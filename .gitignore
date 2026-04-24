@@ -133,3 +133,7 @@ credentials.json
 *.pem
 *.key
 .credentials
+
+frontend/.env
+frontend/.metro-cache/
+frontend/.expo/
