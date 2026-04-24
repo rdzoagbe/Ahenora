@@ -23,6 +23,13 @@ import PIL.Image
 MONGO_URL = os.environ.get("MONGO_URL", "")
 DB_NAME = os.environ.get("DB_NAME", "household_coo")
 GOOGLE_WEB_CLIENT_ID = os.environ.get("GOOGLE_WEB_CLIENT_ID", "")
+GOOGLE_ANDROID_CLIENT_ID = os.environ.get("GOOGLE_ANDROID_CLIENT_ID", "")
+
+GOOGLE_CLIENT_IDS = [
+    client_id
+    for client_id in [GOOGLE_WEB_CLIENT_ID, GOOGLE_ANDROID_CLIENT_ID]
+    if client_id
+]
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
 SESSION_DAYS = int(os.environ.get("SESSION_DAYS", "7"))
 
@@ -360,17 +367,31 @@ async def root():
 async def exchange_session(payload: SessionIn):
     database = get_db()
 
-    if not GOOGLE_WEB_CLIENT_ID:
-        raise HTTPException(status_code=500, detail="GOOGLE_WEB_CLIENT_ID is missing")
+    if not GOOGLE_CLIENT_IDS:
+    raise HTTPException(
+        status_code=500,
+        detail="Google OAuth client IDs are missing",
+    )
 
+token_info = None
+last_error = None
+
+for client_id in GOOGLE_CLIENT_IDS:
     try:
         token_info = google_id_token.verify_oauth2_token(
             payload.session_id,
             GoogleRequest(),
-            GOOGLE_WEB_CLIENT_ID,
+            client_id,
         )
+        break
     except Exception as e:
-        raise HTTPException(status_code=401, detail=f"Invalid Google token: {e}")
+        last_error = e
+
+if not token_info:
+    raise HTTPException(
+        status_code=401,
+        detail=f"Invalid Google token: {last_error}",
+    )
 
     google_sub = token_info["sub"]
     email = token_info.get("email", "")
