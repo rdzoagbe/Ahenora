@@ -1,30 +1,25 @@
-cd "C:\coo\frontend"
+﻿import React from 'react';
+import { View, Text, StyleSheet, Pressable } from 'react-native';
+import { Link, Stack } from 'expo-router';
 
-@'
-import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
-import { useRouter } from 'expo-router';
-import * as WebBrowser from 'expo-web-browser';
-
-WebBrowser.maybeCompleteAuthSession();
-
-export default function NotFound() {
-  const router = useRouter();
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      router.replace('/');
-    }, 1500);
-
-    return () => clearTimeout(timer);
-  }, [router]);
-
+export default function NotFoundScreen() {
   return (
-    <View style={styles.container}>
-      <ActivityIndicator color="#fff" />
-      <Text style={styles.title}>Completing sign-in...</Text>
-      <Text style={styles.subtitle}>Redirecting back to Household COO</Text>
-    </View>
+    <>
+      <Stack.Screen options={{ title: 'Not Found' }} />
+
+      <View style={styles.container}>
+        <Text style={styles.title}>Page not found</Text>
+        <Text style={styles.subtitle}>
+          The screen you are trying to open does not exist.
+        </Text>
+
+        <Link href="/" asChild>
+          <Pressable style={styles.button}>
+            <Text style={styles.buttonText}>Go back home</Text>
+          </Pressable>
+        </Link>
+      </View>
+    </>
   );
 }
 
@@ -38,15 +33,24 @@ const styles = StyleSheet.create({
   },
   title: {
     color: '#fff',
-    fontSize: 20,
+    fontSize: 28,
     fontWeight: '700',
-    marginTop: 16,
+    marginBottom: 8,
   },
   subtitle: {
     color: '#aaa',
-    fontSize: 14,
-    marginTop: 8,
+    fontSize: 15,
     textAlign: 'center',
+    marginBottom: 24,
+  },
+  button: {
+    backgroundColor: '#fff',
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 999,
+  },
+  buttonText: {
+    color: '#111',
+    fontWeight: '700',
   },
 });
-'@ | Set-Content -Path ".\app\+not-found.tsx" -Encoding UTF8

@@ -1,7 +1,4 @@
-cd "C:\coo\frontend"
-
-@'
-import React, { useEffect } from 'react';
+﻿import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
@@ -41,4 +38,3 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
 });
-'@ | Set-Content -Path ".\app\oauthredirect.tsx" -Encoding UTF8

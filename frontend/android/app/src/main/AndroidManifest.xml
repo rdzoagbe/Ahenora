@@ -34,6 +34,7 @@
         <action android:name="android.intent.action.VIEW"/>
         <data android:scheme="householdcoo"/>
         <data android:scheme="com.householdcoo.app"/>
+        <data android:scheme="exp+household-coo"/>
         <category android:name="android.intent.category.BROWSABLE"/>
         <category android:name="android.intent.category.DEFAULT"/>
       </intent-filter>
