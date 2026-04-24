@@ -2,7 +2,6 @@ import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, Pressable, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
-import * as AuthSession from 'expo-auth-session';
 import * as Google from 'expo-auth-session/providers/google';
 
 WebBrowser.maybeCompleteAuthSession();
@@ -13,7 +12,7 @@ export default function Landing() {
   const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
   const androidClientId = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID;
 
-  const [request, response, promptAsync] = Google.useAuthRequest({
+  const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
     androidClientId,
     webClientId,
   });
@@ -26,49 +25,25 @@ export default function Landing() {
 
   useEffect(() => {
     const handleGoogleResponse = async () => {
-      if (!response || response.type !== 'success') return;
+      if (!response) return;
+
+      console.log('Google response:', response);
+
+      if (response.type !== 'success') {
+        console.log('Google sign-in was not successful:', response.type);
+        return;
+      }
 
       try {
-        const code = response.params?.code;
-
-        if (!code) {
-          Alert.alert('Sign-in failed', 'Google did not return an authorization code.');
-          return;
-        }
-
-        if (!request?.redirectUri || !request?.codeVerifier) {
-          Alert.alert('Sign-in failed', 'Google request is missing redirect URI or code verifier.');
-          return;
-        }
-
-        if (!androidClientId) {
-          Alert.alert('Sign-in failed', 'Android Google Client ID is missing.');
-          return;
-        }
-
-        const tokenResult = await AuthSession.exchangeCodeAsync(
-          {
-            clientId: androidClientId,
-            code,
-            redirectUri: request.redirectUri,
-            extraParams: {
-              code_verifier: request.codeVerifier,
-            },
-          },
-          {
-            tokenEndpoint: 'https://oauth2.googleapis.com/token',
-          }
-        );
-
-        const idToken =
-          tokenResult.idToken ||
-          (tokenResult as any).params?.id_token;
+        const idToken = response.params?.id_token;
 
         if (!idToken) {
-          console.log('Google token result:', tokenResult);
+          console.log('Google response params:', response.params);
           Alert.alert('Sign-in failed', 'Google did not return an ID token.');
           return;
         }
+
+        console.log('Google ID token received.');
 
         const { api } = await import('../src/api');
         const result = await api.exchangeSession(idToken);
@@ -77,13 +52,13 @@ export default function Landing() {
 
         router.replace('/(tabs)/feed');
       } catch (error: any) {
-        console.error('google sign-in exchange failed', error);
+        console.error('google sign-in failed', error);
         Alert.alert('Sign-in failed', error?.message || 'Please try again.');
       }
     };
 
     handleGoogleResponse();
-  }, [response, request, router, androidClientId]);
+  }, [response, router]);
 
   const signIn = async () => {
     try {
@@ -91,6 +66,14 @@ export default function Landing() {
         Alert.alert(
           'Google Sign-In not configured',
           'Missing Google OAuth client IDs in .env.'
+        );
+        return;
+      }
+
+      if (!request) {
+        Alert.alert(
+          'Google Sign-In not ready',
+          'The Google auth request is still loading. Please try again in a moment.'
         );
         return;
       }
