@@ -1,262 +1,103 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+const RAW_API_BASE_URL =
+  process.env.EXPO_PUBLIC_BACKEND_URL ||
+  'https://household-coo-production.up.railway.app';
 
-const BASE = process.env.EXPO_PUBLIC_BACKEND_URL;
-if (!BASE) {
-  throw new Error("EXPO_PUBLIC_BACKEND_URL is not set");
-}
+const API_BASE_URL = RAW_API_BASE_URL.startsWith('http')
+  ? RAW_API_BASE_URL
+  : `https://${RAW_API_BASE_URL}`;
 
-const TOKEN_KEY = 'coo_session_token';
+async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const base = API_BASE_URL.replace(/\/$/, '');
+const url = `${base}${path}`;
 
-export const tokenStore = {
-  async get(): Promise<string | null> {
-    try {
-      return await AsyncStorage.getItem(TOKEN_KEY);
-    } catch {
-      return null;
-    }
-  },
-  async set(token: string) {
-    await AsyncStorage.setItem(TOKEN_KEY, token);
-  },
-  async clear() {
-    await AsyncStorage.removeItem(TOKEN_KEY);
-  },
-};
+  console.log('API_BASE_URL:', API_BASE_URL);
+  console.log('API request:', url);
 
-async function request<T = any>(
-  path: string,
-  opts: { method?: string; body?: any } = {}
-): Promise<T> {
-  const token = await tokenStore.get();
   const headers: Record<string, string> = {
+    Accept: 'application/json',
     'Content-Type': 'application/json',
   };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
 
-  const res = await fetch(`${BASE}/api${path}`, {
-    method: opts.method || 'GET',
-    headers,
-    credentials: 'include',
-    body: opts.body ? JSON.stringify(opts.body) : undefined,
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    // Attempt to parse 402 plan-limit payloads so UI can react
-    if (res.status === 402) {
-      try {
-        const parsed = JSON.parse(text);
-        const detail = parsed.detail || parsed;
-        const err: any = new Error(detail?.message || 'Plan limit reached');
-        err.status = 402;
-        err.planLimit = detail;
-        throw err;
-      } catch (e: any) {
-        if (e?.planLimit) throw e;
-      }
-    }
-    const err: any = new Error(`${res.status}: ${text}`);
-    err.status = res.status;
-    throw err;
+  if (options.token) {
+    headers.Authorization = `Bearer ${options.token}`;
   }
-  if (res.status === 204) return {} as T;
-  return res.json();
-}
 
-export type CardType = 'SIGN_SLIP' | 'RSVP' | 'TASK';
-export type CardStatus = 'OPEN' | 'DONE';
-export type Recurrence = 'none' | 'daily' | 'weekly' | 'monthly';
+  let response: Response;
 
-export interface Card {
-  card_id: string;
-  family_id: string;
-  type: CardType;
-  title: string;
-  description?: string;
-  assignee?: string;
-  due_date?: string | null;
-  status: CardStatus;
-  source: 'AI' | 'MANUAL' | 'VOICE' | 'CAMERA';
-  image_base64?: string | null;
-  recurrence: Recurrence;
-  reminder_minutes: number;
-  created_at: string;
-  completed_at?: string | null;
-}
+  try {
+    response = await fetch(url, {
+      method: options.method || 'GET',
+      headers,
+      body: options.body ? JSON.stringify(options.body) : undefined,
+    });
+  } catch (error: any) {
+    console.error('API network failure:', {
+      url,
+      message: error?.message,
+      name: error?.name,
+    });
+    throw new Error(`Network request failed: ${url}`);
+  }
 
-export interface User {
-  user_id: string;
-  email: string;
-  name: string;
-  picture?: string;
-  family_id: string;
-  language: string;
-}
+  const text = await response.text();
 
-export interface FamilyMember {
-  member_id: string;
-  family_id: string;
-  name: string;
-  role: string;
-  avatar?: string | null;
-  stars: number;
-  has_pin?: boolean;
-}
+  let data: any = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = text;
+  }
 
-export interface Reward {
-  reward_id: string;
-  family_id: string;
-  title: string;
-  cost_stars: number;
-  icon?: string | null;
-  created_at: string;
-}
+  if (!response.ok) {
+    console.log('API error response:', response.status, data);
+    throw new Error(
+      `${response.status}: ${typeof data === 'string' ? data : JSON.stringify(data)}`
+    );
+  }
 
-export interface VaultDoc {
-  doc_id: string;
-  family_id: string;
-  title: string;
-  category: string;
-  image_base64: string;
-  created_at: string;
-}
-
-export type Plan = 'village' | 'executive' | 'family_office';
-export type BillingCycle = 'monthly' | 'yearly';
-
-export interface Subscription {
-  plan: Plan;
-  billing_cycle: BillingCycle;
-  grandfathered: boolean;
-  updated_at: string;
-  ai_scans_used: number;
-  ai_scans_period_start: string;
-  vault_bytes_used: number;
-  members_count: number;
-  limits: {
-    max_members: number;
-    ai_scans_per_month: number;
-    vault_bytes: number;
-    weekly_brief: boolean;
-    multi_property: boolean;
-  };
-  price_monthly: number;
-  price_yearly: number;
-}
-
-export interface PlanLimitError {
-  error: 'plan_limit';
-  feature: string;
-  current_plan?: Plan;
-  limit?: number;
-  used?: number;
-  message: string;
+  return data as T;
 }
 
 export const api = {
-  // Auth
-  exchangeSession: (session_id: string, invite_token?: string) =>
-    request<{ user: User; session_token: string }>('/auth/session', {
+  health: async () => {
+    return request<{
+      status: string;
+      message: string;
+      api_configured?: boolean;
+      db_configured?: boolean;
+    }>('/');
+  },
+
+  exchangeSession: async (googleIdToken: string) => {
+    return request<{
+      user: {
+        user_id: string;
+        email: string;
+        name: string;
+        picture?: string;
+        family_id: string;
+        language: string;
+      };
+      session_token: string;
+    }>('/api/auth/session', {
       method: 'POST',
-      body: invite_token ? { session_id, invite_token } : { session_id },
-    }),
-  me: () => request<User>('/auth/me'),
-  logout: () => request('/auth/logout', { method: 'POST' }),
-  setLanguage: (language: string) =>
-    request('/auth/language', { method: 'PATCH', body: { language } }),
-  invite: (email: string) =>
-    request<{ sent: boolean; error?: string; invite_url?: string }>('/family/invite', {
-      method: 'POST',
-      body: { email },
-    }),
-  getInvite: (token: string) =>
-    request<{ inviter_name: string; email?: string }>(`/family/invite/${token}`),
-  // Family
-  familyMembers: () => request<FamilyMember[]>('/family/members'),
-  setMemberPin: (member_id: string, pin: string) =>
-    request<{ ok: boolean; has_pin: boolean }>(`/family/members/${member_id}/pin`, {
-      method: 'PUT',
-      body: { pin },
-    }),
-  verifyMemberPin: (member_id: string, pin: string) =>
-    request<{ ok: boolean; has_pin: boolean }>(`/family/members/${member_id}/verify-pin`, {
-      method: 'POST',
-      body: { pin },
-    }),
-  aiAssign: (title: string, description?: string, type?: string) =>
-    request<{ assignee: string }>('/ai/assign', {
-      method: 'POST',
-      body: { title, description: description || '', type: type || 'TASK' },
-    }),
-  // Cards
-  listCards: (status?: string) =>
-    request<Card[]>(`/cards${status ? `?status=${status}` : ''}`),
-  createCard: (data: Partial<Card>) =>
-    request<Card>('/cards', { method: 'POST', body: data }),
-  updateCard: (id: string, data: { status?: CardStatus }) =>
-    request<Card>(`/cards/${id}`, { method: 'PATCH', body: data }),
-  deleteCard: (id: string) => request(`/cards/${id}`, { method: 'DELETE' }),
-  // Vault
-  listVault: () => request<VaultDoc[]>('/vault'),
-  createVaultDoc: (data: { title: string; category: string; image_base64: string }) =>
-    request<VaultDoc>('/vault', { method: 'POST', body: data }),
-  deleteVaultDoc: (id: string) => request(`/vault/${id}`, { method: 'DELETE' }),
-  // Rewards
-  listRewards: () => request<Reward[]>('/rewards'),
-  createReward: (data: { title: string; cost_stars: number; icon?: string }) =>
-    request<Reward>('/rewards', { method: 'POST', body: data }),
-  deleteReward: (id: string) => request(`/rewards/${id}`, { method: 'DELETE' }),
-  redeemReward: (id: string, member_id: string) =>
-    request<{ ok: boolean; member: FamilyMember }>(`/rewards/${id}/redeem`, {
-      method: 'POST',
-      body: { member_id },
-    }),
-  // Conflicts
-  conflicts: (due_date: string, exclude_id?: string) =>
-    request<Card[]>(
-      `/cards/conflicts?due_date=${encodeURIComponent(due_date)}${
-        exclude_id ? `&exclude_id=${exclude_id}` : ''
-      }`
-    ),
-  // Vision
-  visionExtract: (image_base64: string) =>
-    request<{
-      type: CardType;
-      title: string;
-      description: string;
-      assignee: string;
-      due_date?: string | null;
-    }>('/vision/extract', { method: 'POST', body: { image_base64 } }),
-  // Brief
-  weeklyBrief: () =>
-    request<{ brief: string; generated_at: string }>('/brief/weekly', { method: 'POST' }),
-  // Subscription
-  getSubscription: () => request<Subscription>('/subscription'),
-  changeSubscription: (plan: Plan, billing_cycle: BillingCycle) =>
-    request<Subscription>('/subscription/change', {
-      method: 'POST',
-      body: { plan, billing_cycle },
-    }),
-  // Voice transcribe
-  voiceTranscribe: async (blob: Blob): Promise<{
-    transcript: string;
-    type: CardType;
-    title: string;
-    description: string;
-    assignee: string;
-  }> => {
-    const token = await tokenStore.get();
-    const form = new FormData();
-    const file = new File([blob], 'voice.webm', { type: blob.type || 'audio/webm' });
-    form.append('audio', file);
-    const headers: Record<string, string> = {};
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    const res = await fetch(`${BASE}/api/voice/transcribe`, {
-      method: 'POST',
-      headers,
-      credentials: 'include',
-      body: form,
+      body: {
+        session_id: googleIdToken,
+      },
     });
-    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
-    return res.json();
+  },
+
+  me: async (token: string) => {
+    return request('/api/auth/me', {
+      method: 'GET',
+      token,
+    });
+  },
+
+  logout: async (token: string) => {
+    return request('/api/auth/logout', {
+      method: 'POST',
+      token,
+    });
   },
 };

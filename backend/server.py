@@ -7,10 +7,11 @@ import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
+
 from fastapi import FastAPI, HTTPException, Depends, Header, UploadFile, File, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
+from motor.motor_asyncio import AsyncIOMotorClient
 from google.oauth2 import id_token as google_id_token
 from google.auth.transport.requests import Request as GoogleRequest
 import google.generativeai as genai
@@ -22,16 +23,18 @@ import PIL.Image
 # -----------------------------------------------------------------------------
 MONGO_URL = os.environ.get("MONGO_URL", "")
 DB_NAME = os.environ.get("DB_NAME", "household_coo")
+
 GOOGLE_WEB_CLIENT_ID = os.environ.get("GOOGLE_WEB_CLIENT_ID", "")
 GOOGLE_ANDROID_CLIENT_ID = os.environ.get("GOOGLE_ANDROID_CLIENT_ID", "")
+GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
+
+SESSION_DAYS = int(os.environ.get("SESSION_DAYS", "7"))
 
 GOOGLE_CLIENT_IDS = [
     client_id
     for client_id in [GOOGLE_WEB_CLIENT_ID, GOOGLE_ANDROID_CLIENT_ID]
     if client_id
 ]
-GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
-SESSION_DAYS = int(os.environ.get("SESSION_DAYS", "7"))
 
 if GOOGLE_API_KEY:
     genai.configure(api_key=GOOGLE_API_KEY)
@@ -43,7 +46,7 @@ app = FastAPI(title="Household COO Backend")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # tighten later
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -265,10 +268,8 @@ def public_vault_doc(doc: dict) -> dict:
 
 async def require_user(authorization: str = Header(default="")):
     database = get_db()
-
     if not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing bearer token")
-
     token = authorization.replace("Bearer ", "", 1).strip()
     session = await database["user_sessions"].find_one(
         {"token_hash": sha256(token), "expires_at": {"$gt": utcnow()}},
@@ -276,11 +277,9 @@ async def require_user(authorization: str = Header(default="")):
     )
     if not session:
         raise HTTPException(status_code=401, detail="Invalid or expired session")
-
     user = await database["users"].find_one({"user_id": session["user_id"]}, {"_id": 0})
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
-
     return user
 
 
@@ -368,30 +367,30 @@ async def exchange_session(payload: SessionIn):
     database = get_db()
 
     if not GOOGLE_CLIENT_IDS:
-    raise HTTPException(
-        status_code=500,
-        detail="Google OAuth client IDs are missing",
-    )
-
-token_info = None
-last_error = None
-
-for client_id in GOOGLE_CLIENT_IDS:
-    try:
-        token_info = google_id_token.verify_oauth2_token(
-            payload.session_id,
-            GoogleRequest(),
-            client_id,
+        raise HTTPException(
+            status_code=500,
+            detail="Google OAuth client IDs are missing",
         )
-        break
-    except Exception as e:
-        last_error = e
 
-if not token_info:
-    raise HTTPException(
-        status_code=401,
-        detail=f"Invalid Google token: {last_error}",
-    )
+    token_info = None
+    last_error = None
+
+    for client_id in GOOGLE_CLIENT_IDS:
+        try:
+            token_info = google_id_token.verify_oauth2_token(
+                payload.session_id,
+                GoogleRequest(),
+                client_id,
+            )
+            break
+        except Exception as e:
+            last_error = e
+
+    if token_info is None:
+        raise HTTPException(
+            status_code=401,
+            detail=f"Invalid Google token: {last_error}",
+        )
 
     google_sub = token_info["sub"]
     email = token_info.get("email", "")
@@ -413,6 +412,7 @@ if not token_info:
             "created_at": utcnow(),
             "updated_at": utcnow(),
         }
+
         await database["users"].insert_one(user)
 
         await database["families"].insert_one(
@@ -457,22 +457,17 @@ if not token_info:
                 "pin_hash": None,
             },
         ]
+
         await database["family_members"].insert_many(seed_members)
     else:
         await database["users"].update_one(
             {"user_id": user["user_id"]},
-            {
-                "$set": {
-                    "email": email,
-                    "name": name,
-                    "picture": picture,
-                    "updated_at": utcnow(),
-                }
-            },
+            {"$set": {"email": email, "name": name, "picture": picture, "updated_at": utcnow()}},
         )
         user = await database["users"].find_one({"user_id": user["user_id"]}, {"_id": 0})
 
     raw_session = secrets.token_urlsafe(32)
+
     await database["user_sessions"].insert_one(
         {
             "session_id": new_id("sess"),
@@ -571,6 +566,7 @@ async def family_invite(payload: dict, user=Depends(require_user)):
     sub = await build_subscription(user["family_id"])
     limit = sub["limits"]["max_members"]
     used = sub["members_count"]
+
     if used >= limit:
         plan_limit_error(
             feature="family_members",
@@ -579,6 +575,7 @@ async def family_invite(payload: dict, user=Depends(require_user)):
             used=used,
             message=f"Your current plan allows {limit} family members. Upgrade to add more.",
         )
+
     return {"ok": True, "message": "Invite flow stubbed for now"}
 
 
@@ -589,6 +586,7 @@ async def family_invite(payload: dict, user=Depends(require_user)):
 async def ai_assign(payload: AiAssignIn, user=Depends(require_user)):
     database = get_db()
     members = []
+
     async for m in database["family_members"].find({"family_id": user["family_id"]}, {"_id": 0}):
         members.append(m)
 
@@ -612,9 +610,12 @@ Return only one exact name from the list, or return an empty string.
         prompt,
         system="You are assigning family tasks. Return only one exact name or empty string.",
     )
+
     result = result.strip().replace('"', "")
+
     if result not in names:
         result = ""
+
     return {"assignee": result}
 
 
@@ -693,6 +694,7 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
             },
             {"_id": 0},
         )
+
         if member:
             await database["family_members"].update_one(
                 {"member_id": member["member_id"]},
@@ -717,6 +719,7 @@ async def card_conflicts(
 ):
     database = get_db()
     target = parse_dt(due_date)
+
     if not target:
         return []
 
@@ -727,6 +730,7 @@ async def card_conflicts(
         "family_id": user["family_id"],
         "due_date": {"$gte": start, "$lte": end},
     }
+
     if exclude_id:
         query["card_id"] = {"$ne": exclude_id}
 
@@ -772,11 +776,14 @@ async def create_vault_doc(payload: VaultIn, user=Depends(require_user)):
         "image_base64": payload.image_base64,
         "created_at": utcnow(),
     }
+
     await database["vault"].insert_one(doc)
+
     await database["families"].update_one(
         {"family_id": user["family_id"]},
         {"$inc": {"vault_bytes_used": size}, "$set": {"updated_at": utcnow()}},
     )
+
     return public_vault_doc(doc)
 
 
@@ -787,6 +794,7 @@ async def delete_vault_doc(doc_id: str, user=Depends(require_user)):
         {"doc_id": doc_id, "family_id": user["family_id"]},
         {"_id": 0},
     )
+
     if doc:
         size = len(doc["image_base64"].encode("utf-8"))
         await database["vault"].delete_one({"doc_id": doc_id})
@@ -794,6 +802,7 @@ async def delete_vault_doc(doc_id: str, user=Depends(require_user)):
             {"family_id": user["family_id"]},
             {"$inc": {"vault_bytes_used": -size}, "$set": {"updated_at": utcnow()}},
         )
+
     return {"ok": True}
 
 
@@ -842,6 +851,7 @@ async def redeem_reward(reward_id: str, payload: RedeemIn, user=Depends(require_
         {"member_id": payload.member_id, "family_id": user["family_id"]},
         {"_id": 0},
     )
+
     if not reward or not member:
         raise HTTPException(status_code=404, detail="Reward or member not found")
 
@@ -852,7 +862,9 @@ async def redeem_reward(reward_id: str, payload: RedeemIn, user=Depends(require_
         {"member_id": member["member_id"]},
         {"$inc": {"stars": -reward["cost_stars"]}},
     )
+
     member = await database["family_members"].find_one({"member_id": member["member_id"]}, {"_id": 0})
+
     return {"ok": True, "member": public_member(member)}
 
 
@@ -867,8 +879,10 @@ async def get_subscription(user=Depends(require_user)):
 @app.post("/api/subscription/change")
 async def change_subscription(payload: SubscriptionChangeIn, user=Depends(require_user)):
     database = get_db()
+
     if payload.plan not in PLAN_CATALOG:
         raise HTTPException(status_code=400, detail="Invalid plan")
+
     if payload.billing_cycle not in ("monthly", "yearly"):
         raise HTTPException(status_code=400, detail="Invalid billing cycle")
 
@@ -884,6 +898,7 @@ async def change_subscription(payload: SubscriptionChangeIn, user=Depends(requir
         },
         upsert=True,
     )
+
     return await build_subscription(user["family_id"])
 
 
@@ -894,6 +909,7 @@ async def change_subscription(payload: SubscriptionChangeIn, user=Depends(requir
 async def weekly_brief(user=Depends(require_user)):
     database = get_db()
     sub = await build_subscription(user["family_id"])
+
     if not sub["limits"]["weekly_brief"]:
         plan_limit_error(
             feature="weekly_brief",
@@ -906,7 +922,10 @@ async def weekly_brief(user=Depends(require_user)):
         cards.append(item)
 
     if not cards:
-        brief = "You have a clear runway this week. Use the space to reset routines, confirm calendars, and get ahead on one important family task."
+        brief = (
+            "You have a clear runway this week. Use the space to reset routines, "
+            "confirm calendars, and get ahead on one important family task."
+        )
         return {"brief": brief, "generated_at": iso(utcnow())}
 
     lines = []
@@ -974,7 +993,8 @@ Rules:
 - type must be one of SIGN_SLIP, RSVP, TASK
 - assignee must be one of: {", ".join(members) if members else ""}
 - due_date must be ISO string or null
-"""
+""".strip()
+
         try:
             text = await _gemini_vision(prompt, payload.image_base64)
             text = text.strip().removeprefix("```json").removesuffix("```").strip()
