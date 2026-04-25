@@ -1,4 +1,5 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+﻿import AsyncStorage from '@react-native-async-storage/async-storage';
+import { logger } from './logger';
 
 const RAW_API_BASE_URL =
   process.env.EXPO_PUBLIC_BACKEND_URL ||
@@ -90,8 +91,8 @@ async function request<T = any>(path: string, options: RequestOptions = {}): Pro
     headers.Authorization = `Bearer ${token}`;
   }
 
-  console.log('API_BASE_URL:', API_BASE_URL);
-  console.log('API request:', url);
+  logger.debug('API_BASE_URL:', API_BASE_URL);
+  logger.debug('API request:', url);
   console.log('API auth:', token ? 'Bearer token present' : 'No token');
 
   let response: Response;
@@ -107,7 +108,7 @@ async function request<T = any>(path: string, options: RequestOptions = {}): Pro
         : undefined,
     });
   } catch (error: any) {
-    console.error('API network failure:', {
+    logger.error('API network failure:', {
       url,
       name: error?.name,
       message: error?.message,
@@ -125,7 +126,7 @@ async function request<T = any>(path: string, options: RequestOptions = {}): Pro
   }
 
   if (!response.ok) {
-    console.log('API error response:', response.status, data);
+    logger.warn('API error response:', response.status, data);
 
     if (response.status === 402) {
       const detail = data?.detail || data;
@@ -426,3 +427,8 @@ export const api = {
     });
   },
 };
+
+
+
+
+
