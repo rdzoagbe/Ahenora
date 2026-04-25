@@ -1,4 +1,4 @@
-import os
+﻿import os
 import io
 import json
 import base64
@@ -427,6 +427,8 @@ async def root():
         "message": "Household COO Backend is live",
         "api_configured": bool(GOOGLE_API_KEY),
         "db_configured": bool(MONGO_URL),
+        "backend_version": "invite_tracking_v1",
+        "invite_routes": True,
         "google_web_configured": bool(GOOGLE_WEB_CLIENT_ID),
         "google_android_configured": bool(GOOGLE_ANDROID_CLIENT_ID),
         "google_client_ids_count": len(GOOGLE_CLIENT_IDS),
@@ -1123,7 +1125,7 @@ async def weekly_brief(user=Depends(require_user)):
 
     if not GOOGLE_API_KEY:
         brief = (
-            "This week’s household priorities are: "
+            "This weekâ€™s household priorities are: "
             + "; ".join([c["title"] for c in cards[:5]])
             + ". Focus first on items with dates, assign open tasks clearly, and close one quick win today."
         )
@@ -1217,3 +1219,5 @@ if __name__ == "__main__":
 
     port = int(os.environ.get("PORT", "8080"))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
+
