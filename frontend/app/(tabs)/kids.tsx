@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View,
   Text,
@@ -16,10 +16,11 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
 import { useFocusEffect } from 'expo-router';
-import { Plus, Star, Gift, X, Trash2, Sparkles } from 'lucide-react-native';
+import { Plus, Star, Gift, X, Trash2, Sparkles, Lock } from 'lucide-react-native';
 import { AmbientBackground } from '../../src/components/AmbientBackground';
 import { GlassCard } from '../../src/components/GlassCard';
 import { PressScale } from '../../src/components/PressScale';
+import { PinPadModal } from '../../src/components/PinPadModal';
 import { useStore } from '../../src/store';
 import { api, FamilyMember, Reward } from '../../src/api';
 
@@ -39,22 +40,28 @@ export default function KidsScreen() {
 
   const load = useCallback(async () => {
     try {
+      setLoading(true);
       const [m, r] = await Promise.all([api.familyMembers(), api.listRewards()]);
       setMembers(m);
       setRewards(r);
-      if (!selectedChild) {
-        const firstChild = m.find((x) => x.role === 'Child');
-        if (firstChild) setSelectedChild(firstChild.member_id);
+
+      const firstChild = m.find((x) => x.role === 'Child');
+      if (firstChild) {
+        setSelectedChild((current) => current || firstChild.member_id);
       }
     } catch (e) {
-      console.log(e);
+      console.log('Kids page load failed:', e);
+      showToast('Could not load Kids page. Please try again.');
     } finally {
       setLoading(false);
     }
-  }, [selectedChild]);
+  }, []);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
-  useEffect(() => { load(); }, [load]);
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load])
+  );
 
   const children = members.filter((m) => m.role === 'Child');
   const activeChild = children.find((c) => c.member_id === selectedChild) || children[0];
@@ -65,21 +72,40 @@ export default function KidsScreen() {
     setTimeout(() => setToast(null), 2200);
   };
 
+  const doRedeem = useCallback(
+    async (r: Reward) => {
+      if (!activeChild) return;
+
+      try {
+        const res = await api.redeemReward(r.reward_id, activeChild.member_id);
+
+        setMembers((prev) =>
+          prev.map((m) => (m.member_id === res.member.member_id ? res.member : m))
+        );
+
+        showToast(`${t('redeemed')} ${r.title}`);
+      } catch (e: any) {
+        console.log('Reward redemption failed:', e);
+        showToast(e?.message || 'Error');
+      }
+    },
+    [activeChild, t]
+  );
+
   const redeem = async (r: Reward) => {
     if (!activeChild) return;
+
     if ((activeChild.stars || 0) < r.cost_stars) {
       showToast(t('not_enough_stars'));
       return;
     }
-    try {
-      const res = await api.redeemReward(r.reward_id, activeChild.member_id);
-      setMembers((prev) =>
-        prev.map((m) => (m.member_id === res.member.member_id ? res.member : m))
-      );
-      showToast(`${t('redeemed')} ${r.title}`);
-    } catch (e: any) {
-      showToast(e?.message || 'Error');
+
+    if (activeChild.has_pin) {
+      setPinPromptReward(r);
+      return;
     }
+
+    await doRedeem(r);
   };
 
   const removeReward = async (r: Reward) => {
