@@ -186,6 +186,8 @@ export const api = {
       invite: FamilyInvite;
       invite_url?: string;
       error?: string;
+      email_provider?: string;
+      email_error?: string;
     }>('/family/invite', {
       method: 'POST',
       body: { email },

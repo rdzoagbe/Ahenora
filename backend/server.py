@@ -1,10 +1,13 @@
-﻿import os
+import os
 import io
 import json
 import base64
 import asyncio
 import hashlib
 import secrets
+import html
+import urllib.error
+import urllib.request
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from fastapi import FastAPI, HTTPException, Depends, Header, UploadFile, File, Query
@@ -44,6 +47,13 @@ GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
 SESSION_DAYS = int(os.environ.get("SESSION_DAYS", "7"))
 INVITE_DAYS = int(os.environ.get("INVITE_DAYS", "14"))
 INVITE_BASE_URL = os.environ.get("INVITE_BASE_URL", "householdcoo:///")
+
+# Email delivery. Resend is used through the standard-library urllib client,
+# so no extra Python package is required.
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
+INVITE_FROM_EMAIL = os.environ.get("INVITE_FROM_EMAIL", "")
+INVITE_REPLY_TO = os.environ.get("INVITE_REPLY_TO", "")
+APP_NAME = os.environ.get("APP_NAME", "Household COO")
 
 if GOOGLE_API_KEY and genai:
     genai.configure(api_key=GOOGLE_API_KEY)
@@ -283,6 +293,90 @@ def build_invite_url(token: str) -> str:
     return f"{base}{joiner}invite={token}"
 
 
+async def send_invite_email(to_email: str, invite_url: str, inviter_name: str) -> dict:
+    if not RESEND_API_KEY or not INVITE_FROM_EMAIL:
+        return {
+            "sent": False,
+            "error": "Email delivery is not configured. Set RESEND_API_KEY and INVITE_FROM_EMAIL in Railway.",
+        }
+
+    safe_app_name = html.escape(APP_NAME)
+    safe_inviter = html.escape(inviter_name or "A family member")
+    safe_invite_url = html.escape(invite_url)
+    safe_to = html.escape(to_email)
+
+    subject = f"{inviter_name or 'A family member'} invited you to {APP_NAME}"
+
+    text = (
+        f"{inviter_name or 'A family member'} invited you to join their household in {APP_NAME}.\n\n"
+        f"Open this invite link:\n{invite_url}\n\n"
+        "If you were not expecting this invitation, you can ignore this email."
+    )
+
+    html_body = f"""
+<div style="font-family: Arial, sans-serif; background:#080910; padding:32px;">
+  <div style="max-width:560px; margin:0 auto; background:#141620; border:1px solid rgba(255,255,255,0.10); border-radius:24px; padding:28px;">
+    <div style="font-size:13px; letter-spacing:1.2px; text-transform:uppercase; color:#F59E0B; font-weight:700;">{safe_app_name}</div>
+    <h1 style="color:#ffffff; font-size:28px; margin:12px 0 8px;">You have been invited</h1>
+    <p style="color:rgba(255,255,255,0.72); line-height:1.55; font-size:15px;">
+      <strong style="color:#ffffff;">{safe_inviter}</strong> invited <strong style="color:#ffffff;">{safe_to}</strong>
+      to join their household workspace.
+    </p>
+    <a href="{safe_invite_url}" style="display:inline-block; margin-top:18px; background:#ffffff; color:#080910; text-decoration:none; font-weight:700; padding:13px 18px; border-radius:999px;">
+      Join household
+    </a>
+    <p style="color:rgba(255,255,255,0.45); font-size:12px; line-height:1.5; margin-top:24px;">
+      If the button does not open the app, copy and paste this link:<br />
+      <span style="word-break:break-all;">{safe_invite_url}</span>
+    </p>
+  </div>
+</div>
+""".strip()
+
+    payload = {
+        "from": INVITE_FROM_EMAIL,
+        "to": [to_email],
+        "subject": subject,
+        "text": text,
+        "html": html_body,
+    }
+
+    if INVITE_REPLY_TO:
+        payload["reply_to"] = INVITE_REPLY_TO
+
+    def _send():
+        req = urllib.request.Request(
+            "https://api.resend.com/emails",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {RESEND_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+
+        try:
+            with urllib.request.urlopen(req, timeout=15) as response:
+                raw = response.read().decode("utf-8")
+                try:
+                    parsed = json.loads(raw) if raw else {}
+                except Exception:
+                    parsed = {"raw": raw}
+                return {"sent": True, "provider": "resend", "response": parsed}
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8", errors="replace")
+            return {
+                "sent": False,
+                "provider": "resend",
+                "error": f"Resend HTTP {e.code}: {body}",
+            }
+        except Exception as e:
+            return {"sent": False, "provider": "resend", "error": str(e)}
+
+    return await asyncio.to_thread(_send)
+
+
+
 def public_invite(invite: dict) -> dict:
     return {
         "invite_id": invite["invite_id"],
@@ -427,8 +521,9 @@ async def root():
         "message": "Household COO Backend is live",
         "api_configured": bool(GOOGLE_API_KEY),
         "db_configured": bool(MONGO_URL),
-        "backend_version": "invite_tracking_v1",
+        "backend_version": "email_invites_v1",
         "invite_routes": True,
+        "email_configured": bool(RESEND_API_KEY and INVITE_FROM_EMAIL),
         "google_web_configured": bool(GOOGLE_WEB_CLIENT_ID),
         "google_android_configured": bool(GOOGLE_ANDROID_CLIENT_ID),
         "google_client_ids_count": len(GOOGLE_CLIENT_IDS),
@@ -735,13 +830,26 @@ async def family_invite(payload: InviteIn, user=Depends(require_user)):
         await database["family_invites"].insert_one(invite)
 
     public = public_invite(invite)
+    email_result = await send_invite_email(
+        email,
+        public["invite_url"],
+        user.get("name") or user.get("email") or "A family member",
+    )
+
+    if email_result.get("sent"):
+        message = f"Invitation email sent to {email}."
+    else:
+        message = "Invitation link created, but email delivery failed. Share the link manually."
+
     return {
         "ok": True,
-        "sent": False,
+        "sent": bool(email_result.get("sent")),
         "status": public["status"],
-        "message": "Invitation link created. Email delivery is not configured yet, so share the link manually.",
+        "message": message,
         "invite": public,
         "invite_url": public["invite_url"],
+        "email_provider": email_result.get("provider"),
+        "email_error": email_result.get("error"),
     }
 
 
@@ -1125,7 +1233,7 @@ async def weekly_brief(user=Depends(require_user)):
 
     if not GOOGLE_API_KEY:
         brief = (
-            "This weekâ€™s household priorities are: "
+            "This week’s household priorities are: "
             + "; ".join([c["title"] for c in cards[:5]])
             + ". Focus first on items with dates, assign open tasks clearly, and close one quick win today."
         )
@@ -1219,7 +1327,3 @@ if __name__ == "__main__":
 
     port = int(os.environ.get("PORT", "8080"))
     uvicorn.run(app, host="0.0.0.0", port=port)
-
-
-
-# backend deploy marker: invite_tracking_v1

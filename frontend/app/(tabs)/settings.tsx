@@ -392,11 +392,17 @@ export default function SettingsScreen() {
               try {
                 const res = await api.invite(inviteEmail.trim());
 
-                setInviteResult(
-                  res.invite_url
-                    ? `✓ Invite created. Share this link: ${res.invite_url}`
-                    : res.message || 'Invite created.'
-                );
+                if (res.sent) {
+                  setInviteResult(`✓ Invitation email sent to ${inviteEmail.trim()}. Status: ${res.status}.`);
+                } else if (res.invite_url) {
+                  setInviteResult(
+                    `⚠ Invite created, but email was not delivered. Share this link manually: ${res.invite_url}` +
+                      (res.email_error ? `\n\nEmail error: ${res.email_error}` : '')
+                  );
+                } else {
+                  setInviteResult(res.message || 'Invite created.');
+                }
+
                 setInviteEmail('');
                 await load();
               } catch (e: any) {
