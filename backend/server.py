@@ -9,6 +9,7 @@ import tempfile
 import html
 import urllib.error
 import urllib.request
+import urllib.parse
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from fastapi import FastAPI, HTTPException, Depends, Header, UploadFile, File, Query
@@ -297,6 +298,9 @@ def public_card(card: dict) -> dict:
         "reminder_minutes": card.get("reminder_minutes", 60),
         "created_at": iso(card["created_at"]),
         "completed_at": iso(card.get("completed_at")),
+        "google_event_id": card.get("google_event_id"),
+        "google_ical_uid": card.get("google_ical_uid"),
+        "external_source": card.get("external_source"),
     }
 
 
@@ -430,6 +434,18 @@ def public_invite(invite: dict) -> dict:
     }
 
 
+def public_calendar_contact(contact: dict) -> dict:
+    return {
+        "email": contact.get("email"),
+        "name": contact.get("name"),
+        "event_count": contact.get("event_count", 0),
+        "last_seen_at": iso(contact.get("last_seen_at")),
+        "first_seen_at": iso(contact.get("first_seen_at")),
+        "last_event_title": contact.get("last_event_title"),
+    }
+
+
+
 async def add_user_to_family_if_needed(database: Any, user: dict, family_id: str):
     existing = await database["family_members"].find_one(
         {
@@ -547,6 +563,11 @@ class SubscriptionChangeIn(BaseModel):
 class VisionIn(BaseModel):
     image_base64: str
 
+class CalendarImportIn(BaseModel):
+    access_token: str
+    days: int = 30
+
+
 
 # -----------------------------------------------------------------------------
 # Health
@@ -558,8 +579,9 @@ async def root():
         "message": "Household COO Backend is live",
         "api_configured": bool(GOOGLE_API_KEY),
         "db_configured": bool(MONGO_URL),
-        "backend_version": "voice_transcription_v2",
+        "backend_version": "calendar_sync_v1",
         "invite_routes": True,
+        "calendar_sync": True,
         "email_configured": bool(RESEND_API_KEY and INVITE_FROM_EMAIL),
         "admin_access_enabled": bool(ADMIN_EMAILS),
         "voice_configured": bool(GOOGLE_API_KEY and genai),
@@ -1211,6 +1233,237 @@ async def redeem_reward(reward_id: str, payload: RedeemIn, user=Depends(require_
     return {"ok": True, "member": public_member(member)}
 
 
+
+# -----------------------------------------------------------------------------
+# Google Calendar sync
+# -----------------------------------------------------------------------------
+def _parse_google_event_start(event: dict) -> Optional[datetime]:
+    start = event.get("start") or {}
+    raw = start.get("dateTime")
+
+    if raw:
+        return parse_dt(raw)
+
+    raw_date = start.get("date")
+    if raw_date:
+        try:
+            return datetime.fromisoformat(raw_date).replace(
+                hour=9,
+                minute=0,
+                second=0,
+                microsecond=0,
+                tzinfo=timezone.utc,
+            )
+        except Exception:
+            return None
+
+    return None
+
+
+def _event_attendee_contacts(event: dict) -> list[dict]:
+    contacts = []
+    seen = set()
+
+    for key in ("organizer", "creator"):
+        person = event.get(key) or {}
+        email = str(person.get("email") or "").strip().lower()
+        if email and email not in seen:
+            seen.add(email)
+            contacts.append({
+                "email": email,
+                "name": person.get("displayName") or email.split("@")[0],
+            })
+
+    for attendee in event.get("attendees") or []:
+        email = str(attendee.get("email") or "").strip().lower()
+        if email and email not in seen:
+            seen.add(email)
+            contacts.append({
+                "email": email,
+                "name": attendee.get("displayName") or email.split("@")[0],
+            })
+
+    return contacts
+
+
+async def _fetch_google_calendar_events(access_token: str, days: int) -> list[dict]:
+    now = utcnow()
+    time_min = now.isoformat().replace("+00:00", "Z")
+    time_max = (now + timedelta(days=days)).isoformat().replace("+00:00", "Z")
+
+    params = urllib.parse.urlencode(
+        {
+            "timeMin": time_min,
+            "timeMax": time_max,
+            "singleEvents": "true",
+            "orderBy": "startTime",
+            "maxResults": "100",
+        }
+    )
+
+    url = f"https://www.googleapis.com/calendar/v3/calendars/primary/events?{params}"
+
+    def _request():
+        req = urllib.request.Request(
+            url,
+            headers={"Authorization": f"Bearer {access_token}"},
+            method="GET",
+        )
+
+        try:
+            with urllib.request.urlopen(req, timeout=20) as response:
+                raw = response.read().decode("utf-8")
+                return json.loads(raw)
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8", errors="replace")
+            raise HTTPException(status_code=e.code, detail=f"Google Calendar error: {body}")
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"Google Calendar request failed: {e}")
+
+    data = await asyncio.to_thread(_request)
+    return data.get("items") or []
+
+
+@app.post("/api/calendar/import")
+async def import_google_calendar(payload: CalendarImportIn, user=Depends(require_user)):
+    database = get_db()
+
+    token = payload.access_token.strip()
+    if not token:
+        raise HTTPException(status_code=400, detail="Google Calendar access token is required")
+
+    days = max(1, min(payload.days or 30, 90))
+    events = await _fetch_google_calendar_events(token, days)
+
+    imported = 0
+    skipped = 0
+    contacts_found: dict[str, dict] = {}
+
+    for event in events:
+        if event.get("status") == "cancelled":
+            skipped += 1
+            continue
+
+        event_id = event.get("id")
+        if not event_id:
+            skipped += 1
+            continue
+
+        start_dt = _parse_google_event_start(event)
+        if not start_dt:
+            skipped += 1
+            continue
+
+        existing = await database["cards"].find_one(
+            {
+                "family_id": user["family_id"],
+                "google_event_id": event_id,
+            },
+            {"_id": 0},
+        )
+        if existing:
+            skipped += 1
+            continue
+
+        title = (event.get("summary") or "Calendar event").strip()
+        location = (event.get("location") or "").strip()
+        html_link = event.get("htmlLink")
+        contacts = _event_attendee_contacts(event)
+
+        for contact in contacts:
+            email = contact["email"]
+            contacts_found[email] = contact
+            await database["calendar_contacts"].update_one(
+                {"family_id": user["family_id"], "email": email},
+                {
+                    "$set": {
+                        "name": contact.get("name") or email.split("@")[0],
+                        "last_seen_at": utcnow(),
+                        "last_event_title": title,
+                    },
+                    "$setOnInsert": {
+                        "family_id": user["family_id"],
+                        "email": email,
+                        "first_seen_at": utcnow(),
+                    },
+                    "$inc": {"event_count": 1},
+                },
+                upsert=True,
+            )
+
+        contact_line = ""
+        if contacts:
+            contact_line = "People: " + ", ".join([c["email"] for c in contacts[:8]])
+
+        description_parts = [
+            (event.get("description") or "").strip(),
+            f"Location: {location}" if location else "",
+            contact_line,
+            f"Google Calendar: {html_link}" if html_link else "",
+        ]
+
+        card = {
+            "card_id": new_id("card"),
+            "family_id": user["family_id"],
+            "type": "TASK",
+            "title": title,
+            "description": "\n".join([p for p in description_parts if p]),
+            "assignee": user.get("name"),
+            "due_date": start_dt,
+            "status": "OPEN",
+            "source": "CALENDAR",
+            "image_base64": None,
+            "recurrence": "none",
+            "reminder_minutes": 60,
+            "google_event_id": event_id,
+            "google_ical_uid": event.get("iCalUID"),
+            "external_source": "google_calendar",
+            "created_at": utcnow(),
+            "completed_at": None,
+        }
+
+        await database["cards"].insert_one(card)
+        imported += 1
+
+    contacts = []
+    if contacts_found:
+        cursor = database["calendar_contacts"].find(
+            {"family_id": user["family_id"], "email": {"$in": list(contacts_found.keys())}},
+            {"_id": 0},
+        ).sort("last_seen_at", -1)
+
+        async for item in cursor:
+            contacts.append(public_calendar_contact(item))
+
+    return {
+        "ok": True,
+        "imported": imported,
+        "skipped": skipped,
+        "events_seen": len(events),
+        "contacts_found": len(contacts_found),
+        "contacts": contacts,
+        "days": days,
+    }
+
+
+@app.get("/api/calendar/contacts")
+async def calendar_contacts(user=Depends(require_user)):
+    database = get_db()
+    rows = []
+    cursor = database["calendar_contacts"].find(
+        {"family_id": user["family_id"]},
+        {"_id": 0},
+    ).sort("last_seen_at", -1).limit(50)
+
+    async for item in cursor:
+        rows.append(public_calendar_contact(item))
+
+    return rows
+
+
+
 # -----------------------------------------------------------------------------
 # Subscription
 # -----------------------------------------------------------------------------
@@ -1531,4 +1784,3 @@ if __name__ == "__main__":
 
     port = int(os.environ.get("PORT", "8080"))
     uvicorn.run(app, host="0.0.0.0", port=port)
-# deploy marker: voice_transcription_v2

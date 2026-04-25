@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Globe, LogOut, Users, Mail, UserPlus, X, Send, Lock, Bell, Crown, Sparkles, Share2 } from 'lucide-react-native';
+import { CalendarDays, Globe, LogOut, Users, Mail, UserPlus, X, Send, Lock, Bell, Crown, Sparkles, Share2 } from 'lucide-react-native';
 import { AmbientBackground } from '../../src/components/AmbientBackground';
 import { GlassCard } from '../../src/components/GlassCard';
 import { PressScale } from '../../src/components/PressScale';
@@ -19,7 +19,7 @@ import { LanguageModal } from '../../src/components/LanguageModal';
 import { PinPadModal } from '../../src/components/PinPadModal';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
 import { useStore } from '../../src/store';
-import { api, FamilyInvite, FamilyMember } from '../../src/api';
+import { api, CalendarContact, FamilyInvite, FamilyMember } from '../../src/api';
 import { LANG_NAMES } from '../../src/i18n';
 
 export default function SettingsScreen() {
@@ -27,6 +27,7 @@ export default function SettingsScreen() {
   const router = useRouter();
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [invites, setInvites] = useState<FamilyInvite[]>([]);
+  const [calendarContacts, setCalendarContacts] = useState<CalendarContact[]>([]);
   const [showLang, setShowLang] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
@@ -47,12 +48,14 @@ export default function SettingsScreen() {
 
   const load = useCallback(async () => {
     try {
-      const [memberRows, inviteRows] = await Promise.all([
+      const [memberRows, inviteRows, contactRows] = await Promise.all([
         api.familyMembers(),
         api.listInvites(),
+        api.listCalendarContacts().catch(() => []),
       ]);
       setMembers(memberRows);
       setInvites(inviteRows);
+      setCalendarContacts(contactRows);
     } catch (e) {
       console.log(e);
     }
@@ -208,6 +211,44 @@ export default function SettingsScreen() {
                   >
                     <Text style={styles.statusPillText}>{invite.status}</Text>
                   </View>
+                </View>
+              ))
+            )}
+          </GlassCard>
+
+          {/* Calendar contacts */}
+          <View style={styles.sectionRow}>
+            <CalendarDays color="rgba(255,255,255,0.6)" size={14} />
+            <Text style={styles.sectionLabel}>Calendar contacts</Text>
+          </View>
+          <GlassCard>
+            {calendarContacts.length === 0 ? (
+              <Text style={styles.emptyRow}>No calendar contacts found yet. Sync Google Calendar from the Calendar tab.</Text>
+            ) : (
+              calendarContacts.slice(0, 8).map((contact, index) => (
+                <View key={contact.email} style={[styles.contactRow, index > 0 && styles.memberBorder]}>
+                  <View style={styles.memberAvatar}>
+                    <Text style={styles.memberInitial}>{(contact.name?.[0] || contact.email[0] || '?').toUpperCase()}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.memberName}>{contact.name || contact.email}</Text>
+                    <Text style={styles.memberRole} numberOfLines={1}>
+                      {contact.email} · {contact.event_count} event{contact.event_count === 1 ? '' : 's'}
+                    </Text>
+                  </View>
+                  <PressScale
+                    testID={`invite-calendar-contact-${contact.email}`}
+                    onPress={() => {
+                      setInviteEmail(contact.email);
+                      setInviteResult(null);
+                      setLastInviteUrl(null);
+                      setLastInviteEmail('');
+                      setShowInvite(true);
+                    }}
+                    style={styles.contactInviteBtn}
+                  >
+                    <Text style={styles.contactInviteText}>Invite</Text>
+                  </PressScale>
                 </View>
               ))
             )}

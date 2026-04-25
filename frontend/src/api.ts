@@ -75,12 +75,15 @@ export interface Card {
   assignee?: string;
   due_date?: string | null;
   status: CardStatus;
-  source: 'AI' | 'MANUAL' | 'VOICE' | 'CAMERA';
+  source: 'AI' | 'MANUAL' | 'VOICE' | 'CAMERA' | 'CALENDAR';
   image_base64?: string | null;
   recurrence: Recurrence;
   reminder_minutes: number;
   created_at: string;
   completed_at?: string | null;
+  google_event_id?: string | null;
+  google_ical_uid?: string | null;
+  external_source?: string | null;
 }
 
 export interface User {
@@ -124,6 +127,25 @@ export interface FamilyInvite {
   accepted_at?: string | null;
   accepted_by_email?: string | null;
   created_by_name?: string | null;
+}
+
+export interface CalendarContact {
+  email: string;
+  name?: string | null;
+  event_count: number;
+  first_seen_at?: string | null;
+  last_seen_at?: string | null;
+  last_event_title?: string | null;
+}
+
+export interface CalendarImportResult {
+  ok: boolean;
+  imported: number;
+  skipped: number;
+  events_seen: number;
+  contacts_found: number;
+  contacts: CalendarContact[];
+  days: number;
 }
 
 export interface VaultDoc {
@@ -203,6 +225,12 @@ export const api = {
       email?: string;
       expires_at?: string | null;
     }>(`/family/invite/${token}`),
+  importGoogleCalendar: (access_token: string, days = 30) =>
+    request<CalendarImportResult>('/calendar/import', {
+      method: 'POST',
+      body: { access_token, days },
+    }),
+  listCalendarContacts: () => request<CalendarContact[]>('/calendar/contacts'),
   // Family
   familyMembers: () => request<FamilyMember[]>('/family/members'),
   setMemberPin: (member_id: string, pin: string) =>
