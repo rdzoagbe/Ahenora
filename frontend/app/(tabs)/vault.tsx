@@ -4,34 +4,29 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  ActivityIndicator,
-  Modal,
   TextInput,
   Platform,
   Image,
   Alert,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
 import { useFocusEffect } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import {
-  Plus,
-  X,
-  Lock,
-  Trash2,
-  Stethoscope,
-  BookOpen,
-  Shield,
-  Scale,
-} from 'lucide-react-native';
+import { Plus, X, Lock, Trash2, Stethoscope, BookOpen, Shield, Scale } from 'lucide-react-native';
 
 import { AmbientBackground } from '../../src/components/AmbientBackground';
 import { PressScale } from '../../src/components/PressScale';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
+import AppToast, { ToastTone } from '../../src/components/AppToast';
+import EmptyState from '../../src/components/EmptyState';
+import ErrorState from '../../src/components/ErrorState';
+import LoadingOverlay from '../../src/components/LoadingOverlay';
 
 import { useStore } from '../../src/store';
 import { api, VaultDoc } from '../../src/api';
+import { logger } from '../../src/logger';
 
 const CATEGORIES = [
   { key: 'Medical', icon: Stethoscope, tone: '#F97316' },
@@ -40,11 +35,17 @@ const CATEGORIES = [
   { key: 'Legal', icon: Scale, tone: '#EAB308' },
 ];
 
+type ToastState = {
+  message: string;
+  tone: ToastTone;
+};
+
 export default function VaultScreen() {
   const { t } = useStore();
 
   const [docs, setDocs] = useState<VaultDoc[]>([]);
   const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [preview, setPreview] = useState<VaultDoc | null>(null);
 
@@ -52,15 +53,22 @@ export default function VaultScreen() {
   const [category, setCategory] = useState('Medical');
   const [image, setImage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [toast, setToast] = useState<ToastState | null>(null);
+
+  const showToast = useCallback((message: string, tone: ToastTone = 'info') => {
+    setToast({ message, tone });
+    setTimeout(() => setToast(null), 2300);
+  }, []);
 
   const load = useCallback(async () => {
     try {
-      setLoading(true);
+      setErrorMessage(null);
 
       const res = await api.listVault();
       setDocs(res);
-    } catch (e) {
-      console.log('Vault load failed:', e);
+    } catch (e: any) {
+      logger.warn('Vault load failed:', e?.message || e);
+      setErrorMessage(e?.message || 'Could not load vault.');
     } finally {
       setLoading(false);
     }
@@ -119,36 +127,45 @@ export default function VaultScreen() {
     setSaving(true);
 
     try {
-      await api.createVaultDoc({
+      const created = await api.createVaultDoc({
         title: title.trim(),
         category,
         image_base64: image,
       });
 
+      setDocs((prev) => [created, ...prev]);
       setTitle('');
       setImage(null);
       setCategory('Medical');
       setShowAdd(false);
 
-      await load();
+      showToast('Document saved.', 'success');
     } catch (e: any) {
-      console.log('Save vault document failed:', e);
-      Alert.alert('Save failed', e?.message || 'Please try again.');
+      logger.warn('Save vault document failed:', e?.message || e);
+      showToast(e?.message || 'Could not save document.', 'error');
     } finally {
       setSaving(false);
     }
   };
 
   const remove = async (doc: VaultDoc) => {
-    setDocs((previous) => previous.filter((d) => d.doc_id !== doc.doc_id));
+    const previous = docs;
+
+    setDocs((prev) => prev.filter((d) => d.doc_id !== doc.doc_id));
     setPreview(null);
 
     try {
       await api.deleteVaultDoc(doc.doc_id);
-    } catch {
+      showToast('Document deleted.', 'success');
+    } catch (e: any) {
+      logger.warn('Delete vault document failed:', e?.message || e);
+      setDocs(previous);
+      showToast('Could not delete document.', 'error');
       load();
     }
   };
+
+  const showBlockingError = !loading && Boolean(errorMessage) && docs.length === 0;
 
   return (
     <View style={styles.container}>
@@ -175,13 +192,19 @@ export default function VaultScreen() {
             </PressScale>
           </View>
 
-          {loading ? (
-            <ActivityIndicator color="#fff" style={{ marginTop: 40 }} />
-          ) : docs.length === 0 ? (
-            <View style={styles.empty}>
-              <Lock color="rgba(255,255,255,0.35)" size={28} />
-              <Text style={styles.emptyText}>{t('no_docs')}</Text>
-            </View>
+          {showBlockingError ? (
+            <ErrorState
+              title="Vault unavailable"
+              message={errorMessage || 'Could not load vault.'}
+              onRetry={load}
+            />
+          ) : docs.length === 0 && !loading ? (
+            <EmptyState
+              title={t('no_docs')}
+              message="Store school slips, insurance papers, IDs, and household documents."
+              actionLabel={t('add_document')}
+              onAction={openAdd}
+            />
           ) : (
             <View style={styles.grid}>
               {docs.map((d) => {
@@ -264,12 +287,7 @@ export default function VaultScreen() {
                 ]}
               >
                 <Icon color={active ? c.tone : 'rgba(255,255,255,0.6)'} size={14} />
-                <Text
-                  style={[
-                    styles.catBtnLabel,
-                    { color: active ? c.tone : 'rgba(255,255,255,0.7)' },
-                  ]}
-                >
+                <Text style={[styles.catBtnLabel, { color: active ? c.tone : 'rgba(255,255,255,0.7)' }]}>
                   {t(c.key.toLowerCase())}
                 </Text>
               </PressScale>
@@ -325,6 +343,14 @@ export default function VaultScreen() {
           </View>
         ) : null}
       </Modal>
+
+      <LoadingOverlay visible={loading} label="Loading vault..." />
+
+      <AppToast
+        visible={Boolean(toast)}
+        message={toast?.message || null}
+        tone={toast?.tone || 'info'}
+      />
     </View>
   );
 }
@@ -334,48 +360,14 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   scroll: { paddingHorizontal: 20, paddingTop: 14 },
   headerRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 24 },
-  title: {
-    fontFamily: 'PlayfairDisplay_400Regular_Italic',
-    color: '#fff',
-    fontSize: 40,
-    lineHeight: 46,
-  },
-  subRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    marginTop: 2,
-  },
-  sub: {
-    fontFamily: 'Inter_400Regular',
-    color: 'rgba(255,255,255,0.55)',
-    fontSize: 12,
-  },
+  title: { fontFamily: 'PlayfairDisplay_400Regular_Italic', color: '#fff', fontSize: 40, lineHeight: 46 },
+  subRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 },
+  sub: { fontFamily: 'Inter_400Regular', color: 'rgba(255,255,255,0.55)', fontSize: 12 },
   addBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 9999,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 44, height: 44, borderRadius: 9999, backgroundColor: '#fff',
+    alignItems: 'center', justifyContent: 'center',
   },
-  empty: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 80,
-    gap: 14,
-  },
-  emptyText: {
-    fontFamily: 'PlayfairDisplay_400Regular_Italic',
-    color: 'rgba(255,255,255,0.5)',
-    fontSize: 22,
-  },
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 14,
-    justifyContent: 'space-between',
-  },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 14, justifyContent: 'space-between' },
   tile: {
     width: '48%',
     aspectRatio: 0.85,
@@ -391,26 +383,11 @@ const styles = StyleSheet.create({
   tileOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(8,9,16,0.55)' },
   tileTop: { flexDirection: 'row' },
   catPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderWidth: 1,
-    borderRadius: 9999,
-    backgroundColor: 'rgba(8,9,16,0.6)',
+    flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4,
+    borderWidth: 1, borderRadius: 9999, backgroundColor: 'rgba(8,9,16,0.6)',
   },
-  catText: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 10,
-    letterSpacing: 0.4,
-  },
-  tileTitle: {
-    color: '#fff',
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 13,
-    lineHeight: 18,
-  },
+  catText: { fontFamily: 'Inter_600SemiBold', fontSize: 10, letterSpacing: 0.4 },
+  tileTitle: { color: '#fff', fontFamily: 'Inter_600SemiBold', fontSize: 13, lineHeight: 18 },
   backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(8,9,16,0.5)' },
   sheet: {
     backgroundColor: 'rgba(20,22,32,0.98)',
@@ -421,135 +398,46 @@ const styles = StyleSheet.create({
     padding: 24,
     paddingBottom: 130,
   },
-  sheetHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  sheetTitle: {
-    fontFamily: 'PlayfairDisplay_400Regular_Italic',
-    fontSize: 26,
-    color: '#fff',
-  },
-  iconBtn: {
-    padding: 8,
-    borderRadius: 9999,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-  },
+  sheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  sheetTitle: { fontFamily: 'PlayfairDisplay_400Regular_Italic', fontSize: 26, color: '#fff' },
+  iconBtn: { padding: 8, borderRadius: 9999, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
   label: {
-    fontFamily: 'Inter_500Medium',
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.5)',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginTop: 12,
-    marginBottom: 8,
+    fontFamily: 'Inter_500Medium', fontSize: 11, color: 'rgba(255,255,255,0.5)',
+    textTransform: 'uppercase', letterSpacing: 1, marginTop: 12, marginBottom: 8,
   },
   input: {
     backgroundColor: 'rgba(255,255,255,0.04)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    color: '#fff',
-    fontFamily: 'Inter_400Regular',
-    fontSize: 15,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12,
+    color: '#fff', fontFamily: 'Inter_400Regular', fontSize: 15,
   },
-  catRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
+  catRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   catBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    borderRadius: 9999,
-    borderWidth: 1,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 12, paddingVertical: 9, borderRadius: 9999, borderWidth: 1,
   },
-  catBtnLabel: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 12,
-  },
+  catBtnLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
   pick: {
-    marginTop: 16,
-    height: 140,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderStyle: 'dashed',
-    borderColor: 'rgba(255,255,255,0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    marginTop: 16, height: 140, borderRadius: 16, borderWidth: 1, borderStyle: 'dashed',
+    borderColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center',
+    overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.03)',
   },
   pickImg: { ...StyleSheet.absoluteFillObject, resizeMode: 'cover' },
-  pickText: {
-    color: 'rgba(255,255,255,0.5)',
-    fontFamily: 'Inter_400Regular',
-    fontSize: 13,
-  },
-  sheetFooter: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 20,
-  },
+  pickText: { color: 'rgba(255,255,255,0.5)', fontFamily: 'Inter_400Regular', fontSize: 13 },
+  sheetFooter: { flexDirection: 'row', gap: 12, marginTop: 20 },
   cancelBtn: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 14,
-    paddingVertical: 14,
-    alignItems: 'center',
+    flex: 1, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 14, paddingVertical: 14, alignItems: 'center',
   },
-  cancelText: {
-    color: 'rgba(255,255,255,0.7)',
-    fontFamily: 'Inter_500Medium',
-    fontSize: 15,
-  },
-  saveBtn: {
-    flex: 1,
-    backgroundColor: '#fff',
-    borderRadius: 14,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  saveText: {
-    color: '#080910',
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 15,
-  },
-  previewWrap: {
-    flex: 1,
-    padding: 24,
-    justifyContent: 'center',
-  },
-  previewTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 14,
-  },
-  previewTitle: {
-    flex: 1,
-    color: '#fff',
-    fontFamily: 'PlayfairDisplay_400Regular_Italic',
-    fontSize: 24,
-  },
-  previewActions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
+  cancelText: { color: 'rgba(255,255,255,0.7)', fontFamily: 'Inter_500Medium', fontSize: 15 },
+  saveBtn: { flex: 1, backgroundColor: '#fff', borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
+  saveText: { color: '#080910', fontFamily: 'Inter_600SemiBold', fontSize: 15 },
+  previewWrap: { flex: 1, padding: 24, justifyContent: 'center' },
+  previewTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
+  previewTitle: { flex: 1, color: '#fff', fontFamily: 'PlayfairDisplay_400Regular_Italic', fontSize: 24 },
+  previewActions: { flexDirection: 'row', gap: 8 },
   previewImg: {
-    width: '100%',
-    aspectRatio: 0.75,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    width: '100%', aspectRatio: 0.75, borderRadius: 20,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
   },
 });

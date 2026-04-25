@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import { ChevronLeft, ChevronRight, CalendarDays, ListChecks } from 'lucide-react-native';
@@ -7,8 +7,13 @@ import { ChevronLeft, ChevronRight, CalendarDays, ListChecks } from 'lucide-reac
 import { AmbientBackground } from '../../src/components/AmbientBackground';
 import { GlassCard } from '../../src/components/GlassCard';
 import { PressScale } from '../../src/components/PressScale';
+import EmptyState from '../../src/components/EmptyState';
+import ErrorState from '../../src/components/ErrorState';
+import LoadingOverlay from '../../src/components/LoadingOverlay';
+
 import { useStore } from '../../src/store';
 import { api, Card } from '../../src/api';
+import { logger } from '../../src/logger';
 
 const TYPE_COLOR: Record<string, string> = {
   SIGN_SLIP: '#F97316',
@@ -37,7 +42,6 @@ function parseCardDate(value?: string | null) {
   if (!value) return null;
 
   const date = new Date(value);
-
   if (Number.isNaN(date.getTime())) return null;
 
   return date;
@@ -45,10 +49,7 @@ function parseCardDate(value?: string | null) {
 
 function getCardDayKey(card: Card) {
   const date = parseCardDate(card.due_date);
-
-  if (!date) return null;
-
-  return toDateKey(date);
+  return date ? toDateKey(date) : null;
 }
 
 function groupCardsByDay(cards: Card[]) {
@@ -56,7 +57,6 @@ function groupCardsByDay(cards: Card[]) {
 
   cards.forEach((card) => {
     const key = getCardDayKey(card);
-
     if (!key) return;
 
     groups[key] = groups[key] || [];
@@ -100,7 +100,6 @@ function buildMonthCells(monthDate: Date, grouped: Record<string, Card[]>) {
 
 function formatCardTime(value?: string | null) {
   const date = parseCardDate(value);
-
   if (!date) return '';
 
   return date.toLocaleTimeString([], {
@@ -111,7 +110,6 @@ function formatCardTime(value?: string | null) {
 
 function formatShortDate(value?: string | null) {
   const date = parseCardDate(value);
-
   if (!date) return '';
 
   return date.toLocaleDateString([], {
@@ -126,18 +124,20 @@ export default function CalendarScreen() {
 
   const [cards, setCards] = useState<Card[]>([]);
   const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [monthDate, setMonthDate] = useState(() => startOfMonth(new Date()));
   const [selectedDay, setSelectedDay] = useState(() => toDateKey(new Date()));
 
   const load = useCallback(async () => {
     try {
-      setLoading(true);
+      setErrorMessage(null);
 
       const res = await api.listCards();
 
       setCards(res.filter((card) => card.status === 'OPEN' && Boolean(card.due_date)));
-    } catch (e) {
-      console.log('calendar load failed:', e);
+    } catch (e: any) {
+      logger.warn('Calendar load failed:', e?.message || e);
+      setErrorMessage(e?.message || 'Could not load calendar.');
     } finally {
       setLoading(false);
     }
@@ -164,7 +164,6 @@ export default function CalendarScreen() {
     return cards
       .filter((card) => {
         const date = parseCardDate(card.due_date);
-
         if (!date) return false;
 
         return (
@@ -181,22 +180,23 @@ export default function CalendarScreen() {
 
   const selectedItems = grouped[selectedDay] || [];
 
-  const monthLabel = monthDate.toLocaleDateString(lang === 'es' ? 'es-ES' : 'en-US', {
+  const locale = lang === 'es' ? 'es-ES' : 'en-US';
+
+  const monthLabel = monthDate.toLocaleDateString(locale, {
     month: 'long',
     year: 'numeric',
   });
 
-  const selectedLabel = new Date(`${selectedDay}T12:00:00`).toLocaleDateString(
-    lang === 'es' ? 'es-ES' : 'en-US',
-    {
-      weekday: 'long',
-      month: 'short',
-      day: 'numeric',
-    }
-  );
+  const selectedLabel = new Date(`${selectedDay}T12:00:00`).toLocaleDateString(locale, {
+    weekday: 'long',
+    month: 'short',
+    day: 'numeric',
+  });
 
   const openCount = cards.length;
   const monthCount = monthCards.length;
+
+  const showBlockingError = !loading && Boolean(errorMessage) && cards.length === 0;
 
   return (
     <View style={styles.container}>
@@ -245,8 +245,12 @@ export default function CalendarScreen() {
             </PressScale>
           </View>
 
-          {loading ? (
-            <ActivityIndicator color="#fff" style={{ marginTop: 40 }} />
+          {showBlockingError ? (
+            <ErrorState
+              title="Calendar unavailable"
+              message={errorMessage || 'Could not load calendar.'}
+              onRetry={load}
+            />
           ) : (
             <>
               <View style={styles.weekRow}>
@@ -278,7 +282,6 @@ export default function CalendarScreen() {
                           style={[
                             styles.dayNumber,
                             !cell.inCurrentMonth && styles.dayNumberMuted,
-                            selected && styles.dayNumberSelected,
                           ]}
                         >
                           {cell.dayNumber}
@@ -315,9 +318,10 @@ export default function CalendarScreen() {
               </View>
 
               {selectedItems.length === 0 ? (
-                <GlassCard style={styles.emptyCard}>
-                  <Text style={styles.emptyText}>{t('no_events')}</Text>
-                </GlassCard>
+                <EmptyState
+                  title={t('no_events')}
+                  message="No scheduled household cards for this date."
+                />
               ) : (
                 selectedItems.map((card) => (
                   <GlassCard key={card.card_id} style={styles.itemCard}>
@@ -389,6 +393,8 @@ export default function CalendarScreen() {
           <View style={{ height: 200 }} />
         </ScrollView>
       </SafeAreaView>
+
+      <LoadingOverlay visible={loading} label="Loading calendar..." />
     </View>
   );
 }
@@ -457,10 +463,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     textTransform: 'capitalize',
   },
-  weekRow: {
-    flexDirection: 'row',
-    marginBottom: 8,
-  },
+  weekRow: { flexDirection: 'row', marginBottom: 8 },
   weekDay: {
     width: `${100 / 7}%`,
     color: 'rgba(255,255,255,0.45)',
@@ -487,15 +490,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderColor: 'rgba(255,255,255,0.06)',
   },
-  dayCellMuted: {
-    opacity: 0.38,
-  },
-  dayCellToday: {
-    backgroundColor: 'rgba(249,115,22,0.10)',
-  },
-  dayCellSelected: {
-    backgroundColor: 'rgba(99,102,241,0.20)',
-  },
+  dayCellMuted: { opacity: 0.38 },
+  dayCellToday: { backgroundColor: 'rgba(249,115,22,0.10)' },
+  dayCellSelected: { backgroundColor: 'rgba(99,102,241,0.20)' },
   dayTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -506,12 +503,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_600SemiBold',
     fontSize: 12,
   },
-  dayNumberMuted: {
-    color: 'rgba(255,255,255,0.45)',
-  },
-  dayNumberSelected: {
-    color: '#fff',
-  },
+  dayNumberMuted: { color: 'rgba(255,255,255,0.45)' },
   dayCountBadge: {
     minWidth: 18,
     height: 18,
@@ -532,11 +524,7 @@ const styles = StyleSheet.create({
     gap: 3,
     marginTop: 12,
   },
-  dayDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 9999,
-  },
+  dayDot: { width: 6, height: 6, borderRadius: 9999 },
   sectionHeader: {
     marginTop: 22,
     marginBottom: 10,
@@ -555,27 +543,15 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_400Regular',
     fontSize: 12,
   },
-  emptyCard: {
-    marginBottom: 10,
-  },
+  emptyCard: { marginBottom: 10 },
   emptyText: {
     fontFamily: 'PlayfairDisplay_400Regular_Italic',
     color: 'rgba(255,255,255,0.5)',
     fontSize: 18,
   },
-  itemCard: {
-    marginBottom: 10,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-  },
-  dot: {
-    width: 10,
-    height: 10,
-    borderRadius: 9999,
-  },
+  itemCard: { marginBottom: 10 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  dot: { width: 10, height: 10, borderRadius: 9999 },
   itemTitle: {
     fontFamily: 'Inter_500Medium',
     color: '#fff',
@@ -593,14 +569,8 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
     textTransform: 'uppercase',
   },
-  recapCard: {
-    marginBottom: 8,
-  },
-  recapRow: {
-    flexDirection: 'row',
-    gap: 12,
-    alignItems: 'center',
-  },
+  recapCard: { marginBottom: 8 },
+  recapRow: { flexDirection: 'row', gap: 12, alignItems: 'center' },
   recapDate: {
     width: 82,
     color: 'rgba(255,255,255,0.65)',

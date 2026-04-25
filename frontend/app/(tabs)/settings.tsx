@@ -10,43 +10,86 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Globe, LogOut, Users, Mail, UserPlus, X, Send, Lock, Bell, Crown, Sparkles } from 'lucide-react-native';
+import {
+  Globe,
+  LogOut,
+  Users,
+  Mail,
+  UserPlus,
+  X,
+  Send,
+  Lock,
+  Bell,
+  Crown,
+  Sparkles,
+} from 'lucide-react-native';
+
 import { AmbientBackground } from '../../src/components/AmbientBackground';
 import { GlassCard } from '../../src/components/GlassCard';
 import { PressScale } from '../../src/components/PressScale';
 import { LanguageModal } from '../../src/components/LanguageModal';
 import { PinPadModal } from '../../src/components/PinPadModal';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
+import AppToast, { ToastTone } from '../../src/components/AppToast';
+import EmptyState from '../../src/components/EmptyState';
+import ErrorState from '../../src/components/ErrorState';
+import LoadingOverlay from '../../src/components/LoadingOverlay';
+
 import { useStore } from '../../src/store';
 import { api, FamilyMember } from '../../src/api';
 import { LANG_NAMES } from '../../src/i18n';
+import { logger } from '../../src/logger';
+
+type ToastState = {
+  message: string;
+  tone: ToastTone;
+};
 
 export default function SettingsScreen() {
   const { user, t, lang, logout, subscription } = useStore();
   const router = useRouter();
+
   const [members, setMembers] = useState<FamilyMember[]>([]);
+  const [loadingMembers, setLoadingMembers] = useState(true);
+  const [memberError, setMemberError] = useState<string | null>(null);
+
   const [showLang, setShowLang] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [sending, setSending] = useState(false);
   const [inviteResult, setInviteResult] = useState<string | null>(null);
+
   const [pinMember, setPinMember] = useState<FamilyMember | null>(null);
   const [notifyOn, setNotifyOn] = useState(false);
+  const [toast, setToast] = useState<ToastState | null>(null);
+
+  const showToast = useCallback((message: string, tone: ToastTone = 'info') => {
+    setToast({ message, tone });
+    setTimeout(() => setToast(null), 2300);
+  }, []);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
       try {
         setNotifyOn(window.localStorage.getItem('coo_notify') === '1');
-      } catch { /* ignore */ }
+      } catch {
+        // Ignore web storage failure.
+      }
     }
   }, []);
 
   const load = useCallback(async () => {
     try {
+      setMemberError(null);
+
       const res = await api.familyMembers();
+
       setMembers(res);
-    } catch (e) {
-      console.log(e);
+    } catch (e: any) {
+      logger.warn('Settings members load failed:', e?.message || e);
+      setMemberError(e?.message || 'Could not load family members.');
+    } finally {
+      setLoadingMembers(false);
     }
   }, []);
 
@@ -59,14 +102,48 @@ export default function SettingsScreen() {
     router.replace('/');
   };
 
+  const sendInvite = async () => {
+    if (!inviteEmail.trim() || !inviteEmail.includes('@')) return;
+
+    setSending(true);
+    setInviteResult(null);
+
+    try {
+      const res = await api.invite(inviteEmail.trim());
+
+      if (res.sent) {
+        setInviteResult(`✓ Invitation sent to ${inviteEmail}`);
+        setInviteEmail('');
+        showToast('Invitation sent.', 'success');
+      } else {
+        const message = res.error || 'Email not sent, but invite link created.';
+        setInviteResult(message);
+        showToast(message, 'info');
+      }
+    } catch (e: any) {
+      logger.warn('Invite failed:', e?.message || e);
+      const message = e?.message || 'Could not send invite.';
+      setInviteResult(message);
+      showToast(message, 'error');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const childMembers = members.filter((m) => m.role === 'Child');
+
   return (
     <View style={styles.container}>
       <AmbientBackground />
-      <SafeAreaView style={{ flex: 1 }} edges={['top']}>
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
           <Text style={styles.title}>{t('settings')}</Text>
 
-          {/* Profile */}
           <GlassCard style={{ marginTop: 12, marginBottom: 18 }}>
             <View style={styles.profileRow}>
               {user?.picture ? (
@@ -76,8 +153,10 @@ export default function SettingsScreen() {
                   <Text style={styles.avatarText}>{(user?.name?.[0] || 'C').toUpperCase()}</Text>
                 </View>
               )}
+
               <View style={{ flex: 1 }}>
                 <Text style={styles.name}>{user?.name}</Text>
+
                 <View style={styles.emailRow}>
                   <Mail color="rgba(255,255,255,0.45)" size={11} />
                   <Text style={styles.email}>{user?.email}</Text>
@@ -86,25 +165,36 @@ export default function SettingsScreen() {
             </View>
           </GlassCard>
 
-          {/* Family */}
           <View style={styles.sectionRow}>
             <Users color="rgba(255,255,255,0.6)" size={14} />
             <Text style={styles.sectionLabel}>{t('family')}</Text>
           </View>
+
           <GlassCard>
-            {members.map((m, i) => (
-              <View key={m.member_id} style={[styles.memberRow, i > 0 && styles.memberBorder]}>
-                <View style={styles.memberAvatar}>
-                  <Text style={styles.memberInitial}>{m.name[0]?.toUpperCase()}</Text>
+            {memberError && members.length === 0 ? (
+              <ErrorState
+                title="Family unavailable"
+                message={memberError}
+                onRetry={load}
+              />
+            ) : members.length === 0 && !loadingMembers ? (
+              <EmptyState
+                title="No family members yet"
+                message="Invite your co-parent or add children to unlock family workflows."
+              />
+            ) : (
+              members.map((m, i) => (
+                <View key={m.member_id} style={[styles.memberRow, i > 0 && styles.memberBorder]}>
+                  <View style={styles.memberAvatar}>
+                    <Text style={styles.memberInitial}>{m.name[0]?.toUpperCase()}</Text>
+                  </View>
+
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.memberName}>{m.name}</Text>
+                    <Text style={styles.memberRole}>{m.role}</Text>
+                  </View>
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.memberName}>{m.name}</Text>
-                  <Text style={styles.memberRole}>{m.role}</Text>
-                </View>
-              </View>
-            ))}
-            {members.length === 0 && (
-              <Text style={styles.emptyRow}>No family members yet.</Text>
+              ))
             )}
           </GlassCard>
 
@@ -121,17 +211,18 @@ export default function SettingsScreen() {
             <Text style={styles.inviteBtnText}>Invite co-parent</Text>
           </PressScale>
 
-          {/* Subscription */}
           <View style={styles.sectionRow}>
             <Crown color="rgba(255,255,255,0.6)" size={14} />
             <Text style={styles.sectionLabel}>{t('subscription')}</Text>
           </View>
+
           <GlassCard>
             <View style={styles.subRow}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.subPlanName}>
                   {subscription ? t(`plan_${subscription.plan}`) : t('loading')}
                 </Text>
+
                 <Text style={styles.subPlanTag}>
                   {subscription?.grandfathered
                     ? t('plan_grandfathered')
@@ -140,6 +231,7 @@ export default function SettingsScreen() {
                     : ''}
                 </Text>
               </View>
+
               {subscription?.plan === 'executive' || subscription?.plan === 'family_office' ? (
                 <View style={styles.subBadge}>
                   <Sparkles color="#34D399" size={10} />
@@ -147,9 +239,11 @@ export default function SettingsScreen() {
                 </View>
               ) : null}
             </View>
+
             {subscription && subscription.limits.ai_scans_per_month !== -1 ? (
               <View style={styles.usageWrap}>
                 <Text style={styles.usageLabel}>{t('usage_this_month')}</Text>
+
                 <View style={styles.usageBarBg}>
                   <View
                     style={[
@@ -163,6 +257,7 @@ export default function SettingsScreen() {
                     ]}
                   />
                 </View>
+
                 <Text style={styles.usageText}>
                   {t('ai_scans_used', {
                     used: subscription.ai_scans_used,
@@ -175,6 +270,7 @@ export default function SettingsScreen() {
                 <Text style={styles.usageText}>{t('ai_scans_unlimited')}</Text>
               </View>
             ) : null}
+
             <PressScale
               testID="open-pricing"
               onPress={() => router.push('/pricing')}
@@ -184,50 +280,62 @@ export default function SettingsScreen() {
             </PressScale>
           </GlassCard>
 
-          {/* Kid PINs */}
           <View style={styles.sectionRow}>
             <Lock color="rgba(255,255,255,0.6)" size={14} />
             <Text style={styles.sectionLabel}>Kid PINs</Text>
           </View>
+
           <GlassCard>
-            {members.filter((m) => m.role === 'Child').map((m, i) => (
-              <PressScale
-                key={m.member_id}
-                testID={`set-pin-${m.member_id}`}
-                onPress={() => setPinMember(m)}
-                style={[styles.pinRow, i > 0 && styles.memberBorder]}
-              >
-                <View style={styles.memberAvatar}>
-                  <Text style={styles.memberInitial}>{m.name[0]?.toUpperCase()}</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.memberName}>{m.name}</Text>
-                  <Text style={styles.memberRole}>{m.has_pin ? 'PIN set · tap to change' : 'No PIN · tap to add'}</Text>
-                </View>
-                {m.has_pin ? <Lock color="#F97316" size={14} /> : null}
-              </PressScale>
-            ))}
-            {members.filter((m) => m.role === 'Child').length === 0 && (
+            {childMembers.length === 0 ? (
               <Text style={styles.emptyRow}>No children to secure.</Text>
+            ) : (
+              childMembers.map((m, i) => (
+                <PressScale
+                  key={m.member_id}
+                  testID={`set-pin-${m.member_id}`}
+                  onPress={() => setPinMember(m)}
+                  style={[styles.pinRow, i > 0 && styles.memberBorder]}
+                >
+                  <View style={styles.memberAvatar}>
+                    <Text style={styles.memberInitial}>{m.name[0]?.toUpperCase()}</Text>
+                  </View>
+
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.memberName}>{m.name}</Text>
+                    <Text style={styles.memberRole}>
+                      {m.has_pin ? 'PIN set · tap to change' : 'No PIN · tap to add'}
+                    </Text>
+                  </View>
+
+                  {m.has_pin ? <Lock color="#F97316" size={14} /> : null}
+                </PressScale>
+              ))
             )}
           </GlassCard>
 
-          {/* Notifications */}
           <View style={styles.sectionRow}>
             <Bell color="rgba(255,255,255,0.6)" size={14} />
             <Text style={styles.sectionLabel}>Notifications</Text>
           </View>
+
           <GlassCard>
             <PressScale
               testID="toggle-notify"
               onPress={async () => {
-                if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+                if (Platform.OS !== 'web' || typeof window === 'undefined') {
+                  showToast('Native push notifications will be enabled in the production build.', 'info');
+                  return;
+                }
+
                 if (!notifyOn) {
                   if ('Notification' in window) {
                     const perm = await Notification.requestPermission();
+
                     if (perm === 'granted') {
                       window.localStorage.setItem('coo_notify', '1');
                       setNotifyOn(true);
+                      showToast('Notifications enabled.', 'success');
+
                       new Notification('Household COO', {
                         body: "You'll get a ping when new cards arrive.",
                       });
@@ -236,25 +344,28 @@ export default function SettingsScreen() {
                 } else {
                   window.localStorage.removeItem('coo_notify');
                   setNotifyOn(false);
+                  showToast('Notifications disabled.', 'info');
                 }
               }}
               style={styles.actionRow}
             >
               <Text style={styles.actionLabel}>New-card alerts</Text>
+
               <View style={[styles.switch, notifyOn && styles.switchOn]}>
                 <View style={[styles.knob, notifyOn && styles.knobOn]} />
               </View>
             </PressScale>
+
             <Text style={styles.notifyNote}>
               In-browser pings while the app is open. For background push, a native build + FCM is required.
             </Text>
           </GlassCard>
 
-          {/* Language */}
           <View style={styles.sectionRow}>
             <Globe color="rgba(255,255,255,0.6)" size={14} />
             <Text style={styles.sectionLabel}>{t('language')}</Text>
           </View>
+
           <GlassCard>
             <PressScale
               testID="settings-lang"
@@ -262,13 +373,10 @@ export default function SettingsScreen() {
               style={styles.actionRow}
             >
               <Text style={styles.actionLabel}>{t('language')}</Text>
-              <Text style={styles.actionValue}>
-                {LANG_NAMES[lang]}
-              </Text>
+              <Text style={styles.actionValue}>{LANG_NAMES[lang]}</Text>
             </PressScale>
           </GlassCard>
 
-          {/* Logout */}
           <PressScale testID="logout" onPress={doLogout} style={styles.logoutBtn}>
             <LogOut color="#EF4444" size={16} />
             <Text style={styles.logoutText}>{t('log_out')}</Text>
@@ -277,9 +385,9 @@ export default function SettingsScreen() {
           <View style={{ height: 220 }} />
         </ScrollView>
       </SafeAreaView>
+
       <LanguageModal visible={showLang} onClose={() => setShowLang(false)} />
 
-      {/* PIN setter */}
       <PinPadModal
         visible={pinMember !== null}
         mode="set"
@@ -288,18 +396,20 @@ export default function SettingsScreen() {
         onClose={() => setPinMember(null)}
         onSubmit={async (pin) => {
           if (!pinMember) return false;
+
           try {
             await api.setMemberPin(pinMember.member_id, pin);
             setPinMember(null);
-            load();
+            await load();
+            showToast('PIN saved.', 'success');
             return true;
           } catch {
+            showToast('Could not save PIN.', 'error');
             return false;
           }
         }}
       />
 
-      {/* Invite modal */}
       <KeyboardAwareBottomSheet
         visible={showInvite}
         onClose={() => setShowInvite(false)}
@@ -307,6 +417,7 @@ export default function SettingsScreen() {
       >
         <View style={styles.sheetHeader}>
           <Text style={styles.sheetTitle}>Invite co-parent</Text>
+
           <PressScale testID="close-invite" onPress={() => setShowInvite(false)} style={styles.iconBtn}>
             <X color="#fff" size={18} />
           </PressScale>
@@ -339,27 +450,7 @@ export default function SettingsScreen() {
 
           <PressScale
             testID="send-invite"
-            onPress={async () => {
-              if (!inviteEmail.trim() || !inviteEmail.includes('@')) return;
-
-              setSending(true);
-              setInviteResult(null);
-
-              try {
-                const res = await api.invite(inviteEmail.trim());
-
-                if (res.sent) {
-                  setInviteResult(`✓ Invitation sent to ${inviteEmail}`);
-                  setInviteEmail('');
-                } else {
-                  setInviteResult(res.error || 'Email not sent, but invite link created.');
-                }
-              } catch (e: any) {
-                setInviteResult(e?.message || 'Error');
-              } finally {
-                setSending(false);
-              }
-            }}
+            onPress={sendInvite}
             disabled={sending || !inviteEmail.trim()}
             style={[styles.saveBtn, (!inviteEmail.trim() || sending) && { opacity: 0.5 }]}
           >
@@ -368,12 +459,21 @@ export default function SettingsScreen() {
           </PressScale>
         </View>
       </KeyboardAwareBottomSheet>
+
+      <LoadingOverlay visible={loadingMembers || sending} label={sending ? 'Sending invite...' : 'Loading settings...'} />
+
+      <AppToast
+        visible={Boolean(toast)}
+        message={toast?.message || null}
+        tone={toast?.tone || 'info'}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#080910' },
+  safeArea: { flex: 1 },
   scroll: { paddingHorizontal: 20, paddingTop: 14 },
   title: { fontFamily: 'PlayfairDisplay_400Regular_Italic', color: '#fff', fontSize: 40, lineHeight: 46 },
   profileRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
@@ -423,9 +523,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.04)',
   },
   inviteBtnText: { color: '#fff', fontFamily: 'Inter_500Medium', fontSize: 14 },
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(8,9,16,0.5)' },
   sheet: {
-    backgroundColor: 'rgba(20,22,32,0.96)',
+    backgroundColor: 'rgba(20,22,32,0.98)',
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     borderWidth: 1,
@@ -494,7 +593,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     lineHeight: 16,
   },
-  // Subscription section
   subRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 4 },
   subPlanName: { color: '#fff', fontFamily: 'PlayfairDisplay_400Regular_Italic', fontSize: 20 },
   subPlanTag: { color: 'rgba(255,255,255,0.6)', fontFamily: 'Inter_400Regular', fontSize: 12, marginTop: 2 },

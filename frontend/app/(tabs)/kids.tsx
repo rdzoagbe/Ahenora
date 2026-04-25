@@ -1,26 +1,35 @@
-﻿import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
-  ActivityIndicator,
   TextInput,
   Platform,
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
-import { Plus, Star, Gift, X, Trash2, Sparkles, Lock, Pencil } from 'lucide-react-native';
+import { Plus, Star, Gift, X, Trash2, Sparkles, Lock } from 'lucide-react-native';
 
 import { AmbientBackground } from '../../src/components/AmbientBackground';
 import { GlassCard } from '../../src/components/GlassCard';
 import { PressScale } from '../../src/components/PressScale';
 import { PinPadModal } from '../../src/components/PinPadModal';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
+import AppToast, { ToastTone } from '../../src/components/AppToast';
+import EmptyState from '../../src/components/EmptyState';
+import ErrorState from '../../src/components/ErrorState';
+import LoadingOverlay from '../../src/components/LoadingOverlay';
 
 import { useStore } from '../../src/store';
 import { api, FamilyMember, Reward } from '../../src/api';
+import { logger } from '../../src/logger';
+
+type ToastState = {
+  message: string;
+  tone: ToastTone;
+};
 
 export default function KidsScreen() {
   const { t } = useStore();
@@ -28,26 +37,26 @@ export default function KidsScreen() {
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [rewards, setRewards] = useState<Reward[]>([]);
   const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [selectedChild, setSelectedChild] = useState<string | null>(null);
 
   const [showAdd, setShowAdd] = useState(false);
-  const [editingReward, setEditingReward] = useState<Reward | null>(null);
   const [newTitle, setNewTitle] = useState('');
   const [newCost, setNewCost] = useState('50');
-  const [newIcon, setNewIcon] = useState('ðŸŽ');
+  const [newIcon, setNewIcon] = useState('🎁');
   const [saving, setSaving] = useState(false);
 
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<ToastState | null>(null);
   const [pinPromptReward, setPinPromptReward] = useState<Reward | null>(null);
 
-  const showToast = (msg: string) => {
-    setToast(msg);
-    setTimeout(() => setToast(null), 2200);
-  };
+  const showToast = useCallback((message: string, tone: ToastTone = 'info') => {
+    setToast({ message, tone });
+    setTimeout(() => setToast(null), 2300);
+  }, []);
 
   const load = useCallback(async () => {
     try {
-      setLoading(true);
+      setErrorMessage(null);
 
       const [m, r] = await Promise.all([api.familyMembers(), api.listRewards()]);
 
@@ -59,9 +68,9 @@ export default function KidsScreen() {
       if (firstChild) {
         setSelectedChild((current) => current || firstChild.member_id);
       }
-    } catch (e) {
-      console.log('Kids page load failed:', e);
-      showToast('Could not load Kids page. Please try again.');
+    } catch (e: any) {
+      logger.warn('Kids page load failed:', e?.message || e);
+      setErrorMessage(e?.message || 'Could not load Kids page.');
     } finally {
       setLoading(false);
     }
@@ -72,6 +81,10 @@ export default function KidsScreen() {
       load();
     }, [load])
   );
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const children = members.filter((m) => m.role === 'Child');
   const activeChild = children.find((c) => c.member_id === selectedChild) || children[0];
@@ -88,20 +101,20 @@ export default function KidsScreen() {
           prev.map((m) => (m.member_id === res.member.member_id ? res.member : m))
         );
 
-        showToast(`${t('redeemed')} ${r.title}`);
+        showToast(`${t('redeemed')} ${r.title}`, 'success');
       } catch (e: any) {
-        console.log('Reward redemption failed:', e);
-        showToast(e?.message || 'Error');
+        logger.warn('Reward redemption failed:', e?.message || e);
+        showToast(e?.message || 'Could not redeem reward.', 'error');
       }
     },
-    [activeChild, t]
+    [activeChild, showToast, t]
   );
 
   const redeem = async (r: Reward) => {
     if (!activeChild) return;
 
     if ((activeChild.stars || 0) < r.cost_stars) {
-      showToast(t('not_enough_stars'));
+      showToast(t('not_enough_stars'), 'error');
       return;
     }
 
@@ -114,37 +127,33 @@ export default function KidsScreen() {
   };
 
   const removeReward = async (r: Reward) => {
+    const previous = rewards;
+
     setRewards((prev) => prev.filter((x) => x.reward_id !== r.reward_id));
 
     try {
       await api.deleteReward(r.reward_id);
-    } catch {
+      showToast('Reward deleted.', 'success');
+    } catch (e: any) {
+      logger.warn('Delete reward failed:', e?.message || e);
+      setRewards(previous);
+      showToast('Could not delete reward.', 'error');
       load();
     }
   };
 
   const openAddReward = () => {
-    setEditingReward(null);
     setNewTitle('');
     setNewCost('50');
-    setNewIcon('ðŸŽ');
+    setNewIcon('🎁');
     setShowAdd(true);
   };
 
-  const openEditReward = (reward: Reward) => {
-    setEditingReward(reward);
-    setNewTitle(reward.title);
-    setNewCost(String(reward.cost_stars));
-    setNewIcon(reward.icon || 'ðŸŽ');
-    setShowAdd(true);
-  };
-
-  const closeRewardSheet = () => {
+  const closeAddReward = () => {
     setShowAdd(false);
-    setEditingReward(null);
   };
 
-  const saveReward = async () => {
+  const createReward = async () => {
     const cost = parseInt(newCost, 10);
 
     if (!newTitle.trim() || !cost || cost < 1) return;
@@ -152,59 +161,28 @@ export default function KidsScreen() {
     setSaving(true);
 
     try {
-      if (editingReward) {
-        const updated = await api.updateReward(editingReward.reward_id, {
-          title: newTitle.trim(),
-          cost_stars: cost,
-          icon: newIcon || 'ðŸŽ',
-        });
+      const created = await api.createReward({
+        title: newTitle.trim(),
+        cost_stars: cost,
+        icon: newIcon || '🎁',
+      });
 
-        setRewards((prev) =>
-          prev.map((r) => (r.reward_id === updated.reward_id ? updated : r))
-        );
-
-        showToast('Reward updated.');
-      } else {
-        const created = await api.createReward({
-          title: newTitle.trim(),
-          cost_stars: cost,
-          icon: newIcon || 'ðŸŽ',
-        });
-
-        setRewards((prev) => [created, ...prev]);
-
-        showToast('Reward created.');
-      }
-
+      setRewards((prev) => [created, ...prev]);
       setNewTitle('');
       setNewCost('50');
-      setNewIcon('ðŸŽ');
-      setEditingReward(null);
+      setNewIcon('🎁');
       setShowAdd(false);
+
+      showToast('Reward created.', 'success');
     } catch (e: any) {
-      console.log('Save reward failed:', e);
-      showToast(e?.message || 'Error');
+      logger.warn('Create reward failed:', e?.message || e);
+      showToast(e?.message || 'Could not create reward.', 'error');
     } finally {
       setSaving(false);
     }
   };
 
-  const addStars = async (amount: number) => {
-    if (!activeChild) return;
-
-    try {
-      const updated = await api.addMemberStars(activeChild.member_id, amount);
-
-      setMembers((prev) =>
-        prev.map((m) => (m.member_id === updated.member_id ? updated : m))
-      );
-
-      showToast(`${amount > 0 ? '+' : ''}${amount} stars for ${updated.name}`);
-    } catch (e: any) {
-      console.log('Add stars failed:', e);
-      showToast(e?.message || 'Error');
-    }
-  };
+  const showBlockingError = !loading && Boolean(errorMessage) && members.length === 0;
 
   return (
     <View style={styles.container}>
@@ -227,12 +205,17 @@ export default function KidsScreen() {
             </PressScale>
           </View>
 
-          {loading ? (
-            <ActivityIndicator color="#fff" style={{ marginTop: 40 }} />
-          ) : children.length === 0 ? (
-            <View style={styles.empty}>
-              <Text style={styles.emptyText}>No children in the family yet.</Text>
-            </View>
+          {showBlockingError ? (
+            <ErrorState
+              title="Kids page unavailable"
+              message={errorMessage || 'Could not load Kids page.'}
+              onRetry={load}
+            />
+          ) : children.length === 0 && !loading ? (
+            <EmptyState
+              title="No children yet"
+              message="Add family members to start using stars and rewards."
+            />
           ) : (
             <>
               <ScrollView
@@ -280,7 +263,7 @@ export default function KidsScreen() {
                 })}
               </ScrollView>
 
-              {activeChild && (
+              {activeChild ? (
                 <View style={styles.hero}>
                   <Text style={styles.heroLabel}>{activeChild.name}</Text>
 
@@ -289,27 +272,8 @@ export default function KidsScreen() {
                     <Text style={styles.heroCount}>{stars}</Text>
                     <Text style={styles.heroUnit}>{t('stars')}</Text>
                   </View>
-
-                  <View style={styles.starActions}>
-                    <PressScale
-                      testID="remove-stars"
-                      onPress={() => addStars(-5)}
-                      style={[styles.starActionBtn, stars <= 0 && { opacity: 0.45 }]}
-                      disabled={stars <= 0}
-                    >
-                      <Text style={styles.starActionText}>-5</Text>
-                    </PressScale>
-
-                    <PressScale
-                      testID="add-stars"
-                      onPress={() => addStars(5)}
-                      style={styles.starActionBtn}
-                    >
-                      <Text style={styles.starActionText}>+5 stars</Text>
-                    </PressScale>
-                  </View>
                 </View>
-              )}
+              ) : null}
 
               <View style={styles.sectionRow}>
                 <Gift color="rgba(255,255,255,0.6)" size={14} />
@@ -317,9 +281,12 @@ export default function KidsScreen() {
               </View>
 
               {rewards.length === 0 ? (
-                <GlassCard>
-                  <Text style={styles.emptyInline}>{t('no_rewards')}</Text>
-                </GlassCard>
+                <EmptyState
+                  title={t('no_rewards')}
+                  message="Create a small reward to make chores feel more motivating."
+                  actionLabel={t('add_reward')}
+                  onAction={openAddReward}
+                />
               ) : (
                 rewards.map((r) => {
                   const affordable = stars >= r.cost_stars;
@@ -327,7 +294,7 @@ export default function KidsScreen() {
                   return (
                     <GlassCard key={r.reward_id} style={{ marginBottom: 12 }}>
                       <View style={styles.rewardRow}>
-                        <Text style={styles.rewardIcon}>{r.icon || 'ðŸŽ'}</Text>
+                        <Text style={styles.rewardIcon}>{r.icon || '🎁'}</Text>
 
                         <View style={{ flex: 1 }}>
                           <Text style={styles.rewardTitle} numberOfLines={2}>
@@ -345,19 +312,12 @@ export default function KidsScreen() {
                         <PressScale
                           testID={`redeem-${r.reward_id}`}
                           onPress={() => redeem(r)}
-                          style={styles.redeemBtn}
+                          disabled={!affordable}
+                          style={[styles.redeemBtn, !affordable && { opacity: 0.4 }]}
                         >
                           <Text style={styles.redeemText}>
                             {affordable ? t('redeem') : `Need ${r.cost_stars - stars}`}
                           </Text>
-                        </PressScale>
-
-                        <PressScale
-                          testID={`edit-reward-${r.reward_id}`}
-                          onPress={() => openEditReward(r)}
-                          style={styles.delBtn}
-                        >
-                          <Pencil color="rgba(255,255,255,0.65)" size={14} />
                         </PressScale>
 
                         <PressScale
@@ -386,7 +346,7 @@ export default function KidsScreen() {
 
               <View style={styles.tip}>
                 <Sparkles color="rgba(255,255,255,0.45)" size={12} />
-                <Text style={styles.tipText}>{t('parent_picks')} Â· 5â˜… per task done</Text>
+                <Text style={styles.tipText}>{t('parent_picks')} · 5★ per task done</Text>
               </View>
             </>
           )}
@@ -397,15 +357,13 @@ export default function KidsScreen() {
 
       <KeyboardAwareBottomSheet
         visible={showAdd}
-        onClose={closeRewardSheet}
+        onClose={closeAddReward}
         contentStyle={styles.sheet}
       >
         <View style={styles.sheetHeader}>
-          <Text style={styles.sheetTitle}>
-            {editingReward ? 'Edit reward' : t('add_reward')}
-          </Text>
+          <Text style={styles.sheetTitle}>{t('add_reward')}</Text>
 
-          <PressScale testID="close-reward" onPress={closeRewardSheet} style={styles.iconBtn}>
+          <PressScale testID="close-reward" onPress={closeAddReward} style={styles.iconBtn}>
             <X color="#fff" size={18} />
           </PressScale>
         </View>
@@ -443,13 +401,13 @@ export default function KidsScreen() {
         />
 
         <View style={styles.sheetFooter}>
-          <PressScale testID="cancel-reward" onPress={closeRewardSheet} style={styles.cancelBtn}>
+          <PressScale testID="cancel-reward" onPress={closeAddReward} style={styles.cancelBtn}>
             <Text style={styles.cancelText}>{t('cancel')}</Text>
           </PressScale>
 
           <PressScale
             testID="save-reward"
-            onPress={saveReward}
+            onPress={createReward}
             disabled={saving || !newTitle.trim()}
             style={[styles.saveBtn, (!newTitle.trim() || saving) && { opacity: 0.5 }]}
           >
@@ -457,15 +415,6 @@ export default function KidsScreen() {
           </PressScale>
         </View>
       </KeyboardAwareBottomSheet>
-
-      {toast ? (
-        <View style={styles.toastWrap} pointerEvents="none">
-          <View style={styles.toast}>
-            <Sparkles color="#F59E0B" size={14} />
-            <Text style={styles.toastText}>{toast}</Text>
-          </View>
-        </View>
-      ) : null}
 
       <PinPadModal
         visible={pinPromptReward !== null}
@@ -479,15 +428,23 @@ export default function KidsScreen() {
           try {
             await api.verifyMemberPin(activeChild.member_id, pin);
 
-            const r = pinPromptReward;
+            const reward = pinPromptReward;
             setPinPromptReward(null);
 
-            await doRedeem(r);
+            await doRedeem(reward);
             return true;
           } catch {
             return false;
           }
         }}
+      />
+
+      <LoadingOverlay visible={loading} label="Loading Kids page..." />
+
+      <AppToast
+        visible={Boolean(toast)}
+        message={toast?.message || null}
+        tone={toast?.tone || 'info'}
       />
     </View>
   );
@@ -498,34 +455,18 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   scroll: { paddingHorizontal: 20, paddingTop: 14 },
   titleRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 20 },
-  title: {
-    fontFamily: 'PlayfairDisplay_400Regular_Italic',
-    color: '#fff',
-    fontSize: 40,
-    lineHeight: 46,
-  },
-  sub: {
-    fontFamily: 'Inter_400Regular',
-    color: 'rgba(255,255,255,0.55)',
-    fontSize: 13,
-    marginTop: 2,
-  },
+  title: { fontFamily: 'PlayfairDisplay_400Regular_Italic', color: '#fff', fontSize: 40, lineHeight: 46 },
+  sub: { fontFamily: 'Inter_400Regular', color: 'rgba(255,255,255,0.55)', fontSize: 13, marginTop: 2 },
   addBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 9999,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 44, height: 44, borderRadius: 9999, backgroundColor: '#fff',
+    alignItems: 'center', justifyContent: 'center',
   },
   childRow: { gap: 10, paddingVertical: 6, paddingRight: 20 },
   childBtn: {
     alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingHorizontal: 14, paddingVertical: 12,
     borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
     backgroundColor: 'rgba(255,255,255,0.03)',
     minWidth: 84,
   },
@@ -534,21 +475,13 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(249,115,22,0.12)',
   },
   childAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 9999,
+    width: 40, height: 40, borderRadius: 9999,
     backgroundColor: 'rgba(255,255,255,0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)',
+    alignItems: 'center', justifyContent: 'center',
     marginBottom: 6,
   },
-  childInitial: {
-    color: '#fff',
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 15,
-  },
+  childInitial: { color: '#fff', fontFamily: 'Inter_600SemiBold', fontSize: 15 },
   lockBadge: {
     position: 'absolute',
     right: -3,
@@ -562,17 +495,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  childName: {
-    color: 'rgba(255,255,255,0.75)',
-    fontFamily: 'Inter_500Medium',
-    fontSize: 12,
-  },
+  childName: { color: 'rgba(255,255,255,0.75)', fontFamily: 'Inter_500Medium', fontSize: 12 },
   childStarsRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 2 },
-  childStars: {
-    color: 'rgba(255,255,255,0.65)',
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 11,
-  },
+  childStars: { color: 'rgba(255,255,255,0.65)', fontFamily: 'Inter_600SemiBold', fontSize: 11 },
   hero: {
     alignItems: 'center',
     paddingVertical: 28,
@@ -580,15 +505,9 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     borderRadius: 24,
     backgroundColor: 'rgba(245,158,11,0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(245,158,11,0.3)',
+    borderWidth: 1, borderColor: 'rgba(245,158,11,0.3)',
   },
-  heroLabel: {
-    color: 'rgba(255,255,255,0.7)',
-    fontFamily: 'Inter_500Medium',
-    fontSize: 13,
-    marginBottom: 6,
-  },
+  heroLabel: { color: 'rgba(255,255,255,0.7)', fontFamily: 'Inter_500Medium', fontSize: 13, marginBottom: 6 },
   heroStars: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   heroCount: {
     color: '#fff',
@@ -596,186 +515,52 @@ const styles = StyleSheet.create({
     fontSize: 54,
     lineHeight: 58,
   },
-  heroUnit: {
-    color: 'rgba(255,255,255,0.55)',
-    fontFamily: 'Inter_400Regular',
-    fontSize: 14,
-  },
-  starActions: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 16,
-    justifyContent: 'center',
-  },
-  starActionBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 9999,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
-  },
-  starActionText: {
-    color: '#fff',
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 12,
-  },
-  sectionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 6,
-    marginBottom: 10,
-  },
+  heroUnit: { color: 'rgba(255,255,255,0.55)', fontFamily: 'Inter_400Regular', fontSize: 14 },
+  sectionRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6, marginBottom: 10 },
   sectionLabel: {
-    fontFamily: 'Inter_500Medium',
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.55)',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
+    fontFamily: 'Inter_500Medium', fontSize: 11, color: 'rgba(255,255,255,0.55)',
+    textTransform: 'uppercase', letterSpacing: 1,
   },
   rewardRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   rewardIcon: { fontSize: 26 },
   rewardTitle: { color: '#fff', fontFamily: 'Inter_600SemiBold', fontSize: 15 },
   rewardCostRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3 },
-  rewardCost: {
-    color: 'rgba(255,255,255,0.65)',
-    fontFamily: 'Inter_500Medium',
-    fontSize: 12,
-  },
+  rewardCost: { color: 'rgba(255,255,255,0.65)', fontFamily: 'Inter_500Medium', fontSize: 12 },
   redeemBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 9999,
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 9999,
     backgroundColor: '#F59E0B',
   },
-  redeemText: {
-    color: '#080910',
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 12,
-  },
+  redeemText: { color: '#080910', fontFamily: 'Inter_600SemiBold', fontSize: 12 },
   delBtn: { padding: 6 },
-  emptyInline: {
-    color: 'rgba(255,255,255,0.55)',
-    fontFamily: 'Inter_400Regular',
-    fontSize: 13,
-    paddingVertical: 4,
-  },
-  empty: { paddingVertical: 60, alignItems: 'center' },
-  emptyText: {
-    fontFamily: 'PlayfairDisplay_400Regular_Italic',
-    color: 'rgba(255,255,255,0.5)',
-    fontSize: 20,
-  },
-  tip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    justifyContent: 'center',
-    marginTop: 14,
-  },
-  tipText: {
-    color: 'rgba(255,255,255,0.4)',
-    fontFamily: 'Inter_400Regular',
-    fontSize: 11,
-  },
+  tip: { flexDirection: 'row', alignItems: 'center', gap: 6, justifyContent: 'center', marginTop: 14 },
+  tipText: { color: 'rgba(255,255,255,0.4)', fontFamily: 'Inter_400Regular', fontSize: 11 },
   sheet: {
     backgroundColor: 'rgba(20,22,32,0.98)',
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    padding: 24,
-    paddingBottom: 130,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+    padding: 24, paddingBottom: 130,
   },
-  sheetHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  sheetTitle: {
-    fontFamily: 'PlayfairDisplay_400Regular_Italic',
-    fontSize: 26,
-    color: '#fff',
-  },
-  iconBtn: {
-    padding: 8,
-    borderRadius: 9999,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-  },
+  sheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  sheetTitle: { fontFamily: 'PlayfairDisplay_400Regular_Italic', fontSize: 26, color: '#fff' },
+  iconBtn: { padding: 8, borderRadius: 9999, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
   label: {
-    fontFamily: 'Inter_500Medium',
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.5)',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginTop: 12,
-    marginBottom: 8,
+    fontFamily: 'Inter_500Medium', fontSize: 11, color: 'rgba(255,255,255,0.5)',
+    textTransform: 'uppercase', letterSpacing: 1, marginTop: 12, marginBottom: 8,
   },
   input: {
     backgroundColor: 'rgba(255,255,255,0.04)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    color: '#fff',
-    fontFamily: 'Inter_400Regular',
-    fontSize: 15,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12,
+    color: '#fff', fontFamily: 'Inter_400Regular', fontSize: 15,
   },
-  iconInput: {
-    fontSize: 22,
-    textAlign: 'center',
-  },
+  iconInput: { fontSize: 22, textAlign: 'center' },
   sheetFooter: { flexDirection: 'row', gap: 12, marginTop: 20 },
   cancelBtn: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 14,
-    paddingVertical: 14,
-    alignItems: 'center',
+    flex: 1, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 14, paddingVertical: 14, alignItems: 'center',
   },
-  cancelText: {
-    color: 'rgba(255,255,255,0.7)',
-    fontFamily: 'Inter_500Medium',
-    fontSize: 15,
-  },
-  saveBtn: {
-    flex: 1,
-    backgroundColor: '#fff',
-    borderRadius: 14,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  saveText: {
-    color: '#080910',
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 15,
-  },
-  toastWrap: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 180,
-    alignItems: 'center',
-  },
-  toast: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    backgroundColor: 'rgba(20,22,32,0.95)',
-    borderWidth: 1,
-    borderColor: 'rgba(245,158,11,0.4)',
-    borderRadius: 9999,
-  },
-  toastText: {
-    color: '#fff',
-    fontFamily: 'Inter_500Medium',
-    fontSize: 13,
-  },
+  cancelText: { color: 'rgba(255,255,255,0.7)', fontFamily: 'Inter_500Medium', fontSize: 15 },
+  saveBtn: { flex: 1, backgroundColor: '#fff', borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
+  saveText: { color: '#080910', fontFamily: 'Inter_600SemiBold', fontSize: 15 },
 });
