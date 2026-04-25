@@ -5,14 +5,10 @@ import React, {
   useEffect,
   useState,
 } from 'react';
-import * as SecureStore from 'expo-secure-store';
-
-import { api, User, Subscription } from './api';
+import { api, User, tokenStore, Subscription } from './api';
 import { Lang, SUPPORTED_LANGS, translate } from './i18n';
 
 export type { Lang } from './i18n';
-
-const SESSION_TOKEN_KEY = 'household_coo_session_token';
 
 interface StoreState {
   user: User | null;
@@ -32,19 +28,6 @@ interface StoreState {
 
 const StoreContext = createContext<StoreState | null>(null);
 
-async function saveStoredToken(token: string) {
-  if (!token) {
-    await SecureStore.deleteItemAsync(SESSION_TOKEN_KEY);
-    return;
-  }
-
-  await SecureStore.setItemAsync(SESSION_TOKEN_KEY, token);
-}
-
-async function clearStoredToken() {
-  await SecureStore.deleteItemAsync(SESSION_TOKEN_KEY);
-}
-
 export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -63,6 +46,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const refreshSubscription = useCallback(async () => {
     try {
+      const token = await tokenStore.get();
+
+      if (!token) {
+        setSubscription(null);
+        return;
+      }
+
       const s = await api.getSubscription();
       setSubscription(s);
     } catch (error) {
@@ -73,22 +63,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const refreshUser = useCallback(async () => {
     try {
-      const token = await SecureStore.getItemAsync(SESSION_TOKEN_KEY);
+      const token = await tokenStore.get();
 
       if (!token) {
         setUser(null);
         setSubscription(null);
-        setLoading(false);
         return;
       }
 
-     const u = (await api.me()) as User;
-
-setUser(u);
-
-if (SUPPORTED_LANGS.includes(u.language as Lang)) {
-  setLangState(u.language as Lang);
-}
+      const u = await api.me();
 
       setUser(u);
 
@@ -96,16 +79,17 @@ if (SUPPORTED_LANGS.includes(u.language as Lang)) {
         setLangState(u.language as Lang);
       }
 
-      api.getSubscription()
-        .then(setSubscription)
-        .catch(() => setSubscription(null));
+      api.getSubscription().then(setSubscription).catch((error) => {
+        console.log('refresh subscription after user failed:', error);
+        setSubscription(null);
+      });
     } catch (error) {
       console.log('refreshUser failed:', error);
 
+      await tokenStore.clear();
+
       setUser(null);
       setSubscription(null);
-
-      await clearStoredToken();
     } finally {
       setLoading(false);
     }
@@ -128,12 +112,16 @@ if (SUPPORTED_LANGS.includes(u.language as Lang)) {
 
   const logout = useCallback(async () => {
     try {
-      await api.logout();
+      const token = await tokenStore.get();
+
+      if (token) {
+        await api.logout();
+      }
     } catch (error) {
       console.log('logout failed:', error);
     }
 
-    await clearStoredToken();
+    await tokenStore.clear();
 
     setUser(null);
     setSubscription(null);
@@ -141,7 +129,10 @@ if (SUPPORTED_LANGS.includes(u.language as Lang)) {
   }, []);
 
   const setUserFromAuth = useCallback(async (u: User, token: string) => {
-    await saveStoredToken(token);
+    await tokenStore.set(token);
+
+    const savedToken = await tokenStore.get();
+    console.log('Session token saved:', savedToken ? 'yes' : 'no');
 
     setUser(u);
 
@@ -151,9 +142,10 @@ if (SUPPORTED_LANGS.includes(u.language as Lang)) {
 
     setLoading(false);
 
-    api.getSubscription()
-      .then(setSubscription)
-      .catch(() => setSubscription(null));
+    api.getSubscription().then(setSubscription).catch((error) => {
+      console.log('subscription after auth failed:', error);
+      setSubscription(null);
+    });
   }, []);
 
   const showUpgradePrompt = useCallback((feature: string, message: string) => {
