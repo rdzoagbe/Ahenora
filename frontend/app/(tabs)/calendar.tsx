@@ -1,5 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import { ChevronLeft, ChevronRight, CalendarDays, ListChecks } from 'lucide-react-native';
@@ -23,23 +30,32 @@ const TYPE_COLOR: Record<string, string> = {
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-function monthStart(date: Date) {
+type CalendarCell = {
+  key: string;
+  date: Date;
+  dayNumber: number;
+  isCurrentMonth: boolean;
+  isToday: boolean;
+  items: Card[];
+};
+
+function getMonthStart(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), 1);
 }
 
-function addMonths(date: Date, amount: number) {
-  return new Date(date.getFullYear(), date.getMonth() + amount, 1);
+function addMonths(date: Date, months: number) {
+  return new Date(date.getFullYear(), date.getMonth() + months, 1);
 }
 
-function dateKey(date: Date) {
+function getLocalDateKey(date: Date) {
   const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
+  const month = `${date.getMonth() + 1}`.padStart(2, '0');
+  const day = `${date.getDate()}`.padStart(2, '0');
 
   return `${year}-${month}-${day}`;
 }
 
-function parseDate(value?: string | null) {
+function parseDueDate(value?: string | null) {
   if (!value) return null;
 
   const date = new Date(value);
@@ -49,19 +65,19 @@ function parseDate(value?: string | null) {
   return date;
 }
 
-function cardDateKey(card: Card) {
-  const date = parseDate(card.due_date);
+function getCardKey(card: Card) {
+  const due = parseDueDate(card.due_date);
 
-  if (!date) return null;
+  if (!due) return null;
 
-  return dateKey(date);
+  return getLocalDateKey(due);
 }
 
-function groupCards(cards: Card[]) {
+function groupCardsByDate(cards: Card[]) {
   const grouped: Record<string, Card[]> = {};
 
   cards.forEach((card) => {
-    const key = cardDateKey(card);
+    const key = getCardKey(card);
 
     if (!key) return;
 
@@ -71,8 +87,8 @@ function groupCards(cards: Card[]) {
 
   Object.values(grouped).forEach((items) => {
     items.sort((a, b) => {
-      const left = parseDate(a.due_date)?.getTime() || 0;
-      const right = parseDate(b.due_date)?.getTime() || 0;
+      const left = parseDueDate(a.due_date)?.getTime() || 0;
+      const right = parseDueDate(b.due_date)?.getTime() || 0;
 
       return left - right;
     });
@@ -81,26 +97,26 @@ function groupCards(cards: Card[]) {
   return grouped;
 }
 
-function buildCells(currentMonth: Date, grouped: Record<string, Card[]>) {
-  const first = monthStart(currentMonth);
-  const firstWeekday = first.getDay();
+function buildCalendarCells(monthDate: Date, grouped: Record<string, Card[]>): CalendarCell[] {
+  const firstDayOfMonth = getMonthStart(monthDate);
+  const firstWeekdayIndex = firstDayOfMonth.getDay();
 
-  const gridStart = new Date(first);
-  gridStart.setDate(first.getDate() - firstWeekday);
+  const firstVisibleDate = new Date(firstDayOfMonth);
+  firstVisibleDate.setDate(firstDayOfMonth.getDate() - firstWeekdayIndex);
 
-  const todayKey = dateKey(new Date());
+  const todayKey = getLocalDateKey(new Date());
 
   return Array.from({ length: 42 }, (_, index) => {
-    const date = new Date(gridStart);
-    date.setDate(gridStart.getDate() + index);
+    const cellDate = new Date(firstVisibleDate);
+    cellDate.setDate(firstVisibleDate.getDate() + index);
 
-    const key = dateKey(date);
+    const key = getLocalDateKey(cellDate);
 
     return {
       key,
-      date,
-      day: date.getDate(),
-      isCurrentMonth: date.getMonth() === currentMonth.getMonth(),
+      date: cellDate,
+      dayNumber: cellDate.getDate(),
+      isCurrentMonth: cellDate.getMonth() === monthDate.getMonth(),
       isToday: key === todayKey,
       items: grouped[key] || [],
     };
@@ -108,7 +124,7 @@ function buildCells(currentMonth: Date, grouped: Record<string, Card[]>) {
 }
 
 function formatTime(value?: string | null) {
-  const date = parseDate(value);
+  const date = parseDueDate(value);
 
   if (!date) return '';
 
@@ -118,8 +134,8 @@ function formatTime(value?: string | null) {
   });
 }
 
-function formatShort(value?: string | null) {
-  const date = parseDate(value);
+function formatShortDate(value?: string | null) {
+  const date = parseDueDate(value);
 
   if (!date) return '';
 
@@ -132,20 +148,25 @@ function formatShort(value?: string | null) {
 
 export default function CalendarScreen() {
   const { t, lang } = useStore();
+  const { width } = useWindowDimensions();
 
   const [cards, setCards] = useState<Card[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [currentMonth, setCurrentMonth] = useState(() => monthStart(new Date()));
-  const [selectedDay, setSelectedDay] = useState(() => dateKey(new Date()));
+  const [monthDate, setMonthDate] = useState(() => getMonthStart(new Date()));
+  const [selectedDateKey, setSelectedDateKey] = useState(() => getLocalDateKey(new Date()));
+
+  const horizontalPadding = 40;
+  const calendarBorder = 2;
+  const cellSize = Math.floor((width - horizontalPadding - calendarBorder) / 7);
 
   const load = useCallback(async () => {
     try {
       setErrorMessage(null);
 
-      const response = await api.listCards();
+      const result = await api.listCards();
 
-      setCards(response.filter((card) => card.status === 'OPEN' && Boolean(card.due_date)));
+      setCards(result.filter((card) => card.status === 'OPEN' && Boolean(card.due_date)));
     } catch (e: any) {
       logger.warn('Calendar load failed:', e?.message || e);
       setErrorMessage(e?.message || 'Could not load calendar.');
@@ -164,39 +185,40 @@ export default function CalendarScreen() {
     load();
   }, [load]);
 
-  const locale = lang === 'es' ? 'es-ES' : 'en-US';
+  const grouped = useMemo(() => groupCardsByDate(cards), [cards]);
 
-  const grouped = useMemo(() => groupCards(cards), [cards]);
-  const cells = useMemo(() => buildCells(currentMonth, grouped), [currentMonth, grouped]);
+  const cells = useMemo(() => buildCalendarCells(monthDate, grouped), [monthDate, grouped]);
 
-  const selectedItems = grouped[selectedDay] || [];
+  const selectedItems = grouped[selectedDateKey] || [];
 
   const monthItems = useMemo(() => {
     return cards
       .filter((card) => {
-        const due = parseDate(card.due_date);
+        const due = parseDueDate(card.due_date);
 
         if (!due) return false;
 
         return (
-          due.getFullYear() === currentMonth.getFullYear() &&
-          due.getMonth() === currentMonth.getMonth()
+          due.getFullYear() === monthDate.getFullYear() &&
+          due.getMonth() === monthDate.getMonth()
         );
       })
       .sort((a, b) => {
-        const left = parseDate(a.due_date)?.getTime() || 0;
-        const right = parseDate(b.due_date)?.getTime() || 0;
+        const left = parseDueDate(a.due_date)?.getTime() || 0;
+        const right = parseDueDate(b.due_date)?.getTime() || 0;
 
         return left - right;
       });
-  }, [cards, currentMonth]);
+  }, [cards, monthDate]);
 
-  const monthLabel = currentMonth.toLocaleDateString(locale, {
+  const locale = lang === 'es' ? 'es-ES' : 'en-US';
+
+  const monthLabel = monthDate.toLocaleDateString(locale, {
     month: 'long',
     year: 'numeric',
   });
 
-  const selectedLabel = new Date(`${selectedDay}T12:00:00`).toLocaleDateString(locale, {
+  const selectedLabel = new Date(`${selectedDateKey}T12:00:00`).toLocaleDateString(locale, {
     weekday: 'long',
     month: 'short',
     day: 'numeric',
@@ -234,7 +256,7 @@ export default function CalendarScreen() {
           <View style={styles.monthHeader}>
             <PressScale
               testID="calendar-prev-month"
-              onPress={() => setCurrentMonth((value) => addMonths(value, -1))}
+              onPress={() => setMonthDate((current) => addMonths(current, -1))}
               style={styles.monthNavBtn}
             >
               <ChevronLeft color="#fff" size={18} />
@@ -244,7 +266,7 @@ export default function CalendarScreen() {
 
             <PressScale
               testID="calendar-next-month"
-              onPress={() => setCurrentMonth((value) => addMonths(value, 1))}
+              onPress={() => setMonthDate((current) => addMonths(current, 1))}
               style={styles.monthNavBtn}
             >
               <ChevronRight color="#fff" size={18} />
@@ -261,37 +283,41 @@ export default function CalendarScreen() {
             <>
               <View style={styles.weekRow}>
                 {WEEKDAYS.map((weekday) => (
-                  <Text key={weekday} style={styles.weekDay}>
-                    {weekday}
-                  </Text>
+                  <View key={weekday} style={{ width: cellSize }}>
+                    <Text style={styles.weekDay}>{weekday}</Text>
+                  </View>
                 ))}
               </View>
 
-              <View style={styles.calendarBox}>
+              <View style={[styles.calendarGrid, { width: cellSize * 7 }]}>
                 {cells.map((cell) => {
-                  const selected = cell.key === selectedDay;
+                  const selected = cell.key === selectedDateKey;
 
                   return (
-                    <PressScale
+                    <Pressable
                       key={cell.key}
                       testID={`calendar-day-${cell.key}`}
-                      onPress={() => setSelectedDay(cell.key)}
+                      onPress={() => setSelectedDateKey(cell.key)}
                       style={[
-                        styles.dayCell,
-                        !cell.isCurrentMonth && styles.dayCellOtherMonth,
-                        cell.isToday && styles.dayCellToday,
-                        selected && styles.dayCellSelected,
+                        styles.dateCell,
+                        {
+                          width: cellSize,
+                          height: Math.max(70, cellSize + 18),
+                        },
+                        !cell.isCurrentMonth && styles.dateCellOtherMonth,
+                        cell.isToday && styles.dateCellToday,
+                        selected && styles.dateCellSelected,
                       ]}
                     >
-                      <View style={styles.dayHeader}>
+                      <View style={styles.dateTopRow}>
                         <Text
                           style={[
-                            styles.dayNumber,
-                            !cell.isCurrentMonth && styles.dayNumberOtherMonth,
-                            selected && styles.dayNumberSelected,
+                            styles.dateNumber,
+                            !cell.isCurrentMonth && styles.dateNumberOtherMonth,
+                            selected && styles.dateNumberSelected,
                           ]}
                         >
-                          {cell.day}
+                          {String(cell.dayNumber)}
                         </Text>
 
                         {cell.items.length > 0 ? (
@@ -306,13 +332,13 @@ export default function CalendarScreen() {
                           <View
                             key={item.card_id}
                             style={[
-                              styles.dot,
+                              styles.itemDot,
                               { backgroundColor: TYPE_COLOR[item.type] || '#FFFFFF' },
                             ]}
                           />
                         ))}
                       </View>
-                    </PressScale>
+                    </Pressable>
                   );
                 })}
               </View>
@@ -377,7 +403,7 @@ export default function CalendarScreen() {
                 monthItems.map((card) => (
                   <GlassCard key={`month-${card.card_id}`} style={styles.recapCard}>
                     <View style={styles.recapRow}>
-                      <Text style={styles.recapDate}>{formatShort(card.due_date)}</Text>
+                      <Text style={styles.recapDate}>{formatShortDate(card.due_date)}</Text>
 
                       <View style={{ flex: 1 }}>
                         <Text style={styles.recapTitle} numberOfLines={1}>
@@ -411,18 +437,23 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   scroll: { paddingHorizontal: 20, paddingTop: 14 },
   title: {
-    color: '#fff',
-    fontFamily: 'PlayfairDisplay_400Regular_Italic',
+    color: '#FFFFFF',
     fontSize: 40,
     lineHeight: 46,
+    fontWeight: '400',
+    fontFamily: 'PlayfairDisplay_400Regular_Italic',
   },
   sub: {
     color: 'rgba(255,255,255,0.55)',
-    fontFamily: 'Inter_400Regular',
     fontSize: 13,
     marginBottom: 18,
+    fontFamily: 'Inter_400Regular',
   },
-  summaryRow: { flexDirection: 'row', gap: 12, marginBottom: 18 },
+  summaryRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 18,
+  },
   summaryCard: {
     flex: 1,
     borderRadius: 20,
@@ -432,23 +463,23 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.08)',
   },
   summaryValue: {
-    color: '#fff',
-    fontFamily: 'PlayfairDisplay_400Regular_Italic',
+    color: '#FFFFFF',
     fontSize: 30,
     lineHeight: 34,
     marginTop: 8,
+    fontFamily: 'PlayfairDisplay_400Regular_Italic',
   },
   summaryLabel: {
     color: 'rgba(255,255,255,0.55)',
-    fontFamily: 'Inter_400Regular',
     fontSize: 11,
     marginTop: 2,
+    fontFamily: 'Inter_400Regular',
   },
   monthHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    marginBottom: 14,
   },
   monthNavBtn: {
     width: 40,
@@ -461,90 +492,90 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.1)',
   },
   monthTitle: {
-    color: '#fff',
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 16,
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '700',
     textTransform: 'capitalize',
   },
   weekRow: {
     flexDirection: 'row',
+    alignSelf: 'center',
     marginBottom: 8,
   },
   weekDay: {
-    flex: 1,
-    color: 'rgba(255,255,255,0.55)',
-    fontFamily: 'Inter_700Bold',
-    fontSize: 10,
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
     textAlign: 'center',
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
   },
-  calendarBox: {
+  calendarGrid: {
+    alignSelf: 'center',
     flexDirection: 'row',
     flexWrap: 'wrap',
-    borderRadius: 24,
+    borderLeftWidth: 1,
+    borderTopWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 18,
     overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
-    backgroundColor: 'rgba(255,255,255,0.035)',
   },
-  dayCell: {
-    width: '14.2857%',
-    minHeight: 74,
+  dateCell: {
     paddingHorizontal: 6,
     paddingVertical: 7,
     borderRightWidth: 1,
     borderBottomWidth: 1,
-    borderColor: 'rgba(255,255,255,0.07)',
-    backgroundColor: 'rgba(255,255,255,0.015)',
+    borderColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(255,255,255,0.03)',
   },
-  dayCellOtherMonth: {
-    backgroundColor: 'rgba(255,255,255,0.005)',
+  dateCellOtherMonth: {
+    backgroundColor: 'rgba(255,255,255,0.01)',
   },
-  dayCellToday: {
-    backgroundColor: 'rgba(249,115,22,0.12)',
+  dateCellToday: {
+    backgroundColor: 'rgba(249,115,22,0.18)',
   },
-  dayCellSelected: {
-    backgroundColor: 'rgba(99,102,241,0.28)',
+  dateCellSelected: {
+    backgroundColor: 'rgba(99,102,241,0.32)',
   },
-  dayHeader: {
-    minHeight: 20,
+  dateTopRow: {
+    minHeight: 22,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  dayNumber: {
+  dateNumber: {
     color: '#FFFFFF',
-    fontFamily: 'Inter_700Bold',
-    fontSize: 13,
+    fontSize: 16,
+    fontWeight: '900',
+    lineHeight: 20,
   },
-  dayNumberOtherMonth: {
-    color: 'rgba(255,255,255,0.35)',
+  dateNumberOtherMonth: {
+    color: 'rgba(255,255,255,0.42)',
   },
-  dayNumberSelected: {
+  dateNumberSelected: {
     color: '#FFFFFF',
   },
   countBadge: {
     minWidth: 18,
     height: 18,
-    borderRadius: 9999,
     paddingHorizontal: 4,
+    borderRadius: 9999,
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
   },
   countText: {
     color: '#080910',
-    fontFamily: 'Inter_700Bold',
     fontSize: 10,
+    fontWeight: '900',
   },
   dotRow: {
-    marginTop: 13,
+    marginTop: 14,
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 3,
   },
-  dot: {
+  itemDot: {
     width: 6,
     height: 6,
     borderRadius: 9999,
@@ -558,14 +589,13 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   sectionTitle: {
-    color: '#fff',
-    fontFamily: 'Inter_600SemiBold',
+    color: '#FFFFFF',
     fontSize: 14,
+    fontWeight: '700',
     textTransform: 'capitalize',
   },
   sectionMeta: {
     color: 'rgba(255,255,255,0.45)',
-    fontFamily: 'Inter_400Regular',
     fontSize: 12,
   },
   emptyMiniCard: {
@@ -573,26 +603,24 @@ const styles = StyleSheet.create({
   },
   emptyMiniText: {
     color: 'rgba(255,255,255,0.55)',
-    fontFamily: 'Inter_400Regular',
     fontSize: 13,
   },
   itemCard: { marginBottom: 10 },
   itemRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   itemTypeDot: { width: 10, height: 10, borderRadius: 9999 },
   itemTitle: {
-    color: '#fff',
-    fontFamily: 'Inter_500Medium',
+    color: '#FFFFFF',
     fontSize: 15,
+    fontWeight: '600',
   },
   itemMeta: {
     color: 'rgba(255,255,255,0.5)',
-    fontFamily: 'Inter_400Regular',
     fontSize: 12,
     marginTop: 2,
   },
   typeLabel: {
-    fontFamily: 'Inter_600SemiBold',
     fontSize: 10,
+    fontWeight: '800',
     letterSpacing: 0.8,
     textTransform: 'uppercase',
   },
@@ -601,17 +629,16 @@ const styles = StyleSheet.create({
   recapDate: {
     width: 82,
     color: 'rgba(255,255,255,0.65)',
-    fontFamily: 'Inter_600SemiBold',
     fontSize: 11,
+    fontWeight: '700',
   },
   recapTitle: {
-    color: '#fff',
-    fontFamily: 'Inter_500Medium',
+    color: '#FFFFFF',
     fontSize: 14,
+    fontWeight: '600',
   },
   recapMeta: {
     color: 'rgba(255,255,255,0.45)',
-    fontFamily: 'Inter_400Regular',
     fontSize: 11,
     marginTop: 2,
   },

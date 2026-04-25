@@ -31,20 +31,23 @@
         "android.permission.RECORD_AUDIO"
       ],
       "intentFilters": [
-  {
-    "action": "VIEW",
-    "autoVerify": false,
-    "data": [
-      {
-        "scheme": "householdcoo"
-      },
-      {
-        "scheme": "com.householdcoo.app"
-      }
-    ],
-    "category": ["BROWSABLE", "DEFAULT"]
-  }
-]
+        {
+          "action": "VIEW",
+          "autoVerify": false,
+          "data": [
+            {
+              "scheme": "householdcoo"
+            },
+            {
+              "scheme": "com.householdcoo.app"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -69,7 +72,8 @@
           "backgroundColor": "#FFB84D"
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true
