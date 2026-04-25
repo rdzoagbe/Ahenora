@@ -395,94 +395,175 @@ async def exchange_session(payload: SessionIn):
             detail=f"Invalid Google token: {last_error}",
         )
 
-    google_sub = token_info["sub"]
-    email = token_info.get("email", "")
-    name = token_info.get("name", email.split("@")[0] if email else "Parent")
-    picture = token_info.get("picture")
+    try:
+        google_sub = token_info.get("sub")
+        email = token_info.get("email", "")
+        name = token_info.get("name") or (email.split("@")[0] if email else "Parent")
+        picture = token_info.get("picture")
 
-    user = await database["users"].find_one({"google_sub": google_sub}, {"_id": 0})
+        if not google_sub:
+            raise HTTPException(status_code=400, detail="Google token missing subject")
 
-    if not user:
-        family_id = new_id("family")
-        user = {
-            "user_id": new_id("user"),
-            "google_sub": google_sub,
-            "email": email,
-            "name": name,
-            "picture": picture,
-            "family_id": family_id,
-            "language": "en",
-            "created_at": utcnow(),
-            "updated_at": utcnow(),
-        }
+        user = await database["users"].find_one(
+            {"google_sub": google_sub},
+            {"_id": 0},
+        )
 
-        await database["users"].insert_one(user)
+        if not user:
+            family_id = new_id("family")
+            user_id = new_id("user")
 
-        await database["families"].insert_one(
-            {
+            user = {
+                "user_id": user_id,
+                "google_sub": google_sub,
+                "email": email,
+                "name": name,
+                "picture": picture,
                 "family_id": family_id,
-                "plan": "executive",
-                "billing_cycle": "monthly",
-                "grandfathered": True,
+                "language": "en",
+                "created_at": utcnow(),
                 "updated_at": utcnow(),
-                "ai_scans_used": 0,
-                "ai_scans_period_start": utcnow(),
-                "vault_bytes_used": 0,
+            }
+
+            await database["users"].update_one(
+                {"google_sub": google_sub},
+                {"$setOnInsert": user},
+                upsert=True,
+            )
+
+            await database["families"].update_one(
+                {"family_id": family_id},
+                {
+                    "$setOnInsert": {
+                        "family_id": family_id,
+                        "plan": "executive",
+                        "billing_cycle": "monthly",
+                        "grandfathered": True,
+                        "updated_at": utcnow(),
+                        "ai_scans_used": 0,
+                        "ai_scans_period_start": utcnow(),
+                        "vault_bytes_used": 0,
+                    }
+                },
+                upsert=True,
+            )
+
+            existing_members = await database["family_members"].count_documents(
+                {"family_id": family_id}
+            )
+
+            if existing_members == 0:
+                seed_members = [
+                    {
+                        "member_id": new_id("member"),
+                        "family_id": family_id,
+                        "name": name,
+                        "role": "Parent",
+                        "avatar": picture,
+                        "stars": 0,
+                        "pin_hash": None,
+                    },
+                    {
+                        "member_id": new_id("member"),
+                        "family_id": family_id,
+                        "name": "Emma",
+                        "role": "Child",
+                        "avatar": None,
+                        "stars": 0,
+                        "pin_hash": None,
+                    },
+                    {
+                        "member_id": new_id("member"),
+                        "family_id": family_id,
+                        "name": "Noah",
+                        "role": "Child",
+                        "avatar": None,
+                        "stars": 0,
+                        "pin_hash": None,
+                    },
+                ]
+
+                await database["family_members"].insert_many(seed_members)
+
+            user = await database["users"].find_one(
+                {"google_sub": google_sub},
+                {"_id": 0},
+            )
+        else:
+            patch = {
+                "email": email,
+                "name": name,
+                "picture": picture,
+                "updated_at": utcnow(),
+            }
+
+            if not user.get("user_id"):
+                patch["user_id"] = new_id("user")
+
+            if not user.get("family_id"):
+                patch["family_id"] = new_id("family")
+
+            if not user.get("language"):
+                patch["language"] = "en"
+
+            await database["users"].update_one(
+                {"google_sub": google_sub},
+                {"$set": patch},
+            )
+
+            user = await database["users"].find_one(
+                {"google_sub": google_sub},
+                {"_id": 0},
+            )
+
+            family_id = user.get("family_id")
+
+            if family_id:
+                await database["families"].update_one(
+                    {"family_id": family_id},
+                    {
+                        "$setOnInsert": {
+                            "family_id": family_id,
+                            "plan": "executive",
+                            "billing_cycle": "monthly",
+                            "grandfathered": True,
+                            "updated_at": utcnow(),
+                            "ai_scans_used": 0,
+                            "ai_scans_period_start": utcnow(),
+                            "vault_bytes_used": 0,
+                        }
+                    },
+                    upsert=True,
+                )
+
+        if not user:
+            raise HTTPException(status_code=500, detail="User could not be loaded")
+
+        raw_session = secrets.token_urlsafe(32)
+
+        await database["user_sessions"].insert_one(
+            {
+                "session_id": new_id("sess"),
+                "user_id": user.get("user_id"),
+                "token_hash": sha256(raw_session),
+                "expires_at": utcnow() + timedelta(days=SESSION_DAYS),
+                "created_at": utcnow(),
             }
         )
 
-        seed_members = [
-            {
-                "member_id": new_id("member"),
-                "family_id": family_id,
-                "name": name,
-                "role": "Parent",
-                "avatar": picture,
-                "stars": 0,
-                "pin_hash": None,
-            },
-            {
-                "member_id": new_id("member"),
-                "family_id": family_id,
-                "name": "Emma",
-                "role": "Child",
-                "avatar": None,
-                "stars": 0,
-                "pin_hash": None,
-            },
-            {
-                "member_id": new_id("member"),
-                "family_id": family_id,
-                "name": "Noah",
-                "role": "Child",
-                "avatar": None,
-                "stars": 0,
-                "pin_hash": None,
-            },
-        ]
-
-        await database["family_members"].insert_many(seed_members)
-    else:
-        await database["users"].update_one(
-            {"user_id": user["user_id"]},
-            {"$set": {"email": email, "name": name, "picture": picture, "updated_at": utcnow()}},
-        )
-        user = await database["users"].find_one({"user_id": user["user_id"]}, {"_id": 0})
-
-    raw_session = secrets.token_urlsafe(32)
-
-    await database["user_sessions"].insert_one(
-        {
-            "session_id": new_id("sess"),
-            "user_id": user["user_id"],
-            "token_hash": sha256(raw_session),
-            "expires_at": utcnow() + timedelta(days=SESSION_DAYS),
-            "created_at": utcnow(),
+        return {
+            "user": public_user(user),
+            "session_token": raw_session,
         }
-    )
 
-    return {"user": public_user(user), "session_token": raw_session}
-
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"AUTH_SESSION_ERROR: {type(e).__name__}: {e}", flush=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Auth session failed: {type(e).__name__}: {e}",
+        )
 
 @app.get("/api/auth/me")
 async def me(user=Depends(require_user)):

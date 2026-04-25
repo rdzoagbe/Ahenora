@@ -4,10 +4,13 @@ import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import * as Google from 'expo-auth-session/providers/google';
 
+import { useStore } from '../src/store';
+
 WebBrowser.maybeCompleteAuthSession();
 
 export default function Landing() {
   const router = useRouter();
+  const { setUserFromAuth } = useStore();
 
   const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
   const androidClientId = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID;
@@ -50,6 +53,8 @@ export default function Landing() {
 
         console.log('Signed in user:', result.user);
 
+        await setUserFromAuth(result.user, result.session_token);
+
         router.replace('/(tabs)/feed');
       } catch (error: any) {
         console.error('google sign-in failed', error);
@@ -58,7 +63,7 @@ export default function Landing() {
     };
 
     handleGoogleResponse();
-  }, [response, router]);
+  }, [response, router, setUserFromAuth]);
 
   const signIn = async () => {
     try {

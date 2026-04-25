@@ -6,6 +6,12 @@ const API_BASE_URL = RAW_API_BASE_URL.startsWith('http')
   ? RAW_API_BASE_URL
   : `https://${RAW_API_BASE_URL}`;
 
+type RequestOptions = {
+  method?: string;
+  token?: string;
+  body?: any;
+};
+
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const base = API_BASE_URL.replace(/\/$/, '');
 const url = `${base}${path}`;

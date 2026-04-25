@@ -1,12 +1,17 @@
 import React from 'react';
 import { Stack } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
+import { StoreProvider } from '../src/store';
 
 export default function RootLayout() {
   return (
-    <>
-      <StatusBar style="light" />
-      <Stack screenOptions={{ headerShown: false }} />
-    </>
+    <StoreProvider>
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="index" />
+        <Stack.Screen name="oauthredirect" />
+        <Stack.Screen name="pricing" />
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="+not-found" />
+      </Stack>
+    </StoreProvider>
   );
 }
