@@ -272,26 +272,55 @@ export const api = {
       body: { plan, billing_cycle },
     }),
   // Voice transcribe
-  voiceTranscribe: async (blob: Blob): Promise<{
+  voiceTranscribe: async (
+    audio:
+      | Blob
+      | {
+          uri: string;
+          name?: string;
+          type?: string;
+        }
+  ): Promise<{
     transcript: string;
     type: CardType;
     title: string;
     description: string;
     assignee: string;
+    due_date?: string | null;
   }> => {
     const token = await tokenStore.get();
     const form = new FormData();
-    const file = new File([blob], 'voice.webm', { type: blob.type || 'audio/webm' });
-    form.append('audio', file);
+
+    if (typeof Blob !== 'undefined' && audio instanceof Blob) {
+      const fileName = audio.type?.includes('ogg') ? 'voice.ogg' : 'voice.webm';
+
+      if (typeof File !== 'undefined') {
+        form.append('audio', new File([audio], fileName, { type: audio.type || 'audio/ogg' }));
+      } else {
+        form.append('audio', audio as any);
+      }
+    } else {
+      const nativeFile = audio as { uri: string; name?: string; type?: string };
+
+      form.append('audio', {
+        uri: nativeFile.uri,
+        name: nativeFile.name || 'voice.m4a',
+        type: nativeFile.type || 'audio/aac',
+      } as any);
+    }
+
     const headers: Record<string, string> = {};
     if (token) headers['Authorization'] = `Bearer ${token}`;
+
     const res = await fetch(`${BASE}/api/voice/transcribe`, {
       method: 'POST',
       headers,
       credentials: 'include',
       body: form,
     });
+
     if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+
     return res.json();
   },
 };

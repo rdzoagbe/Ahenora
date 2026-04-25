@@ -5,6 +5,7 @@ import base64
 import asyncio
 import hashlib
 import secrets
+import tempfile
 import html
 import urllib.error
 import urllib.request
@@ -54,6 +55,7 @@ RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
 INVITE_FROM_EMAIL = os.environ.get("INVITE_FROM_EMAIL", "")
 INVITE_REPLY_TO = os.environ.get("INVITE_REPLY_TO", "")
 APP_NAME = os.environ.get("APP_NAME", "Household COO")
+MAX_VOICE_AUDIO_BYTES = int(os.environ.get("MAX_VOICE_AUDIO_BYTES", str(12 * 1024 * 1024)))
 ADMIN_EMAILS_RAW = os.environ.get("ADMIN_EMAILS", "")
 ADMIN_EMAILS = {
     email.strip().lower()
@@ -556,10 +558,11 @@ async def root():
         "message": "Household COO Backend is live",
         "api_configured": bool(GOOGLE_API_KEY),
         "db_configured": bool(MONGO_URL),
-        "backend_version": "admin_landing_v1",
+        "backend_version": "voice_transcription_v1",
         "invite_routes": True,
         "email_configured": bool(RESEND_API_KEY and INVITE_FROM_EMAIL),
         "admin_access_enabled": bool(ADMIN_EMAILS),
+        "voice_configured": bool(GOOGLE_API_KEY and genai),
         "google_web_configured": bool(GOOGLE_WEB_CLIENT_ID),
         "google_android_configured": bool(GOOGLE_ANDROID_CLIENT_ID),
         "google_client_ids_count": len(GOOGLE_CLIENT_IDS),
@@ -1351,8 +1354,150 @@ Rules:
     return fallback
 
 
+
+def _clean_json_text(text: str) -> str:
+    value = (text or "").strip()
+
+    if value.startswith("```json"):
+        value = value.removeprefix("```json").strip()
+    if value.startswith("```"):
+        value = value.removeprefix("```").strip()
+    if value.endswith("```"):
+        value = value.removesuffix("```").strip()
+
+    first = value.find("{")
+    last = value.rfind("}")
+    if first >= 0 and last > first:
+        return value[first : last + 1]
+
+    return value
+
+
+def _safe_voice_draft(parsed: dict, fallback_transcript: str = "") -> dict:
+    transcript = str(parsed.get("transcript") or fallback_transcript or "").strip()
+    title = str(parsed.get("title") or "").strip()
+    description = str(parsed.get("description") or "").strip()
+
+    if not title:
+        title = transcript[:70].strip() or "Voice task"
+    if not description:
+        description = transcript
+
+    card_type = str(parsed.get("type") or "TASK").strip().upper()
+    if card_type not in ("SIGN_SLIP", "RSVP", "TASK"):
+        card_type = "TASK"
+
+    due_date = parsed.get("due_date")
+    if due_date in ("", "null", "None"):
+        due_date = None
+
+    return {
+        "transcript": transcript,
+        "type": card_type,
+        "title": title,
+        "description": description,
+        "assignee": str(parsed.get("assignee") or "").strip(),
+        "due_date": due_date,
+    }
+
+
+async def _voice_to_draft(audio_bytes: bytes, mime_type: str, members: list[str]) -> dict:
+    if not GOOGLE_API_KEY or not genai:
+        raise HTTPException(
+            status_code=501,
+            detail="Voice transcription requires GOOGLE_API_KEY and google-generativeai.",
+        )
+
+    allowed_members = ", ".join(members) if members else ""
+
+    prompt = f"""
+You are Household COO, a premium family chief-of-staff assistant.
+
+Listen to the audio and return JSON only with these keys:
+transcript, type, title, description, assignee, due_date
+
+Rules:
+- transcript: accurate transcription of the user's speech.
+- type: one of SIGN_SLIP, RSVP, TASK.
+- title: concise action title, max 70 characters.
+- description: practical detail from the audio.
+- assignee: one exact name from this list if clearly mentioned or obvious: {allowed_members}
+- assignee may be empty string if unclear.
+- due_date: ISO 8601 string if the audio clearly mentions a date/time, otherwise null.
+- Return valid JSON only. No markdown.
+""".strip()
+
+    model = _gemini(
+        "You convert spoken household instructions into structured task/card JSON."
+    )
+
+    def _generate_inline():
+        return model.generate_content(
+            [
+                prompt,
+                {
+                    "mime_type": mime_type or "audio/aac",
+                    "data": audio_bytes,
+                },
+            ]
+        )
+
+    try:
+        response = await asyncio.to_thread(_generate_inline)
+        text = (response.text or "").strip()
+    except Exception as first_error:
+        # Some Gemini SDK versions are stricter with inline audio. Fall back to Files API
+        # when available.
+        if not hasattr(genai, "upload_file"):
+            raise HTTPException(
+                status_code=500,
+                detail=f"Voice transcription failed: {first_error}",
+            )
+
+        suffix = ".m4a"
+        if "ogg" in (mime_type or ""):
+            suffix = ".ogg"
+        elif "webm" in (mime_type or ""):
+            suffix = ".webm"
+        elif "mpeg" in (mime_type or "") or "mp3" in (mime_type or ""):
+            suffix = ".mp3"
+        elif "wav" in (mime_type or ""):
+            suffix = ".wav"
+
+        tmp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                tmp.write(audio_bytes)
+                tmp_path = tmp.name
+
+            uploaded = await asyncio.to_thread(genai.upload_file, tmp_path, mime_type=mime_type or None)
+            response = await asyncio.to_thread(model.generate_content, [prompt, uploaded])
+            text = (response.text or "").strip()
+        except Exception as second_error:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Voice transcription failed: {second_error}",
+            )
+        finally:
+            if tmp_path:
+                try:
+                    os.remove(tmp_path)
+                except Exception:
+                    pass
+
+    try:
+        parsed = json.loads(_clean_json_text(text))
+        if not isinstance(parsed, dict):
+            raise ValueError("Model response was not an object")
+        return _safe_voice_draft(parsed, fallback_transcript=text)
+    except Exception:
+        return _safe_voice_draft({"transcript": text, "description": text}, fallback_transcript=text)
+
+
+
+
 # -----------------------------------------------------------------------------
-# Voice placeholder
+# Voice
 # -----------------------------------------------------------------------------
 @app.post("/api/voice/transcribe")
 async def voice_transcribe(audio: UploadFile = File(...), user=Depends(require_user)):
