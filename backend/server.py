@@ -203,12 +203,15 @@ async def build_subscription(family_id: str):
 
 
 def public_user(user: dict) -> dict:
+    email = user.get("email", "")
+    name = user.get("name") or (email.split("@")[0] if email else "Parent")
+
     return {
-        "user_id": user["user_id"],
-        "email": user["email"],
-        "name": user["name"],
+        "user_id": user.get("user_id", ""),
+        "email": email,
+        "name": name,
         "picture": user.get("picture"),
-        "family_id": user["family_id"],
+        "family_id": user.get("family_id", ""),
         "language": user.get("language", "en"),
     }
 
