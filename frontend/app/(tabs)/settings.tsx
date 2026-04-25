@@ -5,22 +5,18 @@ import {
   StyleSheet,
   ScrollView,
   Image,
-  Modal,
   TextInput,
-  KeyboardAvoidingView,
   Platform,
-  TouchableWithoutFeedback,
-  Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { BlurView } from 'expo-blur';
 import { Globe, LogOut, Users, Mail, UserPlus, X, Send, Lock, Bell, Crown, Sparkles } from 'lucide-react-native';
 import { AmbientBackground } from '../../src/components/AmbientBackground';
 import { GlassCard } from '../../src/components/GlassCard';
 import { PressScale } from '../../src/components/PressScale';
 import { LanguageModal } from '../../src/components/LanguageModal';
 import { PinPadModal } from '../../src/components/PinPadModal';
+import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
 import { useStore } from '../../src/store';
 import { api, FamilyMember } from '../../src/api';
 import { LANG_NAMES } from '../../src/i18n';
@@ -67,7 +63,7 @@ export default function SettingsScreen() {
     <View style={styles.container}>
       <AmbientBackground />
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
-        <ScrollView contentContainerStyle={styles.scroll}>
+        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           <Text style={styles.title}>{t('settings')}</Text>
 
           {/* Profile */}
@@ -304,76 +300,74 @@ export default function SettingsScreen() {
       />
 
       {/* Invite modal */}
-      <Modal visible={showInvite} transparent animationType="fade" onRequestClose={() => setShowInvite(false)}>
-        <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
-        <View style={styles.backdrop} />
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={{ flex: 1, justifyContent: 'flex-end' }}
-        >
-          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-            <View style={styles.sheet}>
-              <View style={styles.sheetHeader}>
-                <Text style={styles.sheetTitle}>Invite co-parent</Text>
-                <PressScale testID="close-invite" onPress={() => setShowInvite(false)} style={styles.iconBtn}>
-                  <X color="#fff" size={18} />
-                </PressScale>
-              </View>
-              <Text style={styles.inviteHelp}>
-                They&apos;ll get an email with a join link. Signing in merges them into your family feed, calendar, vault, and kids.
-              </Text>
+      <KeyboardAwareBottomSheet
+        visible={showInvite}
+        onClose={() => setShowInvite(false)}
+        contentStyle={styles.sheet}
+      >
+        <View style={styles.sheetHeader}>
+          <Text style={styles.sheetTitle}>Invite co-parent</Text>
+          <PressScale testID="close-invite" onPress={() => setShowInvite(false)} style={styles.iconBtn}>
+            <X color="#fff" size={18} />
+          </PressScale>
+        </View>
 
-              <Text style={styles.label}>Email</Text>
-              <TextInput
-                testID="invite-email"
-                value={inviteEmail}
-                onChangeText={setInviteEmail}
-                placeholder="partner@example.com"
-                placeholderTextColor="rgba(255,255,255,0.3)"
-                autoCapitalize="none"
-                keyboardType="email-address"
-                style={styles.input}
-              />
+        <Text style={styles.inviteHelp}>
+          They&apos;ll get an email with a join link. Signing in merges them into your family feed, calendar, vault, and kids.
+        </Text>
 
-              {inviteResult ? (
-                <Text style={styles.resultText}>{inviteResult}</Text>
-              ) : null}
+        <Text style={styles.label}>Email</Text>
+        <TextInput
+          testID="invite-email"
+          value={inviteEmail}
+          onChangeText={setInviteEmail}
+          placeholder="partner@example.com"
+          placeholderTextColor="rgba(255,255,255,0.3)"
+          autoCapitalize="none"
+          autoCorrect={false}
+          keyboardType="email-address"
+          style={styles.input}
+          returnKeyType="send"
+        />
 
-              <View style={styles.sheetFooter}>
-                <PressScale testID="cancel-invite" onPress={() => setShowInvite(false)} style={styles.cancelBtn}>
-                  <Text style={styles.cancelText}>{t('cancel')}</Text>
-                </PressScale>
-                <PressScale
-                  testID="send-invite"
-                  onPress={async () => {
-                    if (!inviteEmail.trim() || !inviteEmail.includes('@')) return;
-                    setSending(true);
-                    setInviteResult(null);
-                    try {
-                      const res = await api.invite(inviteEmail.trim());
-                      if (res.sent) {
-                        setInviteResult(`✓ Invitation sent to ${inviteEmail}`);
-                        setInviteEmail('');
-                      } else {
-                        setInviteResult(res.error || 'Email not sent, but invite link created.');
-                      }
-                    } catch (e: any) {
-                      setInviteResult(e?.message || 'Error');
-                    } finally {
-                      setSending(false);
-                    }
-                  }}
-                  disabled={sending || !inviteEmail.trim()}
-                  style={[styles.saveBtn, (!inviteEmail.trim() || sending) && { opacity: 0.5 }]}
-                >
-                  <Send color="#080910" size={14} />
-                  <Text style={styles.saveText}>{sending ? '...' : 'Send invite'}</Text>
-                </PressScale>
-              </View>
-            </View>
-          </TouchableWithoutFeedback>
-        </KeyboardAvoidingView>
-      </Modal>
+        {inviteResult ? <Text style={styles.resultText}>{inviteResult}</Text> : null}
+
+        <View style={styles.sheetFooter}>
+          <PressScale testID="cancel-invite" onPress={() => setShowInvite(false)} style={styles.cancelBtn}>
+            <Text style={styles.cancelText}>{t('cancel')}</Text>
+          </PressScale>
+
+          <PressScale
+            testID="send-invite"
+            onPress={async () => {
+              if (!inviteEmail.trim() || !inviteEmail.includes('@')) return;
+
+              setSending(true);
+              setInviteResult(null);
+
+              try {
+                const res = await api.invite(inviteEmail.trim());
+
+                if (res.sent) {
+                  setInviteResult(`✓ Invitation sent to ${inviteEmail}`);
+                  setInviteEmail('');
+                } else {
+                  setInviteResult(res.error || 'Email not sent, but invite link created.');
+                }
+              } catch (e: any) {
+                setInviteResult(e?.message || 'Error');
+              } finally {
+                setSending(false);
+              }
+            }}
+            disabled={sending || !inviteEmail.trim()}
+            style={[styles.saveBtn, (!inviteEmail.trim() || sending) && { opacity: 0.5 }]}
+          >
+            <Send color="#080910" size={14} />
+            <Text style={styles.saveText}>{sending ? '...' : 'Send invite'}</Text>
+          </PressScale>
+        </View>
+      </KeyboardAwareBottomSheet>
     </View>
   );
 }
@@ -437,7 +431,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
     padding: 24,
-    paddingBottom: 36,
+    paddingBottom: 130,
   },
   sheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   sheetTitle: { fontFamily: 'PlayfairDisplay_400Regular_Italic', fontSize: 26, color: '#fff' },
