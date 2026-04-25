@@ -91,9 +91,6 @@ async function request<T = any>(path: string, options: RequestOptions = {}): Pro
     headers.Authorization = `Bearer ${token}`;
   }
 
-  logger.debug('API_BASE_URL:', API_BASE_URL);
-  logger.debug('API request:', url);
-
   let response: Response;
 
   try {
@@ -426,6 +423,7 @@ export const api = {
     });
   },
 };
+
 
 
 

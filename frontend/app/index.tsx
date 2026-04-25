@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+﻿import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Pressable, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
@@ -24,9 +24,6 @@ export default function Landing() {
   });
 
   useEffect(() => {
-    logger.debug('Google webClientId configured:', Boolean(webClientId));
-    logger.debug('Google androidClientId configured:', Boolean(androidClientId));
-    logger.debug('Google auth request ready:', Boolean(request));
   }, [request, webClientId, androidClientId]);
 
   useEffect(() => {
@@ -39,8 +36,6 @@ export default function Landing() {
   useEffect(() => {
     const handleGoogleResponse = async () => {
       if (!response) return;
-
-      logger.debug('Google response type:', response.type);
 
       if (handledResponseRef.current) return;
 
@@ -171,3 +166,4 @@ const styles = StyleSheet.create({
     marginTop: 18,
   },
 });
+
