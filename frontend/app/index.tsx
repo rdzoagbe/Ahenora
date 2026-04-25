@@ -5,6 +5,7 @@ import * as WebBrowser from 'expo-web-browser';
 import * as Google from 'expo-auth-session/providers/google';
 
 import { useStore } from '../src/store';
+import { logger } from '../src/logger';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -23,14 +24,14 @@ export default function Landing() {
   });
 
   useEffect(() => {
-    console.log('Google webClientId:', webClientId);
-    console.log('Google androidClientId:', androidClientId);
-    console.log('Google auth request:', request);
+    logger.debug('Google webClientId configured:', Boolean(webClientId));
+    logger.debug('Google androidClientId configured:', Boolean(androidClientId));
+    logger.debug('Google auth request ready:', Boolean(request));
   }, [request, webClientId, androidClientId]);
 
   useEffect(() => {
     if (!loading && user) {
-      console.log('Existing authenticated user found. Redirecting to feed.');
+      logger.info('Existing authenticated user found. Redirecting to feed.');
       router.replace('/feed');
     }
   }, [loading, user, router]);
@@ -39,12 +40,12 @@ export default function Landing() {
     const handleGoogleResponse = async () => {
       if (!response) return;
 
+      logger.debug('Google response type:', response.type);
+
       if (handledResponseRef.current) return;
 
-      console.log('Google response type:', response.type);
-
       if (response.type !== 'success') {
-        console.log('Google sign-in was not successful:', response.type);
+        logger.debug('Google sign-in was not successful:', response.type);
         return;
       }
 
@@ -54,28 +55,31 @@ export default function Landing() {
         const idToken =
           response.params?.id_token ||
           response.authentication?.idToken ||
-          (response.authentication?.rawResponse as any)?.id_token;
+          response.authentication?.rawResponse?.id_token;
 
         if (!idToken) {
-          console.log('Google response params:', response.params);
-          console.log('Google authentication:', response.authentication);
+          logger.warn('Google sign-in succeeded but no ID token was returned.');
           Alert.alert('Sign-in failed', 'Google did not return an ID token.');
+          handledResponseRef.current = false;
           return;
         }
 
-        console.log('Google ID token received.');
+        logger.info('Google ID token received.');
 
         const { api } = await import('../src/api');
-        const result = await api.exchangeSession(idToken);
+        const authResult = await api.exchangeSession(idToken);
 
-        console.log('Signed in user:', result.user);
+        logger.info(
+          'Signed in user:',
+          authResult.user?.email || authResult.user?.user_id || 'unknown'
+        );
 
-        await setUserFromAuth(result.user, result.session_token);
+        await setUserFromAuth(authResult.user, authResult.session_token);
 
-        console.log('Session saved. Redirecting to feed.');
+        logger.info('Session saved. Redirecting to feed.');
         router.replace('/feed');
       } catch (error: any) {
-        console.error('google sign-in failed', error);
+        logger.error('google sign-in failed', error?.message || error);
         Alert.alert('Sign-in failed', error?.message || 'Please try again.');
         handledResponseRef.current = false;
       }
@@ -106,7 +110,7 @@ export default function Landing() {
 
       await promptAsync();
     } catch (error: any) {
-      console.error('google prompt failed', error);
+      logger.error('google prompt failed', error?.message || error);
       Alert.alert('Sign-in failed', error?.message || 'Please try again.');
     }
   };

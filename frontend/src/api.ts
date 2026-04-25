@@ -93,7 +93,6 @@ async function request<T = any>(path: string, options: RequestOptions = {}): Pro
 
   logger.debug('API_BASE_URL:', API_BASE_URL);
   logger.debug('API request:', url);
-  console.log('API auth:', token ? 'Bearer token present' : 'No token');
 
   let response: Response;
 
@@ -427,6 +426,7 @@ export const api = {
     });
   },
 };
+
 
 
 
