@@ -7,10 +7,11 @@ import {
   Image,
   TextInput,
   Platform,
+  Share,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Globe, LogOut, Users, Mail, UserPlus, X, Send, Lock, Bell, Crown, Sparkles } from 'lucide-react-native';
+import { Globe, LogOut, Users, Mail, UserPlus, X, Send, Lock, Bell, Crown, Sparkles, Share2 } from 'lucide-react-native';
 import { AmbientBackground } from '../../src/components/AmbientBackground';
 import { GlassCard } from '../../src/components/GlassCard';
 import { PressScale } from '../../src/components/PressScale';
@@ -31,6 +32,8 @@ export default function SettingsScreen() {
   const [inviteEmail, setInviteEmail] = useState('');
   const [sending, setSending] = useState(false);
   const [inviteResult, setInviteResult] = useState<string | null>(null);
+  const [lastInviteUrl, setLastInviteUrl] = useState<string | null>(null);
+  const [lastInviteEmail, setLastInviteEmail] = useState('');
   const [pinMember, setPinMember] = useState<FamilyMember | null>(null);
   const [notifyOn, setNotifyOn] = useState(false);
 
@@ -63,6 +66,31 @@ export default function SettingsScreen() {
     await logout();
     router.replace('/');
   };
+
+  const shareInviteLink = useCallback(
+    async (inviteUrl: string, email?: string) => {
+      try {
+        if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) {
+          await navigator.clipboard.writeText(inviteUrl);
+          setInviteResult(
+            email
+              ? `Invite link copied for ${email}.`
+              : 'Invite link copied.'
+          );
+          return;
+        }
+
+        await Share.share({
+          title: 'Join Household COO',
+          message: `${user?.name || 'A family member'} invited you to join Household COO.\n\n${inviteUrl}`,
+          url: inviteUrl,
+        });
+      } catch (e: any) {
+        setInviteResult(`Could not open share sheet. Share this link manually: ${inviteUrl}`);
+      }
+    },
+    [user?.name]
+  );
 
   return (
     <View style={styles.container}>
@@ -118,6 +146,8 @@ export default function SettingsScreen() {
             onPress={() => {
               setInviteEmail('');
               setInviteResult(null);
+              setLastInviteUrl(null);
+              setLastInviteEmail('');
               setShowInvite(true);
             }}
             style={styles.inviteBtn}
@@ -143,9 +173,20 @@ export default function SettingsScreen() {
                         : 'Pending'}
                     </Text>
                     {invite.status === 'pending' && invite.invite_url ? (
-                      <Text style={styles.inviteUrlText} numberOfLines={2}>
-                        {invite.invite_url}
-                      </Text>
+                      <>
+                        <Text style={styles.inviteUrlText} numberOfLines={2}>
+                          {invite.invite_url}
+                        </Text>
+
+                        <PressScale
+                          testID={`share-invite-${invite.invite_id}`}
+                          onPress={() => shareInviteLink(invite.invite_url, invite.email)}
+                          style={styles.inlineShareBtn}
+                        >
+                          <Share2 color="#080910" size={12} />
+                          <Text style={styles.inlineShareText}>Share link</Text>
+                        </PressScale>
+                      </>
                     ) : null}
                   </View>
                   <View
@@ -376,6 +417,17 @@ export default function SettingsScreen() {
 
         {inviteResult ? <Text style={styles.resultText}>{inviteResult}</Text> : null}
 
+        {lastInviteUrl ? (
+          <PressScale
+            testID="share-created-invite"
+            onPress={() => shareInviteLink(lastInviteUrl, lastInviteEmail)}
+            style={styles.shareResultBtn}
+          >
+            <Share2 color="#080910" size={15} />
+            <Text style={styles.shareResultText}>Share invite link</Text>
+          </PressScale>
+        ) : null}
+
         <View style={styles.sheetFooter}>
           <PressScale testID="cancel-invite" onPress={() => setShowInvite(false)} style={styles.cancelBtn}>
             <Text style={styles.cancelText}>{t('cancel')}</Text>
@@ -390,10 +442,16 @@ export default function SettingsScreen() {
               setInviteResult(null);
 
               try {
-                const res = await api.invite(inviteEmail.trim());
+                const submittedEmail = inviteEmail.trim();
+                const res = await api.invite(submittedEmail);
+
+                if (res.invite_url) {
+                  setLastInviteUrl(res.invite_url);
+                  setLastInviteEmail(submittedEmail);
+                }
 
                 if (res.sent) {
-                  setInviteResult(`✓ Invitation email sent to ${inviteEmail.trim()}. Status: ${res.status}.`);
+                  setInviteResult(`✓ Invitation email sent to ${submittedEmail}. Status: ${res.status}.`);
                 } else if (res.invite_url) {
                   setInviteResult(
                     `⚠ Invite created, but email was not delivered. Share this link manually: ${res.invite_url}` +
@@ -510,6 +568,23 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.75)',
     fontFamily: 'Inter_400Regular',
     fontSize: 13,
+    lineHeight: 18,
+  },
+  shareResultBtn: {
+    marginTop: 12,
+    borderRadius: 9999,
+    backgroundColor: '#fff',
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  shareResultText: {
+    color: '#080910',
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 13,
   },
   sheetFooter: { flexDirection: 'row', gap: 12, marginTop: 18 },
   cancelBtn: {
@@ -604,6 +679,22 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_400Regular',
     fontSize: 10,
     marginTop: 4,
+  },
+  inlineShareBtn: {
+    marginTop: 8,
+    alignSelf: 'flex-start',
+    borderRadius: 9999,
+    backgroundColor: '#fff',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  inlineShareText: {
+    color: '#080910',
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 11,
   },
   statusPill: {
     borderRadius: 9999,
