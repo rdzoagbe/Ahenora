@@ -1,10 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  StyleSheet,
-} from 'react-native';
+import { View, Text, TextInput, StyleSheet } from 'react-native';
 import {
   X,
   FileSignature,
@@ -13,12 +8,17 @@ import {
   Repeat,
   Bell,
   Sparkles,
+  CalendarClock,
+  CalendarX,
 } from 'lucide-react-native';
 
 import KeyboardAwareBottomSheet from './KeyboardAwareBottomSheet';
+import DateTimePickerSheet from './DateTimePickerSheet';
 import { PressScale } from './PressScale';
 import { useStore } from '../store';
 import { api, CardType, Recurrence } from '../api';
+import { formatDetailedDue } from '../utils/date';
+import { logger } from '../logger';
 
 interface VoiceDraft {
   transcript: string;
@@ -26,6 +26,7 @@ interface VoiceDraft {
   title: string;
   description: string;
   assignee: string;
+  due_date?: string | null;
 }
 
 interface Props {
@@ -58,12 +59,14 @@ export function AddCardModal({
   initialSource = 'MANUAL',
   initialDraft = null,
 }: Props) {
-  const { t } = useStore();
+  const { t, lang } = useStore();
 
   const [type, setType] = useState<CardType>('TASK');
   const [title, setTitle] = useState('');
   const [desc, setDesc] = useState('');
   const [assignee, setAssignee] = useState('');
+  const [dueDate, setDueDate] = useState<string | null>(null);
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [recurrence, setRecurrence] = useState<Recurrence>('none');
   const [reminderMins, setReminderMins] = useState<number>(0);
   const [saving, setSaving] = useState(false);
@@ -91,11 +94,8 @@ export function AddCardModal({
       try {
         const res = await api.aiAssign(trimmed, desc, type);
 
-        if (res.assignee) {
-          setSuggestedAssignee(res.assignee);
-        } else {
-          setSuggestedAssignee('');
-        }
+        if (res.assignee) setSuggestedAssignee(res.assignee);
+        else setSuggestedAssignee('');
       } catch {
         setSuggestedAssignee('');
       } finally {
@@ -114,11 +114,13 @@ export function AddCardModal({
       setTitle(initialDraft.title);
       setDesc(initialDraft.description || '');
       setAssignee(initialDraft.assignee || '');
+      setDueDate(initialDraft.due_date || null);
     } else {
       setType('TASK');
       setTitle('');
       setDesc('');
       setAssignee('');
+      setDueDate(null);
     }
 
     setRecurrence('none');
@@ -138,6 +140,7 @@ export function AddCardModal({
         title: title.trim(),
         description: desc.trim(),
         assignee: assignee.trim(),
+        due_date: dueDate,
         source: initialSource,
         recurrence,
         reminder_minutes: reminderMins,
@@ -145,196 +148,239 @@ export function AddCardModal({
 
       onCreated();
       onClose();
-    } catch (e) {
-      console.log('create card error', e);
+    } catch (e: any) {
+      logger.warn('Create card failed:', e?.message || e);
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <KeyboardAwareBottomSheet
-      visible={visible}
-      onClose={onClose}
-      contentStyle={styles.sheet}
-    >
-      <View style={styles.header}>
-        <Text style={styles.heading}>{t('add_card')}</Text>
+    <>
+      <KeyboardAwareBottomSheet
+        visible={visible}
+        onClose={onClose}
+        contentStyle={styles.sheet}
+      >
+        <View style={styles.header}>
+          <Text style={styles.heading}>{t('add_card')}</Text>
 
-        <PressScale testID="close-add-card" onPress={onClose} style={styles.closeBtn}>
-          <X color="#fff" size={18} />
-        </PressScale>
-      </View>
-
-      {initialDraft?.transcript ? (
-        <View style={styles.transcriptBox}>
-          <Text style={styles.transcriptLabel}>{t('transcript')}</Text>
-          <Text style={styles.transcriptText} numberOfLines={3}>
-            &ldquo;{initialDraft.transcript}&rdquo;
-          </Text>
+          <PressScale testID="close-add-card" onPress={onClose} style={styles.closeBtn}>
+            <X color="#fff" size={18} />
+          </PressScale>
         </View>
-      ) : null}
 
-      <Text style={styles.label}>{t('choose_type')}</Text>
-      <View style={styles.typeRow}>
-        {TYPES.map((typ) => {
-          const Icon = typ.icon;
-          const active = type === typ.key;
+        {initialDraft?.transcript ? (
+          <View style={styles.transcriptBox}>
+            <Text style={styles.transcriptLabel}>{t('transcript')}</Text>
+            <Text style={styles.transcriptText} numberOfLines={3}>
+              &ldquo;{initialDraft.transcript}&rdquo;
+            </Text>
+          </View>
+        ) : null}
 
-          return (
-            <PressScale
-              key={typ.key}
-              testID={`type-${typ.key}`}
-              onPress={() => setType(typ.key)}
-              style={[
-                styles.typeBtn,
-                {
-                  borderColor: active ? typ.color : 'rgba(255,255,255,0.1)',
-                  backgroundColor: active
-                    ? `${typ.color}22`
-                    : 'rgba(255,255,255,0.03)',
-                },
-              ]}
-            >
-              <Icon color={active ? typ.color : 'rgba(255,255,255,0.6)'} size={18} />
+        <Text style={styles.label}>{t('choose_type')}</Text>
+        <View style={styles.typeRow}>
+          {TYPES.map((typ) => {
+            const Icon = typ.icon;
+            const active = type === typ.key;
 
-              <Text
+            return (
+              <PressScale
+                key={typ.key}
+                testID={`type-${typ.key}`}
+                onPress={() => setType(typ.key)}
                 style={[
-                  styles.typeLabel,
-                  { color: active ? typ.color : 'rgba(255,255,255,0.7)' },
+                  styles.typeBtn,
+                  {
+                    borderColor: active ? typ.color : 'rgba(255,255,255,0.1)',
+                    backgroundColor: active ? `${typ.color}22` : 'rgba(255,255,255,0.03)',
+                  },
                 ]}
               >
-                {typ.key === 'SIGN_SLIP'
-                  ? t('sign_slip')
-                  : typ.key === 'RSVP'
-                  ? t('rsvp')
-                  : t('task')}
-              </Text>
-            </PressScale>
-          );
-        })}
-      </View>
+                <Icon color={active ? typ.color : 'rgba(255,255,255,0.6)'} size={18} />
 
-      <Text style={styles.label}>{t('title')}</Text>
-      <TextInput
-        testID="input-title"
-        value={title}
-        onChangeText={setTitle}
-        placeholder={t('title')}
-        placeholderTextColor="rgba(255,255,255,0.3)"
-        style={styles.input}
-        returnKeyType="next"
-      />
-
-      <Text style={styles.label}>{t('description')}</Text>
-      <TextInput
-        testID="input-description"
-        value={desc}
-        onChangeText={setDesc}
-        placeholder={t('description')}
-        placeholderTextColor="rgba(255,255,255,0.3)"
-        multiline
-        style={[styles.input, styles.descriptionInput]}
-        textAlignVertical="top"
-        returnKeyType="next"
-      />
-
-      <Text style={styles.label}>{t('assignee')}</Text>
-      <TextInput
-        testID="input-assignee"
-        value={assignee}
-        onChangeText={setAssignee}
-        placeholder={t('assignee')}
-        placeholderTextColor="rgba(255,255,255,0.3)"
-        style={styles.input}
-        returnKeyType="done"
-      />
-
-      {suggestedAssignee || suggestLoading ? (
-        <View style={styles.suggestRow}>
-          <Sparkles color="rgba(99,102,241,0.9)" size={11} />
-
-          {suggestLoading ? (
-            <Text style={styles.suggestText}>AI is thinking...</Text>
-          ) : (
-            <>
-              <Text style={styles.suggestText}>Suggested:</Text>
-
-              <PressScale
-                testID={`suggest-${suggestedAssignee}`}
-                onPress={() => setAssignee(suggestedAssignee)}
-                style={styles.suggestChip}
-              >
-                <Text style={styles.suggestChipText}>{suggestedAssignee}</Text>
+                <Text
+                  style={[
+                    styles.typeLabel,
+                    { color: active ? typ.color : 'rgba(255,255,255,0.7)' },
+                  ]}
+                >
+                  {typ.key === 'SIGN_SLIP'
+                    ? t('sign_slip')
+                    : typ.key === 'RSVP'
+                    ? t('rsvp')
+                    : t('task')}
+                </Text>
               </PressScale>
-            </>
-          )}
+            );
+          })}
         </View>
-      ) : null}
 
-      <View style={styles.rowHeader}>
-        <Repeat color="rgba(255,255,255,0.55)" size={12} />
-        <Text style={styles.label}>{t('recurrence')}</Text>
-      </View>
+        <Text style={styles.label}>{t('title')}</Text>
+        <TextInput
+          testID="input-title"
+          value={title}
+          onChangeText={setTitle}
+          placeholder={t('title')}
+          placeholderTextColor="rgba(255,255,255,0.3)"
+          style={styles.input}
+          returnKeyType="next"
+        />
 
-      <View style={styles.pillRow}>
-        {RECURRENCES.map((r) => {
-          const active = recurrence === r;
+        <Text style={styles.label}>{t('description')}</Text>
+        <TextInput
+          testID="input-description"
+          value={desc}
+          onChangeText={setDesc}
+          placeholder={t('description')}
+          placeholderTextColor="rgba(255,255,255,0.3)"
+          multiline
+          style={[styles.input, styles.descriptionInput]}
+          textAlignVertical="top"
+          returnKeyType="next"
+        />
 
-          return (
+        <Text style={styles.label}>{t('assignee')}</Text>
+        <TextInput
+          testID="input-assignee"
+          value={assignee}
+          onChangeText={setAssignee}
+          placeholder={t('assignee')}
+          placeholderTextColor="rgba(255,255,255,0.3)"
+          style={styles.input}
+          returnKeyType="done"
+        />
+
+        {suggestedAssignee || suggestLoading ? (
+          <View style={styles.suggestRow}>
+            <Sparkles color="rgba(99,102,241,0.9)" size={11} />
+
+            {suggestLoading ? (
+              <Text style={styles.suggestText}>AI is thinking...</Text>
+            ) : (
+              <>
+                <Text style={styles.suggestText}>Suggested:</Text>
+
+                <PressScale
+                  testID={`suggest-${suggestedAssignee}`}
+                  onPress={() => setAssignee(suggestedAssignee)}
+                  style={styles.suggestChip}
+                >
+                  <Text style={styles.suggestChipText}>{suggestedAssignee}</Text>
+                </PressScale>
+              </>
+            )}
+          </View>
+        ) : null}
+
+        <View style={styles.rowHeader}>
+          <CalendarClock color="rgba(255,255,255,0.55)" size={12} />
+          <Text style={styles.label}>Due date</Text>
+        </View>
+
+        <View style={styles.dueBox}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.dueTitle}>
+              {dueDate ? formatDetailedDue(dueDate, lang) : 'Not scheduled'}
+            </Text>
+            <Text style={styles.dueSub}>
+              {dueDate
+                ? 'This card will appear in Calendar.'
+                : 'Add a date to show this card in Calendar.'}
+            </Text>
+          </View>
+
+          <PressScale
+            testID="open-due-date"
+            onPress={() => setShowDatePicker(true)}
+            style={styles.dueAction}
+          >
+            <Text style={styles.dueActionText}>{dueDate ? 'Edit' : 'Set'}</Text>
+          </PressScale>
+
+          {dueDate ? (
             <PressScale
-              key={r}
-              testID={`rec-${r}`}
-              onPress={() => setRecurrence(r)}
-              style={[styles.pill, active && styles.pillActive]}
+              testID="clear-due-date-inline"
+              onPress={() => setDueDate(null)}
+              style={styles.clearDateBtn}
             >
-              <Text style={[styles.pillText, active && styles.pillTextActive]}>
-                {t(`rec_${r}`)}
-              </Text>
+              <CalendarX color="rgba(255,255,255,0.55)" size={15} />
             </PressScale>
-          );
-        })}
-      </View>
+          ) : null}
+        </View>
 
-      <View style={styles.rowHeader}>
-        <Bell color="rgba(255,255,255,0.55)" size={12} />
-        <Text style={styles.label}>{t('reminder')}</Text>
-      </View>
+        <View style={styles.rowHeader}>
+          <Repeat color="rgba(255,255,255,0.55)" size={12} />
+          <Text style={styles.label}>{t('recurrence')}</Text>
+        </View>
 
-      <View style={styles.pillRow}>
-        {REMINDERS.map((rem) => {
-          const active = reminderMins === rem.mins;
+        <View style={styles.pillRow}>
+          {RECURRENCES.map((r) => {
+            const active = recurrence === r;
 
-          return (
-            <PressScale
-              key={rem.mins}
-              testID={`rem-${rem.mins}`}
-              onPress={() => setReminderMins(rem.mins)}
-              style={[styles.pill, active && styles.pillActive]}
-            >
-              <Text style={[styles.pillText, active && styles.pillTextActive]}>
-                {t(rem.key)}
-              </Text>
-            </PressScale>
-          );
-        })}
-      </View>
+            return (
+              <PressScale
+                key={r}
+                testID={`rec-${r}`}
+                onPress={() => setRecurrence(r)}
+                style={[styles.pill, active && styles.pillActive]}
+              >
+                <Text style={[styles.pillText, active && styles.pillTextActive]}>
+                  {t(`rec_${r}`)}
+                </Text>
+              </PressScale>
+            );
+          })}
+        </View>
 
-      <View style={styles.footer}>
-        <PressScale testID="cancel-add-card" onPress={onClose} style={styles.cancelBtn}>
-          <Text style={styles.cancelText}>{t('cancel')}</Text>
-        </PressScale>
+        <View style={styles.rowHeader}>
+          <Bell color="rgba(255,255,255,0.55)" size={12} />
+          <Text style={styles.label}>{t('reminder')}</Text>
+        </View>
 
-        <PressScale
-          testID="save-add-card"
-          onPress={handleSave}
-          disabled={saving || !title.trim()}
-          style={[styles.saveBtn, (!title.trim() || saving) && { opacity: 0.5 }]}
-        >
-          <Text style={styles.saveText}>{saving ? '...' : t('save')}</Text>
-        </PressScale>
-      </View>
-    </KeyboardAwareBottomSheet>
+        <View style={styles.pillRow}>
+          {REMINDERS.map((rem) => {
+            const active = reminderMins === rem.mins;
+
+            return (
+              <PressScale
+                key={rem.mins}
+                testID={`rem-${rem.mins}`}
+                onPress={() => setReminderMins(rem.mins)}
+                style={[styles.pill, active && styles.pillActive]}
+              >
+                <Text style={[styles.pillText, active && styles.pillTextActive]}>
+                  {t(rem.key)}
+                </Text>
+              </PressScale>
+            );
+          })}
+        </View>
+
+        <View style={styles.footer}>
+          <PressScale testID="cancel-add-card" onPress={onClose} style={styles.cancelBtn}>
+            <Text style={styles.cancelText}>{t('cancel')}</Text>
+          </PressScale>
+
+          <PressScale
+            testID="save-add-card"
+            onPress={handleSave}
+            disabled={saving || !title.trim()}
+            style={[styles.saveBtn, (!title.trim() || saving) && { opacity: 0.5 }]}
+          >
+            <Text style={styles.saveText}>{saving ? '...' : t('save')}</Text>
+          </PressScale>
+        </View>
+      </KeyboardAwareBottomSheet>
+
+      <DateTimePickerSheet
+        visible={showDatePicker}
+        value={dueDate}
+        onChange={setDueDate}
+        onClose={() => setShowDatePicker(false)}
+      />
+    </>
   );
 }
 
@@ -457,6 +503,44 @@ const styles = StyleSheet.create({
     color: '#A5B4FC',
     fontFamily: 'Inter_600SemiBold',
     fontSize: 12,
+  },
+  dueBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 16,
+    padding: 12,
+  },
+  dueTitle: {
+    color: '#fff',
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 14,
+  },
+  dueSub: {
+    marginTop: 2,
+    color: 'rgba(255,255,255,0.48)',
+    fontFamily: 'Inter_400Regular',
+    fontSize: 11,
+  },
+  dueAction: {
+    borderRadius: 9999,
+    backgroundColor: '#fff',
+    paddingHorizontal: 13,
+    paddingVertical: 8,
+  },
+  dueActionText: {
+    color: '#080910',
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 12,
+  },
+  clearDateBtn: {
+    padding: 8,
+    borderRadius: 9999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
   },
   pillRow: {
     flexDirection: 'row',
