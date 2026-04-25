@@ -23,7 +23,7 @@ const TYPE_COLOR: Record<string, string> = {
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-function startOfMonth(date: Date) {
+function monthStart(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), 1);
 }
 
@@ -31,75 +31,85 @@ function addMonths(date: Date, amount: number) {
   return new Date(date.getFullYear(), date.getMonth() + amount, 1);
 }
 
-function toDateKey(date: Date) {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
+function dateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+
+  return `${year}-${month}-${day}`;
 }
 
-function parseCardDate(value?: string | null) {
+function parseDate(value?: string | null) {
   if (!value) return null;
 
   const date = new Date(value);
+
   if (Number.isNaN(date.getTime())) return null;
 
   return date;
 }
 
-function getCardDayKey(card: Card) {
-  const date = parseCardDate(card.due_date);
-  return date ? toDateKey(date) : null;
+function cardDateKey(card: Card) {
+  const date = parseDate(card.due_date);
+
+  if (!date) return null;
+
+  return dateKey(date);
 }
 
-function groupCardsByDay(cards: Card[]) {
-  const groups: Record<string, Card[]> = {};
+function groupCards(cards: Card[]) {
+  const grouped: Record<string, Card[]> = {};
 
   cards.forEach((card) => {
-    const key = getCardDayKey(card);
+    const key = cardDateKey(card);
+
     if (!key) return;
 
-    groups[key] = groups[key] || [];
-    groups[key].push(card);
+    grouped[key] = grouped[key] || [];
+    grouped[key].push(card);
   });
 
-  Object.values(groups).forEach((items) => {
+  Object.values(grouped).forEach((items) => {
     items.sort((a, b) => {
-      const da = parseCardDate(a.due_date)?.getTime() || 0;
-      const db = parseCardDate(b.due_date)?.getTime() || 0;
-      return da - db;
+      const left = parseDate(a.due_date)?.getTime() || 0;
+      const right = parseDate(b.due_date)?.getTime() || 0;
+
+      return left - right;
     });
   });
 
-  return groups;
+  return grouped;
 }
 
-function buildMonthCells(monthDate: Date, grouped: Record<string, Card[]>) {
-  const first = startOfMonth(monthDate);
-  const startOffset = first.getDay();
+function buildCells(currentMonth: Date, grouped: Record<string, Card[]>) {
+  const first = monthStart(currentMonth);
+  const firstWeekday = first.getDay();
+
   const gridStart = new Date(first);
-  gridStart.setDate(first.getDate() - startOffset);
+  gridStart.setDate(first.getDate() - firstWeekday);
+
+  const todayKey = dateKey(new Date());
 
   return Array.from({ length: 42 }, (_, index) => {
     const date = new Date(gridStart);
     date.setDate(gridStart.getDate() + index);
 
-    const key = toDateKey(date);
-    const todayKey = toDateKey(new Date());
+    const key = dateKey(date);
 
     return {
       key,
       date,
-      dayNumber: date.getDate(),
-      inCurrentMonth: date.getMonth() === monthDate.getMonth(),
+      day: date.getDate(),
+      isCurrentMonth: date.getMonth() === currentMonth.getMonth(),
       isToday: key === todayKey,
       items: grouped[key] || [],
     };
   });
 }
 
-function formatCardTime(value?: string | null) {
-  const date = parseCardDate(value);
+function formatTime(value?: string | null) {
+  const date = parseDate(value);
+
   if (!date) return '';
 
   return date.toLocaleTimeString([], {
@@ -108,8 +118,9 @@ function formatCardTime(value?: string | null) {
   });
 }
 
-function formatShortDate(value?: string | null) {
-  const date = parseCardDate(value);
+function formatShort(value?: string | null) {
+  const date = parseDate(value);
+
   if (!date) return '';
 
   return date.toLocaleDateString([], {
@@ -125,16 +136,16 @@ export default function CalendarScreen() {
   const [cards, setCards] = useState<Card[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [monthDate, setMonthDate] = useState(() => startOfMonth(new Date()));
-  const [selectedDay, setSelectedDay] = useState(() => toDateKey(new Date()));
+  const [currentMonth, setCurrentMonth] = useState(() => monthStart(new Date()));
+  const [selectedDay, setSelectedDay] = useState(() => dateKey(new Date()));
 
   const load = useCallback(async () => {
     try {
       setErrorMessage(null);
 
-      const res = await api.listCards();
+      const response = await api.listCards();
 
-      setCards(res.filter((card) => card.status === 'OPEN' && Boolean(card.due_date)));
+      setCards(response.filter((card) => card.status === 'OPEN' && Boolean(card.due_date)));
     } catch (e: any) {
       logger.warn('Calendar load failed:', e?.message || e);
       setErrorMessage(e?.message || 'Could not load calendar.');
@@ -153,36 +164,34 @@ export default function CalendarScreen() {
     load();
   }, [load]);
 
-  const grouped = useMemo(() => groupCardsByDay(cards), [cards]);
+  const locale = lang === 'es' ? 'es-ES' : 'en-US';
 
-  const monthCells = useMemo(
-    () => buildMonthCells(monthDate, grouped),
-    [monthDate, grouped]
-  );
-
-  const monthCards = useMemo(() => {
-    return cards
-      .filter((card) => {
-        const date = parseCardDate(card.due_date);
-        if (!date) return false;
-
-        return (
-          date.getFullYear() === monthDate.getFullYear() &&
-          date.getMonth() === monthDate.getMonth()
-        );
-      })
-      .sort((a, b) => {
-        const da = parseCardDate(a.due_date)?.getTime() || 0;
-        const db = parseCardDate(b.due_date)?.getTime() || 0;
-        return da - db;
-      });
-  }, [cards, monthDate]);
+  const grouped = useMemo(() => groupCards(cards), [cards]);
+  const cells = useMemo(() => buildCells(currentMonth, grouped), [currentMonth, grouped]);
 
   const selectedItems = grouped[selectedDay] || [];
 
-  const locale = lang === 'es' ? 'es-ES' : 'en-US';
+  const monthItems = useMemo(() => {
+    return cards
+      .filter((card) => {
+        const due = parseDate(card.due_date);
 
-  const monthLabel = monthDate.toLocaleDateString(locale, {
+        if (!due) return false;
+
+        return (
+          due.getFullYear() === currentMonth.getFullYear() &&
+          due.getMonth() === currentMonth.getMonth()
+        );
+      })
+      .sort((a, b) => {
+        const left = parseDate(a.due_date)?.getTime() || 0;
+        const right = parseDate(b.due_date)?.getTime() || 0;
+
+        return left - right;
+      });
+  }, [cards, currentMonth]);
+
+  const monthLabel = currentMonth.toLocaleDateString(locale, {
     month: 'long',
     year: 'numeric',
   });
@@ -192,9 +201,6 @@ export default function CalendarScreen() {
     month: 'short',
     day: 'numeric',
   });
-
-  const openCount = cards.length;
-  const monthCount = monthCards.length;
 
   const showBlockingError = !loading && Boolean(errorMessage) && cards.length === 0;
 
@@ -214,13 +220,13 @@ export default function CalendarScreen() {
           <View style={styles.summaryRow}>
             <View style={styles.summaryCard}>
               <CalendarDays color="#F97316" size={16} />
-              <Text style={styles.summaryValue}>{monthCount}</Text>
+              <Text style={styles.summaryValue}>{monthItems.length}</Text>
               <Text style={styles.summaryLabel}>This month</Text>
             </View>
 
             <View style={styles.summaryCard}>
               <ListChecks color="#10B981" size={16} />
-              <Text style={styles.summaryValue}>{openCount}</Text>
+              <Text style={styles.summaryValue}>{cards.length}</Text>
               <Text style={styles.summaryLabel}>Scheduled open items</Text>
             </View>
           </View>
@@ -228,7 +234,7 @@ export default function CalendarScreen() {
           <View style={styles.monthHeader}>
             <PressScale
               testID="calendar-prev-month"
-              onPress={() => setMonthDate((current) => addMonths(current, -1))}
+              onPress={() => setCurrentMonth((value) => addMonths(value, -1))}
               style={styles.monthNavBtn}
             >
               <ChevronLeft color="#fff" size={18} />
@@ -238,7 +244,7 @@ export default function CalendarScreen() {
 
             <PressScale
               testID="calendar-next-month"
-              onPress={() => setMonthDate((current) => addMonths(current, 1))}
+              onPress={() => setCurrentMonth((value) => addMonths(value, 1))}
               style={styles.monthNavBtn}
             >
               <ChevronRight color="#fff" size={18} />
@@ -254,15 +260,15 @@ export default function CalendarScreen() {
           ) : (
             <>
               <View style={styles.weekRow}>
-                {WEEKDAYS.map((day) => (
-                  <Text key={day} style={styles.weekDay}>
-                    {day}
+                {WEEKDAYS.map((weekday) => (
+                  <Text key={weekday} style={styles.weekDay}>
+                    {weekday}
                   </Text>
                 ))}
               </View>
 
-              <View style={styles.monthGrid}>
-                {monthCells.map((cell) => {
+              <View style={styles.calendarBox}>
+                {cells.map((cell) => {
                   const selected = cell.key === selectedDay;
 
                   return (
@@ -272,35 +278,36 @@ export default function CalendarScreen() {
                       onPress={() => setSelectedDay(cell.key)}
                       style={[
                         styles.dayCell,
-                        !cell.inCurrentMonth && styles.dayCellMuted,
+                        !cell.isCurrentMonth && styles.dayCellOtherMonth,
                         cell.isToday && styles.dayCellToday,
                         selected && styles.dayCellSelected,
                       ]}
                     >
-                      <View style={styles.dayTopRow}>
+                      <View style={styles.dayHeader}>
                         <Text
                           style={[
                             styles.dayNumber,
-                            !cell.inCurrentMonth && styles.dayNumberMuted,
+                            !cell.isCurrentMonth && styles.dayNumberOtherMonth,
+                            selected && styles.dayNumberSelected,
                           ]}
                         >
-                          {cell.dayNumber}
+                          {cell.day}
                         </Text>
 
                         {cell.items.length > 0 ? (
-                          <View style={styles.dayCountBadge}>
-                            <Text style={styles.dayCountText}>{cell.items.length}</Text>
+                          <View style={styles.countBadge}>
+                            <Text style={styles.countText}>{cell.items.length}</Text>
                           </View>
                         ) : null}
                       </View>
 
-                      <View style={styles.dayDots}>
+                      <View style={styles.dotRow}>
                         {cell.items.slice(0, 3).map((item) => (
                           <View
                             key={item.card_id}
                             style={[
-                              styles.dayDot,
-                              { backgroundColor: TYPE_COLOR[item.type] || '#fff' },
+                              styles.dot,
+                              { backgroundColor: TYPE_COLOR[item.type] || '#FFFFFF' },
                             ]}
                           />
                         ))}
@@ -318,18 +325,17 @@ export default function CalendarScreen() {
               </View>
 
               {selectedItems.length === 0 ? (
-                <EmptyState
-                  title={t('no_events')}
-                  message="No scheduled household cards for this date."
-                />
+                <GlassCard style={styles.emptyMiniCard}>
+                  <Text style={styles.emptyMiniText}>No scheduled cards for this date.</Text>
+                </GlassCard>
               ) : (
                 selectedItems.map((card) => (
                   <GlassCard key={card.card_id} style={styles.itemCard}>
-                    <View style={styles.row}>
+                    <View style={styles.itemRow}>
                       <View
                         style={[
-                          styles.dot,
-                          { backgroundColor: TYPE_COLOR[card.type] || '#fff' },
+                          styles.itemTypeDot,
+                          { backgroundColor: TYPE_COLOR[card.type] || '#FFFFFF' },
                         ]}
                       />
 
@@ -338,14 +344,14 @@ export default function CalendarScreen() {
                           {card.title}
                         </Text>
 
-                        <Text style={styles.meta}>
-                          {[formatCardTime(card.due_date), card.assignee]
+                        <Text style={styles.itemMeta}>
+                          {[formatTime(card.due_date), card.assignee]
                             .filter(Boolean)
-                            .join(' · ') || 'No assignee'}
+                            .join(' · ') || 'Unassigned'}
                         </Text>
                       </View>
 
-                      <Text style={[styles.typeLabel, { color: TYPE_COLOR[card.type] }]}>
+                      <Text style={[styles.typeLabel, { color: TYPE_COLOR[card.type] || '#fff' }]}>
                         {card.type === 'SIGN_SLIP'
                           ? t('sign_slip')
                           : card.type === 'RSVP'
@@ -359,18 +365,19 @@ export default function CalendarScreen() {
 
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>Monthly recap</Text>
-                <Text style={styles.sectionMeta}>{monthCount} scheduled</Text>
+                <Text style={styles.sectionMeta}>{monthItems.length} scheduled</Text>
               </View>
 
-              {monthCards.length === 0 ? (
-                <GlassCard style={styles.emptyCard}>
-                  <Text style={styles.emptyText}>Nothing scheduled for this month yet.</Text>
-                </GlassCard>
+              {monthItems.length === 0 ? (
+                <EmptyState
+                  title="No dates yet"
+                  message="Cards with due dates will appear here. Add a due date from the Feed add-card form."
+                />
               ) : (
-                monthCards.map((card) => (
-                  <GlassCard key={`recap-${card.card_id}`} style={styles.recapCard}>
+                monthItems.map((card) => (
+                  <GlassCard key={`month-${card.card_id}`} style={styles.recapCard}>
                     <View style={styles.recapRow}>
-                      <Text style={styles.recapDate}>{formatShortDate(card.due_date)}</Text>
+                      <Text style={styles.recapDate}>{formatShort(card.due_date)}</Text>
 
                       <View style={{ flex: 1 }}>
                         <Text style={styles.recapTitle} numberOfLines={1}>
@@ -378,7 +385,7 @@ export default function CalendarScreen() {
                         </Text>
 
                         <Text style={styles.recapMeta} numberOfLines={1}>
-                          {[formatCardTime(card.due_date), card.assignee]
+                          {[formatTime(card.due_date), card.assignee]
                             .filter(Boolean)
                             .join(' · ') || 'Unassigned'}
                         </Text>
@@ -404,22 +411,18 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   scroll: { paddingHorizontal: 20, paddingTop: 14 },
   title: {
-    fontFamily: 'PlayfairDisplay_400Regular_Italic',
     color: '#fff',
+    fontFamily: 'PlayfairDisplay_400Regular_Italic',
     fontSize: 40,
     lineHeight: 46,
   },
   sub: {
-    fontFamily: 'Inter_400Regular',
     color: 'rgba(255,255,255,0.55)',
+    fontFamily: 'Inter_400Regular',
     fontSize: 13,
     marginBottom: 18,
   },
-  summaryRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 18,
-  },
+  summaryRow: { flexDirection: 'row', gap: 12, marginBottom: 18 },
   summaryCard: {
     flex: 1,
     borderRadius: 20,
@@ -463,101 +466,125 @@ const styles = StyleSheet.create({
     fontSize: 16,
     textTransform: 'capitalize',
   },
-  weekRow: { flexDirection: 'row', marginBottom: 8 },
+  weekRow: {
+    flexDirection: 'row',
+    marginBottom: 8,
+  },
   weekDay: {
-    width: `${100 / 7}%`,
-    color: 'rgba(255,255,255,0.45)',
-    fontFamily: 'Inter_600SemiBold',
+    flex: 1,
+    color: 'rgba(255,255,255,0.55)',
+    fontFamily: 'Inter_700Bold',
     fontSize: 10,
     textAlign: 'center',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
-  monthGrid: {
+  calendarBox: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     borderRadius: 24,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    backgroundColor: 'rgba(255,255,255,0.025)',
+    borderColor: 'rgba(255,255,255,0.10)',
+    backgroundColor: 'rgba(255,255,255,0.035)',
   },
   dayCell: {
-    width: `${100 / 7}%`,
-    minHeight: 72,
-    padding: 7,
+    width: '14.2857%',
+    minHeight: 74,
+    paddingHorizontal: 6,
+    paddingVertical: 7,
     borderRightWidth: 1,
     borderBottomWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
+    borderColor: 'rgba(255,255,255,0.07)',
+    backgroundColor: 'rgba(255,255,255,0.015)',
   },
-  dayCellMuted: { opacity: 0.38 },
-  dayCellToday: { backgroundColor: 'rgba(249,115,22,0.10)' },
-  dayCellSelected: { backgroundColor: 'rgba(99,102,241,0.20)' },
-  dayTopRow: {
+  dayCellOtherMonth: {
+    backgroundColor: 'rgba(255,255,255,0.005)',
+  },
+  dayCellToday: {
+    backgroundColor: 'rgba(249,115,22,0.12)',
+  },
+  dayCellSelected: {
+    backgroundColor: 'rgba(99,102,241,0.28)',
+  },
+  dayHeader: {
+    minHeight: 20,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   dayNumber: {
-    color: '#fff',
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 12,
+    color: '#FFFFFF',
+    fontFamily: 'Inter_700Bold',
+    fontSize: 13,
   },
-  dayNumberMuted: { color: 'rgba(255,255,255,0.45)' },
-  dayCountBadge: {
+  dayNumberOtherMonth: {
+    color: 'rgba(255,255,255,0.35)',
+  },
+  dayNumberSelected: {
+    color: '#FFFFFF',
+  },
+  countBadge: {
     minWidth: 18,
     height: 18,
     borderRadius: 9999,
-    backgroundColor: 'rgba(255,255,255,0.92)',
+    paddingHorizontal: 4,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 4,
+    backgroundColor: '#FFFFFF',
   },
-  dayCountText: {
+  countText: {
     color: '#080910',
     fontFamily: 'Inter_700Bold',
     fontSize: 10,
   },
-  dayDots: {
+  dotRow: {
+    marginTop: 13,
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 3,
-    marginTop: 12,
   },
-  dayDot: { width: 6, height: 6, borderRadius: 9999 },
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 9999,
+  },
   sectionHeader: {
     marginTop: 22,
     marginBottom: 10,
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'flex-end',
+    justifyContent: 'space-between',
     gap: 12,
   },
   sectionTitle: {
     color: '#fff',
     fontFamily: 'Inter_600SemiBold',
     fontSize: 14,
+    textTransform: 'capitalize',
   },
   sectionMeta: {
     color: 'rgba(255,255,255,0.45)',
     fontFamily: 'Inter_400Regular',
     fontSize: 12,
   },
-  emptyCard: { marginBottom: 10 },
-  emptyText: {
-    fontFamily: 'PlayfairDisplay_400Regular_Italic',
-    color: 'rgba(255,255,255,0.5)',
-    fontSize: 18,
+  emptyMiniCard: {
+    marginBottom: 10,
+  },
+  emptyMiniText: {
+    color: 'rgba(255,255,255,0.55)',
+    fontFamily: 'Inter_400Regular',
+    fontSize: 13,
   },
   itemCard: { marginBottom: 10 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 14 },
-  dot: { width: 10, height: 10, borderRadius: 9999 },
+  itemRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  itemTypeDot: { width: 10, height: 10, borderRadius: 9999 },
   itemTitle: {
-    fontFamily: 'Inter_500Medium',
     color: '#fff',
+    fontFamily: 'Inter_500Medium',
     fontSize: 15,
   },
-  meta: {
+  itemMeta: {
     color: 'rgba(255,255,255,0.5)',
     fontFamily: 'Inter_400Regular',
     fontSize: 12,
