@@ -7,10 +7,7 @@ import {
   ActivityIndicator,
   Modal,
   TextInput,
-  KeyboardAvoidingView,
   Platform,
-  TouchableWithoutFeedback,
-  Keyboard,
   Image,
   Alert,
 } from 'react-native';
@@ -18,10 +15,21 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
 import { useFocusEffect } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { Plus, X, Lock, Trash2, Stethoscope, BookOpen, Shield, Scale } from 'lucide-react-native';
+import {
+  Plus,
+  X,
+  Lock,
+  Trash2,
+  Stethoscope,
+  BookOpen,
+  Shield,
+  Scale,
+} from 'lucide-react-native';
+
 import { AmbientBackground } from '../../src/components/AmbientBackground';
-import { GlassCard } from '../../src/components/GlassCard';
 import { PressScale } from '../../src/components/PressScale';
+import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
+
 import { useStore } from '../../src/store';
 import { api, VaultDoc } from '../../src/api';
 
@@ -34,12 +42,12 @@ const CATEGORIES = [
 
 export default function VaultScreen() {
   const { t } = useStore();
+
   const [docs, setDocs] = useState<VaultDoc[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [preview, setPreview] = useState<VaultDoc | null>(null);
 
-  // add doc form
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState('Medical');
   const [image, setImage] = useState<string | null>(null);
@@ -47,72 +55,122 @@ export default function VaultScreen() {
 
   const load = useCallback(async () => {
     try {
+      setLoading(true);
+
       const res = await api.listVault();
       setDocs(res);
     } catch (e) {
-      console.log(e);
+      console.log('Vault load failed:', e);
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
-  useEffect(() => { load(); }, [load]);
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load])
+  );
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const openAdd = () => {
+    setTitle('');
+    setCategory('Medical');
+    setImage(null);
+    setShowAdd(true);
+  };
+
+  const closeAdd = () => {
+    setShowAdd(false);
+  };
 
   const pickImage = async () => {
     if (Platform.OS !== 'web') {
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+
       if (!perm.granted) {
         Alert.alert('Permission needed', 'Gallery access is required.');
         return;
       }
     }
+
     const res = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       base64: true,
       quality: 0.6,
     });
+
     if (!res.canceled && res.assets?.[0]) {
-      const a = res.assets[0];
-      const b64 = a.base64 ? `data:image/jpeg;base64,${a.base64}` : a.uri;
-      setImage(b64);
+      const asset = res.assets[0];
+      const imageValue = asset.base64
+        ? `data:image/jpeg;base64,${asset.base64}`
+        : asset.uri;
+
+      setImage(imageValue);
     }
   };
 
   const save = async () => {
     if (!title.trim() || !image) return;
+
     setSaving(true);
+
     try {
-      await api.createVaultDoc({ title: title.trim(), category, image_base64: image });
-      setTitle(''); setImage(null); setCategory('Medical');
+      await api.createVaultDoc({
+        title: title.trim(),
+        category,
+        image_base64: image,
+      });
+
+      setTitle('');
+      setImage(null);
+      setCategory('Medical');
       setShowAdd(false);
-      load();
-    } catch (e) {
-      console.log(e);
+
+      await load();
+    } catch (e: any) {
+      console.log('Save vault document failed:', e);
+      Alert.alert('Save failed', e?.message || 'Please try again.');
     } finally {
       setSaving(false);
     }
   };
 
   const remove = async (doc: VaultDoc) => {
-    setDocs((p) => p.filter((d) => d.doc_id !== doc.doc_id));
+    setDocs((previous) => previous.filter((d) => d.doc_id !== doc.doc_id));
     setPreview(null);
-    try { await api.deleteVaultDoc(doc.doc_id); } catch { load(); }
+
+    try {
+      await api.deleteVaultDoc(doc.doc_id);
+    } catch {
+      load();
+    }
   };
 
   return (
     <View style={styles.container}>
       <AmbientBackground />
-      <SafeAreaView style={{ flex: 1 }} edges={['top']}>
-        <ScrollView contentContainerStyle={styles.scroll}>
+
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
           <View style={styles.headerRow}>
             <View style={{ flex: 1 }}>
               <Text style={styles.title}>{t('vault')}</Text>
-              <Text style={styles.sub}>
-                <Lock color="rgba(255,255,255,0.45)" size={11} /> End-to-end · Family only
-              </Text>
+
+              <View style={styles.subRow}>
+                <Lock color="rgba(255,255,255,0.45)" size={11} />
+                <Text style={styles.sub}>End-to-end · Family only</Text>
+              </View>
             </View>
-            <PressScale testID="vault-add" onPress={() => setShowAdd(true)} style={styles.addBtn}>
+
+            <PressScale testID="vault-add" onPress={openAdd} style={styles.addBtn}>
               <Plus color="#080910" size={18} />
             </PressScale>
           </View>
@@ -129,6 +187,7 @@ export default function VaultScreen() {
               {docs.map((d) => {
                 const cat = CATEGORIES.find((c) => c.key === d.category) || CATEGORIES[0];
                 const Icon = cat.icon;
+
                 return (
                   <PressScale
                     key={d.doc_id}
@@ -138,14 +197,16 @@ export default function VaultScreen() {
                   >
                     <Image source={{ uri: d.image_base64 }} style={styles.tileImg} />
                     <View style={styles.tileOverlay} />
+
                     <View style={styles.tileTop}>
-                      <View style={[styles.catPill, { borderColor: cat.tone + '88' }]}>
+                      <View style={[styles.catPill, { borderColor: `${cat.tone}88` }]}>
                         <Icon color={cat.tone} size={11} />
                         <Text style={[styles.catText, { color: cat.tone }]}>
                           {t(d.category.toLowerCase())}
                         </Text>
                       </View>
                     </View>
+
                     <Text style={styles.tileTitle} numberOfLines={2}>
                       {d.title}
                     </Text>
@@ -159,103 +220,107 @@ export default function VaultScreen() {
         </ScrollView>
       </SafeAreaView>
 
-      {/* Add Modal */}
-      <Modal visible={showAdd} transparent animationType="fade" onRequestClose={() => setShowAdd(false)}>
-        <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
-        <View style={styles.backdrop} />
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={{ flex: 1, justifyContent: 'flex-end' }}
-        >
-          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-            <View style={styles.sheet}>
-              <View style={styles.sheetHeader}>
-                <Text style={styles.sheetTitle}>{t('add_document')}</Text>
-                <PressScale testID="vault-close" onPress={() => setShowAdd(false)} style={styles.iconBtn}>
-                  <X color="#fff" size={18} />
-                </PressScale>
-              </View>
+      <KeyboardAwareBottomSheet
+        visible={showAdd}
+        onClose={closeAdd}
+        contentStyle={styles.sheet}
+      >
+        <View style={styles.sheetHeader}>
+          <Text style={styles.sheetTitle}>{t('add_document')}</Text>
 
-              <Text style={styles.label}>{t('title')}</Text>
-              <TextInput
-                testID="vault-title"
-                value={title}
-                onChangeText={setTitle}
-                placeholder={t('title')}
-                placeholderTextColor="rgba(255,255,255,0.3)"
-                style={styles.input}
-              />
+          <PressScale testID="vault-close" onPress={closeAdd} style={styles.iconBtn}>
+            <X color="#fff" size={18} />
+          </PressScale>
+        </View>
 
-              <Text style={styles.label}>{t('doc_category')}</Text>
-              <View style={styles.catRow}>
-                {CATEGORIES.map((c) => {
-                  const Icon = c.icon;
-                  const active = category === c.key;
-                  return (
-                    <PressScale
-                      key={c.key}
-                      testID={`vault-cat-${c.key}`}
-                      onPress={() => setCategory(c.key)}
-                      style={[
-                        styles.catBtn,
-                        {
-                          borderColor: active ? c.tone : 'rgba(255,255,255,0.1)',
-                          backgroundColor: active ? c.tone + '22' : 'transparent',
-                        },
-                      ]}
-                    >
-                      <Icon color={active ? c.tone : 'rgba(255,255,255,0.6)'} size={14} />
-                      <Text style={[styles.catBtnLabel, { color: active ? c.tone : 'rgba(255,255,255,0.7)' }]}>
-                        {t(c.key.toLowerCase())}
-                      </Text>
-                    </PressScale>
-                  );
-                })}
-              </View>
+        <Text style={styles.label}>{t('title')}</Text>
+        <TextInput
+          testID="vault-title"
+          value={title}
+          onChangeText={setTitle}
+          placeholder={t('title')}
+          placeholderTextColor="rgba(255,255,255,0.3)"
+          style={styles.input}
+          returnKeyType="next"
+        />
 
-              <PressScale testID="vault-pick" onPress={pickImage} style={styles.pick}>
-                {image ? (
-                  <Image source={{ uri: image }} style={styles.pickImg} />
-                ) : (
-                  <Text style={styles.pickText}>Tap to pick document image</Text>
-                )}
-              </PressScale>
+        <Text style={styles.label}>{t('doc_category')}</Text>
+        <View style={styles.catRow}>
+          {CATEGORIES.map((c) => {
+            const Icon = c.icon;
+            const active = category === c.key;
 
-              <View style={styles.sheetFooter}>
-                <PressScale testID="vault-cancel" onPress={() => setShowAdd(false)} style={styles.cancelBtn}>
-                  <Text style={styles.cancelText}>{t('cancel')}</Text>
-                </PressScale>
-                <PressScale
-                  testID="vault-save"
-                  onPress={save}
-                  disabled={saving || !title.trim() || !image}
-                  style={[styles.saveBtn, (!title.trim() || !image || saving) && { opacity: 0.5 }]}
+            return (
+              <PressScale
+                key={c.key}
+                testID={`vault-cat-${c.key}`}
+                onPress={() => setCategory(c.key)}
+                style={[
+                  styles.catBtn,
+                  {
+                    borderColor: active ? c.tone : 'rgba(255,255,255,0.1)',
+                    backgroundColor: active ? `${c.tone}22` : 'transparent',
+                  },
+                ]}
+              >
+                <Icon color={active ? c.tone : 'rgba(255,255,255,0.6)'} size={14} />
+                <Text
+                  style={[
+                    styles.catBtnLabel,
+                    { color: active ? c.tone : 'rgba(255,255,255,0.7)' },
+                  ]}
                 >
-                  <Text style={styles.saveText}>{saving ? '...' : t('save')}</Text>
-                </PressScale>
-              </View>
-            </View>
-          </TouchableWithoutFeedback>
-        </KeyboardAvoidingView>
-      </Modal>
+                  {t(c.key.toLowerCase())}
+                </Text>
+              </PressScale>
+            );
+          })}
+        </View>
 
-      {/* Preview Modal */}
+        <PressScale testID="vault-pick" onPress={pickImage} style={styles.pick}>
+          {image ? (
+            <Image source={{ uri: image }} style={styles.pickImg} />
+          ) : (
+            <Text style={styles.pickText}>Tap to pick document image</Text>
+          )}
+        </PressScale>
+
+        <View style={styles.sheetFooter}>
+          <PressScale testID="vault-cancel" onPress={closeAdd} style={styles.cancelBtn}>
+            <Text style={styles.cancelText}>{t('cancel')}</Text>
+          </PressScale>
+
+          <PressScale
+            testID="vault-save"
+            onPress={save}
+            disabled={saving || !title.trim() || !image}
+            style={[styles.saveBtn, (!title.trim() || !image || saving) && { opacity: 0.5 }]}
+          >
+            <Text style={styles.saveText}>{saving ? '...' : t('save')}</Text>
+          </PressScale>
+        </View>
+      </KeyboardAwareBottomSheet>
+
       <Modal visible={!!preview} transparent animationType="fade" onRequestClose={() => setPreview(null)}>
         <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
         <View style={styles.backdrop} />
+
         {preview ? (
           <View style={styles.previewWrap}>
             <View style={styles.previewTop}>
               <Text style={styles.previewTitle}>{preview.title}</Text>
-              <View style={{ flexDirection: 'row', gap: 8 }}>
+
+              <View style={styles.previewActions}>
                 <PressScale testID="preview-delete" onPress={() => remove(preview)} style={styles.iconBtn}>
                   <Trash2 color="#EF4444" size={18} />
                 </PressScale>
+
                 <PressScale testID="preview-close" onPress={() => setPreview(null)} style={styles.iconBtn}>
                   <X color="#fff" size={18} />
                 </PressScale>
               </View>
             </View>
+
             <Image source={{ uri: preview.image_base64 }} style={styles.previewImg} />
           </View>
         ) : null}
@@ -266,21 +331,51 @@ export default function VaultScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#080910' },
+  safeArea: { flex: 1 },
   scroll: { paddingHorizontal: 20, paddingTop: 14 },
   headerRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 24 },
-  title: { fontFamily: 'PlayfairDisplay_400Regular_Italic', color: '#fff', fontSize: 40, lineHeight: 46 },
-  sub: { fontFamily: 'Inter_400Regular', color: 'rgba(255,255,255,0.55)', fontSize: 12, marginTop: 2 },
-  addBtn: {
-    width: 44, height: 44, borderRadius: 9999, backgroundColor: '#fff',
-    alignItems: 'center', justifyContent: 'center',
+  title: {
+    fontFamily: 'PlayfairDisplay_400Regular_Italic',
+    color: '#fff',
+    fontSize: 40,
+    lineHeight: 46,
   },
-  empty: { alignItems: 'center', justifyContent: 'center', paddingVertical: 80, gap: 14 },
+  subRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 2,
+  },
+  sub: {
+    fontFamily: 'Inter_400Regular',
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 12,
+  },
+  addBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 9999,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  empty: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 80,
+    gap: 14,
+  },
   emptyText: {
     fontFamily: 'PlayfairDisplay_400Regular_Italic',
     color: 'rgba(255,255,255,0.5)',
     fontSize: 22,
   },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 14, justifyContent: 'space-between' },
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 14,
+    justifyContent: 'space-between',
+  },
   tile: {
     width: '48%',
     aspectRatio: 0.85,
@@ -296,60 +391,165 @@ const styles = StyleSheet.create({
   tileOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(8,9,16,0.55)' },
   tileTop: { flexDirection: 'row' },
   catPill: {
-    flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4,
-    borderWidth: 1, borderRadius: 9999, backgroundColor: 'rgba(8,9,16,0.6)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderRadius: 9999,
+    backgroundColor: 'rgba(8,9,16,0.6)',
   },
-  catText: { fontFamily: 'Inter_600SemiBold', fontSize: 10, letterSpacing: 0.4 },
-  tileTitle: { color: '#fff', fontFamily: 'Inter_600SemiBold', fontSize: 13, lineHeight: 18 },
+  catText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 10,
+    letterSpacing: 0.4,
+  },
+  tileTitle: {
+    color: '#fff',
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 13,
+    lineHeight: 18,
+  },
   backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(8,9,16,0.5)' },
   sheet: {
-    backgroundColor: 'rgba(20,22,32,0.96)',
+    backgroundColor: 'rgba(20,22,32,0.98)',
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
     padding: 24,
-    paddingBottom: 36,
+    paddingBottom: 130,
   },
-  sheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  sheetTitle: { fontFamily: 'PlayfairDisplay_400Regular_Italic', fontSize: 26, color: '#fff' },
-  iconBtn: { padding: 8, borderRadius: 9999, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+  sheetHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  sheetTitle: {
+    fontFamily: 'PlayfairDisplay_400Regular_Italic',
+    fontSize: 26,
+    color: '#fff',
+  },
+  iconBtn: {
+    padding: 8,
+    borderRadius: 9999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
   label: {
-    fontFamily: 'Inter_500Medium', fontSize: 11, color: 'rgba(255,255,255,0.5)',
-    textTransform: 'uppercase', letterSpacing: 1, marginTop: 12, marginBottom: 8,
+    fontFamily: 'Inter_500Medium',
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.5)',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginTop: 12,
+    marginBottom: 8,
   },
   input: {
     backgroundColor: 'rgba(255,255,255,0.04)',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
-    borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12,
-    color: '#fff', fontFamily: 'Inter_400Regular', fontSize: 15,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    color: '#fff',
+    fontFamily: 'Inter_400Regular',
+    fontSize: 15,
   },
-  catRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  catRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
   catBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingHorizontal: 12, paddingVertical: 9, borderRadius: 9999, borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 9999,
+    borderWidth: 1,
   },
-  catBtnLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
+  catBtnLabel: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 12,
+  },
   pick: {
-    marginTop: 16, height: 140, borderRadius: 16, borderWidth: 1, borderStyle: 'dashed',
-    borderColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center',
-    overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.03)',
+    marginTop: 16,
+    height: 140,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    backgroundColor: 'rgba(255,255,255,0.03)',
   },
   pickImg: { ...StyleSheet.absoluteFillObject, resizeMode: 'cover' },
-  pickText: { color: 'rgba(255,255,255,0.5)', fontFamily: 'Inter_400Regular', fontSize: 13 },
-  sheetFooter: { flexDirection: 'row', gap: 12, marginTop: 20 },
-  cancelBtn: {
-    flex: 1, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 14, paddingVertical: 14, alignItems: 'center',
+  pickText: {
+    color: 'rgba(255,255,255,0.5)',
+    fontFamily: 'Inter_400Regular',
+    fontSize: 13,
   },
-  cancelText: { color: 'rgba(255,255,255,0.7)', fontFamily: 'Inter_500Medium', fontSize: 15 },
-  saveBtn: { flex: 1, backgroundColor: '#fff', borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
-  saveText: { color: '#080910', fontFamily: 'Inter_600SemiBold', fontSize: 15 },
-  previewWrap: { flex: 1, padding: 24, justifyContent: 'center' },
-  previewTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
-  previewTitle: { flex: 1, color: '#fff', fontFamily: 'PlayfairDisplay_400Regular_Italic', fontSize: 24 },
+  sheetFooter: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 20,
+  },
+  cancelBtn: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  cancelText: {
+    color: 'rgba(255,255,255,0.7)',
+    fontFamily: 'Inter_500Medium',
+    fontSize: 15,
+  },
+  saveBtn: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  saveText: {
+    color: '#080910',
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 15,
+  },
+  previewWrap: {
+    flex: 1,
+    padding: 24,
+    justifyContent: 'center',
+  },
+  previewTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  previewTitle: {
+    flex: 1,
+    color: '#fff',
+    fontFamily: 'PlayfairDisplay_400Regular_Italic',
+    fontSize: 24,
+  },
+  previewActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
   previewImg: {
-    width: '100%', aspectRatio: 0.75, borderRadius: 20,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
+    width: '100%',
+    aspectRatio: 0.75,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
   },
 });
