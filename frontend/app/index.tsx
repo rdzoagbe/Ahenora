@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Pressable, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
@@ -10,7 +10,9 @@ WebBrowser.maybeCompleteAuthSession();
 
 export default function Landing() {
   const router = useRouter();
-  const { setUserFromAuth } = useStore();
+  const handledResponseRef = useRef(false);
+
+  const { user, loading, setUserFromAuth } = useStore();
 
   const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
   const androidClientId = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID;
@@ -27,21 +29,36 @@ export default function Landing() {
   }, [request, webClientId, androidClientId]);
 
   useEffect(() => {
+    if (!loading && user) {
+      console.log('Existing authenticated user found. Redirecting to feed.');
+      router.replace('/feed');
+    }
+  }, [loading, user, router]);
+
+  useEffect(() => {
     const handleGoogleResponse = async () => {
       if (!response) return;
 
-      console.log('Google response:', response);
+      if (handledResponseRef.current) return;
+
+      console.log('Google response type:', response.type);
 
       if (response.type !== 'success') {
         console.log('Google sign-in was not successful:', response.type);
         return;
       }
 
+      handledResponseRef.current = true;
+
       try {
-        const idToken = response.params?.id_token;
+        const idToken =
+          response.params?.id_token ||
+          response.authentication?.idToken ||
+          (response.authentication?.rawResponse as any)?.id_token;
 
         if (!idToken) {
           console.log('Google response params:', response.params);
+          console.log('Google authentication:', response.authentication);
           Alert.alert('Sign-in failed', 'Google did not return an ID token.');
           return;
         }
@@ -55,10 +72,12 @@ export default function Landing() {
 
         await setUserFromAuth(result.user, result.session_token);
 
-        router.replace('/(tabs)/feed');
+        console.log('Session saved. Redirecting to feed.');
+        router.replace('/feed');
       } catch (error: any) {
         console.error('google sign-in failed', error);
         Alert.alert('Sign-in failed', error?.message || 'Please try again.');
+        handledResponseRef.current = false;
       }
     };
 
@@ -82,6 +101,8 @@ export default function Landing() {
         );
         return;
       }
+
+      handledResponseRef.current = false;
 
       await promptAsync();
     } catch (error: any) {

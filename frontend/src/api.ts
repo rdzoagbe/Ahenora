@@ -1,3 +1,5 @@
+import * as SecureStore from 'expo-secure-store';
+
 const RAW_API_BASE_URL =
   process.env.EXPO_PUBLIC_BACKEND_URL ||
   'https://household-coo-production.up.railway.app';
@@ -6,15 +8,59 @@ const API_BASE_URL = RAW_API_BASE_URL.startsWith('http')
   ? RAW_API_BASE_URL
   : `https://${RAW_API_BASE_URL}`;
 
+const SESSION_TOKEN_KEY = 'household_coo_session_token';
+
+export type User = {
+  user_id: string;
+  email: string;
+  name: string;
+  picture?: string | null;
+  family_id: string;
+  language: string;
+};
+
+export type Subscription = {
+  plan: string;
+  billing_cycle: string;
+  grandfathered?: boolean;
+  updated_at?: string | null;
+  ai_scans_used?: number;
+  ai_scans_period_start?: string | null;
+  vault_bytes_used?: number;
+  members_count?: number;
+  limits?: Record<string, any>;
+  price_monthly?: number;
+  price_yearly?: number;
+};
+
 type RequestOptions = {
   method?: string;
-  token?: string;
-  body?: any;
+  body?: unknown;
+  token?: string | null;
+};
+
+export const tokenStore = {
+  async get(): Promise<string | null> {
+    return SecureStore.getItemAsync(SESSION_TOKEN_KEY);
+  },
+
+  async set(token: string): Promise<void> {
+    if (!token) {
+      await SecureStore.deleteItemAsync(SESSION_TOKEN_KEY);
+      return;
+    }
+
+    await SecureStore.setItemAsync(SESSION_TOKEN_KEY, token);
+  },
+
+  async clear(): Promise<void> {
+    await SecureStore.deleteItemAsync(SESSION_TOKEN_KEY);
+  },
 };
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const base = API_BASE_URL.replace(/\/$/, '');
-const url = `${base}${path}`;
+  const url = `${base}${path}`;
 
   console.log('API_BASE_URL:', API_BASE_URL);
   console.log('API request:', url);
@@ -24,8 +70,10 @@ const url = `${base}${path}`;
     'Content-Type': 'application/json',
   };
 
-  if (options.token) {
-    headers.Authorization = `Bearer ${options.token}`;
+  const storedToken = options.token ?? (await tokenStore.get());
+
+  if (storedToken) {
+    headers.Authorization = `Bearer ${storedToken}`;
   }
 
   let response: Response;
@@ -42,12 +90,14 @@ const url = `${base}${path}`;
       message: error?.message,
       name: error?.name,
     });
+
     throw new Error(`Network request failed: ${url}`);
   }
 
   const text = await response.text();
 
   let data: any = null;
+
   try {
     data = text ? JSON.parse(text) : null;
   } catch {
@@ -76,14 +126,7 @@ export const api = {
 
   exchangeSession: async (googleIdToken: string) => {
     return request<{
-      user: {
-        user_id: string;
-        email: string;
-        name: string;
-        picture?: string;
-        family_id: string;
-        language: string;
-      };
+      user: User;
       session_token: string;
     }>('/api/auth/session', {
       method: 'POST',
@@ -93,17 +136,26 @@ export const api = {
     });
   },
 
-  me: async (token: string) => {
-    return request('/api/auth/me', {
-      method: 'GET',
-      token,
+  me: async () => {
+    return request<User>('/api/auth/me');
+  },
+
+  logout: async () => {
+    return request<{ ok: boolean }>('/api/auth/logout', {
+      method: 'POST',
     });
   },
 
-  logout: async (token: string) => {
-    return request('/api/auth/logout', {
-      method: 'POST',
-      token,
+  setLanguage: async (language: string) => {
+    return request<User>('/api/auth/language', {
+      method: 'PATCH',
+      body: {
+        language,
+      },
     });
+  },
+
+  getSubscription: async () => {
+    return request<Subscription>('/api/subscription');
   },
 };
