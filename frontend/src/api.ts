@@ -90,6 +90,7 @@ export interface User {
   picture?: string;
   family_id: string;
   language: string;
+  is_admin?: boolean;
 }
 
 export interface FamilyMember {
@@ -155,6 +156,7 @@ export interface Subscription {
   };
   price_monthly: number;
   price_yearly: number;
+  admin_unlocked?: boolean;
 }
 
 export interface PlanLimitError {

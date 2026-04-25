@@ -54,6 +54,12 @@ RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
 INVITE_FROM_EMAIL = os.environ.get("INVITE_FROM_EMAIL", "")
 INVITE_REPLY_TO = os.environ.get("INVITE_REPLY_TO", "")
 APP_NAME = os.environ.get("APP_NAME", "Household COO")
+ADMIN_EMAILS_RAW = os.environ.get("ADMIN_EMAILS", "")
+ADMIN_EMAILS = {
+    email.strip().lower()
+    for email in ADMIN_EMAILS_RAW.split(",")
+    if email.strip()
+}
 
 if GOOGLE_API_KEY and genai:
     genai.configure(api_key=GOOGLE_API_KEY)
@@ -101,6 +107,34 @@ def new_id(prefix: str) -> str:
 
 def sha256(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def is_admin_email(email: str) -> bool:
+    return bool(email) and email.strip().lower() in ADMIN_EMAILS
+
+
+def is_admin_user(user: dict) -> bool:
+    return is_admin_email(user.get("email", ""))
+
+
+def apply_admin_subscription(subscription: dict) -> dict:
+    # Admin/tester accounts keep their own family data, but plan limits are bypassed
+    # so the founder can test every feature without changing customer billing rules.
+    admin_sub = dict(subscription)
+    admin_sub["plan"] = "family_office"
+    admin_sub["billing_cycle"] = admin_sub.get("billing_cycle", "yearly")
+    admin_sub["grandfathered"] = True
+    admin_sub["admin_unlocked"] = True
+    admin_sub["limits"] = {
+        "max_members": 999,
+        "ai_scans_per_month": 999999,
+        "vault_bytes": 50 * 1024 * 1024 * 1024,
+        "weekly_brief": True,
+        "multi_property": True,
+    }
+    admin_sub["price_monthly"] = 0.0
+    admin_sub["price_yearly"] = 0.0
+    return admin_sub
 
 
 def get_db() -> Any:
@@ -229,6 +263,7 @@ def public_user(user: dict) -> dict:
         "picture": user.get("picture"),
         "family_id": user["family_id"],
         "language": user.get("language", "en"),
+        "is_admin": is_admin_email(user.get("email", "")),
     }
 
 
@@ -521,9 +556,10 @@ async def root():
         "message": "Household COO Backend is live",
         "api_configured": bool(GOOGLE_API_KEY),
         "db_configured": bool(MONGO_URL),
-        "backend_version": "email_invites_v1",
+        "backend_version": "admin_landing_v1",
         "invite_routes": True,
         "email_configured": bool(RESEND_API_KEY and INVITE_FROM_EMAIL),
+        "admin_access_enabled": bool(ADMIN_EMAILS),
         "google_web_configured": bool(GOOGLE_WEB_CLIENT_ID),
         "google_android_configured": bool(GOOGLE_ANDROID_CLIENT_ID),
         "google_client_ids_count": len(GOOGLE_CLIENT_IDS),
@@ -785,7 +821,7 @@ async def family_invite(payload: InviteIn, user=Depends(require_user)):
     limit = sub["limits"]["max_members"]
     used = sub["members_count"]
 
-    if used >= limit:
+    if not is_admin_user(user) and used >= limit:
         plan_limit_error(
             feature="family_members",
             current_plan=sub["plan"],
@@ -1071,7 +1107,7 @@ async def create_vault_doc(payload: VaultIn, user=Depends(require_user)):
     family = await get_family_doc(user["family_id"])
     size = len(payload.image_base64.encode("utf-8"))
 
-    if family.get("vault_bytes_used", 0) + size > sub["limits"]["vault_bytes"]:
+    if not is_admin_user(user) and family.get("vault_bytes_used", 0) + size > sub["limits"]["vault_bytes"]:
         plan_limit_error(
             feature="vault_storage",
             current_plan=sub["plan"],
@@ -1177,7 +1213,10 @@ async def redeem_reward(reward_id: str, payload: RedeemIn, user=Depends(require_
 # -----------------------------------------------------------------------------
 @app.get("/api/subscription")
 async def get_subscription(user=Depends(require_user)):
-    return await build_subscription(user["family_id"])
+    sub = await build_subscription(user["family_id"])
+    if is_admin_user(user):
+        return apply_admin_subscription(sub)
+    return sub
 
 
 @app.post("/api/subscription/change")
@@ -1210,7 +1249,7 @@ async def change_subscription(payload: SubscriptionChangeIn, user=Depends(requir
 async def weekly_brief(user=Depends(require_user)):
     database = get_db()
     sub = await build_subscription(user["family_id"])
-    if not sub["limits"]["weekly_brief"]:
+    if not is_admin_user(user) and not sub["limits"]["weekly_brief"]:
         plan_limit_error(
             feature="weekly_brief",
             current_plan=sub["plan"],
@@ -1259,7 +1298,7 @@ async def vision_extract(payload: VisionIn, user=Depends(require_user)):
     sub = await build_subscription(user["family_id"])
     family = await get_family_doc(user["family_id"])
 
-    if family.get("ai_scans_used", 0) >= sub["limits"]["ai_scans_per_month"]:
+    if not is_admin_user(user) and family.get("ai_scans_used", 0) >= sub["limits"]["ai_scans_per_month"]:
         plan_limit_error(
             feature="ai_scans",
             current_plan=sub["plan"],
@@ -1303,10 +1342,11 @@ Rules:
         except Exception:
             pass
 
-    await database["families"].update_one(
-        {"family_id": user["family_id"]},
-        {"$inc": {"ai_scans_used": 1}, "$set": {"updated_at": utcnow()}},
-    )
+    if not is_admin_user(user):
+        await database["families"].update_one(
+            {"family_id": user["family_id"]},
+            {"$inc": {"ai_scans_used": 1}, "$set": {"updated_at": utcnow()}},
+        )
 
     return fallback
 

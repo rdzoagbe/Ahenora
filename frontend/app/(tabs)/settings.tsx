@@ -115,6 +115,13 @@ export default function SettingsScreen() {
                   <Mail color="rgba(255,255,255,0.45)" size={11} />
                   <Text style={styles.email}>{user?.email}</Text>
                 </View>
+
+                {user?.is_admin ? (
+                  <View testID="admin-badge" style={styles.adminBadge}>
+                    <Crown color="#F59E0B" size={11} />
+                    <Text style={styles.adminBadgeText}>Admin / Tester · all features unlocked</Text>
+                  </View>
+                ) : null}
               </View>
             </View>
           </GlassCard>
@@ -218,14 +225,21 @@ export default function SettingsScreen() {
                   {subscription ? t(`plan_${subscription.plan}`) : t('loading')}
                 </Text>
                 <Text style={styles.subPlanTag}>
-                  {subscription?.grandfathered
+                  {subscription?.admin_unlocked
+                    ? 'Admin tester account · limits bypassed'
+                    : subscription?.grandfathered
                     ? t('plan_grandfathered')
                     : subscription
                     ? t(`plan_${subscription.plan}_tag`)
                     : ''}
                 </Text>
               </View>
-              {subscription?.plan === 'executive' || subscription?.plan === 'family_office' ? (
+              {subscription?.admin_unlocked ? (
+                <View style={styles.adminPlanBadge}>
+                  <Crown color="#F59E0B" size={10} />
+                  <Text style={styles.adminPlanBadgeText}>ADMIN</Text>
+                </View>
+              ) : subscription?.plan === 'executive' || subscription?.plan === 'family_office' ? (
                 <View style={styles.subBadge}>
                   <Sparkles color="#34D399" size={10} />
                   <Text style={styles.subBadgeText}>PRO</Text>
@@ -492,6 +506,24 @@ const styles = StyleSheet.create({
   name: { color: '#fff', fontFamily: 'Inter_600SemiBold', fontSize: 17 },
   emailRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 },
   email: { color: 'rgba(255,255,255,0.55)', fontFamily: 'Inter_400Regular', fontSize: 12 },
+  adminBadge: {
+    alignSelf: 'flex-start',
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 9999,
+    backgroundColor: 'rgba(245,158,11,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(245,158,11,0.28)',
+  },
+  adminBadgeText: {
+    color: '#FCD34D',
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 11,
+  },
   sectionRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 18, marginBottom: 10 },
   sectionLabel: {
     fontFamily: 'Inter_500Medium', fontSize: 11, color: 'rgba(255,255,255,0.55)',
@@ -631,6 +663,13 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: 'rgba(52,211,153,0.4)',
   },
   subBadgeText: { color: '#34D399', fontFamily: 'Inter_600SemiBold', fontSize: 10, letterSpacing: 0.5 },
+  adminPlanBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 9999,
+    backgroundColor: 'rgba(245,158,11,0.16)',
+    borderWidth: 1, borderColor: 'rgba(245,158,11,0.38)',
+  },
+  adminPlanBadgeText: { color: '#FCD34D', fontFamily: 'Inter_600SemiBold', fontSize: 10, letterSpacing: 0.5 },
   usageWrap: { marginTop: 14, gap: 6 },
   usageLabel: { color: 'rgba(255,255,255,0.55)', fontFamily: 'Inter_500Medium', fontSize: 11, letterSpacing: 0.4, textTransform: 'uppercase' },
   usageBarBg: {
