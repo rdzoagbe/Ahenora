@@ -558,7 +558,7 @@ async def root():
         "message": "Household COO Backend is live",
         "api_configured": bool(GOOGLE_API_KEY),
         "db_configured": bool(MONGO_URL),
-        "backend_version": "voice_transcription_v1",
+        "backend_version": "voice_transcription_v2",
         "invite_routes": True,
         "email_configured": bool(RESEND_API_KEY and INVITE_FROM_EMAIL),
         "admin_access_enabled": bool(ADMIN_EMAILS),
@@ -1405,7 +1405,7 @@ async def _voice_to_draft(audio_bytes: bytes, mime_type: str, members: list[str]
     if not GOOGLE_API_KEY or not genai:
         raise HTTPException(
             status_code=501,
-            detail="Voice transcription requires GOOGLE_API_KEY and google-generativeai.",
+            detail="Voice transcription requires GOOGLE_API_KEY in Railway.",
         )
 
     allowed_members = ", ".join(members) if members else ""
@@ -1446,8 +1446,6 @@ Rules:
         response = await asyncio.to_thread(_generate_inline)
         text = (response.text or "").strip()
     except Exception as first_error:
-        # Some Gemini SDK versions are stricter with inline audio. Fall back to Files API
-        # when available.
         if not hasattr(genai, "upload_file"):
             raise HTTPException(
                 status_code=500,
@@ -1470,7 +1468,11 @@ Rules:
                 tmp.write(audio_bytes)
                 tmp_path = tmp.name
 
-            uploaded = await asyncio.to_thread(genai.upload_file, tmp_path, mime_type=mime_type or None)
+            uploaded = await asyncio.to_thread(
+                genai.upload_file,
+                tmp_path,
+                mime_type=mime_type or None,
+            )
             response = await asyncio.to_thread(model.generate_content, [prompt, uploaded])
             text = (response.text or "").strip()
         except Exception as second_error:
@@ -1495,13 +1497,30 @@ Rules:
 
 
 
-
 # -----------------------------------------------------------------------------
-# Voice
+# Voice placeholder
 # -----------------------------------------------------------------------------
 @app.post("/api/voice/transcribe")
 async def voice_transcribe(audio: UploadFile = File(...), user=Depends(require_user)):
-    raise HTTPException(status_code=501, detail="Voice transcription not implemented yet")
+    database = get_db()
+
+    audio_bytes = await audio.read()
+    if not audio_bytes or len(audio_bytes) < 500:
+        raise HTTPException(status_code=400, detail="Recording is too short")
+
+    if len(audio_bytes) > MAX_VOICE_AUDIO_BYTES:
+        raise HTTPException(status_code=413, detail="Recording is too large")
+
+    members = []
+    async for member in database["family_members"].find(
+        {"family_id": user["family_id"]},
+        {"_id": 0, "name": 1},
+    ):
+        if member.get("name"):
+            members.append(member["name"])
+
+    mime_type = audio.content_type or "audio/aac"
+    return await _voice_to_draft(audio_bytes, mime_type, members)
 
 
 # -----------------------------------------------------------------------------
