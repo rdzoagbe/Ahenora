@@ -21,6 +21,9 @@ interface Draft {
   description: string;
   assignee: string;
   due_date?: string | null;
+  image_base64?: string | null;
+  vault_category?: string;
+  save_to_vault?: boolean;
 }
 
 interface Props {
@@ -47,6 +50,7 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
 
   const pick = async (source: 'camera' | 'library') => {
     setErr(null);
+
     try {
       if (Platform.OS !== 'web') {
         if (source === 'camera') {
@@ -57,6 +61,7 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
           if (!p.granted) throw new Error('Gallery permission denied');
         }
       }
+
       const res =
         source === 'camera'
           ? await ImagePicker.launchCameraAsync({
@@ -69,13 +74,18 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
               quality: 0.55,
               mediaTypes: ImagePicker.MediaTypeOptions.Images,
             });
+
       if (res.canceled || !res.assets?.[0]) return;
-      const a = res.assets[0];
-      const b64 = a.base64 ? `data:image/jpeg;base64,${a.base64}` : a.uri;
-      setPreview(b64);
+
+      const asset = res.assets[0];
+      const imageBase64 = asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri;
+
+      setPreview(imageBase64);
       setPhase('scanning');
+
       try {
-        const draft = await api.visionExtract(b64);
+        const draft = await api.visionExtract(imageBase64);
+
         onDraft({
           transcript: '',
           type: draft.type,
@@ -83,6 +93,9 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
           description: draft.description || '',
           assignee: draft.assignee || '',
           due_date: draft.due_date || null,
+          image_base64: imageBase64,
+          vault_category: draft.vault_category || 'School',
+          save_to_vault: draft.save_to_vault !== false,
         });
       } catch (e: any) {
         setErr(e?.message || 'Vision extraction failed');
@@ -111,7 +124,7 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
           </View>
 
           <Text style={styles.heading}>{t('scan_flyer')}</Text>
-          <Text style={styles.sub}>Snap a photo — AI turns it into a Smart Card.</Text>
+          <Text style={styles.sub}>Snap a photo — AI turns it into a Smart Card and saves it to Vault.</Text>
 
           <View style={styles.stage}>
             {preview ? (

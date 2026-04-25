@@ -1,154 +1,93 @@
-﻿import AsyncStorage from '@react-native-async-storage/async-storage';
-import { logger } from './logger';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const RAW_API_BASE_URL =
-  process.env.EXPO_PUBLIC_BACKEND_URL ||
-  'https://household-coo-production.up.railway.app';
-
-const API_BASE_URL = RAW_API_BASE_URL.startsWith('http')
-  ? RAW_API_BASE_URL.replace(/\/$/, '')
-  : `https://${RAW_API_BASE_URL.replace(/\/$/, '')}`;
+const BASE = process.env.EXPO_PUBLIC_BACKEND_URL;
+if (!BASE) {
+  throw new Error("EXPO_PUBLIC_BACKEND_URL is not set");
+}
 
 const TOKEN_KEY = 'coo_session_token';
 
-let memoryToken: string | null | undefined = undefined;
-
 export const tokenStore = {
   async get(): Promise<string | null> {
-    if (memoryToken !== undefined) {
-      return memoryToken;
-    }
-
     try {
-      const token = await AsyncStorage.getItem(TOKEN_KEY);
-      memoryToken = token && token.length > 0 ? token : null;
-      return memoryToken;
+      return await AsyncStorage.getItem(TOKEN_KEY);
     } catch {
-      memoryToken = null;
       return null;
     }
   },
-
-  async set(token: string): Promise<void> {
-    memoryToken = token;
-
-    if (!token) {
-      await AsyncStorage.removeItem(TOKEN_KEY);
-      memoryToken = null;
-      return;
-    }
-
+  async set(token: string) {
     await AsyncStorage.setItem(TOKEN_KEY, token);
   },
-
-  async clear(): Promise<void> {
-    memoryToken = null;
+  async clear() {
     await AsyncStorage.removeItem(TOKEN_KEY);
   },
 };
 
-type RequestOptions = {
-  method?: string;
-  body?: unknown;
-  token?: string | null;
-  auth?: boolean;
-  isFormData?: boolean;
-};
-
-function buildUrl(path: string): string {
-  if (path === '/') return `${API_BASE_URL}/`;
-
-  if (path.startsWith('/api/')) {
-    return `${API_BASE_URL}${path}`;
-  }
-
-  if (path.startsWith('/')) {
-    return `${API_BASE_URL}/api${path}`;
-  }
-
-  return `${API_BASE_URL}/api/${path}`;
-}
-
-async function request<T = any>(path: string, options: RequestOptions = {}): Promise<T> {
-  const url = buildUrl(path);
-
-  const token =
-    options.auth === false
-      ? null
-      : options.token !== undefined
-        ? options.token
-        : await tokenStore.get();
-
+async function request<T = any>(
+  path: string,
+  opts: { method?: string; body?: any } = {}
+): Promise<T> {
+  const token = await tokenStore.get();
   const headers: Record<string, string> = {
-    Accept: 'application/json',
+    'Content-Type': 'application/json',
   };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
 
-  if (!options.isFormData) {
-    headers['Content-Type'] = 'application/json';
-  }
-
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
-
-  let response: Response;
-
-  try {
-    response = await fetch(url, {
-      method: options.method || 'GET',
-      headers,
-      body: options.body
-        ? options.isFormData
-          ? (options.body as BodyInit)
-          : JSON.stringify(options.body)
-        : undefined,
-    });
-  } catch (error: any) {
-    logger.error('API network failure:', {
-      url,
-      name: error?.name,
-      message: error?.message,
-    });
-    throw new Error(`Network request failed: ${url}`);
-  }
-
-  const text = await response.text();
-
-  let data: any = null;
-  try {
-    data = text ? JSON.parse(text) : null;
-  } catch {
-    data = text;
-  }
-
-  if (!response.ok) {
-    logger.warn('API error response:', response.status, data);
-
-    if (response.status === 402) {
-      const detail = data?.detail || data;
-      const err: any = new Error(detail?.message || 'Plan limit reached');
-      err.status = 402;
-      err.planLimit = detail;
-      throw err;
+  const res = await fetch(`${BASE}/api${path}`, {
+    method: opts.method || 'GET',
+    headers,
+    credentials: 'include',
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    // Attempt to parse 402 plan-limit payloads so UI can react
+    if (res.status === 402) {
+      try {
+        const parsed = JSON.parse(text);
+        const detail = parsed.detail || parsed;
+        const err: any = new Error(detail?.message || 'Plan limit reached');
+        err.status = 402;
+        err.planLimit = detail;
+        throw err;
+      } catch (e: any) {
+        if (e?.planLimit) throw e;
+      }
     }
-
-    throw new Error(
-      `${response.status}: ${typeof data === 'string' ? data : JSON.stringify(data)}`
-    );
+    const err: any = new Error(`${res.status}: ${text}`);
+    err.status = res.status;
+    throw err;
   }
-
-  return data as T;
+  if (res.status === 204) return {} as T;
+  return res.json();
 }
 
 export type CardType = 'SIGN_SLIP' | 'RSVP' | 'TASK';
 export type CardStatus = 'OPEN' | 'DONE';
 export type Recurrence = 'none' | 'daily' | 'weekly' | 'monthly';
 
+export interface Card {
+  card_id: string;
+  family_id: string;
+  type: CardType;
+  title: string;
+  description?: string;
+  assignee?: string;
+  due_date?: string | null;
+  status: CardStatus;
+  source: 'AI' | 'MANUAL' | 'VOICE' | 'CAMERA';
+  image_base64?: string | null;
+  recurrence: Recurrence;
+  reminder_minutes: number;
+  created_at: string;
+  completed_at?: string | null;
+}
+
 export interface User {
   user_id: string;
   email: string;
   name: string;
-  picture?: string | null;
+  picture?: string;
   family_id: string;
   language: string;
 }
@@ -172,21 +111,18 @@ export interface Reward {
   created_at: string;
 }
 
-export interface Card {
-  card_id: string;
+export interface FamilyInvite {
+  invite_id: string;
   family_id: string;
-  type: CardType;
-  title: string;
-  description?: string | null;
-  assignee?: string | null;
-  due_date?: string | null;
-  status: CardStatus;
-  source: 'AI' | 'MANUAL' | 'VOICE' | 'CAMERA';
-  image_base64?: string | null;
-  recurrence: Recurrence;
-  reminder_minutes: number;
-  created_at: string;
-  completed_at?: string | null;
+  email?: string | null;
+  status: 'pending' | 'accepted' | 'expired';
+  token?: string;
+  invite_url?: string;
+  created_at?: string | null;
+  expires_at?: string | null;
+  accepted_at?: string | null;
+  accepted_by_email?: string | null;
+  created_by_name?: string | null;
 }
 
 export interface VaultDoc {
@@ -205,9 +141,9 @@ export interface Subscription {
   plan: Plan;
   billing_cycle: BillingCycle;
   grandfathered: boolean;
-  updated_at: string | null;
+  updated_at: string;
   ai_scans_used: number;
-  ai_scans_period_start: string | null;
+  ai_scans_period_start: string;
   vault_bytes_used: number;
   members_count: number;
   limits: {
@@ -231,169 +167,86 @@ export interface PlanLimitError {
 }
 
 export const api = {
-  health: () =>
-    request<{
-      status: string;
-      message: string;
-      api_configured?: boolean;
-      db_configured?: boolean;
-    }>('/', { auth: false }),
-
-  exchangeSession: (googleIdToken: string, invite_token?: string) =>
+  // Auth
+  exchangeSession: (session_id: string, invite_token?: string) =>
     request<{ user: User; session_token: string }>('/auth/session', {
       method: 'POST',
-      auth: false,
-      body: invite_token
-        ? { session_id: googleIdToken, invite_token }
-        : { session_id: googleIdToken },
+      body: invite_token ? { session_id, invite_token } : { session_id },
     }),
-
   me: () => request<User>('/auth/me'),
-
-  logout: () =>
-    request<{ ok: boolean }>('/auth/logout', {
-      method: 'POST',
-    }),
-
+  logout: () => request('/auth/logout', { method: 'POST' }),
   setLanguage: (language: string) =>
-    request<User>('/auth/language', {
-      method: 'PATCH',
-      body: { language },
+    request('/auth/language', { method: 'PATCH', body: { language } }),
+  invite: (email: string) =>
+    request<{
+      ok: boolean;
+      sent: boolean;
+      status: string;
+      message: string;
+      invite: FamilyInvite;
+      invite_url?: string;
+      error?: string;
+    }>('/family/invite', {
+      method: 'POST',
+      body: { email },
     }),
-
+  listInvites: () => request<FamilyInvite[]>('/family/invites'),
+  getInvite: (token: string) =>
+    request<{
+      invite_id: string;
+      status: string;
+      inviter_name: string;
+      email?: string;
+      expires_at?: string | null;
+    }>(`/family/invite/${token}`),
+  // Family
   familyMembers: () => request<FamilyMember[]>('/family/members'),
-
   setMemberPin: (member_id: string, pin: string) =>
     request<{ ok: boolean; has_pin: boolean }>(`/family/members/${member_id}/pin`, {
       method: 'PUT',
       body: { pin },
     }),
-
   verifyMemberPin: (member_id: string, pin: string) =>
-    request<{ ok: boolean; has_pin: boolean }>(
-      `/family/members/${member_id}/verify-pin`,
-      {
-        method: 'POST',
-        body: { pin },
-      }
-    ),
-
-  addMemberStars: (member_id: string, amount: number) =>
-    request<FamilyMember>(`/family/members/${member_id}/stars`, {
-      method: 'PATCH',
-      body: { amount },
+    request<{ ok: boolean; has_pin: boolean }>(`/family/members/${member_id}/verify-pin`, {
+      method: 'POST',
+      body: { pin },
     }),
-
-  invite: (email: string) =>
-    request<{ ok?: boolean; sent?: boolean; message?: string; error?: string }>(
-      '/family/invite',
-      {
-        method: 'POST',
-        body: { email },
-      }
-    ),
-
-  aiAssign: (title: string, description = '', type = 'TASK') =>
+  aiAssign: (title: string, description?: string, type?: string) =>
     request<{ assignee: string }>('/ai/assign', {
       method: 'POST',
-      body: { title, description, type },
+      body: { title, description: description || '', type: type || 'TASK' },
     }),
-
+  // Cards
   listCards: (status?: string) =>
-    request<Card[]>(`/cards${status ? `?status=${encodeURIComponent(status)}` : ''}`),
-
-  createCard: (data: {
-    type?: CardType;
-    title: string;
-    description?: string | null;
-    assignee?: string | null;
-    due_date?: string | null;
-    source?: 'AI' | 'MANUAL' | 'VOICE' | 'CAMERA';
-    image_base64?: string | null;
-    recurrence?: Recurrence;
-    reminder_minutes?: number;
-  }) =>
-    request<Card>('/cards', {
-      method: 'POST',
-      body: data,
-    }),
-
+    request<Card[]>(`/cards${status ? `?status=${status}` : ''}`),
+  createCard: (data: Partial<Card>) =>
+    request<Card>('/cards', { method: 'POST', body: data }),
   updateCard: (id: string, data: { status?: CardStatus }) =>
-    request<Card>(`/cards/${id}`, {
-      method: 'PATCH',
-      body: data,
-    }),
-
-  deleteCard: (id: string) =>
-    request<{ ok: boolean }>(`/cards/${id}`, {
-      method: 'DELETE',
-    }),
-
-  conflicts: (due_date: string, exclude_id?: string) =>
-    request<Card[]>(
-      `/cards/conflicts?due_date=${encodeURIComponent(due_date)}${
-        exclude_id ? `&exclude_id=${encodeURIComponent(exclude_id)}` : ''
-      }`
-    ),
-
+    request<Card>(`/cards/${id}`, { method: 'PATCH', body: data }),
+  deleteCard: (id: string) => request(`/cards/${id}`, { method: 'DELETE' }),
+  // Vault
   listVault: () => request<VaultDoc[]>('/vault'),
-
-  createVaultDoc: (data: {
-    title: string;
-    category: string;
-    image_base64: string;
-  }) =>
-    request<VaultDoc>('/vault', {
-      method: 'POST',
-      body: data,
-    }),
-
-  deleteVaultDoc: (id: string) =>
-    request<{ ok: boolean }>(`/vault/${id}`, {
-      method: 'DELETE',
-    }),
-
+  createVaultDoc: (data: { title: string; category: string; image_base64: string }) =>
+    request<VaultDoc>('/vault', { method: 'POST', body: data }),
+  deleteVaultDoc: (id: string) => request(`/vault/${id}`, { method: 'DELETE' }),
+  // Rewards
   listRewards: () => request<Reward[]>('/rewards'),
-
   createReward: (data: { title: string; cost_stars: number; icon?: string }) =>
-    request<Reward>('/rewards', {
-      method: 'POST',
-      body: data,
-    }),
-
-  updateReward: (
-    id: string,
-    data: { title?: string; cost_stars?: number; icon?: string }
-  ) =>
-    request<Reward>(`/rewards/${id}`, {
-      method: 'PATCH',
-      body: data,
-    }),
-
-  deleteReward: (id: string) =>
-    request<{ ok: boolean }>(`/rewards/${id}`, {
-      method: 'DELETE',
-    }),
-
+    request<Reward>('/rewards', { method: 'POST', body: data }),
+  deleteReward: (id: string) => request(`/rewards/${id}`, { method: 'DELETE' }),
   redeemReward: (id: string, member_id: string) =>
     request<{ ok: boolean; member: FamilyMember }>(`/rewards/${id}/redeem`, {
       method: 'POST',
       body: { member_id },
     }),
-
-  getSubscription: () => request<Subscription>('/subscription'),
-
-  changeSubscription: (plan: Plan, billing_cycle: BillingCycle) =>
-    request<Subscription>('/subscription/change', {
-      method: 'POST',
-      body: { plan, billing_cycle },
-    }),
-
-  weeklyBrief: () =>
-    request<{ brief: string; generated_at: string }>('/brief/weekly', {
-      method: 'POST',
-    }),
-
+  // Conflicts
+  conflicts: (due_date: string, exclude_id?: string) =>
+    request<Card[]>(
+      `/cards/conflicts?due_date=${encodeURIComponent(due_date)}${
+        exclude_id ? `&exclude_id=${exclude_id}` : ''
+      }`
+    ),
+  // Vision
   visionExtract: (image_base64: string) =>
     request<{
       type: CardType;
@@ -401,11 +254,20 @@ export const api = {
       description: string;
       assignee: string;
       due_date?: string | null;
-    }>('/vision/extract', {
+      vault_category?: string;
+      save_to_vault?: boolean;
+    }>('/vision/extract', { method: 'POST', body: { image_base64 } }),
+  // Brief
+  weeklyBrief: () =>
+    request<{ brief: string; generated_at: string }>('/brief/weekly', { method: 'POST' }),
+  // Subscription
+  getSubscription: () => request<Subscription>('/subscription'),
+  changeSubscription: (plan: Plan, billing_cycle: BillingCycle) =>
+    request<Subscription>('/subscription/change', {
       method: 'POST',
-      body: { image_base64 },
+      body: { plan, billing_cycle },
     }),
-
+  // Voice transcribe
   voiceTranscribe: async (blob: Blob): Promise<{
     transcript: string;
     type: CardType;
@@ -413,20 +275,19 @@ export const api = {
     description: string;
     assignee: string;
   }> => {
+    const token = await tokenStore.get();
     const form = new FormData();
-    form.append('audio', blob as any);
-
-    return request('/voice/transcribe', {
+    const file = new File([blob], 'voice.webm', { type: blob.type || 'audio/webm' });
+    form.append('audio', file);
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const res = await fetch(`${BASE}/api/voice/transcribe`, {
       method: 'POST',
+      headers,
+      credentials: 'include',
       body: form,
-      isFormData: true,
     });
+    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+    return res.json();
   },
 };
-
-
-
-
-
-
-

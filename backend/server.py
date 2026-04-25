@@ -7,14 +7,19 @@ import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
-
 from fastapi import FastAPI, HTTPException, Depends, Header, UploadFile, File, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from motor.motor_asyncio import AsyncIOMotorClient
+try:
+    from motor.motor_asyncio import AsyncIOMotorClient
+except ImportError:
+    AsyncIOMotorClient = None
 from google.oauth2 import id_token as google_id_token
 from google.auth.transport.requests import Request as GoogleRequest
-import google.generativeai as genai
+try:
+    import google.generativeai as genai
+except ImportError:
+    genai = None
 import PIL.Image
 
 
@@ -23,20 +28,24 @@ import PIL.Image
 # -----------------------------------------------------------------------------
 MONGO_URL = os.environ.get("MONGO_URL", "")
 DB_NAME = os.environ.get("DB_NAME", "household_coo")
-
 GOOGLE_WEB_CLIENT_ID = os.environ.get("GOOGLE_WEB_CLIENT_ID", "")
 GOOGLE_ANDROID_CLIENT_ID = os.environ.get("GOOGLE_ANDROID_CLIENT_ID", "")
-GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
-
-SESSION_DAYS = int(os.environ.get("SESSION_DAYS", "7"))
-
+GOOGLE_CLIENT_IDS_EXTRA = os.environ.get("GOOGLE_CLIENT_IDS", "")
 GOOGLE_CLIENT_IDS = [
-    client_id
-    for client_id in [GOOGLE_WEB_CLIENT_ID, GOOGLE_ANDROID_CLIENT_ID]
-    if client_id
+    client_id.strip()
+    for client_id in [
+        GOOGLE_WEB_CLIENT_ID,
+        GOOGLE_ANDROID_CLIENT_ID,
+        *GOOGLE_CLIENT_IDS_EXTRA.split(","),
+    ]
+    if client_id and client_id.strip()
 ]
+GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
+SESSION_DAYS = int(os.environ.get("SESSION_DAYS", "7"))
+INVITE_DAYS = int(os.environ.get("INVITE_DAYS", "14"))
+INVITE_BASE_URL = os.environ.get("INVITE_BASE_URL", "householdcoo:///")
 
-if GOOGLE_API_KEY:
+if GOOGLE_API_KEY and genai:
     genai.configure(api_key=GOOGLE_API_KEY)
 
 mongo = AsyncIOMotorClient(MONGO_URL) if MONGO_URL else None
@@ -46,7 +55,7 @@ app = FastAPI(title="Household COO Backend")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # tighten later
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -203,15 +212,12 @@ async def build_subscription(family_id: str):
 
 
 def public_user(user: dict) -> dict:
-    email = user.get("email", "")
-    name = user.get("name") or (email.split("@")[0] if email else "Parent")
-
     return {
-        "user_id": user.get("user_id", ""),
-        "email": email,
-        "name": name,
+        "user_id": user["user_id"],
+        "email": user["email"],
+        "name": user["name"],
         "picture": user.get("picture"),
-        "family_id": user.get("family_id", ""),
+        "family_id": user["family_id"],
         "language": user.get("language", "en"),
     }
 
@@ -269,10 +275,66 @@ def public_vault_doc(doc: dict) -> dict:
     }
 
 
+def build_invite_url(token: str) -> str:
+    base = INVITE_BASE_URL.strip() or "householdcoo:///"
+    if "{token}" in base:
+        return base.replace("{token}", token)
+    joiner = "&" if "?" in base else "?"
+    return f"{base}{joiner}invite={token}"
+
+
+def public_invite(invite: dict) -> dict:
+    return {
+        "invite_id": invite["invite_id"],
+        "family_id": invite["family_id"],
+        "email": invite.get("email"),
+        "status": invite.get("status", "pending"),
+        "token": invite.get("token"),
+        "invite_url": build_invite_url(invite["token"]),
+        "created_at": iso(invite.get("created_at")),
+        "expires_at": iso(invite.get("expires_at")),
+        "accepted_at": iso(invite.get("accepted_at")),
+        "accepted_by_email": invite.get("accepted_by_email"),
+        "created_by_name": invite.get("created_by_name"),
+    }
+
+
+async def add_user_to_family_if_needed(database: Any, user: dict, family_id: str):
+    existing = await database["family_members"].find_one(
+        {
+            "family_id": family_id,
+            "$or": [
+                {"user_id": user["user_id"]},
+                {"email": user.get("email", "")},
+            ],
+        },
+        {"_id": 0},
+    )
+    if existing:
+        return existing
+
+    member = {
+        "member_id": new_id("member"),
+        "family_id": family_id,
+        "user_id": user["user_id"],
+        "email": user.get("email", ""),
+        "name": user.get("name") or user.get("email") or "Parent",
+        "role": "Parent",
+        "avatar": user.get("picture"),
+        "stars": 0,
+        "pin_hash": None,
+        "created_at": utcnow(),
+    }
+    await database["family_members"].insert_one(member)
+    return member
+
+
 async def require_user(authorization: str = Header(default="")):
     database = get_db()
+
     if not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing bearer token")
+
     token = authorization.replace("Bearer ", "", 1).strip()
     session = await database["user_sessions"].find_one(
         {"token_hash": sha256(token), "expires_at": {"$gt": utcnow()}},
@@ -280,9 +342,11 @@ async def require_user(authorization: str = Header(default="")):
     )
     if not session:
         raise HTTPException(status_code=401, detail="Invalid or expired session")
+
     user = await database["users"].find_one({"user_id": session["user_id"]}, {"_id": 0})
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
+
     return user
 
 
@@ -292,6 +356,10 @@ async def require_user(authorization: str = Header(default="")):
 class SessionIn(BaseModel):
     session_id: str
     invite_token: Optional[str] = None
+
+
+class InviteIn(BaseModel):
+    email: str
 
 
 class LanguageIn(BaseModel):
@@ -336,16 +404,6 @@ class RewardIn(BaseModel):
     icon: Optional[str] = None
 
 
-class RewardPatchIn(BaseModel):
-    title: Optional[str] = None
-    cost_stars: Optional[int] = None
-    icon: Optional[str] = None
-
-
-class StarsPatchIn(BaseModel):
-    amount: int
-
-
 class RedeemIn(BaseModel):
     member_id: str
 
@@ -369,8 +427,10 @@ async def root():
         "message": "Household COO Backend is live",
         "api_configured": bool(GOOGLE_API_KEY),
         "db_configured": bool(MONGO_URL),
+        "google_web_configured": bool(GOOGLE_WEB_CLIENT_ID),
+        "google_android_configured": bool(GOOGLE_ANDROID_CLIENT_ID),
+        "google_client_ids_count": len(GOOGLE_CLIENT_IDS),
     }
-
 
 # -----------------------------------------------------------------------------
 # Auth
@@ -380,14 +440,10 @@ async def exchange_session(payload: SessionIn):
     database = get_db()
 
     if not GOOGLE_CLIENT_IDS:
-        raise HTTPException(
-            status_code=500,
-            detail="Google OAuth client IDs are missing",
-        )
+        raise HTTPException(status_code=500, detail="Google OAuth client IDs are missing")
 
     token_info = None
     last_error = None
-
     for client_id in GOOGLE_CLIENT_IDS:
         try:
             token_info = google_id_token.verify_oauth2_token(
@@ -399,181 +455,151 @@ async def exchange_session(payload: SessionIn):
         except Exception as e:
             last_error = e
 
-    if token_info is None:
-        raise HTTPException(
-            status_code=401,
-            detail=f"Invalid Google token: {last_error}",
-        )
+    if not token_info:
+        raise HTTPException(status_code=401, detail=f"Invalid Google token: {last_error}")
 
-    try:
-        google_sub = token_info.get("sub")
-        email = token_info.get("email", "")
-        name = token_info.get("name") or (email.split("@")[0] if email else "Parent")
-        picture = token_info.get("picture")
+    google_sub = token_info["sub"]
+    email = token_info.get("email", "")
+    name = token_info.get("name", email.split("@")[0] if email else "Parent")
+    picture = token_info.get("picture")
 
-        if not google_sub:
-            raise HTTPException(status_code=400, detail="Google token missing subject")
+    invite = None
+    target_family_id = None
 
-        user = await database["users"].find_one(
-            {"google_sub": google_sub},
+    if payload.invite_token:
+        invite = await database["family_invites"].find_one(
+            {"token": payload.invite_token},
             {"_id": 0},
         )
+        if not invite:
+            raise HTTPException(status_code=404, detail="Invite not found")
 
-        if not user:
-            family_id = new_id("family")
-            user_id = new_id("user")
-
-            user = {
-                "user_id": user_id,
-                "google_sub": google_sub,
-                "email": email,
-                "name": name,
-                "picture": picture,
-                "family_id": family_id,
-                "language": "en",
-                "created_at": utcnow(),
-                "updated_at": utcnow(),
-            }
-
-            await database["users"].update_one(
-                {"google_sub": google_sub},
-                {"$setOnInsert": user},
-                upsert=True,
+        if invite.get("expires_at") and invite["expires_at"] < utcnow():
+            await database["family_invites"].update_one(
+                {"invite_id": invite["invite_id"]},
+                {"$set": {"status": "expired", "updated_at": utcnow()}},
             )
+            raise HTTPException(status_code=410, detail="Invite has expired")
 
-            await database["families"].update_one(
-                {"family_id": family_id},
-                {
-                    "$setOnInsert": {
-                        "family_id": family_id,
-                        "plan": "executive",
-                        "billing_cycle": "monthly",
-                        "grandfathered": True,
-                        "updated_at": utcnow(),
-                        "ai_scans_used": 0,
-                        "ai_scans_period_start": utcnow(),
-                        "vault_bytes_used": 0,
-                    }
-                },
-                upsert=True,
-            )
+        if invite.get("status") == "accepted" and invite.get("accepted_by_email") != email:
+            raise HTTPException(status_code=409, detail="Invite has already been accepted")
 
-            existing_members = await database["family_members"].count_documents(
-                {"family_id": family_id}
-            )
+        target_family_id = invite["family_id"]
 
-            if existing_members == 0:
-                seed_members = [
-                    {
-                        "member_id": new_id("member"),
-                        "family_id": family_id,
-                        "name": name,
-                        "role": "Parent",
-                        "avatar": picture,
-                        "stars": 0,
-                        "pin_hash": None,
-                    },
-                    {
-                        "member_id": new_id("member"),
-                        "family_id": family_id,
-                        "name": "Emma",
-                        "role": "Child",
-                        "avatar": None,
-                        "stars": 0,
-                        "pin_hash": None,
-                    },
-                    {
-                        "member_id": new_id("member"),
-                        "family_id": family_id,
-                        "name": "Noah",
-                        "role": "Child",
-                        "avatar": None,
-                        "stars": 0,
-                        "pin_hash": None,
-                    },
-                ]
+    user = await database["users"].find_one({"google_sub": google_sub}, {"_id": 0})
 
-                await database["family_members"].insert_many(seed_members)
-
-            user = await database["users"].find_one(
-                {"google_sub": google_sub},
-                {"_id": 0},
-            )
-        else:
-            patch = {
-                "email": email,
-                "name": name,
-                "picture": picture,
-                "updated_at": utcnow(),
-            }
-
-            if not user.get("user_id"):
-                patch["user_id"] = new_id("user")
-
-            if not user.get("family_id"):
-                patch["family_id"] = new_id("family")
-
-            if not user.get("language"):
-                patch["language"] = "en"
-
-            await database["users"].update_one(
-                {"google_sub": google_sub},
-                {"$set": patch},
-            )
-
-            user = await database["users"].find_one(
-                {"google_sub": google_sub},
-                {"_id": 0},
-            )
-
-            family_id = user.get("family_id")
-
-            if family_id:
-                await database["families"].update_one(
-                    {"family_id": family_id},
-                    {
-                        "$setOnInsert": {
-                            "family_id": family_id,
-                            "plan": "executive",
-                            "billing_cycle": "monthly",
-                            "grandfathered": True,
-                            "updated_at": utcnow(),
-                            "ai_scans_used": 0,
-                            "ai_scans_period_start": utcnow(),
-                            "vault_bytes_used": 0,
-                        }
-                    },
-                    upsert=True,
-                )
-
-        if not user:
-            raise HTTPException(status_code=500, detail="User could not be loaded")
-
-        raw_session = secrets.token_urlsafe(32)
-
-        await database["user_sessions"].insert_one(
-            {
-                "session_id": new_id("sess"),
-                "user_id": user.get("user_id"),
-                "token_hash": sha256(raw_session),
-                "expires_at": utcnow() + timedelta(days=SESSION_DAYS),
-                "created_at": utcnow(),
-            }
-        )
-
-        return {
-            "user": public_user(user),
-            "session_token": raw_session,
+    if not user:
+        family_id = target_family_id or new_id("family")
+        user = {
+            "user_id": new_id("user"),
+            "google_sub": google_sub,
+            "email": email,
+            "name": name,
+            "picture": picture,
+            "family_id": family_id,
+            "language": "en",
+            "created_at": utcnow(),
+            "updated_at": utcnow(),
         }
+        await database["users"].insert_one(user)
 
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"AUTH_SESSION_ERROR: {type(e).__name__}: {e}", flush=True)
-        raise HTTPException(
-            status_code=500,
-            detail=f"Auth session failed: {type(e).__name__}: {e}",
+        if not target_family_id:
+            await database["families"].insert_one(
+                {
+                    "family_id": family_id,
+                    "plan": "executive",
+                    "billing_cycle": "monthly",
+                    "grandfathered": True,
+                    "updated_at": utcnow(),
+                    "ai_scans_used": 0,
+                    "ai_scans_period_start": utcnow(),
+                    "vault_bytes_used": 0,
+                }
+            )
+
+            seed_members = [
+                {
+                    "member_id": new_id("member"),
+                    "family_id": family_id,
+                    "user_id": user["user_id"],
+                    "email": email,
+                    "name": name,
+                    "role": "Parent",
+                    "avatar": picture,
+                    "stars": 0,
+                    "pin_hash": None,
+                    "created_at": utcnow(),
+                },
+                {
+                    "member_id": new_id("member"),
+                    "family_id": family_id,
+                    "name": "Emma",
+                    "role": "Child",
+                    "avatar": None,
+                    "stars": 0,
+                    "pin_hash": None,
+                    "created_at": utcnow(),
+                },
+                {
+                    "member_id": new_id("member"),
+                    "family_id": family_id,
+                    "name": "Noah",
+                    "role": "Child",
+                    "avatar": None,
+                    "stars": 0,
+                    "pin_hash": None,
+                    "created_at": utcnow(),
+                },
+            ]
+            await database["family_members"].insert_many(seed_members)
+        else:
+            await add_user_to_family_if_needed(database, user, target_family_id)
+    else:
+        updates = {
+            "email": email,
+            "name": name,
+            "picture": picture,
+            "updated_at": utcnow(),
+        }
+        if target_family_id:
+            updates["family_id"] = target_family_id
+
+        await database["users"].update_one(
+            {"user_id": user["user_id"]},
+            {"$set": updates},
         )
+        user = await database["users"].find_one({"user_id": user["user_id"]}, {"_id": 0})
+
+        if target_family_id:
+            await add_user_to_family_if_needed(database, user, target_family_id)
+
+    if invite:
+        await database["family_invites"].update_one(
+            {"invite_id": invite["invite_id"]},
+            {
+                "$set": {
+                    "status": "accepted",
+                    "accepted_at": utcnow(),
+                    "accepted_by_user_id": user["user_id"],
+                    "accepted_by_email": email,
+                    "updated_at": utcnow(),
+                }
+            },
+        )
+
+    raw_session = secrets.token_urlsafe(32)
+    await database["user_sessions"].insert_one(
+        {
+            "session_id": new_id("sess"),
+            "user_id": user["user_id"],
+            "token_hash": sha256(raw_session),
+            "expires_at": utcnow() + timedelta(days=SESSION_DAYS),
+            "created_at": utcnow(),
+        }
+    )
+
+    return {"user": public_user(user), "session_token": raw_session}
+
 
 @app.get("/api/auth/me")
 async def me(user=Depends(require_user)):
@@ -655,36 +681,9 @@ async def verify_member_pin(member_id: str, payload: PinIn, user=Depends(require
     return {"ok": True, "has_pin": True}
 
 
-@app.patch("/api/family/members/{member_id}/stars")
-async def add_member_stars(member_id: str, payload: StarsPatchIn, user=Depends(require_user)):
-    database = get_db()
-
-    member = await database["family_members"].find_one(
-        {"member_id": member_id, "family_id": user["family_id"]},
-        {"_id": 0},
-    )
-
-    if not member:
-        raise HTTPException(status_code=404, detail="Member not found")
-
-    current_stars = int(member.get("stars", 0))
-    new_stars = max(0, current_stars + int(payload.amount))
-
-    await database["family_members"].update_one(
-        {"member_id": member_id, "family_id": user["family_id"]},
-        {"$set": {"stars": new_stars}},
-    )
-
-    updated = await database["family_members"].find_one(
-        {"member_id": member_id, "family_id": user["family_id"]},
-        {"_id": 0},
-    )
-
-    return public_member(updated)
-
-
 @app.post("/api/family/invite")
-async def family_invite(payload: dict, user=Depends(require_user)):
+async def family_invite(payload: InviteIn, user=Depends(require_user)):
+    database = get_db()
     sub = await build_subscription(user["family_id"])
     limit = sub["limits"]["max_members"]
     used = sub["members_count"]
@@ -698,7 +697,95 @@ async def family_invite(payload: dict, user=Depends(require_user)):
             message=f"Your current plan allows {limit} family members. Upgrade to add more.",
         )
 
-    return {"ok": True, "message": "Invite flow stubbed for now"}
+    email = payload.email.strip().lower()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="Valid email is required")
+
+    existing = await database["family_invites"].find_one(
+        {
+            "family_id": user["family_id"],
+            "email": email,
+            "status": "pending",
+            "expires_at": {"$gt": utcnow()},
+        },
+        {"_id": 0},
+    )
+
+    if existing:
+        invite = existing
+    else:
+        invite = {
+            "invite_id": new_id("invite"),
+            "family_id": user["family_id"],
+            "email": email,
+            "token": secrets.token_urlsafe(24),
+            "status": "pending",
+            "created_by_user_id": user["user_id"],
+            "created_by_name": user.get("name"),
+            "created_by_email": user.get("email"),
+            "created_at": utcnow(),
+            "updated_at": utcnow(),
+            "expires_at": utcnow() + timedelta(days=INVITE_DAYS),
+            "accepted_at": None,
+            "accepted_by_user_id": None,
+            "accepted_by_email": None,
+        }
+        await database["family_invites"].insert_one(invite)
+
+    public = public_invite(invite)
+    return {
+        "ok": True,
+        "sent": False,
+        "status": public["status"],
+        "message": "Invitation link created. Email delivery is not configured yet, so share the link manually.",
+        "invite": public,
+        "invite_url": public["invite_url"],
+    }
+
+
+@app.get("/api/family/invites")
+async def family_invites(user=Depends(require_user)):
+    database = get_db()
+    rows = []
+    cursor = database["family_invites"].find(
+        {"family_id": user["family_id"]},
+        {"_id": 0},
+    ).sort("created_at", -1)
+
+    async for item in cursor:
+        if item.get("status") == "pending" and item.get("expires_at") and item["expires_at"] < utcnow():
+            item["status"] = "expired"
+            await database["family_invites"].update_one(
+                {"invite_id": item["invite_id"]},
+                {"$set": {"status": "expired", "updated_at": utcnow()}},
+            )
+        rows.append(public_invite(item))
+
+    return rows
+
+
+@app.get("/api/family/invite/{token}")
+async def family_invite_lookup(token: str):
+    database = get_db()
+    invite = await database["family_invites"].find_one({"token": token}, {"_id": 0})
+    if not invite:
+        raise HTTPException(status_code=404, detail="Invite not found")
+
+    if invite.get("expires_at") and invite["expires_at"] < utcnow():
+        raise HTTPException(status_code=410, detail="Invite has expired")
+
+    inviter = await database["users"].find_one(
+        {"user_id": invite.get("created_by_user_id")},
+        {"_id": 0},
+    )
+
+    return {
+        "invite_id": invite["invite_id"],
+        "status": invite.get("status", "pending"),
+        "email": invite.get("email"),
+        "inviter_name": (inviter or {}).get("name") or invite.get("created_by_name") or "A family member",
+        "expires_at": iso(invite.get("expires_at")),
+    }
 
 
 # -----------------------------------------------------------------------------
@@ -708,7 +795,6 @@ async def family_invite(payload: dict, user=Depends(require_user)):
 async def ai_assign(payload: AiAssignIn, user=Depends(require_user)):
     database = get_db()
     members = []
-
     async for m in database["family_members"].find({"family_id": user["family_id"]}, {"_id": 0}):
         members.append(m)
 
@@ -732,12 +818,9 @@ Return only one exact name from the list, or return an empty string.
         prompt,
         system="You are assigning family tasks. Return only one exact name or empty string.",
     )
-
     result = result.strip().replace('"', "")
-
     if result not in names:
         result = ""
-
     return {"assignee": result}
 
 
@@ -816,7 +899,6 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
             },
             {"_id": 0},
         )
-
         if member:
             await database["family_members"].update_one(
                 {"member_id": member["member_id"]},
@@ -841,7 +923,6 @@ async def card_conflicts(
 ):
     database = get_db()
     target = parse_dt(due_date)
-
     if not target:
         return []
 
@@ -852,7 +933,6 @@ async def card_conflicts(
         "family_id": user["family_id"],
         "due_date": {"$gte": start, "$lte": end},
     }
-
     if exclude_id:
         query["card_id"] = {"$ne": exclude_id}
 
@@ -898,14 +978,11 @@ async def create_vault_doc(payload: VaultIn, user=Depends(require_user)):
         "image_base64": payload.image_base64,
         "created_at": utcnow(),
     }
-
     await database["vault"].insert_one(doc)
-
     await database["families"].update_one(
         {"family_id": user["family_id"]},
         {"$inc": {"vault_bytes_used": size}, "$set": {"updated_at": utcnow()}},
     )
-
     return public_vault_doc(doc)
 
 
@@ -916,7 +993,6 @@ async def delete_vault_doc(doc_id: str, user=Depends(require_user)):
         {"doc_id": doc_id, "family_id": user["family_id"]},
         {"_id": 0},
     )
-
     if doc:
         size = len(doc["image_base64"].encode("utf-8"))
         await database["vault"].delete_one({"doc_id": doc_id})
@@ -924,7 +1000,6 @@ async def delete_vault_doc(doc_id: str, user=Depends(require_user)):
             {"family_id": user["family_id"]},
             {"$inc": {"vault_bytes_used": -size}, "$set": {"updated_at": utcnow()}},
         )
-
     return {"ok": True}
 
 
@@ -955,48 +1030,6 @@ async def create_reward(payload: RewardIn, user=Depends(require_user)):
     return public_reward(reward)
 
 
-@app.patch("/api/rewards/{reward_id}")
-async def update_reward(reward_id: str, payload: RewardPatchIn, user=Depends(require_user)):
-    database = get_db()
-
-    reward = await database["rewards"].find_one(
-        {"reward_id": reward_id, "family_id": user["family_id"]},
-        {"_id": 0},
-    )
-
-    if not reward:
-        raise HTTPException(status_code=404, detail="Reward not found")
-
-    changes = {}
-
-    if payload.title is not None:
-        title = payload.title.strip()
-        if not title:
-            raise HTTPException(status_code=400, detail="Reward title is required")
-        changes["title"] = title
-
-    if payload.cost_stars is not None:
-        if payload.cost_stars < 1:
-            raise HTTPException(status_code=400, detail="Reward cost must be at least 1 star")
-        changes["cost_stars"] = payload.cost_stars
-
-    if payload.icon is not None:
-        changes["icon"] = payload.icon
-
-    if changes:
-        await database["rewards"].update_one(
-            {"reward_id": reward_id, "family_id": user["family_id"]},
-            {"$set": changes},
-        )
-
-    updated = await database["rewards"].find_one(
-        {"reward_id": reward_id, "family_id": user["family_id"]},
-        {"_id": 0},
-    )
-
-    return public_reward(updated)
-
-
 @app.delete("/api/rewards/{reward_id}")
 async def delete_reward(reward_id: str, user=Depends(require_user)):
     database = get_db()
@@ -1015,7 +1048,6 @@ async def redeem_reward(reward_id: str, payload: RedeemIn, user=Depends(require_
         {"member_id": payload.member_id, "family_id": user["family_id"]},
         {"_id": 0},
     )
-
     if not reward or not member:
         raise HTTPException(status_code=404, detail="Reward or member not found")
 
@@ -1026,9 +1058,7 @@ async def redeem_reward(reward_id: str, payload: RedeemIn, user=Depends(require_
         {"member_id": member["member_id"]},
         {"$inc": {"stars": -reward["cost_stars"]}},
     )
-
     member = await database["family_members"].find_one({"member_id": member["member_id"]}, {"_id": 0})
-
     return {"ok": True, "member": public_member(member)}
 
 
@@ -1043,10 +1073,8 @@ async def get_subscription(user=Depends(require_user)):
 @app.post("/api/subscription/change")
 async def change_subscription(payload: SubscriptionChangeIn, user=Depends(require_user)):
     database = get_db()
-
     if payload.plan not in PLAN_CATALOG:
         raise HTTPException(status_code=400, detail="Invalid plan")
-
     if payload.billing_cycle not in ("monthly", "yearly"):
         raise HTTPException(status_code=400, detail="Invalid billing cycle")
 
@@ -1062,7 +1090,6 @@ async def change_subscription(payload: SubscriptionChangeIn, user=Depends(requir
         },
         upsert=True,
     )
-
     return await build_subscription(user["family_id"])
 
 
@@ -1073,7 +1100,6 @@ async def change_subscription(payload: SubscriptionChangeIn, user=Depends(requir
 async def weekly_brief(user=Depends(require_user)):
     database = get_db()
     sub = await build_subscription(user["family_id"])
-
     if not sub["limits"]["weekly_brief"]:
         plan_limit_error(
             feature="weekly_brief",
@@ -1086,10 +1112,7 @@ async def weekly_brief(user=Depends(require_user)):
         cards.append(item)
 
     if not cards:
-        brief = (
-            "You have a clear runway this week. Use the space to reset routines, "
-            "confirm calendars, and get ahead on one important family task."
-        )
+        brief = "You have a clear runway this week. Use the space to reset routines, confirm calendars, and get ahead on one important family task."
         return {"brief": brief, "generated_at": iso(utcnow())}
 
     lines = []
@@ -1145,20 +1168,23 @@ async def vision_extract(payload: VisionIn, user=Depends(require_user)):
         "description": "Scanned item captured for review.",
         "assignee": members[0] if members else "",
         "due_date": None,
+        "vault_category": "School",
+        "save_to_vault": True,
     }
 
     if GOOGLE_API_KEY:
         prompt = f"""
 Extract a household action card from this image.
 Return JSON only with keys:
-type, title, description, assignee, due_date
+type, title, description, assignee, due_date, vault_category, save_to_vault
 
 Rules:
 - type must be one of SIGN_SLIP, RSVP, TASK
 - assignee must be one of: {", ".join(members) if members else ""}
 - due_date must be ISO string or null
-""".strip()
-
+- vault_category must be one of Medical, School, Insurance, Legal
+- save_to_vault must be true for documents worth keeping
+"""
         try:
             text = await _gemini_vision(prompt, payload.image_base64)
             text = text.strip().removeprefix("```json").removesuffix("```").strip()
