@@ -336,6 +336,16 @@ class RewardIn(BaseModel):
     icon: Optional[str] = None
 
 
+class RewardPatchIn(BaseModel):
+    title: Optional[str] = None
+    cost_stars: Optional[int] = None
+    icon: Optional[str] = None
+
+
+class StarsPatchIn(BaseModel):
+    amount: int
+
+
 class RedeemIn(BaseModel):
     member_id: str
 
@@ -645,6 +655,34 @@ async def verify_member_pin(member_id: str, payload: PinIn, user=Depends(require
     return {"ok": True, "has_pin": True}
 
 
+@app.patch("/api/family/members/{member_id}/stars")
+async def add_member_stars(member_id: str, payload: StarsPatchIn, user=Depends(require_user)):
+    database = get_db()
+
+    member = await database["family_members"].find_one(
+        {"member_id": member_id, "family_id": user["family_id"]},
+        {"_id": 0},
+    )
+
+    if not member:
+        raise HTTPException(status_code=404, detail="Member not found")
+
+    current_stars = int(member.get("stars", 0))
+    new_stars = max(0, current_stars + int(payload.amount))
+
+    await database["family_members"].update_one(
+        {"member_id": member_id, "family_id": user["family_id"]},
+        {"$set": {"stars": new_stars}},
+    )
+
+    updated = await database["family_members"].find_one(
+        {"member_id": member_id, "family_id": user["family_id"]},
+        {"_id": 0},
+    )
+
+    return public_member(updated)
+
+
 @app.post("/api/family/invite")
 async def family_invite(payload: dict, user=Depends(require_user)):
     sub = await build_subscription(user["family_id"])
@@ -915,6 +953,48 @@ async def create_reward(payload: RewardIn, user=Depends(require_user)):
     }
     await database["rewards"].insert_one(reward)
     return public_reward(reward)
+
+
+@app.patch("/api/rewards/{reward_id}")
+async def update_reward(reward_id: str, payload: RewardPatchIn, user=Depends(require_user)):
+    database = get_db()
+
+    reward = await database["rewards"].find_one(
+        {"reward_id": reward_id, "family_id": user["family_id"]},
+        {"_id": 0},
+    )
+
+    if not reward:
+        raise HTTPException(status_code=404, detail="Reward not found")
+
+    changes = {}
+
+    if payload.title is not None:
+        title = payload.title.strip()
+        if not title:
+            raise HTTPException(status_code=400, detail="Reward title is required")
+        changes["title"] = title
+
+    if payload.cost_stars is not None:
+        if payload.cost_stars < 1:
+            raise HTTPException(status_code=400, detail="Reward cost must be at least 1 star")
+        changes["cost_stars"] = payload.cost_stars
+
+    if payload.icon is not None:
+        changes["icon"] = payload.icon
+
+    if changes:
+        await database["rewards"].update_one(
+            {"reward_id": reward_id, "family_id": user["family_id"]},
+            {"$set": changes},
+        )
+
+    updated = await database["rewards"].find_one(
+        {"reward_id": reward_id, "family_id": user["family_id"]},
+        {"_id": 0},
+    )
+
+    return public_reward(updated)
 
 
 @app.delete("/api/rewards/{reward_id}")
