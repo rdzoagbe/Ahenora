@@ -308,10 +308,12 @@ export default function KidsScreen() {
                         <PressScale
                           testID={`redeem-${r.reward_id}`}
                           onPress={() => redeem(r)}
-                          disabled={!affordable}
-                          style={[styles.redeemBtn, !affordable && { opacity: 0.4 }]}
+                          disabled={false}
+                          style={styles.redeemBtn}
                         >
-                          <Text style={styles.redeemText}>{t('redeem')}</Text>
+                          <Text style={styles.redeemText}>
+                            {affordable ? t('redeem') : `Need ${r.cost_stars - stars}`}
+                          </Text>
                         </PressScale>
                         <PressScale
                           testID={`edit-reward-${r.reward_id}`}
