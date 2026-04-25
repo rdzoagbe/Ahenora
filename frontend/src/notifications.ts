@@ -149,7 +149,11 @@ export async function syncCardReminderNotifications(cards: Card[], enabled: bool
           card_id: card.card_id,
         },
       },
-      trigger: new Date(triggerAt) as any,
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: new Date(triggerAt),
+        channelId: 'card-reminders',
+      } as any,
     });
 
     nextMap[card.card_id] = identifier;
@@ -159,6 +163,30 @@ export async function syncCardReminderNotifications(cards: Card[], enabled: bool
 
   return { scheduled: Object.keys(nextMap).length };
 }
+
+export async function sendTestScheduledReminderNotification() {
+  const permissions = await Notifications.getPermissionsAsync();
+  if (permissions.status !== 'granted') return false;
+
+  await configureNotificationChannels();
+
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: 'Household COO reminder test',
+      body: 'This reminder was scheduled 5 seconds ago.',
+      sound: true,
+      data: { type: 'scheduled_reminder_test' },
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+      seconds: 5,
+      channelId: 'card-reminders',
+    } as any,
+  });
+
+  return true;
+}
+
 
 export async function sendLocalNotification(title: string, body: string) {
   const permissions = await Notifications.getPermissionsAsync();
@@ -171,7 +199,11 @@ export async function sendLocalNotification(title: string, body: string) {
       sound: true,
       data: { type: 'local_test' },
     },
-    trigger: null,
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+      seconds: 1,
+      channelId: 'household-alerts',
+    } as any,
   });
 
   return true;

@@ -21,7 +21,7 @@ import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSh
 import { useStore } from '../../src/store';
 import { api, CalendarContact, FamilyInvite, FamilyMember, NotificationSettings } from '../../src/api';
 import { LANG_NAMES } from '../../src/i18n';
-import { ensureNotificationPermissions, registerForPushNotificationsAsync, sendLocalNotification, syncCardReminderNotifications } from '../../src/notifications';
+import { ensureNotificationPermissions, registerForPushNotificationsAsync, sendLocalNotification, sendTestScheduledReminderNotification, syncCardReminderNotifications } from '../../src/notifications';
 
 export default function SettingsScreen() {
   const { user, t, lang, logout, subscription } = useStore();
@@ -80,33 +80,60 @@ export default function SettingsScreen() {
 
       try {
         if (nextPrefs.card_reminders || nextPrefs.new_card_alerts) {
-          const push = await registerForPushNotificationsAsync();
+          const granted = await ensureNotificationPermissions();
 
-          if (!push.granted) {
-            setNotificationStatus(push.error || 'Notification permission was not granted.');
-          } else if (push.expoPushToken) {
-            await api.registerNotificationToken(push.expoPushToken, Platform.OS);
-          } else if (push.error) {
-            setNotificationStatus(push.error);
+          if (!granted) {
+            setNotificationStatus('Notification permission was not granted.');
+            setSavingNotifications(false);
+            return;
           }
         }
 
-        const saved = await api.updateNotificationSettings(nextPrefs);
-        setNotificationPrefs(saved);
+        let remoteWarning = '';
 
-        if (saved.card_reminders) {
+        if (nextPrefs.new_card_alerts) {
+          try {
+            const push = await registerForPushNotificationsAsync();
+
+            if (push.expoPushToken) {
+              await api.registerNotificationToken(push.expoPushToken, Platform.OS);
+            } else if (push.error) {
+              remoteWarning = push.error;
+            }
+          } catch (pushError: any) {
+            remoteWarning = pushError?.message || 'Remote push registration failed. Local tests still work.';
+          }
+        }
+
+        try {
+          const saved = await api.updateNotificationSettings(nextPrefs);
+          setNotificationPrefs(saved);
+        } catch (backendError: any) {
+          // Keep the local toggles usable even if the backend route fails.
+          console.log('notification backend settings failed', backendError);
+          setNotificationPrefs(nextPrefs);
+          remoteWarning = backendError?.message || remoteWarning;
+        }
+
+        if (nextPrefs.card_reminders) {
           const cards = await api.listCards();
           const result = await syncCardReminderNotifications(cards, true);
           setNotificationStatus(
             result.scheduled
               ? `${result.scheduled} reminder notification${result.scheduled === 1 ? '' : 's'} scheduled.`
-              : 'Reminder alerts are on. Add due dates and reminder times to schedule alerts.'
+              : remoteWarning ||
+                  'Reminder alerts are on. Add due dates and reminder times to schedule alerts.'
           );
         } else {
           await syncCardReminderNotifications([], false);
+          setNotificationStatus(
+            nextPrefs.new_card_alerts
+              ? remoteWarning || 'New-card alerts are on for this device.'
+              : 'Notifications are off.'
+          );
         }
 
-        if (saved.new_card_alerts) {
+        if (nextPrefs.new_card_alerts) {
           await sendLocalNotification(
             'Household COO alerts active',
             'You will get alerts when new household cards are added.'
@@ -115,13 +142,52 @@ export default function SettingsScreen() {
       } catch (e: any) {
         console.log('notification settings failed', e);
         setNotificationStatus(e?.message || 'Could not update notification settings.');
-        await load();
       } finally {
         setSavingNotifications(false);
       }
     },
-    [notificationPrefs, load]
+    [notificationPrefs]
   );
+
+  const testReminderNotification = useCallback(async () => {
+    try {
+      const granted = await ensureNotificationPermissions();
+      if (!granted) {
+        setNotificationStatus('Notification permission was not granted.');
+        return;
+      }
+
+      await sendTestScheduledReminderNotification();
+      setNotificationStatus('Test reminder scheduled. It should appear in about 5 seconds.');
+    } catch (e: any) {
+      setNotificationStatus(e?.message || 'Could not send test notification.');
+    }
+  }, []);
+
+  const testNewCardAlert = useCallback(async () => {
+    try {
+      const granted = await ensureNotificationPermissions();
+      if (!granted) {
+        setNotificationStatus('Notification permission was not granted.');
+        return;
+      }
+
+      await sendLocalNotification(
+        'New Household COO card',
+        'This is how a new-card alert will appear.'
+      );
+
+      try {
+        await api.testNotification();
+      } catch {
+        // Remote Expo push may not be available yet. The local test above is enough for this device.
+      }
+
+      setNotificationStatus('Test new-card alert sent on this device.');
+    } catch (e: any) {
+      setNotificationStatus(e?.message || 'Could not send test new-card alert.');
+    }
+  }, []);
 
   const shareInviteLink = useCallback(
     async (inviteUrl: string, email?: string) => {
@@ -180,6 +246,76 @@ export default function SettingsScreen() {
                 ) : null}
               </View>
             </View>
+          </GlassCard>
+
+          {/* Notifications */}
+          <View style={styles.sectionRow}>
+            <Bell color="rgba(255,255,255,0.6)" size={14} />
+            <Text style={styles.sectionLabel}>Notifications</Text>
+          </View>
+          <GlassCard>
+            <PressScale
+              testID="toggle-card-reminders"
+              onPress={() =>
+                updateNotificationPrefs({
+                  card_reminders: !notificationPrefs.card_reminders,
+                })
+              }
+              disabled={savingNotifications}
+              style={styles.actionRow}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={styles.actionLabel}>Reminder notifications</Text>
+                <Text style={styles.actionHint}>Alerts before cards with due dates and reminder times.</Text>
+              </View>
+              <View style={[styles.switch, notificationPrefs.card_reminders && styles.switchOn]}>
+                <View style={[styles.knob, notificationPrefs.card_reminders && styles.knobOn]} />
+              </View>
+            </PressScale>
+
+            <View style={styles.memberBorder} />
+
+            <PressScale
+              testID="toggle-new-card-alerts"
+              onPress={() =>
+                updateNotificationPrefs({
+                  new_card_alerts: !notificationPrefs.new_card_alerts,
+                })
+              }
+              disabled={savingNotifications}
+              style={styles.actionRow}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={styles.actionLabel}>New-card alerts</Text>
+                <Text style={styles.actionHint}>Alerts when another household member adds a card.</Text>
+              </View>
+              <View style={[styles.switch, notificationPrefs.new_card_alerts && styles.switchOn]}>
+                <View style={[styles.knob, notificationPrefs.new_card_alerts && styles.knobOn]} />
+              </View>
+            </PressScale>
+
+            <View style={styles.testButtonRow}>
+              <PressScale
+                testID="test-reminder-notification"
+                onPress={testReminderNotification}
+                style={styles.testBtn}
+              >
+                <Text style={styles.testBtnText}>Test reminder</Text>
+              </PressScale>
+
+              <PressScale
+                testID="test-new-card-alert"
+                onPress={testNewCardAlert}
+                style={styles.testBtn}
+              >
+                <Text style={styles.testBtnText}>Test new-card alert</Text>
+              </PressScale>
+            </View>
+
+            <Text style={styles.notifyNote}>
+              {notificationStatus ||
+                'Reminder alerts are scheduled on this device. New-card alerts are mainly for other signed-in family members/devices.'}
+            </Text>
           </GlassCard>
 
           {/* Family */}
@@ -403,58 +539,6 @@ export default function SettingsScreen() {
             {members.filter((m) => m.role === 'Child').length === 0 && (
               <Text style={styles.emptyRow}>No children to secure.</Text>
             )}
-          </GlassCard>
-
-          {/* Notifications */}
-          <View style={styles.sectionRow}>
-            <Bell color="rgba(255,255,255,0.6)" size={14} />
-            <Text style={styles.sectionLabel}>Notifications</Text>
-          </View>
-          <GlassCard>
-            <PressScale
-              testID="toggle-card-reminders"
-              onPress={() =>
-                updateNotificationPrefs({
-                  card_reminders: !notificationPrefs.card_reminders,
-                })
-              }
-              disabled={savingNotifications}
-              style={styles.actionRow}
-            >
-              <View style={{ flex: 1 }}>
-                <Text style={styles.actionLabel}>Reminder notifications</Text>
-                <Text style={styles.actionHint}>Alert before cards with due dates.</Text>
-              </View>
-              <View style={[styles.switch, notificationPrefs.card_reminders && styles.switchOn]}>
-                <View style={[styles.knob, notificationPrefs.card_reminders && styles.knobOn]} />
-              </View>
-            </PressScale>
-
-            <View style={styles.memberBorder} />
-
-            <PressScale
-              testID="toggle-new-card-alerts"
-              onPress={() =>
-                updateNotificationPrefs({
-                  new_card_alerts: !notificationPrefs.new_card_alerts,
-                })
-              }
-              disabled={savingNotifications}
-              style={styles.actionRow}
-            >
-              <View style={{ flex: 1 }}>
-                <Text style={styles.actionLabel}>New-card alerts</Text>
-                <Text style={styles.actionHint}>Notify when someone adds a household card.</Text>
-              </View>
-              <View style={[styles.switch, notificationPrefs.new_card_alerts && styles.switchOn]}>
-                <View style={[styles.knob, notificationPrefs.new_card_alerts && styles.knobOn]} />
-              </View>
-            </PressScale>
-
-            <Text style={styles.notifyNote}>
-              {notificationStatus ||
-                'Reminder alerts are scheduled on this device. New-card alerts use Expo push tokens when available.'}
-            </Text>
           </GlassCard>
 
           {/* Language */}
@@ -753,6 +837,17 @@ const styles = StyleSheet.create({
     width: 20, height: 20, borderRadius: 9999, backgroundColor: '#fff',
   },
   knobOn: { alignSelf: 'flex-end' },
+  testButtonRow: { flexDirection: 'row', gap: 10, marginTop: 14 },
+  testBtn: {
+    flex: 1,
+    borderRadius: 9999,
+    backgroundColor: 'rgba(255,255,255,0.09)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  testBtnText: { color: '#FFFFFF', fontFamily: 'Inter_600SemiBold', fontSize: 12 },
   notifyNote: {
     marginTop: 8,
     color: 'rgba(255,255,255,0.45)',
