@@ -476,6 +476,113 @@ async def add_user_to_family_if_needed(database: Any, user: dict, family_id: str
     return member
 
 
+def public_notification_settings(settings: Optional[dict]) -> dict:
+    settings = settings or {}
+    return {
+        "card_reminders": bool(settings.get("card_reminders", False)),
+        "new_card_alerts": bool(settings.get("new_card_alerts", False)),
+        "updated_at": iso(settings.get("updated_at")),
+    }
+
+
+async def get_notification_settings_doc(user_id: str) -> dict:
+    database = get_db()
+    settings = await database["notification_settings"].find_one(
+        {"user_id": user_id},
+        {"_id": 0},
+    )
+    if settings:
+        return settings
+
+    settings = {
+        "user_id": user_id,
+        "card_reminders": False,
+        "new_card_alerts": False,
+        "created_at": utcnow(),
+        "updated_at": utcnow(),
+    }
+    await database["notification_settings"].insert_one(settings)
+    return settings
+
+
+async def send_expo_push_messages(messages: list[dict]) -> dict:
+    if not messages:
+        return {"sent": 0, "skipped": True}
+
+    def _send():
+        req = urllib.request.Request(
+            "https://exp.host/--/api/v2/push/send",
+            data=json.dumps(messages).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=12) as response:
+                raw = response.read().decode("utf-8")
+                try:
+                    parsed = json.loads(raw) if raw else {}
+                except Exception:
+                    parsed = {"raw": raw}
+                return {"sent": len(messages), "response": parsed}
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8", errors="replace")
+            return {"sent": 0, "error": f"Expo push HTTP {e.code}: {body}"}
+        except Exception as e:
+            return {"sent": 0, "error": str(e)}
+
+    return await asyncio.to_thread(_send)
+
+
+async def send_new_card_alert(family_id: str, card: dict, created_by_user_id: Optional[str] = None):
+    database = get_db()
+    messages = []
+
+    cursor = database["notification_tokens"].find(
+        {
+            "family_id": family_id,
+            "active": True,
+        },
+        {"_id": 0},
+    )
+
+    async for token_doc in cursor:
+        if created_by_user_id and token_doc.get("user_id") == created_by_user_id:
+            continue
+
+        prefs = await database["notification_settings"].find_one(
+            {"user_id": token_doc.get("user_id")},
+            {"_id": 0},
+        )
+
+        if not prefs or not prefs.get("new_card_alerts"):
+            continue
+
+        token = token_doc.get("token")
+        if not token or not token.startswith("ExponentPushToken"):
+            continue
+
+        messages.append(
+            {
+                "to": token,
+                "sound": "default",
+                "title": "New Household COO card",
+                "body": card.get("title") or "A new card was added.",
+                "data": {
+                    "type": "new_card",
+                    "card_id": card.get("card_id"),
+                    "family_id": family_id,
+                },
+            }
+        )
+
+    if messages:
+        await send_expo_push_messages(messages)
+
+
+
 async def require_user(authorization: str = Header(default="")):
     database = get_db()
 
@@ -568,6 +675,16 @@ class CalendarImportIn(BaseModel):
     days: int = 30
 
 
+class NotificationTokenIn(BaseModel):
+    token: str
+    platform: Optional[str] = None
+
+
+class NotificationPrefsIn(BaseModel):
+    card_reminders: Optional[bool] = None
+    new_card_alerts: Optional[bool] = None
+
+
 
 # -----------------------------------------------------------------------------
 # Health
@@ -579,9 +696,10 @@ async def root():
         "message": "Household COO Backend is live",
         "api_configured": bool(GOOGLE_API_KEY),
         "db_configured": bool(MONGO_URL),
-        "backend_version": "calendar_sync_v1",
+        "backend_version": "notifications_v1",
         "invite_routes": True,
         "calendar_sync": True,
+        "notifications": True,
         "email_configured": bool(RESEND_API_KEY and INVITE_FROM_EMAIL),
         "admin_access_enabled": bool(ADMIN_EMAILS),
         "voice_configured": bool(GOOGLE_API_KEY and genai),
@@ -960,6 +1078,93 @@ async def family_invite_lookup(token: str):
 
 
 # -----------------------------------------------------------------------------
+# Notifications
+# -----------------------------------------------------------------------------
+@app.get("/api/notifications/settings")
+async def get_notification_settings(user=Depends(require_user)):
+    settings = await get_notification_settings_doc(user["user_id"])
+    return public_notification_settings(settings)
+
+
+@app.put("/api/notifications/settings")
+async def update_notification_settings(payload: NotificationPrefsIn, user=Depends(require_user)):
+    database = get_db()
+    current = await get_notification_settings_doc(user["user_id"])
+
+    changes = {"updated_at": utcnow()}
+    if payload.card_reminders is not None:
+        changes["card_reminders"] = bool(payload.card_reminders)
+    if payload.new_card_alerts is not None:
+        changes["new_card_alerts"] = bool(payload.new_card_alerts)
+
+    await database["notification_settings"].update_one(
+        {"user_id": user["user_id"]},
+        {"$set": changes},
+        upsert=True,
+    )
+
+    current.update(changes)
+    return public_notification_settings(current)
+
+
+@app.post("/api/notifications/register")
+async def register_notification_token(payload: NotificationTokenIn, user=Depends(require_user)):
+    database = get_db()
+
+    token = payload.token.strip()
+    if not token:
+        raise HTTPException(status_code=400, detail="Notification token is required")
+
+    doc = {
+        "token": token,
+        "user_id": user["user_id"],
+        "family_id": user["family_id"],
+        "email": user.get("email"),
+        "platform": payload.platform,
+        "active": True,
+        "updated_at": utcnow(),
+    }
+
+    await database["notification_tokens"].update_one(
+        {"token": token},
+        {
+            "$set": doc,
+            "$setOnInsert": {"created_at": utcnow()},
+        },
+        upsert=True,
+    )
+
+    return {"ok": True}
+
+
+@app.post("/api/notifications/test")
+async def test_notification(user=Depends(require_user)):
+    database = get_db()
+    messages = []
+    cursor = database["notification_tokens"].find(
+        {"user_id": user["user_id"], "active": True},
+        {"_id": 0},
+    )
+
+    async for token_doc in cursor:
+        token = token_doc.get("token")
+        if token and token.startswith("ExponentPushToken"):
+            messages.append(
+                {
+                    "to": token,
+                    "sound": "default",
+                    "title": "Household COO notifications are active",
+                    "body": "You will receive card alerts and reminder notifications.",
+                    "data": {"type": "notification_test"},
+                }
+            )
+
+    result = await send_expo_push_messages(messages)
+    return {"ok": True, "tokens": len(messages), "result": result}
+
+
+
+# -----------------------------------------------------------------------------
 # AI assign
 # -----------------------------------------------------------------------------
 @app.post("/api/ai/assign")
@@ -1032,6 +1237,12 @@ async def create_card(payload: CardIn, user=Depends(require_user)):
         "completed_at": None,
     }
     await database["cards"].insert_one(doc)
+
+    try:
+        await send_new_card_alert(user["family_id"], doc, created_by_user_id=user["user_id"])
+    except Exception as e:
+        print(f"new card alert failed: {e}")
+
     return public_card(doc)
 
 

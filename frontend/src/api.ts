@@ -292,6 +292,23 @@ export const api = {
   // Brief
   weeklyBrief: () =>
     request<{ brief: string; generated_at: string }>('/brief/weekly', { method: 'POST' }),
+  // Notifications
+  getNotificationSettings: () =>
+    request<NotificationSettings>('/notifications/settings'),
+  updateNotificationSettings: (data: Partial<NotificationSettings>) =>
+    request<NotificationSettings>('/notifications/settings', {
+      method: 'PUT',
+      body: data,
+    }),
+  registerNotificationToken: (token: string, platform?: string) =>
+    request<{ ok: boolean }>('/notifications/register', {
+      method: 'POST',
+      body: { token, platform },
+    }),
+  testNotification: () =>
+    request<{ ok: boolean; tokens: number; result: any }>('/notifications/test', {
+      method: 'POST',
+    }),
   // Subscription
   getSubscription: () => request<Subscription>('/subscription'),
   changeSubscription: (plan: Plan, billing_cycle: BillingCycle) =>

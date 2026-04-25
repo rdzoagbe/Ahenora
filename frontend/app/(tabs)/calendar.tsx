@@ -18,6 +18,7 @@ import { GlassCard } from '../../src/components/GlassCard';
 import { PressScale } from '../../src/components/PressScale';
 import { useStore } from '../../src/store';
 import { api, CalendarImportResult, Card } from '../../src/api';
+import { syncCardReminderNotifications } from '../../src/notifications';
 
 WebBrowser.maybeCompleteAuthSession();
 

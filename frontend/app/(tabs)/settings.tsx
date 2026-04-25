@@ -19,8 +19,9 @@ import { LanguageModal } from '../../src/components/LanguageModal';
 import { PinPadModal } from '../../src/components/PinPadModal';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
 import { useStore } from '../../src/store';
-import { api, CalendarContact, FamilyInvite, FamilyMember } from '../../src/api';
+import { api, CalendarContact, FamilyInvite, FamilyMember, NotificationSettings } from '../../src/api';
 import { LANG_NAMES } from '../../src/i18n';
+import { ensureNotificationPermissions, registerForPushNotificationsAsync, sendLocalNotification, syncCardReminderNotifications } from '../../src/notifications';
 
 export default function SettingsScreen() {
   const { user, t, lang, logout, subscription } = useStore();
@@ -36,26 +37,25 @@ export default function SettingsScreen() {
   const [lastInviteUrl, setLastInviteUrl] = useState<string | null>(null);
   const [lastInviteEmail, setLastInviteEmail] = useState('');
   const [pinMember, setPinMember] = useState<FamilyMember | null>(null);
-  const [notifyOn, setNotifyOn] = useState(false);
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        setNotifyOn(window.localStorage.getItem('coo_notify') === '1');
-      } catch { /* ignore */ }
-    }
-  }, []);
+  const [notificationPrefs, setNotificationPrefs] = useState<NotificationSettings>({
+    card_reminders: false,
+    new_card_alerts: false,
+  });
+  const [notificationStatus, setNotificationStatus] = useState<string | null>(null);
+  const [savingNotifications, setSavingNotifications] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [memberRows, inviteRows, contactRows] = await Promise.all([
+      const [memberRows, inviteRows, contactRows, notificationRows] = await Promise.all([
         api.familyMembers(),
         api.listInvites(),
         api.listCalendarContacts().catch(() => []),
+        api.getNotificationSettings().catch(() => ({ card_reminders: false, new_card_alerts: false })),
       ]);
       setMembers(memberRows);
       setInvites(inviteRows);
       setCalendarContacts(contactRows);
+      setNotificationPrefs(notificationRows);
     } catch (e) {
       console.log(e);
     }
@@ -69,6 +69,59 @@ export default function SettingsScreen() {
     await logout();
     router.replace('/');
   };
+
+  const updateNotificationPrefs = useCallback(
+    async (changes: Partial<NotificationSettings>) => {
+      const nextPrefs = { ...notificationPrefs, ...changes };
+
+      setSavingNotifications(true);
+      setNotificationStatus(null);
+      setNotificationPrefs(nextPrefs);
+
+      try {
+        if (nextPrefs.card_reminders || nextPrefs.new_card_alerts) {
+          const push = await registerForPushNotificationsAsync();
+
+          if (!push.granted) {
+            setNotificationStatus(push.error || 'Notification permission was not granted.');
+          } else if (push.expoPushToken) {
+            await api.registerNotificationToken(push.expoPushToken, Platform.OS);
+          } else if (push.error) {
+            setNotificationStatus(push.error);
+          }
+        }
+
+        const saved = await api.updateNotificationSettings(nextPrefs);
+        setNotificationPrefs(saved);
+
+        if (saved.card_reminders) {
+          const cards = await api.listCards();
+          const result = await syncCardReminderNotifications(cards, true);
+          setNotificationStatus(
+            result.scheduled
+              ? `${result.scheduled} reminder notification${result.scheduled === 1 ? '' : 's'} scheduled.`
+              : 'Reminder alerts are on. Add due dates and reminder times to schedule alerts.'
+          );
+        } else {
+          await syncCardReminderNotifications([], false);
+        }
+
+        if (saved.new_card_alerts) {
+          await sendLocalNotification(
+            'Household COO alerts active',
+            'You will get alerts when new household cards are added.'
+          );
+        }
+      } catch (e: any) {
+        console.log('notification settings failed', e);
+        setNotificationStatus(e?.message || 'Could not update notification settings.');
+        await load();
+      } finally {
+        setSavingNotifications(false);
+      }
+    },
+    [notificationPrefs, load]
+  );
 
   const shareInviteLink = useCallback(
     async (inviteUrl: string, email?: string) => {
@@ -359,34 +412,48 @@ export default function SettingsScreen() {
           </View>
           <GlassCard>
             <PressScale
-              testID="toggle-notify"
-              onPress={async () => {
-                if (Platform.OS !== 'web' || typeof window === 'undefined') return;
-                if (!notifyOn) {
-                  if ('Notification' in window) {
-                    const perm = await Notification.requestPermission();
-                    if (perm === 'granted') {
-                      window.localStorage.setItem('coo_notify', '1');
-                      setNotifyOn(true);
-                      new Notification('Household COO', {
-                        body: "You'll get a ping when new cards arrive.",
-                      });
-                    }
-                  }
-                } else {
-                  window.localStorage.removeItem('coo_notify');
-                  setNotifyOn(false);
-                }
-              }}
+              testID="toggle-card-reminders"
+              onPress={() =>
+                updateNotificationPrefs({
+                  card_reminders: !notificationPrefs.card_reminders,
+                })
+              }
+              disabled={savingNotifications}
               style={styles.actionRow}
             >
-              <Text style={styles.actionLabel}>New-card alerts</Text>
-              <View style={[styles.switch, notifyOn && styles.switchOn]}>
-                <View style={[styles.knob, notifyOn && styles.knobOn]} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.actionLabel}>Reminder notifications</Text>
+                <Text style={styles.actionHint}>Alert before cards with due dates.</Text>
+              </View>
+              <View style={[styles.switch, notificationPrefs.card_reminders && styles.switchOn]}>
+                <View style={[styles.knob, notificationPrefs.card_reminders && styles.knobOn]} />
               </View>
             </PressScale>
+
+            <View style={styles.memberBorder} />
+
+            <PressScale
+              testID="toggle-new-card-alerts"
+              onPress={() =>
+                updateNotificationPrefs({
+                  new_card_alerts: !notificationPrefs.new_card_alerts,
+                })
+              }
+              disabled={savingNotifications}
+              style={styles.actionRow}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={styles.actionLabel}>New-card alerts</Text>
+                <Text style={styles.actionHint}>Notify when someone adds a household card.</Text>
+              </View>
+              <View style={[styles.switch, notificationPrefs.new_card_alerts && styles.switchOn]}>
+                <View style={[styles.knob, notificationPrefs.new_card_alerts && styles.knobOn]} />
+              </View>
+            </PressScale>
+
             <Text style={styles.notifyNote}>
-              In-browser pings while the app is open. For background push, a native build + FCM is required.
+              {notificationStatus ||
+                'Reminder alerts are scheduled on this device. New-card alerts use Expo push tokens when available.'}
             </Text>
           </GlassCard>
 

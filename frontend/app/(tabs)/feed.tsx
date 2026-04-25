@@ -21,6 +21,7 @@ import { VoiceCaptureModal } from '../../src/components/VoiceCaptureModal';
 import { CameraCaptureModal } from '../../src/components/CameraCaptureModal';
 import { useStore } from '../../src/store';
 import { api, Card, CardType } from '../../src/api';
+import { syncCardReminderNotifications } from '../../src/notifications';
 
 interface VoiceDraft {
   transcript: string;
@@ -50,6 +51,16 @@ export default function FeedScreen() {
     try {
       const res = await api.listCards();
       setCards(res);
+
+      api
+        .getNotificationSettings()
+        .then((prefs) => {
+          if (prefs.card_reminders) {
+            return syncCardReminderNotifications(res, true);
+          }
+          return syncCardReminderNotifications([], false);
+        })
+        .catch(() => undefined);
     } catch (e) {
       console.log('load cards error', e);
     } finally {
