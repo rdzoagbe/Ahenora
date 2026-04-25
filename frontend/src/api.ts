@@ -281,6 +281,12 @@ export const api = {
       }
     ),
 
+  addMemberStars: (member_id: string, amount: number) =>
+    request<FamilyMember>(`/family/members/${member_id}/stars`, {
+      method: 'PATCH',
+      body: { amount },
+    }),
+
   invite: (email: string) =>
     request<{ ok?: boolean; sent?: boolean; message?: string; error?: string }>(
       '/family/invite',
@@ -355,6 +361,15 @@ export const api = {
   createReward: (data: { title: string; cost_stars: number; icon?: string }) =>
     request<Reward>('/rewards', {
       method: 'POST',
+      body: data,
+    }),
+
+  updateReward: (
+    id: string,
+    data: { title?: string; cost_stars?: number; icon?: string }
+  ) =>
+    request<Reward>(`/rewards/${id}`, {
+      method: 'PATCH',
       body: data,
     }),
 

@@ -16,7 +16,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
 import { useFocusEffect } from 'expo-router';
-import { Plus, Star, Gift, X, Trash2, Sparkles, Lock } from 'lucide-react-native';
+import { Plus, Star, Gift, X, Trash2, Sparkles, Lock, Pencil } from 'lucide-react-native';
 import { AmbientBackground } from '../../src/components/AmbientBackground';
 import { GlassCard } from '../../src/components/GlassCard';
 import { PressScale } from '../../src/components/PressScale';
@@ -31,6 +31,7 @@ export default function KidsScreen() {
   const [loading, setLoading] = useState(true);
   const [selectedChild, setSelectedChild] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
+  const [editingReward, setEditingReward] = useState<Reward | null>(null);
   const [newTitle, setNewTitle] = useState('');
   const [newCost, setNewCost] = useState('50');
   const [newIcon, setNewIcon] = useState('🎁');
@@ -113,19 +114,81 @@ export default function KidsScreen() {
     try { await api.deleteReward(r.reward_id); } catch { load(); }
   };
 
-  const createReward = async () => {
+  const openAddReward = () => {
+    setEditingReward(null);
+    setNewTitle('');
+    setNewCost('50');
+    setNewIcon('🎁');
+    setShowAdd(true);
+  };
+
+  const openEditReward = (reward: Reward) => {
+    setEditingReward(reward);
+    setNewTitle(reward.title);
+    setNewCost(String(reward.cost_stars));
+    setNewIcon(reward.icon || '🎁');
+    setShowAdd(true);
+  };
+
+  const saveReward = async () => {
     const cost = parseInt(newCost, 10);
+
     if (!newTitle.trim() || !cost || cost < 1) return;
+
     setSaving(true);
+
     try {
-      await api.createReward({ title: newTitle.trim(), cost_stars: cost, icon: newIcon || '🎁' });
-      setNewTitle(''); setNewCost('50'); setNewIcon('🎁');
+      if (editingReward) {
+        const updated = await api.updateReward(editingReward.reward_id, {
+          title: newTitle.trim(),
+          cost_stars: cost,
+          icon: newIcon || '🎁',
+        });
+
+        setRewards((prev) =>
+          prev.map((r) => (r.reward_id === updated.reward_id ? updated : r))
+        );
+
+        showToast('Reward updated.');
+      } else {
+        const created = await api.createReward({
+          title: newTitle.trim(),
+          cost_stars: cost,
+          icon: newIcon || '🎁',
+        });
+
+        setRewards((prev) => [created, ...prev]);
+
+        showToast('Reward created.');
+      }
+
+      setNewTitle('');
+      setNewCost('50');
+      setNewIcon('🎁');
+      setEditingReward(null);
       setShowAdd(false);
-      load();
-    } catch (e) {
-      console.log(e);
+    } catch (e: any) {
+      console.log('Save reward failed:', e);
+      showToast(e?.message || 'Error');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const addStars = async (amount: number) => {
+    if (!activeChild) return;
+
+    try {
+      const updated = await api.addMemberStars(activeChild.member_id, amount);
+
+      setMembers((prev) =>
+        prev.map((m) => (m.member_id === updated.member_id ? updated : m))
+      );
+
+      showToast(`${amount > 0 ? '+' : ''}${amount} stars for ${updated.name}`);
+    } catch (e: any) {
+      console.log('Add stars failed:', e);
+      showToast(e?.message || 'Error');
     }
   };
 
@@ -139,7 +202,7 @@ export default function KidsScreen() {
               <Text style={styles.title}>{t('kids')}</Text>
               <Text style={styles.sub}>{t('earn_stars')}</Text>
             </View>
-            <PressScale testID="add-reward" onPress={() => setShowAdd(true)} style={styles.addBtn}>
+            <PressScale testID="add-reward" onPress={openAddReward} style={styles.addBtn}>
               <Plus color="#080910" size={18} />
             </PressScale>
           </View>
@@ -196,6 +259,25 @@ export default function KidsScreen() {
                     <Text style={styles.heroCount}>{stars}</Text>
                     <Text style={styles.heroUnit}>{t('stars')}</Text>
                   </View>
+
+                  <View style={styles.starActions}>
+                    <PressScale
+                      testID="remove-stars"
+                      onPress={() => addStars(-5)}
+                      style={[styles.starActionBtn, stars <= 0 && { opacity: 0.45 }]}
+                      disabled={stars <= 0}
+                    >
+                      <Text style={styles.starActionText}>-5</Text>
+                    </PressScale>
+
+                    <PressScale
+                      testID="add-stars"
+                      onPress={() => addStars(5)}
+                      style={styles.starActionBtn}
+                    >
+                      <Text style={styles.starActionText}>+5 stars</Text>
+                    </PressScale>
+                  </View>
                 </View>
               )}
 
@@ -232,6 +314,14 @@ export default function KidsScreen() {
                           <Text style={styles.redeemText}>{t('redeem')}</Text>
                         </PressScale>
                         <PressScale
+                          testID={`edit-reward-${r.reward_id}`}
+                          onPress={() => openEditReward(r)}
+                          style={styles.delBtn}
+                        >
+                          <Pencil color="rgba(255,255,255,0.65)" size={14} />
+                        </PressScale>
+
+                        <PressScale
                           testID={`del-reward-${r.reward_id}`}
                           onPress={() =>
                             Platform.OS === 'web'
@@ -262,8 +352,8 @@ export default function KidsScreen() {
         </ScrollView>
       </SafeAreaView>
 
-      {/* Add Reward Modal */}
-      <Modal visible={showAdd} transparent animationType="fade" onRequestClose={() => setShowAdd(false)}>
+      {/* Add/Edit Reward Modal */}
+      <Modal visible={showAdd} transparent animationType="fade" onRequestClose={() => { setShowAdd(false); setEditingReward(null); }}>
         <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
         <View style={styles.backdrop} />
         <KeyboardAvoidingView
@@ -273,8 +363,8 @@ export default function KidsScreen() {
           <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
             <View style={styles.sheet}>
               <View style={styles.sheetHeader}>
-                <Text style={styles.sheetTitle}>{t('add_reward')}</Text>
-                <PressScale testID="close-reward" onPress={() => setShowAdd(false)} style={styles.iconBtn}>
+                <Text style={styles.sheetTitle}>{editingReward ? 'Edit reward' : t('add_reward')}</Text>
+                <PressScale testID="close-reward" onPress={() => { setShowAdd(false); setEditingReward(null); }} style={styles.iconBtn}>
                   <X color="#fff" size={18} />
                 </PressScale>
               </View>
@@ -310,12 +400,12 @@ export default function KidsScreen() {
               />
 
               <View style={styles.sheetFooter}>
-                <PressScale testID="cancel-reward" onPress={() => setShowAdd(false)} style={styles.cancelBtn}>
+                <PressScale testID="cancel-reward" onPress={() => { setShowAdd(false); setEditingReward(null); }} style={styles.cancelBtn}>
                   <Text style={styles.cancelText}>{t('cancel')}</Text>
                 </PressScale>
                 <PressScale
                   testID="save-reward"
-                  onPress={createReward}
+                  onPress={saveReward}
                   disabled={saving || !newTitle.trim()}
                   style={[styles.saveBtn, (!newTitle.trim() || saving) && { opacity: 0.5 }]}
                 >
@@ -426,6 +516,25 @@ const styles = StyleSheet.create({
     lineHeight: 58,
   },
   heroUnit: { color: 'rgba(255,255,255,0.55)', fontFamily: 'Inter_400Regular', fontSize: 14 },
+  starActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 16,
+    justifyContent: 'center',
+  },
+  starActionBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 9999,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+  },
+  starActionText: {
+    color: '#fff',
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 12,
+  },
   sectionRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6, marginBottom: 10 },
   sectionLabel: {
     fontFamily: 'Inter_500Medium', fontSize: 11, color: 'rgba(255,255,255,0.55)',
