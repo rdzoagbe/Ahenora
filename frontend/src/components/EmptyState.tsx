@@ -9,6 +9,7 @@ type EmptyStateProps = {
   message?: string;
   actionLabel?: string;
   onAction?: () => void;
+  actionTestID?: string;
 };
 
 export default function EmptyState({
@@ -16,6 +17,7 @@ export default function EmptyState({
   message,
   actionLabel,
   onAction,
+  actionTestID = 'empty-state-action',
 }: EmptyStateProps) {
   return (
     <View style={styles.wrap}>
@@ -28,7 +30,7 @@ export default function EmptyState({
       {message ? <Text style={styles.message}>{message}</Text> : null}
 
       {actionLabel && onAction ? (
-        <PressScale onPress={onAction} style={styles.action}>
+        <PressScale testID={actionTestID} onPress={onAction} style={styles.action}>
           <Text style={styles.actionText}>{actionLabel}</Text>
         </PressScale>
       ) : null}

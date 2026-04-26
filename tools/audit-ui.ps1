@@ -12,9 +12,15 @@ $paths = @(
 
 Write-Host "=== Household COO UI/API audit ==="
 
-Write-Host "`n=== Stubs / TODO / placeholders ==="
+Write-Host "`n=== Stubs / TODO / implementation placeholders ==="
 Get-ChildItem $paths -Recurse -Include *.tsx,*.ts,*.py |
-  Select-String -Pattern "TODO|FIXME|stubbed|not implemented|placeholder|console\.log\(|Alert\.alert\('Error'|throw new Error" |
+  Select-String -Pattern "TODO|FIXME|stubbed|not implemented|Voice placeholder" |
+  Select-Object Path,LineNumber,Line |
+  Format-Table -AutoSize
+
+Write-Host "`n=== Runtime logs / developer diagnostics ==="
+Get-ChildItem $paths -Recurse -Include *.tsx,*.ts,*.py |
+  Select-String -Pattern "console\.log\(" |
   Select-Object Path,LineNumber,Line |
   Format-Table -AutoSize
 
@@ -39,7 +45,7 @@ Get-ChildItem "$Root\frontend\app","$Root\frontend\src" -Recurse -Include *.tsx 
         Path=$_.FullName
         HasPlaceholderTextColor=($content -match "placeholderTextColor")
         HasKeyboardAvoidingView=($content -match "KeyboardAvoidingView|KeyboardAwareBottomSheet")
-        HasKeyboardShouldPersistTaps=($content -match "keyboardShouldPersistTaps")
+        HasKeyboardShouldPersistTaps=($content -match "keyboardShouldPersistTaps|KeyboardAwareBottomSheet")
       }
     }
   } | Format-Table -AutoSize

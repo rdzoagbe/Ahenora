@@ -9,6 +9,7 @@ type ErrorStateProps = {
   message?: string;
   actionLabel?: string;
   onRetry?: () => void;
+  actionTestID?: string;
 };
 
 export default function ErrorState({
@@ -16,6 +17,7 @@ export default function ErrorState({
   message = 'Please try again.',
   actionLabel = 'Try again',
   onRetry,
+  actionTestID = 'error-state-retry',
 }: ErrorStateProps) {
   return (
     <View style={styles.wrap}>
@@ -27,7 +29,7 @@ export default function ErrorState({
       <Text style={styles.message}>{message}</Text>
 
       {onRetry ? (
-        <PressScale onPress={onRetry} style={styles.action}>
+        <PressScale testID={actionTestID} onPress={onRetry} style={styles.action}>
           <Text style={styles.actionText}>{actionLabel}</Text>
         </PressScale>
       ) : null}
