@@ -1,6 +1,5 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { BlurView } from 'expo-blur';
 import { Mic, Camera, Plus } from 'lucide-react-native';
 import { PressScale } from './PressScale';
 import { useStore } from '../store';
@@ -12,33 +11,39 @@ interface Props {
 }
 
 export function FloatingActionBar({ onManual, onCamera, onVoice }: Props) {
-  const { t } = useStore();
+  const { t, theme } = useStore();
 
   return (
     <View style={styles.wrap} pointerEvents="box-none">
-      <View style={styles.shell}>
-        <BlurView intensity={38} tint="dark" style={StyleSheet.absoluteFill} />
-        <View style={styles.tint} pointerEvents="none" />
-
+      <View
+        style={[
+          styles.shell,
+          {
+            backgroundColor: theme.colors.bgElevated,
+            borderColor: theme.colors.cardBorder,
+            shadowColor: theme.colors.shadow,
+          },
+        ]}
+      >
         <View style={styles.row}>
           <PressScale testID="fab-voice" onPress={onVoice} style={styles.sideBtn}>
-            <View style={styles.sideIcon}>
-              <Mic color="#FFFFFF" size={18} />
+            <View style={[styles.sideIcon, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
+              <Mic color={theme.colors.text} size={18} />
             </View>
-            <Text style={styles.sideLabel}>{t('voice')}</Text>
+            <Text style={[styles.sideLabel, { color: theme.colors.textMuted }]}>{t('voice')}</Text>
           </PressScale>
 
           <PressScale testID="fab-camera" onPress={onCamera} style={styles.centerBtn}>
-            <View style={styles.centerInner}>
-              <Camera color="#080910" size={23} />
+            <View style={[styles.centerInner, { backgroundColor: theme.colors.primary }]}> 
+              <Camera color={theme.colors.primaryText} size={24} />
             </View>
           </PressScale>
 
           <PressScale testID="fab-manual" onPress={onManual} style={styles.sideBtn}>
-            <View style={styles.sideIcon}>
-              <Plus color="#FFFFFF" size={18} />
+            <View style={[styles.sideIcon, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
+              <Plus color={theme.colors.text} size={18} />
             </View>
-            <Text style={styles.sideLabel}>{t('manual')}</Text>
+            <Text style={[styles.sideLabel, { color: theme.colors.textMuted }]}>{t('manual')}</Text>
           </PressScale>
         </View>
       </View>
@@ -51,75 +56,64 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: 96,
+    bottom: 100,
     alignItems: 'center',
     paddingHorizontal: 18,
   },
   shell: {
     width: '100%',
     maxWidth: 420,
-    borderRadius: 30,
-    overflow: 'hidden',
+    borderRadius: 26,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
-    backgroundColor: 'rgba(14,15,22,0.72)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 18 },
-    shadowOpacity: 0.45,
-    shadowRadius: 28,
-    elevation: 12,
-  },
-  tint: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(14,15,22,0.64)',
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.28,
+    shadowRadius: 24,
+    elevation: 10,
   },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 12,
-    paddingVertical: 9,
+    paddingVertical: 10,
   },
   sideBtn: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 7,
-    paddingHorizontal: 10,
-    paddingVertical: 10,
+    gap: 8,
+    minHeight: 48,
+    paddingHorizontal: 8,
     borderRadius: 9999,
   },
   sideIcon: {
-    width: 26,
-    height: 26,
+    width: 32,
+    height: 32,
     borderRadius: 9999,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.075)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
   },
   sideLabel: {
-    fontFamily: 'Inter_600SemiBold',
-    color: 'rgba(255,255,255,0.74)',
-    fontSize: 12,
-    letterSpacing: 0.2,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 13,
+    letterSpacing: 0.1,
   },
   centerBtn: {
     paddingHorizontal: 8,
     paddingVertical: 2,
   },
   centerInner: {
-    width: 58,
-    height: 58,
+    width: 62,
+    height: 62,
     borderRadius: 9999,
-    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#FFFFFF',
-    shadowOpacity: 0.24,
-    shadowRadius: 18,
+    shadowColor: '#000',
+    shadowOpacity: 0.22,
+    shadowRadius: 16,
     shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
   },
 });
