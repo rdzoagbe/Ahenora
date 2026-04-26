@@ -11,8 +11,7 @@ interface Props {
 }
 
 export function GlassCard({ children, style, testID, padded = true }: Props) {
-  const { theme, resolvedAppearance } = useStore();
-  const isLight = resolvedAppearance === 'light';
+  const { theme } = useStore();
 
   return (
     <View
@@ -23,7 +22,6 @@ export function GlassCard({ children, style, testID, padded = true }: Props) {
           borderColor: theme.colors.cardBorder,
           backgroundColor: theme.colors.card,
           shadowColor: theme.colors.shadow,
-          shadowOpacity: isLight ? 0.08 : 0.22,
         },
         style,
       ]}
@@ -35,12 +33,13 @@ export function GlassCard({ children, style, testID, padded = true }: Props) {
 
 const styles = StyleSheet.create({
   wrap: {
-    borderRadius: 22,
+    borderRadius: 24,
     overflow: 'hidden',
     borderWidth: 1,
-    shadowOffset: { width: 0, height: 8 },
-    shadowRadius: 16,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.22,
+    shadowRadius: 18,
+    elevation: 4,
   },
   inner: {
     minHeight: 1,
