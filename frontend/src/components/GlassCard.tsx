@@ -10,7 +10,7 @@ interface Props {
   testID?: string;
 }
 
-export function GlassCard({ children, style, intensity = 24, testID }: Props) {
+export function GlassCard({ children, style, intensity = 10, testID }: Props) {
   const { theme, resolvedAppearance } = useStore();
 
   return (
@@ -35,17 +35,17 @@ export function GlassCard({ children, style, intensity = 24, testID }: Props) {
 
 const styles = StyleSheet.create({
   wrap: {
-    borderRadius: 24,
+    borderRadius: 22,
     overflow: 'hidden',
-    borderWidth: 1,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.18,
-    shadowRadius: 16,
+    borderWidth: 1.25,
+    shadowOffset: { width: 0, height: 7 },
+    shadowOpacity: 0.14,
+    shadowRadius: 14,
   },
   tint: {
     ...StyleSheet.absoluteFillObject,
   },
   inner: {
-    padding: 20,
+    padding: 18,
   },
 });
