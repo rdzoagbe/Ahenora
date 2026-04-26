@@ -7,9 +7,9 @@ import { useStore } from '../../src/store';
 
 function TabIcon({ focused, Icon, label }: { focused: boolean; Icon: any; label: string }) {
   return (
-    <View style={styles.tabItem}>
-      <Icon color={focused ? '#fff' : 'rgba(255,255,255,0.45)'} size={20} />
-      <Text style={[styles.tabLabel, { color: focused ? '#fff' : 'rgba(255,255,255,0.45)' }]}>
+    <View style={[styles.tabItem, focused && styles.tabItemActive]}>
+      <Icon color={focused ? '#FFFFFF' : 'rgba(255,255,255,0.42)'} size={focused ? 21 : 20} />
+      <Text style={[styles.tabLabel, focused && styles.tabLabelActive]} numberOfLines={1}>
         {label}
       </Text>
     </View>
@@ -18,6 +18,7 @@ function TabIcon({ focused, Icon, label }: { focused: boolean; Icon: any; label:
 
 export default function TabLayout() {
   const { t } = useStore();
+
   return (
     <Tabs
       screenOptions={{
@@ -25,27 +26,28 @@ export default function TabLayout() {
         tabBarShowLabel: false,
         tabBarStyle: {
           position: 'absolute',
-          left: 20,
-          right: 20,
-          bottom: 110,
-          height: 60,
-          borderRadius: 9999,
-          backgroundColor: 'rgba(14,15,22,0.75)',
-          borderTopWidth: 1,
+          left: 16,
+          right: 16,
+          bottom: 20,
+          height: 66,
+          borderRadius: 26,
+          backgroundColor: 'rgba(14,15,22,0.82)',
+          borderTopWidth: 0,
           borderWidth: 1,
-          borderColor: 'rgba(255,255,255,0.08)',
+          borderColor: 'rgba(255,255,255,0.10)',
           elevation: 0,
           shadowColor: '#000',
-          shadowOpacity: 0.5,
-          shadowRadius: 16,
-          paddingHorizontal: 10,
+          shadowOpacity: 0.35,
+          shadowRadius: 22,
+          shadowOffset: { width: 0, height: 14 },
+          paddingHorizontal: 8,
         },
         tabBarBackground: () =>
           Platform.OS === 'web' ? null : (
             <BlurView
-              intensity={30}
+              intensity={34}
               tint="dark"
-              style={[StyleSheet.absoluteFill, { borderRadius: 9999 }]}
+              style={[StyleSheet.absoluteFill, { borderRadius: 26, overflow: 'hidden' }]}
             />
           ),
       }}
@@ -89,12 +91,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 3,
-    minWidth: 60,
-    paddingTop: 8,
+    minWidth: 58,
+    height: 52,
+    borderRadius: 20,
+    paddingTop: 6,
+  },
+  tabItemActive: {
+    backgroundColor: 'rgba(255,255,255,0.075)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
   },
   tabLabel: {
     fontFamily: 'Inter_500Medium',
     fontSize: 10,
-    letterSpacing: 0.5,
+    letterSpacing: 0.35,
+    color: 'rgba(255,255,255,0.42)',
+  },
+  tabLabelActive: {
+    color: '#FFFFFF',
+    fontFamily: 'Inter_600SemiBold',
   },
 });
