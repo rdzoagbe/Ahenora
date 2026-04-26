@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Alert, ImageBackground, Platform, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import Constants from 'expo-constants';
 import * as WebBrowser from 'expo-web-browser';
 import * as Google from 'expo-auth-session/providers/google';
 import * as Linking from 'expo-linking';
@@ -36,6 +37,10 @@ function extractInviteToken(rawUrl?: string | null) {
     const match = rawUrl.match(/[?#&]invite=([^&#]+)/);
     return match ? decodeURIComponent(match[1]) : null;
   }
+}
+
+function isExpoGoAndroid() {
+  return Platform.OS === 'android' && Constants.appOwnership === 'expo';
 }
 
 export default function Landing() {
@@ -158,6 +163,14 @@ export default function Landing() {
 
   const signIn = async () => {
     try {
+      if (isExpoGoAndroid()) {
+        Alert.alert(
+          'Development build required',
+          'Google sign-in cannot be tested in Expo Go on Android because the OAuth redirect belongs to Expo Go, not Household COO. Use a Household COO development build to test sign-in.'
+        );
+        return;
+      }
+
       if (!webClientId || !androidClientId) {
         Alert.alert('Google Sign-In not configured', 'Missing Google OAuth client IDs in .env.');
         return;
