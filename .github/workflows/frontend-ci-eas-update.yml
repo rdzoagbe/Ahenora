@@ -38,7 +38,7 @@ jobs:
         run: npm run lint --if-present
 
   expo-update:
-    name: Publish EAS update
+    name: Publish Android EAS update
     runs-on: ubuntu-latest
     needs: frontend-ci
     if: github.ref == 'refs/heads/main'
@@ -47,6 +47,10 @@ jobs:
         working-directory: frontend
     env:
       EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      EXPO_PUBLIC_BACKEND_URL: ${{ secrets.EXPO_PUBLIC_BACKEND_URL || vars.EXPO_PUBLIC_BACKEND_URL }}
+      EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: ${{ secrets.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || vars.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID }}
+      EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: ${{ secrets.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || vars.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID }}
+      EXPO_NO_TELEMETRY: 1
     steps:
       - name: Skip when EXPO_TOKEN is not configured
         if: env.EXPO_TOKEN == ''
@@ -70,6 +74,22 @@ jobs:
         if: env.EXPO_TOKEN != ''
         run: npm ci
 
-      - name: Publish update to Expo production branch
+      - name: Validate public Expo environment
         if: env.EXPO_TOKEN != ''
-        run: npx eas-cli@latest update --branch production --environment production --message "GitHub $GITHUB_SHA" --non-interactive
+        run: |
+          if [ -z "$EXPO_PUBLIC_BACKEND_URL" ]; then
+            echo "Missing EXPO_PUBLIC_BACKEND_URL. Add it as a GitHub Actions secret or repository variable."
+            exit 1
+          fi
+          if [ -z "$EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID" ]; then
+            echo "Missing EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID. Add it as a GitHub Actions secret or repository variable."
+            exit 1
+          fi
+          if [ -z "$EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID" ]; then
+            echo "Missing EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID. Add it as a GitHub Actions secret or repository variable."
+            exit 1
+          fi
+
+      - name: Publish Android update to Expo production branch
+        if: env.EXPO_TOKEN != ''
+        run: npx eas-cli@latest update --platform android --branch production --environment production --message "GitHub $GITHUB_SHA" --non-interactive
