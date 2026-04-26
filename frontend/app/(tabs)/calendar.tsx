@@ -18,7 +18,6 @@ import { GlassCard } from '../../src/components/GlassCard';
 import { PressScale } from '../../src/components/PressScale';
 import { useStore } from '../../src/store';
 import { api, CalendarImportResult, Card } from '../../src/api';
-import { syncCardReminderNotifications } from '../../src/notifications';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -77,7 +76,7 @@ function buildMonthDays(baseDate: Date) {
   const total = leading + last.getDate();
   const trailing = Math.ceil(total / 7) * 7 - total;
 
-  const days: Array<{ date: Date; inMonth: boolean }> = [];
+  const days: { date: Date; inMonth: boolean }[] = [];
 
   for (let i = leading; i > 0; i -= 1) {
     days.push({

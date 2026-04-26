@@ -1,28 +1,28 @@
 import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useStore } from '../store';
 
 export function AmbientBackground() {
+  const { theme } = useStore();
+
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-      <View style={styles.base} />
-      {/* top-left indigo glow */}
+      <View style={[styles.base, { backgroundColor: theme.ambient.base }]} />
       <LinearGradient
-        colors={['rgba(99,102,241,0.35)', 'rgba(99,102,241,0)']}
+        colors={theme.ambient.glowA}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={[styles.glow, { top: -180, left: -180, width: 520, height: 520 }]}
       />
-      {/* bottom-right orange glow */}
       <LinearGradient
-        colors={['rgba(249,115,22,0.22)', 'rgba(249,115,22,0)']}
+        colors={theme.ambient.glowB}
         start={{ x: 1, y: 1 }}
         end={{ x: 0, y: 0 }}
         style={[styles.glow, { bottom: -200, right: -200, width: 560, height: 560 }]}
       />
-      {/* center-left emerald glow */}
       <LinearGradient
-        colors={['rgba(16,185,129,0.14)', 'rgba(16,185,129,0)']}
+        colors={theme.ambient.glowC}
         start={{ x: 0, y: 0.5 }}
         end={{ x: 1, y: 0.5 }}
         style={[styles.glow, { top: 380, left: -160, width: 400, height: 400 }]}
@@ -34,7 +34,6 @@ export function AmbientBackground() {
 const styles = StyleSheet.create({
   base: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#080910',
   },
   glow: {
     position: 'absolute',

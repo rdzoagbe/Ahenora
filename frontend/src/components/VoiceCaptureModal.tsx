@@ -54,7 +54,6 @@ export function VoiceCaptureModal({ visible, onClose, onDraft }: Props) {
     }
 
     return cleanup;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
   const cleanup = () => {

@@ -6,7 +6,7 @@ import Constants from 'expo-constants';
 import * as WebBrowser from 'expo-web-browser';
 import * as Google from 'expo-auth-session/providers/google';
 import * as Linking from 'expo-linking';
-import { Globe, Sparkles, ShieldCheck, Crown } from 'lucide-react-native';
+import { Globe, Sparkles, ShieldCheck, Crown, ArrowRight } from 'lucide-react-native';
 
 import { AmbientBackground } from '../src/components/AmbientBackground';
 import { LanguageModal } from '../src/components/LanguageModal';
@@ -16,7 +16,8 @@ import { logger } from '../src/logger';
 
 WebBrowser.maybeCompleteAuthSession();
 
-const BG_URL = 'https://static.prod-images.emergentagent.com/jobs/096ff1e5-0337-4e7f-a0c1-6a43a75126d3/images/6b243a1cf4a6ac9e40857ce24db4ef57d5831d303169f63507bb73111fe11fac.png';
+const BG_URL =
+  'https://static.prod-images.emergentagent.com/jobs/096ff1e5-0337-4e7f-a0c1-6a43a75126d3/images/6b243a1cf4a6ac9e40857ce24db4ef57d5831d303169f63507bb73111fe11fac.png';
 
 function extractInviteToken(rawUrl?: string | null) {
   if (!rawUrl) return null;
@@ -46,7 +47,7 @@ function isExpoGoAndroid() {
 export default function Landing() {
   const router = useRouter();
   const handledResponseRef = useRef(false);
-  const { user, loading, t, lang, setUserFromAuth } = useStore();
+  const { user, loading, t, lang, setUserFromAuth, theme } = useStore();
 
   const [showLang, setShowLang] = useState(false);
   const [inviteToken, setInviteToken] = useState<string | null>(null);
@@ -69,7 +70,6 @@ export default function Landing() {
   useEffect(() => {
     const loadInvite = async (token: string | null) => {
       if (!token) return;
-
       setInviteToken(token);
 
       try {
@@ -101,7 +101,6 @@ export default function Landing() {
     }
 
     Linking.getInitialURL().then((url) => loadInvite(extractInviteToken(url)));
-
     const subscription = Linking.addEventListener('url', ({ url }) => {
       loadInvite(extractInviteToken(url));
     });
@@ -139,7 +138,6 @@ export default function Landing() {
 
         const { api } = await import('../src/api');
         const authResult = await api.exchangeSession(idToken, token);
-
         await setUserFromAuth(authResult.user, authResult.session_token);
 
         if (Platform.OS === 'web' && typeof window !== 'undefined') {
@@ -190,74 +188,97 @@ export default function Landing() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.colors.bg }]}>
       <ImageBackground source={{ uri: BG_URL }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-      <View style={styles.overlay} pointerEvents="none" />
+      <View
+        style={[
+          styles.overlay,
+          { backgroundColor: theme.mode === 'light' ? 'rgba(246,247,251,0.56)' : 'rgba(8,9,16,0.48)' },
+        ]}
+        pointerEvents="none"
+      />
       <AmbientBackground />
 
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         <View style={styles.top}>
           <View style={styles.logoRow}>
-            <View style={styles.logoDot} />
-            <Text style={styles.logoText}>COO</Text>
+            <View style={[styles.logoDot, { backgroundColor: theme.colors.accent }]} />
+            <Text style={[styles.logoText, { color: theme.colors.text }]}>COO</Text>
           </View>
 
-          <PressScale testID="landing-lang" onPress={() => setShowLang(true)} style={styles.langBtn}>
-            <Globe color="rgba(255,255,255,0.7)" size={14} />
-            <Text style={styles.langText}>{lang.toUpperCase()}</Text>
+          <PressScale
+            testID="landing-lang"
+            onPress={() => setShowLang(true)}
+            style={[styles.langBtn, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}
+          >
+            <Globe color={theme.colors.textMuted} size={14} />
+            <Text style={[styles.langText, { color: theme.colors.textMuted }]}>{lang.toUpperCase()}</Text>
           </PressScale>
         </View>
 
         <View style={styles.center}>
-          <View style={styles.badge}>
-            <Sparkles color="#fff" size={12} />
-            <Text style={styles.badgeText}>{t('app_name')}</Text>
+          <View style={[styles.badge, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}> 
+            <Sparkles color={theme.colors.text} size={12} />
+            <Text style={[styles.badgeText, { color: theme.colors.text }]}>{t('app_name')}</Text>
           </View>
 
           {invitedBy ? (
-            <View style={styles.inviteBanner} testID="invite-banner">
-              <Text style={styles.inviteText}>
-                <Text style={styles.inviteStrong}>{invitedBy}</Text>
+            <View
+              style={[styles.inviteBanner, { backgroundColor: theme.colors.accentSoft, borderColor: theme.colors.accent }]}
+              testID="invite-banner"
+            >
+              <Text style={[styles.inviteText, { color: theme.colors.textMuted }]}> 
+                <Text style={[styles.inviteStrong, { color: theme.colors.text }]}>{invitedBy}</Text>
                 {' invited you to join their Household COO.'}
               </Text>
             </View>
           ) : null}
 
-          <Text style={styles.heading}>{t('tagline')}</Text>
-          <Text style={styles.sub}>{t('subtitle')}</Text>
+          <Text style={[styles.heading, { color: theme.colors.text }]}>{t('tagline')}</Text>
+          <Text style={[styles.sub, { color: theme.colors.textMuted }]}>
+            A calmer household dashboard with priorities, reminders, secure vaulting, and elegant coordination.
+          </Text>
 
-          <PressScale
-            testID="google-signin"
-            onPress={signIn}
-            disabled={!request}
-            style={[styles.cta, !request && styles.ctaDisabled]}
-          >
-            <View style={styles.googleDot}>
-              <Text style={styles.googleText}>G</Text>
-            </View>
-            <Text style={styles.ctaText}>{t('sign_in')}</Text>
-          </PressScale>
+          <View style={styles.buttonStack}>
+            <PressScale
+              testID="google-signin"
+              onPress={signIn}
+              disabled={!request}
+              style={[
+                styles.cta,
+                { backgroundColor: theme.colors.primary },
+                !request && styles.ctaDisabled,
+              ]}
+            >
+              <View style={styles.googleDot}>
+                <Text style={styles.googleText}>G</Text>
+              </View>
+              <Text style={[styles.ctaText, { color: theme.colors.primaryText }]}>{t('sign_in')}</Text>
+            </PressScale>
+
+            <PressScale
+              testID="landing-pricing-link"
+              onPress={() => router.push('/pricing')}
+              style={[styles.secondaryCta, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}
+            >
+              <Text style={[styles.secondaryCtaText, { color: theme.colors.text }]}>Explore plans</Text>
+              <ArrowRight color={theme.colors.text} size={14} />
+            </PressScale>
+          </View>
 
           <View style={styles.secureRow}>
-            <ShieldCheck color="rgba(255,255,255,0.5)" size={12} />
-            <Text style={styles.secureText}>{t('sign_in_secure')}</Text>
+            <ShieldCheck color={theme.colors.textSoft} size={12} />
+            <Text style={[styles.secureText, { color: theme.colors.textSoft }]}>{t('sign_in_secure')}</Text>
           </View>
 
           <View style={styles.adminNote}>
             <Crown color="#F59E0B" size={12} />
-            <Text style={styles.adminNoteText}>Admin testers unlock after sign-in via backend policy.</Text>
+            <Text style={[styles.adminNoteText, { color: theme.colors.textSoft }]}>Admin testers unlock after sign-in via backend policy.</Text>
           </View>
         </View>
 
         <View style={styles.footer}>
-          <PressScale
-            testID="landing-pricing-link"
-            onPress={() => router.push('/pricing')}
-            style={styles.footerPricingBtn}
-          >
-            <Text style={styles.footerPricingText}>{t('pricing_link')}</Text>
-          </PressScale>
-          <Text style={styles.foot}>Household COO · v1</Text>
+          <Text style={[styles.foot, { color: theme.colors.textSoft }]}>Household COO · beautifully organised family operations</Text>
         </View>
       </SafeAreaView>
 
@@ -267,13 +288,13 @@ export default function Landing() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#080910' },
-  overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(8,9,16,0.48)' },
+  container: { flex: 1 },
+  overlay: { ...StyleSheet.absoluteFillObject },
   safe: { flex: 1, paddingHorizontal: 22 },
   top: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 6 },
   logoRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
-  logoDot: { width: 15, height: 15, borderRadius: 9999, backgroundColor: '#F97316' },
-  logoText: { color: '#fff', fontFamily: 'Inter_700Bold', fontSize: 15, letterSpacing: 1.5 },
+  logoDot: { width: 15, height: 15, borderRadius: 9999 },
+  logoText: { fontFamily: 'Inter_700Bold', fontSize: 15, letterSpacing: 1.5 },
   langBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -282,10 +303,8 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 9999,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
-    backgroundColor: 'rgba(255,255,255,0.04)',
   },
-  langText: { color: 'rgba(255,255,255,0.75)', fontFamily: 'Inter_600SemiBold', fontSize: 11 },
+  langText: { fontFamily: 'Inter_600SemiBold', fontSize: 11 },
   center: { flex: 1, justifyContent: 'center' },
   badge: {
     alignSelf: 'flex-start',
@@ -295,49 +314,54 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 9999,
-    backgroundColor: 'rgba(255,255,255,0.10)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.13)',
     marginBottom: 14,
   },
-  badgeText: { color: '#fff', fontFamily: 'Inter_600SemiBold', fontSize: 12 },
+  badgeText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
   inviteBanner: {
     borderRadius: 18,
     padding: 14,
-    backgroundColor: 'rgba(249,115,22,0.13)',
     borderWidth: 1,
-    borderColor: 'rgba(249,115,22,0.32)',
     marginBottom: 14,
   },
-  inviteText: { color: 'rgba(255,255,255,0.78)', fontFamily: 'Inter_400Regular', fontSize: 13, lineHeight: 19 },
-  inviteStrong: { color: '#fff', fontFamily: 'Inter_600SemiBold' },
+  inviteText: { fontFamily: 'Inter_400Regular', fontSize: 13, lineHeight: 19 },
+  inviteStrong: { fontFamily: 'Inter_600SemiBold' },
   heading: {
-    color: '#fff',
     fontFamily: 'PlayfairDisplay_400Regular_Italic',
     fontSize: 47,
     lineHeight: 53,
     maxWidth: 330,
   },
   sub: {
-    color: 'rgba(255,255,255,0.68)',
     fontFamily: 'Inter_400Regular',
     fontSize: 15,
     lineHeight: 22,
     marginTop: 12,
     marginBottom: 24,
-    maxWidth: 330,
+    maxWidth: 340,
   },
+  buttonStack: { gap: 12 },
   cta: {
     alignSelf: 'stretch',
     height: 54,
     borderRadius: 9999,
-    backgroundColor: '#fff',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
   },
   ctaDisabled: { opacity: 0.55 },
+  secondaryCta: {
+    alignSelf: 'stretch',
+    height: 50,
+    borderRadius: 9999,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1,
+  },
+  secondaryCtaText: { fontFamily: 'Inter_600SemiBold', fontSize: 14 },
   googleDot: {
     width: 26,
     height: 26,
@@ -349,20 +373,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   googleText: { fontWeight: '800', color: '#4285F4' },
-  ctaText: { color: '#080910', fontFamily: 'Inter_700Bold', fontSize: 15 },
+  ctaText: { fontFamily: 'Inter_700Bold', fontSize: 15 },
   secureRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 14 },
-  secureText: { color: 'rgba(255,255,255,0.5)', fontFamily: 'Inter_400Regular', fontSize: 11 },
+  secureText: { fontFamily: 'Inter_400Regular', fontSize: 11 },
   adminNote: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 10 },
-  adminNoteText: { color: 'rgba(255,255,255,0.45)', fontFamily: 'Inter_400Regular', fontSize: 10, textAlign: 'center' },
+  adminNoteText: { fontFamily: 'Inter_400Regular', fontSize: 10, textAlign: 'center' },
   footer: { alignItems: 'center', paddingBottom: 10, gap: 10 },
-  footerPricingBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 9999,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
-    backgroundColor: 'rgba(255,255,255,0.04)',
-  },
-  footerPricingText: { color: 'rgba(255,255,255,0.72)', fontFamily: 'Inter_600SemiBold', fontSize: 12 },
-  foot: { color: 'rgba(255,255,255,0.35)', fontFamily: 'Inter_400Regular', fontSize: 11 },
+  foot: { fontFamily: 'Inter_400Regular', fontSize: 11, textAlign: 'center' },
 });

@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   View,
   Text,
@@ -25,10 +24,8 @@ import { api, CalendarContact, Entitlements, FamilyInvite, FamilyMember, Notific
 import { LANG_NAMES } from '../../src/i18n';
 import { ensureNotificationPermissions, registerForPushNotificationsAsync, sendLocalNotification, sendTestScheduledReminderNotification, syncCardReminderNotifications } from '../../src/notifications';
 
-type AppearanceMode = 'system' | 'dark' | 'light';
-
 export default function SettingsScreen() {
-  const { user, t, lang, logout, subscription } = useStore();
+  const { user, t, lang, logout, subscription, appearanceMode, setAppearance, theme } = useStore();
   const router = useRouter();
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [invites, setInvites] = useState<FamilyInvite[]>([]);
@@ -47,7 +44,6 @@ export default function SettingsScreen() {
   });
   const [notificationStatus, setNotificationStatus] = useState<string | null>(null);
   const [savingNotifications, setSavingNotifications] = useState(false);
-  const [appearanceMode, setAppearanceMode] = useState<AppearanceMode>('dark');
   const [showPricing, setShowPricing] = useState(false);
   const [entitlements, setEntitlements] = useState<Entitlements | null>(null);
 
@@ -73,21 +69,6 @@ export default function SettingsScreen() {
   useEffect(() => {
     load();
   }, [load]);
-
-  useEffect(() => {
-    AsyncStorage.getItem('coo_appearance_mode')
-      .then((value) => {
-        if (value === 'system' || value === 'dark' || value === 'light') {
-          setAppearanceMode(value);
-        }
-      })
-      .catch(() => undefined);
-  }, []);
-
-  const setAppearance = useCallback(async (mode: AppearanceMode) => {
-    setAppearanceMode(mode);
-    await AsyncStorage.setItem('coo_appearance_mode', mode);
-  }, []);
 
   const doLogout = async () => {
     await logout();
@@ -159,7 +140,7 @@ export default function SettingsScreen() {
               : 'Notifications are off.'
           );
         }
-      } catch (e: any) {
+      } catch {
         console.log('notification settings failed', e);
         setNotificationStatus(e?.message || 'Could not update notification settings.');
       } finally {
@@ -252,11 +233,11 @@ export default function SettingsScreen() {
   );
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.colors.bg }]} >
       <AmbientBackground />
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-          <Text style={styles.title}>{t('settings')}</Text>
+          <Text style={[styles.title, { color: theme.colors.text }]} >{t('settings')}</Text>
 
           {/* Profile */}
           <GlassCard style={{ marginTop: 12, marginBottom: 18 }}>
@@ -476,7 +457,7 @@ export default function SettingsScreen() {
               </View>
 
               <Text style={styles.preferenceNote}>
-                Saved on this device. Full app-wide light theme styling can be expanded next.
+                Theme preference is saved and now updates the global shell, tab bar, background glow, and landing experience.
               </Text>
             </View>
 
@@ -655,7 +636,7 @@ export default function SettingsScreen() {
             </View>
             {subscription && subscription.limits.ai_scans_per_month !== -1 ? (
               <View style={styles.usageWrap}>
-                <Text style={styles.usageLabel}>{t('usage_this_month')}</Text>
+                <Text style={styles.usageCapsLabel}>{t('usage_this_month')}</Text>
                 <View style={styles.usageBarBg}>
                   <View
                     style={[
@@ -1158,7 +1139,7 @@ const styles = StyleSheet.create({
   },
   adminPlanBadgeText: { color: '#FCD34D', fontFamily: 'Inter_600SemiBold', fontSize: 10, letterSpacing: 0.5 },
   usageWrap: { marginTop: 14, gap: 6 },
-  usageLabel: { color: 'rgba(255,255,255,0.55)', fontFamily: 'Inter_500Medium', fontSize: 11, letterSpacing: 0.4, textTransform: 'uppercase' },
+  usageCapsLabel: { color: 'rgba(255,255,255,0.55)', fontFamily: 'Inter_500Medium', fontSize: 11, letterSpacing: 0.4, textTransform: 'uppercase' },
   usageBarBg: {
     height: 6, borderRadius: 9999, backgroundColor: 'rgba(255,255,255,0.08)',
     overflow: 'hidden',

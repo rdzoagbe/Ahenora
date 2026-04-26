@@ -2,7 +2,6 @@ import React, { useRef } from 'react';
 import {
   Animated,
   Pressable,
-  StyleSheet,
   ViewStyle,
   StyleProp,
   GestureResponderEvent,

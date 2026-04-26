@@ -3,7 +3,6 @@ import { Modal, View, Text, StyleSheet } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { X, Lock, Delete } from 'lucide-react-native';
 import { PressScale } from './PressScale';
-import { useStore } from '../store';
 
 interface Props {
   visible: boolean;
@@ -15,7 +14,6 @@ interface Props {
 }
 
 export function PinPadModal({ visible, mode, title, subtitle, onClose, onSubmit }: Props) {
-  const { t } = useStore();
   const [pin, setPin] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);

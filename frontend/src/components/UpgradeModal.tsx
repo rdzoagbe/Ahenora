@@ -1,5 +1,5 @@
 import React from 'react';
-import { Modal, View, Text, StyleSheet, Platform } from 'react-native';
+import { Modal, View, Text, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { BlurView } from 'expo-blur';
 import { Sparkles, X, ArrowRight } from 'lucide-react-native';

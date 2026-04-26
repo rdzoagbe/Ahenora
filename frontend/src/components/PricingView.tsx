@@ -21,19 +21,16 @@ import Animated, {
 } from 'react-native-reanimated';
 import {
   Sparkles,
-  Star,
   Users,
-  Shield,
   Check,
   Crown,
-  Zap,
   Briefcase,
   Gem,
   ArrowRight,
 } from 'lucide-react-native';
 import { PressScale } from './PressScale';
 import { useStore } from '../store';
-import { api, Plan, BillingCycle, Subscription } from '../api';
+import { api, Plan, BillingCycle } from '../api';
 
 const PLAN_ORDER: Plan[] = ['village', 'executive', 'family_office'];
 
@@ -62,7 +59,7 @@ export function PricingView({ embedded = false, onAuthRequired, onClose }: Props
       damping: 16,
       stiffness: 180,
     });
-  }, [cycle]);
+  }, [cycle, toggleAnim]);
 
   const currentPlan: Plan = subscription?.plan ?? 'village';
 
