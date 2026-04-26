@@ -132,6 +132,11 @@ export function PricingView({ embedded = false, onAuthRequired, onClose }: Props
         {/* Billing Toggle */}
         <Animated.View entering={FadeInDown.duration(500).delay(120)}>
           <BillingToggle value={cycle} onChange={setCycle} t={t} animValue={toggleAnim} />
+          {embedded ? (
+            <Text style={styles.billingNote}>
+              Testing mode: plan changes update Household COO access immediately. Stripe checkout can be connected next.
+            </Text>
+          ) : null}
         </Animated.View>
 
         {/* Plan Cards */}
@@ -510,6 +515,15 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(52,211,153,0.18)',
     borderWidth: 1,
     borderColor: 'rgba(52,211,153,0.4)',
+  },
+  billingNote: {
+    color: 'rgba(255,255,255,0.54)',
+    fontFamily: 'Inter_400Regular',
+    fontSize: 11,
+    lineHeight: 16,
+    textAlign: 'center',
+    marginTop: 10,
+    paddingHorizontal: 20,
   },
   savingsText: {
     color: '#34D399',

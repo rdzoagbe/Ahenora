@@ -696,10 +696,11 @@ async def root():
         "message": "Household COO Backend is live",
         "api_configured": bool(GOOGLE_API_KEY),
         "db_configured": bool(MONGO_URL),
-        "backend_version": "notifications_v1",
+        "backend_version": "pricing_gating_v1",
         "invite_routes": True,
         "calendar_sync": True,
         "notifications": True,
+        "pricing_gating": True,
         "email_configured": bool(RESEND_API_KEY and INVITE_FROM_EMAIL),
         "admin_access_enabled": bool(ADMIN_EMAILS),
         "voice_configured": bool(GOOGLE_API_KEY and genai),
@@ -963,14 +964,22 @@ async def family_invite(payload: InviteIn, user=Depends(require_user)):
     sub = await build_subscription(user["family_id"])
     limit = sub["limits"]["max_members"]
     used = sub["members_count"]
+    pending_invites_count = await database["family_invites"].count_documents(
+        {
+            "family_id": user["family_id"],
+            "status": "pending",
+            "expires_at": {"$gt": utcnow()},
+        }
+    )
+    used_with_pending = used + pending_invites_count
 
-    if not is_admin_user(user) and used >= limit:
+    if not is_admin_user(user) and used_with_pending >= limit:
         plan_limit_error(
             feature="family_members",
             current_plan=sub["plan"],
             limit=limit,
-            used=used,
-            message=f"Your current plan allows {limit} family members. Upgrade to add more.",
+            used=used_with_pending,
+            message=f"Your current plan allows {limit} family member slots including pending invites. Upgrade to add more.",
         )
 
     email = payload.email.strip().lower()
@@ -1707,6 +1716,46 @@ async def change_subscription(payload: SubscriptionChangeIn, user=Depends(requir
         upsert=True,
     )
     return await build_subscription(user["family_id"])
+
+
+# -----------------------------------------------------------------------------
+# Entitlements
+# -----------------------------------------------------------------------------
+@app.get("/api/subscription/entitlements")
+async def get_entitlements(user=Depends(require_user)):
+    database = get_db()
+    sub = await build_subscription(user["family_id"])
+    if is_admin_user(user):
+        sub = apply_admin_subscription(sub)
+
+    members_count = await database["family_members"].count_documents({"family_id": user["family_id"]})
+    pending_invites = await database["family_invites"].count_documents(
+        {
+            "family_id": user["family_id"],
+            "status": "pending",
+            "expires_at": {"$gt": utcnow()},
+        }
+    )
+
+    member_slots_used = members_count + pending_invites
+    max_members = sub["limits"]["max_members"]
+
+    return {
+        "plan": sub["plan"],
+        "admin_unlocked": bool(sub.get("admin_unlocked")),
+        "members_count": members_count,
+        "pending_invites": pending_invites,
+        "member_slots_used": member_slots_used,
+        "max_members": max_members,
+        "can_invite": bool(sub.get("admin_unlocked")) or member_slots_used < max_members,
+        "ai_scans_used": sub.get("ai_scans_used", 0),
+        "ai_scans_limit": sub["limits"]["ai_scans_per_month"],
+        "vault_bytes_used": sub.get("vault_bytes_used", 0),
+        "vault_bytes_limit": sub["limits"]["vault_bytes"],
+        "weekly_brief": sub["limits"].get("weekly_brief", False),
+        "multi_property": sub["limits"].get("multi_property", False),
+    }
+
 
 
 # -----------------------------------------------------------------------------

@@ -181,6 +181,22 @@ export interface Subscription {
   admin_unlocked?: boolean;
 }
 
+export interface Entitlements {
+  plan: Plan;
+  admin_unlocked?: boolean;
+  members_count: number;
+  pending_invites: number;
+  member_slots_used: number;
+  max_members: number;
+  can_invite: boolean;
+  ai_scans_used: number;
+  ai_scans_limit: number;
+  vault_bytes_used: number;
+  vault_bytes_limit: number;
+  weekly_brief: boolean;
+  multi_property: boolean;
+}
+
 export interface PlanLimitError {
   error: 'plan_limit';
   feature: string;
@@ -311,6 +327,7 @@ export const api = {
     }),
   // Subscription
   getSubscription: () => request<Subscription>('/subscription'),
+  getEntitlements: () => request<Entitlements>('/subscription/entitlements'),
   changeSubscription: (plan: Plan, billing_cycle: BillingCycle) =>
     request<Subscription>('/subscription/change', {
       method: 'POST',

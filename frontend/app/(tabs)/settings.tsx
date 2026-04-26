@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   View,
   Text,
@@ -11,17 +12,20 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { CalendarDays, Globe, LogOut, Users, Mail, UserPlus, X, Send, Lock, Bell, Crown, Sparkles, Share2 } from 'lucide-react-native';
+import { CalendarDays, Globe, LogOut, Users, Mail, UserPlus, X, Send, Lock, Bell, Crown, Sparkles, Share2, Moon, Sun, ShieldCheck, ArrowUpRight } from 'lucide-react-native';
 import { AmbientBackground } from '../../src/components/AmbientBackground';
 import { GlassCard } from '../../src/components/GlassCard';
 import { PressScale } from '../../src/components/PressScale';
 import { LanguageModal } from '../../src/components/LanguageModal';
 import { PinPadModal } from '../../src/components/PinPadModal';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
+import { PricingView } from '../../src/components/PricingView';
 import { useStore } from '../../src/store';
-import { api, CalendarContact, FamilyInvite, FamilyMember, NotificationSettings } from '../../src/api';
+import { api, CalendarContact, Entitlements, FamilyInvite, FamilyMember, NotificationSettings } from '../../src/api';
 import { LANG_NAMES } from '../../src/i18n';
 import { ensureNotificationPermissions, registerForPushNotificationsAsync, sendLocalNotification, sendTestScheduledReminderNotification, syncCardReminderNotifications } from '../../src/notifications';
+
+type AppearanceMode = 'system' | 'dark' | 'light';
 
 export default function SettingsScreen() {
   const { user, t, lang, logout, subscription } = useStore();
@@ -43,19 +47,24 @@ export default function SettingsScreen() {
   });
   const [notificationStatus, setNotificationStatus] = useState<string | null>(null);
   const [savingNotifications, setSavingNotifications] = useState(false);
+  const [appearanceMode, setAppearanceMode] = useState<AppearanceMode>('dark');
+  const [showPricing, setShowPricing] = useState(false);
+  const [entitlements, setEntitlements] = useState<Entitlements | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const [memberRows, inviteRows, contactRows, notificationRows] = await Promise.all([
+      const [memberRows, inviteRows, contactRows, notificationRows, entitlementRows] = await Promise.all([
         api.familyMembers(),
         api.listInvites(),
         api.listCalendarContacts().catch(() => []),
         api.getNotificationSettings().catch(() => ({ card_reminders: false, new_card_alerts: false })),
+        api.getEntitlements().catch(() => null),
       ]);
       setMembers(memberRows);
       setInvites(inviteRows);
       setCalendarContacts(contactRows);
       setNotificationPrefs(notificationRows);
+      setEntitlements(entitlementRows);
     } catch (e) {
       console.log(e);
     }
@@ -64,6 +73,21 @@ export default function SettingsScreen() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    AsyncStorage.getItem('coo_appearance_mode')
+      .then((value) => {
+        if (value === 'system' || value === 'dark' || value === 'light') {
+          setAppearanceMode(value);
+        }
+      })
+      .catch(() => undefined);
+  }, []);
+
+  const setAppearance = useCallback(async (mode: AppearanceMode) => {
+    setAppearanceMode(mode);
+    await AsyncStorage.setItem('coo_appearance_mode', mode);
+  }, []);
 
   const doLogout = async () => {
     await logout();
@@ -89,7 +113,7 @@ export default function SettingsScreen() {
           }
         }
 
-        let remoteWarning = '';
+        let warning = '';
 
         if (nextPrefs.new_card_alerts) {
           try {
@@ -98,10 +122,10 @@ export default function SettingsScreen() {
             if (push.expoPushToken) {
               await api.registerNotificationToken(push.expoPushToken, Platform.OS);
             } else if (push.error) {
-              remoteWarning = push.error;
+              warning = push.error;
             }
           } catch (pushError: any) {
-            remoteWarning = pushError?.message || 'Remote push registration failed. Local tests still work.';
+            warning = pushError?.message || 'Remote push registration failed. Local tests still work.';
           }
         }
 
@@ -109,34 +133,30 @@ export default function SettingsScreen() {
           const saved = await api.updateNotificationSettings(nextPrefs);
           setNotificationPrefs(saved);
         } catch (backendError: any) {
-          // Keep the local toggles usable even if the backend route fails.
           console.log('notification backend settings failed', backendError);
           setNotificationPrefs(nextPrefs);
-          remoteWarning = backendError?.message || remoteWarning;
+          warning = warning || 'Backend notification preferences could not be saved, but local notifications can still be tested.';
         }
 
         if (nextPrefs.card_reminders) {
-          const cards = await api.listCards();
-          const result = await syncCardReminderNotifications(cards, true);
-          setNotificationStatus(
-            result.scheduled
-              ? `${result.scheduled} reminder notification${result.scheduled === 1 ? '' : 's'} scheduled.`
-              : remoteWarning ||
-                  'Reminder alerts are on. Add due dates and reminder times to schedule alerts.'
-          );
+          try {
+            const cards = await api.listCards();
+            const result = await syncCardReminderNotifications(cards, true);
+            setNotificationStatus(
+              result.scheduled
+                ? `${result.scheduled} reminder notification${result.scheduled === 1 ? '' : 's'} scheduled.`
+                : warning || 'Reminder alerts are on. Add due dates and reminder times to schedule alerts.'
+            );
+          } catch (scheduleError: any) {
+            console.log('local reminder scheduling failed', scheduleError);
+            setNotificationStatus(scheduleError?.message || 'Could not schedule reminder notifications.');
+          }
         } else {
-          await syncCardReminderNotifications([], false);
+          await syncCardReminderNotifications([], false).catch(() => undefined);
           setNotificationStatus(
             nextPrefs.new_card_alerts
-              ? remoteWarning || 'New-card alerts are on for this device.'
+              ? warning || 'New-card alerts are on. Use the test button to verify this device.'
               : 'Notifications are off.'
-          );
-        }
-
-        if (nextPrefs.new_card_alerts) {
-          await sendLocalNotification(
-            'Household COO alerts active',
-            'You will get alerts when new household cards are added.'
           );
         }
       } catch (e: any) {
@@ -160,6 +180,7 @@ export default function SettingsScreen() {
       await sendTestScheduledReminderNotification();
       setNotificationStatus('Test reminder scheduled. It should appear in about 5 seconds.');
     } catch (e: any) {
+      console.log('test reminder notification failed', e);
       setNotificationStatus(e?.message || 'Could not send test notification.');
     }
   }, []);
@@ -177,17 +198,33 @@ export default function SettingsScreen() {
         'This is how a new-card alert will appear.'
       );
 
-      try {
-        await api.testNotification();
-      } catch {
-        // Remote Expo push may not be available yet. The local test above is enough for this device.
-      }
-
       setNotificationStatus('Test new-card alert sent on this device.');
     } catch (e: any) {
+      console.log('test new-card alert failed', e);
       setNotificationStatus(e?.message || 'Could not send test new-card alert.');
     }
   }, []);
+
+  const memberLimit = entitlements?.max_members ?? subscription?.limits?.max_members ?? 0;
+  const memberSlotsUsed =
+    entitlements?.member_slots_used ??
+    members.length + invites.filter((invite) => invite.status === 'pending').length;
+  const memberLimitReached =
+    !user?.is_admin && memberLimit > 0 && memberSlotsUsed >= memberLimit;
+
+  const formatBytes = (bytes?: number | null) => {
+    const value = bytes || 0;
+    if (value >= 1024 * 1024 * 1024) return `${(value / 1024 / 1024 / 1024).toFixed(1)} GB`;
+    if (value >= 1024 * 1024) return `${(value / 1024 / 1024).toFixed(0)} MB`;
+    return `${Math.max(1, Math.round(value / 1024))} KB`;
+  };
+
+  const planLabel =
+    subscription?.plan === 'family_office'
+      ? 'Family Office'
+      : subscription?.plan === 'executive'
+      ? 'Executive'
+      : 'Village';
 
   const shareInviteLink = useCallback(
     async (inviteUrl: string, email?: string) => {
@@ -246,6 +283,69 @@ export default function SettingsScreen() {
                 ) : null}
               </View>
             </View>
+          </GlassCard>
+
+          {/* Plan & access */}
+          <View style={styles.sectionRow}>
+            <ShieldCheck color="rgba(255,255,255,0.6)" size={14} />
+            <Text style={styles.sectionLabel}>Plan & access</Text>
+          </View>
+          <GlassCard>
+            <View style={styles.planTopRow}>
+              <View>
+                <Text style={styles.planName}>{user?.is_admin ? 'Admin / Tester' : planLabel}</Text>
+                <Text style={styles.planSub}>
+                  {user?.is_admin
+                    ? 'All feature gates bypassed for testing.'
+                    : `${memberSlotsUsed}/${memberLimit || '∞'} member slots used`}
+                </Text>
+              </View>
+              <PressScale
+                testID="open-pricing"
+                onPress={() => setShowPricing(true)}
+                style={styles.upgradeMiniBtn}
+              >
+                <Text style={styles.upgradeMiniText}>
+                  {user?.is_admin ? 'View plans' : memberLimitReached ? 'Upgrade' : 'Plans'}
+                </Text>
+                <ArrowUpRight color="#080910" size={13} />
+              </PressScale>
+            </View>
+
+            <View style={styles.usageGrid}>
+              <View style={styles.usageBox}>
+                <Text style={styles.usageValue}>{memberSlotsUsed}/{memberLimit || '∞'}</Text>
+                <Text style={styles.usageLabel}>Members + pending invites</Text>
+              </View>
+              <View style={styles.usageBox}>
+                <Text style={styles.usageValue}>
+                  {entitlements
+                    ? `${entitlements.ai_scans_used}/${entitlements.ai_scans_limit}`
+                    : `${subscription?.ai_scans_used ?? 0}/${subscription?.limits?.ai_scans_per_month ?? '∞'}`}
+                </Text>
+                <Text style={styles.usageLabel}>AI scans</Text>
+              </View>
+              <View style={styles.usageBox}>
+                <Text style={styles.usageValue}>
+                  {formatBytes(entitlements?.vault_bytes_used ?? subscription?.vault_bytes_used)}
+                </Text>
+                <Text style={styles.usageLabel}>
+                  Vault / {formatBytes(entitlements?.vault_bytes_limit ?? subscription?.limits?.vault_bytes)}
+                </Text>
+              </View>
+              <View style={styles.usageBox}>
+                <Text style={styles.usageValue}>
+                  {entitlements?.weekly_brief || subscription?.limits?.weekly_brief ? 'On' : 'Locked'}
+                </Text>
+                <Text style={styles.usageLabel}>Weekly brief</Text>
+              </View>
+            </View>
+
+            {memberLimitReached ? (
+              <Text style={styles.limitWarning}>
+                You have reached your member limit. Upgrade before inviting another person.
+              </Text>
+            ) : null}
           </GlassCard>
 
           {/* Notifications */}
@@ -316,6 +416,83 @@ export default function SettingsScreen() {
               {notificationStatus ||
                 'Reminder alerts are scheduled on this device. New-card alerts are mainly for other signed-in family members/devices.'}
             </Text>
+          </GlassCard>
+
+          {/* Preferences */}
+          <View style={styles.sectionRow}>
+            <Globe color="rgba(255,255,255,0.6)" size={14} />
+            <Text style={styles.sectionLabel}>Preferences</Text>
+          </View>
+          <GlassCard>
+            <View style={styles.preferenceBlock}>
+              <View style={styles.preferenceHeader}>
+                <View style={styles.preferenceTitleRow}>
+                  {appearanceMode === 'light' ? (
+                    <Sun color="#F59E0B" size={14} />
+                  ) : (
+                    <Moon color="#F59E0B" size={14} />
+                  )}
+                  <Text style={styles.actionLabel}>Appearance</Text>
+                </View>
+                <Text style={styles.actionValue}>
+                  {appearanceMode === 'system'
+                    ? 'System'
+                    : appearanceMode === 'light'
+                    ? 'Light'
+                    : 'Dark'}
+                </Text>
+              </View>
+
+              <View style={styles.segmentRow}>
+                <PressScale
+                  testID="appearance-dark"
+                  onPress={() => setAppearance('dark')}
+                  style={[styles.segmentBtn, appearanceMode === 'dark' && styles.segmentBtnActive]}
+                >
+                  <Text style={[styles.segmentText, appearanceMode === 'dark' && styles.segmentTextActive]}>
+                    Dark
+                  </Text>
+                </PressScale>
+
+                <PressScale
+                  testID="appearance-light"
+                  onPress={() => setAppearance('light')}
+                  style={[styles.segmentBtn, appearanceMode === 'light' && styles.segmentBtnActive]}
+                >
+                  <Text style={[styles.segmentText, appearanceMode === 'light' && styles.segmentTextActive]}>
+                    Light
+                  </Text>
+                </PressScale>
+
+                <PressScale
+                  testID="appearance-system"
+                  onPress={() => setAppearance('system')}
+                  style={[styles.segmentBtn, appearanceMode === 'system' && styles.segmentBtnActive]}
+                >
+                  <Text style={[styles.segmentText, appearanceMode === 'system' && styles.segmentTextActive]}>
+                    System
+                  </Text>
+                </PressScale>
+              </View>
+
+              <Text style={styles.preferenceNote}>
+                Saved on this device. Full app-wide light theme styling can be expanded next.
+              </Text>
+            </View>
+
+            <View style={styles.memberBorder} />
+
+            <PressScale
+              testID="settings-lang"
+              onPress={() => setShowLang(true)}
+              style={styles.actionRow}
+            >
+              <View style={styles.preferenceTitleRow}>
+                <Globe color="#F59E0B" size={14} />
+                <Text style={styles.actionLabel}>{t('language')}</Text>
+              </View>
+              <Text style={styles.actionValue}>{LANG_NAMES[lang]}</Text>
+            </PressScale>
           </GlassCard>
 
           {/* Family */}
@@ -541,24 +718,6 @@ export default function SettingsScreen() {
             )}
           </GlassCard>
 
-          {/* Language */}
-          <View style={styles.sectionRow}>
-            <Globe color="rgba(255,255,255,0.6)" size={14} />
-            <Text style={styles.sectionLabel}>{t('language')}</Text>
-          </View>
-          <GlassCard>
-            <PressScale
-              testID="settings-lang"
-              onPress={() => setShowLang(true)}
-              style={styles.actionRow}
-            >
-              <Text style={styles.actionLabel}>{t('language')}</Text>
-              <Text style={styles.actionValue}>
-                {LANG_NAMES[lang]}
-              </Text>
-            </PressScale>
-          </GlassCard>
-
           {/* Logout */}
           <PressScale testID="logout" onPress={doLogout} style={styles.logoutBtn}>
             <LogOut color="#EF4444" size={16} />
@@ -620,6 +779,12 @@ export default function SettingsScreen() {
           style={styles.input}
           returnKeyType="send"
         />
+
+        {memberLimitReached ? (
+          <Text style={styles.resultText}>
+            Your current plan has no free member slots. Upgrade before sending another invite.
+          </Text>
+        ) : null}
 
         {inviteResult ? <Text style={styles.resultText}>{inviteResult}</Text> : null}
 
@@ -683,6 +848,13 @@ export default function SettingsScreen() {
           </PressScale>
         </View>
       </KeyboardAwareBottomSheet>
+      <KeyboardAwareBottomSheet
+        visible={showPricing}
+        onClose={() => setShowPricing(false)}
+        contentStyle={styles.pricingSheet}
+      >
+        <PricingView embedded onClose={() => setShowPricing(false)} />
+      </KeyboardAwareBottomSheet>
     </View>
   );
 }
@@ -733,6 +905,109 @@ const styles = StyleSheet.create({
   memberName: { color: '#fff', fontFamily: 'Inter_500Medium', fontSize: 15 },
   memberRole: { color: 'rgba(255,255,255,0.5)', fontFamily: 'Inter_400Regular', fontSize: 11, marginTop: 2 },
   emptyRow: { color: 'rgba(255,255,255,0.5)', fontFamily: 'Inter_400Regular', fontSize: 13, paddingVertical: 6 },
+  planTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  planName: {
+    color: '#fff',
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 16,
+  },
+  planSub: {
+    color: 'rgba(255,255,255,0.58)',
+    fontFamily: 'Inter_400Regular',
+    fontSize: 12,
+    marginTop: 3,
+  },
+  upgradeMiniBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#fff',
+    borderRadius: 9999,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  upgradeMiniText: {
+    color: '#080910',
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 12,
+  },
+  usageGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 16,
+  },
+  usageBox: {
+    width: '48%',
+    minHeight: 74,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.09)',
+    backgroundColor: 'rgba(255,255,255,0.035)',
+    padding: 12,
+  },
+  usageValue: {
+    color: '#fff',
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 15,
+  },
+  usageLabel: {
+    color: 'rgba(255,255,255,0.48)',
+    fontFamily: 'Inter_400Regular',
+    fontSize: 10,
+    lineHeight: 14,
+    marginTop: 6,
+  },
+  limitWarning: {
+    color: '#F97316',
+    fontFamily: 'Inter_500Medium',
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 14,
+  },
+  preferenceBlock: { paddingVertical: 2 },
+  preferenceHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  preferenceTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  preferenceNote: {
+    color: 'rgba(255,255,255,0.52)',
+    fontFamily: 'Inter_400Regular',
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 10,
+  },
+  segmentRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 12,
+  },
+  segmentBtn: {
+    flex: 1,
+    borderRadius: 9999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    paddingVertical: 9,
+    alignItems: 'center',
+  },
+  segmentBtnActive: {
+    backgroundColor: '#fff',
+    borderColor: '#fff',
+  },
+  segmentText: {
+    color: 'rgba(255,255,255,0.72)',
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 12,
+  },
+  segmentTextActive: { color: '#080910' },
   actionRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 4 },
   actionLabel: { color: '#fff', fontFamily: 'Inter_500Medium', fontSize: 15 },
   actionValue: { color: 'rgba(255,255,255,0.6)', fontFamily: 'Inter_400Regular', fontSize: 14 },
@@ -743,6 +1018,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(239,68,68,0.08)',
   },
   logoutText: { color: '#EF4444', fontFamily: 'Inter_600SemiBold', fontSize: 14 },
+  inviteBtnLocked: {
+    opacity: 0.72,
+    backgroundColor: 'rgba(249,115,22,0.55)',
+  },
   inviteBtn: {
     marginTop: 12,
     flexDirection: 'row',
@@ -757,6 +1036,11 @@ const styles = StyleSheet.create({
   },
   inviteBtnText: { color: '#fff', fontFamily: 'Inter_500Medium', fontSize: 14 },
   backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(8,9,16,0.5)' },
+  pricingSheet: {
+    padding: 0,
+    paddingBottom: 24,
+    maxHeight: '92%',
+  },
   sheet: {
     backgroundColor: 'rgba(20,22,32,0.96)',
     borderTopLeftRadius: 28,
