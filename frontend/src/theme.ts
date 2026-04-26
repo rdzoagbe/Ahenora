@@ -59,32 +59,37 @@ export const darkTheme: AppTheme = {
   },
 };
 
+// NOTE: This is intentionally a readable high-contrast day palette, not a pale
+// white palette. Several production screens still contain legacy hard-coded
+// light text, so a pure white theme makes important content disappear. This
+// keeps the app usable for families while individual screens are progressively
+// moved to fully theme-aware styles.
 export const lightTheme: AppTheme = {
   mode: 'light',
   colors: {
-    bg: '#F7F2E8',
-    bgElevated: '#FFFFFF',
-    bgSoft: '#F1E8D8',
-    card: '#FFFFFF',
-    cardBorder: '#D9D2C4',
-    glassTint: '#FFFFFF',
-    text: '#111827',
-    textMuted: '#475569',
-    textSoft: '#64748B',
-    tabBar: '#FFFFFF',
-    tabBorder: '#D9D2C4',
-    primary: '#111827',
+    bg: '#172033',
+    bgElevated: '#202B42',
+    bgSoft: '#273650',
+    card: '#202B42',
+    cardBorder: '#40506A',
+    glassTint: '#202B42',
+    text: '#FFFFFF',
+    textMuted: '#DCE6F6',
+    textSoft: '#B9C6D9',
+    tabBar: '#F8FAFC',
+    tabBorder: '#D6DEE9',
+    primary: '#0F172A',
     primaryText: '#FFFFFF',
-    accent: '#B45309',
-    accentSoft: '#FEF3C7',
-    success: '#047857',
-    shadow: '#475569',
+    accent: '#FBBF24',
+    accentSoft: 'rgba(251,191,36,0.18)',
+    success: '#34D399',
+    shadow: '#000000',
   },
   ambient: {
-    base: '#F7F2E8',
-    glowA: ['rgba(251,191,36,0.10)', 'rgba(251,191,36,0)'],
-    glowB: ['rgba(96,165,250,0.07)', 'rgba(96,165,250,0)'],
-    glowC: ['rgba(52,211,153,0.05)', 'rgba(52,211,153,0)'],
+    base: '#172033',
+    glowA: ['rgba(59,130,246,0.18)', 'rgba(59,130,246,0)'],
+    glowB: ['rgba(251,191,36,0.13)', 'rgba(251,191,36,0)'],
+    glowC: ['rgba(52,211,153,0.10)', 'rgba(52,211,153,0)'],
   },
 };
 
