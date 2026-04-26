@@ -30,66 +30,65 @@ export interface AppTheme {
   };
 }
 
+// Family-friendly product palette.
+// The app still has a few legacy screens with hard-coded white text. Until those
+// are fully converted to semantic tokens, both modes intentionally keep enough
+// depth behind the content so every screen remains readable on real phones.
 export const darkTheme: AppTheme = {
   mode: 'dark',
   colors: {
-    bg: '#0B1220',
-    bgElevated: '#121A2A',
-    bgSoft: '#182235',
-    card: '#121A2A',
-    cardBorder: '#273449',
-    glassTint: '#121A2A',
+    bg: '#0B1020',
+    bgElevated: '#111827',
+    bgSoft: '#1B2436',
+    card: '#151D2C',
+    cardBorder: '#334155',
+    glassTint: '#151D2C',
     text: '#F8FAFC',
-    textMuted: '#CBD5E1',
-    textSoft: '#94A3B8',
-    tabBar: '#0F172A',
-    tabBorder: '#273449',
-    primary: '#F8FAFC',
-    primaryText: '#0B1220',
+    textMuted: '#D7DEE9',
+    textSoft: '#A7B3C5',
+    tabBar: '#FFFFFF',
+    tabBorder: '#D7DEE9',
+    primary: '#0F172A',
+    primaryText: '#FFFFFF',
     accent: '#F59E0B',
-    accentSoft: 'rgba(245,158,11,0.16)',
-    success: '#34D399',
+    accentSoft: 'rgba(245,158,11,0.18)',
+    success: '#22C55E',
     shadow: '#000000',
   },
   ambient: {
-    base: '#0B1220',
-    glowA: ['rgba(59,130,246,0.13)', 'rgba(59,130,246,0)'],
-    glowB: ['rgba(245,158,11,0.10)', 'rgba(245,158,11,0)'],
-    glowC: ['rgba(16,185,129,0.07)', 'rgba(16,185,129,0)'],
+    base: '#0B1020',
+    glowA: ['rgba(37,99,235,0.18)', 'rgba(37,99,235,0)'],
+    glowB: ['rgba(245,158,11,0.14)', 'rgba(245,158,11,0)'],
+    glowC: ['rgba(16,185,129,0.10)', 'rgba(16,185,129,0)'],
   },
 };
 
-// NOTE: This is intentionally a readable high-contrast day palette, not a pale
-// white palette. Several production screens still contain legacy hard-coded
-// light text, so a pure white theme makes important content disappear. This
-// keeps the app usable for families while individual screens are progressively
-// moved to fully theme-aware styles.
 export const lightTheme: AppTheme = {
   mode: 'light',
   colors: {
-    bg: '#172033',
-    bgElevated: '#202B42',
-    bgSoft: '#273650',
-    card: '#202B42',
-    cardBorder: '#40506A',
-    glassTint: '#202B42',
+    bg: '#152033',
+    bgElevated: '#1D2A42',
+    bgSoft: '#24344F',
+    card: '#1D2A42',
+    cardBorder: '#4A5C78',
+    glassTint: '#1D2A42',
     text: '#FFFFFF',
-    textMuted: '#DCE6F6',
-    textSoft: '#B9C6D9',
-    tabBar: '#F8FAFC',
-    tabBorder: '#D6DEE9',
+    textMuted: '#E4ECF8',
+    textSoft: '#BCC9DB',
+    tabBar: '#FFFFFF',
+    tabBorder: '#D7DEE9',
     primary: '#0F172A',
     primaryText: '#FFFFFF',
     accent: '#FBBF24',
-    accentSoft: 'rgba(251,191,36,0.18)',
-    success: '#34D399',
+    accentSoft: 'rgba(251,191,36,0.20)',
+    success: '#22C55E',
     shadow: '#000000',
   },
   ambient: {
-    base: '#172033',
-    glowA: ['rgba(59,130,246,0.18)', 'rgba(59,130,246,0)'],
-    glowB: ['rgba(251,191,36,0.13)', 'rgba(251,191,36,0)'],
-    glowC: ['rgba(52,211,153,0.10)', 'rgba(52,211,153,0)'],
+    base: '#152033',
+    glowA: ['rgba(96,165,250,0.20)', 'rgba(96,165,250,0)'],
+    glowB: ['rgba(251,191,36,0.15)', 'rgba(251,191,36,0)'],
+    glowC: ['rgba(34,197,94,0.10)', 'rgba(34,197,94,0)'],
   },
 };
 
