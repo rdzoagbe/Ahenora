@@ -13,6 +13,9 @@ concurrency:
   group: frontend-ci-eas-update-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   frontend-ci:
     name: Frontend lint check
@@ -42,9 +45,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: frontend-ci
     if: github.ref == 'refs/heads/main'
-    defaults:
-      run:
-        working-directory: frontend
     env:
       EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
       EXPO_PUBLIC_BACKEND_URL: ${{ secrets.EXPO_PUBLIC_BACKEND_URL || vars.EXPO_PUBLIC_BACKEND_URL }}
@@ -52,18 +52,41 @@ jobs:
       EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: ${{ secrets.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || vars.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID }}
       EXPO_NO_TELEMETRY: 1
     steps:
-      - name: Skip when EXPO_TOKEN is not configured
-        if: env.EXPO_TOKEN == ''
+      - name: Check Expo publish configuration
+        id: expo_config
+        shell: bash
         run: |
-          echo "EXPO_TOKEN is not configured as a GitHub secret."
-          echo "Skipping EAS Update. Add EXPO_TOKEN to enable Expo updates on expo.dev."
+          missing=()
+
+          if [ -z "$EXPO_TOKEN" ]; then
+            missing+=("EXPO_TOKEN")
+          fi
+          if [ -z "$EXPO_PUBLIC_BACKEND_URL" ]; then
+            missing+=("EXPO_PUBLIC_BACKEND_URL")
+          fi
+          if [ -z "$EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID" ]; then
+            missing+=("EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID")
+          fi
+          if [ -z "$EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID" ]; then
+            missing+=("EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID")
+          fi
+
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "Expo update is skipped because the following GitHub Actions secrets/variables are missing: ${missing[*]}"
+            echo "Add them under Repository > Settings > Secrets and variables > Actions to enable automatic EAS updates."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Expo publish configuration found. Continuing with EAS update."
+          echo "publish=true" >> "$GITHUB_OUTPUT"
 
       - name: Checkout repository
-        if: env.EXPO_TOKEN != ''
+        if: steps.expo_config.outputs.publish == 'true'
         uses: actions/checkout@v4
 
       - name: Setup Node.js
-        if: env.EXPO_TOKEN != ''
+        if: steps.expo_config.outputs.publish == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -71,25 +94,17 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
-        if: env.EXPO_TOKEN != ''
+        if: steps.expo_config.outputs.publish == 'true'
+        working-directory: frontend
         run: npm ci
 
-      - name: Validate public Expo environment
-        if: env.EXPO_TOKEN != ''
-        run: |
-          if [ -z "$EXPO_PUBLIC_BACKEND_URL" ]; then
-            echo "Missing EXPO_PUBLIC_BACKEND_URL. Add it as a GitHub Actions secret or repository variable."
-            exit 1
-          fi
-          if [ -z "$EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID" ]; then
-            echo "Missing EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID. Add it as a GitHub Actions secret or repository variable."
-            exit 1
-          fi
-          if [ -z "$EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID" ]; then
-            echo "Missing EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID. Add it as a GitHub Actions secret or repository variable."
-            exit 1
-          fi
-
       - name: Publish Android update to Expo production branch
-        if: env.EXPO_TOKEN != ''
-        run: npx eas-cli@latest update --platform android --branch production --environment production --message "GitHub $GITHUB_SHA" --non-interactive
+        if: steps.expo_config.outputs.publish == 'true'
+        working-directory: frontend
+        run: |
+          npx eas-cli@latest update \
+            --platform android \
+            --branch production \
+            --environment production \
+            --message "GitHub $GITHUB_SHA" \
+            --non-interactive
