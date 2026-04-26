@@ -1,23 +1,44 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
-import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
 import { Card } from './api';
 
 const REMINDER_IDS_KEY = 'coo_scheduled_card_reminder_ids';
+const EXPO_GO_ANDROID_MESSAGE =
+  'Notifications are disabled in Expo Go on Android. Use a development build to test notifications.';
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
+let notificationHandlerConfigured = false;
+
+function isExpoGoAndroid() {
+  return Platform.OS === 'android' && Constants.appOwnership === 'expo';
+}
+
+async function getNotificationsModule(): Promise<any | null> {
+  if (isExpoGoAndroid()) return null;
+
+  const Notifications = await import('expo-notifications');
+
+  if (!notificationHandlerConfigured) {
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldPlaySound: true,
+        shouldSetBadge: false,
+        shouldShowBanner: true,
+        shouldShowList: true,
+      }),
+    });
+    notificationHandlerConfigured = true;
+  }
+
+  return Notifications;
+}
 
 export async function configureNotificationChannels() {
   if (Platform.OS !== 'android') return;
+
+  const Notifications = await getNotificationsModule();
+  if (!Notifications) return;
 
   await Notifications.setNotificationChannelAsync('card-reminders', {
     name: 'Card reminders',
@@ -35,6 +56,9 @@ export async function configureNotificationChannels() {
 }
 
 export async function ensureNotificationPermissions() {
+  const Notifications = await getNotificationsModule();
+  if (!Notifications) return false;
+
   await configureNotificationChannels();
 
   const existing = await Notifications.getPermissionsAsync();
@@ -53,6 +77,15 @@ export async function registerForPushNotificationsAsync(): Promise<{
   expoPushToken?: string;
   error?: string;
 }> {
+  if (isExpoGoAndroid()) {
+    return { granted: false, error: EXPO_GO_ANDROID_MESSAGE };
+  }
+
+  const Notifications = await getNotificationsModule();
+  if (!Notifications) {
+    return { granted: false, error: EXPO_GO_ANDROID_MESSAGE };
+  }
+
   const granted = await ensureNotificationPermissions();
 
   if (!granted) {
@@ -99,12 +132,15 @@ async function setReminderMap(map: Record<string, string>) {
 
 export async function cancelAllCardReminderNotifications() {
   const map = await getReminderMap();
+  const Notifications = await getNotificationsModule();
 
-  await Promise.all(
-    Object.values(map).map((identifier) =>
-      Notifications.cancelScheduledNotificationAsync(identifier).catch(() => undefined)
-    )
-  );
+  if (Notifications) {
+    await Promise.all(
+      Object.values(map).map((identifier) =>
+        Notifications.cancelScheduledNotificationAsync(identifier).catch(() => undefined)
+      )
+    );
+  }
 
   await setReminderMap({});
 }
@@ -113,6 +149,11 @@ export async function syncCardReminderNotifications(cards: Card[], enabled: bool
   if (!enabled) {
     await cancelAllCardReminderNotifications();
     return { scheduled: 0 };
+  }
+
+  const Notifications = await getNotificationsModule();
+  if (!Notifications) {
+    return { scheduled: 0, skipped: true, reason: 'expo_go_android_not_supported' };
   }
 
   const permissions = await Notifications.getPermissionsAsync();
@@ -165,6 +206,9 @@ export async function syncCardReminderNotifications(cards: Card[], enabled: bool
 }
 
 export async function sendTestScheduledReminderNotification() {
+  const Notifications = await getNotificationsModule();
+  if (!Notifications) return false;
+
   const permissions = await Notifications.getPermissionsAsync();
   if (permissions.status !== 'granted') return false;
 
@@ -187,8 +231,10 @@ export async function sendTestScheduledReminderNotification() {
   return true;
 }
 
-
 export async function sendLocalNotification(title: string, body: string) {
+  const Notifications = await getNotificationsModule();
+  if (!Notifications) return false;
+
   const permissions = await Notifications.getPermissionsAsync();
   if (permissions.status !== 'granted') return false;
 
