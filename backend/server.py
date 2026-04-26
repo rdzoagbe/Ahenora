@@ -103,6 +103,17 @@ def parse_dt(value: Optional[str]) -> Optional[datetime]:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(timezone.utc)
 
+def ensure_aware_utc(value):
+    if not value:
+        return None
+    if isinstance(value, str):
+        return parse_dt(value)
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+    return None
+
 
 def new_id(prefix: str) -> str:
     return f"{prefix}_{secrets.token_hex(8)}"
@@ -1051,7 +1062,9 @@ async def family_invites(user=Depends(require_user)):
     ).sort("created_at", -1)
 
     async for item in cursor:
-        if item.get("status") == "pending" and item.get("expires_at") and item["expires_at"] < utcnow():
+        expires_at = ensure_aware_utc(item.get("expires_at"))
+        if item.get("status") == "pending" and expires_at and expires_at < utcnow():
+            item["expires_at"] = expires_at
             item["status"] = "expired"
             await database["family_invites"].update_one(
                 {"invite_id": item["invite_id"]},
@@ -1788,7 +1801,7 @@ async def weekly_brief(user=Depends(require_user)):
 
     if not GOOGLE_API_KEY:
         brief = (
-            "This week’s household priorities are: "
+            "This week's household priorities are: "
             + "; ".join([c["title"] for c in cards[:5]])
             + ". Focus first on items with dates, assign open tasks clearly, and close one quick win today."
         )
