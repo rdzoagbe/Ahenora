@@ -30,6 +30,35 @@ export interface AppTheme {
   };
 }
 
+export const lightTheme: AppTheme = {
+  mode: 'light',
+  colors: {
+    bg: '#F5F7FB',
+    bgElevated: '#FFFFFF',
+    bgSoft: '#F1F5F9',
+    card: '#FFFFFF',
+    cardBorder: '#E3E8F1',
+    glassTint: '#FFFFFF',
+    text: '#141923',
+    textMuted: '#596474',
+    textSoft: '#8A94A5',
+    tabBar: '#FFFFFF',
+    tabBorder: '#E3E8F1',
+    primary: '#20252B',
+    primaryText: '#FFFFFF',
+    accent: '#F97316',
+    accentSoft: '#FFF3E8',
+    success: '#10B981',
+    shadow: '#0F172A',
+  },
+  ambient: {
+    base: '#F5F7FB',
+    glowA: ['rgba(255,255,255,0.90)', 'rgba(255,255,255,0)'],
+    glowB: ['rgba(226,232,240,0.65)', 'rgba(226,232,240,0)'],
+    glowC: ['rgba(224,242,254,0.55)', 'rgba(224,242,254,0)'],
+  },
+};
+
 export const darkTheme: AppTheme = {
   mode: 'dark',
   colors: {
@@ -46,8 +75,8 @@ export const darkTheme: AppTheme = {
     tabBorder: '#D9E1ED',
     primary: '#FFFFFF',
     primaryText: '#071120',
-    accent: '#F7B733',
-    accentSoft: 'rgba(247,183,51,0.16)',
+    accent: '#F97316',
+    accentSoft: 'rgba(249,115,22,0.16)',
     success: '#22C55E',
     shadow: '#000000',
   },
@@ -56,35 +85,6 @@ export const darkTheme: AppTheme = {
     glowA: ['rgba(37,99,235,0.16)', 'rgba(37,99,235,0)'],
     glowB: ['rgba(247,183,51,0.12)', 'rgba(247,183,51,0)'],
     glowC: ['rgba(20,184,166,0.10)', 'rgba(20,184,166,0)'],
-  },
-};
-
-export const lightTheme: AppTheme = {
-  mode: 'light',
-  colors: {
-    bg: '#F6F1E7',
-    bgElevated: '#FFFFFF',
-    bgSoft: '#EEE7DA',
-    card: '#FFFFFF',
-    cardBorder: '#D9D0C2',
-    glassTint: '#FFFFFF',
-    text: '#172033',
-    textMuted: '#4B5870',
-    textSoft: '#778399',
-    tabBar: '#FFFFFF',
-    tabBorder: '#D9D0C2',
-    primary: '#172033',
-    primaryText: '#FFFFFF',
-    accent: '#B7791F',
-    accentSoft: 'rgba(183,121,31,0.14)',
-    success: '#16A34A',
-    shadow: '#172033',
-  },
-  ambient: {
-    base: '#F6F1E7',
-    glowA: ['rgba(247,183,51,0.24)', 'rgba(247,183,51,0)'],
-    glowB: ['rgba(14,165,233,0.12)', 'rgba(14,165,233,0)'],
-    glowC: ['rgba(34,197,94,0.10)', 'rgba(34,197,94,0)'],
   },
 };
 

@@ -6,19 +6,12 @@ import { useStore } from '../../src/store';
 
 function TabIcon({ focused, Icon, label }: { focused: boolean; Icon: any; label: string }) {
   const { theme } = useStore();
-  const iconColor = focused ? theme.colors.primaryText : theme.colors.textMuted;
+  const activeBg = '#20252B';
+  const iconColor = focused ? '#FFFFFF' : theme.colors.textMuted;
 
   return (
-    <View
-      style={[
-        styles.tabItem,
-        focused && {
-          backgroundColor: theme.colors.primary,
-          borderColor: theme.colors.primary,
-        },
-      ]}
-    >
-      <Icon color={iconColor} size={22} strokeWidth={focused ? 2.5 : 2.1} />
+    <View style={[styles.tabItem, focused && { backgroundColor: activeBg }]}>
+      <Icon color={iconColor} size={24} strokeWidth={focused ? 2.6 : 2.1} />
       <Text
         style={[
           styles.tabLabel,
@@ -46,20 +39,20 @@ export default function TabLayout() {
         sceneStyle: { backgroundColor: theme.colors.bg },
         tabBarStyle: {
           position: 'absolute',
-          left: 14,
-          right: 14,
-          bottom: 14,
-          height: 76,
-          borderRadius: 30,
-          backgroundColor: theme.colors.tabBar,
+          left: 12,
+          right: 12,
+          bottom: 12,
+          height: 82,
+          borderRadius: 34,
+          backgroundColor: '#FFFFFF',
           borderTopWidth: 0,
           borderWidth: 1,
           borderColor: theme.colors.tabBorder,
-          elevation: 8,
+          elevation: 14,
           shadowColor: theme.colors.shadow,
-          shadowOpacity: 0.14,
-          shadowRadius: 18,
-          shadowOffset: { width: 0, height: 8 },
+          shadowOpacity: 0.16,
+          shadowRadius: 24,
+          shadowOffset: { width: 0, height: 12 },
           paddingHorizontal: 8,
           paddingTop: 8,
         },
@@ -79,11 +72,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
-    minWidth: 62,
-    height: 58,
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: 'transparent',
+    minWidth: 64,
+    height: 64,
+    borderRadius: 26,
   },
   tabLabel: {
     fontSize: 12,

@@ -1,16 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  RefreshControl,
-  Image,
-  ActivityIndicator,
-} from 'react-native';
+import { View, Text, StyleSheet, ScrollView, RefreshControl, Image, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Sparkles, Bell } from 'lucide-react-native';
+import { Sparkles, Bell, SlidersHorizontal } from 'lucide-react-native';
 import { useFocusEffect } from 'expo-router';
+
 import { AmbientBackground } from '../../src/components/AmbientBackground';
 import { PressScale } from '../../src/components/PressScale';
 import { SmartCard } from '../../src/components/SmartCard';
@@ -36,7 +29,7 @@ interface VoiceDraft {
 }
 
 export default function FeedScreen() {
-  const { user, t } = useStore();
+  const { user, t, theme } = useStore();
   const [cards, setCards] = useState<Card[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -51,77 +44,46 @@ export default function FeedScreen() {
     try {
       const res = await api.listCards();
       setCards(res);
-
-      api
-        .getNotificationSettings()
-        .then((prefs) => {
-          if (prefs.card_reminders) {
-            return syncCardReminderNotifications(res, true);
-          }
-          return syncCardReminderNotifications([], false);
-        })
+      api.getNotificationSettings()
+        .then((prefs) => prefs.card_reminders ? syncCardReminderNotifications(res, true) : syncCardReminderNotifications([], false))
         .catch(() => undefined);
-    } catch (e) {
-      console.log('load cards error', e);
+    } catch (error) {
+      console.log('load cards error', error);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   }, []);
 
-  useFocusEffect(
-    useCallback(() => {
-      load();
-    }, [load])
-  );
-
-  useEffect(() => {
-    load();
-  }, [load]);
+  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useEffect(() => { load(); }, [load]);
 
   const toggle = async (card: Card) => {
     const next = card.status === 'DONE' ? 'OPEN' : 'DONE';
-    setCards((prev) =>
-      prev.map((c) => (c.card_id === card.card_id ? { ...c, status: next } : c))
-    );
-    try {
-      await api.updateCard(card.card_id, { status: next });
-    } catch {
-      load();
-    }
+    setCards((prev) => prev.map((c) => (c.card_id === card.card_id ? { ...c, status: next } : c)));
+    try { await api.updateCard(card.card_id, { status: next }); } catch { load(); }
   };
 
   const remove = async (card: Card) => {
     setCards((prev) => prev.filter((c) => c.card_id !== card.card_id));
-    try {
-      await api.deleteCard(card.card_id);
-    } catch {
-      load();
-    }
+    try { await api.deleteCard(card.card_id); } catch { load(); }
   };
 
-  const openCount = cards.filter((c) => c.status === 'OPEN').length;
+  const openCards = cards.filter((c) => c.status === 'OPEN');
+  const openCount = openCards.length;
 
   const upcomingReminders = useMemo(() => {
     const now = Date.now();
     const in24h = now + 24 * 60 * 60 * 1000;
-    return cards
-      .filter((c) => c.status === 'OPEN' && c.due_date && (c.reminder_minutes || 0) > 0)
+    return openCards
+      .filter((c) => c.due_date && (c.reminder_minutes || 0) > 0)
       .filter((c) => {
-        try {
-          const due = new Date(c.due_date as string).getTime();
-          const remindAt = due - (c.reminder_minutes || 0) * 60 * 1000;
-          return remindAt >= now - 60 * 60 * 1000 && remindAt <= in24h;
-        } catch {
-          return false;
-        }
+        const due = new Date(c.due_date as string).getTime();
+        const remindAt = due - (c.reminder_minutes || 0) * 60 * 1000;
+        return remindAt >= now - 60 * 60 * 1000 && remindAt <= in24h;
       })
-      .sort((a, b) => {
-        const da = new Date(a.due_date as string).getTime() - (a.reminder_minutes || 0) * 60 * 1000;
-        const dbv = new Date(b.due_date as string).getTime() - (b.reminder_minutes || 0) * 60 * 1000;
-        return da - dbv;
-      });
-  }, [cards]);
+      .sort((a, b) => new Date(a.due_date as string).getTime() - new Date(b.due_date as string).getTime());
+  }, [openCards]);
 
   const greeting = (() => {
     const h = new Date().getHours();
@@ -133,99 +95,77 @@ export default function FeedScreen() {
   const firstName = (user?.name || '').split(' ')[0] || '';
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.colors.bg }]}>
       <AmbientBackground />
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <ScrollView
           contentContainerStyle={styles.scroll}
+          showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
-              onRefresh={() => {
-                setRefreshing(true);
-                load();
-              }}
-              tintColor="#fff"
+              onRefresh={() => { setRefreshing(true); load(); }}
+              tintColor={theme.colors.text}
             />
           }
         >
-          {/* Header */}
           <View style={styles.header}>
-            <View>
-              <Text style={styles.greet}>{greeting}</Text>
-              <Text style={styles.name}>{firstName}.</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.greet, { color: theme.colors.textMuted }]}>{greeting}</Text>
+              <Text style={[styles.name, { color: theme.colors.text }]}>{firstName}.</Text>
             </View>
             {user?.picture ? (
-              <Image source={{ uri: user.picture }} style={styles.avatar} />
+              <Image source={{ uri: user.picture }} style={[styles.avatar, { borderColor: theme.colors.cardBorder }]} />
             ) : (
-              <View style={[styles.avatar, styles.avatarFallback]}>
-                <Text style={styles.avatarText}>{(firstName[0] || 'C').toUpperCase()}</Text>
+              <View style={[styles.avatar, styles.avatarFallback, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
+                <Text style={[styles.avatarText, { color: theme.colors.text }]}>{(firstName[0] || 'C').toUpperCase()}</Text>
               </View>
             )}
           </View>
 
-          {/* Brief card */}
-          <PressScale testID="open-brief" onPress={() => setShowBrief(true)} style={styles.briefCard}>
-            <View style={styles.briefHeader}>
-              <View style={styles.briefBadge}>
-                <Sparkles color="#fff" size={12} />
-                <Text style={styles.briefBadgeText}>{t('sunday_brief')}</Text>
+          <PressScale testID="open-brief" onPress={() => setShowBrief(true)} style={[styles.heroCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder, shadowColor: theme.colors.shadow }]}>
+            <View style={styles.heroTop}>
+              <View style={[styles.heroBadge, { backgroundColor: theme.colors.bgSoft }]}>
+                <Sparkles color={theme.colors.accent} size={15} />
+                <Text style={[styles.heroBadgeText, { color: theme.colors.text }]}>{t('sunday_brief')}</Text>
               </View>
-              <Text style={styles.briefCount}>
-                {openCount} {openCount === 1 ? t('open_item') : t('open_items')}
-              </Text>
+              <Text style={[styles.heroCount, { color: theme.colors.textMuted }]}>{openCount} {openCount === 1 ? t('open_item') : t('open_items')}</Text>
             </View>
-            <Text style={styles.briefTitle}>{t('on_your_desk')}</Text>
-            <Text style={styles.briefSub}>{t('sunday_brief_subtitle')}</Text>
+            <Text style={[styles.heroTitle, { color: theme.colors.text }]}>{t('on_your_desk')}</Text>
+            <Text style={[styles.heroSub, { color: theme.colors.textMuted }]}>{t('sunday_brief_subtitle')}</Text>
           </PressScale>
 
-          {/* Reminders banner */}
           {upcomingReminders.length > 0 && (
-            <View testID="reminders-banner" style={styles.remindersCard}>
+            <View testID="reminders-banner" style={[styles.remindersCard, { backgroundColor: theme.colors.accentSoft, borderColor: theme.colors.accent }]}>
               <View style={styles.remindersHeader}>
-                <Bell color="#F97316" size={14} />
-                <Text style={styles.remindersTitle}>
-                  {t('reminders')} · {upcomingReminders.length}
-                </Text>
+                <Bell color={theme.colors.accent} size={17} />
+                <Text style={[styles.remindersTitle, { color: theme.colors.accent }]}>{t('reminders')} · {upcomingReminders.length}</Text>
               </View>
-              {upcomingReminders.slice(0, 3).map((c) => {
-                const due = new Date(c.due_date as string).getTime();
-                const remindAt = due - (c.reminder_minutes || 0) * 60 * 1000;
-                const mins = Math.max(0, Math.round((remindAt - Date.now()) / 60000));
-                const label =
-                  mins <= 1 ? 'now' : mins < 60 ? `in ${mins}m` : `in ${Math.round(mins / 60)}h`;
-                return (
-                  <View key={c.card_id} style={styles.remindersRow}>
-                    <Text style={styles.remindersItem} numberOfLines={1}>
-                      {c.title}
-                    </Text>
-                    <Text style={styles.remindersWhen}>{label}</Text>
-                  </View>
-                );
-              })}
+              {upcomingReminders.slice(0, 3).map((c) => (
+                <View key={c.card_id} style={styles.remindersRow}>
+                  <Text style={[styles.remindersItem, { color: theme.colors.text }]} numberOfLines={1}>{c.title}</Text>
+                  <Text style={[styles.remindersWhen, { color: theme.colors.textMuted }]}>{new Date(c.due_date as string).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+                </View>
+              ))}
             </View>
           )}
 
-          {/* Feed */}
-          <View style={styles.section}>
-            <Text style={styles.sectionLabel}>{t('this_week')}</Text>
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>{t('this_week')}</Text>
+            <View style={[styles.filterBtn, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
+              <SlidersHorizontal color={theme.colors.text} size={18} />
+            </View>
           </View>
 
           {loading ? (
-            <ActivityIndicator color="#fff" style={{ marginTop: 40 }} />
+            <ActivityIndicator color={theme.colors.text} style={{ marginTop: 40 }} />
           ) : cards.length === 0 ? (
             <View style={styles.empty}>
-              <Text style={styles.emptyTitle}>{t('no_items')}</Text>
+              <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>{t('no_items')}</Text>
+              <Text style={[styles.emptySub, { color: theme.colors.textMuted }]}>Add a task, scan a document, or capture a voice note.</Text>
             </View>
           ) : (
-            cards.map((c) => (
-              <SmartCard
-                key={c.card_id}
-                card={c}
-                onComplete={() => toggle(c)}
-                onDelete={() => remove(c)}
-              />
-            ))
+            cards.map((c) => <SmartCard key={c.card_id} card={c} onComplete={() => toggle(c)} onDelete={() => remove(c)} />)
           )}
 
           <View style={{ height: 220 }} />
@@ -233,17 +173,9 @@ export default function FeedScreen() {
       </SafeAreaView>
 
       <FloatingActionBar
-        onManual={() => {
-          setVoiceDraft(null);
-          setAddSource('MANUAL');
-          setShowAdd(true);
-        }}
-        onCamera={() => {
-          setShowCamera(true);
-        }}
-        onVoice={() => {
-          setShowVoice(true);
-        }}
+        onManual={() => { setVoiceDraft(null); setAddSource('MANUAL'); setShowAdd(true); }}
+        onCamera={() => setShowCamera(true)}
+        onVoice={() => setShowVoice(true)}
       />
 
       <CameraCaptureModal
@@ -266,141 +198,39 @@ export default function FeedScreen() {
           setShowAdd(true);
         }}
       />
-
-      <VoiceCaptureModal
-        visible={showVoice}
-        onClose={() => setShowVoice(false)}
-        onDraft={(d) => {
-          setVoiceDraft(d);
-          setAddSource('VOICE');
-          setShowVoice(false);
-          setShowAdd(true);
-        }}
-      />
-
-      <AddCardModal
-        visible={showAdd}
-        onClose={() => {
-          setShowAdd(false);
-          setVoiceDraft(null);
-        }}
-        onCreated={load}
-        initialSource={addSource}
-        initialDraft={voiceDraft}
-      />
+      <VoiceCaptureModal visible={showVoice} onClose={() => setShowVoice(false)} onDraft={(d) => { setVoiceDraft(d); setAddSource('VOICE'); setShowVoice(false); setShowAdd(true); }} />
+      <AddCardModal visible={showAdd} onClose={() => { setShowAdd(false); setVoiceDraft(null); }} onCreated={load} initialSource={addSource} initialDraft={voiceDraft} />
       <SundayBriefModal visible={showBrief} onClose={() => setShowBrief(false)} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#080910' },
-  scroll: { paddingHorizontal: 20, paddingTop: 8 },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 22,
-    marginTop: 6,
-  },
-  greet: {
-    fontFamily: 'Inter_400Regular',
-    color: 'rgba(255,255,255,0.55)',
-    fontSize: 13,
-  },
-  name: {
-    fontFamily: 'PlayfairDisplay_400Regular_Italic',
-    color: '#fff',
-    fontSize: 32,
-    lineHeight: 38,
-  },
-  avatar: { width: 44, height: 44, borderRadius: 9999, borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)' },
-  avatarFallback: { backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: '#fff', fontFamily: 'Inter_600SemiBold', fontSize: 16 },
-  briefCard: {
-    borderRadius: 24,
-    padding: 22,
-    backgroundColor: 'rgba(99,102,241,0.16)',
-    borderWidth: 1,
-    borderColor: 'rgba(99,102,241,0.35)',
-    marginBottom: 24,
-    overflow: 'hidden',
-  },
-  briefHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 14,
-  },
-  briefBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 9999,
-  },
-  briefBadgeText: { color: '#fff', fontFamily: 'Inter_500Medium', fontSize: 11, letterSpacing: 0.4 },
-  briefCount: { color: 'rgba(255,255,255,0.7)', fontFamily: 'Inter_500Medium', fontSize: 12 },
-  briefTitle: {
-    color: '#fff',
-    fontFamily: 'PlayfairDisplay_400Regular_Italic',
-    fontSize: 30,
-    lineHeight: 36,
-  },
-  briefSub: {
-    color: 'rgba(255,255,255,0.65)',
-    fontFamily: 'Inter_400Regular',
-    fontSize: 13,
-    marginTop: 4,
-  },
-  remindersCard: {
-    marginBottom: 20,
-    padding: 16,
-    borderRadius: 20,
-    backgroundColor: 'rgba(249,115,22,0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(249,115,22,0.3)',
-  },
-  remindersHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
-  remindersTitle: {
-    color: '#F97316',
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 12,
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
-  },
-  remindersRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 6,
-  },
-  remindersItem: {
-    flex: 1,
-    color: '#fff',
-    fontFamily: 'Inter_500Medium',
-    fontSize: 14,
-    marginRight: 12,
-  },
-  remindersWhen: {
-    color: 'rgba(255,255,255,0.75)',
-    fontFamily: 'Inter_500Medium',
-    fontSize: 12,
-  },
-  section: { marginBottom: 14 },
-  sectionLabel: {
-    fontFamily: 'Inter_500Medium',
-    color: 'rgba(255,255,255,0.45)',
-    fontSize: 11,
-    letterSpacing: 1.2,
-    textTransform: 'uppercase',
-  },
-  empty: { paddingVertical: 60, alignItems: 'center' },
-  emptyTitle: {
-    fontFamily: 'PlayfairDisplay_400Regular_Italic',
-    color: 'rgba(255,255,255,0.55)',
-    fontSize: 22,
-  },
+  container: { flex: 1 },
+  scroll: { paddingHorizontal: 20, paddingTop: 12 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22, marginTop: 4 },
+  greet: { fontFamily: 'Inter_500Medium', fontSize: 15 },
+  name: { fontFamily: 'Inter_800ExtraBold', fontSize: 36, lineHeight: 42, letterSpacing: -0.8 },
+  avatar: { width: 54, height: 54, borderRadius: 9999, borderWidth: 1 },
+  avatarFallback: { alignItems: 'center', justifyContent: 'center' },
+  avatarText: { fontFamily: 'Inter_800ExtraBold', fontSize: 18 },
+  heroCard: { borderRadius: 30, padding: 22, borderWidth: 1, marginBottom: 22, shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.08, shadowRadius: 22, elevation: 4 },
+  heroTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28, gap: 12 },
+  heroBadge: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 9999 },
+  heroBadgeText: { fontFamily: 'Inter_700Bold', fontSize: 14 },
+  heroCount: { fontFamily: 'Inter_600SemiBold', fontSize: 13 },
+  heroTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 32, lineHeight: 38, letterSpacing: -0.6 },
+  heroSub: { fontFamily: 'Inter_500Medium', fontSize: 15, lineHeight: 22, marginTop: 6 },
+  remindersCard: { marginBottom: 20, padding: 18, borderRadius: 24, borderWidth: 1 },
+  remindersHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
+  remindersTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 13, letterSpacing: 0.5, textTransform: 'uppercase' },
+  remindersRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 7 },
+  remindersItem: { flex: 1, fontFamily: 'Inter_700Bold', fontSize: 15, marginRight: 12 },
+  remindersWhen: { fontFamily: 'Inter_700Bold', fontSize: 13 },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
+  sectionTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 22, letterSpacing: -0.2 },
+  filterBtn: { width: 44, height: 44, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
+  empty: { paddingVertical: 56, alignItems: 'center' },
+  emptyTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 22, textAlign: 'center' },
+  emptySub: { fontFamily: 'Inter_500Medium', fontSize: 15, textAlign: 'center', marginTop: 8 },
 });

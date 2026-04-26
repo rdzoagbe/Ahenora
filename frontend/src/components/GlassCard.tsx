@@ -22,6 +22,7 @@ export function GlassCard({ children, style, testID, padded = true }: Props) {
           borderColor: theme.colors.cardBorder,
           backgroundColor: theme.colors.card,
           shadowColor: theme.colors.shadow,
+          shadowOpacity: theme.mode === 'light' ? 0.09 : 0.24,
         },
         style,
       ]}
@@ -33,13 +34,12 @@ export function GlassCard({ children, style, testID, padded = true }: Props) {
 
 const styles = StyleSheet.create({
   wrap: {
-    borderRadius: 24,
+    borderRadius: 28,
     overflow: 'hidden',
     borderWidth: 1,
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.22,
-    shadowRadius: 18,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 12 },
+    shadowRadius: 24,
+    elevation: 5,
   },
   inner: {
     minHeight: 1,

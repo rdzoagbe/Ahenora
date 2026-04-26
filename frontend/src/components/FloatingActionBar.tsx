@@ -19,33 +19,29 @@ export function FloatingActionBar({ onManual, onCamera, onVoice }: Props) {
         style={[
           styles.shell,
           {
-            backgroundColor: theme.colors.bgElevated,
-            borderColor: theme.colors.cardBorder,
+            backgroundColor: '#20252B',
+            borderColor: 'rgba(255,255,255,0.10)',
             shadowColor: theme.colors.shadow,
           },
         ]}
       >
-        <View style={styles.row}>
-          <PressScale testID="fab-voice" onPress={onVoice} style={styles.sideBtn}>
-            <View style={[styles.sideIcon, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
-              <Mic color={theme.colors.text} size={18} />
-            </View>
-            <Text style={[styles.sideLabel, { color: theme.colors.textMuted }]}>{t('voice')}</Text>
-          </PressScale>
+        <PressScale testID="fab-voice" onPress={onVoice} style={styles.sideBtn}>
+          <View style={styles.darkIcon}>
+            <Mic color="#FFFFFF" size={18} />
+          </View>
+          <Text style={styles.sideLabel}>{t('voice')}</Text>
+        </PressScale>
 
-          <PressScale testID="fab-camera" onPress={onCamera} style={styles.centerBtn}>
-            <View style={[styles.centerInner, { backgroundColor: theme.colors.primary }]}> 
-              <Camera color={theme.colors.primaryText} size={24} />
-            </View>
-          </PressScale>
+        <PressScale testID="fab-camera" onPress={onCamera} style={styles.centerBtn}>
+          <Camera color="#20252B" size={25} />
+        </PressScale>
 
-          <PressScale testID="fab-manual" onPress={onManual} style={styles.sideBtn}>
-            <View style={[styles.sideIcon, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
-              <Plus color={theme.colors.text} size={18} />
-            </View>
-            <Text style={[styles.sideLabel, { color: theme.colors.textMuted }]}>{t('manual')}</Text>
-          </PressScale>
-        </View>
+        <PressScale testID="fab-manual" onPress={onManual} style={styles.sideBtn}>
+          <View style={styles.darkIcon}>
+            <Plus color="#FFFFFF" size={18} />
+          </View>
+          <Text style={styles.sideLabel}>{t('manual')}</Text>
+        </PressScale>
       </View>
     </View>
   );
@@ -56,21 +52,20 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: 100,
+    bottom: 96,
     alignItems: 'center',
     paddingHorizontal: 18,
   },
   shell: {
     width: '100%',
-    maxWidth: 420,
-    borderRadius: 26,
+    maxWidth: 430,
+    minHeight: 76,
+    borderRadius: 9999,
     borderWidth: 1,
     shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.28,
+    shadowOpacity: 0.2,
     shadowRadius: 24,
     elevation: 10,
-  },
-  row: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -79,39 +74,37 @@ const styles = StyleSheet.create({
   },
   sideBtn: {
     flex: 1,
+    minHeight: 52,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    minHeight: 48,
+    borderRadius: 9999,
     paddingHorizontal: 8,
-    borderRadius: 9999,
-  },
-  sideIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 9999,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
   },
   sideLabel: {
-    fontFamily: 'Inter_700Bold',
+    color: 'rgba(255,255,255,0.82)',
+    fontFamily: 'Inter_600SemiBold',
     fontSize: 13,
-    letterSpacing: 0.1,
   },
-  centerBtn: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-  },
-  centerInner: {
-    width: 62,
-    height: 62,
+  darkIcon: {
+    width: 34,
+    height: 34,
     borderRadius: 9999,
+    backgroundColor: 'rgba(255,255,255,0.10)',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.22,
+  },
+  centerBtn: {
+    width: 64,
+    height: 64,
+    borderRadius: 9999,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 8,
+    shadowColor: '#FFFFFF',
+    shadowOpacity: 0.25,
     shadowRadius: 16,
     shadowOffset: { width: 0, height: 8 },
     elevation: 8,
