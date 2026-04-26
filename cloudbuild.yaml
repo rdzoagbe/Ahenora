@@ -1,0 +1,20 @@
+# Cloud Build check used by the GitHub integration.
+# The actual app backend is deployed through Railway; this config keeps the
+# Google Cloud Build status check healthy when the trigger uses a custom
+# service account.
+
+steps:
+  - name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-lc'
+      - |
+        echo "Household COO Cloud Build preflight"
+        test -f backend/server.py
+        test -f frontend/package.json
+        echo "Repository structure OK"
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+timeout: '600s'
