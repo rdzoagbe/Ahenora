@@ -1,13 +1,12 @@
 import React from 'react';
 import { Tabs } from 'expo-router';
-import { View, StyleSheet, Text, Platform } from 'react-native';
-import { BlurView } from 'expo-blur';
+import { View, StyleSheet, Text } from 'react-native';
 import { Home, Calendar as CalendarIcon, Lock, Settings as SettingsIcon, Star } from 'lucide-react-native';
 import { useStore } from '../../src/store';
 
 function TabIcon({ focused, Icon, label }: { focused: boolean; Icon: any; label: string }) {
   const { theme } = useStore();
-  const iconColor = focused ? theme.colors.primaryText : theme.colors.textSoft;
+  const iconColor = focused ? theme.colors.primaryText : theme.colors.textMuted;
 
   return (
     <View
@@ -19,7 +18,7 @@ function TabIcon({ focused, Icon, label }: { focused: boolean; Icon: any; label:
         },
       ]}
     >
-      <Icon color={iconColor} size={focused ? 22 : 21} strokeWidth={focused ? 2.4 : 2.1} />
+      <Icon color={iconColor} size={22} strokeWidth={focused ? 2.5 : 2.1} />
       <Text
         style={[
           styles.tabLabel,
@@ -37,7 +36,7 @@ function TabIcon({ focused, Icon, label }: { focused: boolean; Icon: any; label:
 }
 
 export default function TabLayout() {
-  const { t, theme, resolvedAppearance } = useStore();
+  const { t, theme } = useStore();
 
   return (
     <Tabs
@@ -49,61 +48,28 @@ export default function TabLayout() {
           position: 'absolute',
           left: 14,
           right: 14,
-          bottom: 16,
-          height: 74,
-          borderRadius: 28,
+          bottom: 14,
+          height: 76,
+          borderRadius: 30,
           backgroundColor: theme.colors.tabBar,
           borderTopWidth: 0,
-          borderWidth: 1.25,
+          borderWidth: 1,
           borderColor: theme.colors.tabBorder,
-          elevation: 0,
+          elevation: 8,
           shadowColor: theme.colors.shadow,
-          shadowOpacity: 0.2,
+          shadowOpacity: 0.14,
           shadowRadius: 18,
           shadowOffset: { width: 0, height: 8 },
-          paddingHorizontal: 7,
+          paddingHorizontal: 8,
           paddingTop: 8,
         },
-        tabBarBackground: () =>
-          Platform.OS === 'web' ? null : (
-            <BlurView
-              intensity={resolvedAppearance === 'light' ? 8 : 12}
-              tint={resolvedAppearance}
-              style={[StyleSheet.absoluteFill, { borderRadius: 28, overflow: 'hidden' }]}
-            />
-          ),
       }}
     >
-      <Tabs.Screen
-        name="feed"
-        options={{
-          tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={Home} label={t('feed')} />,
-        }}
-      />
-      <Tabs.Screen
-        name="calendar"
-        options={{
-          tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={CalendarIcon} label={t('calendar')} />,
-        }}
-      />
-      <Tabs.Screen
-        name="kids"
-        options={{
-          tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={Star} label={t('kids')} />,
-        }}
-      />
-      <Tabs.Screen
-        name="vault"
-        options={{
-          tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={Lock} label={t('vault')} />,
-        }}
-      />
-      <Tabs.Screen
-        name="settings"
-        options={{
-          tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={SettingsIcon} label={t('settings')} />,
-        }}
-      />
+      <Tabs.Screen name="feed" options={{ tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={Home} label={t('feed')} /> }} />
+      <Tabs.Screen name="calendar" options={{ tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={CalendarIcon} label={t('calendar')} /> }} />
+      <Tabs.Screen name="kids" options={{ tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={Star} label={t('kids')} /> }} />
+      <Tabs.Screen name="vault" options={{ tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={Lock} label={t('vault')} /> }} />
+      <Tabs.Screen name="settings" options={{ tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={SettingsIcon} label={t('settings')} /> }} />
     </Tabs>
   );
 }
@@ -116,12 +82,11 @@ const styles = StyleSheet.create({
     minWidth: 62,
     height: 58,
     borderRadius: 22,
-    paddingTop: 6,
     borderWidth: 1,
     borderColor: 'transparent',
   },
   tabLabel: {
-    fontSize: 11,
-    letterSpacing: 0.2,
+    fontSize: 12,
+    letterSpacing: 0.1,
   },
 });

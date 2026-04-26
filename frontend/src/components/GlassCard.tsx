@@ -1,6 +1,5 @@
 import React from 'react';
 import { View, StyleSheet, ViewStyle, StyleProp } from 'react-native';
-import { BlurView } from 'expo-blur';
 import { useStore } from '../store';
 
 interface Props {
@@ -8,10 +7,12 @@ interface Props {
   style?: StyleProp<ViewStyle>;
   intensity?: number;
   testID?: string;
+  padded?: boolean;
 }
 
-export function GlassCard({ children, style, intensity = 10, testID }: Props) {
+export function GlassCard({ children, style, testID, padded = true }: Props) {
   const { theme, resolvedAppearance } = useStore();
+  const isLight = resolvedAppearance === 'light';
 
   return (
     <View
@@ -22,13 +23,12 @@ export function GlassCard({ children, style, intensity = 10, testID }: Props) {
           borderColor: theme.colors.cardBorder,
           backgroundColor: theme.colors.card,
           shadowColor: theme.colors.shadow,
+          shadowOpacity: isLight ? 0.08 : 0.22,
         },
         style,
       ]}
     >
-      <BlurView intensity={intensity} tint={resolvedAppearance} style={StyleSheet.absoluteFill} />
-      <View style={[styles.tint, { backgroundColor: theme.colors.glassTint }]} pointerEvents="none" />
-      <View style={styles.inner}>{children}</View>
+      <View style={[styles.inner, padded && styles.innerPadded]}>{children}</View>
     </View>
   );
 }
@@ -37,15 +37,15 @@ const styles = StyleSheet.create({
   wrap: {
     borderRadius: 22,
     overflow: 'hidden',
-    borderWidth: 1.25,
-    shadowOffset: { width: 0, height: 7 },
-    shadowOpacity: 0.14,
-    shadowRadius: 14,
-  },
-  tint: {
-    ...StyleSheet.absoluteFillObject,
+    borderWidth: 1,
+    shadowOffset: { width: 0, height: 8 },
+    shadowRadius: 16,
+    elevation: 2,
   },
   inner: {
-    padding: 18,
+    minHeight: 1,
+  },
+  innerPadded: {
+    padding: 20,
   },
 });
