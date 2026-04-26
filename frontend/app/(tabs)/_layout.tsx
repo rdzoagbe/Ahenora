@@ -7,12 +7,29 @@ import { useStore } from '../../src/store';
 
 function TabIcon({ focused, Icon, label }: { focused: boolean; Icon: any; label: string }) {
   const { theme } = useStore();
-  const iconColor = focused ? theme.colors.text : theme.colors.textSoft;
+  const iconColor = focused ? theme.colors.primaryText : theme.colors.textSoft;
 
   return (
-    <View style={[styles.tabItem, focused && { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}> 
-      <Icon color={iconColor} size={20} />
-      <Text style={[styles.tabLabel, { color: iconColor, fontFamily: focused ? 'Inter_600SemiBold' : 'Inter_500Medium' }]}>
+    <View
+      style={[
+        styles.tabItem,
+        focused && {
+          backgroundColor: theme.colors.primary,
+          borderColor: theme.colors.primary,
+        },
+      ]}
+    >
+      <Icon color={iconColor} size={focused ? 22 : 21} strokeWidth={focused ? 2.4 : 2.1} />
+      <Text
+        style={[
+          styles.tabLabel,
+          {
+            color: iconColor,
+            fontFamily: focused ? 'Inter_700Bold' : 'Inter_600SemiBold',
+          },
+        ]}
+        numberOfLines={1}
+      >
         {label}
       </Text>
     </View>
@@ -30,28 +47,29 @@ export default function TabLayout() {
         sceneStyle: { backgroundColor: theme.colors.bg },
         tabBarStyle: {
           position: 'absolute',
-          left: 16,
-          right: 16,
-          bottom: 20,
-          height: 66,
-          borderRadius: 26,
+          left: 14,
+          right: 14,
+          bottom: 16,
+          height: 74,
+          borderRadius: 28,
           backgroundColor: theme.colors.tabBar,
           borderTopWidth: 0,
-          borderWidth: 1,
+          borderWidth: 1.25,
           borderColor: theme.colors.tabBorder,
           elevation: 0,
           shadowColor: theme.colors.shadow,
-          shadowOpacity: 0.18,
-          shadowRadius: 20,
-          shadowOffset: { width: 0, height: 10 },
-          paddingHorizontal: 8,
+          shadowOpacity: 0.2,
+          shadowRadius: 18,
+          shadowOffset: { width: 0, height: 8 },
+          paddingHorizontal: 7,
+          paddingTop: 8,
         },
         tabBarBackground: () =>
           Platform.OS === 'web' ? null : (
             <BlurView
-              intensity={34}
+              intensity={resolvedAppearance === 'light' ? 8 : 12}
               tint={resolvedAppearance}
-              style={[StyleSheet.absoluteFill, { borderRadius: 26, overflow: 'hidden' }]}
+              style={[StyleSheet.absoluteFill, { borderRadius: 28, overflow: 'hidden' }]}
             />
           ),
       }}
@@ -94,16 +112,16 @@ const styles = StyleSheet.create({
   tabItem: {
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 3,
-    minWidth: 58,
-    height: 52,
-    borderRadius: 20,
+    gap: 4,
+    minWidth: 62,
+    height: 58,
+    borderRadius: 22,
     paddingTop: 6,
     borderWidth: 1,
     borderColor: 'transparent',
   },
   tabLabel: {
-    fontSize: 10,
-    letterSpacing: 0.35,
+    fontSize: 11,
+    letterSpacing: 0.2,
   },
 });
