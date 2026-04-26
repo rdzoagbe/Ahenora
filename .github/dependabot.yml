@@ -1,45 +1,22 @@
 version: 2
 updates:
+  # Version-update PRs are intentionally paused while Household COO stabilizes
+  # Expo/dev-client, Google auth, notifications, and the UI redesign. Security
+  # alerts can still be reviewed separately from the repository Security tab.
   - package-ecosystem: "npm"
     directory: "/frontend"
     schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 3
-    groups:
-      frontend-minor-patch:
-        update-types:
-          - "minor"
-          - "patch"
-        patterns:
-          - "*"
-    ignore:
-      - dependency-name: "*"
-        update-types:
-          - "version-update:semver-major"
+      interval: "monthly"
+    open-pull-requests-limit: 0
 
   - package-ecosystem: "pip"
     directory: "/backend"
     schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 3
-    groups:
-      backend-minor-patch:
-        update-types:
-          - "minor"
-          - "patch"
-        patterns:
-          - "*"
-    ignore:
-      - dependency-name: "*"
-        update-types:
-          - "version-update:semver-major"
+      interval: "monthly"
+    open-pull-requests-limit: 0
 
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 2
-    ignore:
-      - dependency-name: "*"
-        update-types:
-          - "version-update:semver-major"
+      interval: "monthly"
+    open-pull-requests-limit: 0
