@@ -1107,6 +1107,24 @@ async def set_member_pin(member_id: str, payload: PinIn, user=Depends(require_us
     return {"ok": True, "has_pin": bool(pin_hash)}
 
 
+
+
+@app.delete("/api/family/members/{member_id}/pin")
+async def remove_member_pin(member_id: str, user=Depends(require_user)):
+    database = get_db()
+    member = await database["family_members"].find_one(
+        {"member_id": member_id, "family_id": user["family_id"]},
+        {"_id": 0},
+    )
+    if not member:
+        raise HTTPException(status_code=404, detail="Family member not found")
+
+    await database["family_members"].update_one(
+        {"member_id": member_id},
+        {"$set": {"pin_hash": None}},
+    )
+    return {"ok": True, "has_pin": False}
+
 @app.post("/api/family/members/{member_id}/verify-pin")
 async def verify_member_pin(member_id: str, payload: PinIn, user=Depends(require_user)):
     database = get_db()

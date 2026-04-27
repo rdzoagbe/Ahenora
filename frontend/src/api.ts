@@ -137,6 +137,17 @@ export interface Reward {
   created_at: string;
 }
 
+export interface StarTransaction {
+  transaction_id: string;
+  family_id: string;
+  member_id: string;
+  delta: number;
+  reason?: string | null;
+  created_by_user_id?: string | null;
+  created_by_name?: string | null;
+  created_at?: string | null;
+}
+
 export interface FamilyInvite {
   invite_id: string;
   family_id: string;
@@ -276,6 +287,21 @@ export const api = {
   listCalendarContacts: () => request<CalendarContact[]>('/calendar/contacts'),
   // Family
   familyMembers: () => request<FamilyMember[]>('/family/members'),
+  createFamilyMember: (data: { name: string; starting_stars?: number; pin?: string }) =>
+    request<FamilyMember>('/family/members', {
+      method: 'POST',
+      body: data,
+    }),
+  adjustMemberStars: (member_id: string, data: { delta: number; reason?: string }) =>
+    request<{ ok: boolean; member: FamilyMember; transaction: StarTransaction }>(
+      `/family/members/${member_id}/stars`,
+      {
+        method: 'POST',
+        body: data,
+      }
+    ),
+  memberStarHistory: (member_id: string) =>
+    request<StarTransaction[]>(`/family/members/${member_id}/star-history`),
   setMemberPin: (member_id: string, pin: string) =>
     request<{ ok: boolean; has_pin: boolean }>(`/family/members/${member_id}/pin`, {
       method: 'PUT',
@@ -285,6 +311,10 @@ export const api = {
     request<{ ok: boolean; has_pin: boolean }>(`/family/members/${member_id}/verify-pin`, {
       method: 'POST',
       body: { pin },
+    }),
+  removeMemberPin: (member_id: string) =>
+    request<{ ok: boolean; has_pin: boolean }>(`/family/members/${member_id}/pin`, {
+      method: 'DELETE',
     }),
   aiAssign: (title: string, description?: string, type?: string) =>
     request<{ assignee: string }>('/ai/assign', {
@@ -308,6 +338,8 @@ export const api = {
   listRewards: () => request<Reward[]>('/rewards'),
   createReward: (data: { title: string; cost_stars: number; icon?: string }) =>
     request<Reward>('/rewards', { method: 'POST', body: data }),
+  updateReward: (id: string, data: { title?: string; cost_stars?: number; icon?: string }) =>
+    request<Reward>(`/rewards/${id}`, { method: 'PATCH', body: data }),
   deleteReward: (id: string) => request(`/rewards/${id}`, { method: 'DELETE' }),
   redeemReward: (id: string, member_id: string) =>
     request<{ ok: boolean; member: FamilyMember }>(`/rewards/${id}/redeem`, {
