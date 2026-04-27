@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
@@ -80,6 +80,7 @@ function groupByDay(cards: Card[], selectedDay?: string | null) {
     }));
 }
 
+// Calendar visibility patch v1: explicit light/dark calendar date colors.
 export default function CalendarScreen() {
   const { t, lang, theme } = useStore();
   const [cards, setCards] = useState<Card[]>([]);
@@ -164,12 +165,22 @@ export default function CalendarScreen() {
   const locale = lang === 'es' ? 'es-ES' : lang === 'fr' ? 'fr-FR' : 'en-US';
   const monthTitle = activeMonth.toLocaleDateString(locale, { month: 'long', year: 'numeric' });
 
+  const isDarkCalendar = theme.mode === 'dark';
+  const calendarDayInk = isDarkCalendar ? '#F8FAFC' : '#1F2937';
+  const calendarMutedInk = isDarkCalendar ? '#64748B' : '#98A2B3';
+  const calendarWeekdayInk = isDarkCalendar ? '#A8B3C7' : '#667085';
+  const calendarSelectedBg = isDarkCalendar ? '#F8FAFC' : '#1F2937';
+  const calendarSelectedText = isDarkCalendar ? '#071120' : '#FFFFFF';
+  const calendarTodayBg = isDarkCalendar ? 'rgba(247,183,51,0.16)' : '#FFF7ED';
+  const calendarTodayBorder = isDarkCalendar ? '#F7B733' : '#FDBA74';
+  const calendarCountBg = '#F97316';
+  const calendarCountText = '#FFFFFF';
   const formatDay = (day: string) => {
     const date = new Date(`${day}T00:00:00`);
     const today = startOfLocalDay(new Date());
     const diffDays = Math.round((startOfLocalDay(date).getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
     if (diffDays === 0) return lang === 'fr' ? "Aujourd'hui" : lang === 'es' ? 'Hoy' : 'Today';
-    if (diffDays === 1) return lang === 'fr' ? 'Demain' : lang === 'es' ? 'Mañana' : 'Tomorrow';
+    if (diffDays === 1) return lang === 'fr' ? 'Demain' : lang === 'es' ? 'MaÃ±ana' : 'Tomorrow';
     return date.toLocaleDateString(locale, { weekday: 'long', month: 'short', day: 'numeric' });
   };
 
@@ -235,7 +246,7 @@ export default function CalendarScreen() {
                 <CalendarDays color={theme.colors.accent} size={22} />
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.syncSummaryTitle, { color: theme.colors.text }]}>Google Calendar imported</Text>
-                  <Text style={[styles.syncSummaryText, { color: theme.colors.textMuted }]}>{syncResult.imported} events imported · {syncResult.skipped} skipped · {syncResult.contacts_found} people found</Text>
+                  <Text style={[styles.syncSummaryText, { color: theme.colors.textMuted }]}>{syncResult.imported} events imported Â· {syncResult.skipped} skipped Â· {syncResult.contacts_found} people found</Text>
                 </View>
               </View>
               {syncResult.contacts.length > 0 ? (
@@ -252,7 +263,7 @@ export default function CalendarScreen() {
               <PressScale testID="prev-month" onPress={() => shiftMonth(-1)} style={[styles.monthNav, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
                 <ChevronLeft color={theme.colors.text} size={24} />
               </PressScale>
-              <Text style={[styles.monthTitle, { color: theme.colors.text }]}>{monthTitle}</Text>
+              <Text style={[styles.monthTitle, { color: calendarDayInk }]}>{monthTitle}</Text>
               <PressScale testID="next-month" onPress={() => shiftMonth(1)} style={[styles.monthNav, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
                 <ChevronRight color={theme.colors.text} size={24} />
               </PressScale>
@@ -277,8 +288,8 @@ export default function CalendarScreen() {
                     onPress={() => onSelectDay(key, date)}
                     style={[
                       styles.dayCell,
-                      selected && { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
-                      !selected && isToday && { backgroundColor: theme.colors.accentSoft, borderColor: theme.colors.accent },
+                      selected && { backgroundColor: calendarSelectedBg, borderColor: calendarSelectedBg },
+                      !selected && isToday && { backgroundColor: calendarTodayBg, borderColor: calendarTodayBorder },
                       !selected && { borderColor: 'transparent' },
                     ]}
                   >
@@ -325,7 +336,7 @@ export default function CalendarScreen() {
                         <View style={[styles.dot, { backgroundColor: color }]} />
                         <View style={{ flex: 1 }}>
                           <Text style={[styles.itemTitle, { color: theme.colors.text }]} numberOfLines={2}>{card.title}</Text>
-                          <Text style={[styles.meta, { color: theme.colors.textMuted }]} numberOfLines={1}>{card.assignee || 'Unassigned'}{isGoogle ? ' · Google Calendar' : ''}</Text>
+                          <Text style={[styles.meta, { color: theme.colors.textMuted }]} numberOfLines={1}>{card.assignee || 'Unassigned'}{isGoogle ? ' Â· Google Calendar' : ''}</Text>
                         </View>
                         <Text style={[styles.typeLabel, { color }]}>{card.type === 'SIGN_SLIP' ? t('sign_slip') : card.type === 'RSVP' ? t('rsvp') : t('task')}</Text>
                       </View>
@@ -415,3 +426,4 @@ const styles = StyleSheet.create({
   detailMetaText: { flex: 1, fontFamily: 'Inter_600SemiBold', fontSize: 15, lineHeight: 21 },
   detailDescription: { marginTop: 20, fontFamily: 'Inter_500Medium', fontSize: 16, lineHeight: 24 },
 });
+
