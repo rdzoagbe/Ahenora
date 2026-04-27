@@ -1,5 +1,5 @@
-﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import * as Google from 'expo-auth-session/providers/google';
@@ -42,6 +42,10 @@ function cardDateKey(card: Card) {
   return dateKey(new Date(card.due_date));
 }
 
+function cleanText(value?: string | null) {
+  return (value || '').replace(/Â·/g, '-').replace(/\u00C2/g, '').trim();
+}
+
 function buildMonthDays(baseDate: Date) {
   const first = new Date(baseDate.getFullYear(), baseDate.getMonth(), 1);
   const last = new Date(baseDate.getFullYear(), baseDate.getMonth() + 1, 0);
@@ -62,7 +66,7 @@ function buildMonthDays(baseDate: Date) {
   return days;
 }
 
-function groupByDay(cards: Card[], selectedDay?: string | null) {
+function groupByDay(cards: Card[], selectedDay: string | null) {
   const groups: Record<string, Card[]> = {};
   cards.forEach((card) => {
     const key = cardDateKey(card);
@@ -80,9 +84,9 @@ function groupByDay(cards: Card[], selectedDay?: string | null) {
     }));
 }
 
-// Calendar visibility patch v1: explicit light/dark calendar date colors.
 export default function CalendarScreen() {
   const { t, lang, theme } = useStore();
+  const { width: windowWidth } = useWindowDimensions();
   const [cards, setCards] = useState<Card[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -100,6 +104,36 @@ export default function CalendarScreen() {
     webClientId,
     scopes: ['openid', 'profile', 'email', GOOGLE_CALENDAR_SCOPE],
   });
+
+  const palette = useMemo(() => {
+    if (theme.mode === 'light') {
+      return {
+        dayText: '#151B23',
+        mutedDayText: '#A0A7B2',
+        selectedBg: '#1F2328',
+        selectedText: '#FFFFFF',
+        todayBg: '#FFF3E8',
+        todayBorder: '#F26A1B',
+        badgeBg: '#F26A1B',
+        badgeText: '#FFFFFF',
+      };
+    }
+
+    return {
+      dayText: '#F8FAFC',
+      mutedDayText: '#637083',
+      selectedBg: '#F8FAFC',
+      selectedText: '#111827',
+      todayBg: 'rgba(242,106,27,0.14)',
+      todayBorder: '#F26A1B',
+      badgeBg: '#F26A1B',
+      badgeText: '#FFFFFF',
+    };
+  }, [theme.mode]);
+
+  const calendarContentWidth = Math.max(280, windowWidth - 88);
+  const daySize = Math.max(38, Math.min(50, Math.floor(calendarContentWidth / 7)));
+  const gridWidth = daySize * 7;
 
   const load = useCallback(async () => {
     try {
@@ -157,30 +191,17 @@ export default function CalendarScreen() {
     return counts;
   }, [cards]);
 
-  const groups = useMemo(
-    () => groupByDay(cards, selectedDay && countsByDay[selectedDay] ? selectedDay : null),
-    [cards, countsByDay, selectedDay]
-  );
+  const groups = useMemo(() => groupByDay(cards, selectedDay), [cards, selectedDay]);
 
   const locale = lang === 'es' ? 'es-ES' : lang === 'fr' ? 'fr-FR' : 'en-US';
   const monthTitle = activeMonth.toLocaleDateString(locale, { month: 'long', year: 'numeric' });
 
-  const isDarkCalendar = theme.mode === 'dark';
-  const calendarDayInk = isDarkCalendar ? '#F8FAFC' : '#1F2937';
-  const calendarMutedInk = isDarkCalendar ? '#64748B' : '#98A2B3';
-  const calendarWeekdayInk = isDarkCalendar ? '#A8B3C7' : '#667085';
-  const calendarSelectedBg = isDarkCalendar ? '#F8FAFC' : '#1F2937';
-  const calendarSelectedText = isDarkCalendar ? '#071120' : '#FFFFFF';
-  const calendarTodayBg = isDarkCalendar ? 'rgba(247,183,51,0.16)' : '#FFF7ED';
-  const calendarTodayBorder = isDarkCalendar ? '#F7B733' : '#FDBA74';
-  const calendarCountBg = '#F97316';
-  const calendarCountText = '#FFFFFF';
   const formatDay = (day: string) => {
     const date = new Date(`${day}T00:00:00`);
     const today = startOfLocalDay(new Date());
     const diffDays = Math.round((startOfLocalDay(date).getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
     if (diffDays === 0) return lang === 'fr' ? "Aujourd'hui" : lang === 'es' ? 'Hoy' : 'Today';
-    if (diffDays === 1) return lang === 'fr' ? 'Demain' : lang === 'es' ? 'MaÃ±ana' : 'Tomorrow';
+    if (diffDays === 1) return lang === 'fr' ? 'Demain' : lang === 'es' ? 'Mañana' : 'Tomorrow';
     return date.toLocaleDateString(locale, { weekday: 'long', month: 'short', day: 'numeric' });
   };
 
@@ -218,16 +239,16 @@ export default function CalendarScreen() {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.colors.bg }]}>
+    <View style={[styles.container, { backgroundColor: theme.colors.bg }]}> 
       <AmbientBackground />
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
           <View style={styles.headerRow}>
             <View style={{ flex: 1 }}>
               <Text style={[styles.title, { color: theme.colors.text }]}>{t('calendar')}</Text>
-              <Text style={[styles.sub, { color: theme.colors.textMuted }]}>{selectedDay && countsByDay[selectedDay] ? formatDay(selectedDay) : t('upcoming')}</Text>
+              <Text style={[styles.sub, { color: theme.colors.textMuted }]}>{selectedDay ? formatDay(selectedDay) : t('upcoming')}</Text>
             </View>
-            <PressScale testID="sync-google-calendar" onPress={syncCalendar} disabled={syncing || !calendarRequest} style={[styles.syncBtn, { backgroundColor: theme.colors.primary }, (syncing || !calendarRequest) && { opacity: 0.55 }]}>
+            <PressScale testID="sync-google-calendar" onPress={syncCalendar} disabled={syncing || !calendarRequest} style={[styles.syncBtn, { backgroundColor: theme.colors.primary }, (syncing || !calendarRequest) && { opacity: 0.55 }]}> 
               {syncing ? <ActivityIndicator color={theme.colors.primaryText} size="small" /> : <RefreshCw color={theme.colors.primaryText} size={18} />}
               <Text style={[styles.syncText, { color: theme.colors.primaryText }]}>{syncing ? 'Syncing' : 'Sync'}</Text>
             </PressScale>
@@ -246,7 +267,7 @@ export default function CalendarScreen() {
                 <CalendarDays color={theme.colors.accent} size={22} />
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.syncSummaryTitle, { color: theme.colors.text }]}>Google Calendar imported</Text>
-                  <Text style={[styles.syncSummaryText, { color: theme.colors.textMuted }]}>{syncResult.imported} events imported Â· {syncResult.skipped} skipped Â· {syncResult.contacts_found} people found</Text>
+                  <Text style={[styles.syncSummaryText, { color: theme.colors.textMuted }]}>{syncResult.imported} events imported - {syncResult.skipped} skipped - {syncResult.contacts_found} people found</Text>
                 </View>
               </View>
               {syncResult.contacts.length > 0 ? (
@@ -258,24 +279,24 @@ export default function CalendarScreen() {
             </GlassCard>
           ) : null}
 
-          <GlassCard style={{ marginBottom: 22 }}>
+          <GlassCard style={{ marginBottom: 24 }}>
             <View style={styles.monthHeader}>
-              <PressScale testID="prev-month" onPress={() => shiftMonth(-1)} style={[styles.monthNav, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
+              <PressScale testID="prev-month" onPress={() => shiftMonth(-1)} style={[styles.monthNav, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}> 
                 <ChevronLeft color={theme.colors.text} size={24} />
               </PressScale>
-              <Text style={[styles.monthTitle, { color: calendarDayInk }]}>{monthTitle}</Text>
-              <PressScale testID="next-month" onPress={() => shiftMonth(1)} style={[styles.monthNav, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
+              <Text style={[styles.monthTitle, { color: theme.colors.text }]}>{monthTitle}</Text>
+              <PressScale testID="next-month" onPress={() => shiftMonth(1)} style={[styles.monthNav, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}> 
                 <ChevronRight color={theme.colors.text} size={24} />
               </PressScale>
             </View>
 
-            <View style={styles.weekHeader}>
+            <View style={[styles.weekHeader, { width: gridWidth }]}>
               {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, index) => (
-                <Text key={`${day}-${index}`} style={[styles.weekLabel, { color: theme.colors.textSoft }]}>{day}</Text>
+                <Text key={`${day}-${index}`} style={[styles.weekLabel, { width: daySize, color: theme.colors.textSoft }]}>{day}</Text>
               ))}
             </View>
 
-            <View style={styles.monthGrid}>
+            <View style={[styles.monthGrid, { width: gridWidth }]}> 
               {monthDays.map(({ date, inMonth }) => {
                 const key = dateKey(date);
                 const count = countsByDay[key] || 0;
@@ -288,28 +309,29 @@ export default function CalendarScreen() {
                     onPress={() => onSelectDay(key, date)}
                     style={[
                       styles.dayCell,
-                      selected && { backgroundColor: calendarSelectedBg, borderColor: calendarSelectedBg },
-                      !selected && isToday && { backgroundColor: calendarTodayBg, borderColor: calendarTodayBorder },
-                      !selected && { borderColor: 'transparent' },
+                      { width: daySize, height: 62 },
+                      selected && { backgroundColor: palette.selectedBg, borderColor: palette.selectedBg },
+                      !selected && isToday && { backgroundColor: palette.todayBg, borderColor: palette.todayBorder },
+                      !selected && !isToday && { borderColor: 'transparent' },
                     ]}
                   >
                     <Text
                       style={[
                         styles.dayNumber,
                         {
-                          color: selected ? theme.colors.primaryText : theme.colors.text,
-                          opacity: inMonth ? 1 : 0.34,
+                          color: selected ? palette.selectedText : inMonth ? palette.dayText : palette.mutedDayText,
+                          opacity: inMonth ? 1 : 0.65,
                         },
                       ]}
                     >
                       {date.getDate()}
                     </Text>
                     {count > 0 ? (
-                      <View style={[styles.dayDot, { backgroundColor: selected ? theme.colors.primaryText : theme.colors.accent }]}>
-                        <Text style={[styles.dayDotText, { color: selected ? theme.colors.primary : '#FFFFFF' }]}>{count}</Text>
+                      <View style={[styles.dayBadge, { backgroundColor: selected ? palette.selectedText : palette.badgeBg }]}> 
+                        <Text style={[styles.dayBadgeText, { color: selected ? palette.selectedBg : palette.badgeText }]}>{count}</Text>
                       </View>
                     ) : (
-                      <View style={styles.dayDotSpacer} />
+                      <View style={styles.dayBadgeSpacer} />
                     )}
                   </PressScale>
                 );
@@ -329,14 +351,15 @@ export default function CalendarScreen() {
               {group.items.map((card) => {
                 const color = TYPE_COLOR[card.type] || theme.colors.success;
                 const isGoogle = card.source === 'CALENDAR' || card.external_source === 'google_calendar';
+                const metaText = `${cleanText(card.assignee) || 'Unassigned'}${isGoogle ? ' - Google Calendar' : ''}`;
                 return (
                   <PressScale key={card.card_id} testID={`calendar-card-${card.card_id}`} onPress={() => setSelectedCard(card)}>
                     <GlassCard style={{ marginTop: 12 }}>
                       <View style={styles.row}>
                         <View style={[styles.dot, { backgroundColor: color }]} />
                         <View style={{ flex: 1 }}>
-                          <Text style={[styles.itemTitle, { color: theme.colors.text }]} numberOfLines={2}>{card.title}</Text>
-                          <Text style={[styles.meta, { color: theme.colors.textMuted }]} numberOfLines={1}>{card.assignee || 'Unassigned'}{isGoogle ? ' Â· Google Calendar' : ''}</Text>
+                          <Text style={[styles.itemTitle, { color: theme.colors.text }]} numberOfLines={2}>{cleanText(card.title)}</Text>
+                          <Text style={[styles.meta, { color: theme.colors.textMuted }]} numberOfLines={1}>{metaText}</Text>
                         </View>
                         <Text style={[styles.typeLabel, { color }]}>{card.type === 'SIGN_SLIP' ? t('sign_slip') : card.type === 'RSVP' ? t('rsvp') : t('task')}</Text>
                       </View>
@@ -359,8 +382,8 @@ export default function CalendarScreen() {
         {selectedCard ? (
           <>
             <View style={styles.detailHeader}>
-              <Text style={[styles.detailTitle, { color: theme.colors.text }]}>{selectedCard.title}</Text>
-              <PressScale onPress={() => setSelectedCard(null)} style={[styles.closeBtn, { borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}>
+              <Text style={[styles.detailTitle, { color: theme.colors.text }]}>{cleanText(selectedCard.title)}</Text>
+              <PressScale onPress={() => setSelectedCard(null)} style={[styles.closeBtn, { borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}> 
                 <X color={theme.colors.text} size={20} />
               </PressScale>
             </View>
@@ -370,10 +393,10 @@ export default function CalendarScreen() {
             </View>
             <View style={styles.detailMetaRow}>
               <User color={theme.colors.textSoft} size={17} />
-              <Text style={[styles.detailMetaText, { color: theme.colors.textMuted }]}>{selectedCard.assignee || 'Unassigned'}</Text>
+              <Text style={[styles.detailMetaText, { color: theme.colors.textMuted }]}>{cleanText(selectedCard.assignee) || 'Unassigned'}</Text>
             </View>
             {selectedCard.description ? (
-              <Text style={[styles.detailDescription, { color: theme.colors.text }]}>{selectedCard.description}</Text>
+              <Text style={[styles.detailDescription, { color: theme.colors.text }]}>{cleanText(selectedCard.description)}</Text>
             ) : (
               <Text style={[styles.detailDescription, { color: theme.colors.textMuted }]}>No additional details.</Text>
             )}
@@ -386,7 +409,7 @@ export default function CalendarScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  scroll: { paddingHorizontal: 22, paddingTop: 14 },
+  scroll: { paddingHorizontal: 22, paddingTop: 26 },
   headerRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 18 },
   title: { fontFamily: 'Inter_800ExtraBold', fontSize: 42, lineHeight: 48, letterSpacing: -1.0 },
   sub: { fontFamily: 'Inter_600SemiBold', fontSize: 16, marginTop: 4 },
@@ -402,14 +425,14 @@ const styles = StyleSheet.create({
   monthHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },
   monthTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 21, textTransform: 'capitalize' },
   monthNav: { width: 54, height: 54, borderRadius: 9999, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  weekHeader: { flexDirection: 'row', marginBottom: 8 },
-  weekLabel: { flex: 1, textAlign: 'center', fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
-  monthGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 0 },
-  dayCell: { width: '14.2857%', minHeight: 60, alignItems: 'center', justifyContent: 'center', borderRadius: 19, borderWidth: 1, paddingVertical: 5 },
-  dayNumber: { fontFamily: 'Inter_800ExtraBold', fontSize: 17, lineHeight: 22 },
-  dayDot: { marginTop: 5, minWidth: 24, height: 24, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
-  dayDotSpacer: { marginTop: 5, height: 24 },
-  dayDotText: { fontFamily: 'Inter_800ExtraBold', fontSize: 12 },
+  weekHeader: { flexDirection: 'row', alignSelf: 'center', marginBottom: 10 },
+  weekLabel: { textAlign: 'center', fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
+  monthGrid: { flexDirection: 'row', flexWrap: 'wrap', alignSelf: 'center' },
+  dayCell: { alignItems: 'center', justifyContent: 'flex-start', borderRadius: 17, borderWidth: 1, paddingTop: 8, paddingBottom: 5 },
+  dayNumber: { fontFamily: 'Inter_800ExtraBold', fontSize: 17, lineHeight: 21, includeFontPadding: false, textAlign: 'center' },
+  dayBadge: { marginTop: 7, minWidth: 24, height: 24, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
+  dayBadgeSpacer: { marginTop: 7, height: 24 },
+  dayBadgeText: { fontFamily: 'Inter_800ExtraBold', fontSize: 12, lineHeight: 14, includeFontPadding: false },
   dayLabel: { fontFamily: 'Inter_800ExtraBold', fontSize: 22, letterSpacing: -0.3, marginBottom: 2, textTransform: 'capitalize' },
   row: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   dot: { width: 12, height: 12, borderRadius: 9999 },
@@ -426,4 +449,3 @@ const styles = StyleSheet.create({
   detailMetaText: { flex: 1, fontFamily: 'Inter_600SemiBold', fontSize: 15, lineHeight: 21 },
   detailDescription: { marginTop: 20, fontFamily: 'Inter_500Medium', fontSize: 16, lineHeight: 24 },
 });
-
