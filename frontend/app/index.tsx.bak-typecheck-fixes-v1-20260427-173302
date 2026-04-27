@@ -119,7 +119,7 @@ export default function Landing() {
         const idToken =
           response.params?.id_token ||
           response.authentication?.idToken ||
-          (response.authentication as any)?.rawResponse?.id_token;
+          response.authentication?.rawResponse?.id_token;
 
         if (!idToken) {
           Alert.alert('Sign-in failed', 'Google did not return an ID token.');

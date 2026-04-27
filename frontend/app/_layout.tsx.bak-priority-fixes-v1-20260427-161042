@@ -1,13 +1,7 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import * as SplashScreen from 'expo-splash-screen';
-import { useFonts } from 'expo-font';
-import { Inter_500Medium, Inter_800ExtraBold } from '@expo-google-fonts/inter';
-import { PlayfairDisplay_400Regular_Italic } from '@expo-google-fonts/playfair-display';
 import { StoreProvider, useStore } from '../src/store';
-
-SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
 function RootNavigator() {
   const { resolvedAppearance, theme } = useStore();
@@ -27,20 +21,6 @@ function RootNavigator() {
 }
 
 export default function RootLayout() {
-  const [fontsLoaded] = useFonts({
-    Inter_500Medium,
-    Inter_800ExtraBold,
-    PlayfairDisplay_400Regular_Italic,
-  });
-
-  useEffect(() => {
-    if (fontsLoaded) {
-      SplashScreen.hideAsync().catch(() => undefined);
-    }
-  }, [fontsLoaded]);
-
-  if (!fontsLoaded) return null;
-
   return (
     <StoreProvider>
       <RootNavigator />

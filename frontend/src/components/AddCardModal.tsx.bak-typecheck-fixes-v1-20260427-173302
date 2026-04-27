@@ -418,31 +418,6 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_400Regular',
     fontSize: 15,
   },
-  suggestRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 8,
-    marginBottom: 2,
-  },
-  suggestText: {
-    fontFamily: 'Inter_500Medium',
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.62)',
-  },
-  suggestChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 9999,
-    borderWidth: 1,
-    borderColor: 'rgba(99,102,241,0.36)',
-    backgroundColor: 'rgba(99,102,241,0.16)',
-  },
-  suggestChipText: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 12,
-    color: '#C7D2FE',
-  },
   pillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   pill: {
     paddingHorizontal: 14,

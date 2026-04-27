@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Image, Platform, ScrollView, Share, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+﻿import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Alert, Image, Platform, ScrollView, Share, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Bell, CalendarDays, ChevronRight, Crown, Globe, Lock, LogOut, Mail, Moon, Send, Share2, ShieldCheck, Sun, UserPlus, Users, X } from 'lucide-react-native';
@@ -66,11 +66,7 @@ export default function SettingsScreen() {
   const childMembers = useMemo(() => members.filter((m) => m.role === 'Child'), [members]);
   const planLabel = subscription?.plan === 'family_office' ? 'Family Office' : subscription?.plan === 'executive' ? 'Executive Family' : 'Village';
 
-  const shareInviteLink = useCallback(async (inviteUrl?: string | null, email?: string | null) => {
-    if (!inviteUrl) {
-      setInviteResult(email ? 'Invite link is not available yet for ' + email + '.' : 'Invite link is not available yet.');
-      return;
-    }
+  const shareInviteLink = useCallback(async (inviteUrl: string, email?: string | null) => {
     try {
       if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) {
         await navigator.clipboard.writeText(inviteUrl);
@@ -105,10 +101,8 @@ export default function SettingsScreen() {
       let warning = '';
       if (nextPrefs.new_card_alerts) {
         const push = await registerForPushNotificationsAsync().catch((e) => ({ granted: false, error: e?.message || 'Remote push registration failed.' }));
-        const expoPushToken = 'expoPushToken' in push ? push.expoPushToken : undefined;
-        const pushError = 'error' in push ? push.error : undefined;
-        if (expoPushToken) await api.registerNotificationToken(expoPushToken, Platform.OS);
-        else if (pushError) warning = String(pushError);
+        if (push.expoPushToken) await api.registerNotificationToken(push.expoPushToken, Platform.OS);
+        else if (push.error) warning = push.error;
       }
 
       const saved = await api.updateNotificationSettings(nextPrefs).catch(() => nextPrefs as NotificationSettings);

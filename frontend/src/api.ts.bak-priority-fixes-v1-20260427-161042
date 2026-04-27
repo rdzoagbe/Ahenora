@@ -1,5 +1,4 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as SecureStore from 'expo-secure-store';
 
 const BASE = process.env.EXPO_PUBLIC_BACKEND_URL;
 if (!BASE) {
@@ -11,37 +10,16 @@ const TOKEN_KEY = 'coo_session_token';
 export const tokenStore = {
   async get(): Promise<string | null> {
     try {
-      const secureToken = await SecureStore.getItemAsync(TOKEN_KEY);
-      if (secureToken) return secureToken;
-
-      // One-time migration for users who signed in before SecureStore was enabled.
-      const legacyToken = await AsyncStorage.getItem(TOKEN_KEY);
-      if (legacyToken) {
-        await SecureStore.setItemAsync(TOKEN_KEY, legacyToken);
-        await AsyncStorage.removeItem(TOKEN_KEY).catch(() => undefined);
-        return legacyToken;
-      }
-      return null;
+      return await AsyncStorage.getItem(TOKEN_KEY);
     } catch {
-      // Development/web fallback only. Native builds should use SecureStore.
-      try {
-        return await AsyncStorage.getItem(TOKEN_KEY);
-      } catch {
-        return null;
-      }
+      return null;
     }
   },
   async set(token: string) {
-    try {
-      await SecureStore.setItemAsync(TOKEN_KEY, token);
-      await AsyncStorage.removeItem(TOKEN_KEY).catch(() => undefined);
-    } catch {
-      await AsyncStorage.setItem(TOKEN_KEY, token);
-    }
+    await AsyncStorage.setItem(TOKEN_KEY, token);
   },
   async clear() {
-    await SecureStore.deleteItemAsync(TOKEN_KEY).catch(() => undefined);
-    await AsyncStorage.removeItem(TOKEN_KEY).catch(() => undefined);
+    await AsyncStorage.removeItem(TOKEN_KEY);
   },
 };
 
@@ -160,11 +138,6 @@ export interface CalendarContact {
   last_event_title?: string | null;
 }
 
-export interface NotificationSettings {
-  card_reminders: boolean;
-  new_card_alerts: boolean;
-  updated_at?: string | null;
-}
 export interface CalendarImportResult {
   ok: boolean;
   imported: number;
@@ -296,7 +269,7 @@ export const api = {
     request<Card[]>(`/cards${status ? `?status=${status}` : ''}`),
   createCard: (data: Partial<Card>) =>
     request<Card>('/cards', { method: 'POST', body: data }),
-  updateCard: (id: string, data: Partial<Pick<Card, 'type' | 'title' | 'description' | 'assignee' | 'due_date' | 'status' | 'recurrence' | 'reminder_minutes'>>) =>
+  updateCard: (id: string, data: { status?: CardStatus }) =>
     request<Card>(`/cards/${id}`, { method: 'PATCH', body: data }),
   deleteCard: (id: string) => request(`/cards/${id}`, { method: 'DELETE' }),
   // Vault

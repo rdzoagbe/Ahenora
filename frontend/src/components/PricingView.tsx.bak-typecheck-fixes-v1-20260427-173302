@@ -19,7 +19,6 @@ import Animated, {
   withTiming,
   withSpring,
 } from 'react-native-reanimated';
-import type { SharedValue } from 'react-native-reanimated';
 import {
   Sparkles,
   Users,
@@ -194,7 +193,7 @@ function BillingToggle({
   value: BillingCycle;
   onChange: (v: BillingCycle) => void;
   t: (k: string, p?: any) => string;
-  animValue: SharedValue<number>;
+  animValue: Animated.SharedValue<number>;
 }) {
   const pillStyle = useAnimatedStyle(() => ({
     transform: [
