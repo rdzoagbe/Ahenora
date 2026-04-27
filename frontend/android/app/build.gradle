@@ -1,3 +1,4 @@
+﻿apply plugin: 'com.google.gms.google-services'
 apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
@@ -153,6 +154,8 @@ android {
 }
 
 dependencies {
+    implementation platform('com.google.firebase:firebase-bom:34.7.0')
+    implementation 'com.google.firebase:firebase-analytics'
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
 
@@ -180,3 +183,5 @@ dependencies {
         implementation jscFlavor
     }
 }
+
+
