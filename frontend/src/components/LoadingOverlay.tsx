@@ -1,5 +1,6 @@
 import React from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { useStore } from '../store';
 
 type LoadingOverlayProps = {
   visible: boolean;
@@ -10,13 +11,14 @@ export default function LoadingOverlay({
   visible,
   label = 'Loading...',
 }: LoadingOverlayProps) {
+  const { theme } = useStore();
   if (!visible) return null;
 
   return (
     <View style={styles.wrap} pointerEvents="auto">
-      <View style={styles.card}>
-        <ActivityIndicator color="#fff" />
-        <Text style={styles.label}>{label}</Text>
+      <View style={[styles.card, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder, shadowColor: theme.colors.shadow }]}>
+        <ActivityIndicator color={theme.colors.text} />
+        <Text style={[styles.label, { color: theme.colors.textMuted }]}>{label}</Text>
       </View>
     </View>
   );
@@ -28,22 +30,23 @@ const styles = StyleSheet.create({
     zIndex: 40,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(8,9,16,0.28)',
+    backgroundColor: 'rgba(15,23,42,0.18)',
   },
   card: {
-    minWidth: 140,
-    borderRadius: 22,
-    paddingHorizontal: 18,
+    minWidth: 150,
+    borderRadius: 24,
+    paddingHorizontal: 20,
     paddingVertical: 18,
     alignItems: 'center',
     gap: 10,
-    backgroundColor: 'rgba(20,22,32,0.92)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.12,
+    shadowRadius: 20,
+    elevation: 6,
   },
   label: {
-    color: 'rgba(255,255,255,0.72)',
-    fontFamily: 'Inter_500Medium',
-    fontSize: 12,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 13,
   },
 });

@@ -505,9 +505,9 @@ const styles = StyleSheet.create({
   preferenceHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
   preferenceTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   rowValue: { fontFamily: 'Inter_700Bold', fontSize: 17 },
-  segmentWrap: { flexDirection: 'row', alignItems: 'center', borderRadius: 24, padding: 7, gap: 8, borderWidth: 1, minHeight: 66 },
-  segmentBtn: { flex: 1, minHeight: 52, alignItems: 'center', justifyContent: 'center', borderRadius: 18, paddingHorizontal: 12 },
-  segmentText: { fontFamily: 'Inter_800ExtraBold', fontSize: 16 },
+  segmentWrap: { flexDirection: 'row', alignItems: 'center', borderRadius: 26, padding: 8, gap: 10, borderWidth: 1, minHeight: 70 },
+  segmentBtn: { flex: 1, minHeight: 54, alignItems: 'center', justifyContent: 'center', borderRadius: 20, paddingHorizontal: 14 },
+  segmentText: { fontFamily: 'Inter_800ExtraBold', fontSize: 17 },
   navRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 56 },
   navRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   divider: { height: 1, opacity: 0.9, marginVertical: 18 },
@@ -536,5 +536,6 @@ const styles = StyleSheet.create({
   primaryButton: { minHeight: 54, borderRadius: 9999, paddingHorizontal: 18, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 9, flex: 1 },
   primaryButtonText: { fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
 });
+
 
 
