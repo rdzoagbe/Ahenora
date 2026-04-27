@@ -654,7 +654,14 @@ class CardIn(BaseModel):
 
 
 class CardPatchIn(BaseModel):
+    type: Optional[str] = None
+    title: Optional[str] = None
+    description: Optional[str] = None
+    assignee: Optional[str] = None
+    due_date: Optional[str] = None
     status: Optional[str] = None
+    recurrence: Optional[str] = None
+    reminder_minutes: Optional[int] = None
 
 
 class VaultIn(BaseModel):
@@ -1281,7 +1288,9 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
     changes = {}
     award_child = False
 
-    if payload.status:
+    if payload.status is not None:
+        if payload.status not in {"OPEN", "DONE"}:
+            raise HTTPException(status_code=400, detail="Invalid card status")
         changes["status"] = payload.status
         changes["completed_at"] = utcnow() if payload.status == "DONE" else None
         award_child = (
@@ -1290,6 +1299,39 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
             and card["type"] == "TASK"
             and bool(card.get("assignee"))
         )
+
+    if payload.type is not None:
+        if payload.type not in {"SIGN_SLIP", "RSVP", "TASK"}:
+            raise HTTPException(status_code=400, detail="Invalid card type")
+        changes["type"] = payload.type
+
+    if payload.title is not None:
+        title = payload.title.strip()
+        if not title:
+            raise HTTPException(status_code=400, detail="Title is required")
+        changes["title"] = title
+
+    if payload.description is not None:
+        changes["description"] = payload.description.strip() or None
+
+    if payload.assignee is not None:
+        changes["assignee"] = payload.assignee.strip() or None
+
+    if payload.due_date is not None:
+        changes["due_date"] = parse_dt(payload.due_date) if payload.due_date else None
+
+    if payload.recurrence is not None:
+        if payload.recurrence not in {"none", "daily", "weekly", "monthly"}:
+            raise HTTPException(status_code=400, detail="Invalid recurrence")
+        changes["recurrence"] = payload.recurrence
+
+    if payload.reminder_minutes is not None:
+        if payload.reminder_minutes < 0:
+            raise HTTPException(status_code=400, detail="Reminder must be zero or positive")
+        changes["reminder_minutes"] = payload.reminder_minutes
+
+    if not changes:
+        return public_card(card)
 
     await database["cards"].update_one({"card_id": card_id}, {"$set": changes})
     updated = await database["cards"].find_one({"card_id": card_id}, {"_id": 0})
