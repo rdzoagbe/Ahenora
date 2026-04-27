@@ -326,6 +326,20 @@ def public_reward(reward: dict) -> dict:
     }
 
 
+
+def public_star_transaction(transaction: dict) -> dict:
+    return {
+        "transaction_id": transaction["transaction_id"],
+        "family_id": transaction["family_id"],
+        "member_id": transaction["member_id"],
+        "delta": transaction["delta"],
+        "reason": transaction.get("reason"),
+        "created_by_user_id": transaction.get("created_by_user_id"),
+        "created_by_name": transaction.get("created_by_name"),
+        "created_at": iso(transaction.get("created_at")),
+    }
+
+
 def public_vault_doc(doc: dict) -> dict:
     return {
         "doc_id": doc["doc_id"],
@@ -676,6 +690,23 @@ class RewardIn(BaseModel):
     icon: Optional[str] = None
 
 
+class ChildIn(BaseModel):
+    name: str
+    starting_stars: int = 0
+    pin: Optional[str] = None
+
+
+class StarAdjustmentIn(BaseModel):
+    delta: int
+    reason: Optional[str] = None
+
+
+class RewardPatchIn(BaseModel):
+    title: Optional[str] = None
+    cost_stars: Optional[int] = None
+    icon: Optional[str] = None
+
+
 class RedeemIn(BaseModel):
     member_id: str
 
@@ -933,6 +964,125 @@ async def family_members(user=Depends(require_user)):
     async for item in cursor:
         rows.append(public_member(item))
     return rows
+
+
+@app.post("/api/family/members")
+async def create_family_member(payload: ChildIn, user=Depends(require_user)):
+    database = get_db()
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Child name is required")
+
+    starting_stars = max(0, int(payload.starting_stars or 0))
+    pin = (payload.pin or "").strip()
+    if pin and (not pin.isdigit() or len(pin) != 4):
+        raise HTTPException(status_code=400, detail="PIN must be 4 digits")
+
+    subscription = await build_subscription(user["family_id"])
+    if not is_admin_user(user):
+        members_count = await database["family_members"].count_documents({"family_id": user["family_id"]})
+        if members_count >= subscription["limits"]["max_members"]:
+            plan_limit_error(
+                feature="family_members",
+                current_plan=subscription["plan"],
+                message="Your current plan has reached its member limit.",
+                limit=subscription["limits"]["max_members"],
+                used=members_count,
+            )
+
+    member = {
+        "member_id": new_id("member"),
+        "family_id": user["family_id"],
+        "name": name,
+        "role": "Child",
+        "avatar": None,
+        "stars": starting_stars,
+        "pin_hash": sha256(pin) if pin else None,
+        "created_at": utcnow(),
+    }
+    await database["family_members"].insert_one(member)
+
+    if starting_stars:
+        transaction = {
+            "transaction_id": new_id("star"),
+            "family_id": user["family_id"],
+            "member_id": member["member_id"],
+            "delta": starting_stars,
+            "reason": "Starting stars",
+            "created_by_user_id": user["user_id"],
+            "created_by_name": user.get("name"),
+            "created_at": utcnow(),
+        }
+        await database["star_transactions"].insert_one(transaction)
+
+    return public_member(member)
+
+
+@app.post("/api/family/members/{member_id}/stars")
+async def adjust_member_stars(member_id: str, payload: StarAdjustmentIn, user=Depends(require_user)):
+    database = get_db()
+    member = await database["family_members"].find_one(
+        {"member_id": member_id, "family_id": user["family_id"]},
+        {"_id": 0},
+    )
+    if not member:
+        raise HTTPException(status_code=404, detail="Family member not found")
+
+    delta = int(payload.delta or 0)
+    if delta == 0:
+        raise HTTPException(status_code=400, detail="Star adjustment cannot be zero")
+
+    current_stars = int(member.get("stars", 0))
+    new_total = current_stars + delta
+    if new_total < 0:
+        raise HTTPException(status_code=400, detail="Stars cannot go below zero")
+
+    reason = (payload.reason or "").strip()
+    if delta < 0 and not reason:
+        raise HTTPException(status_code=400, detail="Reason is required when removing stars")
+
+    transaction = {
+        "transaction_id": new_id("star"),
+        "family_id": user["family_id"],
+        "member_id": member_id,
+        "delta": delta,
+        "reason": reason or ("Parent added stars" if delta > 0 else "Parent removed stars"),
+        "created_by_user_id": user["user_id"],
+        "created_by_name": user.get("name"),
+        "created_at": utcnow(),
+    }
+
+    await database["family_members"].update_one(
+        {"member_id": member_id},
+        {"$set": {"stars": new_total}},
+    )
+    await database["star_transactions"].insert_one(transaction)
+    updated = await database["family_members"].find_one({"member_id": member_id}, {"_id": 0})
+
+    return {
+        "ok": True,
+        "member": public_member(updated),
+        "transaction": public_star_transaction(transaction),
+    }
+
+
+@app.get("/api/family/members/{member_id}/star-history")
+async def member_star_history(member_id: str, user=Depends(require_user)):
+    database = get_db()
+    member = await database["family_members"].find_one(
+        {"member_id": member_id, "family_id": user["family_id"]},
+        {"_id": 0},
+    )
+    if not member:
+        raise HTTPException(status_code=404, detail="Family member not found")
+
+    cursor = database["star_transactions"].find(
+        {"member_id": member_id, "family_id": user["family_id"]},
+        {"_id": 0},
+    ).sort("created_at", -1).limit(50)
+
+    return [public_star_transaction(item) async for item in cursor]
+
 
 
 @app.put("/api/family/members/{member_id}/pin")
@@ -1474,6 +1624,44 @@ async def create_reward(payload: RewardIn, user=Depends(require_user)):
     }
     await database["rewards"].insert_one(reward)
     return public_reward(reward)
+
+
+@app.patch("/api/rewards/{reward_id}")
+async def update_reward(reward_id: str, payload: RewardPatchIn, user=Depends(require_user)):
+    database = get_db()
+    reward = await database["rewards"].find_one(
+        {"reward_id": reward_id, "family_id": user["family_id"]},
+        {"_id": 0},
+    )
+    if not reward:
+        raise HTTPException(status_code=404, detail="Reward not found")
+
+    changes = {}
+
+    if payload.title is not None:
+        title = payload.title.strip()
+        if not title:
+            raise HTTPException(status_code=400, detail="Reward title is required")
+        changes["title"] = title
+
+    if payload.cost_stars is not None:
+        if payload.cost_stars < 1:
+            raise HTTPException(status_code=400, detail="Reward cost must be at least 1 star")
+        changes["cost_stars"] = payload.cost_stars
+
+    if payload.icon is not None:
+        changes["icon"] = payload.icon.strip() or None
+
+    if not changes:
+        return public_reward(reward)
+
+    await database["rewards"].update_one(
+        {"reward_id": reward_id},
+        {"$set": changes},
+    )
+    updated = await database["rewards"].find_one({"reward_id": reward_id}, {"_id": 0})
+    return public_reward(updated)
+
 
 
 @app.delete("/api/rewards/{reward_id}")
