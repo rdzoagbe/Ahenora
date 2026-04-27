@@ -30,69 +30,82 @@ export interface AppTheme {
   };
 }
 
+/**
+ * Reference-style palette:
+ * - soft warm-grey app canvas
+ * - solid white elevated cards
+ * - near-black text/buttons
+ * - restrained orange accent for task dots/counts only
+ */
 export const lightTheme: AppTheme = {
   mode: 'light',
   colors: {
-    bg: '#F5F7FB',
+    bg: '#F4F5F2',
     bgElevated: '#FFFFFF',
-    bgSoft: '#F1F5F9',
+    bgSoft: '#ECEEEC',
     card: '#FFFFFF',
-    cardBorder: '#E3E8F1',
+    cardBorder: 'rgba(31,35,35,0.08)',
     glassTint: '#FFFFFF',
-    text: '#141923',
-    textMuted: '#596474',
-    textSoft: '#8A94A5',
-    tabBar: '#FFFFFF',
-    tabBorder: '#E3E8F1',
-    primary: '#20252B',
+    text: '#202323',
+    textMuted: '#747B7C',
+    textSoft: '#A0A6A7',
+    tabBar: '#202323',
+    tabBorder: 'rgba(32,35,35,0.04)',
+    primary: '#202323',
     primaryText: '#FFFFFF',
-    accent: '#F97316',
-    accentSoft: '#FFF3E8',
-    success: '#10B981',
-    shadow: '#0F172A',
+    accent: '#F26A1B',
+    accentSoft: 'rgba(242,106,27,0.12)',
+    success: '#11B886',
+    shadow: '#202323',
   },
   ambient: {
-    base: '#F5F7FB',
-    glowA: ['rgba(255,255,255,0.90)', 'rgba(255,255,255,0)'],
-    glowB: ['rgba(226,232,240,0.65)', 'rgba(226,232,240,0)'],
-    glowC: ['rgba(224,242,254,0.55)', 'rgba(224,242,254,0)'],
+    base: '#F4F5F2',
+    glowA: ['rgba(255,255,255,0.92)', 'rgba(255,255,255,0)'],
+    glowB: ['rgba(222,225,222,0.74)', 'rgba(222,225,222,0)'],
+    glowC: ['rgba(242,106,27,0.08)', 'rgba(242,106,27,0)'],
   },
 };
 
 export const darkTheme: AppTheme = {
   mode: 'dark',
   colors: {
-    bg: '#071120',
-    bgElevated: '#111C2F',
-    bgSoft: '#1A2942',
-    card: '#142238',
-    cardBorder: '#314561',
-    glassTint: '#142238',
+    bg: '#101419',
+    bgElevated: '#171D24',
+    bgSoft: '#202833',
+    card: '#171D24',
+    cardBorder: 'rgba(255,255,255,0.10)',
+    glassTint: '#171D24',
     text: '#F8FAFC',
-    textMuted: '#D5DEEA',
-    textSoft: '#9FB0C7',
-    tabBar: '#FFFFFF',
-    tabBorder: '#D9E1ED',
+    textMuted: '#CBD5E1',
+    textSoft: '#94A3B8',
+    tabBar: '#202323',
+    tabBorder: 'rgba(255,255,255,0.08)',
     primary: '#FFFFFF',
-    primaryText: '#071120',
-    accent: '#F97316',
-    accentSoft: 'rgba(249,115,22,0.16)',
+    primaryText: '#202323',
+    accent: '#F26A1B',
+    accentSoft: 'rgba(242,106,27,0.18)',
     success: '#22C55E',
     shadow: '#000000',
   },
   ambient: {
-    base: '#071120',
-    glowA: ['rgba(37,99,235,0.16)', 'rgba(37,99,235,0)'],
-    glowB: ['rgba(247,183,51,0.12)', 'rgba(247,183,51,0)'],
-    glowC: ['rgba(20,184,166,0.10)', 'rgba(20,184,166,0)'],
+    base: '#101419',
+    glowA: ['rgba(255,255,255,0.04)', 'rgba(255,255,255,0)'],
+    glowB: ['rgba(242,106,27,0.12)', 'rgba(242,106,27,0)'],
+    glowC: ['rgba(17,184,134,0.08)', 'rgba(17,184,134,0)'],
   },
 };
 
-export function resolveAppearance(mode: AppearanceMode, systemScheme: 'light' | 'dark' | null | undefined): ResolvedAppearance {
-  if (mode === 'system') return systemScheme === 'light' ? 'light' : 'dark';
+export function resolveAppearance(
+  mode: AppearanceMode,
+  systemScheme: 'light' | 'dark' | null | undefined
+): ResolvedAppearance {
+  if (mode === 'system') return systemScheme === 'dark' ? 'dark' : 'light';
   return mode;
 }
 
-export function getTheme(mode: AppearanceMode, systemScheme: 'light' | 'dark' | null | undefined): AppTheme {
+export function getTheme(
+  mode: AppearanceMode,
+  systemScheme: 'light' | 'dark' | null | undefined
+): AppTheme {
   return resolveAppearance(mode, systemScheme) === 'light' ? lightTheme : darkTheme;
 }

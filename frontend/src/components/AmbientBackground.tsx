@@ -14,19 +14,19 @@ export function AmbientBackground() {
         colors={theme.ambient.glowA}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
-        style={[styles.blob, light ? styles.lightA : styles.darkA]}
+        style={[styles.glow, light ? styles.lightGlowA : styles.darkGlowA]}
       />
       <LinearGradient
         colors={theme.ambient.glowB}
-        start={{ x: 1, y: 0 }}
-        end={{ x: 0, y: 1 }}
-        style={[styles.blob, light ? styles.lightB : styles.darkB]}
+        start={{ x: 1, y: 1 }}
+        end={{ x: 0, y: 0 }}
+        style={[styles.glow, light ? styles.lightGlowB : styles.darkGlowB]}
       />
       <LinearGradient
         colors={theme.ambient.glowC}
-        start={{ x: 0, y: 1 }}
-        end={{ x: 1, y: 0 }}
-        style={[styles.blob, light ? styles.lightC : styles.darkC]}
+        start={{ x: 0, y: 0.5 }}
+        end={{ x: 1, y: 0.5 }}
+        style={[styles.glow, light ? styles.lightGlowC : styles.darkGlowC]}
       />
     </View>
   );
@@ -36,14 +36,14 @@ const styles = StyleSheet.create({
   base: {
     ...StyleSheet.absoluteFillObject,
   },
-  blob: {
+  glow: {
     position: 'absolute',
     borderRadius: 9999,
   },
-  lightA: { top: -80, left: -80, width: 340, height: 340, opacity: 1 },
-  lightB: { top: 170, right: -110, width: 300, height: 300, opacity: 0.95 },
-  lightC: { bottom: -90, left: -70, width: 300, height: 300, opacity: 0.85 },
-  darkA: { top: -180, left: -180, width: 520, height: 520, opacity: 0.9 },
-  darkB: { bottom: -200, right: -200, width: 560, height: 560, opacity: 0.9 },
-  darkC: { top: 380, left: -160, width: 400, height: 400, opacity: 0.9 },
+  lightGlowA: { top: -160, left: -140, width: 470, height: 470, opacity: 0.95 },
+  lightGlowB: { top: 160, right: -220, width: 520, height: 520, opacity: 0.85 },
+  lightGlowC: { bottom: -200, left: -150, width: 430, height: 430, opacity: 0.75 },
+  darkGlowA: { top: -180, left: -180, width: 520, height: 520, opacity: 0.9 },
+  darkGlowB: { bottom: -200, right: -200, width: 560, height: 560, opacity: 0.9 },
+  darkGlowC: { top: 380, left: -160, width: 400, height: 400, opacity: 0.9 },
 });

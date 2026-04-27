@@ -19,29 +19,33 @@ export function FloatingActionBar({ onManual, onCamera, onVoice }: Props) {
         style={[
           styles.shell,
           {
-            backgroundColor: '#20252B',
-            borderColor: 'rgba(255,255,255,0.10)',
-            shadowColor: theme.colors.shadow,
+            backgroundColor: theme.colors.tabBar,
+            borderColor: theme.colors.tabBorder,
+            shadowColor: '#202323',
           },
         ]}
       >
-        <PressScale testID="fab-voice" onPress={onVoice} style={styles.sideBtn}>
-          <View style={styles.darkIcon}>
-            <Mic color="#FFFFFF" size={18} />
-          </View>
-          <Text style={styles.sideLabel}>{t('voice')}</Text>
-        </PressScale>
+        <View style={styles.row}>
+          <PressScale testID="fab-voice" onPress={onVoice} style={styles.sideBtn}>
+            <View style={styles.sideIcon}>
+              <Mic color="#FFFFFF" size={18} />
+            </View>
+            <Text style={styles.sideLabel}>{t('voice')}</Text>
+          </PressScale>
 
-        <PressScale testID="fab-camera" onPress={onCamera} style={styles.centerBtn}>
-          <Camera color="#20252B" size={25} />
-        </PressScale>
+          <PressScale testID="fab-camera" onPress={onCamera} style={styles.centerBtn}>
+            <View style={styles.centerInner}>
+              <Camera color="#202323" size={24} />
+            </View>
+          </PressScale>
 
-        <PressScale testID="fab-manual" onPress={onManual} style={styles.sideBtn}>
-          <View style={styles.darkIcon}>
-            <Plus color="#FFFFFF" size={18} />
-          </View>
-          <Text style={styles.sideLabel}>{t('manual')}</Text>
-        </PressScale>
+          <PressScale testID="fab-manual" onPress={onManual} style={styles.sideBtn}>
+            <View style={styles.sideIcon}>
+              <Plus color="#FFFFFF" size={18} />
+            </View>
+            <Text style={styles.sideLabel}>{t('manual')}</Text>
+          </PressScale>
+        </View>
       </View>
     </View>
   );
@@ -52,20 +56,21 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: 96,
+    bottom: 100,
     alignItems: 'center',
-    paddingHorizontal: 18,
+    paddingHorizontal: 22,
   },
   shell: {
     width: '100%',
-    maxWidth: 430,
-    minHeight: 76,
-    borderRadius: 9999,
+    maxWidth: 420,
+    borderRadius: 32,
     borderWidth: 1,
     shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.18,
     shadowRadius: 24,
     elevation: 10,
+  },
+  row: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -74,37 +79,42 @@ const styles = StyleSheet.create({
   },
   sideBtn: {
     flex: 1,
-    minHeight: 52,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    borderRadius: 9999,
+    minHeight: 48,
     paddingHorizontal: 8,
+    borderRadius: 9999,
+  },
+  sideIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 9999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.16)',
   },
   sideLabel: {
-    color: 'rgba(255,255,255,0.82)',
-    fontFamily: 'Inter_600SemiBold',
+    fontFamily: 'Inter_800ExtraBold',
     fontSize: 13,
-  },
-  darkIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 9999,
-    backgroundColor: 'rgba(255,255,255,0.10)',
-    alignItems: 'center',
-    justifyContent: 'center',
+    letterSpacing: 0.1,
+    color: 'rgba(255,255,255,0.78)',
   },
   centerBtn: {
-    width: 64,
-    height: 64,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  centerInner: {
+    width: 62,
+    height: 62,
     borderRadius: 9999,
-    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
-    marginHorizontal: 8,
-    shadowColor: '#FFFFFF',
-    shadowOpacity: 0.25,
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
     shadowRadius: 16,
     shadowOffset: { width: 0, height: 8 },
     elevation: 8,

@@ -22,23 +22,27 @@ import { useStore } from '../store';
 import { formatCompactDue, isOverdue } from '../utils/date';
 
 const TYPE_COLOR: Record<string, string> = {
-  SIGN_SLIP: '#F97316',
-  RSVP: '#6366F1',
-  TASK: '#10B981',
+  SIGN_SLIP: '#F26A1B',
+  RSVP: '#202323',
+  TASK: '#11B886',
 };
 
 function TypeIcon({ type, color }: { type: string; color: string }) {
-  const size = 20;
+  const size = 19;
+
   if (type === 'SIGN_SLIP') return <FileSignature color={color} size={size} />;
   if (type === 'RSVP') return <Mail color={color} size={size} />;
+
   return <ListTodo color={color} size={size} />;
 }
 
 function SourceIcon({ source, color }: { source: string; color: string }) {
   const size = 13;
+
   if (source === 'AI') return <Sparkles color={color} size={size} />;
   if (source === 'VOICE') return <Mic color={color} size={size} />;
   if (source === 'CAMERA') return <Camera color={color} size={size} />;
+
   return <Edit3 color={color} size={size} />;
 }
 
@@ -54,11 +58,13 @@ export function SmartCard({ card, onComplete, onDelete }: Props) {
   const isDone = card.status === 'DONE';
   const overdue = !isDone && isOverdue(card.due_date);
   const dueLabel = formatCompactDue(card.due_date, lang);
+  const light = theme.mode === 'light';
 
   const actionLabel = useMemo(() => {
     if (isDone) return t('done');
-    if (card.type === 'SIGN_SLIP') return lang === 'es' ? 'Firmar' : lang === 'fr' ? 'Signer' : 'Mark signed';
-    if (card.type === 'RSVP') return lang === 'es' ? 'Confirmar' : lang === 'fr' ? 'Confirmer' : 'Send RSVP';
+    if (card.type === 'SIGN_SLIP') return lang === 'fr' ? 'Marquer signé' : lang === 'es' ? 'Firmar' : 'Mark signed';
+    if (card.type === 'RSVP') return lang === 'fr' ? 'Confirmer' : lang === 'es' ? 'Confirmar' : 'Send RSVP';
+
     return t('mark_done');
   }, [card.type, isDone, lang, t]);
 
@@ -66,7 +72,7 @@ export function SmartCard({ card, onComplete, onDelete }: Props) {
     if (card.source === 'AI') return t('source_ai');
     if (card.source === 'VOICE') return t('source_voice');
     if (card.source === 'CAMERA') return t('source_camera');
-    if (card.source === 'CALENDAR') return 'Google Calendar';
+
     return t('source_manual');
   }, [card.source, t]);
 
@@ -75,17 +81,26 @@ export function SmartCard({ card, onComplete, onDelete }: Props) {
       <View style={[styles.glowBar, { backgroundColor: overdue ? '#EF4444' : color }]} />
 
       <View style={styles.row}>
-        <View style={[styles.typePill, { borderColor: `${color}55`, backgroundColor: `${color}14` }]}>
+        <View style={[styles.typePill, { borderColor: light ? 'rgba(32,35,35,0.10)' : `${color}66`, backgroundColor: light ? '#F7F7F5' : `${color}1F` }]}>
           <TypeIcon type={card.type} color={color} />
+
           <Text style={[styles.typeText, { color }]}>
             {card.type === 'SIGN_SLIP' ? t('sign_slip') : card.type === 'RSVP' ? t('rsvp') : t('task')}
           </Text>
         </View>
 
         {dueLabel ? (
-          <View style={[styles.duePill, { backgroundColor: overdue ? 'rgba(239,68,68,0.10)' : theme.colors.bgSoft, borderColor: overdue ? 'rgba(239,68,68,0.35)' : theme.colors.cardBorder }]}>
-            <CalendarClock color={overdue ? '#EF4444' : theme.colors.textSoft} size={14} />
-            <Text style={[styles.due, { color: overdue ? '#EF4444' : theme.colors.textMuted }]}>{dueLabel}</Text>
+          <View
+            style={[
+              styles.duePill,
+              {
+                backgroundColor: overdue ? 'rgba(239,68,68,0.10)' : theme.colors.bgSoft,
+                borderColor: overdue ? 'rgba(239,68,68,0.24)' : theme.colors.cardBorder,
+              },
+            ]}
+          >
+            <CalendarClock color={overdue ? '#DC2626' : theme.colors.textSoft} size={14} />
+            <Text style={[styles.due, { color: overdue ? '#DC2626' : theme.colors.textMuted }]}>{dueLabel}</Text>
           </View>
         ) : null}
       </View>
@@ -100,41 +115,63 @@ export function SmartCard({ card, onComplete, onDelete }: Props) {
         </Text>
       ) : null}
 
-      <View style={styles.metaRow}>
-        <SourceIcon source={card.source} color={theme.colors.textSoft} />
-        <Text style={[styles.metaText, { color: theme.colors.textSoft }]}>{sourceLabel}</Text>
-        {card.assignee ? (
-          <>
-            <Text style={[styles.metaText, { color: theme.colors.textSoft }]}>·</Text>
-            <Text style={[styles.metaText, { color: theme.colors.textSoft }]}>{card.assignee}</Text>
-          </>
-        ) : null}
-        {card.recurrence && card.recurrence !== 'none' ? (
-          <>
-            <Text style={[styles.metaText, { color: theme.colors.textSoft }]}>·</Text>
-            <Repeat color={theme.colors.textSoft} size={12} />
-            <Text style={[styles.metaText, { color: theme.colors.textSoft }]}>{t(`rec_${card.recurrence}`)}</Text>
-          </>
-        ) : null}
-        {card.reminder_minutes && card.reminder_minutes > 0 ? (
-          <>
-            <Text style={[styles.metaText, { color: theme.colors.textSoft }]}>·</Text>
-            <Bell color={theme.colors.textSoft} size={12} />
-          </>
-        ) : null}
+      <View style={styles.meta}>
+        <View style={styles.metaRow}>
+          <SourceIcon source={card.source} color={theme.colors.textSoft} />
+          <Text style={[styles.metaText, { color: theme.colors.textSoft }]}>{sourceLabel}</Text>
+
+          {card.assignee ? (
+            <>
+              <Text style={[styles.metaDot, { color: theme.colors.textSoft }]}>·</Text>
+              <Text style={[styles.metaText, { color: theme.colors.textSoft }]}>{card.assignee}</Text>
+            </>
+          ) : null}
+
+          {card.recurrence && card.recurrence !== 'none' ? (
+            <>
+              <Text style={[styles.metaDot, { color: theme.colors.textSoft }]}>·</Text>
+              <Repeat color={theme.colors.textSoft} size={12} />
+              <Text style={[styles.metaText, { color: theme.colors.textSoft }]}>{t(`rec_${card.recurrence}`)}</Text>
+            </>
+          ) : null}
+
+          {card.reminder_minutes && card.reminder_minutes > 0 ? (
+            <>
+              <Text style={[styles.metaDot, { color: theme.colors.textSoft }]}>·</Text>
+              <Bell color={theme.colors.textSoft} size={12} />
+              <Text style={[styles.metaText, { color: theme.colors.textSoft }]}>
+                {card.reminder_minutes >= 1440
+                  ? `${Math.round(card.reminder_minutes / 1440)}d`
+                  : card.reminder_minutes >= 60
+                  ? `${Math.round(card.reminder_minutes / 60)}h`
+                  : `${card.reminder_minutes}m`}
+              </Text>
+            </>
+          ) : null}
+        </View>
       </View>
 
       <View style={styles.actions}>
         <PressScale
           testID={`complete-${card.card_id}`}
           onPress={onComplete}
-          style={[styles.doneBtn, { borderColor: `${color}70`, backgroundColor: isDone ? color : `${color}12` }]}
+          style={[
+            styles.doneBtn,
+            {
+              borderColor: isDone ? color : theme.colors.cardBorder,
+              backgroundColor: isDone ? color : theme.colors.bgSoft,
+            },
+          ]}
         >
-          <CheckCircle2 color={isDone ? '#FFFFFF' : color} size={18} />
-          <Text style={[styles.doneText, { color: isDone ? '#FFFFFF' : color }]}>{actionLabel}</Text>
+          <CheckCircle2 color={isDone ? '#FFFFFF' : theme.colors.text} size={18} />
+          <Text style={[styles.doneText, { color: isDone ? '#FFFFFF' : theme.colors.text }]}>{actionLabel}</Text>
         </PressScale>
 
-        <PressScale testID={`delete-${card.card_id}`} onPress={onDelete} style={[styles.deleteBtn, { borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}>
+        <PressScale
+          testID={`delete-${card.card_id}`}
+          onPress={onDelete}
+          style={[styles.deleteBtn, { borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}
+        >
           <Trash2 color={theme.colors.textSoft} size={18} />
         </PressScale>
       </View>
@@ -143,20 +180,95 @@ export function SmartCard({ card, onComplete, onDelete }: Props) {
 }
 
 const styles = StyleSheet.create({
-  wrap: { marginBottom: 16, borderRadius: 28 },
-  glowBar: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 5, opacity: 1 },
-  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 16 },
-  typePill: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 9999, gap: 8 },
-  typeText: { fontFamily: 'Inter_800ExtraBold', fontSize: 12, letterSpacing: 0.5, textTransform: 'uppercase' },
-  duePill: { maxWidth: '55%', flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 9999, paddingHorizontal: 10, paddingVertical: 8, borderWidth: 1 },
-  due: { fontFamily: 'Inter_700Bold', fontSize: 12 },
-  title: { fontFamily: 'Inter_800ExtraBold', fontSize: 20, lineHeight: 27, marginBottom: 8, letterSpacing: -0.2 },
-  titleDone: { textDecorationLine: 'line-through' },
-  desc: { fontFamily: 'Inter_400Regular', fontSize: 15, lineHeight: 22, marginBottom: 14 },
-  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginBottom: 16 },
-  metaText: { fontFamily: 'Inter_500Medium', fontSize: 13 },
+  wrap: { marginBottom: 16, borderRadius: 30 },
+  glowBar: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 5,
+    opacity: 1,
+  },
+  row: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 14,
+  },
+  typePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 9999,
+    gap: 8,
+  },
+  typeText: {
+    fontFamily: 'Inter_800ExtraBold',
+    fontSize: 12,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  duePill: {
+    maxWidth: '54%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 9999,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderWidth: 1,
+  },
+  due: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 12,
+  },
+  title: {
+    fontFamily: 'Inter_800ExtraBold',
+    fontSize: 20,
+    lineHeight: 27,
+    marginBottom: 8,
+    letterSpacing: -0.2,
+  },
+  titleDone: {
+    textDecorationLine: 'line-through',
+  },
+  desc: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 15,
+    lineHeight: 22,
+    marginBottom: 16,
+  },
+  meta: { marginBottom: 16 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 7, flexWrap: 'wrap' },
+  metaText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 13,
+  },
+  metaDot: { marginHorizontal: 2 },
   actions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  doneBtn: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, borderRadius: 9999, borderWidth: 1 },
-  doneText: { fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
-  deleteBtn: { marginLeft: 'auto', minWidth: 46, minHeight: 46, alignItems: 'center', justifyContent: 'center', borderRadius: 9999, borderWidth: 1 },
+  doneBtn: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    borderRadius: 9999,
+    borderWidth: 1,
+  },
+  doneText: {
+    fontFamily: 'Inter_800ExtraBold',
+    fontSize: 15,
+  },
+  deleteBtn: {
+    marginLeft: 'auto',
+    minWidth: 46,
+    minHeight: 46,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 9999,
+    borderWidth: 1,
+  },
 });

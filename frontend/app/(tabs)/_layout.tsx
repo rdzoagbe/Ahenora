@@ -6,18 +6,20 @@ import { useStore } from '../../src/store';
 
 function TabIcon({ focused, Icon, label }: { focused: boolean; Icon: any; label: string }) {
   const { theme } = useStore();
-  const activeBg = '#20252B';
-  const iconColor = focused ? '#FFFFFF' : theme.colors.textMuted;
+  const light = theme.mode === 'light';
+  const activeBg = light ? '#FFFFFF' : '#FFFFFF';
+  const activeColor = '#202323';
+  const inactiveColor = light ? 'rgba(255,255,255,0.68)' : 'rgba(255,255,255,0.64)';
 
   return (
     <View style={[styles.tabItem, focused && { backgroundColor: activeBg }]}>
-      <Icon color={iconColor} size={24} strokeWidth={focused ? 2.6 : 2.1} />
+      <Icon color={focused ? activeColor : inactiveColor} size={22} strokeWidth={focused ? 2.5 : 2.1} />
       <Text
         style={[
           styles.tabLabel,
           {
-            color: iconColor,
-            fontFamily: focused ? 'Inter_700Bold' : 'Inter_600SemiBold',
+            color: focused ? activeColor : inactiveColor,
+            fontFamily: focused ? 'Inter_800ExtraBold' : 'Inter_600SemiBold',
           },
         ]}
         numberOfLines={1}
@@ -39,19 +41,19 @@ export default function TabLayout() {
         sceneStyle: { backgroundColor: theme.colors.bg },
         tabBarStyle: {
           position: 'absolute',
-          left: 12,
-          right: 12,
-          bottom: 12,
-          height: 82,
-          borderRadius: 34,
-          backgroundColor: '#FFFFFF',
+          left: 20,
+          right: 20,
+          bottom: 14,
+          height: 78,
+          borderRadius: 32,
+          backgroundColor: theme.colors.tabBar,
           borderTopWidth: 0,
           borderWidth: 1,
           borderColor: theme.colors.tabBorder,
-          elevation: 14,
-          shadowColor: theme.colors.shadow,
-          shadowOpacity: 0.16,
-          shadowRadius: 24,
+          elevation: 10,
+          shadowColor: '#202323',
+          shadowOpacity: theme.mode === 'light' ? 0.16 : 0.28,
+          shadowRadius: 22,
           shadowOffset: { width: 0, height: 12 },
           paddingHorizontal: 8,
           paddingTop: 8,
@@ -72,12 +74,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
-    minWidth: 64,
-    height: 64,
-    borderRadius: 26,
+    minWidth: 60,
+    height: 60,
+    borderRadius: 9999,
   },
   tabLabel: {
-    fontSize: 12,
+    fontSize: 11,
     letterSpacing: 0.1,
   },
 });

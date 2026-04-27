@@ -1,10 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, RefreshControl, Image, ActivityIndicator } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  RefreshControl,
+  Image,
+  ActivityIndicator,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Sparkles, Bell, SlidersHorizontal } from 'lucide-react-native';
+import { ArrowRight, Bell, Search, SlidersHorizontal, Sparkles } from 'lucide-react-native';
 import { useFocusEffect } from 'expo-router';
-
 import { AmbientBackground } from '../../src/components/AmbientBackground';
+import { GlassCard } from '../../src/components/GlassCard';
 import { PressScale } from '../../src/components/PressScale';
 import { SmartCard } from '../../src/components/SmartCard';
 import { FloatingActionBar } from '../../src/components/FloatingActionBar';
@@ -44,46 +52,75 @@ export default function FeedScreen() {
     try {
       const res = await api.listCards();
       setCards(res);
-      api.getNotificationSettings()
-        .then((prefs) => prefs.card_reminders ? syncCardReminderNotifications(res, true) : syncCardReminderNotifications([], false))
+
+      api
+        .getNotificationSettings()
+        .then((prefs) => {
+          if (prefs.card_reminders) {
+            return syncCardReminderNotifications(res, true);
+          }
+          return syncCardReminderNotifications([], false);
+        })
         .catch(() => undefined);
-    } catch (error) {
-      console.log('load cards error', error);
+    } catch (e) {
+      console.log('load cards error', e);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   }, []);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
-  useEffect(() => { load(); }, [load]);
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load])
+  );
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const toggle = async (card: Card) => {
     const next = card.status === 'DONE' ? 'OPEN' : 'DONE';
     setCards((prev) => prev.map((c) => (c.card_id === card.card_id ? { ...c, status: next } : c)));
-    try { await api.updateCard(card.card_id, { status: next }); } catch { load(); }
+    try {
+      await api.updateCard(card.card_id, { status: next });
+    } catch {
+      load();
+    }
   };
 
   const remove = async (card: Card) => {
     setCards((prev) => prev.filter((c) => c.card_id !== card.card_id));
-    try { await api.deleteCard(card.card_id); } catch { load(); }
+    try {
+      await api.deleteCard(card.card_id);
+    } catch {
+      load();
+    }
   };
 
-  const openCards = cards.filter((c) => c.status === 'OPEN');
-  const openCount = openCards.length;
+  const openCount = cards.filter((c) => c.status === 'OPEN').length;
 
   const upcomingReminders = useMemo(() => {
     const now = Date.now();
     const in24h = now + 24 * 60 * 60 * 1000;
-    return openCards
-      .filter((c) => c.due_date && (c.reminder_minutes || 0) > 0)
+    return cards
+      .filter((c) => c.status === 'OPEN' && c.due_date && (c.reminder_minutes || 0) > 0)
       .filter((c) => {
-        const due = new Date(c.due_date as string).getTime();
-        const remindAt = due - (c.reminder_minutes || 0) * 60 * 1000;
-        return remindAt >= now - 60 * 60 * 1000 && remindAt <= in24h;
+        try {
+          const due = new Date(c.due_date as string).getTime();
+          const remindAt = due - (c.reminder_minutes || 0) * 60 * 1000;
+          return remindAt >= now - 60 * 60 * 1000 && remindAt <= in24h;
+        } catch {
+          return false;
+        }
       })
-      .sort((a, b) => new Date(a.due_date as string).getTime() - new Date(b.due_date as string).getTime());
-  }, [openCards]);
+      .sort((a, b) => {
+        const da = new Date(a.due_date as string).getTime() - (a.reminder_minutes || 0) * 60 * 1000;
+        const dbv = new Date(b.due_date as string).getTime() - (b.reminder_minutes || 0) * 60 * 1000;
+        return da - dbv;
+      });
+  }, [cards]);
 
   const greeting = (() => {
     const h = new Date().getHours();
@@ -104,7 +141,10 @@ export default function FeedScreen() {
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
-              onRefresh={() => { setRefreshing(true); load(); }}
+              onRefresh={() => {
+                setRefreshing(true);
+                load();
+              }}
               tintColor={theme.colors.text}
             />
           }
@@ -112,7 +152,7 @@ export default function FeedScreen() {
           <View style={styles.header}>
             <View style={{ flex: 1 }}>
               <Text style={[styles.greet, { color: theme.colors.textMuted }]}>{greeting}</Text>
-              <Text style={[styles.name, { color: theme.colors.text }]}>{firstName}.</Text>
+              <Text style={[styles.name, { color: theme.colors.text }]}>{firstName || 'Family'}.</Text>
             </View>
             {user?.picture ? (
               <Image source={{ uri: user.picture }} style={[styles.avatar, { borderColor: theme.colors.cardBorder }]} />
@@ -123,49 +163,79 @@ export default function FeedScreen() {
             )}
           </View>
 
-          <PressScale testID="open-brief" onPress={() => setShowBrief(true)} style={[styles.heroCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder, shadowColor: theme.colors.shadow }]}>
-            <View style={styles.heroTop}>
-              <View style={[styles.heroBadge, { backgroundColor: theme.colors.bgSoft }]}>
-                <Sparkles color={theme.colors.accent} size={15} />
-                <Text style={[styles.heroBadgeText, { color: theme.colors.text }]}>{t('sunday_brief')}</Text>
-              </View>
-              <Text style={[styles.heroCount, { color: theme.colors.textMuted }]}>{openCount} {openCount === 1 ? t('open_item') : t('open_items')}</Text>
+          <View style={[styles.searchShell, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
+            <Search color={theme.colors.textSoft} size={21} />
+            <Text style={[styles.searchText, { color: theme.colors.textMuted }]}>Search</Text>
+            <View style={[styles.filterButton, { backgroundColor: theme.colors.primary }]}>
+              <SlidersHorizontal color={theme.colors.primaryText} size={19} />
             </View>
-            <Text style={[styles.heroTitle, { color: theme.colors.text }]}>{t('on_your_desk')}</Text>
-            <Text style={[styles.heroSub, { color: theme.colors.textMuted }]}>{t('sunday_brief_subtitle')}</Text>
+          </View>
+
+          <PressScale testID="open-brief" onPress={() => setShowBrief(true)} style={[styles.heroCard, { backgroundColor: theme.colors.primary }]}>
+            <View style={styles.heroTopRow}>
+              <View style={styles.heroBadge}>
+                <Sparkles color="#202323" size={13} />
+                <Text style={styles.heroBadgeText}>{t('sunday_brief')}</Text>
+              </View>
+              <Text style={styles.heroCount}>
+                {openCount} {openCount === 1 ? t('open_item') : t('open_items')}
+              </Text>
+            </View>
+            <Text style={styles.heroTitle}>{t('on_your_desk')}</Text>
+            <Text style={styles.heroSub}>{t('sunday_brief_subtitle')}</Text>
+            <View style={styles.heroAction}>
+              <Text style={styles.heroActionText}>See more</Text>
+              <View style={styles.heroArrow}>
+                <ArrowRight color="#202323" size={20} />
+              </View>
+            </View>
           </PressScale>
 
           {upcomingReminders.length > 0 && (
-            <View testID="reminders-banner" style={[styles.remindersCard, { backgroundColor: theme.colors.accentSoft, borderColor: theme.colors.accent }]}>
+            <GlassCard testID="reminders-banner" style={styles.remindersCard}>
               <View style={styles.remindersHeader}>
-                <Bell color={theme.colors.accent} size={17} />
-                <Text style={[styles.remindersTitle, { color: theme.colors.accent }]}>{t('reminders')} · {upcomingReminders.length}</Text>
+                <Bell color={theme.colors.accent} size={16} />
+                <Text style={[styles.remindersTitle, { color: theme.colors.text }]}>
+                  {t('reminders')} · {upcomingReminders.length}
+                </Text>
               </View>
-              {upcomingReminders.slice(0, 3).map((c) => (
-                <View key={c.card_id} style={styles.remindersRow}>
-                  <Text style={[styles.remindersItem, { color: theme.colors.text }]} numberOfLines={1}>{c.title}</Text>
-                  <Text style={[styles.remindersWhen, { color: theme.colors.textMuted }]}>{new Date(c.due_date as string).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
-                </View>
-              ))}
-            </View>
+              {upcomingReminders.slice(0, 3).map((c) => {
+                const due = new Date(c.due_date as string).getTime();
+                const remindAt = due - (c.reminder_minutes || 0) * 60 * 1000;
+                const mins = Math.max(0, Math.round((remindAt - Date.now()) / 60000));
+                const label = mins <= 1 ? 'now' : mins < 60 ? `in ${mins}m` : `in ${Math.round(mins / 60)}h`;
+                return (
+                  <View key={c.card_id} style={styles.remindersRow}>
+                    <Text style={[styles.remindersItem, { color: theme.colors.text }]} numberOfLines={1}>
+                      {c.title}
+                    </Text>
+                    <Text style={[styles.remindersWhen, { color: theme.colors.textMuted }]}>{label}</Text>
+                  </View>
+                );
+              })}
+            </GlassCard>
           )}
 
-          <View style={styles.sectionHeader}>
+          <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>{t('this_week')}</Text>
-            <View style={[styles.filterBtn, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
-              <SlidersHorizontal color={theme.colors.text} size={18} />
-            </View>
+            <Text style={[styles.sectionSub, { color: theme.colors.textMuted }]}>{openCount} active</Text>
           </View>
 
           {loading ? (
             <ActivityIndicator color={theme.colors.text} style={{ marginTop: 40 }} />
           ) : cards.length === 0 ? (
-            <View style={styles.empty}>
+            <GlassCard style={styles.empty}>
               <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>{t('no_items')}</Text>
-              <Text style={[styles.emptySub, { color: theme.colors.textMuted }]}>Add a task, scan a document, or capture a voice note.</Text>
-            </View>
+            </GlassCard>
           ) : (
-            cards.map((c) => <SmartCard key={c.card_id} card={c} onComplete={() => toggle(c)} onDelete={() => remove(c)} />)
+            cards.map((c) => (
+              <SmartCard
+                key={c.card_id}
+                card={c}
+                onComplete={() => toggle(c)}
+                onDelete={() => remove(c)}
+              />
+            ))
           )}
 
           <View style={{ height: 220 }} />
@@ -173,9 +243,17 @@ export default function FeedScreen() {
       </SafeAreaView>
 
       <FloatingActionBar
-        onManual={() => { setVoiceDraft(null); setAddSource('MANUAL'); setShowAdd(true); }}
-        onCamera={() => setShowCamera(true)}
-        onVoice={() => setShowVoice(true)}
+        onManual={() => {
+          setVoiceDraft(null);
+          setAddSource('MANUAL');
+          setShowAdd(true);
+        }}
+        onCamera={() => {
+          setShowCamera(true);
+        }}
+        onVoice={() => {
+          setShowVoice(true);
+        }}
       />
 
       <CameraCaptureModal
@@ -198,8 +276,28 @@ export default function FeedScreen() {
           setShowAdd(true);
         }}
       />
-      <VoiceCaptureModal visible={showVoice} onClose={() => setShowVoice(false)} onDraft={(d) => { setVoiceDraft(d); setAddSource('VOICE'); setShowVoice(false); setShowAdd(true); }} />
-      <AddCardModal visible={showAdd} onClose={() => { setShowAdd(false); setVoiceDraft(null); }} onCreated={load} initialSource={addSource} initialDraft={voiceDraft} />
+
+      <VoiceCaptureModal
+        visible={showVoice}
+        onClose={() => setShowVoice(false)}
+        onDraft={(d) => {
+          setVoiceDraft(d);
+          setAddSource('VOICE');
+          setShowVoice(false);
+          setShowAdd(true);
+        }}
+      />
+
+      <AddCardModal
+        visible={showAdd}
+        onClose={() => {
+          setShowAdd(false);
+          setVoiceDraft(null);
+        }}
+        onCreated={load}
+        initialSource={addSource}
+        initialDraft={voiceDraft}
+      />
       <SundayBriefModal visible={showBrief} onClose={() => setShowBrief(false)} />
     </View>
   );
@@ -207,30 +305,121 @@ export default function FeedScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  scroll: { paddingHorizontal: 20, paddingTop: 12 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22, marginTop: 4 },
-  greet: { fontFamily: 'Inter_500Medium', fontSize: 15 },
-  name: { fontFamily: 'Inter_800ExtraBold', fontSize: 36, lineHeight: 42, letterSpacing: -0.8 },
-  avatar: { width: 54, height: 54, borderRadius: 9999, borderWidth: 1 },
+  scroll: { paddingHorizontal: 22, paddingTop: 8 },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 18,
+    marginTop: 6,
+  },
+  greet: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 14,
+  },
+  name: {
+    fontFamily: 'Inter_800ExtraBold',
+    fontSize: 30,
+    lineHeight: 36,
+    letterSpacing: -0.6,
+  },
+  avatar: { width: 48, height: 48, borderRadius: 9999, borderWidth: 1 },
   avatarFallback: { alignItems: 'center', justifyContent: 'center' },
-  avatarText: { fontFamily: 'Inter_800ExtraBold', fontSize: 18 },
-  heroCard: { borderRadius: 30, padding: 22, borderWidth: 1, marginBottom: 22, shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.08, shadowRadius: 22, elevation: 4 },
-  heroTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28, gap: 12 },
-  heroBadge: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 9999 },
-  heroBadgeText: { fontFamily: 'Inter_700Bold', fontSize: 14 },
-  heroCount: { fontFamily: 'Inter_600SemiBold', fontSize: 13 },
-  heroTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 32, lineHeight: 38, letterSpacing: -0.6 },
-  heroSub: { fontFamily: 'Inter_500Medium', fontSize: 15, lineHeight: 22, marginTop: 6 },
-  remindersCard: { marginBottom: 20, padding: 18, borderRadius: 24, borderWidth: 1 },
-  remindersHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
-  remindersTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 13, letterSpacing: 0.5, textTransform: 'uppercase' },
-  remindersRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 7 },
-  remindersItem: { flex: 1, fontFamily: 'Inter_700Bold', fontSize: 15, marginRight: 12 },
-  remindersWhen: { fontFamily: 'Inter_700Bold', fontSize: 13 },
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
-  sectionTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 22, letterSpacing: -0.2 },
-  filterBtn: { width: 44, height: 44, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
-  empty: { paddingVertical: 56, alignItems: 'center' },
-  emptyTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 22, textAlign: 'center' },
-  emptySub: { fontFamily: 'Inter_500Medium', fontSize: 15, textAlign: 'center', marginTop: 8 },
+  avatarText: { fontFamily: 'Inter_800ExtraBold', fontSize: 17 },
+  searchShell: {
+    minHeight: 58,
+    borderRadius: 9999,
+    borderWidth: 1,
+    paddingLeft: 18,
+    paddingRight: 7,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 22,
+  },
+  searchText: { flex: 1, fontFamily: 'Inter_600SemiBold', fontSize: 16 },
+  filterButton: { width: 46, height: 46, borderRadius: 9999, alignItems: 'center', justifyContent: 'center' },
+  heroCard: {
+    borderRadius: 32,
+    padding: 22,
+    marginBottom: 24,
+    overflow: 'hidden',
+  },
+  heroTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 },
+  heroBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 9999,
+  },
+  heroBadgeText: { color: '#202323', fontFamily: 'Inter_800ExtraBold', fontSize: 12, letterSpacing: 0.4 },
+  heroCount: { color: 'rgba(255,255,255,0.72)', fontFamily: 'Inter_700Bold', fontSize: 13 },
+  heroTitle: {
+    color: '#FFFFFF',
+    fontFamily: 'Inter_800ExtraBold',
+    fontSize: 30,
+    lineHeight: 36,
+    letterSpacing: -0.5,
+  },
+  heroSub: {
+    color: 'rgba(255,255,255,0.72)',
+    fontFamily: 'Inter_500Medium',
+    fontSize: 15,
+    lineHeight: 22,
+    marginTop: 6,
+  },
+  heroAction: {
+    marginTop: 22,
+    minHeight: 54,
+    borderRadius: 9999,
+    paddingLeft: 22,
+    paddingRight: 6,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  heroActionText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 16, flex: 1, textAlign: 'center' },
+  heroArrow: { width: 42, height: 42, borderRadius: 9999, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
+  remindersCard: { marginBottom: 20 },
+  remindersHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  remindersTitle: {
+    fontFamily: 'Inter_800ExtraBold',
+    fontSize: 13,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  remindersRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+  },
+  remindersItem: {
+    flex: 1,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 15,
+    marginRight: 12,
+  },
+  remindersWhen: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 12,
+  },
+  section: { marginBottom: 14, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
+  sectionTitle: {
+    fontFamily: 'Inter_800ExtraBold',
+    fontSize: 22,
+    letterSpacing: -0.3,
+  },
+  sectionSub: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 13,
+  },
+  empty: { paddingVertical: 36, alignItems: 'center' },
+  emptyTitle: {
+    fontFamily: 'Inter_800ExtraBold',
+    fontSize: 21,
+  },
 });
