@@ -182,7 +182,7 @@ export default function SettingsScreen() {
                 {user?.is_admin ? (
                   <View style={[styles.badge, { backgroundColor: theme.colors.accentSoft, borderColor: theme.colors.accent }]}>
                     <Crown color={theme.colors.accent} size={16} />
-                    <Text style={[styles.badgeText, { color: theme.colors.accent }]}>Admin / Tester Â· all features unlocked</Text>
+                    <Text style={[styles.badgeText, { color: theme.colors.accent }]}>Admin / Tester · all features unlocked</Text>
                   </View>
                 ) : null}
               </View>
@@ -194,15 +194,15 @@ export default function SettingsScreen() {
             <View style={styles.cardHeaderRow}>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.cardTitle, { color: theme.colors.text }]}>{user?.is_admin ? 'Admin / Tester' : planLabel}</Text>
-                <Text style={[styles.cardSub, { color: theme.colors.textMuted }]}>{user?.is_admin ? 'All feature gates are bypassed for testing.' : `${memberSlotsUsed}/${memberLimit || 'âˆž'} member slots used`}</Text>
+                <Text style={[styles.cardSub, { color: theme.colors.textMuted }]}>{user?.is_admin ? 'All feature gates are bypassed for testing.' : `${memberSlotsUsed}/${memberLimit || '∞'} member slots used`}</Text>
               </View>
               <PressScale testID="open-pricing" onPress={() => router.push('/pricing')} style={[styles.primaryPill, { backgroundColor: theme.colors.primary }]}>
                 <Text style={[styles.primaryPillText, { color: theme.colors.primaryText }]}>View plans</Text>
               </PressScale>
             </View>
             <View style={styles.statGrid}>
-              <StatBox label="Members" value={`${memberSlotsUsed}/${memberLimit || 'âˆž'}`} />
-              <StatBox label="AI scans" value={entitlements ? `${entitlements.ai_scans_used}/${entitlements.ai_scans_limit}` : `${subscription?.ai_scans_used ?? 0}/${subscription?.limits?.ai_scans_per_month ?? 'âˆž'}`} />
+              <StatBox label="Members" value={`${memberSlotsUsed}/${memberLimit || '∞'}`} />
+              <StatBox label="AI scans" value={entitlements ? `${entitlements.ai_scans_used}/${entitlements.ai_scans_limit}` : `${subscription?.ai_scans_used ?? 0}/${subscription?.limits?.ai_scans_per_month ?? '∞'}`} />
               <StatBox label="Vault" value={formatBytes(entitlements?.vault_bytes_used ?? subscription?.vault_bytes_used)} />
               <StatBox label="Weekly brief" value={entitlements?.weekly_brief || subscription?.limits?.weekly_brief ? 'On' : 'Locked'} />
             </View>
@@ -327,7 +327,7 @@ export default function SettingsScreen() {
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.memberName, { color: theme.colors.text }]}>{member.name}</Text>
-                  <Text style={[styles.memberRole, { color: theme.colors.textMuted }]}>{member.has_pin ? 'PIN set Â· tap to change' : 'No PIN Â· tap to add'}</Text>
+                  <Text style={[styles.memberRole, { color: theme.colors.textMuted }]}>{member.has_pin ? 'PIN set · tap to change' : 'No PIN · tap to add'}</Text>
                 </View>
                 {member.has_pin ? <Lock color={theme.colors.accent} size={18} /> : <ChevronRight color={theme.colors.textSoft} size={22} />}
               </PressScale>
@@ -473,10 +473,10 @@ function SettingSwitch({ title, description, value, onValueChange, disabled }: {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   safe: { flex: 1 },
-  scroll: { paddingHorizontal: 20, paddingTop: 18 },
-  title: { fontFamily: 'Inter_800ExtraBold', fontSize: 40, lineHeight: 46, letterSpacing: -0.9 },
+  scroll: { paddingHorizontal: 20, paddingTop: 34, paddingBottom: 190 },
+  title: { fontFamily: 'Inter_800ExtraBold', fontSize: 38, lineHeight: 44, letterSpacing: -0.8 },
   subtitle: { fontFamily: 'Inter_500Medium', fontSize: 16, lineHeight: 23, marginTop: 6, marginBottom: 18 },
-  profileCard: { marginBottom: 18 },
+  profileCard: { marginBottom: 22 },
   profileRow: { flexDirection: 'row', alignItems: 'center', gap: 16 },
   avatar: { width: 76, height: 76, borderRadius: 9999, borderWidth: 1 },
   avatarFallback: { alignItems: 'center', justifyContent: 'center' },
@@ -486,7 +486,7 @@ const styles = StyleSheet.create({
   email: { fontFamily: 'Inter_500Medium', fontSize: 15, flex: 1 },
   badge: { alignSelf: 'flex-start', marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 9999, borderWidth: 1 },
   badgeText: { fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
-  sectionRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 22, marginBottom: 12 },
+  sectionRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 26, marginBottom: 14 },
   sectionLabel: { fontFamily: 'Inter_800ExtraBold', fontSize: 13, textTransform: 'uppercase', letterSpacing: 1.2 },
   cardHeaderRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
   cardTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 21, lineHeight: 27 },
@@ -494,20 +494,20 @@ const styles = StyleSheet.create({
   primaryPill: { minHeight: 48, borderRadius: 9999, paddingHorizontal: 18, alignItems: 'center', justifyContent: 'center' },
   primaryPillText: { fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
   statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: 18 },
-  statBox: { width: '48%', minHeight: 92, borderRadius: 22, borderWidth: 1, padding: 16, justifyContent: 'center' },
+  statBox: { width: '48%', minHeight: 104, borderRadius: 22, borderWidth: 1, padding: 16, justifyContent: 'center' },
   statValue: { fontFamily: 'Inter_800ExtraBold', fontSize: 22, lineHeight: 27 },
   statLabel: { fontFamily: 'Inter_500Medium', fontSize: 14, marginTop: 6 },
   switchRow: { flexDirection: 'row', alignItems: 'center', gap: 16, paddingVertical: 4 },
-  rowTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 18, lineHeight: 24 },
-  rowDescription: { fontFamily: 'Inter_500Medium', fontSize: 15, lineHeight: 22, marginTop: 5 },
+  rowTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 19, lineHeight: 25 },
+  rowDescription: { fontFamily: 'Inter_500Medium', fontSize: 16, lineHeight: 23, marginTop: 6 },
   testButtonRow: { flexDirection: 'row', gap: 12, flexWrap: 'wrap', marginTop: 20 },
   note: { fontFamily: 'Inter_500Medium', fontSize: 15, lineHeight: 22, marginTop: 16 },
   preferenceHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
   preferenceTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   rowValue: { fontFamily: 'Inter_700Bold', fontSize: 17 },
-  segmentWrap: { flexDirection: 'row', alignItems: 'center', borderRadius: 26, padding: 8, gap: 10, borderWidth: 1, minHeight: 70 },
-  segmentBtn: { flex: 1, minHeight: 54, alignItems: 'center', justifyContent: 'center', borderRadius: 20, paddingHorizontal: 14 },
-  segmentText: { fontFamily: 'Inter_800ExtraBold', fontSize: 17 },
+  segmentWrap: { flexDirection: 'row', alignItems: 'center', borderRadius: 30, padding: 10, gap: 12, borderWidth: 1, minHeight: 82 },
+  segmentBtn: { flex: 1, minHeight: 60, alignItems: 'center', justifyContent: 'center', borderRadius: 23, paddingHorizontal: 18 },
+  segmentText: { fontFamily: 'Inter_800ExtraBold', fontSize: 18 },
   navRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 56 },
   navRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   divider: { height: 1, opacity: 0.9, marginVertical: 18 },

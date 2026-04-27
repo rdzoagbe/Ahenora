@@ -21,7 +21,7 @@ export default function ErrorState({
   const { theme } = useStore();
 
   return (
-    <View style={styles.wrap}>
+    <View style={[styles.wrap, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder, shadowColor: theme.colors.shadow }]}>
       <View style={styles.icon}>
         <AlertCircle color="#EF4444" size={20} />
       </View>
@@ -39,12 +39,7 @@ export default function ErrorState({
 }
 
 const styles = StyleSheet.create({
-  wrap: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 26,
-    paddingVertical: 54,
-  },
+  wrap: { alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, paddingVertical: 56, borderRadius: 30, borderWidth: 1, shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.08, shadowRadius: 22, elevation: 4 },
   icon: {
     width: 46,
     height: 46,

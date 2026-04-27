@@ -21,7 +21,7 @@ export default function EmptyState({
   const { theme } = useStore();
 
   return (
-    <View style={styles.wrap}>
+    <View style={[styles.wrap, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder, shadowColor: theme.colors.shadow }]}>
       <View style={[styles.icon, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
         <Sparkles color={theme.colors.accent} size={18} />
       </View>
@@ -40,12 +40,7 @@ export default function EmptyState({
 }
 
 const styles = StyleSheet.create({
-  wrap: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 26,
-    paddingVertical: 54,
-  },
+  wrap: { alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, paddingVertical: 56, borderRadius: 30, borderWidth: 1, shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.08, shadowRadius: 22, elevation: 4 },
   icon: {
     width: 46,
     height: 46,
@@ -55,10 +50,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     borderWidth: 1,
   },
-  title: {
-    fontFamily: 'Inter_800ExtraBold',
-    fontSize: 24,
-    lineHeight: 30,
+  title: { fontFamily: 'Inter_800ExtraBold', fontSize: 25, lineHeight: 31,
     textAlign: 'center',
     letterSpacing: -0.35,
   },

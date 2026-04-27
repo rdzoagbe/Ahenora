@@ -30,11 +30,11 @@ const styles = StyleSheet.create({
     zIndex: 40,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(15,23,42,0.18)',
+    backgroundColor: 'rgba(15,23,42,0.10)',
   },
   card: {
     minWidth: 150,
-    borderRadius: 24,
+    borderRadius: 28,
     paddingHorizontal: 20,
     paddingVertical: 18,
     alignItems: 'center',
