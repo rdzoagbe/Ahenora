@@ -1,0 +1,24 @@
+﻿{
+  "project_info": {
+    "project_number": "REPLACE_WITH_PROJECT_NUMBER",
+    "project_id": "REPLACE_WITH_PROJECT_ID",
+    "storage_bucket": "REPLACE_WITH_STORAGE_BUCKET"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "REPLACE_WITH_MOBILESDK_APP_ID",
+        "android_client_info": {
+          "package_name": "com.householdcoo.app"
+        }
+      },
+      "api_key": [
+        {
+          "current_key": "REPLACE_WITH_GOOGLE_API_KEY"
+        }
+      ],
+      "services": {}
+    }
+  ],
+  "configuration_version": "1"
+}

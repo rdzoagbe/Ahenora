@@ -137,3 +137,6 @@ credentials.json
 frontend/.env
 frontend/.metro-cache/
 frontend/.expo/
+
+# Local Google/Firebase Android config
+frontend/android/app/google-services.json
