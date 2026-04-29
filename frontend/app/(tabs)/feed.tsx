@@ -9,8 +9,26 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowRight, Bell, Search, SlidersHorizontal, Sparkles } from 'lucide-react-native';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
+import {
+  ArrowRight,
+  Bell,
+  CalendarDays,
+  Camera,
+  CheckCircle2,
+  Clock3,
+  FileText,
+  Gift,
+  Mic,
+  PlusCircle,
+  Search,
+  ShieldCheck,
+  SlidersHorizontal,
+  Sparkles,
+  Star,
+  UsersRound,
+} from 'lucide-react-native';
+
 import { AmbientBackground } from '../../src/components/AmbientBackground';
 import { GlassCard } from '../../src/components/GlassCard';
 import { PressScale } from '../../src/components/PressScale';
@@ -21,8 +39,9 @@ import { SundayBriefModal } from '../../src/components/SundayBriefModal';
 import { VoiceCaptureModal } from '../../src/components/VoiceCaptureModal';
 import { CameraCaptureModal } from '../../src/components/CameraCaptureModal';
 import { useStore } from '../../src/store';
-import { api, Card, CardType } from '../../src/api';
+import { api, Card, CardType, FamilyMember } from '../../src/api';
 import { syncCardReminderNotifications } from '../../src/notifications';
+import { logger } from '../../src/logger';
 
 interface VoiceDraft {
   transcript: string;
@@ -36,9 +55,168 @@ interface VoiceDraft {
   save_to_vault?: boolean;
 }
 
+type Labels = {
+  today: string;
+  commandCenter: string;
+  commandSubtitle: string;
+  capture: string;
+  urgent: string;
+  calendarToday: string;
+  kidStars: string;
+  vaultDocs: string;
+  needsAttention: string;
+  nothingUrgent: string;
+  nothingUrgentSub: string;
+  nextUp: string;
+  quickActions: string;
+  scan: string;
+  voice: string;
+  manual: string;
+  brief: string;
+  calmScore: string;
+  scoreHelper: string;
+  openNow: string;
+};
+
+function labelsFor(lang: string): Labels {
+  if (lang === 'fr') {
+    return {
+      today: "Aujourd'hui",
+      commandCenter: 'Centre familial',
+      commandSubtitle: 'Ce qui compte maintenant, en un seul endroit.',
+      capture: 'Capturer quelque chose',
+      urgent: 'Urgent',
+      calendarToday: 'Calendrier',
+      kidStars: 'Étoiles',
+      vaultDocs: 'Coffre',
+      needsAttention: 'À traiter',
+      nothingUrgent: 'Rien de critique.',
+      nothingUrgentSub: 'Votre foyer est sous contrôle pour le moment.',
+      nextUp: 'À venir',
+      quickActions: 'Actions rapides',
+      scan: 'Scanner',
+      voice: 'Voix',
+      manual: 'Manuel',
+      brief: 'Brief',
+      calmScore: 'Score de calme',
+      scoreHelper: 'Moins il y a de retard, plus le foyer respire.',
+      openNow: 'ouverts',
+    };
+  }
+
+  if (lang === 'es') {
+    return {
+      today: 'Hoy',
+      commandCenter: 'Centro familiar',
+      commandSubtitle: 'Lo importante ahora, en un solo lugar.',
+      capture: 'Capturar algo',
+      urgent: 'Urgente',
+      calendarToday: 'Calendario',
+      kidStars: 'Estrellas',
+      vaultDocs: 'Bóveda',
+      needsAttention: 'Necesita atención',
+      nothingUrgent: 'Nada crítico.',
+      nothingUrgentSub: 'Tu hogar está bajo control por ahora.',
+      nextUp: 'Próximo',
+      quickActions: 'Acciones rápidas',
+      scan: 'Escanear',
+      voice: 'Voz',
+      manual: 'Manual',
+      brief: 'Informe',
+      calmScore: 'Calma',
+      scoreHelper: 'Menos atrasos, más calma.',
+      openNow: 'abiertos',
+    };
+  }
+
+  if (lang === 'de') {
+    return {
+      today: 'Heute',
+      commandCenter: 'Familien-Zentrale',
+      commandSubtitle: 'Das Wichtige jetzt, an einem Ort.',
+      capture: 'Etwas erfassen',
+      urgent: 'Dringend',
+      calendarToday: 'Kalender',
+      kidStars: 'Sterne',
+      vaultDocs: 'Tresor',
+      needsAttention: 'Braucht Aufmerksamkeit',
+      nothingUrgent: 'Nichts Kritisches.',
+      nothingUrgentSub: 'Ihr Haushalt ist im Moment unter Kontrolle.',
+      nextUp: 'Als Nächstes',
+      quickActions: 'Schnellaktionen',
+      scan: 'Scannen',
+      voice: 'Stimme',
+      manual: 'Manuell',
+      brief: 'Brief',
+      calmScore: 'Ruhe-Score',
+      scoreHelper: 'Weniger Rückstand, mehr Ruhe.',
+      openNow: 'offen',
+    };
+  }
+
+  return {
+    today: 'Today',
+    commandCenter: 'Family command center',
+    commandSubtitle: 'Everything that needs attention, in one calm view.',
+    capture: 'Capture anything',
+    urgent: 'Urgent',
+    calendarToday: 'Calendar',
+    kidStars: 'Stars',
+    vaultDocs: 'Vault',
+    needsAttention: 'Needs attention',
+    nothingUrgent: 'Nothing critical.',
+    nothingUrgentSub: 'Your household is under control right now.',
+    nextUp: 'Next up',
+    quickActions: 'Quick actions',
+    scan: 'Scan',
+    voice: 'Voice',
+    manual: 'Manual',
+    brief: 'Brief',
+    calmScore: 'Calm score',
+    scoreHelper: 'Fewer overdue items means a calmer household.',
+    openNow: 'open',
+  };
+}
+
+function dueTime(card: Card) {
+  if (!card.due_date) return null;
+  const time = new Date(card.due_date).getTime();
+  return Number.isNaN(time) ? null : time;
+}
+
+function sameLocalDay(a: Date, b: Date) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+function formatCardDate(card: Card) {
+  const time = dueTime(card);
+  if (!time) return 'No deadline';
+  const date = new Date(time);
+  const today = new Date();
+  if (sameLocalDay(date, today)) {
+    return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  }
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function uniqueCards(cards: Card[]) {
+  const seen = new Set<string>();
+  return cards.filter((card) => {
+    if (seen.has(card.card_id)) return false;
+    seen.add(card.card_id);
+    return true;
+  });
+}
+
 export default function FeedScreen() {
-  const { user, t, theme } = useStore();
+  const router = useRouter();
+  const { user, t, theme, lang } = useStore();
+  const labels = useMemo(() => labelsFor(lang), [lang]);
+
   const [cards, setCards] = useState<Card[]>([]);
+  const [members, setMembers] = useState<FamilyMember[]>([]);
+  const [rewardCount, setRewardCount] = useState(0);
+  const [vaultCount, setVaultCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
@@ -50,20 +228,44 @@ export default function FeedScreen() {
 
   const load = useCallback(async () => {
     try {
-      const res = await api.listCards();
-      setCards(res);
+      const [cardsResult, membersResult, rewardsResult, vaultResult] = await Promise.allSettled([
+        api.listCards(),
+        api.familyMembers(),
+        api.listRewards(),
+        api.listVault(),
+      ]);
 
-      api
-        .getNotificationSettings()
-        .then((prefs) => {
-          if (prefs.card_reminders) {
-            return syncCardReminderNotifications(res, true);
-          }
-          return syncCardReminderNotifications([], false);
-        })
-        .catch(() => undefined);
+      let loadedCards: Card[] = [];
+      if (cardsResult.status === 'fulfilled') {
+        loadedCards = cardsResult.value;
+        setCards(loadedCards);
+      } else {
+        logger.warn('load cards error', cardsResult.reason);
+      }
+
+      if (membersResult.status === 'fulfilled') {
+        setMembers(membersResult.value);
+      }
+      if (rewardsResult.status === 'fulfilled') {
+        setRewardCount(rewardsResult.value.length);
+      }
+      if (vaultResult.status === 'fulfilled') {
+        setVaultCount(vaultResult.value.length);
+      }
+
+      if (cardsResult.status === 'fulfilled') {
+        api
+          .getNotificationSettings()
+          .then((prefs) => {
+            if (prefs.card_reminders) {
+              return syncCardReminderNotifications(loadedCards, true);
+            }
+            return syncCardReminderNotifications([], false);
+          })
+          .catch(() => undefined);
+      }
     } catch (e) {
-      console.log('load cards error', e);
+      logger.warn('command center load failed', e);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -99,7 +301,46 @@ export default function FeedScreen() {
     }
   };
 
-  const openCount = cards.filter((c) => c.status === 'OPEN').length;
+  const activeCards = useMemo(() => cards.filter((c) => c.status === 'OPEN'), [cards]);
+  const openCount = activeCards.length;
+
+  const dashboard = useMemo(() => {
+    const now = Date.now();
+    const today = new Date();
+    const tomorrow = now + 24 * 60 * 60 * 1000;
+
+    const overdue = activeCards.filter((card) => {
+      const time = dueTime(card);
+      return Boolean(time && time < now && !sameLocalDay(new Date(time), today));
+    });
+
+    const todayCards = activeCards.filter((card) => {
+      const time = dueTime(card);
+      return Boolean(time && sameLocalDay(new Date(time), today));
+    });
+
+    const calendarToday = todayCards.filter((card) => card.source === 'CALENDAR');
+    const adminCards = activeCards.filter((card) => card.type === 'SIGN_SLIP' || card.type === 'RSVP');
+    const nextUp = activeCards
+      .filter((card) => {
+        const time = dueTime(card);
+        return Boolean(time && time >= now && time <= tomorrow);
+      })
+      .sort((a, b) => (dueTime(a) || 0) - (dueTime(b) || 0));
+
+    const priority = uniqueCards([...overdue, ...adminCards, ...todayCards]).sort((a, b) => {
+      const at = dueTime(a) || Number.MAX_SAFE_INTEGER;
+      const bt = dueTime(b) || Number.MAX_SAFE_INTEGER;
+      return at - bt;
+    });
+
+    const calmScore = Math.max(12, Math.min(100, 100 - overdue.length * 18 - todayCards.length * 7 - adminCards.length * 6));
+
+    return { overdue, todayCards, calendarToday, adminCards, nextUp, priority, calmScore };
+  }, [activeCards]);
+
+  const childMembers = useMemo(() => members.filter((m) => m.role?.toLowerCase() === 'child'), [members]);
+  const totalStars = useMemo(() => childMembers.reduce((sum, child) => sum + (child.stars || 0), 0), [childMembers]);
 
   const upcomingReminders = useMemo(() => {
     const now = Date.now();
@@ -107,17 +348,14 @@ export default function FeedScreen() {
     return cards
       .filter((c) => c.status === 'OPEN' && c.due_date && (c.reminder_minutes || 0) > 0)
       .filter((c) => {
-        try {
-          const due = new Date(c.due_date as string).getTime();
-          const remindAt = due - (c.reminder_minutes || 0) * 60 * 1000;
-          return remindAt >= now - 60 * 60 * 1000 && remindAt <= in24h;
-        } catch {
-          return false;
-        }
+        const due = dueTime(c);
+        if (!due) return false;
+        const remindAt = due - (c.reminder_minutes || 0) * 60 * 1000;
+        return remindAt >= now - 60 * 60 * 1000 && remindAt <= in24h;
       })
       .sort((a, b) => {
-        const da = new Date(a.due_date as string).getTime() - (a.reminder_minutes || 0) * 60 * 1000;
-        const dbv = new Date(b.due_date as string).getTime() - (b.reminder_minutes || 0) * 60 * 1000;
+        const da = (dueTime(a) || 0) - (a.reminder_minutes || 0) * 60 * 1000;
+        const dbv = (dueTime(b) || 0) - (b.reminder_minutes || 0) * 60 * 1000;
         return da - dbv;
       });
   }, [cards]);
@@ -130,6 +368,12 @@ export default function FeedScreen() {
   })();
 
   const firstName = (user?.name || '').split(' ')[0] || '';
+
+  const openManual = () => {
+    setVoiceDraft(null);
+    setAddSource('MANUAL');
+    setShowAdd(true);
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.bg }]}>
@@ -163,52 +407,103 @@ export default function FeedScreen() {
             )}
           </View>
 
-          <View style={[styles.searchShell, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
+          <PressScale testID="command-capture" onPress={openManual} style={[styles.searchShell, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder, shadowColor: theme.colors.shadow }]}>
             <Search color={theme.colors.textSoft} size={21} />
-            <Text style={[styles.searchText, { color: theme.colors.textMuted }]}>Search</Text>
+            <Text style={[styles.searchText, { color: theme.colors.textMuted }]}>{labels.capture}</Text>
             <View style={[styles.filterButton, { backgroundColor: theme.colors.primary }]}>
               <SlidersHorizontal color={theme.colors.primaryText} size={19} />
             </View>
-          </View>
+          </PressScale>
 
-          <PressScale testID="open-brief" onPress={() => setShowBrief(true)} style={[styles.heroCard, { backgroundColor: theme.colors.primary }]}>
+          <View style={[styles.commandHero, { backgroundColor: theme.colors.primary, shadowColor: theme.colors.shadow }]}>
             <View style={styles.heroTopRow}>
               <View style={styles.heroBadge}>
                 <Sparkles color="#202323" size={13} />
-                <Text style={styles.heroBadgeText}>{t('sunday_brief')}</Text>
+                <Text style={styles.heroBadgeText}>{labels.today}</Text>
               </View>
-              <Text style={styles.heroCount}>
-                {openCount} {openCount === 1 ? t('open_item') : t('open_items')}
-              </Text>
+              <Text style={styles.heroCount}>{openCount} {labels.openNow}</Text>
             </View>
-            <Text style={styles.heroTitle}>{t('on_your_desk')}</Text>
-            <Text style={styles.heroSub}>{t('sunday_brief_subtitle')}</Text>
-            <View style={styles.heroAction}>
-              <Text style={styles.heroActionText}>See more</Text>
+
+            <Text style={styles.heroTitle}>{labels.commandCenter}</Text>
+            <Text style={styles.heroSub}>{labels.commandSubtitle}</Text>
+
+            <View style={styles.scoreRow}>
+              <View style={styles.scoreCircle}>
+                <Text style={styles.scoreValue}>{dashboard.calmScore}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.scoreTitle}>{labels.calmScore}</Text>
+                <Text style={styles.scoreSub}>{labels.scoreHelper}</Text>
+              </View>
+            </View>
+
+            <PressScale testID="open-brief" onPress={() => setShowBrief(true)} style={styles.heroAction}>
+              <Text style={styles.heroActionText}>{t('sunday_brief')}</Text>
               <View style={styles.heroArrow}>
                 <ArrowRight color="#202323" size={20} />
               </View>
-            </View>
-          </PressScale>
+            </PressScale>
+          </View>
+
+          <View style={styles.statGrid}>
+            <PressScale onPress={() => router.push('/calendar')} style={[styles.statCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder, shadowColor: theme.colors.shadow }]}>
+              <Clock3 color={theme.colors.accent} size={19} />
+              <Text style={[styles.statValue, { color: theme.colors.text }]}>{dashboard.priority.length}</Text>
+              <Text style={[styles.statLabel, { color: theme.colors.textMuted }]}>{labels.urgent}</Text>
+            </PressScale>
+            <PressScale onPress={() => router.push('/calendar')} style={[styles.statCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder, shadowColor: theme.colors.shadow }]}>
+              <CalendarDays color={theme.colors.success} size={19} />
+              <Text style={[styles.statValue, { color: theme.colors.text }]}>{dashboard.calendarToday.length}</Text>
+              <Text style={[styles.statLabel, { color: theme.colors.textMuted }]}>{labels.calendarToday}</Text>
+            </PressScale>
+            <PressScale onPress={() => router.push('/kids')} style={[styles.statCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder, shadowColor: theme.colors.shadow }]}>
+              <Star color={theme.colors.accent} size={19} fill={theme.colors.accent} />
+              <Text style={[styles.statValue, { color: theme.colors.text }]}>{totalStars}</Text>
+              <Text style={[styles.statLabel, { color: theme.colors.textMuted }]}>{labels.kidStars}</Text>
+            </PressScale>
+            <PressScale onPress={() => router.push('/vault')} style={[styles.statCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder, shadowColor: theme.colors.shadow }]}>
+              <ShieldCheck color={theme.colors.success} size={19} />
+              <Text style={[styles.statValue, { color: theme.colors.text }]}>{vaultCount}</Text>
+              <Text style={[styles.statLabel, { color: theme.colors.textMuted }]}>{labels.vaultDocs}</Text>
+            </PressScale>
+          </View>
+
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>{labels.quickActions}</Text>
+          </View>
+          <View style={styles.actionRow}>
+            <PressScale onPress={() => setShowCamera(true)} style={[styles.actionTile, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
+              <Camera color={theme.colors.text} size={19} />
+              <Text style={[styles.actionText, { color: theme.colors.text }]}>{labels.scan}</Text>
+            </PressScale>
+            <PressScale onPress={() => setShowVoice(true)} style={[styles.actionTile, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
+              <Mic color={theme.colors.text} size={19} />
+              <Text style={[styles.actionText, { color: theme.colors.text }]}>{labels.voice}</Text>
+            </PressScale>
+            <PressScale onPress={openManual} style={[styles.actionTile, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
+              <PlusCircle color={theme.colors.text} size={19} />
+              <Text style={[styles.actionText, { color: theme.colors.text }]}>{labels.manual}</Text>
+            </PressScale>
+            <PressScale onPress={() => setShowBrief(true)} style={[styles.actionTile, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
+              <Sparkles color={theme.colors.text} size={19} />
+              <Text style={[styles.actionText, { color: theme.colors.text }]}>{labels.brief}</Text>
+            </PressScale>
+          </View>
 
           {upcomingReminders.length > 0 && (
             <GlassCard testID="reminders-banner" style={styles.remindersCard}>
               <View style={styles.remindersHeader}>
                 <Bell color={theme.colors.accent} size={16} />
-                <Text style={[styles.remindersTitle, { color: theme.colors.text }]}>
-                  {t('reminders')} · {upcomingReminders.length}
-                </Text>
+                <Text style={[styles.remindersTitle, { color: theme.colors.text }]}>{t('reminders')} · {upcomingReminders.length}</Text>
               </View>
               {upcomingReminders.slice(0, 3).map((c) => {
-                const due = new Date(c.due_date as string).getTime();
+                const due = dueTime(c) || Date.now();
                 const remindAt = due - (c.reminder_minutes || 0) * 60 * 1000;
                 const mins = Math.max(0, Math.round((remindAt - Date.now()) / 60000));
                 const label = mins <= 1 ? 'now' : mins < 60 ? `in ${mins}m` : `in ${Math.round(mins / 60)}h`;
                 return (
                   <View key={c.card_id} style={styles.remindersRow}>
-                    <Text style={[styles.remindersItem, { color: theme.colors.text }]} numberOfLines={1}>
-                      {c.title}
-                    </Text>
+                    <Text style={[styles.remindersItem, { color: theme.colors.text }]} numberOfLines={1}>{c.title}</Text>
                     <Text style={[styles.remindersWhen, { color: theme.colors.textMuted }]}>{label}</Text>
                   </View>
                 );
@@ -217,43 +512,74 @@ export default function FeedScreen() {
           )}
 
           <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>{t('this_week')}</Text>
-            <Text style={[styles.sectionSub, { color: theme.colors.textMuted }]}>{openCount} active</Text>
+            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>{labels.needsAttention}</Text>
+            <Text style={[styles.sectionSub, { color: theme.colors.textMuted }]}>{dashboard.priority.length}</Text>
           </View>
 
           {loading ? (
             <ActivityIndicator color={theme.colors.text} style={{ marginTop: 40 }} />
-          ) : cards.length === 0 ? (
+          ) : dashboard.priority.length === 0 ? (
+            <GlassCard style={styles.emptyPriority}>
+              <CheckCircle2 color={theme.colors.success} size={28} />
+              <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>{labels.nothingUrgent}</Text>
+              <Text style={[styles.emptySub, { color: theme.colors.textMuted }]}>{labels.nothingUrgentSub}</Text>
+            </GlassCard>
+          ) : (
+            dashboard.priority.slice(0, 3).map((card) => (
+              <PressScale key={`priority-${card.card_id}`} style={[styles.priorityCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder, shadowColor: theme.colors.shadow }]}>
+                <View style={[styles.priorityIcon, { backgroundColor: card.type === 'TASK' ? theme.colors.bgSoft : theme.colors.accentSoft }]}> 
+                  {card.type === 'TASK' ? <CheckCircle2 color={theme.colors.success} size={18} /> : <FileText color={theme.colors.accent} size={18} />}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.priorityTitle, { color: theme.colors.text }]} numberOfLines={1}>{card.title}</Text>
+                  <Text style={[styles.priorityMeta, { color: theme.colors.textMuted }]} numberOfLines={1}>{formatCardDate(card)} · {card.assignee || t('family')}</Text>
+                </View>
+                <ArrowRight color={theme.colors.textMuted} size={17} />
+              </PressScale>
+            ))
+          )}
+
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>{labels.nextUp}</Text>
+            <Text style={[styles.sectionSub, { color: theme.colors.textMuted }]}>{dashboard.nextUp.length}</Text>
+          </View>
+
+          {dashboard.nextUp.slice(0, 3).map((card) => (
+            <View key={`next-${card.card_id}`} style={[styles.nextRow, { borderColor: theme.colors.cardBorder }]}> 
+              <View style={[styles.nextDot, { backgroundColor: card.source === 'CALENDAR' ? theme.colors.success : theme.colors.accent }]} />
+              <Text style={[styles.nextTitle, { color: theme.colors.text }]} numberOfLines={1}>{card.title}</Text>
+              <Text style={[styles.nextTime, { color: theme.colors.textMuted }]}>{formatCardDate(card)}</Text>
+            </View>
+          ))}
+
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>{t('this_week')}</Text>
+            <Text style={[styles.sectionSub, { color: theme.colors.textMuted }]}>{openCount} active</Text>
+          </View>
+
+          {cards.length === 0 && !loading ? (
             <GlassCard style={styles.empty}>
               <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>{t('no_items')}</Text>
             </GlassCard>
           ) : (
             cards.map((c) => (
-              <SmartCard
-                key={c.card_id}
-                card={c}
-                onComplete={() => toggle(c)}
-                onDelete={() => remove(c)}
-              />
+              <SmartCard key={c.card_id} card={c} onComplete={() => toggle(c)} onDelete={() => remove(c)} />
             ))
           )}
+
+          <View style={styles.footerSignal}>
+            <UsersRound color={theme.colors.textMuted} size={14} />
+            <Text style={[styles.footerSignalText, { color: theme.colors.textMuted }]}>Household COO · {childMembers.length} kids · {rewardCount} rewards</Text>
+          </View>
 
           <View style={{ height: 220 }} />
         </ScrollView>
       </SafeAreaView>
 
       <FloatingActionBar
-        onManual={() => {
-          setVoiceDraft(null);
-          setAddSource('MANUAL');
-          setShowAdd(true);
-        }}
-        onCamera={() => {
-          setShowCamera(true);
-        }}
-        onVoice={() => {
-          setShowVoice(true);
-        }}
+        onManual={openManual}
+        onCamera={() => setShowCamera(true)}
+        onVoice={() => setShowVoice(true)}
       />
 
       <CameraCaptureModal
@@ -313,21 +639,13 @@ const styles = StyleSheet.create({
     marginBottom: 18,
     marginTop: 6,
   },
-  greet: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 14,
-  },
-  name: {
-    fontFamily: 'Inter_800ExtraBold',
-    fontSize: 30,
-    lineHeight: 36,
-    letterSpacing: -0.6,
-  },
-  avatar: { width: 48, height: 48, borderRadius: 9999, borderWidth: 1 },
+  greet: { fontFamily: 'Inter_600SemiBold', fontSize: 14 },
+  name: { fontFamily: 'Inter_800ExtraBold', fontSize: 34, lineHeight: 39, letterSpacing: -0.8 },
+  avatar: { width: 50, height: 50, borderRadius: 9999, borderWidth: 1 },
   avatarFallback: { alignItems: 'center', justifyContent: 'center' },
   avatarText: { fontFamily: 'Inter_800ExtraBold', fontSize: 17 },
   searchShell: {
-    minHeight: 58,
+    minHeight: 62,
     borderRadius: 9999,
     borderWidth: 1,
     paddingLeft: 18,
@@ -336,90 +654,65 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
     marginBottom: 22,
+    shadowOpacity: 0.09,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 3,
   },
-  searchText: { flex: 1, fontFamily: 'Inter_600SemiBold', fontSize: 16 },
-  filterButton: { width: 46, height: 46, borderRadius: 9999, alignItems: 'center', justifyContent: 'center' },
-  heroCard: {
-    borderRadius: 32,
-    padding: 22,
-    marginBottom: 24,
+  searchText: { flex: 1, fontFamily: 'Inter_700Bold', fontSize: 16 },
+  filterButton: { width: 48, height: 48, borderRadius: 9999, alignItems: 'center', justifyContent: 'center' },
+  commandHero: {
+    borderRadius: 34,
+    padding: 24,
+    marginBottom: 18,
     overflow: 'hidden',
+    shadowOpacity: 0.16,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 14 },
+    elevation: 6,
   },
   heroTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 },
-  heroBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 9999,
-  },
+  heroBadge: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 13, paddingVertical: 8, backgroundColor: '#FFFFFF', borderRadius: 9999 },
   heroBadgeText: { color: '#202323', fontFamily: 'Inter_800ExtraBold', fontSize: 12, letterSpacing: 0.4 },
   heroCount: { color: 'rgba(255,255,255,0.72)', fontFamily: 'Inter_700Bold', fontSize: 13 },
-  heroTitle: {
-    color: '#FFFFFF',
-    fontFamily: 'Inter_800ExtraBold',
-    fontSize: 30,
-    lineHeight: 36,
-    letterSpacing: -0.5,
-  },
-  heroSub: {
-    color: 'rgba(255,255,255,0.72)',
-    fontFamily: 'Inter_500Medium',
-    fontSize: 15,
-    lineHeight: 22,
-    marginTop: 6,
-  },
-  heroAction: {
-    marginTop: 22,
-    minHeight: 54,
-    borderRadius: 9999,
-    paddingLeft: 22,
-    paddingRight: 6,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
+  heroTitle: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 32, lineHeight: 38, letterSpacing: -0.7 },
+  heroSub: { color: 'rgba(255,255,255,0.74)', fontFamily: 'Inter_500Medium', fontSize: 15, lineHeight: 22, marginTop: 7 },
+  scoreRow: { flexDirection: 'row', alignItems: 'center', gap: 13, marginTop: 20 },
+  scoreCircle: { width: 64, height: 64, borderRadius: 9999, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
+  scoreValue: { color: '#202323', fontFamily: 'Inter_800ExtraBold', fontSize: 22, letterSpacing: -0.6 },
+  scoreTitle: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
+  scoreSub: { color: 'rgba(255,255,255,0.68)', fontFamily: 'Inter_500Medium', fontSize: 12, lineHeight: 17, marginTop: 2 },
+  heroAction: { marginTop: 22, minHeight: 56, borderRadius: 9999, paddingLeft: 22, paddingRight: 6, backgroundColor: 'rgba(255,255,255,0.12)', flexDirection: 'row', alignItems: 'center' },
   heroActionText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 16, flex: 1, textAlign: 'center' },
-  heroArrow: { width: 42, height: 42, borderRadius: 9999, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
+  heroArrow: { width: 44, height: 44, borderRadius: 9999, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
+  statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 22 },
+  statCard: { width: '48.5%', minHeight: 108, borderRadius: 26, borderWidth: 1, padding: 15, justifyContent: 'space-between', shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: 7 }, elevation: 2 },
+  statValue: { fontFamily: 'Inter_800ExtraBold', fontSize: 25, lineHeight: 30, letterSpacing: -0.5, marginTop: 8 },
+  statLabel: { fontFamily: 'Inter_700Bold', fontSize: 12 },
+  section: { marginBottom: 13, marginTop: 4, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
+  sectionTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 23, letterSpacing: -0.4 },
+  sectionSub: { fontFamily: 'Inter_700Bold', fontSize: 13 },
+  actionRow: { flexDirection: 'row', gap: 10, marginBottom: 22 },
+  actionTile: { flex: 1, minHeight: 74, borderRadius: 24, borderWidth: 1, alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 8 },
+  actionText: { fontFamily: 'Inter_800ExtraBold', fontSize: 12 },
   remindersCard: { marginBottom: 20 },
   remindersHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
-  remindersTitle: {
-    fontFamily: 'Inter_800ExtraBold',
-    fontSize: 13,
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
-  },
-  remindersRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 8,
-  },
-  remindersItem: {
-    flex: 1,
-    fontFamily: 'Inter_700Bold',
-    fontSize: 15,
-    marginRight: 12,
-  },
-  remindersWhen: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 12,
-  },
-  section: { marginBottom: 14, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
-  sectionTitle: {
-    fontFamily: 'Inter_800ExtraBold',
-    fontSize: 22,
-    letterSpacing: -0.3,
-  },
-  sectionSub: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 13,
-  },
+  remindersTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 13, letterSpacing: 0.6, textTransform: 'uppercase' },
+  remindersRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8 },
+  remindersItem: { flex: 1, fontFamily: 'Inter_700Bold', fontSize: 15, marginRight: 12 },
+  remindersWhen: { fontFamily: 'Inter_700Bold', fontSize: 12 },
+  emptyPriority: { paddingVertical: 28, alignItems: 'center', gap: 8, marginBottom: 18 },
   empty: { paddingVertical: 36, alignItems: 'center' },
-  emptyTitle: {
-    fontFamily: 'Inter_800ExtraBold',
-    fontSize: 21,
-  },
+  emptyTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 21, textAlign: 'center' },
+  emptySub: { fontFamily: 'Inter_500Medium', fontSize: 14, lineHeight: 20, textAlign: 'center', maxWidth: 270 },
+  priorityCard: { minHeight: 82, borderRadius: 26, borderWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 13, padding: 14, marginBottom: 10, shadowOpacity: 0.08, shadowRadius: 13, shadowOffset: { width: 0, height: 8 }, elevation: 2 },
+  priorityIcon: { width: 44, height: 44, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  priorityTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 16, lineHeight: 21 },
+  priorityMeta: { fontFamily: 'Inter_600SemiBold', fontSize: 12, marginTop: 2 },
+  nextRow: { minHeight: 56, borderBottomWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  nextDot: { width: 11, height: 11, borderRadius: 9999 },
+  nextTitle: { flex: 1, fontFamily: 'Inter_700Bold', fontSize: 15 },
+  nextTime: { fontFamily: 'Inter_700Bold', fontSize: 12 },
+  footerSignal: { alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, marginTop: 22 },
+  footerSignalText: { fontFamily: 'Inter_600SemiBold', fontSize: 12, textAlign: 'center' },
 });
