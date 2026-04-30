@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router';
 import Constants from 'expo-constants';
 import * as WebBrowser from 'expo-web-browser';
 import * as Google from 'expo-auth-session/providers/google';
+import { GoogleSignin, isErrorWithCode, isSuccessResponse } from '@react-native-google-signin/google-signin';
 import * as Linking from 'expo-linking';
 import { Globe, Sparkles, ShieldCheck, Crown, ArrowRight } from 'lucide-react-native';
 
@@ -169,8 +170,46 @@ export default function Landing() {
         return;
       }
 
-      if (!webClientId || !androidClientId) {
-        Alert.alert('Google Sign-In not configured', 'Missing Google OAuth client IDs in .env.');
+      if (!webClientId) {
+        Alert.alert('Google Sign-In not configured', 'Missing EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID in .env.');
+        return;
+      }
+
+      if (Platform.OS === 'android') {
+        GoogleSignin.configure({
+          webClientId,
+          offlineAccess: false,
+          profileImageSize: 120,
+        });
+
+        await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+
+        const nativeResponse = await GoogleSignin.signIn();
+
+        if (!isSuccessResponse(nativeResponse)) {
+          return;
+        }
+
+        const idToken = nativeResponse.data?.idToken;
+
+        if (!idToken) {
+          Alert.alert(
+            'Google Sign-In failed',
+            'Native Google Sign-In did not return an ID token. Check that EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID is a Web OAuth client ID.'
+          );
+          return;
+        }
+
+        const { api } = await import('../src/api');
+        const authResult = await api.exchangeSession(idToken, inviteToken || undefined);
+        await setUserFromAuth(authResult.user, authResult.session_token);
+
+        router.replace('/feed');
+        return;
+      }
+
+      if (!androidClientId) {
+        Alert.alert('Google Sign-In not configured', 'Missing EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID in .env.');
         return;
       }
 
@@ -182,8 +221,9 @@ export default function Landing() {
       handledResponseRef.current = false;
       await promptAsync();
     } catch (error: any) {
+      const code = isErrorWithCode(error) ? ` (${error.code})` : '';
       logger.error('google prompt failed', error?.message || error);
-      Alert.alert('Sign-in failed', error?.message || 'Please try again.');
+      Alert.alert('Google Sign-In failed', `${error?.message || 'Please try again.'}${code}`);
     }
   };
 
@@ -243,11 +283,11 @@ export default function Landing() {
             <PressScale
               testID="google-signin"
               onPress={signIn}
-              disabled={!request}
+              disabled={Platform.OS === 'web' && !request}
               style={[
                 styles.cta,
                 { backgroundColor: theme.colors.primary },
-                !request && styles.ctaDisabled,
+                Platform.OS === 'web' && !request && styles.ctaDisabled,
               ]}
             >
               <View style={styles.googleDot}>

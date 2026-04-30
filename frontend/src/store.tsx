@@ -37,8 +37,8 @@ interface StoreState {
 
 const StoreContext = createContext<StoreState | null>(null);
 
-// v2 intentionally ignores the previous saved dark/blue preference so the reference light UI appears immediately.
-const APPEARANCE_STORAGE_KEY = 'coo_appearance_mode_reference_v2';
+// v4 forces a fresh premium-dark default for existing local installs that cached light mode during testing.
+const APPEARANCE_STORAGE_KEY = 'coo_appearance_mode_premium_dark_v4';
 
 export function StoreProvider({ children }: { children: React.ReactNode }) {
   const systemScheme = useColorScheme();
@@ -46,7 +46,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [lang, setLangState] = useState<Lang>('en');
   const [subscription, setSubscription] = useState<Subscription | null>(null);
-  const [appearanceMode, setAppearanceMode] = useState<AppearanceMode>('light');
+  const [appearanceMode, setAppearanceMode] = useState<AppearanceMode>('dark');
   const [upgradePrompt, setUpgradePrompt] = useState<{
     feature: string;
     message: string;
