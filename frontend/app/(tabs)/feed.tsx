@@ -17,8 +17,7 @@ import {
   Camera,
   CheckCircle2,
   Clock3,
-  FileText,
-  Gift,
+  FileText,
   Mic,
   PlusCircle,
   Search,
@@ -396,7 +395,7 @@ export default function FeedScreen() {
           <View style={styles.header}>
             <View style={{ flex: 1 }}>
               <Text style={[styles.greet, { color: theme.colors.textMuted }]}>{greeting}</Text>
-              <Text style={[styles.name, { color: theme.colors.text }]}>{firstName || 'Family'}.</Text>
+              <Text style={[styles.name, { color: theme.colors.text }]}>{firstName || 'Family'}<Text style={styles.nameDot}>.</Text></Text>
             </View>
             {user?.picture ? (
               <Image source={{ uri: user.picture }} style={[styles.avatar, { borderColor: theme.colors.cardBorder }]} />
@@ -415,7 +414,7 @@ export default function FeedScreen() {
             </View>
           </PressScale>
 
-          <View style={[styles.commandHero, { backgroundColor: theme.colors.primary, shadowColor: theme.colors.shadow }]}>
+          <View style={[styles.commandHero, { shadowColor: theme.colors.shadow }]}>
             <View style={styles.heroTopRow}>
               <View style={styles.heroBadge}>
                 <Sparkles color="#202323" size={13} />
@@ -429,12 +428,27 @@ export default function FeedScreen() {
 
             <View style={styles.scoreRow}>
               <View style={styles.scoreCircle}>
+                <View style={styles.scoreRing} />
+                <View style={styles.scoreArc} />
                 <Text style={styles.scoreValue}>{dashboard.calmScore}</Text>
+                <Text style={styles.scoreTotal}>/100</Text>
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.scoreTitle}>{labels.calmScore}</Text>
                 <Text style={styles.scoreSub}>{labels.scoreHelper}</Text>
               </View>
+            </View>
+            <View pointerEvents="none" style={styles.heroIllustration}>
+              <View style={styles.heroHalo} />
+              <View style={styles.heartOne} />
+              <View style={styles.heartTwo} />
+              <View style={styles.treeTrunk} />
+              <View style={styles.treeTop} />
+              <View style={styles.houseBody} />
+              <View style={styles.houseRoof} />
+              <View style={styles.houseDoor} />
+              <View style={styles.bushOne} />
+              <View style={styles.bushTwo} />
             </View>
 
             <PressScale testID="open-brief" onPress={() => setShowBrief(true)} style={styles.heroAction}>
@@ -449,22 +463,22 @@ export default function FeedScreen() {
             <PressScale onPress={() => router.push('/calendar')} style={[styles.statCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder, shadowColor: theme.colors.shadow }]}>
               <Clock3 color={theme.colors.accent} size={19} />
               <Text style={[styles.statValue, { color: theme.colors.text }]}>{dashboard.priority.length}</Text>
-              <Text style={[styles.statLabel, { color: theme.colors.textMuted }]}>{labels.urgent}</Text>
+              <Text style={[styles.statLabel, { color: theme.colors.textMuted }]}>{lang === 'fr' ? 'En retard' : labels.urgent}</Text>
             </PressScale>
             <PressScale onPress={() => router.push('/calendar')} style={[styles.statCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder, shadowColor: theme.colors.shadow }]}>
               <CalendarDays color={theme.colors.success} size={19} />
               <Text style={[styles.statValue, { color: theme.colors.text }]}>{dashboard.calendarToday.length}</Text>
-              <Text style={[styles.statLabel, { color: theme.colors.textMuted }]}>{labels.calendarToday}</Text>
+              <Text style={[styles.statLabel, { color: theme.colors.textMuted }]}>{lang === 'fr' ? "Événement aujourd'hui" : labels.calendarToday}</Text>
             </PressScale>
             <PressScale onPress={() => router.push('/kids')} style={[styles.statCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder, shadowColor: theme.colors.shadow }]}>
               <Star color={theme.colors.accent} size={19} fill={theme.colors.accent} />
               <Text style={[styles.statValue, { color: theme.colors.text }]}>{totalStars}</Text>
-              <Text style={[styles.statLabel, { color: theme.colors.textMuted }]}>{labels.kidStars}</Text>
+              <Text style={[styles.statLabel, { color: theme.colors.textMuted }]}>{lang === 'fr' ? 'Récompenses' : labels.kidStars}</Text>
             </PressScale>
             <PressScale onPress={() => router.push('/vault')} style={[styles.statCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder, shadowColor: theme.colors.shadow }]}>
               <ShieldCheck color={theme.colors.success} size={19} />
               <Text style={[styles.statValue, { color: theme.colors.text }]}>{vaultCount}</Text>
-              <Text style={[styles.statLabel, { color: theme.colors.textMuted }]}>{labels.vaultDocs}</Text>
+              <Text style={[styles.statLabel, { color: theme.colors.textMuted }]}>{lang === 'fr' ? 'Tout va bien' : labels.vaultDocs}</Text>
             </PressScale>
           </View>
 
@@ -631,64 +645,82 @@ export default function FeedScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  scroll: { paddingHorizontal: 22, paddingTop: 8 },
+  scroll: { paddingHorizontal: 24, paddingTop: 10 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 18,
-    marginTop: 6,
+    marginBottom: 20,
+    marginTop: 8,
   },
-  greet: { fontFamily: 'Inter_600SemiBold', fontSize: 14 },
-  name: { fontFamily: 'Inter_800ExtraBold', fontSize: 34, lineHeight: 39, letterSpacing: -0.8 },
+  greet: { fontFamily: 'Inter_600SemiBold', fontSize: 15 },
+  name: { fontFamily: 'Inter_800ExtraBold', fontSize: 42, lineHeight: 47, letterSpacing: -1.1 },
+  nameDot: { color: '#F97316' },
   avatar: { width: 50, height: 50, borderRadius: 9999, borderWidth: 1 },
   avatarFallback: { alignItems: 'center', justifyContent: 'center' },
   avatarText: { fontFamily: 'Inter_800ExtraBold', fontSize: 17 },
   searchShell: {
-    minHeight: 62,
+    minHeight: 66,
     borderRadius: 9999,
     borderWidth: 1,
-    paddingLeft: 18,
-    paddingRight: 7,
+    paddingLeft: 20,
+    paddingRight: 8,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    marginBottom: 22,
-    shadowOpacity: 0.09,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 3,
+    gap: 14,
+    marginBottom: 24,
+    shadowOpacity: 0.10,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 4,
   },
   searchText: { flex: 1, fontFamily: 'Inter_700Bold', fontSize: 16 },
-  filterButton: { width: 48, height: 48, borderRadius: 9999, alignItems: 'center', justifyContent: 'center' },
+  filterButton: { width: 52, height: 52, borderRadius: 9999, alignItems: 'center', justifyContent: 'center' },
   commandHero: {
+    position: 'relative',
+    minHeight: 372,
     borderRadius: 34,
     padding: 24,
     marginBottom: 18,
     overflow: 'hidden',
-    shadowOpacity: 0.16,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 14 },
-    elevation: 6,
+    backgroundColor: '#172024',
+    shadowOpacity: 0.20,
+    shadowRadius: 26,
+    shadowOffset: { width: 0, height: 16 },
+    elevation: 8,
   },
   heroTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 },
   heroBadge: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 13, paddingVertical: 8, backgroundColor: '#FFFFFF', borderRadius: 9999 },
   heroBadgeText: { color: '#202323', fontFamily: 'Inter_800ExtraBold', fontSize: 12, letterSpacing: 0.4 },
   heroCount: { color: 'rgba(255,255,255,0.72)', fontFamily: 'Inter_700Bold', fontSize: 13 },
-  heroTitle: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 32, lineHeight: 38, letterSpacing: -0.7 },
-  heroSub: { color: 'rgba(255,255,255,0.74)', fontFamily: 'Inter_500Medium', fontSize: 15, lineHeight: 22, marginTop: 7 },
-  scoreRow: { flexDirection: 'row', alignItems: 'center', gap: 13, marginTop: 20 },
-  scoreCircle: { width: 64, height: 64, borderRadius: 9999, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
-  scoreValue: { color: '#202323', fontFamily: 'Inter_800ExtraBold', fontSize: 22, letterSpacing: -0.6 },
+  heroTitle: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 34, lineHeight: 39, letterSpacing: -0.9, marginTop: 2 },
+  heroSub: { color: 'rgba(255,255,255,0.76)', fontFamily: 'Inter_500Medium', fontSize: 15, lineHeight: 22, marginTop: 8, maxWidth: 280 },
+  scoreRow: { flexDirection: 'row', alignItems: 'center', gap: 16, marginTop: 28, maxWidth: 255, zIndex: 3 },
+  scoreCircle: { width: 92, height: 92, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  scoreRing: { position: 'absolute', width: 88, height: 88, borderRadius: 9999, borderWidth: 7, borderColor: 'rgba(255,255,255,0.16)' },
+  scoreArc: { position: 'absolute', width: 88, height: 88, borderRadius: 9999, borderTopWidth: 7, borderRightWidth: 7, borderTopColor: '#F97316', borderRightColor: '#F97316', borderLeftColor: 'transparent', borderBottomColor: 'transparent', transform: [{ rotate: '32deg' }] },
+  scoreTotal: { color: 'rgba(255,255,255,0.68)', fontFamily: 'Inter_600SemiBold', fontSize: 13, marginTop: -2 },
+  scoreValue: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 28, letterSpacing: -0.7, lineHeight: 32 },
   scoreTitle: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
-  scoreSub: { color: 'rgba(255,255,255,0.68)', fontFamily: 'Inter_500Medium', fontSize: 12, lineHeight: 17, marginTop: 2 },
-  heroAction: { marginTop: 22, minHeight: 56, borderRadius: 9999, paddingLeft: 22, paddingRight: 6, backgroundColor: 'rgba(255,255,255,0.12)', flexDirection: 'row', alignItems: 'center' },
+  scoreSub: { color: 'rgba(255,255,255,0.68)', fontFamily: 'Inter_500Medium', fontSize: 12, lineHeight: 18, marginTop: 4 },
+  heroAction: { marginTop: 26, minHeight: 60, borderRadius: 9999, paddingLeft: 22, paddingRight: 7, backgroundColor: 'rgba(255,255,255,0.13)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', flexDirection: 'row', alignItems: 'center', zIndex: 4 },
   heroActionText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 16, flex: 1, textAlign: 'center' },
-  heroArrow: { width: 44, height: 44, borderRadius: 9999, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
-  statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 22 },
-  statCard: { width: '48.5%', minHeight: 108, borderRadius: 26, borderWidth: 1, padding: 15, justifyContent: 'space-between', shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: 7 }, elevation: 2 },
-  statValue: { fontFamily: 'Inter_800ExtraBold', fontSize: 25, lineHeight: 30, letterSpacing: -0.5, marginTop: 8 },
-  statLabel: { fontFamily: 'Inter_700Bold', fontSize: 12 },
+  heroArrow: { width: 48, height: 48, borderRadius: 9999, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
+  heroIllustration: { position: 'absolute', right: -8, bottom: 74, width: 160, height: 168, zIndex: 1 },
+  heroHalo: { position: 'absolute', right: 8, bottom: 20, width: 126, height: 126, borderRadius: 9999, backgroundColor: 'rgba(148,163,184,0.13)' },
+  heartOne: { position: 'absolute', top: 16, right: 42, width: 17, height: 17, borderRadius: 6, backgroundColor: '#A7F3D0', transform: [{ rotate: '45deg' }] },
+  heartTwo: { position: 'absolute', top: 42, right: 74, width: 14, height: 14, borderRadius: 5, backgroundColor: '#8EE6C5', transform: [{ rotate: '45deg' }] },
+  treeTrunk: { position: 'absolute', right: 12, bottom: 29, width: 8, height: 54, borderRadius: 4, backgroundColor: '#3F3A2E' },
+  treeTop: { position: 'absolute', right: -2, bottom: 69, width: 62, height: 76, borderRadius: 30, backgroundColor: '#86B73E' },
+  houseBody: { position: 'absolute', right: 54, bottom: 24, width: 74, height: 78, borderRadius: 14, backgroundColor: '#FFF0D7' },
+  houseRoof: { position: 'absolute', right: 54, bottom: 91, width: 74, height: 42, borderTopLeftRadius: 14, borderTopRightRadius: 14, backgroundColor: '#FFE3B8' },
+  houseDoor: { position: 'absolute', right: 84, bottom: 24, width: 22, height: 38, borderTopLeftRadius: 14, borderTopRightRadius: 14, backgroundColor: '#D9A875' },
+  bushOne: { position: 'absolute', right: 124, bottom: 20, width: 36, height: 30, borderRadius: 18, backgroundColor: '#8BBE4E' },
+  bushTwo: { position: 'absolute', right: 30, bottom: 20, width: 44, height: 30, borderRadius: 20, backgroundColor: '#79A93E' },
+  statGrid: { flexDirection: 'row', gap: 10, marginBottom: 24 },
+  statCard: { flex: 1, minHeight: 118, borderRadius: 24, borderWidth: 1, padding: 12, justifyContent: 'space-between', shadowOpacity: 0.08, shadowRadius: 13, shadowOffset: { width: 0, height: 8 }, elevation: 2 },
+  statValue: { fontFamily: 'Inter_800ExtraBold', fontSize: 22, lineHeight: 25, letterSpacing: -0.5, marginTop: 10 },
+  statLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 10.5, lineHeight: 14, flexShrink: 1 },
   section: { marginBottom: 13, marginTop: 4, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
   sectionTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 23, letterSpacing: -0.4 },
   sectionSub: { fontFamily: 'Inter_700Bold', fontSize: 13 },
