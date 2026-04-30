@@ -49,9 +49,6 @@ type StarMode = 'add' | 'remove';
 
 const DEFAULT_REWARD_ICON = '🎁';
 
-const ADD_STAR_REASONS = ['Homework', 'Chores', 'Kindness', 'Helping out', 'Great attitude'];
-const REMOVE_STAR_REASONS = ['Missed chore', 'Warning', 'Late bedtime', 'Parent adjustment'];
-
 const ICON_LIBRARY: Array<{ match: string[]; icons: string[] }> = [
   { match: ['pizza', 'dinner', 'restaurant', 'food'], icons: ['🍕', '🍽️', '🎉', '🍔'] },
   { match: ['movie', 'cinema', 'film'], icons: ['🎬', '🍿', '🎟️', '⭐'] },
@@ -113,14 +110,15 @@ export default function KidsScreen() {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [pinPromptReward, setPinPromptReward] = useState<Reward | null>(null);
-  const [showPinSheet, setShowPinSheet] = useState(false);
-  const [pinValue, setPinValue] = useState('');
-  const [pinConfirm, setPinConfirm] = useState('');
 
   const children = useMemo(() => members.filter((m) => m.role?.toLowerCase() === 'child'), [members]);
   const activeChild = children.find((c) => c.member_id === selectedChild) || children[0];
   const stars = activeChild?.stars || 0;
   const iconSuggestions = useMemo(() => suggestedIcons(rewardTitle), [rewardTitle]);
+  const affordableRewards = useMemo(() => rewards.filter((reward) => stars >= reward.cost_stars).length, [rewards, stars]);
+  const totalRewards = rewards.length;
+  const recentActivityCount = historyItems.length;
+  const latestActivity = historyItems[0];
 
   const showToast = useCallback((message: string, tone: ToastTone = 'info') => {
     setToast({ message, tone });
@@ -206,60 +204,6 @@ export default function KidsScreen() {
   const closeRewardSheet = () => {
     setShowRewardSheet(false);
     setEditingReward(null);
-  };
-
-
-  const openPinSheet = () => {
-    if (!activeChild) return;
-    setPinValue('');
-    setPinConfirm('');
-    setShowPinSheet(true);
-  };
-
-  const savePin = async () => {
-    if (!activeChild) return;
-    const pin = pinValue.trim();
-    if (!/^\d{4}$/.test(pin)) {
-      showToast('PIN must be exactly 4 digits.', 'error');
-      return;
-    }
-    if (pin !== pinConfirm.trim()) {
-      showToast('PIN confirmation does not match.', 'error');
-      return;
-    }
-
-    setSaving(true);
-    try {
-      await api.setMemberPin(activeChild.member_id, pin);
-      setMembers((prev) => prev.map((member) => (
-        member.member_id === activeChild.member_id ? { ...member, has_pin: true } : member
-      )));
-      setShowPinSheet(false);
-      showToast(activeChild.has_pin ? 'PIN changed.' : 'PIN enabled.', 'success');
-    } catch (e: any) {
-      const message = String(e?.message || e || '');
-      showToast(message.includes('404') ? 'Deploy backend updates first.' : message || 'Could not save PIN.', 'error');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const removePin = async () => {
-    if (!activeChild) return;
-    setSaving(true);
-    try {
-      await api.removeMemberPin(activeChild.member_id);
-      setMembers((prev) => prev.map((member) => (
-        member.member_id === activeChild.member_id ? { ...member, has_pin: false } : member
-      )));
-      setShowPinSheet(false);
-      showToast('PIN removed.', 'success');
-    } catch (e: any) {
-      const message = String(e?.message || e || '');
-      showToast(message.includes('404') ? 'Deploy backend updates first.' : message || 'Could not remove PIN.', 'error');
-    } finally {
-      setSaving(false);
-    }
   };
 
   const openStarSheet = (mode: StarMode, amount = '5') => {
@@ -447,8 +391,8 @@ export default function KidsScreen() {
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           <View style={styles.titleRow}>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.title, { color: theme.colors.text }]}>Kids Rewards</Text>
-              <Text style={[styles.sub, { color: theme.colors.textMuted }]}>Stars, rewards, and motivation.</Text>
+              <Text style={[styles.title, { color: theme.colors.text }]}>Kids</Text>
+              <Text style={[styles.sub, { color: theme.colors.textMuted }]}>Rewards, routines & proud little wins.</Text>
             </View>
             <View>
               <PressScale
@@ -501,32 +445,57 @@ export default function KidsScreen() {
               </ScrollView>
 
               {activeChild ? (
-                <View style={[styles.hero, { backgroundColor: theme.colors.accentSoft, borderColor: theme.colors.accent }]}>
-                  <View style={styles.heroTop}>
-                    <View>
-                      <Text style={[styles.heroLabel, { color: theme.colors.textMuted }]}>Managing</Text>
-                      <Text style={[styles.heroName, { color: theme.colors.text }]}>{activeChild.name}</Text>
-                    </View>
-                    <PressScale onPress={openPinSheet} style={[styles.pinPill, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
-                        <Lock color={activeChild.has_pin ? theme.colors.accent : theme.colors.textSoft} size={14} />
-                        <Text style={[styles.pinText, { color: theme.colors.textMuted }]}>{activeChild.has_pin ? 'PIN active' : 'Set PIN'}</Text>
-                      </PressScale>
+                <View style={styles.hero}>
+                  <View style={styles.heroGlowOne} />
+                  <View style={styles.heroGlowTwo} />
+                  <View style={styles.heroBadge}>
+                    <Sparkles color="#111827" size={14} />
+                    <Text style={styles.heroBadgeText}>Today</Text>
                   </View>
 
-                  <View style={styles.heroStars}>
-                    <Star color={theme.colors.accent} size={30} fill={theme.colors.accent} />
-                    <Text style={[styles.heroCount, { color: theme.colors.text }]}>{stars}</Text>
-                    <Text style={[styles.heroUnit, { color: theme.colors.textMuted }]}>{t('stars')}</Text>
+                  <View style={styles.heroTop}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.heroLabel}>Star wallet</Text>
+                      <Text style={styles.heroName}>{activeChild.name}</Text>
+                      <Text style={styles.heroSubtext}>Keep momentum going with small wins, quick boosts, and motivating rewards.</Text>
+                    </View>
+                    <View style={styles.pinPill}>
+                      <Lock color={activeChild.has_pin ? '#F59E0B' : 'rgba(255,255,255,0.45)'} size={13} />
+                      <Text style={styles.pinText}>{activeChild.has_pin ? 'PIN on' : 'No PIN'}</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.heroScoreRow}>
+                    <View style={styles.heroScoreCircle}>
+                      <View style={styles.heroScoreRing} />
+                      <View style={styles.heroScoreArc} />
+                      <Star color="#F59E0B" size={20} fill="#F59E0B" />
+                      <Text style={styles.heroScoreValue}>{stars}</Text>
+                      <Text style={styles.heroScoreCaption}>{t('stars')}</Text>
+                    </View>
+
+                    <View style={styles.heroInsightCol}>
+                      <View style={styles.heroInsightCard}>
+                        <Text style={styles.heroInsightKicker}>Ready now</Text>
+                        <Text style={styles.heroInsightValue}>{affordableRewards}</Text>
+                        <Text style={styles.heroInsightLabel}>rewards available</Text>
+                      </View>
+                      <View style={styles.heroInsightCard}>
+                        <Text style={styles.heroInsightKicker}>Recent activity</Text>
+                        <Text style={styles.heroInsightValue}>{recentActivityCount}</Text>
+                        <Text style={styles.heroInsightLabel}>{latestActivity?.reason ? latestActivity.reason : 'actions logged'}</Text>
+                      </View>
+                    </View>
                   </View>
 
                   <View style={styles.heroActions}>
-                    <PressScale testID="kids-add-stars" onPress={() => openStarSheet('add', '5')} style={[styles.heroActionBtn, { backgroundColor: theme.colors.primary }]}>
-                      <Plus color={theme.colors.primaryText} size={16} />
-                      <Text style={[styles.heroActionText, { color: theme.colors.primaryText }]}>Stars</Text>
+                    <PressScale testID="kids-add-stars" onPress={() => openStarSheet('add', '5')} style={styles.heroActionBtn}>
+                      <Plus color="#111827" size={16} />
+                      <Text style={styles.heroActionText}>Add stars</Text>
                     </PressScale>
-                    <PressScale testID="kids-remove-stars" onPress={() => openStarSheet('remove', '5')} style={[styles.heroActionBtnSecondary, { borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.card }]}>
-                      <MinusCircle color={theme.colors.textMuted} size={16} />
-                      <Text style={[styles.heroActionTextSecondary, { color: theme.colors.textMuted }]}>− Stars</Text>
+                    <PressScale testID="kids-remove-stars" onPress={() => openStarSheet('remove', '5')} style={styles.heroActionBtnSecondary}>
+                      <MinusCircle color="#FFFFFF" size={16} />
+                      <Text style={styles.heroActionTextSecondary}>Remove</Text>
                     </PressScale>
                   </View>
                 </View>
@@ -541,6 +510,19 @@ export default function KidsScreen() {
                 <PressScale testID="quick-stars-custom" onPress={() => openStarSheet('add', '')} style={[styles.quickBtn, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
                   <Text style={[styles.quickText, { color: theme.colors.text }]}>Custom</Text>
                 </PressScale>
+              </View>
+
+              <View style={styles.statRow}>
+                <View style={[styles.statCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
+                  <Text style={[styles.statEyebrow, { color: theme.colors.textMuted }]}>Reward shop</Text>
+                  <Text style={[styles.statValue, { color: theme.colors.text }]}>{affordableRewards}</Text>
+                  <Text style={[styles.statLabel, { color: theme.colors.textMuted }]}>{totalRewards} total rewards</Text>
+                </View>
+                <View style={[styles.statCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
+                  <Text style={[styles.statEyebrow, { color: theme.colors.textMuted }]}>Activity</Text>
+                  <Text style={[styles.statValue, { color: theme.colors.text }]}>{recentActivityCount}</Text>
+                  <Text style={[styles.statLabel, { color: theme.colors.textMuted }]}>{latestActivity ? formatActivityDate(latestActivity.created_at) : 'No entries yet'}</Text>
+                </View>
               </View>
 
               <GlassCard style={styles.historyCard}>
@@ -743,23 +725,6 @@ export default function KidsScreen() {
         <TextInput testID="star-amount" value={starAmount} onChangeText={(value) => setStarAmount(cleanNumber(value))} keyboardType="number-pad" placeholder="5" placeholderTextColor={theme.colors.textSoft} style={[styles.input, { color: theme.colors.text, backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]} />
 
         <Text style={[styles.label, { color: theme.colors.textMuted }]}>Reason</Text>
-        <View style={styles.reasonRow}>
-          {(starMode === 'add' ? ADD_STAR_REASONS : REMOVE_STAR_REASONS).map((reason) => (
-            <PressScale
-              key={reason}
-              onPress={() => setStarReason(reason)}
-              style={[
-                styles.reasonChip,
-                {
-                  backgroundColor: starReason === reason ? theme.colors.accentSoft : theme.colors.bgSoft,
-                  borderColor: starReason === reason ? theme.colors.accent : theme.colors.cardBorder,
-                },
-              ]}
-            >
-              <Text style={[styles.reasonText, { color: theme.colors.text }]}>{reason}</Text>
-            </PressScale>
-          ))}
-        </View>
         <TextInput testID="star-reason" value={starReason} onChangeText={setStarReason} placeholder={starMode === 'add' ? 'Homework, chores, kindness...' : 'Reason for deduction'} placeholderTextColor={theme.colors.textSoft} style={[styles.input, { color: theme.colors.text, backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]} />
 
         <View style={styles.sheetFooter}>
@@ -768,43 +733,6 @@ export default function KidsScreen() {
           </PressScale>
           <PressScale testID="save-stars" onPress={adjustStars} disabled={saving || !starAmount} style={[styles.saveBtn, { backgroundColor: theme.colors.primary }, (!starAmount || saving) && { opacity: 0.5 }]}>
             <Text style={[styles.saveText, { color: theme.colors.primaryText }]}>{saving ? '...' : 'Save'}</Text>
-          </PressScale>
-        </View>
-      </KeyboardAwareBottomSheet>
-
-
-      <KeyboardAwareBottomSheet visible={showPinSheet} onClose={() => setShowPinSheet(false)} contentStyle={[styles.sheet, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
-        <View style={styles.sheetHeader}>
-          <Text style={[styles.sheetTitle, { color: theme.colors.text }]}>PIN controls</Text>
-          <PressScale testID="close-pin-sheet" onPress={() => setShowPinSheet(false)} style={[styles.iconBtn, { borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}>
-            <X color={theme.colors.text} size={20} />
-          </PressScale>
-        </View>
-
-        <Text style={[styles.sheetHelp, { color: theme.colors.textMuted }]}>
-          {activeChild?.has_pin ? `${activeChild?.name} has a PIN. Change or remove it below.` : `Set a 4-digit PIN for ${activeChild?.name}.`}
-        </Text>
-
-        <Text style={[styles.label, { color: theme.colors.textMuted }]}>New PIN</Text>
-        <TextInput testID="pin-value" value={pinValue} onChangeText={(value) => setPinValue(cleanNumber(value).slice(0, 4))} keyboardType="number-pad" secureTextEntry placeholder="4 digits" placeholderTextColor={theme.colors.textSoft} style={[styles.input, { color: theme.colors.text, backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]} />
-
-        <Text style={[styles.label, { color: theme.colors.textMuted }]}>Confirm PIN</Text>
-        <TextInput testID="pin-confirm" value={pinConfirm} onChangeText={(value) => setPinConfirm(cleanNumber(value).slice(0, 4))} keyboardType="number-pad" secureTextEntry placeholder="Repeat PIN" placeholderTextColor={theme.colors.textSoft} style={[styles.input, { color: theme.colors.text, backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]} />
-
-        <View style={styles.sheetFooter}>
-          {activeChild?.has_pin ? (
-            <PressScale testID="remove-pin" onPress={removePin} disabled={saving} style={[styles.deleteBtn, { borderColor: 'rgba(239,68,68,0.35)', backgroundColor: 'rgba(239,68,68,0.10)' }]}>
-              <Trash2 color="#EF4444" size={17} />
-              <Text style={styles.deleteText}>Remove PIN</Text>
-            </PressScale>
-          ) : (
-            <PressScale testID="cancel-pin" onPress={() => setShowPinSheet(false)} style={[styles.cancelBtn, { borderColor: theme.colors.cardBorder }]}>
-              <Text style={[styles.cancelText, { color: theme.colors.textMuted }]}>Cancel</Text>
-            </PressScale>
-          )}
-
-          <PressScale testID="save-pin" onPress={savePin} disabled={saving || pinValue.length !== 4 || pinConfirm.length !== 4} style={[styles.saveBtn, { backgroundColor: theme.colors.primary }, (saving || pinValue.length !== 4 || pinConfirm.length !== 4) && { opacity: 0.5 }]}>
-            <Text style={[styles.saveText, { color: theme.colors.primaryText }]}>{saving ? '...' : 'Save PIN'}</Text>
           </PressScale>
         </View>
       </KeyboardAwareBottomSheet>
@@ -838,15 +766,15 @@ export default function KidsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   safeArea: { flex: 1 },
-  scroll: { paddingHorizontal: 20, paddingTop: 34, paddingBottom: 190 },
-  titleRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 22, zIndex: 5 },
-  title: { fontFamily: 'Inter_800ExtraBold', fontSize: 39, lineHeight: 45, letterSpacing: -0.8 },
-  sub: { fontFamily: 'Inter_500Medium', fontSize: 16, lineHeight: 23, marginTop: 4 },
+  scroll: { paddingHorizontal: 22, paddingTop: 18, paddingBottom: 190 },
+  titleRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 22, marginTop: 6, zIndex: 5 },
+  title: { fontFamily: 'Inter_800ExtraBold', fontSize: 42, lineHeight: 47, letterSpacing: -1.0 },
+  sub: { fontFamily: 'Inter_500Medium', fontSize: 15, lineHeight: 22, marginTop: 6 },
   addBtn: { minWidth: 64, height: 58, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 2, shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.12, shadowRadius: 16, elevation: 5 },
   addMenu: { position: 'absolute', right: 0, top: 66, borderRadius: 24, borderWidth: 1, padding: 8, minWidth: 196, shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.12, shadowRadius: 22, elevation: 8, zIndex: 10 },
   addMenuItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 13, borderRadius: 18 },
   addMenuText: { fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
-  childRow: { gap: 12, paddingVertical: 8, paddingRight: 20 },
+  childRow: { gap: 12, paddingVertical: 8, paddingRight: 20, marginBottom: 4 },
   childBtn: { alignItems: 'center', paddingHorizontal: 18, paddingVertical: 16, borderRadius: 28, borderWidth: 1, minWidth: 104, shadowColor: '#0F172A', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.08, shadowRadius: 16, elevation: 3 },
   childAvatar: { width: 50, height: 50, borderRadius: 9999, borderWidth: 1, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
   childInitial: { fontFamily: 'Inter_800ExtraBold', fontSize: 17 },
@@ -854,23 +782,44 @@ const styles = StyleSheet.create({
   childName: { fontFamily: 'Inter_700Bold', fontSize: 14 },
   childStarsRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
   childStars: { fontFamily: 'Inter_700Bold', fontSize: 13 },
-  hero: { padding: 22, marginTop: 20, marginBottom: 18, borderRadius: 34, borderWidth: 1 },
-  heroTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 },
-  heroLabel: { fontFamily: 'Inter_700Bold', fontSize: 13, textTransform: 'uppercase', letterSpacing: 1 },
-  heroName: { fontFamily: 'Inter_800ExtraBold', fontSize: 27, letterSpacing: -0.5, marginTop: 3 },
-  pinPill: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 9999, paddingHorizontal: 11, paddingVertical: 7 },
-  pinText: { fontFamily: 'Inter_700Bold', fontSize: 12 },
+  hero: { position: 'relative', padding: 22, marginTop: 18, marginBottom: 16, borderRadius: 34, overflow: 'hidden', backgroundColor: '#172024', shadowColor: '#000', shadowOffset: { width: 0, height: 16 }, shadowOpacity: 0.18, shadowRadius: 24, elevation: 8 },
+  heroTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, zIndex: 2 },
+  heroLabel: { color: 'rgba(255,255,255,0.72)', fontFamily: 'Inter_700Bold', fontSize: 12, textTransform: 'uppercase', letterSpacing: 1.1 },
+  heroName: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 30, lineHeight: 34, letterSpacing: -0.8, marginTop: 6 },
+  pinPill: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)', backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 9999, paddingHorizontal: 11, paddingVertical: 7, zIndex: 2 },
+  pinText: { color: 'rgba(255,255,255,0.72)', fontFamily: 'Inter_700Bold', fontSize: 12 },
   heroStars: { flexDirection: 'row', alignItems: 'center', gap: 9, marginTop: 18 },
   heroCount: { fontFamily: 'Inter_800ExtraBold', fontSize: 58, lineHeight: 64, letterSpacing: -1 },
   heroUnit: { fontFamily: 'Inter_600SemiBold', fontSize: 16 },
-  heroActions: { flexDirection: 'row', gap: 10, marginTop: 18, flexWrap: 'wrap' },
-  heroActionBtn: { flex: 1, minWidth: 132, minHeight: 52, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, paddingHorizontal: 14 },
-  heroActionBtnSecondary: { flex: 1, minWidth: 132, minHeight: 52, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, borderWidth: 1, paddingHorizontal: 14 },
-  heroActionText: { fontFamily: 'Inter_800ExtraBold', fontSize: 15, textAlign: 'center' },
-  heroActionTextSecondary: { fontFamily: 'Inter_800ExtraBold', fontSize: 15, textAlign: 'center' },
+  heroActions: { flexDirection: 'row', gap: 12, marginTop: 18, flexWrap: 'wrap', zIndex: 2 },
+  heroActionBtn: { flex: 1, minWidth: 132, minHeight: 54, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, paddingHorizontal: 16, backgroundColor: '#FFFFFF' },
+  heroActionBtnSecondary: { flex: 1, minWidth: 132, minHeight: 54, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)', backgroundColor: 'rgba(255,255,255,0.04)', paddingHorizontal: 16 },
+  heroActionText: { color: '#111827', fontFamily: 'Inter_800ExtraBold', fontSize: 15, textAlign: 'center' },
+  heroActionTextSecondary: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 15, textAlign: 'center' },
   quickRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 9, marginBottom: 14 },
-  quickBtn: { flexGrow: 1, flexBasis: '22%', minWidth: 74, minHeight: 50, alignItems: 'center', justifyContent: 'center', borderRadius: 20, borderWidth: 1, paddingHorizontal: 10 },
+  quickBtn: { flexGrow: 1, flexBasis: '22%', minWidth: 74, minHeight: 52, alignItems: 'center', justifyContent: 'center', borderRadius: 20, borderWidth: 1, paddingHorizontal: 10 },
   quickText: { fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
+  heroGlowOne: { position: 'absolute', top: -60, right: -40, width: 180, height: 180, borderRadius: 9999, backgroundColor: 'rgba(255,255,255,0.06)' },
+  heroGlowTwo: { position: 'absolute', bottom: -36, left: -20, width: 150, height: 150, borderRadius: 9999, backgroundColor: 'rgba(245,158,11,0.10)' },
+  heroBadge: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#FFFFFF', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 9999, zIndex: 2 },
+  heroBadgeText: { color: '#111827', fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
+  heroSubtext: { color: 'rgba(255,255,255,0.76)', fontFamily: 'Inter_500Medium', fontSize: 15, lineHeight: 22, marginTop: 8, maxWidth: 260 },
+  heroScoreRow: { flexDirection: 'row', alignItems: 'center', gap: 16, marginTop: 24, zIndex: 2 },
+  heroScoreCircle: { width: 118, height: 118, borderRadius: 9999, backgroundColor: 'rgba(255,255,255,0.03)', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  heroScoreRing: { position: 'absolute', width: 106, height: 106, borderRadius: 9999, borderWidth: 8, borderColor: 'rgba(255,255,255,0.14)' },
+  heroScoreArc: { position: 'absolute', width: 106, height: 106, borderRadius: 9999, borderTopWidth: 8, borderRightWidth: 8, borderTopColor: '#F59E0B', borderRightColor: '#F59E0B', borderLeftColor: 'transparent', borderBottomColor: 'transparent', transform: [{ rotate: '32deg' }] },
+  heroScoreValue: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 30, lineHeight: 34, marginTop: 8 },
+  heroScoreCaption: { color: 'rgba(255,255,255,0.62)', fontFamily: 'Inter_600SemiBold', fontSize: 12, marginTop: 2 },
+  heroInsightCol: { flex: 1, gap: 10 },
+  heroInsightCard: { backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 12 },
+  heroInsightKicker: { color: 'rgba(255,255,255,0.58)', fontFamily: 'Inter_700Bold', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1 },
+  heroInsightValue: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 22, lineHeight: 26, marginTop: 5 },
+  heroInsightLabel: { color: 'rgba(255,255,255,0.68)', fontFamily: 'Inter_500Medium', fontSize: 12, lineHeight: 16, marginTop: 2 },
+  statRow: { flexDirection: 'row', gap: 12, marginBottom: 18 },
+  statCard: { flex: 1, borderWidth: 1, borderRadius: 24, padding: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.06, shadowRadius: 16, elevation: 2 },
+  statEyebrow: { fontFamily: 'Inter_700Bold', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1.1 },
+  statValue: { fontFamily: 'Inter_800ExtraBold', fontSize: 28, lineHeight: 32, marginTop: 6 },
+  statLabel: { fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 18, marginTop: 4 },
   historyCard: { marginBottom: 18 },
   sectionHeader: { marginBottom: 10 },
   sectionRowInline: { flexDirection: 'row', alignItems: 'center', gap: 8 },
@@ -881,7 +830,7 @@ const styles = StyleSheet.create({
   activityDelta: { width: 48, fontFamily: 'Inter_800ExtraBold', fontSize: 17 },
   activityReason: { fontFamily: 'Inter_700Bold', fontSize: 14 },
   activityDate: { fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 2 },
-  rewardCard: { marginBottom: 12 },
+  rewardCard: { marginBottom: 14 },
   rewardRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   rewardIcon: { fontSize: 30 },
   rewardTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 18, lineHeight: 24 },
@@ -900,20 +849,17 @@ const styles = StyleSheet.create({
   sheetHelp: { fontFamily: 'Inter_600SemiBold', fontSize: 15, marginTop: -2, marginBottom: 8 },
   iconBtn: { padding: 9, borderRadius: 9999, borderWidth: 1 },
   label: { fontFamily: 'Inter_800ExtraBold', fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginTop: 14, marginBottom: 8 },
-  input: { borderWidth: 1, borderRadius: 18, paddingHorizontal: 16, paddingVertical: 15, fontFamily: 'Inter_600SemiBold', fontSize: 16, marginBottom: 4 },
+  input: { borderWidth: 1, borderRadius: 16, paddingHorizontal: 15, paddingVertical: 13, fontFamily: 'Inter_600SemiBold', fontSize: 16 },
   iconSuggestionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 9 },
   iconChip: { width: 48, height: 48, borderRadius: 18, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   iconChipText: { fontSize: 23 },
-  modeRow: { flexDirection: 'row', gap: 12, marginTop: 10, marginBottom: 8 },
-  modeBtn: { flex: 1, minHeight: 58, borderRadius: 9999, borderWidth: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 20 },
-  modeText: { fontFamily: 'Inter_800ExtraBold', fontSize: 16, textAlign: 'center' },
+  modeRow: { flexDirection: 'row', gap: 10, marginTop: 8 },
+  modeBtn: { flex: 1, minHeight: 48, borderRadius: 18, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  modeText: { fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
   menuSheetButton: { flexDirection: 'row', alignItems: 'center', gap: 14, borderWidth: 1, borderRadius: 24, padding: 16, marginTop: 12, minHeight: 86 },
   menuSheetIcon: { width: 50, height: 50, borderRadius: 18, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   menuSheetTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 18, lineHeight: 24 },
   menuSheetSub: { fontFamily: 'Inter_600SemiBold', fontSize: 13, lineHeight: 19, marginTop: 3 },
-  reasonRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 9, marginBottom: 10 },
-  reasonChip: { minHeight: 42, borderRadius: 9999, borderWidth: 1, paddingHorizontal: 13, alignItems: 'center', justifyContent: 'center' },
-  reasonText: { fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
   sheetFooter: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: 22 },
   cancelBtn: { flex: 1, minWidth: 126, borderWidth: 1, borderRadius: 18, paddingVertical: 15, alignItems: 'center' },
   cancelText: { fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
