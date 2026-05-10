@@ -1,22 +1,42 @@
 version: 2
 updates:
-  # Version-update PRs are intentionally paused while Household COO stabilizes
-  # Expo/dev-client, Google auth, notifications, and the UI redesign. Security
-  # alerts can still be reviewed separately from the repository Security tab.
   - package-ecosystem: "npm"
     directory: "/frontend"
     schedule:
-      interval: "monthly"
-    open-pull-requests-limit: 0
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Europe/Paris"
+    open-pull-requests-limit: 3
+    groups:
+      expo-and-react-native:
+        patterns:
+          - "expo"
+          - "expo-*"
+          - "@expo/*"
+          - "react-native"
+          - "react-native-*"
+          - "@react-native/*"
+      frontend-tooling:
+        patterns:
+          - "typescript"
+          - "eslint"
+          - "@typescript-eslint/*"
 
   - package-ecosystem: "pip"
     directory: "/backend"
     schedule:
-      interval: "monthly"
-    open-pull-requests-limit: 0
+      interval: "weekly"
+      day: "monday"
+      time: "09:15"
+      timezone: "Europe/Paris"
+    open-pull-requests-limit: 3
 
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "monthly"
-    open-pull-requests-limit: 0
+      interval: "weekly"
+      day: "monday"
+      time: "09:30"
+      timezone: "Europe/Paris"
+    open-pull-requests-limit: 2
