@@ -3,6 +3,7 @@ import { Alert, ImageBackground, Platform, StyleSheet, Text, View } from 'react-
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import Constants from 'expo-constants';
+import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 import * as Google from 'expo-auth-session/providers/google';
 import * as Linking from 'expo-linking';
@@ -44,6 +45,13 @@ function isExpoGoAndroid() {
   return Platform.OS === 'android' && Constants.appOwnership === 'expo';
 }
 
+function googleAndroidRedirectUri(clientId?: string) {
+  if (!clientId) return undefined;
+  const prefix = clientId.replace('.apps.googleusercontent.com', '').trim();
+  if (!prefix) return undefined;
+  return `com.googleusercontent.apps.${prefix}:/oauth2redirect/google`;
+}
+
 export default function Landing() {
   const router = useRouter();
   const handledResponseRef = useRef(false);
@@ -55,11 +63,18 @@ export default function Landing() {
 
   const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID?.trim();
   const androidClientId = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID?.trim();
+  const androidRedirectUri = googleAndroidRedirectUri(androidClientId);
+  const redirectUri = Platform.OS === 'android' ? androidRedirectUri : AuthSession.makeRedirectUri({ scheme: 'householdcoo', path: 'oauthredirect' });
 
   const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
     androidClientId,
     webClientId,
+    redirectUri,
   });
+
+  useEffect(() => {
+    logger.info('Google AuthSession redirect URI', redirectUri || 'missing');
+  }, [redirectUri]);
 
   useEffect(() => {
     if (!loading && user) {
@@ -111,6 +126,13 @@ export default function Landing() {
   useEffect(() => {
     const handleGoogleResponse = async () => {
       if (!response || handledResponseRef.current) return;
+
+      if (response.type === 'error') {
+        logger.error('google auth-session error', response.error || response.params);
+        Alert.alert('Google Sign-In failed', response.error?.message || 'Google returned an authentication error.');
+        return;
+      }
+
       if (response.type !== 'success') return;
 
       handledResponseRef.current = true;
@@ -175,13 +197,18 @@ export default function Landing() {
           return;
         }
 
+        if (!androidRedirectUri) {
+          Alert.alert('Google Sign-In not configured', 'The Android Google client ID is invalid.');
+          return;
+        }
+
         if (!request) {
           Alert.alert('Google Sign-In not ready', 'Please try again in a moment.');
           return;
         }
 
         handledResponseRef.current = false;
-        await promptAsync();
+        await promptAsync({ redirectUri: androidRedirectUri });
         return;
       }
 
@@ -196,7 +223,7 @@ export default function Landing() {
       }
 
       handledResponseRef.current = false;
-      await promptAsync();
+      await promptAsync({ redirectUri });
     } catch (error: any) {
       logger.error('google prompt failed', error?.message || error);
       Alert.alert('Google Sign-In failed', error?.message || 'Please try again.');
