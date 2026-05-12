@@ -52,6 +52,18 @@ function googleAndroidRedirectUri(clientId?: string) {
   return `com.googleusercontent.apps.${prefix}:/oauth2redirect/google`;
 }
 
+function authErrorMessage(error: unknown, params?: Record<string, string>) {
+  const candidate = error as { description?: string; code?: string; name?: string } | null | undefined;
+  return (
+    candidate?.description ||
+    candidate?.code ||
+    candidate?.name ||
+    params?.error_description ||
+    params?.error ||
+    'Google returned an authentication error.'
+  );
+}
+
 export default function Landing() {
   const router = useRouter();
   const handledResponseRef = useRef(false);
@@ -129,7 +141,7 @@ export default function Landing() {
 
       if (response.type === 'error') {
         logger.error('google auth-session error', response.error || response.params);
-        Alert.alert('Google Sign-In failed', response.error?.message || 'Google returned an authentication error.');
+        Alert.alert('Google Sign-In failed', authErrorMessage(response.error, response.params));
         return;
       }
 
