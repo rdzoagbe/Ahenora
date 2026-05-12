@@ -10,7 +10,7 @@
                     "web":  "expo start --web",
                     "lint":  "expo lint",
                     "typecheck":  "tsc --noEmit",
-                    "verify":  "npm run lint \u0026\u0026 npm run typecheck"
+                    "verify":  "npm run lint && npm run typecheck"
                 },
     "dependencies":  {
                          "@babel/runtime":  "^7.20.6",
@@ -28,7 +28,6 @@
                          "expo":  "54.0.33",
                          "expo-application":  "~7.0.8",
                          "expo-auth-session":  "~7.0.10",
-                         "expo-av":  "~16.0.8",
                          "expo-blur":  "~15.0.8",
                          "expo-constants":  "~18.0.13",
                          "expo-crypto":  "~15.0.8",
