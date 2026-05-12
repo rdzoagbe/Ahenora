@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -9,16 +9,6 @@ import {
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import Animated, {
-  FadeInDown,
-  FadeIn,
-  Layout,
-  useSharedValue,
-  useAnimatedStyle,
-  withTiming,
-  withSpring,
-} from 'react-native-reanimated';
-import type { SharedValue } from 'react-native-reanimated';
 import {
   Sparkles,
   Users,
@@ -49,15 +39,6 @@ interface Props {
 export function PricingView({ embedded = false, onAuthRequired }: Props) {
   const { t, subscription, user } = useStore();
   const [cycle, setCycle] = useState<BillingCycle>('yearly');
-  const toggleAnim = useSharedValue(1);
-
-  useEffect(() => {
-    toggleAnim.value = withSpring(cycle === 'yearly' ? 1 : 0, {
-      damping: 16,
-      stiffness: 180,
-    });
-  }, [cycle, toggleAnim]);
-
   const currentPlan: Plan = subscription?.plan ?? 'village';
 
   const handleChoose = (plan: Plan) => {
@@ -80,29 +61,25 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
         contentContainerStyle={[styles.scroll, embedded && { paddingTop: 0 }]}
         showsVerticalScrollIndicator={false}
       >
-        <Animated.View entering={FadeInDown.duration(500)} style={styles.header}>
+        <View style={styles.header}>
           <View style={styles.badge}>
             <Sparkles color="#fff" size={12} />
             <Text style={styles.badgeText}>{t('pricing_link')}</Text>
           </View>
           <Text style={styles.title}>{t('pricing_title')}</Text>
           <Text style={styles.subtitle}>{t('pricing_subtitle')}</Text>
-        </Animated.View>
+        </View>
 
-        <Animated.View entering={FadeInDown.duration(500).delay(120)}>
-          <BillingToggle value={cycle} onChange={setCycle} t={t} animValue={toggleAnim} />
+        <View>
+          <BillingToggle value={cycle} onChange={setCycle} t={t} />
           <Text style={styles.billingNote}>
             Play Store testing mode: paid subscriptions are not active yet. Upgrades will be connected later using an approved Google Play billing flow.
           </Text>
-        </Animated.View>
+        </View>
 
         <View style={styles.cardsContainer}>
-          {PLAN_ORDER.map((plan, idx) => (
-            <Animated.View
-              key={plan}
-              entering={FadeInDown.duration(500).delay(200 + idx * 100)}
-              layout={Layout.duration(300)}
-            >
+          {PLAN_ORDER.map((plan) => (
+            <View key={plan}>
               <PlanCard
                 plan={plan}
                 cycle={cycle}
@@ -111,14 +88,11 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
                 showCurrentBadge={embedded && plan === currentPlan}
                 t={t}
               />
-            </Animated.View>
+            </View>
           ))}
         </View>
 
-        <Animated.View
-          entering={FadeInDown.duration(500).delay(600)}
-          style={styles.faqWrap}
-        >
+        <View style={styles.faqWrap}>
           <Text style={styles.faqTitle}>{t('pricing_faq_title')}</Text>
           {[
             [t('pricing_faq_1_q'), t('pricing_faq_1_a')],
@@ -130,7 +104,7 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
               <Text style={styles.faqA}>{a}</Text>
             </View>
           ))}
-        </Animated.View>
+        </View>
 
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -142,25 +116,15 @@ function BillingToggle({
   value,
   onChange,
   t,
-  animValue,
 }: {
   value: BillingCycle;
   onChange: (v: BillingCycle) => void;
   t: (k: string, p?: any) => string;
-  animValue: SharedValue<number>;
 }) {
-  const pillStyle = useAnimatedStyle(() => ({
-    transform: [
-      {
-        translateX: withTiming(animValue.value * 100, { duration: 240 }),
-      },
-    ],
-  }));
-
   return (
     <View style={styles.toggleContainer}>
       <View style={styles.toggleTrack}>
-        <Animated.View style={[styles.togglePill, pillStyle]} />
+        <View style={[styles.togglePill, value === 'yearly' && styles.togglePillYearly]} />
         <PressScale
           testID="toggle-monthly"
           onPress={() => onChange('monthly')}
@@ -181,9 +145,9 @@ function BillingToggle({
         </PressScale>
       </View>
       {value === 'yearly' ? (
-        <Animated.View entering={FadeIn.duration(300)} style={styles.savingsBadge}>
+        <View style={styles.savingsBadge}>
           <Text style={styles.savingsText}>{t('pricing_save_20')}</Text>
-        </Animated.View>
+        </View>
       ) : null}
     </View>
   );
@@ -249,11 +213,7 @@ function PlanCard({
 
       <Text style={styles.planDesc}>{t(`plan_${plan}_desc`)}</Text>
 
-      <Animated.View
-        key={`${plan}-${cycle}`}
-        entering={FadeIn.duration(280)}
-        style={styles.priceRow}
-      >
+      <View style={styles.priceRow}>
         {isFree ? (
           <Text style={styles.freeText}>Free</Text>
         ) : (
@@ -265,7 +225,7 @@ function PlanCard({
             <Text style={styles.pricePer}>{t('pricing_per_month')}</Text>
           </>
         )}
-      </Animated.View>
+      </View>
       {!isFree && cycle === 'yearly' ? (
         <Text style={styles.yearlyNote}>
           ${price.toFixed(2)} {t('pricing_billed_yearly')}
@@ -420,6 +380,7 @@ const styles = StyleSheet.create({
     borderRadius: 9999,
     backgroundColor: '#fff',
   },
+  togglePillYearly: { left: 104 },
   toggleOption: {
     width: 100,
     height: 34,
