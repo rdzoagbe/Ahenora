@@ -31,6 +31,12 @@
         <data android:scheme="householdcoo"/>
         <data android:scheme="exp+household-coo"/>
       </intent-filter>
+      <intent-filter>
+        <action android:name="android.intent.action.VIEW"/>
+        <category android:name="android.intent.category.DEFAULT"/>
+        <category android:name="android.intent.category.BROWSABLE"/>
+        <data android:scheme="com.googleusercontent.apps.243255248169-ike4t51ha6o8c5rcgsp7mvke2g5t67ol" android:path="/oauth2redirect/google"/>
+      </intent-filter>
     </activity>
   </application>
 </manifest>
