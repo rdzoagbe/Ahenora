@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   Platform,
-  ActivityIndicator,
   Alert,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
@@ -27,33 +26,30 @@ import {
   Crown,
   Briefcase,
   Gem,
-  ArrowRight,
+  Lock,
 } from 'lucide-react-native';
 import { PressScale } from './PressScale';
 import { useStore } from '../store';
-import { api, Plan, BillingCycle } from '../api';
+import { Plan, BillingCycle } from '../api';
 
 const PLAN_ORDER: Plan[] = ['village', 'executive', 'family_office'];
 
-// Plan prices in USD. Yearly = ~20% off monthly × 12
 const PLAN_PRICES: Record<Plan, { monthly: number; yearly: number }> = {
   village: { monthly: 0, yearly: 0 },
-  executive: { monthly: 14.99, yearly: 143.99 }, // ~ $12/mo billed yearly
-  family_office: { monthly: 49.99, yearly: 479.99 }, // ~ $40/mo billed yearly
+  executive: { monthly: 14.99, yearly: 143.99 },
+  family_office: { monthly: 49.99, yearly: 479.99 },
 };
 
 interface Props {
-  // When embedded in Settings, we have a subscription; on public landing, no subscription.
   embedded?: boolean;
   onAuthRequired?: () => void;
   onClose?: () => void;
 }
 
-export function PricingView({ embedded = false, onAuthRequired, onClose }: Props) {
-  const { t, subscription, user, refreshSubscription } = useStore();
+export function PricingView({ embedded = false, onAuthRequired }: Props) {
+  const { t, subscription, user } = useStore();
   const [cycle, setCycle] = useState<BillingCycle>('yearly');
-  const [loadingPlan, setLoadingPlan] = useState<Plan | null>(null);
-  const toggleAnim = useSharedValue(1); // 0=monthly, 1=yearly
+  const toggleAnim = useSharedValue(1);
 
   useEffect(() => {
     toggleAnim.value = withSpring(cycle === 'yearly' ? 1 : 0, {
@@ -64,51 +60,18 @@ export function PricingView({ embedded = false, onAuthRequired, onClose }: Props
 
   const currentPlan: Plan = subscription?.plan ?? 'village';
 
-  const handleChoose = async (plan: Plan) => {
+  const handleChoose = (plan: Plan) => {
     if (!user) {
-      // public landing: redirect to sign-in
       onAuthRequired?.();
       return;
     }
+
     if (plan === currentPlan && subscription?.billing_cycle === cycle) return;
 
-    const doChange = async () => {
-      setLoadingPlan(plan);
-      try {
-        await api.changeSubscription(plan, cycle);
-        await refreshSubscription();
-        if (Platform.OS === 'web') {
-          // simple feedback
-          setTimeout(() => {}, 0);
-        } else {
-          Alert.alert(t('confirmed_switched'));
-        }
-      } catch (e: any) {
-        Alert.alert('Error', e?.message || 'Could not switch plan.');
-      } finally {
-        setLoadingPlan(null);
-      }
-    };
-
-    if (Platform.OS === 'web') {
-      const ok = typeof window !== 'undefined'
-        ? window.confirm(
-            t('confirm_plan_change', { plan: t(`plan_${plan}`) }) +
-              '\n\n' +
-              t('confirm_plan_change_sub')
-          )
-        : true;
-      if (ok) await doChange();
-    } else {
-      Alert.alert(
-        t('confirm_plan_change', { plan: t(`plan_${plan}`) }),
-        t('confirm_plan_change_sub'),
-        [
-          { text: t('cancel'), style: 'cancel' },
-          { text: t('pricing_choose_plan'), onPress: doChange },
-        ]
-      );
-    }
+    Alert.alert(
+      'Plans are in testing mode',
+      'Paid upgrades are parked for the Play Store testing release. Plan changes will be connected later through an approved Google Play billing flow.'
+    );
   };
 
   return (
@@ -117,7 +80,6 @@ export function PricingView({ embedded = false, onAuthRequired, onClose }: Props
         contentContainerStyle={[styles.scroll, embedded && { paddingTop: 0 }]}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
         <Animated.View entering={FadeInDown.duration(500)} style={styles.header}>
           <View style={styles.badge}>
             <Sparkles color="#fff" size={12} />
@@ -127,17 +89,13 @@ export function PricingView({ embedded = false, onAuthRequired, onClose }: Props
           <Text style={styles.subtitle}>{t('pricing_subtitle')}</Text>
         </Animated.View>
 
-        {/* Billing Toggle */}
         <Animated.View entering={FadeInDown.duration(500).delay(120)}>
           <BillingToggle value={cycle} onChange={setCycle} t={t} animValue={toggleAnim} />
-          {embedded ? (
-            <Text style={styles.billingNote}>
-              Testing mode: plan changes update Household COO access immediately. Stripe checkout can be connected next.
-            </Text>
-          ) : null}
+          <Text style={styles.billingNote}>
+            Play Store testing mode: paid subscriptions are not active yet. Upgrades will be connected later using an approved Google Play billing flow.
+          </Text>
         </Animated.View>
 
-        {/* Plan Cards */}
         <View style={styles.cardsContainer}>
           {PLAN_ORDER.map((plan, idx) => (
             <Animated.View
@@ -149,7 +107,6 @@ export function PricingView({ embedded = false, onAuthRequired, onClose }: Props
                 plan={plan}
                 cycle={cycle}
                 isCurrent={plan === currentPlan}
-                loading={loadingPlan === plan}
                 onChoose={() => handleChoose(plan)}
                 showCurrentBadge={embedded && plan === currentPlan}
                 t={t}
@@ -158,7 +115,6 @@ export function PricingView({ embedded = false, onAuthRequired, onClose }: Props
           ))}
         </View>
 
-        {/* FAQ */}
         <Animated.View
           entering={FadeInDown.duration(500).delay(600)}
           style={styles.faqWrap}
@@ -182,9 +138,6 @@ export function PricingView({ embedded = false, onAuthRequired, onClose }: Props
   );
 }
 
-// ─────────────────────────────────────────────────────────────
-// Billing Toggle
-// ─────────────────────────────────────────────────────────────
 function BillingToggle({
   value,
   onChange,
@@ -236,14 +189,10 @@ function BillingToggle({
   );
 }
 
-// ─────────────────────────────────────────────────────────────
-// Plan Card
-// ─────────────────────────────────────────────────────────────
 function PlanCard({
   plan,
   cycle,
   isCurrent,
-  loading,
   onChoose,
   showCurrentBadge,
   t,
@@ -251,7 +200,6 @@ function PlanCard({
   plan: Plan;
   cycle: BillingCycle;
   isCurrent: boolean;
-  loading: boolean;
   onChoose: () => void;
   showCurrentBadge: boolean;
   t: (k: string, p?: any) => string;
@@ -262,7 +210,6 @@ function PlanCard({
   const isFree = plan === 'village';
   const isMiddle = plan === 'executive';
 
-  // Icon + color per plan
   const theme = PLAN_THEMES[plan];
   const Icon = theme.icon;
 
@@ -273,7 +220,6 @@ function PlanCard({
         isMiddle && styles.cardFeatured,
       ]}
     >
-      {/* Gradient backdrop */}
       <LinearGradient
         colors={theme.gradient}
         start={{ x: 0, y: 0 }}
@@ -303,7 +249,6 @@ function PlanCard({
 
       <Text style={styles.planDesc}>{t(`plan_${plan}_desc`)}</Text>
 
-      {/* Price with animated key */}
       <Animated.View
         key={`${plan}-${cycle}`}
         entering={FadeIn.duration(280)}
@@ -327,7 +272,6 @@ function PlanCard({
         </Text>
       ) : null}
 
-      {/* Features */}
       <View style={styles.featuresList}>
         {theme.features.map((f, i) => (
           <View key={i} style={styles.featureRow}>
@@ -339,7 +283,6 @@ function PlanCard({
         ))}
       </View>
 
-      {/* CTA */}
       {showCurrentBadge && isCurrent ? (
         <View style={[styles.cta, styles.ctaCurrent]}>
           <Text style={[styles.ctaText, { color: '#fff' }]}>
@@ -352,28 +295,19 @@ function PlanCard({
           onPress={onChoose}
           style={[
             styles.cta,
-            isMiddle ? styles.ctaPrimary : styles.ctaSecondary,
+            styles.ctaDisabled,
           ]}
         >
-          {loading ? (
-            <ActivityIndicator color={isMiddle ? '#080910' : '#fff'} size="small" />
-          ) : (
-            <>
-              <Text style={[styles.ctaText, { color: isMiddle ? '#080910' : '#fff' }]}>
-                {isFree ? t('pricing_get_started') : t('pricing_choose_plan')}
-              </Text>
-              <ArrowRight color={isMiddle ? '#080910' : '#fff'} size={14} />
-            </>
-          )}
+          <Lock color="#fff" size={14} />
+          <Text style={[styles.ctaText, { color: '#fff' }]}>
+            {isFree ? t('pricing_get_started') : 'Coming soon'}
+          </Text>
         </PressScale>
       )}
     </View>
   );
 }
 
-// ─────────────────────────────────────────────────────────────
-// Plan themes (colors + icons + features)
-// ─────────────────────────────────────────────────────────────
 const PLAN_THEMES: Record<
   Plan,
   {
@@ -428,13 +362,9 @@ const PLAN_THEMES: Record<
   },
 };
 
-// ─────────────────────────────────────────────────────────────
-// Styles
-// ─────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   root: { flex: 1 },
   scroll: { paddingHorizontal: 20, paddingTop: 24, paddingBottom: 40 },
-
   header: { alignItems: 'flex-start', marginBottom: 20 },
   badge: {
     flexDirection: 'row',
@@ -466,8 +396,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     marginTop: 6,
   },
-
-  // Toggle
   toggleContainer: {
     alignItems: 'center',
     marginVertical: 22,
@@ -515,10 +443,10 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(52,211,153,0.4)',
   },
   billingNote: {
-    color: 'rgba(255,255,255,0.54)',
-    fontFamily: 'Inter_400Regular',
-    fontSize: 11,
-    lineHeight: 16,
+    color: 'rgba(255,255,255,0.64)',
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 12,
+    lineHeight: 18,
     textAlign: 'center',
     marginTop: 10,
     paddingHorizontal: 20,
@@ -529,8 +457,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     letterSpacing: 0.6,
   },
-
-  // Cards
   cardsContainer: { gap: 14 },
   card: {
     position: 'relative',
@@ -546,7 +472,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 30,
   },
-
   popularBadge: {
     position: 'absolute',
     top: 14,
@@ -565,7 +490,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
     letterSpacing: 0.4,
   },
-
   cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10 },
   iconBubble: {
     width: 36,
@@ -593,7 +517,6 @@ const styles = StyleSheet.create({
     lineHeight: 19,
     marginBottom: 18,
   },
-
   priceRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
@@ -630,7 +553,6 @@ const styles = StyleSheet.create({
     marginTop: 2,
     marginBottom: 6,
   },
-
   featuresList: { marginTop: 16, marginBottom: 20, gap: 10 },
   featureRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   featureCheck: {
@@ -649,7 +571,6 @@ const styles = StyleSheet.create({
     flex: 1,
     lineHeight: 19,
   },
-
   cta: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -658,10 +579,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 9999,
   },
-  ctaPrimary: {
-    backgroundColor: '#fff',
-  },
-  ctaSecondary: {
+  ctaDisabled: {
     backgroundColor: 'rgba(255,255,255,0.08)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.15)',
@@ -680,8 +598,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     letterSpacing: 0.3,
   },
-
-  // FAQ
   faqWrap: { marginTop: 32 },
   faqTitle: {
     color: '#fff',
