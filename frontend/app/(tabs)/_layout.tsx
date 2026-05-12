@@ -1,7 +1,7 @@
 import React from 'react';
 import { Tabs } from 'expo-router';
 import { View, StyleSheet, Text } from 'react-native';
-import { Home, Calendar as CalendarIcon, Lock, Settings as SettingsIcon, Star } from 'lucide-react-native';
+import { Home, Calendar as CalendarIcon, Lock, Settings as SettingsIcon, Star, UserCircle } from 'lucide-react-native';
 import { useStore } from '../../src/store';
 
 function TabIcon({ focused, Icon, label }: { focused: boolean; Icon: any; label: string }) {
@@ -13,7 +13,7 @@ function TabIcon({ focused, Icon, label }: { focused: boolean; Icon: any; label:
 
   return (
     <View style={[styles.tabItem, focused && { backgroundColor: activeBg }]}>
-      <Icon color={focused ? activeColor : inactiveColor} size={22} strokeWidth={focused ? 2.5 : 2.1} />
+      <Icon color={focused ? activeColor : inactiveColor} size={21} strokeWidth={focused ? 2.5 : 2.1} />
       <Text
         style={[
           styles.tabLabel,
@@ -55,7 +55,7 @@ export default function TabLayout() {
           shadowOpacity: theme.mode === 'light' ? 0.16 : 0.28,
           shadowRadius: 22,
           shadowOffset: { width: 0, height: 12 },
-          paddingHorizontal: 8,
+          paddingHorizontal: 6,
           paddingTop: 8,
         },
       }}
@@ -65,6 +65,7 @@ export default function TabLayout() {
       <Tabs.Screen name="kids" options={{ tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={Star} label={t('kids')} /> }} />
       <Tabs.Screen name="vault" options={{ tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={Lock} label={t('vault')} /> }} />
       <Tabs.Screen name="settings" options={{ tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={SettingsIcon} label={t('settings')} /> }} />
+      <Tabs.Screen name="account" options={{ tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={UserCircle} label="Account" /> }} />
     </Tabs>
   );
 }
@@ -74,12 +75,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
-    minWidth: 60,
+    minWidth: 52,
     height: 60,
     borderRadius: 9999,
   },
   tabLabel: {
-    fontSize: 11,
+    fontSize: 10,
     letterSpacing: 0.1,
   },
 });
