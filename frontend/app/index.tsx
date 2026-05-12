@@ -208,7 +208,7 @@ export default function Landing() {
         }
 
         handledResponseRef.current = false;
-        await promptAsync({ redirectUri: androidRedirectUri });
+        await promptAsync();
         return;
       }
 
@@ -223,7 +223,7 @@ export default function Landing() {
       }
 
       handledResponseRef.current = false;
-      await promptAsync({ redirectUri });
+      await promptAsync();
     } catch (error: any) {
       logger.error('google prompt failed', error?.message || error);
       Alert.alert('Google Sign-In failed', error?.message || 'Please try again.');
