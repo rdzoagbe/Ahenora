@@ -5,7 +5,6 @@ import { useRouter } from 'expo-router';
 import Constants from 'expo-constants';
 import * as WebBrowser from 'expo-web-browser';
 import * as Google from 'expo-auth-session/providers/google';
-import { GoogleSignin, isErrorWithCode, isSuccessResponse } from '@react-native-google-signin/google-signin';
 import * as Linking from 'expo-linking';
 import { Globe, Sparkles, ShieldCheck, Crown, ArrowRight } from 'lucide-react-native';
 
@@ -43,19 +42,6 @@ function extractInviteToken(rawUrl?: string | null) {
 
 function isExpoGoAndroid() {
   return Platform.OS === 'android' && Constants.appOwnership === 'expo';
-}
-
-function isDeveloperError(error: any) {
-  const code = isErrorWithCode(error) ? error.code : error?.code;
-  const message = String(error?.message || error || '');
-  return code === '10' || code === 'DEVELOPER_ERROR' || message.includes('DEVELOPER_ERROR');
-}
-
-function shortClientId(value?: string) {
-  if (!value) return 'missing';
-  if (!value.includes('.apps.googleusercontent.com')) return 'set-but-not-google-client-format';
-  const compact = value.replace('.apps.googleusercontent.com', '');
-  return `${compact.slice(0, 8)}...${compact.slice(-6)}.apps.googleusercontent.com`;
 }
 
 export default function Landing() {
@@ -173,21 +159,6 @@ export default function Landing() {
     handleGoogleResponse();
   }, [response, inviteToken, router, setUserFromAuth]);
 
-  const startAuthSessionFallback = async () => {
-    if (!androidClientId) {
-      Alert.alert('Google Sign-In not configured', 'Missing EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID in .env.');
-      return;
-    }
-
-    if (!request) {
-      Alert.alert('Google Sign-In not ready', 'Please try again in a moment.');
-      return;
-    }
-
-    handledResponseRef.current = false;
-    await promptAsync();
-  };
-
   const signIn = async () => {
     try {
       if (isExpoGoAndroid()) {
@@ -198,62 +169,24 @@ export default function Landing() {
         return;
       }
 
-      if (!webClientId) {
-        Alert.alert('Google Sign-In not configured', 'Missing EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID in .env.');
+      if (Platform.OS === 'android') {
+        if (!androidClientId) {
+          Alert.alert('Google Sign-In not configured', 'Missing EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID in .env.');
+          return;
+        }
+
+        if (!request) {
+          Alert.alert('Google Sign-In not ready', 'Please try again in a moment.');
+          return;
+        }
+
+        handledResponseRef.current = false;
+        await promptAsync();
         return;
       }
 
-      if (Platform.OS === 'android') {
-        try {
-          GoogleSignin.configure({
-            webClientId,
-            offlineAccess: false,
-            profileImageSize: 120,
-            scopes: ['profile', 'email'],
-          });
-
-          await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
-
-          const nativeResponse = await GoogleSignin.signIn();
-
-          if (!isSuccessResponse(nativeResponse)) {
-            return;
-          }
-
-          const idToken = nativeResponse.data?.idToken;
-
-          if (!idToken) {
-            Alert.alert(
-              'Google Sign-In failed',
-              'Native Google Sign-In did not return an ID token. Check that EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID is a Web OAuth client ID.'
-            );
-            return;
-          }
-
-          const { api } = await import('../src/api');
-          const authResult = await api.exchangeSession(idToken, inviteToken || undefined);
-          await setUserFromAuth(authResult.user, authResult.session_token);
-
-          router.replace('/feed');
-          return;
-        } catch (nativeError: any) {
-          logger.error('native google sign-in failed', nativeError?.message || nativeError);
-
-          if (isDeveloperError(nativeError)) {
-            Alert.alert(
-              'Google Sign-In configuration issue',
-              `Native Google Sign-In returned DEVELOPER_ERROR (10). I will try the browser fallback next.\n\nIf the fallback also fails, verify Google Cloud has Android OAuth package com.householdcoo.app with the EAS SHA-1, and that EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID is a Web client.\n\nWeb client: ${shortClientId(webClientId)}\nAndroid client: ${shortClientId(androidClientId)}`,
-              [{ text: 'Continue', onPress: startAuthSessionFallback }]
-            );
-            return;
-          }
-
-          throw nativeError;
-        }
-      }
-
-      if (!androidClientId) {
-        Alert.alert('Google Sign-In not configured', 'Missing EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID in .env.');
+      if (!webClientId) {
+        Alert.alert('Google Sign-In not configured', 'Missing EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID in .env.');
         return;
       }
 
@@ -265,9 +198,8 @@ export default function Landing() {
       handledResponseRef.current = false;
       await promptAsync();
     } catch (error: any) {
-      const code = isErrorWithCode(error) ? ` (${error.code})` : '';
       logger.error('google prompt failed', error?.message || error);
-      Alert.alert('Google Sign-In failed', `${error?.message || 'Please try again.'}${code}`);
+      Alert.alert('Google Sign-In failed', error?.message || 'Please try again.');
     }
   };
 
