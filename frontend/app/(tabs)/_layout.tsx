@@ -1,7 +1,7 @@
 import React from 'react';
 import { Tabs } from 'expo-router';
 import { View, StyleSheet, Text } from 'react-native';
-import { Home, Calendar as CalendarIcon, Lock, Settings as SettingsIcon, Star, UserCircle } from 'lucide-react-native';
+import { Home, Calendar as CalendarIcon, Lock, Settings as SettingsIcon, Star } from 'lucide-react-native';
 import { useStore } from '../../src/store';
 
 function TabIcon({ focused, Icon, label }: { focused: boolean; Icon: any; label: string }) {
@@ -9,7 +9,7 @@ function TabIcon({ focused, Icon, label }: { focused: boolean; Icon: any; label:
   const light = theme.mode === 'light';
   const activeBg = light ? '#FFFFFF' : '#FFFFFF';
   const activeColor = '#202323';
-  const inactiveColor = light ? 'rgba(255,255,255,0.68)' : 'rgba(255,255,255,0.64)';
+  const inactiveColor = light ? 'rgba(255,255,255,0.72)' : 'rgba(255,255,255,0.64)';
 
   return (
     <View style={[styles.tabItem, focused && { backgroundColor: activeBg }]}>
@@ -65,7 +65,7 @@ export default function TabLayout() {
       <Tabs.Screen name="kids" options={{ tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={Star} label={t('kids')} /> }} />
       <Tabs.Screen name="vault" options={{ tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={Lock} label={t('vault')} /> }} />
       <Tabs.Screen name="settings" options={{ tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={SettingsIcon} label={t('settings')} /> }} />
-      <Tabs.Screen name="account" options={{ tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={UserCircle} label="Account" /> }} />
+      <Tabs.Screen name="account" options={{ href: null }} />
     </Tabs>
   );
 }
@@ -75,7 +75,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
-    minWidth: 52,
+    minWidth: 58,
     height: 60,
     borderRadius: 9999,
   },
