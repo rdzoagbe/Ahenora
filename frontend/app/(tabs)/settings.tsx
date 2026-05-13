@@ -188,11 +188,61 @@ export default function SettingsScreen() {
                 {user?.is_admin ? (
                   <View style={[styles.badge, { backgroundColor: theme.colors.accentSoft, borderColor: theme.colors.accent }]}>
                     <Crown color={theme.colors.accent} size={16} />
-                    <Text style={[styles.badgeText, { color: theme.colors.accent }]}>Admin / Tester Â· all features unlocked</Text>
+                    <Text style={[styles.badgeText, { color: theme.colors.accent }]}>Admin / Tester Ã‚Â· all features unlocked</Text>
                   </View>
                 ) : null}
               </View>
             </View>
+          </GlassCard>
+
+          <SectionTitle icon={<UserCircle color={theme.colors.textMuted} size={18} />} label="Account, privacy & support" color={theme.colors.textMuted} />
+          <GlassCard>
+            <PressScale testID="settings-open-account" onPress={() => router.push('/account')} style={styles.navRow}>
+              <View style={styles.preferenceTitleRow}>
+                <UserCircle color={theme.colors.accent} size={22} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.rowTitle, { color: theme.colors.text }]}>Account</Text>
+                  <Text style={[styles.rowDescription, { color: theme.colors.textMuted }]}>Sign-in health, support, and session controls.</Text>
+                </View>
+              </View>
+              <ChevronRight color={theme.colors.textSoft} size={22} />
+            </PressScale>
+            <Divider />
+
+            <PressScale testID="settings-open-privacy" onPress={() => router.push('/privacy')} style={styles.navRow}>
+              <View style={styles.preferenceTitleRow}>
+                <ShieldCheck color={theme.colors.accent} size={22} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.rowTitle, { color: theme.colors.text }]}>Privacy Policy</Text>
+                  <Text style={[styles.rowDescription, { color: theme.colors.textMuted }]}>How account, family, vault, calendar, and notification data are handled.</Text>
+                </View>
+              </View>
+              <ChevronRight color={theme.colors.textSoft} size={22} />
+            </PressScale>
+            <Divider />
+
+            <PressScale testID="settings-open-terms" onPress={() => router.push('/terms')} style={styles.navRow}>
+              <View style={styles.preferenceTitleRow}>
+                <FileText color={theme.colors.accent} size={22} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.rowTitle, { color: theme.colors.text }]}>Terms & Support</Text>
+                  <Text style={[styles.rowDescription, { color: theme.colors.textMuted }]}>Testing terms, limitations, and support contact.</Text>
+                </View>
+              </View>
+              <ChevronRight color={theme.colors.textSoft} size={22} />
+            </PressScale>
+            <Divider />
+
+            <PressScale testID="settings-open-delete-account" onPress={() => router.push('/delete-account')} style={styles.navRow}>
+              <View style={styles.preferenceTitleRow}>
+                <Trash2 color="#DC2626" size={22} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.rowTitle, { color: '#DC2626' }]}>Delete account</Text>
+                  <Text style={[styles.rowDescription, { color: theme.colors.textMuted }]}>Request deletion of your account and associated Household COO data.</Text>
+                </View>
+              </View>
+              <ChevronRight color={theme.colors.textSoft} size={22} />
+            </PressScale>
           </GlassCard>
 
           <SectionTitle icon={<ShieldCheck color={theme.colors.textMuted} size={18} />} label="Plan & access" color={theme.colors.textMuted} />
@@ -200,15 +250,15 @@ export default function SettingsScreen() {
             <View style={styles.cardHeaderRow}>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.cardTitle, { color: theme.colors.text }]}>{user?.is_admin ? 'Admin / Tester' : planLabel}</Text>
-                <Text style={[styles.cardSub, { color: theme.colors.textMuted }]}>{user?.is_admin ? 'All feature gates are bypassed for testing.' : `${memberSlotsUsed}/${memberLimit || 'âˆž'} member slots used`}</Text>
+                <Text style={[styles.cardSub, { color: theme.colors.textMuted }]}>{user?.is_admin ? 'All feature gates are bypassed for testing.' : `${memberSlotsUsed}/${memberLimit || 'Ã¢Ë†Å¾'} member slots used`}</Text>
               </View>
               <PressScale testID="open-pricing" onPress={() => router.push('/pricing')} style={[styles.primaryPill, { backgroundColor: theme.colors.primary }]}>
                 <Text style={[styles.primaryPillText, { color: theme.colors.primaryText }]}>View plans</Text>
               </PressScale>
             </View>
             <View style={styles.statGrid}>
-              <StatBox label="Members" value={`${memberSlotsUsed}/${memberLimit || 'âˆž'}`} />
-              <StatBox label="AI scans" value={entitlements ? `${entitlements.ai_scans_used}/${entitlements.ai_scans_limit}` : `${subscription?.ai_scans_used ?? 0}/${subscription?.limits?.ai_scans_per_month ?? 'âˆž'}`} />
+              <StatBox label="Members" value={`${memberSlotsUsed}/${memberLimit || 'Ã¢Ë†Å¾'}`} />
+              <StatBox label="AI scans" value={entitlements ? `${entitlements.ai_scans_used}/${entitlements.ai_scans_limit}` : `${subscription?.ai_scans_used ?? 0}/${subscription?.limits?.ai_scans_per_month ?? 'Ã¢Ë†Å¾'}`} />
               <StatBox label="Vault" value={formatBytes(entitlements?.vault_bytes_used ?? subscription?.vault_bytes_used)} />
               <StatBox label="Weekly brief" value={entitlements?.weekly_brief || subscription?.limits?.weekly_brief ? 'On' : 'Locked'} />
             </View>
@@ -333,7 +383,7 @@ export default function SettingsScreen() {
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.memberName, { color: theme.colors.text }]}>{member.name}</Text>
-                  <Text style={[styles.memberRole, { color: theme.colors.textMuted }]}>{member.has_pin ? 'PIN set Â· tap to change' : 'No PIN Â· tap to add'}</Text>
+                  <Text style={[styles.memberRole, { color: theme.colors.textMuted }]}>{member.has_pin ? 'PIN set Ã‚Â· tap to change' : 'No PIN Ã‚Â· tap to add'}</Text>
                 </View>
                 {member.has_pin ? <Lock color={theme.colors.accent} size={18} /> : <ChevronRight color={theme.colors.textSoft} size={22} />}
               </PressScale>
