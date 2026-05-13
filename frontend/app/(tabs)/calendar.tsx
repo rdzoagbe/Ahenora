@@ -215,12 +215,6 @@ export default function CalendarScreen() {
   };
 
   const syncCalendar = async () => {
-    console.log('B7G_DEBUG syncCalendar pressed', {
-      platform: Platform.OS,
-      hasWebClientId: Boolean(webClientId),
-      hasAndroidClientId: Boolean(androidClientId),
-      hasCalendarRequest: Boolean(calendarRequest),
-    });
 
     setSyncResult(null);
 
@@ -234,7 +228,6 @@ export default function CalendarScreen() {
       try {
         setSyncing(true);
         setCalendarSyncStatus('Opening native Google Calendar permission...');
-        console.log('B7G_DEBUG native Google calendar start');
 
         GoogleSignin.configure({
           webClientId,
@@ -253,29 +246,22 @@ export default function CalendarScreen() {
             currentUser = await googleSigninAny.getCurrentUser();
           }
         } catch (e) {
-          console.log('B7G_DEBUG getCurrentUser failed', e);
         }
 
         if (!currentUser) {
           try {
-            console.log('B7G_DEBUG trying signInSilently');
             if (typeof googleSigninAny.signInSilently === 'function') {
               currentUser = await googleSigninAny.signInSilently();
             }
           } catch (e) {
-            console.log('B7G_DEBUG signInSilently failed, opening signIn', e);
           }
         }
 
         if (!currentUser) {
-          console.log('B7G_DEBUG opening Google signIn');
           currentUser = await GoogleSignin.signIn();
         }
 
-        console.log('B7G_DEBUG signed in user ready', { hasUser: Boolean(currentUser) });
-
         if (typeof googleSigninAny.addScopes === 'function') {
-          console.log('B7G_DEBUG requesting calendar scope with addScopes');
           await googleSigninAny.addScopes({ scopes: [GOOGLE_CALENDAR_SCOPE] });
         }
 
@@ -284,12 +270,10 @@ export default function CalendarScreen() {
         try {
           tokens = await GoogleSignin.getTokens();
         } catch (tokenError: any) {
-          console.log('B7G_DEBUG getTokens failed, forcing interactive signIn', tokenError);
 
           try {
             await GoogleSignin.signOut();
           } catch (signOutError) {
-            console.log('B7G_DEBUG signOut before retry failed', signOutError);
           }
 
           GoogleSignin.configure({
@@ -301,17 +285,11 @@ export default function CalendarScreen() {
           await GoogleSignin.signIn();
 
           if (typeof googleSigninAny.addScopes === 'function') {
-            console.log('B7G_DEBUG requesting calendar scope after forced signIn');
             await googleSigninAny.addScopes({ scopes: [GOOGLE_CALENDAR_SCOPE] });
           }
 
           tokens = await GoogleSignin.getTokens();
         }
-
-        console.log('B7G_DEBUG native Google tokens', {
-          hasAccessToken: Boolean(tokens.accessToken),
-          hasIdToken: Boolean(tokens.idToken),
-        });
 
         if (!tokens.accessToken) {
           setCalendarSyncStatus('Google connected, but no Calendar access token was returned.');
@@ -320,11 +298,8 @@ export default function CalendarScreen() {
         }
 
         setCalendarSyncStatus('Importing Google Calendar events...');
-        console.log('B7G_DEBUG importing calendar with token');
 
         const result = await api.importGoogleCalendar(tokens.accessToken, 30);
-
-        console.log('B7G_DEBUG calendar import result', result);
 
         setSyncResult(result);
         await load();
@@ -360,8 +335,6 @@ export default function CalendarScreen() {
       handledCalendarResponseRef.current = false;
 
       const result = (await promptCalendarAsync()) as any;
-
-      console.log('B7G_DEBUG web AuthSession result', result);
 
       const accessToken =
         result?.authentication?.accessToken ||
