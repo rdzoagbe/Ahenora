@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { CalendarDays, ChevronLeft, ChevronRight, Clock, RefreshCw, ShieldCheck, User, Users, X } from 'lucide-react-native';
 
 import { AmbientBackground } from '../../src/components/AmbientBackground';
@@ -43,7 +44,7 @@ function cardDateKey(card: Card) {
 }
 
 function cleanText(value?: string | null) {
-  return (value || '').replace(/Â·/g, '-').replace(/\u00C2/g, '').trim();
+  return (value || '').replace(/Ã‚Â·/g, '-').replace(/\u00C2/g, '').trim();
 }
 
 function buildMonthDays(baseDate: Date) {
@@ -91,6 +92,7 @@ export default function CalendarScreen() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<CalendarImportResult | null>(null);
+  const [calendarSyncStatus, setCalendarSyncStatus] = useState<string | null>(null);
   const [activeMonth, setActiveMonth] = useState(() => new Date());
   const [selectedDay, setSelectedDay] = useState<string | null>(dateKey(new Date()));
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
@@ -201,7 +203,7 @@ export default function CalendarScreen() {
     const today = startOfLocalDay(new Date());
     const diffDays = Math.round((startOfLocalDay(date).getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
     if (diffDays === 0) return lang === 'fr' ? "Aujourd'hui" : lang === 'es' ? 'Hoy' : 'Today';
-    if (diffDays === 1) return lang === 'fr' ? 'Demain' : lang === 'es' ? 'Mañana' : 'Tomorrow';
+    if (diffDays === 1) return lang === 'fr' ? 'Demain' : lang === 'es' ? 'MaÃ±ana' : 'Tomorrow';
     return date.toLocaleDateString(locale, { weekday: 'long', month: 'short', day: 'numeric' });
   };
 
@@ -213,17 +215,183 @@ export default function CalendarScreen() {
   };
 
   const syncCalendar = async () => {
+    console.log('B7G_DEBUG syncCalendar pressed', {
+      platform: Platform.OS,
+      hasWebClientId: Boolean(webClientId),
+      hasAndroidClientId: Boolean(androidClientId),
+      hasCalendarRequest: Boolean(calendarRequest),
+    });
+
+    setSyncResult(null);
+
+    if (Platform.OS !== 'web') {
+      if (!webClientId) {
+        Alert.alert('Google Calendar not configured', 'Missing Google web client ID.');
+        setCalendarSyncStatus('Google web client ID is missing.');
+        return;
+      }
+
+      try {
+        setSyncing(true);
+        setCalendarSyncStatus('Opening native Google Calendar permission...');
+        console.log('B7G_DEBUG native Google calendar start');
+
+        GoogleSignin.configure({
+          webClientId,
+          scopes: ['profile', 'email', GOOGLE_CALENDAR_SCOPE],
+          offlineAccess: false,
+        });
+
+        await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+
+        const googleSigninAny = GoogleSignin as any;
+
+        let currentUser: any = null;
+
+        try {
+          if (typeof googleSigninAny.getCurrentUser === 'function') {
+            currentUser = await googleSigninAny.getCurrentUser();
+          }
+        } catch (e) {
+          console.log('B7G_DEBUG getCurrentUser failed', e);
+        }
+
+        if (!currentUser) {
+          try {
+            console.log('B7G_DEBUG trying signInSilently');
+            if (typeof googleSigninAny.signInSilently === 'function') {
+              currentUser = await googleSigninAny.signInSilently();
+            }
+          } catch (e) {
+            console.log('B7G_DEBUG signInSilently failed, opening signIn', e);
+          }
+        }
+
+        if (!currentUser) {
+          console.log('B7G_DEBUG opening Google signIn');
+          currentUser = await GoogleSignin.signIn();
+        }
+
+        console.log('B7G_DEBUG signed in user ready', { hasUser: Boolean(currentUser) });
+
+        if (typeof googleSigninAny.addScopes === 'function') {
+          console.log('B7G_DEBUG requesting calendar scope with addScopes');
+          await googleSigninAny.addScopes({ scopes: [GOOGLE_CALENDAR_SCOPE] });
+        }
+
+        let tokens: { accessToken?: string | null; idToken?: string | null } = {};
+
+        try {
+          tokens = await GoogleSignin.getTokens();
+        } catch (tokenError: any) {
+          console.log('B7G_DEBUG getTokens failed, forcing interactive signIn', tokenError);
+
+          try {
+            await GoogleSignin.signOut();
+          } catch (signOutError) {
+            console.log('B7G_DEBUG signOut before retry failed', signOutError);
+          }
+
+          GoogleSignin.configure({
+            webClientId,
+            scopes: ['profile', 'email', GOOGLE_CALENDAR_SCOPE],
+            offlineAccess: false,
+          });
+
+          await GoogleSignin.signIn();
+
+          if (typeof googleSigninAny.addScopes === 'function') {
+            console.log('B7G_DEBUG requesting calendar scope after forced signIn');
+            await googleSigninAny.addScopes({ scopes: [GOOGLE_CALENDAR_SCOPE] });
+          }
+
+          tokens = await GoogleSignin.getTokens();
+        }
+
+        console.log('B7G_DEBUG native Google tokens', {
+          hasAccessToken: Boolean(tokens.accessToken),
+          hasIdToken: Boolean(tokens.idToken),
+        });
+
+        if (!tokens.accessToken) {
+          setCalendarSyncStatus('Google connected, but no Calendar access token was returned.');
+          Alert.alert('Calendar sync failed', 'Google connected, but no Calendar access token was returned.');
+          return;
+        }
+
+        setCalendarSyncStatus('Importing Google Calendar events...');
+        console.log('B7G_DEBUG importing calendar with token');
+
+        const result = await api.importGoogleCalendar(tokens.accessToken, 30);
+
+        console.log('B7G_DEBUG calendar import result', result);
+
+        setSyncResult(result);
+        await load();
+
+        setCalendarSyncStatus(`${result.imported} events imported. ${result.contacts_found} people found.`);
+        Alert.alert('Calendar synced', `${result.imported} events imported. ${result.contacts_found} people found.`);
+      } catch (e: any) {
+        console.log('native google calendar sync failed', e);
+        const message = e?.message || e?.code || 'Native Google Calendar permission failed.';
+        setCalendarSyncStatus(`Calendar sync failed: ${message}`);
+        Alert.alert('Calendar sync failed', message);
+      } finally {
+        setSyncing(false);
+      }
+
+      return;
+    }
+
     if (!webClientId || !androidClientId) {
       Alert.alert('Google Calendar not configured', 'Missing Google OAuth client IDs.');
+      setCalendarSyncStatus('Google OAuth client IDs are missing.');
       return;
     }
+
     if (!calendarRequest) {
       Alert.alert('Google Calendar not ready', 'Please try again in a moment.');
+      setCalendarSyncStatus('Google Calendar connection is preparing. Try again in a few seconds.');
       return;
     }
-    setSyncResult(null);
-    handledCalendarResponseRef.current = false;
-    await promptCalendarAsync();
+
+    try {
+      setCalendarSyncStatus('Opening Google Calendar connection...');
+      handledCalendarResponseRef.current = false;
+
+      const result = (await promptCalendarAsync()) as any;
+
+      console.log('B7G_DEBUG web AuthSession result', result);
+
+      const accessToken =
+        result?.authentication?.accessToken ||
+        result?.params?.access_token ||
+        result?.params?.accessToken;
+
+      if (!accessToken) {
+        console.log('calendar auth returned no access token', result);
+        setCalendarSyncStatus('Google connected, but no calendar access token was returned.');
+        Alert.alert('Calendar sync failed', 'Google connected, but no calendar access token was returned.');
+        return;
+      }
+
+      setSyncing(true);
+      setCalendarSyncStatus('Importing Google Calendar events...');
+
+      const importResult = await api.importGoogleCalendar(accessToken, 30);
+      setSyncResult(importResult);
+      await load();
+
+      setCalendarSyncStatus(`${importResult.imported} events imported. ${importResult.contacts_found} people found.`);
+      Alert.alert('Calendar synced', `${importResult.imported} events imported. ${importResult.contacts_found} people found.`);
+    } catch (e: any) {
+      console.log('calendar sync failed', e);
+      const message = e?.message || 'Please try again.';
+      setCalendarSyncStatus(`Calendar sync failed: ${message}`);
+      Alert.alert('Calendar sync failed', message);
+    } finally {
+      setSyncing(false);
+    }
   };
 
   const shiftMonth = (amount: number) => {
@@ -248,7 +416,7 @@ export default function CalendarScreen() {
               <Text style={[styles.title, { color: theme.colors.text }]}>{t('calendar')}</Text>
               <Text style={[styles.sub, { color: theme.colors.textMuted }]}>{selectedDay ? formatDay(selectedDay) : t('upcoming')}</Text>
             </View>
-            <PressScale testID="sync-google-calendar" onPress={syncCalendar} disabled={syncing || !calendarRequest} style={[styles.syncBtn, { backgroundColor: theme.colors.primary }, (syncing || !calendarRequest) && { opacity: 0.55 }]}> 
+            <PressScale testID="sync-google-calendar" onPress={syncCalendar} disabled={syncing || (Platform.OS === 'web' && !calendarRequest)} style={[styles.syncBtn, { backgroundColor: theme.colors.primary }, (syncing || (Platform.OS === 'web' && !calendarRequest)) && { opacity: 0.55 }]}> 
               {syncing ? <ActivityIndicator color={theme.colors.primaryText} size="small" /> : <RefreshCw color={theme.colors.primaryText} size={18} />}
               <Text style={[styles.syncText, { color: theme.colors.primaryText }]}>{syncing ? 'Syncing' : 'Sync'}</Text>
             </PressScale>
