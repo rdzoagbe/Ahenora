@@ -188,7 +188,7 @@ export default function SettingsScreen() {
                 {user?.is_admin ? (
                   <View style={[styles.badge, { backgroundColor: theme.colors.accentSoft, borderColor: theme.colors.accent }]}>
                     <Crown color={theme.colors.accent} size={16} />
-                    <Text style={[styles.badgeText, { color: theme.colors.accent }]}>Admin / Tester ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· all features unlocked</Text>
+                    <Text style={[styles.badgeText, { color: theme.colors.accent }]}>Admin / Tester ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· all features unlocked</Text>
                   </View>
                 ) : null}
               </View>
@@ -250,15 +250,15 @@ export default function SettingsScreen() {
             <View style={styles.cardHeaderRow}>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.cardTitle, { color: theme.colors.text }]}>{user?.is_admin ? 'Admin / Tester' : planLabel}</Text>
-                <Text style={[styles.cardSub, { color: theme.colors.textMuted }]}>{user?.is_admin ? 'All feature gates are bypassed for testing.' : `${memberSlotsUsed}/${memberLimit || 'ÃƒÆ’Ã‚Â¢Ãƒâ€¹Ã¢â‚¬Â Ãƒâ€¦Ã‚Â¾'} member slots used`}</Text>
+                <Text style={[styles.cardSub, { color: theme.colors.textMuted }]}>{user?.is_admin ? 'All feature gates are bypassed for testing.' : `${memberSlotsUsed}/${memberLimit || 'ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¹ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¾'} member slots used`}</Text>
               </View>
               <PressScale testID="open-pricing" onPress={() => router.push('/pricing')} style={[styles.primaryPill, { backgroundColor: theme.colors.primary }]}>
                 <Text style={[styles.primaryPillText, { color: theme.colors.primaryText }]}>View plans</Text>
               </PressScale>
             </View>
             <View style={styles.statGrid}>
-              <StatBox label="Members" value={`${memberSlotsUsed}/${memberLimit || 'ÃƒÆ’Ã‚Â¢Ãƒâ€¹Ã¢â‚¬Â Ãƒâ€¦Ã‚Â¾'}`} />
-              <StatBox label="AI scans" value={entitlements ? `${entitlements.ai_scans_used}/${entitlements.ai_scans_limit}` : `${subscription?.ai_scans_used ?? 0}/${subscription?.limits?.ai_scans_per_month ?? 'ÃƒÆ’Ã‚Â¢Ãƒâ€¹Ã¢â‚¬Â Ãƒâ€¦Ã‚Â¾'}`} />
+              <StatBox label="Members" value={`${memberSlotsUsed}/${memberLimit || 'ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¹ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¾'}`} />
+              <StatBox label="AI scans" value={entitlements ? `${entitlements.ai_scans_used}/${entitlements.ai_scans_limit}` : `${subscription?.ai_scans_used ?? 0}/${subscription?.limits?.ai_scans_per_month ?? 'ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¹ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¾'}`} />
               <StatBox label="Vault" value={formatBytes(entitlements?.vault_bytes_used ?? subscription?.vault_bytes_used)} />
               <StatBox label="Weekly brief" value={entitlements?.weekly_brief || subscription?.limits?.weekly_brief ? 'On' : 'Locked'} />
             </View>
@@ -383,7 +383,7 @@ export default function SettingsScreen() {
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.memberName, { color: theme.colors.text }]}>{member.name}</Text>
-                  <Text style={[styles.memberRole, { color: theme.colors.textMuted }]}>{member.has_pin ? 'PIN set ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· tap to change' : 'No PIN ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· tap to add'}</Text>
+                  <Text style={[styles.memberRole, { color: theme.colors.textMuted }]}>{member.has_pin ? 'PIN set ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· tap to change' : 'No PIN ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· tap to add'}</Text>
                 </View>
                 {member.has_pin ? <Lock color={theme.colors.accent} size={18} /> : <ChevronRight color={theme.colors.textSoft} size={22} />}
               </PressScale>
@@ -394,7 +394,7 @@ export default function SettingsScreen() {
             <LogOut color="#DC2626" size={22} />
             <Text style={styles.logoutText}>{t('log_out')}</Text>
           </PressScale>
-          <View style={{ height: 150 }} />
+          <View style={{ height: 90 }} />
         </ScrollView>
       </SafeAreaView>
 
@@ -529,23 +529,23 @@ function SettingSwitch({ title, description, value, onValueChange, disabled }: {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   safe: { flex: 1 },
-  scroll: { paddingHorizontal: 20, paddingTop: 34, paddingBottom: 190 },
-  title: { fontFamily: 'Inter_800ExtraBold', fontSize: 38, lineHeight: 44, letterSpacing: -0.8 },
-  subtitle: { fontFamily: 'Inter_500Medium', fontSize: 16, lineHeight: 23, marginTop: 6, marginBottom: 18 },
-  profileCard: { marginBottom: 22 },
-  profileRow: { flexDirection: 'row', alignItems: 'center', gap: 16 },
-  avatar: { width: 76, height: 76, borderRadius: 9999, borderWidth: 1 },
+  scroll: { paddingHorizontal: 16, paddingTop: 18, paddingBottom: 122 },
+  title: { fontFamily: 'Inter_800ExtraBold', fontSize: 30, lineHeight: 36, letterSpacing: -0.6 },
+  subtitle: { fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 19, marginTop: 3, marginBottom: 10 },
+  profileCard: { marginBottom: 10 },
+  profileRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  avatar: { width: 54, height: 54, borderRadius: 9999, borderWidth: 1 },
   avatarFallback: { alignItems: 'center', justifyContent: 'center' },
-  avatarText: { fontFamily: 'Inter_800ExtraBold', fontSize: 26 },
-  name: { fontFamily: 'Inter_800ExtraBold', fontSize: 22, lineHeight: 28 },
-  emailRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 5 },
-  email: { fontFamily: 'Inter_500Medium', fontSize: 15, flex: 1 },
-  badge: { alignSelf: 'flex-start', marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 9999, borderWidth: 1 },
-  badgeText: { fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
-  sectionRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 26, marginBottom: 14 },
-  sectionLabel: { fontFamily: 'Inter_800ExtraBold', fontSize: 13, textTransform: 'uppercase', letterSpacing: 1.2 },
+  avatarText: { fontFamily: 'Inter_800ExtraBold', fontSize: 20 },
+  name: { fontFamily: 'Inter_800ExtraBold', fontSize: 18, lineHeight: 23 },
+  emailRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 },
+  email: { fontFamily: 'Inter_500Medium', fontSize: 12, flex: 1 },
+  badge: { alignSelf: 'flex-start', marginTop: 8, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 9, paddingVertical: 5, borderRadius: 9999, borderWidth: 1 },
+  badgeText: { fontFamily: 'Inter_800ExtraBold', fontSize: 11 },
+  sectionRow: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 16, marginBottom: 8 },
+  sectionLabel: { fontFamily: 'Inter_800ExtraBold', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1 },
   cardHeaderRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
-  cardTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 21, lineHeight: 27 },
+  cardTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 17, lineHeight: 22 },
   cardSub: { fontFamily: 'Inter_500Medium', fontSize: 15, lineHeight: 22, marginTop: 4 },
   primaryPill: { minHeight: 48, borderRadius: 9999, paddingHorizontal: 18, alignItems: 'center', justifyContent: 'center' },
   primaryPillText: { fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
