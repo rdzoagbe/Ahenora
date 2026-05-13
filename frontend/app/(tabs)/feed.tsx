@@ -224,6 +224,7 @@ export default function FeedScreen() {
   const [showCamera, setShowCamera] = useState(false);
   const [addSource, setAddSource] = useState<'MANUAL' | 'VOICE' | 'CAMERA'>('MANUAL');
   const [voiceDraft, setVoiceDraft] = useState<VoiceDraft | null>(null);
+  const [showAllFeedCards, setShowAllFeedCards] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -283,7 +284,11 @@ export default function FeedScreen() {
 
   const toggle = async (card: Card) => {
     const next = card.status === 'DONE' ? 'OPEN' : 'DONE';
-    setCards((prev) => prev.map((c) => (c.card_id === card.card_id ? { ...c, status: next } : c)));
+    setCards((prev) =>
+      next === 'DONE'
+        ? prev.filter((c) => c.card_id !== card.card_id)
+        : prev.map((c) => (c.card_id === card.card_id ? { ...c, status: next, completed_at: null } : c))
+    );
     try {
       await api.updateCard(card.card_id, { status: next });
     } catch {
@@ -622,22 +627,34 @@ export default function FeedScreen() {
             <Text style={[styles.sectionSub, { color: theme.colors.textMuted }]}>{openCount} active</Text>
           </View>
 
-          {cards.length === 0 && !loading ? (
+          {activeCards.length === 0 && !loading ? (
             <GlassCard style={styles.empty}>
               <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>{t('no_items')}</Text>
             </GlassCard>
           ) : (
-            cards.slice(0, 4).map((c) => (
+            (showAllFeedCards ? activeCards : activeCards.slice(0, 3)).map((c) => (
               <SmartCard key={c.card_id} card={c} onComplete={() => toggle(c)} onDelete={() => remove(c)} />
             ))
           )}
+
+          {activeCards.length > 3 ? (
+            <PressScale
+              testID="feed-show-all-cards"
+              onPress={() => setShowAllFeedCards((value) => !value)}
+              style={[styles.compactToggle, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}
+            >
+              <Text style={[styles.compactToggleText, { color: theme.colors.text }]}>
+                {showAllFeedCards ? 'Show fewer cards' : `View all ${activeCards.length} cards`}
+              </Text>
+            </PressScale>
+          ) : null}
 
           <View style={styles.footerSignal}>
             <UsersRound color={theme.colors.textMuted} size={14} />
             <Text style={[styles.footerSignalText, { color: theme.colors.textMuted }]}>Household COO · {childMembers.length} kids · {rewardCount} rewards</Text>
           </View>
 
-          <View style={{ height: 120 }} />
+          <View style={{ height: 80 }} />
         </ScrollView>
       </SafeAreaView>
 
@@ -893,6 +910,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
     paddingTop: 8,
+  },
+
+  compactToggle: {
+    borderWidth: 1,
+    borderRadius: 18,
+    paddingVertical: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 10,
+  },
+  compactToggleText: {
+    fontFamily: 'Inter_800ExtraBold',
+    fontSize: 13,
   },
 
   footerSignal: { alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, marginTop: 22 },

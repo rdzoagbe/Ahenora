@@ -94,6 +94,8 @@ export default function KidsScreen() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [selectedChild, setSelectedChild] = useState<string | null>(null);
+  const [showKidsActivity, setShowKidsActivity] = useState(false);
+  const [showRewardShop, setShowRewardShop] = useState(false);
 
   const [showAddMenu, setShowAddMenu] = useState(false);
 
@@ -528,6 +530,23 @@ export default function KidsScreen() {
                 </View>
               </View>
 
+              <PressScale
+                testID="kids-activity-toggle"
+                onPress={() => setShowKidsActivity((value) => !value)}
+                style={[styles.kidsCompactToggle, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}
+              >
+                <View style={styles.sectionRowInline}>
+                  <History color={theme.colors.textMuted} size={16} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.kidsCompactToggleTitle, { color: theme.colors.text }]}>Recent activity</Text>
+                    <Text style={[styles.kidsCompactToggleSub, { color: theme.colors.textMuted }]}>{recentActivityCount} activity item{recentActivityCount === 1 ? '' : 's'}</Text>
+                  </View>
+                  <Text style={[styles.kidsCompactToggleValue, { color: theme.colors.textMuted }]}>{showKidsActivity ? 'Hide' : 'Show'}</Text>
+                </View>
+              </PressScale>
+
+              {showKidsActivity ? (
+                <>
               <GlassCard style={styles.historyCard}>
                 <View style={styles.sectionHeader}>
                   <View style={styles.sectionRowInline}>
@@ -540,7 +559,7 @@ export default function KidsScreen() {
                 ) : historyItems.length === 0 ? (
                   <Text style={[styles.emptyMini, { color: theme.colors.textMuted }]}>No activity yet.</Text>
                 ) : (
-                  historyItems.slice(0, 3).map((item) => {
+                  historyItems.slice(0, 2).map((item) => {
                     const positive = item.delta > 0;
                     return (
                       <View key={item.transaction_id} style={styles.activityRow}>
@@ -556,6 +575,10 @@ export default function KidsScreen() {
                   })
                 )}
               </GlassCard>
+
+                </>
+              ) : null}
+
               <View style={[styles.rewardShopShell, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
                 <View style={styles.rewardShopHeaderCard}>
                   <View style={[styles.rewardShopBadge, { backgroundColor: theme.colors.accentSoft, borderColor: theme.colors.cardBorder }]}>
@@ -594,7 +617,7 @@ export default function KidsScreen() {
                   <EmptyState title={t('no_rewards')} message="Create a small reward to make chores feel more motivating." actionLabel="Add Reward" onAction={openCreateReward} />
                 ) : (
                   <View style={styles.rewardList}>
-                    {rewards.slice(0, 4).map((reward) => {
+                    {rewards.slice(0, 2).map((reward) => {
                       const affordable = stars >= reward.cost_stars;
                       const starsNeeded = Math.max(0, reward.cost_stars - stars);
                       const progressWidth = `${Math.min(100, Math.round((stars / reward.cost_stars) * 100))}%`;
@@ -811,6 +834,31 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   safeArea: { flex: 1 },
   scroll: { paddingHorizontal: 20, paddingTop: 14, paddingBottom: 168 },
+  kidsCompactToggle: {
+    borderWidth: 1,
+    borderRadius: 22,
+    paddingVertical: 15,
+    paddingHorizontal: 16,
+    marginTop: 12,
+  },
+  kidsCompactToggleTitle: {
+    fontFamily: 'Inter_800ExtraBold',
+    fontSize: 15,
+    lineHeight: 20,
+  },
+  kidsCompactToggleSub: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 2,
+  },
+  kidsCompactToggleValue: {
+    fontFamily: 'Inter_800ExtraBold',
+    fontSize: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+
   titleRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 16, marginTop: 4, zIndex: 5 },
   title: { fontFamily: 'Inter_800ExtraBold', fontSize: 40, lineHeight: 44, letterSpacing: -1.0 },
   sub: { fontFamily: 'Inter_500Medium', fontSize: 14, lineHeight: 20, marginTop: 4 },

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Image, Platform, ScrollView, Share, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { Bell, CalendarDays, ChevronRight, Crown, FileText, Globe, Lock, LogOut, Mail, Moon, Send, Share2, ShieldCheck, Sun, Trash2, UserCircle, UserPlus, Users, X } from 'lucide-react-native';
 
 import { AmbientBackground } from '../../src/components/AmbientBackground';
@@ -11,7 +11,7 @@ import { LanguageModal } from '../../src/components/LanguageModal';
 import { PinPadModal } from '../../src/components/PinPadModal';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
 import { useStore } from '../../src/store';
-import { api, CalendarContact, Entitlements, FamilyInvite, FamilyMember, NotificationSettings } from '../../src/api';
+import { api, CalendarContact, Card, Entitlements, FamilyInvite, FamilyMember, NotificationSettings } from '../../src/api';
 import { LANG_NAMES } from '../../src/i18n';
 import { ensureNotificationPermissions, registerForPushNotificationsAsync, sendLocalNotification, sendTestScheduledReminderNotification, syncCardReminderNotifications } from '../../src/notifications';
 
@@ -40,27 +40,43 @@ export default function SettingsScreen() {
   const [savingNotifications, setSavingNotifications] = useState(false);
   const [entitlements, setEntitlements] = useState<Entitlements | null>(null);
   const [showHouseholdAdvanced, setShowHouseholdAdvanced] = useState(false);
+  const [completedCards, setCompletedCards] = useState<Card[]>([]);
+  const [showCompletedHistory, setShowCompletedHistory] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [memberRows, inviteRows, contactRows, notificationRows, entitlementRows] = await Promise.all([
+      const [memberRows, inviteRows, contactRows, notificationRows, entitlementRows, completedRows] = await Promise.all([
         api.familyMembers(),
         api.listInvites(),
         api.listCalendarContacts().catch(() => []),
         api.getNotificationSettings().catch(() => ({ card_reminders: false, new_card_alerts: false })),
         api.getEntitlements().catch(() => null),
+        api.listCards('DONE')
+          .then(async (rows) => {
+            const directDone = rows.filter((card) => card.status === 'DONE');
+            if (directDone.length > 0) return directDone;
+            const allCards = await api.listCards().catch(() => [] as Card[]);
+            return allCards.filter((card) => card.status === 'DONE');
+          })
+          .catch(async () => {
+            const allCards = await api.listCards().catch(() => [] as Card[]);
+            return allCards.filter((card) => card.status === 'DONE');
+          }),
       ]);
       setMembers(memberRows);
       setInvites(inviteRows);
       setCalendarContacts(contactRows);
       setNotificationPrefs(notificationRows);
       setEntitlements(entitlementRows);
+      setCompletedCards(completedRows);
     } catch (error) {
       console.log('settings load failed', error);
     }
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const memberLimit = entitlements?.max_members ?? subscription?.limits?.max_members ?? 0;
   const memberSlotsUsed = entitlements?.member_slots_used ?? members.length + invites.filter((invite) => invite.status === 'pending').length;
@@ -265,6 +281,64 @@ export default function SettingsScreen() {
             </View>
           </GlassCard>
 
+          <SectionTitle icon={<FileText color={theme.colors.textMuted} size={18} />} label="History" color={theme.colors.textMuted} />
+          <GlassCard>
+            <PressScale testID="settings-completed-history-toggle" onPress={() => setShowCompletedHistory((value) => !value)} style={styles.navRow}>
+              <View style={styles.preferenceTitleRow}>
+                <FileText color={theme.colors.accent} size={22} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.rowTitle, { color: theme.colors.text }]}>Completed history</Text>
+                  <Text style={[styles.rowDescription, { color: theme.colors.textMuted }]}>
+                    {completedCards.length} completed card{completedCards.length === 1 ? '' : 's'}
+                  </Text>
+                </View>
+              </View>
+              <Text style={[styles.rowValue, { color: theme.colors.textMuted }]}>{showCompletedHistory ? 'Hide' : 'Show'}</Text>
+            </PressScale>
+
+            {showCompletedHistory ? (
+              <View>
+                <Divider />
+                {completedCards.length === 0 ? (
+                  <EmptyText text="No completed cards yet." />
+                ) : (
+                  completedCards.slice(0, 8).map((card, index) => (
+                    <View key={card.card_id}>
+                      {index > 0 ? <Divider /> : null}
+                      <View style={styles.memberRow}>
+                        <View style={[styles.memberAvatar, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
+                          <Text style={[styles.memberInitial, { color: theme.colors.text }]}>{card.type === 'TASK' ? 'T' : card.type === 'RSVP' ? 'R' : 'S'}</Text>
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.memberName, { color: theme.colors.text }]} numberOfLines={1}>{card.title}</Text>
+                          <Text style={[styles.memberRole, { color: theme.colors.textMuted }]} numberOfLines={1}>
+                            Done · {card.assignee || 'Family'} · {card.completed_at ? new Date(card.completed_at).toLocaleDateString() : new Date(card.created_at).toLocaleDateString()}
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+                  ))
+                )}
+              </View>
+            ) : null}
+          </GlassCard>
+
+          <SectionTitle icon={<Bell color={theme.colors.textMuted} size={18} />} label="Notifications" color={theme.colors.textMuted} />
+          <GlassCard>
+            <PressScale testID="settings-notifications-toggle" onPress={() => setShowNotifications((value) => !value)} style={styles.navRow}>
+              <View style={styles.preferenceTitleRow}>
+                <Bell color={theme.colors.accent} size={22} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.rowTitle, { color: theme.colors.text }]}>Notification controls</Text>
+                  <Text style={[styles.rowDescription, { color: theme.colors.textMuted }]}>Reminder alerts and new-card alerts. Tap to show or hide.</Text>
+                </View>
+              </View>
+              <Text style={[styles.rowValue, { color: theme.colors.textMuted }]}>{showNotifications ? 'Hide' : 'Show'}</Text>
+            </PressScale>
+          </GlassCard>
+
+          {showNotifications ? (
+            <>
           <SectionTitle icon={<Bell color={theme.colors.textMuted} size={18} />} label="Notifications" color={theme.colors.textMuted} />
           <GlassCard>
             <SettingSwitch
@@ -288,6 +362,10 @@ export default function SettingsScreen() {
             </View>
             <Text style={[styles.note, { color: theme.colors.textMuted }]}>{notificationStatus || 'Use a development build for full push notification testing.'}</Text>
           </GlassCard>
+
+
+            </>
+          ) : null}
 
           <SectionTitle icon={<Globe color={theme.colors.textMuted} size={18} />} label="Preferences" color={theme.colors.textMuted} />
           <GlassCard>
