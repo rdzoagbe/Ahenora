@@ -15,7 +15,7 @@ interface Props {
 const BG_URL = 'https://static.prod-images.emergentagent.com/jobs/096ff1e5-0337-4e7f-a0c1-6a43a75126d3/images/c54dfb594feff59886f35731ad1a1d593ce3d04827e4d753eab304e381593173.png';
 
 export function SundayBriefModal({ visible, onClose }: Props) {
-  const { t, showUpgradePrompt } = useStore();
+  const { t, showUpgradePrompt, theme } = useStore();
   const [loading, setLoading] = useState(false);
   const [brief, setBrief] = useState<string | null>(null);
   const [generatedAt, setGeneratedAt] = useState<string | null>(null);
@@ -46,81 +46,85 @@ export function SundayBriefModal({ visible, onClose }: Props) {
     }
   };
 
+  const light = theme.mode === 'light';
+
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
       <ImageBackground source={{ uri: BG_URL }} style={StyleSheet.absoluteFill} resizeMode="cover">
-        <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
-        <View style={styles.overlay} />
+        <BlurView intensity={light ? 72 : 60} tint={light ? 'light' : 'dark'} style={StyleSheet.absoluteFill} />
+        <View style={[styles.overlay, { backgroundColor: light ? 'rgba(255,255,255,0.78)' : 'rgba(8,9,16,0.72)' }]} />
       </ImageBackground>
       <View style={styles.container}>
         <View style={styles.topBar}>
-          <PressScale testID="close-brief" onPress={onClose} style={styles.closeBtn}>
-            <X color="#fff" size={18} />
+          <PressScale testID="close-brief" onPress={onClose} style={[styles.closeBtn, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}> 
+            <X color={theme.colors.text} size={18} />
           </PressScale>
         </View>
 
         <View style={styles.content}>
-          <View style={styles.badge}>
-            <Sparkles color="#fff" size={14} />
-            <Text style={styles.badgeText}>AI · Gemini 3 Flash</Text>
+          <View style={[styles.badge, { backgroundColor: theme.colors.accentSoft, borderColor: theme.colors.cardBorder }]}> 
+            <Sparkles color={theme.colors.accent} size={14} />
+            <Text style={[styles.badgeText, { color: theme.colors.accent }]}>AI · Gemini 3 Flash</Text>
           </View>
-          <Text style={styles.heading}>{t('sunday_brief')}</Text>
-          <Text style={styles.sub}>{t('sunday_brief_subtitle')}</Text>
+          <Text style={[styles.heading, { color: theme.colors.text }]}>{t('sunday_brief')}</Text>
+          <Text style={[styles.sub, { color: theme.colors.textMuted }]}>{t('sunday_brief_subtitle')}</Text>
 
           {!brief && !loading && (
-            <PressScale testID="generate-brief" onPress={generate} style={styles.ctaBtn}>
-              <Sparkles color="#080910" size={16} />
-              <Text style={styles.ctaText}>{t('generate_brief')}</Text>
+            <PressScale testID="generate-brief" onPress={generate} style={[styles.ctaBtn, { backgroundColor: theme.colors.primary }]}> 
+              <Sparkles color={theme.colors.primaryText} size={16} />
+              <Text style={[styles.ctaText, { color: theme.colors.primaryText }]}>{t('generate_brief')}</Text>
             </PressScale>
           )}
 
           {loading && (
             <View style={styles.loadingWrap}>
-              <ActivityIndicator color="#fff" />
-              <Text style={styles.loadingText}>{t('generating')}</Text>
+              <ActivityIndicator color={theme.colors.text} />
+              <Text style={[styles.loadingText, { color: theme.colors.textMuted }]}>{t('generating')}</Text>
             </View>
           )}
 
           {brief && (
-            <ScrollView
-              style={styles.briefScroll}
-              contentContainerStyle={styles.briefContent}
-              testID="brief-scroll"
-            >
-              <Text style={styles.briefText}>{brief}</Text>
-              {generatedAt ? (
-                <Text style={styles.generatedAt}>
-                  {new Date(generatedAt).toLocaleString()}
-                </Text>
-              ) : null}
-              <PressScale
-                testID="share-brief"
-                onPress={async () => {
-                  const shareText = `Sunday Brief from Household COO\n\n${brief}`;
-                  if (Platform.OS === 'web' && typeof navigator !== 'undefined') {
-                    try {
-                      if ((navigator as any).share) {
-                        await (navigator as any).share({
-                          title: 'Sunday Brief — Household COO',
-                          text: shareText,
-                        });
-                        setShared(true);
-                      } else if (navigator.clipboard) {
-                        await navigator.clipboard.writeText(shareText);
-                        setShared(true);
-                      }
-                    } catch { /* user cancelled */ }
-                  }
-                  setTimeout(() => setShared(false), 2200);
-                }}
-                style={styles.shareBtn}
+            <View style={[styles.briefPanel, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}> 
+              <ScrollView
+                style={styles.briefScroll}
+                contentContainerStyle={styles.briefContent}
+                testID="brief-scroll"
               >
-                <Share2 color="#080910" size={16} />
-                <Text style={styles.shareText}>
-                  {shared ? 'Copied / shared!' : 'Share the brief'}
-                </Text>
-              </PressScale>
-            </ScrollView>
+                <Text style={[styles.briefText, { color: theme.colors.text }]}>{brief}</Text>
+                {generatedAt ? (
+                  <Text style={[styles.generatedAt, { color: theme.colors.textSoft }]}> 
+                    {new Date(generatedAt).toLocaleString()}
+                  </Text>
+                ) : null}
+                <PressScale
+                  testID="share-brief"
+                  onPress={async () => {
+                    const shareText = `Sunday Brief from Household COO\n\n${brief}`;
+                    if (Platform.OS === 'web' && typeof navigator !== 'undefined') {
+                      try {
+                        if ((navigator as any).share) {
+                          await (navigator as any).share({
+                            title: 'Sunday Brief — Household COO',
+                            text: shareText,
+                          });
+                          setShared(true);
+                        } else if (navigator.clipboard) {
+                          await navigator.clipboard.writeText(shareText);
+                          setShared(true);
+                        }
+                      } catch { /* user cancelled */ }
+                    }
+                    setTimeout(() => setShared(false), 2200);
+                  }}
+                  style={[styles.shareBtn, { backgroundColor: theme.colors.primary }]}
+                >
+                  <Share2 color={theme.colors.primaryText} size={16} />
+                  <Text style={[styles.shareText, { color: theme.colors.primaryText }]}> 
+                    {shared ? 'Copied / shared!' : 'Share the brief'}
+                  </Text>
+                </PressScale>
+              </ScrollView>
+            </View>
           )}
         </View>
       </View>
@@ -129,15 +133,13 @@ export function SundayBriefModal({ visible, onClose }: Props) {
 }
 
 const styles = StyleSheet.create({
-  overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(8,9,16,0.7)' },
+  overlay: { ...StyleSheet.absoluteFillObject },
   container: { flex: 1, paddingHorizontal: 24, paddingTop: 60, paddingBottom: 40 },
   topBar: { flexDirection: 'row', justifyContent: 'flex-end' },
   closeBtn: {
     padding: 10,
     borderRadius: 9999,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
-    backgroundColor: 'rgba(255,255,255,0.05)',
   },
   content: { flex: 1, justifyContent: 'center' },
   badge: {
@@ -147,29 +149,25 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    backgroundColor: 'rgba(255,255,255,0.08)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
     borderRadius: 9999,
     marginBottom: 20,
   },
   badgeText: {
-    color: '#fff',
-    fontFamily: 'Inter_500Medium',
+    fontFamily: 'Inter_700Bold',
     fontSize: 11,
     letterSpacing: 0.4,
   },
   heading: {
     fontFamily: 'PlayfairDisplay_400Regular_Italic',
-    color: '#fff',
     fontSize: 48,
     lineHeight: 52,
     marginBottom: 8,
   },
   sub: {
-    fontFamily: 'Inter_400Regular',
-    color: 'rgba(255,255,255,0.6)',
+    fontFamily: 'Inter_500Medium',
     fontSize: 15,
+    lineHeight: 22,
     marginBottom: 28,
   },
   ctaBtn: {
@@ -177,28 +175,31 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     alignSelf: 'flex-start',
-    backgroundColor: '#fff',
     paddingHorizontal: 22,
     paddingVertical: 14,
     borderRadius: 9999,
     gap: 8,
   },
-  ctaText: { color: '#080910', fontFamily: 'Inter_600SemiBold', fontSize: 15 },
+  ctaText: { fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
   loadingWrap: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  loadingText: { color: 'rgba(255,255,255,0.7)', fontFamily: 'Inter_400Regular', fontSize: 14 },
+  loadingText: { fontFamily: 'Inter_600SemiBold', fontSize: 14 },
+  briefPanel: {
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 16,
+    maxHeight: 460,
+  },
   briefScroll: { maxHeight: 420 },
   briefContent: { paddingRight: 8 },
   briefText: {
-    fontFamily: 'Inter_400Regular',
-    color: '#fff',
-    fontSize: 17,
-    lineHeight: 28,
+    fontFamily: 'Inter_500Medium',
+    fontSize: 16,
+    lineHeight: 27,
     letterSpacing: 0.1,
   },
   generatedAt: {
     marginTop: 20,
-    color: 'rgba(255,255,255,0.35)',
-    fontFamily: 'Inter_400Regular',
+    fontFamily: 'Inter_500Medium',
     fontSize: 11,
   },
   shareBtn: {
@@ -207,10 +208,9 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#fff',
     paddingHorizontal: 20,
     paddingVertical: 12,
     borderRadius: 9999,
   },
-  shareText: { color: '#080910', fontFamily: 'Inter_600SemiBold', fontSize: 14 },
+  shareText: { fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
 });
