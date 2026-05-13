@@ -39,6 +39,7 @@ export default function SettingsScreen() {
   const [notificationStatus, setNotificationStatus] = useState<string | null>(null);
   const [savingNotifications, setSavingNotifications] = useState(false);
   const [entitlements, setEntitlements] = useState<Entitlements | null>(null);
+  const [showHouseholdAdvanced, setShowHouseholdAdvanced] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -188,7 +189,7 @@ export default function SettingsScreen() {
                 {user?.is_admin ? (
                   <View style={[styles.badge, { backgroundColor: theme.colors.accentSoft, borderColor: theme.colors.accent }]}>
                     <Crown color={theme.colors.accent} size={16} />
-                    <Text style={[styles.badgeText, { color: theme.colors.accent }]}>Admin / Tester ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· all features unlocked</Text>
+                    <Text style={[styles.badgeText, { color: theme.colors.accent }]}>Admin / Tester - all features unlocked</Text>
                   </View>
                 ) : null}
               </View>
@@ -250,15 +251,15 @@ export default function SettingsScreen() {
             <View style={styles.cardHeaderRow}>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.cardTitle, { color: theme.colors.text }]}>{user?.is_admin ? 'Admin / Tester' : planLabel}</Text>
-                <Text style={[styles.cardSub, { color: theme.colors.textMuted }]}>{user?.is_admin ? 'All feature gates are bypassed for testing.' : `${memberSlotsUsed}/${memberLimit || 'ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¹ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¾'} member slots used`}</Text>
+                <Text style={[styles.cardSub, { color: theme.colors.textMuted }]}>{user?.is_admin ? 'All feature gates are bypassed for testing.' : `${memberSlotsUsed}/${memberLimit || 'Unlimited'} member slots used`}</Text>
               </View>
               <PressScale testID="open-pricing" onPress={() => router.push('/pricing')} style={[styles.primaryPill, { backgroundColor: theme.colors.primary }]}>
                 <Text style={[styles.primaryPillText, { color: theme.colors.primaryText }]}>View plans</Text>
               </PressScale>
             </View>
             <View style={styles.statGrid}>
-              <StatBox label="Members" value={`${memberSlotsUsed}/${memberLimit || 'ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¹ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¾'}`} />
-              <StatBox label="AI scans" value={entitlements ? `${entitlements.ai_scans_used}/${entitlements.ai_scans_limit}` : `${subscription?.ai_scans_used ?? 0}/${subscription?.limits?.ai_scans_per_month ?? 'ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¹ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¾'}`} />
+              <StatBox label="Members" value={`${memberSlotsUsed}/${memberLimit || 'Unlimited'}`} />
+              <StatBox label="AI scans" value={entitlements ? `${entitlements.ai_scans_used}/${entitlements.ai_scans_limit}` : `${subscription?.ai_scans_used ?? 0}/${subscription?.limits?.ai_scans_per_month ?? 'Unlimited'}`} />
               <StatBox label="Vault" value={formatBytes(entitlements?.vault_bytes_used ?? subscription?.vault_bytes_used)} />
               <StatBox label="Weekly brief" value={entitlements?.weekly_brief || subscription?.limits?.weekly_brief ? 'On' : 'Locked'} />
             </View>
@@ -321,6 +322,22 @@ export default function SettingsScreen() {
             </PressScale>
           </GlassCard>
 
+          <SectionTitle icon={<Users color={theme.colors.textMuted} size={18} />} label="Household management" color={theme.colors.textMuted} />
+          <GlassCard>
+            <PressScale testID="settings-household-toggle" onPress={() => setShowHouseholdAdvanced((value) => !value)} style={styles.navRow}>
+              <View style={styles.preferenceTitleRow}>
+                <Users color={theme.colors.accent} size={22} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.rowTitle, { color: theme.colors.text }]}>Family, invites, calendar contacts & kid PINs</Text>
+                  <Text style={[styles.rowDescription, { color: theme.colors.textMuted }]}>Advanced household setup. Tap to show or hide.</Text>
+                </View>
+              </View>
+              <Text style={[styles.rowValue, { color: theme.colors.textMuted }]}>{showHouseholdAdvanced ? 'Hide' : 'Show'}</Text>
+            </PressScale>
+          </GlassCard>
+
+          {showHouseholdAdvanced ? (
+            <>
           <SectionTitle icon={<Users color={theme.colors.textMuted} size={18} />} label="Family" color={theme.colors.textMuted} />
           <GlassCard>
             {members.length === 0 ? <EmptyText text="No family members yet." /> : members.map((member, index) => (
@@ -383,18 +400,22 @@ export default function SettingsScreen() {
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.memberName, { color: theme.colors.text }]}>{member.name}</Text>
-                  <Text style={[styles.memberRole, { color: theme.colors.textMuted }]}>{member.has_pin ? 'PIN set ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· tap to change' : 'No PIN ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· tap to add'}</Text>
+                  <Text style={[styles.memberRole, { color: theme.colors.textMuted }]}>{member.has_pin ? 'PIN set - tap to change' : 'No PIN - tap to add'}</Text>
                 </View>
                 {member.has_pin ? <Lock color={theme.colors.accent} size={18} /> : <ChevronRight color={theme.colors.textSoft} size={22} />}
               </PressScale>
             ))}
           </GlassCard>
 
+
+            </>
+          ) : null}
+
           <PressScale testID="logout" onPress={doLogout} style={styles.logoutBtn}>
             <LogOut color="#DC2626" size={22} />
             <Text style={styles.logoutText}>{t('log_out')}</Text>
           </PressScale>
-          <View style={{ height: 90 }} />
+          <View style={{ height: 60 }} />
         </ScrollView>
       </SafeAreaView>
 
@@ -529,7 +550,7 @@ function SettingSwitch({ title, description, value, onValueChange, disabled }: {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   safe: { flex: 1 },
-  scroll: { paddingHorizontal: 16, paddingTop: 18, paddingBottom: 122 },
+  scroll: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 96 },
   title: { fontFamily: 'Inter_800ExtraBold', fontSize: 30, lineHeight: 36, letterSpacing: -0.6 },
   subtitle: { fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 19, marginTop: 3, marginBottom: 10 },
   profileCard: { marginBottom: 10 },

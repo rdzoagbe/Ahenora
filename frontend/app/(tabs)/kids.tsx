@@ -540,7 +540,7 @@ export default function KidsScreen() {
                 ) : historyItems.length === 0 ? (
                   <Text style={[styles.emptyMini, { color: theme.colors.textMuted }]}>No activity yet.</Text>
                 ) : (
-                  historyItems.slice(0, 4).map((item) => {
+                  historyItems.slice(0, 3).map((item) => {
                     const positive = item.delta > 0;
                     return (
                       <View key={item.transaction_id} style={styles.activityRow}>
@@ -594,7 +594,7 @@ export default function KidsScreen() {
                   <EmptyState title={t('no_rewards')} message="Create a small reward to make chores feel more motivating." actionLabel="Add Reward" onAction={openCreateReward} />
                 ) : (
                   <View style={styles.rewardList}>
-                    {rewards.map((reward) => {
+                    {rewards.slice(0, 4).map((reward) => {
                       const affordable = stars >= reward.cost_stars;
                       const starsNeeded = Math.max(0, reward.cost_stars - stars);
                       const progressWidth = `${Math.min(100, Math.round((stars / reward.cost_stars) * 100))}%`;

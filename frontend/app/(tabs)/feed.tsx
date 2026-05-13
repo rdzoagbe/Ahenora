@@ -627,7 +627,7 @@ export default function FeedScreen() {
               <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>{t('no_items')}</Text>
             </GlassCard>
           ) : (
-            cards.map((c) => (
+            cards.slice(0, 4).map((c) => (
               <SmartCard key={c.card_id} card={c} onComplete={() => toggle(c)} onDelete={() => remove(c)} />
             ))
           )}
@@ -637,7 +637,7 @@ export default function FeedScreen() {
             <Text style={[styles.footerSignalText, { color: theme.colors.textMuted }]}>Household COO · {childMembers.length} kids · {rewardCount} rewards</Text>
           </View>
 
-          <View style={{ height: 160 }} />
+          <View style={{ height: 120 }} />
         </ScrollView>
       </SafeAreaView>
 
