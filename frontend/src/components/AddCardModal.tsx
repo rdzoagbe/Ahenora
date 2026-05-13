@@ -59,7 +59,7 @@ export function AddCardModal({
   initialSource = 'MANUAL',
   initialDraft = null,
 }: Props) {
-  const { t } = useStore();
+  const { t, theme } = useStore();
   const [type, setType] = useState<CardType>('TASK');
   const [title, setTitle] = useState('');
   const [desc, setDesc] = useState('');
@@ -70,7 +70,6 @@ export function AddCardModal({
   const [suggestedAssignee, setSuggestedAssignee] = useState<string>('');
   const [suggestLoading, setSuggestLoading] = useState(false);
 
-  // Auto-assign suggestion: when title is long enough and assignee is empty
   useEffect(() => {
     if (!visible) return;
     if (assignee.trim()) { setSuggestedAssignee(''); return; }
@@ -158,32 +157,32 @@ export function AddCardModal({
 
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
-      <BlurView intensity={50} tint="dark" style={StyleSheet.absoluteFill} />
-      <View style={styles.backdrop} />
+      <BlurView intensity={50} tint={theme.mode === 'light' ? 'light' : 'dark'} style={StyleSheet.absoluteFill} />
+      <View style={[styles.backdrop, { backgroundColor: theme.mode === 'light' ? 'rgba(255,255,255,0.46)' : 'rgba(8,9,16,0.6)' }]} />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.container}
       >
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-          <View style={styles.sheet}>
+          <View style={[styles.sheet, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder, shadowColor: theme.colors.shadow }]}> 
             <View style={styles.header}>
-              <Text style={styles.heading}>{t('add_card')}</Text>
-              <PressScale testID="close-add-card" onPress={onClose} style={styles.closeBtn}>
-                <X color="#fff" size={18} />
+              <Text style={[styles.heading, { color: theme.colors.text }]}>{t('add_card')}</Text>
+              <PressScale testID="close-add-card" onPress={onClose} style={[styles.closeBtn, { borderColor: theme.colors.cardBorder }]}> 
+                <X color={theme.colors.text} size={18} />
               </PressScale>
             </View>
 
             <ScrollView style={{ maxHeight: 520 }} keyboardShouldPersistTaps="handled">
               {initialDraft?.transcript ? (
-                <View style={styles.transcriptBox}>
-                  <Text style={styles.transcriptLabel}>{t('transcript')}</Text>
-                  <Text style={styles.transcriptText} numberOfLines={3}>
+                <View style={[styles.transcriptBox, { backgroundColor: theme.colors.accentSoft, borderColor: theme.colors.cardBorder }]}> 
+                  <Text style={[styles.transcriptLabel, { color: theme.colors.textMuted }]}>{t('transcript')}</Text>
+                  <Text style={[styles.transcriptText, { color: theme.colors.text }]} numberOfLines={3}>
                     &ldquo;{initialDraft.transcript}&rdquo;
                   </Text>
                 </View>
               ) : null}
 
-              <Text style={styles.label}>{t('choose_type')}</Text>
+              <Text style={[styles.label, { color: theme.colors.textMuted }]}>{t('choose_type')}</Text>
               <View style={styles.typeRow}>
                 {TYPES.map((typ) => {
                   const Icon = typ.icon;
@@ -196,16 +195,16 @@ export function AddCardModal({
                       style={[
                         styles.typeBtn,
                         {
-                          borderColor: active ? typ.color : 'rgba(255,255,255,0.1)',
-                          backgroundColor: active ? typ.color + '22' : 'rgba(255,255,255,0.03)',
+                          borderColor: active ? typ.color : theme.colors.cardBorder,
+                          backgroundColor: active ? typ.color + '22' : theme.colors.bgSoft,
                         },
                       ]}
                     >
-                      <Icon color={active ? typ.color : 'rgba(255,255,255,0.6)'} size={18} />
+                      <Icon color={active ? typ.color : theme.colors.textMuted} size={18} />
                       <Text
                         style={[
                           styles.typeLabel,
-                          { color: active ? typ.color : 'rgba(255,255,255,0.7)' },
+                          { color: active ? typ.color : theme.colors.textMuted },
                         ]}
                       >
                         {typ.key === 'SIGN_SLIP'
@@ -219,50 +218,50 @@ export function AddCardModal({
                 })}
               </View>
 
-              <Text style={styles.label}>{t('title')}</Text>
+              <Text style={[styles.label, { color: theme.colors.textMuted }]}>{t('title')}</Text>
               <TextInput
                 testID="input-title"
                 value={title}
                 onChangeText={setTitle}
                 placeholder={t('title')}
-                placeholderTextColor="rgba(255,255,255,0.3)"
-                style={styles.input}
+                placeholderTextColor={theme.colors.textSoft}
+                style={[styles.input, { color: theme.colors.text, backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}
               />
 
-              <Text style={styles.label}>{t('description')}</Text>
+              <Text style={[styles.label, { color: theme.colors.textMuted }]}>{t('description')}</Text>
               <TextInput
                 testID="input-description"
                 value={desc}
                 onChangeText={setDesc}
                 placeholder={t('description')}
-                placeholderTextColor="rgba(255,255,255,0.3)"
+                placeholderTextColor={theme.colors.textSoft}
                 multiline
-                style={[styles.input, { minHeight: 72, textAlignVertical: 'top' }]}
+                style={[styles.input, { minHeight: 72, textAlignVertical: 'top', color: theme.colors.text, backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}
               />
 
-              <Text style={styles.label}>{t('assignee')}</Text>
+              <Text style={[styles.label, { color: theme.colors.textMuted }]}>{t('assignee')}</Text>
               <TextInput
                 testID="input-assignee"
                 value={assignee}
                 onChangeText={setAssignee}
                 placeholder={t('assignee')}
-                placeholderTextColor="rgba(255,255,255,0.3)"
-                style={styles.input}
+                placeholderTextColor={theme.colors.textSoft}
+                style={[styles.input, { color: theme.colors.text, backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}
               />
               {suggestedAssignee || suggestLoading ? (
                 <View style={styles.suggestRow}>
-                  <Sparkles color="rgba(99,102,241,0.9)" size={11} />
+                  <Sparkles color={theme.colors.accent} size={11} />
                   {suggestLoading ? (
-                    <Text style={styles.suggestText}>AI is thinking...</Text>
+                    <Text style={[styles.suggestText, { color: theme.colors.textMuted }]}>AI is thinking...</Text>
                   ) : (
                     <>
-                      <Text style={styles.suggestText}>Suggested:</Text>
+                      <Text style={[styles.suggestText, { color: theme.colors.textMuted }]}>Suggested:</Text>
                       <PressScale
                         testID={`suggest-${suggestedAssignee}`}
                         onPress={() => setAssignee(suggestedAssignee)}
-                        style={styles.suggestChip}
+                        style={[styles.suggestChip, { borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.accentSoft }]}
                       >
-                        <Text style={styles.suggestChipText}>{suggestedAssignee}</Text>
+                        <Text style={[styles.suggestChipText, { color: theme.colors.accent }]}>{suggestedAssignee}</Text>
                       </PressScale>
                     </>
                   )}
@@ -270,8 +269,8 @@ export function AddCardModal({
               ) : null}
 
               <View style={styles.rowHeader}>
-                <Repeat color="rgba(255,255,255,0.55)" size={12} />
-                <Text style={styles.label}>{t('recurrence')}</Text>
+                <Repeat color={theme.colors.textMuted} size={12} />
+                <Text style={[styles.label, { color: theme.colors.textMuted }]}>{t('recurrence')}</Text>
               </View>
               <View style={styles.pillRow}>
                 {RECURRENCES.map((r) => {
@@ -281,9 +280,9 @@ export function AddCardModal({
                       key={r}
                       testID={`rec-${r}`}
                       onPress={() => setRecurrence(r)}
-                      style={[styles.pill, active && styles.pillActive]}
+                      style={[styles.pill, { borderColor: theme.colors.cardBorder, backgroundColor: active ? theme.colors.primary : theme.colors.bgSoft }]}
                     >
-                      <Text style={[styles.pillText, active && styles.pillTextActive]}>
+                      <Text style={[styles.pillText, { color: active ? theme.colors.primaryText : theme.colors.textMuted }]}>
                         {t(`rec_${r}`)}
                       </Text>
                     </PressScale>
@@ -292,8 +291,8 @@ export function AddCardModal({
               </View>
 
               <View style={styles.rowHeader}>
-                <Bell color="rgba(255,255,255,0.55)" size={12} />
-                <Text style={styles.label}>{t('reminder')}</Text>
+                <Bell color={theme.colors.textMuted} size={12} />
+                <Text style={[styles.label, { color: theme.colors.textMuted }]}>{t('reminder')}</Text>
               </View>
               <View style={styles.pillRow}>
                 {REMINDERS.map((rem) => {
@@ -303,9 +302,9 @@ export function AddCardModal({
                       key={rem.mins}
                       testID={`rem-${rem.mins}`}
                       onPress={() => setReminderMins(rem.mins)}
-                      style={[styles.pill, active && styles.pillActive]}
+                      style={[styles.pill, { borderColor: theme.colors.cardBorder, backgroundColor: active ? theme.colors.primary : theme.colors.bgSoft }]}
                     >
-                      <Text style={[styles.pillText, active && styles.pillTextActive]}>
+                      <Text style={[styles.pillText, { color: active ? theme.colors.primaryText : theme.colors.textMuted }]}>
                         {t(rem.key)}
                       </Text>
                     </PressScale>
@@ -315,16 +314,16 @@ export function AddCardModal({
             </ScrollView>
 
             <View style={styles.footer}>
-              <PressScale testID="cancel-add-card" onPress={onClose} style={styles.cancelBtn}>
-                <Text style={styles.cancelText}>{t('cancel')}</Text>
+              <PressScale testID="cancel-add-card" onPress={onClose} style={[styles.cancelBtn, { borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}> 
+                <Text style={[styles.cancelText, { color: theme.colors.text }]}>{t('cancel')}</Text>
               </PressScale>
               <PressScale
                 testID="save-add-card"
                 onPress={handleSave}
                 disabled={saving || !title.trim()}
-                style={[styles.saveBtn, (!title.trim() || saving) && { opacity: 0.5 }]}
+                style={[styles.saveBtn, { backgroundColor: theme.colors.primary }, (!title.trim() || saving) && { opacity: 0.5 }]}
               >
-                <Text style={styles.saveText}>{saving ? '...' : t('save')}</Text>
+                <Text style={[styles.saveText, { color: theme.colors.primaryText }]}>{saving ? '...' : t('save')}</Text>
               </PressScale>
             </View>
           </View>
@@ -335,16 +334,18 @@ export function AddCardModal({
 }
 
 const styles = StyleSheet.create({
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(8,9,16,0.6)' },
+  backdrop: { ...StyleSheet.absoluteFillObject },
   container: { flex: 1, justifyContent: 'flex-end' },
   sheet: {
-    backgroundColor: 'rgba(20,22,32,0.95)',
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
     padding: 24,
     paddingBottom: 34,
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: -10 },
+    elevation: 16,
   },
   header: {
     flexDirection: 'row',
@@ -353,42 +354,36 @@ const styles = StyleSheet.create({
     marginBottom: 18,
   },
   heading: {
-    fontFamily: 'PlayfairDisplay_400Regular_Italic',
+    fontFamily: 'Inter_800ExtraBold',
     fontSize: 26,
-    color: '#fff',
+    letterSpacing: -0.3,
   },
   closeBtn: {
     padding: 8,
     borderRadius: 9999,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
   },
   transcriptBox: {
-    backgroundColor: 'rgba(99,102,241,0.12)',
     borderWidth: 1,
-    borderColor: 'rgba(99,102,241,0.3)',
     borderRadius: 14,
     padding: 12,
     marginBottom: 10,
   },
   transcriptLabel: {
-    fontFamily: 'Inter_500Medium',
+    fontFamily: 'Inter_700Bold',
     fontSize: 10,
     letterSpacing: 1,
-    color: 'rgba(255,255,255,0.55)',
     textTransform: 'uppercase',
     marginBottom: 4,
   },
   transcriptText: {
-    fontFamily: 'PlayfairDisplay_400Regular_Italic',
+    fontFamily: 'Inter_600SemiBold',
     fontSize: 15,
-    color: '#fff',
     lineHeight: 21,
   },
   label: {
-    fontFamily: 'Inter_500Medium',
+    fontFamily: 'Inter_800ExtraBold',
     fontSize: 11,
-    color: 'rgba(255,255,255,0.5)',
     textTransform: 'uppercase',
     letterSpacing: 1,
     marginTop: 12,
@@ -406,16 +401,13 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     gap: 8,
   },
-  typeLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
+  typeLabel: { fontFamily: 'Inter_700Bold', fontSize: 12 },
   input: {
-    backgroundColor: 'rgba(255,255,255,0.04)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
     borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 12,
-    color: '#fff',
-    fontFamily: 'Inter_400Regular',
+    fontFamily: 'Inter_500Medium',
     fontSize: 15,
   },
   suggestRow: {
@@ -426,22 +418,18 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   suggestText: {
-    fontFamily: 'Inter_500Medium',
+    fontFamily: 'Inter_600SemiBold',
     fontSize: 12,
-    color: 'rgba(255,255,255,0.62)',
   },
   suggestChip: {
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 9999,
     borderWidth: 1,
-    borderColor: 'rgba(99,102,241,0.36)',
-    backgroundColor: 'rgba(99,102,241,0.16)',
   },
   suggestChipText: {
-    fontFamily: 'Inter_600SemiBold',
+    fontFamily: 'Inter_800ExtraBold',
     fontSize: 12,
-    color: '#C7D2FE',
   },
   pillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   pill: {
@@ -449,19 +437,11 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
     borderRadius: 9999,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-    backgroundColor: 'rgba(255,255,255,0.03)',
-  },
-  pillActive: {
-    backgroundColor: 'rgba(255,255,255,0.95)',
-    borderColor: '#fff',
   },
   pillText: {
-    fontFamily: 'Inter_500Medium',
+    fontFamily: 'Inter_700Bold',
     fontSize: 12,
-    color: 'rgba(255,255,255,0.7)',
   },
-  pillTextActive: { color: '#080910' },
   footer: {
     flexDirection: 'row',
     gap: 12,
@@ -470,18 +450,16 @@ const styles = StyleSheet.create({
   cancelBtn: {
     flex: 1,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
     borderRadius: 14,
     paddingVertical: 14,
     alignItems: 'center',
   },
-  cancelText: { color: 'rgba(255,255,255,0.7)', fontFamily: 'Inter_500Medium', fontSize: 15 },
+  cancelText: { fontFamily: 'Inter_700Bold', fontSize: 15 },
   saveBtn: {
     flex: 1,
-    backgroundColor: '#fff',
     borderRadius: 14,
     paddingVertical: 14,
     alignItems: 'center',
   },
-  saveText: { color: '#080910', fontFamily: 'Inter_600SemiBold', fontSize: 15 },
+  saveText: { fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
 });
