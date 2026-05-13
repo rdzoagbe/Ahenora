@@ -274,7 +274,7 @@ export default function Landing() {
         <View style={styles.center}>
           <View style={[styles.badge, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}> 
             <Sparkles color={theme.colors.text} size={12} />
-            <Text style={[styles.badgeText, { color: theme.colors.text }]}>{t('app_name')}</Text>
+            <Text style={[styles.badgeText, { color: theme.colors.text }]}>Play Store testing release</Text>
           </View>
 
           {invitedBy ? (
@@ -289,8 +289,13 @@ export default function Landing() {
             </View>
           ) : null}
 
-          <Text style={[styles.heading, { color: theme.colors.text }]}>{t('tagline')}</Text>
-          <Text style={[styles.sub, { color: theme.colors.textMuted }]}>A calmer household dashboard with priorities, reminders, secure vaulting, and elegant coordination.</Text>
+          <Text style={[styles.heading, { color: theme.colors.text }]}>Organise your household, calmly.</Text>
+          <Text style={[styles.sub, { color: theme.colors.textMuted }]}>Manage family tasks, reminders, scanned documents, calendar events, and secure vault items in one place.</Text>
+
+          <View style={[styles.testingCard, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}> 
+            <ShieldCheck color={theme.colors.accent} size={16} />
+            <Text style={[styles.testingText, { color: theme.colors.textMuted }]}>Testing release: paid plans are disabled, no payment is collected, and account/privacy controls are available in Settings.</Text>
+          </View>
 
           <View style={styles.buttonStack}>
             <PressScale
@@ -314,24 +319,24 @@ export default function Landing() {
               onPress={() => router.push('/pricing')}
               style={[styles.secondaryCta, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}
             >
-              <Text style={[styles.secondaryCtaText, { color: theme.colors.text }]}>Explore plans</Text>
+              <Text style={[styles.secondaryCtaText, { color: theme.colors.text }]}>View testing plans</Text>
               <ArrowRight color={theme.colors.text} size={14} />
             </PressScale>
           </View>
 
           <View style={styles.secureRow}>
             <ShieldCheck color={theme.colors.textSoft} size={12} />
-            <Text style={[styles.secureText, { color: theme.colors.textSoft }]}>{t('sign_in_secure')}</Text>
+            <Text style={[styles.secureText, { color: theme.colors.textSoft }]}>Secure Google sign-in · Family data stays inside your Household COO account</Text>
           </View>
 
           <View style={styles.adminNote}>
             <Crown color="#F59E0B" size={12} />
-            <Text style={[styles.adminNoteText, { color: theme.colors.textSoft }]}>Admin testers unlock after sign-in via backend policy.</Text>
+            <Text style={[styles.adminNoteText, { color: theme.colors.textSoft }]}>Tester/admin access may unlock extra features for validation only.</Text>
           </View>
         </View>
 
         <View style={styles.footer}>
-          <Text style={[styles.foot, { color: theme.colors.textSoft }]}>Household COO · beautifully organised family operations</Text>
+          <Text style={[styles.foot, { color: theme.colors.textSoft }]}>Household COO · household operations for families</Text>
         </View>
       </SafeAreaView>
 
@@ -390,8 +395,23 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
     marginTop: 12,
-    marginBottom: 24,
+    marginBottom: 14,
     maxWidth: 340,
+  },
+  testingCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 12,
+    marginBottom: 18,
+  },
+  testingText: {
+    flex: 1,
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 12,
+    lineHeight: 18,
   },
   buttonStack: { gap: 12 },
   cta: {
@@ -428,7 +448,7 @@ const styles = StyleSheet.create({
   googleText: { fontWeight: '800', color: '#4285F4' },
   ctaText: { fontFamily: 'Inter_700Bold', fontSize: 15 },
   secureRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 14 },
-  secureText: { fontFamily: 'Inter_400Regular', fontSize: 11 },
+  secureText: { fontFamily: 'Inter_400Regular', fontSize: 11, flex: 1, textAlign: 'center' },
   adminNote: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 10 },
   adminNoteText: { fontFamily: 'Inter_400Regular', fontSize: 10, textAlign: 'center' },
   footer: { alignItems: 'center', paddingBottom: 10, gap: 10 },
