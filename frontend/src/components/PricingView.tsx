@@ -51,7 +51,7 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
 
     Alert.alert(
       'Plans are in testing mode',
-      'Paid upgrades are parked for the Play Store testing release. Plan changes will be connected later through an approved Google Play billing flow.'
+      'Paid upgrades are disabled in this Play Store testing release. No payment is collected. Plan changes will be connected later through Google Play Billing.'
     );
   };
 
@@ -64,16 +64,16 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
         <View style={styles.header}>
           <View style={styles.badge}>
             <Sparkles color="#fff" size={12} />
-            <Text style={styles.badgeText}>{t('pricing_link')}</Text>
+            <Text style={styles.badgeText}>Testing plans</Text>
           </View>
-          <Text style={styles.title}>{t('pricing_title')}</Text>
-          <Text style={styles.subtitle}>{t('pricing_subtitle')}</Text>
+          <Text style={styles.title}>Plans are visible for testing.</Text>
+          <Text style={styles.subtitle}>Subscriptions are not active in this Play Store testing release. You can review plan limits, but upgrades are disabled until Google Play Billing is enabled.</Text>
         </View>
 
         <View>
           <BillingToggle value={cycle} onChange={setCycle} t={t} />
           <Text style={styles.billingNote}>
-            Play Store testing mode: paid subscriptions are not active yet. Upgrades will be connected later using an approved Google Play billing flow.
+            No payment will be collected during this test. Paid plan buttons intentionally show &quot;Coming soon&quot;.
           </Text>
         </View>
 
@@ -93,7 +93,7 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
         </View>
 
         <View style={styles.faqWrap}>
-          <Text style={styles.faqTitle}>{t('pricing_faq_title')}</Text>
+          <Text style={styles.faqTitle}>Testing notes</Text>
           {[
             [t('pricing_faq_1_q'), t('pricing_faq_1_a')],
             [t('pricing_faq_2_q'), t('pricing_faq_2_a')],
@@ -228,7 +228,7 @@ function PlanCard({
       </View>
       {!isFree && cycle === 'yearly' ? (
         <Text style={styles.yearlyNote}>
-          ${price.toFixed(2)} {t('pricing_billed_yearly')}
+          ${price.toFixed(2)} {t('pricing_billed_yearly')} Ã‚Â· preview only
         </Text>
       ) : null}
 
@@ -246,7 +246,7 @@ function PlanCard({
       {showCurrentBadge && isCurrent ? (
         <View style={[styles.cta, styles.ctaCurrent]}>
           <Text style={[styles.ctaText, { color: '#fff' }]}>
-            ✓ {t('pricing_current_plan')}
+            ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“ {t('pricing_current_plan')}
           </Text>
         </View>
       ) : (
