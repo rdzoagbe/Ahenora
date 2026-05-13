@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Image, Platform, ScrollView, Share, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Bell, CalendarDays, ChevronRight, Crown, Globe, Lock, LogOut, Mail, Moon, Send, Share2, ShieldCheck, Sun, UserPlus, Users, X } from 'lucide-react-native';
+import { Bell, CalendarDays, ChevronRight, Crown, FileText, Globe, LifeBuoy, Lock, LogOut, Mail, Moon, Send, Share2, ShieldCheck, Sun, Trash2, UserCircle, UserPlus, Users, X } from 'lucide-react-native';
 
 import { AmbientBackground } from '../../src/components/AmbientBackground';
 import { GlassCard } from '../../src/components/GlassCard';
@@ -188,7 +188,7 @@ export default function SettingsScreen() {
                 {user?.is_admin ? (
                   <View style={[styles.badge, { backgroundColor: theme.colors.accentSoft, borderColor: theme.colors.accent }]}>
                     <Crown color={theme.colors.accent} size={16} />
-                    <Text style={[styles.badgeText, { color: theme.colors.accent }]}>Admin / Tester · all features unlocked</Text>
+                    <Text style={[styles.badgeText, { color: theme.colors.accent }]}>Admin / Tester Â· all features unlocked</Text>
                   </View>
                 ) : null}
               </View>
@@ -200,15 +200,15 @@ export default function SettingsScreen() {
             <View style={styles.cardHeaderRow}>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.cardTitle, { color: theme.colors.text }]}>{user?.is_admin ? 'Admin / Tester' : planLabel}</Text>
-                <Text style={[styles.cardSub, { color: theme.colors.textMuted }]}>{user?.is_admin ? 'All feature gates are bypassed for testing.' : `${memberSlotsUsed}/${memberLimit || '∞'} member slots used`}</Text>
+                <Text style={[styles.cardSub, { color: theme.colors.textMuted }]}>{user?.is_admin ? 'All feature gates are bypassed for testing.' : `${memberSlotsUsed}/${memberLimit || 'âˆž'} member slots used`}</Text>
               </View>
               <PressScale testID="open-pricing" onPress={() => router.push('/pricing')} style={[styles.primaryPill, { backgroundColor: theme.colors.primary }]}>
                 <Text style={[styles.primaryPillText, { color: theme.colors.primaryText }]}>View plans</Text>
               </PressScale>
             </View>
             <View style={styles.statGrid}>
-              <StatBox label="Members" value={`${memberSlotsUsed}/${memberLimit || '∞'}`} />
-              <StatBox label="AI scans" value={entitlements ? `${entitlements.ai_scans_used}/${entitlements.ai_scans_limit}` : `${subscription?.ai_scans_used ?? 0}/${subscription?.limits?.ai_scans_per_month ?? '∞'}`} />
+              <StatBox label="Members" value={`${memberSlotsUsed}/${memberLimit || 'âˆž'}`} />
+              <StatBox label="AI scans" value={entitlements ? `${entitlements.ai_scans_used}/${entitlements.ai_scans_limit}` : `${subscription?.ai_scans_used ?? 0}/${subscription?.limits?.ai_scans_per_month ?? 'âˆž'}`} />
               <StatBox label="Vault" value={formatBytes(entitlements?.vault_bytes_used ?? subscription?.vault_bytes_used)} />
               <StatBox label="Weekly brief" value={entitlements?.weekly_brief || subscription?.limits?.weekly_brief ? 'On' : 'Locked'} />
             </View>
@@ -333,7 +333,7 @@ export default function SettingsScreen() {
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.memberName, { color: theme.colors.text }]}>{member.name}</Text>
-                  <Text style={[styles.memberRole, { color: theme.colors.textMuted }]}>{member.has_pin ? 'PIN set · tap to change' : 'No PIN · tap to add'}</Text>
+                  <Text style={[styles.memberRole, { color: theme.colors.textMuted }]}>{member.has_pin ? 'PIN set Â· tap to change' : 'No PIN Â· tap to add'}</Text>
                 </View>
                 {member.has_pin ? <Lock color={theme.colors.accent} size={18} /> : <ChevronRight color={theme.colors.textSoft} size={22} />}
               </PressScale>
