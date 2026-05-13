@@ -12,9 +12,8 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.householdcoo.app",
       "infoPlist": {
-        "NSCameraUsageDescription": "Scan school flyers into smart cards",
-        "NSPhotoLibraryUsageDescription": "Attach photos to family documents",
-        "NSMicrophoneUsageDescription": "Capture voice notes into smart cards"
+        "NSCameraUsageDescription": "Household COO uses the camera only when you choose Scan to capture household documents, school letters, appointment cards, or bills.",
+        "NSPhotoLibraryUsageDescription": "Household COO uses your photo library only when you choose a photo to scan or attach to a household document."
       }
     },
     "android": {
@@ -26,8 +25,8 @@
       "edgeToEdgeEnabled": true,
       "permissions": [
         "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO",
-        "android.permission.READ_MEDIA_IMAGES"
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.POST_NOTIFICATIONS"
       ]
     },
     "web": {
@@ -40,8 +39,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Attach photos to family documents",
-          "cameraPermission": "Scan school flyers into smart cards"
+          "photosPermission": "Household COO uses your photo library only when you choose a photo to scan or attach to a household document.",
+          "cameraPermission": "Household COO uses the camera only when you choose Scan to capture household documents, school letters, appointment cards, or bills."
         }
       ],
       [
