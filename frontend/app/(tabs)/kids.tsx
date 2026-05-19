@@ -15,10 +15,7 @@ import {
   Gift,
   History,
   Lock,
-  MinusCircle,
-  Pencil,
   Plus,
-  Sparkles,
   Star,
   Trash2,
   UserPlus,
@@ -44,13 +41,6 @@ type RewardSheetMode = 'create' | 'edit';
 type StarMode = 'add' | 'remove';
 
 const DEFAULT_REWARD_ICON = String.fromCodePoint(0x1F381);
-
-const REWARD_IDEAS = [
-  { title: 'Pizza night', cost_stars: 50, icon: String.fromCodePoint(0x1F355) },
-  { title: 'Movie night', cost_stars: 75, icon: String.fromCodePoint(0x1F3AC) },
-  { title: 'Ice cream treat', cost_stars: 40, icon: String.fromCodePoint(0x1F366) },
-  { title: 'Game time', cost_stars: 60, icon: String.fromCodePoint(0x1F3AE) },
-] as const;
 
 const ICON_LIBRARY: { match: string[]; icons: string[] }[] = [
   { match: ['pizza', 'dinner', 'restaurant', 'food'], icons: [String.fromCodePoint(0x1F355), String.fromCodePoint(0x1F37D), String.fromCodePoint(0x1F389), String.fromCodePoint(0x1F354)] },
@@ -391,7 +381,7 @@ export default function KidsScreen() {
                   <View style={styles.heroContent}>
                     <View style={styles.heroHeaderLine}>
                       <View>
-                        <Text style={styles.heroKicker}>{activeChild.name}'s wallet</Text>
+                        <Text style={styles.heroKicker}>{`${activeChild.name}'s wallet`}</Text>
                         <Text style={styles.heroPin}>{activeChild.has_pin ? 'PIN on' : 'No PIN'}</Text>
                       </View>
                       <View style={styles.readyPill}><Text style={styles.readyPillText}>{affordableRewards}/{rewards.length} ready</Text></View>
