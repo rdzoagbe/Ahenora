@@ -226,7 +226,7 @@ export default function FeedScreen() {
   const [showCamera, setShowCamera] = useState(false);
   const [addSource, setAddSource] = useState<'MANUAL' | 'VOICE' | 'CAMERA'>('MANUAL');
   const [voiceDraft, setVoiceDraft] = useState<VoiceDraft | null>(null);
-  const [showAllFeedCards, setShowAllFeedCards] = useState(false);
+  const [activeTab, setActiveTab] = useState<'today' | 'upcoming' | 'all'>('today');
 
   const load = useCallback(async () => {
     try {
@@ -344,6 +344,38 @@ export default function FeedScreen() {
 
     return { overdue, todayCards, calendarToday, adminCards, nextUp, priority, calmScore };
   }, [activeCards]);
+
+  const tabCards = useMemo(() => {
+    const now = Date.now();
+    const todayDate = new Date();
+    if (activeTab === 'today') {
+      return uniqueCards([...dashboard.overdue, ...dashboard.todayCards]).sort((a, b) => {
+        const at = dueTime(a) || 0;
+        const bt = dueTime(b) || 0;
+        const aOver = at > 0 && at < now;
+        const bOver = bt > 0 && bt < now;
+        if (aOver && !bOver) return -1;
+        if (!aOver && bOver) return 1;
+        return at - bt;
+      });
+    }
+    if (activeTab === 'upcoming') {
+      return activeCards
+        .filter((c) => {
+          const time = dueTime(c);
+          return time !== null && time > now && !sameLocalDay(new Date(time), todayDate);
+        })
+        .sort((a, b) => (dueTime(a) || 0) - (dueTime(b) || 0));
+    }
+    return [...activeCards].sort((a, b) => {
+      const at = dueTime(a);
+      const bt = dueTime(b);
+      if (!at && !bt) return 0;
+      if (!at) return 1;
+      if (!bt) return -1;
+      return at - bt;
+    });
+  }, [activeTab, activeCards, dashboard]);
 
   const childMembers = useMemo(() => members.filter((m) => m.role?.toLowerCase() === 'child'), [members]);
   const totalStars = useMemo(() => childMembers.reduce((sum, child) => sum + (child.stars || 0), 0), [childMembers]);
@@ -498,71 +530,48 @@ export default function FeedScreen() {
             </GlassCard>
           )}
 
-          {loading && <ActivityIndicator color={theme.colors.text} style={{ marginTop: 40 }} />}
+          {/* ── Tab navigation ── */}
+          <View style={styles.tabRow}>
+            {(['today', 'upcoming', 'all'] as const).map((tab) => (
+              <PressScale
+                key={tab}
+                testID={`feed-tab-${tab}`}
+                onPress={() => setActiveTab(tab)}
+                style={[
+                  styles.tabBtn,
+                  { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder },
+                  activeTab === tab && { backgroundColor: theme.colors.primary, borderColor: 'transparent' },
+                ]}
+              >
+                <Text style={[styles.tabBtnText, { color: activeTab === tab ? theme.colors.primaryText : theme.colors.textMuted }]}>
+                  {tab === 'today' ? 'Today' : tab === 'upcoming' ? 'Upcoming' : 'All cards'}
+                </Text>
+              </PressScale>
+            ))}
+          </View>
 
-          {uniqueCards([...dashboard.overdue, ...dashboard.todayCards, ...dashboard.nextUp]).length === 0 ? (
-            <View style={[styles.priorityEmpty, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
+          {loading ? (
+            <ActivityIndicator color={theme.colors.text} style={{ marginTop: 40 }} />
+          ) : tabCards.length === 0 ? (
+            <View style={[styles.emptyTab, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
               <CheckCircle2 color={theme.colors.success} size={18} />
-              <Text style={[styles.priorityEmptyText, { color: theme.colors.text }]}>{labels.nothingUrgent}</Text>
+              <Text style={[styles.emptyTabText, { color: theme.colors.text }]}>
+                {activeTab === 'today' ? labels.nothingUrgent : activeTab === 'upcoming' ? 'Nothing coming up.' : labels.nothingUrgentSub}
+              </Text>
             </View>
           ) : (
-            <View style={[styles.priorityPanel, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
-              <View style={styles.priorityHeader}>
-                <Text style={[styles.priorityLabel, { color: theme.colors.textMuted }]}>PRIORITY NOW</Text>
-                <View style={[styles.priorityBadge, { backgroundColor: theme.colors.accentSoft }]}>
-                  <Text style={[styles.priorityBadgeText, { color: theme.colors.accent }]}>
-                    {uniqueCards([...dashboard.overdue, ...dashboard.todayCards, ...dashboard.nextUp]).length}
-                  </Text>
-                </View>
-              </View>
-              {uniqueCards([...dashboard.overdue, ...dashboard.todayCards, ...dashboard.nextUp]).slice(0, 4).map((card) => (
-                <PressScale
-                  key={`priority-${card.card_id}`}
-                  onPress={() => router.push('/calendar')}
-                  style={[styles.priorityRow, { borderTopColor: theme.colors.cardBorder }]}
-                >
-                  <View style={[styles.priorityIcon, { backgroundColor: card.type === 'TASK' ? theme.colors.bgSoft : theme.colors.accentSoft }]}>
-                    {card.type === 'TASK' ? (
-                      <CheckCircle2 color={theme.colors.success} size={15} />
-                    ) : (
-                      <FileText color={theme.colors.accent} size={15} />
-                    )}
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.priorityTaskTitle, { color: theme.colors.text }]} numberOfLines={1}>{card.title}</Text>
-                    <Text style={[styles.priorityTaskMeta, { color: theme.colors.textMuted }]} numberOfLines={1}>
-                      {formatCardDate(card)} · {card.assignee || t('family')}
-                    </Text>
-                  </View>
-                  <ArrowRight color={theme.colors.textMuted} size={14} />
-                </PressScale>
-              ))}
-            </View>
-          )}
-
-          <PressScale
-            testID="feed-week-toggle"
-            onPress={() => setShowAllFeedCards((v) => !v)}
-            style={[styles.weekToggle, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}
-          >
-            <CalendarDays color={theme.colors.textMuted} size={16} />
-            <Text style={[styles.weekToggleTitle, { color: theme.colors.text }]}>{t('this_week')}</Text>
-            <View style={[styles.weekToggleCount, { backgroundColor: theme.colors.bgSoft }]}>
-              <Text style={[styles.weekToggleCountText, { color: theme.colors.textMuted }]}>{openCount}</Text>
-            </View>
-            <Text style={[styles.weekToggleHint, { color: theme.colors.textMuted }]}>{showAllFeedCards ? 'Hide ↑' : 'Show ↓'}</Text>
-          </PressScale>
-
-          {showAllFeedCards && (
-            activeCards.length === 0 && !loading ? (
-              <GlassCard style={styles.empty}>
-                <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>{t('no_items')}</Text>
-              </GlassCard>
-            ) : (
-              activeCards.map((c) => (
+            <>
+              {tabCards.map((c) => (
                 <SmartCard key={c.card_id} card={c} onComplete={() => toggle(c)} onDelete={() => remove(c)} />
-              ))
-            )
+              ))}
+              {activeTab !== 'all' && openCount > tabCards.length && (
+                <PressScale testID="feed-show-all" onPress={() => setActiveTab('all')} style={styles.showAllRow}>
+                  <Text style={[styles.showAllText, { color: theme.colors.textMuted }]}>
+                    {tabCards.length} of {openCount} cards shown · switch to All →
+                  </Text>
+                </PressScale>
+              )}
+            </>
           )}
 
           </View>{/* end wideColRight */}
@@ -878,4 +887,11 @@ const styles = StyleSheet.create({
   weekToggleCount: { borderRadius: 99, paddingHorizontal: 9, paddingVertical: 4 },
   weekToggleCountText: { fontFamily: 'Inter_800ExtraBold', fontSize: 11 },
   weekToggleHint: { fontFamily: 'Inter_700Bold', fontSize: 11 },
+  tabRow: { flexDirection: 'row', gap: 8, marginBottom: 14, marginTop: 2 },
+  tabBtn: { flex: 1, paddingVertical: 10, borderRadius: 99, borderWidth: 1, alignItems: 'center' },
+  tabBtnText: { fontFamily: 'Inter_700Bold', fontSize: 13 },
+  emptyTab: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderRadius: 20, padding: 18, marginTop: 4 },
+  emptyTabText: { fontFamily: 'Inter_600SemiBold', fontSize: 14, flex: 1 },
+  showAllRow: { paddingVertical: 14, alignItems: 'center' },
+  showAllText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
 });
