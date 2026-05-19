@@ -639,8 +639,6 @@ export default function KidsScreen() {
                 <Text style={[styles.tipText, { color: theme.colors.textMuted }]}>Reward good habits - keep it fair</Text>
               </View>
               </View>{/* end wideColRight */}
-            </>
-          )}
           </View>{/* end wideRow */}
           </View>{/* end maxW wrapper */}
 
