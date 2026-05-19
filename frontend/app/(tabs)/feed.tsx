@@ -87,12 +87,12 @@ function labelsFor(lang: string): Labels {
       capture: 'Capturer quelque chose',
       urgent: 'Urgent',
       calendarToday: 'Calendrier',
-      kidStars: 'Étoiles',
+      kidStars: 'Ã‰toiles',
       vaultDocs: 'Coffre',
-      needsAttention: 'À traiter',
+      needsAttention: 'Ã€ traiter',
       nothingUrgent: 'Rien de critique.',
-      nothingUrgentSub: 'Votre foyer est sous contrôle pour le moment.',
-      nextUp: 'À venir',
+      nothingUrgentSub: 'Votre foyer est sous contrÃ´le pour le moment.',
+      nextUp: 'Ã€ venir',
       quickActions: 'Actions rapides',
       scan: 'Scanner',
       voice: 'Voix',
@@ -113,18 +113,18 @@ function labelsFor(lang: string): Labels {
       urgent: 'Urgente',
       calendarToday: 'Calendario',
       kidStars: 'Estrellas',
-      vaultDocs: 'Bóveda',
-      needsAttention: 'Necesita atención',
-      nothingUrgent: 'Nada crítico.',
-      nothingUrgentSub: 'Tu hogar está bajo control por ahora.',
-      nextUp: 'Próximo',
-      quickActions: 'Acciones rápidas',
+      vaultDocs: 'BÃ³veda',
+      needsAttention: 'Necesita atenciÃ³n',
+      nothingUrgent: 'Nada crÃ­tico.',
+      nothingUrgentSub: 'Tu hogar estÃ¡ bajo control por ahora.',
+      nextUp: 'PrÃ³ximo',
+      quickActions: 'Acciones rÃ¡pidas',
       scan: 'Escanear',
       voice: 'Voz',
       manual: 'Manual',
       brief: 'Informe',
       calmScore: 'Calma',
-      scoreHelper: 'Menos atrasos, más calma.',
+      scoreHelper: 'Menos atrasos, mÃ¡s calma.',
       openNow: 'abiertos',
     };
   }
@@ -142,14 +142,14 @@ function labelsFor(lang: string): Labels {
       needsAttention: 'Braucht Aufmerksamkeit',
       nothingUrgent: 'Nichts Kritisches.',
       nothingUrgentSub: 'Ihr Haushalt ist im Moment unter Kontrolle.',
-      nextUp: 'Als Nächstes',
+      nextUp: 'Als NÃ¤chstes',
       quickActions: 'Schnellaktionen',
       scan: 'Scannen',
       voice: 'Stimme',
       manual: 'Manuell',
       brief: 'Brief',
       calmScore: 'Ruhe-Score',
-      scoreHelper: 'Weniger Rückstand, mehr Ruhe.',
+      scoreHelper: 'Weniger RÃ¼ckstand, mehr Ruhe.',
       openNow: 'offen',
     };
   }
@@ -433,7 +433,7 @@ export default function FeedScreen() {
         >
           <View style={{ maxWidth: maxW, alignSelf: 'center', width: '100%' }}>
           <View style={isWide ? styles.wideRow : null}>
-          {/* ── Left column (hero + stats) ── */}
+          {/* â”€â”€ Left column (hero + stats) â”€â”€ */}
           <View style={isWide ? styles.wideColLeft : null}>
           <View style={styles.header}>
             <View style={{ flex: 1 }}>
@@ -488,7 +488,7 @@ export default function FeedScreen() {
 
           </View>{/* end wideColLeft */}
 
-          {/* ── Right column (actions + cards) ── */}
+          {/* â”€â”€ Right column (actions + cards) â”€â”€ */}
           <View style={isWide ? styles.wideColRight : null}>
           <View style={styles.actionRow}>
             <PressScale onPress={() => setShowCamera(true)} style={[styles.actionTile, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
@@ -513,7 +513,7 @@ export default function FeedScreen() {
             <GlassCard testID="reminders-banner" style={styles.remindersCard}>
               <View style={styles.remindersHeader}>
                 <Bell color={theme.colors.accent} size={16} />
-                <Text style={[styles.remindersTitle, { color: theme.colors.text }]}>{t('reminders')} · {upcomingReminders.length}</Text>
+                <Text style={[styles.remindersTitle, { color: theme.colors.text }]}>{t('reminders')} Â· {upcomingReminders.length}</Text>
               </View>
               {upcomingReminders.slice(0, 3).map((c) => {
                 const due = dueTime(c) || Date.now();
@@ -530,7 +530,7 @@ export default function FeedScreen() {
             </GlassCard>
           )}
 
-          {/* ── Tab navigation ── */}
+          {/* â”€â”€ Tab navigation â”€â”€ */}
           <View style={styles.tabRow}>
             {(['today', 'upcoming', 'all'] as const).map((tab) => (
               <PressScale
@@ -567,7 +567,7 @@ export default function FeedScreen() {
               {activeTab !== 'all' && openCount > tabCards.length && (
                 <PressScale testID="feed-show-all" onPress={() => setActiveTab('all')} style={styles.showAllRow}>
                   <Text style={[styles.showAllText, { color: theme.colors.textMuted }]}>
-                    {tabCards.length} of {openCount} cards shown · switch to All →
+                    {tabCards.length} of {openCount} cards shown Â· switch to All â†’
                   </Text>
                 </PressScale>
               )}
@@ -579,7 +579,7 @@ export default function FeedScreen() {
 
           <View style={styles.footerSignal}>
             <UsersRound color={theme.colors.textMuted} size={14} />
-            <Text style={[styles.footerSignalText, { color: theme.colors.textMuted }]}>Household COO · {childMembers.length} kids · {rewardCount} rewards</Text>
+            <Text style={[styles.footerSignalText, { color: theme.colors.textMuted }]}>Household COO Â· {childMembers.length} kids Â· {rewardCount} rewards</Text>
           </View>
           </View>{/* end maxW wrapper */}
 
@@ -735,7 +735,7 @@ const styles = StyleSheet.create({
   emptyTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 21, textAlign: 'center' },
   emptySub: { fontFamily: 'Inter_500Medium', fontSize: 14, lineHeight: 20, textAlign: 'center', maxWidth: 270 },
   priorityCard: { minHeight: 82, borderRadius: 26, borderWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 13, padding: 14, marginBottom: 10, shadowOpacity: 0.08, shadowRadius: 13, shadowOffset: { width: 0, height: 8 }, elevation: 2 },
-  priorityIcon: { width: 44, height: 44, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  priorityIconDeprecated: { width: 44, height: 44, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   priorityTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 16, lineHeight: 21 },
   priorityMeta: { fontFamily: 'Inter_600SemiBold', fontSize: 12, marginTop: 2 },
   nextRow: { minHeight: 56, borderBottomWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },

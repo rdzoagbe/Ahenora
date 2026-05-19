@@ -480,7 +480,7 @@ export default function KidsScreen() {
                 </PressScale>
               </View>
 
-              {/* ── Stars tab ── */}
+              {/* â”€â”€ Stars tab â”€â”€ */}
               {kidsTab === 'stars' && activeChild && (
                 <>
                   <GlassCard style={styles.walletCard}>
@@ -498,7 +498,7 @@ export default function KidsScreen() {
                         {latestActivity ? (
                           <View style={[styles.walletLastAction, { backgroundColor: theme.colors.bgSoft }]}>
                             <Text style={[styles.walletLastActionText, { color: theme.colors.textMuted }]}>
-                              Last action: {latestActivity.delta > 0 ? '+' : ''}{latestActivity.delta} stars · {latestActivity.reason || 'adjustment'}
+                              Last action: {latestActivity.delta > 0 ? '+' : ''}{latestActivity.delta} stars Â· {latestActivity.reason || 'adjustment'}
                             </Text>
                           </View>
                         ) : null}
@@ -553,7 +553,7 @@ export default function KidsScreen() {
                 </>
               )}
 
-              {/* ── Rewards tab ── */}
+              {/* â”€â”€ Rewards tab â”€â”€ */}
               {kidsTab === 'rewards' && (
                 <View style={[styles.rewardShopShell, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
                   <View style={styles.rewardShopHeaderCard}>
@@ -623,7 +623,7 @@ export default function KidsScreen() {
                 </View>
               )}
 
-              {/* ── History tab ── */}
+              {/* â”€â”€ History tab â”€â”€ */}
               {kidsTab === 'history' && (
                 <GlassCard style={styles.historyCard}>
                   <View style={styles.sectionHeader}>
@@ -633,7 +633,7 @@ export default function KidsScreen() {
                     </View>
                   </View>
                   {historyLoading ? (
-                    <Text style={[styles.emptyMini, { color: theme.colors.textMuted }]}>Loading activity…</Text>
+                    <Text style={[styles.emptyMini, { color: theme.colors.textMuted }]}>Loading activityâ€¦</Text>
                   ) : historyItems.length === 0 ? (
                     <Text style={[styles.emptyMini, { color: theme.colors.textMuted }]}>No activity yet.</Text>
                   ) : (
@@ -1017,7 +1017,7 @@ const styles = StyleSheet.create({
   kidsTabBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: 99, borderWidth: 1 },
   kidsTabText: { fontFamily: 'Inter_700Bold', fontSize: 13 },
 
-  // Stars tab — wallet card
+  // Stars tab â€” wallet card
   walletCard: { marginTop: 12, marginBottom: 4 },
   walletRow: { flexDirection: 'row', gap: 16, alignItems: 'center' },
   starCircleWrap: { width: 80, height: 80, borderRadius: 99, backgroundColor: 'rgba(245,158,11,0.10)', alignItems: 'center', justifyContent: 'center', gap: 2 },
@@ -1030,14 +1030,14 @@ const styles = StyleSheet.create({
   walletLastAction: { borderRadius: 10, paddingHorizontal: 9, paddingVertical: 5, marginTop: 6 },
   walletLastActionText: { fontFamily: 'Inter_600SemiBold', fontSize: 11, lineHeight: 15 },
 
-  // Stars tab — action buttons
+  // Stars tab â€” action buttons
   walletActions: { flexDirection: 'row', gap: 10, marginTop: 12, marginBottom: 4 },
   walletAddBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingVertical: 13, borderRadius: 18 },
   walletAddText: { fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
   walletRemoveBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingVertical: 13, borderRadius: 18, borderWidth: 1 },
   walletRemoveText: { fontFamily: 'Inter_700Bold', fontSize: 14 },
 
-  // Stars tab — rewards in reach
+  // Stars tab â€” rewards in reach
   reachLabel: { fontFamily: 'Inter_700Bold', fontSize: 10, textTransform: 'uppercase', letterSpacing: 1, marginTop: 16, marginBottom: 8 },
   reachCard: { flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1, borderRadius: 18, padding: 12, marginBottom: 8 },
   reachCardIcon: { fontSize: 26 },
