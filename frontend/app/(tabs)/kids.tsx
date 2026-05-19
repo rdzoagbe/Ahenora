@@ -36,6 +36,7 @@ import ErrorState from '../../src/components/ErrorState';
 import LoadingOverlay from '../../src/components/LoadingOverlay';
 
 import { useStore } from '../../src/store';
+import { useBreakpoint } from '../../src/responsive';
 import { api, FamilyMember, Reward, StarTransaction } from '../../src/api';
 import { logger } from '../../src/logger';
 
@@ -86,6 +87,7 @@ function formatActivityDate(value?: string | null) {
 
 export default function KidsScreen() {
   const { t, theme } = useStore();
+  const { isWide, px, maxW } = useBreakpoint();
 
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [rewards, setRewards] = useState<Reward[]>([]);
@@ -393,7 +395,9 @@ export default function KidsScreen() {
     <View style={[styles.container, { backgroundColor: theme.colors.bg }]}>
       <AmbientBackground />
       <SafeAreaView style={styles.safeArea} edges={['top']}>
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        <ScrollView contentContainerStyle={[styles.scroll, { paddingHorizontal: px }]} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+          <View style={{ maxWidth: maxW, alignSelf: 'center', width: '100%' }}>
+          <View style={isWide ? styles.wideRow : null}><View style={isWide ? styles.wideColLeft : null}>
           <View style={styles.titleRow}>
             <View style={{ flex: 1 }}>
               <Text style={[styles.title, { color: theme.colors.text }]}>Kids</Text>
@@ -517,18 +521,7 @@ export default function KidsScreen() {
                 </PressScale>
               </View>
 
-              <View style={styles.statRow}>
-                <View style={[styles.statCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
-                  <Text style={[styles.statEyebrow, { color: theme.colors.textMuted }]}>Reward shop</Text>
-                  <Text style={[styles.statValue, { color: theme.colors.text }]}>{affordableRewards}</Text>
-                  <Text style={[styles.statLabel, { color: theme.colors.textMuted }]}>{totalRewards} total rewards</Text>
-                </View>
-                <View style={[styles.statCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
-                  <Text style={[styles.statEyebrow, { color: theme.colors.textMuted }]}>Activity</Text>
-                  <Text style={[styles.statValue, { color: theme.colors.text }]}>{recentActivityCount}</Text>
-                  <Text style={[styles.statLabel, { color: theme.colors.textMuted }]}>{latestActivity ? formatActivityDate(latestActivity.created_at) : 'No entries yet'}</Text>
-                </View>
-              </View>
+              {/* stat row removed — data already shown in hero insight cards */}
 
               <PressScale
                 testID="kids-activity-toggle"
@@ -579,6 +572,8 @@ export default function KidsScreen() {
                 </>
               ) : null}
 
+              </View>{/* end wideColLeft */}
+              <View style={isWide ? styles.wideColRight : null}>
               <View style={[styles.rewardShopShell, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
                 <View style={styles.rewardShopHeaderCard}>
                   <View style={[styles.rewardShopBadge, { backgroundColor: theme.colors.accentSoft, borderColor: theme.colors.cardBorder }]}>
@@ -662,8 +657,11 @@ export default function KidsScreen() {
                 <Sparkles color={theme.colors.textMuted} size={14} />
                 <Text style={[styles.tipText, { color: theme.colors.textMuted }]}>Reward good habits - keep it fair</Text>
               </View>
+              </View>{/* end wideColRight */}
             </>
           )}
+          </View>{/* end wideRow */}
+          </View>{/* end maxW wrapper */}
 
           <View style={{ height: 170 }} />
         </ScrollView>
@@ -833,7 +831,10 @@ export default function KidsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   safeArea: { flex: 1 },
-  scroll: { paddingHorizontal: 20, paddingTop: 14, paddingBottom: 168 },
+  scroll: { paddingTop: 14, paddingBottom: 168 },
+  wideRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 20 },
+  wideColLeft: { flex: 1 },
+  wideColRight: { flex: 1 },
   kidsCompactToggle: {
     borderWidth: 1,
     borderRadius: 22,

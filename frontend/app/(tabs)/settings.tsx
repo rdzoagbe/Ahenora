@@ -11,6 +11,7 @@ import { LanguageModal } from '../../src/components/LanguageModal';
 import { PinPadModal } from '../../src/components/PinPadModal';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
 import { useStore } from '../../src/store';
+import { useBreakpoint } from '../../src/responsive';
 import { api, CalendarContact, Card, Entitlements, FamilyInvite, FamilyMember, NotificationSettings } from '../../src/api';
 import { LANG_NAMES } from '../../src/i18n';
 import { ensureNotificationPermissions, registerForPushNotificationsAsync, sendLocalNotification, sendTestScheduledReminderNotification, syncCardReminderNotifications } from '../../src/notifications';
@@ -24,6 +25,7 @@ function formatBytes(bytes?: number | null) {
 
 export default function SettingsScreen() {
   const { user, t, lang, logout, subscription, appearanceMode, setAppearance, theme } = useStore();
+  const { isWide, px, maxW } = useBreakpoint();
   const router = useRouter();
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [invites, setInvites] = useState<FamilyInvite[]>([]);
@@ -183,7 +185,10 @@ export default function SettingsScreen() {
     <View style={[styles.container, { backgroundColor: theme.colors.bg }]}>
       <AmbientBackground />
       <SafeAreaView style={styles.safe} edges={['top']}>
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        <ScrollView contentContainerStyle={[styles.scroll, { paddingHorizontal: px }]} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+          <View style={{ maxWidth: maxW, alignSelf: 'center', width: '100%' }}>
+          <View style={isWide ? styles.wideRow : null}>
+          <View style={isWide ? styles.wideColLeft : null}>
           <Text style={[styles.title, { color: theme.colors.text }]}>Settings</Text>
           <Text style={[styles.subtitle, { color: theme.colors.textMuted }]}>Manage your household, access, alerts, and preferences.</Text>
 
@@ -281,6 +286,8 @@ export default function SettingsScreen() {
             </View>
           </GlassCard>
 
+          </View>{/* end wideColLeft */}
+          <View style={isWide ? styles.wideColRight : null}>
           <SectionTitle icon={<FileText color={theme.colors.textMuted} size={18} />} label="History" color={theme.colors.textMuted} />
           <GlassCard>
             <PressScale testID="settings-completed-history-toggle" onPress={() => setShowCompletedHistory((value) => !value)} style={styles.navRow}>
@@ -489,10 +496,13 @@ export default function SettingsScreen() {
             </>
           ) : null}
 
+          </View>{/* end wideColRight */}
+          </View>{/* end wideRow */}
           <PressScale testID="logout" onPress={doLogout} style={styles.logoutBtn}>
             <LogOut color="#DC2626" size={22} />
             <Text style={styles.logoutText}>{t('log_out')}</Text>
           </PressScale>
+          </View>{/* end maxW wrapper */}
           <View style={{ height: 60 }} />
         </ScrollView>
       </SafeAreaView>
@@ -628,7 +638,10 @@ function SettingSwitch({ title, description, value, onValueChange, disabled }: {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   safe: { flex: 1 },
-  scroll: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 96 },
+  scroll: { paddingTop: 14, paddingBottom: 96 },
+  wideRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 20 },
+  wideColLeft: { flex: 1 },
+  wideColRight: { flex: 1 },
   title: { fontFamily: 'Inter_800ExtraBold', fontSize: 30, lineHeight: 36, letterSpacing: -0.6 },
   subtitle: { fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 19, marginTop: 3, marginBottom: 10 },
   profileCard: { marginBottom: 10 },
@@ -648,32 +661,32 @@ const styles = StyleSheet.create({
   cardSub: { fontFamily: 'Inter_500Medium', fontSize: 15, lineHeight: 22, marginTop: 4 },
   primaryPill: { minHeight: 48, borderRadius: 9999, paddingHorizontal: 18, alignItems: 'center', justifyContent: 'center' },
   primaryPillText: { fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
-  statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: 18 },
-  statBox: { width: '48%', minHeight: 104, borderRadius: 22, borderWidth: 1, padding: 16, justifyContent: 'center' },
-  statValue: { fontFamily: 'Inter_800ExtraBold', fontSize: 22, lineHeight: 27 },
-  statLabel: { fontFamily: 'Inter_500Medium', fontSize: 14, marginTop: 6 },
-  switchRow: { flexDirection: 'row', alignItems: 'center', gap: 16, paddingVertical: 4 },
-  rowTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 19, lineHeight: 25 },
-  rowDescription: { fontFamily: 'Inter_500Medium', fontSize: 16, lineHeight: 23, marginTop: 6 },
-  testButtonRow: { flexDirection: 'row', gap: 12, flexWrap: 'wrap', marginTop: 20 },
-  note: { fontFamily: 'Inter_500Medium', fontSize: 15, lineHeight: 22, marginTop: 16 },
-  preferenceHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
-  preferenceTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  rowValue: { fontFamily: 'Inter_700Bold', fontSize: 17 },
-  segmentWrap: { flexDirection: 'row', alignItems: 'center', borderRadius: 30, padding: 10, gap: 12, borderWidth: 1, minHeight: 82 },
-  segmentBtn: { flex: 1, minHeight: 60, alignItems: 'center', justifyContent: 'center', borderRadius: 23, paddingHorizontal: 18 },
-  segmentText: { fontFamily: 'Inter_800ExtraBold', fontSize: 18 },
-  navRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 56 },
+  statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 14 },
+  statBox: { width: '48%', minHeight: 80, borderRadius: 18, borderWidth: 1, padding: 14, justifyContent: 'center' },
+  statValue: { fontFamily: 'Inter_800ExtraBold', fontSize: 20, lineHeight: 24 },
+  statLabel: { fontFamily: 'Inter_500Medium', fontSize: 13, marginTop: 4 },
+  switchRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 4 },
+  rowTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 15, lineHeight: 21 },
+  rowDescription: { fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 19, marginTop: 4 },
+  testButtonRow: { flexDirection: 'row', gap: 10, flexWrap: 'wrap', marginTop: 14 },
+  note: { fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 19, marginTop: 12 },
+  preferenceHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  preferenceTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  rowValue: { fontFamily: 'Inter_700Bold', fontSize: 14 },
+  segmentWrap: { flexDirection: 'row', alignItems: 'center', borderRadius: 24, padding: 6, gap: 8, borderWidth: 1, minHeight: 60 },
+  segmentBtn: { flex: 1, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 18, paddingHorizontal: 12 },
+  segmentText: { fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
+  navRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 48 },
   navRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  divider: { height: 1, opacity: 0.9, marginVertical: 18 },
-  memberRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 10 },
-  memberAvatar: { width: 58, height: 58, borderRadius: 9999, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  memberInitial: { fontFamily: 'Inter_800ExtraBold', fontSize: 18 },
-  memberName: { fontFamily: 'Inter_800ExtraBold', fontSize: 17, lineHeight: 23 },
-  memberRole: { fontFamily: 'Inter_500Medium', fontSize: 14, lineHeight: 20, marginTop: 2 },
-  secondaryButton: { minHeight: 54, borderRadius: 9999, borderWidth: 1, paddingHorizontal: 18, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 9, marginTop: 14 },
-  secondaryButtonCompact: { alignSelf: 'flex-start', minHeight: 46, marginTop: 10 },
-  secondaryButtonText: { fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
+  divider: { height: 1, opacity: 0.9, marginVertical: 10 },
+  memberRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8 },
+  memberAvatar: { width: 44, height: 44, borderRadius: 9999, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  memberInitial: { fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
+  memberName: { fontFamily: 'Inter_800ExtraBold', fontSize: 15, lineHeight: 20 },
+  memberRole: { fontFamily: 'Inter_500Medium', fontSize: 12, lineHeight: 17, marginTop: 2 },
+  secondaryButton: { minHeight: 48, borderRadius: 9999, borderWidth: 1, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, marginTop: 12 },
+  secondaryButtonCompact: { alignSelf: 'flex-start', minHeight: 40, marginTop: 8 },
+  secondaryButtonText: { fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
   topGap: { marginTop: 18 },
   inviteRow: { paddingVertical: 14 },
   emptyText: { fontFamily: 'Inter_600SemiBold', fontSize: 16, lineHeight: 23 },
