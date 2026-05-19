@@ -454,58 +454,49 @@ export default function KidsScreen() {
               </ScrollView>
 
               {activeChild ? (
-                <View style={styles.hero}>
-                  <View style={styles.heroGlowOne} />
-                  <View style={styles.heroGlowTwo} />
-                  <View style={styles.heroBadge}>
-                    <Sparkles color="#111827" size={14} />
-                    <Text style={styles.heroBadgeText}>Today</Text>
-                  </View>
-
-                  <View style={styles.heroTop}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.heroLabel}>Star wallet</Text>
-                      <Text style={styles.heroName}>{activeChild.name}</Text>
-                      <Text style={styles.heroSubtext}>Keep momentum going with small wins, quick boosts, and motivating rewards.</Text>
-                    </View>
-                    <View style={styles.pinPill}>
-                      <Lock color={activeChild.has_pin ? '#F59E0B' : 'rgba(255,255,255,0.45)'} size={13} />
-                      <Text style={styles.pinText}>{activeChild.has_pin ? 'PIN on' : 'No PIN'}</Text>
+                <View style={[styles.compactHero, { backgroundColor: '#172024' }]}>
+                  <View style={styles.compactHeroLeft}>
+                    <View style={styles.compactScoreCircle}>
+                      <View style={styles.compactScoreRing} />
+                      <View style={styles.compactScoreArc} />
+                      <Star color="#F59E0B" size={18} fill="#F59E0B" />
+                      <Text style={styles.compactScoreValue}>{stars}</Text>
+                      <Text style={styles.compactScoreCaption}>{t('stars')}</Text>
                     </View>
                   </View>
-
-                  <View style={styles.heroScoreRow}>
-                    <View style={styles.heroScoreCircle}>
-                      <View style={styles.heroScoreRing} />
-                      <View style={styles.heroScoreArc} />
-                      <Star color="#F59E0B" size={20} fill="#F59E0B" />
-                      <Text style={styles.heroScoreValue}>{stars}</Text>
-                      <Text style={styles.heroScoreCaption}>{t('stars')}</Text>
-                    </View>
-
-                    <View style={styles.heroInsightCol}>
-                      <View style={styles.heroInsightCard}>
-                        <Text style={styles.heroInsightKicker}>Ready now</Text>
-                        <Text style={styles.heroInsightValue}>{affordableRewards}</Text>
-                        <Text style={styles.heroInsightLabel}>rewards available</Text>
+                  <View style={styles.compactHeroRight}>
+                    <View style={styles.compactHeroNameRow}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.compactHeroLabel}>Star wallet</Text>
+                        <Text style={styles.compactHeroName}>{activeChild.name}</Text>
                       </View>
-                      <View style={styles.heroInsightCard}>
-                        <Text style={styles.heroInsightKicker}>Recent activity</Text>
-                        <Text style={styles.heroInsightValue}>{recentActivityCount}</Text>
-                        <Text style={styles.heroInsightLabel}>{latestActivity?.reason ? latestActivity.reason : 'actions logged'}</Text>
+                      <View style={styles.pinPill}>
+                        <Lock color={activeChild.has_pin ? '#F59E0B' : 'rgba(255,255,255,0.45)'} size={11} />
+                        <Text style={styles.pinText}>{activeChild.has_pin ? 'PIN on' : 'No PIN'}</Text>
                       </View>
                     </View>
-                  </View>
-
-                  <View style={styles.heroActions}>
-                    <PressScale testID="kids-add-stars" onPress={() => openStarSheet('add', '5')} style={styles.heroActionBtn}>
-                      <Plus color="#111827" size={16} />
-                      <Text style={styles.heroActionText}>Add stars</Text>
-                    </PressScale>
-                    <PressScale testID="kids-remove-stars" onPress={() => openStarSheet('remove', '5')} style={styles.heroActionBtnSecondary}>
-                      <MinusCircle color="#FFFFFF" size={16} />
-                      <Text style={styles.heroActionTextSecondary}>Remove</Text>
-                    </PressScale>
+                    <View style={styles.compactInsightRow}>
+                      <View style={styles.compactInsightCard}>
+                        <Text style={styles.compactInsightKicker}>Ready</Text>
+                        <Text style={styles.compactInsightValue}>{affordableRewards}</Text>
+                        <Text style={styles.compactInsightLabel}>rewards</Text>
+                      </View>
+                      <View style={styles.compactInsightCard}>
+                        <Text style={styles.compactInsightKicker}>Activity</Text>
+                        <Text style={styles.compactInsightValue}>{recentActivityCount}</Text>
+                        <Text style={styles.compactInsightLabel}>actions</Text>
+                      </View>
+                    </View>
+                    <View style={styles.compactHeroActions}>
+                      <PressScale testID="kids-add-stars" onPress={() => openStarSheet('add', '5')} style={styles.compactAddBtn}>
+                        <Plus color="#111827" size={14} />
+                        <Text style={styles.compactAddText}>Add stars</Text>
+                      </PressScale>
+                      <PressScale testID="kids-remove-stars" onPress={() => openStarSheet('remove', '5')} style={styles.compactRemoveBtn}>
+                        <MinusCircle color="#FFFFFF" size={14} />
+                        <Text style={styles.compactRemoveText}>Remove</Text>
+                      </PressScale>
+                    </View>
                   </View>
                 </View>
               ) : null}
@@ -611,42 +602,30 @@ export default function KidsScreen() {
                 {rewards.length === 0 ? (
                   <EmptyState title={t('no_rewards')} message="Create a small reward to make chores feel more motivating." actionLabel="Add Reward" onAction={openCreateReward} />
                 ) : (
-                  <View style={styles.rewardList}>
-                    {rewards.slice(0, 2).map((reward) => {
+                  <View style={styles.rewardGrid}>
+                    {rewards.slice(0, 4).map((reward) => {
                       const affordable = stars >= reward.cost_stars;
-                      const starsNeeded = Math.max(0, reward.cost_stars - stars);
                       const progressWidth = `${Math.min(100, Math.round((stars / reward.cost_stars) * 100))}%`;
-
                       return (
-                        <GlassCard key={reward.reward_id} style={[styles.rewardCard, { borderColor: affordable ? theme.colors.accent : theme.colors.cardBorder }]}>
-                          <View style={styles.rewardTopRow}>
-                            <View style={[styles.rewardIconWrap, { backgroundColor: theme.colors.accentSoft, borderColor: theme.colors.cardBorder }]}>
-                              <Text style={styles.rewardIcon}>{reward.icon || DEFAULT_REWARD_ICON}</Text>
-                            </View>
-                            <View style={{ flex: 1 }}>
-                              <Text style={[styles.rewardTitle, { color: theme.colors.text }]} numberOfLines={2}>{reward.title}</Text>
-                              <View style={styles.rewardMetaRow}>
-                                <View style={[styles.rewardCostPill, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
-                                  <Star color={theme.colors.accent} size={12} fill={theme.colors.accent} />
-                                  <Text style={[styles.rewardCost, { color: theme.colors.textMuted }]}>{reward.cost_stars} {t('stars')}</Text>
-                                </View>
-                                <Text style={[styles.rewardAvailability, { color: affordable ? theme.colors.success : theme.colors.textMuted }]}>{affordable ? 'Ready to redeem' : `${starsNeeded} more needed`}</Text>
-                              </View>
-                            </View>
-                          </View>
-                          <View style={[styles.rewardProgressTrack, { backgroundColor: theme.colors.bgSoft }]}>
-                            <View style={[styles.rewardProgressFill, { width: progressWidth as any, backgroundColor: theme.colors.accent }]} />
-                          </View>
-                          <View style={styles.rewardActions}>
-                            <PressScale testID={`redeem-${reward.reward_id}`} onPress={() => redeem(reward)} disabled={!affordable} style={[styles.redeemBtn, { backgroundColor: theme.colors.primary }, !affordable && { opacity: 0.45 }]}>
-                              <Text style={[styles.redeemText, { color: theme.colors.primaryText }]}>{affordable ? t('redeem') : 'Not enough stars'}</Text>
-                            </PressScale>
-                            <PressScale testID={`edit-reward-${reward.reward_id}`} onPress={() => openEditReward(reward)} style={[styles.editBtn, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
-                              <Pencil color={theme.colors.textMuted} size={15} />
-                              <Text style={[styles.editText, { color: theme.colors.textMuted }]}>Edit</Text>
+                        <View key={reward.reward_id} style={[styles.rewardGridCard, { backgroundColor: theme.colors.bgSoft, borderColor: affordable ? theme.colors.accent : theme.colors.cardBorder }]}>
+                          <View style={styles.rewardGridTop}>
+                            <Text style={styles.rewardGridIcon}>{reward.icon || DEFAULT_REWARD_ICON}</Text>
+                            <PressScale testID={`edit-reward-${reward.reward_id}`} onPress={() => openEditReward(reward)} style={[styles.rewardGridEditBtn, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
+                              <Pencil color={theme.colors.textMuted} size={12} />
                             </PressScale>
                           </View>
-                        </GlassCard>
+                          <Text style={[styles.rewardGridTitle, { color: theme.colors.text }]} numberOfLines={2}>{reward.title}</Text>
+                          <View style={styles.rewardGridCostRow}>
+                            <Star color={theme.colors.accent} size={10} fill={theme.colors.accent} />
+                            <Text style={[styles.rewardGridCost, { color: theme.colors.textMuted }]}>{reward.cost_stars} {t('stars')}</Text>
+                          </View>
+                          <View style={[styles.rewardProgressTrack, { backgroundColor: theme.colors.card, marginVertical: 8 }]}>
+                            <View style={[styles.rewardProgressFill, { width: progressWidth as any, backgroundColor: affordable ? theme.colors.success : theme.colors.accent }]} />
+                          </View>
+                          <PressScale testID={`redeem-${reward.reward_id}`} onPress={() => redeem(reward)} disabled={!affordable} style={[styles.rewardGridRedeemBtn, { backgroundColor: affordable ? theme.colors.primary : theme.colors.card, borderWidth: 1, borderColor: affordable ? 'transparent' : theme.colors.cardBorder }, !affordable && { opacity: 0.6 }]}>
+                            <Text style={[styles.rewardGridRedeemText, { color: affordable ? theme.colors.primaryText : theme.colors.textMuted }]}>{affordable ? t('redeem') : 'Not yet'}</Text>
+                          </PressScale>
+                        </View>
                       );
                     })}
                   </View>
@@ -941,6 +920,37 @@ const styles = StyleSheet.create({
   rewardIdeaCostRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, marginTop: 1 },
   rewardIdeaCost: { fontFamily: 'Inter_700Bold', fontSize: 11 },
   rewardIdeaHint: { fontFamily: 'Inter_600SemiBold', fontSize: 10, lineHeight: 13, marginTop: 1, textAlign: 'center' },  rewardList: { gap: 12 },
+  compactHero: { flexDirection: 'row', gap: 14, padding: 16, marginTop: 12, marginBottom: 14, borderRadius: 24, overflow: 'hidden' },
+  compactHeroLeft: { alignItems: 'center', justifyContent: 'center' },
+  compactScoreCircle: { width: 88, height: 88, borderRadius: 99, backgroundColor: 'rgba(255,255,255,0.03)', alignItems: 'center', justifyContent: 'center' },
+  compactScoreRing: { position: 'absolute', width: 80, height: 80, borderRadius: 99, borderWidth: 6, borderColor: 'rgba(255,255,255,0.14)' },
+  compactScoreArc: { position: 'absolute', width: 80, height: 80, borderRadius: 99, borderTopWidth: 6, borderRightWidth: 6, borderTopColor: '#F59E0B', borderRightColor: '#F59E0B', borderLeftColor: 'transparent', borderBottomColor: 'transparent', transform: [{ rotate: '32deg' }] },
+  compactScoreValue: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 22, lineHeight: 25, marginTop: 6 },
+  compactScoreCaption: { color: 'rgba(255,255,255,0.55)', fontFamily: 'Inter_600SemiBold', fontSize: 10, marginTop: 1 },
+  compactHeroRight: { flex: 1, gap: 8 },
+  compactHeroNameRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  compactHeroLabel: { color: 'rgba(255,255,255,0.55)', fontFamily: 'Inter_700Bold', fontSize: 10, textTransform: 'uppercase', letterSpacing: 1 },
+  compactHeroName: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 20, lineHeight: 24, letterSpacing: -0.5, marginTop: 2 },
+  compactInsightRow: { flexDirection: 'row', gap: 7 },
+  compactInsightCard: { flex: 1, backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 12, padding: 8 },
+  compactInsightKicker: { color: 'rgba(255,255,255,0.5)', fontFamily: 'Inter_700Bold', fontSize: 9, textTransform: 'uppercase', letterSpacing: 0.8 },
+  compactInsightValue: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 18, lineHeight: 21, marginTop: 3 },
+  compactInsightLabel: { color: 'rgba(255,255,255,0.55)', fontFamily: 'Inter_500Medium', fontSize: 10, marginTop: 1 },
+  compactHeroActions: { flexDirection: 'row', gap: 8 },
+  compactAddBtn: { flex: 1, minHeight: 38, backgroundColor: '#FFFFFF', borderRadius: 99, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5 },
+  compactAddText: { color: '#111827', fontFamily: 'Inter_800ExtraBold', fontSize: 12 },
+  compactRemoveBtn: { flex: 1, minHeight: 38, backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', borderRadius: 99, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5 },
+  compactRemoveText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 12 },
+  rewardGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  rewardGridCard: { width: '47.5%', borderWidth: 1, borderRadius: 18, padding: 12 },
+  rewardGridTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 },
+  rewardGridIcon: { fontSize: 26 },
+  rewardGridEditBtn: { width: 28, height: 28, borderRadius: 9, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  rewardGridTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 13, lineHeight: 17 },
+  rewardGridCostRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 3 },
+  rewardGridCost: { fontFamily: 'Inter_700Bold', fontSize: 11 },
+  rewardGridRedeemBtn: { borderRadius: 10, paddingVertical: 8, alignItems: 'center', justifyContent: 'center', marginTop: 2 },
+  rewardGridRedeemText: { fontFamily: 'Inter_800ExtraBold', fontSize: 12 },
   rewardCard: { padding: 16, borderRadius: 28, borderWidth: 1 },
   rewardTopRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   rewardIconWrap: { width: 58, height: 58, borderRadius: 20, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },

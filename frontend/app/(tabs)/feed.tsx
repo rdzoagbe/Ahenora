@@ -408,13 +408,19 @@ export default function FeedScreen() {
               <Text style={[styles.greet, { color: theme.colors.textMuted }]}>{greeting}</Text>
               <Text style={[styles.name, { color: theme.colors.text }]}>{firstName || 'Family'}<Text style={styles.nameDot}>.</Text></Text>
             </View>
-            {user?.picture ? (
-              <Image source={{ uri: user.picture }} style={[styles.avatar, { borderColor: theme.colors.cardBorder }]} />
-            ) : (
-              <View style={[styles.avatar, styles.avatarFallback, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
-                <Text style={[styles.avatarText, { color: theme.colors.text }]}>{(firstName[0] || 'C').toUpperCase()}</Text>
+            <View style={styles.headerRight}>
+              <View style={[styles.calmChip, { backgroundColor: theme.colors.accentSoft, borderColor: theme.colors.cardBorder }]}>
+                <Text style={[styles.calmValue, { color: theme.colors.success }]}>{dashboard.calmScore}</Text>
+                <Text style={[styles.calmLabel, { color: theme.colors.textMuted }]}>calm</Text>
               </View>
-            )}
+              {user?.picture ? (
+                <Image source={{ uri: user.picture }} style={[styles.avatar, { borderColor: theme.colors.cardBorder }]} />
+              ) : (
+                <View style={[styles.avatar, styles.avatarFallback, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
+                  <Text style={[styles.avatarText, { color: theme.colors.text }]}>{(firstName[0] || 'C').toUpperCase()}</Text>
+                </View>
+              )}
+            </View>
           </View>
 
           <PressScale testID="command-capture" onPress={openManual} style={[styles.searchShell, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder, shadowColor: theme.colors.shadow }]}>
@@ -425,71 +431,26 @@ export default function FeedScreen() {
             </View>
           </PressScale>
 
-          <View style={[styles.commandHero, { shadowColor: theme.colors.shadow }]}>
-            <View style={styles.heroTopRow}>
-              <View style={styles.heroBadge}>
-                <Sparkles color="#202323" size={13} />
-                <Text style={styles.heroBadgeText}>{labels.today}</Text>
-              </View>
-              <Text style={styles.heroCount}>{openCount} {labels.openNow}</Text>
-            </View>
-
-            <Text style={styles.heroTitle}>{labels.commandCenter}</Text>
-            <Text style={styles.heroSub}>{labels.commandSubtitle}</Text>
-
-            <View style={styles.scoreRow}>
-              <View style={styles.scoreCircle}>
-                <View style={styles.scoreRing} />
-                <View style={styles.scoreArc} />
-                <Text style={styles.scoreValue}>{dashboard.calmScore}</Text>
-                <Text style={styles.scoreTotal}>/100</Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.scoreTitle}>{labels.calmScore}</Text>
-                <Text style={styles.scoreSub}>{labels.scoreHelper}</Text>
-              </View>
-            </View>
-            <View pointerEvents="none" style={styles.heroIllustration}>
-              <View style={styles.heroHalo} />
-              <View style={styles.heartOne} />
-              <View style={styles.heartTwo} />
-              <View style={styles.treeTrunk} />
-              <View style={styles.treeTop} />
-              <View style={styles.houseBody} />
-              <View style={styles.houseRoof} />
-              <View style={styles.houseDoor} />
-              <View style={styles.bushOne} />
-              <View style={styles.bushTwo} />
-            </View>
-
-            <PressScale testID="open-brief" onPress={() => setShowBrief(true)} style={styles.heroAction}>
-              <Text style={styles.heroActionText}>{t('sunday_brief')}</Text>
-              <View style={styles.heroArrow}>
-                <ArrowRight color="#202323" size={20} />
-              </View>
+          <View style={styles.statRow}>
+            <PressScale onPress={() => router.push('/calendar')} style={[styles.statChip, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
+              <Clock3 color={dashboard.priority.length > 0 ? '#EF4444' : theme.colors.textMuted} size={15} />
+              <Text style={[styles.statChipValue, { color: dashboard.priority.length > 0 ? '#EF4444' : theme.colors.text }]}>{dashboard.priority.length}</Text>
+              <Text style={[styles.statChipLabel, { color: theme.colors.textMuted }]}>{labels.urgent}</Text>
             </PressScale>
-          </View>
-
-          <View style={styles.statGrid}>
-            <PressScale onPress={() => router.push('/calendar')} style={[styles.statCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder, shadowColor: theme.colors.shadow }]}>
-              <Clock3 color={theme.colors.accent} size={19} />
-              <Text style={[styles.statValue, { color: theme.colors.text }]}>{dashboard.priority.length}</Text>
-              <Text style={[styles.statLabel, { color: theme.colors.textMuted }]}>{lang === 'fr' ? 'En retard' : labels.urgent}</Text>
+            <PressScale onPress={() => router.push('/calendar')} style={[styles.statChip, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
+              <CalendarDays color={theme.colors.success} size={15} />
+              <Text style={[styles.statChipValue, { color: theme.colors.text }]}>{dashboard.calendarToday.length}</Text>
+              <Text style={[styles.statChipLabel, { color: theme.colors.textMuted }]}>{labels.calendarToday}</Text>
             </PressScale>
-            <PressScale onPress={() => router.push('/calendar')} style={[styles.statCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder, shadowColor: theme.colors.shadow }]}>
-              <CalendarDays color={theme.colors.success} size={19} />
-              <Text style={[styles.statValue, { color: theme.colors.text }]}>{dashboard.calendarToday.length}</Text>
-              <Text style={[styles.statLabel, { color: theme.colors.textMuted }]}>{lang === 'fr' ? "Événement aujourd'hui" : labels.calendarToday}</Text>
+            <PressScale onPress={() => router.push('/kids')} style={[styles.statChip, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
+              <Star color={theme.colors.accent} size={15} fill={theme.colors.accent} />
+              <Text style={[styles.statChipValue, { color: theme.colors.text }]}>{totalStars}</Text>
+              <Text style={[styles.statChipLabel, { color: theme.colors.textMuted }]}>{labels.kidStars}</Text>
             </PressScale>
-            <PressScale onPress={() => router.push('/kids')} style={[styles.statCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder, shadowColor: theme.colors.shadow }]}>
-              <Star color={theme.colors.accent} size={19} fill={theme.colors.accent} />
-              <Text style={[styles.statValue, { color: theme.colors.text }]}>{totalStars}</Text>
-              <Text style={[styles.statLabel, { color: theme.colors.textMuted }]}>{lang === 'fr' ? 'Récompenses' : labels.kidStars}</Text>
-            </PressScale>
-            <PressScale onPress={() => router.push('/vault')} style={[styles.statCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder, shadowColor: theme.colors.shadow }]}>
-              <ShieldCheck color={theme.colors.success} size={19} />
-              <Text style={[styles.statValue, { color: theme.colors.text }]}>{vaultCount}</Text>
-              <Text style={[styles.statLabel, { color: theme.colors.textMuted }]}>{lang === 'fr' ? 'Tout va bien' : labels.vaultDocs}</Text>
+            <PressScale onPress={() => router.push('/vault')} style={[styles.statChip, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
+              <ShieldCheck color={theme.colors.success} size={15} />
+              <Text style={[styles.statChipValue, { color: theme.colors.text }]}>{vaultCount}</Text>
+              <Text style={[styles.statChipLabel, { color: theme.colors.textMuted }]}>{labels.vaultDocs}</Text>
             </PressScale>
           </View>
 
@@ -497,9 +458,6 @@ export default function FeedScreen() {
 
           {/* ── Right column (actions + cards) ── */}
           <View style={isWide ? styles.wideColRight : null}>
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>{labels.quickActions}</Text>
-          </View>
           <View style={styles.actionRow}>
             <PressScale onPress={() => setShowCamera(true)} style={[styles.actionTile, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
               <Camera color={theme.colors.text} size={19} />
@@ -542,96 +500,70 @@ export default function FeedScreen() {
 
           {loading && <ActivityIndicator color={theme.colors.text} style={{ marginTop: 40 }} />}
 
-          <View style={[styles.nextUpPanel, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder, shadowColor: theme.colors.shadow }]}>
-            <View style={styles.nextUpHeader}>
-              <View>
-                <Text style={[styles.nextUpEyebrow, { color: theme.colors.textMuted }]}>HOUSEHOLD PRIORITY</Text>
-                <Text style={[styles.nextUpHeading, { color: theme.colors.text }]}>{labels.nextUp}</Text>
-              </View>
-              <View style={[styles.nextUpCountBadge, { backgroundColor: theme.colors.accentSoft }]}>
-                <Text style={[styles.nextUpCountText, { color: theme.colors.accent }]}>
-                  {uniqueCards([...dashboard.overdue, ...dashboard.todayCards, ...dashboard.nextUp]).length}
-                </Text>
-              </View>
+          {uniqueCards([...dashboard.overdue, ...dashboard.todayCards, ...dashboard.nextUp]).length === 0 ? (
+            <View style={[styles.priorityEmpty, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
+              <CheckCircle2 color={theme.colors.success} size={18} />
+              <Text style={[styles.priorityEmptyText, { color: theme.colors.text }]}>{labels.nothingUrgent}</Text>
             </View>
-
-            <View style={styles.nextUpStats}>
-              <View style={[styles.nextUpStat, { backgroundColor: theme.colors.bgSoft }]}>
-                <Text style={[styles.nextUpStatNumber, { color: dashboard.overdue.length ? '#DC2626' : theme.colors.text }]}>
-                  {dashboard.overdue.length}
-                </Text>
-                <Text style={[styles.nextUpStatLabel, { color: theme.colors.textMuted }]}>Overdue</Text>
-              </View>
-              <View style={[styles.nextUpStat, { backgroundColor: theme.colors.bgSoft }]}>
-                <Text style={[styles.nextUpStatNumber, { color: theme.colors.text }]}>{dashboard.todayCards.length}</Text>
-                <Text style={[styles.nextUpStatLabel, { color: theme.colors.textMuted }]}>{labels.today}</Text>
-              </View>
-              <View style={[styles.nextUpStat, { backgroundColor: theme.colors.bgSoft }]}>
-                <Text style={[styles.nextUpStatNumber, { color: theme.colors.text }]}>{dashboard.nextUp.length}</Text>
-                <Text style={[styles.nextUpStatLabel, { color: theme.colors.textMuted }]}>24h</Text>
-              </View>
-            </View>
-
-            {uniqueCards([...dashboard.overdue, ...dashboard.todayCards, ...dashboard.nextUp]).length === 0 ? (
-              <View style={styles.nextUpEmpty}>
-                <CheckCircle2 color={theme.colors.success} size={22} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.nextUpTaskTitle, { color: theme.colors.text }]}>{labels.nothingUrgent}</Text>
-                  <Text style={[styles.nextUpTaskMeta, { color: theme.colors.textMuted }]}>{labels.nothingUrgentSub}</Text>
+          ) : (
+            <View style={[styles.priorityPanel, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
+              <View style={styles.priorityHeader}>
+                <Text style={[styles.priorityLabel, { color: theme.colors.textMuted }]}>PRIORITY NOW</Text>
+                <View style={[styles.priorityBadge, { backgroundColor: theme.colors.accentSoft }]}>
+                  <Text style={[styles.priorityBadgeText, { color: theme.colors.accent }]}>
+                    {uniqueCards([...dashboard.overdue, ...dashboard.todayCards, ...dashboard.nextUp]).length}
+                  </Text>
                 </View>
               </View>
-            ) : (
-              uniqueCards([...dashboard.overdue, ...dashboard.todayCards, ...dashboard.nextUp]).slice(0, 3).map((card) => (
+              {uniqueCards([...dashboard.overdue, ...dashboard.todayCards, ...dashboard.nextUp]).slice(0, 4).map((card) => (
                 <PressScale
-                  key={`next-command-${card.card_id}`}
+                  key={`priority-${card.card_id}`}
                   onPress={() => router.push('/calendar')}
-                  style={[styles.nextUpTask, { borderColor: theme.colors.cardBorder }]}
+                  style={[styles.priorityRow, { borderTopColor: theme.colors.cardBorder }]}
                 >
-                  <View style={[styles.nextUpTaskIcon, { backgroundColor: card.type === 'TASK' ? theme.colors.bgSoft : theme.colors.accentSoft }]}>
+                  <View style={[styles.priorityIcon, { backgroundColor: card.type === 'TASK' ? theme.colors.bgSoft : theme.colors.accentSoft }]}>
                     {card.type === 'TASK' ? (
-                      <CheckCircle2 color={theme.colors.success} size={16} />
+                      <CheckCircle2 color={theme.colors.success} size={15} />
                     ) : (
-                      <FileText color={theme.colors.accent} size={16} />
+                      <FileText color={theme.colors.accent} size={15} />
                     )}
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.nextUpTaskTitle, { color: theme.colors.text }]} numberOfLines={1}>{card.title}</Text>
-                    <Text style={[styles.nextUpTaskMeta, { color: theme.colors.textMuted }]} numberOfLines={1}>
+                    <Text style={[styles.priorityTaskTitle, { color: theme.colors.text }]} numberOfLines={1}>{card.title}</Text>
+                    <Text style={[styles.priorityTaskMeta, { color: theme.colors.textMuted }]} numberOfLines={1}>
                       {formatCardDate(card)} · {card.assignee || t('family')}
                     </Text>
                   </View>
-                  <ArrowRight color={theme.colors.textMuted} size={16} />
+                  <ArrowRight color={theme.colors.textMuted} size={14} />
                 </PressScale>
-              ))
-            )}
-          </View>
-
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>{t('this_week')}</Text>
-            <Text style={[styles.sectionSub, { color: theme.colors.textMuted }]}>{openCount} active</Text>
-          </View>
-
-          {activeCards.length === 0 && !loading ? (
-            <GlassCard style={styles.empty}>
-              <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>{t('no_items')}</Text>
-            </GlassCard>
-          ) : (
-            (showAllFeedCards ? activeCards : activeCards.slice(0, pick(3, 5, 6))).map((c) => (
-              <SmartCard key={c.card_id} card={c} onComplete={() => toggle(c)} onDelete={() => remove(c)} />
-            ))
+              ))}
+            </View>
           )}
 
-          {activeCards.length > 3 ? (
-            <PressScale
-              testID="feed-show-all-cards"
-              onPress={() => setShowAllFeedCards((value) => !value)}
-              style={[styles.compactToggle, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}
-            >
-              <Text style={[styles.compactToggleText, { color: theme.colors.text }]}>
-                {showAllFeedCards ? 'Show fewer cards' : `View all ${activeCards.length} cards`}
-              </Text>
-            </PressScale>
-          ) : null}
+          <PressScale
+            testID="feed-week-toggle"
+            onPress={() => setShowAllFeedCards((v) => !v)}
+            style={[styles.weekToggle, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}
+          >
+            <CalendarDays color={theme.colors.textMuted} size={16} />
+            <Text style={[styles.weekToggleTitle, { color: theme.colors.text }]}>{t('this_week')}</Text>
+            <View style={[styles.weekToggleCount, { backgroundColor: theme.colors.bgSoft }]}>
+              <Text style={[styles.weekToggleCountText, { color: theme.colors.textMuted }]}>{openCount}</Text>
+            </View>
+            <Text style={[styles.weekToggleHint, { color: theme.colors.textMuted }]}>{showAllFeedCards ? 'Hide ↑' : 'Show ↓'}</Text>
+          </PressScale>
+
+          {showAllFeedCards && (
+            activeCards.length === 0 && !loading ? (
+              <GlassCard style={styles.empty}>
+                <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>{t('no_items')}</Text>
+              </GlassCard>
+            ) : (
+              activeCards.map((c) => (
+                <SmartCard key={c.card_id} card={c} onComplete={() => toggle(c)} onDelete={() => remove(c)} />
+              ))
+            )
+          )}
 
           </View>{/* end wideColRight */}
           </View>{/* end wideRow */}
@@ -710,7 +642,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   greet: { fontFamily: 'Inter_600SemiBold', fontSize: 15 },
-  name: { fontFamily: 'Inter_800ExtraBold', fontSize: 36, lineHeight: 41, letterSpacing: -0.9 },
+  name: { fontFamily: 'Inter_800ExtraBold', fontSize: 27, lineHeight: 31, letterSpacing: -0.6 },
   nameDot: { color: '#F97316' },
   avatar: { width: 50, height: 50, borderRadius: 9999, borderWidth: 1 },
   avatarFallback: { alignItems: 'center', justifyContent: 'center' },
@@ -920,4 +852,30 @@ const styles = StyleSheet.create({
   wideRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 24 },
   wideColLeft: { flex: 55 },
   wideColRight: { flex: 45 },
+
+  // Option A new styles
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  calmChip: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 11, paddingVertical: 7, borderRadius: 99, borderWidth: 1 },
+  calmValue: { fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
+  calmLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 10 },
+  statRow: { flexDirection: 'row', gap: 8, marginBottom: 20 },
+  statChip: { flex: 1, alignItems: 'center', paddingVertical: 11, paddingHorizontal: 6, borderRadius: 16, borderWidth: 1, gap: 4 },
+  statChipValue: { fontFamily: 'Inter_800ExtraBold', fontSize: 17, lineHeight: 20 },
+  statChipLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 9, lineHeight: 12, textAlign: 'center' },
+  priorityPanel: { borderWidth: 1, borderRadius: 20, padding: 14, marginTop: 16, marginBottom: 8 },
+  priorityEmpty: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderRadius: 16, padding: 14, marginTop: 16, marginBottom: 8 },
+  priorityEmptyText: { fontFamily: 'Inter_700Bold', fontSize: 13 },
+  priorityHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  priorityLabel: { fontFamily: 'Inter_800ExtraBold', fontSize: 10, letterSpacing: 1.1, textTransform: 'uppercase' },
+  priorityBadge: { minWidth: 28, height: 28, borderRadius: 99, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8 },
+  priorityBadgeText: { fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
+  priorityRow: { flexDirection: 'row', alignItems: 'center', gap: 10, borderTopWidth: 1, paddingTop: 10, paddingBottom: 2, marginTop: 8 },
+  priorityIcon: { width: 32, height: 32, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  priorityTaskTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 13, lineHeight: 18 },
+  priorityTaskMeta: { fontFamily: 'Inter_500Medium', fontSize: 11, lineHeight: 16, marginTop: 1 },
+  weekToggle: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderRadius: 16, padding: 14, marginTop: 14, marginBottom: 8 },
+  weekToggleTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 14, flex: 1 },
+  weekToggleCount: { borderRadius: 99, paddingHorizontal: 9, paddingVertical: 4 },
+  weekToggleCountText: { fontFamily: 'Inter_800ExtraBold', fontSize: 11 },
+  weekToggleHint: { fontFamily: 'Inter_700Bold', fontSize: 11 },
 });
