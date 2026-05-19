@@ -28,6 +28,7 @@ import {
   UsersRound,
 } from 'lucide-react-native';
 
+import { useBreakpoint } from '../../src/responsive';
 import { AmbientBackground } from '../../src/components/AmbientBackground';
 import { GlassCard } from '../../src/components/GlassCard';
 import { PressScale } from '../../src/components/PressScale';
@@ -210,6 +211,7 @@ function uniqueCards(cards: Card[]) {
 export default function FeedScreen() {
   const router = useRouter();
   const { user, t, theme, lang } = useStore();
+  const { isWide, isDesktop, px, maxW, pick } = useBreakpoint();
   const labels = useMemo(() => labelsFor(lang), [lang]);
 
   const [cards, setCards] = useState<Card[]>([]);
@@ -384,7 +386,7 @@ export default function FeedScreen() {
       <AmbientBackground />
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <ScrollView
-          contentContainerStyle={styles.scroll}
+          contentContainerStyle={[styles.scroll, { paddingHorizontal: px }]}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
@@ -397,6 +399,10 @@ export default function FeedScreen() {
             />
           }
         >
+          <View style={{ maxWidth: maxW, alignSelf: 'center', width: '100%' }}>
+          <View style={isWide ? styles.wideRow : null}>
+          {/* ── Left column (hero + stats) ── */}
+          <View style={isWide ? styles.wideColLeft : null}>
           <View style={styles.header}>
             <View style={{ flex: 1 }}>
               <Text style={[styles.greet, { color: theme.colors.textMuted }]}>{greeting}</Text>
@@ -487,6 +493,10 @@ export default function FeedScreen() {
             </PressScale>
           </View>
 
+          </View>{/* end wideColLeft */}
+
+          {/* ── Right column (actions + cards) ── */}
+          <View style={isWide ? styles.wideColRight : null}>
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>{labels.quickActions}</Text>
           </View>
@@ -530,33 +540,7 @@ export default function FeedScreen() {
             </GlassCard>
           )}
 
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>{labels.needsAttention}</Text>
-            <Text style={[styles.sectionSub, { color: theme.colors.textMuted }]}>{dashboard.priority.length}</Text>
-          </View>
-
-          {loading ? (
-            <ActivityIndicator color={theme.colors.text} style={{ marginTop: 40 }} />
-          ) : dashboard.priority.length === 0 ? (
-            <GlassCard style={styles.emptyPriority}>
-              <CheckCircle2 color={theme.colors.success} size={28} />
-              <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>{labels.nothingUrgent}</Text>
-              <Text style={[styles.emptySub, { color: theme.colors.textMuted }]}>{labels.nothingUrgentSub}</Text>
-            </GlassCard>
-          ) : (
-            dashboard.priority.slice(0, 3).map((card) => (
-              <PressScale key={`priority-${card.card_id}`} style={[styles.priorityCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder, shadowColor: theme.colors.shadow }]}>
-                <View style={[styles.priorityIcon, { backgroundColor: card.type === 'TASK' ? theme.colors.bgSoft : theme.colors.accentSoft }]}> 
-                  {card.type === 'TASK' ? <CheckCircle2 color={theme.colors.success} size={18} /> : <FileText color={theme.colors.accent} size={18} />}
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.priorityTitle, { color: theme.colors.text }]} numberOfLines={1}>{card.title}</Text>
-                  <Text style={[styles.priorityMeta, { color: theme.colors.textMuted }]} numberOfLines={1}>{formatCardDate(card)} · {card.assignee || t('family')}</Text>
-                </View>
-                <ArrowRight color={theme.colors.textMuted} size={17} />
-              </PressScale>
-            ))
-          )}
+          {loading && <ActivityIndicator color={theme.colors.text} style={{ marginTop: 40 }} />}
 
           <View style={[styles.nextUpPanel, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder, shadowColor: theme.colors.shadow }]}>
             <View style={styles.nextUpHeader}>
@@ -632,7 +616,7 @@ export default function FeedScreen() {
               <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>{t('no_items')}</Text>
             </GlassCard>
           ) : (
-            (showAllFeedCards ? activeCards : activeCards.slice(0, 3)).map((c) => (
+            (showAllFeedCards ? activeCards : activeCards.slice(0, pick(3, 5, 6))).map((c) => (
               <SmartCard key={c.card_id} card={c} onComplete={() => toggle(c)} onDelete={() => remove(c)} />
             ))
           )}
@@ -649,10 +633,14 @@ export default function FeedScreen() {
             </PressScale>
           ) : null}
 
+          </View>{/* end wideColRight */}
+          </View>{/* end wideRow */}
+
           <View style={styles.footerSignal}>
             <UsersRound color={theme.colors.textMuted} size={14} />
             <Text style={[styles.footerSignalText, { color: theme.colors.textMuted }]}>Household COO · {childMembers.length} kids · {rewardCount} rewards</Text>
           </View>
+          </View>{/* end maxW wrapper */}
 
           <View style={{ height: 80 }} />
         </ScrollView>
@@ -713,7 +701,7 @@ export default function FeedScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  scroll: { paddingHorizontal: 20, paddingTop: 8 },
+  scroll: { paddingTop: 8 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -927,4 +915,9 @@ const styles = StyleSheet.create({
 
   footerSignal: { alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, marginTop: 22 },
   footerSignalText: { fontFamily: 'Inter_600SemiBold', fontSize: 12, textAlign: 'center' },
+
+  // Responsive 2-column layout
+  wideRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 24 },
+  wideColLeft: { flex: 55 },
+  wideColRight: { flex: 45 },
 });
