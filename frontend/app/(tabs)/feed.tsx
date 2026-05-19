@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import {
   ArrowRight,
+  Bell,
   CalendarDays,
   Camera,
   CheckCircle2,
@@ -27,9 +28,11 @@ import {
   UsersRound,
 } from 'lucide-react-native';
 
+import { useBreakpoint } from '../../src/responsive';
 import { AmbientBackground } from '../../src/components/AmbientBackground';
 import { GlassCard } from '../../src/components/GlassCard';
 import { PressScale } from '../../src/components/PressScale';
+import { SmartCard } from '../../src/components/SmartCard';
 import { FloatingActionBar } from '../../src/components/FloatingActionBar';
 import { AddCardModal } from '../../src/components/AddCardModal';
 import { SundayBriefModal } from '../../src/components/SundayBriefModal';
@@ -53,69 +56,125 @@ interface VoiceDraft {
 }
 
 type Labels = {
-  capture: string;
-  overdue: string;
   today: string;
-  stars: string;
-  vault: string;
-  priorityNow: string;
+  commandCenter: string;
+  commandSubtitle: string;
+  capture: string;
+  urgent: string;
+  calendarToday: string;
+  kidStars: string;
+  vaultDocs: string;
+  needsAttention: string;
   nothingUrgent: string;
   nothingUrgentSub: string;
+  nextUp: string;
   quickActions: string;
   scan: string;
   voice: string;
   manual: string;
   brief: string;
-  calm: string;
-  thisWeek: string;
-  items: string;
-  show: string;
-  hide: string;
+  calmScore: string;
+  scoreHelper: string;
+  openNow: string;
 };
 
 function labelsFor(lang: string): Labels {
   if (lang === 'fr') {
     return {
-      capture: 'Capturer quelque chose…',
-      overdue: 'En retard',
       today: "Aujourd'hui",
-      stars: 'Étoiles',
-      vault: 'Coffre',
-      priorityNow: 'Priorité maintenant',
+      commandCenter: 'Centre familial',
+      commandSubtitle: 'Ce qui compte maintenant, en un seul endroit.',
+      capture: 'Capturer quelque chose',
+      urgent: 'Urgent',
+      calendarToday: 'Calendrier',
+      kidStars: 'Étoiles',
+      vaultDocs: 'Coffre',
+      needsAttention: 'À traiter',
       nothingUrgent: 'Rien de critique.',
       nothingUrgentSub: 'Votre foyer est sous contrôle pour le moment.',
+      nextUp: 'À venir',
       quickActions: 'Actions rapides',
-      scan: 'Scan',
+      scan: 'Scanner',
       voice: 'Voix',
       manual: 'Manuel',
       brief: 'Brief',
-      calm: 'calme',
-      thisWeek: 'Cette semaine',
-      items: 'éléments',
-      show: 'Afficher',
-      hide: 'Masquer',
+      calmScore: 'Score de calme',
+      scoreHelper: 'Moins il y a de retard, plus le foyer respire.',
+      openNow: 'ouverts',
+    };
+  }
+
+  if (lang === 'es') {
+    return {
+      today: 'Hoy',
+      commandCenter: 'Centro familiar',
+      commandSubtitle: 'Lo importante ahora, en un solo lugar.',
+      capture: 'Capturar algo',
+      urgent: 'Urgente',
+      calendarToday: 'Calendario',
+      kidStars: 'Estrellas',
+      vaultDocs: 'Bóveda',
+      needsAttention: 'Necesita atención',
+      nothingUrgent: 'Nada crítico.',
+      nothingUrgentSub: 'Tu hogar está bajo control por ahora.',
+      nextUp: 'Próximo',
+      quickActions: 'Acciones rápidas',
+      scan: 'Escanear',
+      voice: 'Voz',
+      manual: 'Manual',
+      brief: 'Informe',
+      calmScore: 'Calma',
+      scoreHelper: 'Menos atrasos, más calma.',
+      openNow: 'abiertos',
+    };
+  }
+
+  if (lang === 'de') {
+    return {
+      today: 'Heute',
+      commandCenter: 'Familien-Zentrale',
+      commandSubtitle: 'Das Wichtige jetzt, an einem Ort.',
+      capture: 'Etwas erfassen',
+      urgent: 'Dringend',
+      calendarToday: 'Kalender',
+      kidStars: 'Sterne',
+      vaultDocs: 'Tresor',
+      needsAttention: 'Braucht Aufmerksamkeit',
+      nothingUrgent: 'Nichts Kritisches.',
+      nothingUrgentSub: 'Ihr Haushalt ist im Moment unter Kontrolle.',
+      nextUp: 'Als Nächstes',
+      quickActions: 'Schnellaktionen',
+      scan: 'Scannen',
+      voice: 'Stimme',
+      manual: 'Manuell',
+      brief: 'Brief',
+      calmScore: 'Ruhe-Score',
+      scoreHelper: 'Weniger Rückstand, mehr Ruhe.',
+      openNow: 'offen',
     };
   }
 
   return {
-    capture: 'Capture anything…',
-    overdue: 'Overdue',
     today: 'Today',
-    stars: 'Stars',
-    vault: 'Vault',
-    priorityNow: 'Priority now',
+    commandCenter: 'Family command center',
+    commandSubtitle: 'Everything that needs attention, in one calm view.',
+    capture: 'Capture anything',
+    urgent: 'Urgent',
+    calendarToday: 'Calendar',
+    kidStars: 'Stars',
+    vaultDocs: 'Vault',
+    needsAttention: 'Needs attention',
     nothingUrgent: 'Nothing critical.',
     nothingUrgentSub: 'Your household is under control right now.',
+    nextUp: 'Next up',
     quickActions: 'Quick actions',
     scan: 'Scan',
     voice: 'Voice',
     manual: 'Manual',
     brief: 'Brief',
-    calm: 'calm',
-    thisWeek: 'This week',
-    items: 'items',
-    show: 'Show',
-    hide: 'Hide',
+    calmScore: 'Calm score',
+    scoreHelper: 'Fewer overdue items means a calmer household.',
+    openNow: 'open',
   };
 }
 
@@ -152,6 +211,7 @@ function uniqueCards(cards: Card[]) {
 export default function FeedScreen() {
   const router = useRouter();
   const { user, t, theme, lang } = useStore();
+  const { isWide, isDesktop, px, maxW, pick } = useBreakpoint();
   const labels = useMemo(() => labelsFor(lang), [lang]);
 
   const [cards, setCards] = useState<Card[]>([]);
@@ -166,7 +226,7 @@ export default function FeedScreen() {
   const [showCamera, setShowCamera] = useState(false);
   const [addSource, setAddSource] = useState<'MANUAL' | 'VOICE' | 'CAMERA'>('MANUAL');
   const [voiceDraft, setVoiceDraft] = useState<VoiceDraft | null>(null);
-  const [showThisWeek, setShowThisWeek] = useState(false);
+  const [activeTab, setActiveTab] = useState<'today' | 'upcoming' | 'all'>('today');
 
   const load = useCallback(async () => {
     try {
@@ -185,14 +245,25 @@ export default function FeedScreen() {
         logger.warn('load cards error', cardsResult.reason);
       }
 
-      if (membersResult.status === 'fulfilled') setMembers(membersResult.value);
-      if (rewardsResult.status === 'fulfilled') setRewardCount(rewardsResult.value.length);
-      if (vaultResult.status === 'fulfilled') setVaultCount(vaultResult.value.length);
+      if (membersResult.status === 'fulfilled') {
+        setMembers(membersResult.value);
+      }
+      if (rewardsResult.status === 'fulfilled') {
+        setRewardCount(rewardsResult.value.length);
+      }
+      if (vaultResult.status === 'fulfilled') {
+        setVaultCount(vaultResult.value.length);
+      }
 
       if (cardsResult.status === 'fulfilled') {
         api
           .getNotificationSettings()
-          .then((prefs) => syncCardReminderNotifications(prefs.card_reminders ? loadedCards : [], prefs.card_reminders))
+          .then((prefs) => {
+            if (prefs.card_reminders) {
+              return syncCardReminderNotifications(loadedCards, true);
+            }
+            return syncCardReminderNotifications([], false);
+          })
           .catch(() => undefined);
       }
     } catch (e) {
@@ -203,33 +274,129 @@ export default function FeedScreen() {
     }
   }, []);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
-  useEffect(() => { load(); }, [load]);
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load])
+  );
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const toggle = async (card: Card) => {
+    const next = card.status === 'DONE' ? 'OPEN' : 'DONE';
+    setCards((prev) =>
+      next === 'DONE'
+        ? prev.filter((c) => c.card_id !== card.card_id)
+        : prev.map((c) => (c.card_id === card.card_id ? { ...c, status: next, completed_at: null } : c))
+    );
+    try {
+      await api.updateCard(card.card_id, { status: next });
+    } catch {
+      load();
+    }
+  };
+
+  const remove = async (card: Card) => {
+    setCards((prev) => prev.filter((c) => c.card_id !== card.card_id));
+    try {
+      await api.deleteCard(card.card_id);
+    } catch {
+      load();
+    }
+  };
 
   const activeCards = useMemo(() => cards.filter((c) => c.status === 'OPEN'), [cards]);
-  const childMembers = useMemo(() => members.filter((m) => m.role?.toLowerCase() === 'child'), [members]);
-  const totalStars = useMemo(() => childMembers.reduce((sum, child) => sum + (child.stars || 0), 0), [childMembers]);
+  const openCount = activeCards.length;
 
   const dashboard = useMemo(() => {
     const now = Date.now();
     const today = new Date();
+    const tomorrow = now + 24 * 60 * 60 * 1000;
+
     const overdue = activeCards.filter((card) => {
       const time = dueTime(card);
       return Boolean(time && time < now && !sameLocalDay(new Date(time), today));
     });
+
     const todayCards = activeCards.filter((card) => {
       const time = dueTime(card);
       return Boolean(time && sameLocalDay(new Date(time), today));
     });
+
+    const calendarToday = todayCards.filter((card) => card.source === 'CALENDAR');
     const adminCards = activeCards.filter((card) => card.type === 'SIGN_SLIP' || card.type === 'RSVP');
+    const nextUp = activeCards
+      .filter((card) => {
+        const time = dueTime(card);
+        return Boolean(time && time >= now && time <= tomorrow);
+      })
+      .sort((a, b) => (dueTime(a) || 0) - (dueTime(b) || 0));
+
     const priority = uniqueCards([...overdue, ...adminCards, ...todayCards]).sort((a, b) => {
       const at = dueTime(a) || Number.MAX_SAFE_INTEGER;
       const bt = dueTime(b) || Number.MAX_SAFE_INTEGER;
       return at - bt;
     });
+
     const calmScore = Math.max(12, Math.min(100, 100 - overdue.length * 18 - todayCards.length * 7 - adminCards.length * 6));
-    return { overdue, todayCards, priority, calmScore };
+
+    return { overdue, todayCards, calendarToday, adminCards, nextUp, priority, calmScore };
   }, [activeCards]);
+
+  const tabCards = useMemo(() => {
+    const now = Date.now();
+    const todayDate = new Date();
+    if (activeTab === 'today') {
+      return uniqueCards([...dashboard.overdue, ...dashboard.todayCards]).sort((a, b) => {
+        const at = dueTime(a) || 0;
+        const bt = dueTime(b) || 0;
+        const aOver = at > 0 && at < now;
+        const bOver = bt > 0 && bt < now;
+        if (aOver && !bOver) return -1;
+        if (!aOver && bOver) return 1;
+        return at - bt;
+      });
+    }
+    if (activeTab === 'upcoming') {
+      return activeCards
+        .filter((c) => {
+          const time = dueTime(c);
+          return time !== null && time > now && !sameLocalDay(new Date(time), todayDate);
+        })
+        .sort((a, b) => (dueTime(a) || 0) - (dueTime(b) || 0));
+    }
+    return [...activeCards].sort((a, b) => {
+      const at = dueTime(a);
+      const bt = dueTime(b);
+      if (!at && !bt) return 0;
+      if (!at) return 1;
+      if (!bt) return -1;
+      return at - bt;
+    });
+  }, [activeTab, activeCards, dashboard]);
+
+  const childMembers = useMemo(() => members.filter((m) => m.role?.toLowerCase() === 'child'), [members]);
+  const totalStars = useMemo(() => childMembers.reduce((sum, child) => sum + (child.stars || 0), 0), [childMembers]);
+
+  const upcomingReminders = useMemo(() => {
+    const now = Date.now();
+    const in24h = now + 24 * 60 * 60 * 1000;
+    return cards
+      .filter((c) => c.status === 'OPEN' && c.due_date && (c.reminder_minutes || 0) > 0)
+      .filter((c) => {
+        const due = dueTime(c);
+        if (!due) return false;
+        const remindAt = due - (c.reminder_minutes || 0) * 60 * 1000;
+        return remindAt >= now - 60 * 60 * 1000 && remindAt <= in24h;
+      })
+      .sort((a, b) => {
+        const da = (dueTime(a) || 0) - (a.reminder_minutes || 0) * 60 * 1000;
+        const dbv = (dueTime(b) || 0) - (b.reminder_minutes || 0) * 60 * 1000;
+        return da - dbv;
+      });
+  }, [cards]);
 
   const greeting = (() => {
     const h = new Date().getHours();
@@ -246,15 +413,12 @@ export default function FeedScreen() {
     setShowAdd(true);
   };
 
-  const openCamera = () => setShowCamera(true);
-  const openVoice = () => setShowVoice(true);
-
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.bg }]}>
       <AmbientBackground />
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <ScrollView
-          contentContainerStyle={styles.scroll}
+          contentContainerStyle={[styles.scroll, { paddingHorizontal: px }]}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
@@ -267,16 +431,19 @@ export default function FeedScreen() {
             />
           }
         >
+          <View style={{ maxWidth: maxW, alignSelf: 'center', width: '100%' }}>
+          <View style={isWide ? styles.wideRow : null}>
+          {/* ── Left column (hero + stats) ── */}
+          <View style={isWide ? styles.wideColLeft : null}>
           <View style={styles.header}>
             <View style={{ flex: 1 }}>
               <Text style={[styles.greet, { color: theme.colors.textMuted }]}>{greeting}</Text>
               <Text style={[styles.name, { color: theme.colors.text }]}>{firstName || 'Family'}<Text style={styles.nameDot}>.</Text></Text>
             </View>
             <View style={styles.headerRight}>
-              <View style={[styles.calmChip, { backgroundColor: theme.colors.success + '18', borderColor: theme.colors.success + '33' }]}>
-                <Clock3 color={theme.colors.success} size={13} />
+              <View style={[styles.calmChip, { backgroundColor: theme.colors.accentSoft, borderColor: theme.colors.cardBorder }]}>
                 <Text style={[styles.calmValue, { color: theme.colors.success }]}>{dashboard.calmScore}</Text>
-                <Text style={[styles.calmLabel, { color: theme.colors.success }]}>{labels.calm}</Text>
+                <Text style={[styles.calmLabel, { color: theme.colors.textMuted }]}>calm</Text>
               </View>
               {user?.picture ? (
                 <Image source={{ uri: user.picture }} style={[styles.avatar, { borderColor: theme.colors.cardBorder }]} />
@@ -289,100 +456,142 @@ export default function FeedScreen() {
           </View>
 
           <PressScale testID="command-capture" onPress={openManual} style={[styles.searchShell, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder, shadowColor: theme.colors.shadow }]}>
-            <Search color={theme.colors.textSoft} size={20} />
+            <Search color={theme.colors.textSoft} size={21} />
             <Text style={[styles.searchText, { color: theme.colors.textMuted }]}>{labels.capture}</Text>
             <View style={[styles.filterButton, { backgroundColor: theme.colors.primary }]}>
-              <SlidersHorizontal color={theme.colors.primaryText} size={18} />
+              <SlidersHorizontal color={theme.colors.primaryText} size={19} />
             </View>
           </PressScale>
 
-          <View style={styles.statStrip}>
-            <StatChip icon={<Clock3 color="#EF4444" size={16} />} value={dashboard.overdue.length} label={labels.overdue} danger />
-            <StatChip icon={<CalendarDays color={theme.colors.success} size={16} />} value={dashboard.todayCards.length} label={labels.today} />
-            <StatChip icon={<Star color={theme.colors.accent} size={16} fill={theme.colors.accent} />} value={totalStars} label={labels.stars} />
-            <StatChip icon={<ShieldCheck color="#60A5FA" size={16} />} value={vaultCount} label={labels.vault} />
+          <View style={styles.statRow}>
+            <PressScale onPress={() => router.push('/calendar')} style={[styles.statChip, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
+              <Clock3 color={dashboard.priority.length > 0 ? '#EF4444' : theme.colors.textMuted} size={15} />
+              <Text style={[styles.statChipValue, { color: dashboard.priority.length > 0 ? '#EF4444' : theme.colors.text }]}>{dashboard.priority.length}</Text>
+              <Text style={[styles.statChipLabel, { color: theme.colors.textMuted }]}>{labels.urgent}</Text>
+            </PressScale>
+            <PressScale onPress={() => router.push('/calendar')} style={[styles.statChip, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
+              <CalendarDays color={theme.colors.success} size={15} />
+              <Text style={[styles.statChipValue, { color: theme.colors.text }]}>{dashboard.calendarToday.length}</Text>
+              <Text style={[styles.statChipLabel, { color: theme.colors.textMuted }]}>{labels.calendarToday}</Text>
+            </PressScale>
+            <PressScale onPress={() => router.push('/kids')} style={[styles.statChip, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
+              <Star color={theme.colors.accent} size={15} fill={theme.colors.accent} />
+              <Text style={[styles.statChipValue, { color: theme.colors.text }]}>{totalStars}</Text>
+              <Text style={[styles.statChipLabel, { color: theme.colors.textMuted }]}>{labels.kidStars}</Text>
+            </PressScale>
+            <PressScale onPress={() => router.push('/vault')} style={[styles.statChip, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
+              <ShieldCheck color={theme.colors.success} size={15} />
+              <Text style={[styles.statChipValue, { color: theme.colors.text }]}>{vaultCount}</Text>
+              <Text style={[styles.statChipLabel, { color: theme.colors.textMuted }]}>{labels.vaultDocs}</Text>
+            </PressScale>
           </View>
 
-          <View style={styles.actionStrip}>
-            <ActionTile label={labels.scan} onPress={openCamera} icon={<Camera color={theme.colors.text} size={18} />} />
-            <ActionTile label={labels.voice} onPress={openVoice} icon={<Mic color={theme.colors.text} size={18} />} />
-            <ActionTile label={labels.manual} onPress={openManual} icon={<PlusCircle color={theme.colors.text} size={18} />} />
-            <ActionTile label={labels.brief} onPress={() => setShowBrief(true)} icon={<Sparkles color={theme.colors.text} size={18} />} />
+          </View>{/* end wideColLeft */}
+
+          {/* ── Right column (actions + cards) ── */}
+          <View style={isWide ? styles.wideColRight : null}>
+          <View style={styles.actionRow}>
+            <PressScale onPress={() => setShowCamera(true)} style={[styles.actionTile, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
+              <Camera color={theme.colors.text} size={19} />
+              <Text style={[styles.actionText, { color: theme.colors.text }]}>{labels.scan}</Text>
+            </PressScale>
+            <PressScale onPress={() => setShowVoice(true)} style={[styles.actionTile, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
+              <Mic color={theme.colors.text} size={19} />
+              <Text style={[styles.actionText, { color: theme.colors.text }]}>{labels.voice}</Text>
+            </PressScale>
+            <PressScale onPress={openManual} style={[styles.actionTile, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
+              <PlusCircle color={theme.colors.text} size={19} />
+              <Text style={[styles.actionText, { color: theme.colors.text }]}>{labels.manual}</Text>
+            </PressScale>
+            <PressScale onPress={() => setShowBrief(true)} style={[styles.actionTile, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
+              <Sparkles color={theme.colors.text} size={19} />
+              <Text style={[styles.actionText, { color: theme.colors.text }]}>{labels.brief}</Text>
+            </PressScale>
           </View>
 
-          <GlassCard style={[styles.priorityPanel, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
-            <View style={styles.panelHeader}>
-              <Text style={[styles.panelLabel, { color: theme.colors.textMuted }]}>{labels.priorityNow}</Text>
-              <View style={[styles.countBadge, { backgroundColor: theme.colors.accentSoft }]}>
-                <Text style={[styles.countBadgeText, { color: theme.colors.accent }]}>{dashboard.priority.length}</Text>
+          {upcomingReminders.length > 0 && (
+            <GlassCard testID="reminders-banner" style={styles.remindersCard}>
+              <View style={styles.remindersHeader}>
+                <Bell color={theme.colors.accent} size={16} />
+                <Text style={[styles.remindersTitle, { color: theme.colors.text }]}>{t('reminders')} · {upcomingReminders.length}</Text>
               </View>
+              {upcomingReminders.slice(0, 3).map((c) => {
+                const due = dueTime(c) || Date.now();
+                const remindAt = due - (c.reminder_minutes || 0) * 60 * 1000;
+                const mins = Math.max(0, Math.round((remindAt - Date.now()) / 60000));
+                const label = mins <= 1 ? 'now' : mins < 60 ? `in ${mins}m` : `in ${Math.round(mins / 60)}h`;
+                return (
+                  <View key={c.card_id} style={styles.remindersRow}>
+                    <Text style={[styles.remindersItem, { color: theme.colors.text }]} numberOfLines={1}>{c.title}</Text>
+                    <Text style={[styles.remindersWhen, { color: theme.colors.textMuted }]}>{label}</Text>
+                  </View>
+                );
+              })}
+            </GlassCard>
+          )}
+
+          {/* ── Tab navigation ── */}
+          <View style={styles.tabRow}>
+            {(['today', 'upcoming', 'all'] as const).map((tab) => (
+              <PressScale
+                key={tab}
+                testID={`feed-tab-${tab}`}
+                onPress={() => setActiveTab(tab)}
+                style={[
+                  styles.tabBtn,
+                  { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder },
+                  activeTab === tab && { backgroundColor: theme.colors.primary, borderColor: 'transparent' },
+                ]}
+              >
+                <Text style={[styles.tabBtnText, { color: activeTab === tab ? theme.colors.primaryText : theme.colors.textMuted }]}>
+                  {tab === 'today' ? 'Today' : tab === 'upcoming' ? 'Upcoming' : 'All cards'}
+                </Text>
+              </PressScale>
+            ))}
+          </View>
+
+          {loading ? (
+            <ActivityIndicator color={theme.colors.text} style={{ marginTop: 40 }} />
+          ) : tabCards.length === 0 ? (
+            <View style={[styles.emptyTab, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
+              <CheckCircle2 color={theme.colors.success} size={18} />
+              <Text style={[styles.emptyTabText, { color: theme.colors.text }]}>
+                {activeTab === 'today' ? labels.nothingUrgent : activeTab === 'upcoming' ? 'Nothing coming up.' : labels.nothingUrgentSub}
+              </Text>
             </View>
-
-            {loading ? (
-              <ActivityIndicator color={theme.colors.text} style={{ marginTop: 18 }} />
-            ) : dashboard.priority.length === 0 ? (
-              <View style={styles.emptyPriority}>
-                <CheckCircle2 color={theme.colors.success} size={24} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>{labels.nothingUrgent}</Text>
-                  <Text style={[styles.emptySub, { color: theme.colors.textMuted }]}>{labels.nothingUrgentSub}</Text>
-                </View>
-              </View>
-            ) : (
-              dashboard.priority.slice(0, 3).map((card) => (
-                <PressScale key={card.card_id} onPress={() => router.push('/calendar')} style={[styles.priorityRow, { borderColor: theme.colors.cardBorder }]}>
-                  <View style={[styles.priorityIcon, { backgroundColor: card.type === 'TASK' ? theme.colors.bgSoft : theme.colors.accentSoft }]}>
-                    {card.type === 'TASK' ? <CheckCircle2 color={theme.colors.success} size={17} /> : <FileText color={theme.colors.accent} size={17} />}
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.priorityTitle, { color: theme.colors.text }]} numberOfLines={1}>{card.title}</Text>
-                    <Text style={[styles.priorityMeta, { color: theme.colors.textMuted }]} numberOfLines={1}>{formatCardDate(card)} · {card.assignee || t('family')}</Text>
-                  </View>
-                  <ArrowRight color={theme.colors.textSoft} size={17} />
-                </PressScale>
-              ))
-            )}
-          </GlassCard>
-
-          <PressScale
-            testID="feed-this-week-toggle"
-            onPress={() => setShowThisWeek((value) => !value)}
-            style={[styles.weekToggle, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}
-          >
-            <View style={styles.weekLeft}>
-              <CalendarDays color={theme.colors.textMuted} size={16} />
-              <Text style={[styles.weekTitle, { color: theme.colors.text }]}>{labels.thisWeek}</Text>
-              <View style={[styles.mutedChip, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
-                <Text style={[styles.mutedChipText, { color: theme.colors.textMuted }]}>{activeCards.length} {labels.items}</Text>
-              </View>
-            </View>
-            <Text style={[styles.weekToggleText, { color: theme.colors.textMuted }]}>{showThisWeek ? labels.hide : labels.show} ↓</Text>
-          </PressScale>
-
-          {showThisWeek ? (
-            <View style={styles.weekList}>
-              {activeCards.slice(0, 8).map((card) => (
-                <PressScale key={`week-${card.card_id}`} onPress={() => router.push('/calendar')} style={[styles.weekItem, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
-                  <View style={[styles.weekDot, { backgroundColor: dueTime(card) && (dueTime(card) || 0) < Date.now() ? '#EF4444' : theme.colors.accent }]} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.weekItemTitle, { color: theme.colors.text }]} numberOfLines={1}>{card.title}</Text>
-                    <Text style={[styles.weekItemMeta, { color: theme.colors.textMuted }]}>{formatCardDate(card)} · {card.assignee || t('family')}</Text>
-                  </View>
-                </PressScale>
+          ) : (
+            <>
+              {tabCards.map((c) => (
+                <SmartCard key={c.card_id} card={c} onComplete={() => toggle(c)} onDelete={() => remove(c)} />
               ))}
-            </View>
-          ) : null}
+              {activeTab !== 'all' && openCount > tabCards.length && (
+                <PressScale testID="feed-show-all" onPress={() => setActiveTab('all')} style={styles.showAllRow}>
+                  <Text style={[styles.showAllText, { color: theme.colors.textMuted }]}>
+                    {tabCards.length} of {openCount} cards shown · switch to All →
+                  </Text>
+                </PressScale>
+              )}
+            </>
+          )}
+
+          </View>{/* end wideColRight */}
+          </View>{/* end wideRow */}
 
           <View style={styles.footerSignal}>
             <UsersRound color={theme.colors.textMuted} size={14} />
             <Text style={[styles.footerSignalText, { color: theme.colors.textMuted }]}>Household COO · {childMembers.length} kids · {rewardCount} rewards</Text>
           </View>
+          </View>{/* end maxW wrapper */}
 
-          <View style={{ height: 90 }} />
+          <View style={{ height: 80 }} />
         </ScrollView>
       </SafeAreaView>
 
-      <FloatingActionBar onManual={openManual} onCamera={openCamera} onVoice={openVoice} />
+      <FloatingActionBar
+        onManual={openManual}
+        onCamera={() => setShowCamera(true)}
+        onVoice={() => setShowVoice(true)}
+      />
 
       <CameraCaptureModal
         visible={showCamera}
@@ -431,74 +640,258 @@ export default function FeedScreen() {
   );
 }
 
-function StatChip({ icon, value, label, danger }: { icon: React.ReactNode; value: number; label: string; danger?: boolean }) {
-  const { theme } = useStore();
-  return (
-    <PressScale style={[styles.statChip, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
-      {icon}
-      <Text style={[styles.statValue, { color: danger ? '#EF4444' : theme.colors.text }]}>{value}</Text>
-      <Text style={[styles.statLabel, { color: theme.colors.textMuted }]}>{label}</Text>
-    </PressScale>
-  );
-}
-
-function ActionTile({ icon, label, onPress }: { icon: React.ReactNode; label: string; onPress: () => void }) {
-  const { theme } = useStore();
-  return (
-    <PressScale onPress={onPress} style={[styles.actionTile, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
-      {icon}
-      <Text style={[styles.actionText, { color: theme.colors.textMuted }]}>{label}</Text>
-    </PressScale>
-  );
-}
-
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  scroll: { paddingHorizontal: 16, paddingTop: 8 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8, marginBottom: 14, gap: 12 },
-  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  greet: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
-  name: { fontFamily: 'Inter_800ExtraBold', fontSize: 24, lineHeight: 29, letterSpacing: -0.5 },
+  scroll: { paddingTop: 8 },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+    marginTop: 8,
+  },
+  greet: { fontFamily: 'Inter_600SemiBold', fontSize: 15 },
+  name: { fontFamily: 'Inter_800ExtraBold', fontSize: 27, lineHeight: 31, letterSpacing: -0.6 },
   nameDot: { color: '#F97316' },
-  avatar: { width: 40, height: 40, borderRadius: 9999, borderWidth: 1 },
+  avatar: { width: 50, height: 50, borderRadius: 9999, borderWidth: 1 },
   avatarFallback: { alignItems: 'center', justifyContent: 'center' },
-  avatarText: { fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
-  calmChip: { minHeight: 30, borderRadius: 9999, borderWidth: 1, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 5 },
-  calmValue: { fontFamily: 'Inter_800ExtraBold', fontSize: 11 },
-  calmLabel: { fontFamily: 'Inter_700Bold', fontSize: 10, opacity: 0.75 },
-  searchShell: { minHeight: 62, borderRadius: 9999, borderWidth: 1, paddingLeft: 18, paddingRight: 9, flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14, shadowOpacity: 0.1, shadowRadius: 18, shadowOffset: { width: 0, height: 10 }, elevation: 4 },
-  searchText: { flex: 1, fontFamily: 'Inter_700Bold', fontSize: 14 },
-  filterButton: { width: 42, height: 42, borderRadius: 9999, alignItems: 'center', justifyContent: 'center' },
-  statStrip: { flexDirection: 'row', gap: 8, marginBottom: 14 },
-  statChip: { flex: 1, minHeight: 78, borderRadius: 18, borderWidth: 1, alignItems: 'center', justifyContent: 'center', gap: 3, paddingHorizontal: 4 },
-  statValue: { fontFamily: 'Inter_800ExtraBold', fontSize: 18, lineHeight: 22, letterSpacing: -0.3 },
-  statLabel: { fontFamily: 'Inter_700Bold', fontSize: 9, textAlign: 'center' },
-  actionStrip: { flexDirection: 'row', gap: 8, marginBottom: 14 },
-  actionTile: { flex: 1, minHeight: 62, borderRadius: 16, borderWidth: 1, alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 4 },
-  actionText: { fontFamily: 'Inter_800ExtraBold', fontSize: 10 },
-  priorityPanel: { borderRadius: 22, padding: 14, marginBottom: 12 },
-  panelHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
-  panelLabel: { fontFamily: 'Inter_800ExtraBold', fontSize: 10, textTransform: 'uppercase', letterSpacing: 1.1 },
-  countBadge: { minWidth: 28, height: 28, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8 },
-  countBadgeText: { fontFamily: 'Inter_800ExtraBold', fontSize: 12 },
-  priorityRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderTopWidth: 1 },
-  priorityIcon: { width: 36, height: 36, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
-  priorityTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 13, lineHeight: 18 },
-  priorityMeta: { fontFamily: 'Inter_600SemiBold', fontSize: 11, marginTop: 2 },
-  emptyPriority: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 },
-  emptyTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
-  emptySub: { fontFamily: 'Inter_500Medium', fontSize: 12, lineHeight: 17, marginTop: 2 },
-  weekToggle: { minHeight: 56, borderRadius: 18, borderWidth: 1, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
-  weekLeft: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 },
-  weekTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
-  weekToggleText: { fontFamily: 'Inter_800ExtraBold', fontSize: 12 },
-  mutedChip: { borderWidth: 1, borderRadius: 9999, paddingHorizontal: 9, paddingVertical: 4 },
-  mutedChipText: { fontFamily: 'Inter_800ExtraBold', fontSize: 10 },
-  weekList: { marginTop: 10, gap: 8 },
-  weekItem: { minHeight: 58, borderRadius: 18, borderWidth: 1, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  weekDot: { width: 10, height: 10, borderRadius: 9999 },
-  weekItemTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
-  weekItemMeta: { fontFamily: 'Inter_600SemiBold', fontSize: 11, marginTop: 2 },
-  footerSignal: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 18 },
-  footerSignalText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
+  avatarText: { fontFamily: 'Inter_800ExtraBold', fontSize: 17 },
+  searchShell: {
+    minHeight: 66,
+    borderRadius: 9999,
+    borderWidth: 1,
+    paddingLeft: 20,
+    paddingRight: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    marginBottom: 24,
+    shadowOpacity: 0.10,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 4,
+  },
+  searchText: { flex: 1, fontFamily: 'Inter_700Bold', fontSize: 16 },
+  filterButton: { width: 52, height: 52, borderRadius: 9999, alignItems: 'center', justifyContent: 'center' },
+  commandHero: {
+    position: 'relative',
+    minHeight: 372,
+    borderRadius: 34,
+    padding: 24,
+    marginBottom: 18,
+    overflow: 'hidden',
+    backgroundColor: '#172024',
+    shadowOpacity: 0.20,
+    shadowRadius: 26,
+    shadowOffset: { width: 0, height: 16 },
+    elevation: 8,
+  },
+  heroTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 },
+  heroBadge: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 13, paddingVertical: 8, backgroundColor: '#FFFFFF', borderRadius: 9999 },
+  heroBadgeText: { color: '#202323', fontFamily: 'Inter_800ExtraBold', fontSize: 12, letterSpacing: 0.4 },
+  heroCount: { color: 'rgba(255,255,255,0.72)', fontFamily: 'Inter_700Bold', fontSize: 13 },
+  heroTitle: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 34, lineHeight: 39, letterSpacing: -0.9, marginTop: 2 },
+  heroSub: { color: 'rgba(255,255,255,0.76)', fontFamily: 'Inter_500Medium', fontSize: 15, lineHeight: 22, marginTop: 8, maxWidth: 280 },
+  scoreRow: { flexDirection: 'row', alignItems: 'center', gap: 16, marginTop: 28, maxWidth: 255, zIndex: 3 },
+  scoreCircle: { width: 92, height: 92, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  scoreRing: { position: 'absolute', width: 88, height: 88, borderRadius: 9999, borderWidth: 7, borderColor: 'rgba(255,255,255,0.16)' },
+  scoreArc: { position: 'absolute', width: 88, height: 88, borderRadius: 9999, borderTopWidth: 7, borderRightWidth: 7, borderTopColor: '#F97316', borderRightColor: '#F97316', borderLeftColor: 'transparent', borderBottomColor: 'transparent', transform: [{ rotate: '32deg' }] },
+  scoreTotal: { color: 'rgba(255,255,255,0.68)', fontFamily: 'Inter_600SemiBold', fontSize: 13, marginTop: -2 },
+  scoreValue: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 28, letterSpacing: -0.7, lineHeight: 32 },
+  scoreTitle: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
+  scoreSub: { color: 'rgba(255,255,255,0.68)', fontFamily: 'Inter_500Medium', fontSize: 12, lineHeight: 18, marginTop: 4 },
+  heroAction: { marginTop: 26, minHeight: 60, borderRadius: 9999, paddingLeft: 22, paddingRight: 7, backgroundColor: 'rgba(255,255,255,0.13)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', flexDirection: 'row', alignItems: 'center', zIndex: 4 },
+  heroActionText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 16, flex: 1, textAlign: 'center' },
+  heroArrow: { width: 48, height: 48, borderRadius: 9999, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
+  heroIllustration: { position: 'absolute', right: -8, bottom: 74, width: 160, height: 168, zIndex: 1 },
+  heroHalo: { position: 'absolute', right: 8, bottom: 20, width: 126, height: 126, borderRadius: 9999, backgroundColor: 'rgba(148,163,184,0.13)' },
+  heartOne: { position: 'absolute', top: 16, right: 42, width: 17, height: 17, borderRadius: 6, backgroundColor: '#A7F3D0', transform: [{ rotate: '45deg' }] },
+  heartTwo: { position: 'absolute', top: 42, right: 74, width: 14, height: 14, borderRadius: 5, backgroundColor: '#8EE6C5', transform: [{ rotate: '45deg' }] },
+  treeTrunk: { position: 'absolute', right: 12, bottom: 29, width: 8, height: 54, borderRadius: 4, backgroundColor: '#3F3A2E' },
+  treeTop: { position: 'absolute', right: -2, bottom: 69, width: 62, height: 76, borderRadius: 30, backgroundColor: '#86B73E' },
+  houseBody: { position: 'absolute', right: 54, bottom: 24, width: 74, height: 78, borderRadius: 14, backgroundColor: '#FFF0D7' },
+  houseRoof: { position: 'absolute', right: 54, bottom: 91, width: 74, height: 42, borderTopLeftRadius: 14, borderTopRightRadius: 14, backgroundColor: '#FFE3B8' },
+  houseDoor: { position: 'absolute', right: 84, bottom: 24, width: 22, height: 38, borderTopLeftRadius: 14, borderTopRightRadius: 14, backgroundColor: '#D9A875' },
+  bushOne: { position: 'absolute', right: 124, bottom: 20, width: 36, height: 30, borderRadius: 18, backgroundColor: '#8BBE4E' },
+  bushTwo: { position: 'absolute', right: 30, bottom: 20, width: 44, height: 30, borderRadius: 20, backgroundColor: '#79A93E' },
+  statGrid: { flexDirection: 'row', gap: 10, marginBottom: 24 },
+  statCard: { flex: 1, minHeight: 118, borderRadius: 24, borderWidth: 1, padding: 12, justifyContent: 'space-between', shadowOpacity: 0.08, shadowRadius: 13, shadowOffset: { width: 0, height: 8 }, elevation: 2 },
+  statValue: { fontFamily: 'Inter_800ExtraBold', fontSize: 22, lineHeight: 25, letterSpacing: -0.5, marginTop: 10 },
+  statLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 10.5, lineHeight: 14, flexShrink: 1 },
+  section: { marginBottom: 13, marginTop: 4, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
+  sectionTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 23, letterSpacing: -0.4 },
+  sectionSub: { fontFamily: 'Inter_700Bold', fontSize: 13 },
+  actionRow: { flexDirection: 'row', gap: 10, marginBottom: 22 },
+  actionTile: { flex: 1, minHeight: 74, borderRadius: 24, borderWidth: 1, alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 8 },
+  actionText: { fontFamily: 'Inter_800ExtraBold', fontSize: 12 },
+  remindersCard: { marginBottom: 20 },
+  remindersHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  remindersTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 13, letterSpacing: 0.6, textTransform: 'uppercase' },
+  remindersRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8 },
+  remindersItem: { flex: 1, fontFamily: 'Inter_700Bold', fontSize: 15, marginRight: 12 },
+  remindersWhen: { fontFamily: 'Inter_700Bold', fontSize: 12 },
+  emptyPriority: { paddingVertical: 28, alignItems: 'center', gap: 8, marginBottom: 18 },
+  empty: { paddingVertical: 36, alignItems: 'center' },
+  emptyTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 21, textAlign: 'center' },
+  emptySub: { fontFamily: 'Inter_500Medium', fontSize: 14, lineHeight: 20, textAlign: 'center', maxWidth: 270 },
+  priorityCard: { minHeight: 82, borderRadius: 26, borderWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 13, padding: 14, marginBottom: 10, shadowOpacity: 0.08, shadowRadius: 13, shadowOffset: { width: 0, height: 8 }, elevation: 2 },
+  priorityIcon: { width: 44, height: 44, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  priorityTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 16, lineHeight: 21 },
+  priorityMeta: { fontFamily: 'Inter_600SemiBold', fontSize: 12, marginTop: 2 },
+  nextRow: { minHeight: 56, borderBottomWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  nextDot: { width: 11, height: 11, borderRadius: 9999 },
+  nextTitle: { flex: 1, fontFamily: 'Inter_700Bold', fontSize: 15 },
+  nextTime: { fontFamily: 'Inter_700Bold', fontSize: 12 },
+  nextUpPanel: {
+    borderWidth: 1,
+    borderRadius: 24,
+    padding: 16,
+    marginTop: 18,
+    marginBottom: 8,
+    shadowOpacity: 0.1,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 8,
+  },
+  nextUpHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  nextUpEyebrow: {
+    fontFamily: 'Inter_800ExtraBold',
+    fontSize: 10,
+    letterSpacing: 1.1,
+    textTransform: 'uppercase',
+    marginBottom: 3,
+  },
+  nextUpHeading: {
+    fontFamily: 'Inter_800ExtraBold',
+    fontSize: 22,
+    lineHeight: 27,
+    letterSpacing: -0.3,
+  },
+  nextUpCountBadge: {
+    minWidth: 38,
+    height: 38,
+    borderRadius: 9999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+  },
+  nextUpCountText: {
+    fontFamily: 'Inter_800ExtraBold',
+    fontSize: 16,
+  },
+  nextUpStats: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  nextUpStat: {
+    flex: 1,
+    borderRadius: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+  },
+  nextUpStatNumber: {
+    fontFamily: 'Inter_800ExtraBold',
+    fontSize: 20,
+    lineHeight: 24,
+  },
+  nextUpStatLabel: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 10,
+    marginTop: 2,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  nextUpTask: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderTopWidth: 1,
+    paddingTop: 11,
+    paddingBottom: 2,
+    marginTop: 8,
+  },
+  nextUpTaskIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  nextUpTaskTitle: {
+    fontFamily: 'Inter_800ExtraBold',
+    fontSize: 14,
+    lineHeight: 19,
+  },
+  nextUpTaskMeta: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 1,
+  },
+  nextUpEmpty: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingTop: 8,
+  },
+
+  compactToggle: {
+    borderWidth: 1,
+    borderRadius: 18,
+    paddingVertical: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 10,
+  },
+  compactToggleText: {
+    fontFamily: 'Inter_800ExtraBold',
+    fontSize: 13,
+  },
+
+  footerSignal: { alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, marginTop: 22 },
+  footerSignalText: { fontFamily: 'Inter_600SemiBold', fontSize: 12, textAlign: 'center' },
+
+  // Responsive 2-column layout
+  wideRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 24 },
+  wideColLeft: { flex: 55 },
+  wideColRight: { flex: 45 },
+
+  // Option A new styles
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  calmChip: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 11, paddingVertical: 7, borderRadius: 99, borderWidth: 1 },
+  calmValue: { fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
+  calmLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 10 },
+  statRow: { flexDirection: 'row', gap: 8, marginBottom: 20 },
+  statChip: { flex: 1, alignItems: 'center', paddingVertical: 11, paddingHorizontal: 6, borderRadius: 16, borderWidth: 1, gap: 4 },
+  statChipValue: { fontFamily: 'Inter_800ExtraBold', fontSize: 17, lineHeight: 20 },
+  statChipLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 9, lineHeight: 12, textAlign: 'center' },
+  priorityPanel: { borderWidth: 1, borderRadius: 20, padding: 14, marginTop: 16, marginBottom: 8 },
+  priorityEmpty: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderRadius: 16, padding: 14, marginTop: 16, marginBottom: 8 },
+  priorityEmptyText: { fontFamily: 'Inter_700Bold', fontSize: 13 },
+  priorityHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  priorityLabel: { fontFamily: 'Inter_800ExtraBold', fontSize: 10, letterSpacing: 1.1, textTransform: 'uppercase' },
+  priorityBadge: { minWidth: 28, height: 28, borderRadius: 99, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8 },
+  priorityBadgeText: { fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
+  priorityRow: { flexDirection: 'row', alignItems: 'center', gap: 10, borderTopWidth: 1, paddingTop: 10, paddingBottom: 2, marginTop: 8 },
+  priorityIcon: { width: 32, height: 32, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  priorityTaskTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 13, lineHeight: 18 },
+  priorityTaskMeta: { fontFamily: 'Inter_500Medium', fontSize: 11, lineHeight: 16, marginTop: 1 },
+  weekToggle: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderRadius: 16, padding: 14, marginTop: 14, marginBottom: 8 },
+  weekToggleTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 14, flex: 1 },
+  weekToggleCount: { borderRadius: 99, paddingHorizontal: 9, paddingVertical: 4 },
+  weekToggleCountText: { fontFamily: 'Inter_800ExtraBold', fontSize: 11 },
+  weekToggleHint: { fontFamily: 'Inter_700Bold', fontSize: 11 },
+  tabRow: { flexDirection: 'row', gap: 8, marginBottom: 14, marginTop: 2 },
+  tabBtn: { flex: 1, paddingVertical: 10, borderRadius: 99, borderWidth: 1, alignItems: 'center' },
+  tabBtnText: { fontFamily: 'Inter_700Bold', fontSize: 13 },
+  emptyTab: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderRadius: 20, padding: 18, marginTop: 4 },
+  emptyTabText: { fontFamily: 'Inter_600SemiBold', fontSize: 14, flex: 1 },
+  showAllRow: { paddingVertical: 14, alignItems: 'center' },
+  showAllText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
 });
