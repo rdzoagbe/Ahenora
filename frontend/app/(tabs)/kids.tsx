@@ -562,6 +562,8 @@ export default function KidsScreen() {
 
                 </>
               ) : null}
+            </>
+          )}
 
               </View>{/* end wideColLeft */}
               <View style={isWide ? styles.wideColRight : null}>
