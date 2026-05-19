@@ -25,6 +25,7 @@ function RootNavigator() {
         <Stack.Screen name="index" />
         <Stack.Screen name="oauthredirect" />
         <Stack.Screen name="oauth2redirect/google" />
+        <Stack.Screen name="oauth2redirect/facebook" />
         <Stack.Screen name="pricing" />
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="+not-found" />
