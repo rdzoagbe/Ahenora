@@ -735,7 +735,6 @@ const styles = StyleSheet.create({
   emptyTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 21, textAlign: 'center' },
   emptySub: { fontFamily: 'Inter_500Medium', fontSize: 14, lineHeight: 20, textAlign: 'center', maxWidth: 270 },
   priorityCard: { minHeight: 82, borderRadius: 26, borderWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 13, padding: 14, marginBottom: 10, shadowOpacity: 0.08, shadowRadius: 13, shadowOffset: { width: 0, height: 8 }, elevation: 2 },
-  priorityIcon: { width: 44, height: 44, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   priorityTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 16, lineHeight: 21 },
   priorityMeta: { fontFamily: 'Inter_600SemiBold', fontSize: 12, marginTop: 2 },
   nextRow: { minHeight: 56, borderBottomWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },

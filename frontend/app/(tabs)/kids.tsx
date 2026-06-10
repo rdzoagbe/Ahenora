@@ -492,7 +492,7 @@ export default function KidsScreen() {
                         <Text style={styles.starCircleLabel}>{t('stars')}</Text>
                       </View>
                       <View style={{ flex: 1 }}>
-                        <Text style={styles.walletChildLabel}>{activeChild.name.toUpperCase()}'S WALLET</Text>
+                        <Text style={styles.walletChildLabel}>{activeChild.name.toUpperCase()}&apos;S WALLET</Text>
                         <Text style={[styles.walletStarCount, { color: theme.colors.text }]}>{stars} {t('stars')}</Text>
                         <Text style={[styles.walletReachText, { color: theme.colors.textMuted }]}>{affordableRewards} reward{affordableRewards !== 1 ? 's' : ''} within reach</Text>
                         {latestActivity ? (
