@@ -8,15 +8,30 @@ updates:
       time: "09:00"
       timezone: "Europe/Paris"
     open-pull-requests-limit: 3
+    # Expo SDK packages, react-native, and react must stay on the versions the
+    # installed Expo SDK expects (managed via `npx expo install --fix`), so
+    # dependabot must not bump them independently — doing so broke main once
+    # already (PR #29 mixed SDK 54 and SDK 56 module versions).
+    ignore:
+      - dependency-name: "expo"
+      - dependency-name: "expo-*"
+      - dependency-name: "@expo/*"
+      - dependency-name: "@expo-google-fonts/*"
+      - dependency-name: "react"
+      - dependency-name: "react-dom"
+      - dependency-name: "react-native"
+      - dependency-name: "react-native-*"
+      - dependency-name: "@react-native/*"
+      - dependency-name: "@react-native-async-storage/*"
+      - dependency-name: "@react-native-google-signin/*"
+      - dependency-name: "@react-navigation/*"
+      - dependency-name: "@types/react"
+      # Majors of these are gated by eslint-config-expo / the Expo SDK toolchain.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "eslint"
+        update-types: ["version-update:semver-major"]
     groups:
-      expo-and-react-native:
-        patterns:
-          - "expo"
-          - "expo-*"
-          - "@expo/*"
-          - "react-native"
-          - "react-native-*"
-          - "@react-native/*"
       frontend-tooling:
         patterns:
           - "typescript"
