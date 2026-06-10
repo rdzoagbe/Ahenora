@@ -1,26 +1,26 @@
 import React from 'react';
-import { Tabs } from 'expo-router';
-import { View, StyleSheet, Text } from 'react-native';
+import { Tabs, usePathname, useRouter } from 'expo-router';
+import { View, StyleSheet, Text, TouchableOpacity } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Home, Calendar as CalendarIcon, Lock, Settings as SettingsIcon, Star } from 'lucide-react-native';
 import { useStore } from '../../src/store';
+import { useBreakpoint } from '../../src/responsive';
+
+// ─── Phone: floating pill tab bar ────────────────────────────────────────────
 
 function TabIcon({ focused, Icon, label }: { focused: boolean; Icon: any; label: string }) {
   const { theme } = useStore();
   const light = theme.mode === 'light';
-  const activeBg = light ? '#FFFFFF' : '#FFFFFF';
   const activeColor = '#202323';
   const inactiveColor = light ? 'rgba(255,255,255,0.72)' : 'rgba(255,255,255,0.64)';
 
   return (
-    <View style={[styles.tabItem, focused && { backgroundColor: activeBg }]}>
+    <View style={[styles.tabItem, focused && { backgroundColor: '#FFFFFF' }]}>
       <Icon color={focused ? activeColor : inactiveColor} size={21} strokeWidth={focused ? 2.5 : 2.1} />
       <Text
         style={[
           styles.tabLabel,
-          {
-            color: focused ? activeColor : inactiveColor,
-            fontFamily: focused ? 'Inter_800ExtraBold' : 'Inter_600SemiBold',
-          },
+          { color: focused ? activeColor : inactiveColor, fontFamily: focused ? 'Inter_800ExtraBold' : 'Inter_600SemiBold' },
         ]}
         numberOfLines={1}
       >
@@ -30,47 +30,123 @@ function TabIcon({ focused, Icon, label }: { focused: boolean; Icon: any; label:
   );
 }
 
-export default function TabLayout() {
-  const { t, theme } = useStore();
+// ─── Tablet / Desktop: left sidebar ──────────────────────────────────────────
+
+const NAV_ITEMS = [
+  { name: 'feed',     Icon: Home,          labelKey: 'feed' },
+  { name: 'calendar', Icon: CalendarIcon,  labelKey: 'calendar' },
+  { name: 'kids',     Icon: Star,          labelKey: 'kids' },
+  { name: 'vault',    Icon: Lock,          labelKey: 'vault' },
+  { name: 'settings', Icon: SettingsIcon,  labelKey: 'settings' },
+] as const;
+
+function SidebarNav({ width }: { width: number }) {
+  const { theme, t } = useStore();
+  const { isDesktop } = useBreakpoint();
+  const router = useRouter();
+  const pathname = usePathname();
+  const insets = useSafeAreaInsets();
 
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarShowLabel: false,
-        sceneStyle: { backgroundColor: theme.colors.bg },
-        tabBarStyle: {
-          position: 'absolute',
-          left: 20,
-          right: 20,
-          bottom: 14,
-          height: 78,
-          borderRadius: 32,
+    <View
+      style={[
+        styles.sidebar,
+        {
+          width,
           backgroundColor: theme.colors.tabBar,
-          borderTopWidth: 0,
-          borderWidth: 1,
-          borderColor: theme.colors.tabBorder,
-          elevation: 10,
-          shadowColor: '#202323',
-          shadowOpacity: theme.mode === 'light' ? 0.16 : 0.28,
-          shadowRadius: 22,
-          shadowOffset: { width: 0, height: 12 },
-          paddingHorizontal: 6,
-          paddingTop: 8,
+          borderRightColor: theme.colors.tabBorder,
+          paddingTop: insets.top + 12,
+          paddingBottom: insets.bottom + 12,
         },
-      }}
+      ]}
     >
-      <Tabs.Screen name="feed" options={{ tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={Home} label={t('feed')} /> }} />
-      <Tabs.Screen name="calendar" options={{ tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={CalendarIcon} label={t('calendar')} /> }} />
-      <Tabs.Screen name="kids" options={{ tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={Star} label={t('kids')} /> }} />
-      <Tabs.Screen name="vault" options={{ tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={Lock} label={t('vault')} /> }} />
-      <Tabs.Screen name="settings" options={{ tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={SettingsIcon} label={t('settings')} /> }} />
-      <Tabs.Screen name="account" options={{ href: null }} />
-    </Tabs>
+      {isDesktop && (
+        <View style={styles.sidebarBrand}>
+          <Text style={styles.sidebarBrandText}>COO</Text>
+        </View>
+      )}
+
+      {NAV_ITEMS.map(({ name, Icon, labelKey }) => {
+        const active = pathname === `/${name}` || pathname.endsWith(name);
+        const iconColor = active ? '#202323' : 'rgba(255,255,255,0.60)';
+
+        return (
+          <TouchableOpacity
+            key={name}
+            onPress={() => router.navigate(`/(tabs)/${name}` as any)}
+            style={[
+              styles.sidebarItem,
+              isDesktop ? styles.sidebarItemWide : styles.sidebarItemCompact,
+              active && styles.sidebarItemActive,
+            ]}
+            activeOpacity={0.75}
+          >
+            <Icon color={iconColor} size={20} strokeWidth={active ? 2.5 : 2.0} />
+            {isDesktop && (
+              <Text style={[styles.sidebarLabel, { color: iconColor }]}>
+                {t(labelKey)}
+              </Text>
+            )}
+          </TouchableOpacity>
+        );
+      })}
+    </View>
   );
 }
 
+// ─── Root layout ─────────────────────────────────────────────────────────────
+
+export default function TabLayout() {
+  const { t, theme } = useStore();
+  const { isWide, sidebarW } = useBreakpoint();
+
+  const floatingTabStyle = {
+    position: 'absolute' as const,
+    left: 20,
+    right: 20,
+    bottom: 14,
+    height: 78,
+    borderRadius: 32,
+    backgroundColor: theme.colors.tabBar,
+    borderTopWidth: 0,
+    borderWidth: 1,
+    borderColor: theme.colors.tabBorder,
+    elevation: 10,
+    shadowColor: '#202323',
+    shadowOpacity: theme.mode === 'light' ? 0.16 : 0.28,
+    shadowRadius: 22,
+    shadowOffset: { width: 0, height: 12 },
+    paddingHorizontal: 6,
+    paddingTop: 8,
+  };
+
+  return (
+    <>
+      <Tabs
+        screenOptions={{
+          headerShown: false,
+          tabBarShowLabel: false,
+          sceneStyle: isWide ? { marginLeft: sidebarW } : undefined,
+          tabBarStyle: isWide ? { display: 'none' } : floatingTabStyle,
+        }}
+      >
+        <Tabs.Screen name="feed"     options={{ tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={Home}          label={t('feed')} /> }} />
+        <Tabs.Screen name="calendar" options={{ tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={CalendarIcon}  label={t('calendar')} /> }} />
+        <Tabs.Screen name="kids"     options={{ tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={Star}          label={t('kids')} /> }} />
+        <Tabs.Screen name="vault"    options={{ tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={Lock}          label={t('vault')} /> }} />
+        <Tabs.Screen name="settings" options={{ tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={SettingsIcon}  label={t('settings')} /> }} />
+        <Tabs.Screen name="account"  options={{ href: null }} />
+      </Tabs>
+
+      {isWide && <SidebarNav width={sidebarW} />}
+    </>
+  );
+}
+
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
+  // Phone tab bar items
   tabItem: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -82,5 +158,55 @@ const styles = StyleSheet.create({
   tabLabel: {
     fontSize: 10,
     letterSpacing: 0.1,
+  },
+
+  // Sidebar
+  sidebar: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    borderRightWidth: 1,
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    gap: 4,
+  },
+  sidebarBrand: {
+    width: '100%',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginBottom: 8,
+  },
+  sidebarBrandText: {
+    color: '#FFFFFF',
+    fontFamily: 'Inter_800ExtraBold',
+    fontSize: 20,
+    letterSpacing: 2,
+  },
+  sidebarItem: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 16,
+    marginVertical: 2,
+  },
+  sidebarItemCompact: {
+    width: 52,
+    height: 52,
+  },
+  sidebarItemWide: {
+    flexDirection: 'row',
+    width: '100%',
+    height: 48,
+    paddingHorizontal: 16,
+    gap: 12,
+    justifyContent: 'flex-start',
+    borderRadius: 14,
+  },
+  sidebarItemActive: {
+    backgroundColor: '#FFFFFF',
+  },
+  sidebarLabel: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 14,
   },
 });

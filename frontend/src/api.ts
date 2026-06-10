@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
+import { Platform } from 'react-native';
 
 const BASE = process.env.EXPO_PUBLIC_BACKEND_URL;
 if (!BASE) {
@@ -36,7 +37,10 @@ export const tokenStore = {
       await SecureStore.setItemAsync(TOKEN_KEY, token);
       await AsyncStorage.removeItem(TOKEN_KEY).catch(() => undefined);
     } catch {
-      await AsyncStorage.setItem(TOKEN_KEY, token);
+      if (Platform.OS === 'web') {
+        await AsyncStorage.setItem(TOKEN_KEY, token);
+      }
+      // On native, SecureStore failure is unrecoverable — do not fall back to plaintext storage.
     }
   },
   async clear() {
@@ -45,9 +49,11 @@ export const tokenStore = {
   },
 };
 
-async function request<T = any>(
+const REQUEST_TIMEOUT_MS = 30_000;
+
+async function request<T = unknown>(
   path: string,
-  opts: { method?: string; body?: any } = {}
+  opts: { method?: string; body?: unknown } = {}
 ): Promise<T> {
   const token = await tokenStore.get();
   const headers: Record<string, string> = {
@@ -55,33 +61,40 @@ async function request<T = any>(
   };
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
-  const res = await fetch(`${BASE}/api${path}`, {
-    method: opts.method || 'GET',
-    headers,
-    credentials: 'include',
-    body: opts.body ? JSON.stringify(opts.body) : undefined,
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/api${path}`, {
+      method: opts.method || 'GET',
+      headers,
+      body: opts.body ? JSON.stringify(opts.body) : undefined,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+
   if (!res.ok) {
     const text = await res.text();
-    // Attempt to parse 402 plan-limit payloads so UI can react
     if (res.status === 402) {
       try {
-        const parsed = JSON.parse(text);
-        const detail = parsed.detail || parsed;
-        const err: any = new Error(detail?.message || 'Plan limit reached');
-        err.status = 402;
-        err.planLimit = detail;
+        const parsed = JSON.parse(text) as Record<string, unknown>;
+        const detail = (parsed.detail ?? parsed) as Record<string, unknown>;
+        const err = Object.assign(
+          new Error((detail?.message as string) || 'Plan limit reached'),
+          { status: 402, planLimit: detail }
+        );
         throw err;
-      } catch (e: any) {
-        if (e?.planLimit) throw e;
+      } catch (e) {
+        if ((e as { planLimit?: unknown }).planLimit) throw e;
       }
     }
-    const err: any = new Error(`${res.status}: ${text}`);
-    err.status = res.status;
-    throw err;
+    throw Object.assign(new Error(`${res.status}: ${text}`), { status: res.status });
   }
   if (res.status === 204) return {} as T;
-  return res.json();
+  return res.json() as Promise<T>;
 }
 
 export type CardType = 'SIGN_SLIP' | 'RSVP' | 'TASK';
@@ -251,6 +264,11 @@ export const api = {
       method: 'POST',
       body: invite_token ? { session_id, invite_token } : { session_id },
     }),
+  exchangeFacebookSession: (access_token: string, invite_token?: string) =>
+    request<{ user: User; session_token: string }>('/auth/facebook', {
+      method: 'POST',
+      body: invite_token ? { access_token, invite_token } : { access_token },
+    }),
   me: () => request<User>('/auth/me'),
   logout: () => request('/auth/logout', { method: 'POST' }),
   setLanguage: (language: string) =>
@@ -381,7 +399,7 @@ export const api = {
       body: { token, platform },
     }),
   testNotification: () =>
-    request<{ ok: boolean; tokens: number; result: any }>('/notifications/test', {
+    request<{ ok: boolean; tokens: number; result: unknown }>('/notifications/test', {
       method: 'POST',
     }),
   // Subscription
@@ -433,12 +451,19 @@ export const api = {
     const headers: Record<string, string> = {};
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
-    const res = await fetch(`${BASE}/api/voice/transcribe`, {
-      method: 'POST',
-      headers,
-      credentials: 'include',
-      body: form,
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    let res: Response;
+    try {
+      res = await fetch(`${BASE}/api/voice/transcribe`, {
+        method: 'POST',
+        headers,
+        body: form,
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
 
