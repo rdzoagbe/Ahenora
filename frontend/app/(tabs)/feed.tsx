@@ -11,13 +11,11 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import {
-  ArrowRight,
   Bell,
   CalendarDays,
   Camera,
   CheckCircle2,
   Clock3,
-  FileText,
   Mic,
   PlusCircle,
   Search,
@@ -30,7 +28,6 @@ import {
 
 import { useBreakpoint } from '../../src/responsive';
 import { AmbientBackground } from '../../src/components/AmbientBackground';
-import { GlassCard } from '../../src/components/GlassCard';
 import { PressScale } from '../../src/components/PressScale';
 import { SmartCard } from '../../src/components/SmartCard';
 import { FloatingActionBar } from '../../src/components/FloatingActionBar';
@@ -188,17 +185,6 @@ function sameLocalDay(a: Date, b: Date) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
-function formatCardDate(card: Card) {
-  const time = dueTime(card);
-  if (!time) return 'No deadline';
-  const date = new Date(time);
-  const today = new Date();
-  if (sameLocalDay(date, today)) {
-    return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-  }
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-}
-
 function uniqueCards(cards: Card[]) {
   const seen = new Set<string>();
   return cards.filter((card) => {
@@ -211,7 +197,7 @@ function uniqueCards(cards: Card[]) {
 export default function FeedScreen() {
   const router = useRouter();
   const { user, t, theme, lang } = useStore();
-  const { isWide, isDesktop, px, maxW, pick } = useBreakpoint();
+  const { isWide, px, maxW } = useBreakpoint();
   const labels = useMemo(() => labelsFor(lang), [lang]);
 
   const [cards, setCards] = useState<Card[]>([]);
@@ -463,72 +449,68 @@ export default function FeedScreen() {
             </View>
           </PressScale>
 
-          <View style={styles.statRow}>
-            <PressScale onPress={() => router.push('/calendar')} style={[styles.statChip, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickBar}>
+            <PressScale onPress={() => router.push('/calendar')} style={[styles.quickStat, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
               <Clock3 color={dashboard.priority.length > 0 ? '#EF4444' : theme.colors.textMuted} size={15} />
-              <Text style={[styles.statChipValue, { color: dashboard.priority.length > 0 ? '#EF4444' : theme.colors.text }]}>{dashboard.priority.length}</Text>
-              <Text style={[styles.statChipLabel, { color: theme.colors.textMuted }]}>{labels.urgent}</Text>
+              <Text style={[styles.quickStatValue, { color: dashboard.priority.length > 0 ? '#EF4444' : theme.colors.text }]}>{dashboard.priority.length}</Text>
+              <Text style={[styles.quickStatLabel, { color: theme.colors.textMuted }]}>{labels.urgent}</Text>
             </PressScale>
-            <PressScale onPress={() => router.push('/calendar')} style={[styles.statChip, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
+            <PressScale onPress={() => router.push('/calendar')} style={[styles.quickStat, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
               <CalendarDays color={theme.colors.success} size={15} />
-              <Text style={[styles.statChipValue, { color: theme.colors.text }]}>{dashboard.calendarToday.length}</Text>
-              <Text style={[styles.statChipLabel, { color: theme.colors.textMuted }]}>{labels.calendarToday}</Text>
+              <Text style={[styles.quickStatValue, { color: theme.colors.text }]}>{dashboard.calendarToday.length}</Text>
+              <Text style={[styles.quickStatLabel, { color: theme.colors.textMuted }]}>{labels.calendarToday}</Text>
             </PressScale>
-            <PressScale onPress={() => router.push('/kids')} style={[styles.statChip, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
+            <PressScale onPress={() => router.push('/kids')} style={[styles.quickStat, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
               <Star color={theme.colors.accent} size={15} fill={theme.colors.accent} />
-              <Text style={[styles.statChipValue, { color: theme.colors.text }]}>{totalStars}</Text>
-              <Text style={[styles.statChipLabel, { color: theme.colors.textMuted }]}>{labels.kidStars}</Text>
+              <Text style={[styles.quickStatValue, { color: theme.colors.text }]}>{totalStars}</Text>
+              <Text style={[styles.quickStatLabel, { color: theme.colors.textMuted }]}>{labels.kidStars}</Text>
             </PressScale>
-            <PressScale onPress={() => router.push('/vault')} style={[styles.statChip, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
+            <PressScale onPress={() => router.push('/vault')} style={[styles.quickStat, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
               <ShieldCheck color={theme.colors.success} size={15} />
-              <Text style={[styles.statChipValue, { color: theme.colors.text }]}>{vaultCount}</Text>
-              <Text style={[styles.statChipLabel, { color: theme.colors.textMuted }]}>{labels.vaultDocs}</Text>
+              <Text style={[styles.quickStatValue, { color: theme.colors.text }]}>{vaultCount}</Text>
+              <Text style={[styles.quickStatLabel, { color: theme.colors.textMuted }]}>{labels.vaultDocs}</Text>
             </PressScale>
-          </View>
+
+            <View style={[styles.quickDivider, { backgroundColor: theme.colors.cardBorder }]} />
+
+            <PressScale onPress={() => setShowCamera(true)} style={[styles.quickAction, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
+              <Camera color={theme.colors.text} size={19} />
+              <Text style={[styles.quickActionLabel, { color: theme.colors.text }]}>{labels.scan}</Text>
+            </PressScale>
+            <PressScale onPress={() => setShowVoice(true)} style={[styles.quickAction, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
+              <Mic color={theme.colors.text} size={19} />
+              <Text style={[styles.quickActionLabel, { color: theme.colors.text }]}>{labels.voice}</Text>
+            </PressScale>
+            <PressScale onPress={openManual} style={[styles.quickAction, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
+              <PlusCircle color={theme.colors.text} size={19} />
+              <Text style={[styles.quickActionLabel, { color: theme.colors.text }]}>{labels.manual}</Text>
+            </PressScale>
+            <PressScale onPress={() => setShowBrief(true)} style={[styles.quickAction, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
+              <Sparkles color={theme.colors.text} size={19} />
+              <Text style={[styles.quickActionLabel, { color: theme.colors.text }]}>{labels.brief}</Text>
+            </PressScale>
+          </ScrollView>
 
           </View>{/* end wideColLeft */}
 
           {/* ── Right column (actions + cards) ── */}
           <View style={isWide ? styles.wideColRight : null}>
-          <View style={styles.actionRow}>
-            <PressScale onPress={() => setShowCamera(true)} style={[styles.actionTile, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
-              <Camera color={theme.colors.text} size={19} />
-              <Text style={[styles.actionText, { color: theme.colors.text }]}>{labels.scan}</Text>
-            </PressScale>
-            <PressScale onPress={() => setShowVoice(true)} style={[styles.actionTile, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
-              <Mic color={theme.colors.text} size={19} />
-              <Text style={[styles.actionText, { color: theme.colors.text }]}>{labels.voice}</Text>
-            </PressScale>
-            <PressScale onPress={openManual} style={[styles.actionTile, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
-              <PlusCircle color={theme.colors.text} size={19} />
-              <Text style={[styles.actionText, { color: theme.colors.text }]}>{labels.manual}</Text>
-            </PressScale>
-            <PressScale onPress={() => setShowBrief(true)} style={[styles.actionTile, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
-              <Sparkles color={theme.colors.text} size={19} />
-              <Text style={[styles.actionText, { color: theme.colors.text }]}>{labels.brief}</Text>
-            </PressScale>
-          </View>
 
-          {upcomingReminders.length > 0 && (
-            <GlassCard testID="reminders-banner" style={styles.remindersCard}>
-              <View style={styles.remindersHeader}>
+          {upcomingReminders.length > 0 && (() => {
+            const next = upcomingReminders[0];
+            const due = dueTime(next) || Date.now();
+            const remindAt = due - (next.reminder_minutes || 0) * 60 * 1000;
+            const mins = Math.max(0, Math.round((remindAt - Date.now()) / 60000));
+            const label = mins <= 1 ? 'now' : mins < 60 ? `in ${mins}m` : `in ${Math.round(mins / 60)}h`;
+            return (
+              <View testID="reminders-banner" style={[styles.reminderStrip, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
                 <Bell color={theme.colors.accent} size={16} />
-                <Text style={[styles.remindersTitle, { color: theme.colors.text }]}>{t('reminders')} · {upcomingReminders.length}</Text>
+                <Text style={[styles.reminderStripText, { color: theme.colors.text }]} numberOfLines={1}>
+                  {upcomingReminders.length} {t('reminders')} · {next.title} {label}
+                </Text>
               </View>
-              {upcomingReminders.slice(0, 3).map((c) => {
-                const due = dueTime(c) || Date.now();
-                const remindAt = due - (c.reminder_minutes || 0) * 60 * 1000;
-                const mins = Math.max(0, Math.round((remindAt - Date.now()) / 60000));
-                const label = mins <= 1 ? 'now' : mins < 60 ? `in ${mins}m` : `in ${Math.round(mins / 60)}h`;
-                return (
-                  <View key={c.card_id} style={styles.remindersRow}>
-                    <Text style={[styles.remindersItem, { color: theme.colors.text }]} numberOfLines={1}>{c.title}</Text>
-                    <Text style={[styles.remindersWhen, { color: theme.colors.textMuted }]}>{label}</Text>
-                  </View>
-                );
-              })}
-            </GlassCard>
-          )}
+            );
+          })()}
 
           {/* ── Tab navigation ── */}
           <View style={styles.tabRow}>
@@ -647,7 +629,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 20,
+    marginBottom: 14,
     marginTop: 8,
   },
   greet: { fontFamily: 'Inter_600SemiBold', fontSize: 15 },
@@ -665,7 +647,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
-    marginBottom: 24,
+    marginBottom: 16,
     shadowOpacity: 0.10,
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 10 },
@@ -721,15 +703,15 @@ const styles = StyleSheet.create({
   section: { marginBottom: 13, marginTop: 4, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
   sectionTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 23, letterSpacing: -0.4 },
   sectionSub: { fontFamily: 'Inter_700Bold', fontSize: 13 },
-  actionRow: { flexDirection: 'row', gap: 10, marginBottom: 22 },
-  actionTile: { flex: 1, minHeight: 74, borderRadius: 24, borderWidth: 1, alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 8 },
-  actionText: { fontFamily: 'Inter_800ExtraBold', fontSize: 12 },
-  remindersCard: { marginBottom: 20 },
-  remindersHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
-  remindersTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 13, letterSpacing: 0.6, textTransform: 'uppercase' },
-  remindersRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8 },
-  remindersItem: { flex: 1, fontFamily: 'Inter_700Bold', fontSize: 15, marginRight: 12 },
-  remindersWhen: { fontFamily: 'Inter_700Bold', fontSize: 12 },
+  quickBar: { flexDirection: 'row', gap: 8, marginBottom: 18, paddingRight: 4 },
+  quickStat: { width: 72, height: 68, borderRadius: 18, borderWidth: 1, alignItems: 'center', justifyContent: 'center', gap: 3 },
+  quickStatValue: { fontFamily: 'Inter_800ExtraBold', fontSize: 16, lineHeight: 19 },
+  quickStatLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 9, lineHeight: 12, textAlign: 'center' },
+  quickDivider: { width: 1, height: 40, alignSelf: 'center', marginHorizontal: 2 },
+  quickAction: { width: 66, height: 68, borderRadius: 18, borderWidth: 1, alignItems: 'center', justifyContent: 'center', gap: 6 },
+  quickActionLabel: { fontFamily: 'Inter_700Bold', fontSize: 10 },
+  reminderStrip: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderRadius: 14, paddingVertical: 10, paddingHorizontal: 12, marginBottom: 12 },
+  reminderStripText: { flex: 1, fontFamily: 'Inter_700Bold', fontSize: 12 },
   emptyPriority: { paddingVertical: 28, alignItems: 'center', gap: 8, marginBottom: 18 },
   empty: { paddingVertical: 36, alignItems: 'center' },
   emptyTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 21, textAlign: 'center' },
@@ -866,10 +848,6 @@ const styles = StyleSheet.create({
   calmChip: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 11, paddingVertical: 7, borderRadius: 99, borderWidth: 1 },
   calmValue: { fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
   calmLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 10 },
-  statRow: { flexDirection: 'row', gap: 8, marginBottom: 20 },
-  statChip: { flex: 1, alignItems: 'center', paddingVertical: 11, paddingHorizontal: 6, borderRadius: 16, borderWidth: 1, gap: 4 },
-  statChipValue: { fontFamily: 'Inter_800ExtraBold', fontSize: 17, lineHeight: 20 },
-  statChipLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 9, lineHeight: 12, textAlign: 'center' },
   priorityPanel: { borderWidth: 1, borderRadius: 20, padding: 14, marginTop: 16, marginBottom: 8 },
   priorityEmpty: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderRadius: 16, padding: 14, marginTop: 16, marginBottom: 8 },
   priorityEmptyText: { fontFamily: 'Inter_700Bold', fontSize: 13 },
@@ -886,7 +864,7 @@ const styles = StyleSheet.create({
   weekToggleCount: { borderRadius: 99, paddingHorizontal: 9, paddingVertical: 4 },
   weekToggleCountText: { fontFamily: 'Inter_800ExtraBold', fontSize: 11 },
   weekToggleHint: { fontFamily: 'Inter_700Bold', fontSize: 11 },
-  tabRow: { flexDirection: 'row', gap: 8, marginBottom: 14, marginTop: 2 },
+  tabRow: { flexDirection: 'row', gap: 8, marginBottom: 10, marginTop: 4 },
   tabBtn: { flex: 1, paddingVertical: 10, borderRadius: 99, borderWidth: 1, alignItems: 'center' },
   tabBtnText: { fontFamily: 'Inter_700Bold', fontSize: 13 },
   emptyTab: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderRadius: 20, padding: 18, marginTop: 4 },
