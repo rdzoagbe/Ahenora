@@ -8,6 +8,10 @@
     "scheme": "householdcoo",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
+    "runtimeVersion": "1.0.0",
+    "updates": {
+      "url": "https://u.expo.dev/e84e02e4-5335-433f-a39c-3539c473a0dd"
+    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.householdcoo.app",

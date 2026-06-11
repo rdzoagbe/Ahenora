@@ -69,7 +69,7 @@ ADMIN_EMAILS = {
 if GOOGLE_API_KEY and genai:
     genai.configure(api_key=GOOGLE_API_KEY)
 
-mongo = AsyncIOMotorClient(MONGO_URL) if MONGO_URL else None
+mongo = AsyncIOMotorClient(MONGO_URL, serverSelectionTimeoutMS=5000) if MONGO_URL else None
 db: Any = mongo[DB_NAME] if mongo else None
 
 app = FastAPI(title="Household COO Backend")
@@ -779,16 +779,22 @@ async def exchange_session(payload: SessionIn):
     last_error = None
     for client_id in GOOGLE_CLIENT_IDS:
         try:
-            token_info = google_id_token.verify_oauth2_token(
-                payload.session_id,
-                GoogleRequest(),
-                client_id,
+            token_info = await asyncio.wait_for(
+                asyncio.to_thread(
+                    google_id_token.verify_oauth2_token,
+                    payload.session_id,
+                    GoogleRequest(),
+                    client_id,
+                ),
+                timeout=10,
             )
             break
         except Exception as e:
             last_error = e
 
     if not token_info:
+        if isinstance(last_error, asyncio.TimeoutError):
+            raise HTTPException(status_code=504, detail="Timed out reaching Google to verify sign-in")
         raise HTTPException(status_code=401, detail=f"Invalid Google token: {last_error}")
 
     google_sub = token_info["sub"]
