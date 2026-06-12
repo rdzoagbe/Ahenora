@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Kids — Household COO</title>
+<link rel="stylesheet" href="styles.css" />
+<script src="https://unpkg.com/lucide@latest"></script>
+<style>
+  body { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #05070a; }
+</style>
+</head>
+<body>
+
+<div class="phone">
+  <div class="notch"></div>
+  <div class="ambient">
+    <div class="glow glow-1"></div>
+    <div class="glow glow-2"></div>
+    <div class="glow glow-3"></div>
+  </div>
+
+  <div class="statusbar">
+    <span>9:41</span>
+    <div class="icons">
+      <i data-lucide="signal" style="width:15px;height:15px"></i>
+      <i data-lucide="wifi" style="width:15px;height:15px"></i>
+      <i data-lucide="battery-full" style="width:18px;height:18px"></i>
+    </div>
+  </div>
+
+  <div class="screen">
+    <div class="screen-inner">
+
+      <!-- Header -->
+      <div style="margin-bottom:18px;">
+        <div class="eyebrow" style="margin-bottom:6px;">Family</div>
+        <h1 class="page-title">Kids</h1>
+      </div>
+
+      <!-- Child selector -->
+      <div class="chip-row" style="margin-bottom:18px;">
+        <div class="chip active" style="display:flex; align-items:center; gap:8px;">
+          <div class="avatar" style="width:24px;height:24px; font-size:11px; background:var(--accent);">M</div>
+          Mia
+        </div>
+        <div class="chip" style="display:flex; align-items:center; gap:8px;">
+          <div class="avatar" style="width:24px;height:24px; font-size:11px; background:#6366F1;">J</div>
+          Jordan
+        </div>
+        <div class="chip" style="display:flex; align-items:center; gap:8px;">
+          <i data-lucide="plus" style="width:14px;height:14px"></i>
+          Add child
+        </div>
+      </div>
+
+      <!-- Wallet card -->
+      <div class="glass glass-pad" style="margin-bottom:18px; background:linear-gradient(135deg, rgba(245,158,11,0.16), rgba(242,106,27,0.04)); border-color:rgba(245,158,11,0.25);">
+        <div class="row-between" style="margin-bottom:14px;">
+          <div class="row">
+            <div class="icon-wrap" style="background:rgba(245,158,11,0.18);">
+              <i data-lucide="star" style="width:20px;height:20px; color:var(--star); fill:var(--star);"></i>
+            </div>
+            <div>
+              <div class="muted-text" style="font-size:11px;">Mia's stars</div>
+              <div style="font-size:28px; font-weight:800; letter-spacing:-0.5px;">128</div>
+            </div>
+          </div>
+          <button class="btn btn-primary btn-sm">
+            <i data-lucide="gift" style="width:14px;height:14px"></i> Redeem
+          </button>
+        </div>
+        <div class="muted-text" style="font-size:12px;">+12 stars this week · Keep it up! ✨</div>
+      </div>
+
+      <!-- Segmented tabs -->
+      <div class="segmented" style="margin-bottom:18px;">
+        <div class="seg active">Rewards</div>
+        <div class="seg">Stars</div>
+        <div class="seg">History</div>
+      </div>
+
+      <!-- Quick add chips -->
+      <div style="margin-bottom:18px;">
+        <div class="row-between" style="margin-bottom:10px;">
+          <div class="section-title">Quick add stars</div>
+        </div>
+        <div class="chip-row">
+          <div class="chip" style="display:flex; align-items:center; gap:6px;"><i data-lucide="bed" style="width:14px;height:14px"></i> Made bed +2</div>
+          <div class="chip" style="display:flex; align-items:center; gap:6px;"><i data-lucide="book-open" style="width:14px;height:14px"></i> Read 20min +3</div>
+          <div class="chip" style="display:flex; align-items:center; gap:6px;"><i data-lucide="utensils" style="width:14px;height:14px"></i> Set table +1</div>
+          <div class="chip" style="display:flex; align-items:center; gap:6px;"><i data-lucide="dog" style="width:14px;height:14px"></i> Fed pet +2</div>
+        </div>
+      </div>
+
+      <!-- Rewards in reach -->
+      <div class="row-between" style="margin-bottom:14px;">
+        <div class="section-title">Rewards in reach</div>
+        <span class="muted-text">3 goals</span>
+      </div>
+
+      <div style="display:flex; flex-direction:column; gap:12px;">
+
+        <div class="glass glass-pad">
+          <div class="row-between" style="margin-bottom:10px;">
+            <div class="row">
+              <div class="icon-wrap" style="background:var(--accent-soft); width:36px; height:36px;">
+                <i data-lucide="ice-cream" style="width:18px;height:18px;color:var(--accent)"></i>
+              </div>
+              <div class="card-title" style="font-size:14px;">Ice cream trip</div>
+            </div>
+            <span class="muted-text">128 / 150</span>
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill" style="width:85%;"></div>
+          </div>
+        </div>
+
+        <div class="glass glass-pad">
+          <div class="row-between" style="margin-bottom:10px;">
+            <div class="row">
+              <div class="icon-wrap" style="background:var(--info-soft); width:36px; height:36px;">
+                <i data-lucide="gamepad-2" style="width:18px;height:18px;color:#818CF8"></i>
+              </div>
+              <div class="card-title" style="font-size:14px;">+1hr screen time</div>
+            </div>
+            <span class="muted-text">128 / 100</span>
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill" style="width:100%; background:var(--success);"></div>
+          </div>
+        </div>
+
+        <div class="glass glass-pad">
+          <div class="row-between" style="margin-bottom:10px;">
+            <div class="row">
+              <div class="icon-wrap" style="background:var(--success-soft); width:36px; height:36px;">
+                <i data-lucide="bike" style="width:18px;height:18px;color:#34D399"></i>
+              </div>
+              <div class="card-title" style="font-size:14px;">New bike (saving up)</div>
+            </div>
+            <span class="muted-text">128 / 500</span>
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill" style="width:26%;"></div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Recent activity -->
+      <div class="row-between" style="margin:22px 0 14px;">
+        <div class="section-title">Recent activity</div>
+      </div>
+
+      <div class="glass glass-pad">
+        <div class="nav-row">
+          <div class="row">
+            <div class="icon-wrap" style="background:var(--success-soft); width:36px; height:36px;">
+              <i data-lucide="plus" style="width:16px;height:16px;color:var(--success)"></i>
+            </div>
+            <div>
+              <div style="font-size:13px; font-weight:700;">Homework done early</div>
+              <div class="muted-text" style="font-size:11px;">Today, 4:30 PM</div>
+            </div>
+          </div>
+          <span style="font-weight:800; color:var(--success);">+3</span>
+        </div>
+        <div class="nav-row">
+          <div class="row">
+            <div class="icon-wrap" style="background:rgba(220,38,38,0.12); width:36px; height:36px;">
+              <i data-lucide="gift" style="width:16px;height:16px;color:var(--danger)"></i>
+            </div>
+            <div>
+              <div style="font-size:13px; font-weight:700;">Redeemed: Movie night pick</div>
+              <div class="muted-text" style="font-size:11px;">Yesterday, 6:10 PM</div>
+            </div>
+          </div>
+          <span style="font-weight:800; color:var(--danger);">-20</span>
+        </div>
+        <div class="nav-row">
+          <div class="row">
+            <div class="icon-wrap" style="background:var(--success-soft); width:36px; height:36px;">
+              <i data-lucide="plus" style="width:16px;height:16px;color:var(--success)"></i>
+            </div>
+            <div>
+              <div style="font-size:13px; font-weight:700;">Made bed</div>
+              <div class="muted-text" style="font-size:11px;">Yesterday, 7:45 AM</div>
+            </div>
+          </div>
+          <span style="font-weight:800; color:var(--success);">+2</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- FAB -->
+  <button class="fab">
+    <i data-lucide="plus" style="width:26px;height:26px"></i>
+  </button>
+
+  <!-- Tab bar -->
+  <div class="tabbar">
+    <div class="tab-item">
+      <i data-lucide="home" style="width:22px;height:22px; stroke-width:2.1"></i>
+      <span class="tab-label">Feed</span>
+    </div>
+    <div class="tab-item">
+      <i data-lucide="calendar-days" style="width:22px;height:22px; stroke-width:2.1"></i>
+      <span class="tab-label">Calendar</span>
+    </div>
+    <div class="tab-item active">
+      <i data-lucide="star" style="width:22px;height:22px; stroke-width:2.5"></i>
+      <span class="tab-label">Kids</span>
+    </div>
+    <div class="tab-item">
+      <i data-lucide="lock" style="width:22px;height:22px; stroke-width:2.1"></i>
+      <span class="tab-label">Vault</span>
+    </div>
+    <div class="tab-item">
+      <i data-lucide="settings" style="width:22px;height:22px; stroke-width:2.1"></i>
+      <span class="tab-label">Settings</span>
+    </div>
+  </div>
+
+</div>
+
+<script>lucide.createIcons();</script>
+</body>
+</html>
