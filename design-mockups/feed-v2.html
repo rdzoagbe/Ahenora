@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Feed — Household COO (v2)</title>
+<link rel="stylesheet" href="styles-v2.css" />
+<script src="https://unpkg.com/lucide@latest"></script>
+<style>
+  body { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #E5E5E2; }
+</style>
+</head>
+<body>
+
+<div class="phone">
+  <div class="notch"></div>
+
+  <div class="statusbar">
+    <span>9:41</span>
+    <div class="icons">
+      <i data-lucide="signal" style="width:15px;height:15px"></i>
+      <i data-lucide="wifi" style="width:15px;height:15px"></i>
+      <i data-lucide="battery-full" style="width:18px;height:18px"></i>
+    </div>
+  </div>
+
+  <div class="screen">
+    <div class="screen-inner">
+
+      <!-- Header -->
+      <div class="row-between" style="margin-bottom:18px;">
+        <div>
+          <div class="eyebrow" style="margin-bottom:4px;">Friday, June 12</div>
+          <h1 class="page-title">Good morning, Roland</h1>
+        </div>
+        <div class="avatar" style="width:42px; height:42px; font-size:15px; background:var(--accent);">R</div>
+      </div>
+
+      <!-- Quick capture -->
+      <div class="row" style="margin-bottom:18px;">
+        <div class="input-shell" style="flex:1;">
+          <i data-lucide="plus" style="width:16px;height:16px"></i>
+          <span>Add a task, note, or reminder...</span>
+        </div>
+        <button class="btn-icon" style="background:var(--text-primary); color:#fff; border:none;">
+          <i data-lucide="mic" style="width:17px;height:17px"></i>
+        </button>
+      </div>
+
+      <!-- Stat strip -->
+      <div class="card" style="margin-bottom:22px; padding: 14px 16px; display:flex; align-items:center;">
+        <div style="flex:1; text-align:center;">
+          <div style="font-size:20px; font-weight:800; color:var(--text-primary);">4</div>
+          <div class="muted-text">Due today</div>
+        </div>
+        <div style="width:1px; height:28px; background:var(--border);"></div>
+        <div style="flex:1; text-align:center;">
+          <div style="font-size:20px; font-weight:800; color:var(--accent);">2</div>
+          <div class="muted-text">Sign slips</div>
+        </div>
+        <div style="width:1px; height:28px; background:var(--border);"></div>
+        <div style="flex:1; text-align:center;">
+          <div style="font-size:20px; font-weight:800; color:var(--text-primary);">92</div>
+          <div class="muted-text">Calm score</div>
+        </div>
+      </div>
+
+      <!-- Segmented -->
+      <div class="segmented" style="margin-bottom:16px;">
+        <div class="seg active">Today</div>
+        <div class="seg">Upcoming</div>
+        <div class="seg">All</div>
+      </div>
+
+      <!-- List -->
+      <div class="card card-pad">
+
+        <div class="list-row">
+          <div class="checkbox"></div>
+          <div style="flex:1;">
+            <div class="card-title">Field trip permission — Mia</div>
+            <div class="muted-text">Sign slip · due 5:00 PM</div>
+          </div>
+          <span class="badge badge-signslip">Sign</span>
+        </div>
+
+        <div class="list-row">
+          <div class="checkbox"></div>
+          <div style="flex:1;">
+            <div class="card-title">Pack swim bag for Jordan</div>
+            <div class="muted-text">Task · due today</div>
+          </div>
+          <i data-lucide="chevron-right" style="width:16px;height:16px;color:var(--text-muted)"></i>
+        </div>
+
+        <div class="list-row">
+          <div class="checkbox"></div>
+          <div style="flex:1;">
+            <div class="card-title">Birthday party — Lucas's 8th</div>
+            <div class="muted-text">RSVP · by Sunday</div>
+          </div>
+          <span class="badge badge-rsvp">RSVP</span>
+        </div>
+
+        <div class="list-row">
+          <div class="checkbox"></div>
+          <div style="flex:1;">
+            <div class="card-title">Soccer practice — Jordan</div>
+            <div class="muted-text">Moved to 5:00 PM today</div>
+          </div>
+          <i data-lucide="chevron-right" style="width:16px;height:16px;color:var(--text-muted)"></i>
+        </div>
+
+        <div class="list-row">
+          <div class="checkbox done"><i data-lucide="check" style="width:13px;height:13px"></i></div>
+          <div style="flex:1;">
+            <div class="card-title" style="text-decoration:line-through; color:var(--text-muted);">Order new cleats — Jordan</div>
+            <div class="muted-text">Completed yesterday</div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Footer signal -->
+      <div style="text-align:center; margin-top:18px;">
+        <div class="muted-text">✦ Everything else is handled.</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- FAB -->
+  <button class="fab">
+    <i data-lucide="sparkles" style="width:24px;height:24px"></i>
+  </button>
+
+  <!-- Tab bar -->
+  <div class="tabbar">
+    <div class="tab-item active">
+      <i data-lucide="home" style="width:22px;height:22px; stroke-width:2.3"></i>
+      <span class="tab-label">Feed</span>
+    </div>
+    <div class="tab-item">
+      <i data-lucide="calendar-days" style="width:22px;height:22px; stroke-width:2"></i>
+      <span class="tab-label">Calendar</span>
+    </div>
+    <div class="tab-item">
+      <i data-lucide="star" style="width:22px;height:22px; stroke-width:2"></i>
+      <span class="tab-label">Kids</span>
+    </div>
+    <div class="tab-item">
+      <i data-lucide="lock" style="width:22px;height:22px; stroke-width:2"></i>
+      <span class="tab-label">Vault</span>
+    </div>
+    <div class="tab-item">
+      <i data-lucide="settings" style="width:22px;height:22px; stroke-width:2"></i>
+      <span class="tab-label">Settings</span>
+    </div>
+  </div>
+
+</div>
+
+<script>lucide.createIcons();</script>
+</body>
+</html>
