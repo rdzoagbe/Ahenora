@@ -28,45 +28,66 @@
     <div class="screen-inner">
 
       <!-- Header -->
-      <div class="row-between" style="margin-bottom:18px;">
+      <div class="row-between" style="margin-bottom:16px;">
         <div>
           <div class="eyebrow" style="margin-bottom:4px;">Friday, June 12</div>
           <h1 class="page-title">Good morning, Roland</h1>
         </div>
-        <div class="avatar" style="width:42px; height:42px; font-size:15px; background:var(--accent);">R</div>
+        <div class="card" style="padding:8px 12px; display:flex; flex-direction:column; align-items:center; gap:1px; border-radius:18px;">
+          <i data-lucide="heart-pulse" style="width:15px;height:15px;color:var(--success)"></i>
+          <span style="font-size:9px;font-weight:700;color:var(--success);">CALM</span>
+          <span style="font-size:15px;font-weight:800;">92</span>
+        </div>
       </div>
 
-      <!-- Quick capture -->
-      <div class="row" style="margin-bottom:18px;">
-        <div class="input-shell" style="flex:1;">
-          <i data-lucide="plus" style="width:16px;height:16px"></i>
-          <span>Add a task, note, or reminder...</span>
+      <!-- Capture shell -->
+      <div class="card card-pad" style="margin-bottom:14px;">
+        <div class="input-shell" style="margin-bottom:10px;">
+          <i data-lucide="pencil-line" style="width:16px;height:16px"></i>
+          <span>"Permission slip due Friday for Mia's trip..."</span>
         </div>
-        <button class="btn-icon" style="background:var(--text-primary); color:#fff; border:none;">
-          <i data-lucide="mic" style="width:17px;height:17px"></i>
-        </button>
+        <div class="row" style="gap:8px;">
+          <button class="btn btn-ghost btn-sm" style="flex:1;">
+            <i data-lucide="camera" style="width:14px;height:14px"></i> Photo
+          </button>
+          <button class="btn btn-ghost btn-sm" style="flex:1;">
+            <i data-lucide="mic" style="width:14px;height:14px"></i> Voice
+          </button>
+          <button class="btn btn-accent btn-sm" style="flex:1;">
+            <i data-lucide="arrow-up" style="width:14px;height:14px"></i> Add
+          </button>
+        </div>
       </div>
 
       <!-- Stat strip -->
-      <div class="card" style="margin-bottom:22px; padding: 14px 16px; display:flex; align-items:center;">
+      <div class="card" style="margin-bottom:14px; padding: 14px 16px; display:flex; align-items:center;">
         <div style="flex:1; text-align:center;">
-          <div style="font-size:20px; font-weight:800; color:var(--text-primary);">4</div>
+          <div style="font-size:19px; font-weight:800; color:var(--text-primary);">4</div>
           <div class="muted-text">Due today</div>
         </div>
-        <div style="width:1px; height:28px; background:var(--border);"></div>
+        <div style="width:1px; height:26px; background:var(--border);"></div>
         <div style="flex:1; text-align:center;">
-          <div style="font-size:20px; font-weight:800; color:var(--accent);">2</div>
+          <div style="font-size:19px; font-weight:800; color:var(--accent);">2</div>
           <div class="muted-text">Sign slips</div>
         </div>
-        <div style="width:1px; height:28px; background:var(--border);"></div>
+        <div style="width:1px; height:26px; background:var(--border);"></div>
         <div style="flex:1; text-align:center;">
-          <div style="font-size:20px; font-weight:800; color:var(--text-primary);">92</div>
-          <div class="muted-text">Calm score</div>
+          <div style="font-size:19px; font-weight:800; color:var(--text-primary);">3</div>
+          <div class="muted-text">This week</div>
         </div>
       </div>
 
+      <!-- Reminders banner -->
+      <div class="card" style="margin-bottom:18px; padding:13px 16px; display:flex; align-items:center; gap:12px; border-color: var(--accent-soft); background: var(--accent-soft);">
+        <i data-lucide="bell-ring" style="width:18px;height:18px;color:var(--accent); flex-shrink:0;"></i>
+        <div style="flex:1; font-size:12px; font-weight:600; color:var(--text-primary); line-height:1.4;">
+          2 things need you today — soccer moved to 5pm, vaccination form due
+        </div>
+        <i data-lucide="chevron-right" style="width:15px;height:15px;color:var(--text-muted); flex-shrink:0;"></i>
+      </div>
+
       <!-- Segmented -->
-      <div class="segmented" style="margin-bottom:16px;">
+      <div class="segmented" style="margin-bottom:14px;">
         <div class="seg active">Today</div>
         <div class="seg">Upcoming</div>
         <div class="seg">All</div>
@@ -75,43 +96,57 @@
       <!-- List -->
       <div class="card card-pad">
 
-        <div class="list-row">
-          <div class="checkbox"></div>
+        <div class="list-row" style="align-items:flex-start;">
+          <div class="checkbox" style="margin-top:2px;"></div>
           <div style="flex:1;">
-            <div class="card-title">Field trip permission — Mia</div>
-            <div class="muted-text">Sign slip · due 5:00 PM</div>
+            <div class="row-between" style="margin-bottom:3px;">
+              <div class="card-title">Field trip permission — Mia</div>
+              <span class="badge badge-signslip">Sign</span>
+            </div>
+            <div class="muted-text" style="margin-bottom:2px;">Lincoln Elementary · due 5:00 PM</div>
           </div>
-          <span class="badge badge-signslip">Sign</span>
+          <button class="btn-icon" style="width:34px; height:34px; flex-shrink:0; margin-top:2px;">
+            <i data-lucide="file-signature" style="width:15px;height:15px"></i>
+          </button>
         </div>
 
-        <div class="list-row">
-          <div class="checkbox"></div>
+        <div class="list-row" style="align-items:flex-start;">
+          <div class="checkbox" style="margin-top:2px;"></div>
           <div style="flex:1;">
-            <div class="card-title">Pack swim bag for Jordan</div>
-            <div class="muted-text">Task · due today</div>
+            <div class="row-between" style="margin-bottom:3px;">
+              <div class="card-title">Pack swim bag for Jordan</div>
+              <span class="badge badge-task">Task</span>
+            </div>
+            <div class="muted-text">Pool day · towel, goggles, spare clothes</div>
           </div>
-          <i data-lucide="chevron-right" style="width:16px;height:16px;color:var(--text-muted)"></i>
         </div>
 
-        <div class="list-row">
-          <div class="checkbox"></div>
+        <div class="list-row" style="align-items:flex-start;">
+          <div class="checkbox" style="margin-top:2px;"></div>
           <div style="flex:1;">
-            <div class="card-title">Birthday party — Lucas's 8th</div>
-            <div class="muted-text">RSVP · by Sunday</div>
+            <div class="row-between" style="margin-bottom:3px;">
+              <div class="card-title">Birthday party — Lucas's 8th</div>
+              <span class="badge badge-rsvp">RSVP</span>
+            </div>
+            <div class="muted-text">Sat 2–4pm, Maple Park · by Sunday</div>
           </div>
-          <span class="badge badge-rsvp">RSVP</span>
+          <button class="btn-icon" style="width:34px; height:34px; flex-shrink:0; margin-top:2px;">
+            <i data-lucide="check" style="width:15px;height:15px"></i>
+          </button>
         </div>
 
-        <div class="list-row">
-          <div class="checkbox"></div>
+        <div class="list-row" style="align-items:flex-start;">
+          <div class="checkbox" style="margin-top:2px;"></div>
           <div style="flex:1;">
-            <div class="card-title">Soccer practice — Jordan</div>
-            <div class="muted-text">Moved to 5:00 PM today</div>
+            <div class="row-between" style="margin-bottom:3px;">
+              <div class="card-title">Soccer practice — Jordan</div>
+              <span class="badge badge-task">Task</span>
+            </div>
+            <div class="muted-text">Riverside Field 2 · moved to 5:00 PM</div>
           </div>
-          <i data-lucide="chevron-right" style="width:16px;height:16px;color:var(--text-muted)"></i>
         </div>
 
-        <div class="list-row">
+        <div class="list-row" style="align-items:flex-start;">
           <div class="checkbox done"><i data-lucide="check" style="width:13px;height:13px"></i></div>
           <div style="flex:1;">
             <div class="card-title" style="text-decoration:line-through; color:var(--text-muted);">Order new cleats — Jordan</div>
@@ -122,7 +157,7 @@
       </div>
 
       <!-- Footer signal -->
-      <div style="text-align:center; margin-top:18px;">
+      <div style="text-align:center; margin-top:16px;">
         <div class="muted-text">✦ Everything else is handled.</div>
       </div>
 
