@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Feed — Household COO</title>
+<link rel="stylesheet" href="styles.css" />
+<script src="https://unpkg.com/lucide@latest"></script>
+<style>
+  body { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #05070a; }
+</style>
+</head>
+<body>
+
+<div class="phone">
+  <div class="notch"></div>
+  <div class="ambient">
+    <div class="glow glow-1"></div>
+    <div class="glow glow-2"></div>
+    <div class="glow glow-3"></div>
+  </div>
+
+  <div class="statusbar">
+    <span>9:41</span>
+    <div class="icons">
+      <i data-lucide="signal" style="width:15px;height:15px"></i>
+      <i data-lucide="wifi" style="width:15px;height:15px"></i>
+      <i data-lucide="battery-full" style="width:18px;height:18px"></i>
+    </div>
+  </div>
+
+  <div class="screen">
+    <div class="screen-inner">
+
+      <!-- Header -->
+      <div class="row-between" style="margin-bottom:22px;">
+        <div>
+          <div class="eyebrow" style="margin-bottom:6px;">Friday, June 12</div>
+          <h1 class="page-title">Good morning,<br/>Roland 👋</h1>
+        </div>
+        <div class="glass" style="padding:10px 14px; display:flex; flex-direction:column; align-items:center; gap:2px; border-radius:22px;">
+          <i data-lucide="heart-pulse" style="width:18px;height:18px;color:#22C55E"></i>
+          <span style="font-size:11px;font-weight:800;color:#22C55E;">Calm</span>
+          <span style="font-size:18px;font-weight:800;">92</span>
+        </div>
+      </div>
+
+      <!-- Capture shell -->
+      <div class="glass glass-pad" style="margin-bottom:16px;">
+        <div class="row" style="margin-bottom:14px;">
+          <div class="icon-wrap" style="background:var(--accent-soft);">
+            <i data-lucide="sparkles" style="width:20px;height:20px;color:var(--accent)"></i>
+          </div>
+          <div>
+            <div class="card-title">Capture anything</div>
+            <div class="muted-text">Type, paste, or snap a photo — I'll sort it</div>
+          </div>
+        </div>
+        <div class="input-shell" style="margin-bottom:12px;">
+          <i data-lucide="pencil-line" style="width:18px;height:18px"></i>
+          <span>"Permission slip due Friday for Mia's trip..."</span>
+        </div>
+        <div class="row" style="gap:10px;">
+          <button class="btn btn-ghost" style="flex:1;">
+            <i data-lucide="camera" style="width:16px;height:16px"></i> Photo
+          </button>
+          <button class="btn btn-ghost" style="flex:1;">
+            <i data-lucide="mic" style="width:16px;height:16px"></i> Voice
+          </button>
+          <button class="btn btn-accent" style="flex:1;">
+            <i data-lucide="arrow-up" style="width:16px;height:16px"></i> Add
+          </button>
+        </div>
+      </div>
+
+      <!-- Quick stats -->
+      <div class="row" style="gap:10px; margin-bottom:16px;">
+        <div class="glass glass-pad" style="flex:1; padding:16px; text-align:center;">
+          <i data-lucide="check-circle-2" style="width:20px;height:20px;color:#22C55E; margin:0 auto 6px;"></i>
+          <div style="font-size:22px; font-weight:800;">4</div>
+          <div class="muted-text" style="font-size:11px;">Due Today</div>
+        </div>
+        <div class="glass glass-pad" style="flex:1; padding:16px; text-align:center;">
+          <i data-lucide="file-signature" style="width:20px;height:20px;color:var(--accent); margin:0 auto 6px;"></i>
+          <div style="font-size:22px; font-weight:800;">2</div>
+          <div class="muted-text" style="font-size:11px;">Sign Slips</div>
+        </div>
+        <div class="glass glass-pad" style="flex:1; padding:16px; text-align:center;">
+          <i data-lucide="calendar-clock" style="width:20px;height:20px;color:#818CF8; margin:0 auto 6px;"></i>
+          <div style="font-size:22px; font-weight:800;">3</div>
+          <div class="muted-text" style="font-size:11px;">This Week</div>
+        </div>
+      </div>
+
+      <!-- Reminders banner -->
+      <div class="glass glass-pad" style="margin-bottom:18px; border-color:var(--accent-soft); background:linear-gradient(135deg, rgba(242,106,27,0.12), rgba(242,106,27,0.02));">
+        <div class="row">
+          <div class="icon-wrap" style="background:var(--accent-soft);">
+            <i data-lucide="bell-ring" style="width:20px;height:20px;color:var(--accent)"></i>
+          </div>
+          <div style="flex:1;">
+            <div class="card-title" style="font-size:14px;">2 things need you today</div>
+            <div class="muted-text">Soccer practice moved to 5pm · Vaccination form due</div>
+          </div>
+          <i data-lucide="chevron-right" style="width:18px;height:18px;color:var(--text-soft)"></i>
+        </div>
+      </div>
+
+      <!-- Segmented tabs -->
+      <div class="segmented" style="margin-bottom:18px;">
+        <div class="seg active">Today</div>
+        <div class="seg">Upcoming</div>
+        <div class="seg">All</div>
+      </div>
+
+      <!-- Section -->
+      <div class="row-between" style="margin-bottom:14px;">
+        <div class="section-title">Your day</div>
+        <span class="muted-text">4 items</span>
+      </div>
+
+      <!-- SmartCard list -->
+      <div style="display:flex; flex-direction:column; gap:12px;">
+
+        <div class="glass glass-pad">
+          <div class="row-between" style="margin-bottom:10px;">
+            <span class="badge badge-signslip"><i data-lucide="file-signature" style="width:12px;height:12px"></i> Sign Slip</span>
+            <span class="muted-text">Due 5:00 PM</span>
+          </div>
+          <div class="card-title" style="margin-bottom:6px;">Field trip permission — Mia</div>
+          <div class="body-text" style="margin-bottom:14px;">Lincoln Elementary needs a signed consent form for the science museum trip on Monday.</div>
+          <div class="row" style="gap:10px;">
+            <button class="btn btn-primary btn-sm" style="flex:1;">Review &amp; sign</button>
+            <button class="btn btn-ghost btn-sm">Snooze</button>
+          </div>
+        </div>
+
+        <div class="glass glass-pad">
+          <div class="row-between" style="margin-bottom:10px;">
+            <span class="badge badge-task"><i data-lucide="circle-check" style="width:12px;height:12px"></i> Task</span>
+            <span class="muted-text">Due Today</span>
+          </div>
+          <div class="card-title" style="margin-bottom:6px;">Pack swim bag for Jordan</div>
+          <div class="body-text" style="margin-bottom:14px;">Pool day at school — towel, goggles, and spare clothes needed.</div>
+          <div class="row" style="gap:10px;">
+            <button class="btn btn-primary btn-sm" style="flex:1;">Mark done</button>
+            <button class="btn btn-ghost btn-sm">Snooze</button>
+          </div>
+        </div>
+
+        <div class="glass glass-pad">
+          <div class="row-between" style="margin-bottom:10px;">
+            <span class="badge badge-rsvp"><i data-lucide="users" style="width:12px;height:12px"></i> RSVP</span>
+            <span class="muted-text">By Sunday</span>
+          </div>
+          <div class="card-title" style="margin-bottom:6px;">Birthday party — Lucas's 8th</div>
+          <div class="body-text" style="margin-bottom:14px;">Saturday 2–4pm at Maple Park. Bring a dish to share if possible.</div>
+          <div class="row" style="gap:10px;">
+            <button class="btn btn-primary btn-sm" style="flex:1;">Respond</button>
+            <button class="btn btn-ghost btn-sm">Snooze</button>
+          </div>
+        </div>
+
+        <div class="glass glass-pad" style="opacity:0.6;">
+          <div class="row-between" style="margin-bottom:10px;">
+            <span class="badge badge-task"><i data-lucide="circle-check" style="width:12px;height:12px"></i> Task</span>
+            <span class="muted-text" style="text-decoration:line-through;">Yesterday</span>
+          </div>
+          <div class="card-title" style="margin-bottom:0; text-decoration:line-through;">Order new cleats — Jordan</div>
+        </div>
+
+      </div>
+
+      <!-- Footer signal -->
+      <div style="text-align:center; margin-top:24px;">
+        <div class="muted-text" style="font-size:12px;">✦ Everything else is handled. Enjoy your day.</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Tab bar -->
+  <div class="tabbar">
+    <div class="tab-item active">
+      <i data-lucide="home" style="width:22px;height:22px; stroke-width:2.5"></i>
+      <span class="tab-label">Feed</span>
+    </div>
+    <div class="tab-item">
+      <i data-lucide="calendar-days" style="width:22px;height:22px; stroke-width:2.1"></i>
+      <span class="tab-label">Calendar</span>
+    </div>
+    <div class="tab-item">
+      <i data-lucide="star" style="width:22px;height:22px; stroke-width:2.1"></i>
+      <span class="tab-label">Kids</span>
+    </div>
+    <div class="tab-item">
+      <i data-lucide="lock" style="width:22px;height:22px; stroke-width:2.1"></i>
+      <span class="tab-label">Vault</span>
+    </div>
+    <div class="tab-item">
+      <i data-lucide="settings" style="width:22px;height:22px; stroke-width:2.1"></i>
+      <span class="tab-label">Settings</span>
+    </div>
+  </div>
+
+</div>
+
+<script>lucide.createIcons();</script>
+</body>
+</html>

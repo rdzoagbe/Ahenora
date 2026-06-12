@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Settings — Household COO</title>
+<link rel="stylesheet" href="styles.css" />
+<script src="https://unpkg.com/lucide@latest"></script>
+<style>
+  body { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #05070a; }
+</style>
+</head>
+<body>
+
+<div class="phone">
+  <div class="notch"></div>
+  <div class="ambient">
+    <div class="glow glow-1"></div>
+    <div class="glow glow-2"></div>
+    <div class="glow glow-3"></div>
+  </div>
+
+  <div class="statusbar">
+    <span>9:41</span>
+    <div class="icons">
+      <i data-lucide="signal" style="width:15px;height:15px"></i>
+      <i data-lucide="wifi" style="width:15px;height:15px"></i>
+      <i data-lucide="battery-full" style="width:18px;height:18px"></i>
+    </div>
+  </div>
+
+  <div class="screen">
+    <div class="screen-inner">
+
+      <!-- Header -->
+      <div style="margin-bottom:18px;">
+        <div class="eyebrow" style="margin-bottom:6px;">Manage</div>
+        <h1 class="page-title">Settings</h1>
+      </div>
+
+      <!-- Profile card -->
+      <div class="glass glass-pad" style="margin-bottom:18px; display:flex; align-items:center; gap:14px;">
+        <div class="avatar" style="width:54px; height:54px; font-size:20px; background:var(--accent);">R</div>
+        <div style="flex:1;">
+          <div class="card-title" style="font-size:16px;">Roland Dzoagbe</div>
+          <div class="muted-text">rolanddzoagbe@gmail.com</div>
+        </div>
+        <i data-lucide="chevron-right" style="width:18px;height:18px;color:var(--text-soft)"></i>
+      </div>
+
+      <!-- Plan & access stats -->
+      <div class="row" style="gap:10px; margin-bottom:18px;">
+        <div class="glass glass-pad" style="flex:1; padding:16px;">
+          <i data-lucide="crown" style="width:18px;height:18px;color:var(--star); margin-bottom:8px;"></i>
+          <div style="font-size:15px; font-weight:800; margin-bottom:2px;">Family Plan</div>
+          <div class="muted-text" style="font-size:11px;">Renews Jul 14</div>
+        </div>
+        <div class="glass glass-pad" style="flex:1; padding:16px;">
+          <i data-lucide="users-round" style="width:18px;height:18px;color:#818CF8; margin-bottom:8px;"></i>
+          <div style="font-size:15px; font-weight:800; margin-bottom:2px;">3 members</div>
+          <div class="muted-text" style="font-size:11px;">2 adults, 1 viewer</div>
+        </div>
+      </div>
+
+      <!-- Notifications -->
+      <div class="row-between" style="margin-bottom:12px;">
+        <div class="section-title">Notifications</div>
+      </div>
+      <div class="glass" style="margin-bottom:18px; padding: 4px 18px;">
+        <div class="nav-row">
+          <div class="row">
+            <div class="icon-wrap" style="background:var(--accent-soft); width:36px; height:36px;">
+              <i data-lucide="bell" style="width:16px;height:16px;color:var(--accent)"></i>
+            </div>
+            <div>
+              <div style="font-size:14px; font-weight:700;">Push notifications</div>
+              <div class="muted-text" style="font-size:11px;">Reminders, deadlines &amp; updates</div>
+            </div>
+          </div>
+          <div class="toggle on"><div class="knob"></div></div>
+        </div>
+        <div class="nav-row">
+          <div class="row">
+            <div class="icon-wrap" style="background:var(--info-soft); width:36px; height:36px;">
+              <i data-lucide="file-signature" style="width:16px;height:16px;color:#818CF8"></i>
+            </div>
+            <div>
+              <div style="font-size:14px; font-weight:700;">Sign slip alerts</div>
+              <div class="muted-text" style="font-size:11px;">When a form needs your signature</div>
+            </div>
+          </div>
+          <div class="toggle on"><div class="knob"></div></div>
+        </div>
+        <div class="nav-row">
+          <div class="row">
+            <div class="icon-wrap" style="background:rgba(255,255,255,0.08); width:36px; height:36px;">
+              <i data-lucide="mail" style="width:16px;height:16px;color:var(--text-soft)"></i>
+            </div>
+            <div>
+              <div style="font-size:14px; font-weight:700;">Weekly digest email</div>
+              <div class="muted-text" style="font-size:11px;">Sunday evening summary</div>
+            </div>
+          </div>
+          <div class="toggle off"><div class="knob"></div></div>
+        </div>
+      </div>
+
+      <!-- Preferences -->
+      <div class="row-between" style="margin-bottom:12px;">
+        <div class="section-title">Appearance</div>
+      </div>
+      <div class="segmented" style="margin-bottom:18px;">
+        <div class="seg">Light</div>
+        <div class="seg active">Dark</div>
+        <div class="seg">System</div>
+      </div>
+
+      <!-- Household management -->
+      <div class="row-between" style="margin-bottom:12px;">
+        <div class="section-title">Household</div>
+      </div>
+      <div class="glass" style="margin-bottom:18px; padding: 4px 18px;">
+        <div class="nav-row">
+          <div class="row">
+            <div class="icon-wrap" style="background:rgba(255,255,255,0.08); width:36px; height:36px;">
+              <i data-lucide="users" style="width:16px;height:16px;color:var(--text-primary)"></i>
+            </div>
+            <div style="font-size:14px; font-weight:700;">Manage members</div>
+          </div>
+          <i data-lucide="chevron-right" style="width:18px;height:18px;color:var(--text-soft)"></i>
+        </div>
+        <div class="nav-row">
+          <div class="row">
+            <div class="icon-wrap" style="background:rgba(255,255,255,0.08); width:36px; height:36px;">
+              <i data-lucide="user-plus" style="width:16px;height:16px;color:var(--text-primary)"></i>
+            </div>
+            <div style="font-size:14px; font-weight:700;">Invite a co-parent</div>
+          </div>
+          <i data-lucide="chevron-right" style="width:18px;height:18px;color:var(--text-soft)"></i>
+        </div>
+        <div class="nav-row">
+          <div class="row">
+            <div class="icon-wrap" style="background:rgba(255,255,255,0.08); width:36px; height:36px;">
+              <i data-lucide="baby" style="width:16px;height:16px;color:var(--text-primary)"></i>
+            </div>
+            <div style="font-size:14px; font-weight:700;">Manage children</div>
+          </div>
+          <i data-lucide="chevron-right" style="width:18px;height:18px;color:var(--text-soft)"></i>
+        </div>
+        <div class="nav-row">
+          <div class="row">
+            <div class="icon-wrap" style="background:rgba(255,255,255,0.08); width:36px; height:36px;">
+              <i data-lucide="calendar-cog" style="width:16px;height:16px;color:var(--text-primary)"></i>
+            </div>
+            <div style="font-size:14px; font-weight:700;">Calendar connections</div>
+          </div>
+          <i data-lucide="chevron-right" style="width:18px;height:18px;color:var(--text-soft)"></i>
+        </div>
+      </div>
+
+      <!-- About -->
+      <div class="row-between" style="margin-bottom:12px;">
+        <div class="section-title">About</div>
+      </div>
+      <div class="glass" style="padding: 4px 18px;">
+        <div class="nav-row">
+          <div style="font-size:14px; font-weight:700;">Help &amp; support</div>
+          <i data-lucide="chevron-right" style="width:18px;height:18px;color:var(--text-soft)"></i>
+        </div>
+        <div class="nav-row">
+          <div style="font-size:14px; font-weight:700;">Privacy policy</div>
+          <i data-lucide="chevron-right" style="width:18px;height:18px;color:var(--text-soft)"></i>
+        </div>
+        <div class="nav-row">
+          <div style="font-size:14px; font-weight:700;">Terms of service</div>
+          <i data-lucide="chevron-right" style="width:18px;height:18px;color:var(--text-soft)"></i>
+        </div>
+        <div class="nav-row">
+          <div class="muted-text">App version 1.0.0</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Tab bar -->
+  <div class="tabbar">
+    <div class="tab-item">
+      <i data-lucide="home" style="width:22px;height:22px; stroke-width:2.1"></i>
+      <span class="tab-label">Feed</span>
+    </div>
+    <div class="tab-item">
+      <i data-lucide="calendar-days" style="width:22px;height:22px; stroke-width:2.1"></i>
+      <span class="tab-label">Calendar</span>
+    </div>
+    <div class="tab-item">
+      <i data-lucide="star" style="width:22px;height:22px; stroke-width:2.1"></i>
+      <span class="tab-label">Kids</span>
+    </div>
+    <div class="tab-item">
+      <i data-lucide="lock" style="width:22px;height:22px; stroke-width:2.1"></i>
+      <span class="tab-label">Vault</span>
+    </div>
+    <div class="tab-item active">
+      <i data-lucide="settings" style="width:22px;height:22px; stroke-width:2.5"></i>
+      <span class="tab-label">Settings</span>
+    </div>
+  </div>
+
+</div>
+
+<script>lucide.createIcons();</script>
+</body>
+</html>

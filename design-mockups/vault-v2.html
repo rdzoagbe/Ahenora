@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Vault — Household COO (v2)</title>
+<link rel="stylesheet" href="styles-v2.css" />
+<script src="https://unpkg.com/lucide@latest"></script>
+<style>
+  body { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #E5E5E2; }
+  .doc-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .doc-card {
+    aspect-ratio: 0.85;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+  .doc-thumb {
+    width: 100%;
+    flex: 1;
+    border-radius: 12px;
+    background: var(--surface-soft);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 8px;
+  }
+</style>
+</head>
+<body>
+
+<div class="phone">
+  <div class="notch"></div>
+
+  <div class="statusbar">
+    <span>9:41</span>
+    <div class="icons">
+      <i data-lucide="signal" style="width:15px;height:15px"></i>
+      <i data-lucide="wifi" style="width:15px;height:15px"></i>
+      <i data-lucide="battery-full" style="width:18px;height:18px"></i>
+    </div>
+  </div>
+
+  <div class="screen">
+    <div class="screen-inner">
+
+      <!-- Header -->
+      <div class="row-between" style="margin-bottom:14px;">
+        <div>
+          <div class="eyebrow" style="margin-bottom:4px;">Secure Storage</div>
+          <h1 class="page-title">Vault</h1>
+        </div>
+        <button class="btn-icon">
+          <i data-lucide="search" style="width:17px;height:17px"></i>
+        </button>
+      </div>
+
+      <!-- Category chips -->
+      <div class="chip-row" style="margin-bottom:14px;">
+        <div class="chip active">All</div>
+        <div class="chip" style="display:flex; align-items:center; gap:6px;"><i data-lucide="stethoscope" style="width:12px;height:12px"></i> Medical</div>
+        <div class="chip" style="display:flex; align-items:center; gap:6px;"><i data-lucide="graduation-cap" style="width:12px;height:12px"></i> School</div>
+        <div class="chip" style="display:flex; align-items:center; gap:6px;"><i data-lucide="shield" style="width:12px;height:12px"></i> Insurance</div>
+        <div class="chip" style="display:flex; align-items:center; gap:6px;"><i data-lucide="scale" style="width:12px;height:12px"></i> Legal</div>
+      </div>
+
+      <!-- Storage summary -->
+      <div class="card" style="margin-bottom:16px; padding:14px 16px; display:flex; align-items:center; gap:12px;">
+        <div class="icon-wrap" style="background:var(--accent-soft); width:38px; height:38px;">
+          <i data-lucide="hard-drive" style="width:18px;height:18px;color:var(--accent)"></i>
+        </div>
+        <div style="flex:1;">
+          <div class="card-title" style="font-size:13px; margin-bottom:6px;">18 documents · 124 MB used</div>
+          <div class="progress-track">
+            <div class="progress-fill" style="width:24%;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section -->
+      <div class="row-between" style="margin-bottom:10px;">
+        <div class="section-title">Recent documents</div>
+        <span class="muted-text">18 total</span>
+      </div>
+
+      <!-- Document grid -->
+      <div class="doc-grid">
+
+        <div class="card card-pad doc-card">
+          <div class="doc-thumb">
+            <i data-lucide="syringe" style="width:26px;height:26px;color:#EA580C"></i>
+          </div>
+          <div>
+            <span class="badge badge-medical" style="margin-bottom:6px;">Medical</span>
+            <div class="card-title" style="font-size:12px; line-height:1.3; margin:6px 0 2px;">Vaccination Record — Mia</div>
+            <div class="muted-text" style="font-size:10px;">Updated May 28</div>
+          </div>
+        </div>
+
+        <div class="card card-pad doc-card">
+          <div class="doc-thumb">
+            <i data-lucide="file-text" style="width:26px;height:26px;color:#6366F1"></i>
+          </div>
+          <div>
+            <span class="badge badge-school" style="margin-bottom:6px;">School</span>
+            <div class="card-title" style="font-size:12px; line-height:1.3; margin:6px 0 2px;">Report Card — Jordan, Q3</div>
+            <div class="muted-text" style="font-size:10px;">Updated May 20</div>
+          </div>
+        </div>
+
+        <div class="card card-pad doc-card">
+          <div class="doc-thumb">
+            <i data-lucide="file-check-2" style="width:26px;height:26px;color:#059669"></i>
+          </div>
+          <div>
+            <span class="badge badge-insurance" style="margin-bottom:6px;">Insurance</span>
+            <div class="card-title" style="font-size:12px; line-height:1.3; margin:6px 0 2px;">Health Insurance Card</div>
+            <div class="muted-text" style="font-size:10px;">Updated Apr 02</div>
+          </div>
+        </div>
+
+        <div class="card card-pad doc-card">
+          <div class="doc-thumb">
+            <i data-lucide="scroll-text" style="width:26px;height:26px;color:#CA8A04"></i>
+          </div>
+          <div>
+            <span class="badge badge-legal" style="margin-bottom:6px;">Legal</span>
+            <div class="card-title" style="font-size:12px; line-height:1.3; margin:6px 0 2px;">Custody Agreement</div>
+            <div class="muted-text" style="font-size:10px;">Updated Mar 14</div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+
+  <!-- FAB -->
+  <button class="fab">
+    <i data-lucide="plus" style="width:26px;height:26px"></i>
+  </button>
+
+  <!-- Tab bar -->
+  <div class="tabbar">
+    <div class="tab-item">
+      <i data-lucide="home" style="width:22px;height:22px; stroke-width:2"></i>
+      <span class="tab-label">Feed</span>
+    </div>
+    <div class="tab-item">
+      <i data-lucide="calendar-days" style="width:22px;height:22px; stroke-width:2"></i>
+      <span class="tab-label">Calendar</span>
+    </div>
+    <div class="tab-item">
+      <i data-lucide="star" style="width:22px;height:22px; stroke-width:2"></i>
+      <span class="tab-label">Kids</span>
+    </div>
+    <div class="tab-item active">
+      <i data-lucide="lock" style="width:22px;height:22px; stroke-width:2.3"></i>
+      <span class="tab-label">Vault</span>
+    </div>
+    <div class="tab-item">
+      <i data-lucide="settings" style="width:22px;height:22px; stroke-width:2"></i>
+      <span class="tab-label">Settings</span>
+    </div>
+  </div>
+
+</div>
+
+<script>lucide.createIcons();</script>
+</body>
+</html>
