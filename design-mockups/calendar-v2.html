@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Calendar — Household COO (v2)</title>
+<link rel="stylesheet" href="styles-v2.css" />
+<script src="https://unpkg.com/lucide@latest"></script>
+<style>
+  body { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #E5E5E2; }
+  .day-cell {
+    aspect-ratio: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    position: relative;
+  }
+  .day-cell.muted { color: var(--text-muted); opacity: 0.4; }
+  .day-cell.today { background: var(--accent); color: #fff; font-weight: 800; }
+  .day-cell .dot {
+    position: absolute;
+    bottom: 5px;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+  .day-cell.today .dot { background: #fff; }
+</style>
+</head>
+<body>
+
+<div class="phone">
+  <div class="notch"></div>
+
+  <div class="statusbar">
+    <span>9:41</span>
+    <div class="icons">
+      <i data-lucide="signal" style="width:15px;height:15px"></i>
+      <i data-lucide="wifi" style="width:15px;height:15px"></i>
+      <i data-lucide="battery-full" style="width:18px;height:18px"></i>
+    </div>
+  </div>
+
+  <div class="screen">
+    <div class="screen-inner">
+
+      <!-- Header -->
+      <div class="row-between" style="margin-bottom:14px;">
+        <div>
+          <div class="eyebrow" style="margin-bottom:4px;">Family Calendar</div>
+          <h1 class="page-title">June 2026</h1>
+        </div>
+        <button class="btn btn-accent btn-sm" style="gap:6px;">
+          <i data-lucide="refresh-cw" style="width:13px;height:13px"></i> Sync
+        </button>
+      </div>
+
+      <!-- Privacy notice -->
+      <div class="card" style="margin-bottom:14px; padding:12px 14px; display:flex; align-items:center; gap:10px;">
+        <i data-lucide="shield-check" style="width:16px;height:16px;color:var(--success); flex-shrink:0;"></i>
+        <div class="muted-text" style="font-size:11px; line-height:1.4;">
+          Connected to Google Calendar. We only read titles &amp; times.
+        </div>
+      </div>
+
+      <!-- Month picker + grid -->
+      <div class="card card-pad" style="margin-bottom:18px;">
+        <div class="row-between" style="margin-bottom:12px;">
+          <button class="btn-icon" style="width:32px; height:32px;"><i data-lucide="chevron-left" style="width:15px;height:15px"></i></button>
+          <div class="card-title">June 2026</div>
+          <button class="btn-icon" style="width:32px; height:32px;"><i data-lucide="chevron-right" style="width:15px;height:15px"></i></button>
+        </div>
+        <div style="display:grid; grid-template-columns:repeat(7,1fr); gap:2px; margin-bottom:6px;">
+          <div class="label-text" style="text-align:center;">S</div>
+          <div class="label-text" style="text-align:center;">M</div>
+          <div class="label-text" style="text-align:center;">T</div>
+          <div class="label-text" style="text-align:center;">W</div>
+          <div class="label-text" style="text-align:center;">T</div>
+          <div class="label-text" style="text-align:center;">F</div>
+          <div class="label-text" style="text-align:center;">S</div>
+        </div>
+        <div style="display:grid; grid-template-columns:repeat(7,1fr); gap:2px;">
+          <div class="day-cell muted">31</div>
+          <div class="day-cell">1</div>
+          <div class="day-cell">2<span class="dot"></span></div>
+          <div class="day-cell">3</div>
+          <div class="day-cell">4</div>
+          <div class="day-cell">5<span class="dot"></span></div>
+          <div class="day-cell">6</div>
+
+          <div class="day-cell">7</div>
+          <div class="day-cell">8</div>
+          <div class="day-cell">9<span class="dot"></span></div>
+          <div class="day-cell">10</div>
+          <div class="day-cell">11</div>
+          <div class="day-cell today">12<span class="dot"></span></div>
+          <div class="day-cell">13</div>
+
+          <div class="day-cell">14</div>
+          <div class="day-cell">15<span class="dot"></span></div>
+          <div class="day-cell">16</div>
+          <div class="day-cell">17</div>
+          <div class="day-cell">18<span class="dot"></span></div>
+          <div class="day-cell">19</div>
+          <div class="day-cell">20<span class="dot"></span></div>
+
+          <div class="day-cell">21</div>
+          <div class="day-cell">22</div>
+          <div class="day-cell">23</div>
+          <div class="day-cell">24</div>
+          <div class="day-cell">25</div>
+          <div class="day-cell">26</div>
+          <div class="day-cell">27</div>
+
+          <div class="day-cell">28</div>
+          <div class="day-cell">29</div>
+          <div class="day-cell">30</div>
+          <div class="day-cell muted">1</div>
+          <div class="day-cell muted">2</div>
+          <div class="day-cell muted">3</div>
+          <div class="day-cell muted">4</div>
+        </div>
+      </div>
+
+      <!-- Section -->
+      <div class="row-between" style="margin-bottom:10px;">
+        <div class="section-title">Friday, June 12</div>
+        <span class="muted-text">3 events</span>
+      </div>
+
+      <!-- Event list -->
+      <div class="card card-pad">
+
+        <div class="list-row">
+          <div style="text-align:center; flex-shrink:0; min-width:42px;">
+            <div style="font-size:13px; font-weight:800;">8:00</div>
+            <div class="muted-text" style="font-size:10px;">AM</div>
+          </div>
+          <div style="width:3px; height:32px; border-radius:2px; background:var(--accent); flex-shrink:0;"></div>
+          <div style="flex:1;">
+            <div class="card-title" style="font-size:13px; margin-bottom:2px;">Drop off — Mia &amp; Jordan</div>
+            <div class="muted-text">Lincoln Elementary School</div>
+          </div>
+        </div>
+
+        <div class="list-row">
+          <div style="text-align:center; flex-shrink:0; min-width:42px;">
+            <div style="font-size:13px; font-weight:800;">5:00</div>
+            <div class="muted-text" style="font-size:10px;">PM</div>
+          </div>
+          <div style="width:3px; height:32px; border-radius:2px; background:#6366F1; flex-shrink:0;"></div>
+          <div style="flex:1;">
+            <div class="card-title" style="font-size:13px; margin-bottom:2px;">Soccer practice — Jordan</div>
+            <div class="muted-text">Riverside Field 2 · moved from 4pm</div>
+          </div>
+        </div>
+
+        <div class="list-row">
+          <div style="text-align:center; flex-shrink:0; min-width:42px;">
+            <div style="font-size:13px; font-weight:800;">7:30</div>
+            <div class="muted-text" style="font-size:10px;">PM</div>
+          </div>
+          <div style="width:3px; height:32px; border-radius:2px; background:var(--success); flex-shrink:0;"></div>
+          <div style="flex:1;">
+            <div class="card-title" style="font-size:13px; margin-bottom:2px;">Family movie night</div>
+            <div class="muted-text">Home · popcorn duty: Roland</div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Tab bar -->
+  <div class="tabbar">
+    <div class="tab-item">
+      <i data-lucide="home" style="width:22px;height:22px; stroke-width:2"></i>
+      <span class="tab-label">Feed</span>
+    </div>
+    <div class="tab-item active">
+      <i data-lucide="calendar-days" style="width:22px;height:22px; stroke-width:2.3"></i>
+      <span class="tab-label">Calendar</span>
+    </div>
+    <div class="tab-item">
+      <i data-lucide="star" style="width:22px;height:22px; stroke-width:2"></i>
+      <span class="tab-label">Kids</span>
+    </div>
+    <div class="tab-item">
+      <i data-lucide="lock" style="width:22px;height:22px; stroke-width:2"></i>
+      <span class="tab-label">Vault</span>
+    </div>
+    <div class="tab-item">
+      <i data-lucide="settings" style="width:22px;height:22px; stroke-width:2"></i>
+      <span class="tab-label">Settings</span>
+    </div>
+  </div>
+
+</div>
+
+<script>lucide.createIcons();</script>
+</body>
+</html>

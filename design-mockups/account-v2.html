@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Account — Household COO (v2)</title>
+<link rel="stylesheet" href="styles-v2.css" />
+<script src="https://unpkg.com/lucide@latest"></script>
+<style>
+  body { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #E5E5E2; }
+</style>
+</head>
+<body>
+
+<div class="phone">
+  <div class="notch"></div>
+
+  <div class="statusbar">
+    <span>9:41</span>
+    <div class="icons">
+      <i data-lucide="signal" style="width:15px;height:15px"></i>
+      <i data-lucide="wifi" style="width:15px;height:15px"></i>
+      <i data-lucide="battery-full" style="width:18px;height:18px"></i>
+    </div>
+  </div>
+
+  <div class="screen">
+    <div class="screen-inner">
+
+      <!-- Header -->
+      <div class="row" style="margin-bottom:14px;">
+        <button class="btn-icon">
+          <i data-lucide="arrow-left" style="width:17px;height:17px"></i>
+        </button>
+        <h1 class="page-title" style="font-size:22px;">Account</h1>
+      </div>
+
+      <!-- Profile card -->
+      <div class="card card-pad" style="margin-bottom:16px; text-align:center;">
+        <div class="avatar" style="width:64px; height:64px; font-size:24px; background:var(--accent); margin:0 auto 12px;">R</div>
+        <div class="card-title" style="font-size:16px; margin-bottom:2px;">Roland Dzoagbe</div>
+        <div class="muted-text" style="margin-bottom:12px;">rolanddzoagbe@gmail.com</div>
+        <div class="row" style="justify-content:center; gap:8px;">
+          <span class="badge" style="background:var(--surface-soft); color:var(--text-secondary);">
+            <i data-lucide="shield" style="width:11px;height:11px"></i> Owner
+          </span>
+          <span class="badge badge-task">
+            <i data-lucide="check" style="width:11px;height:11px"></i> Verified
+          </span>
+        </div>
+      </div>
+
+      <!-- Sign-in health diagnostics -->
+      <div class="section-title" style="margin-bottom:10px;">Sign-in &amp; connections</div>
+      <div class="card card-pad" style="margin-bottom:16px;">
+        <div class="list-row">
+          <div class="icon-wrap" style="background:var(--success-soft); width:34px; height:34px;">
+            <i data-lucide="chrome" style="width:15px;height:15px;color:var(--success)"></i>
+          </div>
+          <div style="flex:1;">
+            <div class="card-title" style="font-size:13px;">Google account</div>
+            <div class="muted-text">Connected · rolanddzoagbe@gmail.com</div>
+          </div>
+          <i data-lucide="check-circle-2" style="width:17px;height:17px;color:var(--success)"></i>
+        </div>
+        <div class="list-row">
+          <div class="icon-wrap" style="background:var(--success-soft); width:34px; height:34px;">
+            <i data-lucide="calendar-check" style="width:15px;height:15px;color:var(--success)"></i>
+          </div>
+          <div style="flex:1;">
+            <div class="card-title" style="font-size:13px;">Calendar sync</div>
+            <div class="muted-text">Last synced 2 minutes ago</div>
+          </div>
+          <i data-lucide="check-circle-2" style="width:17px;height:17px;color:var(--success)"></i>
+        </div>
+        <div class="list-row">
+          <div class="icon-wrap" style="background:var(--surface-soft); width:34px; height:34px;">
+            <i data-lucide="facebook" style="width:15px;height:15px;color:var(--text-muted)"></i>
+          </div>
+          <div style="flex:1;">
+            <div class="card-title" style="font-size:13px;">Facebook account</div>
+            <div class="muted-text">Not connected</div>
+          </div>
+          <button class="btn btn-ghost btn-sm">Connect</button>
+        </div>
+        <div class="list-row">
+          <div class="icon-wrap" style="background:var(--surface-soft); width:34px; height:34px;">
+            <i data-lucide="key-round" style="width:15px;height:15px;color:var(--text-primary)"></i>
+          </div>
+          <div style="flex:1; font-size:13px; font-weight:600;">Change password</div>
+          <i data-lucide="chevron-right" style="width:15px;height:15px;color:var(--text-muted)"></i>
+        </div>
+      </div>
+
+      <!-- Legal & support -->
+      <div class="section-title" style="margin-bottom:10px;">Legal &amp; support</div>
+      <div class="card card-pad" style="margin-bottom:16px;">
+        <div class="list-row">
+          <div class="icon-wrap" style="background:var(--surface-soft); width:34px; height:34px;">
+            <i data-lucide="life-buoy" style="width:15px;height:15px;color:var(--text-primary)"></i>
+          </div>
+          <div style="flex:1; font-size:13px; font-weight:600;">Contact support</div>
+          <i data-lucide="chevron-right" style="width:15px;height:15px;color:var(--text-muted)"></i>
+        </div>
+        <div class="list-row">
+          <div class="icon-wrap" style="background:var(--surface-soft); width:34px; height:34px;">
+            <i data-lucide="file-text" style="width:15px;height:15px;color:var(--text-primary)"></i>
+          </div>
+          <div style="flex:1; font-size:13px; font-weight:600;">Terms of service</div>
+          <i data-lucide="chevron-right" style="width:15px;height:15px;color:var(--text-muted)"></i>
+        </div>
+        <div class="list-row">
+          <div class="icon-wrap" style="background:var(--surface-soft); width:34px; height:34px;">
+            <i data-lucide="shield-check" style="width:15px;height:15px;color:var(--text-primary)"></i>
+          </div>
+          <div style="flex:1; font-size:13px; font-weight:600;">Privacy policy</div>
+          <i data-lucide="chevron-right" style="width:15px;height:15px;color:var(--text-muted)"></i>
+        </div>
+      </div>
+
+      <!-- Danger zone -->
+      <div class="section-title" style="margin-bottom:10px; color:var(--danger);">Account actions</div>
+      <div class="card card-pad" style="border-color: var(--danger-soft);">
+        <div class="list-row">
+          <div class="icon-wrap" style="background:var(--danger-soft); width:34px; height:34px;">
+            <i data-lucide="log-out" style="width:15px;height:15px;color:var(--danger)"></i>
+          </div>
+          <div style="flex:1; font-size:13px; font-weight:600; color:var(--danger);">Log out</div>
+        </div>
+        <div class="list-row">
+          <div class="icon-wrap" style="background:var(--danger-soft); width:34px; height:34px;">
+            <i data-lucide="trash-2" style="width:15px;height:15px;color:var(--danger)"></i>
+          </div>
+          <div style="flex:1; font-size:13px; font-weight:600; color:var(--danger);">Delete account</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<script>lucide.createIcons();</script>
+</body>
+</html>
