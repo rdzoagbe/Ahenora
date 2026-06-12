@@ -44,7 +44,7 @@ function cardDateKey(card: Card) {
 }
 
 function cleanText(value?: string | null) {
-  return (value || '').replace(/Ã‚Â·/g, '-').replace(/\u00C2/g, '').trim();
+  return (value || '').replace(/Ãƒâ€šÃ‚Â·/g, '-').replace(/\u00C2/g, '').trim();
 }
 
 function buildMonthDays(baseDate: Date) {
@@ -203,7 +203,7 @@ export default function CalendarScreen() {
     const today = startOfLocalDay(new Date());
     const diffDays = Math.round((startOfLocalDay(date).getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
     if (diffDays === 0) return lang === 'fr' ? "Aujourd'hui" : lang === 'es' ? 'Hoy' : 'Today';
-    if (diffDays === 1) return lang === 'fr' ? 'Demain' : lang === 'es' ? 'MaÃ±ana' : 'Tomorrow';
+    if (diffDays === 1) return lang === 'fr' ? 'Demain' : lang === 'es' ? 'MaÃƒÂ±ana' : 'Tomorrow';
     return date.toLocaleDateString(locale, { weekday: 'long', month: 'short', day: 'numeric' });
   };
 
