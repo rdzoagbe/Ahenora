@@ -1,5 +1,5 @@
 // metro.config.js
-const { getDefaultConfig } = require("expo/metro-config");
+const { getDefaultConfig } = require('expo/metro-config');
 const path = require('path');
 const { FileStore } = require('metro-cache');
 
@@ -11,6 +11,14 @@ config.cacheStores = [
   new FileStore({ root: path.join(root, 'cache') }),
 ];
 
+// Some Expo/RN export environments do not install Node's buffer package by default,
+// while react-native-svg imports `buffer` for SVG data URI handling.
+// Point Metro at a tiny local shim so EAS Update can bundle reliably.
+config.resolver = config.resolver || {};
+config.resolver.extraNodeModules = {
+  ...(config.resolver.extraNodeModules || {}),
+  buffer: path.resolve(__dirname, 'src/polyfills/buffer.js'),
+};
 
 // // Exclude unnecessary directories from file watching
 // config.watchFolders = [__dirname];
