@@ -229,9 +229,11 @@ export default function VaultScreen() {
         </ScrollView>
       </SafeAreaView>
 
-      <PressScale style={styles.fab} onPress={openAdd} testID="vault-add">
-        <Plus color="#FFFFFF" size={28} />
-      </PressScale>
+      <View style={styles.fabWrap} pointerEvents="box-none">
+        <PressScale style={styles.fab} onPress={openAdd} testID="vault-add">
+          <Plus color="#FFFFFF" size={28} />
+        </PressScale>
+      </View>
 
       <KeyboardAwareBottomSheet visible={showAdd} onClose={closeAdd} contentStyle={styles.sheet}>
         <View style={styles.sheetHeader}>
@@ -333,7 +335,8 @@ const styles = StyleSheet.create({
   emptyBtn: { marginTop: 6, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: UI.orange, paddingHorizontal: 18, paddingVertical: 12, borderRadius: 99 },
   emptyBtnText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
 
-  fab: { position: 'absolute', right: 22, bottom: 102, width: 61, height: 61, borderRadius: 999, backgroundColor: UI.orange, alignItems: 'center', justifyContent: 'center', shadowColor: '#000000', shadowOpacity: 0.18, shadowRadius: 16, shadowOffset: { width: 0, height: 10 }, elevation: 7 },
+  fabWrap: { position: 'absolute', right: 22, bottom: 102 },
+  fab: { width: 61, height: 61, borderRadius: 999, backgroundColor: UI.orange, alignItems: 'center', justifyContent: 'center', shadowColor: '#000000', shadowOpacity: 0.18, shadowRadius: 16, shadowOffset: { width: 0, height: 10 }, elevation: 7 },
 
   backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(8,9,16,0.5)' },
   sheet: { backgroundColor: UI.card, borderTopLeftRadius: 34, borderTopRightRadius: 34, borderWidth: 1, borderColor: UI.line, padding: 26, paddingBottom: 140 },
