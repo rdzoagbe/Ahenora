@@ -10,7 +10,11 @@ import {
   Inter_700Bold,
   Inter_800ExtraBold,
 } from '@expo-google-fonts/inter';
-import { PlayfairDisplay_400Regular_Italic } from '@expo-google-fonts/playfair-display';
+import {
+  PlayfairDisplay_400Regular_Italic,
+  PlayfairDisplay_700Bold,
+  PlayfairDisplay_800ExtraBold,
+} from '@expo-google-fonts/playfair-display';
 import { StoreProvider, useStore } from '../src/store';
 
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
@@ -42,6 +46,8 @@ export default function RootLayout() {
     Inter_700Bold,
     Inter_800ExtraBold,
     PlayfairDisplay_400Regular_Italic,
+    PlayfairDisplay_700Bold,
+    PlayfairDisplay_800ExtraBold,
   });
 
   useEffect(() => {

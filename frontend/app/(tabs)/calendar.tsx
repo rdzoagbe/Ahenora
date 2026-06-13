@@ -5,21 +5,20 @@ import { useFocusEffect } from 'expo-router';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import { CalendarDays, ChevronLeft, ChevronRight, Clock, RefreshCw, ShieldCheck, User, Users, X } from 'lucide-react-native';
+import { CalendarDays, ChevronLeft, ChevronRight, Clock, RefreshCw, User, X } from 'lucide-react-native';
 
-import { AmbientBackground } from '../../src/components/AmbientBackground';
-import { GlassCard } from '../../src/components/GlassCard';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
 import { PressScale } from '../../src/components/PressScale';
+import { Card as KitCard, IconTile, ScreenHeader, UI } from '../../src/components/Kit';
 import { useStore } from '../../src/store';
 import { api, CalendarImportResult, Card } from '../../src/api';
 
 WebBrowser.maybeCompleteAuthSession();
 
 const TYPE_COLOR: Record<string, string> = {
-  SIGN_SLIP: '#F26A1B',
-  RSVP: '#202323',
-  TASK: '#11B886',
+  SIGN_SLIP: UI.orange,
+  RSVP: UI.lavenderText,
+  TASK: UI.mintText,
 };
 
 const GOOGLE_CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.events.readonly';
@@ -44,7 +43,19 @@ function cardDateKey(card: Card) {
 }
 
 function cleanText(value?: string | null) {
-  return (value || '').replace(/Ãƒâ€šÃ‚Â·/g, '-').replace(/\u00C2/g, '').trim();
+  return (value || '').replace(/Ãƒâ€šÃ‚Â·/g, '-').replace(/Â/g, '').trim();
+}
+
+function timeParts(value?: string | null) {
+  if (!value) return { time: '', ampm: '' };
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return { time: '', ampm: '' };
+  let h = date.getHours();
+  const m = date.getMinutes();
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12;
+  if (h === 0) h = 12;
+  return { time: `${h}:${String(m).padStart(2, '0')}`, ampm };
 }
 
 function buildMonthDays(baseDate: Date) {
@@ -86,7 +97,7 @@ function groupByDay(cards: Card[], selectedDay: string | null) {
 }
 
 export default function CalendarScreen() {
-  const { t, lang, theme } = useStore();
+  const { t, lang } = useStore();
   const { width: windowWidth } = useWindowDimensions();
   const [cards, setCards] = useState<Card[]>([]);
   const [loading, setLoading] = useState(true);
@@ -107,34 +118,8 @@ export default function CalendarScreen() {
     scopes: ['openid', 'profile', 'email', GOOGLE_CALENDAR_SCOPE],
   });
 
-  const palette = useMemo(() => {
-    if (theme.mode === 'light') {
-      return {
-        dayText: '#151B23',
-        mutedDayText: '#A0A7B2',
-        selectedBg: '#1F2328',
-        selectedText: '#FFFFFF',
-        todayBg: '#FFF3E8',
-        todayBorder: '#F26A1B',
-        badgeBg: '#F26A1B',
-        badgeText: '#FFFFFF',
-      };
-    }
-
-    return {
-      dayText: '#F8FAFC',
-      mutedDayText: '#637083',
-      selectedBg: '#F8FAFC',
-      selectedText: '#111827',
-      todayBg: 'rgba(242,106,27,0.14)',
-      todayBorder: '#F26A1B',
-      badgeBg: '#F26A1B',
-      badgeText: '#FFFFFF',
-    };
-  }, [theme.mode]);
-
-  const calendarContentWidth = Math.max(280, windowWidth - 88);
-  const daySize = Math.max(38, Math.min(50, Math.floor(calendarContentWidth / 7)));
+  const calendarContentWidth = Math.max(280, windowWidth - 84);
+  const daySize = Math.max(40, Math.min(52, Math.floor(calendarContentWidth / 7)));
   const gridWidth = daySize * 7;
 
   const load = useCallback(async () => {
@@ -198,13 +183,14 @@ export default function CalendarScreen() {
   const locale = lang === 'es' ? 'es-ES' : lang === 'fr' ? 'fr-FR' : 'en-US';
   const monthTitle = activeMonth.toLocaleDateString(locale, { month: 'long', year: 'numeric' });
 
-  const formatDay = (day: string) => {
+  const formatDayFull = (day: string) => {
     const date = new Date(`${day}T00:00:00`);
     const today = startOfLocalDay(new Date());
     const diffDays = Math.round((startOfLocalDay(date).getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-    if (diffDays === 0) return lang === 'fr' ? "Aujourd'hui" : lang === 'es' ? 'Hoy' : 'Today';
-    if (diffDays === 1) return lang === 'fr' ? 'Demain' : lang === 'es' ? 'MaÃƒÂ±ana' : 'Tomorrow';
-    return date.toLocaleDateString(locale, { weekday: 'long', month: 'short', day: 'numeric' });
+    const full = date.toLocaleDateString(locale, { weekday: 'long', month: 'long', day: 'numeric' });
+    if (diffDays === 0) return `${lang === 'fr' ? "Aujourd'hui" : lang === 'es' ? 'Hoy' : 'Today'} · ${full}`;
+    if (diffDays === 1) return `${lang === 'fr' ? 'Demain' : lang === 'es' ? 'Mañana' : 'Tomorrow'} · ${full}`;
+    return full;
   };
 
   const formatDateTime = (value?: string | null) => {
@@ -215,7 +201,6 @@ export default function CalendarScreen() {
   };
 
   const syncCalendar = async () => {
-
     setSyncResult(null);
 
     if (Platform.OS !== 'web') {
@@ -229,37 +214,23 @@ export default function CalendarScreen() {
         setSyncing(true);
         setCalendarSyncStatus('Opening native Google Calendar permission...');
 
-        GoogleSignin.configure({
-          webClientId,
-          scopes: ['profile', 'email', GOOGLE_CALENDAR_SCOPE],
-          offlineAccess: false,
-        });
-
+        GoogleSignin.configure({ webClientId, scopes: ['profile', 'email', GOOGLE_CALENDAR_SCOPE], offlineAccess: false });
         await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
 
         const googleSigninAny = GoogleSignin as any;
-
         let currentUser: any = null;
 
         try {
-          if (typeof googleSigninAny.getCurrentUser === 'function') {
-            currentUser = await googleSigninAny.getCurrentUser();
-          }
-        } catch (e) {
-        }
+          if (typeof googleSigninAny.getCurrentUser === 'function') currentUser = await googleSigninAny.getCurrentUser();
+        } catch (e) {}
 
         if (!currentUser) {
           try {
-            if (typeof googleSigninAny.signInSilently === 'function') {
-              currentUser = await googleSigninAny.signInSilently();
-            }
-          } catch (e) {
-          }
+            if (typeof googleSigninAny.signInSilently === 'function') currentUser = await googleSigninAny.signInSilently();
+          } catch (e) {}
         }
 
-        if (!currentUser) {
-          currentUser = await GoogleSignin.signIn();
-        }
+        if (!currentUser) currentUser = await GoogleSignin.signIn();
 
         if (typeof googleSigninAny.addScopes === 'function') {
           await googleSigninAny.addScopes({ scopes: [GOOGLE_CALENDAR_SCOPE] });
@@ -270,18 +241,9 @@ export default function CalendarScreen() {
         try {
           tokens = await GoogleSignin.getTokens();
         } catch (tokenError: any) {
+          try { await GoogleSignin.signOut(); } catch (signOutError) {}
 
-          try {
-            await GoogleSignin.signOut();
-          } catch (signOutError) {
-          }
-
-          GoogleSignin.configure({
-            webClientId,
-            scopes: ['profile', 'email', GOOGLE_CALENDAR_SCOPE],
-            offlineAccess: false,
-          });
-
+          GoogleSignin.configure({ webClientId, scopes: ['profile', 'email', GOOGLE_CALENDAR_SCOPE], offlineAccess: false });
           await GoogleSignin.signIn();
 
           if (typeof googleSigninAny.addScopes === 'function') {
@@ -298,12 +260,9 @@ export default function CalendarScreen() {
         }
 
         setCalendarSyncStatus('Importing Google Calendar events...');
-
         const result = await api.importGoogleCalendar(tokens.accessToken, 30);
-
         setSyncResult(result);
         await load();
-
         setCalendarSyncStatus(`${result.imported} events imported. ${result.contacts_found} people found.`);
         Alert.alert('Calendar synced', `${result.imported} events imported. ${result.contacts_found} people found.`);
       } catch (e: any) {
@@ -335,11 +294,7 @@ export default function CalendarScreen() {
       handledCalendarResponseRef.current = false;
 
       const result = (await promptCalendarAsync()) as any;
-
-      const accessToken =
-        result?.authentication?.accessToken ||
-        result?.params?.access_token ||
-        result?.params?.accessToken;
+      const accessToken = result?.authentication?.accessToken || result?.params?.access_token || result?.params?.accessToken;
 
       if (!accessToken) {
         console.log('calendar auth returned no access token', result);
@@ -379,99 +334,56 @@ export default function CalendarScreen() {
     }
   };
 
+  const syncDisabled = syncing || (Platform.OS === 'web' && !calendarRequest);
+  const totalSelectedEvents = groups.reduce((sum, g) => sum + g.items.length, 0);
+
   return (
-    <View style={[styles.container, { backgroundColor: theme.colors.bg }]}> 
-      <AmbientBackground />
+    <View style={styles.container}>
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-          <View style={styles.headerRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.title, { color: theme.colors.text }]}>{t('calendar')}</Text>
-              <Text style={[styles.sub, { color: theme.colors.textMuted }]}>{selectedDay ? formatDay(selectedDay) : t('upcoming')}</Text>
-            </View>
-            <PressScale testID="sync-google-calendar" onPress={syncCalendar} disabled={syncing || (Platform.OS === 'web' && !calendarRequest)} style={[styles.syncBtn, { backgroundColor: theme.colors.primary }, (syncing || (Platform.OS === 'web' && !calendarRequest)) && { opacity: 0.55 }]}> 
-              {syncing ? <ActivityIndicator color={theme.colors.primaryText} size="small" /> : <RefreshCw color={theme.colors.primaryText} size={18} />}
-              <Text style={[styles.syncText, { color: theme.colors.primaryText }]}>{syncing ? 'Syncing' : 'Sync'}</Text>
-            </PressScale>
-          </View>
+          <ScreenHeader
+            eyebrow="Family Calendar"
+            title={monthTitle}
+            titleSize={30}
+            right={
+              <PressScale testID="sync-google-calendar" onPress={syncCalendar} disabled={syncDisabled} style={[styles.syncBtn, syncDisabled && { opacity: 0.55 }]}>
+                {syncing ? <ActivityIndicator color="#FFFFFF" size="small" /> : <RefreshCw color="#FFFFFF" size={16} />}
+                <Text style={styles.syncText}>{syncing ? 'Syncing' : 'Sync'}</Text>
+              </PressScale>
+            }
+          />
 
-          <GlassCard testID="calendar-sync-card" style={styles.calendarSyncCard}>
-            <View style={styles.calendarSyncHeader}>
-              <View style={[styles.calendarSyncIcon, { backgroundColor: theme.colors.accentSoft }]}>
-                <CalendarDays color={theme.colors.accent} size={22} />
-              </View>
-
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.calendarSyncTitle, { color: theme.colors.text }]}>Google Calendar</Text>
-                <Text style={[styles.calendarSyncText, { color: theme.colors.textMuted }]}>
-                  Read-only sync. Imports upcoming events and people, but never edits your Google Calendar.
+          {/* Connection banner (tap to sync — keeps the sync card visible & functional) */}
+          <PressScale testID="calendar-sync-card-button" onPress={syncCalendar} disabled={syncDisabled} style={styles.bannerGap}>
+            <KitCard style={styles.banner}>
+              <View testID="calendar-sync-card" style={styles.bannerInner}>
+                <IconTile bg={UI.orangeSoft} size={40} radius={13}><CalendarDays color={UI.orange} size={20} /></IconTile>
+                <Text style={styles.bannerText} numberOfLines={2}>
+                  {calendarSyncStatus || (syncResult ? `${syncResult.imported} events imported · ${syncResult.contacts_found} people found.` : 'Connected to Google Calendar. We only read titles & times.')}
                 </Text>
               </View>
-            </View>
+            </KitCard>
+          </PressScale>
 
-            <PressScale
-              testID="calendar-sync-card-button"
-              onPress={syncCalendar}
-              disabled={syncing || (Platform.OS === 'web' && !calendarRequest)}
-              style={[
-                styles.calendarSyncButton,
-                { backgroundColor: theme.colors.primary },
-                (syncing || (Platform.OS === 'web' && !calendarRequest)) && { opacity: 0.55 },
-              ]}
-            >
-              {syncing ? (
-                <ActivityIndicator color={theme.colors.primaryText} size="small" />
-              ) : (
-                <RefreshCw color={theme.colors.primaryText} size={18} />
-              )}
-              <Text style={[styles.calendarSyncButtonText, { color: theme.colors.primaryText }]}>
-                {syncing ? 'Syncing Google Calendar' : 'Sync Google Calendar'}
-              </Text>
-            </PressScale>
-
-            {calendarSyncStatus ? (
-              <Text style={[styles.calendarSyncHint, { color: theme.colors.textMuted }]}>{calendarSyncStatus}</Text>
-            ) : (
-              <Text style={[styles.calendarSyncHint, { color: theme.colors.textMuted }]}>Last sync result will appear here.</Text>
-            )}
-          </GlassCard>
-
-          {syncResult ? (
-            <GlassCard style={{ marginBottom: 18 }}>
-              <View style={styles.syncSummaryRow}>
-                <CalendarDays color={theme.colors.accent} size={22} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.syncSummaryTitle, { color: theme.colors.text }]}>Google Calendar imported</Text>
-                  <Text style={[styles.syncSummaryText, { color: theme.colors.textMuted }]}>{syncResult.imported} events imported - {syncResult.skipped} skipped - {syncResult.contacts_found} people found</Text>
-                </View>
-              </View>
-              {syncResult.contacts.length > 0 ? (
-                <View style={styles.contactsPreview}>
-                  <Users color={theme.colors.textSoft} size={16} />
-                  <Text style={[styles.contactsPreviewText, { color: theme.colors.textSoft }]} numberOfLines={2}>{syncResult.contacts.slice(0, 3).map((c) => c.email).join(', ')}</Text>
-                </View>
-              ) : null}
-            </GlassCard>
-          ) : null}
-
-          <GlassCard style={{ marginBottom: 24 }}>
+          {/* Month grid */}
+          <KitCard style={styles.calCard}>
             <View style={styles.monthHeader}>
-              <PressScale testID="prev-month" onPress={() => shiftMonth(-1)} style={[styles.monthNav, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}> 
-                <ChevronLeft color={theme.colors.text} size={24} />
+              <PressScale testID="prev-month" onPress={() => shiftMonth(-1)} style={styles.monthNav}>
+                <ChevronLeft color={UI.text} size={20} />
               </PressScale>
-              <Text style={[styles.monthTitle, { color: theme.colors.text }]}>{monthTitle}</Text>
-              <PressScale testID="next-month" onPress={() => shiftMonth(1)} style={[styles.monthNav, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}> 
-                <ChevronRight color={theme.colors.text} size={24} />
+              <Text style={styles.monthTitle}>{monthTitle}</Text>
+              <PressScale testID="next-month" onPress={() => shiftMonth(1)} style={styles.monthNav}>
+                <ChevronRight color={UI.text} size={20} />
               </PressScale>
             </View>
 
             <View style={[styles.weekHeader, { width: gridWidth }]}>
               {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, index) => (
-                <Text key={`${day}-${index}`} style={[styles.weekLabel, { width: daySize, color: theme.colors.textSoft }]}>{day}</Text>
+                <Text key={`${day}-${index}`} style={[styles.weekLabel, { width: daySize }]}>{day}</Text>
               ))}
             </View>
 
-            <View style={[styles.monthGrid, { width: gridWidth }]}> 
+            <View style={[styles.monthGrid, { width: gridWidth }]}>
               {monthDays.map(({ date, inMonth }) => {
                 const key = dateKey(date);
                 const count = countsByDay[key] || 0;
@@ -482,99 +394,87 @@ export default function CalendarScreen() {
                     key={key}
                     testID={`calendar-day-${key}`}
                     onPress={() => onSelectDay(key, date)}
-                    style={[
-                      styles.dayCell,
-                      { width: daySize, height: 62 },
-                      selected && { backgroundColor: palette.selectedBg, borderColor: palette.selectedBg },
-                      !selected && isToday && { backgroundColor: palette.todayBg, borderColor: palette.todayBorder },
-                      !selected && !isToday && { borderColor: 'transparent' },
-                    ]}
+                    style={[styles.dayCell, { width: daySize, height: daySize + 8 }, selected && styles.dayCellSelected]}
                   >
                     <Text
                       style={[
                         styles.dayNumber,
-                        {
-                          color: selected ? palette.selectedText : inMonth ? palette.dayText : palette.mutedDayText,
-                          opacity: inMonth ? 1 : 0.65,
-                        },
+                        { color: selected ? '#FFFFFF' : !inMonth ? UI.line : isToday ? UI.orange : UI.text },
                       ]}
                     >
                       {date.getDate()}
                     </Text>
                     {count > 0 ? (
-                      <View style={[styles.dayBadge, { backgroundColor: selected ? palette.selectedText : palette.badgeBg }]}> 
-                        <Text style={[styles.dayBadgeText, { color: selected ? palette.selectedBg : palette.badgeText }]}>{count}</Text>
-                      </View>
+                      <View style={[styles.dayDot, { backgroundColor: selected ? '#FFFFFF' : UI.orange }]} />
                     ) : (
-                      <View style={styles.dayBadgeSpacer} />
+                      <View style={styles.dayDotSpacer} />
                     )}
                   </PressScale>
                 );
               })}
             </View>
-          </GlassCard>
+          </KitCard>
+
+          {/* Day events */}
+          <View style={styles.dayHead}>
+            <Text style={styles.dayHeadTitle}>{selectedDay ? formatDayFull(selectedDay) : t('upcoming')}</Text>
+            {selectedDay ? <Text style={styles.dayHeadCount}>{totalSelectedEvents} event{totalSelectedEvents === 1 ? '' : 's'}</Text> : null}
+          </View>
 
           {loading ? (
-            <ActivityIndicator color={theme.colors.text} style={{ marginTop: 40 }} />
+            <ActivityIndicator color={UI.orange} style={{ marginTop: 30 }} />
           ) : groups.length === 0 ? (
-            <GlassCard style={styles.empty}>
-              <Text style={[styles.emptyText, { color: theme.colors.textMuted }]}>{selectedDay ? 'No events on this date.' : t('no_events')}</Text>
-            </GlassCard>
-          ) : groups.map((group) => (
-            <View key={group.day} style={{ marginBottom: 20 }}>
-              <Text style={[styles.dayLabel, { color: theme.colors.text }]}>{formatDay(group.day)}</Text>
-              {group.items.map((card) => {
-                const color = TYPE_COLOR[card.type] || theme.colors.success;
+            <KitCard style={styles.empty}>
+              <Text style={styles.emptyText}>{selectedDay ? 'No events on this date.' : t('no_events')}</Text>
+            </KitCard>
+          ) : (
+            <KitCard style={styles.timelineCard}>
+              {groups.flatMap((group) => group.items).map((card, index, arr) => {
+                const color = TYPE_COLOR[card.type] || UI.mintText;
                 const isGoogle = card.source === 'CALENDAR' || card.external_source === 'google_calendar';
-                const metaText = `${cleanText(card.assignee) || 'Unassigned'}${isGoogle ? ' - Google Calendar' : ''}`;
+                const { time, ampm } = timeParts(card.due_date);
+                const sub = cleanText(card.description) || cleanText(card.assignee) || (isGoogle ? 'Google Calendar' : 'Family');
                 return (
-                  <PressScale key={card.card_id} testID={`calendar-card-${card.card_id}`} onPress={() => setSelectedCard(card)}>
-                    <GlassCard style={{ marginTop: 12 }}>
-                      <View style={styles.row}>
-                        <View style={[styles.dot, { backgroundColor: color }]} />
-                        <View style={{ flex: 1 }}>
-                          <Text style={[styles.itemTitle, { color: theme.colors.text }]} numberOfLines={2}>{cleanText(card.title)}</Text>
-                          <Text style={[styles.meta, { color: theme.colors.textMuted }]} numberOfLines={1}>{metaText}</Text>
-                        </View>
-                        <Text style={[styles.typeLabel, { color }]}>{card.type === 'SIGN_SLIP' ? t('sign_slip') : card.type === 'RSVP' ? t('rsvp') : t('task')}</Text>
-                      </View>
-                    </GlassCard>
+                  <PressScale key={card.card_id} testID={`calendar-card-${card.card_id}`} onPress={() => setSelectedCard(card)} style={[styles.eventRow, index < arr.length - 1 && styles.eventRowBorder]}>
+                    <View style={styles.timeBlock}>
+                      <Text style={styles.timeText}>{time}</Text>
+                      <Text style={styles.ampmText}>{ampm}</Text>
+                    </View>
+                    <View style={[styles.eventBar, { backgroundColor: color }]} />
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={styles.eventTitle} numberOfLines={1}>{cleanText(card.title)}</Text>
+                      <Text style={styles.eventSub} numberOfLines={1}>{sub}</Text>
+                    </View>
                   </PressScale>
                 );
               })}
-            </View>
-          ))}
+            </KitCard>
+          )}
 
-          <View style={{ height: 80 }} />
+          <View style={{ height: 110 }} />
         </ScrollView>
       </SafeAreaView>
 
-      <KeyboardAwareBottomSheet
-        visible={!!selectedCard}
-        onClose={() => setSelectedCard(null)}
-        contentStyle={[styles.detailSheet, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}
-      >
+      <KeyboardAwareBottomSheet visible={!!selectedCard} onClose={() => setSelectedCard(null)} contentStyle={styles.detailSheet}>
         {selectedCard ? (
           <>
             <View style={styles.detailHeader}>
-              <Text style={[styles.detailTitle, { color: theme.colors.text }]}>{cleanText(selectedCard.title)}</Text>
-              <PressScale onPress={() => setSelectedCard(null)} style={[styles.closeBtn, { borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}> 
-                <X color={theme.colors.text} size={20} />
+              <Text style={styles.detailTitle}>{cleanText(selectedCard.title)}</Text>
+              <PressScale onPress={() => setSelectedCard(null)} style={styles.closeBtn}>
+                <X color={UI.text} size={20} />
               </PressScale>
             </View>
             <View style={styles.detailMetaRow}>
-              <Clock color={theme.colors.textSoft} size={17} />
-              <Text style={[styles.detailMetaText, { color: theme.colors.textMuted }]}>{formatDateTime(selectedCard.due_date)}</Text>
+              <Clock color={UI.muted} size={17} />
+              <Text style={styles.detailMetaText}>{formatDateTime(selectedCard.due_date)}</Text>
             </View>
             <View style={styles.detailMetaRow}>
-              <User color={theme.colors.textSoft} size={17} />
-              <Text style={[styles.detailMetaText, { color: theme.colors.textMuted }]}>{cleanText(selectedCard.assignee) || 'Unassigned'}</Text>
+              <User color={UI.muted} size={17} />
+              <Text style={styles.detailMetaText}>{cleanText(selectedCard.assignee) || 'Unassigned'}</Text>
             </View>
-            {selectedCard.description ? (
-              <Text style={[styles.detailDescription, { color: theme.colors.text }]}>{cleanText(selectedCard.description)}</Text>
-            ) : (
-              <Text style={[styles.detailDescription, { color: theme.colors.textMuted }]}>No additional details.</Text>
-            )}
+            <Text style={[styles.detailDescription, !selectedCard.description && { color: UI.muted }]}>
+              {selectedCard.description ? cleanText(selectedCard.description) : 'No additional details.'}
+            </Text>
           </>
         ) : null}
       </KeyboardAwareBottomSheet>
@@ -583,93 +483,51 @@ export default function CalendarScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  scroll: { paddingHorizontal: 22, paddingTop: 26 },
-  headerRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 18 },
-  title: { fontFamily: 'Inter_800ExtraBold', fontSize: 42, lineHeight: 48, letterSpacing: -1.0 },
-  sub: { fontFamily: 'Inter_600SemiBold', fontSize: 16, marginTop: 4 },
-  syncBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 9999, paddingHorizontal: 18, paddingVertical: 14, minHeight: 52 },
-  syncText: { fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
-  calendarSyncCard: {
-    marginBottom: 14,
-  },
-  calendarSyncHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-    marginBottom: 14,
-  },
-  calendarSyncIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  calendarSyncTitle: {
-    fontFamily: 'Inter_800ExtraBold',
-    fontSize: 17,
-    lineHeight: 22,
-  },
-  calendarSyncText: {
-    fontFamily: 'Inter_500Medium',
-    fontSize: 12,
-    lineHeight: 18,
-    marginTop: 3,
-  },
-  calendarSyncButton: {
-    minHeight: 48,
-    borderRadius: 18,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  calendarSyncButtonText: {
-    fontFamily: 'Inter_800ExtraBold',
-    fontSize: 14,
-  },
-  calendarSyncHint: {
-    fontFamily: 'Inter_500Medium',
-    fontSize: 11,
-    lineHeight: 16,
-    marginTop: 8,
-    textAlign: 'center',
-  },
+  container: { flex: 1, backgroundColor: UI.bg },
+  scroll: { paddingHorizontal: 20, paddingTop: 8 },
+  syncBtn: { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: UI.orange, borderRadius: 99, paddingHorizontal: 18, paddingVertical: 11 },
+  syncText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
 
-  privacyRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
-  privacyText: { flex: 1, fontFamily: 'Inter_500Medium', fontSize: 15, lineHeight: 22 },
-  syncSummaryRow: { flexDirection: 'row', gap: 12, alignItems: 'center' },
-  syncSummaryTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 17 },
-  syncSummaryText: { fontFamily: 'Inter_500Medium', fontSize: 14, marginTop: 4 },
-  contactsPreview: { flexDirection: 'row', gap: 8, alignItems: 'center', marginTop: 14 },
-  contactsPreviewText: { flex: 1, fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 18 },
-  monthHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },
-  monthTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 21, textTransform: 'capitalize' },
-  monthNav: { width: 54, height: 54, borderRadius: 9999, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  weekHeader: { flexDirection: 'row', alignSelf: 'center', marginBottom: 10 },
-  weekLabel: { textAlign: 'center', fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
+  bannerGap: { marginTop: 18 },
+  banner: { padding: 14 },
+  bannerInner: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  bannerText: { flex: 1, color: UI.muted, fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 18 },
+
+  calCard: { marginTop: 16, padding: 16, alignItems: 'center' },
+  monthHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', marginBottom: 14 },
+  monthNav: { width: 40, height: 40, borderRadius: 99, borderWidth: 1, borderColor: UI.line, alignItems: 'center', justifyContent: 'center' },
+  monthTitle: { color: UI.text, fontFamily: 'Inter_800ExtraBold', fontSize: 18, letterSpacing: -0.2 },
+  weekHeader: { flexDirection: 'row', alignSelf: 'center', marginBottom: 6 },
+  weekLabel: { textAlign: 'center', fontFamily: 'Inter_700Bold', fontSize: 12, color: UI.muted },
   monthGrid: { flexDirection: 'row', flexWrap: 'wrap', alignSelf: 'center' },
-  dayCell: { alignItems: 'center', justifyContent: 'flex-start', borderRadius: 17, borderWidth: 1, paddingTop: 8, paddingBottom: 5 },
-  dayNumber: { fontFamily: 'Inter_800ExtraBold', fontSize: 17, lineHeight: 21, includeFontPadding: false, textAlign: 'center' },
-  dayBadge: { marginTop: 7, minWidth: 24, height: 24, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
-  dayBadgeSpacer: { marginTop: 7, height: 24 },
-  dayBadgeText: { fontFamily: 'Inter_800ExtraBold', fontSize: 12, lineHeight: 14, includeFontPadding: false },
-  dayLabel: { fontFamily: 'Inter_800ExtraBold', fontSize: 22, letterSpacing: -0.3, marginBottom: 2, textTransform: 'capitalize' },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 14 },
-  dot: { width: 12, height: 12, borderRadius: 9999 },
-  itemTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 17, lineHeight: 23 },
-  meta: { fontFamily: 'Inter_500Medium', fontSize: 14, marginTop: 3 },
-  typeLabel: { fontFamily: 'Inter_800ExtraBold', fontSize: 12, letterSpacing: 0.8, textTransform: 'uppercase' },
-  empty: { paddingVertical: 34, alignItems: 'center' },
-  emptyText: { fontFamily: 'Inter_700Bold', fontSize: 17 },
-  detailSheet: { borderTopLeftRadius: 30, borderTopRightRadius: 30, borderWidth: 1, padding: 24, paddingBottom: 110 },
+  dayCell: { alignItems: 'center', justifyContent: 'center', borderRadius: 14 },
+  dayCellSelected: { backgroundColor: UI.orange },
+  dayNumber: { fontFamily: 'Inter_700Bold', fontSize: 15.5, includeFontPadding: false, textAlign: 'center' },
+  dayDot: { marginTop: 5, width: 5, height: 5, borderRadius: 99 },
+  dayDotSpacer: { marginTop: 5, width: 5, height: 5 },
+
+  dayHead: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginTop: 24, marginBottom: 12 },
+  dayHeadTitle: { color: UI.text, fontFamily: 'Inter_800ExtraBold', fontSize: 19, letterSpacing: -0.3, flex: 1 },
+  dayHeadCount: { color: UI.muted, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
+
+  empty: { paddingVertical: 30, alignItems: 'center' },
+  emptyText: { color: UI.muted, fontFamily: 'Inter_700Bold', fontSize: 16 },
+
+  timelineCard: { paddingHorizontal: 16 },
+  eventRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14 },
+  eventRowBorder: { borderBottomWidth: 1, borderBottomColor: UI.line },
+  timeBlock: { width: 50, alignItems: 'flex-start' },
+  timeText: { color: UI.text, fontFamily: 'Inter_800ExtraBold', fontSize: 15, lineHeight: 18 },
+  ampmText: { color: UI.muted, fontFamily: 'Inter_600SemiBold', fontSize: 11 },
+  eventBar: { width: 4, alignSelf: 'stretch', borderRadius: 99, minHeight: 34 },
+  eventTitle: { color: UI.text, fontFamily: 'Inter_800ExtraBold', fontSize: 15, lineHeight: 20 },
+  eventSub: { color: UI.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, marginTop: 2 },
+
+  detailSheet: { backgroundColor: UI.card, borderTopLeftRadius: 30, borderTopRightRadius: 30, borderWidth: 1, borderColor: UI.line, padding: 24, paddingBottom: 110 },
   detailHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
-  detailTitle: { flex: 1, fontFamily: 'Inter_800ExtraBold', fontSize: 25, lineHeight: 31, letterSpacing: -0.4 },
-  closeBtn: { width: 42, height: 42, borderRadius: 9999, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  detailTitle: { flex: 1, color: UI.text, fontFamily: 'Inter_800ExtraBold', fontSize: 24, lineHeight: 30, letterSpacing: -0.4 },
+  closeBtn: { width: 42, height: 42, borderRadius: 9999, borderWidth: 1, borderColor: UI.line, backgroundColor: UI.soft, alignItems: 'center', justifyContent: 'center' },
   detailMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 14 },
-  detailMetaText: { flex: 1, fontFamily: 'Inter_600SemiBold', fontSize: 15, lineHeight: 21 },
-  detailDescription: { marginTop: 20, fontFamily: 'Inter_500Medium', fontSize: 16, lineHeight: 24 },
+  detailMetaText: { flex: 1, color: UI.muted, fontFamily: 'Inter_600SemiBold', fontSize: 15, lineHeight: 21 },
+  detailDescription: { marginTop: 20, color: UI.text, fontFamily: 'Inter_500Medium', fontSize: 16, lineHeight: 24 },
 });

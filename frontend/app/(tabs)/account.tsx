@@ -1,46 +1,65 @@
 import React, { useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { FileText, LifeBuoy, LogOut, RefreshCw, ShieldCheck, Trash2, UserCircle } from 'lucide-react-native';
+import {
+  CalendarCheck,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  FileText,
+  KeyRound,
+  LifeBuoy,
+  LogOut,
+  ShieldCheck,
+  Trash2,
+} from 'lucide-react-native';
 
-import { AmbientBackground } from '../../src/components/AmbientBackground';
-import { GlassCard } from '../../src/components/GlassCard';
 import { PressScale } from '../../src/components/PressScale';
+import { Badge, Card, IconTile, SectionTitle, UI } from '../../src/components/Kit';
 import { useStore } from '../../src/store';
 import { AuthDiagnosticResult, runAuthDiagnostics } from '../../src/authDiagnostics';
 
-function Row({ icon, title, subtitle, danger, onPress, testID }: { icon: React.ReactNode; title: string; subtitle: string; danger?: boolean; onPress: () => void; testID: string }) {
-  const { theme } = useStore();
-  const color = danger ? '#DC2626' : theme.colors.text;
+function ListRow({
+  tile,
+  title,
+  subtitle,
+  right,
+  danger,
+  onPress,
+  testID,
+  divider = true,
+}: {
+  tile: React.ReactNode;
+  title: string;
+  subtitle?: string;
+  right?: React.ReactNode;
+  danger?: boolean;
+  onPress?: () => void;
+  testID?: string;
+  divider?: boolean;
+}) {
   return (
-    <PressScale testID={testID} onPress={onPress} style={[styles.row, { borderColor: theme.colors.cardBorder }]}> 
-      <View style={[styles.iconBox, { backgroundColor: danger ? 'rgba(220,38,38,0.10)' : theme.colors.bgSoft, borderColor: danger ? 'rgba(220,38,38,0.25)' : theme.colors.cardBorder }]}> 
-        {icon}
+    <PressScale testID={testID} onPress={onPress} style={[styles.row, divider && styles.rowDivider]}>
+      {tile}
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={[styles.rowTitle, danger && { color: UI.danger }]} numberOfLines={1}>{title}</Text>
+        {subtitle ? <Text style={styles.rowSub} numberOfLines={1}>{subtitle}</Text> : null}
       </View>
-      <View style={{ flex: 1 }}>
-        <Text style={[styles.rowTitle, { color }]}>{title}</Text>
-        <Text style={[styles.rowSub, { color: theme.colors.textMuted }]}>{subtitle}</Text>
-      </View>
+      {right !== undefined ? right : <ChevronRight color={UI.muted} size={18} />}
     </PressScale>
-  );
-}
-
-function DiagnosticLine({ label, value, good }: { label: string; value: string; good?: boolean }) {
-  const { theme } = useStore();
-  return (
-    <View style={styles.diagnosticLine}>
-      <Text style={[styles.diagnosticLabel, { color: theme.colors.textMuted }]}>{label}</Text>
-      <Text style={[styles.diagnosticValue, { color: good === false ? '#DC2626' : good === true ? theme.colors.success : theme.colors.text }]}>{value}</Text>
-    </View>
   );
 }
 
 export default function AccountScreen() {
   const router = useRouter();
-  const { user, logout, refreshUser, theme } = useStore();
+  const { user, logout, refreshUser } = useStore();
   const [diagnostics, setDiagnostics] = useState<AuthDiagnosticResult | null>(null);
   const [checking, setChecking] = useState(false);
+
+  const name = user?.name || 'Household member';
+  const email = user?.email || 'Not signed in';
+  const initial = (name.trim()[0] || 'H').toUpperCase();
 
   const doLogout = async () => {
     await logout();
@@ -58,85 +77,126 @@ export default function AccountScreen() {
     }
   };
 
+  const goBack = () => {
+    if (router.canGoBack()) router.back();
+    else router.replace('/(tabs)/settings');
+  };
+
   return (
-    <View style={[styles.container, { backgroundColor: theme.colors.bg }]}> 
-      <AmbientBackground />
-      <SafeAreaView style={styles.safe} edges={['top']}>
+    <View style={styles.container}>
+      <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-          <Text style={[styles.title, { color: theme.colors.text }]}>Account</Text>
-          <Text style={[styles.subtitle, { color: theme.colors.textMuted }]}>Privacy, support, deletion, and sign-in health checks for Play Store readiness.</Text>
-
-          <GlassCard style={styles.profileCard}>
-            <View style={styles.profileRow}>
-              <View style={[styles.avatar, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}> 
-                <UserCircle color={theme.colors.text} size={34} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.name, { color: theme.colors.text }]} numberOfLines={1}>{user?.name || 'Household member'}</Text>
-                <Text style={[styles.email, { color: theme.colors.textMuted }]} numberOfLines={1}>{user?.email || 'Not signed in'}</Text>
-              </View>
-            </View>
-          </GlassCard>
-
-          <GlassCard style={styles.topGap}>
-            <View style={styles.supportHeader}>
-              <ShieldCheck color={theme.colors.accent} size={22} />
-              <Text style={[styles.supportTitle, { color: theme.colors.text }]}>Sign-in health</Text>
-            </View>
-            <Text style={[styles.supportText, { color: theme.colors.textMuted }]}>Use this after sign-in, app restart, or logout testing to confirm the local token, backend, and session are all healthy.</Text>
-            <PressScale testID="run-auth-diagnostics" onPress={checkSession} style={[styles.checkBtn, { backgroundColor: theme.colors.primary }]}>
-              <RefreshCw color={theme.colors.primaryText} size={18} />
-              <Text style={[styles.checkBtnText, { color: theme.colors.primaryText }]}>{checking ? 'Checking...' : 'Check session'}</Text>
+          {/* Header */}
+          <View style={styles.navRow}>
+            <PressScale testID="account-back" onPress={goBack} style={styles.backBtn}>
+              <ChevronLeft color={UI.text} size={22} />
             </PressScale>
-            {diagnostics ? (
-              <View style={[styles.diagnosticBox, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}> 
-                <DiagnosticLine label="Local token" value={diagnostics.local_token ? 'Stored' : 'Missing'} good={diagnostics.local_token} />
-                <DiagnosticLine label="Backend" value={diagnostics.backend_online ? 'Online' : 'Unavailable'} good={diagnostics.backend_online} />
-                <DiagnosticLine label="Session" value={diagnostics.session_valid ? 'Valid' : 'Invalid'} good={diagnostics.session_valid} />
-                {diagnostics.session_email ? <DiagnosticLine label="Email" value={diagnostics.session_email} /> : null}
-                {diagnostics.session_is_admin ? <DiagnosticLine label="Admin" value="Tester bypass active" good /> : null}
-                {diagnostics.error ? <Text style={styles.diagnosticError}>{diagnostics.error}</Text> : null}
-              </View>
-            ) : null}
-          </GlassCard>
+            <Text style={styles.navTitle}>Account</Text>
+            <View style={styles.backBtn} />
+          </View>
 
-          <GlassCard style={styles.topGap}>
-            <Row
-              testID="open-privacy-policy"
-              icon={<ShieldCheck color={theme.colors.accent} size={22} />}
-              title="Privacy Policy"
-              subtitle="How Household COO handles sign-in, family, calendar, vault, and notification data."
-              onPress={() => router.push('/privacy')}
+          {/* Profile */}
+          <Card style={styles.profileCard}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>{initial}</Text>
+            </View>
+            <Text style={styles.name} numberOfLines={1}>{name}</Text>
+            <Text style={styles.email} numberOfLines={1}>{email}</Text>
+            <View style={styles.badgeRow}>
+              <Badge label="OWNER" bg={UI.soft} color={UI.muted} />
+              <Badge label="VERIFIED" bg={UI.mint} color={UI.mintText} />
+            </View>
+          </Card>
+
+          {/* Sign-in & connections */}
+          <SectionTitle style={styles.sectionGap}>Sign-in &amp; connections</SectionTitle>
+          <Card style={styles.cardPad}>
+            <ListRow
+              tile={<IconTile bg={UI.blue}><Text style={styles.googleG}>G</Text></IconTile>}
+              title="Google account"
+              subtitle={user?.email ? `Connected · ${user.email}` : 'Not connected'}
+              right={<CheckCircle2 color={UI.mintText} size={20} />}
             />
-            <Row
+            <ListRow
+              tile={<IconTile bg={UI.mint}><CalendarCheck color={UI.mintText} size={18} /></IconTile>}
+              title="Calendar sync"
+              subtitle={diagnostics?.session_valid ? 'Session healthy' : 'Open the family calendar'}
+              onPress={() => router.navigate('/(tabs)/calendar')}
+            />
+            <ListRow
+              testID="run-auth-diagnostics"
+              tile={<IconTile bg={UI.orangeSoft}><ShieldCheck color={UI.orange} size={18} /></IconTile>}
+              title="Sign-in health"
+              subtitle={checking ? 'Checking…' : 'Verify token, backend & session'}
+              right={
+                <Text style={styles.actionLink}>{checking ? '…' : 'Check'}</Text>
+              }
+              onPress={checkSession}
+            />
+            <ListRow
+              tile={<IconTile bg={UI.soft}><KeyRound color={UI.text} size={18} /></IconTile>}
+              title="Change password"
+              subtitle="Managed by your Google sign-in"
+              divider={false}
+            />
+          </Card>
+
+          {diagnostics ? (
+            <Card style={[styles.cardPad, styles.diagCard]}>
+              <DiagLine label="Local token" value={diagnostics.local_token ? 'Stored' : 'Missing'} good={diagnostics.local_token} />
+              <DiagLine label="Backend" value={diagnostics.backend_online ? 'Online' : 'Unavailable'} good={diagnostics.backend_online} />
+              <DiagLine label="Session" value={diagnostics.session_valid ? 'Valid' : 'Invalid'} good={diagnostics.session_valid} />
+              {diagnostics.session_email ? <DiagLine label="Email" value={diagnostics.session_email} /> : null}
+              {diagnostics.session_is_admin ? <DiagLine label="Admin" value="Tester bypass active" good /> : null}
+              {diagnostics.error ? <Text style={styles.diagError}>{diagnostics.error}</Text> : null}
+            </Card>
+          ) : null}
+
+          {/* Legal & support */}
+          <SectionTitle style={styles.sectionGap}>Legal &amp; support</SectionTitle>
+          <Card style={styles.cardPad}>
+            <ListRow
+              tile={<IconTile bg={UI.orangeSoft}><LifeBuoy color={UI.orange} size={18} /></IconTile>}
+              title="Contact support"
+              onPress={() => Linking.openURL('mailto:rolanddzoagbe@gmail.com').catch(() => undefined)}
+            />
+            <ListRow
               testID="open-terms-support"
-              icon={<FileText color={theme.colors.accent} size={22} />}
-              title="Terms & Support"
-              subtitle="Testing terms, limitations, and support contact information."
+              tile={<IconTile bg={UI.orangeSoft}><FileText color={UI.orange} size={18} /></IconTile>}
+              title="Terms of service"
               onPress={() => router.push('/terms')}
             />
-            <Row
-              testID="open-account-deletion"
-              icon={<Trash2 color="#DC2626" size={22} />}
-              title="Delete account"
-              subtitle="Request deletion of your account and associated Household COO data."
-              danger
-              onPress={() => router.push('/delete-account')}
+            <ListRow
+              testID="open-privacy-policy"
+              tile={<IconTile bg={UI.orangeSoft}><ShieldCheck color={UI.orange} size={18} /></IconTile>}
+              title="Privacy policy"
+              onPress={() => router.push('/privacy')}
+              divider={false}
             />
-          </GlassCard>
+          </Card>
 
-          <GlassCard style={styles.topGap}>
-            <View style={styles.supportHeader}>
-              <LifeBuoy color={theme.colors.accent} size={22} />
-              <Text style={[styles.supportTitle, { color: theme.colors.text }]}>Support contact</Text>
-            </View>
-            <Text style={[styles.supportText, { color: theme.colors.textMuted }]}>For Play Store testing, privacy questions, auth issues, or deletion requests, contact rolanddzoagbe@gmail.com.</Text>
-          </GlassCard>
+          {/* Account actions */}
+          <SectionTitle style={[styles.sectionGap, { color: UI.danger }]}>Account actions</SectionTitle>
+          <Card style={[styles.cardPad, { borderColor: 'rgba(220,38,38,0.18)' }]}>
+            <ListRow
+              testID="account-logout"
+              tile={<IconTile bg={UI.dangerSoft}><LogOut color={UI.danger} size={18} /></IconTile>}
+              title="Log out"
+              danger
+              right={null}
+              onPress={doLogout}
+            />
+            <ListRow
+              testID="open-account-deletion"
+              tile={<IconTile bg={UI.dangerSoft}><Trash2 color={UI.danger} size={18} /></IconTile>}
+              title="Delete account"
+              danger
+              right={null}
+              onPress={() => router.push('/delete-account')}
+              divider={false}
+            />
+          </Card>
 
-          <PressScale testID="account-logout" onPress={doLogout} style={styles.logoutBtn}>
-            <LogOut color="#DC2626" size={22} />
-            <Text style={styles.logoutText}>Log out</Text>
-          </PressScale>
           <View style={{ height: 150 }} />
         </ScrollView>
       </SafeAreaView>
@@ -144,32 +204,41 @@ export default function AccountScreen() {
   );
 }
 
+function DiagLine({ label, value, good }: { label: string; value: string; good?: boolean }) {
+  return (
+    <View style={styles.diagLine}>
+      <Text style={styles.diagLabel}>{label}</Text>
+      <Text style={[styles.diagValue, { color: good === false ? UI.danger : good === true ? UI.mintText : UI.text }]}>{value}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  safe: { flex: 1 },
-  scroll: { paddingHorizontal: 20, paddingTop: 34, paddingBottom: 190 },
-  title: { fontFamily: 'Inter_800ExtraBold', fontSize: 38, lineHeight: 44, letterSpacing: -0.8 },
-  subtitle: { fontFamily: 'Inter_500Medium', fontSize: 16, lineHeight: 23, marginTop: 6, marginBottom: 18 },
-  profileCard: { marginBottom: 18 },
-  profileRow: { flexDirection: 'row', alignItems: 'center', gap: 16 },
-  avatar: { width: 70, height: 70, borderRadius: 9999, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  name: { fontFamily: 'Inter_800ExtraBold', fontSize: 22, lineHeight: 28 },
-  email: { fontFamily: 'Inter_500Medium', fontSize: 15, marginTop: 4 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 16, borderBottomWidth: StyleSheet.hairlineWidth },
-  iconBox: { width: 48, height: 48, borderRadius: 18, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  rowTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 18, lineHeight: 23 },
-  rowSub: { fontFamily: 'Inter_500Medium', fontSize: 14, lineHeight: 20, marginTop: 3 },
-  topGap: { marginTop: 18 },
-  supportHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
-  supportTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 19 },
-  supportText: { fontFamily: 'Inter_500Medium', fontSize: 15, lineHeight: 22 },
-  checkBtn: { minHeight: 50, borderRadius: 9999, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, marginTop: 14 },
-  checkBtnText: { fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
-  diagnosticBox: { borderWidth: 1, borderRadius: 18, padding: 14, marginTop: 14, gap: 9 },
-  diagnosticLine: { flexDirection: 'row', justifyContent: 'space-between', gap: 14 },
-  diagnosticLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 13 },
-  diagnosticValue: { flex: 1, textAlign: 'right', fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
-  diagnosticError: { color: '#DC2626', fontFamily: 'Inter_700Bold', fontSize: 13, lineHeight: 19, marginTop: 4 },
-  logoutBtn: { marginTop: 24, minHeight: 58, borderRadius: 9999, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: 'rgba(220,38,38,0.10)' },
-  logoutText: { color: '#DC2626', fontFamily: 'Inter_800ExtraBold', fontSize: 17 },
+  container: { flex: 1, backgroundColor: UI.bg },
+  scroll: { paddingHorizontal: 20, paddingTop: 6, paddingBottom: 190 },
+  navRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 44, marginBottom: 14 },
+  backBtn: { width: 40, height: 40, borderRadius: 99, alignItems: 'center', justifyContent: 'center' },
+  navTitle: { color: UI.text, fontFamily: 'Inter_800ExtraBold', fontSize: 20, letterSpacing: -0.3 },
+
+  profileCard: { alignItems: 'center', paddingVertical: 22, paddingHorizontal: 18, marginBottom: 18 },
+  avatar: { width: 66, height: 66, borderRadius: 99, backgroundColor: UI.orange, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+  avatarText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 26 },
+  name: { color: UI.text, fontFamily: 'Inter_800ExtraBold', fontSize: 19, lineHeight: 24 },
+  email: { color: UI.muted, fontFamily: 'Inter_500Medium', fontSize: 14, marginTop: 3 },
+  badgeRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
+
+  sectionGap: { marginTop: 6, marginBottom: 10 },
+  cardPad: { paddingHorizontal: 16 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 13, paddingVertical: 13 },
+  rowDivider: { borderBottomWidth: 1, borderBottomColor: UI.line },
+  rowTitle: { color: UI.text, fontFamily: 'Inter_700Bold', fontSize: 14.5 },
+  rowSub: { color: UI.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, marginTop: 2 },
+  googleG: { color: UI.blueText, fontFamily: 'Inter_800ExtraBold', fontSize: 18 },
+  actionLink: { color: UI.orange, fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
+
+  diagCard: { marginTop: 12, paddingVertical: 14, gap: 9 },
+  diagLine: { flexDirection: 'row', justifyContent: 'space-between', gap: 14 },
+  diagLabel: { color: UI.muted, fontFamily: 'Inter_600SemiBold', fontSize: 13 },
+  diagValue: { flex: 1, textAlign: 'right', fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
+  diagError: { color: UI.danger, fontFamily: 'Inter_700Bold', fontSize: 13, lineHeight: 19, marginTop: 4 },
 });
