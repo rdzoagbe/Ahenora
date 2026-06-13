@@ -319,14 +319,15 @@ export default function FeedScreen() {
               </PressScale>
               <View style={styles.captureActions}>
                 <PressScale onPress={() => setShowCamera(true)} style={styles.secondaryPill}>
-                  <Camera color={UI.text} size={21} />
+                  <Camera color={UI.text} size={18} />
                   <Text style={styles.secondaryPillText}>Photo</Text>
                 </PressScale>
                 <PressScale onPress={() => setShowVoice(true)} style={styles.secondaryPill}>
-                  <Mic color={UI.text} size={21} />
+                  <Mic color={UI.text} size={18} />
                   <Text style={styles.secondaryPillText}>Voice</Text>
                 </PressScale>
                 <PressScale onPress={openManual} style={styles.addPill}>
+                  <Plus color="#FFFFFF" size={18} />
                   <Text style={styles.addPillText}>Add</Text>
                 </PressScale>
               </View>
@@ -391,9 +392,11 @@ export default function FeedScreen() {
         </ScrollView>
       </SafeAreaView>
 
-      <PressScale style={styles.fab} onPress={openManual} testID="feed-fab-add">
-        <Plus color="#FFFFFF" size={31} />
-      </PressScale>
+      <View style={styles.fabWrap} pointerEvents="box-none">
+        <PressScale style={styles.fab} onPress={openManual} testID="feed-fab-add">
+          <Plus color="#FFFFFF" size={31} />
+        </PressScale>
+      </View>
 
       <CameraCaptureModal
         visible={showCamera}
@@ -581,28 +584,30 @@ const styles = StyleSheet.create({
   },
   secondaryPill: {
     flex: 1,
-    minHeight: 45,
-    borderRadius: 99,
+    height: 50,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: UI.line,
     backgroundColor: UI.soft,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: 7,
   },
   secondaryPillText: {
     color: UI.text,
-    fontFamily: 'Inter_800ExtraBold',
+    fontFamily: 'Inter_700Bold',
     fontSize: 14,
   },
   addPill: {
     flex: 1,
-    minHeight: 45,
-    borderRadius: 99,
+    height: 50,
+    borderRadius: 14,
     backgroundColor: UI.orange,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 7,
   },
   addPillText: {
     color: '#FFFFFF',
@@ -791,10 +796,12 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_700Bold',
     fontSize: 12,
   },
-  fab: {
+  fabWrap: {
     position: 'absolute',
     right: 22,
     bottom: 102,
+  },
+  fab: {
     width: 61,
     height: 61,
     borderRadius: 999,
