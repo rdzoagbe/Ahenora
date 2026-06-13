@@ -11,8 +11,24 @@ import { useBreakpoint } from '../../src/responsive';
 function TabIcon({ focused, Icon, label }: { focused: boolean; Icon: any; label: string }) {
   const { theme } = useStore();
   const light = theme.mode === 'light';
+
+  if (light) {
+    const color = focused ? theme.colors.accent : theme.colors.textSoft;
+    return (
+      <View style={styles.tabItem}>
+        <Icon color={color} size={21} strokeWidth={focused ? 2.4 : 2} />
+        <Text
+          style={[styles.tabLabel, { color, fontFamily: focused ? 'Inter_800ExtraBold' : 'Inter_600SemiBold' }]}
+          numberOfLines={1}
+        >
+          {label}
+        </Text>
+      </View>
+    );
+  }
+
   const activeColor = '#202323';
-  const inactiveColor = light ? 'rgba(255,255,255,0.72)' : 'rgba(255,255,255,0.64)';
+  const inactiveColor = 'rgba(255,255,255,0.64)';
 
   return (
     <View style={[styles.tabItem, focused && { backgroundColor: '#FFFFFF' }]}>
@@ -46,6 +62,7 @@ function SidebarNav({ width }: { width: number }) {
   const router = useRouter();
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
+  const light = theme.mode === 'light';
 
   return (
     <View
@@ -62,13 +79,15 @@ function SidebarNav({ width }: { width: number }) {
     >
       {isDesktop && (
         <View style={styles.sidebarBrand}>
-          <Text style={styles.sidebarBrandText}>COO</Text>
+          <Text style={[styles.sidebarBrandText, { color: light ? theme.colors.text : '#FFFFFF' }]}>COO</Text>
         </View>
       )}
 
       {NAV_ITEMS.map(({ name, Icon, labelKey }) => {
         const active = pathname === `/${name}` || pathname.endsWith(name);
-        const iconColor = active ? '#202323' : 'rgba(255,255,255,0.60)';
+        const iconColor = light
+          ? active ? theme.colors.accent : theme.colors.textSoft
+          : active ? '#202323' : 'rgba(255,255,255,0.60)';
 
         return (
           <TouchableOpacity
@@ -77,7 +96,7 @@ function SidebarNav({ width }: { width: number }) {
             style={[
               styles.sidebarItem,
               isDesktop ? styles.sidebarItemWide : styles.sidebarItemCompact,
-              active && styles.sidebarItemActive,
+              active && (light ? { backgroundColor: theme.colors.accentSoft } : styles.sidebarItemActive),
             ]}
             activeOpacity={0.75}
           >

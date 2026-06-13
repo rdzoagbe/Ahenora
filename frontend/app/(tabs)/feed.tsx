@@ -513,7 +513,7 @@ export default function FeedScreen() {
           })()}
 
           {/* ── Tab navigation ── */}
-          <View style={styles.tabRow}>
+          <View style={[styles.tabRow, { borderBottomColor: theme.colors.cardBorder }]}>
             {(['today', 'upcoming', 'all'] as const).map((tab) => (
               <PressScale
                 key={tab}
@@ -521,11 +521,18 @@ export default function FeedScreen() {
                 onPress={() => setActiveTab(tab)}
                 style={[
                   styles.tabBtn,
-                  { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder },
-                  activeTab === tab && { backgroundColor: theme.colors.primary, borderColor: 'transparent' },
+                  activeTab === tab && { borderBottomColor: theme.colors.accent },
                 ]}
               >
-                <Text style={[styles.tabBtnText, { color: activeTab === tab ? theme.colors.primaryText : theme.colors.textMuted }]}>
+                <Text
+                  style={[
+                    styles.tabBtnText,
+                    {
+                      color: activeTab === tab ? theme.colors.text : theme.colors.textMuted,
+                      fontFamily: activeTab === tab ? 'Inter_800ExtraBold' : 'Inter_600SemiBold',
+                    },
+                  ]}
+                >
                   {tab === 'today' ? 'Today' : tab === 'upcoming' ? 'Upcoming' : 'All cards'}
                 </Text>
               </PressScale>
@@ -864,9 +871,9 @@ const styles = StyleSheet.create({
   weekToggleCount: { borderRadius: 99, paddingHorizontal: 9, paddingVertical: 4 },
   weekToggleCountText: { fontFamily: 'Inter_800ExtraBold', fontSize: 11 },
   weekToggleHint: { fontFamily: 'Inter_700Bold', fontSize: 11 },
-  tabRow: { flexDirection: 'row', gap: 8, marginBottom: 10, marginTop: 4 },
-  tabBtn: { flex: 1, paddingVertical: 10, borderRadius: 99, borderWidth: 1, alignItems: 'center' },
-  tabBtnText: { fontFamily: 'Inter_700Bold', fontSize: 13 },
+  tabRow: { flexDirection: 'row', gap: 22, marginBottom: 14, marginTop: 4, borderBottomWidth: 1 },
+  tabBtn: { paddingTop: 4, paddingBottom: 10, borderBottomWidth: 2, borderBottomColor: 'transparent' },
+  tabBtnText: { fontSize: 13 },
   emptyTab: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderRadius: 20, padding: 18, marginTop: 4 },
   emptyTabText: { fontFamily: 'Inter_600SemiBold', fontSize: 14, flex: 1 },
   showAllRow: { paddingVertical: 14, alignItems: 'center' },
