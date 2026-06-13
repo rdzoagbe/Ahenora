@@ -1,18 +1,34 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Image, Platform, ScrollView, Share, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { Image, Platform, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { Bell, CalendarDays, ChevronRight, Crown, FileText, Globe, Lock, LogOut, Mail, Moon, Send, Share2, ShieldCheck, Sun, Trash2, UserCircle, UserPlus, Users, X } from 'lucide-react-native';
+import {
+  Bell,
+  CalendarDays,
+  ChevronDown,
+  ChevronRight,
+  Crown,
+  Globe,
+  Link2,
+  Lock,
+  LogOut,
+  Mail,
+  PenLine,
+  Send,
+  Share2,
+  Sparkles,
+  Users,
+  UserPlus,
+  X,
+} from 'lucide-react-native';
 
-import { AmbientBackground } from '../../src/components/AmbientBackground';
-import { GlassCard } from '../../src/components/GlassCard';
 import { PressScale } from '../../src/components/PressScale';
 import { LanguageModal } from '../../src/components/LanguageModal';
 import { PinPadModal } from '../../src/components/PinPadModal';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
+import { Card, IconTile, ScreenHeader, SectionTitle, Toggle, UI } from '../../src/components/Kit';
 import { useStore } from '../../src/store';
-import { useBreakpoint } from '../../src/responsive';
-import { api, CalendarContact, Card, Entitlements, FamilyInvite, FamilyMember, NotificationSettings } from '../../src/api';
+import { api, CalendarContact, Card as CardType, Entitlements, FamilyInvite, FamilyMember, NotificationSettings } from '../../src/api';
 import { LANG_NAMES } from '../../src/i18n';
 import { ensureNotificationPermissions, registerForPushNotificationsAsync, sendLocalNotification, sendTestScheduledReminderNotification, syncCardReminderNotifications } from '../../src/notifications';
 
@@ -24,8 +40,7 @@ function formatBytes(bytes?: number | null) {
 }
 
 export default function SettingsScreen() {
-  const { user, t, lang, logout, subscription, appearanceMode, setAppearance, theme } = useStore();
-  const { isWide, px, maxW } = useBreakpoint();
+  const { user, t, lang, logout, subscription, appearanceMode, setAppearance } = useStore();
   const router = useRouter();
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [invites, setInvites] = useState<FamilyInvite[]>([]);
@@ -41,10 +56,13 @@ export default function SettingsScreen() {
   const [notificationStatus, setNotificationStatus] = useState<string | null>(null);
   const [savingNotifications, setSavingNotifications] = useState(false);
   const [entitlements, setEntitlements] = useState<Entitlements | null>(null);
-  const [showHouseholdAdvanced, setShowHouseholdAdvanced] = useState(false);
-  const [completedCards, setCompletedCards] = useState<Card[]>([]);
-  const [showCompletedHistory, setShowCompletedHistory] = useState(false);
-  const [showNotifications, setShowNotifications] = useState(false);
+  const [completedCards, setCompletedCards] = useState<CardType[]>([]);
+
+  const [expandMembers, setExpandMembers] = useState(false);
+  const [expandChildren, setExpandChildren] = useState(false);
+  const [expandConnected, setExpandConnected] = useState(false);
+  const [expandHistory, setExpandHistory] = useState(false);
+  const [expandUsage, setExpandUsage] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -58,11 +76,11 @@ export default function SettingsScreen() {
           .then(async (rows) => {
             const directDone = rows.filter((card) => card.status === 'DONE');
             if (directDone.length > 0) return directDone;
-            const allCards = await api.listCards().catch(() => [] as Card[]);
+            const allCards = await api.listCards().catch(() => [] as CardType[]);
             return allCards.filter((card) => card.status === 'DONE');
           })
           .catch(async () => {
-            const allCards = await api.listCards().catch(() => [] as Card[]);
+            const allCards = await api.listCards().catch(() => [] as CardType[]);
             return allCards.filter((card) => card.status === 'DONE');
           }),
       ]);
@@ -83,7 +101,10 @@ export default function SettingsScreen() {
   const memberLimit = entitlements?.max_members ?? subscription?.limits?.max_members ?? 0;
   const memberSlotsUsed = entitlements?.member_slots_used ?? members.length + invites.filter((invite) => invite.status === 'pending').length;
   const childMembers = useMemo(() => members.filter((m) => m.role === 'Child'), [members]);
+  const adultCount = Math.max(1, members.filter((m) => m.role !== 'Child').length);
   const planLabel = subscription?.plan === 'family_office' ? 'Family Office' : subscription?.plan === 'executive' ? 'Executive Family' : 'Village';
+  const weeklyBrief = Boolean(entitlements?.weekly_brief || subscription?.limits?.weekly_brief);
+  const initial = (user?.name?.[0] || 'C').toUpperCase();
 
   const shareInviteLink = useCallback(async (inviteUrl?: string | null, email?: string | null) => {
     if (!inviteUrl) {
@@ -151,20 +172,14 @@ export default function SettingsScreen() {
 
   const testReminderNotification = useCallback(async () => {
     const granted = await ensureNotificationPermissions();
-    if (!granted) {
-      setNotificationStatus('Notification permission was not granted.');
-      return;
-    }
+    if (!granted) { setNotificationStatus('Notification permission was not granted.'); return; }
     await sendTestScheduledReminderNotification();
     setNotificationStatus('Test reminder scheduled. It should appear in about 5 seconds.');
   }, []);
 
   const testNewCardAlert = useCallback(async () => {
     const granted = await ensureNotificationPermissions();
-    if (!granted) {
-      setNotificationStatus('Notification permission was not granted.');
-      return;
-    }
+    if (!granted) { setNotificationStatus('Notification permission was not granted.'); return; }
     await sendLocalNotification('New Household COO card', 'This is how a new-card alert will appear.');
     setNotificationStatus('Test new-card alert sent on this device.');
   }, []);
@@ -182,338 +197,236 @@ export default function SettingsScreen() {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.colors.bg }]}>
-      <AmbientBackground />
-      <SafeAreaView style={styles.safe} edges={['top']}>
-        <ScrollView contentContainerStyle={[styles.scroll, { paddingHorizontal: px }]} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-          <View style={{ maxWidth: maxW, alignSelf: 'center', width: '100%' }}>
-          <View style={isWide ? styles.wideRow : null}>
-          <View style={isWide ? styles.wideColLeft : null}>
-          <Text style={[styles.title, { color: theme.colors.text }]}>Settings</Text>
-          <Text style={[styles.subtitle, { color: theme.colors.textMuted }]}>Manage your household, access, alerts, and preferences.</Text>
+    <View style={styles.container}>
+      <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+          <ScreenHeader eyebrow="Manage" title="Settings" />
 
-          <GlassCard style={styles.profileCard}>
-            <View style={styles.profileRow}>
+          {/* Profile */}
+          <PressScale testID="settings-open-account" onPress={() => router.push('/account')} style={styles.headerGap}>
+            <Card style={styles.profileCard}>
               {user?.picture ? (
-                <Image source={{ uri: user.picture }} style={[styles.avatar, { borderColor: theme.colors.cardBorder }]} />
+                <Image source={{ uri: user.picture }} style={styles.avatarImg} />
               ) : (
-                <View style={[styles.avatar, styles.avatarFallback, { borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}>
-                  <Text style={[styles.avatarText, { color: theme.colors.text }]}>{(user?.name?.[0] || 'C').toUpperCase()}</Text>
-                </View>
+                <View style={styles.avatar}><Text style={styles.avatarText}>{initial}</Text></View>
               )}
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.name, { color: theme.colors.text }]} numberOfLines={1}>{user?.name || 'Household member'}</Text>
-                <View style={styles.emailRow}>
-                  <Mail color={theme.colors.textSoft} size={16} />
-                  <Text style={[styles.email, { color: theme.colors.textMuted }]} numberOfLines={1}>{user?.email}</Text>
-                </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.profileName} numberOfLines={1}>{user?.name || 'Household member'}</Text>
+                <Text style={styles.profileEmail} numberOfLines={1}>{user?.email || 'Not signed in'}</Text>
                 {user?.is_admin ? (
-                  <View style={[styles.badge, { backgroundColor: theme.colors.accentSoft, borderColor: theme.colors.accent }]}>
-                    <Crown color={theme.colors.accent} size={16} />
-                    <Text style={[styles.badgeText, { color: theme.colors.accent }]}>Admin / Tester - all features unlocked</Text>
+                  <View style={styles.adminBadge}>
+                    <Crown color={UI.orange} size={13} />
+                    <Text style={styles.adminBadgeText}>Admin / Tester</Text>
                   </View>
                 ) : null}
               </View>
-            </View>
-          </GlassCard>
+              <ChevronRight color={UI.muted} size={22} />
+            </Card>
+          </PressScale>
 
-          <SectionTitle icon={<UserCircle color={theme.colors.textMuted} size={18} />} label="Account, privacy & support" color={theme.colors.textMuted} />
-          <GlassCard>
-            <PressScale testID="settings-open-account" onPress={() => router.push('/account')} style={styles.navRow}>
-              <View style={styles.preferenceTitleRow}>
-                <UserCircle color={theme.colors.accent} size={22} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.rowTitle, { color: theme.colors.text }]}>Account</Text>
-                  <Text style={[styles.rowDescription, { color: theme.colors.textMuted }]}>Sign-in health, support, and session controls.</Text>
-                </View>
+          {/* Family plan */}
+          <PressScale testID="open-pricing" onPress={() => router.push('/pricing')} style={{ marginTop: 14 }}>
+            <Card style={styles.planCard}>
+              <View style={styles.planCol}>
+                <Text style={styles.planTitle}>{user?.is_admin ? 'Admin / Tester' : `${planLabel} Plan`}</Text>
+                <Text style={styles.planSub}>{memberLimit ? `${memberSlotsUsed}/${memberLimit} slots` : 'Tap to view plans'}</Text>
               </View>
-              <ChevronRight color={theme.colors.textSoft} size={22} />
-            </PressScale>
-            <Divider />
-
-            <PressScale testID="settings-open-privacy" onPress={() => router.push('/privacy')} style={styles.navRow}>
-              <View style={styles.preferenceTitleRow}>
-                <ShieldCheck color={theme.colors.accent} size={22} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.rowTitle, { color: theme.colors.text }]}>Privacy Policy</Text>
-                  <Text style={[styles.rowDescription, { color: theme.colors.textMuted }]}>How account, family, vault, calendar, and notification data are handled.</Text>
-                </View>
+              <View style={styles.planDivider} />
+              <View style={styles.planCol}>
+                <Text style={styles.planTitle}>{memberSlotsUsed} member{memberSlotsUsed === 1 ? '' : 's'}</Text>
+                <Text style={styles.planSub}>{adultCount} adult{adultCount === 1 ? '' : 's'}, {childMembers.length} kid{childMembers.length === 1 ? '' : 's'}</Text>
               </View>
-              <ChevronRight color={theme.colors.textSoft} size={22} />
-            </PressScale>
-            <Divider />
+              <ChevronRight color={UI.muted} size={20} />
+            </Card>
+          </PressScale>
 
-            <PressScale testID="settings-open-terms" onPress={() => router.push('/terms')} style={styles.navRow}>
-              <View style={styles.preferenceTitleRow}>
-                <FileText color={theme.colors.accent} size={22} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.rowTitle, { color: theme.colors.text }]}>Terms & Support</Text>
-                  <Text style={[styles.rowDescription, { color: theme.colors.textMuted }]}>Testing terms, limitations, and support contact.</Text>
-                </View>
-              </View>
-              <ChevronRight color={theme.colors.textSoft} size={22} />
-            </PressScale>
-            <Divider />
-
-            <PressScale testID="settings-open-delete-account" onPress={() => router.push('/delete-account')} style={styles.navRow}>
-              <View style={styles.preferenceTitleRow}>
-                <Trash2 color="#DC2626" size={22} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.rowTitle, { color: '#DC2626' }]}>Delete account</Text>
-                  <Text style={[styles.rowDescription, { color: theme.colors.textMuted }]}>Request deletion of your account and associated Household COO data.</Text>
-                </View>
-              </View>
-              <ChevronRight color={theme.colors.textSoft} size={22} />
-            </PressScale>
-          </GlassCard>
-
-          <SectionTitle icon={<ShieldCheck color={theme.colors.textMuted} size={18} />} label="Plan & access" color={theme.colors.textMuted} />
-          <GlassCard>
-            <View style={styles.cardHeaderRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.cardTitle, { color: theme.colors.text }]}>{user?.is_admin ? 'Admin / Tester' : planLabel}</Text>
-                <Text style={[styles.cardSub, { color: theme.colors.textMuted }]}>{user?.is_admin ? 'All feature gates are bypassed for testing.' : `${memberSlotsUsed}/${memberLimit || 'Unlimited'} member slots used`}</Text>
-              </View>
-              <PressScale testID="open-pricing" onPress={() => router.push('/pricing')} style={[styles.primaryPill, { backgroundColor: theme.colors.primary }]}>
-                <Text style={[styles.primaryPillText, { color: theme.colors.primaryText }]}>View plans</Text>
-              </PressScale>
-            </View>
-            <View style={styles.statGrid}>
-              <StatBox label="Members" value={`${memberSlotsUsed}/${memberLimit || 'Unlimited'}`} />
-              <StatBox label="AI scans" value={entitlements ? `${entitlements.ai_scans_used}/${entitlements.ai_scans_limit}` : `${subscription?.ai_scans_used ?? 0}/${subscription?.limits?.ai_scans_per_month ?? 'Unlimited'}`} />
-              <StatBox label="Vault" value={formatBytes(entitlements?.vault_bytes_used ?? subscription?.vault_bytes_used)} />
-              <StatBox label="Weekly brief" value={entitlements?.weekly_brief || subscription?.limits?.weekly_brief ? 'On' : 'Locked'} />
-            </View>
-          </GlassCard>
-
-          </View>{/* end wideColLeft */}
-          <View style={isWide ? styles.wideColRight : null}>
-          <SectionTitle icon={<FileText color={theme.colors.textMuted} size={18} />} label="History" color={theme.colors.textMuted} />
-          <GlassCard>
-            <PressScale testID="settings-completed-history-toggle" onPress={() => setShowCompletedHistory((value) => !value)} style={styles.navRow}>
-              <View style={styles.preferenceTitleRow}>
-                <FileText color={theme.colors.accent} size={22} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.rowTitle, { color: theme.colors.text }]}>Completed history</Text>
-                  <Text style={[styles.rowDescription, { color: theme.colors.textMuted }]}>
-                    {completedCards.length} completed card{completedCards.length === 1 ? '' : 's'}
-                  </Text>
-                </View>
-              </View>
-              <Text style={[styles.rowValue, { color: theme.colors.textMuted }]}>{showCompletedHistory ? 'Hide' : 'Show'}</Text>
-            </PressScale>
-
-            {showCompletedHistory ? (
-              <View>
-                <Divider />
-                {completedCards.length === 0 ? (
-                  <EmptyText text="No completed cards yet." />
-                ) : (
-                  completedCards.slice(0, 8).map((card, index) => (
-                    <View key={card.card_id}>
-                      {index > 0 ? <Divider /> : null}
-                      <View style={styles.memberRow}>
-                        <View style={[styles.memberAvatar, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
-                          <Text style={[styles.memberInitial, { color: theme.colors.text }]}>{card.type === 'TASK' ? 'T' : card.type === 'RSVP' ? 'R' : 'S'}</Text>
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <Text style={[styles.memberName, { color: theme.colors.text }]} numberOfLines={1}>{card.title}</Text>
-                          <Text style={[styles.memberRole, { color: theme.colors.textMuted }]} numberOfLines={1}>
-                            Done · {card.assignee || 'Family'} · {card.completed_at ? new Date(card.completed_at).toLocaleDateString() : new Date(card.created_at).toLocaleDateString()}
-                          </Text>
-                        </View>
-                      </View>
-                    </View>
-                  ))
-                )}
-              </View>
-            ) : null}
-          </GlassCard>
-
-          <SectionTitle icon={<Bell color={theme.colors.textMuted} size={18} />} label="Notifications" color={theme.colors.textMuted} />
-          <GlassCard>
-            <PressScale testID="settings-notifications-toggle" onPress={() => setShowNotifications((value) => !value)} style={styles.navRow}>
-              <View style={styles.preferenceTitleRow}>
-                <Bell color={theme.colors.accent} size={22} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.rowTitle, { color: theme.colors.text }]}>Notification controls</Text>
-                  <Text style={[styles.rowDescription, { color: theme.colors.textMuted }]}>Reminder alerts and new-card alerts. Tap to show or hide.</Text>
-                </View>
-              </View>
-              <Text style={[styles.rowValue, { color: theme.colors.textMuted }]}>{showNotifications ? 'Hide' : 'Show'}</Text>
-            </PressScale>
-          </GlassCard>
-
-          {showNotifications ? (
-            <>
-          <SectionTitle icon={<Bell color={theme.colors.textMuted} size={18} />} label="Notifications" color={theme.colors.textMuted} />
-          <GlassCard>
-            <SettingSwitch
-              title="Reminder notifications"
-              description="Alerts before cards with due dates and reminder times."
-              value={notificationPrefs.card_reminders}
+          {/* Notifications */}
+          <SectionTitle style={styles.sectionGap}>Notifications</SectionTitle>
+          <Card style={styles.cardPad}>
+            <ToggleRow
+              testID="notif-push"
+              tile={<IconTile bg={UI.orangeSoft}><Bell color={UI.orange} size={18} /></IconTile>}
+              title="Push notifications"
+              subtitle="Reminders, deadlines & updates"
+              on={notificationPrefs.card_reminders}
               disabled={savingNotifications}
-              onValueChange={() => updateNotificationPrefs({ card_reminders: !notificationPrefs.card_reminders })}
+              onPress={() => updateNotificationPrefs({ card_reminders: !notificationPrefs.card_reminders })}
             />
-            <Divider />
-            <SettingSwitch
-              title="New-card alerts"
-              description="Alerts when another household member adds a card."
-              value={notificationPrefs.new_card_alerts}
+            <ToggleRow
+              testID="notif-sign"
+              tile={<IconTile bg={UI.lavender}><PenLine color={UI.lavenderText} size={18} /></IconTile>}
+              title="Sign slip alerts"
+              subtitle="When a form needs your signature"
+              on={notificationPrefs.new_card_alerts}
               disabled={savingNotifications}
-              onValueChange={() => updateNotificationPrefs({ new_card_alerts: !notificationPrefs.new_card_alerts })}
+              onPress={() => updateNotificationPrefs({ new_card_alerts: !notificationPrefs.new_card_alerts })}
             />
-            <View style={styles.testButtonRow}>
-              <SecondaryButton label="Test reminder" onPress={testReminderNotification} />
-              <SecondaryButton label="Test new-card alert" onPress={testNewCardAlert} />
-            </View>
-            <Text style={[styles.note, { color: theme.colors.textMuted }]}>{notificationStatus || 'Use a development build for full push notification testing.'}</Text>
-          </GlassCard>
+            <ToggleRow
+              testID="notif-digest"
+              tile={<IconTile bg={UI.soft}><Mail color={UI.muted} size={18} /></IconTile>}
+              title="Weekly digest email"
+              subtitle={weeklyBrief ? 'Sunday evening summary' : 'Upgrade to unlock'}
+              on={weeklyBrief}
+              onPress={() => router.push('/pricing')}
+              divider={false}
+            />
+          </Card>
+          {notificationStatus ? <Text style={styles.note}>{notificationStatus}</Text> : null}
 
-
-            </>
-          ) : null}
-
-          <SectionTitle icon={<Globe color={theme.colors.textMuted} size={18} />} label="Preferences" color={theme.colors.textMuted} />
-          <GlassCard>
-            <View style={styles.preferenceHeader}>
-              <View style={styles.preferenceTitleRow}>
-                {appearanceMode === 'light' ? <Sun color={theme.colors.accent} size={22} /> : <Moon color={theme.colors.accent} size={22} />}
-                <Text style={[styles.rowTitle, { color: theme.colors.text }]}>Appearance</Text>
-              </View>
-              <Text style={[styles.rowValue, { color: theme.colors.textMuted }]}>{appearanceMode === 'system' ? 'System' : appearanceMode === 'light' ? 'Light' : 'Dark'}</Text>
-            </View>
-            <View style={[styles.segmentWrap, { borderBottomColor: theme.colors.cardBorder }]}>
-              {(['dark', 'light', 'system'] as const).map((mode) => {
+          {/* Appearance */}
+          <SectionTitle style={styles.sectionGap}>Appearance</SectionTitle>
+          <Card style={styles.segmentCard}>
+            <View style={styles.segmentWrap}>
+              {(['light', 'dark', 'system'] as const).map((mode) => {
                 const active = appearanceMode === mode;
                 return (
-                  <PressScale key={mode} testID={`appearance-${mode}`} onPress={() => setAppearance(mode)} style={[styles.segmentBtn, active && { borderBottomColor: theme.colors.accent }]}>
-                    <Text
-                      style={[
-                        styles.segmentText,
-                        {
-                          color: active ? theme.colors.text : theme.colors.textMuted,
-                          fontFamily: active ? 'Inter_800ExtraBold' : 'Inter_600SemiBold',
-                        },
-                      ]}
-                    >
+                  <PressScale key={mode} testID={`appearance-${mode}`} onPress={() => setAppearance(mode)} style={[styles.segmentBtn, active && { borderBottomColor: UI.orange }]}>
+                    <Text style={[styles.segmentText, { color: active ? UI.text : UI.muted, fontFamily: active ? 'Inter_800ExtraBold' : 'Inter_600SemiBold' }]}>
                       {mode[0].toUpperCase() + mode.slice(1)}
                     </Text>
                   </PressScale>
                 );
               })}
             </View>
-            <Text style={[styles.note, { color: theme.colors.textMuted }]}>Light mode uses solid cards, dark text, and open spacing for comfortable family use.</Text>
+          </Card>
+
+          {/* Household */}
+          <SectionTitle style={styles.sectionGap}>Household</SectionTitle>
+          <Card style={styles.cardPad}>
+            <NavRow
+              testID="settings-household-toggle"
+              tile={<IconTile bg={UI.orangeSoft}><Users color={UI.orange} size={18} /></IconTile>}
+              title="Manage members"
+              right={<Chevron open={expandMembers} />}
+              onPress={() => setExpandMembers((v) => !v)}
+            />
+            {expandMembers ? (
+              <View style={styles.expandBox}>
+                {members.length === 0 ? <Text style={styles.emptyText}>No family members yet.</Text> : members.map((m) => (
+                  <MiniRow key={m.member_id} initial={m.name[0]?.toUpperCase()} name={m.name} sub={m.role} />
+                ))}
+                {invites.filter((i) => i.status === 'pending').map((invite) => (
+                  <View key={invite.invite_id} style={styles.inviteRow}>
+                    <MiniRow initial={(invite.email?.[0] || '?').toUpperCase()} name={invite.email || 'Invite link'} sub={`Invite · ${invite.status}`} />
+                    {invite.invite_url ? (
+                      <PressScale onPress={() => shareInviteLink(invite.invite_url, invite.email)} style={styles.ghostBtn}>
+                        <Share2 color={UI.text} size={14} />
+                        <Text style={styles.ghostBtnText}>Share</Text>
+                      </PressScale>
+                    ) : null}
+                  </View>
+                ))}
+                <PressScale testID="invite-coparent" onPress={() => openInvite()} style={styles.expandAction}>
+                  <UserPlus color={UI.text} size={18} />
+                  <Text style={styles.expandActionText}>Invite co-parent</Text>
+                </PressScale>
+              </View>
+            ) : null}
             <Divider />
-            <PressScale testID="settings-lang" onPress={() => setShowLang(true)} style={styles.navRow}>
-              <View style={styles.preferenceTitleRow}>
-                <Globe color={theme.colors.accent} size={22} />
-                <Text style={[styles.rowTitle, { color: theme.colors.text }]}>{t('language')}</Text>
-              </View>
-              <View style={styles.navRight}>
-                <Text style={[styles.rowValue, { color: theme.colors.textMuted }]}>{LANG_NAMES[lang]}</Text>
-                <ChevronRight color={theme.colors.textSoft} size={22} />
-              </View>
-            </PressScale>
-          </GlassCard>
 
-          <SectionTitle icon={<Users color={theme.colors.textMuted} size={18} />} label="Household management" color={theme.colors.textMuted} />
-          <GlassCard>
-            <PressScale testID="settings-household-toggle" onPress={() => setShowHouseholdAdvanced((value) => !value)} style={styles.navRow}>
-              <View style={styles.preferenceTitleRow}>
-                <Users color={theme.colors.accent} size={22} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.rowTitle, { color: theme.colors.text }]}>Family, invites, calendar contacts & kid PINs</Text>
-                  <Text style={[styles.rowDescription, { color: theme.colors.textMuted }]}>Advanced household setup. Tap to show or hide.</Text>
-                </View>
-              </View>
-              <Text style={[styles.rowValue, { color: theme.colors.textMuted }]}>{showHouseholdAdvanced ? 'Hide' : 'Show'}</Text>
-            </PressScale>
-          </GlassCard>
-
-          {showHouseholdAdvanced ? (
-            <>
-          <SectionTitle icon={<Users color={theme.colors.textMuted} size={18} />} label="Family" color={theme.colors.textMuted} />
-          <GlassCard>
-            {members.length === 0 ? <EmptyText text="No family members yet." /> : members.map((member, index) => (
-              <View key={member.member_id}>
-                {index > 0 ? <Divider /> : null}
-                <View style={styles.memberRow}>
-                  <View style={[styles.memberAvatar, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
-                    <Text style={[styles.memberInitial, { color: theme.colors.text }]}>{member.name[0]?.toUpperCase()}</Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.memberName, { color: theme.colors.text }]}>{member.name}</Text>
-                    <Text style={[styles.memberRole, { color: theme.colors.textMuted }]}>{member.role}</Text>
-                  </View>
-                </View>
-              </View>
-            ))}
-          </GlassCard>
-          <SecondaryButton label="Invite co-parent" onPress={() => openInvite()} icon={<UserPlus color={theme.colors.text} size={20} />} />
-
-          <GlassCard style={styles.topGap}>
-            <Text style={[styles.cardTitle, { color: theme.colors.text }]}>Invite status</Text>
-            {invites.length === 0 ? <EmptyText text="No invites created yet." /> : invites.map((invite) => (
-              <View key={invite.invite_id} style={styles.inviteRow}>
-                <Text style={[styles.memberName, { color: theme.colors.text }]}>{invite.email || 'Invite link'}</Text>
-                <Text style={[styles.memberRole, { color: theme.colors.textMuted }]}>{invite.status}</Text>
-                {invite.status === 'pending' && invite.invite_url ? (
-                  <SecondaryButton label="Share link" onPress={() => shareInviteLink(invite.invite_url, invite.email)} icon={<Share2 color={theme.colors.text} size={16} />} compact />
-                ) : null}
-              </View>
-            ))}
-          </GlassCard>
-
-          <SectionTitle icon={<CalendarDays color={theme.colors.textMuted} size={18} />} label="Calendar contacts" color={theme.colors.textMuted} />
-          <GlassCard>
-            {calendarContacts.length === 0 ? <EmptyText text="No calendar contacts found yet. Sync Google Calendar from the Calendar tab." /> : calendarContacts.slice(0, 8).map((contact, index) => (
-              <View key={contact.email}>
-                {index > 0 ? <Divider /> : null}
-                <View style={styles.memberRow}>
-                  <View style={[styles.memberAvatar, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
-                    <Text style={[styles.memberInitial, { color: theme.colors.text }]}>{(contact.name?.[0] || contact.email[0] || '?').toUpperCase()}</Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.memberName, { color: theme.colors.text }]}>{contact.name || contact.email}</Text>
-                    <Text style={[styles.memberRole, { color: theme.colors.textMuted }]} numberOfLines={1}>{contact.email}</Text>
-                  </View>
-                  <PressScale testID={`invite-calendar-contact-${contact.email}`} onPress={() => openInvite(contact.email)} style={[styles.smallInvite, { borderColor: theme.colors.cardBorder }]}>
-                    <Text style={[styles.smallInviteText, { color: theme.colors.text }]}>Invite</Text>
+            <NavRow
+              tile={<IconTile bg={UI.lavender}><Lock color={UI.lavenderText} size={18} /></IconTile>}
+              title="Manage children"
+              subtitle={`${childMembers.length} child${childMembers.length === 1 ? '' : 'ren'} · kid PINs`}
+              right={<Chevron open={expandChildren} />}
+              onPress={() => setExpandChildren((v) => !v)}
+            />
+            {expandChildren ? (
+              <View style={styles.expandBox}>
+                {childMembers.length === 0 ? <Text style={styles.emptyText}>No children to secure.</Text> : childMembers.map((m) => (
+                  <PressScale key={m.member_id} testID={`set-pin-${m.member_id}`} onPress={() => setPinMember(m)} style={styles.inviteRow}>
+                    <MiniRow initial={m.name[0]?.toUpperCase()} name={m.name} sub={m.has_pin ? 'PIN set · tap to change' : 'No PIN · tap to add'} />
+                    {m.has_pin ? <Lock color={UI.orange} size={16} /> : <ChevronRight color={UI.muted} size={18} />}
                   </PressScale>
+                ))}
+              </View>
+            ) : null}
+            <Divider />
+
+            <NavRow
+              tile={<IconTile bg={UI.mint}><Link2 color={UI.mintText} size={18} /></IconTile>}
+              title="Connected apps"
+              subtitle="Google Calendar contacts"
+              right={<Chevron open={expandConnected} />}
+              onPress={() => setExpandConnected((v) => !v)}
+              divider={false}
+            />
+            {expandConnected ? (
+              <View style={styles.expandBox}>
+                {calendarContacts.length === 0 ? (
+                  <Text style={styles.emptyText}>No calendar contacts yet. Sync Google Calendar from the Calendar tab.</Text>
+                ) : calendarContacts.slice(0, 8).map((c) => (
+                  <PressScale key={c.email} testID={`invite-calendar-contact-${c.email}`} onPress={() => openInvite(c.email)} style={styles.inviteRow}>
+                    <MiniRow initial={(c.name?.[0] || c.email[0] || '?').toUpperCase()} name={c.name || c.email} sub={c.email} />
+                    <View style={styles.ghostBtn}><Text style={styles.ghostBtnText}>Invite</Text></View>
+                  </PressScale>
+                ))}
+              </View>
+            ) : null}
+          </Card>
+
+          {/* Preferences */}
+          <SectionTitle style={styles.sectionGap}>Preferences</SectionTitle>
+          <Card style={styles.cardPad}>
+            <NavRow
+              testID="settings-lang"
+              tile={<IconTile bg={UI.soft}><Globe color={UI.text} size={18} /></IconTile>}
+              title={t('language')}
+              right={<View style={styles.valueRow}><Text style={styles.valueText}>{LANG_NAMES[lang]}</Text><ChevronRight color={UI.muted} size={18} /></View>}
+              onPress={() => setShowLang(true)}
+              divider={false}
+            />
+          </Card>
+
+          {/* More / advanced */}
+          <SectionTitle style={styles.sectionGap}>More</SectionTitle>
+          <Card style={styles.cardPad}>
+            <NavRow
+              testID="settings-completed-history-toggle"
+              tile={<IconTile bg={UI.soft}><CalendarDays color={UI.text} size={18} /></IconTile>}
+              title="Completed history"
+              subtitle={`${completedCards.length} completed card${completedCards.length === 1 ? '' : 's'}`}
+              right={<Chevron open={expandHistory} />}
+              onPress={() => setExpandHistory((v) => !v)}
+            />
+            {expandHistory ? (
+              <View style={styles.expandBox}>
+                {completedCards.length === 0 ? <Text style={styles.emptyText}>No completed cards yet.</Text> : completedCards.slice(0, 8).map((card) => (
+                  <MiniRow key={card.card_id} initial={card.type === 'TASK' ? 'T' : card.type === 'RSVP' ? 'R' : 'S'} name={card.title} sub={`Done · ${card.assignee || 'Family'}`} />
+                ))}
+              </View>
+            ) : null}
+            <Divider />
+
+            <NavRow
+              tile={<IconTile bg={UI.soft}><Sparkles color={UI.text} size={18} /></IconTile>}
+              title="Plan &amp; usage"
+              subtitle="AI scans, vault storage & limits"
+              right={<Chevron open={expandUsage} />}
+              onPress={() => setExpandUsage((v) => !v)}
+              divider={false}
+            />
+            {expandUsage ? (
+              <View style={styles.statGrid}>
+                <StatBox label="Members" value={`${memberSlotsUsed}/${memberLimit || '∞'}`} />
+                <StatBox label="AI scans" value={entitlements ? `${entitlements.ai_scans_used}/${entitlements.ai_scans_limit}` : `${subscription?.ai_scans_used ?? 0}/${subscription?.limits?.ai_scans_per_month ?? '∞'}`} />
+                <StatBox label="Vault" value={formatBytes(entitlements?.vault_bytes_used ?? subscription?.vault_bytes_used)} />
+                <StatBox label="Weekly brief" value={weeklyBrief ? 'On' : 'Locked'} />
+                <View style={styles.testRow}>
+                  <PressScale onPress={testReminderNotification} style={styles.ghostBtnWide}><Text style={styles.ghostBtnText}>Test reminder</Text></PressScale>
+                  <PressScale onPress={testNewCardAlert} style={styles.ghostBtnWide}><Text style={styles.ghostBtnText}>Test alert</Text></PressScale>
                 </View>
               </View>
-            ))}
-          </GlassCard>
+            ) : null}
+          </Card>
 
-          <SectionTitle icon={<Lock color={theme.colors.textMuted} size={18} />} label="Kid PINs" color={theme.colors.textMuted} />
-          <GlassCard>
-            {childMembers.length === 0 ? <EmptyText text="No children to secure." /> : childMembers.map((member) => (
-              <PressScale key={member.member_id} testID={`set-pin-${member.member_id}`} onPress={() => setPinMember(member)} style={styles.memberRow}>
-                <View style={[styles.memberAvatar, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
-                  <Text style={[styles.memberInitial, { color: theme.colors.text }]}>{member.name[0]?.toUpperCase()}</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.memberName, { color: theme.colors.text }]}>{member.name}</Text>
-                  <Text style={[styles.memberRole, { color: theme.colors.textMuted }]}>{member.has_pin ? 'PIN set - tap to change' : 'No PIN - tap to add'}</Text>
-                </View>
-                {member.has_pin ? <Lock color={theme.colors.accent} size={18} /> : <ChevronRight color={theme.colors.textSoft} size={22} />}
-              </PressScale>
-            ))}
-          </GlassCard>
-
-
-            </>
-          ) : null}
-
-          </View>{/* end wideColRight */}
-          </View>{/* end wideRow */}
+          {/* Logout */}
           <PressScale testID="logout" onPress={doLogout} style={styles.logoutBtn}>
-            <LogOut color="#DC2626" size={22} />
+            <LogOut color={UI.danger} size={20} />
             <Text style={styles.logoutText}>{t('log_out')}</Text>
           </PressScale>
-          </View>{/* end maxW wrapper */}
-          <View style={{ height: 60 }} />
+
+          <View style={{ height: 70 }} />
         </ScrollView>
       </SafeAreaView>
 
@@ -537,30 +450,37 @@ export default function SettingsScreen() {
         }}
       />
 
-      <KeyboardAwareBottomSheet visible={showInvite} onClose={() => setShowInvite(false)} contentStyle={[styles.sheet, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
+      <KeyboardAwareBottomSheet visible={showInvite} onClose={() => setShowInvite(false)} contentStyle={styles.sheet}>
         <View style={styles.sheetHeader}>
-          <Text style={[styles.sheetTitle, { color: theme.colors.text }]}>Invite co-parent</Text>
-          <PressScale testID="close-invite" onPress={() => setShowInvite(false)} style={[styles.iconBtn, { borderColor: theme.colors.cardBorder }]}>
-            <X color={theme.colors.text} size={22} />
+          <Text style={styles.sheetTitle}>Invite co-parent</Text>
+          <PressScale testID="close-invite" onPress={() => setShowInvite(false)} style={styles.iconBtn}>
+            <X color={UI.text} size={22} />
           </PressScale>
         </View>
-        <Text style={[styles.sheetHelp, { color: theme.colors.textMuted }]}>They will receive a join link and can sign in to join your household.</Text>
+        <Text style={styles.sheetHelp}>They will receive a join link and can sign in to join your household.</Text>
         <TextInput
           testID="invite-email"
           value={inviteEmail}
           onChangeText={setInviteEmail}
           placeholder="partner@example.com"
-          placeholderTextColor={theme.colors.textSoft}
+          placeholderTextColor={UI.muted}
           autoCapitalize="none"
           autoCorrect={false}
           keyboardType="email-address"
-          style={[styles.input, { color: theme.colors.text, backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}
+          style={styles.input}
           returnKeyType="send"
         />
-        {inviteResult ? <Text style={[styles.note, { color: theme.colors.textMuted }]}>{inviteResult}</Text> : null}
-        {lastInviteUrl ? <SecondaryButton label="Share invite link" onPress={() => shareInviteLink(lastInviteUrl, inviteEmail)} icon={<Share2 color={theme.colors.text} size={18} />} /> : null}
+        {inviteResult ? <Text style={styles.note}>{inviteResult}</Text> : null}
+        {lastInviteUrl ? (
+          <PressScale onPress={() => shareInviteLink(lastInviteUrl, inviteEmail)} style={styles.expandAction}>
+            <Share2 color={UI.text} size={18} />
+            <Text style={styles.expandActionText}>Share invite link</Text>
+          </PressScale>
+        ) : null}
         <View style={styles.sheetFooter}>
-          <SecondaryButton label={t('cancel')} onPress={() => setShowInvite(false)} />
+          <PressScale onPress={() => setShowInvite(false)} style={styles.cancelBtn}>
+            <Text style={styles.cancelText}>{t('cancel')}</Text>
+          </PressScale>
           <PressScale
             testID="send-invite"
             onPress={async () => {
@@ -581,10 +501,10 @@ export default function SettingsScreen() {
               }
             }}
             disabled={sending || !inviteEmail.trim()}
-            style={[styles.primaryButton, { backgroundColor: theme.colors.primary }, (!inviteEmail.trim() || sending) && { opacity: 0.5 }]}
+            style={[styles.primaryButton, (!inviteEmail.trim() || sending) && { opacity: 0.5 }]}
           >
-            <Send color={theme.colors.primaryText} size={18} />
-            <Text style={[styles.primaryButtonText, { color: theme.colors.primaryText }]}>{sending ? 'Sending...' : 'Send invite'}</Text>
+            <Send color="#FFFFFF" size={18} />
+            <Text style={styles.primaryButtonText}>{sending ? 'Sending...' : 'Send invite'}</Text>
           </PressScale>
         </View>
       </KeyboardAwareBottomSheet>
@@ -592,128 +512,131 @@ export default function SettingsScreen() {
   );
 }
 
-function SectionTitle({ icon, label, color }: { icon: React.ReactNode; label: string; color: string }) {
-  return <View style={styles.sectionRow}>{icon}<Text style={[styles.sectionLabel, { color }]}>{label}</Text></View>;
+function Chevron({ open }: { open: boolean }) {
+  return open ? <ChevronDown color={UI.muted} size={18} /> : <ChevronRight color={UI.muted} size={18} />;
 }
 
 function Divider() {
-  const { theme } = useStore();
-  return <View style={[styles.divider, { backgroundColor: theme.colors.cardBorder }]} />;
+  return <View style={styles.divider} />;
 }
 
-function EmptyText({ text }: { text: string }) {
-  const { theme } = useStore();
-  return <Text style={[styles.emptyText, { color: theme.colors.textMuted }]}>{text}</Text>;
-}
-
-function StatBox({ label, value }: { label: string; value: string }) {
-  const { theme } = useStore();
+function NavRow({ tile, title, subtitle, right, onPress, testID, divider = true }: { tile: React.ReactNode; title: string; subtitle?: string; right?: React.ReactNode; onPress?: () => void; testID?: string; divider?: boolean }) {
   return (
-    <View style={[styles.statBox, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
-      <Text style={[styles.statValue, { color: theme.colors.text }]}>{value}</Text>
-      <Text style={[styles.statLabel, { color: theme.colors.textMuted }]}>{label}</Text>
-    </View>
-  );
-}
-
-function SecondaryButton({ label, onPress, testID, icon, compact }: { label: string; onPress: () => void; testID?: string; icon?: React.ReactNode; compact?: boolean }) {
-  const { theme } = useStore();
-  return (
-    <PressScale testID={testID} onPress={onPress} style={[styles.secondaryButton, compact && styles.secondaryButtonCompact, { borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.card }]}>
-      {icon}
-      <Text style={[styles.secondaryButtonText, { color: theme.colors.text }]}>{label}</Text>
+    <PressScale testID={testID} onPress={onPress} style={[styles.row, divider && styles.rowBorder]}>
+      {tile}
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={styles.rowTitle} numberOfLines={1}>{title}</Text>
+        {subtitle ? <Text style={styles.rowSub} numberOfLines={1}>{subtitle}</Text> : null}
+      </View>
+      {right !== undefined ? right : <ChevronRight color={UI.muted} size={18} />}
     </PressScale>
   );
 }
 
-function SettingSwitch({ title, description, value, onValueChange, disabled }: { title: string; description: string; value: boolean; onValueChange: () => void; disabled?: boolean }) {
-  const { theme } = useStore();
+function ToggleRow({ tile, title, subtitle, on, onPress, testID, disabled, divider = true }: { tile: React.ReactNode; title: string; subtitle?: string; on: boolean; onPress: () => void; testID?: string; disabled?: boolean; divider?: boolean }) {
   return (
-    <View style={styles.switchRow}>
-      <View style={{ flex: 1 }}>
-        <Text style={[styles.rowTitle, { color: theme.colors.text }]}>{title}</Text>
-        <Text style={[styles.rowDescription, { color: theme.colors.textMuted }]}>{description}</Text>
+    <PressScale testID={testID} onPress={onPress} disabled={disabled} style={[styles.row, divider && styles.rowBorder]}>
+      {tile}
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={styles.rowTitle} numberOfLines={1}>{title}</Text>
+        {subtitle ? <Text style={styles.rowSub} numberOfLines={1}>{subtitle}</Text> : null}
       </View>
-      <Switch
-        value={value}
-        disabled={disabled}
-        onValueChange={onValueChange}
-        trackColor={{ false: theme.colors.bgSoft, true: theme.colors.success }}
-        thumbColor="#FFFFFF"
-      />
+      <Toggle on={on} />
+    </PressScale>
+  );
+}
+
+function MiniRow({ initial, name, sub }: { initial?: string; name: string; sub?: string }) {
+  return (
+    <View style={styles.miniRow}>
+      <View style={styles.miniAvatar}><Text style={styles.miniInitial}>{initial || '?'}</Text></View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={styles.miniName} numberOfLines={1}>{name}</Text>
+        {sub ? <Text style={styles.miniSub} numberOfLines={1}>{sub}</Text> : null}
+      </View>
+    </View>
+  );
+}
+
+function StatBox({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.statBox}>
+      <Text style={styles.statValue}>{value}</Text>
+      <Text style={styles.statLabel}>{label}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  safe: { flex: 1 },
-  scroll: { paddingTop: 14, paddingBottom: 96 },
-  wideRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 20 },
-  wideColLeft: { flex: 1 },
-  wideColRight: { flex: 1 },
-  title: { fontFamily: 'Inter_800ExtraBold', fontSize: 30, lineHeight: 36, letterSpacing: -0.6 },
-  subtitle: { fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 19, marginTop: 3, marginBottom: 10 },
-  profileCard: { marginBottom: 10 },
-  profileRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  avatar: { width: 54, height: 54, borderRadius: 9999, borderWidth: 1 },
-  avatarFallback: { alignItems: 'center', justifyContent: 'center' },
-  avatarText: { fontFamily: 'Inter_800ExtraBold', fontSize: 20 },
-  name: { fontFamily: 'Inter_800ExtraBold', fontSize: 18, lineHeight: 23 },
-  emailRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 },
-  email: { fontFamily: 'Inter_500Medium', fontSize: 12, flex: 1 },
-  badge: { alignSelf: 'flex-start', marginTop: 8, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 9, paddingVertical: 5, borderRadius: 9999, borderWidth: 1 },
-  badgeText: { fontFamily: 'Inter_800ExtraBold', fontSize: 11 },
-  sectionRow: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 10, marginBottom: 5 },
-  sectionLabel: { fontFamily: 'Inter_800ExtraBold', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1 },
-  cardHeaderRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
-  cardTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 17, lineHeight: 22 },
-  cardSub: { fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 19, marginTop: 4 },
-  primaryPill: { minHeight: 48, borderRadius: 9999, paddingHorizontal: 18, alignItems: 'center', justifyContent: 'center' },
-  primaryPillText: { fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
-  statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 14 },
-  statBox: { width: '48%', minHeight: 66, borderRadius: 16, borderWidth: 1, padding: 12, justifyContent: 'center' },
-  statValue: { fontFamily: 'Inter_800ExtraBold', fontSize: 17, lineHeight: 21 },
-  statLabel: { fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 3 },
-  switchRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 4 },
-  rowTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 15, lineHeight: 21 },
-  rowDescription: { fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 19, marginTop: 4 },
-  testButtonRow: { flexDirection: 'row', gap: 10, flexWrap: 'wrap', marginTop: 14 },
-  note: { fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 19, marginTop: 12 },
-  preferenceHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
-  preferenceTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  rowValue: { fontFamily: 'Inter_700Bold', fontSize: 14 },
-  segmentWrap: { flexDirection: 'row', alignItems: 'center', gap: 22, borderBottomWidth: 1, marginBottom: 12 },
-  segmentBtn: { paddingTop: 4, paddingBottom: 10, borderBottomWidth: 2, borderBottomColor: 'transparent' },
-  segmentText: { fontSize: 14 },
-  navRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 44 },
-  navRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  divider: { height: 1, opacity: 0.9, marginVertical: 6 },
-  memberRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 6 },
-  memberAvatar: { width: 44, height: 44, borderRadius: 9999, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  memberInitial: { fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
-  memberName: { fontFamily: 'Inter_800ExtraBold', fontSize: 15, lineHeight: 20 },
-  memberRole: { fontFamily: 'Inter_500Medium', fontSize: 12, lineHeight: 17, marginTop: 2 },
-  secondaryButton: { minHeight: 48, borderRadius: 9999, borderWidth: 1, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, marginTop: 12 },
-  secondaryButtonCompact: { alignSelf: 'flex-start', minHeight: 40, marginTop: 8 },
-  secondaryButtonText: { fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
-  topGap: { marginTop: 18 },
-  inviteRow: { paddingVertical: 14 },
-  emptyText: { fontFamily: 'Inter_600SemiBold', fontSize: 13, lineHeight: 19 },
-  smallInvite: { borderWidth: 1, borderRadius: 9999, paddingHorizontal: 14, paddingVertical: 9 },
-  smallInviteText: { fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
-  logoutBtn: { minHeight: 58, borderRadius: 22, borderWidth: 1, borderColor: '#DC2626', alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 10, marginTop: 24 },
-  logoutText: { color: '#DC2626', fontFamily: 'Inter_800ExtraBold', fontSize: 17 },
-  sheet: { borderTopLeftRadius: 30, borderTopRightRadius: 30, borderWidth: 1, padding: 24, paddingBottom: 120 },
+  container: { flex: 1, backgroundColor: UI.bg },
+  scroll: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 60 },
+  headerGap: { marginTop: 18 },
+
+  profileCard: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16 },
+  avatar: { width: 52, height: 52, borderRadius: 99, backgroundColor: UI.orange, alignItems: 'center', justifyContent: 'center' },
+  avatarImg: { width: 52, height: 52, borderRadius: 99 },
+  avatarText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 21 },
+  profileName: { color: UI.text, fontFamily: 'Inter_800ExtraBold', fontSize: 18 },
+  profileEmail: { color: UI.muted, fontFamily: 'Inter_500Medium', fontSize: 13, marginTop: 2 },
+  adminBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6, alignSelf: 'flex-start', backgroundColor: UI.orangeSoft, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 99 },
+  adminBadgeText: { color: UI.orange, fontFamily: 'Inter_800ExtraBold', fontSize: 11 },
+
+  planCard: { flexDirection: 'row', alignItems: 'center', padding: 18, gap: 14 },
+  planCol: { flex: 1 },
+  planTitle: { color: UI.text, fontFamily: 'Inter_800ExtraBold', fontSize: 16 },
+  planSub: { color: UI.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, marginTop: 2 },
+  planDivider: { width: 1, height: 38, backgroundColor: UI.line },
+
+  sectionGap: { marginTop: 22, marginBottom: 10 },
+  cardPad: { paddingHorizontal: 16 },
+  segmentCard: { paddingHorizontal: 18, paddingTop: 6 },
+
+  row: { flexDirection: 'row', alignItems: 'center', gap: 13, paddingVertical: 13 },
+  rowBorder: { borderBottomWidth: 1, borderBottomColor: UI.line },
+  rowTitle: { color: UI.text, fontFamily: 'Inter_700Bold', fontSize: 15 },
+  rowSub: { color: UI.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, marginTop: 2 },
+  valueRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  valueText: { color: UI.muted, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
+
+  segmentWrap: { flexDirection: 'row', alignItems: 'center', gap: 26, borderBottomWidth: 1, borderBottomColor: UI.line },
+  segmentBtn: { paddingTop: 8, paddingBottom: 12, borderBottomWidth: 2, borderBottomColor: 'transparent' },
+  segmentText: { fontSize: 15 },
+
+  expandBox: { paddingBottom: 10, gap: 2 },
+  expandAction: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 10, paddingVertical: 12, borderRadius: 14, borderWidth: 1, borderColor: UI.line, backgroundColor: UI.soft },
+  expandActionText: { color: UI.text, fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
+  inviteRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  miniRow: { flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 8, flex: 1, minWidth: 0 },
+  miniAvatar: { width: 38, height: 38, borderRadius: 99, backgroundColor: UI.soft, alignItems: 'center', justifyContent: 'center' },
+  miniInitial: { color: UI.text, fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
+  miniName: { color: UI.text, fontFamily: 'Inter_700Bold', fontSize: 14 },
+  miniSub: { color: UI.muted, fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 1 },
+  ghostBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: UI.line, backgroundColor: UI.soft, borderRadius: 99, paddingHorizontal: 12, paddingVertical: 8 },
+  ghostBtnWide: { flex: 1, alignItems: 'center', borderWidth: 1, borderColor: UI.line, backgroundColor: UI.soft, borderRadius: 12, paddingVertical: 11 },
+  ghostBtnText: { color: UI.text, fontFamily: 'Inter_800ExtraBold', fontSize: 12.5 },
+
+  divider: { height: 1, backgroundColor: UI.line },
+  note: { color: UI.muted, fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 19, marginTop: 10 },
+  emptyText: { color: UI.muted, fontFamily: 'Inter_600SemiBold', fontSize: 13, lineHeight: 19, paddingVertical: 8 },
+
+  statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingTop: 4, paddingBottom: 10 },
+  statBox: { width: '48%', minHeight: 64, borderRadius: 14, borderWidth: 1, borderColor: UI.line, backgroundColor: UI.soft, padding: 12, justifyContent: 'center' },
+  statValue: { color: UI.text, fontFamily: 'Inter_800ExtraBold', fontSize: 16 },
+  statLabel: { color: UI.muted, fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 2 },
+  testRow: { flexDirection: 'row', gap: 10, width: '100%', marginTop: 2 },
+
+  logoutBtn: { marginTop: 26, minHeight: 54, borderRadius: 99, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, backgroundColor: UI.dangerSoft },
+  logoutText: { color: UI.danger, fontFamily: 'Inter_800ExtraBold', fontSize: 16 },
+
+  sheet: { backgroundColor: UI.card, borderTopLeftRadius: 30, borderTopRightRadius: 30, borderWidth: 1, borderColor: UI.line, padding: 24, paddingBottom: 120 },
   sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
-  sheetTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 24 },
-  iconBtn: { width: 42, height: 42, borderRadius: 9999, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  sheetHelp: { fontFamily: 'Inter_500Medium', fontSize: 15, lineHeight: 22, marginBottom: 18 },
-  input: { borderWidth: 1, borderRadius: 18, paddingHorizontal: 16, paddingVertical: 14, fontFamily: 'Inter_500Medium', fontSize: 16 },
+  sheetTitle: { color: UI.text, fontFamily: 'Inter_800ExtraBold', fontSize: 24 },
+  iconBtn: { width: 42, height: 42, borderRadius: 9999, borderWidth: 1, borderColor: UI.line, alignItems: 'center', justifyContent: 'center' },
+  sheetHelp: { color: UI.muted, fontFamily: 'Inter_500Medium', fontSize: 15, lineHeight: 22, marginBottom: 18 },
+  input: { borderWidth: 1, borderColor: UI.line, borderRadius: 18, paddingHorizontal: 16, paddingVertical: 14, fontFamily: 'Inter_500Medium', fontSize: 16, color: UI.text, backgroundColor: UI.soft },
   sheetFooter: { flexDirection: 'row', gap: 12, marginTop: 18 },
-  primaryButton: { minHeight: 54, borderRadius: 9999, paddingHorizontal: 18, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 9, flex: 1 },
-  primaryButtonText: { fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
+  cancelBtn: { flex: 1, minHeight: 54, borderRadius: 99, borderWidth: 1, borderColor: UI.line, alignItems: 'center', justifyContent: 'center' },
+  cancelText: { color: UI.muted, fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
+  primaryButton: { flex: 1, minHeight: 54, borderRadius: 99, paddingHorizontal: 18, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 9, backgroundColor: UI.orange },
+  primaryButtonText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
 });
-
-
-

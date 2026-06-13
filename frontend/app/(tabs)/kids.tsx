@@ -9,24 +9,23 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import {
   Plus,
   Star,
-  Gift,
   X,
   Trash2,
-  Sparkles,
   Lock,
-  UserPlus,
   Pencil,
   MinusCircle,
-  History,
-  ChevronDown,
+  Bell,
+  Bed,
+  BookOpen,
+  Utensils,
+  Check,
+  Minus,
 } from 'lucide-react-native';
 
-import { AmbientBackground } from '../../src/components/AmbientBackground';
-import { GlassCard } from '../../src/components/GlassCard';
 import { PressScale } from '../../src/components/PressScale';
 import { PinPadModal } from '../../src/components/PinPadModal';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
@@ -34,17 +33,13 @@ import AppToast, { ToastTone } from '../../src/components/AppToast';
 import EmptyState from '../../src/components/EmptyState';
 import ErrorState from '../../src/components/ErrorState';
 import LoadingOverlay from '../../src/components/LoadingOverlay';
+import { Card, IconTile, ProgressBar, ScreenHeader, UI } from '../../src/components/Kit';
 
 import { useStore } from '../../src/store';
-import { useBreakpoint } from '../../src/responsive';
 import { api, FamilyMember, Reward, StarTransaction } from '../../src/api';
 import { logger } from '../../src/logger';
 
-type ToastState = {
-  message: string;
-  tone: ToastTone;
-};
-
+type ToastState = { message: string; tone: ToastTone };
 type RewardSheetMode = 'create' | 'edit';
 type StarMode = 'add' | 'remove';
 
@@ -57,6 +52,14 @@ const REWARD_IDEAS = [
   { title: 'Game time', cost_stars: 60, icon: String.fromCodePoint(0x1F3AE) },
 ] as const;
 
+const QUICK_ADDS = [
+  { label: 'Made bed', amount: 2, Icon: Bed, bg: UI.mint, tint: UI.mintText },
+  { label: 'Read 20min', amount: 3, Icon: BookOpen, bg: UI.lavender, tint: UI.lavenderText },
+  { label: 'Set table', amount: 2, Icon: Utensils, bg: UI.orangeSoft, tint: UI.orange },
+];
+
+const CHILD_TINTS = [UI.orange, UI.lavenderText, UI.mintText, UI.goldText];
+
 const ICON_LIBRARY: { match: string[]; icons: string[] }[] = [
   { match: ['pizza', 'dinner', 'restaurant', 'food'], icons: [String.fromCodePoint(0x1F355), String.fromCodePoint(0x1F37D), String.fromCodePoint(0x1F389), String.fromCodePoint(0x1F354)] },
   { match: ['movie', 'cinema', 'film'], icons: [String.fromCodePoint(0x1F3AC), String.fromCodePoint(0x1F37F), String.fromCodePoint(0x1F39F), String.fromCodePoint(0x2B50)] },
@@ -65,7 +68,6 @@ const ICON_LIBRARY: { match: string[]; icons: string[] }[] = [
   { match: ['park', 'outside', 'walk', 'trip'], icons: [String.fromCodePoint(0x1F333), String.fromCodePoint(0x1F6DD), String.fromCodePoint(0x2600), String.fromCodePoint(0x1F6B2)] },
   { match: ['book', 'reading', 'story'], icons: [String.fromCodePoint(0x1F4DA), String.fromCodePoint(0x1F4D6), String.fromCodePoint(0x2728), String.fromCodePoint(0x1F3C5)] },
   { match: ['toy', 'lego', 'gift'], icons: [String.fromCodePoint(0x1F9F8), String.fromCodePoint(0x1F381), String.fromCodePoint(0x1FA80), String.fromCodePoint(0x2728)] },
-  { match: ['sleepover', 'friend', 'party'], icons: [String.fromCodePoint(0x1F389), String.fromCodePoint(0x1F3E0), String.fromCodePoint(0x1F9C3), String.fromCodePoint(0x2B50)] },
 ];
 
 function suggestedIcons(title: string) {
@@ -86,8 +88,8 @@ function formatActivityDate(value?: string | null) {
 }
 
 export default function KidsScreen() {
-  const { t, theme } = useStore();
-  const { isWide, px, maxW } = useBreakpoint();
+  const { t } = useStore();
+  const router = useRouter();
 
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [rewards, setRewards] = useState<Reward[]>([]);
@@ -96,9 +98,7 @@ export default function KidsScreen() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [selectedChild, setSelectedChild] = useState<string | null>(null);
-  const [kidsTab, setKidsTab] = useState<'stars' | 'rewards' | 'history'>('stars');
-
-  const [showAddMenu, setShowAddMenu] = useState(false);
+  const [kidsTab, setKidsTab] = useState<'rewards' | 'stars' | 'history'>('rewards');
 
   const [showChildSheet, setShowChildSheet] = useState(false);
   const [childName, setChildName] = useState('');
@@ -125,10 +125,11 @@ export default function KidsScreen() {
   const activeChild = children.find((c) => c.member_id === selectedChild) || children[0];
   const stars = activeChild?.stars || 0;
   const iconSuggestions = useMemo(() => suggestedIcons(rewardTitle), [rewardTitle]);
-  const affordableRewards = useMemo(() => rewards.filter((reward) => stars >= reward.cost_stars).length, [rewards, stars]);
-  const totalRewards = rewards.length;
-  const recentActivityCount = historyItems.length;
-  const latestActivity = historyItems[0];
+  const sortedRewards = useMemo(() => [...rewards].sort((a, b) => (stars / b.cost_stars) - (stars / a.cost_stars)), [rewards, stars]);
+  const weeklyStars = useMemo(() => {
+    const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    return historyItems.filter((h) => h.created_at && new Date(h.created_at).getTime() >= weekAgo).reduce((sum, h) => sum + h.delta, 0);
+  }, [historyItems]);
 
   const showToast = useCallback((message: string, tone: ToastTone = 'info') => {
     setToast({ message, tone });
@@ -146,9 +147,7 @@ export default function KidsScreen() {
       setHistoryItems(result);
     } catch (e: any) {
       const message = String(e?.message || e || '');
-      if (!message.includes('404')) {
-        logger.warn('Star history load failed:', message);
-      }
+      if (!message.includes('404')) logger.warn('Star history load failed:', message);
       setHistoryItems([]);
     } finally {
       setHistoryLoading(false);
@@ -185,21 +184,19 @@ export default function KidsScreen() {
   const showBlockingError = !loading && Boolean(errorMessage) && members.length === 0;
 
   const openChildSheet = () => {
-    setShowAddMenu(false);
     setChildName('');
     setChildStartingStars('0');
     setChildPin('');
-    setTimeout(() => setShowChildSheet(true), 180);
+    setShowChildSheet(true);
   };
 
   const openCreateReward = () => {
-    setShowAddMenu(false);
     setRewardMode('create');
     setEditingReward(null);
     setRewardTitle('');
     setRewardCost('50');
     setRewardIcon(DEFAULT_REWARD_ICON);
-    setTimeout(() => setShowRewardSheet(true), 180);
+    setShowRewardSheet(true);
   };
 
   const openEditReward = (reward: Reward) => {
@@ -232,26 +229,13 @@ export default function KidsScreen() {
     const starting = parseInt(childStartingStars || '0', 10) || 0;
     const pin = childPin.trim();
 
-    if (!name) {
-      showToast('Child name is required.', 'error');
-      return;
-    }
-    if (starting < 0) {
-      showToast('Starting stars cannot be negative.', 'error');
-      return;
-    }
-    if (pin && !/^\d{4}$/.test(pin)) {
-      showToast('PIN must be 4 digits.', 'error');
-      return;
-    }
+    if (!name) { showToast('Child name is required.', 'error'); return; }
+    if (starting < 0) { showToast('Starting stars cannot be negative.', 'error'); return; }
+    if (pin && !/^\d{4}$/.test(pin)) { showToast('PIN must be 4 digits.', 'error'); return; }
 
     setSaving(true);
     try {
-      const created = await api.createFamilyMember({
-        name,
-        starting_stars: starting,
-        pin: pin || undefined,
-      });
+      const created = await api.createFamilyMember({ name, starting_stars: starting, pin: pin || undefined });
       setMembers((prev) => [...prev, created]);
       setSelectedChild(created.member_id);
       setShowChildSheet(false);
@@ -270,19 +254,12 @@ export default function KidsScreen() {
     const cost = parseInt(rewardCost || '0', 10);
     const icon = rewardIcon || DEFAULT_REWARD_ICON;
 
-    if (!title || !cost || cost < 1) {
-      showToast('Reward title and star cost are required.', 'error');
-      return;
-    }
+    if (!title || !cost || cost < 1) { showToast('Reward title and star cost are required.', 'error'); return; }
 
     setSaving(true);
     try {
       if (rewardMode === 'edit' && editingReward) {
-        const updated = await api.updateReward(editingReward.reward_id, {
-          title,
-          cost_stars: cost,
-          icon,
-        });
+        const updated = await api.updateReward(editingReward.reward_id, { title, cost_stars: cost, icon });
         setRewards((prev) => prev.map((r) => (r.reward_id === updated.reward_id ? updated : r)));
         showToast('Reward updated.', 'success');
       } else {
@@ -315,10 +292,7 @@ export default function KidsScreen() {
   };
 
   const confirmRemoveReward = (reward: Reward) => {
-    if (Platform.OS === 'web') {
-      removeReward(reward);
-      return;
-    }
+    if (Platform.OS === 'web') { removeReward(reward); return; }
     Alert.alert('Delete reward', reward.title, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: () => removeReward(reward) },
@@ -327,31 +301,18 @@ export default function KidsScreen() {
 
   const adjustStars = async () => {
     if (!activeChild) return;
-
     const amount = parseInt(starAmount || '0', 10);
-    if (!amount || amount < 1) {
-      showToast('Enter a valid star amount.', 'error');
-      return;
-    }
+    if (!amount || amount < 1) { showToast('Enter a valid star amount.', 'error'); return; }
 
     const delta = starMode === 'add' ? amount : -amount;
-    if (stars + delta < 0) {
-      showToast('Stars cannot go below zero.', 'error');
-      return;
-    }
+    if (stars + delta < 0) { showToast('Stars cannot go below zero.', 'error'); return; }
 
     const reason = starReason.trim();
-    if (delta < 0 && !reason) {
-      showToast('Please add a reason for removing stars.', 'error');
-      return;
-    }
+    if (delta < 0 && !reason) { showToast('Please add a reason for removing stars.', 'error'); return; }
 
     setSaving(true);
     try {
-      const result = await api.adjustMemberStars(activeChild.member_id, {
-        delta,
-        reason: reason || (delta > 0 ? 'Parent added stars' : 'Parent removed stars'),
-      });
+      const result = await api.adjustMemberStars(activeChild.member_id, { delta, reason: reason || (delta > 0 ? 'Parent added stars' : 'Parent removed stars') });
       setMembers((prev) => prev.map((member) => (member.member_id === result.member.member_id ? result.member : member)));
       setShowStarSheet(false);
       showToast(delta > 0 ? `Added ${amount} stars.` : `Removed ${amount} stars.`, 'success');
@@ -361,6 +322,19 @@ export default function KidsScreen() {
       showToast(e?.message || 'Could not update stars.', 'error');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const quickAdd = async (reason: string, amount: number) => {
+    if (!activeChild) { showToast('Add or select a child first.', 'error'); return; }
+    try {
+      const result = await api.adjustMemberStars(activeChild.member_id, { delta: amount, reason });
+      setMembers((prev) => prev.map((member) => (member.member_id === result.member.member_id ? result.member : member)));
+      showToast(`Added ${amount} stars · ${reason}`, 'success');
+      await refreshHistory(activeChild.member_id);
+    } catch (e: any) {
+      logger.warn('Quick add failed:', e?.message || e);
+      showToast(e?.message || 'Could not add stars.', 'error');
     }
   };
 
@@ -379,39 +353,30 @@ export default function KidsScreen() {
 
   const redeem = async (reward: Reward) => {
     if (!activeChild) return;
-    if ((activeChild.stars || 0) < reward.cost_stars) {
-      showToast(t('not_enough_stars'), 'error');
-      return;
-    }
-    if (activeChild.has_pin) {
-      setPinPromptReward(reward);
-      return;
-    }
+    if ((activeChild.stars || 0) < reward.cost_stars) { showToast(t('not_enough_stars'), 'error'); return; }
+    if (activeChild.has_pin) { setPinPromptReward(reward); return; }
     await doRedeem(reward);
   };
 
+  const weeklyLine = weeklyStars > 0
+    ? `+${weeklyStars} stars this week — keep it up! ✨`
+    : weeklyStars < 0
+      ? `${weeklyStars} stars this week`
+      : `A fresh week of stars ahead ✨`;
+
   return (
-    <View style={[styles.container, { backgroundColor: theme.colors.bg }]}>
-      <AmbientBackground />
-      <SafeAreaView style={styles.safeArea} edges={['top']}>
-        <ScrollView contentContainerStyle={[styles.scroll, { paddingHorizontal: px }]} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-          <View style={{ maxWidth: maxW, alignSelf: 'center', width: '100%' }}>
-          <View style={styles.titleRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.title, { color: theme.colors.text }]}>Kids</Text>
-              <Text style={[styles.sub, { color: theme.colors.textMuted }]}>Rewards, routines & proud little wins.</Text>
-            </View>
-            <View>
-              <PressScale
-                testID="kids-add-menu"
-                onPress={() => setShowAddMenu(true)}
-                style={[styles.addBtn, { backgroundColor: theme.colors.primary, shadowColor: theme.colors.shadow }]}
-              >
-                <Plus color={theme.colors.primaryText} size={21} />
-                <ChevronDown color={theme.colors.primaryText} size={14} />
+    <View style={styles.container}>
+      <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+          <ScreenHeader
+            eyebrow="Family"
+            title="Kids"
+            right={
+              <PressScale onPress={() => router.navigate('/(tabs)/feed')} style={styles.bellWrap}>
+                <Bell color={UI.text} size={24} />
               </PressScale>
-            </View>
-          </View>
+            }
+          />
 
           {showBlockingError ? (
             <ErrorState title="Kids page unavailable" message={errorMessage || 'Could not load Kids page.'} onRetry={load} />
@@ -420,385 +385,243 @@ export default function KidsScreen() {
           ) : (
             <>
               {/* Child selector */}
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.childRow} keyboardShouldPersistTaps="handled">
-                {children.map((child) => {
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.childRow} style={styles.childScroll} keyboardShouldPersistTaps="handled">
+                {children.map((child, index) => {
                   const active = child.member_id === activeChild?.member_id;
+                  const tint = CHILD_TINTS[index % CHILD_TINTS.length];
                   return (
-                    <PressScale
-                      key={child.member_id}
-                      testID={`child-${child.member_id}`}
-                      onPress={() => setSelectedChild(child.member_id)}
-                      style={[
-                        styles.childBtn,
-                        { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder },
-                        active && { borderColor: theme.colors.accent, backgroundColor: theme.colors.accentSoft },
-                      ]}
-                    >
-                      <View style={[styles.childAvatar, { backgroundColor: theme.colors.bgSoft, borderColor: active ? theme.colors.accent : theme.colors.cardBorder }]}>
-                        <Text style={[styles.childInitial, { color: theme.colors.text }]}>{child.name[0]?.toUpperCase()}</Text>
-                        {child.has_pin ? (
-                          <View style={[styles.lockBadge, { backgroundColor: theme.colors.primary, borderColor: theme.colors.accent }]}>
-                            <Lock color={theme.colors.primaryText} size={9} />
-                          </View>
-                        ) : null}
+                    <PressScale key={child.member_id} testID={`child-${child.member_id}`} onPress={() => setSelectedChild(child.member_id)} style={[styles.childChip, active ? styles.childChipActive : styles.childChipIdle]}>
+                      <View style={[styles.childAvatar, { backgroundColor: tint }]}>
+                        <Text style={styles.childAvatarText}>{child.name[0]?.toUpperCase()}</Text>
+                        {child.has_pin ? <View style={styles.lockBadge}><Lock color="#FFFFFF" size={8} /></View> : null}
                       </View>
-                      <Text style={[styles.childName, { color: theme.colors.text }]}>{child.name}</Text>
-                      <View style={styles.childStarsRow}>
-                        <Star color={theme.colors.accent} size={12} fill={theme.colors.accent} />
-                        <Text style={[styles.childStars, { color: theme.colors.textMuted }]}>{child.stars}</Text>
-                      </View>
+                      <Text style={[styles.childChipText, { color: active ? '#FFFFFF' : UI.text }]}>{child.name}</Text>
                     </PressScale>
                   );
                 })}
+                <PressScale testID="kids-add-child" onPress={openChildSheet} style={[styles.childChip, styles.childChipIdle]}>
+                  <Plus color={UI.orange} size={18} />
+                  <Text style={[styles.childChipText, { color: UI.text }]}>Add child</Text>
+                </PressScale>
               </ScrollView>
 
-              {/* Tab switcher */}
-              <View style={styles.kidsTabRow}>
-                <PressScale
-                  testID="kids-tab-stars"
-                  onPress={() => setKidsTab('stars')}
-                  style={[styles.kidsTabBtn, { borderColor: theme.colors.cardBorder, backgroundColor: kidsTab === 'stars' ? theme.colors.accent : theme.colors.card }]}
-                >
-                  <Star color={kidsTab === 'stars' ? '#111' : theme.colors.textMuted} size={13} fill={kidsTab === 'stars' ? '#111' : 'none'} />
-                  <Text style={[styles.kidsTabText, { color: kidsTab === 'stars' ? '#111' : theme.colors.textMuted }]}>Stars</Text>
-                </PressScale>
-                <PressScale
-                  testID="kids-tab-rewards"
-                  onPress={() => setKidsTab('rewards')}
-                  style={[styles.kidsTabBtn, { borderColor: theme.colors.cardBorder, backgroundColor: kidsTab === 'rewards' ? theme.colors.primary : theme.colors.card }]}
-                >
-                  <Gift color={kidsTab === 'rewards' ? theme.colors.primaryText : theme.colors.textMuted} size={13} />
-                  <Text style={[styles.kidsTabText, { color: kidsTab === 'rewards' ? theme.colors.primaryText : theme.colors.textMuted }]}>Rewards</Text>
-                </PressScale>
-                <PressScale
-                  testID="kids-tab-history"
-                  onPress={() => { setKidsTab('history'); if (activeChild) refreshHistory(activeChild.member_id); }}
-                  style={[styles.kidsTabBtn, { borderColor: theme.colors.cardBorder, backgroundColor: kidsTab === 'history' ? theme.colors.card : theme.colors.card, borderWidth: kidsTab === 'history' ? 1.5 : 1 }]}
-                >
-                  <History color={kidsTab === 'history' ? theme.colors.text : theme.colors.textMuted} size={13} />
-                  <Text style={[styles.kidsTabText, { color: kidsTab === 'history' ? theme.colors.text : theme.colors.textMuted }]}>History</Text>
-                </PressScale>
-              </View>
-
-              {/* ── Stars tab ── */}
-              {kidsTab === 'stars' && activeChild && (
+              {activeChild ? (
                 <>
-                  <GlassCard style={styles.walletCard}>
-                    <View style={styles.walletRow}>
-                      <View style={styles.starCircleWrap}>
-                        <View style={styles.starCircleRing} />
-                        <Star color="#F59E0B" size={20} fill="#F59E0B" />
-                        <Text style={styles.starCircleValue}>{stars}</Text>
-                        <Text style={[styles.starCircleLabel, { color: theme.colors.textMuted }]}>{t('stars')}</Text>
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.walletChildLabel, { color: theme.colors.textMuted }]}>{activeChild.name.toUpperCase()}&apos;S WALLET</Text>
-                        <Text style={[styles.walletStarCount, { color: theme.colors.text }]}>{stars} {t('stars')}</Text>
-                        <Text style={[styles.walletReachText, { color: theme.colors.textMuted }]}>{affordableRewards} reward{affordableRewards !== 1 ? 's' : ''} within reach</Text>
-                        {latestActivity ? (
-                          <View style={[styles.walletLastAction, { backgroundColor: theme.colors.bgSoft }]}>
-                            <Text style={[styles.walletLastActionText, { color: theme.colors.textMuted }]}>
-                              Last action: {latestActivity.delta > 0 ? '+' : ''}{latestActivity.delta} stars · {latestActivity.reason || 'adjustment'}
-                            </Text>
-                          </View>
-                        ) : null}
-                      </View>
+                  {/* Wallet */}
+                  <Card style={styles.walletCard}>
+                    <View style={[styles.walletAvatar, { backgroundColor: UI.orangeSoft }]}>
+                      <Text style={[styles.walletAvatarText, { color: UI.orange }]}>{activeChild.name[0]?.toUpperCase()}</Text>
                     </View>
-                  </GlassCard>
-
-                  <View style={styles.walletActions}>
-                    <PressScale testID="kids-add-stars" onPress={() => openStarSheet('add', '5')} style={[styles.walletAddBtn, { backgroundColor: theme.colors.text }]}>
-                      <Plus color={theme.colors.bg} size={15} />
-                      <Text style={[styles.walletAddText, { color: theme.colors.bg }]}>Add stars</Text>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={styles.walletLabel}>{activeChild.name}&apos;s stars</Text>
+                      <Text style={styles.walletCount}>{stars}</Text>
+                    </View>
+                    <PressScale testID="kids-redeem" onPress={() => setKidsTab('rewards')} style={styles.redeemBtn}>
+                      <Text style={styles.redeemText}>Redeem</Text>
                     </PressScale>
-                    <PressScale testID="kids-remove-stars" onPress={() => openStarSheet('remove', '5')} style={[styles.walletRemoveBtn, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
-                      <MinusCircle color={theme.colors.textMuted} size={15} />
-                      <Text style={[styles.walletRemoveText, { color: theme.colors.textMuted }]}>Remove</Text>
-                    </PressScale>
-                  </View>
+                  </Card>
+                  <Text style={styles.weeklyLine}>{weeklyLine}</Text>
 
-                  <View style={styles.quickRow}>
-                    {['5', '10', '20'].map((amount) => (
-                      <PressScale key={amount} testID={`quick-stars-${amount}`} onPress={() => openStarSheet('add', amount)} style={[styles.quickBtn, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
-                        <Text style={[styles.quickText, { color: theme.colors.text }]}>+{amount}</Text>
+                  {/* Tabs */}
+                  <View style={styles.tabRow}>
+                    {(['rewards', 'stars', 'history'] as const).map((tab) => (
+                      <PressScale key={tab} testID={`kids-tab-${tab}`} onPress={() => { setKidsTab(tab); if (tab === 'history' && activeChild) refreshHistory(activeChild.member_id); }} style={[styles.tabBtn, kidsTab === tab && { borderBottomColor: UI.orange }]}>
+                        <Text style={[styles.tabText, { color: kidsTab === tab ? UI.text : UI.muted, fontFamily: kidsTab === tab ? 'Inter_800ExtraBold' : 'Inter_600SemiBold' }]}>
+                          {tab === 'rewards' ? 'Rewards' : tab === 'stars' ? 'Stars' : 'History'}
+                        </Text>
                       </PressScale>
                     ))}
-                    <PressScale testID="quick-stars-custom" onPress={() => openStarSheet('add', '')} style={[styles.quickBtn, { backgroundColor: 'rgba(249,115,22,0.1)', borderColor: 'rgba(249,115,22,0.3)' }]}>
-                      <Text style={[styles.quickText, { color: theme.colors.accent }]}>Other</Text>
-                    </PressScale>
                   </View>
 
-                  {rewards.filter((r) => stars >= r.cost_stars).length > 0 && (
+                  {/* Rewards tab */}
+                  {kidsTab === 'rewards' && (
                     <>
-                      <Text style={[styles.reachLabel, { color: theme.colors.textMuted }]}>REWARDS IN REACH</Text>
-                      {rewards.filter((r) => stars >= r.cost_stars).slice(0, 2).map((reward) => {
-                        const progressWidth = `${Math.min(100, Math.round((stars / reward.cost_stars) * 100))}%`;
-                        return (
-                          <View key={reward.reward_id} style={[styles.reachCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.accent }]}>
-                            <Text style={styles.reachCardIcon}>{reward.icon || DEFAULT_REWARD_ICON}</Text>
-                            <View style={{ flex: 1, gap: 4 }}>
-                              <Text style={[styles.reachCardTitle, { color: theme.colors.text }]} numberOfLines={1}>{reward.title}</Text>
-                              <View style={[styles.rewardProgressTrack, { backgroundColor: theme.colors.bgSoft }]}>
-                                <View style={[styles.rewardProgressFill, { width: progressWidth as any, backgroundColor: theme.colors.success }]} />
+                      <Text style={styles.blockLabel}>Quick add</Text>
+                      <View style={styles.quickAddRow}>
+                        {QUICK_ADDS.map((q) => (
+                          <PressScale key={q.label} testID={`quick-add-${q.label}`} onPress={() => quickAdd(q.label, q.amount)} style={styles.quickAddChip}>
+                            <IconTile bg={q.bg} size={30} radius={9}><q.Icon color={q.tint} size={15} /></IconTile>
+                            <Text style={styles.quickAddText} numberOfLines={1}>{q.label}</Text>
+                            <Text style={styles.quickAddAmt}>+{q.amount}</Text>
+                          </PressScale>
+                        ))}
+                      </View>
+
+                      <View style={styles.blockHead}>
+                        <Text style={styles.blockTitle}>Rewards in reach</Text>
+                        <PressScale testID="kids-add-reward" onPress={openCreateReward} style={styles.newLink}>
+                          <Plus color={UI.orange} size={14} />
+                          <Text style={styles.newLinkText}>New</Text>
+                        </PressScale>
+                      </View>
+                      {rewards.length === 0 ? (
+                        <Card style={styles.emptyRewards}>
+                          <Text style={styles.emptyRewardsText}>{t('no_rewards')}</Text>
+                          <PressScale testID="kids-add-reward-empty" onPress={openCreateReward} style={styles.emptyRewardsBtn}>
+                            <Plus color="#FFFFFF" size={16} />
+                            <Text style={styles.emptyRewardsBtnText}>Add reward</Text>
+                          </PressScale>
+                        </Card>
+                      ) : (
+                        <Card style={styles.cardPad}>
+                          {sortedRewards.slice(0, 5).map((reward, index, arr) => {
+                            const pct = Math.min(100, Math.round((stars / reward.cost_stars) * 100));
+                            const affordable = stars >= reward.cost_stars;
+                            return (
+                              <View key={reward.reward_id} style={[styles.rewardRow, index < arr.length - 1 && styles.rewardRowBorder]}>
+                                <IconTile bg={affordable ? UI.orangeSoft : UI.soft} size={42} radius={13}>
+                                  <Text style={styles.rewardEmoji}>{reward.icon || DEFAULT_REWARD_ICON}</Text>
+                                </IconTile>
+                                <View style={{ flex: 1, minWidth: 0 }}>
+                                  <View style={styles.rewardTopRow}>
+                                    <Text style={styles.rewardTitle} numberOfLines={1}>{reward.title}</Text>
+                                    <Text style={[styles.rewardCount, affordable && { color: UI.mintText }]}>{stars} / {reward.cost_stars}</Text>
+                                  </View>
+                                  <View style={{ marginTop: 8 }}>
+                                    <ProgressBar pct={pct} color={affordable ? UI.mintText : UI.orange} />
+                                  </View>
+                                </View>
+                                {affordable ? (
+                                  <PressScale testID={`redeem-reach-${reward.reward_id}`} onPress={() => redeem(reward)} style={styles.rewardRedeem}>
+                                    <Text style={styles.rewardRedeemText}>{t('redeem')}</Text>
+                                  </PressScale>
+                                ) : (
+                                  <PressScale testID={`edit-reward-${reward.reward_id}`} onPress={() => openEditReward(reward)} style={styles.rewardEdit}>
+                                    <Pencil color={UI.muted} size={14} />
+                                  </PressScale>
+                                )}
                               </View>
-                            </View>
-                            <PressScale testID={`redeem-reach-${reward.reward_id}`} onPress={() => redeem(reward)} style={[styles.reachRedeemBtn, { backgroundColor: theme.colors.primary }]}>
-                              <Text style={[styles.reachRedeemText, { color: theme.colors.primaryText }]}>{t('redeem')}</Text>
-                            </PressScale>
-                          </View>
-                        );
-                      })}
+                            );
+                          })}
+                        </Card>
+                      )}
+
+                      <Text style={styles.blockLabel}>Quick reward ideas</Text>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.ideaRow} style={styles.ideaScroll}>
+                        {REWARD_IDEAS.map((idea) => (
+                          <PressScale key={idea.title} testID={idea.title} onPress={() => { setRewardMode('create'); setEditingReward(null); setRewardTitle(idea.title); setRewardCost(String(idea.cost_stars)); setRewardIcon(idea.icon); setShowRewardSheet(true); }} style={styles.ideaChip}>
+                            <Text style={styles.ideaEmoji}>{idea.icon}</Text>
+                            <Text style={styles.ideaTitle} numberOfLines={1}>{idea.title}</Text>
+                            <Text style={styles.ideaCost}>{idea.cost_stars} {t('stars')}</Text>
+                          </PressScale>
+                        ))}
+                      </ScrollView>
+
+                      <RecentActivity items={historyItems.slice(0, 4)} loading={historyLoading} />
                     </>
                   )}
+
+                  {/* Stars tab */}
+                  {kidsTab === 'stars' && (
+                    <>
+                      <View style={styles.starActions}>
+                        <PressScale testID="kids-add-stars" onPress={() => openStarSheet('add', '5')} style={styles.addStarsBtn}>
+                          <Plus color="#FFFFFF" size={16} />
+                          <Text style={styles.addStarsText}>Add stars</Text>
+                        </PressScale>
+                        <PressScale testID="kids-remove-stars" onPress={() => openStarSheet('remove', '5')} style={styles.removeStarsBtn}>
+                          <MinusCircle color={UI.muted} size={16} />
+                          <Text style={styles.removeStarsText}>Remove</Text>
+                        </PressScale>
+                      </View>
+                      <View style={styles.quickRow}>
+                        {['5', '10', '20'].map((amount) => (
+                          <PressScale key={amount} testID={`quick-stars-${amount}`} onPress={() => openStarSheet('add', amount)} style={styles.quickStarBtn}>
+                            <Text style={styles.quickStarText}>+{amount}</Text>
+                          </PressScale>
+                        ))}
+                        <PressScale testID="quick-stars-custom" onPress={() => openStarSheet('add', '')} style={[styles.quickStarBtn, { backgroundColor: UI.orangeSoft, borderColor: UI.orange }]}>
+                          <Text style={[styles.quickStarText, { color: UI.orange }]}>Other</Text>
+                        </PressScale>
+                      </View>
+                      <RecentActivity items={historyItems.slice(0, 6)} loading={historyLoading} />
+                    </>
+                  )}
+
+                  {/* History tab */}
+                  {kidsTab === 'history' && (
+                    <RecentActivity items={historyItems} loading={historyLoading} expanded />
+                  )}
                 </>
-              )}
-
-              {/* ── Rewards tab ── */}
-              {kidsTab === 'rewards' && (
-                <View style={[styles.rewardShopShell, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
-                  <View style={styles.rewardShopHeaderCard}>
-                    <View style={[styles.rewardShopBadge, { backgroundColor: theme.colors.accentSoft, borderColor: theme.colors.cardBorder }]}>
-                      <Gift color={theme.colors.accent} size={18} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.rewardShopTitle, { color: theme.colors.text }]}>Reward Shop</Text>
-                      <Text style={[styles.rewardShopSubtitle, { color: theme.colors.textMuted }]}>Beautiful little goals to keep good habits exciting.</Text>
-                    </View>
-                    <View style={[styles.rewardShopCountPill, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
-                      <Star color={theme.colors.accent} size={12} fill={theme.colors.accent} />
-                      <Text style={[styles.rewardShopCountText, { color: theme.colors.text }]}>{affordableRewards}/{totalRewards}</Text>
-                    </View>
-                  </View>
-
-                  <Text style={[styles.rewardIdeasSub, { color: theme.colors.textMuted }]}>Quick reward ideas</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rewardIdeaGrid}>
-                    {REWARD_IDEAS.map((idea) => (
-                      <PressScale key={idea.title} testID={idea.title} onPress={() => { setRewardMode('create'); setEditingReward(null); setRewardTitle(idea.title); setRewardCost(String(idea.cost_stars)); setRewardIcon(idea.icon); setShowRewardSheet(true); }} style={[styles.rewardIdeaCard, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder, shadowColor: theme.colors.shadow }]}>
-                        <View style={[styles.rewardIdeaIconWrap, { backgroundColor: theme.colors.accentSoft, borderColor: theme.colors.cardBorder }]}>
-                          <Text style={styles.rewardIdeaIcon}>{idea.icon}</Text>
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <Text style={[styles.rewardIdeaTitle, { color: theme.colors.text }]} numberOfLines={1}>{idea.title}</Text>
-                          <View style={styles.rewardIdeaCostRow}>
-                            <Star color={theme.colors.accent} size={11} fill={theme.colors.accent} />
-                            <Text style={[styles.rewardIdeaCost, { color: theme.colors.textMuted }]}>{idea.cost_stars} {t('stars')}</Text>
-                          </View>
-                          <Text style={[styles.rewardIdeaHint, { color: theme.colors.textMuted }]}>Tap to create</Text>
-                        </View>
-                      </PressScale>
-                    ))}
-                  </ScrollView>
-
-                  {rewards.length === 0 ? (
-                    <EmptyState title={t('no_rewards')} message="Create a small reward to make chores feel more motivating." actionLabel="Add Reward" onAction={openCreateReward} />
-                  ) : (
-                    <View style={styles.rewardGrid}>
-                      {rewards.slice(0, 4).map((reward) => {
-                        const affordable = stars >= reward.cost_stars;
-                        const progressWidth = `${Math.min(100, Math.round((stars / reward.cost_stars) * 100))}%`;
-                        return (
-                          <View key={reward.reward_id} style={[styles.rewardGridCard, { backgroundColor: theme.colors.bgSoft, borderColor: affordable ? theme.colors.accent : theme.colors.cardBorder }]}>
-                            <View style={styles.rewardGridTop}>
-                              <Text style={styles.rewardGridIcon}>{reward.icon || DEFAULT_REWARD_ICON}</Text>
-                              <PressScale testID={`edit-reward-${reward.reward_id}`} onPress={() => openEditReward(reward)} style={[styles.rewardGridEditBtn, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
-                                <Pencil color={theme.colors.textMuted} size={12} />
-                              </PressScale>
-                            </View>
-                            <Text style={[styles.rewardGridTitle, { color: theme.colors.text }]} numberOfLines={2}>{reward.title}</Text>
-                            <View style={styles.rewardGridCostRow}>
-                              <Star color={theme.colors.accent} size={10} fill={theme.colors.accent} />
-                              <Text style={[styles.rewardGridCost, { color: theme.colors.textMuted }]}>{reward.cost_stars} {t('stars')}</Text>
-                            </View>
-                            <View style={[styles.rewardProgressTrack, { backgroundColor: theme.colors.card, marginVertical: 8 }]}>
-                              <View style={[styles.rewardProgressFill, { width: progressWidth as any, backgroundColor: affordable ? theme.colors.success : theme.colors.accent }]} />
-                            </View>
-                            <PressScale testID={`redeem-${reward.reward_id}`} onPress={() => redeem(reward)} disabled={!affordable} style={[styles.rewardGridRedeemBtn, { backgroundColor: affordable ? theme.colors.primary : theme.colors.card, borderWidth: 1, borderColor: affordable ? 'transparent' : theme.colors.cardBorder }, !affordable && { opacity: 0.6 }]}>
-                              <Text style={[styles.rewardGridRedeemText, { color: affordable ? theme.colors.primaryText : theme.colors.textMuted }]}>{affordable ? t('redeem') : 'Not yet'}</Text>
-                            </PressScale>
-                          </View>
-                        );
-                      })}
-                    </View>
-                  )}
-                </View>
-              )}
-
-              {/* ── History tab ── */}
-              {kidsTab === 'history' && (
-                <GlassCard style={styles.historyCard}>
-                  <View style={styles.sectionHeader}>
-                    <View style={styles.sectionRowInline}>
-                      <History color={theme.colors.textMuted} size={16} />
-                      <Text style={[styles.sectionLabel, { color: theme.colors.textMuted }]}>Recent activity</Text>
-                    </View>
-                  </View>
-                  {historyLoading ? (
-                    <Text style={[styles.emptyMini, { color: theme.colors.textMuted }]}>Loading activity…</Text>
-                  ) : historyItems.length === 0 ? (
-                    <Text style={[styles.emptyMini, { color: theme.colors.textMuted }]}>No activity yet.</Text>
-                  ) : (
-                    historyItems.map((item) => {
-                      const positive = item.delta > 0;
-                      return (
-                        <View key={item.transaction_id} style={styles.activityRow}>
-                          <Text style={[styles.activityDelta, { color: positive ? theme.colors.success : '#EF4444' }]}>
-                            {positive ? '+' : ''}{item.delta}
-                          </Text>
-                          <View style={{ flex: 1 }}>
-                            <Text style={[styles.activityReason, { color: theme.colors.text }]} numberOfLines={1}>{item.reason || 'Star adjustment'}</Text>
-                            <Text style={[styles.activityDate, { color: theme.colors.textMuted }]}>{formatActivityDate(item.created_at)}</Text>
-                          </View>
-                        </View>
-                      );
-                    })
-                  )}
-                </GlassCard>
-              )}
-
-              <View style={styles.tip}>
-                <Sparkles color={theme.colors.textMuted} size={14} />
-                <Text style={[styles.tipText, { color: theme.colors.textMuted }]}>Reward good habits - keep it fair</Text>
-              </View>
+              ) : null}
             </>
           )}
-          </View>{/* end maxW wrapper */}
 
-          <View style={{ height: 170 }} />
+          <View style={{ height: 120 }} />
         </ScrollView>
       </SafeAreaView>
 
-
-      <KeyboardAwareBottomSheet visible={showAddMenu} onClose={() => setShowAddMenu(false)} contentStyle={[styles.sheet, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
+      {/* Child sheet */}
+      <KeyboardAwareBottomSheet visible={showChildSheet} onClose={() => setShowChildSheet(false)} contentStyle={styles.sheet}>
         <View style={styles.sheetHeader}>
-          <Text style={[styles.sheetTitle, { color: theme.colors.text }]}>Add to Kids</Text>
-          <PressScale testID="close-add-menu" onPress={() => setShowAddMenu(false)} style={[styles.iconBtn, { borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}>
-            <X color={theme.colors.text} size={20} />
-          </PressScale>
+          <Text style={styles.sheetTitle}>Add Child</Text>
+          <PressScale testID="close-child-sheet" onPress={() => setShowChildSheet(false)} style={styles.iconBtn}><X color={UI.text} size={20} /></PressScale>
         </View>
-
-        <Text style={[styles.sheetHelp, { color: theme.colors.textMuted }]}>Choose what you want to create.</Text>
-
-        <PressScale testID="kids-add-child" onPress={openChildSheet} style={[styles.menuSheetButton, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
-          <View style={[styles.menuSheetIcon, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
-            <UserPlus color={theme.colors.text} size={22} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.menuSheetTitle, { color: theme.colors.text }]}>Add Child</Text>
-            <Text style={[styles.menuSheetSub, { color: theme.colors.textMuted }]}>Create another child profile with optional PIN.</Text>
-          </View>
-        </PressScale>
-
-        <PressScale testID="kids-add-reward" onPress={openCreateReward} style={[styles.menuSheetButton, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
-          <View style={[styles.menuSheetIcon, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
-            <Gift color={theme.colors.text} size={22} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.menuSheetTitle, { color: theme.colors.text }]}>Add Reward</Text>
-            <Text style={[styles.menuSheetSub, { color: theme.colors.textMuted }]}>Create a reward with suggested icons.</Text>
-          </View>
-        </PressScale>
-      </KeyboardAwareBottomSheet>
-
-      <KeyboardAwareBottomSheet visible={showChildSheet} onClose={() => setShowChildSheet(false)} contentStyle={[styles.sheet, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
-        <View style={styles.sheetHeader}>
-          <Text style={[styles.sheetTitle, { color: theme.colors.text }]}>Add Child</Text>
-          <PressScale testID="close-child-sheet" onPress={() => setShowChildSheet(false)} style={[styles.iconBtn, { borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}>
-            <X color={theme.colors.text} size={20} />
-          </PressScale>
-        </View>
-
-        <Text style={[styles.label, { color: theme.colors.textMuted }]}>Child name</Text>
-        <TextInput testID="child-name" value={childName} onChangeText={setChildName} placeholder="Ava" placeholderTextColor={theme.colors.textSoft} style={[styles.input, { color: theme.colors.text, backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]} returnKeyType="next" />
-
-        <Text style={[styles.label, { color: theme.colors.textMuted }]}>Starting stars</Text>
-        <TextInput testID="child-starting-stars" value={childStartingStars} onChangeText={(value) => setChildStartingStars(cleanNumber(value))} keyboardType="number-pad" placeholder="0" placeholderTextColor={theme.colors.textSoft} style={[styles.input, { color: theme.colors.text, backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]} />
-
-        <Text style={[styles.label, { color: theme.colors.textMuted }]}>PIN optional</Text>
-        <TextInput testID="child-pin" value={childPin} onChangeText={(value) => setChildPin(cleanNumber(value).slice(0, 4))} keyboardType="number-pad" secureTextEntry placeholder="4 digits" placeholderTextColor={theme.colors.textSoft} style={[styles.input, { color: theme.colors.text, backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]} />
-
+        <Text style={styles.label}>Child name</Text>
+        <TextInput testID="child-name" value={childName} onChangeText={setChildName} placeholder="Ava" placeholderTextColor={UI.muted} style={styles.input} returnKeyType="next" />
+        <Text style={styles.label}>Starting stars</Text>
+        <TextInput testID="child-starting-stars" value={childStartingStars} onChangeText={(v) => setChildStartingStars(cleanNumber(v))} keyboardType="number-pad" placeholder="0" placeholderTextColor={UI.muted} style={styles.input} />
+        <Text style={styles.label}>PIN optional</Text>
+        <TextInput testID="child-pin" value={childPin} onChangeText={(v) => setChildPin(cleanNumber(v).slice(0, 4))} keyboardType="number-pad" secureTextEntry placeholder="4 digits" placeholderTextColor={UI.muted} style={styles.input} />
         <View style={styles.sheetFooter}>
-          <PressScale testID="cancel-child" onPress={() => setShowChildSheet(false)} style={[styles.cancelBtn, { borderColor: theme.colors.cardBorder }]}>
-            <Text style={[styles.cancelText, { color: theme.colors.textMuted }]}>{t('cancel')}</Text>
-          </PressScale>
-          <PressScale testID="save-child" onPress={createChild} disabled={saving || !childName.trim()} style={[styles.saveBtn, { backgroundColor: theme.colors.primary }, (!childName.trim() || saving) && { opacity: 0.5 }]}>
-            <Text style={[styles.saveText, { color: theme.colors.primaryText }]}>{saving ? '...' : 'Save Child'}</Text>
-          </PressScale>
+          <PressScale testID="cancel-child" onPress={() => setShowChildSheet(false)} style={styles.cancelBtn}><Text style={styles.cancelText}>{t('cancel')}</Text></PressScale>
+          <PressScale testID="save-child" onPress={createChild} disabled={saving || !childName.trim()} style={[styles.saveBtn, (!childName.trim() || saving) && { opacity: 0.5 }]}><Text style={styles.saveText}>{saving ? '...' : 'Save Child'}</Text></PressScale>
         </View>
       </KeyboardAwareBottomSheet>
 
-      <KeyboardAwareBottomSheet visible={showRewardSheet} onClose={closeRewardSheet} contentStyle={[styles.sheet, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
+      {/* Reward sheet */}
+      <KeyboardAwareBottomSheet visible={showRewardSheet} onClose={closeRewardSheet} contentStyle={styles.sheet}>
         <View style={styles.sheetHeader}>
-          <Text style={[styles.sheetTitle, { color: theme.colors.text }]}>{rewardMode === 'edit' ? 'Edit Reward' : 'Add Reward'}</Text>
-          <PressScale testID="close-reward" onPress={closeRewardSheet} style={[styles.iconBtn, { borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}>
-            <X color={theme.colors.text} size={20} />
-          </PressScale>
+          <Text style={styles.sheetTitle}>{rewardMode === 'edit' ? 'Edit Reward' : 'Add Reward'}</Text>
+          <PressScale testID="close-reward" onPress={closeRewardSheet} style={styles.iconBtn}><X color={UI.text} size={20} /></PressScale>
         </View>
-
-        <Text style={[styles.label, { color: theme.colors.textMuted }]}>Reward title</Text>
-        <TextInput testID="reward-title" value={rewardTitle} onChangeText={setRewardTitle} placeholder="Pizza Night" placeholderTextColor={theme.colors.textSoft} style={[styles.input, { color: theme.colors.text, backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]} returnKeyType="next" />
-
-        <Text style={[styles.label, { color: theme.colors.textMuted }]}>Suggested icon</Text>
-        <View style={styles.iconSuggestionRow}>
+        <Text style={styles.label}>Reward title</Text>
+        <TextInput testID="reward-title" value={rewardTitle} onChangeText={setRewardTitle} placeholder="Pizza Night" placeholderTextColor={UI.muted} style={styles.input} returnKeyType="next" />
+        <Text style={styles.label}>Suggested icon</Text>
+        <View style={styles.iconRow}>
           {iconSuggestions.map((icon) => (
-            <PressScale key={icon} testID={`reward-icon-${icon}`} onPress={() => setRewardIcon(icon)} style={[styles.iconChip, { backgroundColor: rewardIcon === icon ? theme.colors.accentSoft : theme.colors.bgSoft, borderColor: rewardIcon === icon ? theme.colors.accent : theme.colors.cardBorder }]}>
+            <PressScale key={icon} testID={`reward-icon-${icon}`} onPress={() => setRewardIcon(icon)} style={[styles.iconChip, { backgroundColor: rewardIcon === icon ? UI.orangeSoft : UI.soft, borderColor: rewardIcon === icon ? UI.orange : UI.line }]}>
               <Text style={styles.iconChipText}>{icon}</Text>
             </PressScale>
           ))}
         </View>
-
-        <Text style={[styles.label, { color: theme.colors.textMuted }]}>Cost in stars</Text>
-        <TextInput testID="reward-cost" value={rewardCost} onChangeText={(value) => setRewardCost(cleanNumber(value))} keyboardType="number-pad" placeholder="50" placeholderTextColor={theme.colors.textSoft} style={[styles.input, { color: theme.colors.text, backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]} />
-
+        <Text style={styles.label}>Cost in stars</Text>
+        <TextInput testID="reward-cost" value={rewardCost} onChangeText={(v) => setRewardCost(cleanNumber(v))} keyboardType="number-pad" placeholder="50" placeholderTextColor={UI.muted} style={styles.input} />
         <View style={styles.sheetFooter}>
           {rewardMode === 'edit' && editingReward ? (
-            <PressScale testID="delete-reward" onPress={() => confirmRemoveReward(editingReward)} style={[styles.deleteBtn, { borderColor: 'rgba(239,68,68,0.35)', backgroundColor: 'rgba(239,68,68,0.10)' }]}>
-              <Trash2 color="#EF4444" size={17} />
+            <PressScale testID="delete-reward" onPress={() => confirmRemoveReward(editingReward)} style={styles.deleteBtn}>
+              <Trash2 color={UI.danger} size={17} />
               <Text style={styles.deleteText}>Delete</Text>
             </PressScale>
           ) : (
-            <PressScale testID="cancel-reward" onPress={closeRewardSheet} style={[styles.cancelBtn, { borderColor: theme.colors.cardBorder }]}>
-              <Text style={[styles.cancelText, { color: theme.colors.textMuted }]}>{t('cancel')}</Text>
-            </PressScale>
+            <PressScale testID="cancel-reward" onPress={closeRewardSheet} style={styles.cancelBtn}><Text style={styles.cancelText}>{t('cancel')}</Text></PressScale>
           )}
-
-          <PressScale testID="save-reward" onPress={saveReward} disabled={saving || !rewardTitle.trim()} style={[styles.saveBtn, { backgroundColor: theme.colors.primary }, (!rewardTitle.trim() || saving) && { opacity: 0.5 }]}>
-            <Text style={[styles.saveText, { color: theme.colors.primaryText }]}>{saving ? '...' : t('save')}</Text>
-          </PressScale>
+          <PressScale testID="save-reward" onPress={saveReward} disabled={saving || !rewardTitle.trim()} style={[styles.saveBtn, (!rewardTitle.trim() || saving) && { opacity: 0.5 }]}><Text style={styles.saveText}>{saving ? '...' : t('save')}</Text></PressScale>
         </View>
       </KeyboardAwareBottomSheet>
 
-      <KeyboardAwareBottomSheet visible={showStarSheet} onClose={() => setShowStarSheet(false)} contentStyle={[styles.sheet, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
+      {/* Star sheet */}
+      <KeyboardAwareBottomSheet visible={showStarSheet} onClose={() => setShowStarSheet(false)} contentStyle={styles.sheet}>
         <View style={styles.sheetHeader}>
-          <Text style={[styles.sheetTitle, { color: theme.colors.text }]}>{starMode === 'add' ? 'Add stars' : 'Remove stars'}</Text>
-          <PressScale testID="close-stars" onPress={() => setShowStarSheet(false)} style={[styles.iconBtn, { borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}>
-            <X color={theme.colors.text} size={20} />
-          </PressScale>
+          <Text style={styles.sheetTitle}>{starMode === 'add' ? 'Add stars' : 'Remove stars'}</Text>
+          <PressScale testID="close-stars" onPress={() => setShowStarSheet(false)} style={styles.iconBtn}><X color={UI.text} size={20} /></PressScale>
         </View>
-
-        <Text style={[styles.sheetHelp, { color: theme.colors.textMuted }]}>For {activeChild?.name || 'selected child'}</Text>
-
+        <Text style={styles.sheetHelp}>For {activeChild?.name || 'selected child'}</Text>
         <View style={styles.modeRow}>
-          <PressScale testID="mode-add-stars" onPress={() => setStarMode('add')} style={[styles.modeBtn, { backgroundColor: starMode === 'add' ? theme.colors.primary : theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
-            <Text style={[styles.modeText, { color: starMode === 'add' ? theme.colors.primaryText : theme.colors.textMuted }]}>Add</Text>
+          <PressScale testID="mode-add-stars" onPress={() => setStarMode('add')} style={[styles.modeBtn, { backgroundColor: starMode === 'add' ? UI.text : UI.soft }]}>
+            <Text style={[styles.modeText, { color: starMode === 'add' ? '#FFFFFF' : UI.muted }]}>Add</Text>
           </PressScale>
-          <PressScale testID="mode-remove-stars" onPress={() => setStarMode('remove')} style={[styles.modeBtn, { backgroundColor: starMode === 'remove' ? theme.colors.primary : theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
-            <Text style={[styles.modeText, { color: starMode === 'remove' ? theme.colors.primaryText : theme.colors.textMuted }]}>- Stars</Text>
+          <PressScale testID="mode-remove-stars" onPress={() => setStarMode('remove')} style={[styles.modeBtn, { backgroundColor: starMode === 'remove' ? UI.text : UI.soft }]}>
+            <Text style={[styles.modeText, { color: starMode === 'remove' ? '#FFFFFF' : UI.muted }]}>Remove</Text>
           </PressScale>
         </View>
-
-        <Text style={[styles.label, { color: theme.colors.textMuted }]}>Amount</Text>
-        <TextInput testID="star-amount" value={starAmount} onChangeText={(value) => setStarAmount(cleanNumber(value))} keyboardType="number-pad" placeholder="5" placeholderTextColor={theme.colors.textSoft} style={[styles.input, { color: theme.colors.text, backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]} />
-
-        <Text style={[styles.label, { color: theme.colors.textMuted }]}>Reason</Text>
-        <TextInput testID="star-reason" value={starReason} onChangeText={setStarReason} placeholder={starMode === 'add' ? 'Homework, chores, kindness...' : 'Reason for deduction'} placeholderTextColor={theme.colors.textSoft} style={[styles.input, { color: theme.colors.text, backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]} />
-
+        <Text style={styles.label}>Amount</Text>
+        <TextInput testID="star-amount" value={starAmount} onChangeText={(v) => setStarAmount(cleanNumber(v))} keyboardType="number-pad" placeholder="5" placeholderTextColor={UI.muted} style={styles.input} />
+        <Text style={styles.label}>Reason</Text>
+        <TextInput testID="star-reason" value={starReason} onChangeText={setStarReason} placeholder={starMode === 'add' ? 'Homework, chores, kindness...' : 'Reason for deduction'} placeholderTextColor={UI.muted} style={styles.input} />
         <View style={styles.sheetFooter}>
-          <PressScale testID="cancel-stars" onPress={() => setShowStarSheet(false)} style={[styles.cancelBtn, { borderColor: theme.colors.cardBorder }]}>
-            <Text style={[styles.cancelText, { color: theme.colors.textMuted }]}>{t('cancel')}</Text>
-          </PressScale>
-          <PressScale testID="save-stars" onPress={adjustStars} disabled={saving || !starAmount} style={[styles.saveBtn, { backgroundColor: theme.colors.primary }, (!starAmount || saving) && { opacity: 0.5 }]}>
-            <Text style={[styles.saveText, { color: theme.colors.primaryText }]}>{saving ? '...' : 'Save'}</Text>
-          </PressScale>
+          <PressScale testID="cancel-stars" onPress={() => setShowStarSheet(false)} style={styles.cancelBtn}><Text style={styles.cancelText}>{t('cancel')}</Text></PressScale>
+          <PressScale testID="save-stars" onPress={adjustStars} disabled={saving || !starAmount} style={[styles.saveBtn, (!starAmount || saving) && { opacity: 0.5 }]}><Text style={styles.saveText}>{saving ? '...' : 'Save'}</Text></PressScale>
         </View>
       </KeyboardAwareBottomSheet>
 
@@ -828,221 +651,137 @@ export default function KidsScreen() {
   );
 }
 
+function RecentActivity({ items, loading, expanded }: { items: StarTransaction[]; loading: boolean; expanded?: boolean }) {
+  return (
+    <>
+      <Text style={styles.blockLabel}>Recent activity</Text>
+      {loading ? (
+        <Text style={styles.emptyMini}>Loading activity…</Text>
+      ) : items.length === 0 ? (
+        <Card style={styles.cardPad}><Text style={styles.emptyMini}>No activity yet.</Text></Card>
+      ) : (
+        <Card style={styles.cardPad}>
+          {items.map((item, index) => {
+            const positive = item.delta > 0;
+            return (
+              <View key={item.transaction_id} style={[styles.activityRow, index < items.length - 1 && styles.activityRowBorder]}>
+                <IconTile bg={positive ? UI.mint : UI.dangerSoft} size={38} radius={11}>
+                  {positive ? <Check color={UI.mintText} size={17} /> : <Minus color={UI.danger} size={17} />}
+                </IconTile>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.activityReason} numberOfLines={1}>{item.reason || 'Star adjustment'}</Text>
+                  <Text style={styles.activityDate}>{formatActivityDate(item.created_at)}</Text>
+                </View>
+                <View style={styles.activityDeltaRow}>
+                  <Text style={[styles.activityDelta, { color: positive ? UI.mintText : UI.danger }]}>{positive ? '+' : ''}{item.delta}</Text>
+                  <Star color={UI.star} size={14} fill={UI.star} />
+                </View>
+              </View>
+            );
+          })}
+        </Card>
+      )}
+    </>
+  );
+}
+
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  safeArea: { flex: 1 },
-  scroll: { paddingTop: 14, paddingBottom: 168 },
-  wideRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 20 },
-  wideColLeft: { flex: 1 },
-  wideColRight: { flex: 1 },
-  kidsCompactToggle: {
-    borderWidth: 1,
-    borderRadius: 22,
-    paddingVertical: 15,
-    paddingHorizontal: 16,
-    marginTop: 12,
-  },
-  kidsCompactToggleTitle: {
-    fontFamily: 'Inter_800ExtraBold',
-    fontSize: 15,
-    lineHeight: 20,
-  },
-  kidsCompactToggleSub: {
-    fontFamily: 'Inter_500Medium',
-    fontSize: 12,
-    lineHeight: 17,
-    marginTop: 2,
-  },
-  kidsCompactToggleValue: {
-    fontFamily: 'Inter_800ExtraBold',
-    fontSize: 12,
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
-  },
+  container: { flex: 1, backgroundColor: UI.bg },
+  scroll: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 40 },
+  bellWrap: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
 
-  titleRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 16, marginTop: 4, zIndex: 5 },
-  title: { fontFamily: 'Inter_800ExtraBold', fontSize: 40, lineHeight: 44, letterSpacing: -1.0 },
-  sub: { fontFamily: 'Inter_500Medium', fontSize: 14, lineHeight: 20, marginTop: 4 },
-  addBtn: { minWidth: 60, height: 56, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 2, shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.12, shadowRadius: 16, elevation: 5 },
-  addMenu: { position: 'absolute', right: 0, top: 66, borderRadius: 24, borderWidth: 1, padding: 8, minWidth: 196, shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.12, shadowRadius: 22, elevation: 8, zIndex: 10 },
-  addMenuItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 13, borderRadius: 18 },
-  addMenuText: { fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
-  childRow: { gap: 12, paddingVertical: 6, paddingRight: 18, marginBottom: 0 },
-  childBtn: { alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, borderRadius: 26, borderWidth: 1, minWidth: 100, shadowColor: '#0F172A', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.08, shadowRadius: 16, elevation: 3 },
-  childAvatar: { width: 48, height: 48, borderRadius: 9999, borderWidth: 1, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
-  childInitial: { fontFamily: 'Inter_800ExtraBold', fontSize: 17 },
-  lockBadge: { position: 'absolute', right: -4, bottom: -4, width: 19, height: 19, borderRadius: 9999, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  childName: { fontFamily: 'Inter_700Bold', fontSize: 13 },
-  childStarsRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
-  childStars: { fontFamily: 'Inter_700Bold', fontSize: 13 },
-  hero: { position: 'relative', padding: 20, marginTop: 14, marginBottom: 14, borderRadius: 32, overflow: 'hidden', backgroundColor: '#172024', shadowColor: '#000', shadowOffset: { width: 0, height: 16 }, shadowOpacity: 0.18, shadowRadius: 24, elevation: 8 },
-  heroTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, zIndex: 2 },
-  heroLabel: { color: 'rgba(255,255,255,0.72)', fontFamily: 'Inter_700Bold', fontSize: 12, textTransform: 'uppercase', letterSpacing: 1.1 },
-  heroName: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 28, lineHeight: 32, letterSpacing: -0.8, marginTop: 6 },
-  pinPill: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)', backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 9999, paddingHorizontal: 11, paddingVertical: 7, zIndex: 2 },
-  pinText: { color: 'rgba(255,255,255,0.72)', fontFamily: 'Inter_700Bold', fontSize: 12 },
-  heroStars: { flexDirection: 'row', alignItems: 'center', gap: 9, marginTop: 18 },
-  heroCount: { fontFamily: 'Inter_800ExtraBold', fontSize: 58, lineHeight: 64, letterSpacing: -1 },
-  heroUnit: { fontFamily: 'Inter_600SemiBold', fontSize: 16 },
-  heroActions: { flexDirection: 'row', gap: 12, marginTop: 16, flexWrap: 'wrap', zIndex: 2 },
-  heroActionBtn: { flex: 1, minWidth: 132, minHeight: 50, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, paddingHorizontal: 16, backgroundColor: '#FFFFFF' },
-  heroActionBtnSecondary: { flex: 1, minWidth: 132, minHeight: 50, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)', backgroundColor: 'rgba(255,255,255,0.04)', paddingHorizontal: 16 },
-  heroActionText: { color: '#111827', fontFamily: 'Inter_800ExtraBold', fontSize: 15, textAlign: 'center' },
-  heroActionTextSecondary: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 15, textAlign: 'center' },
-  quickRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 9, marginBottom: 12 },
-  quickBtn: { flexGrow: 1, flexBasis: '22%', minWidth: 72, minHeight: 48, alignItems: 'center', justifyContent: 'center', borderRadius: 20, borderWidth: 1, paddingHorizontal: 10 },
-  quickText: { fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
-  heroGlowOne: { position: 'absolute', top: -60, right: -40, width: 180, height: 180, borderRadius: 9999, backgroundColor: 'rgba(255,255,255,0.06)' },
-  heroGlowTwo: { position: 'absolute', bottom: -36, left: -20, width: 150, height: 150, borderRadius: 9999, backgroundColor: 'rgba(245,158,11,0.10)' },
-  heroBadge: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#FFFFFF', paddingHorizontal: 13, paddingVertical: 8, borderRadius: 9999, zIndex: 2 },
-  heroBadgeText: { color: '#111827', fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
-  heroSubtext: { color: 'rgba(255,255,255,0.76)', fontFamily: 'Inter_500Medium', fontSize: 14, lineHeight: 20, marginTop: 6, maxWidth: 250 },
-  heroScoreRow: { flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 18, zIndex: 2 },
-  heroScoreCircle: { width: 108, height: 108, borderRadius: 9999, backgroundColor: 'rgba(255,255,255,0.03)', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  heroScoreRing: { position: 'absolute', width: 96, height: 96, borderRadius: 9999, borderWidth: 8, borderColor: 'rgba(255,255,255,0.14)' },
-  heroScoreArc: { position: 'absolute', width: 96, height: 96, borderRadius: 9999, borderTopWidth: 8, borderRightWidth: 8, borderTopColor: '#F59E0B', borderRightColor: '#F59E0B', borderLeftColor: 'transparent', borderBottomColor: 'transparent', transform: [{ rotate: '32deg' }] },
-  heroScoreValue: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 28, lineHeight: 31, marginTop: 8 },
-  heroScoreCaption: { color: 'rgba(255,255,255,0.62)', fontFamily: 'Inter_600SemiBold', fontSize: 12, marginTop: 2 },
-  heroInsightCol: { flex: 1, gap: 9 },
-  heroInsightCard: { backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', borderRadius: 18, paddingHorizontal: 13, paddingVertical: 10 },
-  heroInsightKicker: { color: 'rgba(255,255,255,0.58)', fontFamily: 'Inter_700Bold', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1 },
-  heroInsightValue: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 21, lineHeight: 24, marginTop: 4 },
-  heroInsightLabel: { color: 'rgba(255,255,255,0.68)', fontFamily: 'Inter_500Medium', fontSize: 12, lineHeight: 16, marginTop: 2 },
-  statRow: { flexDirection: 'row', gap: 12, marginBottom: 14 },
-  statCard: { flex: 1, borderWidth: 1, borderRadius: 22, padding: 14, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.06, shadowRadius: 16, elevation: 2 },
-  statEyebrow: { fontFamily: 'Inter_700Bold', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1.1 },
-  statValue: { fontFamily: 'Inter_800ExtraBold', fontSize: 26, lineHeight: 30, marginTop: 6 },
-  statLabel: { fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 18, marginTop: 4 },
-  historyCard: { marginBottom: 14 },
-  sectionHeader: { marginBottom: 10 },
-  sectionRowInline: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  sectionRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4, marginBottom: 10 },
-  sectionLabel: { fontFamily: 'Inter_800ExtraBold', fontSize: 13, textTransform: 'uppercase', letterSpacing: 1.2 },
-  emptyMini: { fontFamily: 'Inter_600SemiBold', fontSize: 14, lineHeight: 21 },
-  activityRow: { flexDirection: 'row', gap: 12, alignItems: 'center', paddingVertical: 8 },
-  activityDelta: { width: 48, fontFamily: 'Inter_800ExtraBold', fontSize: 17 },
-  activityReason: { fontFamily: 'Inter_700Bold', fontSize: 14 },
-  activityDate: { fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 2 },
-  tip: { flexDirection: 'row', alignItems: 'center', gap: 7, justifyContent: 'center', marginTop: 16 },
-  tipText: { fontFamily: 'Inter_600SemiBold', fontSize: 13 },
-  rewardShopShell: { borderWidth: 1, borderRadius: 32, padding: 16, marginTop: 6, marginBottom: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 14 }, shadowOpacity: 0.08, shadowRadius: 22, elevation: 4 },
-  rewardShopHeaderCard: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
-  rewardShopBadge: { width: 48, height: 48, borderRadius: 18, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  rewardShopTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 22, lineHeight: 27, letterSpacing: -0.4 },
-  rewardShopSubtitle: { fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 18, marginTop: 3 },
-  rewardShopCountPill: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 9999, borderWidth: 1, paddingHorizontal: 9, paddingVertical: 7 },
-  rewardShopCountText: { fontFamily: 'Inter_800ExtraBold', fontSize: 12 },
-  rewardIdeasSub: { fontFamily: 'Inter_700Bold', fontSize: 12, lineHeight: 16, marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.9 },
-  rewardIdeaGrid: { gap: 10, paddingRight: 10, paddingBottom: 2, marginBottom: 16 },
-  rewardIdeaCard: { width: 136, minHeight: 112, borderRadius: 22, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 12, alignItems: 'center', justifyContent: 'center', gap: 8, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.06, shadowRadius: 14, elevation: 2 },
-  rewardIdeaIconWrap: { width: 46, height: 46, borderRadius: 16, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  rewardIdeaIcon: { fontSize: 25 },
-  rewardIdeaTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 13, lineHeight: 17, textAlign: 'center' },
-  rewardIdeaCostRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, marginTop: 1 },
-  rewardIdeaCost: { fontFamily: 'Inter_700Bold', fontSize: 11 },
-  rewardIdeaHint: { fontFamily: 'Inter_600SemiBold', fontSize: 10, lineHeight: 13, marginTop: 1, textAlign: 'center' },  rewardList: { gap: 12 },
-  compactHero: { flexDirection: 'row', gap: 14, padding: 16, marginTop: 12, marginBottom: 14, borderRadius: 24, overflow: 'hidden' },
-  compactHeroLeft: { alignItems: 'center', justifyContent: 'center' },
-  compactScoreCircle: { width: 88, height: 88, borderRadius: 99, backgroundColor: 'rgba(255,255,255,0.03)', alignItems: 'center', justifyContent: 'center' },
-  compactScoreRing: { position: 'absolute', width: 80, height: 80, borderRadius: 99, borderWidth: 6, borderColor: 'rgba(255,255,255,0.14)' },
-  compactScoreArc: { position: 'absolute', width: 80, height: 80, borderRadius: 99, borderTopWidth: 6, borderRightWidth: 6, borderTopColor: '#F59E0B', borderRightColor: '#F59E0B', borderLeftColor: 'transparent', borderBottomColor: 'transparent', transform: [{ rotate: '32deg' }] },
-  compactScoreValue: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 22, lineHeight: 25, marginTop: 6 },
-  compactScoreCaption: { color: 'rgba(255,255,255,0.55)', fontFamily: 'Inter_600SemiBold', fontSize: 10, marginTop: 1 },
-  compactHeroRight: { flex: 1, gap: 8 },
-  compactHeroNameRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
-  compactHeroLabel: { color: 'rgba(255,255,255,0.55)', fontFamily: 'Inter_700Bold', fontSize: 10, textTransform: 'uppercase', letterSpacing: 1 },
-  compactHeroName: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 20, lineHeight: 24, letterSpacing: -0.5, marginTop: 2 },
-  compactInsightRow: { flexDirection: 'row', gap: 7 },
-  compactInsightCard: { flex: 1, backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 12, padding: 8 },
-  compactInsightKicker: { color: 'rgba(255,255,255,0.5)', fontFamily: 'Inter_700Bold', fontSize: 9, textTransform: 'uppercase', letterSpacing: 0.8 },
-  compactInsightValue: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 18, lineHeight: 21, marginTop: 3 },
-  compactInsightLabel: { color: 'rgba(255,255,255,0.55)', fontFamily: 'Inter_500Medium', fontSize: 10, marginTop: 1 },
-  compactHeroActions: { flexDirection: 'row', gap: 8 },
-  compactAddBtn: { flex: 1, minHeight: 38, backgroundColor: '#FFFFFF', borderRadius: 99, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5 },
-  compactAddText: { color: '#111827', fontFamily: 'Inter_800ExtraBold', fontSize: 12 },
-  compactRemoveBtn: { flex: 1, minHeight: 38, backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', borderRadius: 99, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5 },
-  compactRemoveText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 12 },
-  rewardGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  rewardGridCard: { width: '47.5%', borderWidth: 1, borderRadius: 18, padding: 12 },
-  rewardGridTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 },
-  rewardGridIcon: { fontSize: 26 },
-  rewardGridEditBtn: { width: 28, height: 28, borderRadius: 9, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  rewardGridTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 13, lineHeight: 17 },
-  rewardGridCostRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 3 },
-  rewardGridCost: { fontFamily: 'Inter_700Bold', fontSize: 11 },
-  rewardGridRedeemBtn: { borderRadius: 10, paddingVertical: 8, alignItems: 'center', justifyContent: 'center', marginTop: 2 },
-  rewardGridRedeemText: { fontFamily: 'Inter_800ExtraBold', fontSize: 12 },
-  rewardCard: { padding: 16, borderRadius: 28, borderWidth: 1 },
-  rewardTopRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
-  rewardIconWrap: { width: 58, height: 58, borderRadius: 20, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  rewardIcon: { fontSize: 30 },
-  rewardTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 18, lineHeight: 23 },
-  rewardMetaRow: { marginTop: 8, gap: 7 },
-  rewardCostPill: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 9999, paddingHorizontal: 10, paddingVertical: 6 },
-  rewardCost: { fontFamily: 'Inter_700Bold', fontSize: 12 },
-  rewardAvailability: { fontFamily: 'Inter_700Bold', fontSize: 12, lineHeight: 16 },
-  rewardProgressTrack: { height: 8, borderRadius: 9999, overflow: 'hidden', marginTop: 16 },
-  rewardProgressFill: { height: 8, borderRadius: 9999 },
-  rewardActions: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 15 },
-  redeemBtn: { flex: 1, minHeight: 46, borderRadius: 18, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14 },
-  redeemText: { fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
-  editBtn: { minHeight: 46, borderRadius: 18, borderWidth: 1, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
-  editText: { fontFamily: 'Inter_800ExtraBold', fontSize: 13 },  sheet: { borderTopLeftRadius: 34, borderTopRightRadius: 34, borderWidth: 1, padding: 26, paddingBottom: 140 },
+  childScroll: { marginTop: 18, marginHorizontal: -20 },
+  childRow: { gap: 10, paddingHorizontal: 20 },
+  childChip: { flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 99 },
+  childChipActive: { backgroundColor: UI.text },
+  childChipIdle: { backgroundColor: UI.card, borderWidth: 1, borderColor: UI.line, paddingHorizontal: 14 },
+  childAvatar: { width: 30, height: 30, borderRadius: 99, alignItems: 'center', justifyContent: 'center' },
+  childAvatarText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
+  lockBadge: { position: 'absolute', bottom: -2, right: -2, width: 14, height: 14, borderRadius: 99, backgroundColor: UI.text, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: UI.card },
+  childChipText: { fontFamily: 'Inter_700Bold', fontSize: 14 },
+
+  walletCard: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16, marginTop: 18 },
+  walletAvatar: { width: 52, height: 52, borderRadius: 99, alignItems: 'center', justifyContent: 'center' },
+  walletAvatarText: { fontFamily: 'Inter_800ExtraBold', fontSize: 20 },
+  walletLabel: { color: UI.muted, fontFamily: 'Inter_600SemiBold', fontSize: 13 },
+  walletCount: { color: UI.text, fontFamily: 'Inter_800ExtraBold', fontSize: 30, lineHeight: 35, marginTop: 1 },
+  redeemBtn: { backgroundColor: UI.text, borderRadius: 99, paddingHorizontal: 20, paddingVertical: 13 },
+  redeemText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
+  weeklyLine: { color: UI.muted, fontFamily: 'Inter_600SemiBold', fontSize: 13.5, marginTop: 12, paddingHorizontal: 2 },
+
+  tabRow: { flexDirection: 'row', gap: 26, borderBottomWidth: 1, borderBottomColor: UI.line, marginTop: 18 },
+  tabBtn: { paddingTop: 6, paddingBottom: 12, borderBottomWidth: 2, borderBottomColor: 'transparent' },
+  tabText: { fontSize: 15 },
+
+  blockLabel: { color: UI.muted, fontFamily: 'Inter_700Bold', fontSize: 13, marginTop: 20, marginBottom: 10 },
+  blockHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 22, marginBottom: 10 },
+  blockTitle: { color: UI.text, fontFamily: 'Inter_800ExtraBold', fontSize: 17, letterSpacing: -0.2 },
+  newLink: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  newLinkText: { color: UI.orange, fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
+  cardPad: { paddingHorizontal: 16 },
+
+  quickAddRow: { flexDirection: 'row', gap: 10 },
+  quickAddChip: { flex: 1, backgroundColor: UI.card, borderWidth: 1, borderColor: UI.line, borderRadius: 16, paddingVertical: 12, paddingHorizontal: 10, alignItems: 'center', gap: 6 },
+  quickAddText: { color: UI.text, fontFamily: 'Inter_700Bold', fontSize: 12, textAlign: 'center' },
+  quickAddAmt: { color: UI.mintText, fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
+
+  emptyRewards: { alignItems: 'center', paddingVertical: 24, gap: 12 },
+  emptyRewardsText: { color: UI.muted, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
+  emptyRewardsBtn: { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: UI.orange, paddingHorizontal: 16, paddingVertical: 11, borderRadius: 99 },
+  emptyRewardsBtnText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
+
+  rewardRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13 },
+  rewardRowBorder: { borderBottomWidth: 1, borderBottomColor: UI.line },
+  rewardEmoji: { fontSize: 20 },
+  rewardTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  rewardTitle: { flex: 1, color: UI.text, fontFamily: 'Inter_800ExtraBold', fontSize: 14.5 },
+  rewardCount: { color: UI.muted, fontFamily: 'Inter_700Bold', fontSize: 12.5 },
+  rewardRedeem: { backgroundColor: UI.text, borderRadius: 99, paddingHorizontal: 14, paddingVertical: 9 },
+  rewardRedeemText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 12.5 },
+  rewardEdit: { width: 34, height: 34, borderRadius: 99, borderWidth: 1, borderColor: UI.line, alignItems: 'center', justifyContent: 'center' },
+
+  ideaScroll: { marginHorizontal: -20 },
+  ideaRow: { gap: 10, paddingHorizontal: 20 },
+  ideaChip: { width: 120, backgroundColor: UI.card, borderWidth: 1, borderColor: UI.line, borderRadius: 16, padding: 12, gap: 4 },
+  ideaEmoji: { fontSize: 22 },
+  ideaTitle: { color: UI.text, fontFamily: 'Inter_800ExtraBold', fontSize: 13, marginTop: 4 },
+  ideaCost: { color: UI.muted, fontFamily: 'Inter_600SemiBold', fontSize: 11.5 },
+
+  starActions: { flexDirection: 'row', gap: 10, marginTop: 4 },
+  addStarsBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, backgroundColor: UI.text, borderRadius: 14, paddingVertical: 14 },
+  addStarsText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
+  removeStarsBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, backgroundColor: UI.soft, borderWidth: 1, borderColor: UI.line, borderRadius: 14, paddingVertical: 14 },
+  removeStarsText: { color: UI.muted, fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
+  quickRow: { flexDirection: 'row', gap: 10, marginTop: 12 },
+  quickStarBtn: { flex: 1, alignItems: 'center', backgroundColor: UI.card, borderWidth: 1, borderColor: UI.line, borderRadius: 14, paddingVertical: 13 },
+  quickStarText: { color: UI.text, fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
+
+  activityRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 },
+  activityRowBorder: { borderBottomWidth: 1, borderBottomColor: UI.line },
+  activityReason: { color: UI.text, fontFamily: 'Inter_700Bold', fontSize: 14 },
+  activityDate: { color: UI.muted, fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 2 },
+  activityDeltaRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  activityDelta: { fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
+  emptyMini: { color: UI.muted, fontFamily: 'Inter_600SemiBold', fontSize: 13, paddingVertical: 14 },
+
+  sheet: { backgroundColor: UI.card, borderTopLeftRadius: 34, borderTopRightRadius: 34, borderWidth: 1, borderColor: UI.line, padding: 26, paddingBottom: 140 },
   sheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  sheetTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 24, lineHeight: 30, letterSpacing: -0.4, flexShrink: 1 },
-  sheetHelp: { fontFamily: 'Inter_600SemiBold', fontSize: 15, marginTop: -2, marginBottom: 8 },
-  iconBtn: { padding: 9, borderRadius: 9999, borderWidth: 1 },
-  label: { fontFamily: 'Inter_800ExtraBold', fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginTop: 14, marginBottom: 8 },
-  input: { borderWidth: 1, borderRadius: 16, paddingHorizontal: 15, paddingVertical: 13, fontFamily: 'Inter_600SemiBold', fontSize: 16 },
-  iconSuggestionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 9 },
-  iconChip: { width: 48, height: 48, borderRadius: 18, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  iconChipText: { fontSize: 23 },
-  modeRow: { flexDirection: 'row', gap: 10, marginTop: 8 },
-  modeBtn: { flex: 1, minHeight: 48, borderRadius: 18, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  modeText: { fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
-  menuSheetButton: { flexDirection: 'row', alignItems: 'center', gap: 14, borderWidth: 1, borderRadius: 24, padding: 16, marginTop: 12, minHeight: 86 },
-  menuSheetIcon: { width: 50, height: 50, borderRadius: 18, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  menuSheetTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 18, lineHeight: 24 },
-  menuSheetSub: { fontFamily: 'Inter_600SemiBold', fontSize: 13, lineHeight: 19, marginTop: 3 },
-  sheetFooter: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: 22 },
-  cancelBtn: { flex: 1, minWidth: 126, borderWidth: 1, borderRadius: 18, paddingVertical: 15, alignItems: 'center' },
-  cancelText: { fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
-  saveBtn: { flex: 1, minWidth: 126, borderRadius: 18, paddingVertical: 15, alignItems: 'center' },
-  saveText: { fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
-  deleteBtn: { flex: 1, minWidth: 126, borderWidth: 1, borderRadius: 18, paddingVertical: 15, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 7 },
-  deleteText: { color: '#EF4444', fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
-
-  // Tab switcher
-  kidsTabRow: { flexDirection: 'row', gap: 8, marginBottom: 16, marginTop: 4 },
-  kidsTabBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: 99, borderWidth: 1 },
-  kidsTabText: { fontFamily: 'Inter_700Bold', fontSize: 13 },
-
-  // Stars tab — wallet card
-  walletCard: { marginTop: 12, marginBottom: 4 },
-  walletRow: { flexDirection: 'row', gap: 16, alignItems: 'center' },
-  starCircleWrap: { width: 80, height: 80, borderRadius: 99, backgroundColor: 'rgba(245,158,11,0.10)', alignItems: 'center', justifyContent: 'center', gap: 2 },
-  starCircleRing: { position: 'absolute', width: 76, height: 76, borderRadius: 99, borderWidth: 3, borderColor: 'rgba(245,158,11,0.25)' },
-  starCircleValue: { fontFamily: 'Inter_800ExtraBold', fontSize: 22, color: '#F59E0B', lineHeight: 26 },
-  starCircleLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 9, textTransform: 'uppercase' },
-  walletChildLabel: { fontFamily: 'Inter_700Bold', fontSize: 10, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 2 },
-  walletStarCount: { fontFamily: 'Inter_800ExtraBold', fontSize: 18, lineHeight: 22 },
-  walletReachText: { fontFamily: 'Inter_600SemiBold', fontSize: 12, marginTop: 2 },
-  walletLastAction: { borderRadius: 10, paddingHorizontal: 9, paddingVertical: 5, marginTop: 6 },
-  walletLastActionText: { fontFamily: 'Inter_600SemiBold', fontSize: 11, lineHeight: 15 },
-
-  // Stars tab — action buttons
-  walletActions: { flexDirection: 'row', gap: 10, marginTop: 12, marginBottom: 4 },
-  walletAddBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingVertical: 13, borderRadius: 18 },
-  walletAddText: { fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
-  walletRemoveBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingVertical: 13, borderRadius: 18, borderWidth: 1 },
-  walletRemoveText: { fontFamily: 'Inter_700Bold', fontSize: 14 },
-
-  // Stars tab — rewards in reach
-  reachLabel: { fontFamily: 'Inter_700Bold', fontSize: 10, textTransform: 'uppercase', letterSpacing: 1, marginTop: 16, marginBottom: 8 },
-  reachCard: { flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1, borderRadius: 18, padding: 12, marginBottom: 8 },
-  reachCardIcon: { fontSize: 26 },
-  reachCardTitle: { fontFamily: 'Inter_700Bold', fontSize: 14 },
-  reachRedeemBtn: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 14 },
-  reachRedeemText: { fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
+  sheetTitle: { color: UI.text, fontFamily: 'Inter_800ExtraBold', fontSize: 24, letterSpacing: -0.4 },
+  sheetHelp: { color: UI.muted, fontFamily: 'Inter_500Medium', fontSize: 14, marginBottom: 12 },
+  iconBtn: { padding: 9, borderRadius: 9999, borderWidth: 1, borderColor: UI.line, backgroundColor: UI.soft },
+  label: { color: UI.muted, fontFamily: 'Inter_800ExtraBold', fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginTop: 14, marginBottom: 8 },
+  input: { borderWidth: 1, borderColor: UI.line, borderRadius: 16, paddingHorizontal: 15, paddingVertical: 13, fontFamily: 'Inter_500Medium', fontSize: 16, color: UI.text, backgroundColor: UI.soft },
+  iconRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 9 },
+  iconChip: { width: 46, height: 46, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  iconChipText: { fontSize: 22 },
+  modeRow: { flexDirection: 'row', gap: 10, marginBottom: 4 },
+  modeBtn: { flex: 1, alignItems: 'center', borderRadius: 14, paddingVertical: 12 },
+  modeText: { fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
+  sheetFooter: { flexDirection: 'row', gap: 12, marginTop: 22 },
+  cancelBtn: { flex: 1, borderWidth: 1, borderColor: UI.line, borderRadius: 18, paddingVertical: 15, alignItems: 'center' },
+  cancelText: { color: UI.muted, fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
+  deleteBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderWidth: 1, borderColor: 'rgba(220,38,38,0.35)', backgroundColor: UI.dangerSoft, borderRadius: 18, paddingVertical: 15 },
+  deleteText: { color: UI.danger, fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
+  saveBtn: { flex: 1, borderRadius: 18, paddingVertical: 15, alignItems: 'center', backgroundColor: UI.orange },
+  saveText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
 });
-
