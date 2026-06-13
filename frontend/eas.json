@@ -11,12 +11,14 @@
     "preview": {
       "distribution": "internal",
       "channel": "preview",
+      "environment": "preview",
       "android": {
         "buildType": "apk"
       },
       "env": {
         "EXPO_PUBLIC_BACKEND_URL": "https://household-coo-production.up.railway.app",
-        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "243255248169-ike4t51ha6o8c5rcgsp7mvke2g5t67ol.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "243255248169-cei972lc7kmfig6tmjb6l2nlmgqkjf22.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "243255248169-n4l7es5ecr3j85v00dia2icp9kjo7umh.apps.googleusercontent.com",
         "EXPO_PUBLIC_FACEBOOK_APP_ID": "1618431972757078"
       }
     },
@@ -29,7 +31,8 @@
       },
       "env": {
         "EXPO_PUBLIC_BACKEND_URL": "https://household-coo-production.up.railway.app",
-        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "243255248169-ike4t51ha6o8c5rcgsp7mvke2g5t67ol.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "243255248169-cei972lc7kmfig6tmjb6l2nlmgqkjf22.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "243255248169-n4l7es5ecr3j85v00dia2icp9kjo7umh.apps.googleusercontent.com",
         "EXPO_PUBLIC_FACEBOOK_APP_ID": "1618431972757078"
       }
     }

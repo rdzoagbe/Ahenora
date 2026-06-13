@@ -44,7 +44,7 @@ function cardDateKey(card: Card) {
 }
 
 function cleanText(value?: string | null) {
-  return (value || '').replace(/Ã‚Â·/g, '-').replace(/\u00C2/g, '').trim();
+  return (value || '').replace(/Ãƒâ€šÃ‚Â·/g, '-').replace(/\u00C2/g, '').trim();
 }
 
 function buildMonthDays(baseDate: Date) {
@@ -203,7 +203,7 @@ export default function CalendarScreen() {
     const today = startOfLocalDay(new Date());
     const diffDays = Math.round((startOfLocalDay(date).getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
     if (diffDays === 0) return lang === 'fr' ? "Aujourd'hui" : lang === 'es' ? 'Hoy' : 'Today';
-    if (diffDays === 1) return lang === 'fr' ? 'Demain' : lang === 'es' ? 'MaÃ±ana' : 'Tomorrow';
+    if (diffDays === 1) return lang === 'fr' ? 'Demain' : lang === 'es' ? 'MaÃƒÂ±ana' : 'Tomorrow';
     return date.toLocaleDateString(locale, { weekday: 'long', month: 'short', day: 'numeric' });
   };
 
@@ -395,11 +395,45 @@ export default function CalendarScreen() {
             </PressScale>
           </View>
 
-          <GlassCard style={{ marginBottom: 18 }}>
-            <View style={styles.privacyRow}>
-              <ShieldCheck color={theme.colors.success} size={20} />
-              <Text style={[styles.privacyText, { color: theme.colors.textMuted }]}>Calendar sync is read-only. Household COO imports reminders and suggests invitees; it does not edit your Google Calendar.</Text>
+          <GlassCard testID="calendar-sync-card" style={styles.calendarSyncCard}>
+            <View style={styles.calendarSyncHeader}>
+              <View style={[styles.calendarSyncIcon, { backgroundColor: theme.colors.accentSoft }]}>
+                <CalendarDays color={theme.colors.accent} size={22} />
+              </View>
+
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.calendarSyncTitle, { color: theme.colors.text }]}>Google Calendar</Text>
+                <Text style={[styles.calendarSyncText, { color: theme.colors.textMuted }]}>
+                  Read-only sync. Imports upcoming events and people, but never edits your Google Calendar.
+                </Text>
+              </View>
             </View>
+
+            <PressScale
+              testID="calendar-sync-card-button"
+              onPress={syncCalendar}
+              disabled={syncing || (Platform.OS === 'web' && !calendarRequest)}
+              style={[
+                styles.calendarSyncButton,
+                { backgroundColor: theme.colors.primary },
+                (syncing || (Platform.OS === 'web' && !calendarRequest)) && { opacity: 0.55 },
+              ]}
+            >
+              {syncing ? (
+                <ActivityIndicator color={theme.colors.primaryText} size="small" />
+              ) : (
+                <RefreshCw color={theme.colors.primaryText} size={18} />
+              )}
+              <Text style={[styles.calendarSyncButtonText, { color: theme.colors.primaryText }]}>
+                {syncing ? 'Syncing Google Calendar' : 'Sync Google Calendar'}
+              </Text>
+            </PressScale>
+
+            {calendarSyncStatus ? (
+              <Text style={[styles.calendarSyncHint, { color: theme.colors.textMuted }]}>{calendarSyncStatus}</Text>
+            ) : (
+              <Text style={[styles.calendarSyncHint, { color: theme.colors.textMuted }]}>Last sync result will appear here.</Text>
+            )}
           </GlassCard>
 
           {syncResult ? (
@@ -511,7 +545,7 @@ export default function CalendarScreen() {
             </View>
           ))}
 
-          <View style={{ height: 220 }} />
+          <View style={{ height: 80 }} />
         </ScrollView>
       </SafeAreaView>
 
@@ -556,6 +590,55 @@ const styles = StyleSheet.create({
   sub: { fontFamily: 'Inter_600SemiBold', fontSize: 16, marginTop: 4 },
   syncBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 9999, paddingHorizontal: 18, paddingVertical: 14, minHeight: 52 },
   syncText: { fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
+  calendarSyncCard: {
+    marginBottom: 14,
+  },
+  calendarSyncHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    marginBottom: 14,
+  },
+  calendarSyncIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  calendarSyncTitle: {
+    fontFamily: 'Inter_800ExtraBold',
+    fontSize: 17,
+    lineHeight: 22,
+  },
+  calendarSyncText: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 3,
+  },
+  calendarSyncButton: {
+    minHeight: 48,
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  calendarSyncButtonText: {
+    fontFamily: 'Inter_800ExtraBold',
+    fontSize: 14,
+  },
+  calendarSyncHint: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 8,
+    textAlign: 'center',
+  },
+
   privacyRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   privacyText: { flex: 1, fontFamily: 'Inter_500Medium', fontSize: 15, lineHeight: 22 },
   syncSummaryRow: { flexDirection: 'row', gap: 12, alignItems: 'center' },
