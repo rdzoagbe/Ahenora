@@ -383,12 +383,22 @@ export default function SettingsScreen() {
               </View>
               <Text style={[styles.rowValue, { color: theme.colors.textMuted }]}>{appearanceMode === 'system' ? 'System' : appearanceMode === 'light' ? 'Light' : 'Dark'}</Text>
             </View>
-            <View style={[styles.segmentWrap, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
+            <View style={[styles.segmentWrap, { borderBottomColor: theme.colors.cardBorder }]}>
               {(['dark', 'light', 'system'] as const).map((mode) => {
                 const active = appearanceMode === mode;
                 return (
-                  <PressScale key={mode} testID={`appearance-${mode}`} onPress={() => setAppearance(mode)} style={[styles.segmentBtn, active && { backgroundColor: theme.colors.primary }]}>
-                    <Text style={[styles.segmentText, { color: active ? theme.colors.primaryText : theme.colors.textMuted }]}>{mode[0].toUpperCase() + mode.slice(1)}</Text>
+                  <PressScale key={mode} testID={`appearance-${mode}`} onPress={() => setAppearance(mode)} style={[styles.segmentBtn, active && { borderBottomColor: theme.colors.accent }]}>
+                    <Text
+                      style={[
+                        styles.segmentText,
+                        {
+                          color: active ? theme.colors.text : theme.colors.textMuted,
+                          fontFamily: active ? 'Inter_800ExtraBold' : 'Inter_600SemiBold',
+                        },
+                      ]}
+                    >
+                      {mode[0].toUpperCase() + mode.slice(1)}
+                    </Text>
                   </PressScale>
                 );
               })}
@@ -673,9 +683,9 @@ const styles = StyleSheet.create({
   preferenceHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
   preferenceTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   rowValue: { fontFamily: 'Inter_700Bold', fontSize: 14 },
-  segmentWrap: { flexDirection: 'row', alignItems: 'center', borderRadius: 20, padding: 5, gap: 6, borderWidth: 1, minHeight: 52 },
-  segmentBtn: { flex: 1, minHeight: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 15, paddingHorizontal: 10 },
-  segmentText: { fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
+  segmentWrap: { flexDirection: 'row', alignItems: 'center', gap: 22, borderBottomWidth: 1, marginBottom: 12 },
+  segmentBtn: { paddingTop: 4, paddingBottom: 10, borderBottomWidth: 2, borderBottomColor: 'transparent' },
+  segmentText: { fontSize: 14 },
   navRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 44 },
   navRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   divider: { height: 1, opacity: 0.9, marginVertical: 6 },

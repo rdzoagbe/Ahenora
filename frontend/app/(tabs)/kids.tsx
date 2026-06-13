@@ -489,10 +489,10 @@ export default function KidsScreen() {
                         <View style={styles.starCircleRing} />
                         <Star color="#F59E0B" size={20} fill="#F59E0B" />
                         <Text style={styles.starCircleValue}>{stars}</Text>
-                        <Text style={styles.starCircleLabel}>{t('stars')}</Text>
+                        <Text style={[styles.starCircleLabel, { color: theme.colors.textMuted }]}>{t('stars')}</Text>
                       </View>
                       <View style={{ flex: 1 }}>
-                        <Text style={styles.walletChildLabel}>{activeChild.name.toUpperCase()}&apos;S WALLET</Text>
+                        <Text style={[styles.walletChildLabel, { color: theme.colors.textMuted }]}>{activeChild.name.toUpperCase()}&apos;S WALLET</Text>
                         <Text style={[styles.walletStarCount, { color: theme.colors.text }]}>{stars} {t('stars')}</Text>
                         <Text style={[styles.walletReachText, { color: theme.colors.textMuted }]}>{affordableRewards} reward{affordableRewards !== 1 ? 's' : ''} within reach</Text>
                         {latestActivity ? (
@@ -1023,8 +1023,8 @@ const styles = StyleSheet.create({
   starCircleWrap: { width: 80, height: 80, borderRadius: 99, backgroundColor: 'rgba(245,158,11,0.10)', alignItems: 'center', justifyContent: 'center', gap: 2 },
   starCircleRing: { position: 'absolute', width: 76, height: 76, borderRadius: 99, borderWidth: 3, borderColor: 'rgba(245,158,11,0.25)' },
   starCircleValue: { fontFamily: 'Inter_800ExtraBold', fontSize: 22, color: '#F59E0B', lineHeight: 26 },
-  starCircleLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 9, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase' },
-  walletChildLabel: { fontFamily: 'Inter_700Bold', fontSize: 10, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 2 },
+  starCircleLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 9, textTransform: 'uppercase' },
+  walletChildLabel: { fontFamily: 'Inter_700Bold', fontSize: 10, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 2 },
   walletStarCount: { fontFamily: 'Inter_800ExtraBold', fontSize: 18, lineHeight: 22 },
   walletReachText: { fontFamily: 'Inter_600SemiBold', fontSize: 12, marginTop: 2 },
   walletLastAction: { borderRadius: 10, paddingHorizontal: 9, paddingVertical: 5, marginTop: 6 },
