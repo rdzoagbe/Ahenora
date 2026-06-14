@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -319,15 +320,21 @@ export default function FeedScreen() {
               </PressScale>
               <View style={styles.captureActions}>
                 <PressScale onPress={() => setShowCamera(true)} style={styles.secondaryPill}>
-                  <Camera color={UI.text} size={18} />
+                  <View style={[styles.pillIcon, { backgroundColor: UI.lavender }]}>
+                    <Camera color={UI.lavenderText} size={16} />
+                  </View>
                   <Text style={styles.secondaryPillText}>Photo</Text>
                 </PressScale>
                 <PressScale onPress={() => setShowVoice(true)} style={styles.secondaryPill}>
-                  <Mic color={UI.text} size={18} />
+                  <View style={[styles.pillIcon, { backgroundColor: UI.mint }]}>
+                    <Mic color={UI.mintText} size={16} />
+                  </View>
                   <Text style={styles.secondaryPillText}>Voice</Text>
                 </PressScale>
                 <PressScale onPress={openManual} style={styles.addPill}>
-                  <Plus color="#FFFFFF" size={18} />
+                  <View style={[styles.pillIcon, { backgroundColor: 'rgba(255,255,255,0.22)' }]}>
+                    <Plus color="#FFFFFF" size={16} />
+                  </View>
                   <Text style={styles.addPillText}>Add</Text>
                 </PressScale>
               </View>
@@ -392,11 +399,13 @@ export default function FeedScreen() {
         </ScrollView>
       </SafeAreaView>
 
-      <View style={styles.fabWrap} pointerEvents="box-none">
-        <PressScale style={styles.fab} onPress={openManual} testID="feed-fab-add">
-          <Plus color="#FFFFFF" size={31} />
-        </PressScale>
-      </View>
+      <Pressable
+        style={({ pressed }) => [styles.fab, pressed && styles.fabPressed]}
+        onPress={openManual}
+        testID="feed-fab-add"
+      >
+        <Plus color="#FFFFFF" size={31} />
+      </Pressable>
 
       <CameraCaptureModal
         visible={showCamera}
@@ -584,15 +593,20 @@ const styles = StyleSheet.create({
   },
   secondaryPill: {
     flex: 1,
-    height: 50,
-    borderRadius: 14,
+    height: 54,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: UI.line,
-    backgroundColor: UI.soft,
+    backgroundColor: UI.card,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 7,
+    gap: 9,
+    shadowColor: '#000000',
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 1,
   },
   secondaryPillText: {
     color: UI.text,
@@ -601,18 +615,30 @@ const styles = StyleSheet.create({
   },
   addPill: {
     flex: 1,
-    height: 50,
-    borderRadius: 14,
+    height: 54,
+    borderRadius: 16,
     backgroundColor: UI.orange,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 7,
+    gap: 9,
+    shadowColor: UI.orange,
+    shadowOpacity: 0.28,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 3,
   },
   addPillText: {
     color: '#FFFFFF',
     fontFamily: 'Inter_800ExtraBold',
     fontSize: 15,
+  },
+  pillIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   statsStrip: {
     minHeight: 78,
@@ -796,12 +822,10 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_700Bold',
     fontSize: 12,
   },
-  fabWrap: {
+  fab: {
     position: 'absolute',
     right: 22,
     bottom: 102,
-  },
-  fab: {
     width: 61,
     height: 61,
     borderRadius: 999,
@@ -813,5 +837,10 @@ const styles = StyleSheet.create({
     shadowRadius: 16,
     shadowOffset: { width: 0, height: 10 },
     elevation: 7,
+    zIndex: 30,
+  },
+  fabPressed: {
+    backgroundColor: '#D9530F',
+    transform: [{ scale: 0.96 }],
   },
 });
