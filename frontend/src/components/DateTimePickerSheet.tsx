@@ -4,6 +4,7 @@ import { CalendarClock, CalendarX, Clock, X } from 'lucide-react-native';
 
 import KeyboardAwareBottomSheet from './KeyboardAwareBottomSheet';
 import { PressScale } from './PressScale';
+import { UI } from './Kit';
 import {
   buildLocalDateTimeIso,
   quickDueDate,
@@ -70,12 +71,12 @@ export default function DateTimePickerSheet({
     >
       <View style={styles.header}>
         <View style={styles.titleRow}>
-          <CalendarClock color="#F97316" size={18} />
+          <CalendarClock color={UI.orange} size={18} />
           <Text style={styles.title}>Schedule card</Text>
         </View>
 
         <PressScale testID="close-date-picker" onPress={onClose} style={styles.iconBtn}>
-          <X color="#fff" size={18} />
+          <X color={UI.text} size={18} />
         </PressScale>
       </View>
 
@@ -103,7 +104,7 @@ export default function DateTimePickerSheet({
         value={dateText}
         onChangeText={setDateText}
         placeholder="YYYY-MM-DD"
-        placeholderTextColor="rgba(255,255,255,0.3)"
+        placeholderTextColor={UI.muted}
         autoCapitalize="none"
         autoCorrect={false}
         style={styles.input}
@@ -111,13 +112,13 @@ export default function DateTimePickerSheet({
 
       <Text style={styles.label}>Time</Text>
       <View style={styles.timeInputWrap}>
-        <Clock color="rgba(255,255,255,0.45)" size={14} />
+        <Clock color={UI.muted} size={14} />
         <TextInput
           testID="due-time-input"
           value={timeText}
           onChangeText={setTimeText}
           placeholder="HH:mm"
-          placeholderTextColor="rgba(255,255,255,0.3)"
+          placeholderTextColor={UI.muted}
           autoCapitalize="none"
           autoCorrect={false}
           style={styles.timeInput}
@@ -128,7 +129,7 @@ export default function DateTimePickerSheet({
 
       <View style={styles.footer}>
         <PressScale testID="clear-due-date" onPress={clear} style={styles.clearBtn}>
-          <CalendarX color="rgba(255,255,255,0.65)" size={15} />
+          <CalendarX color={UI.muted} size={15} />
           <Text style={styles.clearText}>Clear</Text>
         </PressScale>
 
@@ -142,11 +143,11 @@ export default function DateTimePickerSheet({
 
 const styles = StyleSheet.create({
   sheet: {
-    backgroundColor: 'rgba(20,22,32,0.98)',
+    backgroundColor: UI.card,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: UI.line,
     padding: 24,
     paddingBottom: 130,
   },
@@ -162,7 +163,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   title: {
-    color: '#fff',
+    color: UI.text,
     fontFamily: 'PlayfairDisplay_400Regular_Italic',
     fontSize: 26,
   },
@@ -170,10 +171,10 @@ const styles = StyleSheet.create({
     padding: 8,
     borderRadius: 9999,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: UI.line,
   },
   help: {
-    color: 'rgba(255,255,255,0.6)',
+    color: UI.muted,
     fontFamily: 'Inter_400Regular',
     fontSize: 13,
     lineHeight: 19,
@@ -188,33 +189,33 @@ const styles = StyleSheet.create({
   quickBtn: {
     borderRadius: 9999,
     borderWidth: 1,
-    borderColor: 'rgba(249,115,22,0.35)',
-    backgroundColor: 'rgba(249,115,22,0.10)',
+    borderColor: UI.orange,
+    backgroundColor: UI.orangeSoft,
     paddingHorizontal: 12,
     paddingVertical: 9,
   },
   quickText: {
-    color: '#FDBA74',
+    color: UI.orange,
     fontFamily: 'Inter_600SemiBold',
     fontSize: 12,
   },
   label: {
     fontFamily: 'Inter_500Medium',
     fontSize: 11,
-    color: 'rgba(255,255,255,0.5)',
+    color: UI.muted,
     textTransform: 'uppercase',
     letterSpacing: 1,
     marginTop: 12,
     marginBottom: 8,
   },
   input: {
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    backgroundColor: UI.soft,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: UI.line,
     borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 12,
-    color: '#fff',
+    color: UI.text,
     fontFamily: 'Inter_400Regular',
     fontSize: 15,
   },
@@ -222,22 +223,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    backgroundColor: UI.soft,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: UI.line,
     borderRadius: 14,
     paddingHorizontal: 14,
   },
   timeInput: {
     flex: 1,
     paddingVertical: 12,
-    color: '#fff',
+    color: UI.text,
     fontFamily: 'Inter_400Regular',
     fontSize: 15,
   },
   error: {
     marginTop: 10,
-    color: '#FCA5A5',
+    color: UI.danger,
     fontFamily: 'Inter_500Medium',
     fontSize: 12,
   },
@@ -249,7 +250,7 @@ const styles = StyleSheet.create({
   clearBtn: {
     flex: 1,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: UI.line,
     borderRadius: 14,
     paddingVertical: 14,
     alignItems: 'center',
@@ -258,20 +259,20 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   clearText: {
-    color: 'rgba(255,255,255,0.7)',
+    color: UI.muted,
     fontFamily: 'Inter_500Medium',
     fontSize: 15,
   },
   saveBtn: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: UI.orange,
     borderRadius: 14,
     paddingVertical: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
   saveText: {
-    color: '#080910',
+    color: UI.card,
     fontFamily: 'Inter_600SemiBold',
     fontSize: 15,
   },
