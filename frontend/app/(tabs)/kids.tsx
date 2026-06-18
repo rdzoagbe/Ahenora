@@ -26,6 +26,7 @@ import {
   Minus,
 } from 'lucide-react-native';
 
+import { useSwipeTabs } from '../../src/hooks/useSwipeTabs';
 import { PressScale } from '../../src/components/PressScale';
 import { PinPadModal } from '../../src/components/PinPadModal';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
@@ -89,6 +90,7 @@ function formatActivityDate(value?: string | null) {
 
 export default function KidsScreen() {
   const { t } = useStore();
+  const swipeHandlers = useSwipeTabs();
   const router = useRouter();
 
   const [members, setMembers] = useState<FamilyMember[]>([]);
@@ -365,7 +367,7 @@ export default function KidsScreen() {
       : `A fresh week of stars ahead ✨`;
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} {...swipeHandlers}>
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           <ScreenHeader

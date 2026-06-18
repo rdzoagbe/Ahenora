@@ -17,6 +17,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { Plus, X, Trash2, Stethoscope, BookOpen, Shield, Scale, Bell, Folder, MoreVertical, FileText } from 'lucide-react-native';
 
+import { useSwipeTabs } from '../../src/hooks/useSwipeTabs';
 import { PressScale } from '../../src/components/PressScale';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
 import AppToast, { ToastTone } from '../../src/components/AppToast';
@@ -48,6 +49,7 @@ type ToastState = { message: string; tone: ToastTone };
 
 export default function VaultScreen() {
   const { t } = useStore();
+  const swipeHandlers = useSwipeTabs();
   const router = useRouter();
 
   const [docs, setDocs] = useState<VaultDoc[]>([]);
@@ -150,7 +152,7 @@ export default function VaultScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} {...swipeHandlers}>
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           <ScreenHeader

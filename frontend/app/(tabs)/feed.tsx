@@ -21,6 +21,7 @@ import {
 } from 'lucide-react-native';
 
 import { useBreakpoint } from '../../src/responsive';
+import { useSwipeTabs } from '../../src/hooks/useSwipeTabs';
 import { PressScale } from '../../src/components/PressScale';
 import { AddCardModal } from '../../src/components/AddCardModal';
 import { VoiceCaptureModal } from '../../src/components/VoiceCaptureModal';
@@ -131,6 +132,7 @@ function TaskRow({ card, onComplete }: { card: Card; onComplete: () => void }) {
 export default function FeedScreen() {
   const { user, t } = useStore();
   const { px, maxW } = useBreakpoint();
+  const swipeHandlers = useSwipeTabs();
 
   const [cards, setCards] = useState<Card[]>([]);
   const [members, setMembers] = useState<FamilyMember[]>([]);
@@ -275,7 +277,7 @@ export default function FeedScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} {...swipeHandlers}>
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <ScrollView
           showsVerticalScrollIndicator={false}
@@ -319,23 +321,23 @@ export default function FeedScreen() {
                 <Text style={styles.capturePlaceholder} numberOfLines={1}>Add a task, note or reminder...</Text>
               </PressScale>
               <View style={styles.captureActions}>
-                <PressScale onPress={() => setShowCamera(true)} style={styles.actionBtn}>
-                  <View style={[styles.actionCircle, { backgroundColor: UI.lavender }]}>
-                    <Camera color={UI.lavenderText} size={23} />
+                <PressScale onPress={() => setShowCamera(true)} style={styles.actionPill}>
+                  <View style={[styles.actionDot, { backgroundColor: UI.lavender }]}>
+                    <Camera color={UI.lavenderText} size={18} />
                   </View>
-                  <Text style={styles.actionLabel}>Photo</Text>
+                  <Text style={styles.actionPillText}>Photo</Text>
                 </PressScale>
-                <PressScale onPress={() => setShowVoice(true)} style={styles.actionBtn}>
-                  <View style={[styles.actionCircle, { backgroundColor: UI.mint }]}>
-                    <Mic color={UI.mintText} size={23} />
+                <PressScale onPress={() => setShowVoice(true)} style={styles.actionPill}>
+                  <View style={[styles.actionDot, { backgroundColor: UI.mint }]}>
+                    <Mic color={UI.mintText} size={18} />
                   </View>
-                  <Text style={styles.actionLabel}>Voice</Text>
+                  <Text style={styles.actionPillText}>Voice</Text>
                 </PressScale>
-                <PressScale onPress={openManual} style={styles.actionBtn}>
-                  <View style={[styles.actionCircle, { backgroundColor: UI.orange }]}>
-                    <Plus color="#FFFFFF" size={23} />
+                <PressScale onPress={openManual} style={[styles.actionPill, styles.actionPillAccent]}>
+                  <View style={[styles.actionDot, { backgroundColor: 'rgba(255,255,255,0.24)' }]}>
+                    <Plus color="#FFFFFF" size={18} />
                   </View>
-                  <Text style={[styles.actionLabel, { color: UI.orange }]}>Add</Text>
+                  <Text style={styles.actionPillAccentText}>Add</Text>
                 </PressScale>
               </View>
             </View>
@@ -591,27 +593,38 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 10,
   },
-  actionBtn: {
+  actionPill: {
     flex: 1,
-    alignItems: 'center',
-    gap: 6,
-  },
-  actionCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: 999,
+    height: 46,
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: UI.line,
+    backgroundColor: UI.soft,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000000',
-    shadowOpacity: 0.10,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 3,
+    gap: 8,
   },
-  actionLabel: {
+  actionPillAccent: {
+    borderWidth: 0,
+    backgroundColor: UI.orange,
+  },
+  actionDot: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionPillText: {
     color: UI.text,
     fontFamily: 'Inter_700Bold',
-    fontSize: 13,
+    fontSize: 14,
+  },
+  actionPillAccentText: {
+    color: '#FFFFFF',
+    fontFamily: 'Inter_800ExtraBold',
+    fontSize: 14,
   },
   statsStrip: {
     minHeight: 78,
