@@ -319,23 +319,23 @@ export default function FeedScreen() {
                 <Text style={styles.capturePlaceholder} numberOfLines={1}>Add a task, note or reminder...</Text>
               </PressScale>
               <View style={styles.captureActions}>
-                <PressScale onPress={() => setShowCamera(true)} style={styles.secondaryPill}>
-                  <View style={[styles.pillIcon, { backgroundColor: UI.lavender }]}>
-                    <Camera color={UI.lavenderText} size={16} />
+                <PressScale onPress={() => setShowCamera(true)} style={styles.actionBtn}>
+                  <View style={[styles.actionCircle, { backgroundColor: UI.lavender }]}>
+                    <Camera color={UI.lavenderText} size={20} />
                   </View>
-                  <Text style={styles.secondaryPillText}>Photo</Text>
+                  <Text style={styles.actionLabel}>Photo</Text>
                 </PressScale>
-                <PressScale onPress={() => setShowVoice(true)} style={styles.secondaryPill}>
-                  <View style={[styles.pillIcon, { backgroundColor: UI.mint }]}>
-                    <Mic color={UI.mintText} size={16} />
+                <PressScale onPress={() => setShowVoice(true)} style={styles.actionBtn}>
+                  <View style={[styles.actionCircle, { backgroundColor: UI.mint }]}>
+                    <Mic color={UI.mintText} size={20} />
                   </View>
-                  <Text style={styles.secondaryPillText}>Voice</Text>
+                  <Text style={styles.actionLabel}>Voice</Text>
                 </PressScale>
-                <PressScale onPress={openManual} style={styles.addPill}>
-                  <View style={[styles.pillIcon, { backgroundColor: 'rgba(255,255,255,0.22)' }]}>
-                    <Plus color="#FFFFFF" size={16} />
+                <PressScale onPress={openManual} style={styles.actionBtn}>
+                  <View style={[styles.actionCircle, { backgroundColor: UI.orange }]}>
+                    <Plus color="#FFFFFF" size={20} />
                   </View>
-                  <Text style={styles.addPillText}>Add</Text>
+                  <Text style={[styles.actionLabel, { color: UI.orange }]}>Add</Text>
                 </PressScale>
               </View>
             </View>
@@ -591,54 +591,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 10,
   },
-  secondaryPill: {
+  actionBtn: {
     flex: 1,
-    height: 54,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: UI.line,
-    backgroundColor: UI.card,
-    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  actionCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 9,
     shadowColor: '#000000',
-    shadowOpacity: 0.04,
+    shadowOpacity: 0.08,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
-    elevation: 1,
+    elevation: 2,
   },
-  secondaryPillText: {
+  actionLabel: {
     color: UI.text,
     fontFamily: 'Inter_700Bold',
-    fontSize: 14,
-  },
-  addPill: {
-    flex: 1,
-    height: 54,
-    borderRadius: 16,
-    backgroundColor: UI.orange,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 9,
-    shadowColor: UI.orange,
-    shadowOpacity: 0.28,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 3,
-  },
-  addPillText: {
-    color: '#FFFFFF',
-    fontFamily: 'Inter_800ExtraBold',
-    fontSize: 15,
-  },
-  pillIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 9,
-    alignItems: 'center',
-    justifyContent: 'center',
+    fontSize: 12,
   },
   statsStrip: {
     minHeight: 78,
