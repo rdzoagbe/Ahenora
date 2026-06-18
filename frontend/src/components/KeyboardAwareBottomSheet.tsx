@@ -11,7 +11,7 @@ import {
   View,
   ViewStyle,
 } from 'react-native';
-import { UI } from './Kit';
+import { useStore } from '../store';
 
 type KeyboardAwareBottomSheetProps = {
   visible: boolean;
@@ -30,6 +30,7 @@ export default function KeyboardAwareBottomSheet({
   backdropStyle,
   contentStyle,
 }: KeyboardAwareBottomSheetProps) {
+  const { theme } = useStore();
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <KeyboardAvoidingView
@@ -41,7 +42,11 @@ export default function KeyboardAwareBottomSheet({
           <View style={[styles.backdrop, backdropStyle]}>
             <ScrollView
               keyboardShouldPersistTaps="handled"
-              contentContainerStyle={[styles.content, contentStyle]}
+              contentContainerStyle={[
+                styles.content,
+                { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder },
+                contentStyle,
+              ]}
               showsVerticalScrollIndicator={false}
             >
               {children}
@@ -63,9 +68,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.45)',
   },
   content: {
-    backgroundColor: UI.card,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
+    borderWidth: 1,
     padding: 20,
     paddingBottom: 120,
   },

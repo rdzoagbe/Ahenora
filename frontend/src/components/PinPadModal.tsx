@@ -3,7 +3,7 @@ import { Modal, View, Text, StyleSheet } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { X, Lock, Delete } from 'lucide-react-native';
 import { PressScale } from './PressScale';
-import { UI } from './Kit';
+import { useStore } from '../store';
 
 interface Props {
   visible: boolean;
@@ -11,10 +11,12 @@ interface Props {
   title: string;
   subtitle?: string;
   onClose: () => void;
-  onSubmit: (pin: string) => Promise<boolean>; // returns true on success
+  onSubmit: (pin: string) => Promise<boolean>;
 }
 
 export function PinPadModal({ visible, mode, title, subtitle, onClose, onSubmit }: Props) {
+  const { theme } = useStore();
+  const c = theme.colors;
   const [pin, setPin] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -49,24 +51,26 @@ export function PinPadModal({ visible, mode, title, subtitle, onClose, onSubmit 
     setPin((p) => p.slice(0, -1));
   };
 
+  const DANGER = '#DC2626';
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <BlurView intensity={50} tint="light" style={StyleSheet.absoluteFill} />
+      <BlurView intensity={50} tint={theme.mode === 'dark' ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
       <View style={styles.backdrop} />
       <View style={styles.center}>
-        <View style={styles.sheet}>
+        <View style={[styles.sheet, { backgroundColor: c.card, borderColor: c.cardBorder }]}>
           <View style={styles.headerRow}>
-            <View style={styles.badge}>
-              <Lock color={UI.text} size={12} />
-              <Text style={styles.badgeText}>{mode === 'set' ? 'Set PIN' : 'Enter PIN'}</Text>
+            <View style={[styles.badge, { backgroundColor: c.bgSoft, borderColor: c.cardBorder }]}>
+              <Lock color={c.text} size={12} />
+              <Text style={[styles.badgeText, { color: c.text }]}>{mode === 'set' ? 'Set PIN' : 'Enter PIN'}</Text>
             </View>
-            <PressScale testID="pin-close" onPress={onClose} style={styles.closeBtn}>
-              <X color={UI.text} size={18} />
+            <PressScale testID="pin-close" onPress={onClose} style={[styles.closeBtn, { borderColor: c.cardBorder }]}>
+              <X color={c.text} size={18} />
             </PressScale>
           </View>
 
-          <Text style={styles.heading}>{title}</Text>
-          {subtitle ? <Text style={styles.sub}>{subtitle}</Text> : null}
+          <Text style={[styles.heading, { color: c.text }]}>{title}</Text>
+          {subtitle ? <Text style={[styles.sub, { color: c.textMuted }]}>{subtitle}</Text> : null}
 
           <View style={styles.dotsRow}>
             {[0, 1, 2, 3].map((i) => (
@@ -74,32 +78,28 @@ export function PinPadModal({ visible, mode, title, subtitle, onClose, onSubmit 
                 key={i}
                 style={[
                   styles.dot,
-                  i < pin.length && styles.dotFilled,
-                  err && styles.dotErr,
+                  { borderColor: c.cardBorder },
+                  i < pin.length && { backgroundColor: c.text, borderColor: c.text },
+                  err ? { borderColor: DANGER } : undefined,
                 ]}
               />
             ))}
           </View>
 
-          {err ? <Text style={styles.errText}>{err}</Text> : null}
+          {err ? <Text style={[styles.errText, { color: DANGER }]}>{err}</Text> : null}
 
           <View style={styles.pad}>
             {['1','2','3','4','5','6','7','8','9'].map((d) => (
-              <PressScale
-                key={d}
-                testID={`pin-${d}`}
-                onPress={() => pressDigit(d)}
-                style={styles.key}
-              >
-                <Text style={styles.keyText}>{d}</Text>
+              <PressScale key={d} testID={`pin-${d}`} onPress={() => pressDigit(d)} style={styles.key}>
+                <Text style={[styles.keyText, { color: c.text }]}>{d}</Text>
               </PressScale>
             ))}
             <View style={styles.key} />
             <PressScale testID="pin-0" onPress={() => pressDigit('0')} style={styles.key}>
-              <Text style={styles.keyText}>0</Text>
+              <Text style={[styles.keyText, { color: c.text }]}>0</Text>
             </PressScale>
             <PressScale testID="pin-back" onPress={back} style={styles.key}>
-              <Delete color={UI.muted} size={22} />
+              <Delete color={c.textMuted} size={22} />
             </PressScale>
           </View>
         </View>
@@ -114,35 +114,30 @@ const styles = StyleSheet.create({
   sheet: {
     width: '100%',
     maxWidth: 360,
-    backgroundColor: UI.card,
     borderRadius: 28,
     borderWidth: 1,
-    borderColor: UI.line,
     padding: 24,
   },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   badge: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     paddingHorizontal: 10, paddingVertical: 5,
-    backgroundColor: UI.soft,
-    borderWidth: 1, borderColor: UI.line,
+    borderWidth: 1,
     borderRadius: 9999,
   },
-  badgeText: { color: UI.text, fontFamily: 'Inter_500Medium', fontSize: 11, letterSpacing: 0.4 },
-  closeBtn: { padding: 8, borderRadius: 9999, borderWidth: 1, borderColor: UI.line },
+  badgeText: { fontFamily: 'Inter_500Medium', fontSize: 11, letterSpacing: 0.4 },
+  closeBtn: { padding: 8, borderRadius: 9999, borderWidth: 1 },
   heading: {
     fontFamily: 'PlayfairDisplay_400Regular_Italic',
-    color: UI.text, fontSize: 26, marginTop: 16,
+    fontSize: 26, marginTop: 16,
   },
-  sub: { color: UI.muted, fontFamily: 'Inter_400Regular', fontSize: 13, marginTop: 4 },
+  sub: { fontFamily: 'Inter_400Regular', fontSize: 13, marginTop: 4 },
   dotsRow: { flexDirection: 'row', gap: 16, justifyContent: 'center', marginTop: 22, marginBottom: 10 },
   dot: {
     width: 14, height: 14, borderRadius: 9999,
-    borderWidth: 1.5, borderColor: UI.line,
+    borderWidth: 1.5,
   },
-  dotFilled: { backgroundColor: UI.text, borderColor: UI.text },
-  dotErr: { borderColor: UI.danger },
-  errText: { color: UI.danger, textAlign: 'center', fontFamily: 'Inter_500Medium', fontSize: 12, marginBottom: 4 },
+  errText: { textAlign: 'center', fontFamily: 'Inter_500Medium', fontSize: 12, marginBottom: 4 },
   pad: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 10 },
   key: {
     width: '33.333%',
@@ -150,5 +145,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  keyText: { color: UI.text, fontFamily: 'Inter_500Medium', fontSize: 26 },
+  keyText: { fontFamily: 'Inter_500Medium', fontSize: 26 },
 });

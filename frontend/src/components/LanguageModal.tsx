@@ -4,7 +4,6 @@ import { BlurView } from 'expo-blur';
 import { X, Check } from 'lucide-react-native';
 import { PressScale } from './PressScale';
 import { Lang, useStore } from '../store';
-import { UI } from './Kit';
 
 interface Props {
   visible: boolean;
@@ -19,17 +18,18 @@ const OPTIONS: { code: Lang; label: string; native: string }[] = [
 ];
 
 export function LanguageModal({ visible, onClose }: Props) {
-  const { t, lang, setLang } = useStore();
+  const { t, lang, setLang, theme } = useStore();
+  const c = theme.colors;
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <BlurView intensity={40} tint="light" style={StyleSheet.absoluteFill} />
+      <BlurView intensity={40} tint={theme.mode === 'dark' ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
       <View style={styles.backdrop} />
       <View style={styles.center}>
-        <View style={styles.sheet}>
+        <View style={[styles.sheet, { backgroundColor: c.card, borderColor: c.cardBorder }]}>
           <View style={styles.header}>
-            <Text style={styles.heading}>{t('language')}</Text>
-            <PressScale testID="close-lang" onPress={onClose} style={styles.closeBtn}>
-              <X color={UI.text} size={18} />
+            <Text style={[styles.heading, { color: c.text }]}>{t('language')}</Text>
+            <PressScale testID="close-lang" onPress={onClose} style={[styles.closeBtn, { borderColor: c.cardBorder }]}>
+              <X color={c.text} size={18} />
             </PressScale>
           </View>
           {OPTIONS.map((o) => {
@@ -42,13 +42,16 @@ export function LanguageModal({ visible, onClose }: Props) {
                   await setLang(o.code);
                   onClose();
                 }}
-                style={[styles.row, selected && styles.rowSelected]}
+                style={[
+                  styles.row,
+                  selected && { borderColor: c.success, backgroundColor: theme.mode === 'dark' ? 'rgba(34,197,94,0.12)' : '#DFF7EC' },
+                ]}
               >
                 <View>
-                  <Text style={styles.native}>{o.native}</Text>
-                  <Text style={styles.label}>{o.label}</Text>
+                  <Text style={[styles.native, { color: c.text }]}>{o.native}</Text>
+                  <Text style={[styles.label, { color: c.textMuted }]}>{o.label}</Text>
                 </View>
-                {selected ? <Check color="#10B981" size={18} /> : null}
+                {selected ? <Check color={c.success} size={18} /> : null}
               </PressScale>
             );
           })}
@@ -64,15 +67,13 @@ const styles = StyleSheet.create({
   sheet: {
     width: '100%',
     maxWidth: 380,
-    backgroundColor: UI.card,
     borderRadius: 24,
     borderWidth: 1,
-    borderColor: UI.line,
     padding: 22,
   },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  heading: { fontFamily: 'PlayfairDisplay_400Regular_Italic', fontSize: 26, color: UI.text },
-  closeBtn: { padding: 8, borderRadius: 9999, borderWidth: 1, borderColor: UI.line },
+  heading: { fontFamily: 'PlayfairDisplay_400Regular_Italic', fontSize: 26 },
+  closeBtn: { padding: 8, borderRadius: 9999, borderWidth: 1 },
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -84,10 +85,6 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
     marginTop: 8,
   },
-  rowSelected: {
-    borderColor: UI.mintText,
-    backgroundColor: UI.mint,
-  },
-  native: { fontFamily: 'Inter_600SemiBold', fontSize: 16, color: UI.text },
-  label: { fontFamily: 'Inter_400Regular', fontSize: 12, color: UI.muted, marginTop: 2 },
+  native: { fontFamily: 'Inter_600SemiBold', fontSize: 16 },
+  label: { fontFamily: 'Inter_400Regular', fontSize: 12, marginTop: 2 },
 });

@@ -321,19 +321,19 @@ export default function FeedScreen() {
               <View style={styles.captureActions}>
                 <PressScale onPress={() => setShowCamera(true)} style={styles.actionBtn}>
                   <View style={[styles.actionCircle, { backgroundColor: UI.lavender }]}>
-                    <Camera color={UI.lavenderText} size={20} />
+                    <Camera color={UI.lavenderText} size={23} />
                   </View>
                   <Text style={styles.actionLabel}>Photo</Text>
                 </PressScale>
                 <PressScale onPress={() => setShowVoice(true)} style={styles.actionBtn}>
                   <View style={[styles.actionCircle, { backgroundColor: UI.mint }]}>
-                    <Mic color={UI.mintText} size={20} />
+                    <Mic color={UI.mintText} size={23} />
                   </View>
                   <Text style={styles.actionLabel}>Voice</Text>
                 </PressScale>
                 <PressScale onPress={openManual} style={styles.actionBtn}>
                   <View style={[styles.actionCircle, { backgroundColor: UI.orange }]}>
-                    <Plus color="#FFFFFF" size={20} />
+                    <Plus color="#FFFFFF" size={23} />
                   </View>
                   <Text style={[styles.actionLabel, { color: UI.orange }]}>Add</Text>
                 </PressScale>
@@ -597,21 +597,21 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   actionCircle: {
-    width: 48,
-    height: 48,
+    width: 56,
+    height: 56,
     borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000000',
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
+    shadowOpacity: 0.10,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
   },
   actionLabel: {
     color: UI.text,
     fontFamily: 'Inter_700Bold',
-    fontSize: 12,
+    fontSize: 13,
   },
   statsStrip: {
     minHeight: 78,

@@ -4,7 +4,7 @@ import { CalendarClock, CalendarX, Clock, X } from 'lucide-react-native';
 
 import KeyboardAwareBottomSheet from './KeyboardAwareBottomSheet';
 import { PressScale } from './PressScale';
-import { UI } from './Kit';
+import { useStore } from '../store';
 import {
   buildLocalDateTimeIso,
   quickDueDate,
@@ -25,15 +25,15 @@ export default function DateTimePickerSheet({
   onChange,
   onClose,
 }: DateTimePickerSheetProps) {
+  const { theme } = useStore();
+  const c = theme.colors;
   const [dateText, setDateText] = useState('');
   const [timeText, setTimeText] = useState('18:00');
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!visible) return;
-
     const defaultValue = value || quickDueDate('today');
-
     setDateText(toLocalDateInput(defaultValue));
     setTimeText(toLocalTimeInput(defaultValue));
     setError(null);
@@ -41,7 +41,6 @@ export default function DateTimePickerSheet({
 
   const applyQuick = (option: 'today' | 'tomorrow' | 'weekend') => {
     const next = quickDueDate(option);
-
     setDateText(toLocalDateInput(next));
     setTimeText(toLocalTimeInput(next));
     setError(null);
@@ -50,7 +49,6 @@ export default function DateTimePickerSheet({
   const save = () => {
     try {
       const iso = buildLocalDateTimeIso(dateText, timeText);
-
       onChange(iso);
       onClose();
     } catch (e: any) {
@@ -67,73 +65,69 @@ export default function DateTimePickerSheet({
     <KeyboardAwareBottomSheet
       visible={visible}
       onClose={onClose}
-      contentStyle={styles.sheet}
+      contentStyle={[styles.sheet, { backgroundColor: c.card, borderColor: c.cardBorder }]}
     >
       <View style={styles.header}>
         <View style={styles.titleRow}>
-          <CalendarClock color={UI.orange} size={18} />
-          <Text style={styles.title}>Schedule card</Text>
+          <CalendarClock color={c.accent} size={18} />
+          <Text style={[styles.title, { color: c.text }]}>Schedule card</Text>
         </View>
-
-        <PressScale testID="close-date-picker" onPress={onClose} style={styles.iconBtn}>
-          <X color={UI.text} size={18} />
+        <PressScale testID="close-date-picker" onPress={onClose} style={[styles.iconBtn, { borderColor: c.cardBorder }]}>
+          <X color={c.text} size={18} />
         </PressScale>
       </View>
 
-      <Text style={styles.help}>
+      <Text style={[styles.help, { color: c.textMuted }]}>
         Set when this card should appear on the calendar and reminders.
       </Text>
 
       <View style={styles.quickRow}>
-        <PressScale testID="due-today" onPress={() => applyQuick('today')} style={styles.quickBtn}>
-          <Text style={styles.quickText}>Today 18:00</Text>
+        <PressScale testID="due-today" onPress={() => applyQuick('today')} style={[styles.quickBtn, { borderColor: c.accent, backgroundColor: c.accentSoft }]}>
+          <Text style={[styles.quickText, { color: c.accent }]}>Today 18:00</Text>
         </PressScale>
-
-        <PressScale testID="due-tomorrow" onPress={() => applyQuick('tomorrow')} style={styles.quickBtn}>
-          <Text style={styles.quickText}>Tomorrow 09:00</Text>
+        <PressScale testID="due-tomorrow" onPress={() => applyQuick('tomorrow')} style={[styles.quickBtn, { borderColor: c.accent, backgroundColor: c.accentSoft }]}>
+          <Text style={[styles.quickText, { color: c.accent }]}>Tomorrow 09:00</Text>
         </PressScale>
-
-        <PressScale testID="due-weekend" onPress={() => applyQuick('weekend')} style={styles.quickBtn}>
-          <Text style={styles.quickText}>Weekend</Text>
+        <PressScale testID="due-weekend" onPress={() => applyQuick('weekend')} style={[styles.quickBtn, { borderColor: c.accent, backgroundColor: c.accentSoft }]}>
+          <Text style={[styles.quickText, { color: c.accent }]}>Weekend</Text>
         </PressScale>
       </View>
 
-      <Text style={styles.label}>Date</Text>
+      <Text style={[styles.label, { color: c.textMuted }]}>Date</Text>
       <TextInput
         testID="due-date-input"
         value={dateText}
         onChangeText={setDateText}
         placeholder="YYYY-MM-DD"
-        placeholderTextColor={UI.muted}
+        placeholderTextColor={c.textSoft}
         autoCapitalize="none"
         autoCorrect={false}
-        style={styles.input}
+        style={[styles.input, { backgroundColor: c.bgSoft, borderColor: c.cardBorder, color: c.text }]}
       />
 
-      <Text style={styles.label}>Time</Text>
-      <View style={styles.timeInputWrap}>
-        <Clock color={UI.muted} size={14} />
+      <Text style={[styles.label, { color: c.textMuted }]}>Time</Text>
+      <View style={[styles.timeInputWrap, { backgroundColor: c.bgSoft, borderColor: c.cardBorder }]}>
+        <Clock color={c.textMuted} size={14} />
         <TextInput
           testID="due-time-input"
           value={timeText}
           onChangeText={setTimeText}
           placeholder="HH:mm"
-          placeholderTextColor={UI.muted}
+          placeholderTextColor={c.textSoft}
           autoCapitalize="none"
           autoCorrect={false}
-          style={styles.timeInput}
+          style={[styles.timeInput, { color: c.text }]}
         />
       </View>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
       <View style={styles.footer}>
-        <PressScale testID="clear-due-date" onPress={clear} style={styles.clearBtn}>
-          <CalendarX color={UI.muted} size={15} />
-          <Text style={styles.clearText}>Clear</Text>
+        <PressScale testID="clear-due-date" onPress={clear} style={[styles.clearBtn, { borderColor: c.cardBorder }]}>
+          <CalendarX color={c.textMuted} size={15} />
+          <Text style={[styles.clearText, { color: c.textMuted }]}>Clear</Text>
         </PressScale>
-
-        <PressScale testID="save-due-date" onPress={save} style={styles.saveBtn}>
+        <PressScale testID="save-due-date" onPress={save} style={[styles.saveBtn, { backgroundColor: c.accent }]}>
           <Text style={styles.saveText}>Use date</Text>
         </PressScale>
       </View>
@@ -143,11 +137,9 @@ export default function DateTimePickerSheet({
 
 const styles = StyleSheet.create({
   sheet: {
-    backgroundColor: UI.card,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     borderWidth: 1,
-    borderColor: UI.line,
     padding: 24,
     paddingBottom: 130,
   },
@@ -157,123 +149,27 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 8,
   },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  title: {
-    color: UI.text,
-    fontFamily: 'PlayfairDisplay_400Regular_Italic',
-    fontSize: 26,
-  },
-  iconBtn: {
-    padding: 8,
-    borderRadius: 9999,
-    borderWidth: 1,
-    borderColor: UI.line,
-  },
-  help: {
-    color: UI.muted,
-    fontFamily: 'Inter_400Regular',
-    fontSize: 13,
-    lineHeight: 19,
-    marginBottom: 14,
-  },
-  quickRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 8,
-  },
-  quickBtn: {
-    borderRadius: 9999,
-    borderWidth: 1,
-    borderColor: UI.orange,
-    backgroundColor: UI.orangeSoft,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-  },
-  quickText: {
-    color: UI.orange,
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 12,
-  },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  title: { fontFamily: 'PlayfairDisplay_400Regular_Italic', fontSize: 26 },
+  iconBtn: { padding: 8, borderRadius: 9999, borderWidth: 1 },
+  help: { fontFamily: 'Inter_400Regular', fontSize: 13, lineHeight: 19, marginBottom: 14 },
+  quickRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
+  quickBtn: { borderRadius: 9999, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 9 },
+  quickText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
   label: {
-    fontFamily: 'Inter_500Medium',
-    fontSize: 11,
-    color: UI.muted,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginTop: 12,
-    marginBottom: 8,
+    fontFamily: 'Inter_500Medium', fontSize: 11,
+    textTransform: 'uppercase', letterSpacing: 1, marginTop: 12, marginBottom: 8,
   },
-  input: {
-    backgroundColor: UI.soft,
-    borderWidth: 1,
-    borderColor: UI.line,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    color: UI.text,
-    fontFamily: 'Inter_400Regular',
-    fontSize: 15,
-  },
-  timeInputWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: UI.soft,
-    borderWidth: 1,
-    borderColor: UI.line,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-  },
-  timeInput: {
-    flex: 1,
-    paddingVertical: 12,
-    color: UI.text,
-    fontFamily: 'Inter_400Regular',
-    fontSize: 15,
-  },
-  error: {
-    marginTop: 10,
-    color: UI.danger,
-    fontFamily: 'Inter_500Medium',
-    fontSize: 12,
-  },
-  footer: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 20,
-  },
+  input: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, fontFamily: 'Inter_400Regular', fontSize: 15 },
+  timeInputWrap: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14 },
+  timeInput: { flex: 1, paddingVertical: 12, fontFamily: 'Inter_400Regular', fontSize: 15 },
+  error: { marginTop: 10, color: '#DC2626', fontFamily: 'Inter_500Medium', fontSize: 12 },
+  footer: { flexDirection: 'row', gap: 12, marginTop: 20 },
   clearBtn: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: UI.line,
-    borderRadius: 14,
-    paddingVertical: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 8,
+    flex: 1, borderWidth: 1, borderRadius: 14, paddingVertical: 14,
+    alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8,
   },
-  clearText: {
-    color: UI.muted,
-    fontFamily: 'Inter_500Medium',
-    fontSize: 15,
-  },
-  saveBtn: {
-    flex: 1,
-    backgroundColor: UI.orange,
-    borderRadius: 14,
-    paddingVertical: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  saveText: {
-    color: UI.card,
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 15,
-  },
+  clearText: { fontFamily: 'Inter_500Medium', fontSize: 15 },
+  saveBtn: { flex: 1, borderRadius: 14, paddingVertical: 14, alignItems: 'center', justifyContent: 'center' },
+  saveText: { color: '#FFFFFF', fontFamily: 'Inter_600SemiBold', fontSize: 15 },
 });
