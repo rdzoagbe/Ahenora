@@ -18,17 +18,18 @@ const OPTIONS: { code: Lang; label: string; native: string }[] = [
 ];
 
 export function LanguageModal({ visible, onClose }: Props) {
-  const { t, lang, setLang } = useStore();
+  const { t, lang, setLang, theme } = useStore();
+  const c = theme.colors;
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
+      <BlurView intensity={40} tint={theme.mode === 'dark' ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
       <View style={styles.backdrop} />
       <View style={styles.center}>
-        <View style={styles.sheet}>
+        <View style={[styles.sheet, { backgroundColor: c.card, borderColor: c.cardBorder }]}>
           <View style={styles.header}>
-            <Text style={styles.heading}>{t('language')}</Text>
-            <PressScale testID="close-lang" onPress={onClose} style={styles.closeBtn}>
-              <X color="#fff" size={18} />
+            <Text style={[styles.heading, { color: c.text }]}>{t('language')}</Text>
+            <PressScale testID="close-lang" onPress={onClose} style={[styles.closeBtn, { borderColor: c.cardBorder }]}>
+              <X color={c.text} size={18} />
             </PressScale>
           </View>
           {OPTIONS.map((o) => {
@@ -41,13 +42,16 @@ export function LanguageModal({ visible, onClose }: Props) {
                   await setLang(o.code);
                   onClose();
                 }}
-                style={[styles.row, selected && styles.rowSelected]}
+                style={[
+                  styles.row,
+                  selected && { borderColor: c.success, backgroundColor: theme.mode === 'dark' ? 'rgba(34,197,94,0.12)' : '#DFF7EC' },
+                ]}
               >
                 <View>
-                  <Text style={styles.native}>{o.native}</Text>
-                  <Text style={styles.label}>{o.label}</Text>
+                  <Text style={[styles.native, { color: c.text }]}>{o.native}</Text>
+                  <Text style={[styles.label, { color: c.textMuted }]}>{o.label}</Text>
                 </View>
-                {selected ? <Check color="#10B981" size={18} /> : null}
+                {selected ? <Check color={c.success} size={18} /> : null}
               </PressScale>
             );
           })}
@@ -58,20 +62,18 @@ export function LanguageModal({ visible, onClose }: Props) {
 }
 
 const styles = StyleSheet.create({
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(8,9,16,0.5)' },
+  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
   sheet: {
     width: '100%',
     maxWidth: 380,
-    backgroundColor: 'rgba(20,22,32,0.96)',
     borderRadius: 24,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
     padding: 22,
   },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  heading: { fontFamily: 'PlayfairDisplay_400Regular_Italic', fontSize: 26, color: '#fff' },
-  closeBtn: { padding: 8, borderRadius: 9999, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+  heading: { fontFamily: 'PlayfairDisplay_400Regular_Italic', fontSize: 26 },
+  closeBtn: { padding: 8, borderRadius: 9999, borderWidth: 1 },
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -83,10 +85,6 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
     marginTop: 8,
   },
-  rowSelected: {
-    borderColor: 'rgba(16,185,129,0.35)',
-    backgroundColor: 'rgba(16,185,129,0.08)',
-  },
-  native: { fontFamily: 'Inter_600SemiBold', fontSize: 16, color: '#fff' },
-  label: { fontFamily: 'Inter_400Regular', fontSize: 12, color: 'rgba(255,255,255,0.5)', marginTop: 2 },
+  native: { fontFamily: 'Inter_600SemiBold', fontSize: 16 },
+  label: { fontFamily: 'Inter_400Regular', fontSize: 12, marginTop: 2 },
 });

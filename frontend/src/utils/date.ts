@@ -84,15 +84,21 @@ export function formatCompactDue(value?: string | null, lang: string = 'en') {
   tomorrow.setDate(tomorrow.getDate() + 1);
   const tomorrowKey = toLocalDateInput(tomorrow.toISOString());
 
-  const time = date.toLocaleTimeString(lang === 'es' ? 'es-ES' : 'en-US', {
+  const localeMap: Record<string, string> = { en: 'en-US', es: 'es-ES', fr: 'fr-FR', de: 'de-DE' };
+  const locale = localeMap[lang] ?? 'en-US';
+
+  const todayLabels: Record<string, string> = { en: 'Today', es: 'Hoy', fr: "Aujourd'hui", de: 'Heute' };
+  const tomorrowLabels: Record<string, string> = { en: 'Tomorrow', es: 'Mañana', fr: 'Demain', de: 'Morgen' };
+
+  const time = date.toLocaleTimeString(locale, {
     hour: '2-digit',
     minute: '2-digit',
   });
 
-  if (targetKey === todayKey) return lang === 'es' ? `Hoy · ${time}` : `Today · ${time}`;
-  if (targetKey === tomorrowKey) return lang === 'es' ? `Mañana · ${time}` : `Tomorrow · ${time}`;
+  if (targetKey === todayKey) return `${todayLabels[lang] ?? todayLabels.en} · ${time}`;
+  if (targetKey === tomorrowKey) return `${tomorrowLabels[lang] ?? tomorrowLabels.en} · ${time}`;
 
-  return date.toLocaleDateString(lang === 'es' ? 'es-ES' : 'en-US', {
+  return date.toLocaleDateString(locale, {
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
@@ -101,13 +107,18 @@ export function formatCompactDue(value?: string | null, lang: string = 'en') {
 }
 
 export function formatDetailedDue(value?: string | null, lang: string = 'en') {
-  if (!value) return lang === 'es' ? 'Sin fecha' : 'No due date';
+  const noDateLabels: Record<string, string> = { en: 'No due date', es: 'Sin fecha', fr: 'Pas de date', de: 'Kein Fälligkeitsdatum' };
+  const invalidLabels: Record<string, string> = { en: 'Invalid date', es: 'Fecha inválida', fr: 'Date invalide', de: 'Ungültiges Datum' };
+  const localeMap: Record<string, string> = { en: 'en-US', es: 'es-ES', fr: 'fr-FR', de: 'de-DE' };
+  const locale = localeMap[lang] ?? 'en-US';
+
+  if (!value) return noDateLabels[lang] ?? noDateLabels.en;
 
   const date = new Date(value);
 
-  if (Number.isNaN(date.getTime())) return lang === 'es' ? 'Fecha inválida' : 'Invalid date';
+  if (Number.isNaN(date.getTime())) return invalidLabels[lang] ?? invalidLabels.en;
 
-  return date.toLocaleDateString(lang === 'es' ? 'es-ES' : 'en-US', {
+  return date.toLocaleDateString(locale, {
     weekday: 'short',
     month: 'short',
     day: 'numeric',

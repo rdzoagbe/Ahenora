@@ -16,6 +16,7 @@ import {
   PlayfairDisplay_800ExtraBold,
 } from '@expo-google-fonts/playfair-display';
 import { StoreProvider, useStore } from '../src/store';
+import { UpgradeModal } from '../src/components/UpgradeModal';
 
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
@@ -25,6 +26,7 @@ function RootNavigator() {
   return (
     <>
       <StatusBar style={resolvedAppearance === 'light' ? 'dark' : 'light'} backgroundColor={theme.colors.bg} />
+      <UpgradeModal />
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.colors.bg } }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="oauthredirect" />

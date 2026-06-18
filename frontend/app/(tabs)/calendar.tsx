@@ -7,6 +7,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { CalendarDays, ChevronLeft, ChevronRight, Clock, RefreshCw, User, X } from 'lucide-react-native';
 
+import { useSwipeTabs } from '../../src/hooks/useSwipeTabs';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
 import { PressScale } from '../../src/components/PressScale';
 import { Card as KitCard, IconTile, ScreenHeader, UI } from '../../src/components/Kit';
@@ -98,6 +99,7 @@ function groupByDay(cards: Card[], selectedDay: string | null) {
 
 export default function CalendarScreen() {
   const { t, lang } = useStore();
+  const swipeHandlers = useSwipeTabs();
   const { width: windowWidth } = useWindowDimensions();
   const [cards, setCards] = useState<Card[]>([]);
   const [loading, setLoading] = useState(true);
@@ -338,7 +340,7 @@ export default function CalendarScreen() {
   const totalSelectedEvents = groups.reduce((sum, g) => sum + g.items.length, 0);
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} {...swipeHandlers}>
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
           <ScreenHeader

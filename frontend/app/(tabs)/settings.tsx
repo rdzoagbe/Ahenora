@@ -22,6 +22,7 @@ import {
   X,
 } from 'lucide-react-native';
 
+import { useSwipeTabs } from '../../src/hooks/useSwipeTabs';
 import { PressScale } from '../../src/components/PressScale';
 import { LanguageModal } from '../../src/components/LanguageModal';
 import { PinPadModal } from '../../src/components/PinPadModal';
@@ -41,6 +42,7 @@ function formatBytes(bytes?: number | null) {
 
 export default function SettingsScreen() {
   const { user, t, lang, logout, subscription, appearanceMode, setAppearance } = useStore();
+  const swipeHandlers = useSwipeTabs();
   const router = useRouter();
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [invites, setInvites] = useState<FamilyInvite[]>([]);
@@ -197,7 +199,7 @@ export default function SettingsScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} {...swipeHandlers}>
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           <ScreenHeader eyebrow="Manage" title="Settings" />

@@ -21,6 +21,7 @@ import {
 } from 'lucide-react-native';
 
 import { useBreakpoint } from '../../src/responsive';
+import { useSwipeTabs } from '../../src/hooks/useSwipeTabs';
 import { PressScale } from '../../src/components/PressScale';
 import { AddCardModal } from '../../src/components/AddCardModal';
 import { VoiceCaptureModal } from '../../src/components/VoiceCaptureModal';
@@ -131,6 +132,7 @@ function TaskRow({ card, onComplete }: { card: Card; onComplete: () => void }) {
 export default function FeedScreen() {
   const { user, t } = useStore();
   const { px, maxW } = useBreakpoint();
+  const swipeHandlers = useSwipeTabs();
 
   const [cards, setCards] = useState<Card[]>([]);
   const [members, setMembers] = useState<FamilyMember[]>([]);
@@ -275,7 +277,7 @@ export default function FeedScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} {...swipeHandlers}>
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <ScrollView
           showsVerticalScrollIndicator={false}
@@ -319,23 +321,23 @@ export default function FeedScreen() {
                 <Text style={styles.capturePlaceholder} numberOfLines={1}>Add a task, note or reminder...</Text>
               </PressScale>
               <View style={styles.captureActions}>
-                <PressScale onPress={() => setShowCamera(true)} style={styles.secondaryPill}>
-                  <View style={[styles.pillIcon, { backgroundColor: UI.lavender }]}>
-                    <Camera color={UI.lavenderText} size={16} />
+                <PressScale onPress={() => setShowCamera(true)} style={styles.actionPill}>
+                  <View style={[styles.actionDot, { backgroundColor: UI.lavender }]}>
+                    <Camera color={UI.lavenderText} size={18} />
                   </View>
-                  <Text style={styles.secondaryPillText}>Photo</Text>
+                  <Text style={styles.actionPillText}>Photo</Text>
                 </PressScale>
-                <PressScale onPress={() => setShowVoice(true)} style={styles.secondaryPill}>
-                  <View style={[styles.pillIcon, { backgroundColor: UI.mint }]}>
-                    <Mic color={UI.mintText} size={16} />
+                <PressScale onPress={() => setShowVoice(true)} style={styles.actionPill}>
+                  <View style={[styles.actionDot, { backgroundColor: UI.mint }]}>
+                    <Mic color={UI.mintText} size={18} />
                   </View>
-                  <Text style={styles.secondaryPillText}>Voice</Text>
+                  <Text style={styles.actionPillText}>Voice</Text>
                 </PressScale>
-                <PressScale onPress={openManual} style={styles.addPill}>
-                  <View style={[styles.pillIcon, { backgroundColor: 'rgba(255,255,255,0.22)' }]}>
-                    <Plus color="#FFFFFF" size={16} />
+                <PressScale onPress={openManual} style={[styles.actionPill, styles.actionPillAccent]}>
+                  <View style={[styles.actionDot, { backgroundColor: 'rgba(255,255,255,0.24)' }]}>
+                    <Plus color="#FFFFFF" size={18} />
                   </View>
-                  <Text style={styles.addPillText}>Add</Text>
+                  <Text style={styles.actionPillAccentText}>Add</Text>
                 </PressScale>
               </View>
             </View>
@@ -591,54 +593,38 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 10,
   },
-  secondaryPill: {
+  actionPill: {
     flex: 1,
-    height: 54,
-    borderRadius: 16,
+    height: 46,
+    borderRadius: 13,
     borderWidth: 1,
     borderColor: UI.line,
-    backgroundColor: UI.card,
+    backgroundColor: UI.soft,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 9,
-    shadowColor: '#000000',
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 1,
+    gap: 8,
   },
-  secondaryPillText: {
+  actionPillAccent: {
+    borderWidth: 0,
+    backgroundColor: UI.orange,
+  },
+  actionDot: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionPillText: {
     color: UI.text,
     fontFamily: 'Inter_700Bold',
     fontSize: 14,
   },
-  addPill: {
-    flex: 1,
-    height: 54,
-    borderRadius: 16,
-    backgroundColor: UI.orange,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 9,
-    shadowColor: UI.orange,
-    shadowOpacity: 0.28,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 3,
-  },
-  addPillText: {
+  actionPillAccentText: {
     color: '#FFFFFF',
     fontFamily: 'Inter_800ExtraBold',
-    fontSize: 15,
-  },
-  pillIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 9,
-    alignItems: 'center',
-    justifyContent: 'center',
+    fontSize: 14,
   },
   statsStrip: {
     minHeight: 78,
