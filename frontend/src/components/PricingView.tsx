@@ -33,7 +33,6 @@ const PLAN_PRICES: Record<Plan, { monthly: number; yearly: number }> = {
 interface Props {
   embedded?: boolean;
   onAuthRequired?: () => void;
-  onClose?: () => void;
 }
 
 export function PricingView({ embedded = false, onAuthRequired }: Props) {
@@ -228,7 +227,7 @@ function PlanCard({
       </View>
       {!isFree && cycle === 'yearly' ? (
         <Text style={styles.yearlyNote}>
-          ${price.toFixed(2)} {t('pricing_billed_yearly')} Ã‚Â· preview only
+          ${price.toFixed(2)} {t('pricing_billed_yearly')} · preview only
         </Text>
       ) : null}
 
@@ -246,7 +245,7 @@ function PlanCard({
       {showCurrentBadge && isCurrent ? (
         <View style={[styles.cta, styles.ctaCurrent]}>
           <Text style={[styles.ctaText, { color: '#fff' }]}>
-            ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“ {t('pricing_current_plan')}
+            ✓ {t('pricing_current_plan')}
           </Text>
         </View>
       ) : (

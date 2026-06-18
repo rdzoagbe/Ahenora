@@ -4,6 +4,7 @@ import { BlurView } from 'expo-blur';
 import { X, Check } from 'lucide-react-native';
 import { PressScale } from './PressScale';
 import { Lang, useStore } from '../store';
+import { UI } from './Kit';
 
 interface Props {
   visible: boolean;
@@ -21,14 +22,14 @@ export function LanguageModal({ visible, onClose }: Props) {
   const { t, lang, setLang } = useStore();
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
+      <BlurView intensity={40} tint="light" style={StyleSheet.absoluteFill} />
       <View style={styles.backdrop} />
       <View style={styles.center}>
         <View style={styles.sheet}>
           <View style={styles.header}>
             <Text style={styles.heading}>{t('language')}</Text>
             <PressScale testID="close-lang" onPress={onClose} style={styles.closeBtn}>
-              <X color="#fff" size={18} />
+              <X color={UI.text} size={18} />
             </PressScale>
           </View>
           {OPTIONS.map((o) => {
@@ -58,20 +59,20 @@ export function LanguageModal({ visible, onClose }: Props) {
 }
 
 const styles = StyleSheet.create({
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(8,9,16,0.5)' },
+  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
   sheet: {
     width: '100%',
     maxWidth: 380,
-    backgroundColor: 'rgba(20,22,32,0.96)',
+    backgroundColor: UI.card,
     borderRadius: 24,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: UI.line,
     padding: 22,
   },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  heading: { fontFamily: 'PlayfairDisplay_400Regular_Italic', fontSize: 26, color: '#fff' },
-  closeBtn: { padding: 8, borderRadius: 9999, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+  heading: { fontFamily: 'PlayfairDisplay_400Regular_Italic', fontSize: 26, color: UI.text },
+  closeBtn: { padding: 8, borderRadius: 9999, borderWidth: 1, borderColor: UI.line },
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -84,9 +85,9 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   rowSelected: {
-    borderColor: 'rgba(16,185,129,0.35)',
-    backgroundColor: 'rgba(16,185,129,0.08)',
+    borderColor: UI.mintText,
+    backgroundColor: UI.mint,
   },
-  native: { fontFamily: 'Inter_600SemiBold', fontSize: 16, color: '#fff' },
-  label: { fontFamily: 'Inter_400Regular', fontSize: 12, color: 'rgba(255,255,255,0.5)', marginTop: 2 },
+  native: { fontFamily: 'Inter_600SemiBold', fontSize: 16, color: UI.text },
+  label: { fontFamily: 'Inter_400Regular', fontSize: 12, color: UI.muted, marginTop: 2 },
 });

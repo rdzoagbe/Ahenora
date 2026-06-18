@@ -11,6 +11,7 @@ import {
   View,
   ViewStyle,
 } from 'react-native';
+import { UI } from './Kit';
 
 type KeyboardAwareBottomSheetProps = {
   visible: boolean;
@@ -59,10 +60,10 @@ const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
     justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.55)',
+    backgroundColor: 'rgba(0,0,0,0.45)',
   },
   content: {
-    backgroundColor: '#111',
+    backgroundColor: UI.card,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 20,

@@ -3,6 +3,7 @@ import { Modal, View, Text, StyleSheet } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { X, Lock, Delete } from 'lucide-react-native';
 import { PressScale } from './PressScale';
+import { UI } from './Kit';
 
 interface Props {
   visible: boolean;
@@ -50,17 +51,17 @@ export function PinPadModal({ visible, mode, title, subtitle, onClose, onSubmit 
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <BlurView intensity={50} tint="dark" style={StyleSheet.absoluteFill} />
+      <BlurView intensity={50} tint="light" style={StyleSheet.absoluteFill} />
       <View style={styles.backdrop} />
       <View style={styles.center}>
         <View style={styles.sheet}>
           <View style={styles.headerRow}>
             <View style={styles.badge}>
-              <Lock color="#fff" size={12} />
+              <Lock color={UI.text} size={12} />
               <Text style={styles.badgeText}>{mode === 'set' ? 'Set PIN' : 'Enter PIN'}</Text>
             </View>
             <PressScale testID="pin-close" onPress={onClose} style={styles.closeBtn}>
-              <X color="#fff" size={18} />
+              <X color={UI.text} size={18} />
             </PressScale>
           </View>
 
@@ -98,7 +99,7 @@ export function PinPadModal({ visible, mode, title, subtitle, onClose, onSubmit 
               <Text style={styles.keyText}>0</Text>
             </PressScale>
             <PressScale testID="pin-back" onPress={back} style={styles.key}>
-              <Delete color="rgba(255,255,255,0.7)" size={22} />
+              <Delete color={UI.muted} size={22} />
             </PressScale>
           </View>
         </View>
@@ -108,40 +109,40 @@ export function PinPadModal({ visible, mode, title, subtitle, onClose, onSubmit 
 }
 
 const styles = StyleSheet.create({
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(8,9,16,0.6)' },
+  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
   sheet: {
     width: '100%',
     maxWidth: 360,
-    backgroundColor: 'rgba(20,22,32,0.96)',
+    backgroundColor: UI.card,
     borderRadius: 28,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: UI.line,
     padding: 24,
   },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   badge: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     paddingHorizontal: 10, paddingVertical: 5,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: UI.soft,
+    borderWidth: 1, borderColor: UI.line,
     borderRadius: 9999,
   },
-  badgeText: { color: '#fff', fontFamily: 'Inter_500Medium', fontSize: 11, letterSpacing: 0.4 },
-  closeBtn: { padding: 8, borderRadius: 9999, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+  badgeText: { color: UI.text, fontFamily: 'Inter_500Medium', fontSize: 11, letterSpacing: 0.4 },
+  closeBtn: { padding: 8, borderRadius: 9999, borderWidth: 1, borderColor: UI.line },
   heading: {
     fontFamily: 'PlayfairDisplay_400Regular_Italic',
-    color: '#fff', fontSize: 26, marginTop: 16,
+    color: UI.text, fontSize: 26, marginTop: 16,
   },
-  sub: { color: 'rgba(255,255,255,0.55)', fontFamily: 'Inter_400Regular', fontSize: 13, marginTop: 4 },
+  sub: { color: UI.muted, fontFamily: 'Inter_400Regular', fontSize: 13, marginTop: 4 },
   dotsRow: { flexDirection: 'row', gap: 16, justifyContent: 'center', marginTop: 22, marginBottom: 10 },
   dot: {
     width: 14, height: 14, borderRadius: 9999,
-    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.25)',
+    borderWidth: 1.5, borderColor: UI.line,
   },
-  dotFilled: { backgroundColor: '#fff', borderColor: '#fff' },
-  dotErr: { borderColor: '#EF4444' },
-  errText: { color: '#EF4444', textAlign: 'center', fontFamily: 'Inter_500Medium', fontSize: 12, marginBottom: 4 },
+  dotFilled: { backgroundColor: UI.text, borderColor: UI.text },
+  dotErr: { borderColor: UI.danger },
+  errText: { color: UI.danger, textAlign: 'center', fontFamily: 'Inter_500Medium', fontSize: 12, marginBottom: 4 },
   pad: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 10 },
   key: {
     width: '33.333%',
@@ -149,5 +150,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  keyText: { color: '#fff', fontFamily: 'Inter_500Medium', fontSize: 26 },
+  keyText: { color: UI.text, fontFamily: 'Inter_500Medium', fontSize: 26 },
 });
