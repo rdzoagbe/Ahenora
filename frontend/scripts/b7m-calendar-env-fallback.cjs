@@ -18,7 +18,7 @@ const newEnv = `  const webClientId =
 
   const androidClientId =
     process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID ||
-    '243255248169-ike4t51ha6o8c5rcgsp7mvke2g5t67ol.apps.googleusercontent.com';`;
+    '243255248169-ike4t51ha6o8c5rcgsp7mvke2g5t67o1.apps.googleusercontent.com';`;
 
 if (!content.includes(oldEnv) && !content.includes("243255248169-cei972lc7kmfig6tmjb6l2nlmgqkjf22.apps.googleusercontent.com")) {
   throw new Error("Could not find Calendar Google client ID block.");
