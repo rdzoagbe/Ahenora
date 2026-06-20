@@ -13,7 +13,7 @@ $GoogleWebClientId = "243255248169-cei972lc7kmfig6tmjb6l2nlmgqkjf22.apps.googleu
 # Android client ID must be OAuth type: Android, with:
 # Package: com.householdcoo.app
 # SHA-1: 84:C1:B5:CF:DE:FD:B4:B7:24:DE:A6:8C:C6:10:88:77:EE:56:D7:81
-$GoogleAndroidClientId = "243255248169-ike4t51ha6o8c5rcgsp7mvke2g5t67o1.apps.googleusercontent.com"
+$GoogleAndroidClientId = "243255248169-ike4t51ha6o8c5rcgsp7mvke2g5t67ol.apps.googleusercontent.com"
 
 @"
 EXPO_PUBLIC_BACKEND_URL=$BackendUrl
