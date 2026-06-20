@@ -51,6 +51,13 @@ export const tokenStore = {
 
 const REQUEST_TIMEOUT_MS = 30_000;
 
+const RETRY_MAX = 3;
+const RETRY_BASE_MS = 1_000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function request<T = unknown>(
   path: string,
   opts: { method?: string; body?: unknown } = {}
@@ -61,40 +68,67 @@ async function request<T = unknown>(
   };
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  let lastError: unknown;
 
-  let res: Response;
-  try {
-    res = await fetch(`${BASE}/api${path}`, {
-      method: opts.method || 'GET',
-      headers,
-      body: opts.body ? JSON.stringify(opts.body) : undefined,
-      signal: controller.signal,
-    });
-  } finally {
-    clearTimeout(timeoutId);
-  }
-
-  if (!res.ok) {
-    const text = await res.text();
-    if (res.status === 402) {
-      try {
-        const parsed = JSON.parse(text) as Record<string, unknown>;
-        const detail = (parsed.detail ?? parsed) as Record<string, unknown>;
-        const err = Object.assign(
-          new Error((detail?.message as string) || 'Plan limit reached'),
-          { status: 402, planLimit: detail }
-        );
-        throw err;
-      } catch (e) {
-        if ((e as { planLimit?: unknown }).planLimit) throw e;
-      }
+  for (let attempt = 0; attempt <= RETRY_MAX; attempt++) {
+    if (attempt > 0) {
+      await sleep(RETRY_BASE_MS * Math.pow(2, attempt - 1));
     }
-    throw Object.assign(new Error(`${res.status}: ${text}`), { status: res.status });
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+    let res: Response;
+    try {
+      res = await fetch(`${BASE}/api${path}`, {
+        method: opts.method || 'GET',
+        headers,
+        body: opts.body ? JSON.stringify(opts.body) : undefined,
+        signal: controller.signal,
+      });
+    } catch (err) {
+      clearTimeout(timeoutId);
+      // Never retry aborted requests (user cancellation or timeout)
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        throw err;
+      }
+      // Network error — retry if we have attempts left
+      lastError = err;
+      if (attempt < RETRY_MAX) continue;
+      throw err;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
+    // Retry on 5xx server errors
+    if (res.status >= 500 && res.status < 600 && attempt < RETRY_MAX) {
+      lastError = Object.assign(new Error(`${res.status}`), { status: res.status });
+      continue;
+    }
+
+    if (!res.ok) {
+      const text = await res.text();
+      if (res.status === 402) {
+        try {
+          const parsed = JSON.parse(text) as Record<string, unknown>;
+          const detail = (parsed.detail ?? parsed) as Record<string, unknown>;
+          const err = Object.assign(
+            new Error((detail?.message as string) || 'Plan limit reached'),
+            { status: 402, planLimit: detail }
+          );
+          throw err;
+        } catch (e) {
+          if ((e as { planLimit?: unknown }).planLimit) throw e;
+        }
+      }
+      throw Object.assign(new Error(`${res.status}: ${text}`), { status: res.status });
+    }
+    if (res.status === 204) return {} as T;
+    return res.json() as Promise<T>;
   }
-  if (res.status === 204) return {} as T;
-  return res.json() as Promise<T>;
+
+  // Should not be reached, but satisfies TypeScript
+  throw lastError;
 }
 
 export type CardType = 'SIGN_SLIP' | 'RSVP' | 'TASK';

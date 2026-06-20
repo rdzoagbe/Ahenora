@@ -1,5 +1,6 @@
 import React, { useRef } from 'react';
 import {
+  AccessibilityRole,
   Animated,
   Pressable,
   ViewStyle,
@@ -36,9 +37,12 @@ interface Props {
   style?: StyleProp<ViewStyle>;
   testID?: string;
   disabled?: boolean;
+  accessibilityLabel?: string;
+  accessibilityRole?: AccessibilityRole;
+  accessibilityHint?: string;
 }
 
-export function PressScale({ onPress, children, style, testID, disabled }: Props) {
+export function PressScale({ onPress, children, style, testID, disabled, accessibilityLabel, accessibilityRole, accessibilityHint }: Props) {
   const scale = useRef(new Animated.Value(1)).current;
   const { layout, visual } = splitStyles(style);
 
@@ -57,6 +61,9 @@ export function PressScale({ onPress, children, style, testID, disabled }: Props
       onPressOut={onOut}
       disabled={disabled}
       style={layout}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole={accessibilityRole}
+      accessibilityHint={accessibilityHint}
     >
       <Animated.View style={[{ transform: [{ scale }] }, visual]}>{children}</Animated.View>
     </Pressable>

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   TextInput,
   Platform,
   Pressable,
+  RefreshControl,
   Image,
   Alert,
   Modal,
@@ -73,6 +74,7 @@ function VaultScreen() {
   const [category, setCategory] = useState('Medical');
   const [image, setImage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
 
   const showToast = useCallback((message: string, tone: ToastTone = 'info') => {
@@ -92,8 +94,13 @@ function VaultScreen() {
     }
   }, [showToast]);
 
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
+  }, [load]);
+
   useFocusEffect(useCallback(() => { load(); }, [load]));
-  useEffect(() => { load(); }, [load]);
 
   const usedMb = useMemo(() => {
     const bytes = docs.reduce((sum, d) => sum + (d.image_base64?.length || 0) * 0.75, 0);
@@ -165,7 +172,7 @@ function VaultScreen() {
   return (
     <View style={styles.container} {...swipeHandlers}>
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#F56519" />}>
           <ScreenHeader
             eyebrow="Secure Storage"
             title={t('vault')}

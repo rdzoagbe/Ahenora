@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Image, Platform, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useCallback, useMemo, useState } from 'react';
+import { Image, Platform, RefreshControl, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import {
@@ -34,6 +34,7 @@ import { useStore } from '../../src/store';
 import { api, CalendarContact, Card as CardType, Entitlements, FamilyInvite, FamilyMember, NotificationSettings } from '../../src/api';
 import { LANG_NAMES } from '../../src/i18n';
 import { ensureNotificationPermissions, registerForPushNotificationsAsync, sendLocalNotification, sendTestScheduledReminderNotification, syncCardReminderNotifications } from '../../src/notifications';
+import { logger } from '../../src/logger';
 
 function formatBytes(bytes?: number | null) {
   const value = bytes || 0;
@@ -71,6 +72,7 @@ function SettingsScreen() {
   const [entitlements, setEntitlements] = useState<Entitlements | null>(null);
   const [completedCards, setCompletedCards] = useState<CardType[]>([]);
 
+  const [refreshing, setRefreshing] = useState(false);
   const [expandMembers, setExpandMembers] = useState(false);
   const [expandChildren, setExpandChildren] = useState(false);
   const [expandConnected, setExpandConnected] = useState(false);
@@ -104,11 +106,16 @@ function SettingsScreen() {
       setEntitlements(entitlementRows);
       setCompletedCards(completedRows);
     } catch (error) {
-      console.log('settings load failed', error);
+      logger.warn('settings load failed', error);
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
+  }, [load]);
+
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const memberLimit = entitlements?.max_members ?? subscription?.limits?.max_members ?? 0;
@@ -176,7 +183,7 @@ function SettingsScreen() {
         setNotificationStatus(nextPrefs.new_card_alerts ? warning || 'New-card alerts are on.' : 'Notifications are off.');
       }
     } catch (error: any) {
-      console.log('notification settings failed', error);
+      logger.warn('notification settings failed', error);
       setNotificationStatus(error?.message || 'Could not update notification settings.');
     } finally {
       setSavingNotifications(false);
@@ -212,7 +219,7 @@ function SettingsScreen() {
   return (
     <View style={styles.container} {...swipeHandlers}>
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#F56519" />}>
           <ScreenHeader eyebrow="Manage" title="Settings" />
 
           {/* Profile */}

@@ -99,6 +99,9 @@ function SidebarNav({ width }: { width: number }) {
               active && (light ? { backgroundColor: theme.colors.accentSoft } : styles.sidebarItemActive),
             ]}
             activeOpacity={0.75}
+            accessibilityRole="tab"
+            accessibilityLabel={t(labelKey)}
+            accessibilityState={{ selected: active }}
           >
             <Icon color={iconColor} size={20} strokeWidth={active ? 2.5 : 2.0} />
             {isDesktop && (
@@ -149,11 +152,11 @@ export default function TabLayout() {
           tabBarStyle: isWide ? { display: 'none' } : floatingTabStyle,
         }}
       >
-        <Tabs.Screen name="feed"     options={{ tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={Home}          label={t('feed')} /> }} />
-        <Tabs.Screen name="calendar" options={{ tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={CalendarIcon}  label={t('calendar')} /> }} />
-        <Tabs.Screen name="kids"     options={{ tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={Star}          label={t('kids')} /> }} />
-        <Tabs.Screen name="vault"    options={{ tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={Lock}          label={t('vault')} /> }} />
-        <Tabs.Screen name="settings" options={{ tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={SettingsIcon}  label={t('settings')} /> }} />
+        <Tabs.Screen name="feed"     options={{ tabBarAccessibilityLabel: t('feed'), tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={Home}          label={t('feed')} /> }} />
+        <Tabs.Screen name="calendar" options={{ tabBarAccessibilityLabel: t('calendar'), tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={CalendarIcon}  label={t('calendar')} /> }} />
+        <Tabs.Screen name="kids"     options={{ tabBarAccessibilityLabel: t('kids'), tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={Star}          label={t('kids')} /> }} />
+        <Tabs.Screen name="vault"    options={{ tabBarAccessibilityLabel: t('vault'), tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={Lock}          label={t('vault')} /> }} />
+        <Tabs.Screen name="settings" options={{ tabBarAccessibilityLabel: t('settings'), tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={SettingsIcon}  label={t('settings')} /> }} />
         <Tabs.Screen name="account"  options={{ href: null }} />
       </Tabs>
 

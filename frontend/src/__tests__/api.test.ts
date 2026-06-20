@@ -95,9 +95,9 @@ describe('api.exchangeSession', () => {
 
 describe('API error handling', () => {
   it('throws on non-2xx responses', async () => {
-    mockFetch(500, 'Internal Server Error', false);
+    mockFetch(400, 'Bad Request', false);
 
-    await expect(api.me()).rejects.toThrow('500: Internal Server Error');
+    await expect(api.me()).rejects.toThrow('400: Bad Request');
   });
 
   it('attaches status property to error', async () => {

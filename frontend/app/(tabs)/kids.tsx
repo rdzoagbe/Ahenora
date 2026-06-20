@@ -3,6 +3,7 @@ import {
   View,
   Text,
   StyleSheet,
+  RefreshControl,
   ScrollView,
   TextInput,
   Platform,
@@ -131,6 +132,7 @@ function KidsScreen() {
   const [starReason, setStarReason] = useState('');
 
   const [saving, setSaving] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [pinPromptReward, setPinPromptReward] = useState<Reward | null>(null);
 
@@ -187,8 +189,13 @@ function KidsScreen() {
     }
   }, [refreshHistory, selectedChild]);
 
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
+  }, [load]);
+
   useFocusEffect(useCallback(() => { load(); }, [load]));
-  useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
     refreshHistory(activeChild?.member_id);
@@ -380,7 +387,7 @@ function KidsScreen() {
   return (
     <View style={styles.container} {...swipeHandlers}>
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#F56519" />}>
           <ScreenHeader
             eyebrow="Family"
             title="Kids"
