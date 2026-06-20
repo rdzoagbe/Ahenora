@@ -16,13 +16,13 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { Plus, X, Trash2, Stethoscope, BookOpen, Shield, Scale, Bell, Folder, MoreVertical, FileText } from 'lucide-react-native';
 
-import { useSwipeTabs } from '../../src/hooks/useSwipeTabs';
+import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { PressScale } from '../../src/components/PressScale';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
 import AppToast, { ToastTone } from '../../src/components/AppToast';
 import LoadingOverlay from '../../src/components/LoadingOverlay';
 import { TabScreen } from '../../src/components/TabScreen';
-import { Badge, Card, IconTile, ProgressBar, ScreenHeader, UI } from '../../src/components/Kit';
+import { Badge, Card, IconTile, ProgressBar, ScreenHeader, UI, useUI, UIColors } from '../../src/components/Kit';
 
 import { useStore } from '../../src/store';
 import { api, VaultDoc } from '../../src/api';
@@ -49,8 +49,9 @@ type ToastState = { message: string; tone: ToastTone };
 
 export default function Vault() {
   const { t } = useStore();
-  const swipeHandlers = useSwipeTabs();
   const router = useRouter();
+  const ui = useUI();
+  const styles = useMemo(() => createStyles(ui), [ui]);
 
   const [docs, setDocs] = useState<VaultDoc[]>([]);
   const [loading, setLoading] = useState(true);
@@ -158,7 +159,7 @@ export default function Vault() {
   };
 
   return (
-    <View style={styles.container} {...swipeHandlers}>
+    <SwipeableTabView style={styles.container}>
       <TabScreen
         tab="Vault"
         refreshing={refreshing}
@@ -170,7 +171,7 @@ export default function Vault() {
             title={t('vault')}
             right={
               <PressScale onPress={() => router.navigate('/(tabs)/feed')} style={styles.bellWrap}>
-                <Bell color={UI.text} size={24} />
+                <Bell color={ui.text} size={24} />
               </PressScale>
             }
           />
@@ -189,8 +190,8 @@ export default function Vault() {
 
           {/* Storage summary */}
           <Card style={styles.storageCard}>
-            <IconTile bg={UI.orangeSoft} size={52} radius={16}>
-              <Folder color={UI.orange} size={24} />
+            <IconTile bg={ui.orangeSoft} size={52} radius={16}>
+              <Folder color={ui.orange} size={24} />
             </IconTile>
             <View style={{ flex: 1 }}>
               <Text style={styles.storageText}>{docs.length} document{docs.length === 1 ? '' : 's'} · {usedLabel} used</Text>
@@ -208,7 +209,7 @@ export default function Vault() {
 
           {filtered.length === 0 && !loading ? (
             <Card style={styles.emptyCard}>
-              <IconTile bg={UI.soft} size={52} radius={16}><FileText color={UI.muted} size={24} /></IconTile>
+              <IconTile bg={ui.soft} size={52} radius={16}><FileText color={ui.muted} size={24} /></IconTile>
               <Text style={styles.emptyTitle}>{filter === 'All' ? t('no_docs') : `No ${filter.toLowerCase()} documents`}</Text>
               <Text style={styles.emptySub}>Store school slips, insurance papers, IDs, and household documents.</Text>
               <PressScale testID="vault-empty-add" onPress={openAdd} style={styles.emptyBtn}>
@@ -225,7 +226,7 @@ export default function Vault() {
                     <View style={styles.thumbWrap}>
                       <Image source={{ uri: d.image_base64 }} style={styles.thumbImg} />
                       <View style={styles.moreBtn}>
-                        <MoreVertical color={UI.muted} size={16} />
+                        <MoreVertical color={ui.muted} size={16} />
                       </View>
                     </View>
                     <View style={styles.tileBody}>
@@ -253,12 +254,12 @@ export default function Vault() {
         <View style={styles.sheetHeader}>
           <Text style={styles.sheetTitle}>{t('add_document')}</Text>
           <PressScale testID="vault-close" onPress={closeAdd} style={styles.iconBtn}>
-            <X color={UI.text} size={20} />
+            <X color={ui.text} size={20} />
           </PressScale>
         </View>
 
         <Text style={styles.label}>{t('title')}</Text>
-        <TextInput testID="vault-title" value={title} onChangeText={setTitle} placeholder={t('title')} placeholderTextColor={UI.muted} style={styles.input} returnKeyType="next" />
+        <TextInput testID="vault-title" value={title} onChangeText={setTitle} placeholder={t('title')} placeholderTextColor={ui.muted} style={styles.input} returnKeyType="next" />
 
         <Text style={styles.label}>{t('doc_category')}</Text>
         <View style={styles.catRow}>
@@ -266,9 +267,9 @@ export default function Vault() {
             const Icon = c.icon;
             const active = category === c.key;
             return (
-              <PressScale key={c.key} testID={`vault-cat-${c.key}`} onPress={() => setCategory(c.key)} style={[styles.catBtn, { borderColor: active ? c.tone : UI.line, backgroundColor: active ? c.soft : UI.soft }]}>
-                <Icon color={active ? c.tone : UI.muted} size={15} />
-                <Text style={[styles.catBtnLabel, { color: active ? c.tone : UI.muted }]}>{t(c.key.toLowerCase())}</Text>
+              <PressScale key={c.key} testID={`vault-cat-${c.key}`} onPress={() => setCategory(c.key)} style={[styles.catBtn, { borderColor: active ? c.tone : ui.line, backgroundColor: active ? c.soft : ui.soft }]}>
+                <Icon color={active ? c.tone : ui.muted} size={15} />
+                <Text style={[styles.catBtnLabel, { color: active ? c.tone : ui.muted }]}>{t(c.key.toLowerCase())}</Text>
               </PressScale>
             );
           })}
@@ -311,64 +312,64 @@ export default function Vault() {
 
       <LoadingOverlay visible={loading} label="Loading vault..." />
       <AppToast visible={Boolean(toast)} message={toast?.message || null} tone={toast?.tone || 'info'} />
-    </View>
+    </SwipeableTabView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: UI.bg },
+const createStyles = (ui: UIColors) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: ui.bg },
   scroll: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 60 },
   bellWrap: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
 
   chipScroll: { marginTop: 18, marginHorizontal: -20 },
   chipRow: { gap: 9, paddingHorizontal: 20 },
-  chip: { paddingHorizontal: 18, paddingVertical: 10, borderRadius: 99, backgroundColor: UI.card, borderWidth: 1, borderColor: UI.line },
-  chipActive: { backgroundColor: UI.text, borderColor: UI.text },
-  chipText: { color: UI.muted, fontFamily: 'Inter_700Bold', fontSize: 14 },
+  chip: { paddingHorizontal: 18, paddingVertical: 10, borderRadius: 99, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line },
+  chipActive: { backgroundColor: ui.text, borderColor: ui.text },
+  chipText: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 14 },
   chipTextActive: { color: '#FFFFFF' },
 
   storageCard: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16, marginTop: 16 },
-  storageText: { color: UI.text, fontFamily: 'Inter_800ExtraBold', fontSize: 17 },
+  storageText: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 17 },
 
   recentHead: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginTop: 24, marginBottom: 14 },
-  recentTitle: { color: UI.text, fontFamily: 'Inter_800ExtraBold', fontSize: 19, letterSpacing: -0.3 },
-  recentTotal: { color: UI.muted, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
+  recentTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 19, letterSpacing: -0.3 },
+  recentTotal: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
 
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 14, justifyContent: 'space-between' },
-  tile: { width: '48%', borderRadius: 20, backgroundColor: UI.card, borderWidth: 1, borderColor: UI.line, overflow: 'hidden', shadowColor: '#000000', shadowOpacity: 0.06, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 2, marginBottom: 2 },
-  thumbWrap: { height: 132, backgroundColor: UI.soft, alignItems: 'center', justifyContent: 'center' },
+  tile: { width: '48%', borderRadius: 20, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, overflow: 'hidden', shadowColor: '#000000', shadowOpacity: 0.06, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 2, marginBottom: 2 },
+  thumbWrap: { height: 132, backgroundColor: ui.soft, alignItems: 'center', justifyContent: 'center' },
   thumbImg: { ...StyleSheet.absoluteFillObject, resizeMode: 'cover' },
   moreBtn: { position: 'absolute', top: 8, right: 8, width: 28, height: 28, borderRadius: 99, backgroundColor: 'rgba(255,255,255,0.92)', alignItems: 'center', justifyContent: 'center' },
   tileBody: { padding: 12, gap: 7 },
-  tileTitle: { color: UI.text, fontFamily: 'Inter_800ExtraBold', fontSize: 15, lineHeight: 19 },
-  tileDate: { color: UI.muted, fontFamily: 'Inter_500Medium', fontSize: 12 },
+  tileTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 15, lineHeight: 19 },
+  tileDate: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12 },
 
   emptyCard: { alignItems: 'center', paddingVertical: 30, paddingHorizontal: 22, gap: 10 },
-  emptyTitle: { color: UI.text, fontFamily: 'Inter_800ExtraBold', fontSize: 17, textAlign: 'center' },
-  emptySub: { color: UI.muted, fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 19, textAlign: 'center' },
-  emptyBtn: { marginTop: 6, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: UI.orange, paddingHorizontal: 18, paddingVertical: 12, borderRadius: 99 },
+  emptyTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 17, textAlign: 'center' },
+  emptySub: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 19, textAlign: 'center' },
+  emptyBtn: { marginTop: 6, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: ui.orange, paddingHorizontal: 18, paddingVertical: 12, borderRadius: 99 },
   emptyBtnText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
 
-  fab: { position: 'absolute', right: 22, bottom: 102, width: 61, height: 61, borderRadius: 999, backgroundColor: UI.orange, alignItems: 'center', justifyContent: 'center', shadowColor: '#000000', shadowOpacity: 0.18, shadowRadius: 16, shadowOffset: { width: 0, height: 10 }, elevation: 7, zIndex: 30 },
+  fab: { position: 'absolute', right: 22, bottom: 102, width: 61, height: 61, borderRadius: 999, backgroundColor: ui.orange, alignItems: 'center', justifyContent: 'center', shadowColor: '#000000', shadowOpacity: 0.18, shadowRadius: 16, shadowOffset: { width: 0, height: 10 }, elevation: 7, zIndex: 30 },
   fabPressed: { backgroundColor: '#D9530F', transform: [{ scale: 0.96 }] },
 
   backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(8,9,16,0.5)' },
-  sheet: { backgroundColor: UI.card, borderTopLeftRadius: 34, borderTopRightRadius: 34, borderWidth: 1, borderColor: UI.line, padding: 26, paddingBottom: 140 },
+  sheet: { backgroundColor: ui.card, borderTopLeftRadius: 34, borderTopRightRadius: 34, borderWidth: 1, borderColor: ui.line, padding: 26, paddingBottom: 140 },
   sheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  sheetTitle: { color: UI.text, fontFamily: 'Inter_800ExtraBold', fontSize: 24, letterSpacing: -0.4 },
-  iconBtn: { padding: 9, borderRadius: 9999, borderWidth: 1, borderColor: UI.line, backgroundColor: UI.soft },
-  label: { color: UI.muted, fontFamily: 'Inter_800ExtraBold', fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginTop: 14, marginBottom: 8 },
-  input: { borderWidth: 1, borderColor: UI.line, borderRadius: 16, paddingHorizontal: 15, paddingVertical: 13, fontFamily: 'Inter_500Medium', fontSize: 16, color: UI.text, backgroundColor: UI.soft },
+  sheetTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 24, letterSpacing: -0.4 },
+  iconBtn: { padding: 9, borderRadius: 9999, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft },
+  label: { color: ui.muted, fontFamily: 'Inter_800ExtraBold', fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginTop: 14, marginBottom: 8 },
+  input: { borderWidth: 1, borderColor: ui.line, borderRadius: 16, paddingHorizontal: 15, paddingVertical: 13, fontFamily: 'Inter_500Medium', fontSize: 16, color: ui.text, backgroundColor: ui.soft },
   catRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 9 },
   catBtn: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 13, paddingVertical: 10, borderRadius: 9999, borderWidth: 1 },
   catBtnLabel: { fontFamily: 'Inter_800ExtraBold', fontSize: 12 },
-  pick: { marginTop: 18, height: 150, borderRadius: 18, borderWidth: 1, borderColor: UI.line, borderStyle: 'dashed', backgroundColor: UI.soft, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  pick: { marginTop: 18, height: 150, borderRadius: 18, borderWidth: 1, borderColor: ui.line, borderStyle: 'dashed', backgroundColor: ui.soft, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   pickImg: { ...StyleSheet.absoluteFillObject, resizeMode: 'cover' },
-  pickText: { color: UI.muted, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
+  pickText: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
   sheetFooter: { flexDirection: 'row', gap: 12, marginTop: 22 },
-  cancelBtn: { flex: 1, borderWidth: 1, borderColor: UI.line, borderRadius: 18, paddingVertical: 15, alignItems: 'center' },
-  cancelText: { color: UI.muted, fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
-  saveBtn: { flex: 1, borderRadius: 18, paddingVertical: 15, alignItems: 'center', backgroundColor: UI.orange },
+  cancelBtn: { flex: 1, borderWidth: 1, borderColor: ui.line, borderRadius: 18, paddingVertical: 15, alignItems: 'center' },
+  cancelText: { color: ui.muted, fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
+  saveBtn: { flex: 1, borderRadius: 18, paddingVertical: 15, alignItems: 'center', backgroundColor: ui.orange },
   saveText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
   previewWrap: { flex: 1, padding: 24, justifyContent: 'center' },
   previewTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },

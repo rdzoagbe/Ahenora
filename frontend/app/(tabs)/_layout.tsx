@@ -27,11 +27,11 @@ function TabIcon({ focused, Icon, label }: { focused: boolean; Icon: any; label:
     );
   }
 
-  const activeColor = '#202323';
-  const inactiveColor = 'rgba(255,255,255,0.64)';
+  const activeColor = theme.colors.primaryText;
+  const inactiveColor = theme.colors.textSoft;
 
   return (
-    <View style={[styles.tabItem, focused && { backgroundColor: '#FFFFFF' }]}>
+    <View style={[styles.tabItem, focused && { backgroundColor: theme.colors.bgElevated }]}>
       <Icon color={focused ? activeColor : inactiveColor} size={21} strokeWidth={focused ? 2.5 : 2.1} />
       <Text
         style={[
@@ -79,7 +79,7 @@ function SidebarNav({ width }: { width: number }) {
     >
       {isDesktop && (
         <View style={styles.sidebarBrand}>
-          <Text style={[styles.sidebarBrandText, { color: light ? theme.colors.text : '#FFFFFF' }]}>COO</Text>
+          <Text style={[styles.sidebarBrandText, { color: theme.colors.text }]}>COO</Text>
         </View>
       )}
 
@@ -87,7 +87,7 @@ function SidebarNav({ width }: { width: number }) {
         const active = pathname === `/${name}` || pathname.endsWith(name);
         const iconColor = light
           ? active ? theme.colors.accent : theme.colors.textSoft
-          : active ? '#202323' : 'rgba(255,255,255,0.60)';
+          : active ? theme.colors.primaryText : theme.colors.textSoft;
 
         return (
           <TouchableOpacity
@@ -225,7 +225,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
   },
   sidebarItemActive: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: 'rgba(255,255,255,0.15)',
   },
   sidebarLabel: {
     fontFamily: 'Inter_700Bold',

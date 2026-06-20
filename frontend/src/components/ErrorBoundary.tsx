@@ -1,10 +1,15 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { PressScale } from './PressScale';
+import { useUI, UIColors } from './Kit';
 
 interface Props {
   tab: string;
   children: ReactNode;
+}
+
+interface InnerProps extends Props {
+  ui: UIColors;
 }
 
 interface State {
@@ -12,8 +17,8 @@ interface State {
   error: Error | null;
 }
 
-export class ErrorBoundary extends Component<Props, State> {
-  constructor(props: Props) {
+class ErrorBoundaryInner extends Component<InnerProps, State> {
+  constructor(props: InnerProps) {
     super(props);
     this.state = { hasError: false, error: null };
   }
@@ -32,16 +37,17 @@ export class ErrorBoundary extends Component<Props, State> {
 
   render() {
     if (this.state.hasError) {
+      const { ui } = this.props;
       return (
-        <View style={styles.container}>
-          <View style={styles.card}>
+        <View style={[styles.container, { backgroundColor: ui.bg }]}>
+          <View style={[styles.card, { backgroundColor: ui.card, borderColor: ui.line }]}>
             <Text style={styles.emoji}>!</Text>
-            <Text style={styles.title}>Something went wrong</Text>
-            <Text style={styles.subtitle}>
+            <Text style={[styles.title, { color: ui.text }]}>Something went wrong</Text>
+            <Text style={[styles.subtitle, { color: ui.muted }]}>
               The {this.props.tab} tab ran into an unexpected error.
             </Text>
             {__DEV__ && this.state.error ? (
-              <Text style={styles.detail} numberOfLines={4}>
+              <Text style={[styles.detail, { color: ui.muted }]} numberOfLines={4}>
                 {this.state.error.message}
               </Text>
             ) : null}
@@ -57,10 +63,14 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 }
 
+export function ErrorBoundary(props: Props) {
+  const ui = useUI();
+  return <ErrorBoundaryInner {...props} ui={ui} />;
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F6F3EE',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 32,
@@ -68,10 +78,8 @@ const styles = StyleSheet.create({
   card: {
     width: '100%',
     maxWidth: 360,
-    backgroundColor: '#FFFFFF',
     borderRadius: 24,
     borderWidth: 1,
-    borderColor: '#E6E1DA',
     padding: 32,
     alignItems: 'center',
     shadowColor: '#000000',
@@ -94,14 +102,12 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   title: {
-    color: '#101318',
     fontFamily: 'Inter_800ExtraBold',
     fontSize: 20,
     textAlign: 'center',
     marginBottom: 8,
   },
   subtitle: {
-    color: '#8A909A',
     fontFamily: 'Inter_500Medium',
     fontSize: 14,
     lineHeight: 20,
@@ -109,7 +115,6 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   detail: {
-    color: '#8A909A',
     fontFamily: 'Inter_500Medium',
     fontSize: 12,
     lineHeight: 17,

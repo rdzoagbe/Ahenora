@@ -6,12 +6,12 @@ import * as WebBrowser from 'expo-web-browser';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { CalendarDays, ChevronLeft, ChevronRight, Clock, RefreshCw, User, X } from 'lucide-react-native';
 
-import { useSwipeTabs } from '../../src/hooks/useSwipeTabs';
+import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
 import { PressScale } from '../../src/components/PressScale';
 import { logger } from '../../src/logger';
 import { TabScreen } from '../../src/components/TabScreen';
-import { Card as KitCard, IconTile, ScreenHeader, UI } from '../../src/components/Kit';
+import { Card as KitCard, IconTile, ScreenHeader, UI, useUI, UIColors } from '../../src/components/Kit';
 import { useStore } from '../../src/store';
 import { api, CalendarImportResult, Card } from '../../src/api';
 
@@ -100,7 +100,6 @@ function groupByDay(cards: Card[], selectedDay: string | null) {
 
 export default function Calendar() {
   const { t, lang } = useStore();
-  const swipeHandlers = useSwipeTabs();
   const { width: windowWidth } = useWindowDimensions();
   const [cards, setCards] = useState<Card[]>([]);
   const [loading, setLoading] = useState(true);
@@ -121,6 +120,9 @@ export default function Calendar() {
     webClientId,
     scopes: ['openid', 'profile', 'email', GOOGLE_CALENDAR_SCOPE],
   });
+
+  const ui = useUI();
+  const styles = useMemo(() => createStyles(ui), [ui]);
 
   const calendarContentWidth = Math.max(280, windowWidth - 84);
   const daySize = Math.max(40, Math.min(52, Math.floor(calendarContentWidth / 7)));
@@ -347,7 +349,7 @@ export default function Calendar() {
   const totalSelectedEvents = groups.reduce((sum, g) => sum + g.items.length, 0);
 
   return (
-    <View style={styles.container} {...swipeHandlers}>
+    <SwipeableTabView style={styles.container}>
       <TabScreen
         tab="Calendar"
         refreshing={refreshing}
@@ -370,7 +372,7 @@ export default function Calendar() {
           <PressScale testID="calendar-sync-card-button" onPress={syncCalendar} disabled={syncDisabled} style={styles.bannerGap}>
             <KitCard style={styles.banner}>
               <View testID="calendar-sync-card" style={styles.bannerInner}>
-                <IconTile bg={UI.orangeSoft} size={40} radius={13}><CalendarDays color={UI.orange} size={20} /></IconTile>
+                <IconTile bg={ui.orangeSoft} size={40} radius={13}><CalendarDays color={ui.orange} size={20} /></IconTile>
                 <Text style={styles.bannerText} numberOfLines={2}>
                   {calendarSyncStatus || (syncResult ? `${syncResult.imported} events imported · ${syncResult.contacts_found} people found.` : 'Connected to Google Calendar. We only read titles & times.')}
                 </Text>
@@ -382,11 +384,11 @@ export default function Calendar() {
           <KitCard style={styles.calCard}>
             <View style={styles.monthHeader}>
               <PressScale testID="prev-month" onPress={() => shiftMonth(-1)} style={styles.monthNav}>
-                <ChevronLeft color={UI.text} size={20} />
+                <ChevronLeft color={ui.text} size={20} />
               </PressScale>
               <Text style={styles.monthTitle}>{monthTitle}</Text>
               <PressScale testID="next-month" onPress={() => shiftMonth(1)} style={styles.monthNav}>
-                <ChevronRight color={UI.text} size={20} />
+                <ChevronRight color={ui.text} size={20} />
               </PressScale>
             </View>
 
@@ -412,13 +414,13 @@ export default function Calendar() {
                     <Text
                       style={[
                         styles.dayNumber,
-                        { color: selected ? '#FFFFFF' : !inMonth ? UI.line : isToday ? UI.orange : UI.text },
+                        { color: selected ? '#FFFFFF' : !inMonth ? ui.line : isToday ? ui.orange : ui.text },
                       ]}
                     >
                       {date.getDate()}
                     </Text>
                     {count > 0 ? (
-                      <View style={[styles.dayDot, { backgroundColor: selected ? '#FFFFFF' : UI.orange }]} />
+                      <View style={[styles.dayDot, { backgroundColor: selected ? '#FFFFFF' : ui.orange }]} />
                     ) : (
                       <View style={styles.dayDotSpacer} />
                     )}
@@ -435,7 +437,7 @@ export default function Calendar() {
           </View>
 
           {loading ? (
-            <ActivityIndicator color={UI.orange} style={{ marginTop: 30 }} />
+            <ActivityIndicator color={ui.orange} style={{ marginTop: 30 }} />
           ) : groups.length === 0 ? (
             <KitCard style={styles.empty}>
               <Text style={styles.emptyText}>{selectedDay ? 'No events on this date.' : t('no_events')}</Text>
@@ -443,7 +445,7 @@ export default function Calendar() {
           ) : (
             <KitCard style={styles.timelineCard}>
               {groups.flatMap((group) => group.items).map((card, index, arr) => {
-                const color = TYPE_COLOR[card.type] || UI.mintText;
+                const color = TYPE_COLOR[card.type] || ui.mintText;
                 const isGoogle = card.source === 'CALENDAR' || card.external_source === 'google_calendar';
                 const { time, ampm } = timeParts(card.due_date);
                 const sub = cleanText(card.description) || cleanText(card.assignee) || (isGoogle ? 'Google Calendar' : 'Family');
@@ -473,73 +475,73 @@ export default function Calendar() {
             <View style={styles.detailHeader}>
               <Text style={styles.detailTitle}>{cleanText(selectedCard.title)}</Text>
               <PressScale onPress={() => setSelectedCard(null)} style={styles.closeBtn}>
-                <X color={UI.text} size={20} />
+                <X color={ui.text} size={20} />
               </PressScale>
             </View>
             <View style={styles.detailMetaRow}>
-              <Clock color={UI.muted} size={17} />
+              <Clock color={ui.muted} size={17} />
               <Text style={styles.detailMetaText}>{formatDateTime(selectedCard.due_date)}</Text>
             </View>
             <View style={styles.detailMetaRow}>
-              <User color={UI.muted} size={17} />
+              <User color={ui.muted} size={17} />
               <Text style={styles.detailMetaText}>{cleanText(selectedCard.assignee) || 'Unassigned'}</Text>
             </View>
-            <Text style={[styles.detailDescription, !selectedCard.description && { color: UI.muted }]}>
+            <Text style={[styles.detailDescription, !selectedCard.description && { color: ui.muted }]}>
               {selectedCard.description ? cleanText(selectedCard.description) : 'No additional details.'}
             </Text>
           </>
         ) : null}
       </KeyboardAwareBottomSheet>
-    </View>
+    </SwipeableTabView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: UI.bg },
+const createStyles = (ui: UIColors) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: ui.bg },
   scroll: { paddingHorizontal: 20, paddingTop: 8 },
-  syncBtn: { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: UI.orange, borderRadius: 99, paddingHorizontal: 18, paddingVertical: 11 },
+  syncBtn: { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: ui.orange, borderRadius: 99, paddingHorizontal: 18, paddingVertical: 11 },
   syncText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
 
   bannerGap: { marginTop: 18 },
   banner: { padding: 14 },
   bannerInner: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  bannerText: { flex: 1, color: UI.muted, fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 18 },
+  bannerText: { flex: 1, color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 18 },
 
   calCard: { marginTop: 16, padding: 16, alignItems: 'center' },
   monthHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', marginBottom: 14 },
-  monthNav: { width: 40, height: 40, borderRadius: 99, borderWidth: 1, borderColor: UI.line, alignItems: 'center', justifyContent: 'center' },
-  monthTitle: { color: UI.text, fontFamily: 'Inter_800ExtraBold', fontSize: 18, letterSpacing: -0.2 },
+  monthNav: { width: 40, height: 40, borderRadius: 99, borderWidth: 1, borderColor: ui.line, alignItems: 'center', justifyContent: 'center' },
+  monthTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 18, letterSpacing: -0.2 },
   weekHeader: { flexDirection: 'row', alignSelf: 'center', marginBottom: 6 },
-  weekLabel: { textAlign: 'center', fontFamily: 'Inter_700Bold', fontSize: 12, color: UI.muted },
+  weekLabel: { textAlign: 'center', fontFamily: 'Inter_700Bold', fontSize: 12, color: ui.muted },
   monthGrid: { flexDirection: 'row', flexWrap: 'wrap', alignSelf: 'center' },
   dayCell: { alignItems: 'center', justifyContent: 'center', borderRadius: 14 },
-  dayCellSelected: { backgroundColor: UI.orange },
+  dayCellSelected: { backgroundColor: ui.orange },
   dayNumber: { fontFamily: 'Inter_700Bold', fontSize: 15.5, includeFontPadding: false, textAlign: 'center' },
   dayDot: { marginTop: 5, width: 5, height: 5, borderRadius: 99 },
   dayDotSpacer: { marginTop: 5, width: 5, height: 5 },
 
   dayHead: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginTop: 24, marginBottom: 12 },
-  dayHeadTitle: { color: UI.text, fontFamily: 'Inter_800ExtraBold', fontSize: 19, letterSpacing: -0.3, flex: 1 },
-  dayHeadCount: { color: UI.muted, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
+  dayHeadTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 19, letterSpacing: -0.3, flex: 1 },
+  dayHeadCount: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
 
   empty: { paddingVertical: 30, alignItems: 'center' },
-  emptyText: { color: UI.muted, fontFamily: 'Inter_700Bold', fontSize: 16 },
+  emptyText: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 16 },
 
   timelineCard: { paddingHorizontal: 16 },
   eventRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14 },
-  eventRowBorder: { borderBottomWidth: 1, borderBottomColor: UI.line },
+  eventRowBorder: { borderBottomWidth: 1, borderBottomColor: ui.line },
   timeBlock: { width: 50, alignItems: 'flex-start' },
-  timeText: { color: UI.text, fontFamily: 'Inter_800ExtraBold', fontSize: 15, lineHeight: 18 },
-  ampmText: { color: UI.muted, fontFamily: 'Inter_600SemiBold', fontSize: 11 },
+  timeText: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 15, lineHeight: 18 },
+  ampmText: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 11 },
   eventBar: { width: 4, alignSelf: 'stretch', borderRadius: 99, minHeight: 34 },
-  eventTitle: { color: UI.text, fontFamily: 'Inter_800ExtraBold', fontSize: 15, lineHeight: 20 },
-  eventSub: { color: UI.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, marginTop: 2 },
+  eventTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 15, lineHeight: 20 },
+  eventSub: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, marginTop: 2 },
 
-  detailSheet: { backgroundColor: UI.card, borderTopLeftRadius: 30, borderTopRightRadius: 30, borderWidth: 1, borderColor: UI.line, padding: 24, paddingBottom: 110 },
+  detailSheet: { backgroundColor: ui.card, borderTopLeftRadius: 30, borderTopRightRadius: 30, borderWidth: 1, borderColor: ui.line, padding: 24, paddingBottom: 110 },
   detailHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
-  detailTitle: { flex: 1, color: UI.text, fontFamily: 'Inter_800ExtraBold', fontSize: 24, lineHeight: 30, letterSpacing: -0.4 },
-  closeBtn: { width: 42, height: 42, borderRadius: 9999, borderWidth: 1, borderColor: UI.line, backgroundColor: UI.soft, alignItems: 'center', justifyContent: 'center' },
+  detailTitle: { flex: 1, color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 24, lineHeight: 30, letterSpacing: -0.4 },
+  closeBtn: { width: 42, height: 42, borderRadius: 9999, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft, alignItems: 'center', justifyContent: 'center' },
   detailMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 14 },
-  detailMetaText: { flex: 1, color: UI.muted, fontFamily: 'Inter_600SemiBold', fontSize: 15, lineHeight: 21 },
-  detailDescription: { marginTop: 20, color: UI.text, fontFamily: 'Inter_500Medium', fontSize: 16, lineHeight: 24 },
+  detailMetaText: { flex: 1, color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 15, lineHeight: 21 },
+  detailDescription: { marginTop: 20, color: ui.text, fontFamily: 'Inter_500Medium', fontSize: 16, lineHeight: 24 },
 });
