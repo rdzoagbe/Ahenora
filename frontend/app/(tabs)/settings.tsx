@@ -1,11 +1,9 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { Image, Platform, RefreshControl, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Image, Platform, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import {
   Bell,
   CalendarDays,
-  ChevronDown,
   ChevronRight,
   Crown,
   Globe,
@@ -27,9 +25,8 @@ import { PressScale } from '../../src/components/PressScale';
 import { LanguageModal } from '../../src/components/LanguageModal';
 import { PinPadModal } from '../../src/components/PinPadModal';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
-import { ErrorBoundary } from '../../src/components/ErrorBoundary';
-import { OfflineBanner } from '../../src/components/OfflineBanner';
-import { Card, IconTile, ScreenHeader, SectionTitle, Toggle, UI } from '../../src/components/Kit';
+import { TabScreen } from '../../src/components/TabScreen';
+import { Card, Chevron, Divider, IconTile, MiniRow, NavRow, ScreenHeader, SectionTitle, StatBox, Toggle, ToggleRow, UI } from '../../src/components/Kit';
 import { useStore } from '../../src/store';
 import { api, CalendarContact, Card as CardType, Entitlements, FamilyInvite, FamilyMember, NotificationSettings } from '../../src/api';
 import { LANG_NAMES } from '../../src/i18n';
@@ -44,15 +41,6 @@ function formatBytes(bytes?: number | null) {
 }
 
 export default function Settings() {
-  return (
-    <ErrorBoundary tab="Settings">
-      <OfflineBanner />
-      <SettingsScreen />
-    </ErrorBoundary>
-  );
-}
-
-function SettingsScreen() {
   const { user, t, lang, logout, subscription, appearanceMode, setAppearance } = useStore();
   const swipeHandlers = useSwipeTabs();
   const router = useRouter();
@@ -218,8 +206,12 @@ function SettingsScreen() {
 
   return (
     <View style={styles.container} {...swipeHandlers}>
-      <SafeAreaView style={{ flex: 1 }} edges={['top']}>
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#F56519" />}>
+      <TabScreen
+        tab="Settings"
+        refreshing={refreshing}
+        onRefresh={handleRefresh}
+        scrollViewProps={{ contentContainerStyle: styles.scroll, keyboardShouldPersistTaps: 'handled' }}
+      >
           <ScreenHeader eyebrow="Manage" title="Settings" />
 
           {/* Profile */}
@@ -447,8 +439,7 @@ function SettingsScreen() {
           </PressScale>
 
           <View style={{ height: 70 }} />
-        </ScrollView>
-      </SafeAreaView>
+      </TabScreen>
 
       <LanguageModal visible={showLang} onClose={() => setShowLang(false)} />
       <PinPadModal
@@ -532,61 +523,6 @@ function SettingsScreen() {
   );
 }
 
-function Chevron({ open }: { open: boolean }) {
-  return open ? <ChevronDown color={UI.muted} size={18} /> : <ChevronRight color={UI.muted} size={18} />;
-}
-
-function Divider() {
-  return <View style={styles.divider} />;
-}
-
-function NavRow({ tile, title, subtitle, right, onPress, testID, divider = true }: { tile: React.ReactNode; title: string; subtitle?: string; right?: React.ReactNode; onPress?: () => void; testID?: string; divider?: boolean }) {
-  return (
-    <PressScale testID={testID} onPress={onPress} style={[styles.row, divider && styles.rowBorder]}>
-      {tile}
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={styles.rowTitle} numberOfLines={1}>{title}</Text>
-        {subtitle ? <Text style={styles.rowSub} numberOfLines={1}>{subtitle}</Text> : null}
-      </View>
-      {right !== undefined ? right : <ChevronRight color={UI.muted} size={18} />}
-    </PressScale>
-  );
-}
-
-function ToggleRow({ tile, title, subtitle, on, onPress, testID, disabled, divider = true }: { tile: React.ReactNode; title: string; subtitle?: string; on: boolean; onPress: () => void; testID?: string; disabled?: boolean; divider?: boolean }) {
-  return (
-    <PressScale testID={testID} onPress={onPress} disabled={disabled} style={[styles.row, divider && styles.rowBorder]}>
-      {tile}
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={styles.rowTitle} numberOfLines={1}>{title}</Text>
-        {subtitle ? <Text style={styles.rowSub} numberOfLines={1}>{subtitle}</Text> : null}
-      </View>
-      <Toggle on={on} />
-    </PressScale>
-  );
-}
-
-function MiniRow({ initial, name, sub }: { initial?: string; name: string; sub?: string }) {
-  return (
-    <View style={styles.miniRow}>
-      <View style={styles.miniAvatar}><Text style={styles.miniInitial}>{initial || '?'}</Text></View>
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={styles.miniName} numberOfLines={1}>{name}</Text>
-        {sub ? <Text style={styles.miniSub} numberOfLines={1}>{sub}</Text> : null}
-      </View>
-    </View>
-  );
-}
-
-function StatBox({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.statBox}>
-      <Text style={styles.statValue}>{value}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: UI.bg },
   scroll: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 60 },
@@ -611,10 +547,6 @@ const styles = StyleSheet.create({
   cardPad: { paddingHorizontal: 16 },
   segmentCard: { paddingHorizontal: 18, paddingTop: 6 },
 
-  row: { flexDirection: 'row', alignItems: 'center', gap: 13, paddingVertical: 13 },
-  rowBorder: { borderBottomWidth: 1, borderBottomColor: UI.line },
-  rowTitle: { color: UI.text, fontFamily: 'Inter_700Bold', fontSize: 15 },
-  rowSub: { color: UI.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, marginTop: 2 },
   valueRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   valueText: { color: UI.muted, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
 
@@ -626,23 +558,14 @@ const styles = StyleSheet.create({
   expandAction: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 10, paddingVertical: 12, borderRadius: 14, borderWidth: 1, borderColor: UI.line, backgroundColor: UI.soft },
   expandActionText: { color: UI.text, fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
   inviteRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  miniRow: { flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 8, flex: 1, minWidth: 0 },
-  miniAvatar: { width: 38, height: 38, borderRadius: 99, backgroundColor: UI.soft, alignItems: 'center', justifyContent: 'center' },
-  miniInitial: { color: UI.text, fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
-  miniName: { color: UI.text, fontFamily: 'Inter_700Bold', fontSize: 14 },
-  miniSub: { color: UI.muted, fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 1 },
   ghostBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: UI.line, backgroundColor: UI.soft, borderRadius: 99, paddingHorizontal: 12, paddingVertical: 8 },
   ghostBtnWide: { flex: 1, alignItems: 'center', borderWidth: 1, borderColor: UI.line, backgroundColor: UI.soft, borderRadius: 12, paddingVertical: 11 },
   ghostBtnText: { color: UI.text, fontFamily: 'Inter_800ExtraBold', fontSize: 12.5 },
 
-  divider: { height: 1, backgroundColor: UI.line },
   note: { color: UI.muted, fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 19, marginTop: 10 },
   emptyText: { color: UI.muted, fontFamily: 'Inter_600SemiBold', fontSize: 13, lineHeight: 19, paddingVertical: 8 },
 
   statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingTop: 4, paddingBottom: 10 },
-  statBox: { width: '48%', minHeight: 64, borderRadius: 14, borderWidth: 1, borderColor: UI.line, backgroundColor: UI.soft, padding: 12, justifyContent: 'center' },
-  statValue: { color: UI.text, fontFamily: 'Inter_800ExtraBold', fontSize: 16 },
-  statLabel: { color: UI.muted, fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 2 },
   testRow: { flexDirection: 'row', gap: 10, width: '100%', marginTop: 2 },
 
   logoutBtn: { marginTop: 26, minHeight: 54, borderRadius: 99, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, backgroundColor: UI.dangerSoft },

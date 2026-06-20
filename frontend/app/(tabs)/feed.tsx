@@ -2,13 +2,10 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
-  RefreshControl,
-  ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import {
   Bell,
@@ -26,8 +23,7 @@ import { PressScale } from '../../src/components/PressScale';
 import { AddCardModal } from '../../src/components/AddCardModal';
 import { VoiceCaptureModal } from '../../src/components/VoiceCaptureModal';
 import { CameraCaptureModal } from '../../src/components/CameraCaptureModal';
-import { ErrorBoundary } from '../../src/components/ErrorBoundary';
-import { OfflineBanner } from '../../src/components/OfflineBanner';
+import { TabScreen } from '../../src/components/TabScreen';
 import { useStore } from '../../src/store';
 import { api, Card, CardType, FamilyMember } from '../../src/api';
 import { syncCardReminderNotifications } from '../../src/notifications';
@@ -132,15 +128,6 @@ function TaskRow({ card, onComplete }: { card: Card; onComplete: () => void }) {
 }
 
 export default function Feed() {
-  return (
-    <ErrorBoundary tab="Feed">
-      <OfflineBanner />
-      <FeedScreen />
-    </ErrorBoundary>
-  );
-}
-
-function FeedScreen() {
   const { user, t } = useStore();
   const { px, maxW } = useBreakpoint();
   const swipeHandlers = useSwipeTabs();
@@ -287,23 +274,19 @@ function FeedScreen() {
     }
   };
 
+  const handleRefresh = useCallback(() => {
+    setRefreshing(true);
+    load();
+  }, [load]);
+
   return (
     <View style={styles.container} {...swipeHandlers}>
-      <SafeAreaView style={{ flex: 1 }} edges={['top']}>
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={[styles.scroll, { paddingHorizontal: px }]}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              tintColor={UI.orange}
-              onRefresh={() => {
-                setRefreshing(true);
-                load();
-              }}
-            />
-          }
-        >
+      <TabScreen
+        tab="Feed"
+        refreshing={refreshing}
+        onRefresh={handleRefresh}
+        scrollViewProps={{ contentContainerStyle: [styles.scroll, { paddingHorizontal: px }] }}
+      >
           <View style={[styles.page, { maxWidth: maxW }]}>
             <View style={styles.topMetaRow}>
               <Text style={styles.dateText}>{feedDateLine()} <Text style={styles.sun}>☀</Text></Text>
@@ -409,8 +392,7 @@ function FeedScreen() {
             </View>
           </View>
           <View style={{ height: 108 }} />
-        </ScrollView>
-      </SafeAreaView>
+      </TabScreen>
 
       <Pressable
         style={({ pressed }) => [styles.fab, pressed && styles.fabPressed]}

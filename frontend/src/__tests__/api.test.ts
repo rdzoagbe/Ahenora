@@ -29,6 +29,7 @@ jest.mock('react-native', () => ({
 }));
 
 import { api, tokenStore } from '../api';
+import { cache } from '../cache';
 
 // ---------- helpers ----------
 
@@ -50,7 +51,7 @@ function mockFetch(status: number, body: unknown, ok?: boolean) {
 
 beforeEach(() => {
   global.fetch = jest.fn();
-  // Default: no stored token
+  cache.clear();
   jest.spyOn(tokenStore, 'get').mockResolvedValue(null);
 });
 

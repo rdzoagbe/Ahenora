@@ -1,6 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
+import { cache } from './cache';
+
+const CACHE_TTL_MS = 30_000;
 
 const BASE = process.env.EXPO_PUBLIC_BACKEND_URL;
 if (!BASE) {
@@ -304,7 +307,10 @@ export const api = {
       body: invite_token ? { access_token, invite_token } : { access_token },
     }),
   me: () => request<User>('/auth/me'),
-  logout: () => request('/auth/logout', { method: 'POST' }),
+  logout: () => {
+    cache.clear();
+    return request('/auth/logout', { method: 'POST' });
+  },
   setLanguage: (language: string) =>
     request('/auth/language', { method: 'PATCH', body: { language } }),
   invite: (email: string) =>
@@ -338,20 +344,32 @@ export const api = {
     }),
   listCalendarContacts: () => request<CalendarContact[]>('/calendar/contacts'),
   // Family
-  familyMembers: () => request<FamilyMember[]>('/family/members'),
-  createFamilyMember: (data: { name: string; starting_stars?: number; pin?: string }) =>
-    request<FamilyMember>('/family/members', {
+  familyMembers: () => {
+    const cacheKey = 'familyMembers';
+    const cached = cache.get<FamilyMember[]>(cacheKey);
+    if (cached) return Promise.resolve(cached);
+    return request<FamilyMember[]>('/family/members').then((data) => {
+      cache.set(cacheKey, data, CACHE_TTL_MS);
+      return data;
+    });
+  },
+  createFamilyMember: (data: { name: string; starting_stars?: number; pin?: string }) => {
+    cache.invalidate('familyMembers');
+    return request<FamilyMember>('/family/members', {
       method: 'POST',
       body: data,
-    }),
-  adjustMemberStars: (member_id: string, data: { delta: number; reason?: string }) =>
-    request<{ ok: boolean; member: FamilyMember; transaction: StarTransaction }>(
+    });
+  },
+  adjustMemberStars: (member_id: string, data: { delta: number; reason?: string }) => {
+    cache.invalidate('familyMembers');
+    return request<{ ok: boolean; member: FamilyMember; transaction: StarTransaction }>(
       `/family/members/${member_id}/stars`,
       {
         method: 'POST',
         body: data,
       }
-    ),
+    );
+  },
   memberStarHistory: (member_id: string) =>
     request<StarTransaction[]>(`/family/members/${member_id}/star-history`),
   setMemberPin: (member_id: string, pin: string) =>
@@ -374,30 +392,75 @@ export const api = {
       body: { title, description: description || '', type: type || 'TASK' },
     }),
   // Cards
-  listCards: (status?: string) =>
-    request<Card[]>(`/cards${status ? `?status=${status}` : ''}`),
-  createCard: (data: Partial<Card>) =>
-    request<Card>('/cards', { method: 'POST', body: data }),
-  updateCard: (id: string, data: Partial<Pick<Card, 'type' | 'title' | 'description' | 'assignee' | 'due_date' | 'status' | 'recurrence' | 'reminder_minutes'>>) =>
-    request<Card>(`/cards/${id}`, { method: 'PATCH', body: data }),
-  deleteCard: (id: string) => request(`/cards/${id}`, { method: 'DELETE' }),
+  listCards: (status?: string) => {
+    const cacheKey = `listCards:${status ?? ''}`;
+    const cached = cache.get<Card[]>(cacheKey);
+    if (cached) return Promise.resolve(cached);
+    return request<Card[]>(`/cards${status ? `?status=${status}` : ''}`).then((data) => {
+      cache.set(cacheKey, data, CACHE_TTL_MS);
+      return data;
+    });
+  },
+  createCard: (data: Partial<Card>) => {
+    cache.invalidatePrefix('listCards');
+    return request<Card>('/cards', { method: 'POST', body: data });
+  },
+  updateCard: (id: string, data: Partial<Pick<Card, 'type' | 'title' | 'description' | 'assignee' | 'due_date' | 'status' | 'recurrence' | 'reminder_minutes'>>) => {
+    cache.invalidatePrefix('listCards');
+    return request<Card>(`/cards/${id}`, { method: 'PATCH', body: data });
+  },
+  deleteCard: (id: string) => {
+    cache.invalidatePrefix('listCards');
+    return request(`/cards/${id}`, { method: 'DELETE' });
+  },
   // Vault
-  listVault: () => request<VaultDoc[]>('/vault'),
-  createVaultDoc: (data: { title: string; category: string; image_base64: string }) =>
-    request<VaultDoc>('/vault', { method: 'POST', body: data }),
-  deleteVaultDoc: (id: string) => request(`/vault/${id}`, { method: 'DELETE' }),
+  listVault: () => {
+    const cacheKey = 'listVault';
+    const cached = cache.get<VaultDoc[]>(cacheKey);
+    if (cached) return Promise.resolve(cached);
+    return request<VaultDoc[]>('/vault').then((data) => {
+      cache.set(cacheKey, data, CACHE_TTL_MS);
+      return data;
+    });
+  },
+  createVaultDoc: (data: { title: string; category: string; image_base64: string }) => {
+    cache.invalidate('listVault');
+    return request<VaultDoc>('/vault', { method: 'POST', body: data });
+  },
+  deleteVaultDoc: (id: string) => {
+    cache.invalidate('listVault');
+    return request(`/vault/${id}`, { method: 'DELETE' });
+  },
   // Rewards
-  listRewards: () => request<Reward[]>('/rewards'),
-  createReward: (data: { title: string; cost_stars: number; icon?: string }) =>
-    request<Reward>('/rewards', { method: 'POST', body: data }),
-  updateReward: (id: string, data: { title?: string; cost_stars?: number; icon?: string }) =>
-    request<Reward>(`/rewards/${id}`, { method: 'PATCH', body: data }),
-  deleteReward: (id: string) => request(`/rewards/${id}`, { method: 'DELETE' }),
-  redeemReward: (id: string, member_id: string) =>
-    request<{ ok: boolean; member: FamilyMember }>(`/rewards/${id}/redeem`, {
+  listRewards: () => {
+    const cacheKey = 'listRewards';
+    const cached = cache.get<Reward[]>(cacheKey);
+    if (cached) return Promise.resolve(cached);
+    return request<Reward[]>('/rewards').then((data) => {
+      cache.set(cacheKey, data, CACHE_TTL_MS);
+      return data;
+    });
+  },
+  createReward: (data: { title: string; cost_stars: number; icon?: string }) => {
+    cache.invalidate('listRewards');
+    return request<Reward>('/rewards', { method: 'POST', body: data });
+  },
+  updateReward: (id: string, data: { title?: string; cost_stars?: number; icon?: string }) => {
+    cache.invalidate('listRewards');
+    return request<Reward>(`/rewards/${id}`, { method: 'PATCH', body: data });
+  },
+  deleteReward: (id: string) => {
+    cache.invalidate('listRewards');
+    return request(`/rewards/${id}`, { method: 'DELETE' });
+  },
+  redeemReward: (id: string, member_id: string) => {
+    cache.invalidate('listRewards');
+    cache.invalidate('familyMembers');
+    return request<{ ok: boolean; member: FamilyMember }>(`/rewards/${id}/redeem`, {
       method: 'POST',
       body: { member_id },
-    }),
+    });
+  },
   // Conflicts
   conflicts: (due_date: string, exclude_id?: string) =>
     request<Card[]>(
@@ -437,8 +500,24 @@ export const api = {
       method: 'POST',
     }),
   // Subscription
-  getSubscription: () => request<Subscription>('/subscription'),
-  getEntitlements: () => request<Entitlements>('/subscription/entitlements'),
+  getSubscription: () => {
+    const cacheKey = 'getSubscription';
+    const cached = cache.get<Subscription>(cacheKey);
+    if (cached) return Promise.resolve(cached);
+    return request<Subscription>('/subscription').then((data) => {
+      cache.set(cacheKey, data, CACHE_TTL_MS);
+      return data;
+    });
+  },
+  getEntitlements: () => {
+    const cacheKey = 'getEntitlements';
+    const cached = cache.get<Entitlements>(cacheKey);
+    if (cached) return Promise.resolve(cached);
+    return request<Entitlements>('/subscription/entitlements').then((data) => {
+      cache.set(cacheKey, data, CACHE_TTL_MS);
+      return data;
+    });
+  },
   changeSubscription: (plan: Plan, billing_cycle: BillingCycle) =>
     request<Subscription>('/subscription/change', {
       method: 'POST',

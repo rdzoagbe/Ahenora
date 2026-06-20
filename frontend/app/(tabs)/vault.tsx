@@ -7,12 +7,10 @@ import {
   TextInput,
   Platform,
   Pressable,
-  RefreshControl,
   Image,
   Alert,
   Modal,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
 import { useFocusEffect, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
@@ -23,8 +21,7 @@ import { PressScale } from '../../src/components/PressScale';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
 import AppToast, { ToastTone } from '../../src/components/AppToast';
 import LoadingOverlay from '../../src/components/LoadingOverlay';
-import { ErrorBoundary } from '../../src/components/ErrorBoundary';
-import { OfflineBanner } from '../../src/components/OfflineBanner';
+import { TabScreen } from '../../src/components/TabScreen';
 import { Badge, Card, IconTile, ProgressBar, ScreenHeader, UI } from '../../src/components/Kit';
 
 import { useStore } from '../../src/store';
@@ -51,15 +48,6 @@ function updatedLine(iso: string) {
 type ToastState = { message: string; tone: ToastTone };
 
 export default function Vault() {
-  return (
-    <ErrorBoundary tab="Vault">
-      <OfflineBanner />
-      <VaultScreen />
-    </ErrorBoundary>
-  );
-}
-
-function VaultScreen() {
   const { t } = useStore();
   const swipeHandlers = useSwipeTabs();
   const router = useRouter();
@@ -171,8 +159,12 @@ function VaultScreen() {
 
   return (
     <View style={styles.container} {...swipeHandlers}>
-      <SafeAreaView style={{ flex: 1 }} edges={['top']}>
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#F56519" />}>
+      <TabScreen
+        tab="Vault"
+        refreshing={refreshing}
+        onRefresh={handleRefresh}
+        scrollViewProps={{ contentContainerStyle: styles.scroll, keyboardShouldPersistTaps: 'handled' }}
+      >
           <ScreenHeader
             eyebrow="Secure Storage"
             title={t('vault')}
@@ -247,8 +239,7 @@ function VaultScreen() {
             </View>
           )}
           <View style={{ height: 140 }} />
-        </ScrollView>
-      </SafeAreaView>
+      </TabScreen>
 
       <Pressable
         style={({ pressed }) => [styles.fab, pressed && styles.fabPressed]}
