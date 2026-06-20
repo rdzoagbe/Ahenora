@@ -10,6 +10,8 @@ import { CalendarDays, ChevronLeft, ChevronRight, Clock, RefreshCw, User, X } fr
 import { useSwipeTabs } from '../../src/hooks/useSwipeTabs';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
 import { PressScale } from '../../src/components/PressScale';
+import { ErrorBoundary } from '../../src/components/ErrorBoundary';
+import { OfflineBanner } from '../../src/components/OfflineBanner';
 import { Card as KitCard, IconTile, ScreenHeader, UI } from '../../src/components/Kit';
 import { useStore } from '../../src/store';
 import { api, CalendarImportResult, Card } from '../../src/api';
@@ -97,7 +99,16 @@ function groupByDay(cards: Card[], selectedDay: string | null) {
     }));
 }
 
-export default function CalendarScreen() {
+export default function Calendar() {
+  return (
+    <ErrorBoundary tab="Calendar">
+      <OfflineBanner />
+      <CalendarScreen />
+    </ErrorBoundary>
+  );
+}
+
+function CalendarScreen() {
   const { t, lang } = useStore();
   const swipeHandlers = useSwipeTabs();
   const { width: windowWidth } = useWindowDimensions();

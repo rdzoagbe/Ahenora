@@ -22,6 +22,8 @@ import { PressScale } from '../../src/components/PressScale';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
 import AppToast, { ToastTone } from '../../src/components/AppToast';
 import LoadingOverlay from '../../src/components/LoadingOverlay';
+import { ErrorBoundary } from '../../src/components/ErrorBoundary';
+import { OfflineBanner } from '../../src/components/OfflineBanner';
 import { Badge, Card, IconTile, ProgressBar, ScreenHeader, UI } from '../../src/components/Kit';
 
 import { useStore } from '../../src/store';
@@ -47,7 +49,16 @@ function updatedLine(iso: string) {
 
 type ToastState = { message: string; tone: ToastTone };
 
-export default function VaultScreen() {
+export default function Vault() {
+  return (
+    <ErrorBoundary tab="Vault">
+      <OfflineBanner />
+      <VaultScreen />
+    </ErrorBoundary>
+  );
+}
+
+function VaultScreen() {
   const { t } = useStore();
   const swipeHandlers = useSwipeTabs();
   const router = useRouter();
