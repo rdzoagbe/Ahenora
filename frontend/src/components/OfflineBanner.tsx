@@ -9,7 +9,7 @@ export function OfflineBanner() {
 
   return (
     <View style={styles.banner}>
-      <Text style={styles.text}>You're offline</Text>
+      <Text style={styles.text}>{"You're offline"}</Text>
     </View>
   );
 }
