@@ -7,6 +7,12 @@ on:
     paths:
       - 'frontend/**'
       - '.github/workflows/frontend-ci-eas-update.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend-ci-eas-update.yml'
   workflow_dispatch:
 
 concurrency:
