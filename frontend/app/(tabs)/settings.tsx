@@ -27,6 +27,8 @@ import { PressScale } from '../../src/components/PressScale';
 import { LanguageModal } from '../../src/components/LanguageModal';
 import { PinPadModal } from '../../src/components/PinPadModal';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
+import { ErrorBoundary } from '../../src/components/ErrorBoundary';
+import { OfflineBanner } from '../../src/components/OfflineBanner';
 import { Card, IconTile, ScreenHeader, SectionTitle, Toggle, UI } from '../../src/components/Kit';
 import { useStore } from '../../src/store';
 import { api, CalendarContact, Card as CardType, Entitlements, FamilyInvite, FamilyMember, NotificationSettings } from '../../src/api';
@@ -40,7 +42,16 @@ function formatBytes(bytes?: number | null) {
   return `${Math.max(1, Math.round(value / 1024))} KB`;
 }
 
-export default function SettingsScreen() {
+export default function Settings() {
+  return (
+    <ErrorBoundary tab="Settings">
+      <OfflineBanner />
+      <SettingsScreen />
+    </ErrorBoundary>
+  );
+}
+
+function SettingsScreen() {
   const { user, t, lang, logout, subscription, appearanceMode, setAppearance } = useStore();
   const swipeHandlers = useSwipeTabs();
   const router = useRouter();

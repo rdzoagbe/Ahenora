@@ -34,6 +34,8 @@ import AppToast, { ToastTone } from '../../src/components/AppToast';
 import EmptyState from '../../src/components/EmptyState';
 import ErrorState from '../../src/components/ErrorState';
 import LoadingOverlay from '../../src/components/LoadingOverlay';
+import { ErrorBoundary } from '../../src/components/ErrorBoundary';
+import { OfflineBanner } from '../../src/components/OfflineBanner';
 import { Card, IconTile, ProgressBar, ScreenHeader, UI } from '../../src/components/Kit';
 
 import { useStore } from '../../src/store';
@@ -88,7 +90,16 @@ function formatActivityDate(value?: string | null) {
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
-export default function KidsScreen() {
+export default function Kids() {
+  return (
+    <ErrorBoundary tab="Kids">
+      <OfflineBanner />
+      <KidsScreen />
+    </ErrorBoundary>
+  );
+}
+
+function KidsScreen() {
   const { t } = useStore();
   const swipeHandlers = useSwipeTabs();
   const router = useRouter();

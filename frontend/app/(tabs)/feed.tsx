@@ -26,6 +26,8 @@ import { PressScale } from '../../src/components/PressScale';
 import { AddCardModal } from '../../src/components/AddCardModal';
 import { VoiceCaptureModal } from '../../src/components/VoiceCaptureModal';
 import { CameraCaptureModal } from '../../src/components/CameraCaptureModal';
+import { ErrorBoundary } from '../../src/components/ErrorBoundary';
+import { OfflineBanner } from '../../src/components/OfflineBanner';
 import { useStore } from '../../src/store';
 import { api, Card, CardType, FamilyMember } from '../../src/api';
 import { syncCardReminderNotifications } from '../../src/notifications';
@@ -129,7 +131,16 @@ function TaskRow({ card, onComplete }: { card: Card; onComplete: () => void }) {
   );
 }
 
-export default function FeedScreen() {
+export default function Feed() {
+  return (
+    <ErrorBoundary tab="Feed">
+      <OfflineBanner />
+      <FeedScreen />
+    </ErrorBoundary>
+  );
+}
+
+function FeedScreen() {
   const { user, t } = useStore();
   const { px, maxW } = useBreakpoint();
   const swipeHandlers = useSwipeTabs();
