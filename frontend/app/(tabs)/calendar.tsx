@@ -11,8 +11,7 @@ import { useSwipeTabs } from '../../src/hooks/useSwipeTabs';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
 import { PressScale } from '../../src/components/PressScale';
 import { logger } from '../../src/logger';
-import { ErrorBoundary } from '../../src/components/ErrorBoundary';
-import { OfflineBanner } from '../../src/components/OfflineBanner';
+import { TabScreen } from '../../src/components/TabScreen';
 import { Card as KitCard, IconTile, ScreenHeader, UI } from '../../src/components/Kit';
 import { useStore } from '../../src/store';
 import { api, CalendarImportResult, Card } from '../../src/api';
@@ -101,15 +100,6 @@ function groupByDay(cards: Card[], selectedDay: string | null) {
 }
 
 export default function Calendar() {
-  return (
-    <ErrorBoundary tab="Calendar">
-      <OfflineBanner />
-      <CalendarScreen />
-    </ErrorBoundary>
-  );
-}
-
-function CalendarScreen() {
   const { t, lang } = useStore();
   const swipeHandlers = useSwipeTabs();
   const { width: windowWidth } = useWindowDimensions();
@@ -359,8 +349,12 @@ function CalendarScreen() {
 
   return (
     <View style={styles.container} {...swipeHandlers}>
-      <SafeAreaView style={{ flex: 1 }} edges={['top']}>
-        <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#F56519" />}>
+      <TabScreen
+        tab="Calendar"
+        refreshing={refreshing}
+        onRefresh={handleRefresh}
+        scrollViewProps={{ contentContainerStyle: styles.scroll }}
+      >
           <ScreenHeader
             eyebrow="Family Calendar"
             title={monthTitle}

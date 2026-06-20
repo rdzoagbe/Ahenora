@@ -1,5 +1,7 @@
 import React from 'react';
 import { StyleProp, StyleSheet, Text, TextStyle, View, ViewStyle } from 'react-native';
+import { ChevronDown, ChevronRight } from 'lucide-react-native';
+import { PressScale } from './PressScale';
 
 // ── Shared "minimal monochrome + accent" palette (matches the redesigned Feed) ──
 export const UI = {
@@ -108,6 +110,67 @@ export function ProgressBar({ pct, color = UI.orange, track = UI.soft }: { pct: 
   );
 }
 
+// ── Chevron indicator that rotates between right / down ──
+export function Chevron({ open }: { open: boolean }) {
+  return open ? <ChevronDown color={UI.muted} size={18} /> : <ChevronRight color={UI.muted} size={18} />;
+}
+
+// ── Thin horizontal rule ──
+export function Divider() {
+  return <View style={kit.divider} />;
+}
+
+// ── Tappable row with icon tile + label + optional right slot ──
+export function NavRow({ tile, title, subtitle, right, onPress, testID, divider = true }: { tile: React.ReactNode; title: string; subtitle?: string; right?: React.ReactNode; onPress?: () => void; testID?: string; divider?: boolean }) {
+  return (
+    <PressScale testID={testID} onPress={onPress} style={[kit.row, divider && kit.rowBorder]}>
+      {tile}
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={kit.rowTitle} numberOfLines={1}>{title}</Text>
+        {subtitle ? <Text style={kit.rowSub} numberOfLines={1}>{subtitle}</Text> : null}
+      </View>
+      {right !== undefined ? right : <ChevronRight color={UI.muted} size={18} />}
+    </PressScale>
+  );
+}
+
+// ── Row with toggle on the trailing edge ──
+export function ToggleRow({ tile, title, subtitle, on, onPress, testID, disabled, divider = true }: { tile: React.ReactNode; title: string; subtitle?: string; on: boolean; onPress: () => void; testID?: string; disabled?: boolean; divider?: boolean }) {
+  return (
+    <PressScale testID={testID} onPress={onPress} disabled={disabled} style={[kit.row, divider && kit.rowBorder]}>
+      {tile}
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={kit.rowTitle} numberOfLines={1}>{title}</Text>
+        {subtitle ? <Text style={kit.rowSub} numberOfLines={1}>{subtitle}</Text> : null}
+      </View>
+      <Toggle on={on} />
+    </PressScale>
+  );
+}
+
+// ── Compact avatar + name row ──
+export function MiniRow({ initial, name, sub }: { initial?: string; name: string; sub?: string }) {
+  return (
+    <View style={kit.miniRow}>
+      <View style={kit.miniAvatar}><Text style={kit.miniInitial}>{initial || '?'}</Text></View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={kit.miniName} numberOfLines={1}>{name}</Text>
+        {sub ? <Text style={kit.miniSub} numberOfLines={1}>{sub}</Text> : null}
+      </View>
+    </View>
+  );
+}
+
+// ── Bordered stat tile (label + value) ──
+export function StatBox({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={kit.statBox}>
+      <Text style={kit.statValue}>{value}</Text>
+      <Text style={kit.statLabel}>{label}</Text>
+    </View>
+  );
+}
+
 const kit = StyleSheet.create({
   headerRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12 },
   headerRight: { alignItems: 'flex-end', justifyContent: 'center' },
@@ -142,4 +205,17 @@ const kit = StyleSheet.create({
   },
   progressTrack: { height: 7, borderRadius: 99, overflow: 'hidden', width: '100%' },
   progressFill: { height: '100%', borderRadius: 99 },
+  divider: { height: 1, backgroundColor: UI.line },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 13, paddingVertical: 13 },
+  rowBorder: { borderBottomWidth: 1, borderBottomColor: UI.line },
+  rowTitle: { color: UI.text, fontFamily: 'Inter_700Bold', fontSize: 15 },
+  rowSub: { color: UI.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, marginTop: 2 },
+  miniRow: { flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 8, flex: 1, minWidth: 0 },
+  miniAvatar: { width: 38, height: 38, borderRadius: 99, backgroundColor: UI.soft, alignItems: 'center', justifyContent: 'center' },
+  miniInitial: { color: UI.text, fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
+  miniName: { color: UI.text, fontFamily: 'Inter_700Bold', fontSize: 14 },
+  miniSub: { color: UI.muted, fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 1 },
+  statBox: { width: '48%', minHeight: 64, borderRadius: 14, borderWidth: 1, borderColor: UI.line, backgroundColor: UI.soft, padding: 12, justifyContent: 'center' },
+  statValue: { color: UI.text, fontFamily: 'Inter_800ExtraBold', fontSize: 16 },
+  statLabel: { color: UI.muted, fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 2 },
 });
