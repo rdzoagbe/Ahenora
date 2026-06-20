@@ -256,22 +256,41 @@ export default function Landing() {
     try {
       if (Platform.OS === 'android') {
         if (!webClientId) {
-          Alert.alert('Google Sign-In not configured', 'Missing EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID in .env.');
+          Alert.alert('Config Error', 'Missing EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID in .env.');
           return;
         }
 
-        GoogleSignin.configure({
-          webClientId,
-          scopes: ['profile', 'email'],
-          offlineAccess: false,
-        });
+        try {
+          GoogleSignin.configure({
+            webClientId,
+            scopes: ['profile', 'email'],
+            offlineAccess: false,
+          });
+        } catch (configErr: any) {
+          Alert.alert('Configure failed', configErr?.message || String(configErr));
+          return;
+        }
 
-        await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
-        const userInfo = await GoogleSignin.signIn();
-        const idToken = userInfo.data?.idToken;
+        try {
+          await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+        } catch (playErr: any) {
+          Alert.alert('Play Services error', playErr?.message || String(playErr));
+          return;
+        }
+
+        let userInfo;
+        try {
+          userInfo = await GoogleSignin.signIn();
+        } catch (signInErr: any) {
+          if (signInErr?.code === 'SIGN_IN_CANCELLED') return;
+          Alert.alert('Native Sign-In error', `${signInErr?.code || ''}: ${signInErr?.message || String(signInErr)}`);
+          return;
+        }
+
+        const idToken = userInfo?.data?.idToken || (userInfo as any)?.idToken;
 
         if (!idToken) {
-          Alert.alert('Sign-in failed', 'Google did not return an ID token.');
+          Alert.alert('No ID Token', `Got userInfo but no idToken. Keys: ${Object.keys(userInfo?.data || userInfo || {}).join(', ')}`);
           return;
         }
 
@@ -301,7 +320,7 @@ export default function Landing() {
       await promptAsync();
     } catch (error: any) {
       logger.error('google sign-in failed', error?.message || error);
-      Alert.alert('Google Sign-In failed', error?.message || 'Please try again.');
+      Alert.alert('Sign-In failed', error?.message || 'Please try again.');
     }
   };
 
