@@ -5,7 +5,6 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import {
   Bell,
   CalendarDays,
-  ChevronDown,
   ChevronRight,
   Crown,
   Globe,
@@ -575,9 +574,6 @@ const styles = StyleSheet.create({
   emptyText: { color: UI.muted, fontFamily: 'Inter_600SemiBold', fontSize: 13, lineHeight: 19, paddingVertical: 8 },
 
   statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingTop: 4, paddingBottom: 10 },
-  statBox: { width: '48%', minHeight: 64, borderRadius: 14, borderWidth: 1, borderColor: UI.line, backgroundColor: UI.soft, padding: 12, justifyContent: 'center' },
-  statValue: { color: UI.text, fontFamily: 'Inter_800ExtraBold', fontSize: 16 },
-  statLabel: { color: UI.muted, fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 2 },
   testRow: { flexDirection: 'row', gap: 10, width: '100%', marginTop: 2 },
 
   logoutBtn: { marginTop: 26, minHeight: 54, borderRadius: 99, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, backgroundColor: UI.dangerSoft },
