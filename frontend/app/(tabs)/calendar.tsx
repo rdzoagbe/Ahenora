@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Alert, Platform, RefreshControl, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import * as Google from 'expo-auth-session/providers/google';
@@ -10,6 +10,7 @@ import { CalendarDays, ChevronLeft, ChevronRight, Clock, RefreshCw, User, X } fr
 import { useSwipeTabs } from '../../src/hooks/useSwipeTabs';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
 import { PressScale } from '../../src/components/PressScale';
+import { logger } from '../../src/logger';
 import { ErrorBoundary } from '../../src/components/ErrorBoundary';
 import { OfflineBanner } from '../../src/components/OfflineBanner';
 import { Card as KitCard, IconTile, ScreenHeader, UI } from '../../src/components/Kit';
@@ -120,6 +121,7 @@ function CalendarScreen() {
   const [activeMonth, setActiveMonth] = useState(() => new Date());
   const [selectedDay, setSelectedDay] = useState<string | null>(dateKey(new Date()));
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   const handledCalendarResponseRef = useRef(false);
 
   const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
@@ -140,14 +142,19 @@ function CalendarScreen() {
       const result = await api.listCards();
       setCards(result.filter((card) => card.status === 'OPEN' && card.due_date));
     } catch (e) {
-      console.log('calendar load failed', e);
+      logger.warn('calendar load failed', e);
     } finally {
       setLoading(false);
     }
   }, []);
 
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
+  }, [load]);
+
   useFocusEffect(useCallback(() => { load(); }, [load]));
-  useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
     const importCalendar = async () => {
@@ -170,7 +177,7 @@ function CalendarScreen() {
         await load();
         Alert.alert('Calendar synced', `${result.imported} events imported. ${result.contacts_found} people found.`);
       } catch (e: any) {
-        console.log('calendar sync failed', e);
+        logger.warn('calendar sync failed', e);
         Alert.alert('Calendar sync failed', e?.message || 'Please try again.');
       } finally {
         setSyncing(false);
@@ -279,7 +286,7 @@ function CalendarScreen() {
         setCalendarSyncStatus(`${result.imported} events imported. ${result.contacts_found} people found.`);
         Alert.alert('Calendar synced', `${result.imported} events imported. ${result.contacts_found} people found.`);
       } catch (e: any) {
-        console.log('native google calendar sync failed', e);
+        logger.warn('native google calendar sync failed', e);
         const message = e?.message || e?.code || 'Native Google Calendar permission failed.';
         setCalendarSyncStatus(`Calendar sync failed: ${message}`);
         Alert.alert('Calendar sync failed', message);
@@ -310,7 +317,7 @@ function CalendarScreen() {
       const accessToken = result?.authentication?.accessToken || result?.params?.access_token || result?.params?.accessToken;
 
       if (!accessToken) {
-        console.log('calendar auth returned no access token', result);
+        logger.warn('calendar auth returned no access token', result);
         setCalendarSyncStatus('Google connected, but no calendar access token was returned.');
         Alert.alert('Calendar sync failed', 'Google connected, but no calendar access token was returned.');
         return;
@@ -353,7 +360,7 @@ function CalendarScreen() {
   return (
     <View style={styles.container} {...swipeHandlers}>
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
-        <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#F56519" />}>
           <ScreenHeader
             eyebrow="Family Calendar"
             title={monthTitle}

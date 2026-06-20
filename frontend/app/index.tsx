@@ -326,6 +326,8 @@ export default function Landing() {
             testID="landing-lang"
             onPress={() => setShowLang(true)}
             style={[styles.langBtn, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}
+            accessibilityLabel="Change language"
+            accessibilityRole="button"
           >
             <Globe color={theme.colors.textMuted} size={14} />
             <Text style={[styles.langText, { color: theme.colors.textMuted }]}>{lang.toUpperCase()}</Text>
@@ -368,6 +370,8 @@ export default function Landing() {
                 { backgroundColor: theme.colors.primary },
                 Platform.OS === 'web' && !request && styles.ctaDisabled,
               ]}
+              accessibilityLabel="Sign in with Google"
+              accessibilityRole="button"
             >
               <View style={styles.googleDot}>
                 <Text style={styles.googleText}>G</Text>
@@ -380,6 +384,8 @@ export default function Landing() {
               onPress={signInFacebook}
               disabled={!fbRequest}
               style={[styles.cta, styles.fbCta, !fbRequest && styles.ctaDisabled]}
+              accessibilityLabel="Continue with Facebook"
+              accessibilityRole="button"
             >
               <View style={styles.fbDot}>
                 <Text style={styles.fbText}>f</Text>
@@ -391,6 +397,8 @@ export default function Landing() {
               testID="landing-pricing-link"
               onPress={() => router.push('/pricing')}
               style={[styles.secondaryCta, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}
+              accessibilityLabel="View testing plans"
+              accessibilityRole="button"
             >
               <Text style={[styles.secondaryCtaText, { color: theme.colors.text }]}>View testing plans</Text>
               <ArrowRight color={theme.colors.text} size={14} />
