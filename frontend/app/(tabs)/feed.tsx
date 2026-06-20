@@ -321,30 +321,24 @@ export default function FeedScreen() {
                 <Text style={styles.capturePlaceholder} numberOfLines={1}>Add a task, note or reminder...</Text>
               </PressScale>
               <View style={styles.captureActions}>
-                <View style={styles.actionPillWrap}>
-                  <PressScale onPress={() => setShowCamera(true)} style={styles.actionPill}>
-                    <View style={[styles.actionDot, { backgroundColor: UI.lavender }]}>
-                      <Camera color={UI.lavenderText} size={18} />
-                    </View>
-                    <Text style={styles.actionPillText}>Photo</Text>
-                  </PressScale>
-                </View>
-                <View style={styles.actionPillWrap}>
-                  <PressScale onPress={() => setShowVoice(true)} style={styles.actionPill}>
-                    <View style={[styles.actionDot, { backgroundColor: UI.mint }]}>
-                      <Mic color={UI.mintText} size={18} />
-                    </View>
-                    <Text style={styles.actionPillText}>Voice</Text>
-                  </PressScale>
-                </View>
-                <View style={styles.actionPillWrap}>
-                  <PressScale onPress={openManual} style={[styles.actionPill, styles.actionPillAccent]}>
-                    <View style={[styles.actionDot, { backgroundColor: 'rgba(255,255,255,0.24)' }]}>
-                      <Plus color="#FFFFFF" size={18} />
-                    </View>
-                    <Text style={styles.actionPillAccentText}>Add</Text>
-                  </PressScale>
-                </View>
+                <PressScale onPress={() => setShowCamera(true)} style={styles.actionPill}>
+                  <View style={[styles.actionDot, { backgroundColor: UI.lavender }]}>
+                    <Camera color={UI.lavenderText} size={18} />
+                  </View>
+                  <Text style={styles.actionPillText}>Photo</Text>
+                </PressScale>
+                <PressScale onPress={() => setShowVoice(true)} style={styles.actionPill}>
+                  <View style={[styles.actionDot, { backgroundColor: UI.mint }]}>
+                    <Mic color={UI.mintText} size={18} />
+                  </View>
+                  <Text style={styles.actionPillText}>Voice</Text>
+                </PressScale>
+                <PressScale onPress={openManual} style={[styles.actionPill, styles.actionPillAccent]}>
+                  <View style={[styles.actionDot, { backgroundColor: 'rgba(255,255,255,0.24)' }]}>
+                    <Plus color="#FFFFFF" size={18} />
+                  </View>
+                  <Text style={styles.actionPillAccentText}>Add</Text>
+                </PressScale>
               </View>
             </View>
 
@@ -599,10 +593,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 10,
   },
-  actionPillWrap: {
-    flex: 1,
-  },
   actionPill: {
+    flex: 1,
     height: 46,
     borderRadius: 13,
     borderWidth: 1,
