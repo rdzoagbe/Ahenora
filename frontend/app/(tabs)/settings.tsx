@@ -1,6 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { Image, Platform, RefreshControl, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Image, Platform, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import {
   Bell,
@@ -26,8 +25,7 @@ import { PressScale } from '../../src/components/PressScale';
 import { LanguageModal } from '../../src/components/LanguageModal';
 import { PinPadModal } from '../../src/components/PinPadModal';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
-import { ErrorBoundary } from '../../src/components/ErrorBoundary';
-import { OfflineBanner } from '../../src/components/OfflineBanner';
+import { TabScreen } from '../../src/components/TabScreen';
 import { Card, Chevron, Divider, IconTile, MiniRow, NavRow, ScreenHeader, SectionTitle, StatBox, Toggle, ToggleRow, UI } from '../../src/components/Kit';
 import { useStore } from '../../src/store';
 import { api, CalendarContact, Card as CardType, Entitlements, FamilyInvite, FamilyMember, NotificationSettings } from '../../src/api';
@@ -43,15 +41,6 @@ function formatBytes(bytes?: number | null) {
 }
 
 export default function Settings() {
-  return (
-    <ErrorBoundary tab="Settings">
-      <OfflineBanner />
-      <SettingsScreen />
-    </ErrorBoundary>
-  );
-}
-
-function SettingsScreen() {
   const { user, t, lang, logout, subscription, appearanceMode, setAppearance } = useStore();
   const swipeHandlers = useSwipeTabs();
   const router = useRouter();
@@ -217,8 +206,12 @@ function SettingsScreen() {
 
   return (
     <View style={styles.container} {...swipeHandlers}>
-      <SafeAreaView style={{ flex: 1 }} edges={['top']}>
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#F56519" />}>
+      <TabScreen
+        tab="Settings"
+        refreshing={refreshing}
+        onRefresh={handleRefresh}
+        scrollViewProps={{ contentContainerStyle: styles.scroll, keyboardShouldPersistTaps: 'handled' }}
+      >
           <ScreenHeader eyebrow="Manage" title="Settings" />
 
           {/* Profile */}
@@ -446,8 +439,7 @@ function SettingsScreen() {
           </PressScale>
 
           <View style={{ height: 70 }} />
-        </ScrollView>
-      </SafeAreaView>
+      </TabScreen>
 
       <LanguageModal visible={showLang} onClose={() => setShowLang(false)} />
       <PinPadModal
