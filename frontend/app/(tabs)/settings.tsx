@@ -20,7 +20,7 @@ import {
   X,
 } from 'lucide-react-native';
 
-import { useSwipeTabs } from '../../src/hooks/useSwipeTabs';
+import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { PressScale } from '../../src/components/PressScale';
 import { LanguageModal } from '../../src/components/LanguageModal';
 import { PinPadModal } from '../../src/components/PinPadModal';
@@ -28,7 +28,7 @@ import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSh
 import { TabScreen } from '../../src/components/TabScreen';
 import { ErrorBoundary } from '../../src/components/ErrorBoundary';
 import { OfflineBanner } from '../../src/components/OfflineBanner';
-import { Card, Chevron, Divider, IconTile, MiniRow, NavRow, ScreenHeader, SectionTitle, StatBox, Toggle, ToggleRow, UI } from '../../src/components/Kit';
+import { Card, Chevron, Divider, IconTile, MiniRow, NavRow, ScreenHeader, SectionTitle, StatBox, ToggleRow, useUI, UIColors } from '../../src/components/Kit';
 import { useStore } from '../../src/store';
 import { api, CalendarContact, Card as CardType, Entitlements, FamilyInvite, FamilyMember, NotificationSettings } from '../../src/api';
 import { LANG_NAMES } from '../../src/i18n';
@@ -44,8 +44,9 @@ function formatBytes(bytes?: number | null) {
 
 export default function Settings() {
   const { user, t, lang, logout, subscription, appearanceMode, setAppearance } = useStore();
-  const swipeHandlers = useSwipeTabs();
   const router = useRouter();
+  const ui = useUI();
+  const styles = useMemo(() => createStyles(ui), [ui]);
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [invites, setInvites] = useState<FamilyInvite[]>([]);
   const [calendarContacts, setCalendarContacts] = useState<CalendarContact[]>([]);
@@ -207,7 +208,7 @@ export default function Settings() {
   };
 
   return (
-    <View style={styles.container} {...swipeHandlers}>
+    <SwipeableTabView style={styles.container}>
       <TabScreen
         tab="Settings"
         refreshing={refreshing}
@@ -229,12 +230,12 @@ export default function Settings() {
                 <Text style={styles.profileEmail} numberOfLines={1}>{user?.email || 'Not signed in'}</Text>
                 {user?.is_admin ? (
                   <View style={styles.adminBadge}>
-                    <Crown color={UI.orange} size={13} />
+                    <Crown color={ui.orange} size={13} />
                     <Text style={styles.adminBadgeText}>Admin / Tester</Text>
                   </View>
                 ) : null}
               </View>
-              <ChevronRight color={UI.muted} size={22} />
+              <ChevronRight color={ui.muted} size={22} />
             </Card>
           </PressScale>
 
@@ -250,7 +251,7 @@ export default function Settings() {
                 <Text style={styles.planTitle}>{memberSlotsUsed} member{memberSlotsUsed === 1 ? '' : 's'}</Text>
                 <Text style={styles.planSub}>{adultCount} adult{adultCount === 1 ? '' : 's'}, {childMembers.length} kid{childMembers.length === 1 ? '' : 's'}</Text>
               </View>
-              <ChevronRight color={UI.muted} size={20} />
+              <ChevronRight color={ui.muted} size={20} />
             </Card>
           </PressScale>
 
@@ -259,7 +260,7 @@ export default function Settings() {
           <Card style={styles.cardPad}>
             <ToggleRow
               testID="notif-push"
-              tile={<IconTile bg={UI.orangeSoft}><Bell color={UI.orange} size={18} /></IconTile>}
+              tile={<IconTile bg={ui.orangeSoft}><Bell color={ui.orange} size={18} /></IconTile>}
               title="Push notifications"
               subtitle="Reminders, deadlines & updates"
               on={notificationPrefs.card_reminders}
@@ -268,7 +269,7 @@ export default function Settings() {
             />
             <ToggleRow
               testID="notif-sign"
-              tile={<IconTile bg={UI.lavender}><PenLine color={UI.lavenderText} size={18} /></IconTile>}
+              tile={<IconTile bg={ui.lavender}><PenLine color={ui.lavenderText} size={18} /></IconTile>}
               title="Sign slip alerts"
               subtitle="When a form needs your signature"
               on={notificationPrefs.new_card_alerts}
@@ -277,7 +278,7 @@ export default function Settings() {
             />
             <ToggleRow
               testID="notif-digest"
-              tile={<IconTile bg={UI.soft}><Mail color={UI.muted} size={18} /></IconTile>}
+              tile={<IconTile bg={ui.soft}><Mail color={ui.muted} size={18} /></IconTile>}
               title="Weekly digest email"
               subtitle={weeklyBrief ? 'Sunday evening summary' : 'Upgrade to unlock'}
               on={weeklyBrief}
@@ -294,8 +295,8 @@ export default function Settings() {
               {(['light', 'dark', 'system'] as const).map((mode) => {
                 const active = appearanceMode === mode;
                 return (
-                  <PressScale key={mode} testID={`appearance-${mode}`} onPress={() => setAppearance(mode)} style={[styles.segmentBtn, active && { borderBottomColor: UI.orange }]}>
-                    <Text style={[styles.segmentText, { color: active ? UI.text : UI.muted, fontFamily: active ? 'Inter_800ExtraBold' : 'Inter_600SemiBold' }]}>
+                  <PressScale key={mode} testID={`appearance-${mode}`} onPress={() => setAppearance(mode)} style={[styles.segmentBtn, active && { borderBottomColor: ui.orange }]}>
+                    <Text style={[styles.segmentText, { color: active ? ui.text : ui.muted, fontFamily: active ? 'Inter_800ExtraBold' : 'Inter_600SemiBold' }]}>
                       {mode[0].toUpperCase() + mode.slice(1)}
                     </Text>
                   </PressScale>
@@ -309,7 +310,7 @@ export default function Settings() {
           <Card style={styles.cardPad}>
             <NavRow
               testID="settings-household-toggle"
-              tile={<IconTile bg={UI.orangeSoft}><Users color={UI.orange} size={18} /></IconTile>}
+              tile={<IconTile bg={ui.orangeSoft}><Users color={ui.orange} size={18} /></IconTile>}
               title="Manage members"
               right={<Chevron open={expandMembers} />}
               onPress={() => setExpandMembers((v) => !v)}
@@ -324,14 +325,14 @@ export default function Settings() {
                     <MiniRow initial={(invite.email?.[0] || '?').toUpperCase()} name={invite.email || 'Invite link'} sub={`Invite · ${invite.status}`} />
                     {invite.invite_url ? (
                       <PressScale onPress={() => shareInviteLink(invite.invite_url, invite.email)} style={styles.ghostBtn}>
-                        <Share2 color={UI.text} size={14} />
+                        <Share2 color={ui.text} size={14} />
                         <Text style={styles.ghostBtnText}>Share</Text>
                       </PressScale>
                     ) : null}
                   </View>
                 ))}
                 <PressScale testID="invite-coparent" onPress={() => openInvite()} style={styles.expandAction}>
-                  <UserPlus color={UI.text} size={18} />
+                  <UserPlus color={ui.text} size={18} />
                   <Text style={styles.expandActionText}>Invite co-parent</Text>
                 </PressScale>
               </View>
@@ -339,7 +340,7 @@ export default function Settings() {
             <Divider />
 
             <NavRow
-              tile={<IconTile bg={UI.lavender}><Lock color={UI.lavenderText} size={18} /></IconTile>}
+              tile={<IconTile bg={ui.lavender}><Lock color={ui.lavenderText} size={18} /></IconTile>}
               title="Manage children"
               subtitle={`${childMembers.length} child${childMembers.length === 1 ? '' : 'ren'} · kid PINs`}
               right={<Chevron open={expandChildren} />}
@@ -350,7 +351,7 @@ export default function Settings() {
                 {childMembers.length === 0 ? <Text style={styles.emptyText}>No children to secure.</Text> : childMembers.map((m) => (
                   <PressScale key={m.member_id} testID={`set-pin-${m.member_id}`} onPress={() => setPinMember(m)} style={styles.inviteRow}>
                     <MiniRow initial={m.name[0]?.toUpperCase()} name={m.name} sub={m.has_pin ? 'PIN set · tap to change' : 'No PIN · tap to add'} />
-                    {m.has_pin ? <Lock color={UI.orange} size={16} /> : <ChevronRight color={UI.muted} size={18} />}
+                    {m.has_pin ? <Lock color={ui.orange} size={16} /> : <ChevronRight color={ui.muted} size={18} />}
                   </PressScale>
                 ))}
               </View>
@@ -358,7 +359,7 @@ export default function Settings() {
             <Divider />
 
             <NavRow
-              tile={<IconTile bg={UI.mint}><Link2 color={UI.mintText} size={18} /></IconTile>}
+              tile={<IconTile bg={ui.mint}><Link2 color={ui.mintText} size={18} /></IconTile>}
               title="Connected apps"
               subtitle="Google Calendar contacts"
               right={<Chevron open={expandConnected} />}
@@ -384,9 +385,9 @@ export default function Settings() {
           <Card style={styles.cardPad}>
             <NavRow
               testID="settings-lang"
-              tile={<IconTile bg={UI.soft}><Globe color={UI.text} size={18} /></IconTile>}
+              tile={<IconTile bg={ui.soft}><Globe color={ui.text} size={18} /></IconTile>}
               title={t('language')}
-              right={<View style={styles.valueRow}><Text style={styles.valueText}>{LANG_NAMES[lang]}</Text><ChevronRight color={UI.muted} size={18} /></View>}
+              right={<View style={styles.valueRow}><Text style={styles.valueText}>{LANG_NAMES[lang]}</Text><ChevronRight color={ui.muted} size={18} /></View>}
               onPress={() => setShowLang(true)}
               divider={false}
             />
@@ -397,7 +398,7 @@ export default function Settings() {
           <Card style={styles.cardPad}>
             <NavRow
               testID="settings-completed-history-toggle"
-              tile={<IconTile bg={UI.soft}><CalendarDays color={UI.text} size={18} /></IconTile>}
+              tile={<IconTile bg={ui.soft}><CalendarDays color={ui.text} size={18} /></IconTile>}
               title="Completed history"
               subtitle={`${completedCards.length} completed card${completedCards.length === 1 ? '' : 's'}`}
               right={<Chevron open={expandHistory} />}
@@ -413,7 +414,7 @@ export default function Settings() {
             <Divider />
 
             <NavRow
-              tile={<IconTile bg={UI.soft}><Sparkles color={UI.text} size={18} /></IconTile>}
+              tile={<IconTile bg={ui.soft}><Sparkles color={ui.text} size={18} /></IconTile>}
               title="Plan &amp; usage"
               subtitle="AI scans, vault storage & limits"
               right={<Chevron open={expandUsage} />}
@@ -436,7 +437,7 @@ export default function Settings() {
 
           {/* Logout */}
           <PressScale testID="logout" onPress={doLogout} style={styles.logoutBtn}>
-            <LogOut color={UI.danger} size={20} />
+            <LogOut color={ui.danger} size={20} />
             <Text style={styles.logoutText}>{t('log_out')}</Text>
           </PressScale>
 
@@ -467,7 +468,7 @@ export default function Settings() {
         <View style={styles.sheetHeader}>
           <Text style={styles.sheetTitle}>Invite co-parent</Text>
           <PressScale testID="close-invite" onPress={() => setShowInvite(false)} style={styles.iconBtn}>
-            <X color={UI.text} size={22} />
+            <X color={ui.text} size={22} />
           </PressScale>
         </View>
         <Text style={styles.sheetHelp}>They will receive a join link and can sign in to join your household.</Text>
@@ -476,7 +477,7 @@ export default function Settings() {
           value={inviteEmail}
           onChangeText={setInviteEmail}
           placeholder="partner@example.com"
-          placeholderTextColor={UI.muted}
+          placeholderTextColor={ui.muted}
           autoCapitalize="none"
           autoCorrect={false}
           keyboardType="email-address"
@@ -486,7 +487,7 @@ export default function Settings() {
         {inviteResult ? <Text style={styles.note}>{inviteResult}</Text> : null}
         {lastInviteUrl ? (
           <PressScale onPress={() => shareInviteLink(lastInviteUrl, inviteEmail)} style={styles.expandAction}>
-            <Share2 color={UI.text} size={18} />
+            <Share2 color={ui.text} size={18} />
             <Text style={styles.expandActionText}>Share invite link</Text>
           </PressScale>
         ) : null}
@@ -521,67 +522,67 @@ export default function Settings() {
           </PressScale>
         </View>
       </KeyboardAwareBottomSheet>
-    </View>
+    </SwipeableTabView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: UI.bg },
+const createStyles = (ui: UIColors) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: ui.bg },
   scroll: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 60 },
   headerGap: { marginTop: 18 },
 
   profileCard: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16 },
-  avatar: { width: 52, height: 52, borderRadius: 99, backgroundColor: UI.orange, alignItems: 'center', justifyContent: 'center' },
+  avatar: { width: 52, height: 52, borderRadius: 99, backgroundColor: ui.orange, alignItems: 'center', justifyContent: 'center' },
   avatarImg: { width: 52, height: 52, borderRadius: 99 },
   avatarText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 21 },
-  profileName: { color: UI.text, fontFamily: 'Inter_800ExtraBold', fontSize: 18 },
-  profileEmail: { color: UI.muted, fontFamily: 'Inter_500Medium', fontSize: 13, marginTop: 2 },
-  adminBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6, alignSelf: 'flex-start', backgroundColor: UI.orangeSoft, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 99 },
-  adminBadgeText: { color: UI.orange, fontFamily: 'Inter_800ExtraBold', fontSize: 11 },
+  profileName: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 18 },
+  profileEmail: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 13, marginTop: 2 },
+  adminBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6, alignSelf: 'flex-start', backgroundColor: ui.orangeSoft, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 99 },
+  adminBadgeText: { color: ui.orange, fontFamily: 'Inter_800ExtraBold', fontSize: 11 },
 
   planCard: { flexDirection: 'row', alignItems: 'center', padding: 18, gap: 14 },
   planCol: { flex: 1 },
-  planTitle: { color: UI.text, fontFamily: 'Inter_800ExtraBold', fontSize: 16 },
-  planSub: { color: UI.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, marginTop: 2 },
-  planDivider: { width: 1, height: 38, backgroundColor: UI.line },
+  planTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 16 },
+  planSub: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, marginTop: 2 },
+  planDivider: { width: 1, height: 38, backgroundColor: ui.line },
 
   sectionGap: { marginTop: 22, marginBottom: 10 },
   cardPad: { paddingHorizontal: 16 },
   segmentCard: { paddingHorizontal: 18, paddingTop: 6 },
 
   valueRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  valueText: { color: UI.muted, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
+  valueText: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
 
-  segmentWrap: { flexDirection: 'row', alignItems: 'center', gap: 26, borderBottomWidth: 1, borderBottomColor: UI.line },
+  segmentWrap: { flexDirection: 'row', alignItems: 'center', gap: 26, borderBottomWidth: 1, borderBottomColor: ui.line },
   segmentBtn: { paddingTop: 8, paddingBottom: 12, borderBottomWidth: 2, borderBottomColor: 'transparent' },
   segmentText: { fontSize: 15 },
 
   expandBox: { paddingBottom: 10, gap: 2 },
-  expandAction: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 10, paddingVertical: 12, borderRadius: 14, borderWidth: 1, borderColor: UI.line, backgroundColor: UI.soft },
-  expandActionText: { color: UI.text, fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
+  expandAction: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 10, paddingVertical: 12, borderRadius: 14, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft },
+  expandActionText: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
   inviteRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  ghostBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: UI.line, backgroundColor: UI.soft, borderRadius: 99, paddingHorizontal: 12, paddingVertical: 8 },
-  ghostBtnWide: { flex: 1, alignItems: 'center', borderWidth: 1, borderColor: UI.line, backgroundColor: UI.soft, borderRadius: 12, paddingVertical: 11 },
-  ghostBtnText: { color: UI.text, fontFamily: 'Inter_800ExtraBold', fontSize: 12.5 },
+  ghostBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft, borderRadius: 99, paddingHorizontal: 12, paddingVertical: 8 },
+  ghostBtnWide: { flex: 1, alignItems: 'center', borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft, borderRadius: 12, paddingVertical: 11 },
+  ghostBtnText: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 12.5 },
 
-  note: { color: UI.muted, fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 19, marginTop: 10 },
-  emptyText: { color: UI.muted, fontFamily: 'Inter_600SemiBold', fontSize: 13, lineHeight: 19, paddingVertical: 8 },
+  note: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 19, marginTop: 10 },
+  emptyText: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 13, lineHeight: 19, paddingVertical: 8 },
 
   statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingTop: 4, paddingBottom: 10 },
   testRow: { flexDirection: 'row', gap: 10, width: '100%', marginTop: 2 },
 
-  logoutBtn: { marginTop: 26, minHeight: 54, borderRadius: 99, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, backgroundColor: UI.dangerSoft },
-  logoutText: { color: UI.danger, fontFamily: 'Inter_800ExtraBold', fontSize: 16 },
+  logoutBtn: { marginTop: 26, minHeight: 54, borderRadius: 99, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, backgroundColor: ui.dangerSoft },
+  logoutText: { color: ui.danger, fontFamily: 'Inter_800ExtraBold', fontSize: 16 },
 
-  sheet: { backgroundColor: UI.card, borderTopLeftRadius: 30, borderTopRightRadius: 30, borderWidth: 1, borderColor: UI.line, padding: 24, paddingBottom: 120 },
+  sheet: { backgroundColor: ui.card, borderTopLeftRadius: 30, borderTopRightRadius: 30, borderWidth: 1, borderColor: ui.line, padding: 24, paddingBottom: 120 },
   sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
-  sheetTitle: { color: UI.text, fontFamily: 'Inter_800ExtraBold', fontSize: 24 },
-  iconBtn: { width: 42, height: 42, borderRadius: 9999, borderWidth: 1, borderColor: UI.line, alignItems: 'center', justifyContent: 'center' },
-  sheetHelp: { color: UI.muted, fontFamily: 'Inter_500Medium', fontSize: 15, lineHeight: 22, marginBottom: 18 },
-  input: { borderWidth: 1, borderColor: UI.line, borderRadius: 18, paddingHorizontal: 16, paddingVertical: 14, fontFamily: 'Inter_500Medium', fontSize: 16, color: UI.text, backgroundColor: UI.soft },
+  sheetTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 24 },
+  iconBtn: { width: 42, height: 42, borderRadius: 9999, borderWidth: 1, borderColor: ui.line, alignItems: 'center', justifyContent: 'center' },
+  sheetHelp: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 15, lineHeight: 22, marginBottom: 18 },
+  input: { borderWidth: 1, borderColor: ui.line, borderRadius: 18, paddingHorizontal: 16, paddingVertical: 14, fontFamily: 'Inter_500Medium', fontSize: 16, color: ui.text, backgroundColor: ui.soft },
   sheetFooter: { flexDirection: 'row', gap: 12, marginTop: 18 },
-  cancelBtn: { flex: 1, minHeight: 54, borderRadius: 99, borderWidth: 1, borderColor: UI.line, alignItems: 'center', justifyContent: 'center' },
-  cancelText: { color: UI.muted, fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
-  primaryButton: { flex: 1, minHeight: 54, borderRadius: 99, paddingHorizontal: 18, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 9, backgroundColor: UI.orange },
+  cancelBtn: { flex: 1, minHeight: 54, borderRadius: 99, borderWidth: 1, borderColor: ui.line, alignItems: 'center', justifyContent: 'center' },
+  cancelText: { color: ui.muted, fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
+  primaryButton: { flex: 1, minHeight: 54, borderRadius: 99, paddingHorizontal: 18, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 9, backgroundColor: ui.orange },
   primaryButtonText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
 });

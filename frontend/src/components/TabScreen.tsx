@@ -3,6 +3,7 @@ import { RefreshControl, ScrollView, ScrollViewProps } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ErrorBoundary } from './ErrorBoundary';
 import { OfflineBanner } from './OfflineBanner';
+import { useStore } from '../store';
 
 interface TabScreenProps {
   tab: string;
@@ -13,10 +14,11 @@ interface TabScreenProps {
 }
 
 export function TabScreen({ tab, refreshing, onRefresh, children, scrollViewProps }: TabScreenProps) {
+  const { theme } = useStore();
   return (
     <ErrorBoundary tab={tab}>
       <OfflineBanner />
-      <SafeAreaView style={{ flex: 1, backgroundColor: '#F6F3EE' }} edges={['top']}>
+      <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.bg }} edges={['top']}>
         <ScrollView
           showsVerticalScrollIndicator={false}
           {...scrollViewProps}

@@ -18,13 +18,14 @@ import {
 } from 'lucide-react-native';
 
 import { useBreakpoint } from '../../src/responsive';
-import { useSwipeTabs } from '../../src/hooks/useSwipeTabs';
+import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { PressScale } from '../../src/components/PressScale';
 import { AddCardModal } from '../../src/components/AddCardModal';
 import { VoiceCaptureModal } from '../../src/components/VoiceCaptureModal';
 import { CameraCaptureModal } from '../../src/components/CameraCaptureModal';
 import { TabScreen } from '../../src/components/TabScreen';
 import { useStore } from '../../src/store';
+import { useUI, UIColors } from '../../src/components/Kit';
 import { api, Card, CardType, FamilyMember } from '../../src/api';
 import { syncCardReminderNotifications } from '../../src/notifications';
 import { logger } from '../../src/logger';
@@ -43,20 +44,6 @@ interface VoiceDraft {
 
 type FeedTab = 'today' | 'upcoming' | 'all';
 
-const UI = {
-  bg: '#F6F3EE',
-  card: '#FFFFFF',
-  text: '#101318',
-  muted: '#8A909A',
-  soft: '#F1EFEA',
-  line: '#E6E1DA',
-  orange: '#F56519',
-  orangeSoft: '#FFF0E7',
-  mint: '#DFF7EC',
-  mintText: '#0FA36B',
-  lavender: '#EDEBFF',
-  lavenderText: '#6B5CFF',
-};
 
 function dueTime(card: Card) {
   if (!card.due_date) return null;
@@ -93,10 +80,10 @@ function feedDateLine() {
   return new Date().toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
 }
 
-function statusCopy(type: CardType) {
-  if (type === 'SIGN_SLIP') return { label: 'SIGN', bg: UI.orangeSoft, fg: UI.orange };
-  if (type === 'RSVP') return { label: 'RSVP', bg: UI.lavender, fg: UI.lavenderText };
-  return { label: 'TASK', bg: UI.mint, fg: UI.mintText };
+function statusCopy(type: CardType, ui: UIColors) {
+  if (type === 'SIGN_SLIP') return { label: 'SIGN', bg: ui.orangeSoft, fg: ui.orange };
+  if (type === 'RSVP') return { label: 'RSVP', bg: ui.lavender, fg: ui.lavenderText };
+  return { label: 'TASK', bg: ui.mint, fg: ui.mintText };
 }
 
 function cardMeta(card: Card) {
@@ -110,11 +97,12 @@ function greetingFallback(name: string) {
   return `${prefix},${name ? `\n${name}` : ''}`;
 }
 
-function TaskRow({ card, onComplete }: { card: Card; onComplete: () => void }) {
-  const status = statusCopy(card.type);
+function TaskRow({ card, onComplete, styles }: { card: Card; onComplete: () => void; styles: ReturnType<typeof createStyles> }) {
+  const ui = useUI();
+  const status = statusCopy(card.type, ui);
   return (
     <PressScale style={styles.taskRow} onPress={onComplete} testID={`feed-card-${card.card_id}`}>
-      <View style={styles.checkRing}>{card.status === 'DONE' ? <CheckCircle2 size={18} color={UI.orange} /> : null}</View>
+      <View style={styles.checkRing}>{card.status === 'DONE' ? <CheckCircle2 size={18} color={ui.orange} /> : null}</View>
       <View style={styles.taskBody}>
         <Text style={styles.taskTitle} numberOfLines={1}>{card.title}</Text>
         <Text style={styles.taskMeta} numberOfLines={1}>{cardMeta(card)}</Text>
@@ -122,7 +110,7 @@ function TaskRow({ card, onComplete }: { card: Card; onComplete: () => void }) {
       <View style={[styles.statusPill, { backgroundColor: status.bg }]}>
         <Text style={[styles.statusPillText, { color: status.fg }]}>{status.label}</Text>
       </View>
-      <ChevronRight color={UI.text} size={18} />
+      <ChevronRight color={ui.text} size={18} />
     </PressScale>
   );
 }
@@ -130,8 +118,8 @@ function TaskRow({ card, onComplete }: { card: Card; onComplete: () => void }) {
 export default function Feed() {
   const { user, t } = useStore();
   const { px, maxW } = useBreakpoint();
-  const swipeHandlers = useSwipeTabs();
-
+  const ui = useUI();
+  const styles = useMemo(() => createStyles(ui), [ui]);
   const [cards, setCards] = useState<Card[]>([]);
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [rewardCount, setRewardCount] = useState(0);
@@ -280,7 +268,7 @@ export default function Feed() {
   }, [load]);
 
   return (
-    <View style={styles.container} {...swipeHandlers}>
+    <SwipeableTabView style={styles.container}>
       <TabScreen
         tab="Feed"
         refreshing={refreshing}
@@ -291,7 +279,7 @@ export default function Feed() {
             <View style={styles.topMetaRow}>
               <Text style={styles.dateText}>{feedDateLine()} <Text style={styles.sun}>☀</Text></Text>
               <View style={styles.bellWrap}>
-                <Bell color={UI.text} size={25} />
+                <Bell color={ui.text} size={25} />
                 {alertCount > 0 ? (
                   <View style={styles.bellBadge}><Text style={styles.bellBadgeText}>{Math.min(alertCount, 9)}</Text></View>
                 ) : null}
@@ -311,19 +299,19 @@ export default function Feed() {
 
             <View style={styles.captureCard}>
               <PressScale onPress={openManual} style={styles.captureInput} testID="feed-open-add">
-                <View style={styles.plusSoft}><Plus color={UI.orange} size={26} /></View>
+                <View style={styles.plusSoft}><Plus color={ui.orange} size={26} /></View>
                 <Text style={styles.capturePlaceholder} numberOfLines={1}>Add a task, note or reminder...</Text>
               </PressScale>
               <View style={styles.captureActions}>
                 <PressScale onPress={() => setShowCamera(true)} style={styles.actionPill}>
-                  <View style={[styles.actionDot, { backgroundColor: UI.lavender }]}>
-                    <Camera color={UI.lavenderText} size={18} />
+                  <View style={[styles.actionDot, { backgroundColor: ui.lavender }]}>
+                    <Camera color={ui.lavenderText} size={18} />
                   </View>
                   <Text style={styles.actionPillText}>Photo</Text>
                 </PressScale>
                 <PressScale onPress={() => setShowVoice(true)} style={styles.actionPill}>
-                  <View style={[styles.actionDot, { backgroundColor: UI.mint }]}>
-                    <Mic color={UI.mintText} size={18} />
+                  <View style={[styles.actionDot, { backgroundColor: ui.mint }]}>
+                    <Mic color={ui.mintText} size={18} />
                   </View>
                   <Text style={styles.actionPillText}>Voice</Text>
                 </PressScale>
@@ -343,7 +331,7 @@ export default function Feed() {
               </View>
               <View style={styles.statDivider} />
               <View style={styles.statCell}>
-                <Text style={[styles.statNumber, { color: UI.orange }]}>{dashboard.signSlips.length}</Text>
+                <Text style={[styles.statNumber, { color: ui.orange }]}>{dashboard.signSlips.length}</Text>
                 <Text style={styles.statLabel}>Sign slips</Text>
               </View>
               <View style={styles.statDivider} />
@@ -356,7 +344,7 @@ export default function Feed() {
             <PressScale style={styles.alertBanner} onPress={() => setActiveTab('today')}>
               <View style={styles.alertIcon}><Star color="#FFFFFF" fill="#FFFFFF" size={19} /></View>
               <Text style={styles.alertText} numberOfLines={2}>{alertText}</Text>
-              <ChevronRight color={UI.text} size={22} />
+              <ChevronRight color={ui.text} size={22} />
             </PressScale>
 
             <View style={styles.tabRow}>
@@ -370,17 +358,17 @@ export default function Feed() {
 
             <View style={styles.listCard}>
               {loading ? (
-                <ActivityIndicator color={UI.orange} style={{ paddingVertical: 32 }} />
+                <ActivityIndicator color={ui.orange} style={{ paddingVertical: 32 }} />
               ) : visibleCards.length === 0 ? (
                 <View style={styles.emptyBox}>
-                  <CheckCircle2 color={UI.mintText} size={22} />
+                  <CheckCircle2 color={ui.mintText} size={22} />
                   <Text style={styles.emptyTitle}>{activeTab === 'today' ? 'Nothing urgent today.' : 'Nothing to show here.'}</Text>
                   <Text style={styles.emptySub}>Use Add, Photo, or Voice to capture the next household item.</Text>
                 </View>
               ) : (
                 visibleCards.map((card, index) => (
                   <View key={card.card_id}>
-                    <TaskRow card={card} onComplete={() => toggle(card)} />
+                    <TaskRow card={card} onComplete={() => toggle(card)} styles={styles} />
                     {index < visibleCards.length - 1 ? <View style={styles.rowDivider} /> : null}
                   </View>
                 ))
@@ -444,14 +432,14 @@ export default function Feed() {
         initialSource={addSource}
         initialDraft={voiceDraft}
       />
-    </View>
+    </SwipeableTabView>
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (ui: UIColors) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: UI.bg,
+    backgroundColor: ui.bg,
   },
   scroll: {
     paddingTop: 12,
@@ -468,13 +456,13 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   dateText: {
-    color: UI.muted,
+    color: ui.muted,
     fontFamily: 'Inter_600SemiBold',
     fontSize: 15,
     letterSpacing: 0.1,
   },
   sun: {
-    color: UI.orange,
+    color: ui.orange,
   },
   bellWrap: {
     width: 42,
@@ -491,7 +479,7 @@ const styles = StyleSheet.create({
     borderRadius: 99,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: UI.orange,
+    backgroundColor: ui.orange,
     paddingHorizontal: 5,
   },
   bellBadgeText: {
@@ -507,7 +495,7 @@ const styles = StyleSheet.create({
     marginBottom: 22,
   },
   heroTitle: {
-    color: UI.text,
+    color: ui.text,
     fontFamily: 'Inter_800ExtraBold',
     fontSize: 36,
     lineHeight: 41,
@@ -515,7 +503,7 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     marginTop: 8,
-    color: UI.muted,
+    color: ui.muted,
     fontFamily: 'Inter_600SemiBold',
     fontSize: 17,
     letterSpacing: 0.2,
@@ -524,11 +512,11 @@ const styles = StyleSheet.create({
     width: 78,
     height: 92,
     borderRadius: 24,
-    backgroundColor: UI.card,
+    backgroundColor: ui.card,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: UI.line,
+    borderColor: ui.line,
     shadowColor: '#000000',
     shadowOpacity: 0.08,
     shadowRadius: 18,
@@ -536,23 +524,23 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   calmLabel: {
-    color: UI.mintText,
+    color: ui.mintText,
     fontFamily: 'Inter_800ExtraBold',
     fontSize: 12,
     letterSpacing: 0.5,
   },
   calmValue: {
     marginTop: 4,
-    color: UI.text,
+    color: ui.text,
     fontFamily: 'Inter_800ExtraBold',
     fontSize: 26,
     lineHeight: 30,
   },
   captureCard: {
     borderRadius: 26,
-    backgroundColor: UI.card,
+    backgroundColor: ui.card,
     borderWidth: 1,
-    borderColor: UI.line,
+    borderColor: ui.line,
     padding: 16,
     marginBottom: 14,
     shadowColor: '#000000',
@@ -572,13 +560,13 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 18,
-    backgroundColor: UI.orangeSoft,
+    backgroundColor: ui.orangeSoft,
     alignItems: 'center',
     justifyContent: 'center',
   },
   capturePlaceholder: {
     flex: 1,
-    color: UI.muted,
+    color: ui.muted,
     fontFamily: 'Inter_600SemiBold',
     fontSize: 16,
   },
@@ -591,8 +579,8 @@ const styles = StyleSheet.create({
     height: 46,
     borderRadius: 13,
     borderWidth: 1,
-    borderColor: UI.line,
-    backgroundColor: UI.soft,
+    borderColor: ui.line,
+    backgroundColor: ui.soft,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -600,7 +588,7 @@ const styles = StyleSheet.create({
   },
   actionPillAccent: {
     borderWidth: 0,
-    backgroundColor: UI.orange,
+    backgroundColor: ui.orange,
   },
   actionDot: {
     width: 30,
@@ -610,7 +598,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   actionPillText: {
-    color: UI.text,
+    color: ui.text,
     fontFamily: 'Inter_700Bold',
     fontSize: 14,
   },
@@ -622,9 +610,9 @@ const styles = StyleSheet.create({
   statsStrip: {
     minHeight: 78,
     borderRadius: 23,
-    backgroundColor: UI.card,
+    backgroundColor: ui.card,
     borderWidth: 1,
-    borderColor: UI.line,
+    borderColor: ui.line,
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 14,
@@ -640,13 +628,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   statNumber: {
-    color: UI.text,
+    color: ui.text,
     fontFamily: 'Inter_800ExtraBold',
     fontSize: 25,
     lineHeight: 29,
   },
   statLabel: {
-    color: UI.muted,
+    color: ui.muted,
     fontFamily: 'Inter_600SemiBold',
     fontSize: 12,
     marginTop: 3,
@@ -654,14 +642,14 @@ const styles = StyleSheet.create({
   statDivider: {
     width: 1,
     height: 34,
-    backgroundColor: UI.line,
+    backgroundColor: ui.line,
   },
   alertBanner: {
     minHeight: 72,
     borderRadius: 22,
     borderWidth: 1,
     borderColor: '#FFD5C2',
-    backgroundColor: UI.orangeSoft,
+    backgroundColor: ui.orangeSoft,
     paddingHorizontal: 14,
     flexDirection: 'row',
     alignItems: 'center',
@@ -672,13 +660,13 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 99,
-    backgroundColor: UI.orange,
+    backgroundColor: ui.orange,
     alignItems: 'center',
     justifyContent: 'center',
   },
   alertText: {
     flex: 1,
-    color: UI.text,
+    color: ui.text,
     fontFamily: 'Inter_800ExtraBold',
     fontSize: 14,
     lineHeight: 20,
@@ -688,19 +676,19 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     gap: 28,
     borderBottomWidth: 1,
-    borderBottomColor: UI.line,
+    borderBottomColor: ui.line,
     marginBottom: 12,
   },
   tabItem: {
     paddingBottom: 10,
   },
   tabText: {
-    color: UI.muted,
+    color: ui.muted,
     fontFamily: 'Inter_800ExtraBold',
     fontSize: 15,
   },
   tabTextActive: {
-    color: UI.text,
+    color: ui.text,
   },
   tabUnderline: {
     position: 'absolute',
@@ -709,14 +697,14 @@ const styles = StyleSheet.create({
     right: 0,
     height: 2,
     borderRadius: 99,
-    backgroundColor: UI.orange,
+    backgroundColor: ui.orange,
   },
   listCard: {
     overflow: 'hidden',
     borderRadius: 24,
-    backgroundColor: UI.card,
+    backgroundColor: ui.card,
     borderWidth: 1,
-    borderColor: UI.line,
+    borderColor: ui.line,
     shadowColor: '#000000',
     shadowOpacity: 0.06,
     shadowRadius: 18,
@@ -745,13 +733,13 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   taskTitle: {
-    color: UI.text,
+    color: ui.text,
     fontFamily: 'Inter_800ExtraBold',
     fontSize: 15.5,
     lineHeight: 20,
   },
   taskMeta: {
-    color: UI.muted,
+    color: ui.muted,
     fontFamily: 'Inter_500Medium',
     fontSize: 12.2,
     lineHeight: 17,
@@ -769,7 +757,7 @@ const styles = StyleSheet.create({
   },
   rowDivider: {
     height: 1,
-    backgroundColor: UI.line,
+    backgroundColor: ui.line,
     marginLeft: 50,
   },
   emptyBox: {
@@ -780,13 +768,13 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   emptyTitle: {
-    color: UI.text,
+    color: ui.text,
     fontFamily: 'Inter_800ExtraBold',
     fontSize: 17,
     textAlign: 'center',
   },
   emptySub: {
-    color: UI.muted,
+    color: ui.muted,
     fontFamily: 'Inter_500Medium',
     fontSize: 13,
     lineHeight: 19,
@@ -797,7 +785,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   footerSnapshotText: {
-    color: UI.muted,
+    color: ui.muted,
     fontFamily: 'Inter_700Bold',
     fontSize: 12,
   },
@@ -808,7 +796,7 @@ const styles = StyleSheet.create({
     width: 61,
     height: 61,
     borderRadius: 999,
-    backgroundColor: UI.orange,
+    backgroundColor: ui.orange,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000000',

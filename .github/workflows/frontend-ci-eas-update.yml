@@ -20,6 +20,8 @@ jobs:
   frontend-ci:
     name: Frontend lint check
     runs-on: ubuntu-latest
+    env:
+      ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
     defaults:
       run:
         working-directory: frontend
@@ -46,6 +48,7 @@ jobs:
     needs: frontend-ci
     if: github.ref == 'refs/heads/main'
     env:
+      ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
       EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
       EXPO_PUBLIC_BACKEND_URL: ${{ secrets.EXPO_PUBLIC_BACKEND_URL || vars.EXPO_PUBLIC_BACKEND_URL }}
       EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: ${{ secrets.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || vars.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID }}
