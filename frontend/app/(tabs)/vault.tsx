@@ -23,8 +23,7 @@ import { PressScale } from '../../src/components/PressScale';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
 import AppToast, { ToastTone } from '../../src/components/AppToast';
 import LoadingOverlay from '../../src/components/LoadingOverlay';
-import { ErrorBoundary } from '../../src/components/ErrorBoundary';
-import { OfflineBanner } from '../../src/components/OfflineBanner';
+import { TabScreen } from '../../src/components/TabScreen';
 import { Badge, Card, IconTile, ProgressBar, ScreenHeader, UI } from '../../src/components/Kit';
 
 import { useStore } from '../../src/store';

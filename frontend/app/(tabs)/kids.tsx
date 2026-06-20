@@ -3,13 +3,11 @@ import {
   View,
   Text,
   StyleSheet,
-  RefreshControl,
   ScrollView,
   TextInput,
   Platform,
   Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import {
   Plus,
@@ -35,8 +33,7 @@ import AppToast, { ToastTone } from '../../src/components/AppToast';
 import EmptyState from '../../src/components/EmptyState';
 import ErrorState from '../../src/components/ErrorState';
 import LoadingOverlay from '../../src/components/LoadingOverlay';
-import { ErrorBoundary } from '../../src/components/ErrorBoundary';
-import { OfflineBanner } from '../../src/components/OfflineBanner';
+import { TabScreen } from '../../src/components/TabScreen';
 import { Card, IconTile, ProgressBar, ScreenHeader, UI } from '../../src/components/Kit';
 
 import { useStore } from '../../src/store';
@@ -92,15 +89,6 @@ function formatActivityDate(value?: string | null) {
 }
 
 export default function Kids() {
-  return (
-    <ErrorBoundary tab="Kids">
-      <OfflineBanner />
-      <KidsScreen />
-    </ErrorBoundary>
-  );
-}
-
-function KidsScreen() {
   const { t } = useStore();
   const swipeHandlers = useSwipeTabs();
   const router = useRouter();
@@ -386,8 +374,12 @@ function KidsScreen() {
 
   return (
     <View style={styles.container} {...swipeHandlers}>
-      <SafeAreaView style={{ flex: 1 }} edges={['top']}>
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#F56519" />}>
+      <TabScreen
+        tab="Kids"
+        refreshing={refreshing}
+        onRefresh={handleRefresh}
+        scrollViewProps={{ contentContainerStyle: styles.scroll, keyboardShouldPersistTaps: 'handled' }}
+      >
           <ScreenHeader
             eyebrow="Family"
             title="Kids"
@@ -568,8 +560,7 @@ function KidsScreen() {
           )}
 
           <View style={{ height: 120 }} />
-        </ScrollView>
-      </SafeAreaView>
+      </TabScreen>
 
       {/* Child sheet */}
       <KeyboardAwareBottomSheet visible={showChildSheet} onClose={() => setShowChildSheet(false)} contentStyle={styles.sheet}>

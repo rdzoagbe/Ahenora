@@ -509,7 +509,15 @@ export const api = {
       return data;
     });
   },
-  getEntitlements: () => request<Entitlements>('/subscription/entitlements'),
+  getEntitlements: () => {
+    const cacheKey = 'getEntitlements';
+    const cached = cache.get<Entitlements>(cacheKey);
+    if (cached) return Promise.resolve(cached);
+    return request<Entitlements>('/subscription/entitlements').then((data) => {
+      cache.set(cacheKey, data, CACHE_TTL_MS);
+      return data;
+    });
+  },
   changeSubscription: (plan: Plan, billing_cycle: BillingCycle) =>
     request<Subscription>('/subscription/change', {
       method: 'POST',
