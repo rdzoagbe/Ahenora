@@ -2,11 +2,11 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, ImageBackground, Platform, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import Constants from 'expo-constants';
 import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 import * as Google from 'expo-auth-session/providers/google';
 import * as Linking from 'expo-linking';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { Globe, Sparkles, ShieldCheck, Crown, ArrowRight } from 'lucide-react-native';
 
 const FB_APP_ID = process.env.EXPO_PUBLIC_FACEBOOK_APP_ID?.trim();
@@ -44,17 +44,6 @@ function extractInviteToken(rawUrl?: string | null) {
   }
 }
 
-function isExpoGoAndroid() {
-  return Platform.OS === 'android' && Constants.appOwnership === 'expo';
-}
-
-function googleAndroidRedirectUri(clientId?: string) {
-  if (!clientId) return undefined;
-  const prefix = clientId.replace('.apps.googleusercontent.com', '').trim();
-  if (!prefix) return undefined;
-  return `com.googleusercontent.apps.${prefix}:/oauth2redirect/google`;
-}
-
 function authErrorMessage(error: unknown, params?: Record<string, string>) {
   const candidate = error as { description?: string; code?: string; name?: string } | null | undefined;
   return (
@@ -78,14 +67,11 @@ export default function Landing() {
   const [invitedBy, setInvitedBy] = useState<string | null>(null);
 
   const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID?.trim();
-  const androidClientId = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID?.trim();
-  const androidRedirectUri = googleAndroidRedirectUri(androidClientId);
-  const redirectUri = Platform.OS === 'android' ? androidRedirectUri : AuthSession.makeRedirectUri({ scheme: 'householdcoo', path: 'oauthredirect' });
+  const webRedirectUri = Platform.OS !== 'android' ? AuthSession.makeRedirectUri({ scheme: 'householdcoo', path: 'oauthredirect' }) : undefined;
 
   const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
-    androidClientId,
     webClientId,
-    redirectUri,
+    redirectUri: webRedirectUri,
   });
 
   const fbRedirectUri = useMemo(() => AuthSession.makeRedirectUri({
@@ -253,50 +239,50 @@ export default function Landing() {
 
   const signIn = async () => {
     try {
-      if (isExpoGoAndroid()) {
-        Alert.alert(
-          'Development build required',
-          'Google sign-in cannot be tested in Expo Go on Android because the OAuth redirect belongs to Expo Go, not Household COO. Use a Household COO development build to test sign-in.'
-        );
-        return;
-      }
-
       if (Platform.OS === 'android') {
-        if (!androidClientId) {
-          Alert.alert('Google Sign-In not configured', 'Missing EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID in .env.');
+        if (!webClientId) {
+          Alert.alert('Sign-in unavailable', 'Google Sign-In is not configured.');
           return;
         }
 
-        if (!androidRedirectUri) {
-          Alert.alert('Google Sign-In not configured', 'The Android Google client ID is invalid.');
+        GoogleSignin.configure({ webClientId, scopes: ['profile', 'email'], offlineAccess: false });
+        await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+        const userInfo = await GoogleSignin.signIn();
+        const idToken = userInfo?.data?.idToken || (userInfo as any)?.idToken;
+
+        if (!idToken) {
+          Alert.alert('Sign-in failed', 'Google did not return an ID token.');
           return;
         }
 
-        if (!request) {
-          Alert.alert('Google Sign-In not ready', 'Please try again in a moment.');
-          return;
+        let token = inviteToken || undefined;
+        if (!token && Platform.OS === 'web' && typeof window !== 'undefined') {
+          try { token = window.sessionStorage.getItem('pending_invite') || undefined; } catch { /* ignore */ }
         }
 
-        handledResponseRef.current = false;
-        await promptAsync();
+        const { api: apiModule } = await import('../src/api');
+        const authResult = await apiModule.exchangeSession(idToken, token);
+        await setUserFromAuth(authResult.user, authResult.session_token);
+        router.replace('/feed');
         return;
       }
 
       if (!webClientId) {
-        Alert.alert('Google Sign-In not configured', 'Missing EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID in .env.');
+        Alert.alert('Sign-in unavailable', 'Google Sign-In is not configured.');
         return;
       }
 
       if (!request) {
-        Alert.alert('Google Sign-In not ready', 'Please try again in a moment.');
+        Alert.alert('Sign-in not ready', 'Please try again in a moment.');
         return;
       }
 
       handledResponseRef.current = false;
       await promptAsync();
     } catch (error: any) {
-      logger.error('google prompt failed', error?.message || error);
-      Alert.alert('Google Sign-In failed', error?.message || 'Please try again.');
+      if (error?.code === 'SIGN_IN_CANCELLED') return;
+      logger.error('google sign-in failed', error?.message || error);
+      Alert.alert('Sign-in failed', error?.message || 'Please try again.');
     }
   };
 
