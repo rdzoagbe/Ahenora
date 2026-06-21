@@ -121,12 +121,13 @@ function SidebarNav({ width }: { width: number }) {
 export default function TabLayout() {
   const { t, theme } = useStore();
   const { isWide, sidebarW } = useBreakpoint();
+  const insets = useSafeAreaInsets();
 
   const floatingTabStyle = {
     position: 'absolute' as const,
     left: 20,
     right: 20,
-    bottom: 14,
+    bottom: Math.max(insets.bottom, 14),
     height: 78,
     borderRadius: 32,
     backgroundColor: theme.colors.tabBar,
