@@ -5,9 +5,11 @@ import { cache } from './cache';
 
 const CACHE_TTL_MS = 30_000;
 
-const BASE = process.env.EXPO_PUBLIC_BACKEND_URL;
-if (!BASE) {
-  throw new Error("EXPO_PUBLIC_BACKEND_URL is not set");
+const BASE =
+  process.env.EXPO_PUBLIC_BACKEND_URL ||
+  "https://household-coo-production.up.railway.app";
+if (!process.env.EXPO_PUBLIC_BACKEND_URL) {
+  console.warn("EXPO_PUBLIC_BACKEND_URL is not set — using production fallback");
 }
 
 const TOKEN_KEY = 'coo_session_token';
