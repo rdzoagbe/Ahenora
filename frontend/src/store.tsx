@@ -11,6 +11,7 @@ import { useColorScheme } from 'react-native';
 import { api, User, tokenStore, Subscription } from './api';
 import { Lang, SUPPORTED_LANGS, translate } from './i18n';
 import { AppearanceMode, AppTheme, getTheme, resolveAppearance, ResolvedAppearance } from './theme';
+import { logger } from './logger';
 
 export type { Lang } from './i18n';
 export type { AppearanceMode, ResolvedAppearance, AppTheme } from './theme';
@@ -73,7 +74,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       const s = await api.getSubscription();
       setSubscription(s);
     } catch (error) {
-      console.log('refreshSubscription failed:', error);
+      logger.warn('refreshSubscription failed:', error);
       setSubscription(null);
     }
   }, []);
@@ -96,11 +97,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       }
 
       api.getSubscription().then(setSubscription).catch((error) => {
-        console.log('refresh subscription after user failed:', error);
+        logger.warn('refresh subscription after user failed:', error);
         setSubscription(null);
       });
     } catch (error) {
-      console.log('refreshUser failed:', error);
+      logger.warn('refreshUser failed:', error);
       await tokenStore.clear();
       setUser(null);
       setSubscription(null);
@@ -118,7 +119,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       try {
         await api.setLanguage(l);
       } catch (error) {
-        console.log('setLanguage failed:', error);
+        logger.warn('setLanguage failed:', error);
       }
     },
     [user]
@@ -129,7 +130,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     try {
       await AsyncStorage.setItem(APPEARANCE_STORAGE_KEY, mode);
     } catch (error) {
-      console.log('setAppearance failed:', error);
+      logger.warn('setAppearance failed:', error);
     }
   }, []);
 
@@ -141,7 +142,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         await api.logout();
       }
     } catch (error) {
-      console.log('logout failed:', error);
+      logger.warn('logout failed:', error);
     }
 
     await tokenStore.clear();
@@ -154,7 +155,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     await tokenStore.set(token);
 
     const savedToken = await tokenStore.get();
-    console.log('Session token saved:', savedToken ? 'yes' : 'no');
+    logger.info('Session token saved:', savedToken ? 'yes' : 'no');
 
     setUser(u);
 
@@ -165,7 +166,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setLoading(false);
 
     api.getSubscription().then(setSubscription).catch((error) => {
-      console.log('subscription after auth failed:', error);
+      logger.warn('subscription after auth failed:', error);
       setSubscription(null);
     });
   }, []);

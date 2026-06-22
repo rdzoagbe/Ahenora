@@ -39,7 +39,7 @@ export function SundayBriefModal({ visible, onClose }: Props) {
         onClose();
         return;
       }
-      console.log('brief error', e);
+      /* brief load error — user sees fallback message */
       setBrief('Unable to generate brief right now.');
     } finally {
       setLoading(false);

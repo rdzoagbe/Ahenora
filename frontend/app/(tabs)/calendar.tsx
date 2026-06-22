@@ -233,12 +233,12 @@ export default function Calendar() {
 
         try {
           if (typeof googleSigninAny.getCurrentUser === 'function') currentUser = await googleSigninAny.getCurrentUser();
-        } catch (e) {}
+        } catch {}
 
         if (!currentUser) {
           try {
             if (typeof googleSigninAny.signInSilently === 'function') currentUser = await googleSigninAny.signInSilently();
-          } catch (e) {}
+          } catch {}
         }
 
         if (!currentUser) currentUser = await GoogleSignin.signIn();
@@ -251,8 +251,8 @@ export default function Calendar() {
 
         try {
           tokens = await GoogleSignin.getTokens();
-        } catch (tokenError: any) {
-          try { await GoogleSignin.signOut(); } catch (signOutError) {}
+        } catch {
+          try { await GoogleSignin.signOut(); } catch {}
 
           GoogleSignin.configure({ webClientId, scopes: ['profile', 'email', GOOGLE_CALENDAR_SCOPE], offlineAccess: false });
           await GoogleSignin.signIn();
@@ -324,7 +324,7 @@ export default function Calendar() {
       setCalendarSyncStatus(`${importResult.imported} events imported. ${importResult.contacts_found} people found.`);
       Alert.alert('Calendar synced', `${importResult.imported} events imported. ${importResult.contacts_found} people found.`);
     } catch (e: any) {
-      console.log('calendar sync failed', e);
+      /* calendar sync error — alert shown to user */
       const message = e?.message || 'Please try again.';
       setCalendarSyncStatus(`Calendar sync failed: ${message}`);
       Alert.alert('Calendar sync failed', message);
