@@ -66,21 +66,88 @@ ADMIN_EMAILS = {
     if email.strip()
 }
 
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get("ALLOWED_ORIGINS", "").split(",")
+    if origin.strip()
+] or [
+    "https://household-coo.app",
+    "https://www.household-coo.app",
+    "householdcoo://",
+    "exp://",
+]
+
 if GOOGLE_API_KEY and genai:
     genai.configure(api_key=GOOGLE_API_KEY)
 
 mongo = AsyncIOMotorClient(MONGO_URL, serverSelectionTimeoutMS=5000) if MONGO_URL else None
 db: Any = mongo[DB_NAME] if mongo else None
 
+import logging
+from collections import defaultdict
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
+
+log = logging.getLogger("household_coo")
+
 app = FastAPI(title="Household COO Backend")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # tighten later
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# -----------------------------------------------------------------------------
+# Rate limiting (in-memory, per-IP)
+# -----------------------------------------------------------------------------
+RATE_LIMIT_WINDOW = 60  # seconds
+RATE_LIMIT_MAX = int(os.environ.get("RATE_LIMIT_MAX", "120"))
+RATE_LIMIT_AUTH_MAX = int(os.environ.get("RATE_LIMIT_AUTH_MAX", "20"))
+
+_rate_buckets: dict[str, list[float]] = defaultdict(list)
+
+
+def _client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _prune(bucket: list[float], now: float) -> list[float]:
+    cutoff = now - RATE_LIMIT_WINDOW
+    return [t for t in bucket if t > cutoff]
+
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):  # type: ignore[override]
+        import time
+
+        ip = _client_ip(request)
+        now = time.time()
+        key = f"{ip}:{request.url.path}"
+
+        is_auth = request.url.path.startswith("/api/auth/")
+        limit = RATE_LIMIT_AUTH_MAX if is_auth else RATE_LIMIT_MAX
+
+        bucket = _prune(_rate_buckets[key], now)
+        if len(bucket) >= limit:
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Too many requests. Please try again later."},
+            )
+        bucket.append(now)
+        _rate_buckets[key] = bucket
+
+        return await call_next(request)
+
+
+app.add_middleware(RateLimitMiddleware)
 
 
 # -----------------------------------------------------------------------------
@@ -1614,7 +1681,7 @@ async def create_card(payload: CardIn, user=Depends(require_user)):
     try:
         await send_new_card_alert(user["family_id"], doc, created_by_user_id=user["user_id"])
     except Exception as e:
-        print(f"new card alert failed: {e}")
+        log.warning("new card alert failed: %s", e)
 
     return public_card(doc)
 
