@@ -148,7 +148,7 @@ export function AddCardModal({
         Alert.alert('Saved', 'Card created and scanned document saved to Vault.');
       }
     } catch (e: any) {
-      console.log('create card error', e);
+      /* card creation error — alert shown to user */
       Alert.alert('Save failed', e?.message || 'Could not save this card.');
     } finally {
       setSaving(false);

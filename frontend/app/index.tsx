@@ -90,8 +90,8 @@ export default function Landing() {
   );
 
   useEffect(() => {
-    logger.info('Google AuthSession redirect URI', redirectUri || 'missing');
-  }, [redirectUri]);
+    logger.info('Google AuthSession redirect URI', webRedirectUri || 'missing');
+  }, [webRedirectUri]);
 
   useEffect(() => {
     if (!loading && user) {
@@ -256,7 +256,7 @@ export default function Landing() {
         }
 
         let token = inviteToken || undefined;
-        if (!token && Platform.OS === 'web' && typeof window !== 'undefined') {
+        if (!token && (Platform.OS as string) === 'web' && typeof window !== 'undefined') {
           try { token = window.sessionStorage.getItem('pending_invite') || undefined; } catch { /* ignore */ }
         }
 

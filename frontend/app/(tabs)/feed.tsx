@@ -116,7 +116,7 @@ function TaskRow({ card, onComplete, styles }: { card: Card; onComplete: () => v
 }
 
 export default function Feed() {
-  const { user, t } = useStore();
+  const { user } = useStore();
   const { px, maxW } = useBreakpoint();
   const ui = useUI();
   const styles = useMemo(() => createStyles(ui), [ui]);
