@@ -27,11 +27,11 @@ function TabIcon({ focused, Icon, label }: { focused: boolean; Icon: any; label:
     );
   }
 
-  const activeColor = theme.colors.primaryText;
+  const activeColor = theme.colors.accent;
   const inactiveColor = theme.colors.textSoft;
 
   return (
-    <View style={[styles.tabItem, focused && { backgroundColor: theme.colors.bgElevated }]}>
+    <View style={[styles.tabItem, focused && { backgroundColor: theme.colors.bgSoft }]}>
       <Icon color={focused ? activeColor : inactiveColor} size={21} strokeWidth={focused ? 2.5 : 2.1} />
       <Text
         style={[
