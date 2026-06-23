@@ -300,21 +300,59 @@ def plan_limit_error(feature: str, current_plan: str, message: str, limit=None, 
     )
 
 
+AI_SCAN_PERIOD_DAYS = 30
+
+
+def _coerce_dt(value):
+    """Best-effort parse of a stored datetime (datetime or ISO string).
+
+    Always returns a timezone-aware UTC datetime so it can be safely compared
+    against utcnow(). PyMongo returns naive datetimes by default, so naive
+    values are assumed to be UTC.
+    """
+    parsed = None
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, str):
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    if parsed is None:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
 async def get_family_doc(family_id: str):
     database = get_db()
     family = await database["families"].find_one({"family_id": family_id}, {"_id": 0})
     if not family:
         family = {
             "family_id": family_id,
-            "plan": "executive",
+            "plan": "village",
             "billing_cycle": "monthly",
-            "grandfathered": True,
+            "grandfathered": False,
             "updated_at": utcnow(),
             "ai_scans_used": 0,
             "ai_scans_period_start": utcnow(),
             "vault_bytes_used": 0,
         }
         await database["families"].insert_one(family)
+        return family
+
+    # Roll the monthly AI-scan counter over once the period has elapsed so the
+    # "per month" limit actually behaves monthly instead of being a lifetime cap.
+    period_start = _coerce_dt(family.get("ai_scans_period_start"))
+    now = utcnow()
+    if period_start is None or (now - period_start) >= timedelta(days=AI_SCAN_PERIOD_DAYS):
+        await database["families"].update_one(
+            {"family_id": family_id},
+            {"$set": {"ai_scans_used": 0, "ai_scans_period_start": now}},
+        )
+        family["ai_scans_used"] = 0
+        family["ai_scans_period_start"] = now
     return family
 
 
@@ -1136,9 +1174,9 @@ async def exchange_session(payload: SessionIn):
             await database["families"].insert_one(
                 {
                     "family_id": family_id,
-                    "plan": "executive",
+                    "plan": "village",
                     "billing_cycle": "monthly",
-                    "grandfathered": True,
+                    "grandfathered": False,
                     "updated_at": utcnow(),
                     "ai_scans_used": 0,
                     "ai_scans_period_start": utcnow(),
@@ -1309,9 +1347,9 @@ async def exchange_facebook_session(payload: FacebookSessionIn):
         if not target_family_id:
             await database["families"].insert_one({
                 "family_id": family_id,
-                "plan": "executive",
+                "plan": "village",
                 "billing_cycle": "monthly",
-                "grandfathered": True,
+                "grandfathered": False,
                 "updated_at": utcnow(),
                 "ai_scans_used": 0,
                 "ai_scans_period_start": utcnow(),
