@@ -14,7 +14,7 @@ import {
 import { BlurView } from 'expo-blur';
 import { useFocusEffect, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { Plus, X, Trash2, Stethoscope, BookOpen, Shield, Scale, Bell, Folder, MoreVertical, FileText } from 'lucide-react-native';
+import { Plus, X, Trash2, Stethoscope, BookOpen, Shield, Scale, Bell, Folder, MoreVertical, FileText, ShoppingCart, Check, Circle } from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { PressScale } from '../../src/components/PressScale';
@@ -25,7 +25,7 @@ import { TabScreen } from '../../src/components/TabScreen';
 import { Badge, Card, IconTile, ProgressBar, ScreenHeader, UI, useUI, UIColors } from '../../src/components/Kit';
 
 import { useStore } from '../../src/store';
-import { api, VaultDoc } from '../../src/api';
+import { api, ShoppingItem, VaultDoc } from '../../src/api';
 import { logger } from '../../src/logger';
 
 const CATEGORIES = [
@@ -65,6 +65,9 @@ export default function Vault() {
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
+  const [shopItems, setShopItems] = useState<ShoppingItem[]>([]);
+  const [shopInput, setShopInput] = useState('');
+  const [addingShop, setAddingShop] = useState(false);
 
   const showToast = useCallback((message: string, tone: ToastTone = 'info') => {
     setToast({ message, tone });
@@ -73,8 +76,13 @@ export default function Vault() {
 
   const load = useCallback(async () => {
     try {
-      const res = await api.listVault();
-      setDocs(res);
+      const [vaultRes, shopRes] = await Promise.allSettled([api.listVault(), api.listShopping()]);
+      if (vaultRes.status === 'fulfilled') setDocs(vaultRes.value);
+      if (shopRes.status === 'fulfilled') setShopItems(shopRes.value);
+      if (vaultRes.status === 'rejected') {
+        logger.warn('Vault load failed:', vaultRes.reason);
+        showToast('Could not load vault.', 'error');
+      }
     } catch (e: any) {
       logger.warn('Vault load failed:', e?.message || e);
       showToast(e?.message || 'Could not load vault.', 'error');
@@ -158,6 +166,52 @@ export default function Vault() {
     }
   };
 
+  const addShopItem = useCallback(async () => {
+    if (!shopInput.trim()) return;
+    setAddingShop(true);
+    try {
+      const item = await api.addShoppingItem({ name: shopInput.trim() });
+      setShopItems((prev) => [item, ...prev]);
+      setShopInput('');
+    } catch {
+      showToast('Could not add item.', 'error');
+    } finally {
+      setAddingShop(false);
+    }
+  }, [shopInput, showToast]);
+
+  const toggleShopItem = useCallback(async (item: ShoppingItem) => {
+    setShopItems((prev) => prev.map((i) => i.item_id === item.item_id ? { ...i, checked: !i.checked } : i));
+    try {
+      await api.updateShoppingItem(item.item_id, { checked: !item.checked });
+    } catch {
+      load();
+    }
+  }, [load]);
+
+  const deleteShopItem = useCallback(async (itemId: string) => {
+    setShopItems((prev) => prev.filter((i) => i.item_id !== itemId));
+    try {
+      await api.deleteShoppingItem(itemId);
+    } catch {
+      load();
+    }
+  }, [load]);
+
+  const clearChecked = useCallback(async () => {
+    const checkedIds = new Set(shopItems.filter((i) => i.checked).map((i) => i.item_id));
+    if (checkedIds.size === 0) return;
+    setShopItems((prev) => prev.filter((i) => !checkedIds.has(i.item_id)));
+    try {
+      await api.clearCheckedShopping();
+    } catch {
+      load();
+    }
+  }, [shopItems, load]);
+
+  const uncheckedItems = useMemo(() => shopItems.filter((i) => !i.checked), [shopItems]);
+  const checkedItems = useMemo(() => shopItems.filter((i) => i.checked), [shopItems]);
+
   return (
     <SwipeableTabView style={styles.container}>
       <TabScreen
@@ -239,6 +293,70 @@ export default function Vault() {
               })}
             </View>
           )}
+          {/* Shopping List */}
+          <View style={styles.recentHead}>
+            <View style={styles.shopHeaderLeft}>
+              <ShoppingCart color={ui.orange} size={20} />
+              <Text style={styles.recentTitle}>Shopping List</Text>
+            </View>
+            {checkedItems.length > 0 ? (
+              <PressScale onPress={clearChecked} style={styles.clearBtn}>
+                <Text style={styles.clearBtnText}>Clear done</Text>
+              </PressScale>
+            ) : (
+              <Text style={styles.recentTotal}>{shopItems.length} item{shopItems.length === 1 ? '' : 's'}</Text>
+            )}
+          </View>
+
+          <View style={styles.shopCard}>
+            <View style={styles.shopInputRow}>
+              <TextInput
+                value={shopInput}
+                onChangeText={setShopInput}
+                placeholder="Add item..."
+                placeholderTextColor={ui.muted}
+                style={styles.shopInput}
+                returnKeyType="done"
+                onSubmitEditing={addShopItem}
+              />
+              <PressScale onPress={addShopItem} disabled={addingShop || !shopInput.trim()} style={[styles.shopAddBtn, (!shopInput.trim() || addingShop) && { opacity: 0.4 }]}>
+                <Plus color="#FFFFFF" size={18} />
+              </PressScale>
+            </View>
+
+            {uncheckedItems.map((item) => (
+              <PressScale key={item.item_id} onPress={() => toggleShopItem(item)} style={styles.shopRow}>
+                <Circle color={ui.muted} size={20} />
+                <Text style={styles.shopItemText}>{item.name}</Text>
+                <Text style={styles.shopCat}>{item.category}</Text>
+                <PressScale onPress={() => deleteShopItem(item.item_id)} style={{ padding: 4 }}>
+                  <Trash2 color={ui.muted} size={15} />
+                </PressScale>
+              </PressScale>
+            ))}
+
+            {checkedItems.length > 0 ? (
+              <>
+                <View style={styles.shopDivider}>
+                  <Text style={styles.shopDividerText}>Done ({checkedItems.length})</Text>
+                </View>
+                {checkedItems.map((item) => (
+                  <PressScale key={item.item_id} onPress={() => toggleShopItem(item)} style={styles.shopRow}>
+                    <Check color={ui.mintText} size={20} />
+                    <Text style={[styles.shopItemText, styles.shopItemDone]}>{item.name}</Text>
+                    <PressScale onPress={() => deleteShopItem(item.item_id)} style={{ padding: 4 }}>
+                      <Trash2 color={ui.muted} size={15} />
+                    </PressScale>
+                  </PressScale>
+                ))}
+              </>
+            ) : null}
+
+            {shopItems.length === 0 ? (
+              <Text style={styles.shopEmpty}>No items yet. Add groceries, supplies, or anything the household needs.</Text>
+            ) : null}
+          </View>
+
           <View style={{ height: 140 }} />
       </TabScreen>
 
@@ -377,4 +495,19 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   previewActions: { flexDirection: 'row', gap: 8 },
   previewIconBtn: { padding: 10, borderRadius: 9999, borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)', backgroundColor: 'rgba(15,23,42,0.55)' },
   previewImg: { width: '100%', aspectRatio: 0.75, borderRadius: 24, borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)' },
+
+  shopHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  clearBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 99, backgroundColor: ui.mint },
+  clearBtnText: { color: ui.mintText, fontFamily: 'Inter_700Bold', fontSize: 12 },
+  shopCard: { borderRadius: 20, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, padding: 14, gap: 4 },
+  shopInputRow: { flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 6 },
+  shopInput: { flex: 1, borderWidth: 1, borderColor: ui.line, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10, fontFamily: 'Inter_500Medium', fontSize: 14, color: ui.text, backgroundColor: ui.soft },
+  shopAddBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: ui.orange, alignItems: 'center', justifyContent: 'center' },
+  shopRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: ui.line },
+  shopItemText: { flex: 1, color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 15 },
+  shopItemDone: { textDecorationLine: 'line-through', color: ui.muted },
+  shopCat: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12 },
+  shopDivider: { marginTop: 8, paddingVertical: 4 },
+  shopDividerText: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5 },
+  shopEmpty: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 13, textAlign: 'center', paddingVertical: 14 },
 });

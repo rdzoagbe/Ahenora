@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
@@ -12,9 +14,13 @@ import {
   Camera,
   CheckCircle2,
   ChevronRight,
+  MessageSquare,
   Mic,
   Plus,
+  Repeat,
   Star,
+  Trash2,
+  Zap,
 } from 'lucide-react-native';
 
 import { useBreakpoint } from '../../src/responsive';
@@ -26,7 +32,7 @@ import { CameraCaptureModal } from '../../src/components/CameraCaptureModal';
 import { TabScreen } from '../../src/components/TabScreen';
 import { useStore } from '../../src/store';
 import { useUI, UIColors } from '../../src/components/Kit';
-import { api, Card, CardType, FamilyMember } from '../../src/api';
+import { api, Card, CardType, FamilyMember, HandoffNote, Template } from '../../src/api';
 import { syncCardReminderNotifications } from '../../src/notifications';
 import { logger } from '../../src/logger';
 
@@ -132,14 +138,21 @@ export default function Feed() {
   const [addSource, setAddSource] = useState<'MANUAL' | 'VOICE' | 'CAMERA'>('MANUAL');
   const [voiceDraft, setVoiceDraft] = useState<VoiceDraft | null>(null);
   const [activeTab, setActiveTab] = useState<FeedTab>('today');
+  const [notes, setNotes] = useState<HandoffNote[]>([]);
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [noteText, setNoteText] = useState('');
+  const [savingNote, setSavingNote] = useState(false);
+  const [expandNotes, setExpandNotes] = useState(true);
 
   const load = useCallback(async () => {
     try {
-      const [cardsResult, membersResult, rewardsResult, vaultResult] = await Promise.allSettled([
+      const [cardsResult, membersResult, rewardsResult, vaultResult, notesResult, templatesResult] = await Promise.allSettled([
         api.listCards(),
         api.familyMembers(),
         api.listRewards(),
         api.listVault(),
+        api.listHandoffNotes(),
+        api.listTemplates(),
       ]);
 
       let loadedCards: Card[] = [];
@@ -153,6 +166,8 @@ export default function Feed() {
       if (membersResult.status === 'fulfilled') setMembers(membersResult.value);
       if (rewardsResult.status === 'fulfilled') setRewardCount(rewardsResult.value.length);
       if (vaultResult.status === 'fulfilled') setVaultCount(vaultResult.value.length);
+      if (notesResult.status === 'fulfilled') setNotes(notesResult.value);
+      if (templatesResult.status === 'fulfilled') setTemplates(templatesResult.value);
 
       if (cardsResult.status === 'fulfilled') {
         api
@@ -267,6 +282,40 @@ export default function Feed() {
     load();
   }, [load]);
 
+  const addNote = useCallback(async () => {
+    if (!noteText.trim()) return;
+    setSavingNote(true);
+    try {
+      const created = await api.createHandoffNote({ text: noteText.trim() });
+      setNotes((prev) => [created, ...prev]);
+      setNoteText('');
+    } catch {
+      Alert.alert('Error', 'Could not save note.');
+    } finally {
+      setSavingNote(false);
+    }
+  }, [noteText]);
+
+  const removeNote = useCallback(async (noteId: string) => {
+    setNotes((prev) => prev.filter((n) => n.note_id !== noteId));
+    try {
+      await api.deleteHandoffNote(noteId);
+    } catch {
+      load();
+    }
+  }, [load]);
+
+  const runTemplate = useCallback(async (tpl: Template) => {
+    try {
+      await api.generateFromTemplate(tpl.template_id);
+      load();
+    } catch {
+      Alert.alert('Error', 'Could not generate card from template.');
+    }
+  }, [load]);
+
+  const enabledTemplates = useMemo(() => templates.filter((t) => t.enabled), [templates]);
+
   return (
     <SwipeableTabView style={styles.container}>
       <TabScreen
@@ -324,6 +373,18 @@ export default function Feed() {
               </View>
             </View>
 
+            {/* Quick templates */}
+            {enabledTemplates.length > 0 ? (
+              <View style={styles.templateRow}>
+                {enabledTemplates.slice(0, 4).map((tpl) => (
+                  <PressScale key={tpl.template_id} onPress={() => runTemplate(tpl)} style={styles.templateChip}>
+                    <Zap color={ui.orange} size={14} />
+                    <Text style={styles.templateChipText} numberOfLines={1}>{tpl.title}</Text>
+                  </PressScale>
+                ))}
+              </View>
+            ) : null}
+
             <View style={styles.statsStrip}>
               <View style={styles.statCell}>
                 <Text style={styles.statNumber}>{dashboard.todayCards.length}</Text>
@@ -340,6 +401,45 @@ export default function Feed() {
                 <Text style={styles.statLabel}>This week</Text>
               </View>
             </View>
+
+            {/* Handoff notes */}
+            <PressScale onPress={() => setExpandNotes((v) => !v)} style={styles.notesHeader}>
+              <MessageSquare color={ui.lavenderText} size={18} />
+              <Text style={styles.notesHeaderText}>Handoff Notes</Text>
+              <Text style={styles.notesBadge}>{notes.length}</Text>
+              <ChevronRight color={ui.muted} size={16} style={expandNotes ? { transform: [{ rotate: '90deg' }] } : undefined} />
+            </PressScale>
+            {expandNotes ? (
+              <View style={styles.notesCard}>
+                <View style={styles.noteInputRow}>
+                  <TextInput
+                    value={noteText}
+                    onChangeText={setNoteText}
+                    placeholder="Leave a note for your co-parent..."
+                    placeholderTextColor={ui.muted}
+                    style={styles.noteInput}
+                    returnKeyType="send"
+                    onSubmitEditing={addNote}
+                    multiline={false}
+                  />
+                  <PressScale onPress={addNote} disabled={savingNote || !noteText.trim()} style={[styles.noteSendBtn, (!noteText.trim() || savingNote) && { opacity: 0.4 }]}>
+                    <Plus color="#FFFFFF" size={18} />
+                  </PressScale>
+                </View>
+                {notes.slice(0, 5).map((note) => (
+                  <View key={note.note_id} style={styles.noteRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.noteText}>{note.text}</Text>
+                      <Text style={styles.noteMeta}>{note.author_name} · {new Date(note.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}</Text>
+                    </View>
+                    <PressScale onPress={() => removeNote(note.note_id)} style={{ padding: 4 }}>
+                      <Trash2 color={ui.muted} size={15} />
+                    </PressScale>
+                  </View>
+                ))}
+                {notes.length === 0 ? <Text style={styles.noteEmpty}>No handoff notes yet. Leave one for your co-parent.</Text> : null}
+              </View>
+            ) : null}
 
             <PressScale style={styles.alertBanner} onPress={() => setActiveTab('today')}>
               <View style={styles.alertIcon}><Star color="#FFFFFF" fill="#FFFFFF" size={19} /></View>
@@ -809,5 +909,107 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   fabPressed: {
     backgroundColor: '#D9530F',
     transform: [{ scale: 0.96 }],
+  },
+  templateRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 14,
+  },
+  templateChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 13,
+    paddingVertical: 9,
+    borderRadius: 99,
+    backgroundColor: ui.orangeSoft,
+    borderWidth: 1,
+    borderColor: ui.line,
+  },
+  templateChipText: {
+    color: ui.text,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 13,
+    maxWidth: 120,
+  },
+  notesHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+    paddingVertical: 4,
+  },
+  notesHeaderText: {
+    flex: 1,
+    color: ui.text,
+    fontFamily: 'Inter_800ExtraBold',
+    fontSize: 16,
+  },
+  notesBadge: {
+    color: ui.muted,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 13,
+  },
+  notesCard: {
+    borderRadius: 20,
+    backgroundColor: ui.card,
+    borderWidth: 1,
+    borderColor: ui.line,
+    padding: 14,
+    marginBottom: 14,
+    gap: 10,
+  },
+  noteInputRow: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+  },
+  noteInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: ui.line,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontFamily: 'Inter_500Medium',
+    fontSize: 14,
+    color: ui.text,
+    backgroundColor: ui.soft,
+  },
+  noteSendBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: ui.orange,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  noteRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    paddingVertical: 6,
+    borderTopWidth: 1,
+    borderTopColor: ui.line,
+  },
+  noteText: {
+    color: ui.text,
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  noteMeta: {
+    color: ui.muted,
+    fontFamily: 'Inter_500Medium',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  noteEmpty: {
+    color: ui.muted,
+    fontFamily: 'Inter_500Medium',
+    fontSize: 13,
+    textAlign: 'center',
+    paddingVertical: 8,
   },
 });
