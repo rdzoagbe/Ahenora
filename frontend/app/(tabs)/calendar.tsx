@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Platform, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import { CalendarDays, ChevronLeft, ChevronRight, Clock, RefreshCw, User, X } from 'lucide-react-native';
+import { CalendarDays, Car, CheckCircle2, ChevronLeft, ChevronRight, Clock, ExternalLink, MapPin, Plus, RefreshCw, Trash2, User, Users, Video, X } from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
@@ -13,7 +13,7 @@ import { logger } from '../../src/logger';
 import { TabScreen } from '../../src/components/TabScreen';
 import { Card as KitCard, IconTile, ScreenHeader, UI, useUI, UIColors } from '../../src/components/Kit';
 import { useStore } from '../../src/store';
-import { api, CalendarImportResult, Card } from '../../src/api';
+import { api, CalendarImportResult, Card, Carpool } from '../../src/api';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -46,6 +46,76 @@ function cardDateKey(card: Card) {
 
 function cleanText(value?: string | null) {
   return (value || '').replace(/Ãƒâ€šÃ‚Â·/g, '-').replace(/Â/g, '').trim();
+}
+
+function linkLabel(url: string): string {
+  if (/teams\.microsoft|teams\.live/i.test(url)) return 'Teams Meeting';
+  if (/zoom\.us/i.test(url)) return 'Zoom Meeting';
+  if (/meet\.google/i.test(url)) return 'Google Meet';
+  if (/calendar\.google/i.test(url)) return 'View in Google Calendar';
+  if (/webex/i.test(url)) return 'Webex Meeting';
+  return 'Open link';
+}
+
+function isVideoLink(url: string): boolean {
+  return /teams\.microsoft|teams\.live|zoom\.us|meet\.google|webex/i.test(url);
+}
+
+interface DescriptionParts {
+  text: string;
+  location: string | null;
+  people: string | null;
+  links: { url: string; label: string; isVideo: boolean }[];
+}
+
+function parseDescription(raw?: string | null): DescriptionParts {
+  if (!raw) return { text: '', location: null, people: null, links: [] };
+  const cleaned = cleanText(raw);
+  const lines = cleaned.split('\n');
+  let location: string | null = null;
+  let people: string | null = null;
+  const links: DescriptionParts['links'] = [];
+  const textLines: string[] = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    if (/^Location:\s*/i.test(trimmed)) {
+      const loc = trimmed.replace(/^Location:\s*/i, '').trim();
+      if (loc && !/^https?:\/\//i.test(loc)) {
+        location = loc;
+      } else if (loc) {
+        links.push({ url: loc, label: linkLabel(loc), isVideo: isVideoLink(loc) });
+      }
+      continue;
+    }
+
+    if (/^People:\s*/i.test(trimmed)) {
+      people = trimmed.replace(/^People:\s*/i, '').trim();
+      continue;
+    }
+
+    if (/^Google Calendar:\s*/i.test(trimmed)) {
+      const url = trimmed.replace(/^Google Calendar:\s*/i, '').trim();
+      if (url) links.push({ url, label: 'View in Google Calendar', isVideo: false });
+      continue;
+    }
+
+    const urlMatch = trimmed.match(/https?:\/\/[^\s]+/g);
+    if (urlMatch) {
+      for (const url of urlMatch) {
+        links.push({ url, label: linkLabel(url), isVideo: isVideoLink(url) });
+      }
+      const remaining = trimmed.replace(/https?:\/\/[^\s]+/g, '').trim();
+      if (remaining) textLines.push(remaining);
+      continue;
+    }
+
+    textLines.push(trimmed);
+  }
+
+  return { text: textLines.join('\n').trim(), location, people, links };
 }
 
 function timeParts(value?: string | null) {
@@ -110,10 +180,15 @@ export default function Calendar() {
   const [selectedDay, setSelectedDay] = useState<string | null>(dateKey(new Date()));
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [carpools, setCarpools] = useState<Carpool[]>([]);
   const handledCalendarResponseRef = useRef(false);
 
-  const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
-  const androidClientId = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID;
+  const webClientId =
+    process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID?.trim() ||
+    '243255248169-cei972lc7kmfig6tmjb6l2nlmgqkjf22.apps.googleusercontent.com';
+  const androidClientId =
+    process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID?.trim() ||
+    '243255248169-n4l7es5ecr3j85v00dia2icp9kjo7umh.apps.googleusercontent.com';
 
   const [calendarRequest, calendarResponse, promptCalendarAsync] = Google.useAuthRequest({
     androidClientId,
@@ -130,8 +205,9 @@ export default function Calendar() {
 
   const load = useCallback(async () => {
     try {
-      const result = await api.listCards();
-      setCards(result.filter((card) => card.status === 'OPEN' && card.due_date));
+      const [cardsRes, carpoolRes] = await Promise.allSettled([api.listCards(), api.listCarpools()]);
+      if (cardsRes.status === 'fulfilled') setCards(cardsRes.value.filter((card) => card.status === 'OPEN' && card.due_date));
+      if (carpoolRes.status === 'fulfilled') setCarpools(carpoolRes.value);
     } catch (e) {
       logger.warn('calendar load failed', e);
     } finally {
@@ -324,7 +400,7 @@ export default function Calendar() {
       setCalendarSyncStatus(`${importResult.imported} events imported. ${importResult.contacts_found} people found.`);
       Alert.alert('Calendar synced', `${importResult.imported} events imported. ${importResult.contacts_found} people found.`);
     } catch (e: any) {
-      /* calendar sync error — alert shown to user */
+      logger.warn('calendar sync failed', e);
       const message = e?.message || 'Please try again.';
       setCalendarSyncStatus(`Calendar sync failed: ${message}`);
       Alert.alert('Calendar sync failed', message);
@@ -466,7 +542,33 @@ export default function Calendar() {
             </KitCard>
           )}
 
-          <View style={{ height: 110 }} />
+          {/* Carpool Coordinator */}
+          {carpools.length > 0 ? (
+            <View style={styles.carpoolSection}>
+              <View style={styles.carpoolHeader}>
+                <Car color={ui.orange} size={18} />
+                <Text style={styles.carpoolTitle}>Carpool Schedule</Text>
+              </View>
+              <KitCard style={{ paddingHorizontal: 14 }}>
+                {carpools.map((cp) => (
+                  <View key={cp.carpool_id} style={styles.carpoolRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.carpoolName}>{cp.title}</Text>
+                      <Text style={styles.carpoolSub}>{cp.day_of_week} · {cp.time} · {cp.driver_name}{cp.pickup_kids.length > 0 ? ` · ${cp.pickup_kids.join(', ')}` : ''}</Text>
+                    </View>
+                    <PressScale onPress={async () => {
+                      setCarpools((prev) => prev.filter((c) => c.carpool_id !== cp.carpool_id));
+                      try { await api.deleteCarpool(cp.carpool_id); } catch { load(); }
+                    }} style={{ padding: 4 }}>
+                      <Trash2 color={ui.muted} size={15} />
+                    </PressScale>
+                  </View>
+                ))}
+              </KitCard>
+            </View>
+          ) : null}
+
+          <View style={{ height: 120 }} />
       </TabScreen>
 
       <KeyboardAwareBottomSheet visible={!!selectedCard} onClose={() => setSelectedCard(null)} contentStyle={styles.detailSheet}>
@@ -486,9 +588,70 @@ export default function Calendar() {
               <User color={ui.muted} size={17} />
               <Text style={styles.detailMetaText}>{cleanText(selectedCard.assignee) || 'Unassigned'}</Text>
             </View>
-            <Text style={[styles.detailDescription, !selectedCard.description && { color: ui.muted }]}>
-              {selectedCard.description ? cleanText(selectedCard.description) : 'No additional details.'}
-            </Text>
+            {(() => {
+              const parts = parseDescription(selectedCard.description);
+              const hasContent = parts.text || parts.location || parts.people || parts.links.length > 0;
+              if (!hasContent) return <Text style={[styles.detailDescription, { color: ui.muted }]}>No additional details.</Text>;
+              return (
+                <View style={styles.detailBody}>
+                  {parts.text ? <Text style={styles.detailDescription}>{parts.text}</Text> : null}
+                  {parts.location ? (
+                    <Pressable
+                      onPress={() => {
+                        const q = encodeURIComponent(parts.location!);
+                        Linking.openURL(Platform.OS === 'ios' ? `maps:?q=${q}` : `geo:0,0?q=${q}`);
+                      }}
+                      style={styles.detailChip}
+                    >
+                      <MapPin color={ui.orange} size={16} />
+                      <Text style={styles.detailChipText} numberOfLines={2}>{parts.location}</Text>
+                      <ExternalLink color={ui.muted} size={13} />
+                    </Pressable>
+                  ) : null}
+                  {parts.links.map((link, i) => (
+                    <Pressable key={i} onPress={() => Linking.openURL(link.url)} style={styles.detailChip}>
+                      {link.isVideo ? <Video color={ui.orange} size={16} /> : <ExternalLink color={ui.orange} size={16} />}
+                      <Text style={styles.detailChipText}>{link.label}</Text>
+                      <ExternalLink color={ui.muted} size={13} />
+                    </Pressable>
+                  ))}
+                  {parts.people ? (
+                    <View style={styles.detailMetaRow}>
+                      <Users color={ui.muted} size={17} />
+                      <Text style={styles.detailMetaText}>{parts.people}</Text>
+                    </View>
+                  ) : null}
+                </View>
+              );
+            })()}
+            <PressScale
+              testID="calendar-complete-card"
+              onPress={() => {
+                Alert.alert(
+                  'Mark as done?',
+                  `"${cleanText(selectedCard.title)}" will move to completed history.`,
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Done',
+                      onPress: async () => {
+                        try {
+                          await api.updateCard(selectedCard.card_id, { status: 'DONE' });
+                          setCards((prev) => prev.filter((c) => c.card_id !== selectedCard.card_id));
+                          setSelectedCard(null);
+                        } catch {
+                          Alert.alert('Error', 'Could not update this card.');
+                        }
+                      },
+                    },
+                  ],
+                );
+              }}
+              style={styles.completeBtn}
+            >
+              <CheckCircle2 color="#FFFFFF" size={18} />
+              <Text style={styles.completeBtnText}>Mark as done</Text>
+            </PressScale>
           </>
         ) : null}
       </KeyboardAwareBottomSheet>
@@ -543,5 +706,17 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   closeBtn: { width: 42, height: 42, borderRadius: 9999, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft, alignItems: 'center', justifyContent: 'center' },
   detailMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 14 },
   detailMetaText: { flex: 1, color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 15, lineHeight: 21 },
-  detailDescription: { marginTop: 20, color: ui.text, fontFamily: 'Inter_500Medium', fontSize: 16, lineHeight: 24 },
+  detailBody: { marginTop: 16, gap: 10 },
+  detailDescription: { color: ui.text, fontFamily: 'Inter_500Medium', fontSize: 16, lineHeight: 24 },
+  detailChip: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 14, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft },
+  detailChipText: { flex: 1, color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 14, lineHeight: 20 },
+  completeBtn: { marginTop: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, minHeight: 54, borderRadius: 99, backgroundColor: ui.orange },
+  completeBtnText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 16 },
+
+  carpoolSection: { marginTop: 24 },
+  carpoolHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
+  carpoolTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 17 },
+  carpoolRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: ui.line },
+  carpoolName: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 15 },
+  carpoolSub: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 2, textTransform: 'capitalize' },
 });

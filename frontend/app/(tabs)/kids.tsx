@@ -23,6 +23,11 @@ import {
   Utensils,
   Check,
   Minus,
+  Timer,
+  DollarSign,
+  RotateCcw,
+  Play,
+  ChevronRight,
 } from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
@@ -37,7 +42,7 @@ import { TabScreen } from '../../src/components/TabScreen';
 import { Card, IconTile, ProgressBar, ScreenHeader, UI, useUI, UIColors } from '../../src/components/Kit';
 
 import { useStore } from '../../src/store';
-import { api, FamilyMember, Reward, StarTransaction } from '../../src/api';
+import { api, AllowanceConfig, Chore, FamilyMember, Reward, Routine, StarTransaction } from '../../src/api';
 import { logger } from '../../src/logger';
 
 type ToastState = { message: string; tone: ToastTone };
@@ -123,6 +128,11 @@ export default function Kids() {
   const [toast, setToast] = useState<ToastState | null>(null);
   const [pinPromptReward, setPinPromptReward] = useState<Reward | null>(null);
 
+  const [routines, setRoutines] = useState<Routine[]>([]);
+  const [allowances, setAllowances] = useState<AllowanceConfig[]>([]);
+  const [balances, setBalances] = useState<Record<string, number>>({});
+  const [chores, setChores] = useState<Chore[]>([]);
+
   const children = useMemo(() => members.filter((m) => m.role?.toLowerCase() === 'child'), [members]);
   const activeChild = children.find((c) => c.member_id === selectedChild) || children[0];
   const stars = activeChild?.stars || 0;
@@ -171,6 +181,20 @@ export default function Kids() {
       const nextSelected = currentChildStillExists ? selectedChild : firstChild?.member_id || null;
       setSelectedChild(nextSelected);
       await refreshHistory(nextSelected);
+
+      Promise.allSettled([api.listRoutines(), api.listAllowances(), api.listChores()])
+        .then(async ([rtnRes, alwRes, choreRes]) => {
+          if (rtnRes.status === 'fulfilled') setRoutines(rtnRes.value);
+          if (alwRes.status === 'fulfilled') setAllowances(alwRes.value);
+          if (choreRes.status === 'fulfilled') setChores(choreRes.value);
+          const kids = m.filter((x) => x.role?.toLowerCase() === 'child');
+          const bals: Record<string, number> = {};
+          for (const kid of kids) {
+            try { const b = await api.allowanceBalance(kid.member_id); bals[kid.member_id] = b.balance; } catch { /* skip */ }
+          }
+          setBalances(bals);
+        })
+        .catch(() => undefined);
     } catch (e: any) {
       logger.warn('Kids page load failed:', e?.message || e);
       setErrorMessage(e?.message || 'Could not load Kids page.');
@@ -368,6 +392,48 @@ export default function Kids() {
     await doRedeem(reward);
   };
 
+  const rotateChore = useCallback(async (choreId: string) => {
+    try {
+      const updated = await api.rotateChore(choreId);
+      setChores((prev) => prev.map((c) => c.chore_id === choreId ? updated : c));
+      showToast('Chore rotated!', 'success');
+    } catch { showToast('Could not rotate chore.', 'error'); }
+  }, [showToast]);
+
+  const deleteChore = useCallback(async (choreId: string) => {
+    setChores((prev) => prev.filter((c) => c.chore_id !== choreId));
+    try { await api.deleteChore(choreId); } catch { load(); }
+  }, [load]);
+
+  const deleteRoutine = useCallback(async (id: string) => {
+    setRoutines((prev) => prev.filter((r) => r.routine_id !== id));
+    try { await api.deleteRoutine(id); } catch { load(); }
+  }, [load]);
+
+  const logRoutine = useCallback(async (id: string) => {
+    try {
+      await api.logRoutineCompletion(id);
+      showToast('Routine completed!', 'success');
+    } catch { showToast('Could not log routine.', 'error'); }
+  }, [showToast]);
+
+  const childRoutines = useMemo(() => {
+    if (!activeChild) return routines;
+    return routines.filter((r) => !r.member_id || r.member_id === activeChild.member_id);
+  }, [routines, activeChild]);
+
+  const childAllowance = useMemo(() => {
+    if (!activeChild) return null;
+    return allowances.find((a) => a.member_id === activeChild.member_id) || null;
+  }, [allowances, activeChild]);
+
+  const childBalance = activeChild ? (balances[activeChild.member_id] || 0) : 0;
+
+  const memberName = useCallback((memberId: string) => {
+    const m = members.find((x) => x.member_id === memberId);
+    return m?.name || memberId;
+  }, [members]);
+
   const weeklyLine = weeklyStars > 0
     ? `+${weeklyStars} stars this week — keep it up! ✨`
     : weeklyStars < 0
@@ -561,7 +627,85 @@ export default function Kids() {
             </>
           )}
 
-          <View style={{ height: 120 }} />
+          {/* Morning Routines */}
+          {childRoutines.length > 0 ? (
+            <>
+              <View style={styles.featureHeader}>
+                <Timer color={ui.lavenderText} size={18} />
+                <Text style={styles.featureHeaderText}>Morning Routines</Text>
+              </View>
+              <Card style={styles.cardPad}>
+                {childRoutines.map((rtn) => (
+                  <View key={rtn.routine_id} style={styles.featureRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.featureRowTitle}>{rtn.name}</Text>
+                      <Text style={styles.featureRowSub}>{rtn.steps.length} steps · {Math.round(rtn.steps.reduce((s, st) => s + (st.duration_seconds || 0), 0) / 60)} min</Text>
+                    </View>
+                    <PressScale onPress={() => logRoutine(rtn.routine_id)} style={styles.featureActionBtn}>
+                      <Play color="#FFFFFF" size={14} />
+                      <Text style={styles.featureActionText}>Done</Text>
+                    </PressScale>
+                    <PressScale onPress={() => deleteRoutine(rtn.routine_id)} style={{ padding: 4, marginLeft: 6 }}>
+                      <Trash2 color={ui.muted} size={15} />
+                    </PressScale>
+                  </View>
+                ))}
+              </Card>
+            </>
+          ) : null}
+
+          {/* Allowance Tracker */}
+          {activeChild ? (
+            <>
+              <View style={styles.featureHeader}>
+                <DollarSign color={ui.goldText} size={18} />
+                <Text style={styles.featureHeaderText}>Allowance</Text>
+              </View>
+              <Card style={styles.cardPad}>
+                <View style={styles.allowanceRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.allowanceBalance}>${childBalance.toFixed(2)}</Text>
+                    <Text style={styles.featureRowSub}>
+                      {childAllowance ? `$${childAllowance.amount}/${childAllowance.frequency}` : 'No allowance set'}
+                    </Text>
+                  </View>
+                </View>
+              </Card>
+            </>
+          ) : null}
+
+          {/* Chore Wheel */}
+          {chores.length > 0 ? (
+            <>
+              <View style={styles.featureHeader}>
+                <RotateCcw color={ui.mintText} size={18} />
+                <Text style={styles.featureHeaderText}>Chore Wheel</Text>
+              </View>
+              <Card style={styles.cardPad}>
+                {chores.map((chore) => (
+                  <View key={chore.chore_id} style={styles.featureRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.featureRowTitle}>{chore.title}</Text>
+                      <Text style={styles.featureRowSub}>
+                        {chore.current_assignee ? memberName(chore.current_assignee) : 'Unassigned'} · {chore.frequency}
+                      </Text>
+                    </View>
+                    {chore.rotate && chore.assigned_members.length > 1 ? (
+                      <PressScale onPress={() => rotateChore(chore.chore_id)} style={styles.featureActionBtn}>
+                        <RotateCcw color="#FFFFFF" size={14} />
+                        <Text style={styles.featureActionText}>Rotate</Text>
+                      </PressScale>
+                    ) : null}
+                    <PressScale onPress={() => deleteChore(chore.chore_id)} style={{ padding: 4, marginLeft: 6 }}>
+                      <Trash2 color={ui.muted} size={15} />
+                    </PressScale>
+                  </View>
+                ))}
+              </Card>
+            </>
+          ) : null}
+
+          <View style={{ height: 130 }} />
       </TabScreen>
 
       {/* Child sheet */}
@@ -799,4 +943,14 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   deleteText: { color: ui.danger, fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
   saveBtn: { flex: 1, borderRadius: 18, paddingVertical: 15, alignItems: 'center', backgroundColor: ui.orange },
   saveText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
+
+  featureHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 22, marginBottom: 10 },
+  featureHeaderText: { flex: 1, color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 17 },
+  featureRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: ui.line },
+  featureRowTitle: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 15 },
+  featureRowSub: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 2 },
+  featureActionBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: ui.orange, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 99 },
+  featureActionText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 12 },
+  allowanceRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12 },
+  allowanceBalance: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 28 },
 });

@@ -1,20 +1,28 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import {
+  AlertTriangle,
+  BarChart3,
   Bell,
   Camera,
   CheckCircle2,
   ChevronRight,
+  Megaphone,
+  MessageSquare,
   Mic,
   Plus,
   Star,
+  Trash2,
+  Zap,
 } from 'lucide-react-native';
 
 import { useBreakpoint } from '../../src/responsive';
@@ -26,7 +34,7 @@ import { CameraCaptureModal } from '../../src/components/CameraCaptureModal';
 import { TabScreen } from '../../src/components/TabScreen';
 import { useStore } from '../../src/store';
 import { useUI, UIColors } from '../../src/components/Kit';
-import { api, Card, CardType, FamilyMember } from '../../src/api';
+import { api, Announcement, Card, CardType, FamilyMember, HandoffNote, Template, WeeklyReport } from '../../src/api';
 import { syncCardReminderNotifications } from '../../src/notifications';
 import { logger } from '../../src/logger';
 
@@ -132,14 +140,27 @@ export default function Feed() {
   const [addSource, setAddSource] = useState<'MANUAL' | 'VOICE' | 'CAMERA'>('MANUAL');
   const [voiceDraft, setVoiceDraft] = useState<VoiceDraft | null>(null);
   const [activeTab, setActiveTab] = useState<FeedTab>('today');
+  const [notes, setNotes] = useState<HandoffNote[]>([]);
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [noteText, setNoteText] = useState('');
+  const [savingNote, setSavingNote] = useState(false);
+  const [expandNotes, setExpandNotes] = useState(true);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [annText, setAnnText] = useState('');
+  const [savingAnn, setSavingAnn] = useState(false);
+  const [report, setReport] = useState<WeeklyReport | null>(null);
+  const [expandReport, setExpandReport] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [cardsResult, membersResult, rewardsResult, vaultResult] = await Promise.allSettled([
+      const [cardsResult, membersResult, rewardsResult, vaultResult, notesResult, templatesResult, annResult] = await Promise.allSettled([
         api.listCards(),
         api.familyMembers(),
         api.listRewards(),
         api.listVault(),
+        api.listHandoffNotes(),
+        api.listTemplates(),
+        api.listAnnouncements(),
       ]);
 
       let loadedCards: Card[] = [];
@@ -153,6 +174,11 @@ export default function Feed() {
       if (membersResult.status === 'fulfilled') setMembers(membersResult.value);
       if (rewardsResult.status === 'fulfilled') setRewardCount(rewardsResult.value.length);
       if (vaultResult.status === 'fulfilled') setVaultCount(vaultResult.value.length);
+      if (notesResult.status === 'fulfilled') setNotes(notesResult.value);
+      if (templatesResult.status === 'fulfilled') setTemplates(templatesResult.value);
+      if (annResult.status === 'fulfilled') setAnnouncements(annResult.value);
+
+      api.weeklyReport().then(setReport).catch(() => undefined);
 
       if (cardsResult.status === 'fulfilled') {
         api
@@ -267,6 +293,59 @@ export default function Feed() {
     load();
   }, [load]);
 
+  const addNote = useCallback(async () => {
+    if (!noteText.trim()) return;
+    setSavingNote(true);
+    try {
+      const created = await api.createHandoffNote({ text: noteText.trim() });
+      setNotes((prev) => [created, ...prev]);
+      setNoteText('');
+    } catch {
+      Alert.alert('Error', 'Could not save note.');
+    } finally {
+      setSavingNote(false);
+    }
+  }, [noteText]);
+
+  const removeNote = useCallback(async (noteId: string) => {
+    setNotes((prev) => prev.filter((n) => n.note_id !== noteId));
+    try {
+      await api.deleteHandoffNote(noteId);
+    } catch {
+      load();
+    }
+  }, [load]);
+
+  const runTemplate = useCallback(async (tpl: Template) => {
+    try {
+      await api.generateFromTemplate(tpl.template_id);
+      load();
+    } catch {
+      Alert.alert('Error', 'Could not generate card from template.');
+    }
+  }, [load]);
+
+  const enabledTemplates = useMemo(() => templates.filter((t) => t.enabled), [templates]);
+
+  const addAnnouncement = useCallback(async () => {
+    if (!annText.trim()) return;
+    setSavingAnn(true);
+    try {
+      const created = await api.createAnnouncement({ text: annText.trim() });
+      setAnnouncements((prev) => [created, ...prev]);
+      setAnnText('');
+    } catch {
+      Alert.alert('Error', 'Could not post announcement.');
+    } finally {
+      setSavingAnn(false);
+    }
+  }, [annText]);
+
+  const removeAnnouncement = useCallback(async (id: string) => {
+    setAnnouncements((prev) => prev.filter((a) => a.announcement_id !== id));
+    try { await api.deleteAnnouncement(id); } catch { load(); }
+  }, [load]);
+
   return (
     <SwipeableTabView style={styles.container}>
       <TabScreen
@@ -324,6 +403,18 @@ export default function Feed() {
               </View>
             </View>
 
+            {/* Quick templates */}
+            {enabledTemplates.length > 0 ? (
+              <View style={styles.templateRow}>
+                {enabledTemplates.slice(0, 4).map((tpl) => (
+                  <PressScale key={tpl.template_id} onPress={() => runTemplate(tpl)} style={styles.templateChip}>
+                    <Zap color={ui.orange} size={14} />
+                    <Text style={styles.templateChipText} numberOfLines={1}>{tpl.title}</Text>
+                  </PressScale>
+                ))}
+              </View>
+            ) : null}
+
             <View style={styles.statsStrip}>
               <View style={styles.statCell}>
                 <Text style={styles.statNumber}>{dashboard.todayCards.length}</Text>
@@ -340,6 +431,45 @@ export default function Feed() {
                 <Text style={styles.statLabel}>This week</Text>
               </View>
             </View>
+
+            {/* Handoff notes */}
+            <PressScale onPress={() => setExpandNotes((v) => !v)} style={styles.notesHeader}>
+              <MessageSquare color={ui.lavenderText} size={18} />
+              <Text style={styles.notesHeaderText}>Handoff Notes</Text>
+              <Text style={styles.notesBadge}>{notes.length}</Text>
+              <ChevronRight color={ui.muted} size={16} style={expandNotes ? { transform: [{ rotate: '90deg' }] } : undefined} />
+            </PressScale>
+            {expandNotes ? (
+              <View style={styles.notesCard}>
+                <View style={styles.noteInputRow}>
+                  <TextInput
+                    value={noteText}
+                    onChangeText={setNoteText}
+                    placeholder="Leave a note for your co-parent..."
+                    placeholderTextColor={ui.muted}
+                    style={styles.noteInput}
+                    returnKeyType="send"
+                    onSubmitEditing={addNote}
+                    multiline={false}
+                  />
+                  <PressScale onPress={addNote} disabled={savingNote || !noteText.trim()} style={[styles.noteSendBtn, (!noteText.trim() || savingNote) && { opacity: 0.4 }]}>
+                    <Plus color="#FFFFFF" size={18} />
+                  </PressScale>
+                </View>
+                {notes.slice(0, 5).map((note) => (
+                  <View key={note.note_id} style={styles.noteRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.noteText}>{note.text}</Text>
+                      <Text style={styles.noteMeta}>{note.author_name} · {new Date(note.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}</Text>
+                    </View>
+                    <PressScale onPress={() => removeNote(note.note_id)} style={{ padding: 4 }}>
+                      <Trash2 color={ui.muted} size={15} />
+                    </PressScale>
+                  </View>
+                ))}
+                {notes.length === 0 ? <Text style={styles.noteEmpty}>No handoff notes yet. Leave one for your co-parent.</Text> : null}
+              </View>
+            ) : null}
 
             <PressScale style={styles.alertBanner} onPress={() => setActiveTab('today')}>
               <View style={styles.alertIcon}><Star color="#FFFFFF" fill="#FFFFFF" size={19} /></View>
@@ -375,11 +505,90 @@ export default function Feed() {
               )}
             </View>
 
+            {/* Announcements */}
+            <View style={styles.sectionHeader}>
+              <Megaphone color={ui.orange} size={18} />
+              <Text style={styles.sectionHeaderText}>Family Board</Text>
+            </View>
+            <View style={styles.notesCard}>
+              <View style={styles.noteInputRow}>
+                <TextInput
+                  value={annText}
+                  onChangeText={setAnnText}
+                  placeholder="Post an announcement..."
+                  placeholderTextColor={ui.muted}
+                  style={styles.noteInput}
+                  returnKeyType="send"
+                  onSubmitEditing={addAnnouncement}
+                />
+                <PressScale onPress={addAnnouncement} disabled={savingAnn || !annText.trim()} style={[styles.noteSendBtn, (!annText.trim() || savingAnn) && { opacity: 0.4 }]}>
+                  <Plus color="#FFFFFF" size={18} />
+                </PressScale>
+              </View>
+              {announcements.slice(0, 5).map((ann) => (
+                <View key={ann.announcement_id} style={styles.noteRow}>
+                  <View style={{ flex: 1 }}>
+                    {ann.priority === 'urgent' ? (
+                      <View style={styles.urgentBadge}><AlertTriangle color="#DC2626" size={12} /><Text style={styles.urgentText}>URGENT</Text></View>
+                    ) : null}
+                    <Text style={styles.noteText}>{ann.text}</Text>
+                    <Text style={styles.noteMeta}>{ann.author_name} · {new Date(ann.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}</Text>
+                  </View>
+                  <PressScale onPress={() => removeAnnouncement(ann.announcement_id)} style={{ padding: 4 }}>
+                    <Trash2 color={ui.muted} size={15} />
+                  </PressScale>
+                </View>
+              ))}
+              {announcements.length === 0 ? <Text style={styles.noteEmpty}>No announcements. Post dinner plans, schedule changes, or reminders.</Text> : null}
+            </View>
+
+            {/* Weekly Report Card */}
+            <PressScale onPress={() => setExpandReport((v) => !v)} style={styles.sectionHeader}>
+              <BarChart3 color={ui.mintText} size={18} />
+              <Text style={styles.sectionHeaderText}>Weekly Report</Text>
+              <ChevronRight color={ui.muted} size={16} style={expandReport ? { transform: [{ rotate: '90deg' }] } : undefined} />
+            </PressScale>
+            {expandReport && report ? (
+              <View style={styles.reportCard}>
+                <View style={styles.reportGrid}>
+                  <View style={styles.reportCell}>
+                    <Text style={styles.reportNum}>{report.tasks_completed}</Text>
+                    <Text style={styles.reportLabel}>Done</Text>
+                  </View>
+                  <View style={styles.reportCell}>
+                    <Text style={styles.reportNum}>{report.tasks_created}</Text>
+                    <Text style={styles.reportLabel}>Created</Text>
+                  </View>
+                  <View style={styles.reportCell}>
+                    <Text style={[styles.reportNum, report.tasks_overdue > 0 && { color: '#DC2626' }]}>{report.tasks_overdue}</Text>
+                    <Text style={styles.reportLabel}>Overdue</Text>
+                  </View>
+                  <View style={styles.reportCell}>
+                    <Text style={[styles.reportNum, { color: ui.orange }]}>{report.stars_earned}</Text>
+                    <Text style={styles.reportLabel}>Stars</Text>
+                  </View>
+                </View>
+                {report.total_spent > 0 ? (
+                  <View style={styles.reportSpent}>
+                    <Text style={styles.reportSpentText}>${report.total_spent.toFixed(2)} spent this week</Text>
+                  </View>
+                ) : null}
+                {report.upcoming_deadlines.length > 0 ? (
+                  <View style={styles.reportUpcoming}>
+                    <Text style={styles.reportUpLabel}>Upcoming</Text>
+                    {report.upcoming_deadlines.slice(0, 3).map((d, i) => (
+                      <Text key={i} style={styles.reportUpItem}>• {d.title}{d.assignee ? ` (${d.assignee})` : ''}</Text>
+                    ))}
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
+
             <View style={styles.footerSnapshot}>
               <Text style={styles.footerSnapshotText}>{members.filter((m) => m.role?.toLowerCase() === 'child').length} kids · {rewardCount} rewards · {vaultCount} vault docs</Text>
             </View>
           </View>
-          <View style={{ height: 108 }} />
+          <View style={{ height: 120 }} />
       </TabScreen>
 
       <Pressable
@@ -809,5 +1018,192 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   fabPressed: {
     backgroundColor: '#D9530F',
     transform: [{ scale: 0.96 }],
+  },
+  templateRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 14,
+  },
+  templateChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 13,
+    paddingVertical: 9,
+    borderRadius: 99,
+    backgroundColor: ui.orangeSoft,
+    borderWidth: 1,
+    borderColor: ui.line,
+  },
+  templateChipText: {
+    color: ui.text,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 13,
+    maxWidth: 120,
+  },
+  notesHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+    paddingVertical: 4,
+  },
+  notesHeaderText: {
+    flex: 1,
+    color: ui.text,
+    fontFamily: 'Inter_800ExtraBold',
+    fontSize: 16,
+  },
+  notesBadge: {
+    color: ui.muted,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 13,
+  },
+  notesCard: {
+    borderRadius: 20,
+    backgroundColor: ui.card,
+    borderWidth: 1,
+    borderColor: ui.line,
+    padding: 14,
+    marginBottom: 14,
+    gap: 10,
+  },
+  noteInputRow: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+  },
+  noteInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: ui.line,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontFamily: 'Inter_500Medium',
+    fontSize: 14,
+    color: ui.text,
+    backgroundColor: ui.soft,
+  },
+  noteSendBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: ui.orange,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  noteRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    paddingVertical: 6,
+    borderTopWidth: 1,
+    borderTopColor: ui.line,
+  },
+  noteText: {
+    color: ui.text,
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  noteMeta: {
+    color: ui.muted,
+    fontFamily: 'Inter_500Medium',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  noteEmpty: {
+    color: ui.muted,
+    fontFamily: 'Inter_500Medium',
+    fontSize: 13,
+    textAlign: 'center',
+    paddingVertical: 8,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 18,
+    marginBottom: 8,
+    paddingVertical: 4,
+  },
+  sectionHeaderText: {
+    flex: 1,
+    color: ui.text,
+    fontFamily: 'Inter_800ExtraBold',
+    fontSize: 16,
+  },
+  urgentBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 3,
+  },
+  urgentText: {
+    color: '#DC2626',
+    fontFamily: 'Inter_800ExtraBold',
+    fontSize: 11,
+  },
+  reportCard: {
+    borderRadius: 20,
+    backgroundColor: ui.card,
+    borderWidth: 1,
+    borderColor: ui.line,
+    padding: 16,
+    marginBottom: 14,
+  },
+  reportGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  reportCell: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  reportNum: {
+    color: ui.text,
+    fontFamily: 'Inter_800ExtraBold',
+    fontSize: 22,
+    lineHeight: 26,
+  },
+  reportLabel: {
+    color: ui.muted,
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 11,
+    marginTop: 2,
+  },
+  reportSpent: {
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: ui.line,
+    alignItems: 'center',
+  },
+  reportSpentText: {
+    color: ui.orange,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 14,
+  },
+  reportUpcoming: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: ui.line,
+  },
+  reportUpLabel: {
+    color: ui.muted,
+    fontFamily: 'Inter_800ExtraBold',
+    fontSize: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  reportUpItem: {
+    color: ui.text,
+    fontFamily: 'Inter_500Medium',
+    fontSize: 13,
+    lineHeight: 20,
   },
 });

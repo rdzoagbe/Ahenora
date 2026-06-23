@@ -4,9 +4,9 @@ import { useRouter, usePathname } from 'expo-router';
 import { Gesture } from 'react-native-gesture-handler';
 
 const TAB_ORDER = ['/feed', '/calendar', '/kids', '/vault', '/settings'] as const;
-const SWIPE_THRESHOLD = 40;
-const VELOCITY_THRESHOLD = 400;
-const DRAG_RESISTANCE = 0.45;
+const SWIPE_THRESHOLD = 60;
+const VELOCITY_THRESHOLD = 500;
+const DRAG_RESISTANCE = 0.35;
 
 export function useSwipeTabs() {
   const router = useRouter();
@@ -22,14 +22,15 @@ export function useSwipeTabs() {
   }, [pathname]);
 
   const gesture = Gesture.Pan()
-    .activeOffsetX([-15, 15])
-    .failOffsetY([-15, 15])
+    .activeOffsetX([-25, 25])
+    .failOffsetY([-10, 10])
+    .minDistance(20)
     .onUpdate((e) => {
       if (isNavigating.current) return;
       const currentIndex = getCurrentIndex();
       const atStart = currentIndex <= 0 && e.translationX > 0;
       const atEnd = currentIndex >= TAB_ORDER.length - 1 && e.translationX < 0;
-      const resistance = atStart || atEnd ? DRAG_RESISTANCE * 0.3 : DRAG_RESISTANCE;
+      const resistance = atStart || atEnd ? DRAG_RESISTANCE * 0.2 : DRAG_RESISTANCE;
       translateX.setValue(e.translationX * resistance);
     })
     .onEnd((e) => {
@@ -40,8 +41,8 @@ export function useSwipeTabs() {
         return;
       }
 
-      const swipedLeft = e.translationX < -SWIPE_THRESHOLD || e.velocityX < -VELOCITY_THRESHOLD;
-      const swipedRight = e.translationX > SWIPE_THRESHOLD || e.velocityX > VELOCITY_THRESHOLD;
+      const swipedLeft = e.translationX < -SWIPE_THRESHOLD && e.velocityX < -VELOCITY_THRESHOLD;
+      const swipedRight = e.translationX > SWIPE_THRESHOLD && e.velocityX > VELOCITY_THRESHOLD;
 
       const nextIndex = swipedLeft
         ? currentIndex + 1
@@ -55,11 +56,10 @@ export function useSwipeTabs() {
       }
 
       isNavigating.current = true;
-      const exitDirection = swipedLeft ? -screenWidth : screenWidth;
 
       Animated.timing(translateX, {
-        toValue: exitDirection * 0.4,
-        duration: 150,
+        toValue: 0,
+        duration: 120,
         useNativeDriver: true,
       }).start(() => {
         router.navigate(`/(tabs)${TAB_ORDER[nextIndex]}` as any);

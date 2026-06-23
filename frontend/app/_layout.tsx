@@ -15,6 +15,7 @@ import {
   PlayfairDisplay_700Bold,
   PlayfairDisplay_800ExtraBold,
 } from '@expo-google-fonts/playfair-display';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StoreProvider, useStore } from '../src/store';
 import { UpgradeModal } from '../src/components/UpgradeModal';
 
@@ -61,8 +62,10 @@ export default function RootLayout() {
   if (!fontsLoaded) return null;
 
   return (
-    <StoreProvider>
-      <RootNavigator />
-    </StoreProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <StoreProvider>
+        <RootNavigator />
+      </StoreProvider>
+    </GestureHandlerRootView>
   );
 }

@@ -14,7 +14,7 @@ import {
 import { BlurView } from 'expo-blur';
 import { useFocusEffect, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { Plus, X, Trash2, Stethoscope, BookOpen, Shield, Scale, Bell, Folder, MoreVertical, FileText } from 'lucide-react-native';
+import { Plus, X, Trash2, Stethoscope, BookOpen, Shield, Scale, Bell, Folder, MoreVertical, FileText, ShoppingCart, Check, Circle, UtensilsCrossed, AlertTriangle, ChevronRight, ShoppingBag } from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { PressScale } from '../../src/components/PressScale';
@@ -25,7 +25,7 @@ import { TabScreen } from '../../src/components/TabScreen';
 import { Badge, Card, IconTile, ProgressBar, ScreenHeader, UI, useUI, UIColors } from '../../src/components/Kit';
 
 import { useStore } from '../../src/store';
-import { api, VaultDoc } from '../../src/api';
+import { api, ExpiryAlert, MealPlan, ShoppingItem, VaultDoc } from '../../src/api';
 import { logger } from '../../src/logger';
 
 const CATEGORIES = [
@@ -65,6 +65,15 @@ export default function Vault() {
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
+  const [shopItems, setShopItems] = useState<ShoppingItem[]>([]);
+  const [shopInput, setShopInput] = useState('');
+  const [addingShop, setAddingShop] = useState(false);
+  const [meals, setMeals] = useState<MealPlan[]>([]);
+  const [expiryAlerts, setExpiryAlerts] = useState<ExpiryAlert[]>([]);
+  const [mealDay, setMealDay] = useState('monday');
+  const [mealTitle, setMealTitle] = useState('');
+  const [mealIngredients, setMealIngredients] = useState('');
+  const [showMealAdd, setShowMealAdd] = useState(false);
 
   const showToast = useCallback((message: string, tone: ToastTone = 'info') => {
     setToast({ message, tone });
@@ -73,8 +82,15 @@ export default function Vault() {
 
   const load = useCallback(async () => {
     try {
-      const res = await api.listVault();
-      setDocs(res);
+      const [vaultRes, shopRes, mealRes, expiryRes] = await Promise.allSettled([api.listVault(), api.listShopping(), api.listMeals(), api.vaultExpiryAlerts()]);
+      if (vaultRes.status === 'fulfilled') setDocs(vaultRes.value);
+      if (shopRes.status === 'fulfilled') setShopItems(shopRes.value);
+      if (mealRes.status === 'fulfilled') setMeals(mealRes.value);
+      if (expiryRes.status === 'fulfilled') setExpiryAlerts(expiryRes.value);
+      if (vaultRes.status === 'rejected') {
+        logger.warn('Vault load failed:', vaultRes.reason);
+        showToast('Could not load vault.', 'error');
+      }
     } catch (e: any) {
       logger.warn('Vault load failed:', e?.message || e);
       showToast(e?.message || 'Could not load vault.', 'error');
@@ -158,6 +174,95 @@ export default function Vault() {
     }
   };
 
+  const addShopItem = useCallback(async () => {
+    if (!shopInput.trim()) return;
+    setAddingShop(true);
+    try {
+      const item = await api.addShoppingItem({ name: shopInput.trim() });
+      setShopItems((prev) => [item, ...prev]);
+      setShopInput('');
+    } catch {
+      showToast('Could not add item.', 'error');
+    } finally {
+      setAddingShop(false);
+    }
+  }, [shopInput, showToast]);
+
+  const toggleShopItem = useCallback(async (item: ShoppingItem) => {
+    setShopItems((prev) => prev.map((i) => i.item_id === item.item_id ? { ...i, checked: !i.checked } : i));
+    try {
+      await api.updateShoppingItem(item.item_id, { checked: !item.checked });
+    } catch {
+      load();
+    }
+  }, [load]);
+
+  const deleteShopItem = useCallback(async (itemId: string) => {
+    setShopItems((prev) => prev.filter((i) => i.item_id !== itemId));
+    try {
+      await api.deleteShoppingItem(itemId);
+    } catch {
+      load();
+    }
+  }, [load]);
+
+  const clearChecked = useCallback(async () => {
+    const checkedIds = new Set(shopItems.filter((i) => i.checked).map((i) => i.item_id));
+    if (checkedIds.size === 0) return;
+    setShopItems((prev) => prev.filter((i) => !checkedIds.has(i.item_id)));
+    try {
+      await api.clearCheckedShopping();
+    } catch {
+      load();
+    }
+  }, [shopItems, load]);
+
+  const addMeal = useCallback(async () => {
+    if (!mealTitle.trim()) return;
+    try {
+      const ingredients = mealIngredients.split(',').map((s) => s.trim()).filter(Boolean);
+      const created = await api.createMeal({ day: mealDay, title: mealTitle.trim(), ingredients });
+      setMeals((prev) => [...prev, created]);
+      setMealTitle('');
+      setMealIngredients('');
+      setShowMealAdd(false);
+      showToast('Meal added.', 'success');
+    } catch {
+      showToast('Could not add meal.', 'error');
+    }
+  }, [mealDay, mealTitle, mealIngredients, showToast]);
+
+  const deleteMeal = useCallback(async (id: string) => {
+    setMeals((prev) => prev.filter((m) => m.meal_id !== id));
+    try { await api.deleteMeal(id); } catch { load(); }
+  }, [load]);
+
+  const syncMealsToShopping = useCallback(async () => {
+    try {
+      const res = await api.syncMealsToShopping();
+      showToast(`${res.added} ingredients added to shopping list.`, 'success');
+      const shopRes = await api.listShopping().catch(() => []);
+      setShopItems(shopRes);
+    } catch {
+      showToast('Could not sync ingredients.', 'error');
+    }
+  }, [showToast]);
+
+  const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+
+  const mealsByDay = useMemo(() => {
+    const grouped: Record<string, MealPlan[]> = {};
+    for (const d of DAYS) grouped[d] = [];
+    for (const m of meals) {
+      if (grouped[m.day]) grouped[m.day].push(m);
+      else grouped[m.day] = [m];
+    }
+    return grouped;
+  }, [meals]);
+
+  const uncheckedItems = useMemo(() => shopItems.filter((i) => !i.checked), [shopItems]);
+  const checkedItems = useMemo(() => shopItems.filter((i) => i.checked), [shopItems]);
+
   return (
     <SwipeableTabView style={styles.container}>
       <TabScreen
@@ -239,6 +344,135 @@ export default function Vault() {
               })}
             </View>
           )}
+          {/* Shopping List */}
+          <View style={styles.recentHead}>
+            <View style={styles.shopHeaderLeft}>
+              <ShoppingCart color={ui.orange} size={20} />
+              <Text style={styles.recentTitle}>Shopping List</Text>
+            </View>
+            {checkedItems.length > 0 ? (
+              <PressScale onPress={clearChecked} style={styles.clearBtn}>
+                <Text style={styles.clearBtnText}>Clear done</Text>
+              </PressScale>
+            ) : (
+              <Text style={styles.recentTotal}>{shopItems.length} item{shopItems.length === 1 ? '' : 's'}</Text>
+            )}
+          </View>
+
+          <View style={styles.shopCard}>
+            <View style={styles.shopInputRow}>
+              <TextInput
+                value={shopInput}
+                onChangeText={setShopInput}
+                placeholder="Add item..."
+                placeholderTextColor={ui.muted}
+                style={styles.shopInput}
+                returnKeyType="done"
+                onSubmitEditing={addShopItem}
+              />
+              <PressScale onPress={addShopItem} disabled={addingShop || !shopInput.trim()} style={[styles.shopAddBtn, (!shopInput.trim() || addingShop) && { opacity: 0.4 }]}>
+                <Plus color="#FFFFFF" size={18} />
+              </PressScale>
+            </View>
+
+            {uncheckedItems.map((item) => (
+              <PressScale key={item.item_id} onPress={() => toggleShopItem(item)} style={styles.shopRow}>
+                <Circle color={ui.muted} size={20} />
+                <Text style={styles.shopItemText}>{item.name}</Text>
+                <Text style={styles.shopCat}>{item.category}</Text>
+                <PressScale onPress={() => deleteShopItem(item.item_id)} style={{ padding: 4 }}>
+                  <Trash2 color={ui.muted} size={15} />
+                </PressScale>
+              </PressScale>
+            ))}
+
+            {checkedItems.length > 0 ? (
+              <>
+                <View style={styles.shopDivider}>
+                  <Text style={styles.shopDividerText}>Done ({checkedItems.length})</Text>
+                </View>
+                {checkedItems.map((item) => (
+                  <PressScale key={item.item_id} onPress={() => toggleShopItem(item)} style={styles.shopRow}>
+                    <Check color={ui.mintText} size={20} />
+                    <Text style={[styles.shopItemText, styles.shopItemDone]}>{item.name}</Text>
+                    <PressScale onPress={() => deleteShopItem(item.item_id)} style={{ padding: 4 }}>
+                      <Trash2 color={ui.muted} size={15} />
+                    </PressScale>
+                  </PressScale>
+                ))}
+              </>
+            ) : null}
+
+            {shopItems.length === 0 ? (
+              <Text style={styles.shopEmpty}>No items yet. Add groceries, supplies, or anything the household needs.</Text>
+            ) : null}
+          </View>
+
+          {/* Meal Planner */}
+          <View style={styles.recentHead}>
+            <View style={styles.shopHeaderLeft}>
+              <UtensilsCrossed color={ui.lavenderText} size={20} />
+              <Text style={styles.recentTitle}>Meal Planner</Text>
+            </View>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              {meals.length > 0 ? (
+                <PressScale onPress={syncMealsToShopping} style={styles.clearBtn}>
+                  <Text style={styles.clearBtnText}>Sync to list</Text>
+                </PressScale>
+              ) : null}
+              <PressScale onPress={() => setShowMealAdd(true)} style={[styles.clearBtn, { backgroundColor: ui.lavender }]}>
+                <Text style={[styles.clearBtnText, { color: ui.lavenderText }]}>+ Add</Text>
+              </PressScale>
+            </View>
+          </View>
+          <View style={styles.shopCard}>
+            {DAYS.filter((d) => (mealsByDay[d] || []).length > 0).map((day) => (
+              <View key={day}>
+                <Text style={styles.mealDayLabel}>{day.charAt(0).toUpperCase() + day.slice(1)}</Text>
+                {mealsByDay[day].map((meal) => (
+                  <View key={meal.meal_id} style={styles.shopRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.shopItemText}>{meal.title}</Text>
+                      {meal.ingredients.length > 0 ? <Text style={styles.shopCat}>{meal.ingredients.join(', ')}</Text> : null}
+                    </View>
+                    <PressScale onPress={() => deleteMeal(meal.meal_id)} style={{ padding: 4 }}>
+                      <Trash2 color={ui.muted} size={15} />
+                    </PressScale>
+                  </View>
+                ))}
+              </View>
+            ))}
+            {meals.length === 0 ? (
+              <Text style={styles.shopEmpty}>Plan your weekly meals. Ingredients sync to the shopping list.</Text>
+            ) : null}
+          </View>
+
+          {/* Document Expiry Alerts */}
+          {expiryAlerts.length > 0 ? (
+            <>
+              <View style={styles.recentHead}>
+                <View style={styles.shopHeaderLeft}>
+                  <AlertTriangle color="#DC2626" size={20} />
+                  <Text style={styles.recentTitle}>Expiry Alerts</Text>
+                </View>
+                <Text style={styles.recentTotal}>{expiryAlerts.length} alert{expiryAlerts.length === 1 ? '' : 's'}</Text>
+              </View>
+              <View style={styles.shopCard}>
+                {expiryAlerts.slice(0, 6).map((alert) => (
+                  <View key={alert.doc_id} style={styles.shopRow}>
+                    <View style={[styles.expiryDot, { backgroundColor: alert.status === 'expired' ? '#DC2626' : alert.status === 'urgent' ? '#F59E0B' : ui.mintText }]} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.shopItemText}>{alert.title}</Text>
+                      <Text style={styles.shopCat}>
+                        {alert.status === 'expired' ? `Expired ${Math.abs(alert.days_left)} days ago` : `${alert.days_left} days left`} · {alert.category}
+                      </Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </>
+          ) : null}
+
           <View style={{ height: 140 }} />
       </TabScreen>
 
@@ -286,6 +520,31 @@ export default function Vault() {
           <PressScale testID="vault-save" onPress={save} disabled={saving || !title.trim() || !image} style={[styles.saveBtn, (!title.trim() || !image || saving) && { opacity: 0.5 }]}>
             <Text style={styles.saveText}>{saving ? '...' : t('save')}</Text>
           </PressScale>
+        </View>
+      </KeyboardAwareBottomSheet>
+
+      <KeyboardAwareBottomSheet visible={showMealAdd} onClose={() => setShowMealAdd(false)} contentStyle={styles.sheet}>
+        <View style={styles.sheetHeader}>
+          <Text style={styles.sheetTitle}>Add Meal</Text>
+          <PressScale onPress={() => setShowMealAdd(false)} style={styles.iconBtn}><X color={ui.text} size={20} /></PressScale>
+        </View>
+        <Text style={styles.label}>Day</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {DAYS.map((d) => (
+              <PressScale key={d} onPress={() => setMealDay(d)} style={[styles.mealDayChip, mealDay === d && styles.mealDayChipActive]}>
+                <Text style={[styles.mealDayChipText, mealDay === d && styles.mealDayChipTextActive]}>{d.slice(0, 3)}</Text>
+              </PressScale>
+            ))}
+          </View>
+        </ScrollView>
+        <Text style={styles.label}>Meal</Text>
+        <TextInput value={mealTitle} onChangeText={setMealTitle} placeholder="e.g. Spaghetti Bolognese" placeholderTextColor={ui.muted} style={styles.input} />
+        <Text style={styles.label}>Ingredients (comma separated)</Text>
+        <TextInput value={mealIngredients} onChangeText={setMealIngredients} placeholder="pasta, minced beef, tomato sauce" placeholderTextColor={ui.muted} style={styles.input} />
+        <View style={styles.sheetFooter}>
+          <PressScale onPress={() => setShowMealAdd(false)} style={styles.cancelBtn}><Text style={styles.cancelText}>Cancel</Text></PressScale>
+          <PressScale onPress={addMeal} disabled={!mealTitle.trim()} style={[styles.saveBtn, !mealTitle.trim() && { opacity: 0.5 }]}><Text style={styles.saveText}>Save</Text></PressScale>
         </View>
       </KeyboardAwareBottomSheet>
 
@@ -377,4 +636,25 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   previewActions: { flexDirection: 'row', gap: 8 },
   previewIconBtn: { padding: 10, borderRadius: 9999, borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)', backgroundColor: 'rgba(15,23,42,0.55)' },
   previewImg: { width: '100%', aspectRatio: 0.75, borderRadius: 24, borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)' },
+
+  shopHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  clearBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 99, backgroundColor: ui.mint },
+  clearBtnText: { color: ui.mintText, fontFamily: 'Inter_700Bold', fontSize: 12 },
+  shopCard: { borderRadius: 20, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, padding: 14, gap: 4 },
+  shopInputRow: { flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 6 },
+  shopInput: { flex: 1, borderWidth: 1, borderColor: ui.line, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10, fontFamily: 'Inter_500Medium', fontSize: 14, color: ui.text, backgroundColor: ui.soft },
+  shopAddBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: ui.orange, alignItems: 'center', justifyContent: 'center' },
+  shopRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: ui.line },
+  shopItemText: { flex: 1, color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 15 },
+  shopItemDone: { textDecorationLine: 'line-through', color: ui.muted },
+  shopCat: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12 },
+  shopDivider: { marginTop: 8, paddingVertical: 4 },
+  shopDividerText: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5 },
+  shopEmpty: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 13, textAlign: 'center', paddingVertical: 14 },
+  mealDayLabel: { color: ui.lavenderText, fontFamily: 'Inter_800ExtraBold', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 8, marginBottom: 2 },
+  mealDayChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 99, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft },
+  mealDayChipActive: { backgroundColor: ui.lavender, borderColor: ui.lavenderText },
+  mealDayChipText: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 13, textTransform: 'capitalize' },
+  mealDayChipTextActive: { color: ui.lavenderText },
+  expiryDot: { width: 10, height: 10, borderRadius: 99 },
 });
