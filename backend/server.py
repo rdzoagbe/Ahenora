@@ -3533,6 +3533,39 @@ async def delete_chore(chore_id: str, user: dict = Depends(require_user), databa
 
 
 # -----------------------------------------------------------------------------
+# Support Contact
+# -----------------------------------------------------------------------------
+
+class SupportContactIn(BaseModel):
+    subject: str
+    message: str
+
+@app.post("/api/support/contact")
+async def submit_support_contact(
+    body: SupportContactIn,
+    user: dict = Depends(require_user),
+    database=Depends(get_db),
+):
+    subject = body.subject.strip()[:200]
+    message = body.message.strip()[:5000]
+    if not subject or not message:
+        raise HTTPException(400, "Subject and message are required")
+    ticket = {
+        "ticket_id": new_id("tkt"),
+        "family_id": user["family_id"],
+        "user_id": user["user_id"],
+        "user_email": user.get("email", ""),
+        "user_name": user.get("name", ""),
+        "subject": subject,
+        "message": message,
+        "status": "open",
+        "created_at": utcnow(),
+    }
+    await database["support_tickets"].insert_one(ticket)
+    return {"ok": True, "ticket_id": ticket["ticket_id"]}
+
+
+# -----------------------------------------------------------------------------
 # Railway entrypoint
 # -----------------------------------------------------------------------------
 if __name__ == "__main__":
