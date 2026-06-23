@@ -26,6 +26,7 @@ import { Badge, Card, IconTile, ProgressBar, ScreenHeader, UI, useUI, UIColors }
 
 import { useStore } from '../../src/store';
 import { api, ExpiryAlert, MealPlan, ShoppingItem, VaultDoc } from '../../src/api';
+import { usePremiumGate, LockBadge } from '../../src/components/PremiumGate';
 import { logger } from '../../src/logger';
 
 const CATEGORIES = [
@@ -49,6 +50,8 @@ type ToastState = { message: string; tone: ToastTone };
 
 export default function Vault() {
   const { t } = useStore();
+  const { isLocked, promptUpgrade } = usePremiumGate();
+  const mealLocked = isLocked('meal_planner');
   const router = useRouter();
   const ui = useUI();
   const styles = useMemo(() => createStyles(ui), [ui]);
@@ -414,16 +417,20 @@ export default function Vault() {
               <UtensilsCrossed color={ui.lavenderText} size={20} />
               <Text style={styles.recentTitle}>Meal Planner</Text>
             </View>
-            <View style={{ flexDirection: 'row', gap: 8 }}>
-              {meals.length > 0 ? (
-                <PressScale onPress={syncMealsToShopping} style={styles.clearBtn}>
-                  <Text style={styles.clearBtnText}>Sync to list</Text>
+            {mealLocked ? (
+              <LockBadge onPress={() => promptUpgrade('meal_planner')} />
+            ) : (
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                {meals.length > 0 ? (
+                  <PressScale onPress={syncMealsToShopping} style={styles.clearBtn}>
+                    <Text style={styles.clearBtnText}>Sync to list</Text>
+                  </PressScale>
+                ) : null}
+                <PressScale onPress={() => setShowMealAdd(true)} style={[styles.clearBtn, { backgroundColor: ui.lavender }]}>
+                  <Text style={[styles.clearBtnText, { color: ui.lavenderText }]}>+ Add</Text>
                 </PressScale>
-              ) : null}
-              <PressScale onPress={() => setShowMealAdd(true)} style={[styles.clearBtn, { backgroundColor: ui.lavender }]}>
-                <Text style={[styles.clearBtnText, { color: ui.lavenderText }]}>+ Add</Text>
-              </PressScale>
-            </View>
+              </View>
+            )}
           </View>
           <View style={styles.shopCard}>
             {DAYS.filter((d) => (mealsByDay[d] || []).length > 0).map((day) => (

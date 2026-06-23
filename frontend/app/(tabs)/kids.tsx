@@ -43,6 +43,7 @@ import { Card, IconTile, ProgressBar, ScreenHeader, UI, useUI, UIColors } from '
 
 import { useStore } from '../../src/store';
 import { api, AllowanceConfig, Chore, FamilyMember, Reward, Routine, StarTransaction } from '../../src/api';
+import { usePremiumGate, LockBadge } from '../../src/components/PremiumGate';
 import { logger } from '../../src/logger';
 
 type ToastState = { message: string; tone: ToastTone };
@@ -95,6 +96,8 @@ function formatActivityDate(value?: string | null) {
 
 export default function Kids() {
   const { t } = useStore();
+  const { isLocked, promptUpgrade } = usePremiumGate();
+  const allowanceLocked = isLocked('allowance');
   const router = useRouter();
 
   const [members, setMembers] = useState<FamilyMember[]>([]);
@@ -660,16 +663,26 @@ export default function Kids() {
               <View style={styles.featureHeader}>
                 <DollarSign color={ui.goldText} size={18} />
                 <Text style={styles.featureHeaderText}>Allowance</Text>
+                {allowanceLocked ? <LockBadge onPress={() => promptUpgrade('allowance')} /> : null}
               </View>
               <Card style={styles.cardPad}>
-                <View style={styles.allowanceRow}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.allowanceBalance}>${childBalance.toFixed(2)}</Text>
-                    <Text style={styles.featureRowSub}>
-                      {childAllowance ? `$${childAllowance.amount}/${childAllowance.frequency}` : 'No allowance set'}
-                    </Text>
+                {allowanceLocked ? (
+                  <PressScale onPress={() => promptUpgrade('allowance')} style={styles.allowanceRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.featureRowTitle}>Track pocket money & chores payouts</Text>
+                      <Text style={styles.featureRowSub}>Available on Executive and Family Office plans.</Text>
+                    </View>
+                  </PressScale>
+                ) : (
+                  <View style={styles.allowanceRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.allowanceBalance}>${childBalance.toFixed(2)}</Text>
+                      <Text style={styles.featureRowSub}>
+                        {childAllowance ? `$${childAllowance.amount}/${childAllowance.frequency}` : 'No allowance set'}
+                      </Text>
+                    </View>
                   </View>
-                </View>
+                )}
               </Card>
             </>
           ) : null}

@@ -416,6 +416,10 @@ export interface Subscription {
     vault_bytes: number;
     weekly_brief: boolean;
     multi_property: boolean;
+    meal_planner: boolean;
+    allowance: boolean;
+    carpool: boolean;
+    weekly_report: boolean;
   };
   price_monthly: number;
   price_yearly: number;
@@ -436,6 +440,12 @@ export interface Entitlements {
   vault_bytes_limit: number;
   weekly_brief: boolean;
   multi_property: boolean;
+  features?: {
+    meal_planner: boolean;
+    allowance: boolean;
+    carpool: boolean;
+    weekly_report: boolean;
+  };
 }
 
 export interface PlanLimitError {
