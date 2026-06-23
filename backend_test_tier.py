@@ -29,10 +29,10 @@ def test_get_subscription_initial():
     data = r.json()
     # Field presence & values
     checks = []
-    checks.append(("plan_is_executive_or_grandfathered_exec", data.get("plan") == "executive"))
-    checks.append(("grandfathered_true", data.get("grandfathered") is True))
-    checks.append(("price_monthly_14.99", abs(float(data.get("price_monthly", 0)) - 14.99) < 0.01))
-    checks.append(("price_yearly_143.99", abs(float(data.get("price_yearly", 0)) - 143.99) < 0.01))
+    checks.append(("plan_is_village", data.get("plan") == "village"))
+    checks.append(("grandfathered_false", data.get("grandfathered") is False))
+    checks.append(("price_monthly_0", abs(float(data.get("price_monthly", -1)) - 0.0) < 0.01))
+    checks.append(("price_yearly_0", abs(float(data.get("price_yearly", -1)) - 0.0) < 0.01))
     checks.append(("ai_scans_used_0", int(data.get("ai_scans_used", -1)) == 0))
     checks.append(("members_count_3", int(data.get("members_count", 0)) == 3))
     limits = data.get("limits") or {}
@@ -42,7 +42,7 @@ def test_get_subscription_initial():
 
     all_ok = all(v for _, v in checks)
     detail = ", ".join([f"{k}={v}" for k, v in checks]) + f" | plan={data.get('plan')}, grandfathered={data.get('grandfathered')}, billing={data.get('billing_cycle')}, members={data.get('members_count')}"
-    rec("Step 1: GET /subscription initial (executive, grandfathered)", all_ok, detail)
+    rec("Step 1: GET /subscription initial (village, not grandfathered)", all_ok, detail)
     return data
 
 
@@ -180,20 +180,22 @@ def test_regression():
         rec("Step 7d: GET /cards", isinstance(cards, list), f"count={len(cards) if isinstance(cards, list) else 'n/a'}")
 
 
-def test_cleanup_executive_monthly():
+def test_cleanup_village_monthly():
+    # Reset to the default free tier so the next run's "initial" state matches
+    # the village default and this script stays idempotent.
     r = requests.post(
         f"{BASE}/subscription/change",
         headers=HEADERS,
-        json={"plan": "executive", "billing_cycle": "monthly"},
+        json={"plan": "village", "billing_cycle": "monthly"},
         timeout=30,
     )
     ok = r.status_code == 200
     if not ok:
-        rec("Step 8: Cleanup -> executive monthly", False, f"HTTP {r.status_code} body={r.text[:200]}")
+        rec("Step 8: Cleanup -> village monthly", False, f"HTTP {r.status_code} body={r.text[:200]}")
         return
     d = r.json()
-    ok2 = d.get("plan") == "executive" and d.get("billing_cycle") == "monthly"
-    rec("Step 8: Cleanup -> executive monthly", ok2, f"final plan={d.get('plan')} billing={d.get('billing_cycle')}")
+    ok2 = d.get("plan") == "village" and d.get("billing_cycle") == "monthly"
+    rec("Step 8: Cleanup -> village monthly", ok2, f"final plan={d.get('plan')} billing={d.get('billing_cycle')}")
 
 
 def main():
@@ -205,7 +207,7 @@ def main():
     test_change_to_executive_yearly()
     test_brief_unblocked_executive()
     test_regression()
-    test_cleanup_executive_monthly()
+    test_cleanup_village_monthly()
 
     print("\n===== SUMMARY =====")
     passed = sum(1 for _, ok, _ in results if ok)
