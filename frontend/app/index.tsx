@@ -9,7 +9,8 @@ import * as Linking from 'expo-linking';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { Globe, Sparkles, ShieldCheck, Crown, ArrowRight } from 'lucide-react-native';
 
-const FB_APP_ID = process.env.EXPO_PUBLIC_FACEBOOK_APP_ID?.trim();
+const FB_APP_ID =
+  process.env.EXPO_PUBLIC_FACEBOOK_APP_ID?.trim() || '1618431972757078';
 const FB_DISCOVERY = { authorizationEndpoint: 'https://www.facebook.com/v19.0/dialog/oauth' };
 
 import { AmbientBackground } from '../src/components/AmbientBackground';
@@ -66,11 +67,17 @@ export default function Landing() {
   const [inviteToken, setInviteToken] = useState<string | null>(null);
   const [invitedBy, setInvitedBy] = useState<string | null>(null);
 
-  const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID?.trim();
+  const webClientId =
+    process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID?.trim() ||
+    '243255248169-cei972lc7kmfig6tmjb6l2nlmgqkjf22.apps.googleusercontent.com';
+  const androidClientId =
+    process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID?.trim() ||
+    '243255248169-n4l7es5ecr3j85v00dia2icp9kjo7umh.apps.googleusercontent.com';
   const webRedirectUri = Platform.OS !== 'android' ? AuthSession.makeRedirectUri({ scheme: 'householdcoo', path: 'oauthredirect' }) : undefined;
 
   const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
     webClientId,
+    androidClientId,
     redirectUri: webRedirectUri,
   });
 
