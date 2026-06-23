@@ -13,7 +13,6 @@ import {
   LogOut,
   Mail,
   PenLine,
-  Plus,
   Receipt,
   RotateCcw,
   Send,

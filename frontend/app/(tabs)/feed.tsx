@@ -17,7 +17,6 @@ import {
   MessageSquare,
   Mic,
   Plus,
-  Repeat,
   Star,
   Trash2,
   Zap,
