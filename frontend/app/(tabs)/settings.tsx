@@ -1,8 +1,9 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { Image, Platform, Share, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Image, Platform, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import {
   Bell,
+  BookUser,
   CalendarDays,
   ChevronRight,
   Crown,
@@ -32,6 +33,23 @@ import { api, CalendarContact, Card as CardType, Entitlements, FamilyInvite, Fam
 import { LANG_NAMES } from '../../src/i18n';
 import { ensureNotificationPermissions, registerForPushNotificationsAsync, sendLocalNotification, sendTestScheduledReminderNotification, syncCardReminderNotifications } from '../../src/notifications';
 import { logger } from '../../src/logger';
+import { Contact, ContactField } from 'expo-contacts';
+
+async function pickContactEmail(): Promise<string | null> {
+  try {
+    const picked = await Contact.presentPicker();
+    if (!picked) return null;
+    const details = await picked.getDetails([ContactField.EMAILS, ContactField.FULL_NAME]);
+    const emails = (details as any).emails;
+    if (!emails || emails.length === 0) {
+      Alert.alert('No email', 'This contact does not have an email address.');
+      return null;
+    }
+    return emails[0].email || emails[0].address || null;
+  } catch {
+    return null;
+  }
+}
 
 function formatBytes(bytes?: number | null) {
   const value = bytes || 0;
@@ -359,13 +377,24 @@ export default function Settings() {
             <NavRow
               tile={<IconTile bg={ui.mint}><Link2 color={ui.mintText} size={18} /></IconTile>}
               title="Connected apps"
-              subtitle="Google Calendar contacts"
+              subtitle="Contacts & Google Calendar"
               right={<Chevron open={expandConnected} />}
               onPress={() => setExpandConnected((v) => !v)}
               divider={false}
             />
             {expandConnected ? (
               <View style={styles.expandBox}>
+                <PressScale
+                  testID="import-from-contacts"
+                  onPress={async () => {
+                    const email = await pickContactEmail();
+                    if (email) openInvite(email);
+                  }}
+                  style={styles.expandAction}
+                >
+                  <BookUser color={ui.text} size={18} />
+                  <Text style={styles.expandActionText}>Pick from Contacts</Text>
+                </PressScale>
                 {calendarContacts.length === 0 ? (
                   <Text style={styles.emptyText}>No calendar contacts yet. Sync Google Calendar from the Calendar tab.</Text>
                 ) : calendarContacts.slice(0, 8).map((c) => (
@@ -470,6 +499,17 @@ export default function Settings() {
           </PressScale>
         </View>
         <Text style={styles.sheetHelp}>They will receive a join link and can sign in to join your household.</Text>
+        <PressScale
+          testID="pick-from-contacts"
+          onPress={async () => {
+            const email = await pickContactEmail();
+            if (email) setInviteEmail(email);
+          }}
+          style={[styles.expandAction, { marginTop: 0, marginBottom: 14 }]}
+        >
+          <BookUser color={ui.text} size={18} />
+          <Text style={styles.expandActionText}>Pick from Contacts</Text>
+        </PressScale>
         <TextInput
           testID="invite-email"
           value={inviteEmail}
