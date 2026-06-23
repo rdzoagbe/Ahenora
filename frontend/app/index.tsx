@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Alert, ImageBackground, Platform, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -7,13 +7,10 @@ import * as WebBrowser from 'expo-web-browser';
 import * as Google from 'expo-auth-session/providers/google';
 import * as Linking from 'expo-linking';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import { Globe, Sparkles, ShieldCheck, Crown, ArrowRight } from 'lucide-react-native';
-
-const FB_APP_ID =
-  process.env.EXPO_PUBLIC_FACEBOOK_APP_ID?.trim() || '1618431972757078';
-const FB_DISCOVERY = { authorizationEndpoint: 'https://www.facebook.com/v19.0/dialog/oauth' };
+import { Globe, Sparkles, ShieldCheck, Crown, ArrowRight, Mail } from 'lucide-react-native';
 
 import { AmbientBackground } from '../src/components/AmbientBackground';
+import { EmailAuthModal } from '../src/components/EmailAuthModal';
 import { LanguageModal } from '../src/components/LanguageModal';
 import { PressScale } from '../src/components/PressScale';
 import { useStore } from '../src/store';
@@ -60,10 +57,10 @@ function authErrorMessage(error: unknown, params?: Record<string, string>) {
 export default function Landing() {
   const router = useRouter();
   const handledResponseRef = useRef(false);
-  const handledFbRef = useRef(false);
   const { user, loading, t, lang, setUserFromAuth, theme } = useStore();
 
   const [showLang, setShowLang] = useState(false);
+  const [showEmailAuth, setShowEmailAuth] = useState(false);
   const [inviteToken, setInviteToken] = useState<string | null>(null);
   const [invitedBy, setInvitedBy] = useState<string | null>(null);
 
@@ -80,21 +77,6 @@ export default function Landing() {
     androidClientId,
     redirectUri: webRedirectUri,
   });
-
-  const fbRedirectUri = useMemo(() => AuthSession.makeRedirectUri({
-    scheme: 'householdcoo',
-    path: 'oauth2redirect/facebook',
-  }), []);
-
-  const [fbRequest, fbResponse, promptFacebook] = AuthSession.useAuthRequest(
-    {
-      clientId: FB_APP_ID || '',
-      scopes: ['public_profile', 'email'],
-      responseType: AuthSession.ResponseType.Token,
-      redirectUri: fbRedirectUri,
-    },
-    FB_DISCOVERY
-  );
 
   useEffect(() => {
     logger.info('Google AuthSession redirect URI', webRedirectUri || 'missing');
@@ -205,45 +187,6 @@ export default function Landing() {
     handleGoogleResponse();
   }, [response, inviteToken, router, setUserFromAuth]);
 
-  useEffect(() => {
-    const handleFacebookResponse = async () => {
-      if (!fbResponse || handledFbRef.current) return;
-      if (fbResponse.type === 'error') {
-        Alert.alert('Facebook Sign-In failed', fbResponse.error?.description || 'Facebook returned an error.');
-        return;
-      }
-      if (fbResponse.type !== 'success') return;
-
-      handledFbRef.current = true;
-      const accessToken = fbResponse.params?.access_token || (fbResponse.authentication as any)?.accessToken;
-
-      if (!accessToken) {
-        Alert.alert('Sign-in failed', 'Facebook did not return an access token.');
-        handledFbRef.current = false;
-        return;
-      }
-
-      let token = inviteToken || undefined;
-      if (!token && Platform.OS === 'web' && typeof window !== 'undefined') {
-        try { token = window.sessionStorage.getItem('pending_invite') || undefined; } catch { /* ignore */ }
-      }
-
-      try {
-        const { api } = await import('../src/api');
-        const authResult = await api.exchangeFacebookSession(accessToken, token);
-        await setUserFromAuth(authResult.user, authResult.session_token);
-        if (Platform.OS === 'web' && typeof window !== 'undefined') {
-          try { window.sessionStorage.removeItem('pending_invite'); } catch { /* ignore */ }
-        }
-        router.replace('/feed');
-      } catch (error: any) {
-        Alert.alert('Facebook sign-in failed', error?.message || 'Please try again.');
-        handledFbRef.current = false;
-      }
-    };
-    handleFacebookResponse();
-  }, [fbResponse, inviteToken, router, setUserFromAuth]);
-
   const signIn = async () => {
     try {
       if (Platform.OS === 'android') {
@@ -293,21 +236,12 @@ export default function Landing() {
     }
   };
 
-  const signInFacebook = async () => {
-    if (!FB_APP_ID) {
-      Alert.alert('Facebook Sign-In not configured', 'Missing EXPO_PUBLIC_FACEBOOK_APP_ID in .env.');
-      return;
+  const handleEmailSuccess = () => {
+    setShowEmailAuth(false);
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      try { window.sessionStorage.removeItem('pending_invite'); } catch { /* ignore */ }
     }
-    if (!fbRequest) {
-      Alert.alert('Facebook Sign-In not ready', 'Please try again in a moment.');
-      return;
-    }
-    handledFbRef.current = false;
-    try {
-      await promptFacebook();
-    } catch (error: any) {
-      Alert.alert('Facebook Sign-In failed', error?.message || 'Please try again.');
-    }
+    router.replace('/feed');
   };
 
   return (
@@ -387,17 +321,16 @@ export default function Landing() {
             </PressScale>
 
             <PressScale
-              testID="facebook-signin"
-              onPress={signInFacebook}
-              disabled={!fbRequest}
-              style={[styles.cta, styles.fbCta, !fbRequest && styles.ctaDisabled]}
-              accessibilityLabel="Continue with Facebook"
+              testID="email-signin"
+              onPress={() => setShowEmailAuth(true)}
+              style={[styles.cta, styles.emailCta, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}
+              accessibilityLabel="Create an account with email"
               accessibilityRole="button"
             >
-              <View style={styles.fbDot}>
-                <Text style={styles.fbText}>f</Text>
+              <View style={[styles.emailDot, { backgroundColor: theme.colors.accentSoft }]}>
+                <Mail color={theme.colors.accent} size={15} />
               </View>
-              <Text style={[styles.ctaText, { color: '#fff' }]}>Continue with Facebook</Text>
+              <Text style={[styles.ctaText, { color: theme.colors.text }]}>Create an account with email</Text>
             </PressScale>
 
             <PressScale
@@ -429,6 +362,12 @@ export default function Landing() {
       </SafeAreaView>
 
       <LanguageModal visible={showLang} onClose={() => setShowLang(false)} />
+      <EmailAuthModal
+        visible={showEmailAuth}
+        onClose={() => setShowEmailAuth(false)}
+        onSuccess={handleEmailSuccess}
+        inviteToken={inviteToken}
+      />
     </View>
   );
 }
@@ -534,16 +473,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   googleText: { fontWeight: '800', color: '#4285F4' },
-  fbCta: { backgroundColor: '#1877F2' },
-  fbDot: {
+  emailCta: { borderWidth: 1 },
+  emailDot: {
     width: 26,
     height: 26,
     borderRadius: 9999,
-    backgroundColor: 'rgba(255,255,255,0.18)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  fbText: { fontWeight: '900', color: '#fff', fontSize: 16 },
   ctaText: { fontFamily: 'Inter_700Bold', fontSize: 15 },
   secureRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 14 },
   secureText: { fontFamily: 'Inter_400Regular', fontSize: 11, flex: 1, textAlign: 'center' },

@@ -459,6 +459,10 @@ export const api = {
       method: 'POST',
       body: invite_token ? { access_token, invite_token } : { access_token },
     }),
+  registerWithEmail: (data: { name: string; email: string; password: string; invite_token?: string }) =>
+    request<{ user: User; session_token: string }>('/auth/register', { method: 'POST', body: data }),
+  loginWithEmail: (data: { email: string; password: string }) =>
+    request<{ user: User; session_token: string }>('/auth/login', { method: 'POST', body: data }),
   me: () => request<User>('/auth/me'),
   logout: () => {
     cache.clear();

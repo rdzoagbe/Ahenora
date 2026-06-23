@@ -526,6 +526,14 @@ export default function Settings() {
             <Divider />
 
             <NavRow
+              testID="settings-view-plans"
+              tile={<IconTile bg={ui.orangeSoft}><Crown color={ui.orange} size={18} /></IconTile>}
+              title="View all plans"
+              subtitle={`You're on ${user?.is_admin ? 'Admin / Tester' : `${planLabel}`} · compare tiers`}
+              onPress={() => router.push('/pricing')}
+            />
+
+            <NavRow
               tile={<IconTile bg={ui.soft}><Sparkles color={ui.text} size={18} /></IconTile>}
               title="Plan &amp; usage"
               subtitle="AI scans, vault storage & limits"
