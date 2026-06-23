@@ -34,13 +34,13 @@ import { api, CalendarContact, Card as CardType, Entitlements, FamilyInvite, Fam
 import { LANG_NAMES } from '../../src/i18n';
 import { ensureNotificationPermissions, registerForPushNotificationsAsync, sendLocalNotification, sendTestScheduledReminderNotification, syncCardReminderNotifications } from '../../src/notifications';
 import { logger } from '../../src/logger';
-import { Contact, ContactField } from 'expo-contacts';
 
 async function pickContactEmail(): Promise<string | null> {
   try {
-    const picked = await Contact.presentPicker();
+    const Contacts = await import('expo-contacts');
+    const picked = await Contacts.Contact.presentPicker();
     if (!picked) return null;
-    const details = await picked.getDetails([ContactField.EMAILS, ContactField.FULL_NAME]);
+    const details = await picked.getDetails([Contacts.ContactField.EMAILS, Contacts.ContactField.FULL_NAME]);
     const emails = (details as any).emails;
     if (!emails || emails.length === 0) {
       Alert.alert('No email', 'This contact does not have an email address.');
@@ -48,6 +48,7 @@ async function pickContactEmail(): Promise<string | null> {
     }
     return emails[0].email || emails[0].address || null;
   } catch {
+    Alert.alert('Not available', 'Contact picker requires a new app build that includes the Contacts module. For now, type the email manually.');
     return null;
   }
 }

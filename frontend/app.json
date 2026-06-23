@@ -57,13 +57,7 @@
         }
       ],
       "expo-web-browser",
-      "expo-secure-store",
-      [
-        "expo-contacts",
-        {
-          "contactsPermission": "Household COO accesses your contacts only when you choose to invite a family member."
-        }
-      ]
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true
