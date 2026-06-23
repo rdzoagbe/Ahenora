@@ -160,6 +160,58 @@ export interface Card {
   external_source?: string | null;
 }
 
+export interface HandoffNote {
+  note_id: string;
+  family_id: string;
+  member_id?: string;
+  member_name?: string;
+  text: string;
+  author_name: string;
+  created_at: string;
+}
+
+export interface ShoppingItem {
+  item_id: string;
+  family_id: string;
+  name: string;
+  category: string;
+  checked: boolean;
+  added_by: string;
+  created_at: string;
+}
+
+export interface Expense {
+  expense_id: string;
+  family_id: string;
+  description: string;
+  amount: number;
+  category: string;
+  child_member_id?: string;
+  child_name?: string;
+  paid_by_name: string;
+  paid_by_user_id?: string;
+  created_at: string;
+}
+
+export interface ExpenseSummary {
+  total: number;
+  by_person: Record<string, number>;
+  by_category: Record<string, number>;
+  days: number;
+}
+
+export interface Template {
+  template_id: string;
+  family_id: string;
+  title: string;
+  description?: string;
+  recurrence: string;
+  time_of_day?: string;
+  assignee?: string;
+  enabled: boolean;
+  created_at: string;
+}
+
 export interface User {
   user_id: string;
   email: string;
@@ -584,4 +636,41 @@ export const api = {
 
     return res.json();
   },
+
+  // Handoff Notes
+  listHandoffNotes: () => request<HandoffNote[]>('/handoff-notes'),
+  createHandoffNote: (data: { member_id?: string; text: string }) =>
+    request<HandoffNote>('/handoff-notes', { method: 'POST', body: data }),
+  deleteHandoffNote: (noteId: string) =>
+    request<{ ok: boolean }>(`/handoff-notes/${noteId}`, { method: 'DELETE' }),
+
+  // Shopping List
+  listShopping: () => request<ShoppingItem[]>('/shopping'),
+  addShoppingItem: (data: { name: string; category?: string }) =>
+    request<ShoppingItem>('/shopping', { method: 'POST', body: data }),
+  updateShoppingItem: (itemId: string, data: { checked?: boolean; name?: string; category?: string }) =>
+    request<ShoppingItem>(`/shopping/${itemId}`, { method: 'PATCH', body: data }),
+  deleteShoppingItem: (itemId: string) =>
+    request<{ ok: boolean }>(`/shopping/${itemId}`, { method: 'DELETE' }),
+  clearCheckedShopping: () =>
+    request<{ deleted: number }>('/shopping', { method: 'DELETE' }),
+
+  // Expenses
+  listExpenses: (days = 30) => request<Expense[]>(`/expenses?days=${days}`),
+  getExpenseSummary: (days = 30) => request<ExpenseSummary>(`/expenses/summary?days=${days}`),
+  addExpense: (data: { description: string; amount: number; category?: string; child_member_id?: string }) =>
+    request<Expense>('/expenses', { method: 'POST', body: data }),
+  deleteExpense: (expenseId: string) =>
+    request<{ ok: boolean }>(`/expenses/${expenseId}`, { method: 'DELETE' }),
+
+  // Templates
+  listTemplates: () => request<Template[]>('/templates'),
+  createTemplate: (data: { title: string; description?: string; recurrence?: string; time_of_day?: string; assignee?: string }) =>
+    request<Template>('/templates', { method: 'POST', body: data }),
+  toggleTemplate: (templateId: string) =>
+    request<Template>(`/templates/${templateId}`, { method: 'PATCH' }),
+  deleteTemplate: (templateId: string) =>
+    request<{ ok: boolean }>(`/templates/${templateId}`, { method: 'DELETE' }),
+  generateFromTemplate: (templateId: string) =>
+    request<Card>(`/templates/${templateId}/generate`, { method: 'POST' }),
 };

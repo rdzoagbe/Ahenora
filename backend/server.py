@@ -539,6 +539,59 @@ def public_calendar_contact(contact: dict) -> dict:
     }
 
 
+def public_handoff_note(note: dict) -> dict:
+    return {
+        "note_id": note["note_id"],
+        "family_id": note["family_id"],
+        "member_id": note.get("member_id"),
+        "member_name": note.get("member_name"),
+        "text": note["text"],
+        "author_name": note.get("author_name", ""),
+        "created_at": iso(note["created_at"]),
+    }
+
+
+def public_shopping_item(item: dict) -> dict:
+    return {
+        "item_id": item["item_id"],
+        "family_id": item["family_id"],
+        "name": item["name"],
+        "category": item.get("category", "Other"),
+        "checked": item.get("checked", False),
+        "added_by": item.get("added_by", ""),
+        "created_at": iso(item["created_at"]),
+    }
+
+
+def public_expense(exp: dict) -> dict:
+    return {
+        "expense_id": exp["expense_id"],
+        "family_id": exp["family_id"],
+        "description": exp["description"],
+        "amount": exp["amount"],
+        "category": exp.get("category", "General"),
+        "child_member_id": exp.get("child_member_id"),
+        "child_name": exp.get("child_name"),
+        "paid_by_name": exp.get("paid_by_name", ""),
+        "paid_by_user_id": exp.get("paid_by_user_id"),
+        "created_at": iso(exp["created_at"]),
+    }
+
+
+def public_template(tmpl: dict) -> dict:
+    return {
+        "template_id": tmpl["template_id"],
+        "family_id": tmpl["family_id"],
+        "title": tmpl["title"],
+        "description": tmpl.get("description"),
+        "recurrence": tmpl.get("recurrence", "daily"),
+        "time_of_day": tmpl.get("time_of_day"),
+        "assignee": tmpl.get("assignee"),
+        "enabled": tmpl.get("enabled", True),
+        "created_at": iso(tmpl["created_at"]),
+    }
+
+
 
 async def add_user_to_family_if_needed(database: Any, user: dict, family_id: str):
     existing = await database["family_members"].find_one(
@@ -806,6 +859,37 @@ class NotificationTokenIn(BaseModel):
 class NotificationPrefsIn(BaseModel):
     card_reminders: Optional[bool] = None
     new_card_alerts: Optional[bool] = None
+
+
+class HandoffNoteIn(BaseModel):
+    member_id: Optional[str] = None
+    text: str
+
+
+class ShoppingItemIn(BaseModel):
+    name: str
+    category: str = "Other"
+
+
+class ShoppingItemPatchIn(BaseModel):
+    checked: Optional[bool] = None
+    name: Optional[str] = None
+    category: Optional[str] = None
+
+
+class ExpenseIn(BaseModel):
+    description: str
+    amount: float
+    category: str = "General"
+    child_member_id: Optional[str] = None
+
+
+class TemplateIn(BaseModel):
+    title: str
+    description: Optional[str] = None
+    recurrence: str = "daily"
+    time_of_day: Optional[str] = None
+    assignee: Optional[str] = None
 
 
 
@@ -2538,6 +2622,307 @@ async def voice_transcribe(audio: UploadFile = File(...), user=Depends(require_u
 
     mime_type = audio.content_type or "audio/aac"
     return await _voice_to_draft(audio_bytes, mime_type, members)
+
+
+# -----------------------------------------------------------------------------
+# Handoff Notes
+# -----------------------------------------------------------------------------
+
+@app.get("/api/handoff-notes")
+async def list_handoff_notes(user=Depends(require_user)):
+    rows = []
+    async for note in database["handoff_notes"].find(
+        {"family_id": user["family_id"]},
+        {"_id": 0},
+    ).sort("created_at", -1).limit(50):
+        rows.append(public_handoff_note(note))
+    return rows
+
+
+@app.post("/api/handoff-notes")
+async def create_handoff_note(payload: HandoffNoteIn, user=Depends(require_user)):
+    member_name = None
+    if payload.member_id:
+        member = await database["family_members"].find_one(
+            {"family_id": user["family_id"], "member_id": payload.member_id},
+            {"_id": 0, "name": 1},
+        )
+        if member:
+            member_name = member["name"]
+    doc = {
+        "note_id": new_id("note"),
+        "family_id": user["family_id"],
+        "member_id": payload.member_id,
+        "member_name": member_name,
+        "text": payload.text.strip(),
+        "author_name": user.get("name", ""),
+        "author_user_id": user["user_id"],
+        "created_at": utcnow(),
+    }
+    await database["handoff_notes"].insert_one(doc)
+    return public_handoff_note(doc)
+
+
+@app.delete("/api/handoff-notes/{note_id}")
+async def delete_handoff_note(note_id: str, user=Depends(require_user)):
+    result = await database["handoff_notes"].delete_one(
+        {"note_id": note_id, "family_id": user["family_id"]}
+    )
+    if result.deleted_count == 0:
+        raise HTTPException(404, "Note not found")
+    return {"ok": True}
+
+
+# -----------------------------------------------------------------------------
+# Shopping List
+# -----------------------------------------------------------------------------
+
+SHOPPING_CATEGORIES = [
+    "Produce", "Dairy", "Meat", "Bakery", "Frozen",
+    "Pantry", "Drinks", "Snacks", "Baby", "Household",
+    "Health", "School", "Other",
+]
+
+
+@app.get("/api/shopping")
+async def list_shopping(user=Depends(require_user)):
+    rows = []
+    async for item in database["shopping_list"].find(
+        {"family_id": user["family_id"]},
+        {"_id": 0},
+    ).sort("created_at", -1):
+        rows.append(public_shopping_item(item))
+    return rows
+
+
+@app.post("/api/shopping")
+async def add_shopping_item(payload: ShoppingItemIn, user=Depends(require_user)):
+    doc = {
+        "item_id": new_id("shop"),
+        "family_id": user["family_id"],
+        "name": payload.name.strip(),
+        "category": payload.category if payload.category in SHOPPING_CATEGORIES else "Other",
+        "checked": False,
+        "added_by": user.get("name", ""),
+        "created_at": utcnow(),
+    }
+    await database["shopping_list"].insert_one(doc)
+    return public_shopping_item(doc)
+
+
+@app.patch("/api/shopping/{item_id}")
+async def update_shopping_item(item_id: str, payload: ShoppingItemPatchIn, user=Depends(require_user)):
+    updates = {}
+    if payload.checked is not None:
+        updates["checked"] = payload.checked
+    if payload.name is not None:
+        updates["name"] = payload.name.strip()
+    if payload.category is not None:
+        updates["category"] = payload.category
+    if not updates:
+        raise HTTPException(400, "Nothing to update")
+    result = await database["shopping_list"].update_one(
+        {"item_id": item_id, "family_id": user["family_id"]},
+        {"$set": updates},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(404, "Item not found")
+    doc = await database["shopping_list"].find_one({"item_id": item_id}, {"_id": 0})
+    return public_shopping_item(doc)
+
+
+@app.delete("/api/shopping/{item_id}")
+async def delete_shopping_item(item_id: str, user=Depends(require_user)):
+    result = await database["shopping_list"].delete_one(
+        {"item_id": item_id, "family_id": user["family_id"]}
+    )
+    if result.deleted_count == 0:
+        raise HTTPException(404, "Item not found")
+    return {"ok": True}
+
+
+@app.delete("/api/shopping")
+async def clear_checked_shopping(user=Depends(require_user)):
+    result = await database["shopping_list"].delete_many(
+        {"family_id": user["family_id"], "checked": True}
+    )
+    return {"deleted": result.deleted_count}
+
+
+# -----------------------------------------------------------------------------
+# Expense Tracking
+# -----------------------------------------------------------------------------
+
+@app.get("/api/expenses")
+async def list_expenses(
+    user=Depends(require_user),
+    days: int = Query(default=30, ge=1, le=365),
+):
+    since = utcnow() - timedelta(days=days)
+    rows = []
+    async for exp in database["expenses"].find(
+        {"family_id": user["family_id"], "created_at": {"$gte": since}},
+        {"_id": 0},
+    ).sort("created_at", -1):
+        rows.append(public_expense(exp))
+    return rows
+
+
+@app.get("/api/expenses/summary")
+async def expense_summary(
+    user=Depends(require_user),
+    days: int = Query(default=30, ge=1, le=365),
+):
+    since = utcnow() - timedelta(days=days)
+    by_user: dict[str, float] = {}
+    by_category: dict[str, float] = {}
+    total = 0.0
+    async for exp in database["expenses"].find(
+        {"family_id": user["family_id"], "created_at": {"$gte": since}},
+        {"_id": 0},
+    ):
+        amt = exp.get("amount", 0)
+        total += amt
+        name = exp.get("paid_by_name", "Unknown")
+        by_user[name] = by_user.get(name, 0) + amt
+        cat = exp.get("category", "General")
+        by_category[cat] = by_category.get(cat, 0) + amt
+    return {
+        "total": round(total, 2),
+        "by_person": {k: round(v, 2) for k, v in by_user.items()},
+        "by_category": {k: round(v, 2) for k, v in by_category.items()},
+        "days": days,
+    }
+
+
+@app.post("/api/expenses")
+async def add_expense(payload: ExpenseIn, user=Depends(require_user)):
+    child_name = None
+    if payload.child_member_id:
+        member = await database["family_members"].find_one(
+            {"family_id": user["family_id"], "member_id": payload.child_member_id},
+            {"_id": 0, "name": 1},
+        )
+        if member:
+            child_name = member["name"]
+    doc = {
+        "expense_id": new_id("exp"),
+        "family_id": user["family_id"],
+        "description": payload.description.strip(),
+        "amount": round(payload.amount, 2),
+        "category": payload.category,
+        "child_member_id": payload.child_member_id,
+        "child_name": child_name,
+        "paid_by_name": user.get("name", ""),
+        "paid_by_user_id": user["user_id"],
+        "created_at": utcnow(),
+    }
+    await database["expenses"].insert_one(doc)
+    return public_expense(doc)
+
+
+@app.delete("/api/expenses/{expense_id}")
+async def delete_expense(expense_id: str, user=Depends(require_user)):
+    result = await database["expenses"].delete_one(
+        {"expense_id": expense_id, "family_id": user["family_id"]}
+    )
+    if result.deleted_count == 0:
+        raise HTTPException(404, "Expense not found")
+    return {"ok": True}
+
+
+# -----------------------------------------------------------------------------
+# Recurring Templates
+# -----------------------------------------------------------------------------
+
+@app.get("/api/templates")
+async def list_templates(user=Depends(require_user)):
+    rows = []
+    async for tmpl in database["templates"].find(
+        {"family_id": user["family_id"]},
+        {"_id": 0},
+    ).sort("created_at", -1):
+        rows.append(public_template(tmpl))
+    return rows
+
+
+@app.post("/api/templates")
+async def create_template(payload: TemplateIn, user=Depends(require_user)):
+    doc = {
+        "template_id": new_id("tmpl"),
+        "family_id": user["family_id"],
+        "title": payload.title.strip(),
+        "description": (payload.description or "").strip() or None,
+        "recurrence": payload.recurrence if payload.recurrence in ("daily", "weekly", "monthly") else "daily",
+        "time_of_day": payload.time_of_day,
+        "assignee": payload.assignee,
+        "enabled": True,
+        "created_at": utcnow(),
+    }
+    await database["templates"].insert_one(doc)
+    return public_template(doc)
+
+
+@app.patch("/api/templates/{template_id}")
+async def update_template(template_id: str, user=Depends(require_user)):
+    tmpl = await database["templates"].find_one(
+        {"template_id": template_id, "family_id": user["family_id"]},
+        {"_id": 0},
+    )
+    if not tmpl:
+        raise HTTPException(404, "Template not found")
+    new_enabled = not tmpl.get("enabled", True)
+    await database["templates"].update_one(
+        {"template_id": template_id},
+        {"$set": {"enabled": new_enabled}},
+    )
+    tmpl["enabled"] = new_enabled
+    return public_template(tmpl)
+
+
+@app.delete("/api/templates/{template_id}")
+async def delete_template(template_id: str, user=Depends(require_user)):
+    result = await database["templates"].delete_one(
+        {"template_id": template_id, "family_id": user["family_id"]}
+    )
+    if result.deleted_count == 0:
+        raise HTTPException(404, "Template not found")
+    return {"ok": True}
+
+
+@app.post("/api/templates/{template_id}/generate")
+async def generate_from_template(template_id: str, user=Depends(require_user)):
+    tmpl = await database["templates"].find_one(
+        {"template_id": template_id, "family_id": user["family_id"]},
+        {"_id": 0},
+    )
+    if not tmpl:
+        raise HTTPException(404, "Template not found")
+    due = utcnow()
+    if tmpl.get("time_of_day"):
+        try:
+            parts = tmpl["time_of_day"].split(":")
+            due = due.replace(hour=int(parts[0]), minute=int(parts[1]) if len(parts) > 1 else 0, second=0, microsecond=0)
+        except (ValueError, IndexError):
+            pass
+    card = {
+        "card_id": new_id("card"),
+        "family_id": user["family_id"],
+        "type": "TASK",
+        "title": tmpl["title"],
+        "description": tmpl.get("description"),
+        "assignee": tmpl.get("assignee"),
+        "due_date": due,
+        "status": "OPEN",
+        "source": "MANUAL",
+        "image_base64": None,
+        "recurrence": tmpl.get("recurrence", "none"),
+        "reminder_minutes": 60,
+        "created_at": utcnow(),
+        "completed_at": None,
+    }
+    await database["cards"].insert_one(card)
+    return public_card(card)
 
 
 # -----------------------------------------------------------------------------
