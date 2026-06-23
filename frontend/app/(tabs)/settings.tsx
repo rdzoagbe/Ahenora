@@ -3,7 +3,6 @@ import { Alert, Image, Platform, Share, StyleSheet, Text, TextInput, View } from
 import { useFocusEffect, useRouter } from 'expo-router';
 import {
   Bell,
-  BookUser,
   CalendarDays,
   ChevronRight,
   Crown,
@@ -30,28 +29,10 @@ import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSh
 import { TabScreen } from '../../src/components/TabScreen';
 import { Card, Chevron, Divider, IconTile, MiniRow, NavRow, ScreenHeader, SectionTitle, StatBox, ToggleRow, useUI, UIColors } from '../../src/components/Kit';
 import { useStore } from '../../src/store';
-import { api, CalendarContact, Card as CardType, Entitlements, FamilyInvite, FamilyMember, NotificationSettings } from '../../src/api';
+import { api, Card as CardType, Entitlements, FamilyInvite, FamilyMember, NotificationSettings } from '../../src/api';
 import { LANG_NAMES } from '../../src/i18n';
 import { ensureNotificationPermissions, registerForPushNotificationsAsync, sendLocalNotification, sendTestScheduledReminderNotification, syncCardReminderNotifications } from '../../src/notifications';
 import { logger } from '../../src/logger';
-
-async function pickContactEmail(): Promise<string | null> {
-  try {
-    const Contacts = await import('expo-contacts');
-    const picked = await Contacts.Contact.presentPicker();
-    if (!picked) return null;
-    const details = await picked.getDetails([Contacts.ContactField.EMAILS, Contacts.ContactField.FULL_NAME]);
-    const emails = (details as any).emails;
-    if (!emails || emails.length === 0) {
-      Alert.alert('No email', 'This contact does not have an email address.');
-      return null;
-    }
-    return emails[0].email || emails[0].address || null;
-  } catch {
-    Alert.alert('Not available', 'Contact picker requires a new app build that includes the Contacts module. For now, type the email manually.');
-    return null;
-  }
-}
 
 function formatBytes(bytes?: number | null) {
   const value = bytes || 0;
@@ -67,7 +48,6 @@ export default function Settings() {
   const styles = useMemo(() => createStyles(ui), [ui]);
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [invites, setInvites] = useState<FamilyInvite[]>([]);
-  const [calendarContacts, setCalendarContacts] = useState<CalendarContact[]>([]);
   const [showLang, setShowLang] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
@@ -84,16 +64,14 @@ export default function Settings() {
   const [refreshing, setRefreshing] = useState(false);
   const [expandMembers, setExpandMembers] = useState(false);
   const [expandChildren, setExpandChildren] = useState(false);
-  const [expandConnected, setExpandConnected] = useState(false);
   const [expandHistory, setExpandHistory] = useState(false);
   const [expandUsage, setExpandUsage] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [memberRows, inviteRows, contactRows, notificationRows, entitlementRows, completedRows] = await Promise.all([
+      const [memberRows, inviteRows, notificationRows, entitlementRows, completedRows] = await Promise.all([
         api.familyMembers(),
         api.listInvites(),
-        api.listCalendarContacts().catch(() => []),
         api.getNotificationSettings().catch(() => ({ card_reminders: false, new_card_alerts: false })),
         api.getEntitlements().catch(() => null),
         api.listCards('DONE')
@@ -110,7 +88,6 @@ export default function Settings() {
       ]);
       setMembers(memberRows);
       setInvites(inviteRows);
-      setCalendarContacts(contactRows);
       setNotificationPrefs(notificationRows);
       setEntitlements(entitlementRows);
       setCompletedCards(completedRows);
@@ -378,35 +355,12 @@ export default function Settings() {
 
             <NavRow
               tile={<IconTile bg={ui.mint}><Link2 color={ui.mintText} size={18} /></IconTile>}
-              title="Connected apps"
-              subtitle="Contacts & Google Calendar"
-              right={<Chevron open={expandConnected} />}
-              onPress={() => setExpandConnected((v) => !v)}
+              title="Invite a family member"
+              subtitle="Send an invite link via email"
+              onPress={() => openInvite()}
+              right={<ChevronRight color={ui.muted} size={18} />}
               divider={false}
             />
-            {expandConnected ? (
-              <View style={styles.expandBox}>
-                <PressScale
-                  testID="import-from-contacts"
-                  onPress={async () => {
-                    const email = await pickContactEmail();
-                    if (email) openInvite(email);
-                  }}
-                  style={styles.expandAction}
-                >
-                  <BookUser color={ui.text} size={18} />
-                  <Text style={styles.expandActionText}>Pick from Contacts</Text>
-                </PressScale>
-                {calendarContacts.length === 0 ? (
-                  <Text style={styles.emptyText}>No calendar contacts yet. Sync Google Calendar from the Calendar tab.</Text>
-                ) : calendarContacts.slice(0, 8).map((c) => (
-                  <PressScale key={c.email} testID={`invite-calendar-contact-${c.email}`} onPress={() => openInvite(c.email)} style={styles.inviteRow}>
-                    <MiniRow initial={(c.name?.[0] || c.email[0] || '?').toUpperCase()} name={c.name || c.email} sub={c.email} />
-                    <View style={styles.ghostBtn}><Text style={styles.ghostBtnText}>Invite</Text></View>
-                  </PressScale>
-                ))}
-              </View>
-            ) : null}
           </Card>
 
           {/* Preferences */}
@@ -526,17 +480,6 @@ export default function Settings() {
           </PressScale>
         </View>
         <Text style={styles.sheetHelp}>They will receive a join link and can sign in to join your household.</Text>
-        <PressScale
-          testID="pick-from-contacts"
-          onPress={async () => {
-            const email = await pickContactEmail();
-            if (email) setInviteEmail(email);
-          }}
-          style={[styles.expandAction, { marginTop: 0, marginBottom: 14 }]}
-        >
-          <BookUser color={ui.text} size={18} />
-          <Text style={styles.expandActionText}>Pick from Contacts</Text>
-        </PressScale>
         <TextInput
           testID="invite-email"
           value={inviteEmail}
