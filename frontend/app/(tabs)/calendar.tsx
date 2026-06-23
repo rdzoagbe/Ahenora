@@ -14,6 +14,7 @@ import { TabScreen } from '../../src/components/TabScreen';
 import { Card as KitCard, IconTile, ScreenHeader, UI, useUI, UIColors } from '../../src/components/Kit';
 import { useStore } from '../../src/store';
 import { api, CalendarImportResult, Card, Carpool } from '../../src/api';
+import { usePremiumGate, LockBadge } from '../../src/components/PremiumGate';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -170,6 +171,8 @@ function groupByDay(cards: Card[], selectedDay: string | null) {
 
 export default function Calendar() {
   const { t, lang } = useStore();
+  const { isLocked, promptUpgrade } = usePremiumGate();
+  const carpoolLocked = isLocked('carpool');
   const { width: windowWidth } = useWindowDimensions();
   const [cards, setCards] = useState<Card[]>([]);
   const [loading, setLoading] = useState(true);
@@ -543,7 +546,23 @@ export default function Calendar() {
           )}
 
           {/* Carpool Coordinator */}
-          {carpools.length > 0 ? (
+          {carpoolLocked ? (
+            <View style={styles.carpoolSection}>
+              <View style={styles.carpoolHeader}>
+                <Car color={ui.orange} size={18} />
+                <Text style={styles.carpoolTitle}>Carpool Schedule</Text>
+                <LockBadge onPress={() => promptUpgrade('carpool')} />
+              </View>
+              <KitCard style={{ paddingHorizontal: 14 }}>
+                <PressScale onPress={() => promptUpgrade('carpool')} style={styles.carpoolRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.carpoolName}>Coordinate school & activity carpools</Text>
+                    <Text style={styles.carpoolSub}>Available on Executive and Family Office plans.</Text>
+                  </View>
+                </PressScale>
+              </KitCard>
+            </View>
+          ) : carpools.length > 0 ? (
             <View style={styles.carpoolSection}>
               <View style={styles.carpoolHeader}>
                 <Car color={ui.orange} size={18} />

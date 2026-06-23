@@ -214,6 +214,10 @@ def apply_admin_subscription(subscription: dict) -> dict:
         "vault_bytes": 50 * 1024 * 1024 * 1024,
         "weekly_brief": True,
         "multi_property": True,
+        "meal_planner": True,
+        "allowance": True,
+        "carpool": True,
+        "weekly_report": True,
     }
     admin_sub["price_monthly"] = 0.0
     admin_sub["price_yearly"] = 0.0
@@ -259,6 +263,11 @@ PLAN_CATALOG = {
             "vault_bytes": 20 * 1024 * 1024,
             "weekly_brief": False,
             "multi_property": False,
+            # Premium feature flags (Executive+ only)
+            "meal_planner": False,
+            "allowance": False,
+            "carpool": False,
+            "weekly_report": False,
         },
     },
     "executive": {
@@ -270,6 +279,10 @@ PLAN_CATALOG = {
             "vault_bytes": 250 * 1024 * 1024,
             "weekly_brief": True,
             "multi_property": False,
+            "meal_planner": True,
+            "allowance": True,
+            "carpool": True,
+            "weekly_report": True,
         },
     },
     "family_office": {
@@ -281,8 +294,21 @@ PLAN_CATALOG = {
             "vault_bytes": 2 * 1024 * 1024 * 1024,
             "weekly_brief": True,
             "multi_property": True,
+            "meal_planner": True,
+            "allowance": True,
+            "carpool": True,
+            "weekly_report": True,
         },
     },
+}
+
+# Features gated behind paid plans. Maps the feature flag to a user-facing
+# upgrade message used when a free-tier family hits the gate (HTTP 402).
+PREMIUM_FEATURE_MESSAGES = {
+    "meal_planner": "Meal Planner is available on Executive and Family Office plans.",
+    "allowance": "Allowance Tracker is available on Executive and Family Office plans.",
+    "carpool": "Carpool Coordinator is available on Executive and Family Office plans.",
+    "weekly_report": "Weekly Report is available on Executive and Family Office plans.",
 }
 
 
@@ -298,6 +324,21 @@ def plan_limit_error(feature: str, current_plan: str, message: str, limit=None, 
             "message": message,
         },
     )
+
+
+async def require_feature(user: dict, feature: str):
+    """Gate a premium feature: raises HTTP 402 if the family's plan doesn't
+    include it. Admin/founder accounts always pass. Returns the subscription."""
+    sub = await build_subscription(user["family_id"])
+    if is_admin_user(user):
+        return apply_admin_subscription(sub)
+    if not sub["limits"].get(feature, True):
+        plan_limit_error(
+            feature=feature,
+            current_plan=sub["plan"],
+            message=PREMIUM_FEATURE_MESSAGES.get(feature, "Upgrade to use this feature."),
+        )
+    return sub
 
 
 AI_SCAN_PERIOD_DAYS = 30
@@ -2519,6 +2560,12 @@ async def get_entitlements(user=Depends(require_user)):
         "vault_bytes_limit": sub["limits"]["vault_bytes"],
         "weekly_brief": sub["limits"].get("weekly_brief", False),
         "multi_property": sub["limits"].get("multi_property", False),
+        "features": {
+            "meal_planner": sub["limits"].get("meal_planner", False),
+            "allowance": sub["limits"].get("allowance", False),
+            "carpool": sub["limits"].get("carpool", False),
+            "weekly_report": sub["limits"].get("weekly_report", False),
+        },
     }
 
 
@@ -3190,6 +3237,7 @@ async def list_meals(user: dict = Depends(require_user), database=Depends(get_db
 
 @app.post("/api/meals")
 async def create_meal(body: MealPlanIn, user: dict = Depends(require_user), database=Depends(get_db)):
+    await require_feature(user, "meal_planner")
     day = body.day.lower()
     if day not in DAYS_OF_WEEK:
         raise HTTPException(400, f"Day must be one of {DAYS_OF_WEEK}")
@@ -3219,6 +3267,7 @@ async def delete_meal(meal_id: str, user: dict = Depends(require_user), database
 
 @app.post("/api/meals/sync-shopping")
 async def sync_meals_to_shopping(user: dict = Depends(require_user), database=Depends(get_db)):
+    await require_feature(user, "meal_planner")
     meals = await database["meals"].find(
         {"family_id": user["family_id"]}, {"_id": 0}
     ).to_list(200)
@@ -3259,6 +3308,7 @@ async def list_carpools(user: dict = Depends(require_user), database=Depends(get
 
 @app.post("/api/carpools")
 async def create_carpool(body: CarpoolIn, user: dict = Depends(require_user), database=Depends(get_db)):
+    await require_feature(user, "carpool")
     carpool = {
         "carpool_id": new_id("cpool"),
         "family_id": user["family_id"],
@@ -3297,6 +3347,7 @@ async def list_allowances(user: dict = Depends(require_user), database=Depends(g
 
 @app.post("/api/allowances")
 async def set_allowance(body: AllowanceIn, user: dict = Depends(require_user), database=Depends(get_db)):
+    await require_feature(user, "allowance")
     existing = await database["allowances"].find_one(
         {"family_id": user["family_id"], "member_id": body.member_id}
     )
@@ -3340,6 +3391,7 @@ async def list_allowance_transactions(member_id: str, user: dict = Depends(requi
 
 @app.post("/api/allowances/transaction")
 async def add_allowance_transaction(body: AllowanceTxnIn, user: dict = Depends(require_user), database=Depends(get_db)):
+    await require_feature(user, "allowance")
     txn = {
         "txn_id": new_id("atxn"),
         "family_id": user["family_id"],
@@ -3448,6 +3500,7 @@ async def set_vault_expiry(doc_id: str, expiry_date: str = Query(...), user: dic
 # -----------------------------------------------------------------------------
 @app.get("/api/report/weekly")
 async def weekly_report(user: dict = Depends(require_user), database=Depends(get_db)):
+    await require_feature(user, "weekly_report")
     now = utcnow()
     week_ago = now - timedelta(days=7)
     fid = user["family_id"]

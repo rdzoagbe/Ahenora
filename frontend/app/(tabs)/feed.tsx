@@ -33,6 +33,7 @@ import { VoiceCaptureModal } from '../../src/components/VoiceCaptureModal';
 import { CameraCaptureModal } from '../../src/components/CameraCaptureModal';
 import { TabScreen } from '../../src/components/TabScreen';
 import { useStore } from '../../src/store';
+import { usePremiumGate, LockBadge } from '../../src/components/PremiumGate';
 import { useUI, UIColors } from '../../src/components/Kit';
 import { api, Announcement, Card, CardType, FamilyMember, HandoffNote, Template, WeeklyReport } from '../../src/api';
 import { syncCardReminderNotifications } from '../../src/notifications';
@@ -125,6 +126,8 @@ function TaskRow({ card, onComplete, styles }: { card: Card; onComplete: () => v
 
 export default function Feed() {
   const { user } = useStore();
+  const { isLocked, promptUpgrade } = usePremiumGate();
+  const reportLocked = isLocked('weekly_report');
   const { px, maxW } = useBreakpoint();
   const ui = useUI();
   const styles = useMemo(() => createStyles(ui), [ui]);
@@ -178,7 +181,7 @@ export default function Feed() {
       if (templatesResult.status === 'fulfilled') setTemplates(templatesResult.value);
       if (annResult.status === 'fulfilled') setAnnouncements(annResult.value);
 
-      api.weeklyReport().then(setReport).catch(() => undefined);
+      if (!reportLocked) api.weeklyReport().then(setReport).catch(() => undefined);
 
       if (cardsResult.status === 'fulfilled') {
         api
@@ -543,12 +546,19 @@ export default function Feed() {
             </View>
 
             {/* Weekly Report Card */}
-            <PressScale onPress={() => setExpandReport((v) => !v)} style={styles.sectionHeader}>
+            <PressScale
+              onPress={() => (reportLocked ? promptUpgrade('weekly_report') : setExpandReport((v) => !v))}
+              style={styles.sectionHeader}
+            >
               <BarChart3 color={ui.mintText} size={18} />
               <Text style={styles.sectionHeaderText}>Weekly Report</Text>
-              <ChevronRight color={ui.muted} size={16} style={expandReport ? { transform: [{ rotate: '90deg' }] } : undefined} />
+              {reportLocked ? (
+                <LockBadge onPress={() => promptUpgrade('weekly_report')} />
+              ) : (
+                <ChevronRight color={ui.muted} size={16} style={expandReport ? { transform: [{ rotate: '90deg' }] } : undefined} />
+              )}
             </PressScale>
-            {expandReport && report ? (
+            {!reportLocked && expandReport && report ? (
               <View style={styles.reportCard}>
                 <View style={styles.reportGrid}>
                   <View style={styles.reportCell}>
