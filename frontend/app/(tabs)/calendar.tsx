@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Platform, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import { CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock, RefreshCw, User, X } from 'lucide-react-native';
+import { CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock, ExternalLink, MapPin, RefreshCw, User, Users, Video, X } from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
@@ -46,6 +46,76 @@ function cardDateKey(card: Card) {
 
 function cleanText(value?: string | null) {
   return (value || '').replace(/Ãƒâ€šÃ‚Â·/g, '-').replace(/Â/g, '').trim();
+}
+
+function linkLabel(url: string): string {
+  if (/teams\.microsoft|teams\.live/i.test(url)) return 'Teams Meeting';
+  if (/zoom\.us/i.test(url)) return 'Zoom Meeting';
+  if (/meet\.google/i.test(url)) return 'Google Meet';
+  if (/calendar\.google/i.test(url)) return 'View in Google Calendar';
+  if (/webex/i.test(url)) return 'Webex Meeting';
+  return 'Open link';
+}
+
+function isVideoLink(url: string): boolean {
+  return /teams\.microsoft|teams\.live|zoom\.us|meet\.google|webex/i.test(url);
+}
+
+interface DescriptionParts {
+  text: string;
+  location: string | null;
+  people: string | null;
+  links: { url: string; label: string; isVideo: boolean }[];
+}
+
+function parseDescription(raw?: string | null): DescriptionParts {
+  if (!raw) return { text: '', location: null, people: null, links: [] };
+  const cleaned = cleanText(raw);
+  const lines = cleaned.split('\n');
+  let location: string | null = null;
+  let people: string | null = null;
+  const links: DescriptionParts['links'] = [];
+  const textLines: string[] = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    if (/^Location:\s*/i.test(trimmed)) {
+      const loc = trimmed.replace(/^Location:\s*/i, '').trim();
+      if (loc && !/^https?:\/\//i.test(loc)) {
+        location = loc;
+      } else if (loc) {
+        links.push({ url: loc, label: linkLabel(loc), isVideo: isVideoLink(loc) });
+      }
+      continue;
+    }
+
+    if (/^People:\s*/i.test(trimmed)) {
+      people = trimmed.replace(/^People:\s*/i, '').trim();
+      continue;
+    }
+
+    if (/^Google Calendar:\s*/i.test(trimmed)) {
+      const url = trimmed.replace(/^Google Calendar:\s*/i, '').trim();
+      if (url) links.push({ url, label: 'View in Google Calendar', isVideo: false });
+      continue;
+    }
+
+    const urlMatch = trimmed.match(/https?:\/\/[^\s]+/g);
+    if (urlMatch) {
+      for (const url of urlMatch) {
+        links.push({ url, label: linkLabel(url), isVideo: isVideoLink(url) });
+      }
+      const remaining = trimmed.replace(/https?:\/\/[^\s]+/g, '').trim();
+      if (remaining) textLines.push(remaining);
+      continue;
+    }
+
+    textLines.push(trimmed);
+  }
+
+  return { text: textLines.join('\n').trim(), location, people, links };
 }
 
 function timeParts(value?: string | null) {
@@ -490,9 +560,42 @@ export default function Calendar() {
               <User color={ui.muted} size={17} />
               <Text style={styles.detailMetaText}>{cleanText(selectedCard.assignee) || 'Unassigned'}</Text>
             </View>
-            <Text style={[styles.detailDescription, !selectedCard.description && { color: ui.muted }]}>
-              {selectedCard.description ? cleanText(selectedCard.description) : 'No additional details.'}
-            </Text>
+            {(() => {
+              const parts = parseDescription(selectedCard.description);
+              const hasContent = parts.text || parts.location || parts.people || parts.links.length > 0;
+              if (!hasContent) return <Text style={[styles.detailDescription, { color: ui.muted }]}>No additional details.</Text>;
+              return (
+                <View style={styles.detailBody}>
+                  {parts.text ? <Text style={styles.detailDescription}>{parts.text}</Text> : null}
+                  {parts.location ? (
+                    <Pressable
+                      onPress={() => {
+                        const q = encodeURIComponent(parts.location!);
+                        Linking.openURL(Platform.OS === 'ios' ? `maps:?q=${q}` : `geo:0,0?q=${q}`);
+                      }}
+                      style={styles.detailChip}
+                    >
+                      <MapPin color={ui.orange} size={16} />
+                      <Text style={styles.detailChipText} numberOfLines={2}>{parts.location}</Text>
+                      <ExternalLink color={ui.muted} size={13} />
+                    </Pressable>
+                  ) : null}
+                  {parts.links.map((link, i) => (
+                    <Pressable key={i} onPress={() => Linking.openURL(link.url)} style={styles.detailChip}>
+                      {link.isVideo ? <Video color={ui.orange} size={16} /> : <ExternalLink color={ui.orange} size={16} />}
+                      <Text style={styles.detailChipText}>{link.label}</Text>
+                      <ExternalLink color={ui.muted} size={13} />
+                    </Pressable>
+                  ))}
+                  {parts.people ? (
+                    <View style={styles.detailMetaRow}>
+                      <Users color={ui.muted} size={17} />
+                      <Text style={styles.detailMetaText}>{parts.people}</Text>
+                    </View>
+                  ) : null}
+                </View>
+              );
+            })()}
             <PressScale
               testID="calendar-complete-card"
               onPress={() => {
@@ -575,7 +678,10 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   closeBtn: { width: 42, height: 42, borderRadius: 9999, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft, alignItems: 'center', justifyContent: 'center' },
   detailMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 14 },
   detailMetaText: { flex: 1, color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 15, lineHeight: 21 },
-  detailDescription: { marginTop: 20, color: ui.text, fontFamily: 'Inter_500Medium', fontSize: 16, lineHeight: 24 },
+  detailBody: { marginTop: 16, gap: 10 },
+  detailDescription: { color: ui.text, fontFamily: 'Inter_500Medium', fontSize: 16, lineHeight: 24 },
+  detailChip: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 14, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft },
+  detailChipText: { flex: 1, color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 14, lineHeight: 20 },
   completeBtn: { marginTop: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, minHeight: 54, borderRadius: 99, backgroundColor: ui.orange },
   completeBtnText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 16 },
 });
