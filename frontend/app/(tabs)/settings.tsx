@@ -13,6 +13,7 @@ import {
   LogOut,
   Mail,
   PenLine,
+  RotateCcw,
   Send,
   Share2,
   Sparkles,
@@ -434,7 +435,32 @@ export default function Settings() {
             {expandHistory ? (
               <View style={styles.expandBox}>
                 {completedCards.length === 0 ? <Text style={styles.emptyText}>No completed cards yet.</Text> : completedCards.slice(0, 8).map((card) => (
-                  <MiniRow key={card.card_id} initial={card.type === 'TASK' ? 'T' : card.type === 'RSVP' ? 'R' : 'S'} name={card.title} sub={`Done · ${card.assignee || 'Family'}`} />
+                  <View key={card.card_id} style={styles.inviteRow}>
+                    <MiniRow initial={card.type === 'TASK' ? 'T' : card.type === 'RSVP' ? 'R' : 'S'} name={card.title} sub={`Done · ${card.assignee || 'Family'}`} />
+                    <PressScale
+                      testID={`restore-card-${card.card_id}`}
+                      onPress={() => {
+                        Alert.alert('Restore card?', `"${card.title}" will be moved back to your active cards.`, [
+                          { text: 'Cancel', style: 'cancel' },
+                          {
+                            text: 'Restore',
+                            onPress: async () => {
+                              try {
+                                await api.updateCard(card.card_id, { status: 'OPEN' });
+                                setCompletedCards((prev) => prev.filter((c) => c.card_id !== card.card_id));
+                              } catch {
+                                Alert.alert('Error', 'Could not restore this card.');
+                              }
+                            },
+                          },
+                        ]);
+                      }}
+                      style={styles.ghostBtn}
+                    >
+                      <RotateCcw color={ui.text} size={14} />
+                      <Text style={styles.ghostBtnText}>Restore</Text>
+                    </PressScale>
+                  </View>
                 ))}
               </View>
             ) : null}

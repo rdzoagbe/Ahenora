@@ -4,7 +4,7 @@ import { useFocusEffect } from 'expo-router';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import { CalendarDays, ChevronLeft, ChevronRight, Clock, RefreshCw, User, X } from 'lucide-react-native';
+import { CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock, RefreshCw, User, X } from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
@@ -493,6 +493,34 @@ export default function Calendar() {
             <Text style={[styles.detailDescription, !selectedCard.description && { color: ui.muted }]}>
               {selectedCard.description ? cleanText(selectedCard.description) : 'No additional details.'}
             </Text>
+            <PressScale
+              testID="calendar-complete-card"
+              onPress={() => {
+                Alert.alert(
+                  'Mark as done?',
+                  `"${cleanText(selectedCard.title)}" will move to completed history.`,
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Done',
+                      onPress: async () => {
+                        try {
+                          await api.updateCard(selectedCard.card_id, { status: 'DONE' });
+                          setCards((prev) => prev.filter((c) => c.card_id !== selectedCard.card_id));
+                          setSelectedCard(null);
+                        } catch {
+                          Alert.alert('Error', 'Could not update this card.');
+                        }
+                      },
+                    },
+                  ],
+                );
+              }}
+              style={styles.completeBtn}
+            >
+              <CheckCircle2 color="#FFFFFF" size={18} />
+              <Text style={styles.completeBtnText}>Mark as done</Text>
+            </PressScale>
           </>
         ) : null}
       </KeyboardAwareBottomSheet>
@@ -548,4 +576,6 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   detailMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 14 },
   detailMetaText: { flex: 1, color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 15, lineHeight: 21 },
   detailDescription: { marginTop: 20, color: ui.text, fontFamily: 'Inter_500Medium', fontSize: 16, lineHeight: 24 },
+  completeBtn: { marginTop: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, minHeight: 54, borderRadius: 99, backgroundColor: ui.orange },
+  completeBtnText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 16 },
 });
