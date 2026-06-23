@@ -6,6 +6,7 @@ import { PressScale } from './PressScale';
 import { useStore } from '../store';
 import { api } from '../api';
 import { handlePlanLimitError } from './UpgradeModal';
+import { logger } from '../logger';
 
 interface Props {
   visible: boolean;
@@ -39,7 +40,7 @@ export function SundayBriefModal({ visible, onClose }: Props) {
         onClose();
         return;
       }
-      /* brief load error — user sees fallback message */
+      logger.warn('brief error', e);
       setBrief('Unable to generate brief right now.');
     } finally {
       setLoading(false);

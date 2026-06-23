@@ -17,6 +17,7 @@ import { BlurView } from 'expo-blur';
 import { PressScale } from './PressScale';
 import { useStore } from '../store';
 import { api, CardType, Recurrence } from '../api';
+import { logger } from '../logger';
 
 interface VoiceDraft {
   transcript: string;
@@ -148,7 +149,7 @@ export function AddCardModal({
         Alert.alert('Saved', 'Card created and scanned document saved to Vault.');
       }
     } catch (e: any) {
-      /* card creation error — alert shown to user */
+      logger.warn('create card error', e);
       Alert.alert('Save failed', e?.message || 'Could not save this card.');
     } finally {
       setSaving(false);

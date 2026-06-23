@@ -324,7 +324,7 @@ export default function Calendar() {
       setCalendarSyncStatus(`${importResult.imported} events imported. ${importResult.contacts_found} people found.`);
       Alert.alert('Calendar synced', `${importResult.imported} events imported. ${importResult.contacts_found} people found.`);
     } catch (e: any) {
-      /* calendar sync error — alert shown to user */
+      logger.warn('calendar sync failed', e);
       const message = e?.message || 'Please try again.';
       setCalendarSyncStatus(`Calendar sync failed: ${message}`);
       Alert.alert('Calendar sync failed', message);
