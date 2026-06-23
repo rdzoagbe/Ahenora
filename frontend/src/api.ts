@@ -212,6 +212,105 @@ export interface Template {
   created_at: string;
 }
 
+export interface RoutineStep {
+  label: string;
+  duration_seconds: number;
+}
+
+export interface Routine {
+  routine_id: string;
+  family_id: string;
+  name: string;
+  steps: RoutineStep[];
+  member_id?: string;
+  created_at: string;
+}
+
+export interface MealPlan {
+  meal_id: string;
+  family_id: string;
+  day: string;
+  meal_type: string;
+  title: string;
+  ingredients: string[];
+  notes?: string;
+  created_at: string;
+}
+
+export interface Carpool {
+  carpool_id: string;
+  family_id: string;
+  title: string;
+  day_of_week: string;
+  time: string;
+  driver_name: string;
+  pickup_kids: string[];
+  notes?: string;
+  created_at: string;
+}
+
+export interface AllowanceConfig {
+  allowance_id: string;
+  family_id: string;
+  member_id: string;
+  amount: number;
+  frequency: string;
+  created_at: string;
+}
+
+export interface AllowanceTxn {
+  txn_id: string;
+  family_id: string;
+  member_id: string;
+  amount: number;
+  description: string;
+  txn_type: string;
+  created_at: string;
+}
+
+export interface Announcement {
+  announcement_id: string;
+  family_id: string;
+  text: string;
+  author_name: string;
+  priority: string;
+  created_at: string;
+}
+
+export interface ExpiryAlert {
+  doc_id: string;
+  title: string;
+  category: string;
+  expiry_date: string;
+  days_left: number;
+  status: string;
+}
+
+export interface WeeklyReport {
+  period_start: string;
+  period_end: string;
+  tasks_completed: number;
+  tasks_created: number;
+  tasks_overdue: number;
+  stars_earned: number;
+  total_spent: number;
+  expense_by_category: Record<string, number>;
+  routines_completed: number;
+  upcoming_deadlines: { title: string; due_date: string; type: string; assignee?: string }[];
+}
+
+export interface Chore {
+  chore_id: string;
+  family_id: string;
+  title: string;
+  frequency: string;
+  assigned_members: string[];
+  current_assignee?: string;
+  rotate: boolean;
+  last_rotated?: string;
+  created_at: string;
+}
+
 export interface User {
   user_id: string;
   email: string;
@@ -673,4 +772,55 @@ export const api = {
     request<{ ok: boolean }>(`/templates/${templateId}`, { method: 'DELETE' }),
   generateFromTemplate: (templateId: string) =>
     request<Card>(`/templates/${templateId}/generate`, { method: 'POST' }),
+
+  // Morning Routines
+  listRoutines: () => request<Routine[]>('/routines'),
+  createRoutine: (data: { name: string; steps: { label: string; duration_seconds: number }[]; member_id?: string }) =>
+    request<Routine>('/routines', { method: 'POST', body: data }),
+  deleteRoutine: (id: string) => request<{ ok: boolean }>(`/routines/${id}`, { method: 'DELETE' }),
+  logRoutineCompletion: (id: string) => request<{ ok: boolean }>(`/routines/${id}/log`, { method: 'POST' }),
+
+  // Meal Planner
+  listMeals: () => request<MealPlan[]>('/meals'),
+  createMeal: (data: { day: string; meal_type?: string; title: string; ingredients?: string[]; notes?: string }) =>
+    request<MealPlan>('/meals', { method: 'POST', body: data }),
+  deleteMeal: (id: string) => request<{ ok: boolean }>(`/meals/${id}`, { method: 'DELETE' }),
+  syncMealsToShopping: () => request<{ ok: boolean; added: number }>('/meals/sync-shopping', { method: 'POST' }),
+
+  // Carpool
+  listCarpools: () => request<Carpool[]>('/carpools'),
+  createCarpool: (data: { title: string; day_of_week: string; time: string; driver_name: string; pickup_kids?: string[]; notes?: string }) =>
+    request<Carpool>('/carpools', { method: 'POST', body: data }),
+  deleteCarpool: (id: string) => request<{ ok: boolean }>(`/carpools/${id}`, { method: 'DELETE' }),
+
+  // Allowance
+  listAllowances: () => request<AllowanceConfig[]>('/allowances'),
+  setAllowance: (data: { member_id: string; amount: number; frequency?: string }) =>
+    request<AllowanceConfig>('/allowances', { method: 'POST', body: data }),
+  deleteAllowance: (memberId: string) => request<{ ok: boolean }>(`/allowances/${memberId}`, { method: 'DELETE' }),
+  allowanceTransactions: (memberId: string) => request<AllowanceTxn[]>(`/allowances/${memberId}/transactions`),
+  addAllowanceTxn: (data: { member_id: string; amount: number; description: string; txn_type?: string }) =>
+    request<AllowanceTxn>('/allowances/transaction', { method: 'POST', body: data }),
+  allowanceBalance: (memberId: string) => request<{ member_id: string; balance: number }>(`/allowances/${memberId}/balance`),
+
+  // Announcements
+  listAnnouncements: () => request<Announcement[]>('/announcements'),
+  createAnnouncement: (data: { text: string; priority?: string }) =>
+    request<Announcement>('/announcements', { method: 'POST', body: data }),
+  deleteAnnouncement: (id: string) => request<{ ok: boolean }>(`/announcements/${id}`, { method: 'DELETE' }),
+
+  // Document Expiry
+  vaultExpiryAlerts: () => request<ExpiryAlert[]>('/vault/expiry-alerts'),
+  setVaultExpiry: (docId: string, expiryDate: string) =>
+    request<{ ok: boolean }>(`/vault/${docId}/expiry?expiry_date=${encodeURIComponent(expiryDate)}`, { method: 'PATCH' }),
+
+  // Weekly Report
+  weeklyReport: () => request<WeeklyReport>('/report/weekly'),
+
+  // Chore Wheel
+  listChores: () => request<Chore[]>('/chores'),
+  createChore: (data: { title: string; frequency?: string; assigned_members?: string[]; rotate?: boolean }) =>
+    request<Chore>('/chores', { method: 'POST', body: data }),
+  rotateChore: (id: string) => request<Chore>(`/chores/${id}/rotate`, { method: 'POST' }),
+  deleteChore: (id: string) => request<{ ok: boolean }>(`/chores/${id}`, { method: 'DELETE' }),
 };

@@ -4,7 +4,7 @@ import { useFocusEffect } from 'expo-router';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import { CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock, ExternalLink, MapPin, RefreshCw, User, Users, Video, X } from 'lucide-react-native';
+import { CalendarDays, Car, CheckCircle2, ChevronLeft, ChevronRight, Clock, ExternalLink, MapPin, Plus, RefreshCw, Trash2, User, Users, Video, X } from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
@@ -13,7 +13,7 @@ import { logger } from '../../src/logger';
 import { TabScreen } from '../../src/components/TabScreen';
 import { Card as KitCard, IconTile, ScreenHeader, UI, useUI, UIColors } from '../../src/components/Kit';
 import { useStore } from '../../src/store';
-import { api, CalendarImportResult, Card } from '../../src/api';
+import { api, CalendarImportResult, Card, Carpool } from '../../src/api';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -180,6 +180,7 @@ export default function Calendar() {
   const [selectedDay, setSelectedDay] = useState<string | null>(dateKey(new Date()));
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [carpools, setCarpools] = useState<Carpool[]>([]);
   const handledCalendarResponseRef = useRef(false);
 
   const webClientId =
@@ -204,8 +205,9 @@ export default function Calendar() {
 
   const load = useCallback(async () => {
     try {
-      const result = await api.listCards();
-      setCards(result.filter((card) => card.status === 'OPEN' && card.due_date));
+      const [cardsRes, carpoolRes] = await Promise.allSettled([api.listCards(), api.listCarpools()]);
+      if (cardsRes.status === 'fulfilled') setCards(cardsRes.value.filter((card) => card.status === 'OPEN' && card.due_date));
+      if (carpoolRes.status === 'fulfilled') setCarpools(carpoolRes.value);
     } catch (e) {
       logger.warn('calendar load failed', e);
     } finally {
@@ -540,7 +542,33 @@ export default function Calendar() {
             </KitCard>
           )}
 
-          <View style={{ height: 110 }} />
+          {/* Carpool Coordinator */}
+          {carpools.length > 0 ? (
+            <View style={styles.carpoolSection}>
+              <View style={styles.carpoolHeader}>
+                <Car color={ui.orange} size={18} />
+                <Text style={styles.carpoolTitle}>Carpool Schedule</Text>
+              </View>
+              <KitCard style={{ paddingHorizontal: 14 }}>
+                {carpools.map((cp) => (
+                  <View key={cp.carpool_id} style={styles.carpoolRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.carpoolName}>{cp.title}</Text>
+                      <Text style={styles.carpoolSub}>{cp.day_of_week} · {cp.time} · {cp.driver_name}{cp.pickup_kids.length > 0 ? ` · ${cp.pickup_kids.join(', ')}` : ''}</Text>
+                    </View>
+                    <PressScale onPress={async () => {
+                      setCarpools((prev) => prev.filter((c) => c.carpool_id !== cp.carpool_id));
+                      try { await api.deleteCarpool(cp.carpool_id); } catch { load(); }
+                    }} style={{ padding: 4 }}>
+                      <Trash2 color={ui.muted} size={15} />
+                    </PressScale>
+                  </View>
+                ))}
+              </KitCard>
+            </View>
+          ) : null}
+
+          <View style={{ height: 120 }} />
       </TabScreen>
 
       <KeyboardAwareBottomSheet visible={!!selectedCard} onClose={() => setSelectedCard(null)} contentStyle={styles.detailSheet}>
@@ -684,4 +712,11 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   detailChipText: { flex: 1, color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 14, lineHeight: 20 },
   completeBtn: { marginTop: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, minHeight: 54, borderRadius: 99, backgroundColor: ui.orange },
   completeBtnText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 16 },
+
+  carpoolSection: { marginTop: 24 },
+  carpoolHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
+  carpoolTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 17 },
+  carpoolRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: ui.line },
+  carpoolName: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 15 },
+  carpoolSub: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 2, textTransform: 'capitalize' },
 });

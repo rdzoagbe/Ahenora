@@ -592,6 +592,92 @@ def public_template(tmpl: dict) -> dict:
     }
 
 
+def public_routine(r: dict) -> dict:
+    return {
+        "routine_id": r["routine_id"],
+        "family_id": r["family_id"],
+        "name": r["name"],
+        "steps": r.get("steps", []),
+        "member_id": r.get("member_id"),
+        "created_at": iso(r["created_at"]),
+    }
+
+
+def public_meal(m: dict) -> dict:
+    return {
+        "meal_id": m["meal_id"],
+        "family_id": m["family_id"],
+        "day": m["day"],
+        "meal_type": m.get("meal_type", "dinner"),
+        "title": m["title"],
+        "ingredients": m.get("ingredients", []),
+        "notes": m.get("notes"),
+        "created_at": iso(m["created_at"]),
+    }
+
+
+def public_carpool(c: dict) -> dict:
+    return {
+        "carpool_id": c["carpool_id"],
+        "family_id": c["family_id"],
+        "title": c["title"],
+        "day_of_week": c["day_of_week"],
+        "time": c.get("time", ""),
+        "driver_name": c.get("driver_name", ""),
+        "pickup_kids": c.get("pickup_kids", []),
+        "notes": c.get("notes"),
+        "created_at": iso(c["created_at"]),
+    }
+
+
+def public_allowance_config(a: dict) -> dict:
+    return {
+        "allowance_id": a["allowance_id"],
+        "family_id": a["family_id"],
+        "member_id": a["member_id"],
+        "amount": a["amount"],
+        "frequency": a.get("frequency", "weekly"),
+        "created_at": iso(a["created_at"]),
+    }
+
+
+def public_allowance_txn(t: dict) -> dict:
+    return {
+        "txn_id": t["txn_id"],
+        "family_id": t["family_id"],
+        "member_id": t["member_id"],
+        "amount": t["amount"],
+        "description": t.get("description", ""),
+        "txn_type": t.get("txn_type", "deposit"),
+        "created_at": iso(t["created_at"]),
+    }
+
+
+def public_announcement(a: dict) -> dict:
+    return {
+        "announcement_id": a["announcement_id"],
+        "family_id": a["family_id"],
+        "text": a["text"],
+        "author_name": a.get("author_name", ""),
+        "priority": a.get("priority", "normal"),
+        "created_at": iso(a["created_at"]),
+    }
+
+
+def public_chore(c: dict) -> dict:
+    return {
+        "chore_id": c["chore_id"],
+        "family_id": c["family_id"],
+        "title": c["title"],
+        "frequency": c.get("frequency", "daily"),
+        "assigned_members": c.get("assigned_members", []),
+        "current_assignee": c.get("current_assignee"),
+        "rotate": c.get("rotate", True),
+        "last_rotated": iso(c.get("last_rotated")),
+        "created_at": iso(c["created_at"]),
+    }
+
+
 
 async def add_user_to_family_if_needed(database: Any, user: dict, family_id: str):
     existing = await database["family_members"].find_one(
@@ -890,6 +976,59 @@ class TemplateIn(BaseModel):
     recurrence: str = "daily"
     time_of_day: Optional[str] = None
     assignee: Optional[str] = None
+
+
+class RoutineIn(BaseModel):
+    name: str
+    steps: list  # [{"label": str, "duration_seconds": int}]
+    member_id: Optional[str] = None
+
+
+class RoutinePatchIn(BaseModel):
+    name: Optional[str] = None
+    steps: Optional[list] = None
+
+
+class MealPlanIn(BaseModel):
+    day: str  # "monday", "tuesday", etc.
+    meal_type: str = "dinner"  # breakfast, lunch, dinner, snack
+    title: str
+    ingredients: list = []  # [str]
+    notes: Optional[str] = None
+
+
+class CarpoolIn(BaseModel):
+    title: str
+    day_of_week: str  # "monday" etc.
+    time: str  # "08:00"
+    driver_name: str
+    pickup_kids: list = []  # [str] kid names
+    notes: Optional[str] = None
+
+
+class AllowanceIn(BaseModel):
+    member_id: str
+    amount: float
+    frequency: str = "weekly"  # weekly, biweekly, monthly
+
+
+class AllowanceTxnIn(BaseModel):
+    member_id: str
+    amount: float
+    description: str
+    txn_type: str = "deposit"  # deposit, withdrawal
+
+
+class AnnouncementIn(BaseModel):
+    text: str
+    priority: str = "normal"  # normal, urgent
+
+
+class ChoreIn(BaseModel):
+    title: str
+    frequency: str = "daily"  # daily, weekly
+    assigned_members: list = []  # [member_id, ...]
+    rotate: bool = True
 
 
 
@@ -2923,6 +3062,474 @@ async def generate_from_template(template_id: str, user=Depends(require_user)):
     }
     await database["cards"].insert_one(card)
     return public_card(card)
+
+
+# -----------------------------------------------------------------------------
+# Morning Routines
+# -----------------------------------------------------------------------------
+@app.get("/api/routines")
+async def list_routines(user: dict = Depends(require_user), database=Depends(get_db)):
+    rows = await database["routines"].find(
+        {"family_id": user["family_id"]}, {"_id": 0}
+    ).sort("created_at", -1).to_list(100)
+    return [public_routine(r) for r in rows]
+
+
+@app.post("/api/routines")
+async def create_routine(body: RoutineIn, user: dict = Depends(require_user), database=Depends(get_db)):
+    routine = {
+        "routine_id": new_id("rtn"),
+        "family_id": user["family_id"],
+        "name": body.name,
+        "steps": body.steps,
+        "member_id": body.member_id,
+        "created_at": utcnow(),
+    }
+    await database["routines"].insert_one(routine)
+    return public_routine(routine)
+
+
+@app.patch("/api/routines/{routine_id}")
+async def update_routine(routine_id: str, body: RoutinePatchIn, user: dict = Depends(require_user), database=Depends(get_db)):
+    updates = {k: v for k, v in body.dict(exclude_unset=True).items() if v is not None}
+    if not updates:
+        raise HTTPException(400, "No updates provided")
+    await database["routines"].update_one(
+        {"routine_id": routine_id, "family_id": user["family_id"]},
+        {"$set": updates},
+    )
+    row = await database["routines"].find_one(
+        {"routine_id": routine_id, "family_id": user["family_id"]}, {"_id": 0}
+    )
+    if not row:
+        raise HTTPException(404, "Routine not found")
+    return public_routine(row)
+
+
+@app.delete("/api/routines/{routine_id}")
+async def delete_routine(routine_id: str, user: dict = Depends(require_user), database=Depends(get_db)):
+    result = await database["routines"].delete_one(
+        {"routine_id": routine_id, "family_id": user["family_id"]}
+    )
+    if result.deleted_count == 0:
+        raise HTTPException(404, "Routine not found")
+    return {"ok": True}
+
+
+@app.post("/api/routines/{routine_id}/log")
+async def log_routine_completion(routine_id: str, user: dict = Depends(require_user), database=Depends(get_db)):
+    routine = await database["routines"].find_one(
+        {"routine_id": routine_id, "family_id": user["family_id"]}, {"_id": 0}
+    )
+    if not routine:
+        raise HTTPException(404, "Routine not found")
+    log_entry = {
+        "log_id": new_id("rlog"),
+        "routine_id": routine_id,
+        "family_id": user["family_id"],
+        "member_id": routine.get("member_id"),
+        "completed_at": utcnow(),
+        "steps_count": len(routine.get("steps", [])),
+    }
+    await database["routine_logs"].insert_one(log_entry)
+    return {"ok": True, "log_id": log_entry["log_id"]}
+
+
+# -----------------------------------------------------------------------------
+# Meal Planner
+# -----------------------------------------------------------------------------
+DAYS_OF_WEEK = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack"]
+
+
+@app.get("/api/meals")
+async def list_meals(user: dict = Depends(require_user), database=Depends(get_db)):
+    rows = await database["meals"].find(
+        {"family_id": user["family_id"]}, {"_id": 0}
+    ).to_list(200)
+    return [public_meal(m) for m in rows]
+
+
+@app.post("/api/meals")
+async def create_meal(body: MealPlanIn, user: dict = Depends(require_user), database=Depends(get_db)):
+    day = body.day.lower()
+    if day not in DAYS_OF_WEEK:
+        raise HTTPException(400, f"Day must be one of {DAYS_OF_WEEK}")
+    meal = {
+        "meal_id": new_id("meal"),
+        "family_id": user["family_id"],
+        "day": day,
+        "meal_type": body.meal_type.lower(),
+        "title": body.title,
+        "ingredients": body.ingredients,
+        "notes": body.notes,
+        "created_at": utcnow(),
+    }
+    await database["meals"].insert_one(meal)
+    return public_meal(meal)
+
+
+@app.delete("/api/meals/{meal_id}")
+async def delete_meal(meal_id: str, user: dict = Depends(require_user), database=Depends(get_db)):
+    result = await database["meals"].delete_one(
+        {"meal_id": meal_id, "family_id": user["family_id"]}
+    )
+    if result.deleted_count == 0:
+        raise HTTPException(404, "Meal not found")
+    return {"ok": True}
+
+
+@app.post("/api/meals/sync-shopping")
+async def sync_meals_to_shopping(user: dict = Depends(require_user), database=Depends(get_db)):
+    meals = await database["meals"].find(
+        {"family_id": user["family_id"]}, {"_id": 0}
+    ).to_list(200)
+    all_ingredients = []
+    for meal in meals:
+        all_ingredients.extend(meal.get("ingredients", []))
+    unique = list(set(i.strip() for i in all_ingredients if i.strip()))
+    added = 0
+    for name in unique:
+        existing = await database["shopping"].find_one(
+            {"family_id": user["family_id"], "name": {"$regex": f"^{name}$", "$options": "i"}}
+        )
+        if not existing:
+            item = {
+                "item_id": new_id("shop"),
+                "family_id": user["family_id"],
+                "name": name,
+                "category": "Groceries",
+                "checked": False,
+                "added_by": user.get("name", ""),
+                "created_at": utcnow(),
+            }
+            await database["shopping"].insert_one(item)
+            added += 1
+    return {"ok": True, "added": added, "total_ingredients": len(unique)}
+
+
+# -----------------------------------------------------------------------------
+# Carpool Coordinator
+# -----------------------------------------------------------------------------
+@app.get("/api/carpools")
+async def list_carpools(user: dict = Depends(require_user), database=Depends(get_db)):
+    rows = await database["carpools"].find(
+        {"family_id": user["family_id"]}, {"_id": 0}
+    ).sort("created_at", -1).to_list(100)
+    return [public_carpool(c) for c in rows]
+
+
+@app.post("/api/carpools")
+async def create_carpool(body: CarpoolIn, user: dict = Depends(require_user), database=Depends(get_db)):
+    carpool = {
+        "carpool_id": new_id("cpool"),
+        "family_id": user["family_id"],
+        "title": body.title,
+        "day_of_week": body.day_of_week.lower(),
+        "time": body.time,
+        "driver_name": body.driver_name,
+        "pickup_kids": body.pickup_kids,
+        "notes": body.notes,
+        "created_at": utcnow(),
+    }
+    await database["carpools"].insert_one(carpool)
+    return public_carpool(carpool)
+
+
+@app.delete("/api/carpools/{carpool_id}")
+async def delete_carpool(carpool_id: str, user: dict = Depends(require_user), database=Depends(get_db)):
+    result = await database["carpools"].delete_one(
+        {"carpool_id": carpool_id, "family_id": user["family_id"]}
+    )
+    if result.deleted_count == 0:
+        raise HTTPException(404, "Carpool not found")
+    return {"ok": True}
+
+
+# -----------------------------------------------------------------------------
+# Allowance Tracker
+# -----------------------------------------------------------------------------
+@app.get("/api/allowances")
+async def list_allowances(user: dict = Depends(require_user), database=Depends(get_db)):
+    rows = await database["allowances"].find(
+        {"family_id": user["family_id"]}, {"_id": 0}
+    ).to_list(50)
+    return [public_allowance_config(a) for a in rows]
+
+
+@app.post("/api/allowances")
+async def set_allowance(body: AllowanceIn, user: dict = Depends(require_user), database=Depends(get_db)):
+    existing = await database["allowances"].find_one(
+        {"family_id": user["family_id"], "member_id": body.member_id}
+    )
+    if existing:
+        await database["allowances"].update_one(
+            {"allowance_id": existing["allowance_id"]},
+            {"$set": {"amount": body.amount, "frequency": body.frequency}},
+        )
+        existing["amount"] = body.amount
+        existing["frequency"] = body.frequency
+        return public_allowance_config(existing)
+    allowance = {
+        "allowance_id": new_id("alw"),
+        "family_id": user["family_id"],
+        "member_id": body.member_id,
+        "amount": body.amount,
+        "frequency": body.frequency,
+        "created_at": utcnow(),
+    }
+    await database["allowances"].insert_one(allowance)
+    return public_allowance_config(allowance)
+
+
+@app.delete("/api/allowances/{member_id}")
+async def delete_allowance(member_id: str, user: dict = Depends(require_user), database=Depends(get_db)):
+    result = await database["allowances"].delete_one(
+        {"family_id": user["family_id"], "member_id": member_id}
+    )
+    if result.deleted_count == 0:
+        raise HTTPException(404, "Allowance not found")
+    return {"ok": True}
+
+
+@app.get("/api/allowances/{member_id}/transactions")
+async def list_allowance_transactions(member_id: str, user: dict = Depends(require_user), database=Depends(get_db)):
+    rows = await database["allowance_txns"].find(
+        {"family_id": user["family_id"], "member_id": member_id}, {"_id": 0}
+    ).sort("created_at", -1).to_list(100)
+    return [public_allowance_txn(t) for t in rows]
+
+
+@app.post("/api/allowances/transaction")
+async def add_allowance_transaction(body: AllowanceTxnIn, user: dict = Depends(require_user), database=Depends(get_db)):
+    txn = {
+        "txn_id": new_id("atxn"),
+        "family_id": user["family_id"],
+        "member_id": body.member_id,
+        "amount": body.amount,
+        "description": body.description,
+        "txn_type": body.txn_type,
+        "created_at": utcnow(),
+    }
+    await database["allowance_txns"].insert_one(txn)
+    return public_allowance_txn(txn)
+
+
+@app.get("/api/allowances/{member_id}/balance")
+async def get_allowance_balance(member_id: str, user: dict = Depends(require_user), database=Depends(get_db)):
+    txns = await database["allowance_txns"].find(
+        {"family_id": user["family_id"], "member_id": member_id}, {"_id": 0}
+    ).to_list(1000)
+    balance = 0.0
+    for t in txns:
+        if t.get("txn_type") == "withdrawal":
+            balance -= t.get("amount", 0)
+        else:
+            balance += t.get("amount", 0)
+    return {"member_id": member_id, "balance": round(balance, 2)}
+
+
+# -----------------------------------------------------------------------------
+# Family Announcements / Chat
+# -----------------------------------------------------------------------------
+@app.get("/api/announcements")
+async def list_announcements(user: dict = Depends(require_user), database=Depends(get_db)):
+    rows = await database["announcements"].find(
+        {"family_id": user["family_id"]}, {"_id": 0}
+    ).sort("created_at", -1).to_list(50)
+    return [public_announcement(a) for a in rows]
+
+
+@app.post("/api/announcements")
+async def create_announcement(body: AnnouncementIn, user: dict = Depends(require_user), database=Depends(get_db)):
+    announcement = {
+        "announcement_id": new_id("ann"),
+        "family_id": user["family_id"],
+        "text": body.text,
+        "author_name": user.get("name", ""),
+        "priority": body.priority,
+        "created_at": utcnow(),
+    }
+    await database["announcements"].insert_one(announcement)
+    return public_announcement(announcement)
+
+
+@app.delete("/api/announcements/{announcement_id}")
+async def delete_announcement(announcement_id: str, user: dict = Depends(require_user), database=Depends(get_db)):
+    result = await database["announcements"].delete_one(
+        {"announcement_id": announcement_id, "family_id": user["family_id"]}
+    )
+    if result.deleted_count == 0:
+        raise HTTPException(404, "Announcement not found")
+    return {"ok": True}
+
+
+# -----------------------------------------------------------------------------
+# Document Expiry Alerts
+# -----------------------------------------------------------------------------
+@app.get("/api/vault/expiry-alerts")
+async def vault_expiry_alerts(user: dict = Depends(require_user), database=Depends(get_db)):
+    docs = await database["vault"].find(
+        {"family_id": user["family_id"]}, {"_id": 0}
+    ).to_list(500)
+    alerts = []
+    for doc in docs:
+        exp = doc.get("expiry_date")
+        if exp:
+            exp_dt = ensure_aware_utc(exp)
+            if exp_dt:
+                days_left = (exp_dt - utcnow()).days
+                alerts.append({
+                    "doc_id": doc["doc_id"],
+                    "title": doc.get("title", ""),
+                    "category": doc.get("category", ""),
+                    "expiry_date": iso(exp_dt),
+                    "days_left": days_left,
+                    "status": "expired" if days_left < 0 else "urgent" if days_left <= 30 else "upcoming",
+                })
+    alerts.sort(key=lambda a: a["days_left"])
+    return alerts
+
+
+@app.patch("/api/vault/{doc_id}/expiry")
+async def set_vault_expiry(doc_id: str, expiry_date: str = Query(...), user: dict = Depends(require_user), database=Depends(get_db)):
+    exp_dt = parse_dt(expiry_date)
+    if not exp_dt:
+        raise HTTPException(400, "Invalid date format")
+    result = await database["vault"].update_one(
+        {"doc_id": doc_id, "family_id": user["family_id"]},
+        {"$set": {"expiry_date": exp_dt}},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(404, "Document not found")
+    return {"ok": True, "doc_id": doc_id, "expiry_date": iso(exp_dt)}
+
+
+# -----------------------------------------------------------------------------
+# Weekly Report Card
+# -----------------------------------------------------------------------------
+@app.get("/api/report/weekly")
+async def weekly_report(user: dict = Depends(require_user), database=Depends(get_db)):
+    now = utcnow()
+    week_ago = now - timedelta(days=7)
+    fid = user["family_id"]
+
+    cards_done = await database["cards"].count_documents(
+        {"family_id": fid, "status": "DONE", "completed_at": {"$gte": week_ago}}
+    )
+    cards_created = await database["cards"].count_documents(
+        {"family_id": fid, "created_at": {"$gte": week_ago}}
+    )
+    cards_overdue = await database["cards"].count_documents(
+        {"family_id": fid, "status": "OPEN", "due_date": {"$lt": now}}
+    )
+
+    star_txns = await database["star_transactions"].find(
+        {"family_id": fid, "created_at": {"$gte": week_ago}}, {"_id": 0}
+    ).to_list(500)
+    stars_given = sum(t.get("delta", 0) for t in star_txns if t.get("delta", 0) > 0)
+
+    expenses = await database["expenses"].find(
+        {"family_id": fid, "created_at": {"$gte": week_ago}}, {"_id": 0}
+    ).to_list(500)
+    total_spent = sum(e.get("amount", 0) for e in expenses)
+    expense_categories = {}
+    for e in expenses:
+        cat = e.get("category", "Other")
+        expense_categories[cat] = expense_categories.get(cat, 0) + e.get("amount", 0)
+
+    upcoming_cards = await database["cards"].find(
+        {"family_id": fid, "status": "OPEN", "due_date": {"$gte": now, "$lte": now + timedelta(days=7)}},
+        {"_id": 0, "title": 1, "due_date": 1, "type": 1, "assignee": 1},
+    ).sort("due_date", 1).to_list(10)
+
+    routine_logs = await database["routine_logs"].count_documents(
+        {"family_id": fid, "completed_at": {"$gte": week_ago}}
+    )
+
+    return {
+        "period_start": iso(week_ago),
+        "period_end": iso(now),
+        "tasks_completed": cards_done,
+        "tasks_created": cards_created,
+        "tasks_overdue": cards_overdue,
+        "stars_earned": stars_given,
+        "total_spent": round(total_spent, 2),
+        "expense_by_category": expense_categories,
+        "routines_completed": routine_logs,
+        "upcoming_deadlines": [
+            {
+                "title": c.get("title", ""),
+                "due_date": iso(ensure_aware_utc(c.get("due_date"))),
+                "type": c.get("type", "TASK"),
+                "assignee": c.get("assignee"),
+            }
+            for c in upcoming_cards
+        ],
+    }
+
+
+# -----------------------------------------------------------------------------
+# Chore Wheel
+# -----------------------------------------------------------------------------
+@app.get("/api/chores")
+async def list_chores(user: dict = Depends(require_user), database=Depends(get_db)):
+    rows = await database["chores"].find(
+        {"family_id": user["family_id"]}, {"_id": 0}
+    ).sort("created_at", -1).to_list(100)
+    return [public_chore(c) for c in rows]
+
+
+@app.post("/api/chores")
+async def create_chore(body: ChoreIn, user: dict = Depends(require_user), database=Depends(get_db)):
+    chore = {
+        "chore_id": new_id("chore"),
+        "family_id": user["family_id"],
+        "title": body.title,
+        "frequency": body.frequency,
+        "assigned_members": body.assigned_members,
+        "current_assignee": body.assigned_members[0] if body.assigned_members else None,
+        "rotate": body.rotate,
+        "last_rotated": utcnow(),
+        "created_at": utcnow(),
+    }
+    await database["chores"].insert_one(chore)
+    return public_chore(chore)
+
+
+@app.post("/api/chores/{chore_id}/rotate")
+async def rotate_chore(chore_id: str, user: dict = Depends(require_user), database=Depends(get_db)):
+    chore = await database["chores"].find_one(
+        {"chore_id": chore_id, "family_id": user["family_id"]}, {"_id": 0}
+    )
+    if not chore:
+        raise HTTPException(404, "Chore not found")
+    members = chore.get("assigned_members", [])
+    if len(members) < 2:
+        return public_chore(chore)
+    current = chore.get("current_assignee")
+    try:
+        idx = members.index(current)
+        next_idx = (idx + 1) % len(members)
+    except ValueError:
+        next_idx = 0
+    await database["chores"].update_one(
+        {"chore_id": chore_id},
+        {"$set": {"current_assignee": members[next_idx], "last_rotated": utcnow()}},
+    )
+    chore["current_assignee"] = members[next_idx]
+    chore["last_rotated"] = utcnow()
+    return public_chore(chore)
+
+
+@app.delete("/api/chores/{chore_id}")
+async def delete_chore(chore_id: str, user: dict = Depends(require_user), database=Depends(get_db)):
+    result = await database["chores"].delete_one(
+        {"chore_id": chore_id, "family_id": user["family_id"]}
+    )
+    if result.deleted_count == 0:
+        raise HTTPException(404, "Chore not found")
+    return {"ok": True}
 
 
 # -----------------------------------------------------------------------------
