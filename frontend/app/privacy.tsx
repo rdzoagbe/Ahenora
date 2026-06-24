@@ -60,7 +60,7 @@ export default function PrivacyScreen() {
           body: 'For privacy or deletion requests, contact: rolanddzoagbe@gmail.com. Include the Google account email used for Household COO so the request can be matched to the correct account.',
         },
       ]}
-      footer="This policy is provided for the current Household COO testing release and should be reviewed before production launch."
+      footer="This policy applies to the current version of Household COO. Contact rolanddzoagbe@gmail.com with any questions."
     />
   );
 }
