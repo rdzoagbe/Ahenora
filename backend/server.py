@@ -46,8 +46,6 @@ GOOGLE_CLIENT_IDS = [
     if client_id and client_id.strip()
 ]
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
-FACEBOOK_APP_ID = os.environ.get("FACEBOOK_APP_ID", "")
-FACEBOOK_APP_SECRET = os.environ.get("FACEBOOK_APP_SECRET", "")
 SESSION_DAYS = int(os.environ.get("SESSION_DAYS", "7"))
 INVITE_DAYS = int(os.environ.get("INVITE_DAYS", "14"))
 INVITE_BASE_URL = os.environ.get("INVITE_BASE_URL", "householdcoo:///")
@@ -948,10 +946,6 @@ class SessionIn(BaseModel):
     invite_token: Optional[str] = None
 
 
-class FacebookSessionIn(BaseModel):
-    access_token: str
-    invite_token: Optional[str] = None
-
 
 class EmailRegisterIn(BaseModel):
     name: str
@@ -1341,169 +1335,6 @@ async def exchange_session(payload: SessionIn):
             "created_at": utcnow(),
         }
     )
-
-    return {"user": public_user(user), "session_token": raw_session}
-
-
-@app.post("/api/auth/facebook")
-async def exchange_facebook_session(payload: FacebookSessionIn):
-    database = get_db()
-
-    params = urllib.parse.urlencode({
-        "fields": "id,name,email,picture.type(large)",
-        "access_token": payload.access_token,
-    })
-    fb_url = f"https://graph.facebook.com/v19.0/me?{params}"
-
-    try:
-        req = urllib.request.Request(fb_url)
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            fb_user = json.loads(resp.read().decode())
-    except urllib.error.HTTPError as exc:
-        body = exc.read().decode()
-        raise HTTPException(status_code=401, detail=f"Facebook token rejected: {body[:200]}")
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Could not reach Facebook: {exc}")
-
-    if "error" in fb_user:
-        raise HTTPException(status_code=401, detail=fb_user["error"].get("message", "Facebook error"))
-
-    facebook_id = fb_user.get("id")
-    if not facebook_id:
-        raise HTTPException(status_code=401, detail="Facebook did not return a user ID")
-
-    email = fb_user.get("email", "")
-    name = fb_user.get("name") or (email.split("@")[0] if email else "Parent")
-    picture_field = fb_user.get("picture")
-    picture = (picture_field or {}).get("data", {}).get("url") if isinstance(picture_field, dict) else None
-
-    invite = None
-    target_family_id = None
-
-    if payload.invite_token:
-        invite = await database["family_invites"].find_one(
-            {"token": payload.invite_token}, {"_id": 0}
-        )
-        if not invite:
-            raise HTTPException(status_code=404, detail="Invite not found")
-        if invite.get("expires_at") and invite["expires_at"] < utcnow():
-            await database["family_invites"].update_one(
-                {"invite_id": invite["invite_id"]},
-                {"$set": {"status": "expired", "updated_at": utcnow()}},
-            )
-            raise HTTPException(status_code=410, detail="Invite has expired")
-        if invite.get("status") == "accepted" and invite.get("accepted_by_email") != email:
-            raise HTTPException(status_code=409, detail="Invite has already been accepted")
-        target_family_id = invite["family_id"]
-
-    user = await database["users"].find_one({"facebook_id": facebook_id}, {"_id": 0})
-
-    if not user and email:
-        user = await database["users"].find_one({"email": email}, {"_id": 0})
-        if user and not user.get("facebook_id"):
-            await database["users"].update_one(
-                {"user_id": user["user_id"]},
-                {"$set": {"facebook_id": facebook_id}},
-            )
-
-    if not user:
-        family_id = target_family_id or new_id("family")
-        user = {
-            "user_id": new_id("user"),
-            "facebook_id": facebook_id,
-            "email": email,
-            "name": name,
-            "picture": picture,
-            "family_id": family_id,
-            "language": "en",
-            "created_at": utcnow(),
-            "updated_at": utcnow(),
-        }
-        await database["users"].insert_one(user)
-
-        if not target_family_id:
-            await database["families"].insert_one({
-                "family_id": family_id,
-                "plan": "village",
-                "billing_cycle": "monthly",
-                "grandfathered": False,
-                "updated_at": utcnow(),
-                "ai_scans_used": 0,
-                "ai_scans_period_start": utcnow(),
-                "vault_bytes_used": 0,
-            })
-            await database["family_members"].insert_many([
-                {
-                    "member_id": new_id("member"),
-                    "family_id": family_id,
-                    "user_id": user["user_id"],
-                    "email": email,
-                    "name": name,
-                    "role": "Parent",
-                    "avatar": picture,
-                    "stars": 0,
-                    "pin_hash": None,
-                    "created_at": utcnow(),
-                },
-                {
-                    "member_id": new_id("member"),
-                    "family_id": family_id,
-                    "name": "Emma",
-                    "role": "Child",
-                    "avatar": None,
-                    "stars": 0,
-                    "pin_hash": None,
-                    "created_at": utcnow(),
-                },
-                {
-                    "member_id": new_id("member"),
-                    "family_id": family_id,
-                    "name": "Noah",
-                    "role": "Child",
-                    "avatar": None,
-                    "stars": 0,
-                    "pin_hash": None,
-                    "created_at": utcnow(),
-                },
-            ])
-        else:
-            await add_user_to_family_if_needed(database, user, target_family_id)
-    else:
-        updates = {
-            "email": email,
-            "name": name,
-            "picture": picture,
-            "updated_at": utcnow(),
-        }
-        if not user.get("facebook_id"):
-            updates["facebook_id"] = facebook_id
-        if target_family_id:
-            updates["family_id"] = target_family_id
-        await database["users"].update_one({"user_id": user["user_id"]}, {"$set": updates})
-        user = await database["users"].find_one({"user_id": user["user_id"]}, {"_id": 0})
-        if target_family_id:
-            await add_user_to_family_if_needed(database, user, target_family_id)
-
-    if invite:
-        await database["family_invites"].update_one(
-            {"invite_id": invite["invite_id"]},
-            {"$set": {
-                "status": "accepted",
-                "accepted_at": utcnow(),
-                "accepted_by_user_id": user["user_id"],
-                "accepted_by_email": email,
-                "updated_at": utcnow(),
-            }},
-        )
-
-    raw_session = secrets.token_urlsafe(32)
-    await database["user_sessions"].insert_one({
-        "session_id": new_id("sess"),
-        "user_id": user["user_id"],
-        "token_hash": sha256(raw_session),
-        "expires_at": utcnow() + timedelta(days=SESSION_DAYS),
-        "created_at": utcnow(),
-    })
 
     return {"user": public_user(user), "session_token": raw_session}
 

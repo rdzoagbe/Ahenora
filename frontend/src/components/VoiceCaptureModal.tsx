@@ -53,7 +53,7 @@ export function VoiceCaptureModal({ visible, onClose }: Props) {
           </View>
 
           <Text style={[styles.heading, { color: theme.colors.text }]}>Voice is coming soon</Text>
-          <Text style={[styles.sub, { color: theme.colors.textMuted }]}>We have parked voice transcription for the first Play Store testing release so testers only see stable features. Use Manual or Scan for now.</Text>
+          <Text style={[styles.sub, { color: theme.colors.textMuted }]}>Voice transcription is coming in a future update. Use Manual or Scan for now.</Text>
 
           <PressScale testID="voice-coming-soon-close" onPress={onClose} style={[styles.closeBtn, { backgroundColor: theme.colors.primary }]}> 
             <Text style={[styles.closeText, { color: theme.colors.primaryText }]}>Got it</Text>

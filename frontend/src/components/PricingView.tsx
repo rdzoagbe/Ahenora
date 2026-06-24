@@ -47,8 +47,8 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
     if (plan === currentPlan && subscription?.billing_cycle === cycle) return;
 
     Alert.alert(
-      'Plans are in testing mode',
-      'Paid upgrades are disabled in this Play Store testing release. No payment is collected. Plan changes will be connected later through Google Play Billing.'
+      'Coming soon',
+      'Paid plan upgrades will be available soon through Google Play. For now, all features included in the Village plan are free to use.'
     );
   };
 
@@ -61,16 +61,16 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
         <View style={styles.header}>
           <View style={styles.badge}>
             <Sparkles color="#fff" size={12} />
-            <Text style={styles.badgeText}>Testing plans</Text>
+            <Text style={styles.badgeText}>Plans</Text>
           </View>
-          <Text style={styles.title}>Plans are visible for testing.</Text>
-          <Text style={styles.subtitle}>Subscriptions are not active in this Play Store testing release. You can review plan limits, but upgrades are disabled until Google Play Billing is enabled.</Text>
+          <Text style={styles.title}>Choose the right plan for your family.</Text>
+          <Text style={styles.subtitle}>Paid upgrades are coming soon. Village plan features are free to use while we prepare subscription billing.</Text>
         </View>
 
         <View>
           <BillingToggle value={cycle} onChange={setCycle} t={t} />
           <Text style={styles.billingNote}>
-            No payment will be collected during this test. Paid plan buttons intentionally show &quot;Coming soon&quot;.
+            Save with annual billing. Paid plans coming soon.
           </Text>
         </View>
 

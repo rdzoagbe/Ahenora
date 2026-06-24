@@ -282,7 +282,7 @@ export default function Landing() {
         <View style={styles.center}>
           <View style={[styles.badge, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}> 
             <Sparkles color={theme.colors.text} size={12} />
-            <Text style={[styles.badgeText, { color: theme.colors.text }]}>Play Store testing release</Text>
+            <Text style={[styles.badgeText, { color: theme.colors.text }]}>Now available on Google Play</Text>
           </View>
 
           {invitedBy ? (
@@ -302,7 +302,7 @@ export default function Landing() {
 
           <View style={[styles.testingCard, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}> 
             <ShieldCheck color={theme.colors.accent} size={16} />
-            <Text style={[styles.testingText, { color: theme.colors.textMuted }]}>Testing release: paid plans are disabled, no payment is collected, and account/privacy controls are available in Settings.</Text>
+            <Text style={[styles.testingText, { color: theme.colors.textMuted }]}>Your data stays private. Account and privacy controls are available in Settings.</Text>
           </View>
 
           <View style={styles.buttonStack}>
@@ -341,10 +341,10 @@ export default function Landing() {
               testID="landing-pricing-link"
               onPress={() => router.push('/pricing')}
               style={[styles.secondaryCta, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}
-              accessibilityLabel="View testing plans"
+              accessibilityLabel="View plans"
               accessibilityRole="button"
             >
-              <Text style={[styles.secondaryCtaText, { color: theme.colors.text }]}>View testing plans</Text>
+              <Text style={[styles.secondaryCtaText, { color: theme.colors.text }]}>View plans</Text>
               <ArrowRight color={theme.colors.text} size={14} />
             </PressScale>
           </View>
@@ -356,7 +356,7 @@ export default function Landing() {
 
           <View style={styles.adminNote}>
             <Crown color="#F59E0B" size={12} />
-            <Text style={[styles.adminNoteText, { color: theme.colors.textSoft }]}>Tester/admin access may unlock extra features for validation only.</Text>
+            <Text style={[styles.adminNoteText, { color: theme.colors.textSoft }]}>Premium plans unlock extra features for your household.</Text>
           </View>
         </View>
 

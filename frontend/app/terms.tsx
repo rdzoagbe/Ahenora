@@ -5,12 +5,12 @@ export default function TermsScreen() {
   return (
     <LegalPage
       title="Terms & Support"
-      subtitle="Basic testing terms, acceptable use, support contact, and important limitations for the Household COO pre-release app."
+      subtitle="Terms of use, acceptable use, support contact, and important limitations for the Household COO app."
       updatedAt="May 2026"
       sections={[
         {
-          title: 'Testing release',
-          body: 'Household COO is currently being prepared for Google Play testing. Some features may still be marked as testing, preview, or coming soon.',
+          title: 'About this app',
+          body: 'Household COO is available on Google Play. Some features may be marked as coming soon as we continue to add and improve functionality.',
         },
         {
           title: 'Your responsibilities',
@@ -23,7 +23,7 @@ export default function TermsScreen() {
         },
         {
           title: 'Subscriptions and payments',
-          body: 'Plan and pricing screens may appear during testing. Paid subscriptions are not active unless clearly stated in the app and processed through an approved payment flow for the distribution channel.',
+          body: 'Paid subscriptions are not active unless clearly stated in the app and processed through an approved payment flow (Google Play Billing).',
         },
         {
           title: 'Availability',
