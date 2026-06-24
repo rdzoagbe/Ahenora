@@ -72,13 +72,11 @@ export default function Landing() {
     '243255248169-n4l7es5ecr3j85v00dia2icp9kjo7umh.apps.googleusercontent.com';
   const webRedirectUri = Platform.OS !== 'android' ? AuthSession.makeRedirectUri({ scheme: 'householdcoo', path: 'oauthredirect' }) : undefined;
 
-  // On Android we use the native GoogleSignin SDK (in the signIn function),
-  // not the AuthSession hook — the hook throws if androidClientId is set.
-  const [request, response, promptAsync] = Google.useIdTokenAuthRequest(
-    Platform.OS === 'android'
-      ? { webClientId }
-      : { webClientId, androidClientId, redirectUri: webRedirectUri }
-  );
+  const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
+    webClientId,
+    androidClientId,
+    redirectUri: webRedirectUri,
+  });
 
   useEffect(() => {
     logger.info('Google AuthSession redirect URI', webRedirectUri || 'missing');
