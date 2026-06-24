@@ -8,9 +8,10 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  Clipboard,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
-import { X, Mail } from 'lucide-react-native';
+import { X, Mail, Check, ShieldCheck } from 'lucide-react-native';
 
 import { PressScale } from './PressScale';
 import { useStore } from '../store';
@@ -35,6 +36,30 @@ export function EmailAuthModal({ visible, onClose, onSuccess, inviteToken }: Pro
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const hasLength = password.length >= 8;
+  const hasUpper = /[A-Z]/.test(password);
+  const hasLower = /[a-z]/.test(password);
+  const hasNumber = /[0-9]/.test(password);
+  const hasSpecial = /[^A-Za-z0-9]/.test(password);
+  const strengthCount = [hasLength, hasUpper, hasLower, hasNumber, hasSpecial].filter(Boolean).length;
+
+  const generateStrongPassword = () => {
+    const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+    const lower = 'abcdefghjkmnpqrstuvwxyz';
+    const digits = '23456789';
+    const special = '!@#$%&*?';
+    const all = upper + lower + digits + special;
+    const pick = (s: string) => s[Math.floor(Math.random() * s.length)];
+    const parts = [pick(upper), pick(lower), pick(digits), pick(special)];
+    for (let i = parts.length; i < 12; i++) parts.push(pick(all));
+    for (let i = parts.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [parts[i], parts[j]] = [parts[j], parts[i]];
+    }
+    const strong = parts.join('');
+    setPassword(strong);
+  };
 
   const reset = () => {
     setName('');
@@ -149,18 +174,42 @@ export function EmailAuthModal({ visible, onClose, onSuccess, inviteToken }: Pro
             returnKeyType="next"
           />
 
-          <Text style={[styles.label, { color: c.textMuted }]}>Password</Text>
+          <View style={styles.labelRow}>
+            <Text style={[styles.label, { color: c.textMuted, marginBottom: 0 }]}>Password</Text>
+            {mode === 'signup' ? (
+              <PressScale onPress={generateStrongPassword} style={[styles.suggestBtn, { backgroundColor: c.accentSoft }]}>
+                <ShieldCheck color={c.accent} size={12} />
+                <Text style={[styles.suggestText, { color: c.accent }]}>Use strong password</Text>
+              </PressScale>
+            ) : null}
+          </View>
           <TextInput
             style={[styles.input, { color: c.text, borderColor: c.cardBorder, backgroundColor: c.bgSoft }]}
             value={password}
             onChangeText={setPassword}
-            placeholder={mode === 'signup' ? 'At least 8 characters' : 'Your password'}
+            placeholder={mode === 'signup' ? 'At least 8 mixed characters' : 'Your password'}
             placeholderTextColor={c.textSoft}
-            secureTextEntry
+            secureTextEntry={mode === 'login'}
             autoCapitalize="none"
             returnKeyType="done"
             onSubmitEditing={submit}
           />
+
+          {mode === 'signup' && password.length > 0 ? (
+            <View style={styles.hintsWrap}>
+              <PasswordHint met={hasLength} label="8+ characters" color={c} />
+              <PasswordHint met={hasUpper} label="Uppercase (A-Z)" color={c} />
+              <PasswordHint met={hasLower} label="Lowercase (a-z)" color={c} />
+              <PasswordHint met={hasNumber} label="Number (0-9)" color={c} />
+              <PasswordHint met={hasSpecial} label="Special (!@#$…)" color={c} />
+              <View style={[styles.strengthBar, { backgroundColor: c.bgSoft }]}>
+                <View style={[styles.strengthFill, { width: `${(strengthCount / 5) * 100}%`, backgroundColor: strengthCount <= 2 ? '#EF4444' : strengthCount <= 3 ? '#F59E0B' : '#22C55E' }]} />
+              </View>
+              <Text style={[styles.strengthLabel, { color: c.textMuted }]}>
+                {strengthCount <= 2 ? 'Weak' : strengthCount <= 3 ? 'Fair' : strengthCount <= 4 ? 'Strong' : 'Very strong'}
+              </Text>
+            </View>
+          ) : null}
 
           {error ? <Text style={[styles.error, { color: '#EF4444' }]}>{error}</Text> : null}
 
@@ -176,6 +225,17 @@ export function EmailAuthModal({ visible, onClose, onSuccess, inviteToken }: Pro
         </View>
       </KeyboardAvoidingView>
     </Modal>
+  );
+}
+
+function PasswordHint({ met, label, color }: { met: boolean; label: string; color: any }) {
+  return (
+    <View style={styles.hintRow}>
+      <View style={[styles.hintDot, { backgroundColor: met ? '#22C55E' : color.bgSoft }]}>
+        {met ? <Check color="#fff" size={9} /> : null}
+      </View>
+      <Text style={[styles.hintText, { color: met ? color.text : color.textMuted }]}>{label}</Text>
+    </View>
   );
 }
 
@@ -202,6 +262,16 @@ const styles = StyleSheet.create({
   modeText: { fontFamily: 'Inter_700Bold', fontSize: 13.5 },
   label: { fontFamily: 'Inter_600SemiBold', fontSize: 12.5, marginBottom: 6 },
   input: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontFamily: 'Inter_500Medium', fontSize: 15, marginBottom: 14 },
+  labelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
+  suggestBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  suggestText: { fontFamily: 'Inter_700Bold', fontSize: 11 },
+  hintsWrap: { marginTop: -6, marginBottom: 14 },
+  hintRow: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 5 },
+  hintDot: { width: 16, height: 16, borderRadius: 99, alignItems: 'center', justifyContent: 'center' },
+  hintText: { fontFamily: 'Inter_500Medium', fontSize: 12 },
+  strengthBar: { height: 4, borderRadius: 99, marginTop: 10, overflow: 'hidden' },
+  strengthFill: { height: 4, borderRadius: 99 },
+  strengthLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 11, marginTop: 4 },
   error: { fontFamily: 'Inter_600SemiBold', fontSize: 13, lineHeight: 18, marginBottom: 12 },
   submitBtn: { height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginTop: 2 },
   submitText: { fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
