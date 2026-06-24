@@ -192,6 +192,30 @@ def sha256(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
+PASSWORD_ITERATIONS = 200_000
+
+
+def hash_password(password: str) -> str:
+    salt = secrets.token_hex(16)
+    dk = hashlib.pbkdf2_hmac(
+        "sha256", password.encode("utf-8"), salt.encode("utf-8"), PASSWORD_ITERATIONS
+    )
+    return f"pbkdf2_sha256${PASSWORD_ITERATIONS}${salt}${dk.hex()}"
+
+
+def verify_password(password: str, stored: str) -> bool:
+    try:
+        algo, iterations, salt, hexhash = stored.split("$")
+        if algo != "pbkdf2_sha256":
+            return False
+        dk = hashlib.pbkdf2_hmac(
+            "sha256", password.encode("utf-8"), salt.encode("utf-8"), int(iterations)
+        )
+        return secrets.compare_digest(dk.hex(), hexhash)
+    except Exception:
+        return False
+
+
 def is_admin_email(email: str) -> bool:
     return bool(email) and email.strip().lower() in ADMIN_EMAILS
 
@@ -929,6 +953,18 @@ class FacebookSessionIn(BaseModel):
     invite_token: Optional[str] = None
 
 
+class EmailRegisterIn(BaseModel):
+    name: str
+    email: str
+    password: str
+    invite_token: Optional[str] = None
+
+
+class EmailLoginIn(BaseModel):
+    email: str
+    password: str
+
+
 class InviteIn(BaseModel):
     email: str
 
@@ -1469,6 +1505,158 @@ async def exchange_facebook_session(payload: FacebookSessionIn):
         "created_at": utcnow(),
     })
 
+    return {"user": public_user(user), "session_token": raw_session}
+
+
+async def _issue_session(database, user_id: str) -> str:
+    raw_session = secrets.token_urlsafe(32)
+    await database["user_sessions"].insert_one({
+        "session_id": new_id("sess"),
+        "user_id": user_id,
+        "token_hash": sha256(raw_session),
+        "expires_at": utcnow() + timedelta(days=SESSION_DAYS),
+        "created_at": utcnow(),
+    })
+    return raw_session
+
+
+async def _seed_new_family(database, user: dict, family_id: str, email: str, name: str, picture=None):
+    await database["families"].insert_one({
+        "family_id": family_id,
+        "plan": "executive",
+        "billing_cycle": "monthly",
+        "grandfathered": True,
+        "updated_at": utcnow(),
+        "ai_scans_used": 0,
+        "ai_scans_period_start": utcnow(),
+        "vault_bytes_used": 0,
+    })
+    await database["family_members"].insert_many([
+        {
+            "member_id": new_id("member"),
+            "family_id": family_id,
+            "user_id": user["user_id"],
+            "email": email,
+            "name": name,
+            "role": "Parent",
+            "avatar": picture,
+            "stars": 0,
+            "pin_hash": None,
+            "created_at": utcnow(),
+        },
+        {
+            "member_id": new_id("member"),
+            "family_id": family_id,
+            "name": "Emma",
+            "role": "Child",
+            "avatar": None,
+            "stars": 0,
+            "pin_hash": None,
+            "created_at": utcnow(),
+        },
+        {
+            "member_id": new_id("member"),
+            "family_id": family_id,
+            "name": "Noah",
+            "role": "Child",
+            "avatar": None,
+            "stars": 0,
+            "pin_hash": None,
+            "created_at": utcnow(),
+        },
+    ])
+
+
+async def _resolve_invite(database, invite_token: Optional[str], email: str):
+    """Validate an invite token and return (invite_doc, target_family_id)."""
+    if not invite_token:
+        return None, None
+    invite = await database["family_invites"].find_one({"token": invite_token}, {"_id": 0})
+    if not invite:
+        raise HTTPException(status_code=404, detail="Invite not found")
+    if invite.get("expires_at") and invite["expires_at"] < utcnow():
+        await database["family_invites"].update_one(
+            {"invite_id": invite["invite_id"]},
+            {"$set": {"status": "expired", "updated_at": utcnow()}},
+        )
+        raise HTTPException(status_code=410, detail="Invite has expired")
+    if invite.get("status") == "accepted" and invite.get("accepted_by_email") != email:
+        raise HTTPException(status_code=409, detail="Invite has already been accepted")
+    return invite, invite["family_id"]
+
+
+@app.post("/api/auth/register")
+async def register_email(payload: EmailRegisterIn):
+    database = get_db()
+
+    email = payload.email.strip().lower()
+    name = payload.name.strip() or (email.split("@")[0] if email else "Parent")
+    password = payload.password or ""
+
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="A valid email is required")
+    if len(password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+
+    existing = await database["users"].find_one({"email": email}, {"_id": 0})
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail="An account with this email already exists. Try signing in instead.",
+        )
+
+    invite, target_family_id = await _resolve_invite(database, payload.invite_token, email)
+
+    family_id = target_family_id or new_id("family")
+    user = {
+        "user_id": new_id("user"),
+        "email": email,
+        "name": name,
+        "picture": None,
+        "password_hash": hash_password(password),
+        "family_id": family_id,
+        "language": "en",
+        "created_at": utcnow(),
+        "updated_at": utcnow(),
+    }
+    await database["users"].insert_one(user)
+
+    if not target_family_id:
+        await _seed_new_family(database, user, family_id, email, name)
+    else:
+        await add_user_to_family_if_needed(database, user, target_family_id)
+
+    if invite:
+        await database["family_invites"].update_one(
+            {"invite_id": invite["invite_id"]},
+            {"$set": {
+                "status": "accepted",
+                "accepted_at": utcnow(),
+                "accepted_by_user_id": user["user_id"],
+                "accepted_by_email": email,
+                "updated_at": utcnow(),
+            }},
+        )
+
+    raw_session = await _issue_session(database, user["user_id"])
+    return {"user": public_user(user), "session_token": raw_session}
+
+
+@app.post("/api/auth/login")
+async def login_email(payload: EmailLoginIn):
+    database = get_db()
+
+    email = payload.email.strip().lower()
+    user = await database["users"].find_one({"email": email}, {"_id": 0})
+    if not user or not user.get("password_hash"):
+        raise HTTPException(
+            status_code=401,
+            detail="No password account found for this email. Try Google sign-in.",
+        )
+    if not verify_password(payload.password or "", user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Incorrect email or password")
+
+    raw_session = await _issue_session(database, user["user_id"])
     return {"user": public_user(user), "session_token": raw_session}
 
 
@@ -3621,6 +3809,39 @@ async def delete_chore(chore_id: str, user: dict = Depends(require_user), databa
     if result.deleted_count == 0:
         raise HTTPException(404, "Chore not found")
     return {"ok": True}
+
+
+# -----------------------------------------------------------------------------
+# Support Contact
+# -----------------------------------------------------------------------------
+
+class SupportContactIn(BaseModel):
+    subject: str
+    message: str
+
+@app.post("/api/support/contact")
+async def submit_support_contact(
+    body: SupportContactIn,
+    user: dict = Depends(require_user),
+    database=Depends(get_db),
+):
+    subject = body.subject.strip()[:200]
+    message = body.message.strip()[:5000]
+    if not subject or not message:
+        raise HTTPException(400, "Subject and message are required")
+    ticket = {
+        "ticket_id": new_id("tkt"),
+        "family_id": user["family_id"],
+        "user_id": user["user_id"],
+        "user_email": user.get("email", ""),
+        "user_name": user.get("name", ""),
+        "subject": subject,
+        "message": message,
+        "status": "open",
+        "created_at": utcnow(),
+    }
+    await database["support_tickets"].insert_one(ticket)
+    return {"ok": True, "ticket_id": ticket["ticket_id"]}
 
 
 # -----------------------------------------------------------------------------

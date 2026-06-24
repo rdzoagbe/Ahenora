@@ -26,13 +26,12 @@ function RootNavigator() {
 
   return (
     <>
-      <StatusBar style={resolvedAppearance === 'light' ? 'dark' : 'light'} backgroundColor={theme.colors.bg} />
+      <StatusBar style={resolvedAppearance === 'light' ? 'dark' : 'light'} translucent backgroundColor="transparent" />
       <UpgradeModal />
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.colors.bg } }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="oauthredirect" />
         <Stack.Screen name="oauth2redirect/google" />
-        <Stack.Screen name="oauth2redirect/facebook" />
         <Stack.Screen name="pricing" />
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="+not-found" />

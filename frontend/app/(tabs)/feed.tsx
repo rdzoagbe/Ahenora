@@ -598,7 +598,7 @@ export default function Feed() {
               <Text style={styles.footerSnapshotText}>{members.filter((m) => m.role?.toLowerCase() === 'child').length} kids · {rewardCount} rewards · {vaultCount} vault docs</Text>
             </View>
           </View>
-          <View style={{ height: 120 }} />
+          <View style={{ height: 160 }} />
       </TabScreen>
 
       <Pressable
@@ -1011,7 +1011,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   fab: {
     position: 'absolute',
     right: 22,
-    bottom: 102,
+    bottom: 120,
     width: 61,
     height: 61,
     borderRadius: 999,

@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Modal, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { BlurView } from 'expo-blur';
 import {
   CalendarCheck,
   CheckCircle2,
@@ -13,12 +14,15 @@ import {
   LogOut,
   ShieldCheck,
   Trash2,
+  X,
+  Send,
 } from 'lucide-react-native';
 
 import { PressScale } from '../../src/components/PressScale';
 import { Badge, Card, IconTile, SectionTitle, UI } from '../../src/components/Kit';
 import { useStore } from '../../src/store';
 import { AuthDiagnosticResult, runAuthDiagnostics } from '../../src/authDiagnostics';
+import { api } from '../../src/api';
 
 function ListRow({
   tile,
@@ -54,8 +58,13 @@ function ListRow({
 export default function AccountScreen() {
   const router = useRouter();
   const { user, logout, refreshUser } = useStore();
+  const { theme } = useStore();
   const [diagnostics, setDiagnostics] = useState<AuthDiagnosticResult | null>(null);
   const [checking, setChecking] = useState(false);
+  const [supportOpen, setSupportOpen] = useState(false);
+  const [supportSubject, setSupportSubject] = useState('');
+  const [supportMessage, setSupportMessage] = useState('');
+  const [supportSending, setSupportSending] = useState(false);
 
   const name = user?.name || 'Household member';
   const email = user?.email || 'Not signed in';
@@ -80,6 +89,27 @@ export default function AccountScreen() {
   const goBack = () => {
     if (router.canGoBack()) router.back();
     else router.replace('/(tabs)/settings');
+  };
+
+  const submitSupport = async () => {
+    const subj = supportSubject.trim();
+    const msg = supportMessage.trim();
+    if (!subj || !msg) {
+      Alert.alert('Missing fields', 'Please fill in both the subject and message.');
+      return;
+    }
+    setSupportSending(true);
+    try {
+      await api.submitSupportRequest({ subject: subj, message: msg });
+      setSupportOpen(false);
+      setSupportSubject('');
+      setSupportMessage('');
+      Alert.alert('Sent!', 'Your message has been received. We\'ll get back to you soon.');
+    } catch {
+      Alert.alert('Error', 'Could not send your message. Please try again.');
+    } finally {
+      setSupportSending(false);
+    }
   };
 
   return (
@@ -158,7 +188,7 @@ export default function AccountScreen() {
             <ListRow
               tile={<IconTile bg={UI.orangeSoft}><LifeBuoy color={UI.orange} size={18} /></IconTile>}
               title="Contact support"
-              onPress={() => Linking.openURL('mailto:rolanddzoagbe@gmail.com').catch(() => undefined)}
+              onPress={() => setSupportOpen(true)}
             />
             <ListRow
               testID="open-terms-support"
@@ -200,6 +230,55 @@ export default function AccountScreen() {
           <View style={{ height: 150 }} />
         </ScrollView>
       </SafeAreaView>
+
+      {/* Support Contact Form Modal */}
+      <Modal visible={supportOpen} transparent animationType="fade" onRequestClose={() => setSupportOpen(false)}>
+        <BlurView intensity={40} tint={theme.mode === 'light' ? 'light' : 'dark'} style={StyleSheet.absoluteFill} />
+        <View style={[styles.modalBackdrop, { backgroundColor: theme.mode === 'light' ? 'rgba(255,255,255,0.52)' : 'rgba(8,9,16,0.6)' }]} />
+        <View style={styles.modalCenter}>
+          <View style={[styles.modalSheet, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder, shadowColor: theme.colors.shadow }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: theme.colors.text }]}>Contact Support</Text>
+              <PressScale onPress={() => setSupportOpen(false)} style={[styles.modalCloseBtn, { borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}>
+                <X color={theme.colors.text} size={18} />
+              </PressScale>
+            </View>
+
+            <Text style={[styles.modalLabel, { color: theme.colors.textMuted }]}>Subject</Text>
+            <TextInput
+              style={[styles.modalInput, { color: theme.colors.text, borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}
+              value={supportSubject}
+              onChangeText={setSupportSubject}
+              placeholder="e.g. Bug report, Feature request…"
+              placeholderTextColor={theme.colors.textMuted}
+              maxLength={200}
+              returnKeyType="next"
+            />
+
+            <Text style={[styles.modalLabel, { color: theme.colors.textMuted }]}>Message</Text>
+            <TextInput
+              style={[styles.modalInput, styles.modalTextArea, { color: theme.colors.text, borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}
+              value={supportMessage}
+              onChangeText={setSupportMessage}
+              placeholder="Describe your issue or request…"
+              placeholderTextColor={theme.colors.textMuted}
+              maxLength={5000}
+              multiline
+              textAlignVertical="top"
+            />
+
+            <PressScale
+              onPress={submitSupport}
+              style={[styles.modalSendBtn, { backgroundColor: theme.colors.primary, opacity: supportSending ? 0.6 : 1 }]}
+            >
+              <Send color={theme.colors.primaryText} size={16} />
+              <Text style={[styles.modalSendText, { color: theme.colors.primaryText }]}>
+                {supportSending ? 'Sending…' : 'Send Message'}
+              </Text>
+            </PressScale>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -241,4 +320,16 @@ const styles = StyleSheet.create({
   diagLabel: { color: UI.muted, fontFamily: 'Inter_600SemiBold', fontSize: 13 },
   diagValue: { flex: 1, textAlign: 'right', fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
   diagError: { color: UI.danger, fontFamily: 'Inter_700Bold', fontSize: 13, lineHeight: 19, marginTop: 4 },
+
+  modalBackdrop: { ...StyleSheet.absoluteFillObject },
+  modalCenter: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 },
+  modalSheet: { width: '100%', maxWidth: 400, borderRadius: 22, borderWidth: 1, padding: 24, shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.15, shadowRadius: 24, elevation: 16 },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  modalTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 20, letterSpacing: -0.3 },
+  modalCloseBtn: { width: 34, height: 34, borderRadius: 99, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  modalLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 13, marginBottom: 6 },
+  modalInput: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontFamily: 'Inter_500Medium', fontSize: 15, marginBottom: 16 },
+  modalTextArea: { minHeight: 120 },
+  modalSendBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: 14, marginTop: 4 },
+  modalSendText: { fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
 });

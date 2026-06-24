@@ -4,10 +4,8 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  Platform,
   Alert,
 } from 'react-native';
-import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
   Sparkles,
@@ -189,9 +187,6 @@ function PlanCard({
         end={{ x: 1, y: 1 }}
         style={StyleSheet.absoluteFill}
       />
-      {Platform.OS !== 'web' && (
-        <BlurView intensity={8} tint="dark" style={StyleSheet.absoluteFill} />
-      )}
 
       {isMiddle ? (
         <View style={styles.popularBadge}>
@@ -425,6 +420,10 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.08)',
     padding: 22,
     overflow: 'hidden',
+    // Solid base so the translucent gradients render over a readable surface
+    // (previously the cards relied on a BlurView that rendered as a grey
+    // "glass mirror" sheet on Android).
+    backgroundColor: '#13141d',
   },
   cardFeatured: {
     borderColor: 'rgba(52,211,153,0.4)',
