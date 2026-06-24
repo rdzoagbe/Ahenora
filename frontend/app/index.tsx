@@ -201,7 +201,9 @@ export default function Landing() {
 
         GoogleSignin.configure({ webClientId, scopes: ['profile', 'email'], offlineAccess: false });
         await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+        logger.info('[signin] calling GoogleSignin.signIn...');
         const userInfo = await GoogleSignin.signIn();
+        logger.info('[signin] GoogleSignin OK, idToken present:', !!(userInfo?.data?.idToken || (userInfo as any)?.idToken));
         const idToken = userInfo?.data?.idToken || (userInfo as any)?.idToken;
 
         if (!idToken) {
@@ -215,6 +217,7 @@ export default function Landing() {
         }
 
         const { api: apiModule } = await import('../src/api');
+        logger.info('[signin] calling exchangeSession, BASE:', (await import('../src/api')).BASE);
         const authResult = await apiModule.exchangeSession(idToken, token);
         await setUserFromAuth(authResult.user, authResult.session_token);
         router.replace('/feed');
