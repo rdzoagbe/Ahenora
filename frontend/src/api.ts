@@ -5,7 +5,7 @@ import { cache } from './cache';
 
 const CACHE_TTL_MS = 30_000;
 
-const BASE =
+export const BASE =
   process.env.EXPO_PUBLIC_BACKEND_URL ||
   "https://household-coo-production.up.railway.app";
 if (!process.env.EXPO_PUBLIC_BACKEND_URL) {
