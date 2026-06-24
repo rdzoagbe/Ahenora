@@ -26,7 +26,7 @@ function RootNavigator() {
 
   return (
     <>
-      <StatusBar style={resolvedAppearance === 'light' ? 'dark' : 'light'} backgroundColor={theme.colors.bg} />
+      <StatusBar style={resolvedAppearance === 'light' ? 'dark' : 'light'} translucent backgroundColor="transparent" />
       <UpgradeModal />
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.colors.bg } }}>
         <Stack.Screen name="index" />
