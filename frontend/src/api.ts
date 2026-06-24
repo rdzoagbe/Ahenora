@@ -5,7 +5,7 @@ import { cache } from './cache';
 
 const CACHE_TTL_MS = 30_000;
 
-export const BASE =
+const BASE =
   process.env.EXPO_PUBLIC_BACKEND_URL ||
   "https://household-coo-production.up.railway.app";
 if (!process.env.EXPO_PUBLIC_BACKEND_URL) {
@@ -416,6 +416,10 @@ export interface Subscription {
     vault_bytes: number;
     weekly_brief: boolean;
     multi_property: boolean;
+    meal_planner: boolean;
+    allowance: boolean;
+    carpool: boolean;
+    weekly_report: boolean;
   };
   price_monthly: number;
   price_yearly: number;
@@ -436,6 +440,12 @@ export interface Entitlements {
   vault_bytes_limit: number;
   weekly_brief: boolean;
   multi_property: boolean;
+  features?: {
+    meal_planner: boolean;
+    allowance: boolean;
+    carpool: boolean;
+    weekly_report: boolean;
+  };
 }
 
 export interface PlanLimitError {

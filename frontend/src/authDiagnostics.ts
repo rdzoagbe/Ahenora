@@ -1,4 +1,4 @@
-import { api, tokenStore } from './api';
+import { api, BASE, tokenStore } from './api';
 
 export interface AuthDiagnosticResult {
   checked_at: string;
@@ -31,10 +31,13 @@ export async function runAuthDiagnostics(): Promise<AuthDiagnosticResult> {
     result.error = `Token check failed: ${shortError(error)}`;
   }
 
-  const base = process.env.EXPO_PUBLIC_BACKEND_URL;
-  if (!base) {
-    result.error = 'EXPO_PUBLIC_BACKEND_URL is missing.';
-    return result;
+  // Use the same resolved base URL the rest of the app uses (api.ts), which
+  // falls back to the production backend when EXPO_PUBLIC_BACKEND_URL is not
+  // inlined into the build. Reading process.env directly here previously caused
+  // a false "backend unavailable" report even though the app worked fine.
+  const base = BASE;
+  if (!process.env.EXPO_PUBLIC_BACKEND_URL) {
+    result.backend_message = 'EXPO_PUBLIC_BACKEND_URL not set — using production fallback.';
   }
 
   try {
