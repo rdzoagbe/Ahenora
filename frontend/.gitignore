@@ -39,3 +39,6 @@ yarn-error.*
 app-example
 
 .env
+
+# Google Play service account key (never commit — used by `eas submit`)
+play-service-account.json
