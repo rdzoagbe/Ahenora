@@ -63,6 +63,14 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// The store registers a handler so an expired session (401) mid-session can
+// clear auth state and route back to the landing screen, instead of leaving
+// screens silently blank until the app is restarted.
+let unauthorizedHandler: (() => void) | null = null;
+export function setUnauthorizedHandler(fn: (() => void) | null) {
+  unauthorizedHandler = fn;
+}
+
 async function request<T = unknown>(
   path: string,
   opts: { method?: string; body?: unknown } = {}
@@ -113,6 +121,15 @@ async function request<T = unknown>(
 
     if (!res.ok) {
       const text = await res.text();
+      // A 401 on a non-auth endpoint means the session expired or was revoked.
+      // Clear the token and let the app return to the landing screen. Auth
+      // endpoints (login/register/session) use 401 for bad credentials, so
+      // they must not trigger a global sign-out.
+      if (res.status === 401 && !path.startsWith('/auth/')) {
+        await tokenStore.clear().catch(() => undefined);
+        cache.clear();
+        if (unauthorizedHandler) unauthorizedHandler();
+      }
       if (res.status === 402) {
         try {
           const parsed = JSON.parse(text) as Record<string, unknown>;
@@ -457,6 +474,14 @@ export interface PlanLimitError {
   message: string;
 }
 
+// Invalidate the cached plan-usage snapshots so counters (member slots,
+// vault storage, AI scans, pending invites) refresh after a mutation that
+// changes them, instead of showing stale values for the cache TTL.
+function invalidateUsageCaches() {
+  cache.invalidate('getEntitlements');
+  cache.invalidate('getSubscription');
+}
+
 export const api = {
   // Auth
   exchangeSession: (session_id: string, invite_token?: string) =>
@@ -475,8 +500,9 @@ export const api = {
   },
   setLanguage: (language: string) =>
     request('/auth/language', { method: 'PATCH', body: { language } }),
-  invite: (email: string) =>
-    request<{
+  invite: (email: string) => {
+    invalidateUsageCaches();
+    return request<{
       ok: boolean;
       sent: boolean;
       status: string;
@@ -489,7 +515,8 @@ export const api = {
     }>('/family/invite', {
       method: 'POST',
       body: { email },
-    }),
+    });
+  },
   listInvites: () => request<FamilyInvite[]>('/family/invites'),
   getInvite: (token: string) =>
     request<{
@@ -517,6 +544,7 @@ export const api = {
   },
   createFamilyMember: (data: { name: string; starting_stars?: number; pin?: string }) => {
     cache.invalidate('familyMembers');
+    invalidateUsageCaches();
     return request<FamilyMember>('/family/members', {
       method: 'POST',
       body: data,
@@ -534,20 +562,24 @@ export const api = {
   },
   memberStarHistory: (member_id: string) =>
     request<StarTransaction[]>(`/family/members/${member_id}/star-history`),
-  setMemberPin: (member_id: string, pin: string) =>
-    request<{ ok: boolean; has_pin: boolean }>(`/family/members/${member_id}/pin`, {
+  setMemberPin: (member_id: string, pin: string) => {
+    cache.invalidate('familyMembers');
+    return request<{ ok: boolean; has_pin: boolean }>(`/family/members/${member_id}/pin`, {
       method: 'PUT',
       body: { pin },
-    }),
+    });
+  },
   verifyMemberPin: (member_id: string, pin: string) =>
     request<{ ok: boolean; has_pin: boolean }>(`/family/members/${member_id}/verify-pin`, {
       method: 'POST',
       body: { pin },
     }),
-  removeMemberPin: (member_id: string) =>
-    request<{ ok: boolean; has_pin: boolean }>(`/family/members/${member_id}/pin`, {
+  removeMemberPin: (member_id: string) => {
+    cache.invalidate('familyMembers');
+    return request<{ ok: boolean; has_pin: boolean }>(`/family/members/${member_id}/pin`, {
       method: 'DELETE',
-    }),
+    });
+  },
   aiAssign: (title: string, description?: string, type?: string) =>
     request<{ assignee: string }>('/ai/assign', {
       method: 'POST',
@@ -565,15 +597,26 @@ export const api = {
   },
   createCard: (data: Partial<Card>) => {
     cache.invalidatePrefix('listCards');
-    return request<Card>('/cards', { method: 'POST', body: data });
+    // Invalidate again after the write commits so a read that raced the
+    // round-trip can't leave a pre-write snapshot cached for the TTL window.
+    return request<Card>('/cards', { method: 'POST', body: data }).then((r) => {
+      cache.invalidatePrefix('listCards');
+      return r;
+    });
   },
   updateCard: (id: string, data: Partial<Pick<Card, 'type' | 'title' | 'description' | 'assignee' | 'due_date' | 'status' | 'recurrence' | 'reminder_minutes'>>) => {
     cache.invalidatePrefix('listCards');
-    return request<Card>(`/cards/${id}`, { method: 'PATCH', body: data });
+    return request<Card>(`/cards/${id}`, { method: 'PATCH', body: data }).then((r) => {
+      cache.invalidatePrefix('listCards');
+      return r;
+    });
   },
   deleteCard: (id: string) => {
     cache.invalidatePrefix('listCards');
-    return request(`/cards/${id}`, { method: 'DELETE' });
+    return request(`/cards/${id}`, { method: 'DELETE' }).then((r) => {
+      cache.invalidatePrefix('listCards');
+      return r;
+    });
   },
   // Vault
   listVault: () => {
@@ -587,10 +630,12 @@ export const api = {
   },
   createVaultDoc: (data: { title: string; category: string; image_base64: string }) => {
     cache.invalidate('listVault');
+    invalidateUsageCaches();
     return request<VaultDoc>('/vault', { method: 'POST', body: data });
   },
   deleteVaultDoc: (id: string) => {
     cache.invalidate('listVault');
+    invalidateUsageCaches();
     return request(`/vault/${id}`, { method: 'DELETE' });
   },
   // Rewards
@@ -631,8 +676,9 @@ export const api = {
       }`
     ),
   // Vision
-  visionExtract: (image_base64: string) =>
-    request<{
+  visionExtract: (image_base64: string) => {
+    invalidateUsageCaches();
+    return request<{
       type: CardType;
       title: string;
       description: string;
@@ -640,7 +686,8 @@ export const api = {
       due_date?: string | null;
       vault_category?: string;
       save_to_vault?: boolean;
-    }>('/vision/extract', { method: 'POST', body: { image_base64 } }),
+    }>('/vision/extract', { method: 'POST', body: { image_base64 } });
+  },
   // Brief
   weeklyBrief: () =>
     request<{ brief: string; generated_at: string }>('/brief/weekly', { method: 'POST' }),
@@ -680,11 +727,13 @@ export const api = {
       return data;
     });
   },
-  changeSubscription: (plan: Plan, billing_cycle: BillingCycle) =>
-    request<Subscription>('/subscription/change', {
+  changeSubscription: (plan: Plan, billing_cycle: BillingCycle) => {
+    invalidateUsageCaches();
+    return request<Subscription>('/subscription/change', {
       method: 'POST',
       body: { plan, billing_cycle },
-    }),
+    });
+  },
   // Voice transcribe
   voiceTranscribe: async (
     audio:

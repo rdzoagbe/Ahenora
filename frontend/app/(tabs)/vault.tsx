@@ -25,7 +25,7 @@ import { TabScreen } from '../../src/components/TabScreen';
 import { Badge, Card, IconTile, ProgressBar, ScreenHeader, UI, useUI, UIColors } from '../../src/components/Kit';
 
 import { useStore } from '../../src/store';
-import { api, ExpiryAlert, MealPlan, ShoppingItem, VaultDoc } from '../../src/api';
+import { api, Entitlements, ExpiryAlert, MealPlan, ShoppingItem, VaultDoc } from '../../src/api';
 import { usePremiumGate, LockBadge } from '../../src/components/PremiumGate';
 import { logger } from '../../src/logger';
 
@@ -73,6 +73,7 @@ export default function Vault() {
   const [addingShop, setAddingShop] = useState(false);
   const [meals, setMeals] = useState<MealPlan[]>([]);
   const [expiryAlerts, setExpiryAlerts] = useState<ExpiryAlert[]>([]);
+  const [entitlements, setEntitlements] = useState<Entitlements | null>(null);
   const [mealDay, setMealDay] = useState('monday');
   const [mealTitle, setMealTitle] = useState('');
   const [mealIngredients, setMealIngredients] = useState('');
@@ -85,11 +86,12 @@ export default function Vault() {
 
   const load = useCallback(async () => {
     try {
-      const [vaultRes, shopRes, mealRes, expiryRes] = await Promise.allSettled([api.listVault(), api.listShopping(), api.listMeals(), api.vaultExpiryAlerts()]);
+      const [vaultRes, shopRes, mealRes, expiryRes, entRes] = await Promise.allSettled([api.listVault(), api.listShopping(), api.listMeals(), api.vaultExpiryAlerts(), api.getEntitlements()]);
       if (vaultRes.status === 'fulfilled') setDocs(vaultRes.value);
       if (shopRes.status === 'fulfilled') setShopItems(shopRes.value);
       if (mealRes.status === 'fulfilled') setMeals(mealRes.value);
       if (expiryRes.status === 'fulfilled') setExpiryAlerts(expiryRes.value);
+      if (entRes.status === 'fulfilled') setEntitlements(entRes.value);
       if (vaultRes.status === 'rejected') {
         logger.warn('Vault load failed:', vaultRes.reason);
         showToast('Could not load vault.', 'error');
@@ -110,12 +112,15 @@ export default function Vault() {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const usedMb = useMemo(() => {
-    const bytes = docs.reduce((sum, d) => sum + (d.image_base64?.length || 0) * 0.75, 0);
-    return bytes / (1024 * 1024);
-  }, [docs]);
+  const usedBytes = useMemo(() => {
+    // Prefer the server-computed total; fall back to estimating from loaded docs.
+    if (entitlements) return entitlements.vault_bytes_used;
+    return docs.reduce((sum, d) => sum + (d.image_base64?.length || 0) * 0.75, 0);
+  }, [entitlements, docs]);
+  const usedMb = usedBytes / (1024 * 1024);
+  const limitMb = entitlements ? entitlements.vault_bytes_limit / (1024 * 1024) : 500;
   const usedLabel = usedMb >= 1 ? `${usedMb.toFixed(0)} MB` : `${(usedMb * 1024).toFixed(0)} KB`;
-  const storagePct = Math.min(100, (usedMb / 500) * 100);
+  const storagePct = limitMb > 0 ? Math.min(100, (usedMb / limitMb) * 100) : 0;
 
   const filtered = useMemo(() => (filter === 'All' ? docs : docs.filter((d) => d.category === filter)), [docs, filter]);
 
@@ -128,18 +133,23 @@ export default function Vault() {
   const closeAdd = () => setShowAdd(false);
 
   const pickImage = async () => {
-    if (Platform.OS !== 'web') {
-      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!perm.granted) {
-        Alert.alert('Permission needed', 'Gallery access is required.');
-        return;
+    try {
+      if (Platform.OS !== 'web') {
+        const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!perm.granted) {
+          Alert.alert('Permission needed', 'Gallery access is required.');
+          return;
+        }
       }
-    }
-    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, base64: true, quality: 0.6 });
-    if (!res.canceled && res.assets?.[0]) {
-      const asset = res.assets[0];
-      const imageValue = asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri;
-      setImage(imageValue);
+      const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, base64: true, quality: 0.6 });
+      if (!res.canceled && res.assets?.[0]) {
+        const asset = res.assets[0];
+        const imageValue = asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri;
+        setImage(imageValue);
+      }
+    } catch (e: any) {
+      logger.warn('pickImage failed:', e?.message || e);
+      Alert.alert('Could not open gallery', 'Please try again.');
     }
   };
 
@@ -302,7 +312,7 @@ export default function Vault() {
               <Folder color={ui.orange} size={24} />
             </IconTile>
             <View style={{ flex: 1 }}>
-              <Text style={styles.storageText}>{docs.length} document{docs.length === 1 ? '' : 's'} · {usedLabel} used</Text>
+              <Text style={styles.storageText}>{docs.length} document{docs.length === 1 ? '' : 's'} · {usedLabel} of {limitMb >= 1024 ? `${(limitMb / 1024).toFixed(0)} GB` : `${limitMb.toFixed(0)} MB`}</Text>
               <View style={{ marginTop: 10 }}>
                 <ProgressBar pct={storagePct} />
               </View>

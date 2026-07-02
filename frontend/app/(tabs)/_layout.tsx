@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Tabs, usePathname, useRouter } from 'expo-router';
 import { View, StyleSheet, Text, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -119,9 +119,17 @@ function SidebarNav({ width }: { width: number }) {
 // ─── Root layout ─────────────────────────────────────────────────────────────
 
 export default function TabLayout() {
-  const { t, theme } = useStore();
+  const { t, theme, user, loading } = useStore();
   const { isWide, sidebarW } = useBreakpoint();
   const insets = useSafeAreaInsets();
+  const router = useRouter();
+
+  // If the session is cleared (logout or expiry), return to the landing screen.
+  useEffect(() => {
+    if (!loading && !user) {
+      router.replace('/');
+    }
+  }, [loading, user, router]);
 
   const floatingTabStyle = {
     position: 'absolute' as const,
