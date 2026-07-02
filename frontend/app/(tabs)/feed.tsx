@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -132,6 +132,10 @@ export default function Feed() {
   const ui = useUI();
   const styles = useMemo(() => createStyles(ui), [ui]);
   const [cards, setCards] = useState<Card[]>([]);
+  // Card ids the user just completed/dismissed. A refetch that raced the write
+  // can return them still OPEN; we hide those until the server confirms, so a
+  // dismissed card never reappears.
+  const pendingDismissRef = useRef<Set<string>>(new Set());
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [rewardCount, setRewardCount] = useState(0);
   const [vaultCount, setVaultCount] = useState(0);
@@ -168,7 +172,17 @@ export default function Feed() {
 
       let loadedCards: Card[] = [];
       if (cardsResult.status === 'fulfilled') {
-        loadedCards = cardsResult.value;
+        // Drop cards the user just dismissed that the server still reports as
+        // OPEN (a stale/raced snapshot); clear ones the server confirms DONE.
+        const pending = pendingDismissRef.current;
+        loadedCards = cardsResult.value.filter((c) => {
+          if (!pending.has(c.card_id)) return true;
+          if (c.status !== 'OPEN') {
+            pending.delete(c.card_id);
+            return true;
+          }
+          return false;
+        });
         setCards(loadedCards);
       } else {
         logger.warn('feed cards load failed', cardsResult.reason);
@@ -202,10 +216,6 @@ export default function Feed() {
       load();
     }, [load])
   );
-
-  useEffect(() => {
-    load();
-  }, [load]);
 
   const activeCards = useMemo(() => cards.filter((card) => card.status === 'OPEN'), [cards]);
 
@@ -283,10 +293,17 @@ export default function Feed() {
 
   const toggle = async (card: Card) => {
     const next = card.status === 'DONE' ? 'OPEN' : 'DONE';
+    if (next === 'DONE') {
+      pendingDismissRef.current.add(card.card_id);
+    } else {
+      pendingDismissRef.current.delete(card.card_id);
+    }
     setCards((prev) => (next === 'DONE' ? prev.filter((c) => c.card_id !== card.card_id) : prev.map((c) => (c.card_id === card.card_id ? { ...c, status: next, completed_at: null } : c))));
     try {
       await api.updateCard(card.card_id, { status: next });
     } catch {
+      pendingDismissRef.current.delete(card.card_id);
+      Alert.alert('Could not update', 'That change did not save. Please try again.');
       load();
     }
   };

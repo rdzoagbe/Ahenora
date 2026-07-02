@@ -182,6 +182,25 @@ def ensure_aware_utc(value):
     return None
 
 
+def advance_due_date(dt: datetime, recurrence: str) -> datetime:
+    """Return the next occurrence for a recurring card's due date."""
+    if recurrence == "daily":
+        return dt + timedelta(days=1)
+    if recurrence == "weekly":
+        return dt + timedelta(weeks=1)
+    if recurrence == "monthly":
+        month = dt.month + 1
+        year = dt.year + (month - 1) // 12
+        month = (month - 1) % 12 + 1
+        # Clamp the day to the last valid day of the target month.
+        for day in (dt.day, 30, 29, 28):
+            try:
+                return dt.replace(year=year, month=month, day=day)
+            except ValueError:
+                continue
+    return dt
+
+
 def new_id(prefix: str) -> str:
     return f"{prefix}_{secrets.token_hex(8)}"
 
@@ -2030,7 +2049,10 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
             and payload.status == "DONE"
             and card["type"] == "TASK"
             and bool(card.get("assignee"))
+            and not card.get("stars_awarded")
         )
+        if award_child:
+            changes["stars_awarded"] = True
 
     if payload.type is not None:
         if payload.type not in {"SIGN_SLIP", "RSVP", "TASK"}:
@@ -2067,6 +2089,31 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
 
     await database["cards"].update_one({"card_id": card_id}, {"$set": changes})
     updated = await database["cards"].find_one({"card_id": card_id}, {"_id": 0})
+
+    # When a recurring card is completed, spawn its next occurrence.
+    if (
+        changes.get("status") == "DONE"
+        and card["status"] != "DONE"
+        and card.get("recurrence") in {"daily", "weekly", "monthly"}
+    ):
+        base_due = ensure_aware_utc(card.get("due_date")) or utcnow()
+        next_doc = {
+            "card_id": new_id("card"),
+            "family_id": user["family_id"],
+            "type": card["type"],
+            "title": card["title"],
+            "description": card.get("description"),
+            "assignee": card.get("assignee"),
+            "due_date": advance_due_date(base_due, card["recurrence"]),
+            "status": "OPEN",
+            "source": card.get("source", "MANUAL"),
+            "image_base64": card.get("image_base64"),
+            "recurrence": card["recurrence"],
+            "reminder_minutes": card.get("reminder_minutes", 0),
+            "created_at": utcnow(),
+            "completed_at": None,
+        }
+        await database["cards"].insert_one(next_doc)
 
     if award_child:
         member = await database["family_members"].find_one(

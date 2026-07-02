@@ -8,7 +8,7 @@ import React, {
 } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useColorScheme } from 'react-native';
-import { api, User, tokenStore, Subscription } from './api';
+import { api, User, tokenStore, Subscription, setUnauthorizedHandler } from './api';
 import { Lang, SUPPORTED_LANGS, translate } from './i18n';
 import { AppearanceMode, AppTheme, getTheme, resolveAppearance, ResolvedAppearance } from './theme';
 import { logger } from './logger';
@@ -182,6 +182,17 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     refreshUser();
   }, [refreshUser]);
+
+  // Clear auth state if any request reports the session expired (401). The
+  // (tabs) layout redirects to the landing screen when user becomes null.
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      setUser(null);
+      setSubscription(null);
+      setLoading(false);
+    });
+    return () => setUnauthorizedHandler(null);
+  }, []);
 
   useEffect(() => {
     AsyncStorage.getItem(APPEARANCE_STORAGE_KEY)
