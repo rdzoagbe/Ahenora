@@ -16,12 +16,15 @@ import {
   Camera,
   CheckCircle2,
   ChevronRight,
+  Clock,
   Megaphone,
   MessageSquare,
   Mic,
   Plus,
   Star,
   Trash2,
+  User,
+  X,
   Zap,
 } from 'lucide-react-native';
 
@@ -31,6 +34,7 @@ import { PressScale } from '../../src/components/PressScale';
 import { AddCardModal } from '../../src/components/AddCardModal';
 import { VoiceCaptureModal } from '../../src/components/VoiceCaptureModal';
 import { CameraCaptureModal } from '../../src/components/CameraCaptureModal';
+import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
 import { TabScreen } from '../../src/components/TabScreen';
 import { useStore } from '../../src/store';
 import { usePremiumGate, LockBadge } from '../../src/components/PremiumGate';
@@ -106,12 +110,20 @@ function greetingFallback(name: string) {
   return `${prefix},${name ? `\n${name}` : ''}`;
 }
 
-function TaskRow({ card, onComplete, styles }: { card: Card; onComplete: () => void; styles: ReturnType<typeof createStyles> }) {
+function TaskRow({ card, onOpen, onComplete, styles }: { card: Card; onOpen: () => void; onComplete: () => void; styles: ReturnType<typeof createStyles> }) {
   const ui = useUI();
   const status = statusCopy(card.type, ui);
   return (
-    <PressScale style={styles.taskRow} onPress={onComplete} testID={`feed-card-${card.card_id}`}>
-      <View style={styles.checkRing}>{card.status === 'DONE' ? <CheckCircle2 size={18} color={ui.orange} /> : null}</View>
+    <PressScale style={styles.taskRow} onPress={onOpen} testID={`feed-card-${card.card_id}`}>
+      <PressScale
+        onPress={onComplete}
+        style={styles.checkRing}
+        accessibilityLabel={card.status === 'DONE' ? 'Mark as not done' : 'Mark as done'}
+        accessibilityRole="button"
+        testID={`feed-card-complete-${card.card_id}`}
+      >
+        {card.status === 'DONE' ? <CheckCircle2 size={18} color={ui.orange} /> : null}
+      </PressScale>
       <View style={styles.taskBody}>
         <Text style={styles.taskTitle} numberOfLines={1}>{card.title}</Text>
         <Text style={styles.taskMeta} numberOfLines={1}>{cardMeta(card)}</Text>
@@ -136,6 +148,7 @@ export default function Feed() {
   // can return them still OPEN; we hide those until the server confirms, so a
   // dismissed card never reappears.
   const pendingDismissRef = useRef<Set<string>>(new Set());
+  const [selectedCard, setSelectedCard] = useState<Card | null>(null);
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [rewardCount, setRewardCount] = useState(0);
   const [vaultCount, setVaultCount] = useState(0);
@@ -306,6 +319,25 @@ export default function Feed() {
       Alert.alert('Could not update', 'That change did not save. Please try again.');
       load();
     }
+  };
+
+  const completeSelected = () => {
+    if (!selectedCard) return;
+    const card = selectedCard;
+    Alert.alert(
+      'Mark as done?',
+      `"${card.title}" will move to completed history.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Done',
+          onPress: () => {
+            setSelectedCard(null);
+            toggle(card);
+          },
+        },
+      ],
+    );
   };
 
   const handleRefresh = useCallback(() => {
@@ -518,7 +550,7 @@ export default function Feed() {
               ) : (
                 visibleCards.map((card, index) => (
                   <View key={card.card_id}>
-                    <TaskRow card={card} onComplete={() => toggle(card)} styles={styles} />
+                    <TaskRow card={card} onOpen={() => setSelectedCard(card)} onComplete={() => toggle(card)} styles={styles} />
                     {index < visibleCards.length - 1 ? <View style={styles.rowDivider} /> : null}
                   </View>
                 ))
@@ -668,11 +700,51 @@ export default function Feed() {
         initialSource={addSource}
         initialDraft={voiceDraft}
       />
+
+      <KeyboardAwareBottomSheet visible={!!selectedCard} onClose={() => setSelectedCard(null)} contentStyle={styles.detailSheet}>
+        {selectedCard ? (
+          <>
+            <View style={styles.detailHeader}>
+              <Text style={styles.detailTitle}>{selectedCard.title}</Text>
+              <PressScale onPress={() => setSelectedCard(null)} style={styles.closeBtn} testID="feed-detail-close">
+                <X color={ui.text} size={20} />
+              </PressScale>
+            </View>
+            <View style={styles.detailMetaRow}>
+              <Clock color={ui.muted} size={17} />
+              <Text style={styles.detailMetaText}>{cardMeta(selectedCard)}</Text>
+            </View>
+            <View style={styles.detailMetaRow}>
+              <User color={ui.muted} size={17} />
+              <Text style={styles.detailMetaText}>{selectedCard.assignee || 'Unassigned'}</Text>
+            </View>
+            <View style={styles.detailBody}>
+              <Text style={[styles.detailDescription, !selectedCard.description && { color: ui.muted }]}>
+                {selectedCard.description || 'No additional details.'}
+              </Text>
+            </View>
+            <PressScale testID="feed-complete-card" onPress={completeSelected} style={styles.completeBtn}>
+              <CheckCircle2 color="#FFFFFF" size={18} />
+              <Text style={styles.completeBtnText}>Mark as done</Text>
+            </PressScale>
+          </>
+        ) : null}
+      </KeyboardAwareBottomSheet>
     </SwipeableTabView>
   );
 }
 
 const createStyles = (ui: UIColors) => StyleSheet.create({
+  detailSheet: { backgroundColor: ui.card, borderTopLeftRadius: 30, borderTopRightRadius: 30, borderWidth: 1, borderColor: ui.line, padding: 24, paddingBottom: 110 },
+  detailHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
+  detailTitle: { flex: 1, color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 24, lineHeight: 30, letterSpacing: -0.4 },
+  closeBtn: { width: 42, height: 42, borderRadius: 9999, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft, alignItems: 'center', justifyContent: 'center' },
+  detailMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 14 },
+  detailMetaText: { flex: 1, color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 15, lineHeight: 21 },
+  detailBody: { marginTop: 16, gap: 10 },
+  detailDescription: { color: ui.text, fontFamily: 'Inter_500Medium', fontSize: 16, lineHeight: 24 },
+  completeBtn: { marginTop: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, minHeight: 54, borderRadius: 99, backgroundColor: ui.orange },
+  completeBtnText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 16 },
   container: {
     flex: 1,
     backgroundColor: ui.bg,
