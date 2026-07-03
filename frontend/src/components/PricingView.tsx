@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -17,6 +17,7 @@ import {
   Lock,
 } from 'lucide-react-native';
 import { PressScale } from './PressScale';
+import { useUI, UIColors } from './Kit';
 import { useStore } from '../store';
 import { Plan, BillingCycle } from '../api';
 
@@ -35,6 +36,8 @@ interface Props {
 
 export function PricingView({ embedded = false, onAuthRequired }: Props) {
   const { t, subscription, user } = useStore();
+  const ui = useUI();
+  const styles = useMemo(() => createStyles(ui), [ui]);
   const [cycle, setCycle] = useState<BillingCycle>('yearly');
   const currentPlan: Plan = subscription?.plan ?? 'village';
 
@@ -60,7 +63,7 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
       >
         <View style={styles.header}>
           <View style={styles.badge}>
-            <Sparkles color="#fff" size={12} />
+            <Sparkles color={ui.text} size={12} />
             <Text style={styles.badgeText}>Plans</Text>
           </View>
           <Text style={styles.title}>Choose the right plan for your family.</Text>
@@ -68,7 +71,7 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
         </View>
 
         <View>
-          <BillingToggle value={cycle} onChange={setCycle} t={t} />
+          <BillingToggle value={cycle} onChange={setCycle} t={t} styles={styles} />
           <Text style={styles.billingNote}>
             Save with annual billing. Paid plans coming soon.
           </Text>
@@ -84,13 +87,14 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
                 onChoose={() => handleChoose(plan)}
                 showCurrentBadge={embedded && plan === currentPlan}
                 t={t}
+                styles={styles}
               />
             </View>
           ))}
         </View>
 
         <View style={styles.faqWrap}>
-          <Text style={styles.faqTitle}>Testing notes</Text>
+          <Text style={styles.faqTitle}>Good to know</Text>
           {[
             [t('pricing_faq_1_q'), t('pricing_faq_1_a')],
             [t('pricing_faq_2_q'), t('pricing_faq_2_a')],
@@ -113,10 +117,12 @@ function BillingToggle({
   value,
   onChange,
   t,
+  styles,
 }: {
   value: BillingCycle;
   onChange: (v: BillingCycle) => void;
   t: (k: string, p?: any) => string;
+  styles: ReturnType<typeof createStyles>;
 }) {
   return (
     <View style={styles.toggleContainer}>
@@ -157,6 +163,7 @@ function PlanCard({
   onChoose,
   showCurrentBadge,
   t,
+  styles,
 }: {
   plan: Plan;
   cycle: BillingCycle;
@@ -164,6 +171,7 @@ function PlanCard({
   onChoose: () => void;
   showCurrentBadge: boolean;
   t: (k: string, p?: any) => string;
+  styles: ReturnType<typeof createStyles>;
 }) {
   const price = PLAN_PRICES[plan][cycle];
   const perMonth = cycle === 'yearly' ? price / 12 : price;
@@ -316,7 +324,10 @@ const PLAN_THEMES: Record<
   },
 };
 
-const styles = StyleSheet.create({
+// Page chrome (header, toggle, notes, FAQ) follows the active theme; the plan
+// cards themselves are intentionally dark in both themes, so their inner
+// colors stay fixed.
+const createStyles = (ui: UIColors) => StyleSheet.create({
   root: { flex: 1 },
   scroll: { paddingHorizontal: 20, paddingTop: 24, paddingBottom: 40 },
   header: { alignItems: 'flex-start', marginBottom: 20 },
@@ -326,26 +337,26 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingHorizontal: 10,
     paddingVertical: 5,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: ui.soft,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
+    borderColor: ui.line,
     borderRadius: 9999,
     marginBottom: 16,
   },
   badgeText: {
-    color: '#fff',
+    color: ui.text,
     fontFamily: 'Inter_500Medium',
     fontSize: 11,
     letterSpacing: 0.5,
   },
   title: {
     fontFamily: 'PlayfairDisplay_400Regular_Italic',
-    color: '#fff',
+    color: ui.text,
     fontSize: 34,
     lineHeight: 40,
   },
   subtitle: {
-    color: 'rgba(255,255,255,0.55)',
+    color: ui.muted,
     fontFamily: 'Inter_400Regular',
     fontSize: 15,
     marginTop: 6,
@@ -357,9 +368,9 @@ const styles = StyleSheet.create({
   },
   toggleTrack: {
     flexDirection: 'row',
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: ui.soft,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: ui.line,
     borderRadius: 9999,
     padding: 4,
     position: 'relative',
@@ -372,7 +383,7 @@ const styles = StyleSheet.create({
     width: 100,
     height: 34,
     borderRadius: 9999,
-    backgroundColor: '#fff',
+    backgroundColor: ui.text,
   },
   togglePillYearly: { left: 104 },
   toggleOption: {
@@ -385,9 +396,9 @@ const styles = StyleSheet.create({
   toggleText: {
     fontFamily: 'Inter_500Medium',
     fontSize: 13,
-    color: 'rgba(255,255,255,0.6)',
+    color: ui.muted,
   },
-  toggleTextActive: { color: '#080910' },
+  toggleTextActive: { color: ui.bg },
   savingsBadge: {
     marginTop: 10,
     paddingHorizontal: 10,
@@ -398,7 +409,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(52,211,153,0.4)',
   },
   billingNote: {
-    color: 'rgba(255,255,255,0.64)',
+    color: ui.muted,
     fontFamily: 'Inter_600SemiBold',
     fontSize: 12,
     lineHeight: 18,
@@ -407,7 +418,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   savingsText: {
-    color: '#34D399',
+    color: ui.mintText,
     fontFamily: 'Inter_600SemiBold',
     fontSize: 11,
     letterSpacing: 0.6,
@@ -559,7 +570,7 @@ const styles = StyleSheet.create({
   },
   faqWrap: { marginTop: 32 },
   faqTitle: {
-    color: '#fff',
+    color: ui.text,
     fontFamily: 'PlayfairDisplay_400Regular_Italic',
     fontSize: 22,
     marginBottom: 14,
@@ -567,16 +578,16 @@ const styles = StyleSheet.create({
   faqItem: {
     paddingVertical: 14,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.08)',
+    borderTopColor: ui.line,
   },
   faqQ: {
-    color: '#fff',
+    color: ui.text,
     fontFamily: 'Inter_600SemiBold',
     fontSize: 14,
     marginBottom: 4,
   },
   faqA: {
-    color: 'rgba(255,255,255,0.6)',
+    color: ui.muted,
     fontFamily: 'Inter_400Regular',
     fontSize: 13,
     lineHeight: 19,

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -6,11 +6,14 @@ import { ArrowLeft } from 'lucide-react-native';
 import { PricingView } from '../src/components/PricingView';
 import { PressScale } from '../src/components/PressScale';
 import { AmbientBackground } from '../src/components/AmbientBackground';
+import { useUI, UIColors } from '../src/components/Kit';
 import { useStore } from '../src/store';
 
 export default function PricingScreen() {
   const router = useRouter();
   const { t, user } = useStore();
+  const ui = useUI();
+  const styles = useMemo(() => createStyles(ui), [ui]);
 
   const goBack = () => {
     if (Platform.OS === 'web' && typeof window !== 'undefined' && window.history.length > 1) {
@@ -34,7 +37,7 @@ export default function PricingScreen() {
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         <View style={styles.topBar}>
           <PressScale testID="pricing-back" onPress={goBack} style={styles.backBtn}>
-            <ArrowLeft color="rgba(255,255,255,0.8)" size={16} />
+            <ArrowLeft color={ui.text} size={16} />
             <Text style={styles.backText}>{t('back')}</Text>
           </PressScale>
         </View>
@@ -44,8 +47,8 @@ export default function PricingScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#080910' },
+const createStyles = (ui: UIColors) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: ui.bg },
   safe: { flex: 1 },
   topBar: {
     paddingHorizontal: 20,
@@ -62,11 +65,11 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     borderRadius: 9999,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderColor: ui.line,
+    backgroundColor: ui.soft,
   },
   backText: {
-    color: 'rgba(255,255,255,0.85)',
+    color: ui.text,
     fontFamily: 'Inter_500Medium',
     fontSize: 12,
     letterSpacing: 0.4,
