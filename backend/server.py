@@ -479,6 +479,7 @@ def public_member(member: dict) -> dict:
         "avatar": member.get("avatar"),
         "stars": member.get("stars", 0),
         "has_pin": bool(member.get("pin_hash")),
+        "has_account": bool(member.get("user_id")),
     }
 
 
@@ -1274,41 +1275,18 @@ async def exchange_session(payload: SessionIn):
                 }
             )
 
-            seed_members = [
-                {
-                    "member_id": new_id("member"),
-                    "family_id": family_id,
-                    "user_id": user["user_id"],
-                    "email": email,
-                    "name": name,
-                    "role": "Parent",
-                    "avatar": picture,
-                    "stars": 0,
-                    "pin_hash": None,
-                    "created_at": utcnow(),
-                },
-                {
-                    "member_id": new_id("member"),
-                    "family_id": family_id,
-                    "name": "Emma",
-                    "role": "Child",
-                    "avatar": None,
-                    "stars": 0,
-                    "pin_hash": None,
-                    "created_at": utcnow(),
-                },
-                {
-                    "member_id": new_id("member"),
-                    "family_id": family_id,
-                    "name": "Noah",
-                    "role": "Child",
-                    "avatar": None,
-                    "stars": 0,
-                    "pin_hash": None,
-                    "created_at": utcnow(),
-                },
-            ]
-            await database["family_members"].insert_many(seed_members)
+            await database["family_members"].insert_one({
+                "member_id": new_id("member"),
+                "family_id": family_id,
+                "user_id": user["user_id"],
+                "email": email,
+                "name": name,
+                "role": "Parent",
+                "avatar": picture,
+                "stars": 0,
+                "pin_hash": None,
+                "created_at": utcnow(),
+            })
         else:
             await add_user_to_family_if_needed(database, user, target_family_id)
     else:
@@ -1373,48 +1351,26 @@ async def _issue_session(database, user_id: str) -> str:
 async def _seed_new_family(database, user: dict, family_id: str, email: str, name: str, picture=None):
     await database["families"].insert_one({
         "family_id": family_id,
-        "plan": "executive",
+        "plan": "village",
         "billing_cycle": "monthly",
-        "grandfathered": True,
+        "grandfathered": False,
         "updated_at": utcnow(),
         "ai_scans_used": 0,
         "ai_scans_period_start": utcnow(),
         "vault_bytes_used": 0,
     })
-    await database["family_members"].insert_many([
-        {
-            "member_id": new_id("member"),
-            "family_id": family_id,
-            "user_id": user["user_id"],
-            "email": email,
-            "name": name,
-            "role": "Parent",
-            "avatar": picture,
-            "stars": 0,
-            "pin_hash": None,
-            "created_at": utcnow(),
-        },
-        {
-            "member_id": new_id("member"),
-            "family_id": family_id,
-            "name": "Emma",
-            "role": "Child",
-            "avatar": None,
-            "stars": 0,
-            "pin_hash": None,
-            "created_at": utcnow(),
-        },
-        {
-            "member_id": new_id("member"),
-            "family_id": family_id,
-            "name": "Noah",
-            "role": "Child",
-            "avatar": None,
-            "stars": 0,
-            "pin_hash": None,
-            "created_at": utcnow(),
-        },
-    ])
+    await database["family_members"].insert_one({
+        "member_id": new_id("member"),
+        "family_id": family_id,
+        "user_id": user["user_id"],
+        "email": email,
+        "name": name,
+        "role": "Parent",
+        "avatar": picture,
+        "stars": 0,
+        "pin_hash": None,
+        "created_at": utcnow(),
+    })
 
 
 async def _resolve_invite(database, invite_token: Optional[str], email: str):
@@ -1599,6 +1555,28 @@ async def create_family_member(payload: ChildIn, user=Depends(require_user)):
         await database["star_transactions"].insert_one(transaction)
 
     return public_member(member)
+
+
+@app.delete("/api/family/members/{member_id}")
+async def delete_family_member(member_id: str, user=Depends(require_user)):
+    database = get_db()
+    member = await database["family_members"].find_one(
+        {"member_id": member_id, "family_id": user["family_id"]},
+        {"_id": 0},
+    )
+    if not member:
+        raise HTTPException(status_code=404, detail="Member not found")
+    if member.get("user_id"):
+        raise HTTPException(
+            status_code=400,
+            detail="This member is a signed-in account and cannot be removed here. Use account deletion instead.",
+        )
+
+    await database["family_members"].delete_one({"member_id": member_id})
+    await database["star_transactions"].delete_many(
+        {"member_id": member_id, "family_id": user["family_id"]}
+    )
+    return {"ok": True}
 
 
 @app.post("/api/family/members/{member_id}/stars")

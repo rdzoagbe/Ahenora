@@ -346,6 +346,7 @@ export interface FamilyMember {
   avatar?: string | null;
   stars: number;
   has_pin?: boolean;
+  has_account?: boolean;
 }
 
 export interface Reward {
@@ -549,6 +550,11 @@ export const api = {
       method: 'POST',
       body: data,
     });
+  },
+  deleteFamilyMember: (member_id: string) => {
+    cache.invalidate('familyMembers');
+    invalidateUsageCaches();
+    return request(`/family/members/${member_id}`, { method: 'DELETE' });
   },
   adjustMemberStars: (member_id: string, data: { delta: number; reason?: string }) => {
     cache.invalidate('familyMembers');
