@@ -130,6 +130,28 @@ export default function Settings() {
   const weeklyBrief = Boolean(entitlements?.weekly_brief || subscription?.limits?.weekly_brief);
   const initial = (user?.name?.[0] || 'C').toUpperCase();
 
+  const removeMember = useCallback((member: FamilyMember) => {
+    Alert.alert(
+      `Remove ${member.name}?`,
+      'Their profile and star history will be removed from the household. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await api.deleteFamilyMember(member.member_id);
+              setMembers((prev) => prev.filter((m) => m.member_id !== member.member_id));
+            } catch (error: any) {
+              Alert.alert('Could not remove member', error?.message || 'Please try again.');
+            }
+          },
+        },
+      ],
+    );
+  }, []);
+
   const shareInviteLink = useCallback(async (inviteUrl?: string | null, email?: string | null) => {
     if (!inviteUrl) {
       setInviteResult(email ? 'Invite link is not available yet for ' + email + '.' : 'Invite link is not available yet.');
@@ -363,7 +385,19 @@ export default function Settings() {
             {expandMembers ? (
               <View style={styles.expandBox}>
                 {members.length === 0 ? <Text style={styles.emptyText}>No family members yet.</Text> : members.map((m) => (
-                  <MiniRow key={m.member_id} initial={m.name[0]?.toUpperCase()} name={m.name} sub={m.role} />
+                  <View key={m.member_id} style={styles.inviteRow}>
+                    <MiniRow initial={m.name[0]?.toUpperCase()} name={m.name} sub={m.has_account ? `${m.role} · account` : m.role} />
+                    {!m.has_account ? (
+                      <PressScale
+                        testID={`remove-member-${m.member_id}`}
+                        onPress={() => removeMember(m)}
+                        style={{ padding: 4 }}
+                        accessibilityLabel={`Remove ${m.name}`}
+                      >
+                        <Trash2 color={ui.muted} size={15} />
+                      </PressScale>
+                    ) : null}
+                  </View>
                 ))}
                 {invites.filter((i) => i.status === 'pending').map((invite) => (
                   <View key={invite.invite_id} style={styles.inviteRow}>
