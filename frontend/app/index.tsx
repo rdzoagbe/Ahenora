@@ -42,7 +42,7 @@ function extractInviteToken(rawUrl?: string | null) {
   }
 }
 
-function authErrorMessage(error: unknown, params?: Record<string, string>) {
+function authErrorMessage(error: unknown, params?: Record<string, string>, fallback?: string) {
   const candidate = error as { description?: string; code?: string; name?: string } | null | undefined;
   return (
     candidate?.description ||
@@ -50,6 +50,7 @@ function authErrorMessage(error: unknown, params?: Record<string, string>) {
     candidate?.name ||
     params?.error_description ||
     params?.error ||
+    fallback ||
     'Google returned an authentication error.'
   );
 }
@@ -140,7 +141,7 @@ export default function Landing() {
 
       if (response.type === 'error') {
         logger.error('google auth-session error', response.error || response.params);
-        Alert.alert('Google Sign-In failed', authErrorMessage(response.error, response.params));
+        Alert.alert(t('land_google_signin_failed'), authErrorMessage(response.error, response.params, t('land_google_auth_error')));
         return;
       }
 
@@ -155,7 +156,7 @@ export default function Landing() {
           (response.authentication as any)?.rawResponse?.id_token;
 
         if (!idToken) {
-          Alert.alert('Sign-in failed', 'Google did not return an ID token.');
+          Alert.alert(t('land_signin_failed'), t('land_no_id_token'));
           handledResponseRef.current = false;
           return;
         }
@@ -184,7 +185,7 @@ export default function Landing() {
         router.replace('/feed');
       } catch (error: any) {
         logger.error('google sign-in failed', error?.message || error);
-        Alert.alert('Sign-in failed', error?.message || 'Please try again.');
+        Alert.alert(t('land_signin_failed'), error?.message || t('land_try_again'));
         handledResponseRef.current = false;
         setSigningIn(false);
       }
@@ -199,7 +200,7 @@ export default function Landing() {
     try {
       if (Platform.OS === 'android') {
         if (!webClientId) {
-          Alert.alert('Sign-in unavailable', 'Google Sign-In is not configured.');
+          Alert.alert(t('land_signin_unavailable'), t('land_google_not_configured'));
           setSigningIn(false);
           return;
         }
@@ -210,7 +211,7 @@ export default function Landing() {
         const idToken = userInfo?.data?.idToken || (userInfo as any)?.idToken;
 
         if (!idToken) {
-          Alert.alert('Sign-in failed', 'Google did not return an ID token.');
+          Alert.alert(t('land_signin_failed'), t('land_no_id_token'));
           setSigningIn(false);
           return;
         }
@@ -228,13 +229,13 @@ export default function Landing() {
       }
 
       if (!webClientId) {
-        Alert.alert('Sign-in unavailable', 'Google Sign-In is not configured.');
+        Alert.alert(t('land_signin_unavailable'), t('land_google_not_configured'));
         setSigningIn(false);
         return;
       }
 
       if (!request) {
-        Alert.alert('Sign-in not ready', 'Please try again in a moment.');
+        Alert.alert(t('land_signin_not_ready'), t('land_try_again_moment'));
         setSigningIn(false);
         return;
       }
@@ -250,7 +251,7 @@ export default function Landing() {
       setSigningIn(false);
       if (error?.code === 'SIGN_IN_CANCELLED') return;
       logger.error('google sign-in failed', error?.message || error);
-      Alert.alert('Sign-in failed', error?.message || 'Please try again.');
+      Alert.alert(t('land_signin_failed'), error?.message || t('land_try_again'));
     }
   };
 
@@ -285,7 +286,7 @@ export default function Landing() {
             testID="landing-lang"
             onPress={() => setShowLang(true)}
             style={[styles.langBtn, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}
-            accessibilityLabel="Change language"
+            accessibilityLabel={t('land_change_language')}
             accessibilityRole="button"
           >
             <Globe color={theme.colors.textMuted} size={14} />
@@ -296,7 +297,7 @@ export default function Landing() {
         <View style={styles.center}>
           <View style={[styles.badge, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}> 
             <Sparkles color={theme.colors.text} size={12} />
-            <Text style={[styles.badgeText, { color: theme.colors.text }]}>Now available on Google Play</Text>
+            <Text style={[styles.badgeText, { color: theme.colors.text }]}>{t('land_badge_google_play')}</Text>
           </View>
 
           {invitedBy ? (
@@ -306,17 +307,17 @@ export default function Landing() {
             >
               <Text style={[styles.inviteText, { color: theme.colors.textMuted }]}> 
                 <Text style={[styles.inviteStrong, { color: theme.colors.text }]}>{invitedBy}</Text>
-                {' invited you to join their Household COO.'}
+                {t('land_invite_suffix')}
               </Text>
             </View>
           ) : null}
 
-          <Text style={[styles.heading, { color: theme.colors.text }]}>Organise your household, calmly.</Text>
-          <Text style={[styles.sub, { color: theme.colors.textMuted }]}>Manage family tasks, reminders, scanned documents, calendar events, and secure vault items in one place.</Text>
+          <Text style={[styles.heading, { color: theme.colors.text }]}>{t('land_heading')}</Text>
+          <Text style={[styles.sub, { color: theme.colors.textMuted }]}>{t('land_sub')}</Text>
 
           <View style={[styles.testingCard, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}> 
             <ShieldCheck color={theme.colors.accent} size={16} />
-            <Text style={[styles.testingText, { color: theme.colors.textMuted }]}>Your data stays private. Account and privacy controls are available in Settings.</Text>
+            <Text style={[styles.testingText, { color: theme.colors.textMuted }]}>{t('land_privacy_note')}</Text>
           </View>
 
           <View style={styles.buttonStack}>
@@ -329,7 +330,7 @@ export default function Landing() {
                 { backgroundColor: theme.colors.primary },
                 (signingIn || (Platform.OS === 'web' && !request)) && styles.ctaDisabled,
               ]}
-              accessibilityLabel="Sign in with Google"
+              accessibilityLabel={t('land_a11y_google')}
               accessibilityRole="button"
             >
               {signingIn ? (
@@ -349,13 +350,13 @@ export default function Landing() {
               onPress={() => setShowEmailAuth(true)}
               disabled={signingIn}
               style={[styles.cta, styles.emailCta, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }, signingIn && styles.ctaDisabled]}
-              accessibilityLabel="Create an account with email"
+              accessibilityLabel={t('land_email_cta')}
               accessibilityRole="button"
             >
               <View style={[styles.emailDot, { backgroundColor: theme.colors.accentSoft }]}>
                 <Mail color={theme.colors.accent} size={15} />
               </View>
-              <Text style={[styles.ctaText, { color: theme.colors.text }]}>Create an account with email</Text>
+              <Text style={[styles.ctaText, { color: theme.colors.text }]}>{t('land_email_cta')}</Text>
             </PressScale>
 
             <PressScale
@@ -363,27 +364,27 @@ export default function Landing() {
               onPress={() => router.push('/pricing')}
               disabled={signingIn}
               style={[styles.secondaryCta, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }, signingIn && styles.ctaDisabled]}
-              accessibilityLabel="View plans"
+              accessibilityLabel={t('land_view_plans')}
               accessibilityRole="button"
             >
-              <Text style={[styles.secondaryCtaText, { color: theme.colors.text }]}>View plans</Text>
+              <Text style={[styles.secondaryCtaText, { color: theme.colors.text }]}>{t('land_view_plans')}</Text>
               <ArrowRight color={theme.colors.text} size={14} />
             </PressScale>
           </View>
 
           <View style={styles.secureRow}>
             <ShieldCheck color={theme.colors.textSoft} size={12} />
-            <Text style={[styles.secureText, { color: theme.colors.textSoft }]}>Secure sign-in · Family data stays inside your Household COO account</Text>
+            <Text style={[styles.secureText, { color: theme.colors.textSoft }]}>{t('land_secure_note')}</Text>
           </View>
 
           <View style={styles.adminNote}>
             <Crown color="#F59E0B" size={12} />
-            <Text style={[styles.adminNoteText, { color: theme.colors.textSoft }]}>Premium plans unlock extra features for your household.</Text>
+            <Text style={[styles.adminNoteText, { color: theme.colors.textSoft }]}>{t('land_premium_note')}</Text>
           </View>
         </View>
 
         <View style={styles.footer}>
-          <Text style={[styles.foot, { color: theme.colors.textSoft }]}>Household COO · household operations for families</Text>
+          <Text style={[styles.foot, { color: theme.colors.textSoft }]}>{t('land_footer')}</Text>
         </View>
       </SafeAreaView>
 
