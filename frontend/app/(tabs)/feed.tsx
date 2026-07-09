@@ -170,6 +170,8 @@ export default function Feed() {
   const [savingAnn, setSavingAnn] = useState(false);
   const [report, setReport] = useState<WeeklyReport | null>(null);
   const [expandReport, setExpandReport] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const [runningTemplate, setRunningTemplate] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -197,8 +199,13 @@ export default function Feed() {
           return false;
         });
         setCards(loadedCards);
+        setLoadError(false);
       } else {
+        // Distinguish a real load failure (offline / backend down) from a
+        // genuinely empty account so we don't show an empty feed as if the
+        // user's data vanished.
         logger.warn('feed cards load failed', cardsResult.reason);
+        setLoadError(true);
       }
 
       if (membersResult.status === 'fulfilled') setMembers(membersResult.value);
@@ -364,18 +371,23 @@ export default function Feed() {
     try {
       await api.deleteHandoffNote(noteId);
     } catch {
+      Alert.alert('Could not delete', 'That note was restored. Please try again.');
       load();
     }
   }, [load]);
 
   const runTemplate = useCallback(async (tpl: Template) => {
+    if (runningTemplate) return;
+    setRunningTemplate(tpl.template_id);
     try {
       await api.generateFromTemplate(tpl.template_id);
       load();
     } catch {
       Alert.alert('Error', 'Could not generate card from template.');
+    } finally {
+      setRunningTemplate(null);
     }
-  }, [load]);
+  }, [load, runningTemplate]);
 
   const enabledTemplates = useMemo(() => templates.filter((t) => t.enabled), [templates]);
 
@@ -395,7 +407,12 @@ export default function Feed() {
 
   const removeAnnouncement = useCallback(async (id: string) => {
     setAnnouncements((prev) => prev.filter((a) => a.announcement_id !== id));
-    try { await api.deleteAnnouncement(id); } catch { load(); }
+    try {
+      await api.deleteAnnouncement(id);
+    } catch {
+      Alert.alert('Could not delete', 'That announcement was restored. Please try again.');
+      load();
+    }
   }, [load]);
 
   return (
@@ -459,7 +476,12 @@ export default function Feed() {
             {enabledTemplates.length > 0 ? (
               <View style={styles.templateRow}>
                 {enabledTemplates.slice(0, 4).map((tpl) => (
-                  <PressScale key={tpl.template_id} onPress={() => runTemplate(tpl)} style={styles.templateChip}>
+                  <PressScale
+                    key={tpl.template_id}
+                    onPress={() => runTemplate(tpl)}
+                    disabled={runningTemplate !== null}
+                    style={[styles.templateChip, runningTemplate !== null && { opacity: 0.5 }]}
+                  >
                     <Zap color={ui.orange} size={14} />
                     <Text style={styles.templateChipText} numberOfLines={1}>{tpl.title}</Text>
                   </PressScale>
@@ -541,6 +563,12 @@ export default function Feed() {
             <View style={styles.listCard}>
               {loading ? (
                 <ActivityIndicator color={ui.orange} style={{ paddingVertical: 32 }} />
+              ) : loadError && visibleCards.length === 0 ? (
+                <PressScale onPress={handleRefresh} style={styles.emptyBox}>
+                  <AlertTriangle color={ui.orange} size={22} />
+                  <Text style={styles.emptyTitle}>Couldn&apos;t load your tasks</Text>
+                  <Text style={styles.emptySub}>Check your connection and tap to try again.</Text>
+                </PressScale>
               ) : visibleCards.length === 0 ? (
                 <View style={styles.emptyBox}>
                   <CheckCircle2 color={ui.mintText} size={22} />

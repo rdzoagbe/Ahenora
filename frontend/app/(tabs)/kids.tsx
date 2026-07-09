@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -130,6 +130,8 @@ export default function Kids() {
   const [refreshing, setRefreshing] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [pinPromptReward, setPinPromptReward] = useState<Reward | null>(null);
+  // Guards against double-tap double-charging stars (redeem) / double-awarding.
+  const starActionRef = useRef(false);
 
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [allowances, setAllowances] = useState<AllowanceConfig[]>([]);
@@ -280,7 +282,21 @@ export default function Kids() {
       await refreshHistory(created.member_id);
     } catch (e: any) {
       logger.warn('Create child failed:', e?.message || e);
-      showToast(e?.message || 'Could not add child.', 'error');
+      // A member-limit (402) is a plan cap, not a random error — explain it
+      // clearly and offer to view plans instead of a vanishing toast.
+      if (e?.status === 402 || e?.planLimit) {
+        setShowChildSheet(false);
+        Alert.alert(
+          'Household is full',
+          "You've reached the number of members your current plan allows. More plans are coming soon.",
+          [
+            { text: 'Not now', style: 'cancel' },
+            { text: 'See plans', onPress: () => router.push('/pricing') },
+          ],
+        );
+      } else {
+        showToast(e?.message || 'Could not add child.', 'error');
+      }
     } finally {
       setSaving(false);
     }
@@ -364,6 +380,8 @@ export default function Kids() {
 
   const quickAdd = async (reason: string, amount: number) => {
     if (!activeChild) { showToast('Add or select a child first.', 'error'); return; }
+    if (starActionRef.current) return;
+    starActionRef.current = true;
     try {
       const result = await api.adjustMemberStars(activeChild.member_id, { delta: amount, reason });
       setMembers((prev) => prev.map((member) => (member.member_id === result.member.member_id ? result.member : member)));
@@ -372,11 +390,15 @@ export default function Kids() {
     } catch (e: any) {
       logger.warn('Quick add failed:', e?.message || e);
       showToast(e?.message || 'Could not add stars.', 'error');
+    } finally {
+      starActionRef.current = false;
     }
   };
 
   const doRedeem = useCallback(async (reward: Reward) => {
     if (!activeChild) return;
+    if (starActionRef.current) return;
+    starActionRef.current = true;
     try {
       const res = await api.redeemReward(reward.reward_id, activeChild.member_id);
       setMembers((prev) => prev.map((m) => (m.member_id === res.member.member_id ? res.member : m)));
@@ -385,6 +407,8 @@ export default function Kids() {
     } catch (e: any) {
       logger.warn('Reward redemption failed:', e?.message || e);
       showToast(e?.message || 'Could not redeem reward.', 'error');
+    } finally {
+      starActionRef.current = false;
     }
   }, [activeChild, refreshHistory, showToast, t]);
 
@@ -403,15 +427,43 @@ export default function Kids() {
     } catch { showToast('Could not rotate chore.', 'error'); }
   }, [showToast]);
 
-  const deleteChore = useCallback(async (choreId: string) => {
-    setChores((prev) => prev.filter((c) => c.chore_id !== choreId));
-    try { await api.deleteChore(choreId); } catch { load(); }
-  }, [load]);
+  const deleteChore = useCallback((choreId: string) => {
+    Alert.alert('Delete chore?', 'This chore will be removed.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          setChores((prev) => prev.filter((c) => c.chore_id !== choreId));
+          try {
+            await api.deleteChore(choreId);
+          } catch {
+            showToast('Could not delete — restored.', 'error');
+            load();
+          }
+        },
+      },
+    ]);
+  }, [load, showToast]);
 
-  const deleteRoutine = useCallback(async (id: string) => {
-    setRoutines((prev) => prev.filter((r) => r.routine_id !== id));
-    try { await api.deleteRoutine(id); } catch { load(); }
-  }, [load]);
+  const deleteRoutine = useCallback((id: string) => {
+    Alert.alert('Delete routine?', 'This routine will be removed.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          setRoutines((prev) => prev.filter((r) => r.routine_id !== id));
+          try {
+            await api.deleteRoutine(id);
+          } catch {
+            showToast('Could not delete — restored.', 'error');
+            load();
+          }
+        },
+      },
+    ]);
+  }, [load, showToast]);
 
   const logRoutine = useCallback(async (id: string) => {
     try {

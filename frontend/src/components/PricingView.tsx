@@ -47,7 +47,10 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
       return;
     }
 
-    if (plan === currentPlan && subscription?.billing_cycle === cycle) return;
+    if (plan === currentPlan) {
+      Alert.alert('Your current plan', "You're already on this plan. Enjoy!");
+      return;
+    }
 
     Alert.alert(
       'Coming soon',

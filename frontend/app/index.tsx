@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Alert, ImageBackground, Platform, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, ImageBackground, Platform, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as AuthSession from 'expo-auth-session';
@@ -61,6 +61,7 @@ export default function Landing() {
 
   const [showLang, setShowLang] = useState(false);
   const [showEmailAuth, setShowEmailAuth] = useState(false);
+  const [signingIn, setSigningIn] = useState(false);
   const [inviteToken, setInviteToken] = useState<string | null>(null);
   const [invitedBy, setInvitedBy] = useState<string | null>(null);
 
@@ -185,6 +186,7 @@ export default function Landing() {
         logger.error('google sign-in failed', error?.message || error);
         Alert.alert('Sign-in failed', error?.message || 'Please try again.');
         handledResponseRef.current = false;
+        setSigningIn(false);
       }
     };
 
@@ -192,10 +194,13 @@ export default function Landing() {
   }, [response, inviteToken, router, setUserFromAuth]);
 
   const signIn = async () => {
+    if (signingIn) return;
+    setSigningIn(true);
     try {
       if (Platform.OS === 'android') {
         if (!webClientId) {
           Alert.alert('Sign-in unavailable', 'Google Sign-In is not configured.');
+          setSigningIn(false);
           return;
         }
 
@@ -206,6 +211,7 @@ export default function Landing() {
 
         if (!idToken) {
           Alert.alert('Sign-in failed', 'Google did not return an ID token.');
+          setSigningIn(false);
           return;
         }
 
@@ -223,17 +229,25 @@ export default function Landing() {
 
       if (!webClientId) {
         Alert.alert('Sign-in unavailable', 'Google Sign-In is not configured.');
+        setSigningIn(false);
         return;
       }
 
       if (!request) {
         Alert.alert('Sign-in not ready', 'Please try again in a moment.');
+        setSigningIn(false);
         return;
       }
 
       handledResponseRef.current = false;
-      await promptAsync();
+      const result = await promptAsync();
+      // The success case is finished by the response effect (which navigates);
+      // for any other outcome (dismiss/cancel) clear the busy state here.
+      if (!result || result.type !== 'success') {
+        setSigningIn(false);
+      }
     } catch (error: any) {
+      setSigningIn(false);
       if (error?.code === 'SIGN_IN_CANCELLED') return;
       logger.error('google sign-in failed', error?.message || error);
       Alert.alert('Sign-in failed', error?.message || 'Please try again.');
@@ -309,25 +323,32 @@ export default function Landing() {
             <PressScale
               testID="google-signin"
               onPress={signIn}
-              disabled={Platform.OS === 'web' && !request}
+              disabled={signingIn || (Platform.OS === 'web' && !request)}
               style={[
                 styles.cta,
                 { backgroundColor: theme.colors.primary },
-                Platform.OS === 'web' && !request && styles.ctaDisabled,
+                (signingIn || (Platform.OS === 'web' && !request)) && styles.ctaDisabled,
               ]}
               accessibilityLabel="Sign in with Google"
               accessibilityRole="button"
             >
-              <View style={styles.googleDot}>
-                <Text style={styles.googleText}>G</Text>
-              </View>
-              <Text style={[styles.ctaText, { color: theme.colors.primaryText }]}>{t('sign_in')}</Text>
+              {signingIn ? (
+                <ActivityIndicator color={theme.colors.primaryText} />
+              ) : (
+                <>
+                  <View style={styles.googleDot}>
+                    <Text style={styles.googleText}>G</Text>
+                  </View>
+                  <Text style={[styles.ctaText, { color: theme.colors.primaryText }]}>{t('sign_in')}</Text>
+                </>
+              )}
             </PressScale>
 
             <PressScale
               testID="email-signin"
               onPress={() => setShowEmailAuth(true)}
-              style={[styles.cta, styles.emailCta, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}
+              disabled={signingIn}
+              style={[styles.cta, styles.emailCta, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }, signingIn && styles.ctaDisabled]}
               accessibilityLabel="Create an account with email"
               accessibilityRole="button"
             >
@@ -340,7 +361,8 @@ export default function Landing() {
             <PressScale
               testID="landing-pricing-link"
               onPress={() => router.push('/pricing')}
-              style={[styles.secondaryCta, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}
+              disabled={signingIn}
+              style={[styles.secondaryCta, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }, signingIn && styles.ctaDisabled]}
               accessibilityLabel="View plans"
               accessibilityRole="button"
             >

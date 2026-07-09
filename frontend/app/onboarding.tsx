@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ArrowRight, Check, Crown, Plus, Sparkles, Trash2, Users } from 'lucide-react-native';
@@ -45,23 +45,58 @@ export default function Onboarding() {
     setFinishing(true);
     try {
       const names = childNames.map((n) => n.trim()).filter(Boolean);
+
+      // Dedupe against members already on the server so a retry (or a repeated
+      // run after a previous failure) never creates duplicate children.
+      let existing = new Set<string>();
+      try {
+        const members = await api.familyMembers();
+        existing = new Set(members.map((m) => m.name.trim().toLowerCase()));
+      } catch (e) {
+        logger.warn('onboarding member fetch failed', e);
+      }
+
+      let addFailed = false;
       for (const name of names) {
+        if (existing.has(name.toLowerCase())) continue;
         try {
           await api.createFamilyMember({ name });
+          existing.add(name.toLowerCase());
         } catch (e) {
-          // A single failed add shouldn't block finishing onboarding.
           logger.warn('onboarding add child failed', e);
+          addFailed = true;
         }
       }
-      try {
-        await api.completeOnboarding();
-      } catch (e) {
-        logger.warn('completeOnboarding failed', e);
-      }
-      // Refresh so user.onboarding_completed is up to date before we leave.
+
+      // Only mark onboarding done — and leave the screen — if the flag actually
+      // persists. Otherwise the user would land in the app believing setup
+      // saved (it didn't) and get re-onboarded next launch.
+      await api.completeOnboarding();
       await refreshUser().catch(() => undefined);
+
+      if (addFailed) {
+        Alert.alert(
+          'Almost there',
+          "You're all set, but we couldn't add every child. You can add them anytime in Settings.",
+          [{ text: 'OK', onPress: goFeed }],
+        );
+      } else {
+        goFeed();
+      }
+    } catch (e) {
+      // completeOnboarding failed — do NOT navigate away (avoids a fake
+      // success + a re-onboarding loop). Let the user retry or skip.
+      logger.warn('completeOnboarding failed', e);
+      Alert.alert(
+        "Couldn't finish setup",
+        'Please check your connection and try again.',
+        [
+          { text: 'Skip for now', style: 'cancel', onPress: goFeed },
+          { text: 'Retry', onPress: () => { setFinishing(false); finish(); } },
+        ],
+      );
     } finally {
-      goFeed();
+      setFinishing(false);
     }
   };
 
