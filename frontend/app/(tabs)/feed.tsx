@@ -39,8 +39,8 @@ import { TabScreen } from '../../src/components/TabScreen';
 import { useStore } from '../../src/store';
 import { usePremiumGate, LockBadge } from '../../src/components/PremiumGate';
 import { useUI, UIColors } from '../../src/components/Kit';
-import { api, Announcement, Card, CardType, FamilyMember, HandoffNote, Template, WeeklyReport } from '../../src/api';
-import { syncCardReminderNotifications } from '../../src/notifications';
+import { api, logEvent, Announcement, Card, CardType, FamilyMember, HandoffNote, Template, WeeklyReport } from '../../src/api';
+import { syncCardReminderNotifications, syncMorningDigest } from '../../src/notifications';
 import { logger } from '../../src/logger';
 
 interface VoiceDraft {
@@ -177,6 +177,7 @@ export default function Feed() {
   const [runningTemplate, setRunningTemplate] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    logEvent('feed_open');
     try {
       const [cardsResult, membersResult, rewardsResult, vaultResult, notesResult, templatesResult, annResult] = await Promise.allSettled([
         api.listCards(),
@@ -223,7 +224,32 @@ export default function Feed() {
       if (cardsResult.status === 'fulfilled') {
         api
           .getNotificationSettings()
-          .then((prefs) => syncCardReminderNotifications(prefs.card_reminders ? loadedCards : [], prefs.card_reminders))
+          .then((prefs) => {
+            syncCardReminderNotifications(prefs.card_reminders ? loadedCards : [], prefs.card_reminders).catch(() => undefined);
+            // Morning digest: 07:30 local tomorrow, listing what is due that
+            // day (plus anything overdue). Recomputed on every sync; skipped
+            // when there is nothing to say. Rides the card_reminders toggle.
+            const startTomorrow = new Date();
+            startTomorrow.setDate(startTomorrow.getDate() + 1);
+            startTomorrow.setHours(0, 0, 0, 0);
+            const endTomorrow = new Date(startTomorrow);
+            endTomorrow.setDate(endTomorrow.getDate() + 1);
+            const dueTomorrow = loadedCards.filter((c) => {
+              if (c.status !== 'OPEN') return false;
+              const time = dueTime(c);
+              return time !== null && (time < endTomorrow.getTime());
+            });
+            let payload: { title: string; body: string } | null = null;
+            if (dueTomorrow.length > 0) {
+              const names = dueTomorrow.slice(0, 3).map((c) => c.title).join(' · ');
+              const extra = dueTomorrow.length > 3 ? ` +${dueTomorrow.length - 3}` : '';
+              payload = {
+                title: t('digest_title'),
+                body: `${dueTomorrow.length} ${dueTomorrow.length === 1 ? t('digest_item_one') : t('digest_item_many')}: ${names}${extra}`,
+              };
+            }
+            syncMorningDigest(prefs.card_reminders, payload).catch(() => undefined);
+          })
           .catch(() => undefined);
       }
     } catch (e) {
@@ -232,7 +258,7 @@ export default function Feed() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [t]);
 
   useFocusEffect(
     useCallback(() => {
@@ -577,6 +603,14 @@ export default function Feed() {
                   <CheckCircle2 color={ui.mintText} size={22} />
                   <Text style={styles.emptyTitle}>{activeTab === 'today' ? t('feed_nothing_urgent') : t('feed_nothing_to_show')}</Text>
                   <Text style={styles.emptySub}>{t('feed_empty_hint')}</Text>
+                  <PressScale
+                    testID="feed-empty-scan"
+                    onPress={() => setShowCamera(true)}
+                    style={[styles.emptyScanBtn, { backgroundColor: ui.orangeSoft, borderColor: ui.orange + '40' }]}
+                  >
+                    <Camera color={ui.orange} size={15} />
+                    <Text style={[styles.emptyScanText, { color: ui.orange }]}>{t('feed_try_scan')}</Text>
+                  </PressScale>
                 </View>
               ) : (
                 visibleCards.map((card, index) => (
@@ -707,6 +741,7 @@ export default function Feed() {
           setAddSource('CAMERA');
           setShowCamera(false);
           setShowAdd(true);
+          logEvent('scan_used');
         }}
       />
 
@@ -727,7 +762,7 @@ export default function Feed() {
           setShowAdd(false);
           setVoiceDraft(null);
         }}
-        onCreated={load}
+        onCreated={() => { logEvent('card_created'); load(); }}
         initialSource={addSource}
         initialDraft={voiceDraft}
       />
@@ -766,6 +801,17 @@ export default function Feed() {
 }
 
 const createStyles = (ui: UIColors) => StyleSheet.create({
+  emptyScanBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    marginTop: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 9999,
+    borderWidth: 1,
+  },
+  emptyScanText: { fontFamily: 'Inter_700Bold', fontSize: 13 },
   detailSheet: { backgroundColor: ui.card, borderTopLeftRadius: 30, borderTopRightRadius: 30, borderWidth: 1, borderColor: ui.line, padding: 24, paddingBottom: 110 },
   detailHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
   detailTitle: { flex: 1, color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 24, lineHeight: 30, letterSpacing: -0.4 },

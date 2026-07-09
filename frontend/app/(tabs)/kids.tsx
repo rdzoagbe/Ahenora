@@ -42,7 +42,7 @@ import { TabScreen } from '../../src/components/TabScreen';
 import { Card, IconTile, ProgressBar, ScreenHeader, UI, useUI, UIColors } from '../../src/components/Kit';
 
 import { useStore } from '../../src/store';
-import { api, AllowanceConfig, Chore, FamilyMember, Reward, Routine, StarTransaction } from '../../src/api';
+import { api, logEvent, AllowanceConfig, Chore, FamilyMember, Reward, Routine, StarTransaction } from '../../src/api';
 import { usePremiumGate, LockBadge } from '../../src/components/PremiumGate';
 import { logger } from '../../src/logger';
 
@@ -175,6 +175,7 @@ export default function Kids() {
   }, []);
 
   const load = useCallback(async () => {
+    logEvent('kids_open');
     try {
       setErrorMessage(null);
       const [m, r] = await Promise.all([api.familyMembers(), api.listRewards()]);

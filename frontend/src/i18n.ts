@@ -12,6 +12,10 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  digest_title: "Good morning 👋",
+  digest_item_one: "thing for today",
+  digest_item_many: "things for today",
+  feed_try_scan: "📸 Try it: scan a school letter or bill",
   land_completing_signin: "Completing Google sign-in…",
   upg_badge: "Upgrade",
   premium_meal_planner: "Meal Planner is available on Executive and Family Office plans.",
@@ -738,6 +742,10 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  digest_title: "Buenos días 👋",
+  digest_item_one: "cosa para hoy",
+  digest_item_many: "cosas para hoy",
+  feed_try_scan: "📸 Pruébalo: escanea una carta del colegio o una factura",
   land_completing_signin: "Completando el inicio de sesión con Google…",
   upg_badge: "Mejorar",
   premium_meal_planner: "El planificador de comidas está disponible en los planes Executive y Family Office.",
@@ -1458,6 +1466,10 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  digest_title: "Bonjour 👋",
+  digest_item_one: "chose pour aujourd'hui",
+  digest_item_many: "choses pour aujourd'hui",
+  feed_try_scan: "📸 Essayez : scannez une lettre de l'école ou une facture",
   land_completing_signin: "Finalisation de la connexion Google…",
   upg_badge: "Améliorer",
   premium_meal_planner: "Le planificateur de repas est disponible avec les forfaits Executive et Family Office.",
@@ -2178,6 +2190,10 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  digest_title: "Guten Morgen 👋",
+  digest_item_one: "Sache für heute",
+  digest_item_many: "Dinge für heute",
+  feed_try_scan: "📸 Probier es: scanne einen Schulbrief oder eine Rechnung",
   land_completing_signin: "Google-Anmeldung wird abgeschlossen…",
   upg_badge: "Upgrade",
   premium_meal_planner: "Der Essensplaner ist in den Tarifen Executive und Family Office verfügbar.",

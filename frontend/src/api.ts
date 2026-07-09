@@ -508,6 +508,19 @@ function invalidateUsageCaches() {
   cache.invalidate('getSubscription');
 }
 
+// Fire-and-forget first-party usage counter (count-only, no payloads). Never
+// throws and never retries — losing an event is fine, bothering the user isn't.
+export function logEvent(name: string): void {
+  tokenStore.get().then((token) => {
+    if (!token) return;
+    fetch(`${BASE}/api/metrics/event`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ name }),
+    }).catch(() => undefined);
+  }).catch(() => undefined);
+}
+
 export const api = {
   // Auth
   exchangeSession: (session_id: string, invite_token?: string) =>
