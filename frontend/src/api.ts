@@ -63,6 +63,15 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// Fire-and-forget ping to wake a cold (idle) backend while the user is still
+// on the landing screen, so the first real request — usually sign-in — doesn't
+// absorb the full cold-start delay and time out.
+export function warmupBackend(): void {
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), 20_000);
+  fetch(BASE, { method: 'GET', signal: controller.signal }).catch(() => undefined);
+}
+
 // The store registers a handler so an expired session (401) mid-session can
 // clear auth state and route back to the landing screen, instead of leaving
 // screens silently blank until the app is restarted.
@@ -101,13 +110,17 @@ async function request<T = unknown>(
       });
     } catch (err) {
       clearTimeout(timeoutId);
-      // Never retry aborted requests (user cancellation or timeout).
       // Check the error name directly — `DOMException` is not a defined global
       // on Hermes (release builds), so referencing it here would itself throw.
-      if ((err as { name?: string })?.name === 'AbortError') {
+      const isAbort = (err as { name?: string })?.name === 'AbortError';
+      const isGet = !opts.method || opts.method.toUpperCase() === 'GET';
+      // A timeout (AbortError) on a GET is safe to retry — this rides out a
+      // cold backend start (Railway wake-up). Never retry a non-GET on timeout:
+      // the write may have landed, and a retry could duplicate it.
+      if (isAbort && !isGet) {
         throw err;
       }
-      // Network error — retry if we have attempts left
+      // Network error or GET timeout — retry if we have attempts left.
       lastError = err;
       if (attempt < RETRY_MAX) continue;
       throw err;

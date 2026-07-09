@@ -14,8 +14,14 @@ function extractIdToken(url: string): string | null {
   const afterQuery = url.split('?')[1]?.split('#')[0] ?? '';
   for (const part of [afterHash, afterQuery]) {
     if (!part) continue;
-    const token = new URLSearchParams(part).get('id_token');
-    if (token) return token;
+    try {
+      const token = new URLSearchParams(part).get('id_token');
+      if (token) return token;
+    } catch {
+      // URLSearchParams should exist on RN, but guard against any engine gap.
+      const match = part.match(/[?&#]?id_token=([^&#]+)/);
+      if (match) return decodeURIComponent(match[1]);
+    }
   }
   return null;
 }
