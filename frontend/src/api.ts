@@ -101,8 +101,10 @@ async function request<T = unknown>(
       });
     } catch (err) {
       clearTimeout(timeoutId);
-      // Never retry aborted requests (user cancellation or timeout)
-      if (err instanceof DOMException && err.name === 'AbortError') {
+      // Never retry aborted requests (user cancellation or timeout).
+      // Check the error name directly — `DOMException` is not a defined global
+      // on Hermes (release builds), so referencing it here would itself throw.
+      if ((err as { name?: string })?.name === 'AbortError') {
         throw err;
       }
       // Network error — retry if we have attempts left
