@@ -25,7 +25,7 @@ import { TabScreen } from '../../src/components/TabScreen';
 import { Badge, Card, IconTile, ProgressBar, ScreenHeader, UI, useUI, UIColors } from '../../src/components/Kit';
 
 import { useStore } from '../../src/store';
-import { api, Entitlements, ExpiryAlert, MealPlan, ShoppingItem, VaultDoc } from '../../src/api';
+import { api, logEvent, Entitlements, ExpiryAlert, MealPlan, ShoppingItem, VaultDoc } from '../../src/api';
 import { usePremiumGate, LockBadge } from '../../src/components/PremiumGate';
 import { logger } from '../../src/logger';
 
@@ -165,6 +165,7 @@ export default function Vault() {
       setCategory('Medical');
       setShowAdd(false);
       showToast(t('vault_document_saved'), 'success');
+      logEvent('vault_added');
     } catch (e: any) {
       logger.warn('Save vault document failed:', e?.message || e);
       showToast(e?.message || t('vault_could_not_save'), 'error');

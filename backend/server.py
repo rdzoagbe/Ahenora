@@ -969,6 +969,22 @@ async def require_user(authorization: str = Header(default="")):
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
 
+    # Daily-active tracking, throttled to one write per user per day.
+    today = utcnow().strftime("%Y-%m-%d")
+    if user.get("last_active_day") != today:
+        try:
+            await database["users"].update_one(
+                {"user_id": user["user_id"]},
+                {"$set": {"last_active_day": today}},
+            )
+            await database["metrics_daily"].update_one(
+                {"date": today, "name": "active_users"},
+                {"$inc": {"count": 1}},
+                upsert=True,
+            )
+        except Exception:
+            pass  # metrics must never break auth
+
     return user
 
 
@@ -3709,6 +3725,53 @@ async def delete_chore(chore_id: str, user: dict = Depends(require_user), databa
 class SupportContactIn(BaseModel):
     subject: str
     message: str
+
+# -----------------------------------------------------------------------------
+# Metrics (first-party, count-only — no payloads, no third-party SDKs)
+# -----------------------------------------------------------------------------
+ALLOWED_EVENTS = {
+    "feed_open", "scan_used", "card_created", "vault_added",
+    "kids_open", "calendar_open", "onboarding_done",
+}
+
+
+class MetricEventIn(BaseModel):
+    name: str
+
+
+@app.post("/api/metrics/event")
+async def log_metric_event(payload: MetricEventIn, user=Depends(require_user)):
+    name = (payload.name or "").strip()
+    if name not in ALLOWED_EVENTS:
+        return {"ok": False}
+    database = get_db()
+    today = utcnow().strftime("%Y-%m-%d")
+    try:
+        await database["metrics_daily"].update_one(
+            {"date": today, "name": name},
+            {"$inc": {"count": 1}},
+            upsert=True,
+        )
+    except Exception:
+        pass
+    return {"ok": True}
+
+
+@app.get("/api/metrics/summary")
+async def metrics_summary(days: int = 14, user=Depends(require_user)):
+    if not is_admin_user(user):
+        raise HTTPException(status_code=403, detail="Admin only")
+    database = get_db()
+    days = max(1, min(days, 90))
+    cutoff = (utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
+    rows = []
+    cursor = database["metrics_daily"].find(
+        {"date": {"$gte": cutoff}}, {"_id": 0}
+    ).sort("date", -1)
+    async for row in cursor:
+        rows.append(row)
+    return {"days": days, "rows": rows}
+
 
 @app.post("/api/support/contact")
 async def submit_support_contact(

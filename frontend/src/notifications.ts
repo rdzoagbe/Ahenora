@@ -205,6 +205,55 @@ export async function syncCardReminderNotifications(cards: Card[], enabled: bool
   return { scheduled: Object.keys(nextMap).length };
 }
 
+const DIGEST_ID_KEY = 'coo_morning_digest_id';
+
+/**
+ * Schedules (or clears) tomorrow's 07:30 local "morning digest" notification.
+ * The caller recomputes the digest on every sync, so content staleness is
+ * bounded by the user's last app open. No backend scheduler or timezone
+ * bookkeeping needed — the OS fires it in the device's local time.
+ */
+export async function syncMorningDigest(
+  enabled: boolean,
+  digest: { title: string; body: string } | null
+) {
+  const Notifications = await getNotificationsModule();
+  if (!Notifications) return { scheduled: false };
+
+  const previous = await AsyncStorage.getItem(DIGEST_ID_KEY).catch(() => null);
+  if (previous) {
+    await Notifications.cancelScheduledNotificationAsync(previous).catch(() => undefined);
+    await AsyncStorage.removeItem(DIGEST_ID_KEY).catch(() => undefined);
+  }
+
+  if (!enabled || !digest) return { scheduled: false };
+
+  const permissions = await Notifications.getPermissionsAsync();
+  if (permissions.status !== 'granted') return { scheduled: false };
+
+  await configureNotificationChannels();
+
+  const at = new Date();
+  at.setDate(at.getDate() + 1);
+  at.setHours(7, 30, 0, 0);
+
+  const identifier = await Notifications.scheduleNotificationAsync({
+    content: {
+      title: digest.title,
+      body: digest.body,
+      sound: true,
+      data: { type: 'morning_digest' },
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.DATE,
+      date: at,
+      channelId: 'card-reminders',
+    } as any,
+  });
+  await AsyncStorage.setItem(DIGEST_ID_KEY, identifier).catch(() => undefined);
+  return { scheduled: true };
+}
+
 export async function sendTestScheduledReminderNotification() {
   const Notifications = await getNotificationsModule();
   if (!Notifications) return false;

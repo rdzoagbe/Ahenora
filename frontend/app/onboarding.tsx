@@ -6,7 +6,7 @@ import { ArrowRight, Check, Crown, Plus, Sparkles, Trash2, Users } from 'lucide-
 
 import { PressScale } from '../src/components/PressScale';
 import { useStore } from '../src/store';
-import { api } from '../src/api';
+import { api, logEvent } from '../src/api';
 import { LANG_NAMES, SUPPORTED_LANGS } from '../src/i18n';
 import type { Lang } from '../src/i18n';
 import { logger } from '../src/logger';
@@ -72,6 +72,7 @@ export default function Onboarding() {
       // persists. Otherwise the user would land in the app believing setup
       // saved (it didn't) and get re-onboarded next launch.
       await api.completeOnboarding();
+      logEvent('onboarding_done');
       await refreshUser().catch(() => undefined);
 
       if (addFailed) {

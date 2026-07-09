@@ -13,7 +13,7 @@ import { logger } from '../../src/logger';
 import { TabScreen } from '../../src/components/TabScreen';
 import { Card as KitCard, IconTile, ScreenHeader, UI, useUI, UIColors } from '../../src/components/Kit';
 import { useStore } from '../../src/store';
-import { api, CalendarImportResult, Card, Carpool } from '../../src/api';
+import { api, logEvent, CalendarImportResult, Card, Carpool } from '../../src/api';
 import { usePremiumGate, LockBadge } from '../../src/components/PremiumGate';
 
 WebBrowser.maybeCompleteAuthSession();
@@ -220,6 +220,7 @@ export default function Calendar() {
   const gridWidth = daySize * 7;
 
   const load = useCallback(async () => {
+    logEvent('calendar_open');
     try {
       const [cardsRes, carpoolRes] = await Promise.allSettled([api.listCards(), api.listCarpools()]);
       if (cardsRes.status === 'fulfilled') setCards(cardsRes.value.filter((card) => card.status === 'OPEN' && card.due_date));
