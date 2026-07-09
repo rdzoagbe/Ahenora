@@ -25,8 +25,8 @@ const PLAN_ORDER: Plan[] = ['village', 'executive', 'family_office'];
 
 const PLAN_PRICES: Record<Plan, { monthly: number; yearly: number }> = {
   village: { monthly: 0, yearly: 0 },
-  executive: { monthly: 14.99, yearly: 143.99 },
-  family_office: { monthly: 49.99, yearly: 479.99 },
+  executive: { monthly: 8.99, yearly: 69.99 },
+  family_office: { monthly: 19.99, yearly: 179.99 },
 };
 
 interface Props {

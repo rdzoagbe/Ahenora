@@ -322,8 +322,8 @@ PLAN_CATALOG = {
         },
     },
     "executive": {
-        "price_monthly": 14.99,
-        "price_yearly": 143.99,
+        "price_monthly": 8.99,
+        "price_yearly": 69.99,
         "limits": {
             "max_members": 8,
             "ai_scans_per_month": 100,
@@ -337,8 +337,8 @@ PLAN_CATALOG = {
         },
     },
     "family_office": {
-        "price_monthly": 49.99,
-        "price_yearly": 479.99,
+        "price_monthly": 19.99,
+        "price_yearly": 179.99,
         "limits": {
             "max_members": 20,
             "ai_scans_per_month": 1000,
