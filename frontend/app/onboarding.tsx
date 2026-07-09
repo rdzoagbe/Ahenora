@@ -13,7 +13,7 @@ import { logger } from '../src/logger';
 
 export default function Onboarding() {
   const router = useRouter();
-  const { user, loading, theme, lang, setLang, refreshUser } = useStore();
+  const { user, loading, theme, lang, setLang, refreshUser, t } = useStore();
   const styles = useMemo(() => createStyles(theme.colors), [theme]);
 
   const [step, setStep] = useState(0);
@@ -76,8 +76,8 @@ export default function Onboarding() {
 
       if (addFailed) {
         Alert.alert(
-          'Almost there',
-          "You're all set, but we couldn't add every child. You can add them anytime in Settings.",
+          t('ob_almost_there'),
+          t('ob_add_fail'),
           [{ text: 'OK', onPress: goFeed }],
         );
       } else {
@@ -88,11 +88,11 @@ export default function Onboarding() {
       // success + a re-onboarding loop). Let the user retry or skip.
       logger.warn('completeOnboarding failed', e);
       Alert.alert(
-        "Couldn't finish setup",
-        'Please check your connection and try again.',
+        t('ob_finish_fail_title'),
+        t('ob_finish_fail_msg'),
         [
-          { text: 'Skip for now', style: 'cancel', onPress: goFeed },
-          { text: 'Retry', onPress: () => { setFinishing(false); finish(); } },
+          { text: t('ob_skip_for_now'), style: 'cancel', onPress: goFeed },
+          { text: t('ob_retry'), onPress: () => { setFinishing(false); finish(); } },
         ],
       );
     } finally {
@@ -124,10 +124,10 @@ export default function Onboarding() {
             <View>
               <View style={[styles.badge, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
                 <Sparkles color={theme.colors.accent} size={13} />
-                <Text style={[styles.badgeText, { color: theme.colors.text }]}>Welcome{firstName ? `, ${firstName}` : ''}</Text>
+                <Text style={[styles.badgeText, { color: theme.colors.text }]}>{t('ob_welcome')}{firstName ? `, ${firstName}` : ''}</Text>
               </View>
-              <Text style={[styles.title, { color: theme.colors.text }]}>Choose your language</Text>
-              <Text style={[styles.sub, { color: theme.colors.textMuted }]}>You can change this anytime in Settings.</Text>
+              <Text style={[styles.title, { color: theme.colors.text }]}>{t('ob_choose_language')}</Text>
+              <Text style={[styles.sub, { color: theme.colors.textMuted }]}>{t('ob_language_hint')}</Text>
 
               <View style={styles.langList}>
                 {SUPPORTED_LANGS.map((l) => {
@@ -155,10 +155,10 @@ export default function Onboarding() {
             <View>
               <View style={[styles.badge, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
                 <Users color={theme.colors.accent} size={13} />
-                <Text style={[styles.badgeText, { color: theme.colors.text }]}>Your household</Text>
+                <Text style={[styles.badgeText, { color: theme.colors.text }]}>{t('ob_household')}</Text>
               </View>
-              <Text style={[styles.title, { color: theme.colors.text }]}>Add your kids</Text>
-              <Text style={[styles.sub, { color: theme.colors.textMuted }]}>Add the children in your household so you can assign chores and track stars. You can skip this and add them later.</Text>
+              <Text style={[styles.title, { color: theme.colors.text }]}>{t('ob_add_kids')}</Text>
+              <Text style={[styles.sub, { color: theme.colors.textMuted }]}>{t('ob_add_kids_hint')}</Text>
 
               <View style={styles.childList}>
                 {childNames.map((name, i) => (
@@ -167,7 +167,7 @@ export default function Onboarding() {
                       testID={`onboarding-child-${i}`}
                       value={name}
                       onChangeText={(v) => updateChild(i, v)}
-                      placeholder="Child's name"
+                      placeholder={t('ob_child_name')}
                       placeholderTextColor={theme.colors.textSoft}
                       style={[styles.childInput, { color: theme.colors.text }]}
                     />
@@ -180,7 +180,7 @@ export default function Onboarding() {
                 ))}
                 <PressScale onPress={addChildRow} style={[styles.addRow, { borderColor: theme.colors.cardBorder }]}>
                   <Plus color={theme.colors.accent} size={16} />
-                  <Text style={[styles.addRowText, { color: theme.colors.text }]}>Add another child</Text>
+                  <Text style={[styles.addRowText, { color: theme.colors.text }]}>{t('ob_add_another_child')}</Text>
                 </PressScale>
               </View>
             </View>
@@ -190,14 +190,14 @@ export default function Onboarding() {
             <View>
               <View style={[styles.badge, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
                 <Crown color="#F59E0B" size={13} />
-                <Text style={[styles.badgeText, { color: theme.colors.text }]}>Your plan</Text>
+                <Text style={[styles.badgeText, { color: theme.colors.text }]}>{t('ob_your_plan')}</Text>
               </View>
-              <Text style={[styles.title, { color: theme.colors.text }]}>You&apos;re all set</Text>
-              <Text style={[styles.sub, { color: theme.colors.textMuted }]}>You&apos;re on the free Village plan — everything you need to start organising your household. More plans are coming soon.</Text>
+              <Text style={[styles.title, { color: theme.colors.text }]}>{t('ob_all_set')}</Text>
+              <Text style={[styles.sub, { color: theme.colors.textMuted }]}>{t('ob_plan_hint')}</Text>
 
               <View style={[styles.planCard, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
-                <Text style={[styles.planName, { color: theme.colors.text }]}>Village · Free</Text>
-                {['Up to 3 family members', 'Shared tasks & calendar', 'Kids chores & rewards', 'Secure document vault'].map((f) => (
+                <Text style={[styles.planName, { color: theme.colors.text }]}>{t('ob_village_free')}</Text>
+                {[t('ob_feat_members3'), t('ob_feat_tasks'), t('ob_feat_kids'), t('ob_feat_vault')].map((f) => (
                   <View key={f} style={styles.planFeatureRow}>
                     <Check color={theme.colors.accent} size={15} />
                     <Text style={[styles.planFeature, { color: theme.colors.textMuted }]}>{f}</Text>
@@ -206,7 +206,7 @@ export default function Onboarding() {
               </View>
 
               <PressScale onPress={() => router.push('/pricing')} style={styles.linkRow}>
-                <Text style={[styles.linkText, { color: theme.colors.accent }]}>See all plans</Text>
+                <Text style={[styles.linkText, { color: theme.colors.accent }]}>{t('ob_see_all_plans')}</Text>
                 <ArrowRight color={theme.colors.accent} size={14} />
               </PressScale>
             </View>
@@ -217,7 +217,7 @@ export default function Onboarding() {
         <View style={styles.footer}>
           {step < 2 ? (
             <PressScale testID="onboarding-skip" onPress={() => setStep((s) => s + 1)} style={styles.skipBtn}>
-              <Text style={[styles.skipText, { color: theme.colors.textMuted }]}>{step === 1 ? 'Skip for now' : 'Skip'}</Text>
+              <Text style={[styles.skipText, { color: theme.colors.textMuted }]}>{step === 1 ? t('ob_skip_for_now') : t('ob_skip')}</Text>
             </PressScale>
           ) : (
             <View style={{ flex: 1 }} />
@@ -230,7 +230,7 @@ export default function Onboarding() {
             style={[styles.nextBtn, { backgroundColor: theme.colors.primary }, finishing && { opacity: 0.6 }]}
           >
             <Text style={[styles.nextText, { color: theme.colors.primaryText }]}>
-              {step < 2 ? 'Continue' : finishing ? 'Setting up…' : 'Start organising'}
+              {step < 2 ? t('ob_continue') : finishing ? t('ob_setting_up') : t('ob_start')}
             </Text>
             {step < 2 ? <ArrowRight color={theme.colors.primaryText} size={16} /> : null}
           </PressScale>
