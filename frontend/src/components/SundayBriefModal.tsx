@@ -41,7 +41,7 @@ export function SundayBriefModal({ visible, onClose }: Props) {
         return;
       }
       logger.warn('brief error', e);
-      setBrief('Unable to generate brief right now.');
+      setBrief(t('brief_unable'));
     } finally {
       setLoading(false);
     }
@@ -121,7 +121,7 @@ export function SundayBriefModal({ visible, onClose }: Props) {
                 >
                   <Share2 color={theme.colors.primaryText} size={16} />
                   <Text style={[styles.shareText, { color: theme.colors.primaryText }]}> 
-                    {shared ? 'Copied / shared!' : 'Share the brief'}
+                    {shared ? t('brief_copied') : t('brief_share')}
                   </Text>
                 </PressScale>
               </ScrollView>

@@ -2,6 +2,7 @@ import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { PressScale } from './PressScale';
 import { useUI, UIColors } from './Kit';
+import { useStore } from '../store';
 
 interface Props {
   tab: string;
@@ -10,6 +11,7 @@ interface Props {
 
 interface InnerProps extends Props {
   ui: UIColors;
+  t: (key: string, params?: Record<string, string | number>) => string;
 }
 
 interface State {
@@ -37,14 +39,14 @@ class ErrorBoundaryInner extends Component<InnerProps, State> {
 
   render() {
     if (this.state.hasError) {
-      const { ui } = this.props;
+      const { ui, t } = this.props;
       return (
         <View style={[styles.container, { backgroundColor: ui.bg }]}>
           <View style={[styles.card, { backgroundColor: ui.card, borderColor: ui.line }]}>
             <Text style={styles.emoji}>!</Text>
-            <Text style={[styles.title, { color: ui.text }]}>Something went wrong</Text>
+            <Text style={[styles.title, { color: ui.text }]}>{t('err_something_wrong')}</Text>
             <Text style={[styles.subtitle, { color: ui.muted }]}>
-              The {this.props.tab} tab ran into an unexpected error.
+              {t('err_tab_crashed', { tab: this.props.tab })}
             </Text>
             {__DEV__ && this.state.error ? (
               <Text style={[styles.detail, { color: ui.muted }]} numberOfLines={4}>
@@ -52,7 +54,7 @@ class ErrorBoundaryInner extends Component<InnerProps, State> {
               </Text>
             ) : null}
             <PressScale onPress={this.handleReset} style={styles.button}>
-              <Text style={styles.buttonText}>Try again</Text>
+              <Text style={styles.buttonText}>{t('err_try_again')}</Text>
             </PressScale>
           </View>
         </View>
@@ -65,7 +67,8 @@ class ErrorBoundaryInner extends Component<InnerProps, State> {
 
 export function ErrorBoundary(props: Props) {
   const ui = useUI();
-  return <ErrorBoundaryInner {...props} ui={ui} />;
+  const { t } = useStore();
+  return <ErrorBoundaryInner {...props} ui={ui} t={t} />;
 }
 
 const styles = StyleSheet.create({

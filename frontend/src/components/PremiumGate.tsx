@@ -10,20 +10,15 @@ import { useStore } from '../store';
 // the backend PLAN_CATALOG limit flags and PREMIUM_FEATURE_MESSAGES.
 export type PremiumFeature = 'meal_planner' | 'allowance' | 'carpool' | 'weekly_report';
 
-const MESSAGES: Record<PremiumFeature, string> = {
-  meal_planner: 'Meal Planner is available on Executive and Family Office plans.',
-  allowance: 'Allowance Tracker is available on Executive and Family Office plans.',
-  carpool: 'Carpool Coordinator is available on Executive and Family Office plans.',
-  weekly_report: 'Weekly Report is available on Executive and Family Office plans.',
-};
-
 /**
  * Hook for premium feature gating. `isLocked(feature)` tells you whether the
  * current plan blocks the feature; `promptUpgrade(feature)` opens the global
  * upgrade modal. Admin/unlocked accounts are never locked.
+ * Prompt copy lives in i18n under `premium_<feature>` so it follows the
+ * user's language.
  */
 export function usePremiumGate() {
-  const { subscription, showUpgradePrompt } = useStore();
+  const { subscription, showUpgradePrompt, t } = useStore();
 
   const isLocked = (feature: PremiumFeature): boolean => {
     if (!subscription) return false; // unknown yet — don't lock the UI prematurely
@@ -32,7 +27,7 @@ export function usePremiumGate() {
   };
 
   const promptUpgrade = (feature: PremiumFeature) => {
-    showUpgradePrompt(feature, MESSAGES[feature]);
+    showUpgradePrompt(feature, t(`premium_${feature}`));
   };
 
   return { isLocked, promptUpgrade };
@@ -41,11 +36,12 @@ export function usePremiumGate() {
 /** Small "Upgrade" lock pill shown next to a gated feature's header. */
 export function LockBadge({ onPress }: { onPress: () => void }) {
   const ui = useUI();
+  const { t } = useStore();
   const styles = createStyles(ui);
   return (
     <PressScale onPress={onPress} style={styles.badge}>
       <Lock color={ui.orange} size={12} />
-      <Text style={styles.badgeText}>Upgrade</Text>
+      <Text style={styles.badgeText}>{t('upg_badge')}</Text>
     </PressScale>
   );
 }
