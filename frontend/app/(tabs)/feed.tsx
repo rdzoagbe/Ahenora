@@ -291,7 +291,7 @@ export default function Feed() {
   }, [activeTab, activeCards, dashboard]);
 
   const visibleCards = tabCards.slice(0, 5);
-  const firstName = (user?.name || '').split(' ')[0] || 'Roland';
+  const firstName = (user?.name || '').split(' ')[0] || '';
   const headline = greetingFallback(firstName);
   const alertCount = dashboard.priority.length;
   const alertText = alertCount > 0

@@ -36,15 +36,22 @@ DB_NAME = os.environ.get("DB_NAME", "household_coo")
 GOOGLE_WEB_CLIENT_ID = os.environ.get("GOOGLE_WEB_CLIENT_ID", "")
 GOOGLE_ANDROID_CLIENT_ID = os.environ.get("GOOGLE_ANDROID_CLIENT_ID", "")
 GOOGLE_CLIENT_IDS_EXTRA = os.environ.get("GOOGLE_CLIENT_IDS", "")
+# Fallback web client ID — must match the app's hardcoded fallback in
+# frontend/app/index.tsx so Google sign-in still verifies if the Railway env
+# var is ever unset. The token audience is this web client ID.
+GOOGLE_WEB_CLIENT_ID_FALLBACK = "243255248169-cei972lc7kmfig6tmjb6l2nlmgqkjf22.apps.googleusercontent.com"
 GOOGLE_CLIENT_IDS = [
     client_id.strip()
     for client_id in [
         GOOGLE_WEB_CLIENT_ID,
         GOOGLE_ANDROID_CLIENT_ID,
         *GOOGLE_CLIENT_IDS_EXTRA.split(","),
+        GOOGLE_WEB_CLIENT_ID_FALLBACK,
     ]
     if client_id and client_id.strip()
 ]
+# De-duplicate while preserving order.
+GOOGLE_CLIENT_IDS = list(dict.fromkeys(GOOGLE_CLIENT_IDS))
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
 SESSION_DAYS = int(os.environ.get("SESSION_DAYS", "7"))
 INVITE_DAYS = int(os.environ.get("INVITE_DAYS", "14"))
@@ -105,7 +112,10 @@ app.add_middleware(
 # -----------------------------------------------------------------------------
 RATE_LIMIT_WINDOW = 60  # seconds
 RATE_LIMIT_MAX = int(os.environ.get("RATE_LIMIT_MAX", "120"))
-RATE_LIMIT_AUTH_MAX = int(os.environ.get("RATE_LIMIT_AUTH_MAX", "20"))
+# Auth limit is per IP+path. Kept generous so a cohort of testers sharing one
+# egress IP (home/office/school NAT), each with client-side retries, doesn't
+# collectively trip a 429 on sign-in. Still low enough to blunt brute force.
+RATE_LIMIT_AUTH_MAX = int(os.environ.get("RATE_LIMIT_AUTH_MAX", "60"))
 
 _rate_buckets: dict[str, list[float]] = defaultdict(list)
 

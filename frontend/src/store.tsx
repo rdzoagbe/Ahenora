@@ -8,7 +8,7 @@ import React, {
 } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useColorScheme } from 'react-native';
-import { api, User, tokenStore, Subscription, setUnauthorizedHandler } from './api';
+import { api, User, tokenStore, Subscription, setUnauthorizedHandler, warmupBackend } from './api';
 import { Lang, SUPPORTED_LANGS, translate } from './i18n';
 import { AppearanceMode, AppTheme, getTheme, resolveAppearance, ResolvedAppearance } from './theme';
 import { logger } from './logger';
@@ -100,11 +100,17 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         logger.warn('refresh subscription after user failed:', error);
         setSubscription(null);
       });
-    } catch (error) {
+    } catch (error: any) {
       logger.warn('refreshUser failed:', error);
-      await tokenStore.clear();
-      setUser(null);
-      setSubscription(null);
+      // Only sign out on a real 401 (invalid/expired session). A transient
+      // network failure or a cold backend must NOT wipe the token — otherwise
+      // a returning user gets logged out by a momentary blip and has to sign
+      // in again. Keeping the token lets the next launch/retry recover.
+      if (error?.status === 401) {
+        await tokenStore.clear();
+        setUser(null);
+        setSubscription(null);
+      }
     } finally {
       setLoading(false);
     }
@@ -180,6 +186,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    warmupBackend();
     refreshUser();
   }, [refreshUser]);
 
