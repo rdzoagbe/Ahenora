@@ -118,6 +118,10 @@ function SidebarNav({ width }: { width: number }) {
 
 // ─── Root layout ─────────────────────────────────────────────────────────────
 
+// Session-scoped guard so a new user is sent through onboarding at most once —
+// prevents any redirect loop if completing onboarding ever fails to persist.
+let onboardingRedirected = false;
+
 export default function TabLayout() {
   const { t, theme, user, loading } = useStore();
   const { isWide, sidebarW } = useBreakpoint();
@@ -128,6 +132,16 @@ export default function TabLayout() {
   useEffect(() => {
     if (!loading && !user) {
       router.replace('/');
+    }
+  }, [loading, user, router]);
+
+  // First-run onboarding: only for a brand-new account (flag explicitly false),
+  // and only once per app session. Missing/true flag never redirects, so
+  // existing testers and old builds are unaffected.
+  useEffect(() => {
+    if (!loading && user && user.onboarding_completed === false && !onboardingRedirected) {
+      onboardingRedirected = true;
+      router.replace('/onboarding');
     }
   }, [loading, user, router]);
 

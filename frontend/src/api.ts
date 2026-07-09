@@ -351,6 +351,7 @@ export interface User {
   family_id: string;
   language: string;
   is_admin?: boolean;
+  onboarding_completed?: boolean;
 }
 
 export interface FamilyMember {
@@ -516,6 +517,8 @@ export const api = {
   },
   setLanguage: (language: string) =>
     request('/auth/language', { method: 'PATCH', body: { language } }),
+  completeOnboarding: () =>
+    request<User>('/auth/complete-onboarding', { method: 'POST' }),
   invite: (email: string) => {
     invalidateUsageCaches();
     return request<{
