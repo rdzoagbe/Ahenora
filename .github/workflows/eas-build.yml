@@ -1,7 +1,8 @@
 name: EAS Build (Android)
 
-# Manually-triggered cloud build. Runs on Expo's servers using the EXPO_TOKEN
-# repo secret, so a production AAB can be produced without a local machine.
+# Manually-triggered cloud build (+ optional auto-submit to Google Play).
+# Runs on Expo's servers using the EXPO_TOKEN repo secret, so a production
+# AAB can be produced and shipped without a local machine.
 on:
   workflow_dispatch:
     inputs:
@@ -13,6 +14,11 @@ on:
         options:
           - production
           - preview
+      submit:
+        description: 'Auto-submit to Google Play after build (needs GOOGLE_SERVICE_ACCOUNT_KEY secret)'
+        required: true
+        default: true
+        type: boolean
 
 concurrency:
   group: eas-build-${{ github.ref }}
@@ -23,7 +29,7 @@ permissions:
 
 jobs:
   build:
-    name: Build Android app
+    name: Build (and submit) Android app
     runs-on: ubuntu-latest
     env:
       EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
@@ -57,3 +63,34 @@ jobs:
             --platform android \
             --profile "${{ github.event.inputs.profile }}" \
             --non-interactive
+
+      - name: Check Google Play submit configuration
+        id: submit_cfg
+        if: ${{ github.event.inputs.submit == 'true' && github.event.inputs.profile == 'production' }}
+        working-directory: frontend
+        env:
+          GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
+        run: |
+          if [ -z "$GOOGLE_SERVICE_ACCOUNT_KEY" ]; then
+            echo "GOOGLE_SERVICE_ACCOUNT_KEY secret is not set — skipping auto-submit."
+            echo "Add it to enable build -> Google Play in one step."
+            echo "submit=false" >> "$GITHUB_OUTPUT"
+          else
+            printf '%s' "$GOOGLE_SERVICE_ACCOUNT_KEY" > play-service-account.json
+            echo "submit=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Submit latest build to Google Play
+        if: ${{ steps.submit_cfg.outputs.submit == 'true' }}
+        working-directory: frontend
+        run: |
+          npx eas-cli@latest submit \
+            --platform android \
+            --profile production \
+            --latest \
+            --non-interactive
+
+      - name: Clean up service account key
+        if: ${{ always() }}
+        working-directory: frontend
+        run: rm -f play-service-account.json
