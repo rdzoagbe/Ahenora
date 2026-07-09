@@ -13,12 +13,15 @@ type ErrorStateProps = {
 };
 
 export default function ErrorState({
-  title = 'Something went wrong',
-  message = 'Please try again.',
-  actionLabel = 'Try again',
+  title,
+  message,
+  actionLabel,
   onRetry,
 }: ErrorStateProps) {
-  const { theme } = useStore();
+  const { theme, t } = useStore();
+  title = title ?? t('err_something_wrong');
+  message = message ?? t('err_please_try_again');
+  actionLabel = actionLabel ?? t('err_try_again');
 
   return (
     <View style={[styles.wrap, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder, shadowColor: theme.colors.shadow }]}>

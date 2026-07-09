@@ -1,21 +1,21 @@
 import React from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { Link, Stack } from 'expo-router';
+import { useStore } from '../src/store';
 
 export default function NotFoundScreen() {
+  const { t } = useStore();
   return (
     <>
       <Stack.Screen options={{ title: 'Not Found' }} />
 
       <View style={styles.container}>
-        <Text style={styles.title}>Page not found</Text>
-        <Text style={styles.subtitle}>
-          The screen you are trying to open does not exist.
-        </Text>
+        <Text style={styles.title}>{t('nf_title')}</Text>
+        <Text style={styles.subtitle}>{t('nf_sub')}</Text>
 
         <Link href="/" asChild>
           <Pressable style={styles.button}>
-            <Text style={styles.buttonText}>Go back home</Text>
+            <Text style={styles.buttonText}>{t('nf_home')}</Text>
           </Pressable>
         </Link>
       </View>

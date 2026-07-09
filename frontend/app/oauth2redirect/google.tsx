@@ -28,7 +28,7 @@ function extractIdToken(url: string): string | null {
 
 export default function OAuthGoogleRedirect() {
   const router = useRouter();
-  const { setUserFromAuth } = useStore();
+  const { setUserFromAuth, t } = useStore();
   const handledRef = useRef(false);
   const url = Linking.useURL();
 
@@ -52,7 +52,7 @@ export default function OAuthGoogleRedirect() {
         await setUserFromAuth(user, session_token);
         router.replace('/feed');
       } catch (err: any) {
-        Alert.alert('Sign-in failed', err?.message || 'Please try again.');
+        Alert.alert(t('land_signin_failed'), err?.message || t('land_try_again'));
         handledRef.current = false;
         router.replace('/');
       }
@@ -62,7 +62,7 @@ export default function OAuthGoogleRedirect() {
   return (
     <View style={styles.container}>
       <ActivityIndicator color="#fff" size="large" />
-      <Text style={styles.text}>Completing Google sign-in…</Text>
+      <Text style={styles.text}>{t('land_completing_signin')}</Text>
     </View>
   );
 }
