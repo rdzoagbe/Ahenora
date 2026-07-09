@@ -5,11 +5,20 @@ import { cache } from './cache';
 
 const CACHE_TTL_MS = 30_000;
 
+const PROD_BACKEND = "https://household-coo-production.up.railway.app";
+const RAW_BACKEND = process.env.EXPO_PUBLIC_BACKEND_URL;
+// Guard against a stale/wrong env value baked in at bundle time (CI secrets or
+// EAS environment variables carrying the retired "-backend-" Railway subdomain,
+// which 404s "Application not found" and breaks every sign-in). Any value that
+// doesn't resolve to the real backend falls back to the known-good URL.
 export const BASE =
-  process.env.EXPO_PUBLIC_BACKEND_URL ||
-  "https://household-coo-production.up.railway.app";
-if (!process.env.EXPO_PUBLIC_BACKEND_URL) {
-  console.warn("EXPO_PUBLIC_BACKEND_URL is not set — using production fallback");
+  typeof RAW_BACKEND === "string" &&
+  RAW_BACKEND.trim().startsWith("https://") &&
+  !RAW_BACKEND.includes("household-coo-backend-production")
+    ? RAW_BACKEND.trim().replace(/\/+$/, "")
+    : PROD_BACKEND;
+if (BASE === PROD_BACKEND && RAW_BACKEND !== PROD_BACKEND) {
+  console.warn("EXPO_PUBLIC_BACKEND_URL missing or invalid — using production fallback");
 }
 
 const TOKEN_KEY = 'coo_session_token';
