@@ -77,15 +77,17 @@ function uniqueCards(cards: Card[]) {
   });
 }
 
-function formatDayLine(date?: string | null) {
-  if (!date) return 'No deadline';
+type TFunc = (key: string) => string;
+
+function formatDayLine(date: string | null | undefined, t: TFunc) {
+  if (!date) return t('feed_no_deadline');
   const due = new Date(date);
-  if (Number.isNaN(due.getTime())) return 'No deadline';
+  if (Number.isNaN(due.getTime())) return t('feed_no_deadline');
   const today = new Date();
   const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
   const time = due.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-  if (sameLocalDay(due, today)) return `Today · ${time}`;
-  if (sameLocalDay(due, tomorrow)) return `Tomorrow · ${time}`;
+  if (sameLocalDay(due, today)) return `${t('feed_today')} · ${time}`;
+  if (sameLocalDay(due, tomorrow)) return `${t('feed_tomorrow')} · ${time}`;
   return `${due.toLocaleDateString([], { month: 'short', day: 'numeric' })} · ${time}`;
 }
 
@@ -93,32 +95,33 @@ function feedDateLine() {
   return new Date().toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
 }
 
-function statusCopy(type: CardType, ui: UIColors) {
-  if (type === 'SIGN_SLIP') return { label: 'SIGN', bg: ui.orangeSoft, fg: ui.orange };
-  if (type === 'RSVP') return { label: 'RSVP', bg: ui.lavender, fg: ui.lavenderText };
-  return { label: 'TASK', bg: ui.mint, fg: ui.mintText };
+function statusCopy(type: CardType, ui: UIColors, t: TFunc) {
+  if (type === 'SIGN_SLIP') return { label: t('feed_status_sign'), bg: ui.orangeSoft, fg: ui.orange };
+  if (type === 'RSVP') return { label: t('feed_status_rsvp'), bg: ui.lavender, fg: ui.lavenderText };
+  return { label: t('feed_status_task'), bg: ui.mint, fg: ui.mintText };
 }
 
-function cardMeta(card: Card) {
-  const parts = [card.assignee, card.description, formatDayLine(card.due_date)].filter(Boolean);
+function cardMeta(card: Card, t: TFunc) {
+  const parts = [card.assignee, card.description, formatDayLine(card.due_date, t)].filter(Boolean);
   return parts.join(' · ');
 }
 
-function greetingFallback(name: string) {
+function greetingFallback(name: string, t: TFunc) {
   const hour = new Date().getHours();
-  const prefix = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+  const prefix = hour < 12 ? t('feed_good_morning') : hour < 18 ? t('feed_good_afternoon') : t('feed_good_evening');
   return `${prefix},${name ? `\n${name}` : ''}`;
 }
 
 function TaskRow({ card, onOpen, onComplete, styles }: { card: Card; onOpen: () => void; onComplete: () => void; styles: ReturnType<typeof createStyles> }) {
   const ui = useUI();
-  const status = statusCopy(card.type, ui);
+  const { t } = useStore();
+  const status = statusCopy(card.type, ui, t);
   return (
     <PressScale style={styles.taskRow} onPress={onOpen} testID={`feed-card-${card.card_id}`}>
       <PressScale
         onPress={onComplete}
         style={styles.checkRing}
-        accessibilityLabel={card.status === 'DONE' ? 'Mark as not done' : 'Mark as done'}
+        accessibilityLabel={card.status === 'DONE' ? t('feed_mark_not_done') : t('feed_mark_done')}
         accessibilityRole="button"
         testID={`feed-card-complete-${card.card_id}`}
       >
@@ -126,7 +129,7 @@ function TaskRow({ card, onOpen, onComplete, styles }: { card: Card; onOpen: () 
       </PressScale>
       <View style={styles.taskBody}>
         <Text style={styles.taskTitle} numberOfLines={1}>{card.title}</Text>
-        <Text style={styles.taskMeta} numberOfLines={1}>{cardMeta(card)}</Text>
+        <Text style={styles.taskMeta} numberOfLines={1}>{cardMeta(card, t)}</Text>
       </View>
       <View style={[styles.statusPill, { backgroundColor: status.bg }]}>
         <Text style={[styles.statusPillText, { color: status.fg }]}>{status.label}</Text>
@@ -137,7 +140,7 @@ function TaskRow({ card, onOpen, onComplete, styles }: { card: Card; onOpen: () 
 }
 
 export default function Feed() {
-  const { user } = useStore();
+  const { user, t } = useStore();
   const { isLocked, promptUpgrade } = usePremiumGate();
   const reportLocked = isLocked('weekly_report');
   const { px, maxW } = useBreakpoint();
@@ -299,11 +302,11 @@ export default function Feed() {
 
   const visibleCards = tabCards.slice(0, 5);
   const firstName = (user?.name || '').split(' ')[0] || '';
-  const headline = greetingFallback(firstName);
+  const headline = greetingFallback(firstName, t);
   const alertCount = dashboard.priority.length;
   const alertText = alertCount > 0
-    ? `${alertCount} ${alertCount === 1 ? 'thing needs' : 'things need'} your attention today — ${dashboard.priority[0]?.title || 'review your household list'}.`
-    : 'Nothing critical today — your household is moving calmly.';
+    ? `${alertCount} ${alertCount === 1 ? t('feed_thing_needs') : t('feed_things_need')} — ${dashboard.priority[0]?.title || t('feed_review_list')}.`
+    : t('feed_nothing_critical');
 
   const openManual = () => {
     setVoiceDraft(null);
@@ -323,7 +326,7 @@ export default function Feed() {
       await api.updateCard(card.card_id, { status: next });
     } catch {
       pendingDismissRef.current.delete(card.card_id);
-      Alert.alert('Could not update', 'That change did not save. Please try again.');
+      Alert.alert(t('feed_could_not_update'), t('feed_change_not_saved'));
       load();
     }
   };
@@ -332,12 +335,12 @@ export default function Feed() {
     if (!selectedCard) return;
     const card = selectedCard;
     Alert.alert(
-      'Mark as done?',
-      `"${card.title}" will move to completed history.`,
+      t('feed_mark_done_q'),
+      `"${card.title}" ${t('feed_move_to_history')}`,
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('feed_cancel'), style: 'cancel' },
         {
-          text: 'Done',
+          text: t('feed_done'),
           onPress: () => {
             setSelectedCard(null);
             toggle(card);
@@ -360,7 +363,7 @@ export default function Feed() {
       setNotes((prev) => [created, ...prev]);
       setNoteText('');
     } catch {
-      Alert.alert('Error', 'Could not save note.');
+      Alert.alert(t('feed_error'), t('feed_could_not_save_note'));
     } finally {
       setSavingNote(false);
     }
@@ -371,7 +374,7 @@ export default function Feed() {
     try {
       await api.deleteHandoffNote(noteId);
     } catch {
-      Alert.alert('Could not delete', 'That note was restored. Please try again.');
+      Alert.alert(t('feed_could_not_delete'), t('feed_note_restored'));
       load();
     }
   }, [load]);
@@ -383,7 +386,7 @@ export default function Feed() {
       await api.generateFromTemplate(tpl.template_id);
       load();
     } catch {
-      Alert.alert('Error', 'Could not generate card from template.');
+      Alert.alert(t('feed_error'), t('feed_could_not_generate'));
     } finally {
       setRunningTemplate(null);
     }
@@ -399,7 +402,7 @@ export default function Feed() {
       setAnnouncements((prev) => [created, ...prev]);
       setAnnText('');
     } catch {
-      Alert.alert('Error', 'Could not post announcement.');
+      Alert.alert(t('feed_error'), t('feed_could_not_post'));
     } finally {
       setSavingAnn(false);
     }
@@ -410,7 +413,7 @@ export default function Feed() {
     try {
       await api.deleteAnnouncement(id);
     } catch {
-      Alert.alert('Could not delete', 'That announcement was restored. Please try again.');
+      Alert.alert(t('feed_could_not_delete'), t('feed_announcement_restored'));
       load();
     }
   }, [load]);
@@ -440,7 +443,7 @@ export default function Feed() {
                 <Text style={styles.subtitle}>Household COO</Text>
               </View>
               <View style={styles.calmCard}>
-                <Text style={styles.calmLabel}>CALM</Text>
+                <Text style={styles.calmLabel}>{t('feed_calm')}</Text>
                 <Text style={styles.calmValue}>{dashboard.calmScore}</Text>
               </View>
             </View>
@@ -448,26 +451,26 @@ export default function Feed() {
             <View style={styles.captureCard}>
               <PressScale onPress={openManual} style={styles.captureInput} testID="feed-open-add">
                 <View style={styles.plusSoft}><Plus color={ui.orange} size={26} /></View>
-                <Text style={styles.capturePlaceholder} numberOfLines={1}>Add a task, note or reminder...</Text>
+                <Text style={styles.capturePlaceholder} numberOfLines={1}>{t('feed_add_placeholder')}</Text>
               </PressScale>
               <View style={styles.captureActions}>
                 <PressScale onPress={() => setShowCamera(true)} style={styles.actionPill}>
                   <View style={[styles.actionDot, { backgroundColor: ui.lavender }]}>
                     <Camera color={ui.lavenderText} size={18} />
                   </View>
-                  <Text style={styles.actionPillText}>Photo</Text>
+                  <Text style={styles.actionPillText}>{t('feed_photo')}</Text>
                 </PressScale>
                 <PressScale onPress={() => setShowVoice(true)} style={styles.actionPill}>
                   <View style={[styles.actionDot, { backgroundColor: ui.mint }]}>
                     <Mic color={ui.mintText} size={18} />
                   </View>
-                  <Text style={styles.actionPillText}>Voice</Text>
+                  <Text style={styles.actionPillText}>{t('feed_voice')}</Text>
                 </PressScale>
                 <PressScale onPress={openManual} style={[styles.actionPill, styles.actionPillAccent]}>
                   <View style={[styles.actionDot, { backgroundColor: 'rgba(255,255,255,0.24)' }]}>
                     <Plus color="#FFFFFF" size={18} />
                   </View>
-                  <Text style={styles.actionPillAccentText}>Add</Text>
+                  <Text style={styles.actionPillAccentText}>{t('feed_add')}</Text>
                 </PressScale>
               </View>
             </View>
@@ -492,24 +495,24 @@ export default function Feed() {
             <View style={styles.statsStrip}>
               <View style={styles.statCell}>
                 <Text style={styles.statNumber}>{dashboard.todayCards.length}</Text>
-                <Text style={styles.statLabel}>Due today</Text>
+                <Text style={styles.statLabel}>{t('feed_due_today')}</Text>
               </View>
               <View style={styles.statDivider} />
               <View style={styles.statCell}>
                 <Text style={[styles.statNumber, { color: ui.orange }]}>{dashboard.signSlips.length}</Text>
-                <Text style={styles.statLabel}>Sign slips</Text>
+                <Text style={styles.statLabel}>{t('feed_sign_slips')}</Text>
               </View>
               <View style={styles.statDivider} />
               <View style={styles.statCell}>
                 <Text style={styles.statNumber}>{dashboard.weekCards.length}</Text>
-                <Text style={styles.statLabel}>This week</Text>
+                <Text style={styles.statLabel}>{t('feed_this_week')}</Text>
               </View>
             </View>
 
             {/* Handoff notes */}
             <PressScale onPress={() => setExpandNotes((v) => !v)} style={styles.notesHeader}>
               <MessageSquare color={ui.lavenderText} size={18} />
-              <Text style={styles.notesHeaderText}>Handoff Notes</Text>
+              <Text style={styles.notesHeaderText}>{t('feed_handoff_notes')}</Text>
               <Text style={styles.notesBadge}>{notes.length}</Text>
               <ChevronRight color={ui.muted} size={16} style={expandNotes ? { transform: [{ rotate: '90deg' }] } : undefined} />
             </PressScale>
@@ -519,7 +522,7 @@ export default function Feed() {
                   <TextInput
                     value={noteText}
                     onChangeText={setNoteText}
-                    placeholder="Leave a note for your co-parent..."
+                    placeholder={t('feed_note_placeholder')}
                     placeholderTextColor={ui.muted}
                     style={styles.noteInput}
                     returnKeyType="send"
@@ -541,7 +544,7 @@ export default function Feed() {
                     </PressScale>
                   </View>
                 ))}
-                {notes.length === 0 ? <Text style={styles.noteEmpty}>No handoff notes yet. Leave one for your co-parent.</Text> : null}
+                {notes.length === 0 ? <Text style={styles.noteEmpty}>{t('feed_no_notes')}</Text> : null}
               </View>
             ) : null}
 
@@ -554,7 +557,7 @@ export default function Feed() {
             <View style={styles.tabRow}>
               {(['today', 'upcoming', 'all'] as const).map((tab) => (
                 <PressScale key={tab} onPress={() => setActiveTab(tab)} style={styles.tabItem} testID={`feed-tab-${tab}`}>
-                  <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>{tab === 'today' ? 'Today' : tab === 'upcoming' ? 'Upcoming' : 'All'}</Text>
+                  <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>{tab === 'today' ? t('feed_today') : tab === 'upcoming' ? t('feed_upcoming') : t('feed_all')}</Text>
                   {activeTab === tab ? <View style={styles.tabUnderline} /> : null}
                 </PressScale>
               ))}
@@ -566,14 +569,14 @@ export default function Feed() {
               ) : loadError && visibleCards.length === 0 ? (
                 <PressScale onPress={handleRefresh} style={styles.emptyBox}>
                   <AlertTriangle color={ui.orange} size={22} />
-                  <Text style={styles.emptyTitle}>Couldn&apos;t load your tasks</Text>
-                  <Text style={styles.emptySub}>Check your connection and tap to try again.</Text>
+                  <Text style={styles.emptyTitle}>{t('feed_load_failed_title')}</Text>
+                  <Text style={styles.emptySub}>{t('feed_load_failed_sub')}</Text>
                 </PressScale>
               ) : visibleCards.length === 0 ? (
                 <View style={styles.emptyBox}>
                   <CheckCircle2 color={ui.mintText} size={22} />
-                  <Text style={styles.emptyTitle}>{activeTab === 'today' ? 'Nothing urgent today.' : 'Nothing to show here.'}</Text>
-                  <Text style={styles.emptySub}>Use Add, Photo, or Voice to capture the next household item.</Text>
+                  <Text style={styles.emptyTitle}>{activeTab === 'today' ? t('feed_nothing_urgent') : t('feed_nothing_to_show')}</Text>
+                  <Text style={styles.emptySub}>{t('feed_empty_hint')}</Text>
                 </View>
               ) : (
                 visibleCards.map((card, index) => (
@@ -588,14 +591,14 @@ export default function Feed() {
             {/* Announcements */}
             <View style={styles.sectionHeader}>
               <Megaphone color={ui.orange} size={18} />
-              <Text style={styles.sectionHeaderText}>Family Board</Text>
+              <Text style={styles.sectionHeaderText}>{t('feed_family_board')}</Text>
             </View>
             <View style={styles.notesCard}>
               <View style={styles.noteInputRow}>
                 <TextInput
                   value={annText}
                   onChangeText={setAnnText}
-                  placeholder="Post an announcement..."
+                  placeholder={t('feed_announcement_placeholder')}
                   placeholderTextColor={ui.muted}
                   style={styles.noteInput}
                   returnKeyType="send"
@@ -609,7 +612,7 @@ export default function Feed() {
                 <View key={ann.announcement_id} style={styles.noteRow}>
                   <View style={{ flex: 1 }}>
                     {ann.priority === 'urgent' ? (
-                      <View style={styles.urgentBadge}><AlertTriangle color="#DC2626" size={12} /><Text style={styles.urgentText}>URGENT</Text></View>
+                      <View style={styles.urgentBadge}><AlertTriangle color="#DC2626" size={12} /><Text style={styles.urgentText}>{t('feed_urgent')}</Text></View>
                     ) : null}
                     <Text style={styles.noteText}>{ann.text}</Text>
                     <Text style={styles.noteMeta}>{ann.author_name} · {new Date(ann.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}</Text>
@@ -619,7 +622,7 @@ export default function Feed() {
                   </PressScale>
                 </View>
               ))}
-              {announcements.length === 0 ? <Text style={styles.noteEmpty}>No announcements. Post dinner plans, schedule changes, or reminders.</Text> : null}
+              {announcements.length === 0 ? <Text style={styles.noteEmpty}>{t('feed_no_announcements')}</Text> : null}
             </View>
 
             {/* Weekly Report Card */}
@@ -628,7 +631,7 @@ export default function Feed() {
               style={styles.sectionHeader}
             >
               <BarChart3 color={ui.mintText} size={18} />
-              <Text style={styles.sectionHeaderText}>Weekly Report</Text>
+              <Text style={styles.sectionHeaderText}>{t('feed_weekly_report')}</Text>
               {reportLocked ? (
                 <LockBadge onPress={() => promptUpgrade('weekly_report')} />
               ) : (
@@ -640,29 +643,29 @@ export default function Feed() {
                 <View style={styles.reportGrid}>
                   <View style={styles.reportCell}>
                     <Text style={styles.reportNum}>{report.tasks_completed}</Text>
-                    <Text style={styles.reportLabel}>Done</Text>
+                    <Text style={styles.reportLabel}>{t('feed_report_done')}</Text>
                   </View>
                   <View style={styles.reportCell}>
                     <Text style={styles.reportNum}>{report.tasks_created}</Text>
-                    <Text style={styles.reportLabel}>Created</Text>
+                    <Text style={styles.reportLabel}>{t('feed_report_created')}</Text>
                   </View>
                   <View style={styles.reportCell}>
                     <Text style={[styles.reportNum, report.tasks_overdue > 0 && { color: '#DC2626' }]}>{report.tasks_overdue}</Text>
-                    <Text style={styles.reportLabel}>Overdue</Text>
+                    <Text style={styles.reportLabel}>{t('feed_report_overdue')}</Text>
                   </View>
                   <View style={styles.reportCell}>
                     <Text style={[styles.reportNum, { color: ui.orange }]}>{report.stars_earned}</Text>
-                    <Text style={styles.reportLabel}>Stars</Text>
+                    <Text style={styles.reportLabel}>{t('feed_report_stars')}</Text>
                   </View>
                 </View>
                 {report.total_spent > 0 ? (
                   <View style={styles.reportSpent}>
-                    <Text style={styles.reportSpentText}>${report.total_spent.toFixed(2)} spent this week</Text>
+                    <Text style={styles.reportSpentText}>${report.total_spent.toFixed(2)} {t('feed_spent_this_week')}</Text>
                   </View>
                 ) : null}
                 {report.upcoming_deadlines.length > 0 ? (
                   <View style={styles.reportUpcoming}>
-                    <Text style={styles.reportUpLabel}>Upcoming</Text>
+                    <Text style={styles.reportUpLabel}>{t('feed_upcoming')}</Text>
                     {report.upcoming_deadlines.slice(0, 3).map((d, i) => (
                       <Text key={i} style={styles.reportUpItem}>• {d.title}{d.assignee ? ` (${d.assignee})` : ''}</Text>
                     ))}
@@ -672,7 +675,7 @@ export default function Feed() {
             ) : null}
 
             <View style={styles.footerSnapshot}>
-              <Text style={styles.footerSnapshotText}>{members.filter((m) => m.role?.toLowerCase() === 'child').length} kids · {rewardCount} rewards · {vaultCount} vault docs</Text>
+              <Text style={styles.footerSnapshotText}>{members.filter((m) => m.role?.toLowerCase() === 'child').length} {t('feed_kids')} · {rewardCount} {t('feed_rewards')} · {vaultCount} {t('feed_vault_docs')}</Text>
             </View>
           </View>
           <View style={{ height: 160 }} />
@@ -740,20 +743,20 @@ export default function Feed() {
             </View>
             <View style={styles.detailMetaRow}>
               <Clock color={ui.muted} size={17} />
-              <Text style={styles.detailMetaText}>{cardMeta(selectedCard)}</Text>
+              <Text style={styles.detailMetaText}>{cardMeta(selectedCard, t)}</Text>
             </View>
             <View style={styles.detailMetaRow}>
               <User color={ui.muted} size={17} />
-              <Text style={styles.detailMetaText}>{selectedCard.assignee || 'Unassigned'}</Text>
+              <Text style={styles.detailMetaText}>{selectedCard.assignee || t('feed_unassigned')}</Text>
             </View>
             <View style={styles.detailBody}>
               <Text style={[styles.detailDescription, !selectedCard.description && { color: ui.muted }]}>
-                {selectedCard.description || 'No additional details.'}
+                {selectedCard.description || t('feed_no_details')}
               </Text>
             </View>
             <PressScale testID="feed-complete-card" onPress={completeSelected} style={styles.completeBtn}>
               <CheckCircle2 color="#FFFFFF" size={18} />
-              <Text style={styles.completeBtnText}>Mark as done</Text>
+              <Text style={styles.completeBtnText}>{t('feed_mark_done')}</Text>
             </PressScale>
           </>
         ) : null}

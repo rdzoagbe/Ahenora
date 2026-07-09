@@ -135,19 +135,19 @@ export default function Settings() {
 
   const removeMember = useCallback((member: FamilyMember) => {
     Alert.alert(
-      `Remove ${member.name}?`,
-      'Their profile and star history will be removed from the household. This cannot be undone.',
+      `${t('set_remove')} ${member.name}?`,
+      t('set_remove_member_msg'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('cancel'), style: 'cancel' },
         {
-          text: 'Remove',
+          text: t('set_remove'),
           style: 'destructive',
           onPress: async () => {
             try {
               await api.deleteFamilyMember(member.member_id);
               setMembers((prev) => prev.filter((m) => m.member_id !== member.member_id));
             } catch (error: any) {
-              Alert.alert('Could not remove member', error?.message || 'Please try again.');
+              Alert.alert(t('set_remove_member_error'), error?.message || t('set_please_try_again'));
             }
           },
         },
@@ -157,22 +157,22 @@ export default function Settings() {
 
   const shareInviteLink = useCallback(async (inviteUrl?: string | null, email?: string | null) => {
     if (!inviteUrl) {
-      setInviteResult(email ? 'Invite link is not available yet for ' + email + '.' : 'Invite link is not available yet.');
+      setInviteResult(email ? `${t('set_invite_link_unavailable_for')} ${email}.` : t('set_invite_link_unavailable'));
       return;
     }
     try {
       if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) {
         await navigator.clipboard.writeText(inviteUrl);
-        setInviteResult(email ? `Invite link copied for ${email}.` : 'Invite link copied.');
+        setInviteResult(email ? `${t('set_invite_link_copied_for')} ${email}.` : t('set_invite_link_copied'));
         return;
       }
       await Share.share({
-        title: 'Join Household COO',
-        message: `${user?.name || 'A family member'} invited you to join Household COO.\n\n${inviteUrl}`,
+        title: t('set_join_household_coo'),
+        message: `${user?.name || t('set_a_family_member')} ${t('set_invited_you')}\n\n${inviteUrl}`,
         url: inviteUrl,
       });
     } catch {
-      setInviteResult(`Could not open share sheet. Share this link manually: ${inviteUrl}`);
+      setInviteResult(`${t('set_share_sheet_error')} ${inviteUrl}`);
     }
   }, [user?.name]);
 
@@ -189,14 +189,14 @@ export default function Settings() {
           // Revert the optimistic toggle so it doesn't stay ON while
           // notifications are actually off.
           setNotificationPrefs(notificationPrefs);
-          setNotificationStatus('Notification permission was not granted. Enable it in your device Settings to turn this on.');
+          setNotificationStatus(t('set_notif_permission_denied_long'));
           return;
         }
       }
 
       let warning = '';
       if (nextPrefs.new_card_alerts) {
-        const push = await registerForPushNotificationsAsync().catch((e) => ({ granted: false, error: e?.message || 'Remote push registration failed.' }));
+        const push = await registerForPushNotificationsAsync().catch((e) => ({ granted: false, error: e?.message || t('set_push_registration_failed') }));
         const expoPushToken = 'expoPushToken' in push ? push.expoPushToken : undefined;
         const pushError = 'error' in push ? push.error : undefined;
         if (expoPushToken) await api.registerNotificationToken(expoPushToken, Platform.OS);
@@ -209,14 +209,14 @@ export default function Settings() {
       if (nextPrefs.card_reminders) {
         const cards = await api.listCards();
         const result = await syncCardReminderNotifications(cards, true);
-        setNotificationStatus(result.scheduled ? `${result.scheduled} reminder notification${result.scheduled === 1 ? '' : 's'} scheduled.` : warning || 'Reminder alerts are on.');
+        setNotificationStatus(result.scheduled ? `${result.scheduled} reminder notification${result.scheduled === 1 ? '' : 's'} scheduled.` : warning || t('set_reminder_alerts_on'));
       } else {
         await syncCardReminderNotifications([], false).catch(() => undefined);
-        setNotificationStatus(nextPrefs.new_card_alerts ? warning || 'New-card alerts are on.' : 'Notifications are off.');
+        setNotificationStatus(nextPrefs.new_card_alerts ? warning || t('set_new_card_alerts_on') : t('set_notifications_off'));
       }
     } catch (error: any) {
       logger.warn('notification settings failed', error);
-      setNotificationStatus(error?.message || 'Could not update notification settings.');
+      setNotificationStatus(error?.message || t('set_notif_update_error'));
     } finally {
       setSavingNotifications(false);
     }
@@ -224,16 +224,16 @@ export default function Settings() {
 
   const testReminderNotification = useCallback(async () => {
     const granted = await ensureNotificationPermissions();
-    if (!granted) { setNotificationStatus('Notification permission was not granted.'); return; }
+    if (!granted) { setNotificationStatus(t('set_notif_permission_denied')); return; }
     await sendTestScheduledReminderNotification();
-    setNotificationStatus('Test reminder scheduled. It should appear in about 5 seconds.');
+    setNotificationStatus(t('set_test_reminder_scheduled'));
   }, []);
 
   const testNewCardAlert = useCallback(async () => {
     const granted = await ensureNotificationPermissions();
-    if (!granted) { setNotificationStatus('Notification permission was not granted.'); return; }
-    await sendLocalNotification('New Household COO card', 'This is how a new-card alert will appear.');
-    setNotificationStatus('Test new-card alert sent on this device.');
+    if (!granted) { setNotificationStatus(t('set_notif_permission_denied')); return; }
+    await sendLocalNotification(t('set_test_alert_title'), t('set_test_alert_body'));
+    setNotificationStatus(t('set_test_alert_sent'));
   }, []);
 
   const addExpense = useCallback(async () => {
@@ -249,7 +249,7 @@ export default function Settings() {
       const sum = await api.getExpenseSummary().catch(() => null);
       if (sum) setExpenseSummary(sum);
     } catch {
-      Alert.alert('Error', 'Could not add expense.');
+      Alert.alert(t('set_error'), t('set_add_expense_error'));
     } finally {
       setSavingExpense(false);
     }
@@ -288,7 +288,7 @@ export default function Settings() {
         onRefresh={handleRefresh}
         scrollViewProps={{ contentContainerStyle: styles.scroll, keyboardShouldPersistTaps: 'handled' }}
       >
-          <ScreenHeader eyebrow="Manage" title="Settings" />
+          <ScreenHeader eyebrow={t('set_manage')} title={t('set_settings')} />
 
           {/* Profile */}
           <PressScale testID="settings-open-account" onPress={() => router.push('/account')} style={styles.headerGap}>
@@ -299,12 +299,12 @@ export default function Settings() {
                 <View style={styles.avatar}><Text style={styles.avatarText}>{initial}</Text></View>
               )}
               <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={styles.profileName} numberOfLines={1}>{user?.name || 'Household member'}</Text>
-                <Text style={styles.profileEmail} numberOfLines={1}>{user?.email || 'Not signed in'}</Text>
+                <Text style={styles.profileName} numberOfLines={1}>{user?.name || t('set_household_member')}</Text>
+                <Text style={styles.profileEmail} numberOfLines={1}>{user?.email || t('set_not_signed_in')}</Text>
                 {user?.is_admin ? (
                   <View style={styles.adminBadge}>
                     <Crown color={ui.orange} size={13} />
-                    <Text style={styles.adminBadgeText}>Admin / Tester</Text>
+                    <Text style={styles.adminBadgeText}>{t('set_admin_tester')}</Text>
                   </View>
                 ) : null}
               </View>
@@ -316,8 +316,8 @@ export default function Settings() {
           <PressScale testID="open-pricing" onPress={() => router.push('/pricing')} style={{ marginTop: 14 }}>
             <Card style={styles.planCard}>
               <View style={styles.planCol}>
-                <Text style={styles.planTitle}>{user?.is_admin ? 'Admin / Tester' : `${planLabel} Plan`}</Text>
-                <Text style={styles.planSub}>{memberLimit ? `${memberSlotsUsed}/${memberLimit} slots` : 'Tap to view plans'}</Text>
+                <Text style={styles.planTitle}>{user?.is_admin ? t('set_admin_tester') : `${planLabel} ${t('set_plan')}`}</Text>
+                <Text style={styles.planSub}>{memberLimit ? `${memberSlotsUsed}/${memberLimit} ${t('set_slots')}` : t('set_tap_view_plans')}</Text>
               </View>
               <View style={styles.planDivider} />
               <View style={styles.planCol}>
@@ -329,13 +329,13 @@ export default function Settings() {
           </PressScale>
 
           {/* Notifications */}
-          <SectionTitle style={styles.sectionGap}>Notifications</SectionTitle>
+          <SectionTitle style={styles.sectionGap}>{t('set_notifications')}</SectionTitle>
           <Card style={styles.cardPad}>
             <ToggleRow
               testID="notif-push"
               tile={<IconTile bg={ui.orangeSoft}><Bell color={ui.orange} size={18} /></IconTile>}
-              title="Push notifications"
-              subtitle="Reminders, deadlines & updates"
+              title={t('set_push_notifications')}
+              subtitle={t('set_push_notifications_sub')}
               on={notificationPrefs.card_reminders}
               disabled={savingNotifications}
               onPress={() => updateNotificationPrefs({ card_reminders: !notificationPrefs.card_reminders })}
@@ -343,8 +343,8 @@ export default function Settings() {
             <ToggleRow
               testID="notif-sign"
               tile={<IconTile bg={ui.lavender}><PenLine color={ui.lavenderText} size={18} /></IconTile>}
-              title="Sign slip alerts"
-              subtitle="When a form needs your signature"
+              title={t('set_sign_slip_alerts')}
+              subtitle={t('set_sign_slip_alerts_sub')}
               on={notificationPrefs.new_card_alerts}
               disabled={savingNotifications}
               onPress={() => updateNotificationPrefs({ new_card_alerts: !notificationPrefs.new_card_alerts })}
@@ -352,8 +352,8 @@ export default function Settings() {
             <ToggleRow
               testID="notif-digest"
               tile={<IconTile bg={ui.soft}><Mail color={ui.muted} size={18} /></IconTile>}
-              title="Weekly digest email"
-              subtitle={weeklyBrief ? 'Sunday evening summary' : 'Upgrade to unlock'}
+              title={t('set_weekly_digest')}
+              subtitle={weeklyBrief ? t('set_weekly_digest_sub') : t('set_upgrade_to_unlock')}
               on={weeklyBrief}
               onPress={() => router.push('/pricing')}
               divider={false}
@@ -362,7 +362,7 @@ export default function Settings() {
           {notificationStatus ? <Text style={styles.note}>{notificationStatus}</Text> : null}
 
           {/* Appearance */}
-          <SectionTitle style={styles.sectionGap}>Appearance</SectionTitle>
+          <SectionTitle style={styles.sectionGap}>{t('set_appearance')}</SectionTitle>
           <Card style={styles.segmentCard}>
             <View style={styles.segmentWrap}>
               {(['light', 'dark', 'system'] as const).map((mode) => {
@@ -370,7 +370,7 @@ export default function Settings() {
                 return (
                   <PressScale key={mode} testID={`appearance-${mode}`} onPress={() => setAppearance(mode)} style={[styles.segmentBtn, active && { borderBottomColor: ui.orange }]}>
                     <Text style={[styles.segmentText, { color: active ? ui.text : ui.muted, fontFamily: active ? 'Inter_800ExtraBold' : 'Inter_600SemiBold' }]}>
-                      {mode[0].toUpperCase() + mode.slice(1)}
+                      {t('set_appearance_' + mode)}
                     </Text>
                   </PressScale>
                 );
@@ -379,26 +379,26 @@ export default function Settings() {
           </Card>
 
           {/* Household */}
-          <SectionTitle style={styles.sectionGap}>Household</SectionTitle>
+          <SectionTitle style={styles.sectionGap}>{t('set_household')}</SectionTitle>
           <Card style={styles.cardPad}>
             <NavRow
               testID="settings-household-toggle"
               tile={<IconTile bg={ui.orangeSoft}><Users color={ui.orange} size={18} /></IconTile>}
-              title="Manage members"
+              title={t('set_manage_members')}
               right={<Chevron open={expandMembers} />}
               onPress={() => setExpandMembers((v) => !v)}
             />
             {expandMembers ? (
               <View style={styles.expandBox}>
-                {members.length === 0 ? <Text style={styles.emptyText}>No family members yet.</Text> : members.map((m) => (
+                {members.length === 0 ? <Text style={styles.emptyText}>{t('set_no_members_yet')}</Text> : members.map((m) => (
                   <View key={m.member_id} style={styles.inviteRow}>
-                    <MiniRow initial={m.name[0]?.toUpperCase()} name={m.name} sub={m.has_account ? `${m.role} · account` : m.role} />
+                    <MiniRow initial={m.name[0]?.toUpperCase()} name={m.name} sub={m.has_account ? `${m.role} · ${t('set_account')}` : m.role} />
                     {!m.has_account ? (
                       <PressScale
                         testID={`remove-member-${m.member_id}`}
                         onPress={() => removeMember(m)}
                         style={{ padding: 4 }}
-                        accessibilityLabel={`Remove ${m.name}`}
+                        accessibilityLabel={`${t('set_remove')} ${m.name}`}
                       >
                         <Trash2 color={ui.muted} size={15} />
                       </PressScale>
@@ -407,18 +407,18 @@ export default function Settings() {
                 ))}
                 {invites.filter((i) => i.status === 'pending').map((invite) => (
                   <View key={invite.invite_id} style={styles.inviteRow}>
-                    <MiniRow initial={(invite.email?.[0] || '?').toUpperCase()} name={invite.email || 'Invite link'} sub={`Invite · ${invite.status}`} />
+                    <MiniRow initial={(invite.email?.[0] || '?').toUpperCase()} name={invite.email || t('set_invite_link')} sub={`${t('set_invite')} · ${invite.status}`} />
                     {invite.invite_url ? (
                       <PressScale onPress={() => shareInviteLink(invite.invite_url, invite.email)} style={styles.ghostBtn}>
                         <Share2 color={ui.text} size={14} />
-                        <Text style={styles.ghostBtnText}>Share</Text>
+                        <Text style={styles.ghostBtnText}>{t('set_share')}</Text>
                       </PressScale>
                     ) : null}
                   </View>
                 ))}
                 <PressScale testID="invite-coparent" onPress={() => openInvite()} style={styles.expandAction}>
                   <UserPlus color={ui.text} size={18} />
-                  <Text style={styles.expandActionText}>Invite co-parent</Text>
+                  <Text style={styles.expandActionText}>{t('set_invite_coparent')}</Text>
                 </PressScale>
               </View>
             ) : null}
@@ -426,16 +426,16 @@ export default function Settings() {
 
             <NavRow
               tile={<IconTile bg={ui.lavender}><Lock color={ui.lavenderText} size={18} /></IconTile>}
-              title="Manage children"
-              subtitle={`${childMembers.length} child${childMembers.length === 1 ? '' : 'ren'} · kid PINs`}
+              title={t('set_manage_children')}
+              subtitle={`${childMembers.length} child${childMembers.length === 1 ? '' : 'ren'} · ${t('set_kid_pins')}`}
               right={<Chevron open={expandChildren} />}
               onPress={() => setExpandChildren((v) => !v)}
             />
             {expandChildren ? (
               <View style={styles.expandBox}>
-                {childMembers.length === 0 ? <Text style={styles.emptyText}>No children to secure.</Text> : childMembers.map((m) => (
+                {childMembers.length === 0 ? <Text style={styles.emptyText}>{t('set_no_children')}</Text> : childMembers.map((m) => (
                   <PressScale key={m.member_id} testID={`set-pin-${m.member_id}`} onPress={() => setPinMember(m)} style={styles.inviteRow}>
-                    <MiniRow initial={m.name[0]?.toUpperCase()} name={m.name} sub={m.has_pin ? 'PIN set · tap to change' : 'No PIN · tap to add'} />
+                    <MiniRow initial={m.name[0]?.toUpperCase()} name={m.name} sub={m.has_pin ? t('set_pin_set') : t('set_no_pin')} />
                     {m.has_pin ? <Lock color={ui.orange} size={16} /> : <ChevronRight color={ui.muted} size={18} />}
                   </PressScale>
                 ))}
@@ -445,8 +445,8 @@ export default function Settings() {
 
             <NavRow
               tile={<IconTile bg={ui.mint}><Link2 color={ui.mintText} size={18} /></IconTile>}
-              title="Invite a family member"
-              subtitle="Send an invite link via email"
+              title={t('set_invite_family_member')}
+              subtitle={t('set_invite_family_member_sub')}
               onPress={() => openInvite()}
               right={<ChevronRight color={ui.muted} size={18} />}
               divider={false}
@@ -454,13 +454,13 @@ export default function Settings() {
           </Card>
 
           {/* Expenses */}
-          <SectionTitle style={styles.sectionGap}>Expense Splitting</SectionTitle>
+          <SectionTitle style={styles.sectionGap}>{t('set_expense_splitting')}</SectionTitle>
           <Card style={styles.cardPad}>
             <NavRow
               testID="settings-expenses-toggle"
               tile={<IconTile bg={ui.gold}><DollarSign color={ui.goldText} size={18} /></IconTile>}
-              title="Household expenses"
-              subtitle={expenseSummary ? `$${expenseSummary.total.toFixed(0)} last ${expenseSummary.days} days` : 'Track shared costs'}
+              title={t('set_household_expenses')}
+              subtitle={expenseSummary ? `$${expenseSummary.total.toFixed(0)} last ${expenseSummary.days} days` : t('set_track_shared_costs')}
               right={<Chevron open={expandExpenses} />}
               onPress={() => setExpandExpenses((v) => !v)}
               divider={false}
@@ -489,7 +489,7 @@ export default function Settings() {
                     </PressScale>
                   </View>
                 ))}
-                {expenses.length === 0 ? <Text style={styles.emptyText}>No expenses recorded yet.</Text> : null}
+                {expenses.length === 0 ? <Text style={styles.emptyText}>{t('set_no_expenses')}</Text> : null}
                 <PressScale
                   testID="add-expense"
                   onPress={() => {
@@ -501,14 +501,14 @@ export default function Settings() {
                   style={styles.expandAction}
                 >
                   <Receipt color={ui.text} size={18} />
-                  <Text style={styles.expandActionText}>Add expense</Text>
+                  <Text style={styles.expandActionText}>{t('set_add_expense')}</Text>
                 </PressScale>
               </View>
             ) : null}
           </Card>
 
           {/* Preferences */}
-          <SectionTitle style={styles.sectionGap}>Preferences</SectionTitle>
+          <SectionTitle style={styles.sectionGap}>{t('set_preferences')}</SectionTitle>
           <Card style={styles.cardPad}>
             <NavRow
               testID="settings-lang"
@@ -521,34 +521,34 @@ export default function Settings() {
           </Card>
 
           {/* More / advanced */}
-          <SectionTitle style={styles.sectionGap}>More</SectionTitle>
+          <SectionTitle style={styles.sectionGap}>{t('set_more')}</SectionTitle>
           <Card style={styles.cardPad}>
             <NavRow
               testID="settings-completed-history-toggle"
               tile={<IconTile bg={ui.soft}><CalendarDays color={ui.text} size={18} /></IconTile>}
-              title="Completed history"
+              title={t('set_completed_history')}
               subtitle={`${completedCards.length} completed card${completedCards.length === 1 ? '' : 's'}`}
               right={<Chevron open={expandHistory} />}
               onPress={() => setExpandHistory((v) => !v)}
             />
             {expandHistory ? (
               <View style={styles.expandBox}>
-                {completedCards.length === 0 ? <Text style={styles.emptyText}>No completed cards yet.</Text> : completedCards.slice(0, 8).map((card) => (
+                {completedCards.length === 0 ? <Text style={styles.emptyText}>{t('set_no_completed_cards')}</Text> : completedCards.slice(0, 8).map((card) => (
                   <View key={card.card_id} style={styles.inviteRow}>
-                    <MiniRow initial={card.type === 'TASK' ? 'T' : card.type === 'RSVP' ? 'R' : 'S'} name={card.title} sub={`Done · ${card.assignee || 'Family'}`} />
+                    <MiniRow initial={card.type === 'TASK' ? 'T' : card.type === 'RSVP' ? 'R' : 'S'} name={card.title} sub={`${t('set_done')} · ${card.assignee || t('set_family')}`} />
                     <PressScale
                       testID={`restore-card-${card.card_id}`}
                       onPress={() => {
-                        Alert.alert('Restore card?', `"${card.title}" will be moved back to your active cards.`, [
-                          { text: 'Cancel', style: 'cancel' },
+                        Alert.alert(t('set_restore_card_title'), `"${card.title}" ${t('set_restore_card_msg')}`, [
+                          { text: t('cancel'), style: 'cancel' },
                           {
-                            text: 'Restore',
+                            text: t('set_restore'),
                             onPress: async () => {
                               try {
                                 await api.updateCard(card.card_id, { status: 'OPEN' });
                                 setCompletedCards((prev) => prev.filter((c) => c.card_id !== card.card_id));
                               } catch {
-                                Alert.alert('Error', 'Could not restore this card.');
+                                Alert.alert(t('set_error'), t('set_restore_error'));
                               }
                             },
                           },
@@ -557,7 +557,7 @@ export default function Settings() {
                       style={styles.ghostBtn}
                     >
                       <RotateCcw color={ui.text} size={14} />
-                      <Text style={styles.ghostBtnText}>Restore</Text>
+                      <Text style={styles.ghostBtnText}>{t('set_restore')}</Text>
                     </PressScale>
                   </View>
                 ))}
@@ -568,28 +568,28 @@ export default function Settings() {
             <NavRow
               testID="settings-view-plans"
               tile={<IconTile bg={ui.orangeSoft}><Crown color={ui.orange} size={18} /></IconTile>}
-              title="View all plans"
-              subtitle={`You're on ${user?.is_admin ? 'Admin / Tester' : `${planLabel}`} · compare tiers`}
+              title={t('set_view_all_plans')}
+              subtitle={`${t('set_youre_on')} ${user?.is_admin ? t('set_admin_tester') : `${planLabel}`} · ${t('set_compare_tiers')}`}
               onPress={() => router.push('/pricing')}
             />
 
             <NavRow
               tile={<IconTile bg={ui.soft}><Sparkles color={ui.text} size={18} /></IconTile>}
-              title="Plan &amp; usage"
-              subtitle="AI scans, vault storage & limits"
+              title={t('set_plan_usage')}
+              subtitle={t('set_plan_usage_sub')}
               right={<Chevron open={expandUsage} />}
               onPress={() => setExpandUsage((v) => !v)}
               divider={false}
             />
             {expandUsage ? (
               <View style={styles.statGrid}>
-                <StatBox label="Members" value={`${memberSlotsUsed}/${memberLimit || '∞'}`} />
-                <StatBox label="AI scans" value={entitlements ? `${entitlements.ai_scans_used}/${entitlements.ai_scans_limit}` : `${subscription?.ai_scans_used ?? 0}/${subscription?.limits?.ai_scans_per_month ?? '∞'}`} />
-                <StatBox label="Vault" value={formatBytes(entitlements?.vault_bytes_used ?? subscription?.vault_bytes_used)} />
-                <StatBox label="Weekly brief" value={weeklyBrief ? 'On' : 'Locked'} />
+                <StatBox label={t('set_stat_members')} value={`${memberSlotsUsed}/${memberLimit || '∞'}`} />
+                <StatBox label={t('set_stat_ai_scans')} value={entitlements ? `${entitlements.ai_scans_used}/${entitlements.ai_scans_limit}` : `${subscription?.ai_scans_used ?? 0}/${subscription?.limits?.ai_scans_per_month ?? '∞'}`} />
+                <StatBox label={t('set_stat_vault')} value={formatBytes(entitlements?.vault_bytes_used ?? subscription?.vault_bytes_used)} />
+                <StatBox label={t('set_stat_weekly_brief')} value={weeklyBrief ? t('set_on') : t('set_locked')} />
                 <View style={styles.testRow}>
-                  <PressScale onPress={testReminderNotification} style={styles.ghostBtnWide}><Text style={styles.ghostBtnText}>Test reminder</Text></PressScale>
-                  <PressScale onPress={testNewCardAlert} style={styles.ghostBtnWide}><Text style={styles.ghostBtnText}>Test alert</Text></PressScale>
+                  <PressScale onPress={testReminderNotification} style={styles.ghostBtnWide}><Text style={styles.ghostBtnText}>{t('set_test_reminder')}</Text></PressScale>
+                  <PressScale onPress={testNewCardAlert} style={styles.ghostBtnWide}><Text style={styles.ghostBtnText}>{t('set_test_alert')}</Text></PressScale>
                 </View>
               </View>
             ) : null}
@@ -608,8 +608,8 @@ export default function Settings() {
       <PinPadModal
         visible={pinMember !== null}
         mode="set"
-        title={pinMember ? `${pinMember.name}'s PIN` : 'Set PIN'}
-        subtitle="4 digits. Tap any digit to clear and retry."
+        title={pinMember ? `${t('set_pin_for')} ${pinMember.name}` : t('set_set_pin')}
+        subtitle={t('set_pin_subtitle')}
         onClose={() => setPinMember(null)}
         onSubmit={async (pin) => {
           if (!pinMember) return false;
@@ -626,17 +626,17 @@ export default function Settings() {
 
       <KeyboardAwareBottomSheet visible={showInvite} onClose={() => setShowInvite(false)} contentStyle={styles.sheet}>
         <View style={styles.sheetHeader}>
-          <Text style={styles.sheetTitle}>Invite co-parent</Text>
+          <Text style={styles.sheetTitle}>{t('set_invite_coparent')}</Text>
           <PressScale testID="close-invite" onPress={() => setShowInvite(false)} style={styles.iconBtn}>
             <X color={ui.text} size={22} />
           </PressScale>
         </View>
-        <Text style={styles.sheetHelp}>They will receive a join link and can sign in to join your household.</Text>
+        <Text style={styles.sheetHelp}>{t('set_invite_help')}</Text>
         <TextInput
           testID="invite-email"
           value={inviteEmail}
           onChangeText={setInviteEmail}
-          placeholder="partner@example.com"
+          placeholder={t('set_email_placeholder')}
           placeholderTextColor={ui.muted}
           autoCapitalize="none"
           autoCorrect={false}
@@ -648,7 +648,7 @@ export default function Settings() {
         {lastInviteUrl ? (
           <PressScale onPress={() => shareInviteLink(lastInviteUrl, inviteEmail)} style={styles.expandAction}>
             <Share2 color={ui.text} size={18} />
-            <Text style={styles.expandActionText}>Share invite link</Text>
+            <Text style={styles.expandActionText}>{t('set_share_invite_link')}</Text>
           </PressScale>
         ) : null}
         <View style={styles.sheetFooter}>
@@ -665,11 +665,11 @@ export default function Settings() {
                 const submittedEmail = inviteEmail.trim();
                 const res = await api.invite(submittedEmail);
                 if (res.invite_url) setLastInviteUrl(res.invite_url);
-                setInviteResult(res.sent ? `Invitation email sent to ${submittedEmail}.` : res.invite_url ? `Invite created. Share this link manually: ${res.invite_url}` : res.message || 'Invite created.');
+                setInviteResult(res.sent ? `${t('set_invite_email_sent')} ${submittedEmail}.` : res.invite_url ? `${t('set_invite_created_share')} ${res.invite_url}` : res.message || t('set_invite_created'));
                 setInviteEmail('');
                 await load();
               } catch (error: any) {
-                setInviteResult(error?.message || 'Error');
+                setInviteResult(error?.message || t('set_error'));
               } finally {
                 setSending(false);
               }
@@ -678,24 +678,24 @@ export default function Settings() {
             style={[styles.primaryButton, (!inviteEmail.trim() || sending) && { opacity: 0.5 }]}
           >
             <Send color="#FFFFFF" size={18} />
-            <Text style={styles.primaryButtonText}>{sending ? 'Sending...' : 'Send invite'}</Text>
+            <Text style={styles.primaryButtonText}>{sending ? t('set_sending') : t('set_send_invite')}</Text>
           </PressScale>
         </View>
       </KeyboardAwareBottomSheet>
 
       <KeyboardAwareBottomSheet visible={showExpenseAdd} onClose={() => setShowExpenseAdd(false)} contentStyle={styles.sheet}>
         <View style={styles.sheetHeader}>
-          <Text style={styles.sheetTitle}>Add Expense</Text>
+          <Text style={styles.sheetTitle}>{t('set_add_expense_title')}</Text>
           <PressScale testID="close-expense" onPress={() => setShowExpenseAdd(false)} style={styles.iconBtn}>
             <X color={ui.text} size={22} />
           </PressScale>
         </View>
-        <Text style={styles.sheetHelp}>Split household costs between family members.</Text>
+        <Text style={styles.sheetHelp}>{t('set_expense_help')}</Text>
         <TextInput
           testID="expense-desc"
           value={expDesc}
           onChangeText={setExpDesc}
-          placeholder="What was it for?"
+          placeholder={t('set_expense_desc_placeholder')}
           placeholderTextColor={ui.muted}
           style={styles.input}
           returnKeyType="next"
@@ -704,7 +704,7 @@ export default function Settings() {
           testID="expense-amount"
           value={expAmount}
           onChangeText={setExpAmount}
-          placeholder="Amount (e.g. 42.50)"
+          placeholder={t('set_expense_amount_placeholder')}
           placeholderTextColor={ui.muted}
           keyboardType="decimal-pad"
           style={[styles.input, { marginTop: 10 }]}
@@ -728,7 +728,7 @@ export default function Settings() {
             style={[styles.primaryButton, (savingExpense || !expDesc.trim() || !expAmount.trim()) && { opacity: 0.5 }]}
           >
             <DollarSign color="#FFFFFF" size={18} />
-            <Text style={styles.primaryButtonText}>{savingExpense ? 'Saving...' : 'Add expense'}</Text>
+            <Text style={styles.primaryButtonText}>{savingExpense ? t('set_saving') : t('set_add_expense')}</Text>
           </PressScale>
         </View>
       </KeyboardAwareBottomSheet>

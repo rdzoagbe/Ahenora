@@ -202,7 +202,7 @@ export default function Kids() {
         .catch(() => undefined);
     } catch (e: any) {
       logger.warn('Kids page load failed:', e?.message || e);
-      setErrorMessage(e?.message || 'Could not load Kids page.');
+      setErrorMessage(e?.message || t('kids_load_error'));
     } finally {
       setLoading(false);
     }
@@ -254,12 +254,12 @@ export default function Kids() {
 
   const openStarSheet = (mode: StarMode, amount = '5') => {
     if (!activeChild) {
-      showToast('Add or select a child first.', 'error');
+      showToast(t('kids_select_child_first'), 'error');
       return;
     }
     setStarMode(mode);
     setStarAmount(amount);
-    setStarReason(mode === 'add' ? 'Good job' : '');
+    setStarReason(mode === 'add' ? t('kids_good_job') : '');
     setShowStarSheet(true);
   };
 
@@ -268,9 +268,9 @@ export default function Kids() {
     const starting = parseInt(childStartingStars || '0', 10) || 0;
     const pin = childPin.trim();
 
-    if (!name) { showToast('Child name is required.', 'error'); return; }
-    if (starting < 0) { showToast('Starting stars cannot be negative.', 'error'); return; }
-    if (pin && !/^\d{4}$/.test(pin)) { showToast('PIN must be 4 digits.', 'error'); return; }
+    if (!name) { showToast(t('kids_name_required'), 'error'); return; }
+    if (starting < 0) { showToast(t('kids_stars_not_negative'), 'error'); return; }
+    if (pin && !/^\d{4}$/.test(pin)) { showToast(t('kids_pin_4_digits'), 'error'); return; }
 
     setSaving(true);
     try {
@@ -278,7 +278,7 @@ export default function Kids() {
       setMembers((prev) => [...prev, created]);
       setSelectedChild(created.member_id);
       setShowChildSheet(false);
-      showToast(`${created.name} added.`, 'success');
+      showToast(`${created.name} ${t('kids_child_added')}`, 'success');
       await refreshHistory(created.member_id);
     } catch (e: any) {
       logger.warn('Create child failed:', e?.message || e);
@@ -287,15 +287,15 @@ export default function Kids() {
       if (e?.status === 402 || e?.planLimit) {
         setShowChildSheet(false);
         Alert.alert(
-          'Household is full',
-          "You've reached the number of members your current plan allows. More plans are coming soon.",
+          t('kids_household_full'),
+          t('kids_household_full_msg'),
           [
-            { text: 'Not now', style: 'cancel' },
-            { text: 'See plans', onPress: () => router.push('/pricing') },
+            { text: t('kids_not_now'), style: 'cancel' },
+            { text: t('kids_see_plans'), onPress: () => router.push('/pricing') },
           ],
         );
       } else {
-        showToast(e?.message || 'Could not add child.', 'error');
+        showToast(e?.message || t('kids_add_child_error'), 'error');
       }
     } finally {
       setSaving(false);
@@ -307,23 +307,23 @@ export default function Kids() {
     const cost = parseInt(rewardCost || '0', 10);
     const icon = rewardIcon || DEFAULT_REWARD_ICON;
 
-    if (!title || !cost || cost < 1) { showToast('Reward title and star cost are required.', 'error'); return; }
+    if (!title || !cost || cost < 1) { showToast(t('kids_reward_fields_required'), 'error'); return; }
 
     setSaving(true);
     try {
       if (rewardMode === 'edit' && editingReward) {
         const updated = await api.updateReward(editingReward.reward_id, { title, cost_stars: cost, icon });
         setRewards((prev) => prev.map((r) => (r.reward_id === updated.reward_id ? updated : r)));
-        showToast('Reward updated.', 'success');
+        showToast(t('kids_reward_updated'), 'success');
       } else {
         const created = await api.createReward({ title, cost_stars: cost, icon });
         setRewards((prev) => [created, ...prev]);
-        showToast('Reward created.', 'success');
+        showToast(t('kids_reward_created'), 'success');
       }
       closeRewardSheet();
     } catch (e: any) {
       logger.warn('Save reward failed:', e?.message || e);
-      showToast(e?.message || 'Could not save reward.', 'error');
+      showToast(e?.message || t('kids_save_reward_error'), 'error');
     } finally {
       setSaving(false);
     }
@@ -334,62 +334,62 @@ export default function Kids() {
     setRewards((prev) => prev.filter((x) => x.reward_id !== reward.reward_id));
     try {
       await api.deleteReward(reward.reward_id);
-      showToast('Reward deleted.', 'success');
+      showToast(t('kids_reward_deleted'), 'success');
       closeRewardSheet();
     } catch (e: any) {
       logger.warn('Delete reward failed:', e?.message || e);
       setRewards(previous);
-      showToast('Could not delete reward.', 'error');
+      showToast(t('kids_delete_reward_error'), 'error');
       load();
     }
   };
 
   const confirmRemoveReward = (reward: Reward) => {
     if (Platform.OS === 'web') { removeReward(reward); return; }
-    Alert.alert('Delete reward', reward.title, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => removeReward(reward) },
+    Alert.alert(t('kids_delete_reward'), reward.title, [
+      { text: t('cancel'), style: 'cancel' },
+      { text: t('kids_delete'), style: 'destructive', onPress: () => removeReward(reward) },
     ]);
   };
 
   const adjustStars = async () => {
     if (!activeChild) return;
     const amount = parseInt(starAmount || '0', 10);
-    if (!amount || amount < 1) { showToast('Enter a valid star amount.', 'error'); return; }
+    if (!amount || amount < 1) { showToast(t('kids_valid_amount'), 'error'); return; }
 
     const delta = starMode === 'add' ? amount : -amount;
-    if (stars + delta < 0) { showToast('Stars cannot go below zero.', 'error'); return; }
+    if (stars + delta < 0) { showToast(t('kids_stars_below_zero'), 'error'); return; }
 
     const reason = starReason.trim();
-    if (delta < 0 && !reason) { showToast('Please add a reason for removing stars.', 'error'); return; }
+    if (delta < 0 && !reason) { showToast(t('kids_reason_required'), 'error'); return; }
 
     setSaving(true);
     try {
-      const result = await api.adjustMemberStars(activeChild.member_id, { delta, reason: reason || (delta > 0 ? 'Parent added stars' : 'Parent removed stars') });
+      const result = await api.adjustMemberStars(activeChild.member_id, { delta, reason: reason || (delta > 0 ? t('kids_parent_added_stars') : t('kids_parent_removed_stars')) });
       setMembers((prev) => prev.map((member) => (member.member_id === result.member.member_id ? result.member : member)));
       setShowStarSheet(false);
-      showToast(delta > 0 ? `Added ${amount} stars.` : `Removed ${amount} stars.`, 'success');
+      showToast(delta > 0 ? `${t('kids_added')} ${amount} ${t('stars')}.` : `${t('kids_removed')} ${amount} ${t('stars')}.`, 'success');
       await refreshHistory(activeChild.member_id);
     } catch (e: any) {
       logger.warn('Adjust stars failed:', e?.message || e);
-      showToast(e?.message || 'Could not update stars.', 'error');
+      showToast(e?.message || t('kids_update_stars_error'), 'error');
     } finally {
       setSaving(false);
     }
   };
 
   const quickAdd = async (reason: string, amount: number) => {
-    if (!activeChild) { showToast('Add or select a child first.', 'error'); return; }
+    if (!activeChild) { showToast(t('kids_select_child_first'), 'error'); return; }
     if (starActionRef.current) return;
     starActionRef.current = true;
     try {
       const result = await api.adjustMemberStars(activeChild.member_id, { delta: amount, reason });
       setMembers((prev) => prev.map((member) => (member.member_id === result.member.member_id ? result.member : member)));
-      showToast(`Added ${amount} stars · ${reason}`, 'success');
+      showToast(`${t('kids_added')} ${amount} ${t('stars')} · ${reason}`, 'success');
       await refreshHistory(activeChild.member_id);
     } catch (e: any) {
       logger.warn('Quick add failed:', e?.message || e);
-      showToast(e?.message || 'Could not add stars.', 'error');
+      showToast(e?.message || t('kids_add_stars_error'), 'error');
     } finally {
       starActionRef.current = false;
     }
@@ -406,7 +406,7 @@ export default function Kids() {
       await refreshHistory(activeChild.member_id);
     } catch (e: any) {
       logger.warn('Reward redemption failed:', e?.message || e);
-      showToast(e?.message || 'Could not redeem reward.', 'error');
+      showToast(e?.message || t('kids_redeem_error'), 'error');
     } finally {
       starActionRef.current = false;
     }
@@ -423,22 +423,22 @@ export default function Kids() {
     try {
       const updated = await api.rotateChore(choreId);
       setChores((prev) => prev.map((c) => c.chore_id === choreId ? updated : c));
-      showToast('Chore rotated!', 'success');
-    } catch { showToast('Could not rotate chore.', 'error'); }
+      showToast(t('kids_chore_rotated'), 'success');
+    } catch { showToast(t('kids_rotate_chore_error'), 'error'); }
   }, [showToast]);
 
   const deleteChore = useCallback((choreId: string) => {
-    Alert.alert('Delete chore?', 'This chore will be removed.', [
-      { text: 'Cancel', style: 'cancel' },
+    Alert.alert(t('kids_delete_chore_q'), t('kids_delete_chore_msg'), [
+      { text: t('cancel'), style: 'cancel' },
       {
-        text: 'Delete',
+        text: t('kids_delete'),
         style: 'destructive',
         onPress: async () => {
           setChores((prev) => prev.filter((c) => c.chore_id !== choreId));
           try {
             await api.deleteChore(choreId);
           } catch {
-            showToast('Could not delete — restored.', 'error');
+            showToast(t('kids_delete_restored_error'), 'error');
             load();
           }
         },
@@ -447,17 +447,17 @@ export default function Kids() {
   }, [load, showToast]);
 
   const deleteRoutine = useCallback((id: string) => {
-    Alert.alert('Delete routine?', 'This routine will be removed.', [
-      { text: 'Cancel', style: 'cancel' },
+    Alert.alert(t('kids_delete_routine_q'), t('kids_delete_routine_msg'), [
+      { text: t('cancel'), style: 'cancel' },
       {
-        text: 'Delete',
+        text: t('kids_delete'),
         style: 'destructive',
         onPress: async () => {
           setRoutines((prev) => prev.filter((r) => r.routine_id !== id));
           try {
             await api.deleteRoutine(id);
           } catch {
-            showToast('Could not delete — restored.', 'error');
+            showToast(t('kids_delete_restored_error'), 'error');
             load();
           }
         },
@@ -468,8 +468,8 @@ export default function Kids() {
   const logRoutine = useCallback(async (id: string) => {
     try {
       await api.logRoutineCompletion(id);
-      showToast('Routine completed!', 'success');
-    } catch { showToast('Could not log routine.', 'error'); }
+      showToast(t('kids_routine_completed'), 'success');
+    } catch { showToast(t('kids_log_routine_error'), 'error'); }
   }, [showToast]);
 
   const childRoutines = useMemo(() => {
@@ -490,10 +490,10 @@ export default function Kids() {
   }, [members]);
 
   const weeklyLine = weeklyStars > 0
-    ? `+${weeklyStars} stars this week — keep it up! ✨`
+    ? `+${weeklyStars} ${t('kids_stars_this_week')} — ${t('kids_keep_it_up')} ✨`
     : weeklyStars < 0
-      ? `${weeklyStars} stars this week`
-      : `A fresh week of stars ahead ✨`;
+      ? `${weeklyStars} ${t('kids_stars_this_week')}`
+      : `${t('kids_fresh_week')} ✨`;
 
   return (
     <SwipeableTabView style={styles.container}>
@@ -504,8 +504,8 @@ export default function Kids() {
         scrollViewProps={{ contentContainerStyle: styles.scroll, keyboardShouldPersistTaps: 'handled' }}
       >
           <ScreenHeader
-            eyebrow="Family"
-            title="Kids"
+            eyebrow={t('kids_eyebrow_family')}
+            title={t('kids_title')}
             right={
               <PressScale onPress={() => router.navigate('/(tabs)/feed')} style={styles.bellWrap}>
                 <Bell color={ui.text} size={24} />
@@ -514,9 +514,9 @@ export default function Kids() {
           />
 
           {showBlockingError ? (
-            <ErrorState title="Kids page unavailable" message={errorMessage || 'Could not load Kids page.'} onRetry={load} />
+            <ErrorState title={t('kids_page_unavailable')} message={errorMessage || t('kids_load_error')} onRetry={load} />
           ) : children.length === 0 && !loading ? (
-            <EmptyState title="No children yet" message="Add your first child to start using stars and rewards." actionLabel="Add Child" onAction={openChildSheet} />
+            <EmptyState title={t('kids_no_children')} message={t('kids_no_children_msg')} actionLabel={t('kids_add_child')} onAction={openChildSheet} />
           ) : (
             <>
               {/* Child selector */}
@@ -536,7 +536,7 @@ export default function Kids() {
                 })}
                 <PressScale testID="kids-add-child" onPress={openChildSheet} style={[styles.childChip, styles.childChipIdle]}>
                   <Plus color={ui.orange} size={18} />
-                  <Text style={[styles.childChipText, { color: ui.text }]}>Add child</Text>
+                  <Text style={[styles.childChipText, { color: ui.text }]}>{t('kids_add_child')}</Text>
                 </PressScale>
               </ScrollView>
 
@@ -548,11 +548,11 @@ export default function Kids() {
                       <Text style={[styles.walletAvatarText, { color: ui.orange }]}>{activeChild.name[0]?.toUpperCase()}</Text>
                     </View>
                     <View style={{ flex: 1, minWidth: 0 }}>
-                      <Text style={styles.walletLabel}>{activeChild.name}&apos;s stars</Text>
+                      <Text style={styles.walletLabel}>{activeChild.name}&apos;s {t('stars')}</Text>
                       <Text style={styles.walletCount}>{stars}</Text>
                     </View>
                     <PressScale testID="kids-redeem" onPress={() => setKidsTab('rewards')} style={styles.redeemBtn}>
-                      <Text style={styles.redeemText}>Redeem</Text>
+                      <Text style={styles.redeemText}>{t('redeem')}</Text>
                     </PressScale>
                   </Card>
                   <Text style={styles.weeklyLine}>{weeklyLine}</Text>
@@ -562,7 +562,7 @@ export default function Kids() {
                     {(['rewards', 'stars', 'history'] as const).map((tab) => (
                       <PressScale key={tab} testID={`kids-tab-${tab}`} onPress={() => { setKidsTab(tab); if (tab === 'history' && activeChild) refreshHistory(activeChild.member_id); }} style={[styles.tabBtn, kidsTab === tab && { borderBottomColor: ui.orange }]}>
                         <Text style={[styles.tabText, { color: kidsTab === tab ? ui.text : ui.muted, fontFamily: kidsTab === tab ? 'Inter_800ExtraBold' : 'Inter_600SemiBold' }]}>
-                          {tab === 'rewards' ? 'Rewards' : tab === 'stars' ? 'Stars' : 'History'}
+                          {tab === 'rewards' ? t('kids_tab_rewards') : tab === 'stars' ? t('kids_tab_stars') : t('kids_tab_history')}
                         </Text>
                       </PressScale>
                     ))}
@@ -571,7 +571,7 @@ export default function Kids() {
                   {/* Rewards tab */}
                   {kidsTab === 'rewards' && (
                     <>
-                      <Text style={styles.blockLabel}>Quick add</Text>
+                      <Text style={styles.blockLabel}>{t('kids_quick_add')}</Text>
                       <View style={styles.quickAddRow}>
                         {QUICK_ADDS.map((q) => (
                           <PressScale key={q.label} testID={`quick-add-${q.label}`} onPress={() => quickAdd(q.label, q.amount)} style={styles.quickAddChip}>
@@ -583,10 +583,10 @@ export default function Kids() {
                       </View>
 
                       <View style={styles.blockHead}>
-                        <Text style={styles.blockTitle}>Rewards in reach</Text>
+                        <Text style={styles.blockTitle}>{t('kids_rewards_in_reach')}</Text>
                         <PressScale testID="kids-add-reward" onPress={openCreateReward} style={styles.newLink}>
                           <Plus color={ui.orange} size={14} />
-                          <Text style={styles.newLinkText}>New</Text>
+                          <Text style={styles.newLinkText}>{t('kids_new')}</Text>
                         </PressScale>
                       </View>
                       {rewards.length === 0 ? (
@@ -594,7 +594,7 @@ export default function Kids() {
                           <Text style={styles.emptyRewardsText}>{t('no_rewards')}</Text>
                           <PressScale testID="kids-add-reward-empty" onPress={openCreateReward} style={styles.emptyRewardsBtn}>
                             <Plus color="#FFFFFF" size={16} />
-                            <Text style={styles.emptyRewardsBtnText}>Add reward</Text>
+                            <Text style={styles.emptyRewardsBtnText}>{t('kids_add_reward')}</Text>
                           </PressScale>
                         </Card>
                       ) : (
@@ -631,7 +631,7 @@ export default function Kids() {
                         </Card>
                       )}
 
-                      <Text style={styles.blockLabel}>Quick reward ideas</Text>
+                      <Text style={styles.blockLabel}>{t('kids_quick_reward_ideas')}</Text>
                       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.ideaRow} style={styles.ideaScroll}>
                         {REWARD_IDEAS.map((idea) => (
                           <PressScale key={idea.title} testID={idea.title} onPress={() => { setRewardMode('create'); setEditingReward(null); setRewardTitle(idea.title); setRewardCost(String(idea.cost_stars)); setRewardIcon(idea.icon); setShowRewardSheet(true); }} style={styles.ideaChip}>
@@ -652,11 +652,11 @@ export default function Kids() {
                       <View style={styles.starActions}>
                         <PressScale testID="kids-add-stars" onPress={() => openStarSheet('add', '5')} style={styles.addStarsBtn}>
                           <Plus color="#FFFFFF" size={16} />
-                          <Text style={styles.addStarsText}>Add stars</Text>
+                          <Text style={styles.addStarsText}>{t('kids_add_stars')}</Text>
                         </PressScale>
                         <PressScale testID="kids-remove-stars" onPress={() => openStarSheet('remove', '5')} style={styles.removeStarsBtn}>
                           <MinusCircle color={ui.muted} size={16} />
-                          <Text style={styles.removeStarsText}>Remove</Text>
+                          <Text style={styles.removeStarsText}>{t('kids_remove')}</Text>
                         </PressScale>
                       </View>
                       <View style={styles.quickRow}>
@@ -666,7 +666,7 @@ export default function Kids() {
                           </PressScale>
                         ))}
                         <PressScale testID="quick-stars-custom" onPress={() => openStarSheet('add', '')} style={[styles.quickStarBtn, { backgroundColor: ui.orangeSoft, borderColor: ui.orange }]}>
-                          <Text style={[styles.quickStarText, { color: ui.orange }]}>Other</Text>
+                          <Text style={[styles.quickStarText, { color: ui.orange }]}>{t('kids_other')}</Text>
                         </PressScale>
                       </View>
                       <RecentActivity items={historyItems.slice(0, 6)} loading={historyLoading} />
@@ -687,18 +687,18 @@ export default function Kids() {
             <>
               <View style={styles.featureHeader}>
                 <Timer color={ui.lavenderText} size={18} />
-                <Text style={styles.featureHeaderText}>Morning Routines</Text>
+                <Text style={styles.featureHeaderText}>{t('kids_morning_routines')}</Text>
               </View>
               <Card style={styles.cardPad}>
                 {childRoutines.map((rtn) => (
                   <View key={rtn.routine_id} style={styles.featureRow}>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.featureRowTitle}>{rtn.name}</Text>
-                      <Text style={styles.featureRowSub}>{rtn.steps.length} steps · {Math.round(rtn.steps.reduce((s, st) => s + (st.duration_seconds || 0), 0) / 60)} min</Text>
+                      <Text style={styles.featureRowSub}>{rtn.steps.length} {t('kids_steps')} · {Math.round(rtn.steps.reduce((s, st) => s + (st.duration_seconds || 0), 0) / 60)} {t('kids_min')}</Text>
                     </View>
                     <PressScale onPress={() => logRoutine(rtn.routine_id)} style={styles.featureActionBtn}>
                       <Play color="#FFFFFF" size={14} />
-                      <Text style={styles.featureActionText}>Done</Text>
+                      <Text style={styles.featureActionText}>{t('kids_done')}</Text>
                     </PressScale>
                     <PressScale onPress={() => deleteRoutine(rtn.routine_id)} style={{ padding: 4, marginLeft: 6 }}>
                       <Trash2 color={ui.muted} size={15} />
@@ -714,15 +714,15 @@ export default function Kids() {
             <>
               <View style={styles.featureHeader}>
                 <DollarSign color={ui.goldText} size={18} />
-                <Text style={styles.featureHeaderText}>Allowance</Text>
+                <Text style={styles.featureHeaderText}>{t('kids_allowance')}</Text>
                 {allowanceLocked ? <LockBadge onPress={() => promptUpgrade('allowance')} /> : null}
               </View>
               <Card style={styles.cardPad}>
                 {allowanceLocked ? (
                   <PressScale onPress={() => promptUpgrade('allowance')} style={styles.allowanceRow}>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.featureRowTitle}>Track pocket money & chores payouts</Text>
-                      <Text style={styles.featureRowSub}>Available on Executive and Family Office plans.</Text>
+                      <Text style={styles.featureRowTitle}>{t('kids_track_pocket_money')}</Text>
+                      <Text style={styles.featureRowSub}>{t('kids_allowance_plan_note')}</Text>
                     </View>
                   </PressScale>
                 ) : (
@@ -730,7 +730,7 @@ export default function Kids() {
                     <View style={{ flex: 1 }}>
                       <Text style={styles.allowanceBalance}>${childBalance.toFixed(2)}</Text>
                       <Text style={styles.featureRowSub}>
-                        {childAllowance ? `$${childAllowance.amount}/${childAllowance.frequency}` : 'No allowance set'}
+                        {childAllowance ? `$${childAllowance.amount}/${childAllowance.frequency}` : t('kids_no_allowance_set')}
                       </Text>
                     </View>
                   </View>
@@ -744,7 +744,7 @@ export default function Kids() {
             <>
               <View style={styles.featureHeader}>
                 <RotateCcw color={ui.mintText} size={18} />
-                <Text style={styles.featureHeaderText}>Chore Wheel</Text>
+                <Text style={styles.featureHeaderText}>{t('kids_chore_wheel')}</Text>
               </View>
               <Card style={styles.cardPad}>
                 {chores.map((chore) => (
@@ -752,13 +752,13 @@ export default function Kids() {
                     <View style={{ flex: 1 }}>
                       <Text style={styles.featureRowTitle}>{chore.title}</Text>
                       <Text style={styles.featureRowSub}>
-                        {chore.current_assignee ? memberName(chore.current_assignee) : 'Unassigned'} · {chore.frequency}
+                        {chore.current_assignee ? memberName(chore.current_assignee) : t('kids_unassigned')} · {chore.frequency}
                       </Text>
                     </View>
                     {chore.rotate && chore.assigned_members.length > 1 ? (
                       <PressScale onPress={() => rotateChore(chore.chore_id)} style={styles.featureActionBtn}>
                         <RotateCcw color="#FFFFFF" size={14} />
-                        <Text style={styles.featureActionText}>Rotate</Text>
+                        <Text style={styles.featureActionText}>{t('kids_rotate')}</Text>
                       </PressScale>
                     ) : null}
                     <PressScale onPress={() => deleteChore(chore.chore_id)} style={{ padding: 4, marginLeft: 6 }}>
@@ -776,30 +776,30 @@ export default function Kids() {
       {/* Child sheet */}
       <KeyboardAwareBottomSheet visible={showChildSheet} onClose={() => setShowChildSheet(false)} contentStyle={styles.sheet}>
         <View style={styles.sheetHeader}>
-          <Text style={styles.sheetTitle}>Add Child</Text>
+          <Text style={styles.sheetTitle}>{t('kids_add_child_title')}</Text>
           <PressScale testID="close-child-sheet" onPress={() => setShowChildSheet(false)} style={styles.iconBtn}><X color={ui.text} size={20} /></PressScale>
         </View>
-        <Text style={styles.label}>Child name</Text>
-        <TextInput testID="child-name" value={childName} onChangeText={setChildName} placeholder="Ava" placeholderTextColor={ui.muted} style={styles.input} returnKeyType="next" />
-        <Text style={styles.label}>Starting stars</Text>
+        <Text style={styles.label}>{t('kids_child_name')}</Text>
+        <TextInput testID="child-name" value={childName} onChangeText={setChildName} placeholder={t('kids_child_name_placeholder')} placeholderTextColor={ui.muted} style={styles.input} returnKeyType="next" />
+        <Text style={styles.label}>{t('kids_starting_stars')}</Text>
         <TextInput testID="child-starting-stars" value={childStartingStars} onChangeText={(v) => setChildStartingStars(cleanNumber(v))} keyboardType="number-pad" placeholder="0" placeholderTextColor={ui.muted} style={styles.input} />
-        <Text style={styles.label}>PIN optional</Text>
-        <TextInput testID="child-pin" value={childPin} onChangeText={(v) => setChildPin(cleanNumber(v).slice(0, 4))} keyboardType="number-pad" secureTextEntry placeholder="4 digits" placeholderTextColor={ui.muted} style={styles.input} />
+        <Text style={styles.label}>{t('kids_pin_optional')}</Text>
+        <TextInput testID="child-pin" value={childPin} onChangeText={(v) => setChildPin(cleanNumber(v).slice(0, 4))} keyboardType="number-pad" secureTextEntry placeholder={t('kids_pin_placeholder')} placeholderTextColor={ui.muted} style={styles.input} />
         <View style={styles.sheetFooter}>
           <PressScale testID="cancel-child" onPress={() => setShowChildSheet(false)} style={styles.cancelBtn}><Text style={styles.cancelText}>{t('cancel')}</Text></PressScale>
-          <PressScale testID="save-child" onPress={createChild} disabled={saving || !childName.trim()} style={[styles.saveBtn, (!childName.trim() || saving) && { opacity: 0.5 }]}><Text style={styles.saveText}>{saving ? '...' : 'Save Child'}</Text></PressScale>
+          <PressScale testID="save-child" onPress={createChild} disabled={saving || !childName.trim()} style={[styles.saveBtn, (!childName.trim() || saving) && { opacity: 0.5 }]}><Text style={styles.saveText}>{saving ? '...' : t('kids_save_child')}</Text></PressScale>
         </View>
       </KeyboardAwareBottomSheet>
 
       {/* Reward sheet */}
       <KeyboardAwareBottomSheet visible={showRewardSheet} onClose={closeRewardSheet} contentStyle={styles.sheet}>
         <View style={styles.sheetHeader}>
-          <Text style={styles.sheetTitle}>{rewardMode === 'edit' ? 'Edit Reward' : 'Add Reward'}</Text>
+          <Text style={styles.sheetTitle}>{rewardMode === 'edit' ? t('kids_edit_reward') : t('kids_add_reward_title')}</Text>
           <PressScale testID="close-reward" onPress={closeRewardSheet} style={styles.iconBtn}><X color={ui.text} size={20} /></PressScale>
         </View>
-        <Text style={styles.label}>Reward title</Text>
-        <TextInput testID="reward-title" value={rewardTitle} onChangeText={setRewardTitle} placeholder="Pizza Night" placeholderTextColor={ui.muted} style={styles.input} returnKeyType="next" />
-        <Text style={styles.label}>Suggested icon</Text>
+        <Text style={styles.label}>{t('kids_reward_title')}</Text>
+        <TextInput testID="reward-title" value={rewardTitle} onChangeText={setRewardTitle} placeholder={t('kids_reward_title_placeholder')} placeholderTextColor={ui.muted} style={styles.input} returnKeyType="next" />
+        <Text style={styles.label}>{t('kids_suggested_icon')}</Text>
         <View style={styles.iconRow}>
           {iconSuggestions.map((icon) => (
             <PressScale key={icon} testID={`reward-icon-${icon}`} onPress={() => setRewardIcon(icon)} style={[styles.iconChip, { backgroundColor: rewardIcon === icon ? ui.orangeSoft : ui.soft, borderColor: rewardIcon === icon ? ui.orange : ui.line }]}>
@@ -807,13 +807,13 @@ export default function Kids() {
             </PressScale>
           ))}
         </View>
-        <Text style={styles.label}>Cost in stars</Text>
+        <Text style={styles.label}>{t('kids_cost_in_stars')}</Text>
         <TextInput testID="reward-cost" value={rewardCost} onChangeText={(v) => setRewardCost(cleanNumber(v))} keyboardType="number-pad" placeholder="50" placeholderTextColor={ui.muted} style={styles.input} />
         <View style={styles.sheetFooter}>
           {rewardMode === 'edit' && editingReward ? (
             <PressScale testID="delete-reward" onPress={() => confirmRemoveReward(editingReward)} style={styles.deleteBtn}>
               <Trash2 color={ui.danger} size={17} />
-              <Text style={styles.deleteText}>Delete</Text>
+              <Text style={styles.deleteText}>{t('kids_delete')}</Text>
             </PressScale>
           ) : (
             <PressScale testID="cancel-reward" onPress={closeRewardSheet} style={styles.cancelBtn}><Text style={styles.cancelText}>{t('cancel')}</Text></PressScale>
@@ -825,33 +825,33 @@ export default function Kids() {
       {/* Star sheet */}
       <KeyboardAwareBottomSheet visible={showStarSheet} onClose={() => setShowStarSheet(false)} contentStyle={styles.sheet}>
         <View style={styles.sheetHeader}>
-          <Text style={styles.sheetTitle}>{starMode === 'add' ? 'Add stars' : 'Remove stars'}</Text>
+          <Text style={styles.sheetTitle}>{starMode === 'add' ? t('kids_add_stars') : t('kids_remove_stars')}</Text>
           <PressScale testID="close-stars" onPress={() => setShowStarSheet(false)} style={styles.iconBtn}><X color={ui.text} size={20} /></PressScale>
         </View>
-        <Text style={styles.sheetHelp}>For {activeChild?.name || 'selected child'}</Text>
+        <Text style={styles.sheetHelp}>{t('kids_for')} {activeChild?.name || t('kids_selected_child')}</Text>
         <View style={styles.modeRow}>
           <PressScale testID="mode-add-stars" onPress={() => setStarMode('add')} style={[styles.modeBtn, { backgroundColor: starMode === 'add' ? ui.text : ui.soft }]}>
-            <Text style={[styles.modeText, { color: starMode === 'add' ? '#FFFFFF' : ui.muted }]}>Add</Text>
+            <Text style={[styles.modeText, { color: starMode === 'add' ? '#FFFFFF' : ui.muted }]}>{t('kids_add')}</Text>
           </PressScale>
           <PressScale testID="mode-remove-stars" onPress={() => setStarMode('remove')} style={[styles.modeBtn, { backgroundColor: starMode === 'remove' ? ui.text : ui.soft }]}>
-            <Text style={[styles.modeText, { color: starMode === 'remove' ? '#FFFFFF' : ui.muted }]}>Remove</Text>
+            <Text style={[styles.modeText, { color: starMode === 'remove' ? '#FFFFFF' : ui.muted }]}>{t('kids_remove')}</Text>
           </PressScale>
         </View>
-        <Text style={styles.label}>Amount</Text>
+        <Text style={styles.label}>{t('kids_amount')}</Text>
         <TextInput testID="star-amount" value={starAmount} onChangeText={(v) => setStarAmount(cleanNumber(v))} keyboardType="number-pad" placeholder="5" placeholderTextColor={ui.muted} style={styles.input} />
-        <Text style={styles.label}>Reason</Text>
-        <TextInput testID="star-reason" value={starReason} onChangeText={setStarReason} placeholder={starMode === 'add' ? 'Homework, chores, kindness...' : 'Reason for deduction'} placeholderTextColor={ui.muted} style={styles.input} />
+        <Text style={styles.label}>{t('kids_reason')}</Text>
+        <TextInput testID="star-reason" value={starReason} onChangeText={setStarReason} placeholder={starMode === 'add' ? t('kids_reason_add_placeholder') : t('kids_reason_remove_placeholder')} placeholderTextColor={ui.muted} style={styles.input} />
         <View style={styles.sheetFooter}>
           <PressScale testID="cancel-stars" onPress={() => setShowStarSheet(false)} style={styles.cancelBtn}><Text style={styles.cancelText}>{t('cancel')}</Text></PressScale>
-          <PressScale testID="save-stars" onPress={adjustStars} disabled={saving || !starAmount} style={[styles.saveBtn, (!starAmount || saving) && { opacity: 0.5 }]}><Text style={styles.saveText}>{saving ? '...' : 'Save'}</Text></PressScale>
+          <PressScale testID="save-stars" onPress={adjustStars} disabled={saving || !starAmount} style={[styles.saveBtn, (!starAmount || saving) && { opacity: 0.5 }]}><Text style={styles.saveText}>{saving ? '...' : t('save')}</Text></PressScale>
         </View>
       </KeyboardAwareBottomSheet>
 
       <PinPadModal
         visible={pinPromptReward !== null}
         mode="verify"
-        title={activeChild ? `${activeChild.name}'s PIN` : 'PIN'}
-        subtitle="Enter your 4-digit PIN to redeem"
+        title={activeChild ? `${activeChild.name}'s ${t('kids_pin')}` : t('kids_pin')}
+        subtitle={t('kids_pin_subtitle')}
         onClose={() => setPinPromptReward(null)}
         onSubmit={async (pin) => {
           if (!activeChild || !pinPromptReward) return false;
@@ -867,7 +867,7 @@ export default function Kids() {
         }}
       />
 
-      <LoadingOverlay visible={loading} label="Loading Kids page..." />
+      <LoadingOverlay visible={loading} label={t('kids_loading')} />
       <AppToast visible={Boolean(toast)} message={toast?.message || null} tone={toast?.tone || 'info'} />
     </SwipeableTabView>
   );
@@ -875,14 +875,15 @@ export default function Kids() {
 
 function RecentActivity({ items, loading, expanded }: { items: StarTransaction[]; loading: boolean; expanded?: boolean }) {
   const ui = useUI();
+  const { t } = useStore();
   const styles = useMemo(() => createStyles(ui), [ui]);
   return (
     <>
-      <Text style={styles.blockLabel}>Recent activity</Text>
+      <Text style={styles.blockLabel}>{t('kids_recent_activity')}</Text>
       {loading ? (
-        <Text style={styles.emptyMini}>Loading activity…</Text>
+        <Text style={styles.emptyMini}>{t('kids_loading_activity')}</Text>
       ) : items.length === 0 ? (
-        <Card style={styles.cardPad}><Text style={styles.emptyMini}>No activity yet.</Text></Card>
+        <Card style={styles.cardPad}><Text style={styles.emptyMini}>{t('kids_no_activity')}</Text></Card>
       ) : (
         <Card style={styles.cardPad}>
           {items.map((item, index) => {
@@ -893,7 +894,7 @@ function RecentActivity({ items, loading, expanded }: { items: StarTransaction[]
                   {positive ? <Check color={ui.mintText} size={17} /> : <Minus color={ui.danger} size={17} />}
                 </IconTile>
                 <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={styles.activityReason} numberOfLines={1}>{item.reason || 'Star adjustment'}</Text>
+                  <Text style={styles.activityReason} numberOfLines={1}>{item.reason || t('kids_star_adjustment')}</Text>
                   <Text style={styles.activityDate}>{formatActivityDate(item.created_at)}</Text>
                 </View>
                 <View style={styles.activityDeltaRow}>
