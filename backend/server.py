@@ -477,6 +477,10 @@ def public_user(user: dict) -> dict:
         "family_id": user["family_id"],
         "language": user.get("language", "en"),
         "is_admin": is_admin_email(user.get("email", "")),
+        # Absent field (existing users predating onboarding) reads as True so
+        # they never get sent through first-run setup. Only accounts explicitly
+        # created with False (new sign-ups) see onboarding.
+        "onboarding_completed": bool(user.get("onboarding_completed", True)),
     }
 
 
@@ -1266,6 +1270,7 @@ async def exchange_session(payload: SessionIn):
             "picture": picture,
             "family_id": family_id,
             "language": "en",
+            "onboarding_completed": False,
             "created_at": utcnow(),
             "updated_at": utcnow(),
         }
@@ -1432,6 +1437,7 @@ async def register_email(payload: EmailRegisterIn):
         "password_hash": hash_password(password),
         "family_id": family_id,
         "language": "en",
+        "onboarding_completed": False,
         "created_at": utcnow(),
         "updated_at": utcnow(),
     }
@@ -1489,6 +1495,17 @@ async def logout(user=Depends(require_user), authorization: str = Header(default
         {"user_id": user["user_id"], "token_hash": sha256(token)}
     )
     return {"ok": True}
+
+
+@app.post("/api/auth/complete-onboarding")
+async def complete_onboarding(user=Depends(require_user)):
+    database = get_db()
+    await database["users"].update_one(
+        {"user_id": user["user_id"]},
+        {"$set": {"onboarding_completed": True, "updated_at": utcnow()}},
+    )
+    user = await database["users"].find_one({"user_id": user["user_id"]}, {"_id": 0})
+    return public_user(user)
 
 
 @app.patch("/api/auth/language")
