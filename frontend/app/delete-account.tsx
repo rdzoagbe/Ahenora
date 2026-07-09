@@ -29,7 +29,11 @@ export default function DeleteAccountScreen() {
       Alert.alert('Could not open email app', `Please email ${SUPPORT_EMAIL} with your account email and deletion request.`);
       return;
     }
-    await Linking.openURL(url);
+    try {
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert('Could not open email app', `Please email ${SUPPORT_EMAIL} with your account email and deletion request.`);
+    }
   };
 
   return (

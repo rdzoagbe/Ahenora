@@ -45,6 +45,17 @@ function cardDateKey(card: Card) {
   return dateKey(new Date(card.due_date));
 }
 
+async function openExternal(url: string) {
+  // Never let a failed openURL become an unhandled rejection with no feedback.
+  try {
+    const ok = await Linking.canOpenURL(url).catch(() => true);
+    if (ok === false) throw new Error('unsupported');
+    await Linking.openURL(url);
+  } catch {
+    Alert.alert("Couldn't open", 'No app is available to open this link on your device.');
+  }
+}
+
 function cleanText(value?: string | null) {
   return (value || '').replace(/Ãƒâ€šÃ‚Â·/g, '-').replace(/Â/g, '').trim();
 }
@@ -356,6 +367,12 @@ export default function Calendar() {
         setCalendarSyncStatus(`${result.imported} events imported. ${result.contacts_found} people found.`);
         Alert.alert('Calendar synced', `${result.imported} events imported. ${result.contacts_found} people found.`);
       } catch (e: any) {
+        // User cancelled the Google chooser — not an error, say nothing scary.
+        const code = e?.code || '';
+        if (code === 'SIGN_IN_CANCELLED' || code === '-5' || code === '12501') {
+          setCalendarSyncStatus(null);
+          return;
+        }
         logger.warn('native google calendar sync failed', e);
         const message = e?.message || e?.code || 'Native Google Calendar permission failed.';
         setCalendarSyncStatus(`Calendar sync failed: ${message}`);
@@ -618,7 +635,7 @@ export default function Calendar() {
                     <Pressable
                       onPress={() => {
                         const q = encodeURIComponent(parts.location!);
-                        Linking.openURL(Platform.OS === 'ios' ? `maps:?q=${q}` : `geo:0,0?q=${q}`);
+                        openExternal(Platform.OS === 'ios' ? `maps:?q=${q}` : `geo:0,0?q=${q}`);
                       }}
                       style={styles.detailChip}
                     >
@@ -628,7 +645,7 @@ export default function Calendar() {
                     </Pressable>
                   ) : null}
                   {parts.links.map((link, i) => (
-                    <Pressable key={i} onPress={() => Linking.openURL(link.url)} style={styles.detailChip}>
+                    <Pressable key={i} onPress={() => openExternal(link.url)} style={styles.detailChip}>
                       {link.isVideo ? <Video color={ui.orange} size={16} /> : <ExternalLink color={ui.orange} size={16} />}
                       <Text style={styles.detailChipText}>{link.label}</Text>
                       <ExternalLink color={ui.muted} size={13} />

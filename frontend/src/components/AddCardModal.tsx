@@ -126,33 +126,38 @@ export function AddCardModal({
         recurrence,
         reminder_minutes: reminderMins,
       } as any);
-
-      let vaultSaved = false;
-
-      if (
-        initialSource === 'CAMERA' &&
-        initialDraft?.image_base64 &&
-        initialDraft.save_to_vault !== false
-      ) {
-        await api.createVaultDoc({
-          title: title.trim() || initialDraft.title || 'Scanned document',
-          category: initialDraft.vault_category || 'School',
-          image_base64: initialDraft.image_base64,
-        });
-        vaultSaved = true;
-      }
-
-      onCreated();
-      onClose();
-
-      if (vaultSaved) {
-        Alert.alert('Saved', 'Card created and scanned document saved to Vault.');
-      }
     } catch (e: any) {
+      // The card wasn't created — safe to let the user retry.
       logger.warn('create card error', e);
       Alert.alert('Save failed', e?.message || 'Could not save this card.');
-    } finally {
       setSaving(false);
+      return;
+    }
+
+    // The card is created. Close the modal FIRST so a failed vault save can
+    // never lead the user to tap Save again and create a duplicate card.
+    const wantsVault =
+      initialSource === 'CAMERA' &&
+      !!initialDraft?.image_base64 &&
+      initialDraft?.save_to_vault !== false;
+
+    onCreated();
+    onClose();
+    setSaving(false);
+
+    if (wantsVault) {
+      try {
+        await api.createVaultDoc({
+          title: title.trim() || initialDraft!.title || 'Scanned document',
+          category: initialDraft!.vault_category || 'School',
+          image_base64: initialDraft!.image_base64!,
+        });
+        Alert.alert('Saved', 'Card created and scanned document saved to Vault.');
+      } catch (e: any) {
+        // Card already saved; only the vault copy failed — inform, don't retry.
+        logger.warn('vault save error', e);
+        Alert.alert('Card saved', "Your card was created, but the document couldn't be added to the Vault. You can add it later from the Vault tab.");
+      }
     }
   };
 

@@ -2413,7 +2413,15 @@ async def _fetch_google_calendar_events(access_token: str, days: int) -> list[di
                 return json.loads(raw)
         except urllib.error.HTTPError as e:
             body = e.read().decode("utf-8", errors="replace")
-            raise HTTPException(status_code=e.code, detail=f"Google Calendar error: {body}")
+            # Never let Google's own 401/403 propagate as OUR 401 — the app
+            # treats a 401 as an expired session and signs the user out. Remap
+            # an upstream auth failure to a clear, non-session error.
+            if e.code in (401, 403):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Google Calendar access was denied or expired. Please reconnect your Google account and try again.",
+                )
+            raise HTTPException(status_code=502, detail=f"Google Calendar error: {body[:200]}")
         except HTTPException:
             raise
         except Exception as e:

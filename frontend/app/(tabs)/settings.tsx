@@ -80,9 +80,11 @@ export default function Settings() {
 
   const load = useCallback(async () => {
     try {
+      // Each call is individually fault-tolerant so one failing endpoint
+      // (offline / cold backend) can't blank the whole Settings screen.
       const [memberRows, inviteRows, notificationRows, entitlementRows, completedRows] = await Promise.all([
-        api.familyMembers(),
-        api.listInvites(),
+        api.familyMembers().catch(() => null),
+        api.listInvites().catch(() => null),
         api.getNotificationSettings().catch(() => ({ card_reminders: false, new_card_alerts: false })),
         api.getEntitlements().catch(() => null),
         api.listCards('DONE')
@@ -97,8 +99,9 @@ export default function Settings() {
             return allCards.filter((card) => card.status === 'DONE');
           }),
       ]);
-      setMembers(memberRows);
-      setInvites(inviteRows);
+      // Only overwrite on success — keep existing data if a call failed.
+      if (memberRows) setMembers(memberRows);
+      if (inviteRows) setInvites(inviteRows);
       setNotificationPrefs(notificationRows);
       setEntitlements(entitlementRows);
       setCompletedCards(completedRows);
@@ -183,7 +186,10 @@ export default function Settings() {
       if (nextPrefs.card_reminders || nextPrefs.new_card_alerts) {
         const granted = await ensureNotificationPermissions();
         if (!granted) {
-          setNotificationStatus('Notification permission was not granted.');
+          // Revert the optimistic toggle so it doesn't stay ON while
+          // notifications are actually off.
+          setNotificationPrefs(notificationPrefs);
+          setNotificationStatus('Notification permission was not granted. Enable it in your device Settings to turn this on.');
           return;
         }
       }

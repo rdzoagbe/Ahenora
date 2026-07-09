@@ -92,6 +92,7 @@ export default function AccountScreen() {
   };
 
   const submitSupport = async () => {
+    if (supportSending) return;
     const subj = supportSubject.trim();
     const msg = supportMessage.trim();
     if (!subj || !msg) {
@@ -269,6 +270,7 @@ export default function AccountScreen() {
 
             <PressScale
               onPress={submitSupport}
+              disabled={supportSending}
               style={[styles.modalSendBtn, { backgroundColor: theme.colors.primary, opacity: supportSending ? 0.6 : 1 }]}
             >
               <Send color={theme.colors.primaryText} size={16} />

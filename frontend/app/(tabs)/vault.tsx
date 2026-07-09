@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -74,6 +74,7 @@ export default function Vault() {
   const [meals, setMeals] = useState<MealPlan[]>([]);
   const [expiryAlerts, setExpiryAlerts] = useState<ExpiryAlert[]>([]);
   const [entitlements, setEntitlements] = useState<Entitlements | null>(null);
+  const mealSavingRef = useRef(false);
   const [mealDay, setMealDay] = useState('monday');
   const [mealTitle, setMealTitle] = useState('');
   const [mealIngredients, setMealIngredients] = useState('');
@@ -187,6 +188,17 @@ export default function Vault() {
     }
   };
 
+  const confirmRemove = (doc: VaultDoc) => {
+    Alert.alert(
+      'Delete document?',
+      `"${doc.title}" will be permanently removed from your Vault. This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: () => remove(doc) },
+      ],
+    );
+  };
+
   const addShopItem = useCallback(async () => {
     if (!shopInput.trim()) return;
     setAddingShop(true);
@@ -206,18 +218,20 @@ export default function Vault() {
     try {
       await api.updateShoppingItem(item.item_id, { checked: !item.checked });
     } catch {
+      showToast('Could not update — try again.', 'error');
       load();
     }
-  }, [load]);
+  }, [load, showToast]);
 
   const deleteShopItem = useCallback(async (itemId: string) => {
     setShopItems((prev) => prev.filter((i) => i.item_id !== itemId));
     try {
       await api.deleteShoppingItem(itemId);
     } catch {
+      showToast('Could not delete — restored.', 'error');
       load();
     }
-  }, [load]);
+  }, [load, showToast]);
 
   const clearChecked = useCallback(async () => {
     const checkedIds = new Set(shopItems.filter((i) => i.checked).map((i) => i.item_id));
@@ -226,12 +240,15 @@ export default function Vault() {
     try {
       await api.clearCheckedShopping();
     } catch {
+      showToast('Could not clear — restored.', 'error');
       load();
     }
-  }, [shopItems, load]);
+  }, [shopItems, load, showToast]);
 
   const addMeal = useCallback(async () => {
     if (!mealTitle.trim()) return;
+    if (mealSavingRef.current) return;
+    mealSavingRef.current = true;
     try {
       const ingredients = mealIngredients.split(',').map((s) => s.trim()).filter(Boolean);
       const created = await api.createMeal({ day: mealDay, title: mealTitle.trim(), ingredients });
@@ -242,13 +259,15 @@ export default function Vault() {
       showToast('Meal added.', 'success');
     } catch {
       showToast('Could not add meal.', 'error');
+    } finally {
+      mealSavingRef.current = false;
     }
   }, [mealDay, mealTitle, mealIngredients, showToast]);
 
   const deleteMeal = useCallback(async (id: string) => {
     setMeals((prev) => prev.filter((m) => m.meal_id !== id));
-    try { await api.deleteMeal(id); } catch { load(); }
-  }, [load]);
+    try { await api.deleteMeal(id); } catch { showToast('Could not delete — restored.', 'error'); load(); }
+  }, [load, showToast]);
 
   const syncMealsToShopping = useCallback(async () => {
     try {
@@ -573,7 +592,7 @@ export default function Vault() {
             <View style={styles.previewTop}>
               <Text style={styles.previewTitle}>{preview.title}</Text>
               <View style={styles.previewActions}>
-                <PressScale testID="preview-delete" onPress={() => remove(preview)} style={styles.previewIconBtn}>
+                <PressScale testID="preview-delete" onPress={() => confirmRemove(preview)} style={styles.previewIconBtn}>
                   <Trash2 color="#EF4444" size={20} />
                 </PressScale>
                 <PressScale testID="preview-close" onPress={() => setPreview(null)} style={styles.previewIconBtn}>
