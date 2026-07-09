@@ -28,7 +28,7 @@ interface Props {
  * the deprecated expo-av runtime warning from the Android test path.
  */
 export function VoiceCaptureModal({ visible, onClose }: Props) {
-  const { theme } = useStore();
+  const { t, theme } = useStore();
 
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
@@ -40,7 +40,7 @@ export function VoiceCaptureModal({ visible, onClose }: Props) {
           <View style={styles.header}>
             <View style={[styles.badge, { backgroundColor: theme.colors.accentSoft, borderColor: theme.colors.cardBorder }]}> 
               <Sparkles color={theme.colors.accent} size={12} />
-              <Text style={[styles.badgeText, { color: theme.colors.text }]}>Voice capture</Text>
+              <Text style={[styles.badgeText, { color: theme.colors.text }]}>{t('voice_capture')}</Text>
             </View>
 
             <PressScale testID="voice-close" onPress={onClose} style={[styles.iconBtn, { borderColor: theme.colors.cardBorder }]}> 
@@ -52,11 +52,11 @@ export function VoiceCaptureModal({ visible, onClose }: Props) {
             <MicOff color={theme.colors.textMuted} size={34} />
           </View>
 
-          <Text style={[styles.heading, { color: theme.colors.text }]}>Voice is coming soon</Text>
-          <Text style={[styles.sub, { color: theme.colors.textMuted }]}>Voice transcription is coming in a future update. Use Manual or Scan for now.</Text>
+          <Text style={[styles.heading, { color: theme.colors.text }]}>{t('voice_coming_soon')}</Text>
+          <Text style={[styles.sub, { color: theme.colors.textMuted }]}>{t('voice_coming_soon_sub')}</Text>
 
           <PressScale testID="voice-coming-soon-close" onPress={onClose} style={[styles.closeBtn, { backgroundColor: theme.colors.primary }]}> 
-            <Text style={[styles.closeText, { color: theme.colors.primaryText }]}>Got it</Text>
+            <Text style={[styles.closeText, { color: theme.colors.primaryText }]}>{t('voice_got_it')}</Text>
           </PressScale>
         </View>
       </View>

@@ -31,8 +31,8 @@ export function UpgradeModal() {
               <X color={theme.colors.text} size={18} />
             </PressScale>
           </View>
-          <Text style={[styles.title, { color: theme.colors.text }]}>{upgradePrompt?.message || 'Unlock more with an upgrade.'}</Text>
-          <Text style={[styles.subtitle, { color: theme.colors.textMuted }]}>Paid upgrades are parked for testing and will use the approved Google Play billing flow later.</Text>
+          <Text style={[styles.title, { color: theme.colors.text }]}>{upgradePrompt?.message || t('upg_default_message')}</Text>
+          <Text style={[styles.subtitle, { color: theme.colors.textMuted }]}>{t('upg_subtitle')}</Text>
           <View style={styles.actions}>
             <PressScale
               testID="upgrade-dismiss"

@@ -40,10 +40,10 @@ function catInfo(key: string) {
   return CATEGORIES.find((c) => c.key === key) || CATEGORIES[0];
 }
 
-function updatedLine(iso: string) {
+function updatedLine(iso: string, t: (k: string) => string) {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
-  return `Updated ${d.toLocaleDateString([], { month: 'short', day: '2-digit' })}`;
+  return `${t('vault_updated')} ${d.toLocaleDateString([], { month: 'short', day: '2-digit' })}`;
 }
 
 type ToastState = { message: string; tone: ToastTone };
@@ -95,11 +95,11 @@ export default function Vault() {
       if (entRes.status === 'fulfilled') setEntitlements(entRes.value);
       if (vaultRes.status === 'rejected') {
         logger.warn('Vault load failed:', vaultRes.reason);
-        showToast('Could not load vault.', 'error');
+        showToast(t('vault_could_not_load'), 'error');
       }
     } catch (e: any) {
       logger.warn('Vault load failed:', e?.message || e);
-      showToast(e?.message || 'Could not load vault.', 'error');
+      showToast(e?.message || t('vault_could_not_load'), 'error');
     } finally {
       setLoading(false);
     }
@@ -138,7 +138,7 @@ export default function Vault() {
       if (Platform.OS !== 'web') {
         const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (!perm.granted) {
-          Alert.alert('Permission needed', 'Gallery access is required.');
+          Alert.alert(t('vault_permission_needed'), t('vault_gallery_access_required'));
           return;
         }
       }
@@ -150,7 +150,7 @@ export default function Vault() {
       }
     } catch (e: any) {
       logger.warn('pickImage failed:', e?.message || e);
-      Alert.alert('Could not open gallery', 'Please try again.');
+      Alert.alert(t('vault_could_not_open_gallery'), t('vault_please_try_again'));
     }
   };
 
@@ -164,10 +164,10 @@ export default function Vault() {
       setImage(null);
       setCategory('Medical');
       setShowAdd(false);
-      showToast('Document saved.', 'success');
+      showToast(t('vault_document_saved'), 'success');
     } catch (e: any) {
       logger.warn('Save vault document failed:', e?.message || e);
-      showToast(e?.message || 'Could not save document.', 'error');
+      showToast(e?.message || t('vault_could_not_save'), 'error');
     } finally {
       setSaving(false);
     }
@@ -179,22 +179,22 @@ export default function Vault() {
     setPreview(null);
     try {
       await api.deleteVaultDoc(doc.doc_id);
-      showToast('Document deleted.', 'success');
+      showToast(t('vault_document_deleted'), 'success');
     } catch (e: any) {
       logger.warn('Delete vault document failed:', e?.message || e);
       setDocs(previous);
-      showToast('Could not delete document.', 'error');
+      showToast(t('vault_could_not_delete'), 'error');
       load();
     }
   };
 
   const confirmRemove = (doc: VaultDoc) => {
     Alert.alert(
-      'Delete document?',
-      `"${doc.title}" will be permanently removed from your Vault. This cannot be undone.`,
+      t('vault_delete_document_title'),
+      `"${doc.title}" ${t('vault_delete_doc_message')}`,
       [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: () => remove(doc) },
+        { text: t('vault_cancel'), style: 'cancel' },
+        { text: t('vault_delete'), style: 'destructive', onPress: () => remove(doc) },
       ],
     );
   };
@@ -207,7 +207,7 @@ export default function Vault() {
       setShopItems((prev) => [item, ...prev]);
       setShopInput('');
     } catch {
-      showToast('Could not add item.', 'error');
+      showToast(t('vault_could_not_add_item'), 'error');
     } finally {
       setAddingShop(false);
     }
@@ -218,7 +218,7 @@ export default function Vault() {
     try {
       await api.updateShoppingItem(item.item_id, { checked: !item.checked });
     } catch {
-      showToast('Could not update — try again.', 'error');
+      showToast(t('vault_could_not_update'), 'error');
       load();
     }
   }, [load, showToast]);
@@ -228,7 +228,7 @@ export default function Vault() {
     try {
       await api.deleteShoppingItem(itemId);
     } catch {
-      showToast('Could not delete — restored.', 'error');
+      showToast(t('vault_could_not_delete_restored'), 'error');
       load();
     }
   }, [load, showToast]);
@@ -240,7 +240,7 @@ export default function Vault() {
     try {
       await api.clearCheckedShopping();
     } catch {
-      showToast('Could not clear — restored.', 'error');
+      showToast(t('vault_could_not_clear_restored'), 'error');
       load();
     }
   }, [shopItems, load, showToast]);
@@ -256,9 +256,9 @@ export default function Vault() {
       setMealTitle('');
       setMealIngredients('');
       setShowMealAdd(false);
-      showToast('Meal added.', 'success');
+      showToast(t('vault_meal_added'), 'success');
     } catch {
-      showToast('Could not add meal.', 'error');
+      showToast(t('vault_could_not_add_meal'), 'error');
     } finally {
       mealSavingRef.current = false;
     }
@@ -266,17 +266,17 @@ export default function Vault() {
 
   const deleteMeal = useCallback(async (id: string) => {
     setMeals((prev) => prev.filter((m) => m.meal_id !== id));
-    try { await api.deleteMeal(id); } catch { showToast('Could not delete — restored.', 'error'); load(); }
+    try { await api.deleteMeal(id); } catch { showToast(t('vault_could_not_delete_restored'), 'error'); load(); }
   }, [load, showToast]);
 
   const syncMealsToShopping = useCallback(async () => {
     try {
       const res = await api.syncMealsToShopping();
-      showToast(`${res.added} ingredients added to shopping list.`, 'success');
+      showToast(`${res.added} ${t('vault_ingredients_added_to_list')}`, 'success');
       const shopRes = await api.listShopping().catch(() => []);
       setShopItems(shopRes);
     } catch {
-      showToast('Could not sync ingredients.', 'error');
+      showToast(t('vault_could_not_sync'), 'error');
     }
   }, [showToast]);
 
@@ -304,7 +304,7 @@ export default function Vault() {
         scrollViewProps={{ contentContainerStyle: styles.scroll, keyboardShouldPersistTaps: 'handled' }}
       >
           <ScreenHeader
-            eyebrow="Secure Storage"
+            eyebrow={t('vault_secure_storage')}
             title={t('vault')}
             right={
               <PressScale onPress={() => router.navigate('/(tabs)/feed')} style={styles.bellWrap}>
@@ -319,7 +319,7 @@ export default function Vault() {
               const active = filter === key;
               return (
                 <PressScale key={key} testID={`vault-filter-${key}`} onPress={() => setFilter(key)} style={[styles.chip, active && styles.chipActive]}>
-                  <Text style={[styles.chipText, active && styles.chipTextActive]}>{key === 'All' ? 'All' : t(key.toLowerCase())}</Text>
+                  <Text style={[styles.chipText, active && styles.chipTextActive]}>{key === 'All' ? t('vault_all') : t(key.toLowerCase())}</Text>
                 </PressScale>
               );
             })}
@@ -331,7 +331,7 @@ export default function Vault() {
               <Folder color={ui.orange} size={24} />
             </IconTile>
             <View style={{ flex: 1 }}>
-              <Text style={styles.storageText}>{docs.length} document{docs.length === 1 ? '' : 's'} · {usedLabel} of {limitMb >= 1024 ? `${(limitMb / 1024).toFixed(0)} GB` : `${limitMb.toFixed(0)} MB`}</Text>
+              <Text style={styles.storageText}>{docs.length} {docs.length === 1 ? t('vault_document') : t('vault_documents')} · {usedLabel} {t('vault_of')} {limitMb >= 1024 ? `${(limitMb / 1024).toFixed(0)} GB` : `${limitMb.toFixed(0)} MB`}</Text>
               <View style={{ marginTop: 10 }}>
                 <ProgressBar pct={storagePct} />
               </View>
@@ -340,15 +340,15 @@ export default function Vault() {
 
           {/* Recent documents */}
           <View style={styles.recentHead}>
-            <Text style={styles.recentTitle}>Recent documents</Text>
-            <Text style={styles.recentTotal}>{filtered.length} total</Text>
+            <Text style={styles.recentTitle}>{t('vault_recent_documents')}</Text>
+            <Text style={styles.recentTotal}>{filtered.length} {t('vault_total')}</Text>
           </View>
 
           {filtered.length === 0 && !loading ? (
             <Card style={styles.emptyCard}>
               <IconTile bg={ui.soft} size={52} radius={16}><FileText color={ui.muted} size={24} /></IconTile>
-              <Text style={styles.emptyTitle}>{filter === 'All' ? t('no_docs') : `No ${filter.toLowerCase()} documents`}</Text>
-              <Text style={styles.emptySub}>Store school slips, insurance papers, IDs, and household documents.</Text>
+              <Text style={styles.emptyTitle}>{filter === 'All' ? t('no_docs') : `${t('vault_no')} ${t(filter.toLowerCase())} ${t('vault_documents')}`}</Text>
+              <Text style={styles.emptySub}>{t('vault_empty_sub')}</Text>
               <PressScale testID="vault-empty-add" onPress={openAdd} style={styles.emptyBtn}>
                 <Plus color="#FFFFFF" size={18} />
                 <Text style={styles.emptyBtnText}>{t('add_document')}</Text>
@@ -369,7 +369,7 @@ export default function Vault() {
                     <View style={styles.tileBody}>
                       <Badge label={d.category.toUpperCase()} bg={cat.soft} color={cat.tone} />
                       <Text style={styles.tileTitle} numberOfLines={2}>{d.title}</Text>
-                      <Text style={styles.tileDate}>{updatedLine(d.created_at)}</Text>
+                      <Text style={styles.tileDate}>{updatedLine(d.created_at, t)}</Text>
                     </View>
                   </PressScale>
                 );
@@ -380,14 +380,14 @@ export default function Vault() {
           <View style={styles.recentHead}>
             <View style={styles.shopHeaderLeft}>
               <ShoppingCart color={ui.orange} size={20} />
-              <Text style={styles.recentTitle}>Shopping List</Text>
+              <Text style={styles.recentTitle}>{t('vault_shopping_list')}</Text>
             </View>
             {checkedItems.length > 0 ? (
               <PressScale onPress={clearChecked} style={styles.clearBtn}>
-                <Text style={styles.clearBtnText}>Clear done</Text>
+                <Text style={styles.clearBtnText}>{t('vault_clear_done')}</Text>
               </PressScale>
             ) : (
-              <Text style={styles.recentTotal}>{shopItems.length} item{shopItems.length === 1 ? '' : 's'}</Text>
+              <Text style={styles.recentTotal}>{shopItems.length} {shopItems.length === 1 ? t('vault_item') : t('vault_items')}</Text>
             )}
           </View>
 
@@ -396,7 +396,7 @@ export default function Vault() {
               <TextInput
                 value={shopInput}
                 onChangeText={setShopInput}
-                placeholder="Add item..."
+                placeholder={t('vault_add_item_placeholder')}
                 placeholderTextColor={ui.muted}
                 style={styles.shopInput}
                 returnKeyType="done"
@@ -421,7 +421,7 @@ export default function Vault() {
             {checkedItems.length > 0 ? (
               <>
                 <View style={styles.shopDivider}>
-                  <Text style={styles.shopDividerText}>Done ({checkedItems.length})</Text>
+                  <Text style={styles.shopDividerText}>{t('vault_done')} ({checkedItems.length})</Text>
                 </View>
                 {checkedItems.map((item) => (
                   <PressScale key={item.item_id} onPress={() => toggleShopItem(item)} style={styles.shopRow}>
@@ -436,7 +436,7 @@ export default function Vault() {
             ) : null}
 
             {shopItems.length === 0 ? (
-              <Text style={styles.shopEmpty}>No items yet. Add groceries, supplies, or anything the household needs.</Text>
+              <Text style={styles.shopEmpty}>{t('vault_shop_empty')}</Text>
             ) : null}
           </View>
 
@@ -444,7 +444,7 @@ export default function Vault() {
           <View style={styles.recentHead}>
             <View style={styles.shopHeaderLeft}>
               <UtensilsCrossed color={ui.lavenderText} size={20} />
-              <Text style={styles.recentTitle}>Meal Planner</Text>
+              <Text style={styles.recentTitle}>{t('vault_meal_planner')}</Text>
             </View>
             {mealLocked ? (
               <LockBadge onPress={() => promptUpgrade('meal_planner')} />
@@ -452,11 +452,11 @@ export default function Vault() {
               <View style={{ flexDirection: 'row', gap: 8 }}>
                 {meals.length > 0 ? (
                   <PressScale onPress={syncMealsToShopping} style={styles.clearBtn}>
-                    <Text style={styles.clearBtnText}>Sync to list</Text>
+                    <Text style={styles.clearBtnText}>{t('vault_sync_to_list')}</Text>
                   </PressScale>
                 ) : null}
                 <PressScale onPress={() => setShowMealAdd(true)} style={[styles.clearBtn, { backgroundColor: ui.lavender }]}>
-                  <Text style={[styles.clearBtnText, { color: ui.lavenderText }]}>+ Add</Text>
+                  <Text style={[styles.clearBtnText, { color: ui.lavenderText }]}>{t('vault_add_short')}</Text>
                 </PressScale>
               </View>
             )}
@@ -479,7 +479,7 @@ export default function Vault() {
               </View>
             ))}
             {meals.length === 0 ? (
-              <Text style={styles.shopEmpty}>Plan your weekly meals. Ingredients sync to the shopping list.</Text>
+              <Text style={styles.shopEmpty}>{t('vault_meal_empty')}</Text>
             ) : null}
           </View>
 
@@ -489,9 +489,9 @@ export default function Vault() {
               <View style={styles.recentHead}>
                 <View style={styles.shopHeaderLeft}>
                   <AlertTriangle color="#DC2626" size={20} />
-                  <Text style={styles.recentTitle}>Expiry Alerts</Text>
+                  <Text style={styles.recentTitle}>{t('vault_expiry_alerts')}</Text>
                 </View>
-                <Text style={styles.recentTotal}>{expiryAlerts.length} alert{expiryAlerts.length === 1 ? '' : 's'}</Text>
+                <Text style={styles.recentTotal}>{expiryAlerts.length} {expiryAlerts.length === 1 ? t('vault_alert') : t('vault_alerts')}</Text>
               </View>
               <View style={styles.shopCard}>
                 {expiryAlerts.slice(0, 6).map((alert) => (
@@ -500,7 +500,7 @@ export default function Vault() {
                     <View style={{ flex: 1 }}>
                       <Text style={styles.shopItemText}>{alert.title}</Text>
                       <Text style={styles.shopCat}>
-                        {alert.status === 'expired' ? `Expired ${Math.abs(alert.days_left)} days ago` : `${alert.days_left} days left`} · {alert.category}
+                        {alert.status === 'expired' ? `${t('vault_expired')} ${Math.abs(alert.days_left)} ${t('vault_days_ago')}` : `${alert.days_left} ${t('vault_days_left')}`} · {alert.category}
                       </Text>
                     </View>
                   </View>
@@ -546,7 +546,7 @@ export default function Vault() {
         </View>
 
         <PressScale testID="vault-pick" onPress={pickImage} style={styles.pick}>
-          {image ? <Image source={{ uri: image }} style={styles.pickImg} /> : <Text style={styles.pickText}>Tap to pick document image</Text>}
+          {image ? <Image source={{ uri: image }} style={styles.pickImg} /> : <Text style={styles.pickText}>{t('vault_pick_document_image')}</Text>}
         </PressScale>
 
         <View style={styles.sheetFooter}>
@@ -561,10 +561,10 @@ export default function Vault() {
 
       <KeyboardAwareBottomSheet visible={showMealAdd} onClose={() => setShowMealAdd(false)} contentStyle={styles.sheet}>
         <View style={styles.sheetHeader}>
-          <Text style={styles.sheetTitle}>Add Meal</Text>
+          <Text style={styles.sheetTitle}>{t('vault_add_meal')}</Text>
           <PressScale onPress={() => setShowMealAdd(false)} style={styles.iconBtn}><X color={ui.text} size={20} /></PressScale>
         </View>
-        <Text style={styles.label}>Day</Text>
+        <Text style={styles.label}>{t('vault_day')}</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
           <View style={{ flexDirection: 'row', gap: 8 }}>
             {DAYS.map((d) => (
@@ -574,13 +574,13 @@ export default function Vault() {
             ))}
           </View>
         </ScrollView>
-        <Text style={styles.label}>Meal</Text>
-        <TextInput value={mealTitle} onChangeText={setMealTitle} placeholder="e.g. Spaghetti Bolognese" placeholderTextColor={ui.muted} style={styles.input} />
-        <Text style={styles.label}>Ingredients (comma separated)</Text>
-        <TextInput value={mealIngredients} onChangeText={setMealIngredients} placeholder="pasta, minced beef, tomato sauce" placeholderTextColor={ui.muted} style={styles.input} />
+        <Text style={styles.label}>{t('vault_meal')}</Text>
+        <TextInput value={mealTitle} onChangeText={setMealTitle} placeholder={t('vault_meal_title_placeholder')} placeholderTextColor={ui.muted} style={styles.input} />
+        <Text style={styles.label}>{t('vault_ingredients_label')}</Text>
+        <TextInput value={mealIngredients} onChangeText={setMealIngredients} placeholder={t('vault_ingredients_placeholder')} placeholderTextColor={ui.muted} style={styles.input} />
         <View style={styles.sheetFooter}>
-          <PressScale onPress={() => setShowMealAdd(false)} style={styles.cancelBtn}><Text style={styles.cancelText}>Cancel</Text></PressScale>
-          <PressScale onPress={addMeal} disabled={!mealTitle.trim()} style={[styles.saveBtn, !mealTitle.trim() && { opacity: 0.5 }]}><Text style={styles.saveText}>Save</Text></PressScale>
+          <PressScale onPress={() => setShowMealAdd(false)} style={styles.cancelBtn}><Text style={styles.cancelText}>{t('vault_cancel')}</Text></PressScale>
+          <PressScale onPress={addMeal} disabled={!mealTitle.trim()} style={[styles.saveBtn, !mealTitle.trim() && { opacity: 0.5 }]}><Text style={styles.saveText}>{t('vault_save')}</Text></PressScale>
         </View>
       </KeyboardAwareBottomSheet>
 
@@ -605,7 +605,7 @@ export default function Vault() {
         ) : null}
       </Modal>
 
-      <LoadingOverlay visible={loading} label="Loading vault..." />
+      <LoadingOverlay visible={loading} label={t('vault_loading')} />
       <AppToast visible={Boolean(toast)} message={toast?.message || null} tone={toast?.tone || 'info'} />
     </SwipeableTabView>
   );

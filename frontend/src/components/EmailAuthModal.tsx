@@ -27,7 +27,7 @@ interface Props {
 type Mode = 'signup' | 'login';
 
 export function EmailAuthModal({ visible, onClose, onSuccess, inviteToken }: Props) {
-  const { theme, setUserFromAuth } = useStore();
+  const { theme, setUserFromAuth, t } = useStore();
   const c = theme.colors;
 
   const [mode, setMode] = useState<Mode>('signup');
@@ -78,15 +78,15 @@ export function EmailAuthModal({ visible, onClose, onSuccess, inviteToken }: Pro
     setError(null);
     const trimmedEmail = email.trim().toLowerCase();
     if (!trimmedEmail || !trimmedEmail.includes('@')) {
-      setError('Please enter a valid email address.');
+      setError(t('email_invalid_email'));
       return;
     }
     if (password.length < 8) {
-      setError('Password must be at least 8 characters.');
+      setError(t('email_password_too_short'));
       return;
     }
     if (mode === 'signup' && !name.trim()) {
-      setError('Please enter your name.');
+      setError(t('email_name_required'));
       return;
     }
 
@@ -111,7 +111,7 @@ export function EmailAuthModal({ visible, onClose, onSuccess, inviteToken }: Pro
       const raw = String(e?.message || '');
       // request() throws `${status}: ${body}` — surface the readable detail when present.
       const match = raw.match(/\{.*"detail"\s*:\s*"([^"]+)"/);
-      setError(match?.[1] || (mode === 'signup' ? 'Could not create your account. Please try again.' : 'Could not sign you in. Please try again.'));
+      setError(match?.[1] || (mode === 'signup' ? t('email_signup_failed') : t('email_login_failed')));
       setBusy(false);
     }
   };
@@ -130,7 +130,7 @@ export function EmailAuthModal({ visible, onClose, onSuccess, inviteToken }: Pro
               <Mail color={c.accent} size={18} />
             </View>
             <Text style={[styles.title, { color: c.text }]}>
-              {mode === 'signup' ? 'Create your account' : 'Welcome back'}
+              {mode === 'signup' ? t('email_create_title') : t('email_welcome_back')}
             </Text>
             <PressScale onPress={close} style={[styles.closeBtn, { borderColor: c.cardBorder, backgroundColor: c.bgSoft }]}>
               <X color={c.text} size={18} />
@@ -139,21 +139,21 @@ export function EmailAuthModal({ visible, onClose, onSuccess, inviteToken }: Pro
 
           <View style={[styles.modeToggle, { backgroundColor: c.bgSoft, borderColor: c.cardBorder }]}>
             <PressScale onPress={() => { setMode('signup'); setError(null); }} style={[styles.modeOption, mode === 'signup' && { backgroundColor: c.primary }]}>
-              <Text style={[styles.modeText, { color: mode === 'signup' ? c.primaryText : c.textMuted }]}>Sign up</Text>
+              <Text style={[styles.modeText, { color: mode === 'signup' ? c.primaryText : c.textMuted }]}>{t('email_sign_up')}</Text>
             </PressScale>
             <PressScale onPress={() => { setMode('login'); setError(null); }} style={[styles.modeOption, mode === 'login' && { backgroundColor: c.primary }]}>
-              <Text style={[styles.modeText, { color: mode === 'login' ? c.primaryText : c.textMuted }]}>Log in</Text>
+              <Text style={[styles.modeText, { color: mode === 'login' ? c.primaryText : c.textMuted }]}>{t('email_log_in')}</Text>
             </PressScale>
           </View>
 
           {mode === 'signup' ? (
             <>
-              <Text style={[styles.label, { color: c.textMuted }]}>Name</Text>
+              <Text style={[styles.label, { color: c.textMuted }]}>{t('email_name_label')}</Text>
               <TextInput
                 style={[styles.input, { color: c.text, borderColor: c.cardBorder, backgroundColor: c.bgSoft }]}
                 value={name}
                 onChangeText={setName}
-                placeholder="Your name"
+                placeholder={t('email_name_placeholder')}
                 placeholderTextColor={c.textSoft}
                 autoCapitalize="words"
                 returnKeyType="next"
@@ -161,7 +161,7 @@ export function EmailAuthModal({ visible, onClose, onSuccess, inviteToken }: Pro
             </>
           ) : null}
 
-          <Text style={[styles.label, { color: c.textMuted }]}>Email</Text>
+          <Text style={[styles.label, { color: c.textMuted }]}>{t('email_email_label')}</Text>
           <TextInput
             style={[styles.input, { color: c.text, borderColor: c.cardBorder, backgroundColor: c.bgSoft }]}
             value={email}
@@ -175,11 +175,11 @@ export function EmailAuthModal({ visible, onClose, onSuccess, inviteToken }: Pro
           />
 
           <View style={styles.labelRow}>
-            <Text style={[styles.label, { color: c.textMuted, marginBottom: 0 }]}>Password</Text>
+            <Text style={[styles.label, { color: c.textMuted, marginBottom: 0 }]}>{t('email_password_label')}</Text>
             {mode === 'signup' ? (
               <PressScale onPress={generateStrongPassword} style={[styles.suggestBtn, { backgroundColor: c.accentSoft }]}>
                 <ShieldCheck color={c.accent} size={12} />
-                <Text style={[styles.suggestText, { color: c.accent }]}>Use strong password</Text>
+                <Text style={[styles.suggestText, { color: c.accent }]}>{t('email_use_strong_password')}</Text>
               </PressScale>
             ) : null}
           </View>
@@ -187,7 +187,7 @@ export function EmailAuthModal({ visible, onClose, onSuccess, inviteToken }: Pro
             style={[styles.input, { color: c.text, borderColor: c.cardBorder, backgroundColor: c.bgSoft }]}
             value={password}
             onChangeText={setPassword}
-            placeholder={mode === 'signup' ? 'At least 8 mixed characters' : 'Your password'}
+            placeholder={mode === 'signup' ? t('email_password_placeholder_signup') : t('email_password_placeholder_login')}
             placeholderTextColor={c.textSoft}
             secureTextEntry={mode === 'login'}
             autoCapitalize="none"
@@ -197,16 +197,16 @@ export function EmailAuthModal({ visible, onClose, onSuccess, inviteToken }: Pro
 
           {mode === 'signup' && password.length > 0 ? (
             <View style={styles.hintsWrap}>
-              <PasswordHint met={hasLength} label="8+ characters" color={c} />
-              <PasswordHint met={hasUpper} label="Uppercase (A-Z)" color={c} />
-              <PasswordHint met={hasLower} label="Lowercase (a-z)" color={c} />
-              <PasswordHint met={hasNumber} label="Number (0-9)" color={c} />
-              <PasswordHint met={hasSpecial} label="Special (!@#$…)" color={c} />
+              <PasswordHint met={hasLength} label={t('email_hint_length')} color={c} />
+              <PasswordHint met={hasUpper} label={t('email_hint_uppercase')} color={c} />
+              <PasswordHint met={hasLower} label={t('email_hint_lowercase')} color={c} />
+              <PasswordHint met={hasNumber} label={t('email_hint_number')} color={c} />
+              <PasswordHint met={hasSpecial} label={t('email_hint_special')} color={c} />
               <View style={[styles.strengthBar, { backgroundColor: c.bgSoft }]}>
                 <View style={[styles.strengthFill, { width: `${(strengthCount / 5) * 100}%`, backgroundColor: strengthCount <= 2 ? '#EF4444' : strengthCount <= 3 ? '#F59E0B' : '#22C55E' }]} />
               </View>
               <Text style={[styles.strengthLabel, { color: c.textMuted }]}>
-                {strengthCount <= 2 ? 'Weak' : strengthCount <= 3 ? 'Fair' : strengthCount <= 4 ? 'Strong' : 'Very strong'}
+                {strengthCount <= 2 ? t('email_strength_weak') : strengthCount <= 3 ? t('email_strength_fair') : strengthCount <= 4 ? t('email_strength_strong') : t('email_strength_very_strong')}
               </Text>
             </View>
           ) : null}
@@ -218,7 +218,7 @@ export function EmailAuthModal({ visible, onClose, onSuccess, inviteToken }: Pro
               <ActivityIndicator color={c.primaryText} size="small" />
             ) : (
               <Text style={[styles.submitText, { color: c.primaryText }]}>
-                {mode === 'signup' ? 'Create account' : 'Log in'}
+                {mode === 'signup' ? t('email_create_account') : t('email_log_in')}
               </Text>
             )}
           </PressScale>

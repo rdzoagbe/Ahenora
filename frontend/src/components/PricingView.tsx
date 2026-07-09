@@ -48,13 +48,13 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
     }
 
     if (plan === currentPlan) {
-      Alert.alert('Your current plan', "You're already on this plan. Enjoy!");
+      Alert.alert(t('price_current_plan_title'), t('price_current_plan_msg'));
       return;
     }
 
     Alert.alert(
-      'Coming soon',
-      'Paid plan upgrades will be available soon through Google Play. For now, all features included in the Village plan are free to use.'
+      t('price_coming_soon_title'),
+      t('price_coming_soon_msg')
     );
   };
 
@@ -67,16 +67,16 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
         <View style={styles.header}>
           <View style={styles.badge}>
             <Sparkles color={ui.text} size={12} />
-            <Text style={styles.badgeText}>Plans</Text>
+            <Text style={styles.badgeText}>{t('price_badge_plans')}</Text>
           </View>
-          <Text style={styles.title}>Choose the right plan for your family.</Text>
-          <Text style={styles.subtitle}>Paid upgrades are coming soon. Village plan features are free to use while we prepare subscription billing.</Text>
+          <Text style={styles.title}>{t('price_header_title')}</Text>
+          <Text style={styles.subtitle}>{t('price_header_subtitle')}</Text>
         </View>
 
         <View>
           <BillingToggle value={cycle} onChange={setCycle} t={t} styles={styles} />
           <Text style={styles.billingNote}>
-            Save with annual billing. Paid plans coming soon.
+            {t('price_billing_note')}
           </Text>
         </View>
 
@@ -97,7 +97,7 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
         </View>
 
         <View style={styles.faqWrap}>
-          <Text style={styles.faqTitle}>Good to know</Text>
+          <Text style={styles.faqTitle}>{t('price_faq_title')}</Text>
           {[
             [t('pricing_faq_1_q'), t('pricing_faq_1_a')],
             [t('pricing_faq_2_q'), t('pricing_faq_2_a')],
@@ -220,7 +220,7 @@ function PlanCard({
 
       <View style={styles.priceRow}>
         {isFree ? (
-          <Text style={styles.freeText}>Free</Text>
+          <Text style={styles.freeText}>{t('price_free')}</Text>
         ) : (
           <>
             <Text style={styles.priceSymbol}>$</Text>
@@ -233,7 +233,7 @@ function PlanCard({
       </View>
       {!isFree && cycle === 'yearly' ? (
         <Text style={styles.yearlyNote}>
-          ${price.toFixed(2)} {t('pricing_billed_yearly')} · preview only
+          ${price.toFixed(2)} {t('pricing_billed_yearly')} · {t('price_preview_only')}
         </Text>
       ) : null}
 
@@ -265,7 +265,7 @@ function PlanCard({
         >
           <Lock color="#fff" size={14} />
           <Text style={[styles.ctaText, { color: '#fff' }]}>
-            {isFree ? t('pricing_get_started') : 'Coming soon'}
+            {isFree ? t('pricing_get_started') : t('price_coming_soon_cta')}
           </Text>
         </PressScale>
       )}
