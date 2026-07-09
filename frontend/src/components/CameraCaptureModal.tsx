@@ -55,10 +55,10 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
       if (Platform.OS !== 'web') {
         if (source === 'camera') {
           const p = await ImagePicker.requestCameraPermissionsAsync();
-          if (!p.granted) throw new Error('Camera permission denied');
+          if (!p.granted) throw new Error(t('cam_camera_permission_denied'));
         } else {
           const p = await ImagePicker.requestMediaLibraryPermissionsAsync();
-          if (!p.granted) throw new Error('Gallery permission denied');
+          if (!p.granted) throw new Error(t('cam_gallery_permission_denied'));
         }
       }
 
@@ -98,11 +98,11 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
           save_to_vault: draft.save_to_vault !== false,
         });
       } catch (e: any) {
-        setErr(e?.message || 'Vision extraction failed');
+        setErr(e?.message || t('cam_vision_failed'));
         setPhase('error');
       }
     } catch (e: any) {
-      setErr(e?.message || 'Could not open camera');
+      setErr(e?.message || t('cam_could_not_open_camera'));
       setPhase('error');
     }
   };
@@ -118,7 +118,7 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
           <View style={styles.header}>
             <View style={[styles.badge, { backgroundColor: theme.colors.accentSoft, borderColor: theme.colors.cardBorder }]}> 
               <Sparkles color={theme.colors.accent} size={12} />
-              <Text style={[styles.badgeText, { color: theme.colors.text }]}>Quick action</Text>
+              <Text style={[styles.badgeText, { color: theme.colors.text }]}>{t('cam_quick_action')}</Text>
             </View>
             <PressScale testID="cam-close" onPress={onClose} style={[styles.iconBtn, { borderColor: theme.colors.cardBorder }]} disabled={scanning}>
               <X color={theme.colors.text} size={18} />
@@ -129,8 +129,8 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
             <FileScan color={theme.colors.accent} size={28} />
           </View>
 
-          <Text style={[styles.heading, { color: theme.colors.text }]}>Smart scan</Text>
-          <Text style={[styles.sub, { color: theme.colors.textMuted }]}>Scan a school letter, bill, appointment card, or note. Household COO will create a draft first so you can review before saving.</Text>
+          <Text style={[styles.heading, { color: theme.colors.text }]}>{t('cam_smart_scan')}</Text>
+          <Text style={[styles.sub, { color: theme.colors.textMuted }]}>{t('cam_smart_scan_sub')}</Text>
 
           <View style={[styles.stage, { borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}> 
             {preview ? (
@@ -138,7 +138,7 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
             ) : (
               <View style={styles.emptyStage}>
                 <Camera color={theme.colors.textSoft} size={36} />
-                <Text style={[styles.emptyStageText, { color: theme.colors.textMuted }]}>Take a photo or choose from gallery</Text>
+                <Text style={[styles.emptyStageText, { color: theme.colors.textMuted }]}>{t('cam_take_or_choose')}</Text>
               </View>
             )}
             {scanning && (
@@ -152,7 +152,7 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
           {phase === 'error' && (
             <View style={[styles.errorBox, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}> 
               <Text style={styles.errText}>{err}</Text>
-              <Text style={[styles.errHelp, { color: theme.colors.textMuted }]}>You can still use Manual from Quick Actions.</Text>
+              <Text style={[styles.errHelp, { color: theme.colors.textMuted }]}>{t('cam_error_help')}</Text>
             </View>
           )}
 

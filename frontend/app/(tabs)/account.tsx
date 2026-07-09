@@ -57,7 +57,7 @@ function ListRow({
 
 export default function AccountScreen() {
   const router = useRouter();
-  const { user, logout, refreshUser } = useStore();
+  const { user, logout, refreshUser, t } = useStore();
   const { theme } = useStore();
   const [diagnostics, setDiagnostics] = useState<AuthDiagnosticResult | null>(null);
   const [checking, setChecking] = useState(false);
@@ -66,8 +66,8 @@ export default function AccountScreen() {
   const [supportMessage, setSupportMessage] = useState('');
   const [supportSending, setSupportSending] = useState(false);
 
-  const name = user?.name || 'Household member';
-  const email = user?.email || 'Not signed in';
+  const name = user?.name || t('acc_default_name');
+  const email = user?.email || t('acc_not_signed_in');
   const initial = (name.trim()[0] || 'H').toUpperCase();
 
   const doLogout = async () => {
@@ -96,7 +96,7 @@ export default function AccountScreen() {
     const subj = supportSubject.trim();
     const msg = supportMessage.trim();
     if (!subj || !msg) {
-      Alert.alert('Missing fields', 'Please fill in both the subject and message.');
+      Alert.alert(t('acc_missing_fields_title'), t('acc_missing_fields_msg'));
       return;
     }
     setSupportSending(true);
@@ -105,9 +105,9 @@ export default function AccountScreen() {
       setSupportOpen(false);
       setSupportSubject('');
       setSupportMessage('');
-      Alert.alert('Sent!', 'Your message has been received. We\'ll get back to you soon.');
+      Alert.alert(t('acc_sent_title'), t('acc_sent_msg'));
     } catch {
-      Alert.alert('Error', 'Could not send your message. Please try again.');
+      Alert.alert(t('acc_error_title'), t('acc_send_error_msg'));
     } finally {
       setSupportSending(false);
     }
@@ -122,7 +122,7 @@ export default function AccountScreen() {
             <PressScale testID="account-back" onPress={goBack} style={styles.backBtn}>
               <ChevronLeft color={UI.text} size={22} />
             </PressScale>
-            <Text style={styles.navTitle}>Account</Text>
+            <Text style={styles.navTitle}>{t('acc_title')}</Text>
             <View style={styles.backBtn} />
           </View>
 
@@ -134,85 +134,85 @@ export default function AccountScreen() {
             <Text style={styles.name} numberOfLines={1}>{name}</Text>
             <Text style={styles.email} numberOfLines={1}>{email}</Text>
             <View style={styles.badgeRow}>
-              <Badge label="OWNER" bg={UI.soft} color={UI.muted} />
-              <Badge label="VERIFIED" bg={UI.mint} color={UI.mintText} />
+              <Badge label={t('acc_badge_owner')} bg={UI.soft} color={UI.muted} />
+              <Badge label={t('acc_badge_verified')} bg={UI.mint} color={UI.mintText} />
             </View>
           </Card>
 
           {/* Sign-in & connections */}
-          <SectionTitle style={styles.sectionGap}>Sign-in &amp; connections</SectionTitle>
+          <SectionTitle style={styles.sectionGap}>{t('acc_section_signin')}</SectionTitle>
           <Card style={styles.cardPad}>
             <ListRow
               tile={<IconTile bg={UI.blue}><Text style={styles.googleG}>G</Text></IconTile>}
-              title="Google account"
-              subtitle={user?.email ? `Connected · ${user.email}` : 'Not connected'}
+              title={t('acc_google_account')}
+              subtitle={user?.email ? `${t('acc_connected')} · ${user.email}` : t('acc_not_connected')}
               right={<CheckCircle2 color={UI.mintText} size={20} />}
             />
             <ListRow
               tile={<IconTile bg={UI.mint}><CalendarCheck color={UI.mintText} size={18} /></IconTile>}
-              title="Calendar sync"
-              subtitle={diagnostics?.session_valid ? 'Session healthy' : 'Open the family calendar'}
+              title={t('acc_calendar_sync')}
+              subtitle={diagnostics?.session_valid ? t('acc_session_healthy') : t('acc_open_calendar')}
               onPress={() => router.navigate('/(tabs)/calendar')}
             />
             <ListRow
               testID="run-auth-diagnostics"
               tile={<IconTile bg={UI.orangeSoft}><ShieldCheck color={UI.orange} size={18} /></IconTile>}
-              title="Sign-in health"
-              subtitle={checking ? 'Checking…' : 'Verify token, backend & session'}
+              title={t('acc_signin_health')}
+              subtitle={checking ? t('acc_checking') : t('acc_verify_session')}
               right={
-                <Text style={styles.actionLink}>{checking ? '…' : 'Check'}</Text>
+                <Text style={styles.actionLink}>{checking ? '…' : t('acc_check')}</Text>
               }
               onPress={checkSession}
             />
             <ListRow
               tile={<IconTile bg={UI.soft}><KeyRound color={UI.text} size={18} /></IconTile>}
-              title="Change password"
-              subtitle="Managed by your Google sign-in"
+              title={t('acc_change_password')}
+              subtitle={t('acc_change_password_sub')}
               divider={false}
             />
           </Card>
 
           {diagnostics ? (
             <Card style={[styles.cardPad, styles.diagCard]}>
-              <DiagLine label="Local token" value={diagnostics.local_token ? 'Stored' : 'Missing'} good={diagnostics.local_token} />
-              <DiagLine label="Backend" value={diagnostics.backend_online ? 'Online' : 'Unavailable'} good={diagnostics.backend_online} />
-              <DiagLine label="Session" value={diagnostics.session_valid ? 'Valid' : 'Invalid'} good={diagnostics.session_valid} />
-              {diagnostics.session_email ? <DiagLine label="Email" value={diagnostics.session_email} /> : null}
-              {diagnostics.session_is_admin ? <DiagLine label="Admin" value="Tester bypass active" good /> : null}
+              <DiagLine label={t('acc_diag_local_token')} value={diagnostics.local_token ? t('acc_diag_stored') : t('acc_diag_missing')} good={diagnostics.local_token} />
+              <DiagLine label={t('acc_diag_backend')} value={diagnostics.backend_online ? t('acc_diag_online') : t('acc_diag_unavailable')} good={diagnostics.backend_online} />
+              <DiagLine label={t('acc_diag_session')} value={diagnostics.session_valid ? t('acc_diag_valid') : t('acc_diag_invalid')} good={diagnostics.session_valid} />
+              {diagnostics.session_email ? <DiagLine label={t('acc_diag_email')} value={diagnostics.session_email} /> : null}
+              {diagnostics.session_is_admin ? <DiagLine label={t('acc_diag_admin')} value={t('acc_diag_tester_bypass')} good /> : null}
               {diagnostics.error ? <Text style={styles.diagError}>{diagnostics.error}</Text> : null}
             </Card>
           ) : null}
 
           {/* Legal & support */}
-          <SectionTitle style={styles.sectionGap}>Legal &amp; support</SectionTitle>
+          <SectionTitle style={styles.sectionGap}>{t('acc_section_legal')}</SectionTitle>
           <Card style={styles.cardPad}>
             <ListRow
               tile={<IconTile bg={UI.orangeSoft}><LifeBuoy color={UI.orange} size={18} /></IconTile>}
-              title="Contact support"
+              title={t('acc_contact_support')}
               onPress={() => setSupportOpen(true)}
             />
             <ListRow
               testID="open-terms-support"
               tile={<IconTile bg={UI.orangeSoft}><FileText color={UI.orange} size={18} /></IconTile>}
-              title="Terms of service"
+              title={t('acc_terms')}
               onPress={() => router.push('/terms')}
             />
             <ListRow
               testID="open-privacy-policy"
               tile={<IconTile bg={UI.orangeSoft}><ShieldCheck color={UI.orange} size={18} /></IconTile>}
-              title="Privacy policy"
+              title={t('acc_privacy')}
               onPress={() => router.push('/privacy')}
               divider={false}
             />
           </Card>
 
           {/* Account actions */}
-          <SectionTitle style={[styles.sectionGap, { color: UI.danger }]}>Account actions</SectionTitle>
+          <SectionTitle style={[styles.sectionGap, { color: UI.danger }]}>{t('acc_section_actions')}</SectionTitle>
           <Card style={[styles.cardPad, { borderColor: 'rgba(220,38,38,0.18)' }]}>
             <ListRow
               testID="account-logout"
               tile={<IconTile bg={UI.dangerSoft}><LogOut color={UI.danger} size={18} /></IconTile>}
-              title="Log out"
+              title={t('acc_logout')}
               danger
               right={null}
               onPress={doLogout}
@@ -220,7 +220,7 @@ export default function AccountScreen() {
             <ListRow
               testID="open-account-deletion"
               tile={<IconTile bg={UI.dangerSoft}><Trash2 color={UI.danger} size={18} /></IconTile>}
-              title="Delete account"
+              title={t('acc_delete_account')}
               danger
               right={null}
               onPress={() => router.push('/delete-account')}
@@ -239,29 +239,29 @@ export default function AccountScreen() {
         <View style={styles.modalCenter}>
           <View style={[styles.modalSheet, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder, shadowColor: theme.colors.shadow }]}>
             <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: theme.colors.text }]}>Contact Support</Text>
+              <Text style={[styles.modalTitle, { color: theme.colors.text }]}>{t('acc_contact_support')}</Text>
               <PressScale onPress={() => setSupportOpen(false)} style={[styles.modalCloseBtn, { borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}>
                 <X color={theme.colors.text} size={18} />
               </PressScale>
             </View>
 
-            <Text style={[styles.modalLabel, { color: theme.colors.textMuted }]}>Subject</Text>
+            <Text style={[styles.modalLabel, { color: theme.colors.textMuted }]}>{t('acc_subject')}</Text>
             <TextInput
               style={[styles.modalInput, { color: theme.colors.text, borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}
               value={supportSubject}
               onChangeText={setSupportSubject}
-              placeholder="e.g. Bug report, Feature request…"
+              placeholder={t('acc_subject_placeholder')}
               placeholderTextColor={theme.colors.textMuted}
               maxLength={200}
               returnKeyType="next"
             />
 
-            <Text style={[styles.modalLabel, { color: theme.colors.textMuted }]}>Message</Text>
+            <Text style={[styles.modalLabel, { color: theme.colors.textMuted }]}>{t('acc_message')}</Text>
             <TextInput
               style={[styles.modalInput, styles.modalTextArea, { color: theme.colors.text, borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}
               value={supportMessage}
               onChangeText={setSupportMessage}
-              placeholder="Describe your issue or request…"
+              placeholder={t('acc_message_placeholder')}
               placeholderTextColor={theme.colors.textMuted}
               maxLength={5000}
               multiline
@@ -275,7 +275,7 @@ export default function AccountScreen() {
             >
               <Send color={theme.colors.primaryText} size={16} />
               <Text style={[styles.modalSendText, { color: theme.colors.primaryText }]}>
-                {supportSending ? 'Sending…' : 'Send Message'}
+                {supportSending ? t('acc_sending') : t('acc_send_message')}
               </Text>
             </PressScale>
           </View>

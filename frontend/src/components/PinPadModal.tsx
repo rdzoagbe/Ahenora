@@ -15,7 +15,7 @@ interface Props {
 }
 
 export function PinPadModal({ visible, mode, title, subtitle, onClose, onSubmit }: Props) {
-  const { theme } = useStore();
+  const { theme, t } = useStore();
   const c = theme.colors;
   const [pin, setPin] = useState('');
   const [err, setErr] = useState<string | null>(null);
@@ -39,7 +39,7 @@ export function PinPadModal({ visible, mode, title, subtitle, onClose, onSubmit 
       setBusy(true);
       const ok = await onSubmit(next);
       if (!ok) {
-        setErr(mode === 'verify' ? 'Wrong PIN' : 'Could not save');
+        setErr(mode === 'verify' ? t('pin_wrong') : t('pin_could_not_save'));
         setPin('');
         setBusy(false);
       }
@@ -62,7 +62,7 @@ export function PinPadModal({ visible, mode, title, subtitle, onClose, onSubmit 
           <View style={styles.headerRow}>
             <View style={[styles.badge, { backgroundColor: c.bgSoft, borderColor: c.cardBorder }]}>
               <Lock color={c.text} size={12} />
-              <Text style={[styles.badgeText, { color: c.text }]}>{mode === 'set' ? 'Set PIN' : 'Enter PIN'}</Text>
+              <Text style={[styles.badgeText, { color: c.text }]}>{mode === 'set' ? t('pin_set') : t('pin_enter')}</Text>
             </View>
             <PressScale testID="pin-close" onPress={onClose} style={[styles.closeBtn, { borderColor: c.cardBorder }]}>
               <X color={c.text} size={18} />

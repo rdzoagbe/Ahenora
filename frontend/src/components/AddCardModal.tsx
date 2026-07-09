@@ -129,7 +129,7 @@ export function AddCardModal({
     } catch (e: any) {
       // The card wasn't created — safe to let the user retry.
       logger.warn('create card error', e);
-      Alert.alert('Save failed', e?.message || 'Could not save this card.');
+      Alert.alert(t('addcard_save_failed_title'), e?.message || t('addcard_save_failed_message'));
       setSaving(false);
       return;
     }
@@ -148,15 +148,15 @@ export function AddCardModal({
     if (wantsVault) {
       try {
         await api.createVaultDoc({
-          title: title.trim() || initialDraft!.title || 'Scanned document',
+          title: title.trim() || initialDraft!.title || t('addcard_scanned_document'),
           category: initialDraft!.vault_category || 'School',
           image_base64: initialDraft!.image_base64!,
         });
-        Alert.alert('Saved', 'Card created and scanned document saved to Vault.');
+        Alert.alert(t('addcard_saved_title'), t('addcard_saved_vault_message'));
       } catch (e: any) {
         // Card already saved; only the vault copy failed — inform, don't retry.
         logger.warn('vault save error', e);
-        Alert.alert('Card saved', "Your card was created, but the document couldn't be added to the Vault. You can add it later from the Vault tab.");
+        Alert.alert(t('addcard_card_saved_title'), t('addcard_vault_failed_message'));
       }
     }
   };
@@ -258,10 +258,10 @@ export function AddCardModal({
                 <View style={styles.suggestRow}>
                   <Sparkles color={theme.colors.accent} size={11} />
                   {suggestLoading ? (
-                    <Text style={[styles.suggestText, { color: theme.colors.textMuted }]}>AI is thinking...</Text>
+                    <Text style={[styles.suggestText, { color: theme.colors.textMuted }]}>{t('addcard_ai_thinking')}</Text>
                   ) : (
                     <>
-                      <Text style={[styles.suggestText, { color: theme.colors.textMuted }]}>Suggested:</Text>
+                      <Text style={[styles.suggestText, { color: theme.colors.textMuted }]}>{t('addcard_suggested')}</Text>
                       <PressScale
                         testID={`suggest-${suggestedAssignee}`}
                         onPress={() => setAssignee(suggestedAssignee)}

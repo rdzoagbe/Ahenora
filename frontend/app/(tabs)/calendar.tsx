@@ -26,6 +26,8 @@ const TYPE_COLOR: Record<string, string> = {
 
 const GOOGLE_CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.events.readonly';
 
+type TFunc = (key: string) => string;
+
 function startOfLocalDay(date: Date) {
   const d = new Date(date);
   d.setHours(0, 0, 0, 0);
@@ -45,14 +47,14 @@ function cardDateKey(card: Card) {
   return dateKey(new Date(card.due_date));
 }
 
-async function openExternal(url: string) {
+async function openExternal(url: string, t: TFunc) {
   // Never let a failed openURL become an unhandled rejection with no feedback.
   try {
     const ok = await Linking.canOpenURL(url).catch(() => true);
     if (ok === false) throw new Error('unsupported');
     await Linking.openURL(url);
   } catch {
-    Alert.alert("Couldn't open", 'No app is available to open this link on your device.');
+    Alert.alert(t('cal_couldnt_open'), t('cal_no_app_available'));
   }
 }
 
@@ -60,13 +62,13 @@ function cleanText(value?: string | null) {
   return (value || '').replace(/Ãƒâ€šÃ‚Â·/g, '-').replace(/Â/g, '').trim();
 }
 
-function linkLabel(url: string): string {
-  if (/teams\.microsoft|teams\.live/i.test(url)) return 'Teams Meeting';
-  if (/zoom\.us/i.test(url)) return 'Zoom Meeting';
-  if (/meet\.google/i.test(url)) return 'Google Meet';
-  if (/calendar\.google/i.test(url)) return 'View in Google Calendar';
-  if (/webex/i.test(url)) return 'Webex Meeting';
-  return 'Open link';
+function linkLabel(url: string, t: TFunc): string {
+  if (/teams\.microsoft|teams\.live/i.test(url)) return t('cal_teams_meeting');
+  if (/zoom\.us/i.test(url)) return t('cal_zoom_meeting');
+  if (/meet\.google/i.test(url)) return t('cal_google_meet');
+  if (/calendar\.google/i.test(url)) return t('cal_view_in_google_calendar');
+  if (/webex/i.test(url)) return t('cal_webex_meeting');
+  return t('cal_open_link');
 }
 
 function isVideoLink(url: string): boolean {
@@ -80,7 +82,7 @@ interface DescriptionParts {
   links: { url: string; label: string; isVideo: boolean }[];
 }
 
-function parseDescription(raw?: string | null): DescriptionParts {
+function parseDescription(raw: string | null | undefined, t: TFunc): DescriptionParts {
   if (!raw) return { text: '', location: null, people: null, links: [] };
   const cleaned = cleanText(raw);
   const lines = cleaned.split('\n');
@@ -98,7 +100,7 @@ function parseDescription(raw?: string | null): DescriptionParts {
       if (loc && !/^https?:\/\//i.test(loc)) {
         location = loc;
       } else if (loc) {
-        links.push({ url: loc, label: linkLabel(loc), isVideo: isVideoLink(loc) });
+        links.push({ url: loc, label: linkLabel(loc, t), isVideo: isVideoLink(loc) });
       }
       continue;
     }
@@ -110,14 +112,14 @@ function parseDescription(raw?: string | null): DescriptionParts {
 
     if (/^Google Calendar:\s*/i.test(trimmed)) {
       const url = trimmed.replace(/^Google Calendar:\s*/i, '').trim();
-      if (url) links.push({ url, label: 'View in Google Calendar', isVideo: false });
+      if (url) links.push({ url, label: t('cal_view_in_google_calendar'), isVideo: false });
       continue;
     }
 
     const urlMatch = trimmed.match(/https?:\/\/[^\s]+/g);
     if (urlMatch) {
       for (const url of urlMatch) {
-        links.push({ url, label: linkLabel(url), isVideo: isVideoLink(url) });
+        links.push({ url, label: linkLabel(url, t), isVideo: isVideoLink(url) });
       }
       const remaining = trimmed.replace(/https?:\/\/[^\s]+/g, '').trim();
       if (remaining) textLines.push(remaining);
@@ -241,13 +243,13 @@ export default function Calendar() {
     const importCalendar = async () => {
       if (!calendarResponse || handledCalendarResponseRef.current) return;
       if (calendarResponse.type !== 'success') {
-        if (calendarResponse.type === 'error') Alert.alert('Calendar sync failed', 'Google Calendar permission was not granted.');
+        if (calendarResponse.type === 'error') Alert.alert(t('cal_calendar_sync_failed'), t('cal_permission_not_granted'));
         return;
       }
       handledCalendarResponseRef.current = true;
       const accessToken = calendarResponse.authentication?.accessToken || calendarResponse.params?.access_token;
       if (!accessToken) {
-        Alert.alert('Calendar sync failed', 'Google did not return a calendar access token.');
+        Alert.alert(t('cal_calendar_sync_failed'), t('cal_google_no_access_token'));
         handledCalendarResponseRef.current = false;
         return;
       }
@@ -256,10 +258,10 @@ export default function Calendar() {
         const result = await api.importGoogleCalendar(accessToken, 30);
         setSyncResult(result);
         await load();
-        Alert.alert('Calendar synced', `${result.imported} events imported. ${result.contacts_found} people found.`);
+        Alert.alert(t('cal_calendar_synced'), `${result.imported} ${t('cal_events_imported')}. ${result.contacts_found} ${t('cal_people_found')}.`);
       } catch (e: any) {
         logger.warn('calendar sync failed', e);
-        Alert.alert('Calendar sync failed', e?.message || 'Please try again.');
+        Alert.alert(t('cal_calendar_sync_failed'), e?.message || t('cal_please_try_again'));
       } finally {
         setSyncing(false);
         handledCalendarResponseRef.current = false;
@@ -306,14 +308,14 @@ export default function Calendar() {
 
     if (Platform.OS !== 'web') {
       if (!webClientId) {
-        Alert.alert('Google Calendar not configured', 'Missing Google web client ID.');
-        setCalendarSyncStatus('Google web client ID is missing.');
+        Alert.alert(t('cal_google_not_configured'), t('cal_missing_web_client_id'));
+        setCalendarSyncStatus(t('cal_web_client_id_missing'));
         return;
       }
 
       try {
         setSyncing(true);
-        setCalendarSyncStatus('Opening native Google Calendar permission...');
+        setCalendarSyncStatus(t('cal_opening_native_permission'));
 
         GoogleSignin.configure({ webClientId, scopes: ['profile', 'email', GOOGLE_CALENDAR_SCOPE], offlineAccess: false });
         await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
@@ -355,17 +357,17 @@ export default function Calendar() {
         }
 
         if (!tokens.accessToken) {
-          setCalendarSyncStatus('Google connected, but no Calendar access token was returned.');
-          Alert.alert('Calendar sync failed', 'Google connected, but no Calendar access token was returned.');
+          setCalendarSyncStatus(t('cal_connected_no_access_token'));
+          Alert.alert(t('cal_calendar_sync_failed'), t('cal_connected_no_access_token'));
           return;
         }
 
-        setCalendarSyncStatus('Importing Google Calendar events...');
+        setCalendarSyncStatus(t('cal_importing_events'));
         const result = await api.importGoogleCalendar(tokens.accessToken, 30);
         setSyncResult(result);
         await load();
-        setCalendarSyncStatus(`${result.imported} events imported. ${result.contacts_found} people found.`);
-        Alert.alert('Calendar synced', `${result.imported} events imported. ${result.contacts_found} people found.`);
+        setCalendarSyncStatus(`${result.imported} ${t('cal_events_imported')}. ${result.contacts_found} ${t('cal_people_found')}.`);
+        Alert.alert(t('cal_calendar_synced'), `${result.imported} ${t('cal_events_imported')}. ${result.contacts_found} ${t('cal_people_found')}.`);
       } catch (e: any) {
         // User cancelled the Google chooser — not an error, say nothing scary.
         const code = e?.code || '';
@@ -374,9 +376,9 @@ export default function Calendar() {
           return;
         }
         logger.warn('native google calendar sync failed', e);
-        const message = e?.message || e?.code || 'Native Google Calendar permission failed.';
-        setCalendarSyncStatus(`Calendar sync failed: ${message}`);
-        Alert.alert('Calendar sync failed', message);
+        const message = e?.message || e?.code || t('cal_native_permission_failed');
+        setCalendarSyncStatus(`${t('cal_calendar_sync_failed')}: ${message}`);
+        Alert.alert(t('cal_calendar_sync_failed'), message);
       } finally {
         setSyncing(false);
       }
@@ -385,19 +387,19 @@ export default function Calendar() {
     }
 
     if (!webClientId || !androidClientId) {
-      Alert.alert('Google Calendar not configured', 'Missing Google OAuth client IDs.');
-      setCalendarSyncStatus('Google OAuth client IDs are missing.');
+      Alert.alert(t('cal_google_not_configured'), t('cal_missing_oauth_client_ids'));
+      setCalendarSyncStatus(t('cal_oauth_client_ids_missing'));
       return;
     }
 
     if (!calendarRequest) {
-      Alert.alert('Google Calendar not ready', 'Please try again in a moment.');
-      setCalendarSyncStatus('Google Calendar connection is preparing. Try again in a few seconds.');
+      Alert.alert(t('cal_google_not_ready'), t('cal_try_again_moment'));
+      setCalendarSyncStatus(t('cal_connection_preparing'));
       return;
     }
 
     try {
-      setCalendarSyncStatus('Opening Google Calendar connection...');
+      setCalendarSyncStatus(t('cal_opening_connection'));
       handledCalendarResponseRef.current = false;
 
       const result = (await promptCalendarAsync()) as any;
@@ -405,25 +407,25 @@ export default function Calendar() {
 
       if (!accessToken) {
         logger.warn('calendar auth returned no access token', result);
-        setCalendarSyncStatus('Google connected, but no calendar access token was returned.');
-        Alert.alert('Calendar sync failed', 'Google connected, but no calendar access token was returned.');
+        setCalendarSyncStatus(t('cal_connected_no_access_token'));
+        Alert.alert(t('cal_calendar_sync_failed'), t('cal_connected_no_access_token'));
         return;
       }
 
       setSyncing(true);
-      setCalendarSyncStatus('Importing Google Calendar events...');
+      setCalendarSyncStatus(t('cal_importing_events'));
 
       const importResult = await api.importGoogleCalendar(accessToken, 30);
       setSyncResult(importResult);
       await load();
 
-      setCalendarSyncStatus(`${importResult.imported} events imported. ${importResult.contacts_found} people found.`);
-      Alert.alert('Calendar synced', `${importResult.imported} events imported. ${importResult.contacts_found} people found.`);
+      setCalendarSyncStatus(`${importResult.imported} ${t('cal_events_imported')}. ${importResult.contacts_found} ${t('cal_people_found')}.`);
+      Alert.alert(t('cal_calendar_synced'), `${importResult.imported} ${t('cal_events_imported')}. ${importResult.contacts_found} ${t('cal_people_found')}.`);
     } catch (e: any) {
       logger.warn('calendar sync failed', e);
-      const message = e?.message || 'Please try again.';
-      setCalendarSyncStatus(`Calendar sync failed: ${message}`);
-      Alert.alert('Calendar sync failed', message);
+      const message = e?.message || t('cal_please_try_again');
+      setCalendarSyncStatus(`${t('cal_calendar_sync_failed')}: ${message}`);
+      Alert.alert(t('cal_calendar_sync_failed'), message);
     } finally {
       setSyncing(false);
     }
@@ -453,13 +455,13 @@ export default function Calendar() {
         scrollViewProps={{ contentContainerStyle: styles.scroll }}
       >
           <ScreenHeader
-            eyebrow="Family Calendar"
+            eyebrow={t('cal_family_calendar')}
             title={monthTitle}
             titleSize={30}
             right={
               <PressScale testID="sync-google-calendar" onPress={syncCalendar} disabled={syncDisabled} style={[styles.syncBtn, syncDisabled && { opacity: 0.55 }]}>
                 {syncing ? <ActivityIndicator color="#FFFFFF" size="small" /> : <RefreshCw color="#FFFFFF" size={16} />}
-                <Text style={styles.syncText}>{syncing ? 'Syncing' : 'Sync'}</Text>
+                <Text style={styles.syncText}>{syncing ? t('cal_syncing') : t('cal_sync')}</Text>
               </PressScale>
             }
           />
@@ -470,7 +472,7 @@ export default function Calendar() {
               <View testID="calendar-sync-card" style={styles.bannerInner}>
                 <IconTile bg={ui.orangeSoft} size={40} radius={13}><CalendarDays color={ui.orange} size={20} /></IconTile>
                 <Text style={styles.bannerText} numberOfLines={2}>
-                  {calendarSyncStatus || (syncResult ? `${syncResult.imported} events imported · ${syncResult.contacts_found} people found.` : 'Connected to Google Calendar. We only read titles & times.')}
+                  {calendarSyncStatus || (syncResult ? `${syncResult.imported} ${t('cal_events_imported')} · ${syncResult.contacts_found} ${t('cal_people_found')}.` : t('cal_connected_read_only'))}
                 </Text>
               </View>
             </KitCard>
@@ -529,14 +531,14 @@ export default function Calendar() {
           {/* Day events */}
           <View style={styles.dayHead}>
             <Text style={styles.dayHeadTitle}>{selectedDay ? formatDayFull(selectedDay) : t('upcoming')}</Text>
-            {selectedDay ? <Text style={styles.dayHeadCount}>{totalSelectedEvents} event{totalSelectedEvents === 1 ? '' : 's'}</Text> : null}
+            {selectedDay ? <Text style={styles.dayHeadCount}>{totalSelectedEvents} {totalSelectedEvents === 1 ? t('cal_event') : t('cal_events')}</Text> : null}
           </View>
 
           {loading ? (
             <ActivityIndicator color={ui.orange} style={{ marginTop: 30 }} />
           ) : groups.length === 0 ? (
             <KitCard style={styles.empty}>
-              <Text style={styles.emptyText}>{selectedDay ? 'No events on this date.' : t('no_events')}</Text>
+              <Text style={styles.emptyText}>{selectedDay ? t('cal_no_events_date') : t('no_events')}</Text>
             </KitCard>
           ) : (
             <KitCard style={styles.timelineCard}>
@@ -544,7 +546,7 @@ export default function Calendar() {
                 const color = TYPE_COLOR[card.type] || ui.mintText;
                 const isGoogle = card.source === 'CALENDAR' || card.external_source === 'google_calendar';
                 const { time, ampm } = timeParts(card.due_date);
-                const sub = cleanText(card.description) || cleanText(card.assignee) || (isGoogle ? 'Google Calendar' : 'Family');
+                const sub = cleanText(card.description) || cleanText(card.assignee) || (isGoogle ? t('cal_google_calendar') : t('cal_family'));
                 return (
                   <PressScale key={card.card_id} testID={`calendar-card-${card.card_id}`} onPress={() => setSelectedCard(card)} style={[styles.eventRow, index < arr.length - 1 && styles.eventRowBorder]}>
                     <View style={styles.timeBlock}>
@@ -567,14 +569,14 @@ export default function Calendar() {
             <View style={styles.carpoolSection}>
               <View style={styles.carpoolHeader}>
                 <Car color={ui.orange} size={18} />
-                <Text style={styles.carpoolTitle}>Carpool Schedule</Text>
+                <Text style={styles.carpoolTitle}>{t('cal_carpool_schedule')}</Text>
                 <LockBadge onPress={() => promptUpgrade('carpool')} />
               </View>
               <KitCard style={{ paddingHorizontal: 14 }}>
                 <PressScale onPress={() => promptUpgrade('carpool')} style={styles.carpoolRow}>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.carpoolName}>Coordinate school & activity carpools</Text>
-                    <Text style={styles.carpoolSub}>Available on Executive and Family Office plans.</Text>
+                    <Text style={styles.carpoolName}>{t('cal_coordinate_carpools')}</Text>
+                    <Text style={styles.carpoolSub}>{t('cal_carpool_upsell')}</Text>
                   </View>
                 </PressScale>
               </KitCard>
@@ -583,7 +585,7 @@ export default function Calendar() {
             <View style={styles.carpoolSection}>
               <View style={styles.carpoolHeader}>
                 <Car color={ui.orange} size={18} />
-                <Text style={styles.carpoolTitle}>Carpool Schedule</Text>
+                <Text style={styles.carpoolTitle}>{t('cal_carpool_schedule')}</Text>
               </View>
               <KitCard style={{ paddingHorizontal: 14 }}>
                 {carpools.map((cp) => (
@@ -622,12 +624,12 @@ export default function Calendar() {
             </View>
             <View style={styles.detailMetaRow}>
               <User color={ui.muted} size={17} />
-              <Text style={styles.detailMetaText}>{cleanText(selectedCard.assignee) || 'Unassigned'}</Text>
+              <Text style={styles.detailMetaText}>{cleanText(selectedCard.assignee) || t('cal_unassigned')}</Text>
             </View>
             {(() => {
-              const parts = parseDescription(selectedCard.description);
+              const parts = parseDescription(selectedCard.description, t);
               const hasContent = parts.text || parts.location || parts.people || parts.links.length > 0;
-              if (!hasContent) return <Text style={[styles.detailDescription, { color: ui.muted }]}>No additional details.</Text>;
+              if (!hasContent) return <Text style={[styles.detailDescription, { color: ui.muted }]}>{t('cal_no_additional_details')}</Text>;
               return (
                 <View style={styles.detailBody}>
                   {parts.text ? <Text style={styles.detailDescription}>{parts.text}</Text> : null}
@@ -635,7 +637,7 @@ export default function Calendar() {
                     <Pressable
                       onPress={() => {
                         const q = encodeURIComponent(parts.location!);
-                        openExternal(Platform.OS === 'ios' ? `maps:?q=${q}` : `geo:0,0?q=${q}`);
+                        openExternal(Platform.OS === 'ios' ? `maps:?q=${q}` : `geo:0,0?q=${q}`, t);
                       }}
                       style={styles.detailChip}
                     >
@@ -645,7 +647,7 @@ export default function Calendar() {
                     </Pressable>
                   ) : null}
                   {parts.links.map((link, i) => (
-                    <Pressable key={i} onPress={() => openExternal(link.url)} style={styles.detailChip}>
+                    <Pressable key={i} onPress={() => openExternal(link.url, t)} style={styles.detailChip}>
                       {link.isVideo ? <Video color={ui.orange} size={16} /> : <ExternalLink color={ui.orange} size={16} />}
                       <Text style={styles.detailChipText}>{link.label}</Text>
                       <ExternalLink color={ui.muted} size={13} />
@@ -664,19 +666,19 @@ export default function Calendar() {
               testID="calendar-complete-card"
               onPress={() => {
                 Alert.alert(
-                  'Mark as done?',
-                  `"${cleanText(selectedCard.title)}" will move to completed history.`,
+                  t('cal_mark_as_done_q'),
+                  `"${cleanText(selectedCard.title)}" ${t('cal_move_to_history')}`,
                   [
-                    { text: 'Cancel', style: 'cancel' },
+                    { text: t('cal_cancel'), style: 'cancel' },
                     {
-                      text: 'Done',
+                      text: t('cal_done'),
                       onPress: async () => {
                         try {
                           await api.updateCard(selectedCard.card_id, { status: 'DONE' });
                           setCards((prev) => prev.filter((c) => c.card_id !== selectedCard.card_id));
                           setSelectedCard(null);
                         } catch {
-                          Alert.alert('Error', 'Could not update this card.');
+                          Alert.alert(t('cal_error'), t('cal_could_not_update'));
                         }
                       },
                     },
@@ -686,7 +688,7 @@ export default function Calendar() {
               style={styles.completeBtn}
             >
               <CheckCircle2 color="#FFFFFF" size={18} />
-              <Text style={styles.completeBtnText}>Mark as done</Text>
+              <Text style={styles.completeBtnText}>{t('cal_mark_as_done')}</Text>
             </PressScale>
           </>
         ) : null}
