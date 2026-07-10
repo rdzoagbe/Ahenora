@@ -465,11 +465,11 @@ export default function Feed() {
 
             <View style={styles.heroRow}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.heroTitle}>{headline}</Text>
+                <Text style={styles.heroTitle} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.6}>{headline}</Text>
                 <Text style={styles.subtitle}>Household COO</Text>
               </View>
               <View style={styles.calmCard}>
-                <Text style={styles.calmLabel}>{t('feed_calm')}</Text>
+                <Text style={styles.calmLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>{t('feed_calm')}</Text>
                 <Text style={styles.calmValue}>{dashboard.calmScore}</Text>
               </View>
             </View>
@@ -484,19 +484,19 @@ export default function Feed() {
                   <View style={[styles.actionDot, { backgroundColor: ui.lavender }]}>
                     <Camera color={ui.lavenderText} size={18} />
                   </View>
-                  <Text style={styles.actionPillText}>{t('feed_photo')}</Text>
+                  <Text style={styles.actionPillText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>{t('feed_photo')}</Text>
                 </PressScale>
                 <PressScale onPress={() => setShowVoice(true)} style={styles.actionPill}>
                   <View style={[styles.actionDot, { backgroundColor: ui.mint }]}>
                     <Mic color={ui.mintText} size={18} />
                   </View>
-                  <Text style={styles.actionPillText}>{t('feed_voice')}</Text>
+                  <Text style={styles.actionPillText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>{t('feed_voice')}</Text>
                 </PressScale>
                 <PressScale onPress={openManual} style={[styles.actionPill, styles.actionPillAccent]}>
                   <View style={[styles.actionDot, { backgroundColor: 'rgba(255,255,255,0.24)' }]}>
                     <Plus color="#FFFFFF" size={18} />
                   </View>
-                  <Text style={styles.actionPillAccentText}>{t('feed_add')}</Text>
+                  <Text style={styles.actionPillAccentText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>{t('feed_add')}</Text>
                 </PressScale>
               </View>
             </View>
@@ -521,17 +521,17 @@ export default function Feed() {
             <View style={styles.statsStrip}>
               <View style={styles.statCell}>
                 <Text style={styles.statNumber}>{dashboard.todayCards.length}</Text>
-                <Text style={styles.statLabel}>{t('feed_due_today')}</Text>
+                <Text style={styles.statLabel} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.7}>{t('feed_due_today')}</Text>
               </View>
               <View style={styles.statDivider} />
               <View style={styles.statCell}>
                 <Text style={[styles.statNumber, { color: ui.orange }]}>{dashboard.signSlips.length}</Text>
-                <Text style={styles.statLabel}>{t('feed_sign_slips')}</Text>
+                <Text style={styles.statLabel} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.7}>{t('feed_sign_slips')}</Text>
               </View>
               <View style={styles.statDivider} />
               <View style={styles.statCell}>
                 <Text style={styles.statNumber}>{dashboard.weekCards.length}</Text>
-                <Text style={styles.statLabel}>{t('feed_this_week')}</Text>
+                <Text style={styles.statLabel} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.7}>{t('feed_this_week')}</Text>
               </View>
             </View>
 
@@ -960,6 +960,8 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     gap: 10,
   },
   actionPill: {
+    flexShrink: 1,
+    minWidth: 0,
     flex: 1,
     height: 46,
     borderRadius: 13,
@@ -1008,6 +1010,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     elevation: 2,
   },
   statCell: {
+    minWidth: 0,
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
