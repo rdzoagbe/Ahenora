@@ -19,7 +19,7 @@ function TabIcon({ focused, Icon, label }: { focused: boolean; Icon: any; label:
         <Icon color={color} size={21} strokeWidth={focused ? 2.4 : 2} />
         <Text
           style={[styles.tabLabel, { color, fontFamily: focused ? 'Inter_800ExtraBold' : 'Inter_600SemiBold' }]}
-          numberOfLines={1}
+          numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}
         >
           {label}
         </Text>
@@ -38,7 +38,7 @@ function TabIcon({ focused, Icon, label }: { focused: boolean; Icon: any; label:
           styles.tabLabel,
           { color: focused ? activeColor : inactiveColor, fontFamily: focused ? 'Inter_800ExtraBold' : 'Inter_600SemiBold' },
         ]}
-        numberOfLines={1}
+        numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}
       >
         {label}
       </Text>
