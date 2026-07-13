@@ -47,6 +47,13 @@ export async function configureNotificationChannels() {
     lightColor: '#F59E0B',
   });
 
+  await Notifications.setNotificationChannelAsync('daily-tips', {
+    name: 'Daily tips',
+    importance: Notifications.AndroidImportance.LOW,
+    vibrationPattern: [0],
+    sound: null,
+  });
+
   await Notifications.setNotificationChannelAsync('household-alerts', {
     name: 'Household alerts',
     importance: Notifications.AndroidImportance.HIGH,
@@ -205,6 +212,29 @@ export async function syncCardReminderNotifications(cards: Card[], enabled: bool
   return { scheduled: Object.keys(nextMap).length };
 }
 
+const NOTIF_ASKED_KEY = 'coo_notif_permission_asked';
+
+/**
+ * Requests notification permission a single time (e.g. on first feed load
+ * after this feature ships). If the user declines, we never ask again from
+ * here — they can still enable it via Settings.
+ */
+export async function ensureAskedNotificationPermissionOnce() {
+  try {
+    const asked = await AsyncStorage.getItem(NOTIF_ASKED_KEY);
+    if (asked) return;
+    await AsyncStorage.setItem(NOTIF_ASKED_KEY, '1');
+    const Notifications = await getNotificationsModule();
+    if (!Notifications) return;
+    const current = await Notifications.getPermissionsAsync();
+    if (current.status !== 'granted') {
+      await Notifications.requestPermissionsAsync();
+    }
+  } catch {
+    // Permission prompts must never break the feed.
+  }
+}
+
 const DIGEST_ID_KEY = 'coo_morning_digest_id';
 
 /**
@@ -215,7 +245,8 @@ const DIGEST_ID_KEY = 'coo_morning_digest_id';
  */
 export async function syncMorningDigest(
   enabled: boolean,
-  digest: { title: string; body: string } | null
+  digest: { title: string; body: string } | null,
+  quietTip?: { title: string; body: string } | null
 ) {
   const Notifications = await getNotificationsModule();
   if (!Notifications) return { scheduled: false };
@@ -226,7 +257,12 @@ export async function syncMorningDigest(
     await AsyncStorage.removeItem(DIGEST_ID_KEY).catch(() => undefined);
   }
 
-  if (!enabled || !digest) return { scheduled: false };
+  // With items due: normal digest. With nothing due: a SILENT rotating tip on
+  // the low-priority channel — no sound, no vibration, just a gentle presence
+  // in the tray that keeps quiet-day users coming back.
+  const content = digest ?? quietTip ?? null;
+  if (!enabled || !content) return { scheduled: false };
+  const quiet = !digest;
 
   const permissions = await Notifications.getPermissionsAsync();
   if (permissions.status !== 'granted') return { scheduled: false };
@@ -239,15 +275,15 @@ export async function syncMorningDigest(
 
   const identifier = await Notifications.scheduleNotificationAsync({
     content: {
-      title: digest.title,
-      body: digest.body,
-      sound: true,
-      data: { type: 'morning_digest' },
+      title: content.title,
+      body: content.body,
+      sound: !quiet,
+      data: { type: quiet ? 'daily_tip' : 'morning_digest' },
     },
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.DATE,
       date: at,
-      channelId: 'card-reminders',
+      channelId: quiet ? 'daily-tips' : 'card-reminders',
     } as any,
   });
   await AsyncStorage.setItem(DIGEST_ID_KEY, identifier).catch(() => undefined);

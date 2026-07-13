@@ -12,6 +12,11 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  tip_scan: "Quiet day 😌 Try scanning a school letter or a bill 📸",
+  tip_note: "Leave a handoff note for your co-parent 💬",
+  tip_kids: "Add a chore and award some stars today ⭐",
+  tip_meal: "Plan tonight's dinner in the meal planner 🍝",
+  tip_vault: "Save an important document to your vault 🔒",
   feed_past_event: "past event — did it happen? Clear it from your feed?",
   feed_past_events: "past events — did they happen? Clear them from your feed?",
   feed_keep: "Keep",
@@ -746,6 +751,11 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  tip_scan: "Día tranquilo 😌 Prueba a escanear una carta del colegio o una factura 📸",
+  tip_note: "Deja una nota de relevo para tu copadre o comadre 💬",
+  tip_kids: "Añade una tarea y regala estrellas hoy ⭐",
+  tip_meal: "Planifica la cena de esta noche en el planificador 🍝",
+  tip_vault: "Guarda un documento importante en tu bóveda 🔒",
   feed_past_event: "evento pasado — ¿se realizó? ¿Quitarlo del feed?",
   feed_past_events: "eventos pasados — ¿se realizaron? ¿Quitarlos del feed?",
   feed_keep: "Mantener",
@@ -1474,6 +1484,11 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  tip_scan: "Journée calme 😌 Essayez de scanner un mot d'école ou une facture 📸",
+  tip_note: "Laissez une note de relais à votre co-parent 💬",
+  tip_kids: "Ajoutez une corvée et offrez des étoiles aujourd'hui ⭐",
+  tip_meal: "Planifiez le dîner de ce soir dans le planificateur de repas 🍝",
+  tip_vault: "Enregistrez un document important dans votre coffre 🔒",
   feed_past_event: "événement passé — a-t-il eu lieu ? Le retirer du fil ?",
   feed_past_events: "événements passés — ont-ils eu lieu ? Les retirer du fil ?",
   feed_keep: "Garder",
@@ -2202,6 +2217,11 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  tip_scan: "Ruhiger Tag 😌 Scanne doch einen Schulbrief oder eine Rechnung 📸",
+  tip_note: "Hinterlasse eine Übergabenotiz für deinen Mitelternteil 💬",
+  tip_kids: "Füge eine Aufgabe hinzu und vergib heute Sterne ⭐",
+  tip_meal: "Plane das Abendessen im Essensplaner 🍝",
+  tip_vault: "Speichere ein wichtiges Dokument in deinem Tresor 🔒",
   feed_past_event: "vergangener Termin — hat er stattgefunden? Aus dem Feed entfernen?",
   feed_past_events: "vergangene Termine — haben sie stattgefunden? Aus dem Feed entfernen?",
   feed_keep: "Behalten",
