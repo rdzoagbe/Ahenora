@@ -40,7 +40,7 @@ import { useStore } from '../../src/store';
 import { usePremiumGate, LockBadge } from '../../src/components/PremiumGate';
 import { useUI, UIColors } from '../../src/components/Kit';
 import { api, logEvent, Announcement, Card, CardType, FamilyMember, HandoffNote, Template, WeeklyReport } from '../../src/api';
-import { syncCardReminderNotifications, syncMorningDigest } from '../../src/notifications';
+import { syncCardReminderNotifications, syncMorningDigest, ensureAskedNotificationPermissionOnce } from '../../src/notifications';
 import { logger } from '../../src/logger';
 
 interface VoiceDraft {
@@ -181,6 +181,7 @@ export default function Feed() {
 
   const load = useCallback(async () => {
     logEvent('feed_open');
+    ensureAskedNotificationPermissionOnce().catch(() => undefined);
     try {
       const [cardsResult, membersResult, rewardsResult, vaultResult, notesResult, templatesResult, annResult] = await Promise.allSettled([
         api.listCards(),
@@ -251,7 +252,12 @@ export default function Feed() {
                 body: `${dueTomorrow.length} ${dueTomorrow.length === 1 ? t('digest_item_one') : t('digest_item_many')}: ${names}${extra}`,
               };
             }
-            syncMorningDigest(prefs.card_reminders, payload).catch(() => undefined);
+            const tipKeys = ['tip_scan', 'tip_note', 'tip_kids', 'tip_meal', 'tip_vault'];
+            const tipKey = tipKeys[new Date().getDate() % tipKeys.length];
+            const quietTip = { title: t('digest_title'), body: t(tipKey) };
+            // Quiet tip is silent (low-priority channel) so it is enabled by
+            // default; the content digest still respects the reminders toggle.
+            syncMorningDigest(true, prefs.card_reminders ? payload : null, quietTip).catch(() => undefined);
           })
           .catch(() => undefined);
       }
