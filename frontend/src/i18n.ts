@@ -12,6 +12,10 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  feed_past_event: "past event — did it happen? Clear it from your feed?",
+  feed_past_events: "past events — did they happen? Clear them from your feed?",
+  feed_keep: "Keep",
+  feed_clear: "Clear",
   digest_title: "Good morning 👋",
   digest_item_one: "thing for today",
   digest_item_many: "things for today",
@@ -742,6 +746,10 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  feed_past_event: "evento pasado — ¿se realizó? ¿Quitarlo del feed?",
+  feed_past_events: "eventos pasados — ¿se realizaron? ¿Quitarlos del feed?",
+  feed_keep: "Mantener",
+  feed_clear: "Quitar",
   digest_title: "Buenos días 👋",
   digest_item_one: "cosa para hoy",
   digest_item_many: "cosas para hoy",
@@ -1466,6 +1474,10 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  feed_past_event: "événement passé — a-t-il eu lieu ? Le retirer du fil ?",
+  feed_past_events: "événements passés — ont-ils eu lieu ? Les retirer du fil ?",
+  feed_keep: "Garder",
+  feed_clear: "Retirer",
   digest_title: "Bonjour 👋",
   digest_item_one: "chose pour aujourd'hui",
   digest_item_many: "choses pour aujourd'hui",
@@ -2190,6 +2202,10 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  feed_past_event: "vergangener Termin — hat er stattgefunden? Aus dem Feed entfernen?",
+  feed_past_events: "vergangene Termine — haben sie stattgefunden? Aus dem Feed entfernen?",
+  feed_keep: "Behalten",
+  feed_clear: "Entfernen",
   digest_title: "Guten Morgen 👋",
   digest_item_one: "Sache für heute",
   digest_item_many: "Dinge für heute",

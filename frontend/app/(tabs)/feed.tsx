@@ -175,6 +175,9 @@ export default function Feed() {
   const [expandReport, setExpandReport] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [runningTemplate, setRunningTemplate] = useState<string | null>(null);
+  // Calendar events whose day has fully passed. Tasks stay (overdue = still to
+  // do), but a past event is history — we prompt before clearing, never silently.
+  const [pastPromptDismissed, setPastPromptDismissed] = useState(false);
 
   const load = useCallback(async () => {
     logEvent('feed_open');
@@ -267,6 +270,30 @@ export default function Feed() {
   );
 
   const activeCards = useMemo(() => cards.filter((card) => card.status === 'OPEN'), [cards]);
+
+  const pastEvents = useMemo(() => {
+    const startToday = new Date();
+    startToday.setHours(0, 0, 0, 0);
+    return activeCards.filter((c) => {
+      const isEvent = c.source === 'CALENDAR' || !!c.google_event_id;
+      if (!isEvent) return false;
+      const time = dueTime(c);
+      return time !== null && time < startToday.getTime();
+    });
+  }, [activeCards]);
+
+  const clearPastEvents = useCallback(async () => {
+    const ids = pastEvents.map((c) => c.card_id);
+    if (ids.length === 0) return;
+    ids.forEach((id) => pendingDismissRef.current.add(id));
+    setCards((prev) => prev.filter((c) => !ids.includes(c.card_id)));
+    const results = await Promise.allSettled(ids.map((id) => api.updateCard(id, { status: 'DONE' })));
+    if (results.some((r) => r.status === 'rejected')) {
+      ids.forEach((id) => pendingDismissRef.current.delete(id));
+      Alert.alert(t('feed_could_not_update'), t('feed_change_not_saved'));
+      load();
+    }
+  }, [pastEvents, load, t]);
 
   const dashboard = useMemo(() => {
     const now = Date.now();
@@ -580,6 +607,21 @@ export default function Feed() {
               <ChevronRight color={ui.text} size={22} />
             </PressScale>
 
+            {pastEvents.length > 0 && !pastPromptDismissed ? (
+              <View style={[styles.pastBanner, { backgroundColor: ui.soft, borderColor: ui.line }]}>
+                <Clock color={ui.muted} size={16} />
+                <Text style={[styles.pastBannerText, { color: ui.text }]} numberOfLines={2}>
+                  {pastEvents.length} {pastEvents.length === 1 ? t('feed_past_event') : t('feed_past_events')}
+                </Text>
+                <PressScale testID="feed-past-keep" onPress={() => setPastPromptDismissed(true)} style={styles.pastBtn}>
+                  <Text style={[styles.pastBtnText, { color: ui.muted }]}>{t('feed_keep')}</Text>
+                </PressScale>
+                <PressScale testID="feed-past-clear" onPress={clearPastEvents} style={[styles.pastBtn, { backgroundColor: ui.orangeSoft }]}>
+                  <Text style={[styles.pastBtnText, { color: ui.orange }]}>{t('feed_clear')}</Text>
+                </PressScale>
+              </View>
+            ) : null}
+
             <View style={styles.tabRow}>
               {(['today', 'upcoming', 'all'] as const).map((tab) => (
                 <PressScale key={tab} onPress={() => setActiveTab(tab)} style={styles.tabItem} testID={`feed-tab-${tab}`}>
@@ -801,6 +843,19 @@ export default function Feed() {
 }
 
 const createStyles = (ui: UIColors) => StyleSheet.create({
+  pastBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginTop: 10,
+  },
+  pastBannerText: { flex: 1, fontFamily: 'Inter_600SemiBold', fontSize: 12.5, lineHeight: 17 },
+  pastBtn: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 9999 },
+  pastBtnText: { fontFamily: 'Inter_700Bold', fontSize: 12.5 },
   emptyScanBtn: {
     flexDirection: 'row',
     alignItems: 'center',
