@@ -51,7 +51,14 @@ Display-only today. **Enforcement** (parents uncounted, children metered 1/4/10,
 - **Tablet landscape** (unlock portrait-only orientation; native change) + large-screen polish (Play ranking factor)
 - Deobfuscation mapping upload for native crash reports (nice-to-have)
 
-### Phase 4 — AI Gift Concierge (Executive-tier candidate)
+### Phase 4 — AI food & gifting (Executive-tier candidates)
+
+**AI Chef (fridge scan):** photograph the fridge/groceries → existing Gemini
+vision pipeline proposes meals that can be cooked from what's there; one tap
+adds missing ingredients to the shopping list. Same machinery as the document
+scan — new prompt, new UI.
+
+**AI Gift Concierge:**
 1. Birthday field on family members → "birthday coming up" feed card
 2. AI gift suggestions with budget (existing Gemini integration)
 3. Birthday message + family notification
