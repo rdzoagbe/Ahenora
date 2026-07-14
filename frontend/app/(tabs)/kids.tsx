@@ -53,16 +53,16 @@ type StarMode = 'add' | 'remove';
 const DEFAULT_REWARD_ICON = String.fromCodePoint(0x1F381);
 
 const REWARD_IDEAS = [
-  { title: 'Pizza night', cost_stars: 50, icon: String.fromCodePoint(0x1F355) },
-  { title: 'Movie night', cost_stars: 75, icon: String.fromCodePoint(0x1F3AC) },
-  { title: 'Ice cream treat', cost_stars: 40, icon: String.fromCodePoint(0x1F366) },
-  { title: 'Game time', cost_stars: 60, icon: String.fromCodePoint(0x1F3AE) },
+  { titleKey: 'ri_pizza', cost_stars: 50, icon: String.fromCodePoint(0x1F355) },
+  { titleKey: 'ri_movie', cost_stars: 75, icon: String.fromCodePoint(0x1F3AC) },
+  { titleKey: 'ri_icecream', cost_stars: 40, icon: String.fromCodePoint(0x1F366) },
+  { titleKey: 'ri_game', cost_stars: 60, icon: String.fromCodePoint(0x1F3AE) },
 ] as const;
 
 const QUICK_ADDS = [
-  { label: 'Made bed', amount: 2, Icon: Bed, bg: UI.mint, tint: UI.mintText },
-  { label: 'Read 20min', amount: 3, Icon: BookOpen, bg: UI.lavender, tint: UI.lavenderText },
-  { label: 'Set table', amount: 2, Icon: Utensils, bg: UI.orangeSoft, tint: UI.orange },
+  { labelKey: 'qa_bed', amount: 2, Icon: Bed, bg: UI.mint, tint: UI.mintText },
+  { labelKey: 'qa_read', amount: 3, Icon: BookOpen, bg: UI.lavender, tint: UI.lavenderText },
+  { labelKey: 'qa_table', amount: 2, Icon: Utensils, bg: UI.orangeSoft, tint: UI.orange },
 ];
 
 const CHILD_TINTS = [UI.orange, UI.lavenderText, UI.mintText, UI.goldText];
@@ -531,7 +531,7 @@ export default function Kids() {
                         <Text style={styles.childAvatarText}>{child.name[0]?.toUpperCase()}</Text>
                         {child.has_pin ? <View style={styles.lockBadge}><Lock color="#FFFFFF" size={8} /></View> : null}
                       </View>
-                      <Text style={[styles.childChipText, { color: active ? '#FFFFFF' : ui.text }]}>{child.name}</Text>
+                      <Text style={[styles.childChipText, { color: active ? ui.bg : ui.text }]}>{child.name}</Text>
                     </PressScale>
                   );
                 })}
@@ -575,9 +575,9 @@ export default function Kids() {
                       <Text style={styles.blockLabel}>{t('kids_quick_add')}</Text>
                       <View style={styles.quickAddRow}>
                         {QUICK_ADDS.map((q) => (
-                          <PressScale key={q.label} testID={`quick-add-${q.label}`} onPress={() => quickAdd(q.label, q.amount)} style={styles.quickAddChip}>
+                          <PressScale key={q.labelKey} testID={`quick-add-${q.labelKey}`} onPress={() => quickAdd(t(q.labelKey), q.amount)} style={styles.quickAddChip}>
                             <IconTile bg={q.bg} size={30} radius={9}><q.Icon color={q.tint} size={15} /></IconTile>
-                            <Text style={styles.quickAddText} numberOfLines={1}>{q.label}</Text>
+                            <Text style={styles.quickAddText} numberOfLines={1}>{t(q.labelKey)}</Text>
                             <Text style={styles.quickAddAmt}>+{q.amount}</Text>
                           </PressScale>
                         ))}
@@ -594,7 +594,7 @@ export default function Kids() {
                         <Card style={styles.emptyRewards}>
                           <Text style={styles.emptyRewardsText}>{t('no_rewards')}</Text>
                           <PressScale testID="kids-add-reward-empty" onPress={openCreateReward} style={styles.emptyRewardsBtn}>
-                            <Plus color="#FFFFFF" size={16} />
+                            <Plus color={ui.bg} size={16} />
                             <Text style={styles.emptyRewardsBtnText}>{t('kids_add_reward')}</Text>
                           </PressScale>
                         </Card>
@@ -635,9 +635,9 @@ export default function Kids() {
                       <Text style={styles.blockLabel}>{t('kids_quick_reward_ideas')}</Text>
                       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.ideaRow} style={styles.ideaScroll}>
                         {REWARD_IDEAS.map((idea) => (
-                          <PressScale key={idea.title} testID={idea.title} onPress={() => { setRewardMode('create'); setEditingReward(null); setRewardTitle(idea.title); setRewardCost(String(idea.cost_stars)); setRewardIcon(idea.icon); setShowRewardSheet(true); }} style={styles.ideaChip}>
+                          <PressScale key={idea.titleKey} testID={idea.titleKey} onPress={() => { setRewardMode('create'); setEditingReward(null); setRewardTitle(t(idea.titleKey)); setRewardCost(String(idea.cost_stars)); setRewardIcon(idea.icon); setShowRewardSheet(true); }} style={styles.ideaChip}>
                             <Text style={styles.ideaEmoji}>{idea.icon}</Text>
-                            <Text style={styles.ideaTitle} numberOfLines={1}>{idea.title}</Text>
+                            <Text style={styles.ideaTitle} numberOfLines={1}>{t(idea.titleKey)}</Text>
                             <Text style={styles.ideaCost}>{idea.cost_stars} {t('stars')}</Text>
                           </PressScale>
                         ))}
@@ -652,13 +652,10 @@ export default function Kids() {
                     <>
                       <View style={styles.starActions}>
                         <PressScale testID="kids-add-stars" onPress={() => openStarSheet('add', '5')} style={styles.addStarsBtn}>
-                          <Plus color="#FFFFFF" size={16} />
+                          <Plus color={ui.bg} size={16} />
                           <Text style={styles.addStarsText}>{t('kids_add_stars')}</Text>
                         </PressScale>
-                        <PressScale testID="kids-remove-stars" onPress={() => openStarSheet('remove', '5')} style={styles.removeStarsBtn}>
-                          <MinusCircle color={ui.muted} size={16} />
-                          <Text style={styles.removeStarsText}>{t('kids_remove')}</Text>
-                        </PressScale>
+
                       </View>
                       <View style={styles.quickRow}>
                         {['5', '10', '20'].map((amount) => (
@@ -830,14 +827,6 @@ export default function Kids() {
           <PressScale testID="close-stars" onPress={() => setShowStarSheet(false)} style={styles.iconBtn}><X color={ui.text} size={20} /></PressScale>
         </View>
         <Text style={styles.sheetHelp}>{t('kids_for')} {activeChild?.name || t('kids_selected_child')}</Text>
-        <View style={styles.modeRow}>
-          <PressScale testID="mode-add-stars" onPress={() => setStarMode('add')} style={[styles.modeBtn, { backgroundColor: starMode === 'add' ? ui.text : ui.soft }]}>
-            <Text style={[styles.modeText, { color: starMode === 'add' ? '#FFFFFF' : ui.muted }]}>{t('kids_add')}</Text>
-          </PressScale>
-          <PressScale testID="mode-remove-stars" onPress={() => setStarMode('remove')} style={[styles.modeBtn, { backgroundColor: starMode === 'remove' ? ui.text : ui.soft }]}>
-            <Text style={[styles.modeText, { color: starMode === 'remove' ? '#FFFFFF' : ui.muted }]}>{t('kids_remove')}</Text>
-          </PressScale>
-        </View>
         <Text style={styles.label}>{t('kids_amount')}</Text>
         <TextInput testID="star-amount" value={starAmount} onChangeText={(v) => setStarAmount(cleanNumber(v))} keyboardType="number-pad" placeholder="5" placeholderTextColor={ui.muted} style={styles.input} />
         <Text style={styles.label}>{t('kids_reason')}</Text>
@@ -932,7 +921,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   walletLabel: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 13 },
   walletCount: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 30, lineHeight: 35, marginTop: 1 },
   redeemBtn: { backgroundColor: ui.text, borderRadius: 99, paddingHorizontal: 20, paddingVertical: 13 },
-  redeemText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
+  redeemText: { color: ui.bg, fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
   weeklyLine: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 13.5, marginTop: 12, paddingHorizontal: 2 },
 
   tabRow: { flexDirection: 'row', gap: 26, borderBottomWidth: 1, borderBottomColor: ui.line, marginTop: 18 },
@@ -963,7 +952,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   rewardTitle: { flex: 1, color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 14.5 },
   rewardCount: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 12.5 },
   rewardRedeem: { backgroundColor: ui.text, borderRadius: 99, paddingHorizontal: 14, paddingVertical: 9 },
-  rewardRedeemText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 12.5 },
+  rewardRedeemText: { color: ui.bg, fontFamily: 'Inter_800ExtraBold', fontSize: 12.5 },
   rewardEdit: { width: 34, height: 34, borderRadius: 99, borderWidth: 1, borderColor: ui.line, alignItems: 'center', justifyContent: 'center' },
 
   ideaScroll: { marginHorizontal: -20 },
@@ -975,7 +964,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
 
   starActions: { flexDirection: 'row', gap: 10, marginTop: 4 },
   addStarsBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, backgroundColor: ui.text, borderRadius: 14, paddingVertical: 14 },
-  addStarsText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
+  addStarsText: { color: ui.bg, fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
   removeStarsBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, backgroundColor: ui.soft, borderWidth: 1, borderColor: ui.line, borderRadius: 14, paddingVertical: 14 },
   removeStarsText: { color: ui.muted, fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
   quickRow: { flexDirection: 'row', gap: 10, marginTop: 12 },

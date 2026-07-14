@@ -12,6 +12,13 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  qa_bed: "Made bed",
+  qa_read: "Read 20min",
+  qa_table: "Set table",
+  ri_pizza: "Pizza night",
+  ri_movie: "Movie night",
+  ri_icecream: "Ice cream treat",
+  ri_game: "Game time",
   tip_scan: "Quiet day 😌 Try scanning a school letter or a bill 📸",
   tip_note: "Leave a handoff note for your co-parent 💬",
   tip_kids: "Add a chore and award some stars today ⭐",
@@ -751,6 +758,13 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  qa_bed: "Cama hecha",
+  qa_read: "Lectura 20 min",
+  qa_table: "Mesa puesta",
+  ri_pizza: "Noche de pizza",
+  ri_movie: "Noche de cine",
+  ri_icecream: "Helado especial",
+  ri_game: "Tiempo de juego",
   tip_scan: "Día tranquilo 😌 Prueba a escanear una carta del colegio o una factura 📸",
   tip_note: "Deja una nota de relevo para tu copadre o comadre 💬",
   tip_kids: "Añade una tarea y regala estrellas hoy ⭐",
@@ -1484,6 +1498,13 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  qa_bed: "Lit fait",
+  qa_read: "Lecture 20 min",
+  qa_table: "Table mise",
+  ri_pizza: "Soirée pizza",
+  ri_movie: "Soirée cinéma",
+  ri_icecream: "Glace surprise",
+  ri_game: "Temps de jeu",
   tip_scan: "Journée calme 😌 Essayez de scanner un mot d'école ou une facture 📸",
   tip_note: "Laissez une note de relais à votre co-parent 💬",
   tip_kids: "Ajoutez une corvée et offrez des étoiles aujourd'hui ⭐",
@@ -2217,6 +2238,13 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  qa_bed: "Bett gemacht",
+  qa_read: "20 Min. gelesen",
+  qa_table: "Tisch gedeckt",
+  ri_pizza: "Pizza-Abend",
+  ri_movie: "Filmabend",
+  ri_icecream: "Eis-Überraschung",
+  ri_game: "Spielzeit",
   tip_scan: "Ruhiger Tag 😌 Scanne doch einen Schulbrief oder eine Rechnung 📸",
   tip_note: "Hinterlasse eine Übergabenotiz für deinen Mitelternteil 💬",
   tip_kids: "Füge eine Aufgabe hinzu und vergib heute Sterne ⭐",

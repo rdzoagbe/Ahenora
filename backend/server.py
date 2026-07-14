@@ -904,6 +904,37 @@ async def send_expo_push_messages(messages: list[dict]) -> dict:
     return await asyncio.to_thread(_send)
 
 
+STAR_MILESTONE = 50
+
+
+async def send_star_milestone_alert(family_id: str, member_name: str, old_total: int, new_total: int):
+    """Notify the family's devices when a child crosses a 50-star milestone."""
+    try:
+        if new_total // STAR_MILESTONE <= old_total // STAR_MILESTONE:
+            return
+        milestone = (new_total // STAR_MILESTONE) * STAR_MILESTONE
+        database = get_db()
+        messages = []
+        cursor = database["notification_tokens"].find(
+            {"family_id": family_id, "active": True}, {"_id": 0}
+        )
+        async for token_doc in cursor:
+            token = token_doc.get("token")
+            if not token or not token.startswith("ExponentPushToken"):
+                continue
+            messages.append({
+                "to": token,
+                "sound": "default",
+                "title": f"{member_name} reached {milestone} stars!",
+                "body": "Amazing work — time to celebrate with a reward?",
+                "data": {"type": "star_milestone", "family_id": family_id},
+            })
+        if messages:
+            await send_expo_push_messages(messages)
+    except Exception as e:
+        log.warning("star milestone alert failed: %s", e)
+
+
 async def send_new_card_alert(family_id: str, card: dict, created_by_user_id: Optional[str] = None):
     database = get_db()
     messages = []
@@ -1663,6 +1694,9 @@ async def adjust_member_stars(member_id: str, payload: StarAdjustmentIn, user=De
     await database["star_transactions"].insert_one(transaction)
     updated = await database["family_members"].find_one({"member_id": member_id}, {"_id": 0})
 
+    if delta > 0:
+        await send_star_milestone_alert(user["family_id"], member.get("name", "Your child"), current_stars, new_total)
+
     return {
         "ok": True,
         "member": public_member(updated),
@@ -2150,6 +2184,8 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
                 {"member_id": member["member_id"]},
                 {"$inc": {"stars": 5}},
             )
+            old_stars = int(member.get("stars", 0))
+            await send_star_milestone_alert(user["family_id"], member.get("name", "Your child"), old_stars, old_stars + 5)
 
     return public_card(updated)
 
