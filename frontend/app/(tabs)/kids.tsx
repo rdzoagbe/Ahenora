@@ -33,6 +33,7 @@ import {
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { PressScale } from '../../src/components/PressScale';
 import { PinPadModal } from '../../src/components/PinPadModal';
+import { StarCelebration } from '../../src/components/StarCelebration';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
 import AppToast, { ToastTone } from '../../src/components/AppToast';
 import EmptyState from '../../src/components/EmptyState';
@@ -130,6 +131,9 @@ export default function Kids() {
   const [refreshing, setRefreshing] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [pinPromptReward, setPinPromptReward] = useState<Reward | null>(null);
+  const [celebration, setCelebration] = useState<number | null>(null);
+  const [showFixSheet, setShowFixSheet] = useState(false);
+  const [fixValue, setFixValue] = useState('');
   // Guards against double-tap double-charging stars (redeem) / double-awarding.
   const starActionRef = useRef(false);
 
@@ -370,6 +374,7 @@ export default function Kids() {
       setMembers((prev) => prev.map((member) => (member.member_id === result.member.member_id ? result.member : member)));
       setShowStarSheet(false);
       showToast(delta > 0 ? `${t('kids_added')} ${amount} ${t('stars')}.` : `${t('kids_removed')} ${amount} ${t('stars')}.`, 'success');
+      if (delta > 0) setCelebration(amount);
       await refreshHistory(activeChild.member_id);
     } catch (e: any) {
       logger.warn('Adjust stars failed:', e?.message || e);
@@ -387,12 +392,33 @@ export default function Kids() {
       const result = await api.adjustMemberStars(activeChild.member_id, { delta: amount, reason });
       setMembers((prev) => prev.map((member) => (member.member_id === result.member.member_id ? result.member : member)));
       showToast(`${t('kids_added')} ${amount} ${t('stars')} · ${reason}`, 'success');
+      setCelebration(amount);
       await refreshHistory(activeChild.member_id);
     } catch (e: any) {
       logger.warn('Quick add failed:', e?.message || e);
       showToast(e?.message || t('kids_add_stars_error'), 'error');
     } finally {
       starActionRef.current = false;
+    }
+  };
+
+  const fixBalance = async () => {
+    if (!activeChild) return;
+    const target = parseInt(fixValue || '', 10);
+    if (Number.isNaN(target) || target < 0) { showToast(t('kids_valid_amount'), 'error'); return; }
+    const delta = target - stars;
+    if (delta === 0) { setShowFixSheet(false); return; }
+    setSaving(true);
+    try {
+      const result = await api.adjustMemberStars(activeChild.member_id, { delta, reason: t('kids_balance_correction') });
+      setMembers((prev) => prev.map((m) => (m.member_id === result.member.member_id ? result.member : m)));
+      setShowFixSheet(false);
+      showToast(t('kids_balance_updated'), 'success');
+      await refreshHistory(activeChild.member_id);
+    } catch (e: any) {
+      showToast(e?.message || t('kids_update_stars_error'), 'error');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -550,7 +576,17 @@ export default function Kids() {
                     </View>
                     <View style={{ flex: 1, minWidth: 0 }}>
                       <Text style={styles.walletLabel}>{activeChild.name}&apos;s {t('stars')}</Text>
-                      <Text style={styles.walletCount}>{stars}</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <Text style={styles.walletCount}>{stars}</Text>
+                        <PressScale
+                          testID="kids-fix-balance"
+                          onPress={() => { setFixValue(String(stars)); setShowFixSheet(true); }}
+                          accessibilityLabel={t('kids_fix_balance')}
+                          style={{ padding: 4 }}
+                        >
+                          <Pencil color={ui.muted} size={14} />
+                        </PressScale>
+                      </View>
                     </View>
                     <PressScale testID="kids-redeem" onPress={() => setKidsTab('rewards')} style={styles.redeemBtn}>
                       <Text style={styles.redeemText}>{t('redeem')}</Text>
@@ -836,6 +872,22 @@ export default function Kids() {
           <PressScale testID="save-stars" onPress={adjustStars} disabled={saving || !starAmount} style={[styles.saveBtn, (!starAmount || saving) && { opacity: 0.5 }]}><Text style={styles.saveText}>{saving ? '...' : t('save')}</Text></PressScale>
         </View>
       </KeyboardAwareBottomSheet>
+
+      <KeyboardAwareBottomSheet visible={showFixSheet} onClose={() => setShowFixSheet(false)} contentStyle={styles.sheet}>
+        <View style={styles.sheetHeader}>
+          <Text style={styles.sheetTitle}>{t('kids_fix_balance')}</Text>
+          <PressScale testID="close-fix" onPress={() => setShowFixSheet(false)} style={styles.iconBtn}><X color={ui.text} size={20} /></PressScale>
+        </View>
+        <Text style={styles.sheetHelp}>{t('kids_fix_help', { name: activeChild?.name || '' })}</Text>
+        <Text style={styles.label}>{t('kids_correct_total')}</Text>
+        <TextInput testID="fix-balance-input" value={fixValue} onChangeText={(v) => setFixValue(cleanNumber(v))} keyboardType="number-pad" placeholder="0" placeholderTextColor={ui.muted} style={styles.input} />
+        <View style={styles.sheetFooter}>
+          <PressScale testID="cancel-fix" onPress={() => setShowFixSheet(false)} style={styles.cancelBtn}><Text style={styles.cancelText}>{t('cancel')}</Text></PressScale>
+          <PressScale testID="save-fix" onPress={fixBalance} disabled={saving} style={[styles.saveBtn, saving && { opacity: 0.5 }]}><Text style={styles.saveText}>{saving ? '...' : t('save')}</Text></PressScale>
+        </View>
+      </KeyboardAwareBottomSheet>
+
+      <StarCelebration amount={celebration} onDone={() => setCelebration(null)} />
 
       <PinPadModal
         visible={pinPromptReward !== null}

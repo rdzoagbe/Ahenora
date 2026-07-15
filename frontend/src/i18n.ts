@@ -12,6 +12,14 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  "kids_praise_1": "Wow, good job!",
+  "kids_praise_2": "Amazing!",
+  "kids_praise_3": "Keep it up!",
+  "kids_fix_balance": "Correct balance",
+  "kids_fix_help": "Set the correct star total for {name}. Use this to fix a mistake.",
+  "kids_correct_total": "Correct total",
+  "kids_balance_correction": "Balance correction",
+  "kids_balance_updated": "Balance updated.",
   qa_bed: "Made bed",
   qa_read: "Read 20min",
   qa_table: "Set table",
@@ -758,6 +766,14 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  "kids_praise_1": "¡Guau, buen trabajo!",
+  "kids_praise_2": "¡Increíble!",
+  "kids_praise_3": "¡Sigue así!",
+  "kids_fix_balance": "Corregir saldo",
+  "kids_fix_help": "Fija el total correcto de estrellas de {name}. Úsalo para corregir un error.",
+  "kids_correct_total": "Total correcto",
+  "kids_balance_correction": "Corrección de saldo",
+  "kids_balance_updated": "Saldo actualizado.",
   qa_bed: "Cama hecha",
   qa_read: "Lectura 20 min",
   qa_table: "Mesa puesta",
@@ -1498,6 +1514,14 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  "kids_praise_1": "Bravo, super !",
+  "kids_praise_2": "Incroyable !",
+  "kids_praise_3": "Continue !",
+  "kids_fix_balance": "Corriger le solde",
+  "kids_fix_help": "Définis le bon total d’étoiles pour {name}. Utile en cas d’erreur.",
+  "kids_correct_total": "Total correct",
+  "kids_balance_correction": "Correction du solde",
+  "kids_balance_updated": "Solde mis à jour.",
   qa_bed: "Lit fait",
   qa_read: "Lecture 20 min",
   qa_table: "Table mise",
@@ -2238,6 +2262,14 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  "kids_praise_1": "Wow, gut gemacht!",
+  "kids_praise_2": "Fantastisch!",
+  "kids_praise_3": "Weiter so!",
+  "kids_fix_balance": "Stand korrigieren",
+  "kids_fix_help": "Lege die richtige Sterne-Summe für {name} fest. Nützlich bei Fehlern.",
+  "kids_correct_total": "Richtige Summe",
+  "kids_balance_correction": "Stand-Korrektur",
+  "kids_balance_updated": "Stand aktualisiert.",
   qa_bed: "Bett gemacht",
   qa_read: "20 Min. gelesen",
   qa_table: "Tisch gedeckt",
