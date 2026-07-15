@@ -628,6 +628,10 @@ async def send_invite_email(to_email: str, invite_url: str, inviter_name: str, i
             headers={
                 "Authorization": f"Bearer {RESEND_API_KEY}",
                 "Content-Type": "application/json",
+                # Resend's edge (Cloudflare) rejects requests with no / a
+                # default Python-urllib User-Agent with 403 code 1010, before
+                # they reach the API. An explicit UA fixes delivery.
+                "User-Agent": f"HouseholdCOO/1.0 (+{APP_NAME})",
             },
             method="POST",
         )
