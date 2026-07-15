@@ -29,7 +29,9 @@ Kid-metered tiers, **both parents always free**:
 | Executive | $8.99/mo · $69.99/yr | 2 parents + up to 4 children |
 | Family Office | $19.99/mo · $179.99/yr | Extended household: up to 10 children + caregivers |
 
-Display-only today. **Enforcement** (parents uncounted, children metered 1/4/10, extra adults gated to Family Office) ships together with billing. Google Play Billing handles currency localization, tax, and payouts (15% fee) — **no Stripe** for in-app subscriptions (Play policy).
+Display-only today. **Testing window:** the Village member cap is temporarily
+relaxed to 10 so closed-test families can explore multi-kid features (no way to
+upgrade exists yet). **Enforcement** (parents uncounted, children metered 1/4/10, extra adults gated to Family Office) ships together with billing. Google Play Billing handles currency localization, tax, and payouts (15% fee) — **no Stripe** for in-app subscriptions (Play policy).
 
 ---
 
