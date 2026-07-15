@@ -1252,6 +1252,13 @@ async def root():
         "google_web_configured": bool(GOOGLE_WEB_CLIENT_ID),
         "google_android_configured": bool(GOOGLE_ANDROID_CLIENT_ID),
         "google_client_ids_count": len(GOOGLE_CLIENT_IDS),
+        # Diagnostics for GOOGLE_API_KEY delivery. These expose only presence
+        # and length — never the value — so we can tell "not injected" (present
+        # is false) from "empty value" (present true, len 0) from "library
+        # missing" (len > 0 but genai_imported false).
+        "google_api_key_present": os.getenv("GOOGLE_API_KEY") is not None,
+        "google_api_key_len": len(os.getenv("GOOGLE_API_KEY") or ""),
+        "genai_imported": genai is not None,
     }
 
 # -----------------------------------------------------------------------------
