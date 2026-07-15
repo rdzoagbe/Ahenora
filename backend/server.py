@@ -1259,6 +1259,14 @@ async def root():
         "google_api_key_present": os.getenv("GOOGLE_API_KEY") is not None,
         "google_api_key_len": len(os.getenv("GOOGLE_API_KEY") or ""),
         "genai_imported": genai is not None,
+        # Names only (never values) of env vars the process can actually see
+        # that relate to Google/Gemini/API keys. Reveals a mistyped or
+        # space-padded variable name (shown wrapped in <> so stray spaces are
+        # visible) without exposing any secret.
+        "google_env_names": sorted(
+            f"<{k}>" for k in os.environ
+            if any(tok in k.upper() for tok in ("GOOGLE", "GEMINI", "GENAI", "API_KEY"))
+        ),
     }
 
 # -----------------------------------------------------------------------------
