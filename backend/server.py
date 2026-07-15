@@ -309,7 +309,11 @@ PLAN_CATALOG = {
         "price_monthly": 0.0,
         "price_yearly": 0.0,
         "limits": {
-            "max_members": 3,
+            # TESTING WINDOW: caps relaxed so closed-test families can explore
+            # freely (a tester hit the 3-member wall adding a 3rd child with no
+            # way to upgrade). Role-aware enforcement (parents free, children
+            # metered 1/4/10) ships with Play Billing — see docs/ROADMAP.md.
+            "max_members": 10,
             "ai_scans_per_month": 5,
             "vault_bytes": 20 * 1024 * 1024,
             "weekly_brief": False,
