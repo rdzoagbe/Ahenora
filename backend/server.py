@@ -3020,6 +3020,7 @@ async def voice_transcribe(audio: UploadFile = File(...), user=Depends(require_u
 
 @app.get("/api/handoff-notes")
 async def list_handoff_notes(user=Depends(require_user)):
+    database = get_db()
     rows = []
     async for note in database["handoff_notes"].find(
         {"family_id": user["family_id"]},
@@ -3031,6 +3032,7 @@ async def list_handoff_notes(user=Depends(require_user)):
 
 @app.post("/api/handoff-notes")
 async def create_handoff_note(payload: HandoffNoteIn, user=Depends(require_user)):
+    database = get_db()
     member_name = None
     if payload.member_id:
         member = await database["family_members"].find_one(
@@ -3055,6 +3057,7 @@ async def create_handoff_note(payload: HandoffNoteIn, user=Depends(require_user)
 
 @app.delete("/api/handoff-notes/{note_id}")
 async def delete_handoff_note(note_id: str, user=Depends(require_user)):
+    database = get_db()
     result = await database["handoff_notes"].delete_one(
         {"note_id": note_id, "family_id": user["family_id"]}
     )
@@ -3076,6 +3079,7 @@ SHOPPING_CATEGORIES = [
 
 @app.get("/api/shopping")
 async def list_shopping(user=Depends(require_user)):
+    database = get_db()
     rows = []
     async for item in database["shopping_list"].find(
         {"family_id": user["family_id"]},
@@ -3087,6 +3091,7 @@ async def list_shopping(user=Depends(require_user)):
 
 @app.post("/api/shopping")
 async def add_shopping_item(payload: ShoppingItemIn, user=Depends(require_user)):
+    database = get_db()
     doc = {
         "item_id": new_id("shop"),
         "family_id": user["family_id"],
@@ -3102,6 +3107,7 @@ async def add_shopping_item(payload: ShoppingItemIn, user=Depends(require_user))
 
 @app.patch("/api/shopping/{item_id}")
 async def update_shopping_item(item_id: str, payload: ShoppingItemPatchIn, user=Depends(require_user)):
+    database = get_db()
     updates = {}
     if payload.checked is not None:
         updates["checked"] = payload.checked
@@ -3123,6 +3129,7 @@ async def update_shopping_item(item_id: str, payload: ShoppingItemPatchIn, user=
 
 @app.delete("/api/shopping/{item_id}")
 async def delete_shopping_item(item_id: str, user=Depends(require_user)):
+    database = get_db()
     result = await database["shopping_list"].delete_one(
         {"item_id": item_id, "family_id": user["family_id"]}
     )
@@ -3133,6 +3140,7 @@ async def delete_shopping_item(item_id: str, user=Depends(require_user)):
 
 @app.delete("/api/shopping")
 async def clear_checked_shopping(user=Depends(require_user)):
+    database = get_db()
     result = await database["shopping_list"].delete_many(
         {"family_id": user["family_id"], "checked": True}
     )
@@ -3148,6 +3156,7 @@ async def list_expenses(
     user=Depends(require_user),
     days: int = Query(default=30, ge=1, le=365),
 ):
+    database = get_db()
     since = utcnow() - timedelta(days=days)
     rows = []
     async for exp in database["expenses"].find(
@@ -3163,6 +3172,7 @@ async def expense_summary(
     user=Depends(require_user),
     days: int = Query(default=30, ge=1, le=365),
 ):
+    database = get_db()
     since = utcnow() - timedelta(days=days)
     by_user: dict[str, float] = {}
     by_category: dict[str, float] = {}
@@ -3187,6 +3197,7 @@ async def expense_summary(
 
 @app.post("/api/expenses")
 async def add_expense(payload: ExpenseIn, user=Depends(require_user)):
+    database = get_db()
     child_name = None
     if payload.child_member_id:
         member = await database["family_members"].find_one(
@@ -3213,6 +3224,7 @@ async def add_expense(payload: ExpenseIn, user=Depends(require_user)):
 
 @app.delete("/api/expenses/{expense_id}")
 async def delete_expense(expense_id: str, user=Depends(require_user)):
+    database = get_db()
     result = await database["expenses"].delete_one(
         {"expense_id": expense_id, "family_id": user["family_id"]}
     )
@@ -3227,6 +3239,7 @@ async def delete_expense(expense_id: str, user=Depends(require_user)):
 
 @app.get("/api/templates")
 async def list_templates(user=Depends(require_user)):
+    database = get_db()
     rows = []
     async for tmpl in database["templates"].find(
         {"family_id": user["family_id"]},
@@ -3238,6 +3251,7 @@ async def list_templates(user=Depends(require_user)):
 
 @app.post("/api/templates")
 async def create_template(payload: TemplateIn, user=Depends(require_user)):
+    database = get_db()
     doc = {
         "template_id": new_id("tmpl"),
         "family_id": user["family_id"],
@@ -3255,6 +3269,7 @@ async def create_template(payload: TemplateIn, user=Depends(require_user)):
 
 @app.patch("/api/templates/{template_id}")
 async def update_template(template_id: str, user=Depends(require_user)):
+    database = get_db()
     tmpl = await database["templates"].find_one(
         {"template_id": template_id, "family_id": user["family_id"]},
         {"_id": 0},
@@ -3272,6 +3287,7 @@ async def update_template(template_id: str, user=Depends(require_user)):
 
 @app.delete("/api/templates/{template_id}")
 async def delete_template(template_id: str, user=Depends(require_user)):
+    database = get_db()
     result = await database["templates"].delete_one(
         {"template_id": template_id, "family_id": user["family_id"]}
     )
@@ -3282,6 +3298,7 @@ async def delete_template(template_id: str, user=Depends(require_user)):
 
 @app.post("/api/templates/{template_id}/generate")
 async def generate_from_template(template_id: str, user=Depends(require_user)):
+    database = get_db()
     tmpl = await database["templates"].find_one(
         {"template_id": template_id, "family_id": user["family_id"]},
         {"_id": 0},
@@ -3443,7 +3460,7 @@ async def sync_meals_to_shopping(user: dict = Depends(require_user), database=De
     unique = list(set(i.strip() for i in all_ingredients if i.strip()))
     added = 0
     for name in unique:
-        existing = await database["shopping"].find_one(
+        existing = await database["shopping_list"].find_one(
             {"family_id": user["family_id"], "name": {"$regex": f"^{name}$", "$options": "i"}}
         )
         if not existing:
@@ -3456,7 +3473,7 @@ async def sync_meals_to_shopping(user: dict = Depends(require_user), database=De
                 "added_by": user.get("name", ""),
                 "created_at": utcnow(),
             }
-            await database["shopping"].insert_one(item)
+            await database["shopping_list"].insert_one(item)
             added += 1
     return {"ok": True, "added": added, "total_ingredients": len(unique)}
 
