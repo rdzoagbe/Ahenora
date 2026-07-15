@@ -438,6 +438,8 @@ export interface VaultDoc {
   title: string;
   category: string;
   image_base64: string;
+  mime_type?: string;
+  file_name?: string | null;
   created_at: string;
 }
 
@@ -674,7 +676,7 @@ export const api = {
       return data;
     });
   },
-  createVaultDoc: (data: { title: string; category: string; image_base64: string }) => {
+  createVaultDoc: (data: { title: string; category: string; image_base64: string; mime_type?: string; file_name?: string }) => {
     cache.invalidate('listVault');
     invalidateUsageCaches();
     return request<VaultDoc>('/vault', { method: 'POST', body: data });

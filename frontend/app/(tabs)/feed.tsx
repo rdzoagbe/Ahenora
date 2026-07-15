@@ -488,12 +488,17 @@ export default function Feed() {
           <View style={[styles.page, { maxWidth: maxW }]}>
             <View style={styles.topMetaRow}>
               <Text style={styles.dateText}>{feedDateLine()} <Text style={styles.sun}>☀</Text></Text>
-              <View style={styles.bellWrap}>
+              <PressScale
+                testID="feed-bell"
+                onPress={() => setActiveTab('today')}
+                style={styles.bellWrap}
+                accessibilityLabel={t('feed_view_alerts')}
+              >
                 <Bell color={ui.text} size={25} />
                 {alertCount > 0 ? (
                   <View style={styles.bellBadge}><Text style={styles.bellBadgeText}>{Math.min(alertCount, 9)}</Text></View>
                 ) : null}
-              </View>
+              </PressScale>
             </View>
 
             <View style={styles.heroRow}>

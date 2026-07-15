@@ -12,6 +12,16 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  "feed_view_alerts": "View what needs attention",
+  "vault_pick_photo": "Photo",
+  "vault_pick_file": "File",
+  "vault_files_update_needed": "Adding files needs the latest app version. Please update the app.",
+  "vault_file_too_large": "File too large",
+  "vault_file_too_large_msg": "Please choose a file under 8 MB.",
+  "vault_could_not_open_files": "Could not open files",
+  "vault_file_selected": "File selected",
+  "vault_open_file": "Open file",
+  "vault_shop_tap_hint": "Tap an item to check it off once it’s in the cart.",
   "kids_set_allowance": "Set pocket money",
   "kids_set_short": "Set",
   "kids_frequency": "Frequency",
@@ -777,6 +787,16 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  "feed_view_alerts": "Ver lo que necesita atención",
+  "vault_pick_photo": "Foto",
+  "vault_pick_file": "Archivo",
+  "vault_files_update_needed": "Añadir archivos requiere la última versión de la app. Actualízala.",
+  "vault_file_too_large": "Archivo demasiado grande",
+  "vault_file_too_large_msg": "Elige un archivo de menos de 8 MB.",
+  "vault_could_not_open_files": "No se pudieron abrir los archivos",
+  "vault_file_selected": "Archivo seleccionado",
+  "vault_open_file": "Abrir archivo",
+  "vault_shop_tap_hint": "Toca un artículo para marcarlo cuando esté en el carrito.",
   "kids_set_allowance": "Fijar la paga",
   "kids_set_short": "Fijar",
   "kids_frequency": "Frecuencia",
@@ -1536,6 +1556,16 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  "feed_view_alerts": "Voir ce qui demande votre attention",
+  "vault_pick_photo": "Photo",
+  "vault_pick_file": "Fichier",
+  "vault_files_update_needed": "Ajouter des fichiers nécessite la dernière version de l’app. Mettez-la à jour.",
+  "vault_file_too_large": "Fichier trop volumineux",
+  "vault_file_too_large_msg": "Choisissez un fichier de moins de 8 Mo.",
+  "vault_could_not_open_files": "Impossible d’ouvrir les fichiers",
+  "vault_file_selected": "Fichier sélectionné",
+  "vault_open_file": "Ouvrir le fichier",
+  "vault_shop_tap_hint": "Touchez un article pour le cocher une fois dans le panier.",
   "kids_set_allowance": "Argent de poche",
   "kids_set_short": "Définir",
   "kids_frequency": "Fréquence",
@@ -2295,6 +2325,16 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  "feed_view_alerts": "Ansehen, was Aufmerksamkeit braucht",
+  "vault_pick_photo": "Foto",
+  "vault_pick_file": "Datei",
+  "vault_files_update_needed": "Dateien hinzufügen benötigt die neueste App-Version. Bitte aktualisieren.",
+  "vault_file_too_large": "Datei zu groß",
+  "vault_file_too_large_msg": "Bitte eine Datei unter 8 MB wählen.",
+  "vault_could_not_open_files": "Dateien konnten nicht geöffnet werden",
+  "vault_file_selected": "Datei ausgewählt",
+  "vault_open_file": "Datei öffnen",
+  "vault_shop_tap_hint": "Tippe einen Eintrag an, um ihn im Einkaufswagen abzuhaken.",
   "kids_set_allowance": "Taschengeld festlegen",
   "kids_set_short": "Festlegen",
   "kids_frequency": "Häufigkeit",
