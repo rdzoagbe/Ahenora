@@ -12,6 +12,19 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  "set_invite_via_email": "Email",
+  "set_invite_via_phone": "Phone",
+  "set_invite_via_link": "Link",
+  "set_invite_email_hint": "We’ll email the invite straight away. Ask them to check spam if it doesn’t arrive.",
+  "set_phone_placeholder": "Phone number",
+  "set_invite_phone_hint": "Opens your texting app with the invite link ready to send.",
+  "set_invite_link_hint": "Create a link and share it through WhatsApp, Messages or anywhere.",
+  "set_invite_valid_email": "Enter a valid email address.",
+  "set_invite_valid_phone": "Enter a valid phone number.",
+  "set_invite_email_failed": "Email couldn’t be sent right now. Share the link instead:",
+  "set_invite_sms_opened": "Your texting app is ready — hit send to invite them.",
+  "set_invite_send_text": "Send text",
+  "set_invite_share_link_cta": "Share link",
   "feed_view_alerts": "View what needs attention",
   "vault_pick_photo": "Photo",
   "vault_pick_file": "File",
@@ -787,6 +800,19 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  "set_invite_via_email": "Correo",
+  "set_invite_via_phone": "Teléfono",
+  "set_invite_via_link": "Enlace",
+  "set_invite_email_hint": "Enviaremos la invitación de inmediato. Pídeles que revisen el spam si no llega.",
+  "set_phone_placeholder": "Número de teléfono",
+  "set_invite_phone_hint": "Abre tu app de mensajes con el enlace listo para enviar.",
+  "set_invite_link_hint": "Crea un enlace y compártelo por WhatsApp, Mensajes o donde quieras.",
+  "set_invite_valid_email": "Introduce un correo válido.",
+  "set_invite_valid_phone": "Introduce un número de teléfono válido.",
+  "set_invite_email_failed": "No se pudo enviar el correo ahora. Comparte el enlace:",
+  "set_invite_sms_opened": "Tu app de mensajes está lista: pulsa enviar para invitar.",
+  "set_invite_send_text": "Enviar SMS",
+  "set_invite_share_link_cta": "Compartir enlace",
   "feed_view_alerts": "Ver lo que necesita atención",
   "vault_pick_photo": "Foto",
   "vault_pick_file": "Archivo",
@@ -1556,6 +1582,19 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  "set_invite_via_email": "E-mail",
+  "set_invite_via_phone": "Téléphone",
+  "set_invite_via_link": "Lien",
+  "set_invite_email_hint": "Nous envoyons l’invitation aussitôt. Demandez-leur de vérifier les spams si elle n’arrive pas.",
+  "set_phone_placeholder": "Numéro de téléphone",
+  "set_invite_phone_hint": "Ouvre votre app de SMS avec le lien d’invitation prêt à envoyer.",
+  "set_invite_link_hint": "Créez un lien et partagez-le par WhatsApp, Messages ou ailleurs.",
+  "set_invite_valid_email": "Saisissez une adresse e-mail valide.",
+  "set_invite_valid_phone": "Saisissez un numéro de téléphone valide.",
+  "set_invite_email_failed": "L’e-mail n’a pas pu être envoyé. Partagez plutôt le lien :",
+  "set_invite_sms_opened": "Votre app de SMS est prête — appuyez sur envoyer pour inviter.",
+  "set_invite_send_text": "Envoyer le SMS",
+  "set_invite_share_link_cta": "Partager le lien",
   "feed_view_alerts": "Voir ce qui demande votre attention",
   "vault_pick_photo": "Photo",
   "vault_pick_file": "Fichier",
@@ -2325,6 +2364,19 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  "set_invite_via_email": "E-Mail",
+  "set_invite_via_phone": "Telefon",
+  "set_invite_via_link": "Link",
+  "set_invite_email_hint": "Wir senden die Einladung sofort. Bitte im Spam nachsehen, falls sie nicht ankommt.",
+  "set_phone_placeholder": "Telefonnummer",
+  "set_invite_phone_hint": "Öffnet deine SMS-App mit fertigem Einladungslink.",
+  "set_invite_link_hint": "Erstelle einen Link und teile ihn per WhatsApp, Nachrichten oder überall.",
+  "set_invite_valid_email": "Gib eine gültige E-Mail-Adresse ein.",
+  "set_invite_valid_phone": "Gib eine gültige Telefonnummer ein.",
+  "set_invite_email_failed": "E-Mail konnte nicht gesendet werden. Teile stattdessen den Link:",
+  "set_invite_sms_opened": "Deine SMS-App ist bereit — auf Senden tippen, um einzuladen.",
+  "set_invite_send_text": "SMS senden",
+  "set_invite_share_link_cta": "Link teilen",
   "feed_view_alerts": "Ansehen, was Aufmerksamkeit braucht",
   "vault_pick_photo": "Foto",
   "vault_pick_file": "Datei",

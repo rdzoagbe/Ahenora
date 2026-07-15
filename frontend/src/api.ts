@@ -560,6 +560,12 @@ export const api = {
       body: { email },
     });
   },
+  createInviteLink: () => {
+    invalidateUsageCaches();
+    return request<{ ok: boolean; invite: FamilyInvite; invite_url: string }>('/family/invite/link', {
+      method: 'POST',
+    });
+  },
   listInvites: () => request<FamilyInvite[]>('/family/invites'),
   getInvite: (token: string) =>
     request<{

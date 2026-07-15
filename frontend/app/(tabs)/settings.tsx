@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { Alert, Image, Platform, Share, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Image, Linking, Platform, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import {
   Bell,
@@ -12,6 +12,7 @@ import {
   Lock,
   LogOut,
   Mail,
+  MessageSquare,
   PenLine,
   Receipt,
   RotateCcw,
@@ -53,9 +54,12 @@ export default function Settings() {
   const [invites, setInvites] = useState<FamilyInvite[]>([]);
   const [showLang, setShowLang] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
+  const [inviteMethod, setInviteMethod] = useState<'email' | 'phone' | 'link'>('email');
   const [inviteEmail, setInviteEmail] = useState('');
+  const [invitePhone, setInvitePhone] = useState('');
   const [sending, setSending] = useState(false);
   const [inviteResult, setInviteResult] = useState<string | null>(null);
+  const [inviteError, setInviteError] = useState(false);
   const [lastInviteUrl, setLastInviteUrl] = useState<string | null>(null);
   const [pinMember, setPinMember] = useState<FamilyMember | null>(null);
   const [notificationPrefs, setNotificationPrefs] = useState<NotificationSettings>({ card_reminders: false, new_card_alerts: false });
@@ -274,11 +278,104 @@ export default function Settings() {
   };
 
   const openInvite = (email = '') => {
+    setInviteMethod('email');
     setInviteEmail(email);
+    setInvitePhone('');
     setInviteResult(null);
+    setInviteError(false);
     setLastInviteUrl(null);
     setShowInvite(true);
   };
+
+  const inviteMessage = useCallback(
+    (url: string) => `${user?.name || t('set_a_family_member')} ${t('set_invited_you')}\n\n${url}`,
+    [user?.name],
+  );
+
+  // Email: send directly through the backend and confirm — no extra steps.
+  const sendEmailInvite = useCallback(async () => {
+    const submitted = inviteEmail.trim();
+    if (!submitted || !submitted.includes('@')) {
+      setInviteError(true);
+      setInviteResult(t('set_invite_valid_email'));
+      return;
+    }
+    setSending(true);
+    setInviteResult(null);
+    setInviteError(false);
+    try {
+      const res = await api.invite(submitted);
+      if (res.sent) {
+        setInviteResult(`${t('set_invite_email_sent')} ${submitted}.`);
+        setInviteError(false);
+        setInviteEmail('');
+      } else {
+        // Delivery not configured / failed — fall back to the shareable link.
+        setInviteError(true);
+        setInviteResult(t('set_invite_email_failed'));
+        if (res.invite_url) setLastInviteUrl(res.invite_url);
+      }
+      await load();
+    } catch (error: any) {
+      setInviteError(true);
+      setInviteResult(error?.message || t('set_error'));
+    } finally {
+      setSending(false);
+    }
+  }, [inviteEmail, load]);
+
+  // Phone: create a link, then hand off to the device's SMS app pre-filled.
+  const sendPhoneInvite = useCallback(async () => {
+    const phone = invitePhone.trim();
+    if (phone.replace(/[^0-9]/g, '').length < 6) {
+      setInviteError(true);
+      setInviteResult(t('set_invite_valid_phone'));
+      return;
+    }
+    setSending(true);
+    setInviteResult(null);
+    setInviteError(false);
+    try {
+      const res = await api.createInviteLink();
+      const url = res.invite_url;
+      setLastInviteUrl(url);
+      const sep = Platform.OS === 'ios' ? '&' : '?';
+      const smsUrl = `sms:${phone}${sep}body=${encodeURIComponent(inviteMessage(url))}`;
+      try {
+        // Attempt directly — canOpenURL can falsely report false on Android 11+
+        // because of package visibility rules.
+        await Linking.openURL(smsUrl);
+        setInviteResult(t('set_invite_sms_opened'));
+      } catch {
+        // No SMS app (e.g. a tablet) — fall back to the share sheet.
+        await shareInviteLink(url, null);
+      }
+      await load();
+    } catch (error: any) {
+      setInviteError(true);
+      setInviteResult(error?.message || t('set_error'));
+    } finally {
+      setSending(false);
+    }
+  }, [invitePhone, inviteMessage, shareInviteLink, load]);
+
+  // Link: create a link and open the native share sheet.
+  const shareNewLink = useCallback(async () => {
+    setSending(true);
+    setInviteResult(null);
+    setInviteError(false);
+    try {
+      const res = await api.createInviteLink();
+      setLastInviteUrl(res.invite_url);
+      await shareInviteLink(res.invite_url, null);
+      await load();
+    } catch (error: any) {
+      setInviteError(true);
+      setInviteResult(error?.message || t('set_error'));
+    } finally {
+      setSending(false);
+    }
+  }, [shareInviteLink, load]);
 
   return (
     <SwipeableTabView style={styles.container}>
@@ -632,53 +729,92 @@ export default function Settings() {
           </PressScale>
         </View>
         <Text style={styles.sheetHelp}>{t('set_invite_help')}</Text>
-        <TextInput
-          testID="invite-email"
-          value={inviteEmail}
-          onChangeText={setInviteEmail}
-          placeholder={t('set_email_placeholder')}
-          placeholderTextColor={ui.muted}
-          autoCapitalize="none"
-          autoCorrect={false}
-          keyboardType="email-address"
-          style={styles.input}
-          returnKeyType="send"
-        />
-        {inviteResult ? <Text style={styles.note}>{inviteResult}</Text> : null}
-        {lastInviteUrl ? (
-          <PressScale onPress={() => shareInviteLink(lastInviteUrl, inviteEmail)} style={styles.expandAction}>
+
+        {/* Method selector: Email · Phone · Link — three distinct paths. */}
+        <View style={styles.inviteMethodRow}>
+          {([
+            { key: 'email', icon: Mail, label: t('set_invite_via_email') },
+            { key: 'phone', icon: MessageSquare, label: t('set_invite_via_phone') },
+            { key: 'link', icon: Link2, label: t('set_invite_via_link') },
+          ] as const).map((m) => {
+            const active = inviteMethod === m.key;
+            const Icon = m.icon;
+            return (
+              <PressScale
+                key={m.key}
+                testID={`invite-method-${m.key}`}
+                onPress={() => { setInviteMethod(m.key); setInviteResult(null); setInviteError(false); setLastInviteUrl(null); }}
+                style={[styles.inviteMethodBtn, active && styles.inviteMethodBtnActive]}
+              >
+                <Icon color={active ? ui.bg : ui.muted} size={18} />
+                <Text style={[styles.inviteMethodLabel, { color: active ? ui.bg : ui.muted }]}>{m.label}</Text>
+              </PressScale>
+            );
+          })}
+        </View>
+
+        {inviteMethod === 'email' ? (
+          <>
+            <TextInput
+              testID="invite-email"
+              value={inviteEmail}
+              onChangeText={setInviteEmail}
+              placeholder={t('set_email_placeholder')}
+              placeholderTextColor={ui.muted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="email-address"
+              style={styles.input}
+              returnKeyType="send"
+              onSubmitEditing={sendEmailInvite}
+            />
+            <Text style={styles.inviteHint}>{t('set_invite_email_hint')}</Text>
+          </>
+        ) : inviteMethod === 'phone' ? (
+          <>
+            <TextInput
+              testID="invite-phone"
+              value={invitePhone}
+              onChangeText={setInvitePhone}
+              placeholder={t('set_phone_placeholder')}
+              placeholderTextColor={ui.muted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="phone-pad"
+              style={styles.input}
+              returnKeyType="send"
+              onSubmitEditing={sendPhoneInvite}
+            />
+            <Text style={styles.inviteHint}>{t('set_invite_phone_hint')}</Text>
+          </>
+        ) : (
+          <Text style={styles.inviteHint}>{t('set_invite_link_hint')}</Text>
+        )}
+
+        {inviteResult ? (
+          <Text style={[styles.note, inviteError && { color: ui.danger }]}>{inviteResult}</Text>
+        ) : null}
+        {inviteError && lastInviteUrl ? (
+          <PressScale testID="invite-share-fallback" onPress={() => shareInviteLink(lastInviteUrl, null)} style={styles.expandAction}>
             <Share2 color={ui.text} size={18} />
             <Text style={styles.expandActionText}>{t('set_share_invite_link')}</Text>
           </PressScale>
         ) : null}
+
         <View style={styles.sheetFooter}>
           <PressScale onPress={() => setShowInvite(false)} style={styles.cancelBtn}>
             <Text style={styles.cancelText}>{t('cancel')}</Text>
           </PressScale>
           <PressScale
             testID="send-invite"
-            onPress={async () => {
-              if (!inviteEmail.trim() || !inviteEmail.includes('@')) return;
-              setSending(true);
-              setInviteResult(null);
-              try {
-                const submittedEmail = inviteEmail.trim();
-                const res = await api.invite(submittedEmail);
-                if (res.invite_url) setLastInviteUrl(res.invite_url);
-                setInviteResult(res.sent ? `${t('set_invite_email_sent')} ${submittedEmail}.` : res.invite_url ? `${t('set_invite_created_share')} ${res.invite_url}` : res.message || t('set_invite_created'));
-                setInviteEmail('');
-                await load();
-              } catch (error: any) {
-                setInviteResult(error?.message || t('set_error'));
-              } finally {
-                setSending(false);
-              }
-            }}
-            disabled={sending || !inviteEmail.trim()}
-            style={[styles.primaryButton, (!inviteEmail.trim() || sending) && { opacity: 0.5 }]}
+            onPress={inviteMethod === 'email' ? sendEmailInvite : inviteMethod === 'phone' ? sendPhoneInvite : shareNewLink}
+            disabled={sending || (inviteMethod === 'email' && !inviteEmail.trim()) || (inviteMethod === 'phone' && !invitePhone.trim())}
+            style={[styles.primaryButton, (sending || (inviteMethod === 'email' && !inviteEmail.trim()) || (inviteMethod === 'phone' && !invitePhone.trim())) && { opacity: 0.5 }]}
           >
-            <Send color="#FFFFFF" size={18} />
-            <Text style={styles.primaryButtonText}>{sending ? t('set_sending') : t('set_send_invite')}</Text>
+            {inviteMethod === 'link' ? <Share2 color="#FFFFFF" size={18} /> : <Send color="#FFFFFF" size={18} />}
+            <Text style={styles.primaryButtonText}>
+              {sending ? t('set_sending') : inviteMethod === 'email' ? t('set_send_invite') : inviteMethod === 'phone' ? t('set_invite_send_text') : t('set_invite_share_link_cta')}
+            </Text>
           </PressScale>
         </View>
       </KeyboardAwareBottomSheet>
@@ -790,6 +926,11 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   iconBtn: { width: 42, height: 42, borderRadius: 9999, borderWidth: 1, borderColor: ui.line, alignItems: 'center', justifyContent: 'center' },
   sheetHelp: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 15, lineHeight: 22, marginBottom: 18 },
   input: { borderWidth: 1, borderColor: ui.line, borderRadius: 18, paddingHorizontal: 16, paddingVertical: 14, fontFamily: 'Inter_500Medium', fontSize: 16, color: ui.text, backgroundColor: ui.soft },
+  inviteMethodRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
+  inviteMethodBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 11, borderRadius: 14, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft },
+  inviteMethodBtnActive: { backgroundColor: ui.text, borderColor: ui.text },
+  inviteMethodLabel: { fontFamily: 'Inter_700Bold', fontSize: 13 },
+  inviteHint: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 19, marginTop: 10 },
   sheetFooter: { flexDirection: 'row', gap: 12, marginTop: 18 },
   cancelBtn: { flex: 1, minHeight: 54, borderRadius: 99, borderWidth: 1, borderColor: ui.line, alignItems: 'center', justifyContent: 'center' },
   cancelText: { color: ui.muted, fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
