@@ -312,7 +312,10 @@ export default function Settings() {
       } else {
         // Delivery not configured / failed — fall back to the shareable link.
         setInviteError(true);
-        setInviteResult(t('set_invite_email_failed'));
+        // Show the provider's exact reason to admins so email issues are
+        // debuggable (e.g. unverified domain) without digging through logs.
+        const detail = user?.is_admin ? (res.email_error || res.message) : '';
+        setInviteResult(detail ? `${t('set_invite_email_failed')}\n\n${detail}` : t('set_invite_email_failed'));
         if (res.invite_url) setLastInviteUrl(res.invite_url);
       }
       await load();
@@ -322,7 +325,7 @@ export default function Settings() {
     } finally {
       setSending(false);
     }
-  }, [inviteEmail, load]);
+  }, [inviteEmail, load, user?.is_admin]);
 
   // Phone: create a link, then hand off to the device's SMS app pre-filled.
   const sendPhoneInvite = useCallback(async () => {
