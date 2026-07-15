@@ -14,7 +14,7 @@ import {
 import { BlurView } from 'expo-blur';
 import { useFocusEffect, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { Plus, X, Trash2, Stethoscope, BookOpen, Shield, Scale, Bell, Folder, MoreVertical, FileText, ShoppingCart, Check, Circle, UtensilsCrossed, AlertTriangle, ChevronRight, ShoppingBag } from 'lucide-react-native';
+import { Plus, X, Trash2, Stethoscope, BookOpen, Shield, Scale, Bell, Folder, MoreVertical, FileText, ShoppingCart, Check, Circle, UtensilsCrossed, AlertTriangle, ChevronRight, ShoppingBag, Share2 } from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { PressScale } from '../../src/components/PressScale';
@@ -188,6 +188,32 @@ export default function Vault() {
       load();
     }
   };
+
+  const shareDoc = useCallback(async (doc: VaultDoc) => {
+    // expo-sharing ships with newer app builds only; older binaries get a
+    // friendly nudge instead of a crash.
+    let Sharing: any;
+    try {
+      Sharing = require('expo-sharing');
+      if (!(await Sharing.isAvailableAsync())) throw new Error('unavailable');
+    } catch {
+      showToast(t('vault_share_update_needed'), 'info');
+      return;
+    }
+    try {
+      const FS = require('expo-file-system/legacy');
+      const data = doc.image_base64 || '';
+      const match = data.match(/^data:image\/(\w+);base64,(.+)$/);
+      const ext = match && match[1] === 'png' ? 'png' : 'jpg';
+      const fileUri = `${FS.cacheDirectory}${doc.doc_id}.${ext}`;
+      await FS.writeAsStringAsync(fileUri, match ? match[2] : data, { encoding: FS.EncodingType.Base64 });
+      await Sharing.shareAsync(fileUri, { mimeType: ext === 'png' ? 'image/png' : 'image/jpeg', dialogTitle: doc.title });
+      logEvent('vault_shared');
+    } catch (e: any) {
+      logger.warn('Share doc failed:', e?.message || e);
+      showToast(t('vault_share_error'), 'error');
+    }
+  }, [showToast, t]);
 
   const confirmRemove = (doc: VaultDoc) => {
     Alert.alert(
@@ -593,6 +619,9 @@ export default function Vault() {
             <View style={styles.previewTop}>
               <Text style={styles.previewTitle}>{preview.title}</Text>
               <View style={styles.previewActions}>
+                <PressScale testID="preview-share" onPress={() => shareDoc(preview)} style={styles.previewIconBtn}>
+                  <Share2 color="#fff" size={20} />
+                </PressScale>
                 <PressScale testID="preview-delete" onPress={() => confirmRemove(preview)} style={styles.previewIconBtn}>
                   <Trash2 color="#EF4444" size={20} />
                 </PressScale>

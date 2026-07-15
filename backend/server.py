@@ -3770,7 +3770,7 @@ class SupportContactIn(BaseModel):
 # Metrics (first-party, count-only — no payloads, no third-party SDKs)
 # -----------------------------------------------------------------------------
 ALLOWED_EVENTS = {
-    "feed_open", "scan_used", "card_created", "vault_added",
+    "feed_open", "scan_used", "card_created", "vault_added", "vault_shared",
     "kids_open", "calendar_open", "onboarding_done",
 }
 

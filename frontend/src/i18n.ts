@@ -12,6 +12,17 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  "kids_set_allowance": "Set pocket money",
+  "kids_set_short": "Set",
+  "kids_frequency": "Frequency",
+  "kids_freq_weekly": "week",
+  "kids_freq_biweekly": "2 weeks",
+  "kids_freq_monthly": "month",
+  "kids_pocket_tip": "💡 Guide: ages 3–5 ≈ 5 per week · ages 6–10 ≈ 10 · older kids — you decide.",
+  "kids_allowance_saved": "Pocket money updated.",
+  "kids_allowance_error": "Could not save pocket money.",
+  "vault_share_update_needed": "Sharing needs the latest app version. Please update the app.",
+  "vault_share_error": "Could not share this document.",
   "kids_praise_1": "Wow, good job!",
   "kids_praise_2": "Amazing!",
   "kids_praise_3": "Keep it up!",
@@ -766,6 +777,17 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  "kids_set_allowance": "Fijar la paga",
+  "kids_set_short": "Fijar",
+  "kids_frequency": "Frecuencia",
+  "kids_freq_weekly": "semana",
+  "kids_freq_biweekly": "2 semanas",
+  "kids_freq_monthly": "mes",
+  "kids_pocket_tip": "💡 Guía: 3–5 años ≈ 5 por semana · 6–10 años ≈ 10 · mayores: tú decides.",
+  "kids_allowance_saved": "Paga actualizada.",
+  "kids_allowance_error": "No se pudo guardar la paga.",
+  "vault_share_update_needed": "Para compartir necesitas la última versión de la app.",
+  "vault_share_error": "No se pudo compartir el documento.",
   "kids_praise_1": "¡Guau, buen trabajo!",
   "kids_praise_2": "¡Increíble!",
   "kids_praise_3": "¡Sigue así!",
@@ -1514,6 +1536,17 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  "kids_set_allowance": "Argent de poche",
+  "kids_set_short": "Définir",
+  "kids_frequency": "Fréquence",
+  "kids_freq_weekly": "semaine",
+  "kids_freq_biweekly": "2 semaines",
+  "kids_freq_monthly": "mois",
+  "kids_pocket_tip": "💡 Repère : 3–5 ans ≈ 5 par semaine · 6–10 ans ≈ 10 · plus grands : à vous de voir.",
+  "kids_allowance_saved": "Argent de poche mis à jour.",
+  "kids_allowance_error": "Impossible d’enregistrer l’argent de poche.",
+  "vault_share_update_needed": "Le partage nécessite la dernière version de l’app.",
+  "vault_share_error": "Impossible de partager ce document.",
   "kids_praise_1": "Bravo, super !",
   "kids_praise_2": "Incroyable !",
   "kids_praise_3": "Continue !",
@@ -2262,6 +2295,17 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  "kids_set_allowance": "Taschengeld festlegen",
+  "kids_set_short": "Festlegen",
+  "kids_frequency": "Häufigkeit",
+  "kids_freq_weekly": "Woche",
+  "kids_freq_biweekly": "2 Wochen",
+  "kids_freq_monthly": "Monat",
+  "kids_pocket_tip": "💡 Richtwert: 3–5 Jahre ≈ 5 pro Woche · 6–10 Jahre ≈ 10 · ältere Kinder: ihr entscheidet.",
+  "kids_allowance_saved": "Taschengeld aktualisiert.",
+  "kids_allowance_error": "Taschengeld konnte nicht gespeichert werden.",
+  "vault_share_update_needed": "Zum Teilen wird die neueste App-Version benötigt.",
+  "vault_share_error": "Dokument konnte nicht geteilt werden.",
   "kids_praise_1": "Wow, gut gemacht!",
   "kids_praise_2": "Fantastisch!",
   "kids_praise_3": "Weiter so!",

@@ -134,6 +134,9 @@ export default function Kids() {
   const [celebration, setCelebration] = useState<number | null>(null);
   const [showFixSheet, setShowFixSheet] = useState(false);
   const [fixValue, setFixValue] = useState('');
+  const [showAllowanceSheet, setShowAllowanceSheet] = useState(false);
+  const [alwAmount, setAlwAmount] = useState('');
+  const [alwFrequency, setAlwFrequency] = useState('weekly');
   // Guards against double-tap double-charging stars (redeem) / double-awarding.
   const starActionRef = useRef(false);
 
@@ -417,6 +420,24 @@ export default function Kids() {
       await refreshHistory(activeChild.member_id);
     } catch (e: any) {
       showToast(e?.message || t('kids_update_stars_error'), 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveAllowance = async () => {
+    if (!activeChild) return;
+    const amount = parseInt(alwAmount || '', 10);
+    if (Number.isNaN(amount) || amount < 0) { showToast(t('kids_valid_amount'), 'error'); return; }
+    setSaving(true);
+    try {
+      const saved = await api.setAllowance({ member_id: activeChild.member_id, amount, frequency: alwFrequency });
+      setAllowances((prev) => [...prev.filter((a) => a.member_id !== saved.member_id), saved]);
+      setShowAllowanceSheet(false);
+      showToast(t('kids_allowance_saved'), 'success');
+    } catch (e: any) {
+      logger.warn('Save allowance failed:', e?.message || e);
+      showToast(e?.message || t('kids_allowance_error'), 'error');
     } finally {
       setSaving(false);
     }
@@ -764,9 +785,21 @@ export default function Kids() {
                     <View style={{ flex: 1 }}>
                       <Text style={styles.allowanceBalance}>${childBalance.toFixed(2)}</Text>
                       <Text style={styles.featureRowSub}>
-                        {childAllowance ? `$${childAllowance.amount}/${childAllowance.frequency}` : t('kids_no_allowance_set')}
+                        {childAllowance ? `$${childAllowance.amount}/${t('kids_freq_' + childAllowance.frequency)}` : t('kids_no_allowance_set')}
                       </Text>
                     </View>
+                    <PressScale
+                      testID="kids-set-allowance"
+                      onPress={() => {
+                        setAlwAmount(childAllowance ? String(childAllowance.amount) : '');
+                        setAlwFrequency(childAllowance?.frequency || 'weekly');
+                        setShowAllowanceSheet(true);
+                      }}
+                      style={styles.featureActionBtn}
+                    >
+                      <Pencil color="#FFFFFF" size={13} />
+                      <Text style={styles.featureActionText}>{t('kids_set_short')}</Text>
+                    </PressScale>
                   </View>
                 )}
               </Card>
@@ -884,6 +917,29 @@ export default function Kids() {
         <View style={styles.sheetFooter}>
           <PressScale testID="cancel-fix" onPress={() => setShowFixSheet(false)} style={styles.cancelBtn}><Text style={styles.cancelText}>{t('cancel')}</Text></PressScale>
           <PressScale testID="save-fix" onPress={fixBalance} disabled={saving} style={[styles.saveBtn, saving && { opacity: 0.5 }]}><Text style={styles.saveText}>{saving ? '...' : t('save')}</Text></PressScale>
+        </View>
+      </KeyboardAwareBottomSheet>
+
+      <KeyboardAwareBottomSheet visible={showAllowanceSheet} onClose={() => setShowAllowanceSheet(false)} contentStyle={styles.sheet}>
+        <View style={styles.sheetHeader}>
+          <Text style={styles.sheetTitle}>{t('kids_set_allowance')}</Text>
+          <PressScale testID="close-allowance" onPress={() => setShowAllowanceSheet(false)} style={styles.iconBtn}><X color={ui.text} size={20} /></PressScale>
+        </View>
+        <Text style={styles.sheetHelp}>{t('kids_for')} {activeChild?.name || t('kids_selected_child')}</Text>
+        <Text style={styles.label}>{t('kids_amount')}</Text>
+        <TextInput testID="allowance-amount" value={alwAmount} onChangeText={(v) => setAlwAmount(cleanNumber(v))} keyboardType="number-pad" placeholder="5" placeholderTextColor={ui.muted} style={styles.input} />
+        <Text style={styles.label}>{t('kids_frequency')}</Text>
+        <View style={styles.freqRow}>
+          {['weekly', 'biweekly', 'monthly'].map((f) => (
+            <PressScale key={f} testID={`allowance-freq-${f}`} onPress={() => setAlwFrequency(f)} style={[styles.freqChip, alwFrequency === f && styles.freqChipActive]}>
+              <Text style={[styles.freqChipText, alwFrequency === f && styles.freqChipTextActive]}>{t('kids_freq_' + f)}</Text>
+            </PressScale>
+          ))}
+        </View>
+        <Text style={styles.pocketTip}>{t('kids_pocket_tip')}</Text>
+        <View style={styles.sheetFooter}>
+          <PressScale testID="cancel-allowance" onPress={() => setShowAllowanceSheet(false)} style={styles.cancelBtn}><Text style={styles.cancelText}>{t('cancel')}</Text></PressScale>
+          <PressScale testID="save-allowance" onPress={saveAllowance} disabled={saving || !alwAmount} style={[styles.saveBtn, (!alwAmount || saving) && { opacity: 0.5 }]}><Text style={styles.saveText}>{saving ? '...' : t('save')}</Text></PressScale>
         </View>
       </KeyboardAwareBottomSheet>
 
@@ -1057,6 +1113,12 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   featureRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: ui.line },
   featureRowTitle: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 15 },
   featureRowSub: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 2 },
+  freqRow: { flexDirection: 'row', gap: 8 },
+  freqChip: { paddingHorizontal: 14, paddingVertical: 9, borderRadius: 99, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft },
+  freqChipActive: { backgroundColor: ui.text, borderColor: ui.text },
+  freqChipText: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 13 },
+  freqChipTextActive: { color: ui.bg },
+  pocketTip: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 19, marginTop: 14 },
   featureActionBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: ui.orange, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 99 },
   featureActionText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 12 },
   allowanceRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12 },
