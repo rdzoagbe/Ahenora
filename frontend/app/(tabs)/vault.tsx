@@ -14,7 +14,7 @@ import {
 import { BlurView } from 'expo-blur';
 import { useFocusEffect, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { Plus, X, Trash2, Stethoscope, BookOpen, Shield, Scale, Bell, Folder, MoreVertical, FileText, ShoppingCart, Check, Circle, UtensilsCrossed, AlertTriangle, ChevronRight, ShoppingBag, Share2 } from 'lucide-react-native';
+import { Plus, X, Trash2, Stethoscope, BookOpen, Shield, Scale, Bell, Folder, MoreVertical, FileText, ShoppingCart, Check, UtensilsCrossed, AlertTriangle, ChevronRight, ShoppingBag, Share2, Image as ImageIcon } from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { PressScale } from '../../src/components/PressScale';
@@ -38,6 +38,13 @@ const CATEGORIES = [
 
 function catInfo(key: string) {
   return CATEGORIES.find((c) => c.key === key) || CATEGORIES[0];
+}
+
+function isImageDoc(doc: { mime_type?: string; image_base64?: string }) {
+  const mime = doc.mime_type;
+  if (mime) return mime.startsWith('image/');
+  // Legacy docs saved before mime tracking are always images.
+  return !doc.image_base64 || doc.image_base64.startsWith('data:image') || !doc.image_base64.startsWith('data:');
 }
 
 function updatedLine(iso: string, t: (k: string) => string) {
@@ -65,6 +72,8 @@ export default function Vault() {
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState('Medical');
   const [image, setImage] = useState<string | null>(null);
+  const [mimeType, setMimeType] = useState<string>('image/jpeg');
+  const [fileName, setFileName] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
@@ -129,6 +138,8 @@ export default function Vault() {
     setTitle('');
     setCategory('Medical');
     setImage(null);
+    setMimeType('image/jpeg');
+    setFileName(null);
     setShowAdd(true);
   };
   const closeAdd = () => setShowAdd(false);
@@ -147,6 +158,9 @@ export default function Vault() {
         const asset = res.assets[0];
         const imageValue = asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri;
         setImage(imageValue);
+        setMimeType('image/jpeg');
+        setFileName(null);
+        if (!title.trim() && asset.fileName) setTitle(asset.fileName.replace(/\.[^.]+$/, ''));
       }
     } catch (e: any) {
       logger.warn('pickImage failed:', e?.message || e);
@@ -154,14 +168,51 @@ export default function Vault() {
     }
   };
 
+  const pickDocument = async () => {
+    // expo-document-picker is a native module bundled from the next build on;
+    // older binaries fall back to a friendly nudge instead of crashing.
+    let DocumentPicker: any;
+    try {
+      DocumentPicker = require('expo-document-picker');
+    } catch {
+      showToast(t('vault_files_update_needed'), 'info');
+      return;
+    }
+    try {
+      const res = await DocumentPicker.getDocumentAsync({
+        type: ['application/pdf', 'image/*'],
+        copyToCacheDirectory: true,
+      });
+      if (res.canceled || !res.assets?.[0]) return;
+      const asset = res.assets[0];
+      const mime = asset.mimeType || 'application/octet-stream';
+      // PDFs and non-image files can be large; guard against oversized picks.
+      if (asset.size && asset.size > 8 * 1024 * 1024) {
+        Alert.alert(t('vault_file_too_large'), t('vault_file_too_large_msg'));
+        return;
+      }
+      const FS = require('expo-file-system/legacy');
+      const b64 = await FS.readAsStringAsync(asset.uri, { encoding: FS.EncodingType.Base64 });
+      setImage(`data:${mime};base64,${b64}`);
+      setMimeType(mime);
+      setFileName(asset.name || null);
+      if (!title.trim() && asset.name) setTitle(asset.name.replace(/\.[^.]+$/, ''));
+    } catch (e: any) {
+      logger.warn('pickDocument failed:', e?.message || e);
+      Alert.alert(t('vault_could_not_open_files'), t('vault_please_try_again'));
+    }
+  };
+
   const save = async () => {
     if (!title.trim() || !image) return;
     setSaving(true);
     try {
-      const created = await api.createVaultDoc({ title: title.trim(), category, image_base64: image });
+      const created = await api.createVaultDoc({ title: title.trim(), category, image_base64: image, mime_type: mimeType, file_name: fileName || undefined });
       setDocs((prev) => [created, ...prev]);
       setTitle('');
       setImage(null);
+      setMimeType('image/jpeg');
+      setFileName(null);
       setCategory('Medical');
       setShowAdd(false);
       showToast(t('vault_document_saved'), 'success');
@@ -203,11 +254,13 @@ export default function Vault() {
     try {
       const FS = require('expo-file-system/legacy');
       const data = doc.image_base64 || '';
-      const match = data.match(/^data:image\/(\w+);base64,(.+)$/);
-      const ext = match && match[1] === 'png' ? 'png' : 'jpg';
+      const match = data.match(/^data:([\w/+.-]+);base64,(.+)$/);
+      const mime = doc.mime_type || (match ? match[1] : 'image/jpeg');
+      const EXT: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'application/pdf': 'pdf' };
+      const ext = EXT[mime] || 'bin';
       const fileUri = `${FS.cacheDirectory}${doc.doc_id}.${ext}`;
       await FS.writeAsStringAsync(fileUri, match ? match[2] : data, { encoding: FS.EncodingType.Base64 });
-      await Sharing.shareAsync(fileUri, { mimeType: ext === 'png' ? 'image/png' : 'image/jpeg', dialogTitle: doc.title });
+      await Sharing.shareAsync(fileUri, { mimeType: mime, dialogTitle: doc.title });
       logEvent('vault_shared');
     } catch (e: any) {
       logger.warn('Share doc failed:', e?.message || e);
@@ -385,10 +438,18 @@ export default function Vault() {
             <View style={styles.grid}>
               {filtered.map((d) => {
                 const cat = catInfo(d.category);
+                const isImg = isImageDoc(d);
                 return (
                   <PressScale key={d.doc_id} testID={`vault-doc-${d.doc_id}`} onPress={() => setPreview(d)} style={styles.tile}>
                     <View style={styles.thumbWrap}>
-                      <Image source={{ uri: d.image_base64 }} style={styles.thumbImg} />
+                      {isImg ? (
+                        <Image source={{ uri: d.image_base64 }} style={styles.thumbImg} />
+                      ) : (
+                        <View style={styles.fileThumb}>
+                          <FileText color={cat.tone} size={38} />
+                          <Text style={styles.fileThumbLabel}>PDF</Text>
+                        </View>
+                      )}
                       <View style={styles.moreBtn}>
                         <MoreVertical color={ui.muted} size={16} />
                       </View>
@@ -434,16 +495,21 @@ export default function Vault() {
               </PressScale>
             </View>
 
-            {uncheckedItems.map((item) => (
+            {uncheckedItems.map((item, index) => (
               <PressScale key={item.item_id} onPress={() => toggleShopItem(item)} style={styles.shopRow}>
-                <Circle color={ui.muted} size={20} />
+                <View style={styles.shopNumberBadge}>
+                  <Text style={styles.shopNumberText}>{index + 1}</Text>
+                </View>
                 <Text style={styles.shopItemText}>{item.name}</Text>
-                <Text style={styles.shopCat}>{item.category}</Text>
+                {item.category ? <Text style={styles.shopCat}>{item.category}</Text> : null}
                 <PressScale onPress={() => deleteShopItem(item.item_id)} style={{ padding: 4 }}>
                   <Trash2 color={ui.muted} size={15} />
                 </PressScale>
               </PressScale>
             ))}
+            {uncheckedItems.length > 0 ? (
+              <Text style={styles.shopHint}>{t('vault_shop_tap_hint')}</Text>
+            ) : null}
 
             {checkedItems.length > 0 ? (
               <>
@@ -572,9 +638,33 @@ export default function Vault() {
           })}
         </View>
 
-        <PressScale testID="vault-pick" onPress={pickImage} style={styles.pick}>
-          {image ? <Image source={{ uri: image }} style={styles.pickImg} /> : <Text style={styles.pickText}>{t('vault_pick_document_image')}</Text>}
-        </PressScale>
+        <View style={styles.pickRow}>
+          <PressScale testID="vault-pick-photo" onPress={pickImage} style={styles.pickOption}>
+            <ImageIcon color={ui.orange} size={20} />
+            <Text style={styles.pickOptionText}>{t('vault_pick_photo')}</Text>
+          </PressScale>
+          <PressScale testID="vault-pick-file" onPress={pickDocument} style={styles.pickOption}>
+            <FileText color={ui.lavenderText} size={20} />
+            <Text style={styles.pickOptionText}>{t('vault_pick_file')}</Text>
+          </PressScale>
+        </View>
+
+        {image ? (
+          isImageDoc({ mime_type: mimeType, image_base64: image }) ? (
+            <View style={styles.pick}>
+              <Image source={{ uri: image }} style={styles.pickImg} />
+            </View>
+          ) : (
+            <View style={[styles.pick, styles.pickFile]}>
+              <FileText color={ui.lavenderText} size={34} />
+              <Text style={styles.pickFileName} numberOfLines={1}>{fileName || t('vault_file_selected')}</Text>
+            </View>
+          )
+        ) : (
+          <View style={[styles.pick, styles.pickEmpty]}>
+            <Text style={styles.pickText}>{t('vault_pick_document_image')}</Text>
+          </View>
+        )}
 
         <View style={styles.sheetFooter}>
           <PressScale testID="vault-cancel" onPress={closeAdd} style={styles.cancelBtn}>
@@ -630,7 +720,18 @@ export default function Vault() {
                 </PressScale>
               </View>
             </View>
-            <Image source={{ uri: preview.image_base64 }} style={styles.previewImg} />
+            {isImageDoc(preview) ? (
+              <Image source={{ uri: preview.image_base64 }} style={styles.previewImg} />
+            ) : (
+              <View style={styles.previewFile}>
+                <FileText color="#fff" size={64} />
+                <Text style={styles.previewFileName} numberOfLines={2}>{preview.file_name || preview.title}</Text>
+                <PressScale testID="preview-open" onPress={() => shareDoc(preview)} style={styles.previewOpenBtn}>
+                  <Share2 color="#fff" size={18} />
+                  <Text style={styles.previewOpenText}>{t('vault_open_file')}</Text>
+                </PressScale>
+              </View>
+            )}
           </View>
         ) : null}
       </Modal>
@@ -651,7 +752,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   chip: { paddingHorizontal: 18, paddingVertical: 10, borderRadius: 99, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line },
   chipActive: { backgroundColor: ui.text, borderColor: ui.text },
   chipText: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 14 },
-  chipTextActive: { color: '#FFFFFF' },
+  chipTextActive: { color: ui.bg },
 
   storageCard: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16, marginTop: 16 },
   storageText: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 17 },
@@ -688,9 +789,17 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   catRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 9 },
   catBtn: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 13, paddingVertical: 10, borderRadius: 9999, borderWidth: 1 },
   catBtnLabel: { fontFamily: 'Inter_800ExtraBold', fontSize: 12 },
-  pick: { marginTop: 18, height: 150, borderRadius: 18, borderWidth: 1, borderColor: ui.line, borderStyle: 'dashed', backgroundColor: ui.soft, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  pickRow: { flexDirection: 'row', gap: 12, marginTop: 18 },
+  pickOption: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 13, borderRadius: 16, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft },
+  pickOptionText: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 14 },
+  pick: { marginTop: 12, height: 150, borderRadius: 18, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  pickEmpty: { borderStyle: 'dashed' },
+  pickFile: { gap: 10, paddingHorizontal: 20 },
+  pickFileName: { color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 14, textAlign: 'center' },
   pickImg: { ...StyleSheet.absoluteFillObject, resizeMode: 'cover' },
   pickText: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
+  fileThumb: { flex: 1, width: '100%', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  fileThumbLabel: { color: ui.muted, fontFamily: 'Inter_800ExtraBold', fontSize: 12, letterSpacing: 1 },
   sheetFooter: { flexDirection: 'row', gap: 12, marginTop: 22 },
   cancelBtn: { flex: 1, borderWidth: 1, borderColor: ui.line, borderRadius: 18, paddingVertical: 15, alignItems: 'center' },
   cancelText: { color: ui.muted, fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
@@ -702,6 +811,10 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   previewActions: { flexDirection: 'row', gap: 8 },
   previewIconBtn: { padding: 10, borderRadius: 9999, borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)', backgroundColor: 'rgba(15,23,42,0.55)' },
   previewImg: { width: '100%', aspectRatio: 0.75, borderRadius: 24, borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)' },
+  previewFile: { alignItems: 'center', justifyContent: 'center', gap: 16, paddingVertical: 48, borderRadius: 24, borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)', backgroundColor: 'rgba(15,23,42,0.45)' },
+  previewFileName: { color: '#fff', fontFamily: 'Inter_700Bold', fontSize: 17, textAlign: 'center', paddingHorizontal: 24 },
+  previewOpenBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(255,255,255,0.16)', borderRadius: 99, paddingHorizontal: 20, paddingVertical: 12 },
+  previewOpenText: { color: '#fff', fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
 
   shopHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   clearBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 99, backgroundColor: ui.mint },
@@ -711,6 +824,9 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   shopInput: { flex: 1, borderWidth: 1, borderColor: ui.line, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10, fontFamily: 'Inter_500Medium', fontSize: 14, color: ui.text, backgroundColor: ui.soft },
   shopAddBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: ui.orange, alignItems: 'center', justifyContent: 'center' },
   shopRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: ui.line },
+  shopNumberBadge: { width: 24, height: 24, borderRadius: 99, backgroundColor: ui.orangeSoft, alignItems: 'center', justifyContent: 'center' },
+  shopNumberText: { color: ui.orange, fontFamily: 'Inter_800ExtraBold', fontSize: 12 },
+  shopHint: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12, textAlign: 'center', paddingTop: 10 },
   shopItemText: { flex: 1, color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 15 },
   shopItemDone: { textDecorationLine: 'line-through', color: ui.muted },
   shopCat: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12 },

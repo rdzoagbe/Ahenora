@@ -555,6 +555,8 @@ def public_vault_doc(doc: dict) -> dict:
         "title": doc["title"],
         "category": doc["category"],
         "image_base64": doc["image_base64"],
+        "mime_type": doc.get("mime_type") or "image/jpeg",
+        "file_name": doc.get("file_name"),
         "created_at": iso(doc["created_at"]),
     }
 
@@ -1089,6 +1091,8 @@ class VaultIn(BaseModel):
     title: str
     category: str
     image_base64: str
+    mime_type: Optional[str] = None
+    file_name: Optional[str] = None
 
 
 class RewardIn(BaseModel):
@@ -2262,6 +2266,8 @@ async def create_vault_doc(payload: VaultIn, user=Depends(require_user)):
         "title": payload.title,
         "category": payload.category,
         "image_base64": payload.image_base64,
+        "mime_type": payload.mime_type or "image/jpeg",
+        "file_name": payload.file_name,
         "created_at": utcnow(),
     }
     await database["vault"].insert_one(doc)

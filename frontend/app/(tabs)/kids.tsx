@@ -576,7 +576,7 @@ export default function Kids() {
                     <PressScale key={child.member_id} testID={`child-${child.member_id}`} onPress={() => setSelectedChild(child.member_id)} style={[styles.childChip, active ? styles.childChipActive : styles.childChipIdle]}>
                       <View style={[styles.childAvatar, { backgroundColor: tint }]}>
                         <Text style={styles.childAvatarText}>{child.name[0]?.toUpperCase()}</Text>
-                        {child.has_pin ? <View style={styles.lockBadge}><Lock color="#FFFFFF" size={8} /></View> : null}
+                        {child.has_pin ? <View style={styles.lockBadge}><Lock color={ui.bg} size={8} /></View> : null}
                       </View>
                       <Text style={[styles.childChipText, { color: active ? ui.bg : ui.text }]}>{child.name}</Text>
                     </PressScale>
