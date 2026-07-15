@@ -569,7 +569,7 @@ def build_invite_url(token: str) -> str:
     return f"{base}{joiner}invite={token}"
 
 
-async def send_invite_email(to_email: str, invite_url: str, inviter_name: str) -> dict:
+async def send_invite_email(to_email: str, invite_url: str, inviter_name: str, inviter_email: str = "") -> dict:
     if not RESEND_API_KEY or not INVITE_FROM_EMAIL:
         return {
             "sent": False,
@@ -617,8 +617,9 @@ async def send_invite_email(to_email: str, invite_url: str, inviter_name: str) -
         "html": html_body,
     }
 
-    if INVITE_REPLY_TO:
-        payload["reply_to"] = INVITE_REPLY_TO
+    reply_to = INVITE_REPLY_TO or inviter_email
+    if reply_to:
+        payload["reply_to"] = reply_to
 
     def _send():
         req = urllib.request.Request(
@@ -1790,9 +1791,9 @@ async def verify_member_pin(member_id: str, payload: PinIn, user=Depends(require
     return {"ok": True, "has_pin": True}
 
 
-@app.post("/api/family/invite")
-async def family_invite(payload: InviteIn, user=Depends(require_user)):
-    database = get_db()
+async def _enforce_member_slot_limit(database, user) -> None:
+    """Raise a plan-limit error when the household (members + pending
+    invites) has no free slot. Admins bypass the check."""
     sub = await build_subscription(user["family_id"])
     limit = sub["limits"]["max_members"]
     used = sub["members_count"]
@@ -1804,7 +1805,6 @@ async def family_invite(payload: InviteIn, user=Depends(require_user)):
         }
     )
     used_with_pending = used + pending_invites_count
-
     if not is_admin_user(user) and used_with_pending >= limit:
         plan_limit_error(
             feature="family_members",
@@ -1813,6 +1813,45 @@ async def family_invite(payload: InviteIn, user=Depends(require_user)):
             used=used_with_pending,
             message=f"Your current plan allows {limit} family member slots including pending invites. Upgrade to add more.",
         )
+
+
+def _new_invite_doc(user, email=None) -> dict:
+    now = utcnow()
+    return {
+        "invite_id": new_id("invite"),
+        "family_id": user["family_id"],
+        "email": email,
+        "token": secrets.token_urlsafe(24),
+        "status": "pending",
+        "created_by_user_id": user["user_id"],
+        "created_by_name": user.get("name"),
+        "created_by_email": user.get("email"),
+        "created_at": now,
+        "updated_at": now,
+        "expires_at": now + timedelta(days=INVITE_DAYS),
+        "accepted_at": None,
+        "accepted_by_user_id": None,
+        "accepted_by_email": None,
+    }
+
+
+@app.post("/api/family/invite/link")
+async def family_invite_link(user=Depends(require_user)):
+    """Create a shareable invite link with no email attached — used by the
+    Phone (SMS) and Share-link options, which deliver the link from the
+    inviter's own device."""
+    database = get_db()
+    await _enforce_member_slot_limit(database, user)
+    invite = _new_invite_doc(user, email=None)
+    await database["family_invites"].insert_one(invite)
+    public = public_invite(invite)
+    return {"ok": True, "invite": public, "invite_url": public["invite_url"]}
+
+
+@app.post("/api/family/invite")
+async def family_invite(payload: InviteIn, user=Depends(require_user)):
+    database = get_db()
+    await _enforce_member_slot_limit(database, user)
 
     email = payload.email.strip().lower()
     if not email or "@" not in email:
@@ -1831,22 +1870,7 @@ async def family_invite(payload: InviteIn, user=Depends(require_user)):
     if existing:
         invite = existing
     else:
-        invite = {
-            "invite_id": new_id("invite"),
-            "family_id": user["family_id"],
-            "email": email,
-            "token": secrets.token_urlsafe(24),
-            "status": "pending",
-            "created_by_user_id": user["user_id"],
-            "created_by_name": user.get("name"),
-            "created_by_email": user.get("email"),
-            "created_at": utcnow(),
-            "updated_at": utcnow(),
-            "expires_at": utcnow() + timedelta(days=INVITE_DAYS),
-            "accepted_at": None,
-            "accepted_by_user_id": None,
-            "accepted_by_email": None,
-        }
+        invite = _new_invite_doc(user, email=email)
         await database["family_invites"].insert_one(invite)
 
     public = public_invite(invite)
@@ -1854,6 +1878,7 @@ async def family_invite(payload: InviteIn, user=Depends(require_user)):
         email,
         public["invite_url"],
         user.get("name") or user.get("email") or "A family member",
+        user.get("email") or "",
     )
 
     if email_result.get("sent"):
