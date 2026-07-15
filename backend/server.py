@@ -590,20 +590,22 @@ async def send_invite_email(to_email: str, invite_url: str, inviter_name: str, i
     )
 
     html_body = f"""
-<div style="font-family: Arial, sans-serif; background:#080910; padding:32px;">
-  <div style="max-width:560px; margin:0 auto; background:#141620; border:1px solid rgba(255,255,255,0.10); border-radius:24px; padding:28px;">
-    <div style="font-size:13px; letter-spacing:1.2px; text-transform:uppercase; color:#F59E0B; font-weight:700;">{safe_app_name}</div>
-    <h1 style="color:#ffffff; font-size:28px; margin:12px 0 8px;">You have been invited</h1>
-    <p style="color:rgba(255,255,255,0.72); line-height:1.55; font-size:15px;">
-      <strong style="color:#ffffff;">{safe_inviter}</strong> invited <strong style="color:#ffffff;">{safe_to}</strong>
-      to join their household workspace.
+<div style="font-family: -apple-system, 'Segoe UI', Roboto, Arial, sans-serif; background:#f4f5f2; padding:24px;">
+  <div style="max-width:520px; margin:0 auto; background:#ffffff; border:1px solid #e6e1da; border-radius:16px; padding:28px;">
+    <p style="color:#202323; font-size:16px; line-height:1.55; margin:0 0 14px;">Hi,</p>
+    <p style="color:#202323; font-size:16px; line-height:1.55; margin:0 0 20px;">
+      <strong>{safe_inviter}</strong> invited you to join their family household on {safe_app_name} —
+      a shared space to keep schedules, tasks, and important documents organised together.
     </p>
-    <a href="{safe_invite_url}" style="display:inline-block; margin-top:18px; background:#ffffff; color:#080910; text-decoration:none; font-weight:700; padding:13px 18px; border-radius:999px;">
-      Join household
+    <a href="{safe_invite_url}" style="display:inline-block; background:#f26a1b; color:#ffffff; text-decoration:none; font-weight:700; padding:12px 22px; border-radius:10px; font-size:15px;">
+      Accept invite
     </a>
-    <p style="color:rgba(255,255,255,0.45); font-size:12px; line-height:1.5; margin-top:24px;">
-      If the button does not open the app, copy and paste this link:<br />
+    <p style="color:#747b7c; font-size:13px; line-height:1.5; margin:22px 0 0;">
+      Or open this link on your phone:<br />
       <span style="word-break:break-all;">{safe_invite_url}</span>
+    </p>
+    <p style="color:#a0a6a7; font-size:12px; line-height:1.5; margin:20px 0 0;">
+      If you weren't expecting this, you can safely ignore this email.
     </p>
   </div>
 </div>
@@ -620,6 +622,12 @@ async def send_invite_email(to_email: str, invite_url: str, inviter_name: str, i
     reply_to = INVITE_REPLY_TO or inviter_email
     if reply_to:
         payload["reply_to"] = reply_to
+        # A List-Unsubscribe header is a strong positive signal for Gmail/Yahoo
+        # inbox placement, even for transactional mail.
+        payload["headers"] = {
+            "List-Unsubscribe": f"<mailto:{reply_to}?subject=unsubscribe>",
+            "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+        }
 
     def _send():
         req = urllib.request.Request(
