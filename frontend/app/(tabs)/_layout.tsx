@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { Tabs, usePathname, useRouter } from 'expo-router';
 import { View, StyleSheet, Text, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Home, Calendar as CalendarIcon, Lock, Settings as SettingsIcon, Star } from 'lucide-react-native';
+import { Home, Calendar as CalendarIcon, Lock, Settings as SettingsIcon, Star, UtensilsCrossed } from 'lucide-react-native';
 import { useStore } from '../../src/store';
 import { useBreakpoint } from '../../src/responsive';
 
@@ -52,6 +52,7 @@ const NAV_ITEMS = [
   { name: 'feed',     Icon: Home,          labelKey: 'feed' },
   { name: 'calendar', Icon: CalendarIcon,  labelKey: 'calendar' },
   { name: 'kids',     Icon: Star,          labelKey: 'kids' },
+  { name: 'kitchen',  Icon: UtensilsCrossed, labelKey: 'kitchen' },
   { name: 'vault',    Icon: Lock,          labelKey: 'vault' },
   { name: 'settings', Icon: SettingsIcon,  labelKey: 'settings' },
 ] as const;
@@ -178,6 +179,7 @@ export default function TabLayout() {
         <Tabs.Screen name="feed"     options={{ tabBarAccessibilityLabel: t('feed'), tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={Home}          label={t('feed')} /> }} />
         <Tabs.Screen name="calendar" options={{ tabBarAccessibilityLabel: t('calendar'), tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={CalendarIcon}  label={t('calendar')} /> }} />
         <Tabs.Screen name="kids"     options={{ tabBarAccessibilityLabel: t('kids'), tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={Star}          label={t('kids')} /> }} />
+        <Tabs.Screen name="kitchen"  options={{ tabBarAccessibilityLabel: t('kitchen'), tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={UtensilsCrossed} label={t('kitchen')} /> }} />
         <Tabs.Screen name="vault"    options={{ tabBarAccessibilityLabel: t('vault'), tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={Lock}          label={t('vault')} /> }} />
         <Tabs.Screen name="settings" options={{ tabBarAccessibilityLabel: t('settings'), tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={SettingsIcon}  label={t('settings')} /> }} />
         <Tabs.Screen name="account"  options={{ href: null }} />

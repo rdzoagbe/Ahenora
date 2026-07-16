@@ -3,7 +3,7 @@ import { Animated, Dimensions } from 'react-native';
 import { useRouter, usePathname } from 'expo-router';
 import { Gesture } from 'react-native-gesture-handler';
 
-const TAB_ORDER = ['/feed', '/calendar', '/kids', '/vault', '/settings'] as const;
+const TAB_ORDER = ['/feed', '/calendar', '/kids', '/kitchen', '/vault', '/settings'] as const;
 const SWIPE_THRESHOLD = 60;
 const VELOCITY_THRESHOLD = 500;
 const DRAG_RESISTANCE = 0.35;
