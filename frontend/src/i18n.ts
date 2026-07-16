@@ -12,6 +12,8 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  "dinner_title": "Dinner tonight 🍽️",
+  "dinner_to_buy": "{meal} · {n} still on your shopping list",
   "vault_no_pdf_viewer": "No app to open this file. A PDF viewer (like Google Drive) is needed.",
   "vault_open_error": "Could not open this document.",
   "streak_day1": "Day 1 — nice start!",
@@ -818,6 +820,8 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  "dinner_title": "Cena de hoy 🍽️",
+  "dinner_to_buy": "{meal} · {n} aún en tu lista de la compra",
   "vault_no_pdf_viewer": "No hay app para abrir este archivo. Necesitas un visor de PDF (como Google Drive).",
   "vault_open_error": "No se pudo abrir este documento.",
   "streak_day1": "Día 1: ¡buen comienzo!",
@@ -1618,6 +1622,8 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  "dinner_title": "Dîner de ce soir 🍽️",
+  "dinner_to_buy": "{meal} · {n} encore sur ta liste de courses",
   "vault_no_pdf_viewer": "Aucune app pour ouvrir ce fichier. Un lecteur de PDF (comme Google Drive) est nécessaire.",
   "vault_open_error": "Impossible d’ouvrir ce document.",
   "streak_day1": "Jour 1 — beau début !",
@@ -2418,6 +2424,8 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  "dinner_title": "Abendessen heute 🍽️",
+  "dinner_to_buy": "{meal} · {n} noch auf deiner Einkaufsliste",
   "vault_no_pdf_viewer": "Keine App zum Öffnen dieser Datei. Ein PDF-Viewer (z. B. Google Drive) wird benötigt.",
   "vault_open_error": "Dokument konnte nicht geöffnet werden.",
   "streak_day1": "Tag 1 — guter Start!",

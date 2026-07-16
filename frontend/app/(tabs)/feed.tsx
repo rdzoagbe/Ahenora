@@ -42,7 +42,7 @@ import { useStore } from '../../src/store';
 import { usePremiumGate, LockBadge } from '../../src/components/PremiumGate';
 import { useUI, UIColors } from '../../src/components/Kit';
 import { api, logEvent, Announcement, Card, CardType, FamilyMember, HandoffNote, Template, WeeklyReport } from '../../src/api';
-import { syncCardReminderNotifications, syncMorningDigest, ensureAskedNotificationPermissionOnce } from '../../src/notifications';
+import { syncCardReminderNotifications, syncMorningDigest, syncDinnerReminder, ensureAskedNotificationPermissionOnce } from '../../src/notifications';
 import { logger } from '../../src/logger';
 
 interface VoiceDraft {
@@ -272,6 +272,27 @@ export default function Feed() {
             // Quiet tip is silent (low-priority channel) so it is enabled by
             // default; the content digest still respects the reminders toggle.
             syncMorningDigest(true, prefs.card_reminders ? payload : null, quietTip).catch(() => undefined);
+
+            // Dinner-tonight nudge: 17:30 local, only when a meal is planned for
+            // today. Ties the Kitchen tab to a daily moment. Rides the reminders toggle.
+            Promise.allSettled([api.listMeals(), api.listShopping()])
+              .then(([mealRes, shopRes]) => {
+                const WEEK = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+                const today = WEEK[new Date().getDay()];
+                const meals = mealRes.status === 'fulfilled' ? mealRes.value : [];
+                const todaysMeal = meals.find((m) => m.day === today);
+                if (!prefs.card_reminders || !todaysMeal) {
+                  syncDinnerReminder(false, null).catch(() => undefined);
+                  return;
+                }
+                const shop = shopRes.status === 'fulfilled' ? shopRes.value : [];
+                const toBuy = shop.filter((i) => !i.checked).length;
+                const body = toBuy > 0
+                  ? t('dinner_to_buy', { meal: todaysMeal.title, n: String(toBuy) })
+                  : todaysMeal.title;
+                syncDinnerReminder(true, { title: t('dinner_title'), body }).catch(() => undefined);
+              })
+              .catch(() => undefined);
           })
           .catch(() => undefined);
       }
