@@ -14,7 +14,7 @@ import {
 import { BlurView } from 'expo-blur';
 import { useFocusEffect, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { Plus, X, Trash2, Stethoscope, BookOpen, Shield, Scale, Bell, Folder, MoreVertical, FileText, AlertTriangle, Share2, Image as ImageIcon } from 'lucide-react-native';
+import { Plus, X, Trash2, Stethoscope, BookOpen, Shield, Scale, Bell, Folder, ChevronRight, FileText, AlertTriangle, Share2, Image as ImageIcon } from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { PressScale } from '../../src/components/PressScale';
@@ -327,30 +327,27 @@ export default function Vault() {
               </PressScale>
             </Card>
           ) : (
-            <View style={styles.grid}>
+            <View style={styles.list}>
               {filtered.map((d) => {
                 const cat = catInfo(d.category);
                 const isImg = isImageDoc(d);
                 return (
-                  <PressScale key={d.doc_id} testID={`vault-doc-${d.doc_id}`} onPress={() => setPreview(d)} style={styles.tile}>
-                    <View style={styles.thumbWrap}>
+                  <PressScale key={d.doc_id} testID={`vault-doc-${d.doc_id}`} onPress={() => setPreview(d)} style={styles.listRow}>
+                    <View style={[styles.listThumb, { backgroundColor: cat.soft }]}>
                       {isImg ? (
-                        <Image source={{ uri: d.image_base64 }} style={styles.thumbImg} />
+                        <Image source={{ uri: d.image_base64 }} style={styles.listThumbImg} />
                       ) : (
-                        <View style={styles.fileThumb}>
-                          <FileText color={cat.tone} size={38} />
-                          <Text style={styles.fileThumbLabel}>PDF</Text>
-                        </View>
+                        <FileText color={cat.tone} size={22} />
                       )}
-                      <View style={styles.moreBtn}>
-                        <MoreVertical color={ui.muted} size={16} />
+                    </View>
+                    <View style={{ flex: 1, minWidth: 0, gap: 5 }}>
+                      <Text style={styles.listTitle} numberOfLines={1}>{d.title}</Text>
+                      <View style={styles.listMeta}>
+                        <Badge label={d.category.toUpperCase()} bg={cat.soft} color={cat.tone} />
+                        <Text style={styles.listDate}>{updatedLine(d.created_at, t)}</Text>
                       </View>
                     </View>
-                    <View style={styles.tileBody}>
-                      <Badge label={d.category.toUpperCase()} bg={cat.soft} color={cat.tone} />
-                      <Text style={styles.tileTitle} numberOfLines={2}>{d.title}</Text>
-                      <Text style={styles.tileDate}>{updatedLine(d.created_at, t)}</Text>
-                    </View>
+                    <ChevronRight color={ui.muted} size={18} />
                   </PressScale>
                 );
               })}
@@ -475,6 +472,10 @@ export default function Vault() {
                 </PressScale>
               </View>
             </View>
+            <Text style={styles.previewMeta}>
+              {t(preview.category.toLowerCase())} · {updatedLine(preview.created_at, t)}
+              {preview.file_name ? ` · ${preview.file_name}` : ''}
+            </Text>
             {isImageDoc(preview) ? (
               <Image source={{ uri: preview.image_base64 }} style={styles.previewImg} />
             ) : (
@@ -516,14 +517,13 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   recentTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 19, letterSpacing: -0.3 },
   recentTotal: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
 
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 14, justifyContent: 'space-between' },
-  tile: { width: '48%', borderRadius: 20, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, overflow: 'hidden', shadowColor: '#000000', shadowOpacity: 0.06, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 2, marginBottom: 2 },
-  thumbWrap: { height: 132, backgroundColor: ui.soft, alignItems: 'center', justifyContent: 'center' },
-  thumbImg: { ...StyleSheet.absoluteFillObject, resizeMode: 'cover' },
-  moreBtn: { position: 'absolute', top: 8, right: 8, width: 28, height: 28, borderRadius: 99, backgroundColor: 'rgba(255,255,255,0.92)', alignItems: 'center', justifyContent: 'center' },
-  tileBody: { padding: 12, gap: 7 },
-  tileTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 15, lineHeight: 19 },
-  tileDate: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12 },
+  list: { gap: 10 },
+  listRow: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, borderRadius: 16, paddingVertical: 11, paddingHorizontal: 12 },
+  listThumb: { width: 46, height: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  listThumbImg: { width: 46, height: 46, resizeMode: 'cover' },
+  listTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 15, letterSpacing: -0.2 },
+  listMeta: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  listDate: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12 },
 
   emptyCard: { alignItems: 'center', paddingVertical: 30, paddingHorizontal: 22, gap: 10 },
   emptyTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 17, textAlign: 'center' },
@@ -553,8 +553,6 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   pickFileName: { color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 14, textAlign: 'center' },
   pickImg: { ...StyleSheet.absoluteFillObject, resizeMode: 'cover' },
   pickText: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
-  fileThumb: { flex: 1, width: '100%', alignItems: 'center', justifyContent: 'center', gap: 6 },
-  fileThumbLabel: { color: ui.muted, fontFamily: 'Inter_800ExtraBold', fontSize: 12, letterSpacing: 1 },
   sheetFooter: { flexDirection: 'row', gap: 12, marginTop: 22 },
   cancelBtn: { flex: 1, borderWidth: 1, borderColor: ui.line, borderRadius: 18, paddingVertical: 15, alignItems: 'center' },
   cancelText: { color: ui.muted, fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
@@ -563,6 +561,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   previewWrap: { flex: 1, padding: 24, justifyContent: 'center' },
   previewTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
   previewTitle: { flex: 1, color: '#fff', fontFamily: 'Inter_800ExtraBold', fontSize: 24 },
+  previewMeta: { color: 'rgba(255,255,255,0.7)', fontFamily: 'Inter_600SemiBold', fontSize: 13, marginBottom: 14, marginTop: -6 },
   previewActions: { flexDirection: 'row', gap: 8 },
   previewIconBtn: { padding: 10, borderRadius: 9999, borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)', backgroundColor: 'rgba(15,23,42,0.55)' },
   previewImg: { width: '100%', aspectRatio: 0.75, borderRadius: 24, borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)' },
