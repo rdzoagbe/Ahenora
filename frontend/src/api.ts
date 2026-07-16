@@ -394,6 +394,12 @@ export interface StarTransaction {
   created_at?: string | null;
 }
 
+export interface MetricRow {
+  date: string;
+  name: string;
+  count: number;
+}
+
 export interface FamilyInvite {
   invite_id: string;
   family_id: string;
@@ -566,6 +572,8 @@ export const api = {
       method: 'POST',
     });
   },
+  getMetricsSummary: (days = 14) =>
+    request<{ days: number; rows: MetricRow[] }>(`/metrics/summary?days=${days}`),
   listInvites: () => request<FamilyInvite[]>('/family/invites'),
   getInvite: (token: string) =>
     request<{

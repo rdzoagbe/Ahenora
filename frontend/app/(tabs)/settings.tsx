@@ -2,6 +2,7 @@ import React, { useCallback, useMemo, useState } from 'react';
 import { Alert, Image, Linking, Platform, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import {
+  BarChart3,
   Bell,
   CalendarDays,
   ChevronRight,
@@ -672,6 +673,16 @@ export default function Settings() {
               subtitle={`${t('set_youre_on')} ${user?.is_admin ? t('set_admin_tester') : `${planLabel}`} · ${t('set_compare_tiers')}`}
               onPress={() => router.push('/pricing')}
             />
+
+            {user?.is_admin ? (
+              <NavRow
+                testID="settings-metrics"
+                tile={<IconTile bg={ui.mint}><BarChart3 color={ui.mintText} size={18} /></IconTile>}
+                title="Usage analytics"
+                subtitle="Active users & feature usage (admin)"
+                onPress={() => router.push('/metrics')}
+              />
+            ) : null}
 
             <NavRow
               tile={<IconTile bg={ui.soft}><Sparkles color={ui.text} size={18} /></IconTile>}
