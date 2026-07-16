@@ -12,6 +12,8 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  "feed_needs_attention": "Needs attention",
+  "feed_all_caught_up": "You're all caught up!",
   "kitchen": "Kitchen",
   "kitchen_eyebrow": "Household",
   "kitchen_meal_word": "meal",
@@ -812,6 +814,8 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  "feed_needs_attention": "Requiere atención",
+  "feed_all_caught_up": "¡Todo al día!",
   "kitchen": "Cocina",
   "kitchen_eyebrow": "Hogar",
   "kitchen_meal_word": "comida",
@@ -1606,6 +1610,8 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  "feed_needs_attention": "À traiter",
+  "feed_all_caught_up": "Tout est à jour !",
   "kitchen": "Cuisine",
   "kitchen_eyebrow": "Maison",
   "kitchen_meal_word": "repas",
@@ -2400,6 +2406,8 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  "feed_needs_attention": "Zu erledigen",
+  "feed_all_caught_up": "Alles erledigt!",
   "kitchen": "Küche",
   "kitchen_eyebrow": "Haushalt",
   "kitchen_meal_word": "Mahlzeit",
