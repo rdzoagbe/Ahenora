@@ -12,6 +12,8 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  "vault_no_pdf_viewer": "No app to open this file. A PDF viewer (like Google Drive) is needed.",
+  "vault_open_error": "Could not open this document.",
   "streak_day1": "Day 1 — nice start!",
   "streak_days": "{n}-day streak",
   "feed_needs_attention": "Needs attention",
@@ -816,6 +818,8 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  "vault_no_pdf_viewer": "No hay app para abrir este archivo. Necesitas un visor de PDF (como Google Drive).",
+  "vault_open_error": "No se pudo abrir este documento.",
   "streak_day1": "Día 1: ¡buen comienzo!",
   "streak_days": "Racha de {n} días",
   "feed_needs_attention": "Requiere atención",
@@ -1614,6 +1618,8 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  "vault_no_pdf_viewer": "Aucune app pour ouvrir ce fichier. Un lecteur de PDF (comme Google Drive) est nécessaire.",
+  "vault_open_error": "Impossible d’ouvrir ce document.",
   "streak_day1": "Jour 1 — beau début !",
   "streak_days": "Série de {n} jours",
   "feed_needs_attention": "À traiter",
@@ -2412,6 +2418,8 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  "vault_no_pdf_viewer": "Keine App zum Öffnen dieser Datei. Ein PDF-Viewer (z. B. Google Drive) wird benötigt.",
+  "vault_open_error": "Dokument konnte nicht geöffnet werden.",
   "streak_day1": "Tag 1 — guter Start!",
   "streak_days": "{n}-Tage-Serie",
   "feed_needs_attention": "Zu erledigen",

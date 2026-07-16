@@ -255,6 +255,52 @@ export default function Vault() {
     }
   }, [showToast, t]);
 
+  // Open a document for *reading* (not sharing): PDFs/files launch in the
+  // phone's viewer. On Android we fire a VIEW intent so it opens directly;
+  // elsewhere (and on older builds) we fall back to the share/quick-look sheet.
+  const openDoc = useCallback(async (doc: VaultDoc) => {
+    try {
+      const FS = require('expo-file-system/legacy');
+      const data = doc.image_base64 || '';
+      const match = data.match(/^data:([\w/+.-]+);base64,(.+)$/);
+      const mime = doc.mime_type || (match ? match[1] : 'application/octet-stream');
+      const EXT: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'application/pdf': 'pdf' };
+      const ext = EXT[mime] || 'bin';
+      const fileUri = `${FS.cacheDirectory}${doc.doc_id}.${ext}`;
+      await FS.writeAsStringAsync(fileUri, match ? match[2] : data, { encoding: FS.EncodingType.Base64 });
+
+      if (Platform.OS === 'android') {
+        try {
+          const IntentLauncher = require('expo-intent-launcher');
+          const contentUri = await FS.getContentUriAsync(fileUri);
+          await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+            data: contentUri,
+            flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
+            type: mime,
+          });
+          logEvent('vault_shared');
+          return;
+        } catch {
+          // No viewer / module unavailable — fall through to the share sheet.
+        }
+      }
+
+      let Sharing: any;
+      try {
+        Sharing = require('expo-sharing');
+        if (!(await Sharing.isAvailableAsync())) throw new Error('unavailable');
+      } catch {
+        showToast(t('vault_no_pdf_viewer'), 'info');
+        return;
+      }
+      await Sharing.shareAsync(fileUri, { mimeType: mime, dialogTitle: doc.title });
+      logEvent('vault_shared');
+    } catch (e: any) {
+      logger.warn('Open doc failed:', e?.message || e);
+      showToast(t('vault_open_error'), 'error');
+    }
+  }, [showToast, t]);
+
   const confirmRemove = (doc: VaultDoc) => {
     Alert.alert(
       t('vault_delete_document_title'),
@@ -482,8 +528,8 @@ export default function Vault() {
               <View style={styles.previewFile}>
                 <FileText color="#fff" size={64} />
                 <Text style={styles.previewFileName} numberOfLines={2}>{preview.file_name || preview.title}</Text>
-                <PressScale testID="preview-open" onPress={() => shareDoc(preview)} style={styles.previewOpenBtn}>
-                  <Share2 color="#fff" size={18} />
+                <PressScale testID="preview-open" onPress={() => openDoc(preview)} style={styles.previewOpenBtn}>
+                  <FileText color="#fff" size={18} />
                   <Text style={styles.previewOpenText}>{t('vault_open_file')}</Text>
                 </PressScale>
               </View>
