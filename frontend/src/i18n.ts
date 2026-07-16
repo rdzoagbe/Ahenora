@@ -12,6 +12,7 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  "cal_empty_hint": "Sync your Google Calendar, or add a task with a date, to see it here.",
   "gs_title": "Getting started",
   "gs_done": "done",
   "gs_add_member": "Add a family member",
@@ -806,6 +807,7 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  "cal_empty_hint": "Sincroniza tu Google Calendar o añade una tarea con fecha para verla aquí.",
   "gs_title": "Primeros pasos",
   "gs_done": "listo",
   "gs_add_member": "Añade un familiar",
@@ -1594,6 +1596,7 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  "cal_empty_hint": "Synchronisez votre Google Agenda ou ajoutez une tâche datée pour la voir ici.",
   "gs_title": "Pour commencer",
   "gs_done": "fait",
   "gs_add_member": "Ajoutez un membre de la famille",
@@ -2382,6 +2385,7 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  "cal_empty_hint": "Synchronisiere deinen Google Kalender oder füge eine Aufgabe mit Datum hinzu, um sie hier zu sehen.",
   "gs_title": "Erste Schritte",
   "gs_done": "erledigt",
   "gs_add_member": "Familienmitglied hinzufügen",

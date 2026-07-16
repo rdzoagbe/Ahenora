@@ -539,7 +539,20 @@ export default function Calendar() {
             <ActivityIndicator color={ui.orange} style={{ marginTop: 30 }} />
           ) : groups.length === 0 ? (
             <KitCard style={styles.empty}>
+              <View style={styles.emptyIcon}>
+                <CalendarDays color={ui.muted} size={26} />
+              </View>
               <Text style={styles.emptyText}>{selectedDay ? t('cal_no_events_date') : t('no_events')}</Text>
+              <Text style={styles.emptyHint}>{t('cal_empty_hint')}</Text>
+              <PressScale
+                testID="calendar-empty-sync"
+                onPress={syncCalendar}
+                disabled={syncDisabled}
+                style={[styles.emptySyncBtn, syncDisabled && { opacity: 0.55 }]}
+              >
+                <RefreshCw color={ui.orange} size={15} />
+                <Text style={styles.emptySyncText}>{syncing ? t('cal_syncing') : t('cal_sync')}</Text>
+              </PressScale>
             </KitCard>
           ) : (
             <KitCard style={styles.timelineCard}>
@@ -726,8 +739,12 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   dayHeadTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 19, letterSpacing: -0.3, flex: 1 },
   dayHeadCount: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
 
-  empty: { paddingVertical: 30, alignItems: 'center' },
-  emptyText: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 16 },
+  empty: { paddingVertical: 34, paddingHorizontal: 24, alignItems: 'center' },
+  emptyIcon: { width: 54, height: 54, borderRadius: 16, backgroundColor: ui.soft, alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
+  emptyText: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 17, textAlign: 'center' },
+  emptyHint: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 13.5, lineHeight: 20, textAlign: 'center', marginTop: 6 },
+  emptySyncBtn: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 16, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 99, borderWidth: 1, borderColor: ui.orange + '55', backgroundColor: ui.orangeSoft },
+  emptySyncText: { color: ui.orange, fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
 
   timelineCard: { paddingHorizontal: 16 },
   eventRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14 },
