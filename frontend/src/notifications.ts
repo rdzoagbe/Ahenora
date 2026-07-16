@@ -290,6 +290,55 @@ export async function syncMorningDigest(
   return { scheduled: true };
 }
 
+const DINNER_ID_KEY = 'coo_dinner_reminder_id';
+
+/**
+ * Schedules (or clears) a "dinner tonight" nudge for 17:30 local — but only
+ * when there's a meal planned for today and 17:30 is still ahead. Ties the
+ * meal planner to a daily moment. Caller passes pre-localized content.
+ */
+export async function syncDinnerReminder(
+  enabled: boolean,
+  content: { title: string; body: string } | null
+) {
+  const Notifications = await getNotificationsModule();
+  if (!Notifications) return { scheduled: false };
+
+  const previous = await AsyncStorage.getItem(DINNER_ID_KEY).catch(() => null);
+  if (previous) {
+    await Notifications.cancelScheduledNotificationAsync(previous).catch(() => undefined);
+    await AsyncStorage.removeItem(DINNER_ID_KEY).catch(() => undefined);
+  }
+
+  if (!enabled || !content) return { scheduled: false };
+
+  // It's about *tonight* — skip if 17:30 has already passed today.
+  const at = new Date();
+  at.setHours(17, 30, 0, 0);
+  if (at.getTime() <= Date.now()) return { scheduled: false };
+
+  const permissions = await Notifications.getPermissionsAsync();
+  if (permissions.status !== 'granted') return { scheduled: false };
+
+  await configureNotificationChannels();
+
+  const identifier = await Notifications.scheduleNotificationAsync({
+    content: {
+      title: content.title,
+      body: content.body,
+      sound: true,
+      data: { type: 'dinner_reminder' },
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.DATE,
+      date: at,
+      channelId: 'card-reminders',
+    } as any,
+  });
+  await AsyncStorage.setItem(DINNER_ID_KEY, identifier).catch(() => undefined);
+  return { scheduled: true };
+}
+
 export async function sendTestScheduledReminderNotification() {
   const Notifications = await getNotificationsModule();
   if (!Notifications) return false;
