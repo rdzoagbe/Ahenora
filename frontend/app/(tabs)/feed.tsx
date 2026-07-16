@@ -164,6 +164,7 @@ export default function Feed() {
   // dismissed card never reappears.
   const pendingDismissRef = useRef<Set<string>>(new Set());
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
+  const [showAlerts, setShowAlerts] = useState(false);
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [rewardCount, setRewardCount] = useState(0);
   const [vaultCount, setVaultCount] = useState(0);
@@ -502,7 +503,7 @@ export default function Feed() {
               <Text style={styles.dateText}>{feedDateLine()} <Text style={styles.sun}>{timeEmoji()}</Text></Text>
               <PressScale
                 testID="feed-bell"
-                onPress={() => setActiveTab('today')}
+                onPress={() => setShowAlerts(true)}
                 style={styles.bellWrap}
                 accessibilityLabel={t('feed_view_alerts')}
               >
@@ -871,6 +872,37 @@ export default function Feed() {
           </>
         ) : null}
       </KeyboardAwareBottomSheet>
+
+      <KeyboardAwareBottomSheet visible={showAlerts} onClose={() => setShowAlerts(false)} contentStyle={styles.detailSheet}>
+        <View style={styles.detailHeader}>
+          <Text style={styles.detailTitle}>{t('feed_needs_attention')}</Text>
+          <PressScale onPress={() => setShowAlerts(false)} style={styles.closeBtn} testID="feed-alerts-close">
+            <X color={ui.text} size={20} />
+          </PressScale>
+        </View>
+        {dashboard.priority.length === 0 ? (
+          <View style={styles.alertsEmpty}>
+            <CheckCircle2 color={ui.mintText} size={30} />
+            <Text style={styles.alertsEmptyText}>{t('feed_all_caught_up')}</Text>
+          </View>
+        ) : (
+          dashboard.priority.map((card, index) => (
+            <PressScale
+              key={card.card_id}
+              testID={`feed-alert-${card.card_id}`}
+              onPress={() => { setShowAlerts(false); setSelectedCard(card); }}
+              style={[styles.alertRow, index === 0 && { borderTopWidth: 0 }]}
+            >
+              <View style={styles.alertDot} />
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.alertRowTitle} numberOfLines={1}>{card.title}</Text>
+                <Text style={styles.alertRowMeta} numberOfLines={1}>{cardMeta(card, t)}</Text>
+              </View>
+              <ChevronRight color={ui.muted} size={18} />
+            </PressScale>
+          ))
+        )}
+      </KeyboardAwareBottomSheet>
     </SwipeableTabView>
   );
 }
@@ -901,6 +933,12 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   emptyScanText: { fontFamily: 'Inter_700Bold', fontSize: 13 },
   detailSheet: { backgroundColor: ui.card, borderTopLeftRadius: 30, borderTopRightRadius: 30, borderWidth: 1, borderColor: ui.line, padding: 24, paddingBottom: 110 },
+  alertRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, borderTopWidth: 1, borderTopColor: ui.line, marginTop: 4 },
+  alertDot: { width: 9, height: 9, borderRadius: 99, backgroundColor: ui.orange, flexShrink: 0 },
+  alertRowTitle: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 15.5 },
+  alertRowMeta: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 13, marginTop: 2 },
+  alertsEmpty: { alignItems: 'center', gap: 12, paddingVertical: 34 },
+  alertsEmptyText: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 15 },
   detailHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
   detailTitle: { flex: 1, color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 24, lineHeight: 30, letterSpacing: -0.4 },
   closeBtn: { width: 42, height: 42, borderRadius: 9999, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft, alignItems: 'center', justifyContent: 'center' },
