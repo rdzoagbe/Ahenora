@@ -38,41 +38,49 @@ upgrade exists yet). **Enforcement** (parents uncounted, children metered 1/4/10
 
 ---
 
-## Post-launch phases (in order)
+## Post-approval execution plan
 
-### Phase 1 — Google Play Billing
-- Integrate Play Billing library; define the two subscription products in Play Console
-- Role-aware member limits (backend `PLAN_CATALOG` + enforcement)
-- Real upgrade flow replaces the "coming soon" alerts
-- Automated release notes via `eas submit` what's-new files
+Ordered by what to do first. Each item notes **how** we build it and whether it
+ships via **OTA** (JS only) or needs a **native build** (EAS Build → AAB).
 
-### Phase 2 — Web version (iPhone access)
-- `expo export` for web; fix native-module edges; free static hosting
-- Google OAuth: add web origin to allowed origins (owner action)
-- Positioning: companion access for iPhone family members (owner's co-parent is on iPhone). Not a substitute for the future native iOS app ($99/yr Apple program, when revenue justifies)
+### Step 0 — Launch stabilization (first ~1–2 weeks)
+Before building anything new, watch the wider audience.
+- **Staged production rollout** (~20% → 50% → 100% over a few days), not 100% at once.
+- Watch **Play Console** crash-free rate + ANRs, reviews, and **Settings → Usage analytics**.
+- Fix whatever real users surface via OTA.
+- Feature freeze lifts → batch the held **Dependabot** updates one small, verified PR at a time.
 
-### Phase 3 — Engagement & platform polish
-- **Android home-screen widget** (today's tasks) — native change
-- **Tablet landscape** (unlock portrait-only orientation; native change) + large-screen polish (Play ranking factor)
-- Deobfuscation mapping upload for native crash reports (nice-to-have)
+### Phase 1 — Monetization (Google Play Billing)  *— highest ROI, do first*
+Already scaffolded: pricing decided, `PLAN_CATALOG` exists, "coming soon" upgrade alerts in place.
+1. Create the two subscriptions in Play Console — **Executive** and **Family Office**, each monthly + yearly ($8.99/$69.99, $19.99/$179.99).
+2. Add **RevenueCat** (handles receipt validation, entitlements, renewals — needs a build). Alt: `react-native-iap`.
+3. **Backend:** entitlement webhook sets the family's plan; **restore real member limits** in `PLAN_CATALOG` (Village was relaxed to 10 for testing) and enforce **parents uncounted, kids metered 1/4/10**.
+4. **Frontend:** replace `promptUpgrade` alerts with the real purchase sheet; unlock gated features off the entitlement.
+- Native build required. **Phase 4 AI features monetize through this — Billing lands first.**
 
-### Phase 4 — AI food & gifting (Executive-tier candidates)
+### Phase 2 — Web version (iPhone family access)
+- `expo export --platform web` → free static hosting (Vercel/Netlify/GitHub Pages).
+- Work is **guarding native-only modules** for web (document-picker, sharing, intent-launcher, PDF/WebView) with web fallbacks.
+- Add the **web origin** to Google OAuth allowed origins + backend `ALLOWED_ORIGINS` (CORS).
+- Positioning: companion access for iPhone family members — not a full iOS app (that's the $99/yr Apple program, later, when revenue justifies).
 
-**AI Chef (fridge scan):** photograph the fridge/groceries → existing Gemini
-vision pipeline proposes meals that can be cooked from what's there; one tap
-adds missing ingredients to the shopping list. Same machinery as the document
-scan — new prompt, new UI.
+### Phase 3 — Platform polish (ranking + engagement)
+- **Android home-screen widget** (today's tasks) — native build. `react-native-android-widget` or a small native module + config plugin.
+- **Tablet / landscape** — unlock the portrait lock in `app.json`; lean on existing `useBreakpoint` responsive layouts; polish large screens (Play ranking factor). Native build for the orientation change.
+- **Crash-report mapping** — upload deobfuscation `mapping.txt` (or add Sentry) so production crashes are readable.
 
-**AI Gift Concierge:**
-1. Birthday field on family members → "birthday coming up" feed card
-2. AI gift suggestions with budget (existing Gemini integration)
-3. Birthday message + family notification
-4. Retailer **link-outs with affiliate links** (revenue; no gift-card issuance — that would mean payments regulation + Play financial-features redeclaration)
+### Phase 4 — AI food & gifting (Executive-tier differentiators)
+- **AI Chef (fridge scan):** photograph groceries → reuse the **Gemini vision pipeline** (same as document scan), new prompt → one-tap add missing items to the shopping list. Lives in the **Kitchen tab**. Mostly a new prompt + UI (OTA-friendly).
+- **AI Gift Concierge:** ① birthday field on members → "birthday in 3 days" **feed card** (also retention idea #5), ② Gemini gift suggestions with budget, ③ birthday message + notification, ④ retailer **affiliate link-outs** for revenue (no gift-card *issuance* — payments regulation).
 
-### Parked (deliberately)
-- **Kid sessions** (children checking off their own chores from their phones): great retention idea, but adding child *users* flips the Play target-audience declaration to mixed-audience → Google Families program compliance. Revisit **only if testers/users ask for it** post-launch.
-- **Dependabot PRs** (fastapi, pymongo, babel 8, etc.): major bumps held during testing; batch carefully after launch.
-- **Tech debt** (revisit at real scale): vault images as base64 in Mongo → object storage (~1k users); split the 3,700-line `server.py`; Mongo indexes on `family_id`; PBKDF2 iterations bump.
+### Parked (only if users ask)
+- **Kid logins** (children checking off their own chores) — flips Play audience to mixed → Families-program compliance. Revisit only on demand.
+- **Tech debt at real scale (~1k users):** vault files base64-in-Mongo → object storage; split the 3,700-line `server.py`; Mongo indexes on `family_id`; PBKDF2 iteration bump.
+
+### How we execute
+- Same rhythm as the build-out: small branch → `tsc`/`jest`/`py_compile` → PR → merge → **OTA** for JS, **EAS build** for anything native.
+- **New for production:** staged rollouts; watch crash-free rate; always flag build-vs-OTA before shipping.
+- **Recommended sequence:** Stabilize → **Billing** → **Web** → **Polish** → **AI**.
 
 ---
 
