@@ -37,6 +37,7 @@ import { CameraCaptureModal } from '../../src/components/CameraCaptureModal';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
 import { TabScreen } from '../../src/components/TabScreen';
 import { GettingStarted } from '../../src/components/GettingStarted';
+import { StreakChip } from '../../src/components/StreakChip';
 import { useStore } from '../../src/store';
 import { usePremiumGate, LockBadge } from '../../src/components/PremiumGate';
 import { useUI, UIColors } from '../../src/components/Kit';
@@ -513,6 +514,8 @@ export default function Feed() {
                 ) : null}
               </PressScale>
             </View>
+
+            <StreakChip />
 
             <View style={styles.heroRow}>
               <View style={{ flex: 1 }}>
