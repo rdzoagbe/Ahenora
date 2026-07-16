@@ -12,6 +12,7 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  "kids_reward_enjoy": "Enjoy your reward!",
   "set_invite_via_email": "Email",
   "set_invite_via_phone": "Phone",
   "set_invite_via_link": "Link",
@@ -800,6 +801,7 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  "kids_reward_enjoy": "¡Disfruta tu premio!",
   "set_invite_via_email": "Correo",
   "set_invite_via_phone": "Teléfono",
   "set_invite_via_link": "Enlace",
@@ -1582,6 +1584,7 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  "kids_reward_enjoy": "Profite bien de ta récompense !",
   "set_invite_via_email": "E-mail",
   "set_invite_via_phone": "Téléphone",
   "set_invite_via_link": "Lien",
@@ -2364,6 +2367,7 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  "kids_reward_enjoy": "Viel Freude mit deiner Belohnung!",
   "set_invite_via_email": "E-Mail",
   "set_invite_via_phone": "Telefon",
   "set_invite_via_link": "Link",

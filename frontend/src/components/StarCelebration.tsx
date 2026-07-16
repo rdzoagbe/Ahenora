@@ -2,28 +2,32 @@ import React, { useEffect, useRef } from 'react';
 import { Animated, StyleSheet, Text } from 'react-native';
 import { useStore } from '../store';
 
+/** What to celebrate: stars earned, or a reward redeemed. */
+export type CelebrationContent =
+  | { kind: 'stars'; amount: number }
+  | { kind: 'reward'; title: string };
+
 interface Props {
-  amount: number | null;
+  content: CelebrationContent | null;
   onDone: () => void;
 }
 
 const PRAISE_KEYS = ['kids_praise_1', 'kids_praise_2', 'kids_praise_3'];
 
 /**
- * A lightweight celebratory burst shown when stars are awarded:
- * "🎉 +5 ⭐ — Wow, good job!". Uses the built-in Animated API (spring in,
- * float up, fade out) — no external animation libraries.
+ * A lightweight celebratory burst shown when stars are awarded
+ * ("🎉 +5 ⭐ — Wow, good job!") or a reward is redeemed
+ * ("🎁 Movie night — Enjoy your reward!"). Uses the built-in Animated API
+ * (spring in, float up, fade out) — no external animation libraries.
  */
-export function StarCelebration({ amount, onDone }: Props) {
+export function StarCelebration({ content, onDone }: Props) {
   const { t, theme } = useStore();
   const scale = useRef(new Animated.Value(0.3)).current;
   const opacity = useRef(new Animated.Value(0)).current;
   const rise = useRef(new Animated.Value(0)).current;
-  // Vary the praise line per burst without needing randomness at render time.
-  const praiseIndex = Math.abs(amount ?? 0) % PRAISE_KEYS.length;
 
   useEffect(() => {
-    if (amount === null) return;
+    if (!content) return;
     scale.setValue(0.3);
     opacity.setValue(0);
     rise.setValue(0);
@@ -40,9 +44,16 @@ export function StarCelebration({ amount, onDone }: Props) {
     ]).start(({ finished }) => {
       if (finished) onDone();
     });
-  }, [amount, scale, opacity, rise, onDone]);
+  }, [content, scale, opacity, rise, onDone]);
 
-  if (amount === null) return null;
+  if (content === null) return null;
+
+  const isStars = content.kind === 'stars';
+  const burst = isStars ? '🎉' : '🎁';
+  const headline = isStars ? `+${content.amount} ⭐` : content.title;
+  // Vary the praise line per burst without needing randomness at render time.
+  const praiseIndex = isStars ? Math.abs(content.amount) % PRAISE_KEYS.length : 0;
+  const subtitle = isStars ? t(PRAISE_KEYS[praiseIndex]) : t('kids_reward_enjoy');
 
   return (
     <Animated.View
@@ -58,9 +69,9 @@ export function StarCelebration({ amount, onDone }: Props) {
         },
       ]}
     >
-      <Text style={styles.burst}>🎉</Text>
-      <Text style={[styles.amount, { color: theme.colors.accent }]}>+{amount} ⭐</Text>
-      <Text style={[styles.praise, { color: theme.colors.text }]}>{t(PRAISE_KEYS[praiseIndex])}</Text>
+      <Text style={styles.burst}>{burst}</Text>
+      <Text style={[styles.amount, { color: theme.colors.accent }]} numberOfLines={2}>{headline}</Text>
+      <Text style={[styles.praise, { color: theme.colors.text }]}>{subtitle}</Text>
     </Animated.View>
   );
 }
@@ -71,6 +82,7 @@ const styles = StyleSheet.create({
     top: '32%',
     alignSelf: 'center',
     alignItems: 'center',
+    maxWidth: '82%',
     paddingHorizontal: 28,
     paddingVertical: 20,
     borderRadius: 24,
@@ -82,6 +94,6 @@ const styles = StyleSheet.create({
     zIndex: 999,
   },
   burst: { fontSize: 34, marginBottom: 2 },
-  amount: { fontFamily: 'Inter_800ExtraBold', fontSize: 26 },
-  praise: { fontFamily: 'Inter_600SemiBold', fontSize: 14, marginTop: 4 },
+  amount: { fontFamily: 'Inter_800ExtraBold', fontSize: 26, textAlign: 'center' },
+  praise: { fontFamily: 'Inter_600SemiBold', fontSize: 14, marginTop: 4, textAlign: 'center' },
 });

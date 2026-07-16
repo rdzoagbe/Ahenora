@@ -33,7 +33,7 @@ import {
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { PressScale } from '../../src/components/PressScale';
 import { PinPadModal } from '../../src/components/PinPadModal';
-import { StarCelebration } from '../../src/components/StarCelebration';
+import { StarCelebration, CelebrationContent } from '../../src/components/StarCelebration';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
 import AppToast, { ToastTone } from '../../src/components/AppToast';
 import EmptyState from '../../src/components/EmptyState';
@@ -131,7 +131,7 @@ export default function Kids() {
   const [refreshing, setRefreshing] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [pinPromptReward, setPinPromptReward] = useState<Reward | null>(null);
-  const [celebration, setCelebration] = useState<number | null>(null);
+  const [celebration, setCelebration] = useState<CelebrationContent | null>(null);
   const [showFixSheet, setShowFixSheet] = useState(false);
   const [fixValue, setFixValue] = useState('');
   const [showAllowanceSheet, setShowAllowanceSheet] = useState(false);
@@ -377,7 +377,7 @@ export default function Kids() {
       setMembers((prev) => prev.map((member) => (member.member_id === result.member.member_id ? result.member : member)));
       setShowStarSheet(false);
       showToast(delta > 0 ? `${t('kids_added')} ${amount} ${t('stars')}.` : `${t('kids_removed')} ${amount} ${t('stars')}.`, 'success');
-      if (delta > 0) setCelebration(amount);
+      if (delta > 0) setCelebration({ kind: 'stars', amount });
       await refreshHistory(activeChild.member_id);
     } catch (e: any) {
       logger.warn('Adjust stars failed:', e?.message || e);
@@ -395,7 +395,7 @@ export default function Kids() {
       const result = await api.adjustMemberStars(activeChild.member_id, { delta: amount, reason });
       setMembers((prev) => prev.map((member) => (member.member_id === result.member.member_id ? result.member : member)));
       showToast(`${t('kids_added')} ${amount} ${t('stars')} · ${reason}`, 'success');
-      setCelebration(amount);
+      setCelebration({ kind: 'stars', amount });
       await refreshHistory(activeChild.member_id);
     } catch (e: any) {
       logger.warn('Quick add failed:', e?.message || e);
@@ -451,6 +451,7 @@ export default function Kids() {
       const res = await api.redeemReward(reward.reward_id, activeChild.member_id);
       setMembers((prev) => prev.map((m) => (m.member_id === res.member.member_id ? res.member : m)));
       showToast(`${t('redeemed')} ${reward.title}`, 'success');
+      setCelebration({ kind: 'reward', title: reward.title });
       await refreshHistory(activeChild.member_id);
     } catch (e: any) {
       logger.warn('Reward redemption failed:', e?.message || e);
@@ -943,7 +944,7 @@ export default function Kids() {
         </View>
       </KeyboardAwareBottomSheet>
 
-      <StarCelebration amount={celebration} onDone={() => setCelebration(null)} />
+      <StarCelebration content={celebration} onDone={() => setCelebration(null)} />
 
       <PinPadModal
         visible={pinPromptReward !== null}
