@@ -87,65 +87,54 @@ scan — new prompt, new UI.
 
 ---
 
-## Release notes — build "1.0.0 – Rewards, invites & polish"
+## Release notes — build "Kitchen, retention & readable docs"
 
-Paste the matching language block into Play Console → closed testing → release notes.
-Each is under Play's 500-character limit. Update this section for each new build.
+Paste the matching `<lang-CODE>` blocks into Play Console → release notes.
+Use only the language tags your store listing supports, and make the code
+match exactly (e.g. `en-US` vs `en-GB`). Each block is under Play's 500-char
+limit. Update this section for each new build.
 
-**Release name:** `1.0.0 – Rewards, invites & polish`
+**Release name:** `1.0.0 – Kitchen & retention`
 
-**English (en-US)**
 ```
+<en-GB>
 What's new:
-• 🎉 Star celebrations when kids earn rewards
-• Fix a child's star balance if points were added by mistake
-• Set pocket money per child, with an age-based guide
-• 3 ways to invite family: email, text, or a share link
-• Attach PDF files to the Vault, not just photos
-• Share Vault documents by email or messaging apps
-• Numbered shopping list you can check off
-• Dark mode is now clearly readable everywhere
-• Faster, more reliable — several fixes under the hood
-```
-
-**Français (fr-FR)**
-```
+• New Kitchen tab — shopping list + meal planner together, with a quick switcher
+• Open and read your PDF documents right from the Vault
+• Documents now shown in a tidy, space-saving list
+• Tap the bell to see exactly what needs your attention
+• Stay on track: a daily streak, a dinner-time reminder and a Sunday recap
+• Get a heads-up when your co-parent leaves a note or posts an announcement
+• Smoother, clearer and more polished throughout
+</en-GB>
+<fr-FR>
 Nouveautés :
-• 🎉 Célébrations quand les enfants gagnent des étoiles
-• Corrigez le solde d'étoiles en cas d'erreur
-• Argent de poche par enfant, avec un repère selon l'âge
-• 3 façons d'inviter : e-mail, SMS ou lien à partager
-• Ajoutez des fichiers PDF au coffre, pas que des photos
-• Partagez les documents du coffre par e-mail ou messagerie
-• Liste de courses numérotée à cocher
-• Mode sombre bien lisible partout
-• Plus rapide et fiable — corrections internes
-```
-
-**Español (es-ES)**
-```
+• Nouvel onglet Cuisine — liste de courses et menus au même endroit
+• Ouvrez et lisez vos documents PDF directement dans le coffre
+• Les documents s'affichent en liste, plus compacte
+• Touchez la cloche pour voir ce qui demande votre attention
+• Gardez le rythme : série quotidienne, rappel du dîner et bilan du dimanche
+• Soyez prévenu quand votre co-parent laisse une note ou une annonce
+• Plus fluide, plus clair et plus soigné partout
+</fr-FR>
+<es-ES>
 Novedades:
-• 🎉 Celebraciones cuando los niños ganan estrellas
-• Corrige el saldo de estrellas si hubo un error
-• Fija la paga por niño, con una guía según la edad
-• 3 formas de invitar: correo, SMS o enlace
-• Adjunta archivos PDF al baúl, no solo fotos
-• Comparte documentos del baúl por correo o mensajería
-• Lista de compras numerada para marcar
-• Modo oscuro legible en todas partes
-• Más rápido y fiable — varias correcciones
-```
-
-**Deutsch (de-DE)**
-```
+• Nueva pestaña Cocina: lista de la compra y menús juntos
+• Abre y lee tus documentos PDF desde el baúl
+• Los documentos ahora en una lista más compacta
+• Toca la campana para ver qué necesita tu atención
+• Mantén el ritmo: racha diaria, recordatorio de la cena y resumen del domingo
+• Recibe aviso cuando tu co-madre/padre deja una nota o un anuncio
+• Más fluido, claro y pulido en general
+</es-ES>
+<de-DE>
 Neu:
-• 🎉 Feier-Momente, wenn Kinder Sterne verdienen
-• Sterne-Stand bei Fehlern korrigieren
-• Taschengeld pro Kind, mit Alters-Richtwert
-• 3 Wege zum Einladen: E-Mail, SMS oder Link
-• PDF-Dateien im Tresor speichern, nicht nur Fotos
-• Tresor-Dokumente per E-Mail oder Messenger teilen
-• Nummerierte Einkaufsliste zum Abhaken
-• Dunkler Modus überall gut lesbar
-• Schneller und stabiler — diverse Fixes
+• Neuer Küche-Tab — Einkaufsliste und Essensplaner an einem Ort
+• PDF-Dokumente direkt im Tresor öffnen und lesen
+• Dokumente jetzt als platzsparende Liste
+• Tippe auf die Glocke, um zu sehen, was ansteht
+• Bleib dran: tägliche Serie, Abendessen-Erinnerung und Sonntags-Rückblick
+• Hinweis, wenn dein Co-Elternteil eine Notiz oder Ankündigung hinterlässt
+• Rundum flüssiger, klarer und feiner
+</de-DE>
 ```
