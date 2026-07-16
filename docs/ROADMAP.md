@@ -84,3 +84,68 @@ scan — new prompt, new UI.
 - Localized copy must fit: FR/DE run ~25% longer than EN — tight UI uses short translations + `adjustsFontSizeToFit`.
 - Testers only count when they're added by Gmail in Play Console **and** tap "Become a tester". Quality of engagement matters to Google — never buy testers.
 - Usage metrics are first-party, count-only (`/api/metrics/summary`, admin-only). Check DAU + feature counts mid-test to guide decisions.
+
+---
+
+## Release notes — build "1.0.0 – Rewards, invites & polish"
+
+Paste the matching language block into Play Console → closed testing → release notes.
+Each is under Play's 500-character limit. Update this section for each new build.
+
+**Release name:** `1.0.0 – Rewards, invites & polish`
+
+**English (en-US)**
+```
+What's new:
+• 🎉 Star celebrations when kids earn rewards
+• Fix a child's star balance if points were added by mistake
+• Set pocket money per child, with an age-based guide
+• 3 ways to invite family: email, text, or a share link
+• Attach PDF files to the Vault, not just photos
+• Share Vault documents by email or messaging apps
+• Numbered shopping list you can check off
+• Dark mode is now clearly readable everywhere
+• Faster, more reliable — several fixes under the hood
+```
+
+**Français (fr-FR)**
+```
+Nouveautés :
+• 🎉 Célébrations quand les enfants gagnent des étoiles
+• Corrigez le solde d'étoiles en cas d'erreur
+• Argent de poche par enfant, avec un repère selon l'âge
+• 3 façons d'inviter : e-mail, SMS ou lien à partager
+• Ajoutez des fichiers PDF au coffre, pas que des photos
+• Partagez les documents du coffre par e-mail ou messagerie
+• Liste de courses numérotée à cocher
+• Mode sombre bien lisible partout
+• Plus rapide et fiable — corrections internes
+```
+
+**Español (es-ES)**
+```
+Novedades:
+• 🎉 Celebraciones cuando los niños ganan estrellas
+• Corrige el saldo de estrellas si hubo un error
+• Fija la paga por niño, con una guía según la edad
+• 3 formas de invitar: correo, SMS o enlace
+• Adjunta archivos PDF al baúl, no solo fotos
+• Comparte documentos del baúl por correo o mensajería
+• Lista de compras numerada para marcar
+• Modo oscuro legible en todas partes
+• Más rápido y fiable — varias correcciones
+```
+
+**Deutsch (de-DE)**
+```
+Neu:
+• 🎉 Feier-Momente, wenn Kinder Sterne verdienen
+• Sterne-Stand bei Fehlern korrigieren
+• Taschengeld pro Kind, mit Alters-Richtwert
+• 3 Wege zum Einladen: E-Mail, SMS oder Link
+• PDF-Dateien im Tresor speichern, nicht nur Fotos
+• Tresor-Dokumente per E-Mail oder Messenger teilen
+• Nummerierte Einkaufsliste zum Abhaken
+• Dunkler Modus überall gut lesbar
+• Schneller und stabiler — diverse Fixes
+```
