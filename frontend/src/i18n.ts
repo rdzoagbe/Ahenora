@@ -12,6 +12,7 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  "vault_open_external": "Open in another app",
   "set_revoke": "Revoke",
   "set_revoke_invite_title": "Revoke this invite?",
   "set_revoke_invite_msg": "The invite link will stop working.",
@@ -825,6 +826,7 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  "vault_open_external": "Abrir en otra app",
   "set_revoke": "Revocar",
   "set_revoke_invite_title": "¿Revocar esta invitación?",
   "set_revoke_invite_msg": "El enlace de invitación dejará de funcionar.",
@@ -1632,6 +1634,7 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  "vault_open_external": "Ouvrir dans une autre app",
   "set_revoke": "Révoquer",
   "set_revoke_invite_title": "Révoquer cette invitation ?",
   "set_revoke_invite_msg": "Le lien d’invitation cessera de fonctionner.",
@@ -2439,6 +2442,7 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  "vault_open_external": "In anderer App öffnen",
   "set_revoke": "Widerrufen",
   "set_revoke_invite_title": "Diese Einladung widerrufen?",
   "set_revoke_invite_msg": "Der Einladungslink funktioniert dann nicht mehr.",

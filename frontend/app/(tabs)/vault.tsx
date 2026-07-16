@@ -22,6 +22,7 @@ import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSh
 import AppToast, { ToastTone } from '../../src/components/AppToast';
 import LoadingOverlay from '../../src/components/LoadingOverlay';
 import { TabScreen } from '../../src/components/TabScreen';
+import { PdfViewer } from '../../src/components/PdfViewer';
 import { Badge, Card, IconTile, ProgressBar, ScreenHeader, UI, useUI, UIColors } from '../../src/components/Kit';
 
 import { useStore } from '../../src/store';
@@ -38,6 +39,11 @@ const CATEGORIES = [
 
 function catInfo(key: string) {
   return CATEGORIES.find((c) => c.key === key) || CATEGORIES[0];
+}
+
+function isPdfDoc(doc: { mime_type?: string; image_base64?: string }) {
+  if (doc.mime_type) return doc.mime_type === 'application/pdf';
+  return !!doc.image_base64 && doc.image_base64.startsWith('data:application/pdf');
 }
 
 function isImageDoc(doc: { mime_type?: string; image_base64?: string }) {
@@ -65,6 +71,8 @@ export default function Vault() {
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [preview, setPreview] = useState<VaultDoc | null>(null);
+  const [pdfFailed, setPdfFailed] = useState(false);
+  const openPreview = (d: VaultDoc) => { setPdfFailed(false); setPreview(d); };
   const [filter, setFilter] = useState<string>('All');
 
   const [title, setTitle] = useState('');
@@ -378,7 +386,7 @@ export default function Vault() {
                 const cat = catInfo(d.category);
                 const isImg = isImageDoc(d);
                 return (
-                  <PressScale key={d.doc_id} testID={`vault-doc-${d.doc_id}`} onPress={() => setPreview(d)} style={styles.listRow}>
+                  <PressScale key={d.doc_id} testID={`vault-doc-${d.doc_id}`} onPress={() => openPreview(d)} style={styles.listRow}>
                     <View style={[styles.listThumb, { backgroundColor: cat.soft }]}>
                       {isImg ? (
                         <Image source={{ uri: d.image_base64 }} style={styles.listThumbImg} />
@@ -524,6 +532,13 @@ export default function Vault() {
             </Text>
             {isImageDoc(preview) ? (
               <Image source={{ uri: preview.image_base64 }} style={styles.previewImg} />
+            ) : isPdfDoc(preview) && !pdfFailed ? (
+              <View style={styles.previewPdfWrap}>
+                <PdfViewer base64={preview.image_base64} onError={() => setPdfFailed(true)} />
+                <PressScale testID="preview-open-ext" onPress={() => openDoc(preview)} style={styles.previewExternalRow}>
+                  <Text style={styles.previewExternalText}>{t('vault_open_external')}</Text>
+                </PressScale>
+              </View>
             ) : (
               <View style={styles.previewFile}>
                 <FileText color="#fff" size={64} />
@@ -608,6 +623,9 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   previewTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
   previewTitle: { flex: 1, color: '#fff', fontFamily: 'Inter_800ExtraBold', fontSize: 24 },
   previewMeta: { color: 'rgba(255,255,255,0.7)', fontFamily: 'Inter_600SemiBold', fontSize: 13, marginBottom: 14, marginTop: -6 },
+  previewPdfWrap: { flex: 1, width: '100%' },
+  previewExternalRow: { alignSelf: 'center', marginTop: 10, paddingVertical: 8, paddingHorizontal: 14 },
+  previewExternalText: { color: 'rgba(255,255,255,0.75)', fontFamily: 'Inter_700Bold', fontSize: 13, textDecorationLine: 'underline' },
   previewActions: { flexDirection: 'row', gap: 8 },
   previewIconBtn: { padding: 10, borderRadius: 9999, borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)', backgroundColor: 'rgba(15,23,42,0.55)' },
   previewImg: { width: '100%', aspectRatio: 0.75, borderRadius: 24, borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)' },
