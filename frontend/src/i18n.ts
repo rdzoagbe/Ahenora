@@ -12,6 +12,8 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  "streak_day1": "Day 1 — nice start!",
+  "streak_days": "{n}-day streak",
   "feed_needs_attention": "Needs attention",
   "feed_all_caught_up": "You're all caught up!",
   "kitchen": "Kitchen",
@@ -814,6 +816,8 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  "streak_day1": "Día 1: ¡buen comienzo!",
+  "streak_days": "Racha de {n} días",
   "feed_needs_attention": "Requiere atención",
   "feed_all_caught_up": "¡Todo al día!",
   "kitchen": "Cocina",
@@ -1610,6 +1614,8 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  "streak_day1": "Jour 1 — beau début !",
+  "streak_days": "Série de {n} jours",
   "feed_needs_attention": "À traiter",
   "feed_all_caught_up": "Tout est à jour !",
   "kitchen": "Cuisine",
@@ -2406,6 +2412,8 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  "streak_day1": "Tag 1 — guter Start!",
+  "streak_days": "{n}-Tage-Serie",
   "feed_needs_attention": "Zu erledigen",
   "feed_all_caught_up": "Alles erledigt!",
   "kitchen": "Küche",
