@@ -17,7 +17,10 @@ Last updated: July 2026.
 - [ ] Countries enabled on the closed track (France added for diaspora testers; simplest: all countries)
 - [ ] 14 continuous days at 12+ testers
 - [ ] Apply for production access (answer recruitment/feedback questions honestly — real testers, real bug reports)
+- [ ] **Email deliverability — add DMARC record** to the sending domain `joblytics-ai.com` (Squarespace DNS): TXT record, host `_dmarc`, value `v=DMARC1; p=none; rua=mailto:<you>@joblytics-ai.com`. Resend already sets SPF+DKIM; DMARC lifts inbox placement. Also click "Not spam" on the first tester invites to warm up sender reputation.
 - [ ] Final production AAB → production track → Google review → **public launch** 🚀
+
+> **Email sending — status & notes.** Invites send via Resend from a from-address on the **verified** domain `joblytics-ai.com` (`INVITE_FROM_EMAIL`). Two bugs fixed during closed testing: a stray trailing space in the `GOOGLE_API_KEY` Railway variable name (unrelated, broke AI features), and a missing `User-Agent` header on the Resend request (caused `403 error 1010`, blocked all sends). Email template is now light/transactional with `List-Unsubscribe` headers. Remaining: DMARC (above) + reputation warm-up. Public-launch polish: move sending to a **matching** domain (e.g. `householdcoo.app`) so the sender brand matches the app.
 
 ## Pricing (decided)
 
