@@ -12,6 +12,9 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  "set_revoke": "Revoke",
+  "set_revoke_invite_title": "Revoke this invite?",
+  "set_revoke_invite_msg": "The invite link will stop working.",
   "recap_title": "Your week 🗓️",
   "recap_body": "{tasks} done · {stars} ⭐ earned this week. Ready for the next one?",
   "dinner_title": "Dinner tonight 🍽️",
@@ -822,6 +825,9 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  "set_revoke": "Revocar",
+  "set_revoke_invite_title": "¿Revocar esta invitación?",
+  "set_revoke_invite_msg": "El enlace de invitación dejará de funcionar.",
   "recap_title": "Tu semana 🗓️",
   "recap_body": "{tasks} hechas · {stars} ⭐ ganadas esta semana. ¿Listos para la próxima?",
   "dinner_title": "Cena de hoy 🍽️",
@@ -1626,6 +1632,9 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  "set_revoke": "Révoquer",
+  "set_revoke_invite_title": "Révoquer cette invitation ?",
+  "set_revoke_invite_msg": "Le lien d’invitation cessera de fonctionner.",
   "recap_title": "Ta semaine 🗓️",
   "recap_body": "{tasks} terminées · {stars} ⭐ gagnées cette semaine. Prêt pour la suivante ?",
   "dinner_title": "Dîner de ce soir 🍽️",
@@ -2430,6 +2439,9 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  "set_revoke": "Widerrufen",
+  "set_revoke_invite_title": "Diese Einladung widerrufen?",
+  "set_revoke_invite_msg": "Der Einladungslink funktioniert dann nicht mehr.",
   "recap_title": "Deine Woche 🗓️",
   "recap_body": "{tasks} erledigt · {stars} ⭐ diese Woche. Bereit für die nächste?",
   "dinner_title": "Abendessen heute 🍽️",

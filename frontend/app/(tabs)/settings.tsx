@@ -160,6 +160,30 @@ export default function Settings() {
     );
   }, []);
 
+  const revokeInvite = useCallback((invite: FamilyInvite) => {
+    Alert.alert(
+      t('set_revoke_invite_title'),
+      `${t('set_revoke_invite_msg')}${invite.email ? ` (${invite.email})` : ''}`,
+      [
+        { text: t('cancel'), style: 'cancel' },
+        {
+          text: t('set_revoke'),
+          style: 'destructive',
+          onPress: async () => {
+            const prev = invites;
+            setInvites((list) => list.filter((i) => i.invite_id !== invite.invite_id));
+            try {
+              await api.deleteInvite(invite.invite_id);
+            } catch (error: any) {
+              setInvites(prev);
+              Alert.alert(t('set_error'), error?.message || t('set_please_try_again'));
+            }
+          },
+        },
+      ],
+    );
+  }, [invites]);
+
   const shareInviteLink = useCallback(async (inviteUrl?: string | null, email?: string | null) => {
     if (!inviteUrl) {
       setInviteResult(email ? `${t('set_invite_link_unavailable_for')} ${email}.` : t('set_invite_link_unavailable'));
@@ -515,6 +539,9 @@ export default function Settings() {
                         <Text style={styles.ghostBtnText}>{t('set_share')}</Text>
                       </PressScale>
                     ) : null}
+                    <PressScale testID={`revoke-invite-${invite.invite_id}`} onPress={() => revokeInvite(invite)} style={styles.iconGhostBtn}>
+                      <Trash2 color={ui.danger} size={16} />
+                    </PressScale>
                   </View>
                 ))}
                 <PressScale testID="invite-coparent" onPress={() => openInvite()} style={styles.expandAction}>
@@ -922,6 +949,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   expandActionText: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
   inviteRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   ghostBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft, borderRadius: 99, paddingHorizontal: 12, paddingVertical: 8 },
+  iconGhostBtn: { alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft, borderRadius: 99, width: 34, height: 34, marginLeft: 8 },
   ghostBtnWide: { flex: 1, alignItems: 'center', borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft, borderRadius: 12, paddingVertical: 11 },
   ghostBtnText: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 12.5 },
 

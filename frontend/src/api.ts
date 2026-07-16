@@ -575,6 +575,10 @@ export const api = {
   getMetricsSummary: (days = 14) =>
     request<{ days: number; rows: MetricRow[] }>(`/metrics/summary?days=${days}`),
   listInvites: () => request<FamilyInvite[]>('/family/invites'),
+  deleteInvite: (inviteId: string) => {
+    invalidateUsageCaches();
+    return request<{ ok: boolean }>(`/family/invites/${inviteId}`, { method: 'DELETE' });
+  },
   getInvite: (token: string) =>
     request<{
       invite_id: string;
