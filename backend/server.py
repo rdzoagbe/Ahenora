@@ -1000,6 +1000,44 @@ async def send_new_card_alert(family_id: str, card: dict, created_by_user_id: Op
         await send_expo_push_messages(messages)
 
 
+async def send_handoff_note_alert(family_id: str, author_name: str, text: str, created_by_user_id: Optional[str] = None):
+    """Notify the OTHER family members when a co-parent leaves a handoff note —
+    the two-sided pull that makes a shared household app worth opening daily.
+    Respects each user's existing household-alert preference."""
+    database = get_db()
+    messages = []
+    preview = (text or "").strip()
+    if len(preview) > 120:
+        preview = preview[:117].rstrip() + "…"
+    who = author_name or "A co-parent"
+
+    cursor = database["notification_tokens"].find(
+        {"family_id": family_id, "active": True}, {"_id": 0}
+    )
+    async for token_doc in cursor:
+        if created_by_user_id and token_doc.get("user_id") == created_by_user_id:
+            continue
+        prefs = await database["notification_settings"].find_one(
+            {"user_id": token_doc.get("user_id")}, {"_id": 0}
+        )
+        if not prefs or not prefs.get("new_card_alerts"):
+            continue
+        token = token_doc.get("token")
+        if not token or not token.startswith("ExponentPushToken"):
+            continue
+        messages.append(
+            {
+                "to": token,
+                "sound": "default",
+                "title": f"{who} left a note",
+                "body": preview or "Open Household COO to read it.",
+                "data": {"type": "handoff_note", "family_id": family_id},
+            }
+        )
+
+    if messages:
+        await send_expo_push_messages(messages)
+
 
 async def require_user(authorization: str = Header(default="")):
     database = get_db()
@@ -3064,6 +3102,12 @@ async def create_handoff_note(payload: HandoffNoteIn, user=Depends(require_user)
         "created_at": utcnow(),
     }
     await database["handoff_notes"].insert_one(doc)
+    try:
+        await send_handoff_note_alert(
+            user["family_id"], user.get("name", ""), doc["text"], created_by_user_id=user["user_id"]
+        )
+    except Exception as e:
+        log.warning("handoff note alert failed: %s", e)
     return public_handoff_note(doc)
 
 
