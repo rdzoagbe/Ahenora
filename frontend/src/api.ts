@@ -936,6 +936,7 @@ export const api = {
 
   // Weekly Report
   weeklyReport: () => request<WeeklyReport>('/report/weekly'),
+  reportLite: () => request<{ tasks_done: number; stars_earned: number }>('/report/lite'),
 
   // Support
   submitSupportRequest: (data: { subject: string; message: string }) =>

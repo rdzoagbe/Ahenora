@@ -12,6 +12,8 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  "recap_title": "Your week 🗓️",
+  "recap_body": "{tasks} done · {stars} ⭐ earned this week. Ready for the next one?",
   "dinner_title": "Dinner tonight 🍽️",
   "dinner_to_buy": "{meal} · {n} still on your shopping list",
   "vault_no_pdf_viewer": "No app to open this file. A PDF viewer (like Google Drive) is needed.",
@@ -820,6 +822,8 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  "recap_title": "Tu semana 🗓️",
+  "recap_body": "{tasks} hechas · {stars} ⭐ ganadas esta semana. ¿Listos para la próxima?",
   "dinner_title": "Cena de hoy 🍽️",
   "dinner_to_buy": "{meal} · {n} aún en tu lista de la compra",
   "vault_no_pdf_viewer": "No hay app para abrir este archivo. Necesitas un visor de PDF (como Google Drive).",
@@ -1622,6 +1626,8 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  "recap_title": "Ta semaine 🗓️",
+  "recap_body": "{tasks} terminées · {stars} ⭐ gagnées cette semaine. Prêt pour la suivante ?",
   "dinner_title": "Dîner de ce soir 🍽️",
   "dinner_to_buy": "{meal} · {n} encore sur ta liste de courses",
   "vault_no_pdf_viewer": "Aucune app pour ouvrir ce fichier. Un lecteur de PDF (comme Google Drive) est nécessaire.",
@@ -2424,6 +2430,8 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  "recap_title": "Deine Woche 🗓️",
+  "recap_body": "{tasks} erledigt · {stars} ⭐ diese Woche. Bereit für die nächste?",
   "dinner_title": "Abendessen heute 🍽️",
   "dinner_to_buy": "{meal} · {n} noch auf deiner Einkaufsliste",
   "vault_no_pdf_viewer": "Keine App zum Öffnen dieser Datei. Ein PDF-Viewer (z. B. Google Drive) wird benötigt.",

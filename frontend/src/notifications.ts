@@ -339,6 +339,57 @@ export async function syncDinnerReminder(
   return { scheduled: true };
 }
 
+const RECAP_ID_KEY = 'coo_sunday_recap_id';
+
+/**
+ * Schedules (or clears) a "Sunday recap" nudge for the upcoming Sunday 18:00
+ * local — a feel-good weekly summary that also pulls people back to plan the
+ * week. Recomputed on each app open; caller passes pre-localized content.
+ */
+export async function syncSundayRecap(
+  enabled: boolean,
+  content: { title: string; body: string } | null
+) {
+  const Notifications = await getNotificationsModule();
+  if (!Notifications) return { scheduled: false };
+
+  const previous = await AsyncStorage.getItem(RECAP_ID_KEY).catch(() => null);
+  if (previous) {
+    await Notifications.cancelScheduledNotificationAsync(previous).catch(() => undefined);
+    await AsyncStorage.removeItem(RECAP_ID_KEY).catch(() => undefined);
+  }
+
+  if (!enabled || !content) return { scheduled: false };
+
+  const permissions = await Notifications.getPermissionsAsync();
+  if (permissions.status !== 'granted') return { scheduled: false };
+
+  await configureNotificationChannels();
+
+  // The next Sunday at 18:00 local (today if it's Sunday and 18:00 is still ahead).
+  const at = new Date();
+  at.setHours(18, 0, 0, 0);
+  let add = (7 - at.getDay()) % 7;
+  if (add === 0 && at.getTime() <= Date.now()) add = 7;
+  at.setDate(at.getDate() + add);
+
+  const identifier = await Notifications.scheduleNotificationAsync({
+    content: {
+      title: content.title,
+      body: content.body,
+      sound: true,
+      data: { type: 'sunday_recap' },
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.DATE,
+      date: at,
+      channelId: 'card-reminders',
+    } as any,
+  });
+  await AsyncStorage.setItem(RECAP_ID_KEY, identifier).catch(() => undefined);
+  return { scheduled: true };
+}
+
 export async function sendTestScheduledReminderNotification() {
   const Notifications = await getNotificationsModule();
   if (!Notifications) return false;

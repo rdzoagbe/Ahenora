@@ -3809,6 +3809,24 @@ async def weekly_report(user: dict = Depends(require_user), database=Depends(get
     }
 
 
+@app.get("/api/report/lite")
+async def report_lite(user: dict = Depends(require_user), database=Depends(get_db)):
+    """A minimal, un-gated weekly recap (tasks done + stars earned in the last
+    7 days) for the Sunday recap — available to every plan, unlike the full
+    premium weekly report."""
+    now = utcnow()
+    week_ago = now - timedelta(days=7)
+    fid = user["family_id"]
+    tasks_done = await database["cards"].count_documents(
+        {"family_id": fid, "status": "DONE", "completed_at": {"$gte": week_ago}}
+    )
+    star_txns = await database["star_transactions"].find(
+        {"family_id": fid, "created_at": {"$gte": week_ago}}, {"_id": 0}
+    ).to_list(500)
+    stars_earned = sum(t.get("delta", 0) for t in star_txns if t.get("delta", 0) > 0)
+    return {"tasks_done": tasks_done, "stars_earned": stars_earned}
+
+
 # -----------------------------------------------------------------------------
 # Chore Wheel
 # -----------------------------------------------------------------------------
