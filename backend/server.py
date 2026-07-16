@@ -1000,16 +1000,16 @@ async def send_new_card_alert(family_id: str, card: dict, created_by_user_id: Op
         await send_expo_push_messages(messages)
 
 
-async def send_handoff_note_alert(family_id: str, author_name: str, text: str, created_by_user_id: Optional[str] = None):
-    """Notify the OTHER family members when a co-parent leaves a handoff note —
-    the two-sided pull that makes a shared household app worth opening daily.
-    Respects each user's existing household-alert preference."""
+async def send_coparent_alert(family_id: str, title: str, body: str, data_type: str, created_by_user_id: Optional[str] = None):
+    """Notify the OTHER family members when a co-parent does something worth
+    seeing (a note, an announcement, …) — the two-sided pull that makes a shared
+    household app worth opening daily. Respects each user's household-alert
+    preference and never notifies the author of their own action."""
     database = get_db()
     messages = []
-    preview = (text or "").strip()
+    preview = (body or "").strip()
     if len(preview) > 120:
         preview = preview[:117].rstrip() + "…"
-    who = author_name or "A co-parent"
 
     cursor = database["notification_tokens"].find(
         {"family_id": family_id, "active": True}, {"_id": 0}
@@ -1029,9 +1029,9 @@ async def send_handoff_note_alert(family_id: str, author_name: str, text: str, c
             {
                 "to": token,
                 "sound": "default",
-                "title": f"{who} left a note",
-                "body": preview or "Open Household COO to read it.",
-                "data": {"type": "handoff_note", "family_id": family_id},
+                "title": title,
+                "body": preview or "Open Household COO to see it.",
+                "data": {"type": data_type, "family_id": family_id},
             }
         )
 
@@ -3103,8 +3103,10 @@ async def create_handoff_note(payload: HandoffNoteIn, user=Depends(require_user)
     }
     await database["handoff_notes"].insert_one(doc)
     try:
-        await send_handoff_note_alert(
-            user["family_id"], user.get("name", ""), doc["text"], created_by_user_id=user["user_id"]
+        who = user.get("name") or "A co-parent"
+        await send_coparent_alert(
+            user["family_id"], f"{who} left a note", doc["text"], "handoff_note",
+            created_by_user_id=user["user_id"],
         )
     except Exception as e:
         log.warning("handoff note alert failed: %s", e)
@@ -3680,6 +3682,14 @@ async def create_announcement(body: AnnouncementIn, user: dict = Depends(require
         "created_at": utcnow(),
     }
     await database["announcements"].insert_one(announcement)
+    try:
+        who = user.get("name") or "A co-parent"
+        await send_coparent_alert(
+            user["family_id"], f"{who} posted an announcement", body.text, "announcement",
+            created_by_user_id=user["user_id"],
+        )
+    except Exception as e:
+        log.warning("announcement alert failed: %s", e)
     return public_announcement(announcement)
 
 
