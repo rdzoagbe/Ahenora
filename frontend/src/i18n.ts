@@ -12,6 +12,11 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  "gs_title": "Getting started",
+  "gs_done": "done",
+  "gs_add_member": "Add a family member",
+  "gs_add_task": "Add your first task",
+  "gs_add_doc": "Save an important document",
   "kids_reward_enjoy": "Enjoy your reward!",
   "set_invite_via_email": "Email",
   "set_invite_via_phone": "Phone",
@@ -801,6 +806,11 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  "gs_title": "Primeros pasos",
+  "gs_done": "listo",
+  "gs_add_member": "Añade un familiar",
+  "gs_add_task": "Añade tu primera tarea",
+  "gs_add_doc": "Guarda un documento importante",
   "kids_reward_enjoy": "¡Disfruta tu premio!",
   "set_invite_via_email": "Correo",
   "set_invite_via_phone": "Teléfono",
@@ -1584,6 +1594,11 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  "gs_title": "Pour commencer",
+  "gs_done": "fait",
+  "gs_add_member": "Ajoutez un membre de la famille",
+  "gs_add_task": "Ajoutez votre première tâche",
+  "gs_add_doc": "Enregistrez un document important",
   "kids_reward_enjoy": "Profite bien de ta récompense !",
   "set_invite_via_email": "E-mail",
   "set_invite_via_phone": "Téléphone",
@@ -2367,6 +2382,11 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  "gs_title": "Erste Schritte",
+  "gs_done": "erledigt",
+  "gs_add_member": "Familienmitglied hinzufügen",
+  "gs_add_task": "Erste Aufgabe hinzufügen",
+  "gs_add_doc": "Wichtiges Dokument speichern",
   "kids_reward_enjoy": "Viel Freude mit deiner Belohnung!",
   "set_invite_via_email": "E-Mail",
   "set_invite_via_phone": "Telefon",

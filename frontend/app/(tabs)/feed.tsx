@@ -8,7 +8,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import {
   AlertTriangle,
   BarChart3,
@@ -36,6 +36,7 @@ import { VoiceCaptureModal } from '../../src/components/VoiceCaptureModal';
 import { CameraCaptureModal } from '../../src/components/CameraCaptureModal';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
 import { TabScreen } from '../../src/components/TabScreen';
+import { GettingStarted } from '../../src/components/GettingStarted';
 import { useStore } from '../../src/store';
 import { usePremiumGate, LockBadge } from '../../src/components/PremiumGate';
 import { useUI, UIColors } from '../../src/components/Kit';
@@ -145,6 +146,7 @@ export default function Feed() {
   const reportLocked = isLocked('weekly_report');
   const { px, maxW } = useBreakpoint();
   const ui = useUI();
+  const router = useRouter();
   const styles = useMemo(() => createStyles(ui), [ui]);
   const [cards, setCards] = useState<Card[]>([]);
   // Card ids the user just completed/dismissed. A refetch that raced the write
@@ -538,6 +540,16 @@ export default function Feed() {
                 </PressScale>
               </View>
             </View>
+
+            {/* First-run checklist for new households (self-hides once done) */}
+            <GettingStarted
+              hasMember={members.length > 1}
+              hasCard={cards.length > 0}
+              hasDoc={vaultCount > 0}
+              onAddMember={() => router.navigate('/(tabs)/kids')}
+              onAddCard={openManual}
+              onAddDoc={() => router.navigate('/(tabs)/vault')}
+            />
 
             {/* Quick templates */}
             {enabledTemplates.length > 0 ? (
