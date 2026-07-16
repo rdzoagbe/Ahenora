@@ -12,6 +12,11 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  "kitchen": "Kitchen",
+  "kitchen_eyebrow": "Household",
+  "kitchen_meal_word": "meal",
+  "kitchen_meals_word": "meals",
+  "kitchen_sync_tip": "💡 “Sync to list” drops every ingredient above straight into your shopping list.",
   "cal_empty_hint": "Sync your Google Calendar, or add a task with a date, to see it here.",
   "gs_title": "Getting started",
   "gs_done": "done",
@@ -807,6 +812,11 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  "kitchen": "Cocina",
+  "kitchen_eyebrow": "Hogar",
+  "kitchen_meal_word": "comida",
+  "kitchen_meals_word": "comidas",
+  "kitchen_sync_tip": "💡 “Sincronizar con la lista” añade todos los ingredientes de arriba a tu lista de la compra.",
   "cal_empty_hint": "Sincroniza tu Google Calendar o añade una tarea con fecha para verla aquí.",
   "gs_title": "Primeros pasos",
   "gs_done": "listo",
@@ -1596,6 +1606,11 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  "kitchen": "Cuisine",
+  "kitchen_eyebrow": "Maison",
+  "kitchen_meal_word": "repas",
+  "kitchen_meals_word": "repas",
+  "kitchen_sync_tip": "💡 « Ajouter à la liste » envoie tous les ingrédients ci-dessus dans votre liste de courses.",
   "cal_empty_hint": "Synchronisez votre Google Agenda ou ajoutez une tâche datée pour la voir ici.",
   "gs_title": "Pour commencer",
   "gs_done": "fait",
@@ -2385,6 +2400,11 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  "kitchen": "Küche",
+  "kitchen_eyebrow": "Haushalt",
+  "kitchen_meal_word": "Mahlzeit",
+  "kitchen_meals_word": "Mahlzeiten",
+  "kitchen_sync_tip": "💡 „Zur Liste hinzufügen“ überträgt alle Zutaten oben direkt auf deine Einkaufsliste.",
   "cal_empty_hint": "Synchronisiere deinen Google Kalender oder füge eine Aufgabe mit Datum hinzu, um sie hier zu sehen.",
   "gs_title": "Erste Schritte",
   "gs_done": "erledigt",
