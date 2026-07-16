@@ -42,7 +42,7 @@ import { useStore } from '../../src/store';
 import { usePremiumGate, LockBadge } from '../../src/components/PremiumGate';
 import { useUI, UIColors } from '../../src/components/Kit';
 import { api, logEvent, Announcement, Card, CardType, FamilyMember, HandoffNote, Template, WeeklyReport } from '../../src/api';
-import { syncCardReminderNotifications, syncMorningDigest, syncDinnerReminder, ensureAskedNotificationPermissionOnce } from '../../src/notifications';
+import { syncCardReminderNotifications, syncMorningDigest, syncDinnerReminder, syncSundayRecap, ensureAskedNotificationPermissionOnce } from '../../src/notifications';
 import { logger } from '../../src/logger';
 
 interface VoiceDraft {
@@ -293,6 +293,23 @@ export default function Feed() {
                 syncDinnerReminder(true, { title: t('dinner_title'), body }).catch(() => undefined);
               })
               .catch(() => undefined);
+
+            // Sunday recap: a feel-good weekly summary pushed Sunday 18:00 local.
+            // Only when there's something to celebrate; rides the reminders toggle.
+            if (prefs.card_reminders) {
+              api.reportLite()
+                .then((r) => {
+                  if ((r.tasks_done || 0) + (r.stars_earned || 0) <= 0) {
+                    syncSundayRecap(false, null).catch(() => undefined);
+                    return;
+                  }
+                  const body = t('recap_body', { tasks: String(r.tasks_done), stars: String(r.stars_earned) });
+                  syncSundayRecap(true, { title: t('recap_title'), body }).catch(() => undefined);
+                })
+                .catch(() => undefined);
+            } else {
+              syncSundayRecap(false, null).catch(() => undefined);
+            }
           })
           .catch(() => undefined);
       }
