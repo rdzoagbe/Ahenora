@@ -96,6 +96,16 @@ function feedDateLine() {
   return new Date().toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
 }
 
+// A small emoji that tracks the time of day, matching the greeting.
+function timeEmoji() {
+  const h = new Date().getHours();
+  if (h < 6) return '🌙';
+  if (h < 12) return '☀️';
+  if (h < 18) return '🌤️';
+  if (h < 21) return '🌆';
+  return '🌙';
+}
+
 function statusCopy(type: CardType, ui: UIColors, t: TFunc) {
   if (type === 'SIGN_SLIP') return { label: t('feed_status_sign'), bg: ui.orangeSoft, fg: ui.orange };
   if (type === 'RSVP') return { label: t('feed_status_rsvp'), bg: ui.lavender, fg: ui.lavenderText };
@@ -489,7 +499,7 @@ export default function Feed() {
       >
           <View style={[styles.page, { maxWidth: maxW }]}>
             <View style={styles.topMetaRow}>
-              <Text style={styles.dateText}>{feedDateLine()} <Text style={styles.sun}>☀</Text></Text>
+              <Text style={styles.dateText}>{feedDateLine()} <Text style={styles.sun}>{timeEmoji()}</Text></Text>
               <PressScale
                 testID="feed-bell"
                 onPress={() => setActiveTab('today')}
