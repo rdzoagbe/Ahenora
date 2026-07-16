@@ -699,6 +699,8 @@ export const api = {
     invalidateUsageCaches();
     return request<VaultDoc>('/vault', { method: 'POST', body: data });
   },
+  renderVaultDoc: (docId: string) =>
+    request<{ kind: 'image' | 'pdf' | 'html' | 'unsupported'; html?: string }>(`/vault/${docId}/render`),
   deleteVaultDoc: (id: string) => {
     cache.invalidate('listVault');
     invalidateUsageCaches();

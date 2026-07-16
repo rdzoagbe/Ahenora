@@ -12,6 +12,7 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  "vault_no_inapp_view": "This file type can't be shown in the app.",
   "vault_open_external": "Open in another app",
   "set_revoke": "Revoke",
   "set_revoke_invite_title": "Revoke this invite?",
@@ -826,6 +827,7 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  "vault_no_inapp_view": "Este tipo de archivo no se puede mostrar en la app.",
   "vault_open_external": "Abrir en otra app",
   "set_revoke": "Revocar",
   "set_revoke_invite_title": "¿Revocar esta invitación?",
@@ -1634,6 +1636,7 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  "vault_no_inapp_view": "Ce type de fichier ne peut pas s'afficher dans l'app.",
   "vault_open_external": "Ouvrir dans une autre app",
   "set_revoke": "Révoquer",
   "set_revoke_invite_title": "Révoquer cette invitation ?",
@@ -2442,6 +2445,7 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  "vault_no_inapp_view": "Dieser Dateityp kann in der App nicht angezeigt werden.",
   "vault_open_external": "In anderer App öffnen",
   "set_revoke": "Widerrufen",
   "set_revoke_invite_title": "Diese Einladung widerrufen?",

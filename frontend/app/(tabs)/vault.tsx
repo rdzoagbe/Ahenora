@@ -10,6 +10,7 @@ import {
   Image,
   Alert,
   Modal,
+  ActivityIndicator,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -23,6 +24,7 @@ import AppToast, { ToastTone } from '../../src/components/AppToast';
 import LoadingOverlay from '../../src/components/LoadingOverlay';
 import { TabScreen } from '../../src/components/TabScreen';
 import { PdfViewer } from '../../src/components/PdfViewer';
+import { HtmlDocViewer } from '../../src/components/HtmlDocViewer';
 import { Badge, Card, IconTile, ProgressBar, ScreenHeader, UI, useUI, UIColors } from '../../src/components/Kit';
 
 import { useStore } from '../../src/store';
@@ -72,7 +74,22 @@ export default function Vault() {
   const [showAdd, setShowAdd] = useState(false);
   const [preview, setPreview] = useState<VaultDoc | null>(null);
   const [pdfFailed, setPdfFailed] = useState(false);
-  const openPreview = (d: VaultDoc) => { setPdfFailed(false); setPreview(d); };
+  const [docHtml, setDocHtml] = useState<string | null>(null);
+  const [docRendering, setDocRendering] = useState(false);
+  const openPreview = (d: VaultDoc) => {
+    setPdfFailed(false);
+    setDocHtml(null);
+    setPreview(d);
+    // Images and PDFs render from the bytes the app already has. Everything
+    // else (Word/Excel/…) is converted to readable HTML by the backend.
+    if (!isImageDoc(d) && !isPdfDoc(d)) {
+      setDocRendering(true);
+      api.renderVaultDoc(d.doc_id)
+        .then((r) => { if (r.kind === 'html' && r.html) setDocHtml(r.html); })
+        .catch(() => undefined)
+        .finally(() => setDocRendering(false));
+    }
+  };
   const [filter, setFilter] = useState<string>('All');
 
   const [title, setTitle] = useState('');
@@ -175,7 +192,7 @@ export default function Vault() {
     }
     try {
       const res = await DocumentPicker.getDocumentAsync({
-        type: ['application/pdf', 'image/*'],
+        type: '*/*',
         copyToCacheDirectory: true,
       });
       if (res.canceled || !res.assets?.[0]) return;
@@ -539,10 +556,23 @@ export default function Vault() {
                   <Text style={styles.previewExternalText}>{t('vault_open_external')}</Text>
                 </PressScale>
               </View>
+            ) : docHtml ? (
+              <View style={styles.previewPdfWrap}>
+                <HtmlDocViewer html={docHtml} />
+                <PressScale testID="preview-open-ext" onPress={() => openDoc(preview)} style={styles.previewExternalRow}>
+                  <Text style={styles.previewExternalText}>{t('vault_open_external')}</Text>
+                </PressScale>
+              </View>
+            ) : docRendering ? (
+              <View style={styles.previewFile}>
+                <ActivityIndicator color="#fff" />
+                <Text style={styles.previewFileName}>{t('vault_loading')}</Text>
+              </View>
             ) : (
               <View style={styles.previewFile}>
                 <FileText color="#fff" size={64} />
                 <Text style={styles.previewFileName} numberOfLines={2}>{preview.file_name || preview.title}</Text>
+                <Text style={styles.previewNote}>{t('vault_no_inapp_view')}</Text>
                 <PressScale testID="preview-open" onPress={() => openDoc(preview)} style={styles.previewOpenBtn}>
                   <FileText color="#fff" size={18} />
                   <Text style={styles.previewOpenText}>{t('vault_open_file')}</Text>
@@ -626,6 +656,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   previewPdfWrap: { flex: 1, width: '100%' },
   previewExternalRow: { alignSelf: 'center', marginTop: 10, paddingVertical: 8, paddingHorizontal: 14 },
   previewExternalText: { color: 'rgba(255,255,255,0.75)', fontFamily: 'Inter_700Bold', fontSize: 13, textDecorationLine: 'underline' },
+  previewNote: { color: 'rgba(255,255,255,0.6)', fontFamily: 'Inter_500Medium', fontSize: 13, textAlign: 'center', marginTop: -4 },
   previewActions: { flexDirection: 'row', gap: 8 },
   previewIconBtn: { padding: 10, borderRadius: 9999, borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)', backgroundColor: 'rgba(15,23,42,0.55)' },
   previewImg: { width: '100%', aspectRatio: 0.75, borderRadius: 24, borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)' },

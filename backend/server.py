@@ -2366,6 +2366,80 @@ async def create_vault_doc(payload: VaultIn, user=Depends(require_user)):
     return public_vault_doc(doc)
 
 
+def _decode_doc_bytes(image_base64: str) -> bytes:
+    data = image_base64 or ""
+    if "," in data:
+        data = data.split(",", 1)[1]
+    return base64.b64decode(data)
+
+
+def _docx_to_html(raw: bytes) -> str:
+    from docx import Document  # local import keeps startup light
+    d = Document(io.BytesIO(raw))
+    parts = []
+    for p in d.paragraphs:
+        text = html.escape(p.text)
+        style = (p.style.name if p.style else "") or ""
+        if not p.text.strip():
+            parts.append("<br/>")
+        elif style == "Title" or style.startswith("Heading 1"):
+            parts.append(f"<h1>{text}</h1>")
+        elif style.startswith("Heading"):
+            parts.append(f"<h2>{text}</h2>")
+        else:
+            parts.append(f"<p>{text}</p>")
+    for table in d.tables:
+        rows = []
+        for row in table.rows:
+            cells = "".join(f"<td>{html.escape(c.text)}</td>" for c in row.cells)
+            rows.append(f"<tr>{cells}</tr>")
+        if rows:
+            parts.append(f"<table>{''.join(rows)}</table>")
+    return "".join(parts) or "<p><em>(empty document)</em></p>"
+
+
+def _xlsx_to_html(raw: bytes) -> str:
+    import pandas as pd
+    sheets = pd.read_excel(io.BytesIO(raw), sheet_name=None, engine="openpyxl")
+    parts = []
+    for name, df in sheets.items():
+        parts.append(f"<h2>{html.escape(str(name))}</h2>")
+        parts.append(df.to_html(index=False, na_rep="", border=0))
+    return "".join(parts) or "<p><em>(empty spreadsheet)</em></p>"
+
+
+DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+@app.get("/api/vault/{doc_id}/render")
+async def render_vault_doc(doc_id: str, user=Depends(require_user)):
+    """Return an in-app-viewable form of a document. Images/PDFs are rendered
+    client-side (the app already has the bytes); Word/Excel are converted to
+    readable HTML here so they can be viewed without an external app."""
+    database = get_db()
+    doc = await database["vault"].find_one(
+        {"doc_id": doc_id, "family_id": user["family_id"]}, {"_id": 0}
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    mime = doc.get("mime_type") or "image/jpeg"
+    if mime.startswith("image/"):
+        return {"kind": "image"}
+    if mime == "application/pdf":
+        return {"kind": "pdf"}
+    try:
+        raw = _decode_doc_bytes(doc.get("image_base64", ""))
+        if mime == DOCX_MIME:
+            return {"kind": "html", "html": _docx_to_html(raw)}
+        if mime == XLSX_MIME:
+            return {"kind": "html", "html": _xlsx_to_html(raw)}
+    except Exception as e:
+        log.warning("vault render failed for %s: %s", doc_id, e)
+        return {"kind": "unsupported"}
+    return {"kind": "unsupported"}
+
+
 @app.delete("/api/vault/{doc_id}")
 async def delete_vault_doc(doc_id: str, user=Depends(require_user)):
     database = get_db()
