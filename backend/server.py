@@ -1971,6 +1971,19 @@ async def family_invites(user=Depends(require_user)):
     return rows
 
 
+@app.delete("/api/family/invites/{invite_id}")
+async def delete_family_invite(invite_id: str, user=Depends(require_user)):
+    """Revoke a pending (or any) invite belonging to the caller's family.
+    Deleting the record invalidates its token, so a shared link stops working."""
+    database = get_db()
+    result = await database["family_invites"].delete_one(
+        {"invite_id": invite_id, "family_id": user["family_id"]}
+    )
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Invite not found")
+    return {"ok": True}
+
+
 @app.get("/api/family/invite/{token}")
 async def family_invite_lookup(token: str):
     database = get_db()
