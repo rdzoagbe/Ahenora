@@ -12,6 +12,13 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  "kitchen_restore_last": "Restore from your last list?",
+  "kitchen_review": "Review",
+  "kitchen_restore_items": "Restore items",
+  "kitchen_selected": "selected",
+  "kitchen_select_all": "Select all",
+  "kitchen_clear_all": "Clear all",
+  "kitchen_add_selected": "Add to list",
   "pf_free_1": "Both parents + up to 2 children",
   "pf_free_2": "Tasks, calendar & reminders",
   "pf_free_3": "Kids stars & rewards",
@@ -849,6 +856,13 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  "kitchen_restore_last": "¿Restaurar tu última lista?",
+  "kitchen_review": "Revisar",
+  "kitchen_restore_items": "Restaurar artículos",
+  "kitchen_selected": "seleccionados",
+  "kitchen_select_all": "Seleccionar todo",
+  "kitchen_clear_all": "Quitar todo",
+  "kitchen_add_selected": "Añadir a la lista",
   "pf_free_1": "Ambos padres + hasta 2 hijos",
   "pf_free_2": "Tareas, calendario y recordatorios",
   "pf_free_3": "Estrellas y premios para niños",
@@ -1680,6 +1694,13 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  "kitchen_restore_last": "Restaurer ta dernière liste ?",
+  "kitchen_review": "Voir",
+  "kitchen_restore_items": "Restaurer des articles",
+  "kitchen_selected": "sélectionnés",
+  "kitchen_select_all": "Tout sélectionner",
+  "kitchen_clear_all": "Tout retirer",
+  "kitchen_add_selected": "Ajouter à la liste",
   "pf_free_1": "Les deux parents + jusqu’à 2 enfants",
   "pf_free_2": "Tâches, agenda et rappels",
   "pf_free_3": "Étoiles et récompenses enfants",
@@ -2511,6 +2532,13 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  "kitchen_restore_last": "Letzte Liste wiederherstellen?",
+  "kitchen_review": "Ansehen",
+  "kitchen_restore_items": "Artikel wiederherstellen",
+  "kitchen_selected": "ausgewählt",
+  "kitchen_select_all": "Alle auswählen",
+  "kitchen_clear_all": "Alle entfernen",
+  "kitchen_add_selected": "Zur Liste hinzufügen",
   "pf_free_1": "Beide Eltern + bis zu 2 Kinder",
   "pf_free_2": "Aufgaben, Kalender & Erinnerungen",
   "pf_free_3": "Sterne & Belohnungen für Kinder",

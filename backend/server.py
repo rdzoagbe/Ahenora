@@ -3351,6 +3351,38 @@ async def delete_shopping_history(history_id: str, user=Depends(require_user)):
     return {"ok": True}
 
 
+class BulkShoppingIn(BaseModel):
+    names: list[str]
+
+
+@app.post("/api/shopping/bulk")
+async def bulk_add_shopping(body: BulkShoppingIn, user=Depends(require_user)):
+    """Add several items at once — used to restore selected items from a past
+    list. Skips blanks and anything already on the current (unchecked) list."""
+    database = get_db()
+    existing = await database["shopping_list"].find(
+        {"family_id": user["family_id"], "checked": False}, {"_id": 0, "name": 1}
+    ).to_list(500)
+    have = {(e.get("name") or "").strip().lower() for e in existing}
+    added = 0
+    for raw in body.names:
+        name = (raw or "").strip()
+        if not name or name.lower() in have:
+            continue
+        have.add(name.lower())
+        await database["shopping_list"].insert_one({
+            "item_id": new_id("shop"),
+            "family_id": user["family_id"],
+            "name": name,
+            "category": "Other",
+            "checked": False,
+            "added_by": user.get("name", ""),
+            "created_at": utcnow(),
+        })
+        added += 1
+    return {"ok": True, "added": added}
+
+
 # -----------------------------------------------------------------------------
 # Expense Tracking
 # -----------------------------------------------------------------------------
