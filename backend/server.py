@@ -3284,12 +3284,71 @@ async def delete_shopping_item(item_id: str, user=Depends(require_user)):
 
 
 @app.delete("/api/shopping")
+def public_shopping_history(h: dict) -> dict:
+    return {"history_id": h["history_id"], "items": h.get("items", []), "created_at": iso(h["created_at"])}
+
+
 async def clear_checked_shopping(user=Depends(require_user)):
     database = get_db()
+    # Archive the finished trip (checked items) before clearing, so it can be reused.
+    checked = await database["shopping_list"].find(
+        {"family_id": user["family_id"], "checked": True}, {"_id": 0, "name": 1}
+    ).to_list(500)
+    names = [c.get("name", "") for c in checked if c.get("name")]
+    if names:
+        await database["shopping_history"].insert_one({
+            "history_id": new_id("shist"),
+            "family_id": user["family_id"],
+            "items": names,
+            "created_at": utcnow(),
+        })
     result = await database["shopping_list"].delete_many(
         {"family_id": user["family_id"], "checked": True}
     )
     return {"deleted": result.deleted_count}
+
+
+@app.get("/api/shopping/history")
+async def list_shopping_history(user=Depends(require_user)):
+    database = get_db()
+    rows = await database["shopping_history"].find(
+        {"family_id": user["family_id"]}, {"_id": 0}
+    ).sort("created_at", -1).to_list(30)
+    return [public_shopping_history(h) for h in rows]
+
+
+@app.post("/api/shopping/history/{history_id}/reuse")
+async def reuse_shopping_history(history_id: str, user=Depends(require_user)):
+    database = get_db()
+    h = await database["shopping_history"].find_one(
+        {"history_id": history_id, "family_id": user["family_id"]}, {"_id": 0}
+    )
+    if not h:
+        raise HTTPException(404, "Not found")
+    added = 0
+    for name in h.get("items", []):
+        if not name:
+            continue
+        await database["shopping_list"].insert_one({
+            "item_id": new_id("shop"),
+            "family_id": user["family_id"],
+            "name": name,
+            "category": "Other",
+            "checked": False,
+            "added_by": user.get("name", ""),
+            "created_at": utcnow(),
+        })
+        added += 1
+    return {"ok": True, "added": added}
+
+
+@app.delete("/api/shopping/history/{history_id}")
+async def delete_shopping_history(history_id: str, user=Depends(require_user)):
+    database = get_db()
+    await database["shopping_history"].delete_one(
+        {"history_id": history_id, "family_id": user["family_id"]}
+    )
+    return {"ok": True}
 
 
 # -----------------------------------------------------------------------------
@@ -3590,6 +3649,75 @@ async def delete_meal(meal_id: str, user: dict = Depends(require_user), database
     )
     if result.deleted_count == 0:
         raise HTTPException(404, "Meal not found")
+    return {"ok": True}
+
+
+class SavedPlanIn(BaseModel):
+    name: str
+
+
+def public_saved_plan(pl: dict) -> dict:
+    return {"plan_id": pl["plan_id"], "name": pl.get("name", ""), "meals": pl.get("meals", []), "created_at": iso(pl["created_at"])}
+
+
+@app.post("/api/meals/save")
+async def save_meal_plan(body: SavedPlanIn, user: dict = Depends(require_user), database=Depends(get_db)):
+    await require_feature(user, "meal_planner")
+    meals = await database["meals"].find(
+        {"family_id": user["family_id"]}, {"_id": 0, "day": 1, "title": 1, "ingredients": 1}
+    ).to_list(200)
+    snapshot = [{"day": m.get("day"), "title": m.get("title", ""), "ingredients": m.get("ingredients", [])} for m in meals]
+    plan = {
+        "plan_id": new_id("mplan"),
+        "family_id": user["family_id"],
+        "name": (body.name or "Saved plan").strip()[:60] or "Saved plan",
+        "meals": snapshot,
+        "created_at": utcnow(),
+    }
+    await database["meal_plans_saved"].insert_one(plan)
+    return public_saved_plan(plan)
+
+
+@app.get("/api/meals/saved")
+async def list_saved_plans(user: dict = Depends(require_user), database=Depends(get_db)):
+    rows = await database["meal_plans_saved"].find(
+        {"family_id": user["family_id"]}, {"_id": 0}
+    ).sort("created_at", -1).to_list(30)
+    return [public_saved_plan(p) for p in rows]
+
+
+@app.post("/api/meals/saved/{plan_id}/reuse")
+async def reuse_saved_plan(plan_id: str, user: dict = Depends(require_user), database=Depends(get_db)):
+    await require_feature(user, "meal_planner")
+    pl = await database["meal_plans_saved"].find_one(
+        {"plan_id": plan_id, "family_id": user["family_id"]}, {"_id": 0}
+    )
+    if not pl:
+        raise HTTPException(404, "Not found")
+    added = 0
+    for m in pl.get("meals", []):
+        day = (m.get("day") or "monday").lower()
+        if day not in DAYS_OF_WEEK:
+            continue
+        await database["meals"].insert_one({
+            "meal_id": new_id("meal"),
+            "family_id": user["family_id"],
+            "day": day,
+            "meal_type": "dinner",
+            "title": m.get("title", ""),
+            "ingredients": m.get("ingredients", []),
+            "notes": None,
+            "created_at": utcnow(),
+        })
+        added += 1
+    return {"ok": True, "added": added}
+
+
+@app.delete("/api/meals/saved/{plan_id}")
+async def delete_saved_plan(plan_id: str, user: dict = Depends(require_user), database=Depends(get_db)):
+    await database["meal_plans_saved"].delete_one(
+        {"plan_id": plan_id, "family_id": user["family_id"]}
+    )
     return {"ok": True}
 
 
