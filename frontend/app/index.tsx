@@ -263,6 +263,17 @@ export default function Landing() {
     router.replace('/feed');
   };
 
+  // While the saved session is being restored (or a signed-in user is about to
+  // be redirected to the app), show a plain splash instead of the sign-in page —
+  // otherwise the connect/create screen flashes for already-logged-in users.
+  if (loading || user) {
+    return (
+      <View style={[styles.container, styles.splash, { backgroundColor: theme.colors.bg }]}>
+        <ActivityIndicator color={theme.colors.accent} size="large" />
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.bg }]}>
       <ImageBackground source={{ uri: BG_URL }} style={StyleSheet.absoluteFill} resizeMode="cover" />
@@ -401,6 +412,7 @@ export default function Landing() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  splash: { alignItems: 'center', justifyContent: 'center' },
   overlay: { ...StyleSheet.absoluteFillObject },
   safe: { flex: 1, paddingHorizontal: 22 },
   top: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 6 },
