@@ -22,19 +22,47 @@ Last updated: July 2026.
 
 > **Email sending — status & notes.** Invites send via Resend from a from-address on the **verified** domain `joblytics-ai.com` (`INVITE_FROM_EMAIL`). Two bugs fixed during closed testing: a stray trailing space in the `GOOGLE_API_KEY` Railway variable name (unrelated, broke AI features), and a missing `User-Agent` header on the Resend request (caused `403 error 1010`, blocked all sends). Email template is now light/transactional with `List-Unsubscribe` headers. Remaining: DMARC (above) + reputation warm-up. Public-launch polish: move sending to a **matching** domain (e.g. `householdcoo.app`) so the sender brand matches the app.
 
-## Pricing (decided)
+## Pricing & gating (decided)
 
-Kid-metered tiers, **both parents always free**:
+**Two tiers at launch: Free + Premium.** Keep it simple — a third
+"Family Office" tier is deferred until big/extended households actually ask
+for it (three similar tiers depress early conversion). Both parents always free;
+the cleanest paywall is **household size (child count)** — non-punitive, nobody
+resents metering on how many kids they have.
 
 | Tier | Price | Household |
 |------|-------|-----------|
-| Village (free) | $0 | 2 parents + 1 child |
-| Executive | $8.99/mo · $69.99/yr | 2 parents + up to 4 children |
-| Family Office | $19.99/mo · $179.99/yr | Extended household: up to 10 children + caregivers |
+| **Free** | $0 | both parents + 1 child |
+| **Premium** | **$6.99/mo · $49.99/yr** | both parents + up to 4 children (+ caregivers) |
 
-Display-only today. **Testing window:** the Village member cap is temporarily
-relaxed to 10 so closed-test families can explore multi-kid features (no way to
-upgrade exists yet). **Enforcement** (parents uncounted, children metered 1/4/10, extra adults gated to Family Office) ships together with billing. Google Play Billing handles currency localization, tax, and payouts (15% fee) — **no Stripe** for in-app subscriptions (Play policy).
+*(Family Office — extended households of ~10 kids + caregivers, bigger storage/AI —
+kept in the back pocket for later, not launched.)*
+
+### Feature map
+- **Free (the daily-habit hook — keep genuinely useful):** feed, tasks, calendar,
+  **all retention nudges** (streak, co-parent pings, dinner + Sunday recap), kids
+  stars/rewards/chores/celebrations, shopping list **+ reuse past lists**,
+  **viewing any document** (PDF/Word/Excel), sharing, ~25 MB vault, 5 AI scans/mo, 1 child.
+- **Premium ($6.99):** up to 4 children, **meal planner + saved plans**, **pocket
+  money/allowance**, **weekly report**, **carpool**, 100 AI scans/mo, 500 MB vault.
+  Later: **AI Chef**.
+
+### Principles
+- **Never paywall the retention loop** (streak, co-parent pings, dinner/Sunday
+  nudges) — those feed the funnel; gating them starves conversion.
+- **Document *viewing* stays free**; monetize **storage** instead (vault fills up →
+  upgrade). Charging to open a doc you saved feels punitive.
+- **Meter on child count** as the primary paywall; features are the secondary lever.
+- **Push the annual plan** — that's where family apps make their money. Prices can
+  rise later; lowering is painful, so we start at $6.99 and grow into more.
+
+### Status & mechanics
+Display-only today. **Testing window:** the Free member cap is temporarily relaxed
+to 10 so closed-test families can explore multi-kid features (no upgrade path exists
+yet). **Enforcement** (parents uncounted, children metered 1 free / 4 Premium) ships
+with **Phase 1 billing** — rebuild `PricingView` to two tiers, collapse
+`PLAN_CATALOG`, set prices in Play Console. Google Play Billing handles currency
+localization, tax, and payouts (15% fee) — **no Stripe** for in-app subscriptions (Play policy).
 
 ---
 
