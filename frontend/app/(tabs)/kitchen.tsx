@@ -52,6 +52,8 @@ export default function Kitchen() {
   const [savedPlans, setSavedPlans] = useState<SavedMealPlan[]>([]);
   const [histLoading, setHistLoading] = useState(false);
   const [savePlanName, setSavePlanName] = useState('');
+  const [restoreEntry, setRestoreEntry] = useState<ShoppingHistoryEntry | null>(null);
+  const [restoreSel, setRestoreSel] = useState<Set<number>>(new Set());
 
   const showToast = useCallback((message: string, tone: ToastTone = 'info') => {
     setToast({ message, tone });
@@ -60,9 +62,10 @@ export default function Kitchen() {
 
   const load = useCallback(async () => {
     try {
-      const [shopRes, mealRes] = await Promise.allSettled([api.listShopping(), api.listMeals()]);
+      const [shopRes, mealRes, histRes] = await Promise.allSettled([api.listShopping(), api.listMeals(), api.listShoppingHistory()]);
       if (shopRes.status === 'fulfilled') setShopItems(shopRes.value);
       if (mealRes.status === 'fulfilled') setMeals(mealRes.value);
+      if (histRes.status === 'fulfilled') setShopHistory(histRes.value);
     } catch (e: any) {
       logger.warn('Kitchen load failed:', e?.message || e);
     } finally {
@@ -168,14 +171,32 @@ export default function Kitchen() {
     finally { setHistLoading(false); }
   }, []);
 
-  const reuseShopTrip = useCallback(async (id: string) => {
+  // Open the selectable "restore items" sheet for a past trip (all pre-ticked).
+  const openRestore = useCallback((entry: ShoppingHistoryEntry) => {
+    setShowShopHistory(false);
+    setRestoreEntry(entry);
+    setRestoreSel(new Set(entry.items.map((_, i) => i)));
+  }, []);
+
+  const toggleRestore = useCallback((i: number) => {
+    setRestoreSel((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i); else next.add(i);
+      return next;
+    });
+  }, []);
+
+  const confirmRestore = useCallback(async () => {
+    if (!restoreEntry) return;
+    const names = restoreEntry.items.filter((_, i) => restoreSel.has(i));
+    if (names.length === 0) { setRestoreEntry(null); return; }
     try {
-      const r = await api.reuseShoppingHistory(id);
-      setShowShopHistory(false);
+      const r = await api.bulkAddShopping(names);
+      setRestoreEntry(null);
       setShopItems(await api.listShopping().catch(() => []));
       showToast(`${r.added} ${t('vault_ingredients_added_to_list')}`, 'success');
     } catch { showToast(t('vault_could_not_update'), 'error'); }
-  }, [showToast]);
+  }, [restoreEntry, restoreSel, showToast]);
 
   const deleteShopTrip = useCallback(async (id: string) => {
     setShopHistory((prev) => prev.filter((h) => h.history_id !== id));
@@ -315,6 +336,17 @@ export default function Kitchen() {
               </View>
             </View>
 
+            {shopItems.length === 0 && shopHistory.length > 0 ? (
+              <PressScale testID="restore-banner" onPress={() => openRestore(shopHistory[0])} style={styles.restoreBanner}>
+                <View style={styles.restoreIcon}><RotateCcw color={ui.orange} size={18} /></View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.restoreTitle}>{t('kitchen_restore_last')}</Text>
+                  <Text style={styles.restoreSub} numberOfLines={1}>{histDate(shopHistory[0].created_at)} · {shopHistory[0].items.length} {shopHistory[0].items.length === 1 ? t('vault_item') : t('vault_items')}</Text>
+                </View>
+                <Text style={styles.restoreCta}>{t('kitchen_review')}</Text>
+              </PressScale>
+            ) : null}
+
             <View style={styles.card}>
               <View style={styles.shopInputRow}>
                 <TextInput
@@ -431,7 +463,7 @@ export default function Kitchen() {
                 <Text style={styles.histTitle}>{histDate(h.created_at)} · {h.items.length} {h.items.length === 1 ? t('vault_item') : t('vault_items')}</Text>
                 <Text style={styles.histSub} numberOfLines={1}>{h.items.join(', ')}</Text>
               </View>
-              <PressScale testID={`reuse-trip-${h.history_id}`} onPress={() => reuseShopTrip(h.history_id)} style={styles.reuseBtn}>
+              <PressScale testID={`reuse-trip-${h.history_id}`} onPress={() => openRestore(h)} style={styles.reuseBtn}>
                 <RotateCcw color={ui.orange} size={14} />
                 <Text style={styles.reuseText}>{t('kitchen_reuse')}</Text>
               </PressScale>
@@ -441,6 +473,44 @@ export default function Kitchen() {
             </View>
           ))
         )}
+      </KeyboardAwareBottomSheet>
+
+      {/* Restore items from a past list — selectable */}
+      <KeyboardAwareBottomSheet visible={restoreEntry !== null} onClose={() => setRestoreEntry(null)} contentStyle={styles.sheet}>
+        <View style={styles.sheetHeader}>
+          <Text style={styles.sheetTitle}>{t('kitchen_restore_items')}</Text>
+          <PressScale onPress={() => setRestoreEntry(null)} style={styles.iconBtn}><X color={ui.text} size={20} /></PressScale>
+        </View>
+        {restoreEntry ? (
+          <>
+            <View style={styles.restoreSelRow}>
+              <Text style={styles.restoreSelText}>{restoreSel.size}/{restoreEntry.items.length} {t('kitchen_selected')}</Text>
+              <PressScale
+                onPress={() => setRestoreSel(restoreSel.size === restoreEntry.items.length ? new Set() : new Set(restoreEntry.items.map((_, i) => i)))}
+                style={styles.selAllBtn}
+              >
+                <Text style={styles.selAllText}>{restoreSel.size === restoreEntry.items.length ? t('kitchen_clear_all') : t('kitchen_select_all')}</Text>
+              </PressScale>
+            </View>
+            {restoreEntry.items.map((name, i) => {
+              const on = restoreSel.has(i);
+              return (
+                <PressScale key={`${name}-${i}`} testID={`restore-item-${i}`} onPress={() => toggleRestore(i)} style={styles.row}>
+                  <View style={[styles.checkbox, on && styles.checkboxOn]}>
+                    {on ? <Check color={ui.bg} size={13} /> : null}
+                  </View>
+                  <Text style={[styles.rowText, !on && { color: ui.muted }]}>{name}</Text>
+                </PressScale>
+              );
+            })}
+            <View style={styles.sheetFooter}>
+              <PressScale onPress={() => setRestoreEntry(null)} style={styles.cancelBtn}><Text style={styles.cancelText}>{t('cancel')}</Text></PressScale>
+              <PressScale testID="confirm-restore" onPress={confirmRestore} disabled={restoreSel.size === 0} style={[styles.saveBtn, restoreSel.size === 0 && { opacity: 0.5 }]}>
+                <Text style={styles.saveText}>{t('kitchen_add_selected')} ({restoreSel.size})</Text>
+              </PressScale>
+            </View>
+          </>
+        ) : null}
       </KeyboardAwareBottomSheet>
 
       {/* Saved meal plans */}
@@ -544,6 +614,17 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   reuseBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 99, backgroundColor: ui.orangeSoft },
   reuseText: { color: ui.orange, fontFamily: 'Inter_800ExtraBold', fontSize: 12 },
   savePlanRow: { flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 8 },
+  restoreBanner: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: ui.orangeSoft, borderRadius: 16, paddingVertical: 12, paddingHorizontal: 14, marginBottom: 12 },
+  restoreIcon: { width: 38, height: 38, borderRadius: 11, backgroundColor: ui.card, alignItems: 'center', justifyContent: 'center' },
+  restoreTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
+  restoreSub: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, marginTop: 1 },
+  restoreCta: { color: ui.orange, fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
+  restoreSelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
+  restoreSelText: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 13 },
+  selAllBtn: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 99, backgroundColor: ui.soft, borderWidth: 1, borderColor: ui.line },
+  selAllText: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 12.5 },
+  checkbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 1.5, borderColor: ui.line, alignItems: 'center', justifyContent: 'center' },
+  checkboxOn: { backgroundColor: ui.orange, borderColor: ui.orange },
   secLeft: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   secTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 19, letterSpacing: -0.3 },
   secCount: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 14 },

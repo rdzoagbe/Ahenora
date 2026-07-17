@@ -892,6 +892,8 @@ export const api = {
     request<{ ok: boolean }>(`/shopping/${itemId}`, { method: 'DELETE' }),
   clearCheckedShopping: () =>
     request<{ deleted: number }>('/shopping', { method: 'DELETE' }),
+  bulkAddShopping: (names: string[]) =>
+    request<{ ok: boolean; added: number }>('/shopping/bulk', { method: 'POST', body: { names } }),
   listShoppingHistory: () => request<ShoppingHistoryEntry[]>('/shopping/history'),
   reuseShoppingHistory: (id: string) =>
     request<{ ok: boolean; added: number }>(`/shopping/history/${id}/reuse`, { method: 'POST' }),
