@@ -21,11 +21,12 @@ import { useUI, UIColors } from './Kit';
 import { useStore } from '../store';
 import { Plan, BillingCycle } from '../api';
 
-const PLAN_ORDER: Plan[] = ['village', 'executive', 'family_office'];
+// Two tiers at launch: Free + Premium (Family Office deferred — see ROADMAP).
+const PLAN_ORDER: Plan[] = ['village', 'executive'];
 
 const PLAN_PRICES: Record<Plan, { monthly: number; yearly: number }> = {
   village: { monthly: 0, yearly: 0 },
-  executive: { monthly: 8.99, yearly: 69.99 },
+  executive: { monthly: 6.99, yearly: 49.99 },
   family_office: { monthly: 19.99, yearly: 179.99 },
 };
 
@@ -289,11 +290,12 @@ const PLAN_THEMES: Record<
     iconColor: '#A5B4FC',
     gradient: ['rgba(30,32,48,0.95)', 'rgba(20,22,34,0.98)'] as const,
     features: [
-      'feat_members_3',
-      'feat_ai_scans_10',
-      'feat_vault_1gb',
-      'feat_smart_feed',
-      'feat_kid_mode',
+      'pf_free_1',
+      'pf_free_2',
+      'pf_free_3',
+      'pf_free_4',
+      'pf_free_5',
+      'pf_free_6',
     ],
   },
   executive: {
@@ -302,13 +304,12 @@ const PLAN_THEMES: Record<
     iconColor: '#34D399',
     gradient: ['rgba(16,185,129,0.15)', 'rgba(99,102,241,0.15)'] as const,
     features: [
-      'feat_members_10',
-      'feat_ai_scans_unlimited',
-      'feat_vault_20gb',
-      'feat_sunday_brief',
-      'feat_voice_capture',
-      'feat_email_invites',
-      'feat_recurring',
+      'pf_prem_1',
+      'pf_prem_2',
+      'pf_prem_3',
+      'pf_prem_4',
+      'pf_prem_5',
+      'pf_prem_6',
     ],
   },
   family_office: {
