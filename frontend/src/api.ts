@@ -267,6 +267,19 @@ export interface Routine {
   created_at: string;
 }
 
+export interface ShoppingHistoryEntry {
+  history_id: string;
+  items: string[];
+  created_at: string;
+}
+
+export interface SavedMealPlan {
+  plan_id: string;
+  name: string;
+  meals: { day: string; title: string; ingredients: string[] }[];
+  created_at: string;
+}
+
 export interface MealPlan {
   meal_id: string;
   family_id: string;
@@ -879,6 +892,11 @@ export const api = {
     request<{ ok: boolean }>(`/shopping/${itemId}`, { method: 'DELETE' }),
   clearCheckedShopping: () =>
     request<{ deleted: number }>('/shopping', { method: 'DELETE' }),
+  listShoppingHistory: () => request<ShoppingHistoryEntry[]>('/shopping/history'),
+  reuseShoppingHistory: (id: string) =>
+    request<{ ok: boolean; added: number }>(`/shopping/history/${id}/reuse`, { method: 'POST' }),
+  deleteShoppingHistory: (id: string) =>
+    request<{ ok: boolean }>(`/shopping/history/${id}`, { method: 'DELETE' }),
 
   // Expenses
   listExpenses: (days = 30) => request<Expense[]>(`/expenses?days=${days}`),
@@ -912,6 +930,10 @@ export const api = {
     request<MealPlan>('/meals', { method: 'POST', body: data }),
   deleteMeal: (id: string) => request<{ ok: boolean }>(`/meals/${id}`, { method: 'DELETE' }),
   syncMealsToShopping: () => request<{ ok: boolean; added: number }>('/meals/sync-shopping', { method: 'POST' }),
+  saveMealPlan: (name: string) => request<SavedMealPlan>('/meals/save', { method: 'POST', body: { name } }),
+  listSavedPlans: () => request<SavedMealPlan[]>('/meals/saved'),
+  reuseSavedPlan: (id: string) => request<{ ok: boolean; added: number }>(`/meals/saved/${id}/reuse`, { method: 'POST' }),
+  deleteSavedPlan: (id: string) => request<{ ok: boolean }>(`/meals/saved/${id}`, { method: 'DELETE' }),
 
   // Carpool
   listCarpools: () => request<Carpool[]>('/carpools'),

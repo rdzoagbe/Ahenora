@@ -12,6 +12,16 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  "kitchen_past_lists": "Past shopping lists",
+  "kitchen_no_past_lists": "No past lists yet. Finished lists appear here when you clear them.",
+  "kitchen_reuse": "Reuse",
+  "kitchen_saved_plans": "Saved meal plans",
+  "kitchen_no_saved_plans": "No saved plans yet. Save this week to reuse it later.",
+  "kitchen_name_this_plan": "Name this plan (e.g. Family week)",
+  "kitchen_plan_saved": "Meal plan saved.",
+  "kitchen_meals_added": "meals added.",
+  "kitchen_nothing_to_save": "Add some meals first.",
+  "kitchen_saved_plan_default": "Saved plan",
   "vault_no_inapp_view": "This file type can't be shown in the app.",
   "vault_open_external": "Open in another app",
   "set_revoke": "Revoke",
@@ -827,6 +837,16 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  "kitchen_past_lists": "Listas anteriores",
+  "kitchen_no_past_lists": "Aún no hay listas. Las listas terminadas aparecen aquí al vaciarlas.",
+  "kitchen_reuse": "Reutilizar",
+  "kitchen_saved_plans": "Menús guardados",
+  "kitchen_no_saved_plans": "Aún no hay menús. Guarda esta semana para reutilizarla.",
+  "kitchen_name_this_plan": "Nombra este menú (p. ej. Semana familiar)",
+  "kitchen_plan_saved": "Menú guardado.",
+  "kitchen_meals_added": "comidas añadidas.",
+  "kitchen_nothing_to_save": "Añade comidas primero.",
+  "kitchen_saved_plan_default": "Menú guardado",
   "vault_no_inapp_view": "Este tipo de archivo no se puede mostrar en la app.",
   "vault_open_external": "Abrir en otra app",
   "set_revoke": "Revocar",
@@ -1636,6 +1656,16 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  "kitchen_past_lists": "Listes précédentes",
+  "kitchen_no_past_lists": "Pas encore de listes. Les listes terminées apparaissent ici après les avoir vidées.",
+  "kitchen_reuse": "Réutiliser",
+  "kitchen_saved_plans": "Menus enregistrés",
+  "kitchen_no_saved_plans": "Aucun menu enregistré. Enregistre cette semaine pour la réutiliser.",
+  "kitchen_name_this_plan": "Nommer ce menu (ex. Semaine famille)",
+  "kitchen_plan_saved": "Menu enregistré.",
+  "kitchen_meals_added": "repas ajoutés.",
+  "kitchen_nothing_to_save": "Ajoute d'abord des repas.",
+  "kitchen_saved_plan_default": "Menu enregistré",
   "vault_no_inapp_view": "Ce type de fichier ne peut pas s'afficher dans l'app.",
   "vault_open_external": "Ouvrir dans une autre app",
   "set_revoke": "Révoquer",
@@ -2445,6 +2475,16 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  "kitchen_past_lists": "Frühere Listen",
+  "kitchen_no_past_lists": "Noch keine Listen. Erledigte Listen erscheinen hier, wenn du sie leerst.",
+  "kitchen_reuse": "Wiederverwenden",
+  "kitchen_saved_plans": "Gespeicherte Pläne",
+  "kitchen_no_saved_plans": "Noch keine Pläne. Speichere diese Woche, um sie wiederzuverwenden.",
+  "kitchen_name_this_plan": "Plan benennen (z. B. Familienwoche)",
+  "kitchen_plan_saved": "Plan gespeichert.",
+  "kitchen_meals_added": "Mahlzeiten hinzugefügt.",
+  "kitchen_nothing_to_save": "Füge zuerst Mahlzeiten hinzu.",
+  "kitchen_saved_plan_default": "Gespeicherter Plan",
   "vault_no_inapp_view": "Dieser Dateityp kann in der App nicht angezeigt werden.",
   "vault_open_external": "In anderer App öffnen",
   "set_revoke": "Widerrufen",

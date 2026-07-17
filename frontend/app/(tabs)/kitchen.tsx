@@ -1,7 +1,7 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TextInput, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TextInput, ScrollView, ActivityIndicator } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { Plus, X, Trash2, ShoppingCart, Check, UtensilsCrossed, Bell, ChevronDown } from 'lucide-react-native';
+import { Plus, X, Trash2, ShoppingCart, Check, UtensilsCrossed, Bell, ChevronDown, History, RotateCcw } from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { PressScale } from '../../src/components/PressScale';
@@ -12,7 +12,7 @@ import { TabScreen } from '../../src/components/TabScreen';
 import { ScreenHeader, useUI, UIColors } from '../../src/components/Kit';
 
 import { useStore } from '../../src/store';
-import { api, MealPlan, ShoppingItem } from '../../src/api';
+import { api, MealPlan, ShoppingItem, ShoppingHistoryEntry, SavedMealPlan } from '../../src/api';
 import { usePremiumGate, LockBadge } from '../../src/components/PremiumGate';
 import { logger } from '../../src/logger';
 
@@ -45,6 +45,13 @@ export default function Kitchen() {
   const [mealTitle, setMealTitle] = useState('');
   const [mealIngredients, setMealIngredients] = useState('');
   const [showMealAdd, setShowMealAdd] = useState(false);
+
+  const [showShopHistory, setShowShopHistory] = useState(false);
+  const [shopHistory, setShopHistory] = useState<ShoppingHistoryEntry[]>([]);
+  const [showMealHistory, setShowMealHistory] = useState(false);
+  const [savedPlans, setSavedPlans] = useState<SavedMealPlan[]>([]);
+  const [histLoading, setHistLoading] = useState(false);
+  const [savePlanName, setSavePlanName] = useState('');
 
   const showToast = useCallback((message: string, tone: ToastTone = 'info') => {
     setToast({ message, tone });
@@ -152,6 +159,67 @@ export default function Kitchen() {
     }
   }, [showToast]);
 
+  // ── History: past shopping trips + saved meal plans ──
+  const openShopHistory = useCallback(async () => {
+    setShowShopHistory(true);
+    setHistLoading(true);
+    try { setShopHistory(await api.listShoppingHistory()); }
+    catch { /* keep whatever's there */ }
+    finally { setHistLoading(false); }
+  }, []);
+
+  const reuseShopTrip = useCallback(async (id: string) => {
+    try {
+      const r = await api.reuseShoppingHistory(id);
+      setShowShopHistory(false);
+      setShopItems(await api.listShopping().catch(() => []));
+      showToast(`${r.added} ${t('vault_ingredients_added_to_list')}`, 'success');
+    } catch { showToast(t('vault_could_not_update'), 'error'); }
+  }, [showToast]);
+
+  const deleteShopTrip = useCallback(async (id: string) => {
+    setShopHistory((prev) => prev.filter((h) => h.history_id !== id));
+    try { await api.deleteShoppingHistory(id); } catch { /* best effort */ }
+  }, []);
+
+  const openMealHistory = useCallback(async () => {
+    setShowMealHistory(true);
+    setHistLoading(true);
+    try { setSavedPlans(await api.listSavedPlans()); }
+    catch { /* keep */ }
+    finally { setHistLoading(false); }
+  }, []);
+
+  const saveCurrentPlan = useCallback(async () => {
+    if (meals.length === 0) { showToast(t('kitchen_nothing_to_save'), 'info'); return; }
+    const name = savePlanName.trim() || t('kitchen_saved_plan_default');
+    try {
+      await api.saveMealPlan(name);
+      setSavePlanName('');
+      setSavedPlans(await api.listSavedPlans().catch(() => []));
+      showToast(t('kitchen_plan_saved'), 'success');
+    } catch { showToast(t('vault_could_not_add_meal'), 'error'); }
+  }, [meals.length, savePlanName, showToast]);
+
+  const reusePlan = useCallback(async (id: string) => {
+    try {
+      const r = await api.reuseSavedPlan(id);
+      setShowMealHistory(false);
+      setMeals(await api.listMeals().catch(() => []));
+      showToast(`${r.added} ${t('kitchen_meals_added')}`, 'success');
+    } catch { showToast(t('vault_could_not_add_meal'), 'error'); }
+  }, [showToast]);
+
+  const deletePlan = useCallback(async (id: string) => {
+    setSavedPlans((prev) => prev.filter((p) => p.plan_id !== id));
+    try { await api.deleteSavedPlan(id); } catch { /* best effort */ }
+  }, []);
+
+  const histDate = (iso: string) => {
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString([], { day: '2-digit', month: 'short' });
+  };
+
   const mealsByDay = useMemo(() => {
     const grouped: Record<string, MealPlan[]> = {};
     for (const d of DAYS) grouped[d] = [];
@@ -233,13 +301,18 @@ export default function Kitchen() {
                 <ShoppingCart color={ui.orange} size={20} />
                 <Text style={styles.secTitle}>{t('vault_shopping_list')}</Text>
               </View>
-              {checkedItems.length > 0 ? (
-                <PressScale onPress={clearChecked} style={styles.clearBtn}>
-                  <Text style={styles.clearBtnText}>{t('vault_clear_done')}</Text>
+              <View style={styles.secRight}>
+                <PressScale testID="shop-history" onPress={openShopHistory} style={styles.histBtn}>
+                  <History color={ui.muted} size={18} />
                 </PressScale>
-              ) : (
-                <Text style={styles.secCount}>{shopItems.length} {shopItems.length === 1 ? t('vault_item') : t('vault_items')}</Text>
-              )}
+                {checkedItems.length > 0 ? (
+                  <PressScale onPress={clearChecked} style={styles.clearBtn}>
+                    <Text style={styles.clearBtnText}>{t('vault_clear_done')}</Text>
+                  </PressScale>
+                ) : (
+                  <Text style={styles.secCount}>{shopItems.length} {shopItems.length === 1 ? t('vault_item') : t('vault_items')}</Text>
+                )}
+              </View>
             </View>
 
             <View style={styles.card}>
@@ -299,7 +372,10 @@ export default function Kitchen() {
               {mealLocked ? (
                 <LockBadge onPress={() => promptUpgrade('meal_planner')} />
               ) : (
-                <View style={{ flexDirection: 'row', gap: 8 }}>
+                <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                  <PressScale testID="meal-history" onPress={openMealHistory} style={styles.histBtn}>
+                    <History color={ui.muted} size={18} />
+                  </PressScale>
                   {meals.length > 0 ? (
                     <PressScale onPress={syncMealsToShopping} style={styles.clearBtn}>
                       <Text style={styles.clearBtnText}>{t('vault_sync_to_list')}</Text>
@@ -337,6 +413,78 @@ export default function Kitchen() {
 
         <View style={{ height: 120 }} />
       </TabScreen>
+
+      {/* Shopping history */}
+      <KeyboardAwareBottomSheet visible={showShopHistory} onClose={() => setShowShopHistory(false)} contentStyle={styles.sheet}>
+        <View style={styles.sheetHeader}>
+          <Text style={styles.sheetTitle}>{t('kitchen_past_lists')}</Text>
+          <PressScale onPress={() => setShowShopHistory(false)} style={styles.iconBtn}><X color={ui.text} size={20} /></PressScale>
+        </View>
+        {histLoading ? (
+          <ActivityIndicator color={ui.orange} style={{ marginVertical: 24 }} />
+        ) : shopHistory.length === 0 ? (
+          <Text style={styles.histEmpty}>{t('kitchen_no_past_lists')}</Text>
+        ) : (
+          shopHistory.map((h) => (
+            <View key={h.history_id} style={styles.histRow}>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.histTitle}>{histDate(h.created_at)} · {h.items.length} {h.items.length === 1 ? t('vault_item') : t('vault_items')}</Text>
+                <Text style={styles.histSub} numberOfLines={1}>{h.items.join(', ')}</Text>
+              </View>
+              <PressScale testID={`reuse-trip-${h.history_id}`} onPress={() => reuseShopTrip(h.history_id)} style={styles.reuseBtn}>
+                <RotateCcw color={ui.orange} size={14} />
+                <Text style={styles.reuseText}>{t('kitchen_reuse')}</Text>
+              </PressScale>
+              <PressScale onPress={() => deleteShopTrip(h.history_id)} style={{ padding: 6 }}>
+                <Trash2 color={ui.muted} size={15} />
+              </PressScale>
+            </View>
+          ))
+        )}
+      </KeyboardAwareBottomSheet>
+
+      {/* Saved meal plans */}
+      <KeyboardAwareBottomSheet visible={showMealHistory} onClose={() => setShowMealHistory(false)} contentStyle={styles.sheet}>
+        <View style={styles.sheetHeader}>
+          <Text style={styles.sheetTitle}>{t('kitchen_saved_plans')}</Text>
+          <PressScale onPress={() => setShowMealHistory(false)} style={styles.iconBtn}><X color={ui.text} size={20} /></PressScale>
+        </View>
+        <View style={styles.savePlanRow}>
+          <TextInput
+            value={savePlanName}
+            onChangeText={setSavePlanName}
+            placeholder={t('kitchen_name_this_plan')}
+            placeholderTextColor={ui.muted}
+            style={styles.shopInput}
+            returnKeyType="done"
+            onSubmitEditing={saveCurrentPlan}
+          />
+          <PressScale testID="save-plan" onPress={saveCurrentPlan} style={[styles.clearBtn, { backgroundColor: ui.lavender }]}>
+            <Text style={[styles.clearBtnText, { color: ui.lavenderText }]}>{t('vault_save')}</Text>
+          </PressScale>
+        </View>
+        {histLoading ? (
+          <ActivityIndicator color={ui.lavenderText} style={{ marginVertical: 24 }} />
+        ) : savedPlans.length === 0 ? (
+          <Text style={styles.histEmpty}>{t('kitchen_no_saved_plans')}</Text>
+        ) : (
+          savedPlans.map((p) => (
+            <View key={p.plan_id} style={styles.histRow}>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.histTitle}>{p.name}</Text>
+                <Text style={styles.histSub} numberOfLines={1}>{histDate(p.created_at)} · {p.meals.length} {p.meals.length === 1 ? t('kitchen_meal_word') : t('kitchen_meals_word')}</Text>
+              </View>
+              <PressScale testID={`reuse-plan-${p.plan_id}`} onPress={() => reusePlan(p.plan_id)} style={styles.reuseBtn}>
+                <RotateCcw color={ui.orange} size={14} />
+                <Text style={styles.reuseText}>{t('kitchen_reuse')}</Text>
+              </PressScale>
+              <PressScale onPress={() => deletePlan(p.plan_id)} style={{ padding: 6 }}>
+                <Trash2 color={ui.muted} size={15} />
+              </PressScale>
+            </View>
+          ))
+        )}
+      </KeyboardAwareBottomSheet>
 
       <KeyboardAwareBottomSheet visible={showMealAdd} onClose={() => setShowMealAdd(false)} contentStyle={styles.sheet}>
         <View style={styles.sheetHeader}>
@@ -387,6 +535,15 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   menuText: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 15 },
 
   secHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 22, marginBottom: 12 },
+  secRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  histBtn: { width: 34, height: 34, borderRadius: 99, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.card, alignItems: 'center', justifyContent: 'center' },
+  histRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, borderTopWidth: 1, borderTopColor: ui.line },
+  histTitle: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 15 },
+  histSub: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, marginTop: 2 },
+  histEmpty: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 14, textAlign: 'center', paddingVertical: 24 },
+  reuseBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 99, backgroundColor: ui.orangeSoft },
+  reuseText: { color: ui.orange, fontFamily: 'Inter_800ExtraBold', fontSize: 12 },
+  savePlanRow: { flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 8 },
   secLeft: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   secTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 19, letterSpacing: -0.3 },
   secCount: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
