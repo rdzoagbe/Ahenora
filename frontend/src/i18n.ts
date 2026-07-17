@@ -12,13 +12,13 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
-  "pf_free_1": "Both parents + 1 child",
+  "pf_free_1": "Both parents + up to 2 children",
   "pf_free_2": "Tasks, calendar & reminders",
   "pf_free_3": "Kids stars & rewards",
   "pf_free_4": "Shopping list + reuse",
   "pf_free_5": "View any document (PDF, Word, Excel)",
   "pf_free_6": "5 AI scans / month",
-  "pf_prem_1": "Up to 4 children",
+  "pf_prem_1": "Up to 5 children",
   "pf_prem_2": "Meal planner + saved plans",
   "pf_prem_3": "Pocket money tracking",
   "pf_prem_4": "Weekly report & carpool",
@@ -849,13 +849,13 @@ const en: Dict = {
 };
 
 const es: Dict = {
-  "pf_free_1": "Ambos padres + 1 hijo",
+  "pf_free_1": "Ambos padres + hasta 2 hijos",
   "pf_free_2": "Tareas, calendario y recordatorios",
   "pf_free_3": "Estrellas y premios para niños",
   "pf_free_4": "Lista de compra + reutilizar",
   "pf_free_5": "Ver cualquier documento (PDF, Word, Excel)",
   "pf_free_6": "5 escaneos IA / mes",
-  "pf_prem_1": "Hasta 4 hijos",
+  "pf_prem_1": "Hasta 5 hijos",
   "pf_prem_2": "Planificador de menús + guardados",
   "pf_prem_3": "Control de la paga",
   "pf_prem_4": "Informe semanal y transporte compartido",
@@ -1680,13 +1680,13 @@ const es: Dict = {
 };
 
 const fr: Dict = {
-  "pf_free_1": "Les deux parents + 1 enfant",
+  "pf_free_1": "Les deux parents + jusqu’à 2 enfants",
   "pf_free_2": "Tâches, agenda et rappels",
   "pf_free_3": "Étoiles et récompenses enfants",
   "pf_free_4": "Liste de courses + réutiliser",
   "pf_free_5": "Voir tout document (PDF, Word, Excel)",
   "pf_free_6": "5 scans IA / mois",
-  "pf_prem_1": "Jusqu'à 4 enfants",
+  "pf_prem_1": "Jusqu’à 5 enfants",
   "pf_prem_2": "Menus + plans enregistrés",
   "pf_prem_3": "Suivi de l’argent de poche",
   "pf_prem_4": "Bilan hebdo et covoiturage",
@@ -2511,13 +2511,13 @@ const fr: Dict = {
 };
 
 const de: Dict = {
-  "pf_free_1": "Beide Eltern + 1 Kind",
+  "pf_free_1": "Beide Eltern + bis zu 2 Kinder",
   "pf_free_2": "Aufgaben, Kalender & Erinnerungen",
   "pf_free_3": "Sterne & Belohnungen für Kinder",
   "pf_free_4": "Einkaufsliste + Wiederverwenden",
   "pf_free_5": "Jedes Dokument ansehen (PDF, Word, Excel)",
   "pf_free_6": "5 KI-Scans / Monat",
-  "pf_prem_1": "Bis zu 4 Kinder",
+  "pf_prem_1": "Bis zu 5 Kinder",
   "pf_prem_2": "Essensplaner + gespeicherte Pläne",
   "pf_prem_3": "Taschengeld-Tracking",
   "pf_prem_4": "Wochenbericht & Fahrgemeinschaft",

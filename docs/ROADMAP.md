@@ -32,8 +32,8 @@ resents metering on how many kids they have.
 
 | Tier | Price | Household |
 |------|-------|-----------|
-| **Free** | $0 | both parents + 1 child |
-| **Premium** | **$6.99/mo · $49.99/yr** | both parents + up to 4 children (+ caregivers) |
+| **Free** | $0 | both parents + up to 2 children |
+| **Premium** | **$6.99/mo · $49.99/yr** | both parents + up to 5 children (+ caregivers) |
 
 *(Family Office — extended households of ~10 kids + caregivers, bigger storage/AI —
 kept in the back pocket for later, not launched.)*
@@ -42,8 +42,8 @@ kept in the back pocket for later, not launched.)*
 - **Free (the daily-habit hook — keep genuinely useful):** feed, tasks, calendar,
   **all retention nudges** (streak, co-parent pings, dinner + Sunday recap), kids
   stars/rewards/chores/celebrations, shopping list **+ reuse past lists**,
-  **viewing any document** (PDF/Word/Excel), sharing, ~25 MB vault, 5 AI scans/mo, 1 child.
-- **Premium ($6.99):** up to 4 children, **meal planner + saved plans**, **pocket
+  **viewing any document** (PDF/Word/Excel), sharing, ~25 MB vault, 5 AI scans/mo, up to 2 children.
+- **Premium ($6.99):** up to 5 children, **meal planner + saved plans**, **pocket
   money/allowance**, **weekly report**, **carpool**, 100 AI scans/mo, 500 MB vault.
   Later: **AI Chef**.
 
@@ -52,14 +52,14 @@ kept in the back pocket for later, not launched.)*
   nudges) — those feed the funnel; gating them starves conversion.
 - **Document *viewing* stays free**; monetize **storage** instead (vault fills up →
   upgrade). Charging to open a doc you saved feels punitive.
-- **Meter on child count** as the primary paywall; features are the secondary lever.
+- **Meter on child count generously (2 free)** so modest families rarely pay "just for a kid"; **lead every upgrade prompt with the feature** ("Unlock meal planning & pocket money"), never the child limit — avoids a "child tax" feel for a parenting brand.
 - **Push the annual plan** — that's where family apps make their money. Prices can
   rise later; lowering is painful, so we start at $6.99 and grow into more.
 
 ### Status & mechanics
 Display-only today. **Testing window:** the Free member cap is temporarily relaxed
 to 10 so closed-test families can explore multi-kid features (no upgrade path exists
-yet). **Enforcement** (parents uncounted, children metered 1 free / 4 Premium) ships
+yet). **Enforcement** (parents uncounted, children metered 2 free / 5 Premium) ships
 with **Phase 1 billing** — rebuild `PricingView` to two tiers, collapse
 `PLAN_CATALOG`, set prices in Play Console. Google Play Billing handles currency
 localization, tax, and payouts (15% fee) — **no Stripe** for in-app subscriptions (Play policy).
