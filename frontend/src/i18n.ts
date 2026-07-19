@@ -12,6 +12,14 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  "price_downgrade_title": "Manage in Google Play",
+  "price_downgrade_msg": "To cancel or downgrade, open Google Play → Payments & subscriptions. You keep Premium until the period ends.",
+  "price_purchase_done_title": "Welcome to Premium! 🎉",
+  "price_purchase_done_msg": "Your family now has the full Household COO — meal planner, pocket money, weekly report and more.",
+  "price_purchase_failed_title": "Purchase not completed",
+  "price_purchase_failed_msg": "Nothing was charged. Please try again in a moment.",
+  "price_restore_title": "Restore purchases",
+  "price_restore_none": "No previous purchase was found for this account.",
   "kitchen_clear_shop_q": "Clear the whole list?",
   "kitchen_clear_shop_body": "Every item will be removed. The list is saved to your history first, so you can restore it.",
   "kitchen_clear_meal_q": "Clear all meals?",
@@ -884,6 +892,14 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  "price_downgrade_title": "Gestionar en Google Play",
+  "price_downgrade_msg": "Para cancelar o bajar de plan, abre Google Play → Pagos y suscripciones. Mantienes Premium hasta el final del periodo.",
+  "price_purchase_done_title": "¡Bienvenido a Premium! 🎉",
+  "price_purchase_done_msg": "Tu familia ya tiene Household COO completo: planificador de comidas, paga, informe semanal y más.",
+  "price_purchase_failed_title": "Compra no completada",
+  "price_purchase_failed_msg": "No se realizó ningún cargo. Inténtalo de nuevo en un momento.",
+  "price_restore_title": "Restaurar compras",
+  "price_restore_none": "No se encontró ninguna compra anterior para esta cuenta.",
   "kitchen_clear_shop_q": "¿Borrar toda la lista?",
   "kitchen_clear_shop_body": "Se eliminarán todos los artículos. La lista se guarda antes en tu historial para poder restaurarla.",
   "kitchen_clear_meal_q": "¿Borrar todas las comidas?",
@@ -1750,6 +1766,14 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  "price_downgrade_title": "Gérer dans Google Play",
+  "price_downgrade_msg": "Pour annuler ou rétrograder, ouvrez Google Play → Paiements et abonnements. Vous gardez Premium jusqu’à la fin de la période.",
+  "price_purchase_done_title": "Bienvenue dans Premium ! 🎉",
+  "price_purchase_done_msg": "Votre famille a désormais Household COO au complet : menus, argent de poche, bilan hebdo et plus.",
+  "price_purchase_failed_title": "Achat non finalisé",
+  "price_purchase_failed_msg": "Aucun débit n’a été effectué. Réessayez dans un instant.",
+  "price_restore_title": "Restaurer les achats",
+  "price_restore_none": "Aucun achat précédent trouvé pour ce compte.",
   "kitchen_clear_shop_q": "Effacer toute la liste ?",
   "kitchen_clear_shop_body": "Tous les articles seront supprimés. La liste est d'abord enregistrée dans votre historique pour pouvoir la restaurer.",
   "kitchen_clear_meal_q": "Effacer tous les repas ?",
@@ -2616,6 +2640,14 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  "price_downgrade_title": "In Google Play verwalten",
+  "price_downgrade_msg": "Zum Kündigen oder Herabstufen öffne Google Play → Zahlungen & Abos. Premium bleibt bis zum Ende des Zeitraums aktiv.",
+  "price_purchase_done_title": "Willkommen bei Premium! 🎉",
+  "price_purchase_done_msg": "Deine Familie hat jetzt das volle Household COO — Essensplaner, Taschengeld, Wochenbericht und mehr.",
+  "price_purchase_failed_title": "Kauf nicht abgeschlossen",
+  "price_purchase_failed_msg": "Es wurde nichts abgebucht. Bitte versuche es gleich noch einmal.",
+  "price_restore_title": "Käufe wiederherstellen",
+  "price_restore_none": "Für dieses Konto wurde kein früherer Kauf gefunden.",
   "kitchen_clear_shop_q": "Die ganze Liste löschen?",
   "kitchen_clear_shop_body": "Alle Artikel werden entfernt. Die Liste wird vorher im Verlauf gespeichert und kann wiederhergestellt werden.",
   "kitchen_clear_meal_q": "Alle Mahlzeiten löschen?",

@@ -231,6 +231,7 @@ export default function Kitchen() {
   }, [shopItems, shopHistory, lang]);
 
   const acceptSuggestion = useCallback(async (sug: MealSuggestion) => {
+    if (mealLocked) { promptUpgrade('meal_planner'); return; }
     if (addedSuggest.has(sug.recipeId)) return;
     setAddedSuggest((prev) => new Set(prev).add(sug.recipeId));
     try {
@@ -240,9 +241,10 @@ export default function Kitchen() {
       setAddedSuggest((prev) => { const n = new Set(prev); n.delete(sug.recipeId); return n; });
       showToast(t('vault_could_not_add_meal'), 'error');
     }
-  }, [addedSuggest, showToast, t]);
+  }, [addedSuggest, mealLocked, promptUpgrade, showToast, t]);
 
   const acceptAllSuggestions = useCallback(async () => {
+    if (mealLocked) { promptUpgrade('meal_planner'); return; }
     // Only fill days that don't already have a meal, so we never clobber a plan.
     const busyDays = new Set(meals.map((m) => m.day));
     const toAdd = suggestions.filter((s) => !addedSuggest.has(s.recipeId) && !busyDays.has(s.day));
@@ -259,7 +261,7 @@ export default function Kitchen() {
       setMeals(await api.listMeals().catch(() => []));
       showToast(t('vault_could_not_add_meal'), 'error');
     }
-  }, [suggestions, addedSuggest, meals, showToast, t]);
+  }, [suggestions, addedSuggest, meals, mealLocked, promptUpgrade, showToast, t]);
 
   // ── History: past shopping trips + saved meal plans ──
   const openShopHistory = useCallback(async () => {
@@ -509,6 +511,17 @@ export default function Kitchen() {
               </View>
               {mealLocked ? <LockBadge onPress={() => promptUpgrade('meal_planner')} /> : null}
             </View>
+
+            {/* Free peek: locked families can still OPEN the suggestions sheet —
+                seeing 7 concrete dinners sells Premium far better than a lock
+                icon. Adding to the planner is what prompts the upgrade. */}
+            {mealLocked ? (
+              <View style={styles.mealActions}>
+                <PressScale testID="meal-suggest" onPress={openSuggest} style={styles.histBtn}>
+                  <Sparkles color={ui.lavenderText} size={18} />
+                </PressScale>
+              </View>
+            ) : null}
 
             {/* Actions get their own wrapping row so "Sync to list" is never cut off. */}
             {!mealLocked ? (
