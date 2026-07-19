@@ -460,6 +460,14 @@ async def build_subscription(family_id: str):
         {"family_id": family_id, "role": {"$regex": "^child$", "$options": "i"}}
     )
     catalog = plan_catalog_for(family["plan"])
+    limits = catalog["limits"]
+    # TESTING WINDOW: until billing is live (RC_WEBHOOK_SECRET set), every
+    # family gets Premium limits so closed-test families can exercise the
+    # gated features (meal planner, allowance, carpool, weekly report) and
+    # aren't blocked by the child cap. Gates enforce automatically the moment
+    # billing is configured — same trigger that locks /subscription/change.
+    if not os.environ.get("RC_WEBHOOK_SECRET"):
+        limits = PLAN_CATALOG["executive"]["limits"]
     return {
         "plan": family["plan"],
         "billing_cycle": family["billing_cycle"],
@@ -470,7 +478,7 @@ async def build_subscription(family_id: str):
         "vault_bytes_used": family.get("vault_bytes_used", 0),
         "members_count": members_count,
         "children_count": children_count,
-        "limits": catalog["limits"],
+        "limits": limits,
         "price_monthly": catalog["price_monthly"],
         "price_yearly": catalog["price_yearly"],
     }
