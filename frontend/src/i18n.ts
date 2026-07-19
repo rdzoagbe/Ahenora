@@ -12,6 +12,14 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  "kitchen_suggest_week": "Suggest a week of meals",
+  "kitchen_suggest_title": "Meals from your shopping",
+  "kitchen_suggest_sub": "Dinner ideas for the week, based on what you've bought. Tap to add any to your planner.",
+  "kitchen_suggest_have": "You have",
+  "kitchen_suggest_need": "You'll need",
+  "kitchen_suggest_add": "Add",
+  "kitchen_suggest_added": "Added",
+  "kitchen_suggest_add_all": "Add all to planner",
   "cal_coparent_view_link": "See what your co-parent can see",
   "cal_coparent_view_title": "Shared with your co-parent",
   "cal_coparent_view_subtitle": "This is everything your co-parent can see from you. Anything not listed here stays private.",
@@ -871,6 +879,14 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  "kitchen_suggest_week": "Sugerir una semana de comidas",
+  "kitchen_suggest_title": "Comidas según tu compra",
+  "kitchen_suggest_sub": "Ideas de cena para la semana, según lo que has comprado. Toca para añadir al planificador.",
+  "kitchen_suggest_have": "Ya tienes",
+  "kitchen_suggest_need": "Necesitarás",
+  "kitchen_suggest_add": "Añadir",
+  "kitchen_suggest_added": "Añadido",
+  "kitchen_suggest_add_all": "Añadir todo al planificador",
   "cal_coparent_view_link": "Ver lo que el otro padre puede ver",
   "cal_coparent_view_title": "Compartido con el otro padre",
   "cal_coparent_view_subtitle": "Esto es todo lo que el otro padre puede ver de ti. Lo que no aparece aquí permanece privado.",
@@ -1724,6 +1740,14 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  "kitchen_suggest_week": "Proposer une semaine de repas",
+  "kitchen_suggest_title": "Repas selon vos courses",
+  "kitchen_suggest_sub": "Idées de dîners pour la semaine, selon ce que vous avez acheté. Touchez pour ajouter au planificateur.",
+  "kitchen_suggest_have": "Vous avez",
+  "kitchen_suggest_need": "Il vous faudra",
+  "kitchen_suggest_add": "Ajouter",
+  "kitchen_suggest_added": "Ajouté",
+  "kitchen_suggest_add_all": "Tout ajouter au planificateur",
   "cal_coparent_view_link": "Voir ce que le co-parent peut voir",
   "cal_coparent_view_title": "Partagé avec votre co-parent",
   "cal_coparent_view_subtitle": "Voici tout ce que votre co-parent peut voir de vous. Tout ce qui n'est pas listé ici reste privé.",
@@ -2577,6 +2601,14 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  "kitchen_suggest_week": "Eine Woche Essen vorschlagen",
+  "kitchen_suggest_title": "Gerichte aus deinem Einkauf",
+  "kitchen_suggest_sub": "Abendessen-Ideen für die Woche, basierend auf deinem Einkauf. Tippe zum Hinzufügen zum Planer.",
+  "kitchen_suggest_have": "Du hast",
+  "kitchen_suggest_need": "Du brauchst noch",
+  "kitchen_suggest_add": "Hinzufügen",
+  "kitchen_suggest_added": "Hinzugefügt",
+  "kitchen_suggest_add_all": "Alle zum Planer hinzufügen",
   "cal_coparent_view_link": "Ansehen, was dein Co-Elternteil sieht",
   "cal_coparent_view_title": "Mit deinem Co-Elternteil geteilt",
   "cal_coparent_view_subtitle": "Das ist alles, was dein Co-Elternteil von dir sehen kann. Alles, was hier nicht steht, bleibt privat.",
