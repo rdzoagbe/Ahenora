@@ -12,6 +12,11 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  "kitchen_clear_shop_q": "Clear the whole list?",
+  "kitchen_clear_shop_body": "Every item will be removed. The list is saved to your history first, so you can restore it.",
+  "kitchen_clear_meal_q": "Clear all meals?",
+  "kitchen_clear_meal_body": "Every planned meal will be removed. Tip: save the plan first if you want to reuse it.",
+  "kitchen_cleared": "Cleared",
   "kitchen_suggest_week": "Suggest a week of meals",
   "kitchen_suggest_title": "Meals from your shopping",
   "kitchen_suggest_sub": "Dinner ideas for the week, based on what you've bought. Tap to add any to your planner.",
@@ -318,7 +323,7 @@ const en: Dict = {
   vault_clear_done: "Clear done",
   vault_item: "item",
   vault_items: "items",
-  vault_add_item_placeholder: "Add item...",
+  vault_add_item_placeholder: "Add items — use commas for several…",
   vault_done: "Done",
   vault_shop_empty: "No items yet. Add groceries, supplies, or anything the household needs.",
   vault_meal_planner: "Meal Planner",
@@ -879,6 +884,11 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  "kitchen_clear_shop_q": "¿Borrar toda la lista?",
+  "kitchen_clear_shop_body": "Se eliminarán todos los artículos. La lista se guarda antes en tu historial para poder restaurarla.",
+  "kitchen_clear_meal_q": "¿Borrar todas las comidas?",
+  "kitchen_clear_meal_body": "Se eliminarán todas las comidas planificadas. Consejo: guarda el plan antes si quieres reutilizarlo.",
+  "kitchen_cleared": "Borrado",
   "kitchen_suggest_week": "Sugerir una semana de comidas",
   "kitchen_suggest_title": "Comidas según tu compra",
   "kitchen_suggest_sub": "Ideas de cena para la semana, según lo que has comprado. Toca para añadir al planificador.",
@@ -1185,7 +1195,7 @@ const es: Dict = {
   vault_clear_done: "Borrar completados",
   vault_item: "artículo",
   vault_items: "artículos",
-  vault_add_item_placeholder: "Añadir artículo...",
+  vault_add_item_placeholder: "Añadir artículos — usa comas para varios…",
   vault_done: "Hecho",
   vault_shop_empty: "Aún no hay artículos. Añade comestibles, suministros o cualquier cosa que necesite el hogar.",
   vault_meal_planner: "Planificador de comidas",
@@ -1740,6 +1750,11 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  "kitchen_clear_shop_q": "Effacer toute la liste ?",
+  "kitchen_clear_shop_body": "Tous les articles seront supprimés. La liste est d'abord enregistrée dans votre historique pour pouvoir la restaurer.",
+  "kitchen_clear_meal_q": "Effacer tous les repas ?",
+  "kitchen_clear_meal_body": "Tous les repas prévus seront supprimés. Astuce : enregistrez d'abord le plan si vous voulez le réutiliser.",
+  "kitchen_cleared": "Effacé",
   "kitchen_suggest_week": "Proposer une semaine de repas",
   "kitchen_suggest_title": "Repas selon vos courses",
   "kitchen_suggest_sub": "Idées de dîners pour la semaine, selon ce que vous avez acheté. Touchez pour ajouter au planificateur.",
@@ -2046,7 +2061,7 @@ const fr: Dict = {
   vault_clear_done: "Effacer les terminés",
   vault_item: "article",
   vault_items: "articles",
-  vault_add_item_placeholder: "Ajouter un article...",
+  vault_add_item_placeholder: "Ajouter des articles — virgules pour plusieurs…",
   vault_done: "Terminé",
   vault_shop_empty: "Aucun article pour l'instant. Ajoutez des courses, des fournitures ou tout ce dont le foyer a besoin.",
   vault_meal_planner: "Planificateur de repas",
@@ -2601,6 +2616,11 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  "kitchen_clear_shop_q": "Die ganze Liste löschen?",
+  "kitchen_clear_shop_body": "Alle Artikel werden entfernt. Die Liste wird vorher im Verlauf gespeichert und kann wiederhergestellt werden.",
+  "kitchen_clear_meal_q": "Alle Mahlzeiten löschen?",
+  "kitchen_clear_meal_body": "Alle geplanten Mahlzeiten werden entfernt. Tipp: Speichere den Plan vorher, wenn du ihn wiederverwenden willst.",
+  "kitchen_cleared": "Gelöscht",
   "kitchen_suggest_week": "Eine Woche Essen vorschlagen",
   "kitchen_suggest_title": "Gerichte aus deinem Einkauf",
   "kitchen_suggest_sub": "Abendessen-Ideen für die Woche, basierend auf deinem Einkauf. Tippe zum Hinzufügen zum Planer.",
@@ -2907,7 +2927,7 @@ const de: Dict = {
   vault_clear_done: "Erledigte löschen",
   vault_item: "Artikel",
   vault_items: "Artikel",
-  vault_add_item_placeholder: "Artikel hinzufügen...",
+  vault_add_item_placeholder: "Artikel hinzufügen — Kommas für mehrere…",
   vault_done: "Erledigt",
   vault_shop_empty: "Noch keine Artikel. Füge Lebensmittel, Vorräte oder alles hinzu, was der Haushalt braucht.",
   vault_meal_planner: "Essensplaner",

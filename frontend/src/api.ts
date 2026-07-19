@@ -906,6 +906,8 @@ export const api = {
     request<{ deleted: number }>('/shopping', { method: 'DELETE' }),
   bulkAddShopping: (names: string[]) =>
     request<{ ok: boolean; added: number }>('/shopping/bulk', { method: 'POST', body: { names } }),
+  // Wipes the whole list (it's archived to history first, so it's recoverable).
+  clearAllShopping: () => request<{ deleted: number }>('/shopping/all', { method: 'DELETE' }),
   listShoppingHistory: () => request<ShoppingHistoryEntry[]>('/shopping/history'),
   reuseShoppingHistory: (id: string) =>
     request<{ ok: boolean; added: number }>(`/shopping/history/${id}/reuse`, { method: 'POST' }),
@@ -943,6 +945,7 @@ export const api = {
   createMeal: (data: { day: string; meal_type?: string; title: string; ingredients?: string[]; notes?: string }) =>
     request<MealPlan>('/meals', { method: 'POST', body: data }),
   deleteMeal: (id: string) => request<{ ok: boolean }>(`/meals/${id}`, { method: 'DELETE' }),
+  clearAllMeals: () => request<{ deleted: number }>('/meals/all', { method: 'DELETE' }),
   syncMealsToShopping: () => request<{ ok: boolean; added: number }>('/meals/sync-shopping', { method: 'POST' }),
   saveMealPlan: (name: string) => request<SavedMealPlan>('/meals/save', { method: 'POST', body: { name } }),
   listSavedPlans: () => request<SavedMealPlan[]>('/meals/saved'),
