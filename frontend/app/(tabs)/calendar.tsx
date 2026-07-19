@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from 'expo-router';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
@@ -15,6 +16,7 @@ import { Card as KitCard, IconTile, ScreenHeader, UI, useUI, UIColors } from '..
 import { useStore } from '../../src/store';
 import { api, logEvent, CalendarImportResult, Card, Carpool } from '../../src/api';
 import { usePremiumGate, LockBadge } from '../../src/components/PremiumGate';
+import { sendLocalNotification, syncCalendarNightly } from '../../src/notifications';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -25,6 +27,13 @@ const TYPE_COLOR: Record<string, string> = {
 };
 
 const GOOGLE_CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.events.readonly';
+
+// Silent auto-sync: don't re-pull Google more than once every 6h, and remember
+// which upcoming items we've already surfaced so "new on your agenda" only fires
+// for genuinely new events (never on an idempotent re-import).
+const AUTOSYNC_AT_KEY = 'coo_cal_autosync_at';
+const CAL_SEEN_KEY = 'coo_cal_seen_ids';
+const AUTOSYNC_MIN_GAP_MS = 6 * 60 * 60 * 1000;
 
 type TFunc = (key: string) => string;
 
@@ -270,6 +279,81 @@ export default function Calendar() {
     };
     importCalendar();
   }, [calendarResponse, load]);
+
+  // Silent auto-sync — runs once when the calendar opens (native only). If the
+  // user has connected Google before, it quietly refreshes tokens and re-imports
+  // WITHOUT any popup or button tap, then notifies only about genuinely new
+  // upcoming items. If they've never connected, it stays completely silent (no
+  // sign-in prompt). Throttled to at most once every 6 hours.
+  const autoSyncedRef = useRef(false);
+  const autoSyncCalendar = useCallback(async () => {
+    if (Platform.OS === 'web') return;
+    if (autoSyncedRef.current) return;
+    autoSyncedRef.current = true;
+    try {
+      const lastRaw = await AsyncStorage.getItem(AUTOSYNC_AT_KEY).catch(() => null);
+      if (Date.now() - Number(lastRaw || 0) < AUTOSYNC_MIN_GAP_MS) return;
+      if (!webClientId) return;
+
+      GoogleSignin.configure({ webClientId, scopes: ['profile', 'email', GOOGLE_CALENDAR_SCOPE], offlineAccess: false });
+      const g = GoogleSignin as any;
+
+      let currentUser: any = null;
+      try { if (typeof g.getCurrentUser === 'function') currentUser = await g.getCurrentUser(); } catch {}
+      if (!currentUser) {
+        try { if (typeof g.signInSilently === 'function') currentUser = await g.signInSilently(); } catch {}
+      }
+      if (!currentUser) return; // never connected — never prompt in auto mode
+
+      let tokens: { accessToken?: string | null } = {};
+      try { tokens = await GoogleSignin.getTokens(); } catch { return; }
+      if (!tokens.accessToken) return;
+
+      const result = await api.importGoogleCalendar(tokens.accessToken, 30);
+      await AsyncStorage.setItem(AUTOSYNC_AT_KEY, String(Date.now())).catch(() => undefined);
+      setSyncResult(result);
+
+      const list = await api.listCards();
+      const open = list.filter((card) => card.status === 'OPEN' && card.due_date);
+      setCards(open);
+
+      // Diff upcoming items against what we've already surfaced.
+      const todayStart = startOfLocalDay(new Date()).getTime();
+      const upcoming = open.filter((c) => new Date(c.due_date as string).getTime() >= todayStart);
+      const seenRaw = await AsyncStorage.getItem(CAL_SEEN_KEY).catch(() => null);
+      let seen: string[] = [];
+      try { seen = seenRaw ? JSON.parse(seenRaw) : []; } catch { seen = []; }
+      const seenSet = new Set(seen);
+      const fresh = upcoming.filter((c) => !seenSet.has(c.card_id));
+      await AsyncStorage.setItem(CAL_SEEN_KEY, JSON.stringify(upcoming.map((c) => c.card_id).slice(0, 300))).catch(() => undefined);
+
+      // Only buzz once we have a baseline (don't notify on the first-ever sync).
+      if (seen.length > 0 && fresh.length > 0) {
+        const title = t('cal_new_agenda_title');
+        const body = fresh.length === 1
+          ? (fresh[0].title || t('cal_new_agenda_generic'))
+          : t('cal_new_agenda_count', { count: fresh.length });
+        await sendLocalNotification(title, body);
+      }
+    } catch (e) {
+      logger.warn('calendar auto-sync skipped', e);
+    }
+  }, [webClientId, t]);
+
+  useEffect(() => { autoSyncCalendar(); }, [autoSyncCalendar]);
+
+  // Nightly agenda reminder (~20:15 local) with tomorrow's plan. Rescheduled
+  // whenever the agenda changes so the body stays current.
+  useEffect(() => {
+    const tomorrow = startOfLocalDay(new Date());
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowKey = dateKey(tomorrow);
+    const count = cards.filter((c) => cardDateKey(c) === tomorrowKey).length;
+    const content = count > 0
+      ? { title: t('cal_nightly_title'), body: t('cal_nightly_body', { count }) }
+      : null;
+    syncCalendarNightly(true, content).catch(() => undefined);
+  }, [cards, t]);
 
   const monthDays = useMemo(() => buildMonthDays(activeMonth), [activeMonth]);
   const countsByDay = useMemo(() => {

@@ -390,6 +390,56 @@ export async function syncSundayRecap(
   return { scheduled: true };
 }
 
+const CAL_NIGHTLY_ID_KEY = 'coo_calendar_nightly_id';
+
+/**
+ * Schedules (or clears) a nightly "here's tomorrow" agenda reminder for ~20:15
+ * local. Caller passes pre-localized content built from the upcoming agenda.
+ * Rescheduled on each calendar open (mirrors the morning digest) so the body
+ * always reflects the latest plan. Fires tonight if 20:15 is still ahead,
+ * otherwise tomorrow evening.
+ */
+export async function syncCalendarNightly(
+  enabled: boolean,
+  content: { title: string; body: string } | null
+) {
+  const Notifications = await getNotificationsModule();
+  if (!Notifications) return { scheduled: false };
+
+  const previous = await AsyncStorage.getItem(CAL_NIGHTLY_ID_KEY).catch(() => null);
+  if (previous) {
+    await Notifications.cancelScheduledNotificationAsync(previous).catch(() => undefined);
+    await AsyncStorage.removeItem(CAL_NIGHTLY_ID_KEY).catch(() => undefined);
+  }
+
+  if (!enabled || !content) return { scheduled: false };
+
+  const at = new Date();
+  at.setHours(20, 15, 0, 0);
+  if (at.getTime() <= Date.now()) at.setDate(at.getDate() + 1);
+
+  const permissions = await Notifications.getPermissionsAsync();
+  if (permissions.status !== 'granted') return { scheduled: false };
+
+  await configureNotificationChannels();
+
+  const identifier = await Notifications.scheduleNotificationAsync({
+    content: {
+      title: content.title,
+      body: content.body,
+      sound: true,
+      data: { type: 'calendar_nightly' },
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.DATE,
+      date: at,
+      channelId: 'card-reminders',
+    } as any,
+  });
+  await AsyncStorage.setItem(CAL_NIGHTLY_ID_KEY, identifier).catch(() => undefined);
+  return { scheduled: true };
+}
+
 export async function sendTestScheduledReminderNotification() {
   const Notifications = await getNotificationsModule();
   if (!Notifications) return false;
