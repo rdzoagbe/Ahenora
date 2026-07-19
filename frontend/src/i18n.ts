@@ -12,6 +12,7 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  "cal_share_child_nudge": "This looks like it's about {name}. Share it with your co-parent?",
   "cal_share_with_coparent": "Share with co-parent",
   "cal_shared_with_coparent": "Shared with co-parent",
   "cal_share_q": "Share with co-parent?",
@@ -866,6 +867,7 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  "cal_share_child_nudge": "Parece que esto es sobre {name}. ¿Compartirlo con el otro padre?",
   "cal_share_with_coparent": "Compartir con el otro padre",
   "cal_shared_with_coparent": "Compartido con el otro padre",
   "cal_share_q": "¿Compartir con el otro padre?",
@@ -1714,6 +1716,7 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  "cal_share_child_nudge": "Cela semble concerner {name}. Le partager avec le co-parent ?",
   "cal_share_with_coparent": "Partager avec le co-parent",
   "cal_shared_with_coparent": "Partagé avec le co-parent",
   "cal_share_q": "Partager avec le co-parent ?",
@@ -2562,6 +2565,7 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  "cal_share_child_nudge": "Das betrifft anscheinend {name}. Mit dem Co-Elternteil teilen?",
   "cal_share_with_coparent": "Mit Co-Elternteil teilen",
   "cal_shared_with_coparent": "Mit Co-Elternteil geteilt",
   "cal_share_q": "Mit Co-Elternteil teilen?",
