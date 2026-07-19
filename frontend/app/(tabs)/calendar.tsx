@@ -760,6 +760,42 @@ export default function Calendar() {
                 </View>
               );
             })()}
+            {selectedCard.shared ? (
+              <View style={styles.sharedBadge}>
+                <Users color={ui.mintText} size={16} />
+                <Text style={styles.sharedBadgeText}>{t('cal_shared_with_coparent')}</Text>
+              </View>
+            ) : (
+              <PressScale
+                testID="calendar-share-card"
+                onPress={() => {
+                  const id = selectedCard.card_id;
+                  Alert.alert(
+                    t('cal_share_q'),
+                    t('cal_share_body'),
+                    [
+                      { text: t('cal_cancel'), style: 'cancel' },
+                      {
+                        text: t('cal_share_action'),
+                        onPress: async () => {
+                          try {
+                            await api.shareCard(id);
+                            setCards((prev) => prev.map((c) => (c.card_id === id ? { ...c, shared: true } : c)));
+                            setSelectedCard((prev) => (prev && prev.card_id === id ? { ...prev, shared: true } : prev));
+                          } catch {
+                            Alert.alert(t('cal_error'), t('cal_could_not_update'));
+                          }
+                        },
+                      },
+                    ],
+                  );
+                }}
+                style={styles.shareBtn}
+              >
+                <Users color={ui.orange} size={18} />
+                <Text style={styles.shareBtnText}>{t('cal_share_with_coparent')}</Text>
+              </PressScale>
+            )}
             <PressScale
               testID="calendar-complete-card"
               onPress={() => {
@@ -852,6 +888,10 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   detailChipText: { flex: 1, color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 14, lineHeight: 20 },
   completeBtn: { marginTop: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, minHeight: 54, borderRadius: 99, backgroundColor: ui.orange },
   completeBtnText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 16 },
+  shareBtn: { marginTop: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 50, borderRadius: 99, borderWidth: 1.5, borderColor: ui.orange + '66', backgroundColor: ui.orangeSoft },
+  shareBtnText: { color: ui.orange, fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
+  sharedBadge: { marginTop: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 46, borderRadius: 99, backgroundColor: ui.mintText + '1E' },
+  sharedBadgeText: { color: ui.mintText, fontFamily: 'Inter_700Bold', fontSize: 14 },
 
   carpoolSection: { marginTop: 24 },
   carpoolHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },

@@ -12,6 +12,11 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  "cal_share_with_coparent": "Share with co-parent",
+  "cal_shared_with_coparent": "Shared with co-parent",
+  "cal_share_q": "Share with co-parent?",
+  "cal_share_body": "This item is private to you. Sharing lets your co-parent see it and sends them a heads-up.",
+  "cal_share_action": "Share",
   "cal_new_agenda_title": "New on your agenda",
   "cal_new_agenda_generic": "Something new was added to your calendar.",
   "cal_new_agenda_count": "{count} new items were added to your calendar.",
@@ -861,6 +866,11 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  "cal_share_with_coparent": "Compartir con el otro padre",
+  "cal_shared_with_coparent": "Compartido con el otro padre",
+  "cal_share_q": "¿Compartir con el otro padre?",
+  "cal_share_body": "Este elemento es privado. Al compartirlo, el otro padre podrá verlo y recibirá un aviso.",
+  "cal_share_action": "Compartir",
   "cal_new_agenda_title": "Novedad en tu agenda",
   "cal_new_agenda_generic": "Se añadió algo nuevo a tu calendario.",
   "cal_new_agenda_count": "Se añadieron {count} elementos nuevos a tu calendario.",
@@ -1704,6 +1714,11 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  "cal_share_with_coparent": "Partager avec le co-parent",
+  "cal_shared_with_coparent": "Partagé avec le co-parent",
+  "cal_share_q": "Partager avec le co-parent ?",
+  "cal_share_body": "Cet élément est privé. Le partager permet au co-parent de le voir et lui envoie une notification.",
+  "cal_share_action": "Partager",
   "cal_new_agenda_title": "Nouveau dans votre agenda",
   "cal_new_agenda_generic": "Un nouvel élément a été ajouté à votre calendrier.",
   "cal_new_agenda_count": "{count} nouveaux éléments ont été ajoutés à votre calendrier.",
@@ -2547,6 +2562,11 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  "cal_share_with_coparent": "Mit Co-Elternteil teilen",
+  "cal_shared_with_coparent": "Mit Co-Elternteil geteilt",
+  "cal_share_q": "Mit Co-Elternteil teilen?",
+  "cal_share_body": "Dieser Eintrag ist privat. Beim Teilen kann ihn das Co-Elternteil sehen und wird benachrichtigt.",
+  "cal_share_action": "Teilen",
   "cal_new_agenda_title": "Neu in deinem Kalender",
   "cal_new_agenda_generic": "Etwas Neues wurde zu deinem Kalender hinzugefügt.",
   "cal_new_agenda_count": "{count} neue Einträge wurden zu deinem Kalender hinzugefügt.",

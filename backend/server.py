@@ -520,6 +520,10 @@ def public_card(card: dict) -> dict:
         "google_event_id": card.get("google_event_id"),
         "google_ical_uid": card.get("google_ical_uid"),
         "external_source": card.get("external_source"),
+        # Legacy cards (created before per-item privacy) have no owner recorded;
+        # they were visible to the whole family, so report them as shared.
+        "shared": bool(card["shared"]) if card.get("shared") is not None else card.get("created_by_user_id") is None,
+        "created_by_user_id": card.get("created_by_user_id"),
     }
 
 
@@ -1125,6 +1129,7 @@ class CardIn(BaseModel):
     image_base64: Optional[str] = None
     recurrence: str = "none"
     reminder_minutes: int = 60
+    shared: bool = False
 
 
 class CardPatchIn(BaseModel):
@@ -1136,6 +1141,7 @@ class CardPatchIn(BaseModel):
     status: Optional[str] = None
     recurrence: Optional[str] = None
     reminder_minutes: Optional[int] = None
+    shared: Optional[bool] = None
 
 
 class VaultIn(BaseModel):
@@ -2137,7 +2143,17 @@ Return only one exact name from the list, or return an empty string.
 @app.get("/api/cards")
 async def list_cards(status: Optional[str] = Query(default=None), user=Depends(require_user)):
     database = get_db()
-    query = {"family_id": user["family_id"]}
+    # Per-item privacy: each parent sees family-shared items, their own private
+    # items, and legacy items (created before privacy existed, no owner stored).
+    # A co-parent's private items stay hidden until they choose to share.
+    query = {
+        "family_id": user["family_id"],
+        "$or": [
+            {"shared": True},
+            {"created_by_user_id": user["user_id"]},
+            {"created_by_user_id": {"$exists": False}},
+        ],
+    }
     if status:
         query["status"] = status
 
@@ -2166,13 +2182,20 @@ async def create_card(payload: CardIn, user=Depends(require_user)):
         "reminder_minutes": payload.reminder_minutes,
         "created_at": utcnow(),
         "completed_at": None,
+        # Private to the creator by default — the co-parent only sees it if the
+        # creator explicitly shares it (via /api/cards/{id}/share).
+        "created_by_user_id": user["user_id"],
+        "shared": bool(payload.shared),
     }
     await database["cards"].insert_one(doc)
 
-    try:
-        await send_new_card_alert(user["family_id"], doc, created_by_user_id=user["user_id"])
-    except Exception as e:
-        log.warning("new card alert failed: %s", e)
+    # Only ping the co-parent when the item is actually shared — private items
+    # are silent by design.
+    if doc.get("shared"):
+        try:
+            await send_new_card_alert(user["family_id"], doc, created_by_user_id=user["user_id"])
+        except Exception as e:
+            log.warning("new card alert failed: %s", e)
 
     return public_card(doc)
 
@@ -2235,6 +2258,15 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
             raise HTTPException(status_code=400, detail="Reminder must be zero or positive")
         changes["reminder_minutes"] = payload.reminder_minutes
 
+    if payload.shared is not None:
+        # Only the person who added a private item may change its sharing here
+        # (making it private again). Sharing-with-notification goes through the
+        # dedicated /share endpoint. Legacy items (no owner) are family-wide.
+        owner = card.get("created_by_user_id")
+        if owner and owner != user["user_id"]:
+            raise HTTPException(status_code=403, detail="Only the person who added this can change its sharing")
+        changes["shared"] = bool(payload.shared)
+
     if not changes:
         return public_card(card)
 
@@ -2263,6 +2295,9 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
             "reminder_minutes": card.get("reminder_minutes", 0),
             "created_at": utcnow(),
             "completed_at": None,
+            # The next occurrence keeps the same privacy as its parent.
+            "created_by_user_id": card.get("created_by_user_id"),
+            "shared": card.get("shared", False),
         }
         await database["cards"].insert_one(next_doc)
 
@@ -2284,6 +2319,40 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
             await send_star_milestone_alert(user["family_id"], member.get("name", "Your child"), old_stars, old_stars + 5)
 
     return public_card(updated)
+
+
+@app.post("/api/cards/{card_id}/share")
+async def share_card(card_id: str, user=Depends(require_user)):
+    """Share a private calendar item with the co-parent and notify them.
+    Only the person who added the item can share it."""
+    database = get_db()
+    card = await database["cards"].find_one(
+        {"card_id": card_id, "family_id": user["family_id"]},
+        {"_id": 0},
+    )
+    if not card:
+        raise HTTPException(status_code=404, detail="Card not found")
+
+    owner = card.get("created_by_user_id")
+    if owner and owner != user["user_id"]:
+        raise HTTPException(status_code=403, detail="Only the person who added this can share it")
+
+    if not card.get("shared"):
+        await database["cards"].update_one({"card_id": card_id}, {"$set": {"shared": True}})
+        card["shared"] = True
+        try:
+            sharer = user.get("name") or "A parent"
+            await send_coparent_alert(
+                user["family_id"],
+                f"{sharer} shared a calendar item",
+                card.get("title") or "New shared item",
+                "shared_card",
+                created_by_user_id=user["user_id"],
+            )
+        except Exception as e:
+            log.warning("share card alert failed: %s", e)
+
+    return public_card(card)
 
 
 @app.delete("/api/cards/{card_id}")
@@ -2310,6 +2379,12 @@ async def card_conflicts(
     query = {
         "family_id": user["family_id"],
         "due_date": {"$gte": start, "$lte": end},
+        # Don't surface a co-parent's private items as conflicts.
+        "$or": [
+            {"shared": True},
+            {"created_by_user_id": user["user_id"]},
+            {"created_by_user_id": {"$exists": False}},
+        ],
     }
     if exclude_id:
         query["card_id"] = {"$ne": exclude_id}
@@ -2751,6 +2826,10 @@ async def import_google_calendar(payload: CalendarImportIn, user=Depends(require
             "external_source": "google_calendar",
             "created_at": utcnow(),
             "completed_at": None,
+            # A parent's Google Calendar is personal — imported events are
+            # private to them until they choose to share.
+            "created_by_user_id": user["user_id"],
+            "shared": False,
         }
 
         await database["cards"].insert_one(card)
@@ -3563,6 +3642,8 @@ async def generate_from_template(template_id: str, user=Depends(require_user)):
         "reminder_minutes": 60,
         "created_at": utcnow(),
         "completed_at": None,
+        "created_by_user_id": user["user_id"],
+        "shared": False,
     }
     await database["cards"].insert_one(card)
     return public_card(card)
@@ -4026,7 +4107,17 @@ async def weekly_report(user: dict = Depends(require_user), database=Depends(get
         expense_categories[cat] = expense_categories.get(cat, 0) + e.get("amount", 0)
 
     upcoming_cards = await database["cards"].find(
-        {"family_id": fid, "status": "OPEN", "due_date": {"$gte": now, "$lte": now + timedelta(days=7)}},
+        {
+            "family_id": fid,
+            "status": "OPEN",
+            "due_date": {"$gte": now, "$lte": now + timedelta(days=7)},
+            # Don't list a co-parent's private item titles in this report.
+            "$or": [
+                {"shared": True},
+                {"created_by_user_id": user["user_id"]},
+                {"created_by_user_id": {"$exists": False}},
+            ],
+        },
         {"_id": 0, "title": 1, "due_date": 1, "type": 1, "assignee": 1},
     ).sort("due_date", 1).to_list(10)
 
