@@ -12,6 +12,10 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  "cal_coparent_view_link": "See what your co-parent can see",
+  "cal_coparent_view_title": "Shared with your co-parent",
+  "cal_coparent_view_subtitle": "This is everything your co-parent can see from you. Anything not listed here stays private.",
+  "cal_coparent_view_empty": "You haven't shared anything yet — your whole agenda is private.",
   "cal_share_child_nudge": "This looks like it's about {name}. Share it with your co-parent?",
   "cal_share_with_coparent": "Share with co-parent",
   "cal_shared_with_coparent": "Shared with co-parent",
@@ -867,6 +871,10 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  "cal_coparent_view_link": "Ver lo que el otro padre puede ver",
+  "cal_coparent_view_title": "Compartido con el otro padre",
+  "cal_coparent_view_subtitle": "Esto es todo lo que el otro padre puede ver de ti. Lo que no aparece aquí permanece privado.",
+  "cal_coparent_view_empty": "Aún no has compartido nada: toda tu agenda es privada.",
   "cal_share_child_nudge": "Parece que esto es sobre {name}. ¿Compartirlo con el otro padre?",
   "cal_share_with_coparent": "Compartir con el otro padre",
   "cal_shared_with_coparent": "Compartido con el otro padre",
@@ -1716,6 +1724,10 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  "cal_coparent_view_link": "Voir ce que le co-parent peut voir",
+  "cal_coparent_view_title": "Partagé avec votre co-parent",
+  "cal_coparent_view_subtitle": "Voici tout ce que votre co-parent peut voir de vous. Tout ce qui n'est pas listé ici reste privé.",
+  "cal_coparent_view_empty": "Vous n'avez encore rien partagé — tout votre agenda est privé.",
   "cal_share_child_nudge": "Cela semble concerner {name}. Le partager avec le co-parent ?",
   "cal_share_with_coparent": "Partager avec le co-parent",
   "cal_shared_with_coparent": "Partagé avec le co-parent",
@@ -2565,6 +2577,10 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  "cal_coparent_view_link": "Ansehen, was dein Co-Elternteil sieht",
+  "cal_coparent_view_title": "Mit deinem Co-Elternteil geteilt",
+  "cal_coparent_view_subtitle": "Das ist alles, was dein Co-Elternteil von dir sehen kann. Alles, was hier nicht steht, bleibt privat.",
+  "cal_coparent_view_empty": "Du hast noch nichts geteilt — dein ganzer Kalender ist privat.",
   "cal_share_child_nudge": "Das betrifft anscheinend {name}. Mit dem Co-Elternteil teilen?",
   "cal_share_with_coparent": "Mit Co-Elternteil teilen",
   "cal_shared_with_coparent": "Mit Co-Elternteil geteilt",
