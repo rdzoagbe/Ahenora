@@ -39,7 +39,7 @@ import { TabScreen } from '../../src/components/TabScreen';
 import { GettingStarted } from '../../src/components/GettingStarted';
 import { StreakChip } from '../../src/components/StreakChip';
 import { useStore } from '../../src/store';
-import { usePremiumGate, LockBadge } from '../../src/components/PremiumGate';
+import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { useUI, UIColors } from '../../src/components/Kit';
 import { api, logEvent, Announcement, Card, CardType, FamilyMember, HandoffNote, Template, WeeklyReport } from '../../src/api';
 import { syncCardReminderNotifications, syncMorningDigest, syncDinnerReminder, syncSundayRecap, ensureAskedNotificationPermissionOnce } from '../../src/notifications';
@@ -789,6 +789,7 @@ export default function Feed() {
                 <ChevronRight color={ui.muted} size={16} style={expandReport ? { transform: [{ rotate: '90deg' }] } : undefined} />
               )}
             </PressScale>
+            {!reportLocked && expandReport ? <PremiumPreviewBanner /> : null}
             {!reportLocked && expandReport && report ? (
               <View style={styles.reportCard}>
                 <View style={styles.reportGrid}>

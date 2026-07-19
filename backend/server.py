@@ -466,10 +466,14 @@ async def build_subscription(family_id: str):
     # gated features (meal planner, allowance, carpool, weekly report) and
     # aren't blocked by the child cap. Gates enforce automatically the moment
     # billing is configured — same trigger that locks /subscription/change.
-    if not os.environ.get("RC_WEBHOOK_SECRET"):
+    testing_window = not os.environ.get("RC_WEBHOOK_SECRET")
+    if testing_window:
         limits = PLAN_CATALOG["executive"]["limits"]
     return {
         "plan": family["plan"],
+        # Lets the app show "you're previewing Premium free" notices so launch
+        # gating never feels like a surprise takeaway.
+        "testing_window": testing_window,
         "billing_cycle": family["billing_cycle"],
         "grandfathered": family.get("grandfathered", False),
         "updated_at": iso(family.get("updated_at")),

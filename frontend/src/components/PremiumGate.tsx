@@ -1,6 +1,7 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { Lock } from 'lucide-react-native';
+import { useRouter } from 'expo-router';
+import { Lock, Sparkles } from 'lucide-react-native';
 
 import { PressScale } from './PressScale';
 import { useUI, UIColors } from './Kit';
@@ -46,6 +47,30 @@ export function LockBadge({ onPress }: { onPress: () => void }) {
   );
 }
 
+/**
+ * Testing-window notice shown on Premium features while everyone has them
+ * free. Sets the expectation that these become part of Premium at launch, so
+ * gating never feels like a surprise takeaway. Renders nothing once billing
+ * is live (or for admin accounts). Tapping opens the pricing screen.
+ */
+export function PremiumPreviewBanner() {
+  const ui = useUI();
+  const { t, subscription } = useStore();
+  const router = useRouter();
+  const styles = createStyles(ui);
+  if (!subscription?.testing_window || subscription?.admin_unlocked) return null;
+  return (
+    <PressScale onPress={() => router.push('/pricing')} style={styles.preview}>
+      <Sparkles color={ui.orange} size={15} />
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={styles.previewTitle}>{t('preview_banner_title')}</Text>
+        <Text style={styles.previewBody}>{t('preview_banner_body')}</Text>
+      </View>
+      <Text style={styles.previewCta}>{t('preview_banner_cta')}</Text>
+    </PressScale>
+  );
+}
+
 const createStyles = (ui: UIColors) =>
   StyleSheet.create({
     badge: {
@@ -64,4 +89,19 @@ const createStyles = (ui: UIColors) =>
       fontWeight: '700',
       color: ui.orange,
     },
+    preview: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      paddingHorizontal: 13,
+      paddingVertical: 10,
+      borderRadius: 16,
+      backgroundColor: ui.orange + '14',
+      borderWidth: 1,
+      borderColor: ui.orange + '33',
+      marginBottom: 12,
+    },
+    previewTitle: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 13 },
+    previewBody: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12, lineHeight: 17, marginTop: 1 },
+    previewCta: { color: ui.orange, fontFamily: 'Inter_800ExtraBold', fontSize: 12 },
   });

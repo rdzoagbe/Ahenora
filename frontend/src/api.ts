@@ -471,6 +471,8 @@ export interface Subscription {
   plan: Plan;
   billing_cycle: BillingCycle;
   grandfathered: boolean;
+  testing_window?: boolean;
+  children_count?: number;
   updated_at: string;
   ai_scans_used: number;
   ai_scans_period_start: string;
