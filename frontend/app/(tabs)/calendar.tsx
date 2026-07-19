@@ -206,6 +206,7 @@ export default function Calendar() {
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [carpools, setCarpools] = useState<Carpool[]>([]);
+  const [childNames, setChildNames] = useState<Set<string>>(new Set());
   const handledCalendarResponseRef = useRef(false);
 
   const webClientId =
@@ -231,9 +232,16 @@ export default function Calendar() {
   const load = useCallback(async () => {
     logEvent('calendar_open');
     try {
-      const [cardsRes, carpoolRes] = await Promise.allSettled([api.listCards(), api.listCarpools()]);
+      const [cardsRes, carpoolRes, membersRes] = await Promise.allSettled([api.listCards(), api.listCarpools(), api.familyMembers()]);
       if (cardsRes.status === 'fulfilled') setCards(cardsRes.value.filter((card) => card.status === 'OPEN' && card.due_date));
       if (carpoolRes.status === 'fulfilled') setCarpools(carpoolRes.value);
+      if (membersRes.status === 'fulfilled') {
+        setChildNames(new Set(
+          membersRes.value
+            .filter((m) => /^child$/i.test(m.role) && m.name)
+            .map((m) => m.name.trim().toLowerCase()),
+        ));
+      }
     } catch (e) {
       logger.warn('calendar load failed', e);
     } finally {
@@ -765,37 +773,53 @@ export default function Calendar() {
                 <Users color={ui.mintText} size={16} />
                 <Text style={styles.sharedBadgeText}>{t('cal_shared_with_coparent')}</Text>
               </View>
-            ) : (
-              <PressScale
-                testID="calendar-share-card"
-                onPress={() => {
-                  const id = selectedCard.card_id;
-                  Alert.alert(
-                    t('cal_share_q'),
-                    t('cal_share_body'),
-                    [
-                      { text: t('cal_cancel'), style: 'cancel' },
-                      {
-                        text: t('cal_share_action'),
-                        onPress: async () => {
-                          try {
-                            await api.shareCard(id);
-                            setCards((prev) => prev.map((c) => (c.card_id === id ? { ...c, shared: true } : c)));
-                            setSelectedCard((prev) => (prev && prev.card_id === id ? { ...prev, shared: true } : prev));
-                          } catch {
-                            Alert.alert(t('cal_error'), t('cal_could_not_update'));
-                          }
-                        },
+            ) : (() => {
+              const assigneeLower = selectedCard.assignee?.trim().toLowerCase();
+              const isChildItem = !!assigneeLower && childNames.has(assigneeLower);
+              const doShare = () => {
+                const id = selectedCard.card_id;
+                Alert.alert(
+                  t('cal_share_q'),
+                  t('cal_share_body'),
+                  [
+                    { text: t('cal_cancel'), style: 'cancel' },
+                    {
+                      text: t('cal_share_action'),
+                      onPress: async () => {
+                        try {
+                          await api.shareCard(id);
+                          setCards((prev) => prev.map((c) => (c.card_id === id ? { ...c, shared: true } : c)));
+                          setSelectedCard((prev) => (prev && prev.card_id === id ? { ...prev, shared: true } : prev));
+                        } catch {
+                          Alert.alert(t('cal_error'), t('cal_could_not_update'));
+                        }
                       },
-                    ],
-                  );
-                }}
-                style={styles.shareBtn}
-              >
-                <Users color={ui.orange} size={18} />
-                <Text style={styles.shareBtnText}>{t('cal_share_with_coparent')}</Text>
-              </PressScale>
-            )}
+                    },
+                  ],
+                );
+              };
+              // A gentle nudge only for items that look like they're about a
+              // child — personal items are never suggested for sharing.
+              if (isChildItem) {
+                return (
+                  <View style={styles.shareNudge}>
+                    <Text style={styles.shareNudgeText}>
+                      {t('cal_share_child_nudge', { name: cleanText(selectedCard.assignee) })}
+                    </Text>
+                    <PressScale testID="calendar-share-card" onPress={doShare} style={styles.shareNudgeBtn}>
+                      <Users color="#FFFFFF" size={18} />
+                      <Text style={styles.shareNudgeBtnText}>{t('cal_share_action')}</Text>
+                    </PressScale>
+                  </View>
+                );
+              }
+              return (
+                <PressScale testID="calendar-share-card" onPress={doShare} style={styles.shareBtn}>
+                  <Users color={ui.orange} size={18} />
+                  <Text style={styles.shareBtnText}>{t('cal_share_with_coparent')}</Text>
+                </PressScale>
+              );
+            })()}
             <PressScale
               testID="calendar-complete-card"
               onPress={() => {
@@ -892,6 +916,10 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   shareBtnText: { color: ui.orange, fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
   sharedBadge: { marginTop: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 46, borderRadius: 99, backgroundColor: ui.mintText + '1E' },
   sharedBadgeText: { color: ui.mintText, fontFamily: 'Inter_700Bold', fontSize: 14 },
+  shareNudge: { marginTop: 20, padding: 14, borderRadius: 18, borderWidth: 1.5, borderColor: ui.orange + '55', backgroundColor: ui.orangeSoft, gap: 12 },
+  shareNudgeText: { color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 14, lineHeight: 20 },
+  shareNudgeBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 46, borderRadius: 99, backgroundColor: ui.orange },
+  shareNudgeBtnText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
 
   carpoolSection: { marginTop: 24 },
   carpoolHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
