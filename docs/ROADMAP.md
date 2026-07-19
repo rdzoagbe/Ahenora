@@ -98,6 +98,7 @@ Already scaffolded: pricing decided, `PLAN_CATALOG` exists, "coming soon" upgrad
 - **Crash-report mapping** — upload deobfuscation `mapping.txt` (or add Sentry) so production crashes are readable.
 
 ### Phase 4 — AI food & gifting (Executive-tier differentiators)
+- **Cooking steps per meal (recipes):** each suggested meal gets a short, parent-friendly recipe — step-by-step instructions + timings — so choosing a dinner also tells you *how to cook it*. Build path: ① add a `steps` field to the `mealSuggestions.ts` library (localized like titles, OTA-friendly, works offline) for the 38 curated meals, shown in a "Cook it" view from the planner/suggestion sheet; ② later, Gemini generates steps for *any* custom meal a parent typed themselves (needs API budget → Premium AI Chef umbrella). Dinner-reminder tie-in: the 17:30 nudge can deep-link straight to tonight's recipe.
 - **AI Chef (fridge scan):** photograph groceries → reuse the **Gemini vision pipeline** (same as document scan), new prompt → one-tap add missing items to the shopping list. Lives in the **Kitchen tab**. Mostly a new prompt + UI (OTA-friendly).
 - **AI Gift Concierge:** ① birthday field on members → "birthday in 3 days" **feed card** (also retention idea #5), ② Gemini gift suggestions with budget, ③ birthday message + notification, ④ retailer **affiliate link-outs** for revenue (no gift-card *issuance* — payments regulation).
 
