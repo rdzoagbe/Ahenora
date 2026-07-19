@@ -1,7 +1,7 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TextInput, ScrollView, ActivityIndicator } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { Plus, X, Trash2, ShoppingCart, Check, UtensilsCrossed, Bell, ChevronDown, History, RotateCcw } from 'lucide-react-native';
+import { Plus, X, Trash2, ShoppingCart, Check, UtensilsCrossed, Bell, ChevronDown, History, RotateCcw, Sparkles } from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { PressScale } from '../../src/components/PressScale';
@@ -15,6 +15,7 @@ import { useStore } from '../../src/store';
 import { api, MealPlan, ShoppingItem, ShoppingHistoryEntry, SavedMealPlan } from '../../src/api';
 import { usePremiumGate, LockBadge } from '../../src/components/PremiumGate';
 import { logger } from '../../src/logger';
+import { suggestWeek, MealSuggestion, SuggestLang } from '../../src/mealSuggestions';
 
 type ToastState = { message: string; tone: ToastTone };
 type KitchenView = 'shop' | 'meal';
@@ -22,7 +23,7 @@ type KitchenView = 'shop' | 'meal';
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 
 export default function Kitchen() {
-  const { t } = useStore();
+  const { t, lang } = useStore();
   const { isLocked, promptUpgrade } = usePremiumGate();
   const mealLocked = isLocked('meal_planner');
   const router = useRouter();
@@ -54,6 +55,9 @@ export default function Kitchen() {
   const [savePlanName, setSavePlanName] = useState('');
   const [restoreEntry, setRestoreEntry] = useState<ShoppingHistoryEntry | null>(null);
   const [restoreSel, setRestoreSel] = useState<Set<number>>(new Set());
+  const [showSuggest, setShowSuggest] = useState(false);
+  const [suggestions, setSuggestions] = useState<MealSuggestion[]>([]);
+  const [addedSuggest, setAddedSuggest] = useState<Set<string>>(new Set());
 
   const showToast = useCallback((message: string, tone: ToastTone = 'info') => {
     setToast({ message, tone });
@@ -161,6 +165,50 @@ export default function Kitchen() {
       showToast(t('vault_could_not_sync'), 'error');
     }
   }, [showToast]);
+
+  // ── Suggest a week of meals from what you've bought (rule-based, offline) ──
+  const openSuggest = useCallback(() => {
+    // Draw on the current list plus recent shopping trips so suggestions reflect
+    // what the family actually buys, not just today's list.
+    const owned = [
+      ...shopItems.map((i) => i.name),
+      ...shopHistory.slice(0, 6).flatMap((h) => h.items),
+    ];
+    setSuggestions(suggestWeek(owned, (lang as SuggestLang) || 'en'));
+    setAddedSuggest(new Set());
+    setShowSuggest(true);
+  }, [shopItems, shopHistory, lang]);
+
+  const acceptSuggestion = useCallback(async (sug: MealSuggestion) => {
+    if (addedSuggest.has(sug.recipeId)) return;
+    setAddedSuggest((prev) => new Set(prev).add(sug.recipeId));
+    try {
+      const created = await api.createMeal({ day: sug.day, title: sug.title, ingredients: sug.allLabels });
+      setMeals((prev) => [...prev, created]);
+    } catch {
+      setAddedSuggest((prev) => { const n = new Set(prev); n.delete(sug.recipeId); return n; });
+      showToast(t('vault_could_not_add_meal'), 'error');
+    }
+  }, [addedSuggest, showToast, t]);
+
+  const acceptAllSuggestions = useCallback(async () => {
+    // Only fill days that don't already have a meal, so we never clobber a plan.
+    const busyDays = new Set(meals.map((m) => m.day));
+    const toAdd = suggestions.filter((s) => !addedSuggest.has(s.recipeId) && !busyDays.has(s.day));
+    if (toAdd.length === 0) { setShowSuggest(false); return; }
+    setAddedSuggest((prev) => { const n = new Set(prev); toAdd.forEach((s) => n.add(s.recipeId)); return n; });
+    try {
+      const created = await Promise.all(
+        toAdd.map((s) => api.createMeal({ day: s.day, title: s.title, ingredients: s.allLabels })),
+      );
+      setMeals((prev) => [...prev, ...created]);
+      setShowSuggest(false);
+      showToast(`${created.length} ${t('kitchen_meals_added')}`, 'success');
+    } catch {
+      setMeals(await api.listMeals().catch(() => []));
+      showToast(t('vault_could_not_add_meal'), 'error');
+    }
+  }, [suggestions, addedSuggest, meals, showToast, t]);
 
   // ── History: past shopping trips + saved meal plans ──
   const openShopHistory = useCallback(async () => {
@@ -405,6 +453,9 @@ export default function Kitchen() {
                 <LockBadge onPress={() => promptUpgrade('meal_planner')} />
               ) : (
                 <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                  <PressScale testID="meal-suggest" onPress={openSuggest} style={styles.histBtn}>
+                    <Sparkles color={ui.lavenderText} size={18} />
+                  </PressScale>
                   <PressScale testID="meal-history" onPress={openMealHistory} style={styles.histBtn}>
                     <History color={ui.muted} size={18} />
                   </PressScale>
@@ -437,7 +488,15 @@ export default function Kitchen() {
                   ))}
                 </View>
               ))}
-              {meals.length === 0 ? <Text style={styles.empty}>{t('vault_meal_empty')}</Text> : null}
+              {meals.length === 0 ? (
+                <View style={styles.mealEmptyWrap}>
+                  <Text style={styles.empty}>{t('vault_meal_empty')}</Text>
+                  <PressScale testID="meal-suggest-cta" onPress={openSuggest} style={styles.suggestCta}>
+                    <Sparkles color="#FFFFFF" size={16} />
+                    <Text style={styles.suggestCtaText}>{t('kitchen_suggest_week')}</Text>
+                  </PressScale>
+                </View>
+              ) : null}
             </View>
             {meals.length > 0 ? <Text style={styles.mealTip}>{t('kitchen_sync_tip')}</Text> : null}
           </>
@@ -581,6 +640,44 @@ export default function Kitchen() {
         </View>
       </KeyboardAwareBottomSheet>
 
+      {/* Suggest a week of meals from your shopping */}
+      <KeyboardAwareBottomSheet visible={showSuggest} onClose={() => setShowSuggest(false)} contentStyle={styles.sheet}>
+        <View style={styles.sheetHeader}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+            <Sparkles color={ui.lavenderText} size={20} />
+            <Text style={styles.sheetTitle}>{t('kitchen_suggest_title')}</Text>
+          </View>
+          <PressScale onPress={() => setShowSuggest(false)} style={styles.iconBtn}><X color={ui.text} size={20} /></PressScale>
+        </View>
+        <Text style={styles.suggestSub}>{t('kitchen_suggest_sub')}</Text>
+        <ScrollView style={{ maxHeight: 400 }} showsVerticalScrollIndicator={false}>
+          {suggestions.map((s) => {
+            const added = addedSuggest.has(s.recipeId);
+            return (
+              <View key={s.recipeId} style={styles.suggestRow}>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.suggestDay}>{s.day.charAt(0).toUpperCase() + s.day.slice(1)}</Text>
+                  <Text style={styles.suggestTitle}>{s.title}</Text>
+                  {s.haveLabels.length > 0 ? (
+                    <Text style={styles.suggestHave} numberOfLines={2}>{t('kitchen_suggest_have')}: {s.haveLabels.join(', ')}</Text>
+                  ) : null}
+                  {s.needLabels.length > 0 ? (
+                    <Text style={styles.suggestNeed} numberOfLines={2}>{t('kitchen_suggest_need')}: {s.needLabels.join(', ')}</Text>
+                  ) : null}
+                </View>
+                <PressScale testID={`suggest-add-${s.recipeId}`} onPress={() => acceptSuggestion(s)} disabled={added} style={[styles.suggestAddBtn, added && styles.suggestAddedBtn]}>
+                  {added ? <Check color={ui.mintText} size={15} /> : <Plus color={ui.lavenderText} size={15} />}
+                  <Text style={[styles.suggestAddText, added && { color: ui.mintText }]}>{added ? t('kitchen_suggest_added') : t('kitchen_suggest_add')}</Text>
+                </PressScale>
+              </View>
+            );
+          })}
+        </ScrollView>
+        <PressScale testID="suggest-add-all" onPress={acceptAllSuggestions} style={styles.suggestAllBtn}>
+          <Text style={styles.suggestAllText}>{t('kitchen_suggest_add_all')}</Text>
+        </PressScale>
+      </KeyboardAwareBottomSheet>
+
       <LoadingOverlay visible={loading} label={t('vault_loading')} />
       <AppToast visible={Boolean(toast)} message={toast?.message || null} tone={toast?.tone || 'info'} />
     </SwipeableTabView>
@@ -648,6 +745,20 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   empty: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 13, textAlign: 'center', paddingVertical: 14 },
   mealDayLabel: { color: ui.lavenderText, fontFamily: 'Inter_800ExtraBold', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 8, marginBottom: 2 },
   mealTip: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, lineHeight: 19, marginTop: 12 },
+  mealEmptyWrap: { alignItems: 'center', paddingVertical: 6 },
+  suggestCta: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 18, paddingVertical: 12, borderRadius: 99, backgroundColor: ui.lavenderText, marginTop: 4 },
+  suggestCtaText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
+  suggestSub: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 13.5, lineHeight: 20, marginBottom: 8 },
+  suggestRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13, borderTopWidth: 1, borderTopColor: ui.line },
+  suggestDay: { color: ui.lavenderText, fontFamily: 'Inter_800ExtraBold', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 },
+  suggestTitle: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 15.5, marginTop: 1 },
+  suggestHave: { color: ui.mintText, fontFamily: 'Inter_500Medium', fontSize: 12.5, marginTop: 3 },
+  suggestNeed: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, marginTop: 2 },
+  suggestAddBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 13, paddingVertical: 8, borderRadius: 99, backgroundColor: ui.lavender },
+  suggestAddedBtn: { backgroundColor: ui.mintText + '22' },
+  suggestAddText: { color: ui.lavenderText, fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
+  suggestAllBtn: { alignItems: 'center', justifyContent: 'center', minHeight: 52, borderRadius: 99, backgroundColor: ui.lavenderText, marginTop: 16 },
+  suggestAllText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
 
   sheet: { backgroundColor: ui.card, borderTopLeftRadius: 34, borderTopRightRadius: 34, borderWidth: 1, borderColor: ui.line, padding: 26, paddingBottom: 140 },
   sheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
