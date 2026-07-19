@@ -90,6 +90,10 @@ const ING: Record<string, Ingredient> = {
   noodles: { label: { en: 'noodles', es: 'fideos', fr: 'nouilles', de: 'Nudeln' }, match: ['noodles', 'fideos', 'nouilles'] },
   tuna: { label: { en: 'tuna', es: 'atún', fr: 'thon', de: 'Thunfisch' }, match: ['tuna', 'atun', 'thon', 'thunfisch'] },
   peas: { label: { en: 'peas', es: 'guisantes', fr: 'petits pois', de: 'Erbsen' }, match: ['peas', 'guisantes', 'petits pois', 'erbsen'] },
+  milk: { label: { en: 'milk', es: 'leche', fr: 'lait', de: 'Milch' }, match: ['milk', 'leche', 'lait', 'milch'] },
+  cucumber: { label: { en: 'cucumber', es: 'pepino', fr: 'concombre', de: 'Gurke' }, match: ['cucumber', 'pepino', 'concombre', 'gurke'] },
+  zucchini: { label: { en: 'zucchini', es: 'calabacín', fr: 'courgette', de: 'Zucchini' }, match: ['zucchini', 'calabacin', 'courgette'] },
+  sausage: { label: { en: 'sausage', es: 'salchicha', fr: 'saucisse', de: 'Wurst' }, match: ['sausage', 'salchicha', 'chorizo', 'saucisse', 'wurst', 'bratwurst'] },
 };
 
 interface Recipe {
@@ -124,6 +128,20 @@ const RECIPES: Recipe[] = [
   { id: 'noodle_soup', title: { en: 'Chicken Noodle Soup', es: 'Sopa de pollo con fideos', fr: 'Soupe poulet-nouilles', de: 'Hühnernudelsuppe' }, ing: ['chicken', 'noodles', 'carrot', 'onion'] },
   { id: 'stuffed_peppers', title: { en: 'Stuffed Peppers', es: 'Pimientos rellenos', fr: 'Poivrons farcis', de: 'Gefüllte Paprika' }, ing: ['pepper', 'rice', 'ground_beef', 'tomato'] },
   { id: 'avocado_eggs', title: { en: 'Avocado Toast & Eggs', es: 'Tostada de aguacate con huevo', fr: 'Toast à l’avocat et œufs', de: 'Avocado-Toast mit Ei' }, ing: ['bread', 'avocado', 'eggs'], staple: true },
+  { id: 'chicken_fajitas', title: { en: 'Chicken Fajitas', es: 'Fajitas de pollo', fr: 'Fajitas de poulet', de: 'Hähnchen-Fajitas' }, ing: ['chicken', 'pepper', 'onion', 'tortilla'] },
+  { id: 'mac_cheese', title: { en: 'Mac & Cheese', es: 'Macarrones con queso', fr: 'Gratin de macaronis', de: 'Käse-Makkaroni' }, ing: ['pasta', 'cheese', 'milk', 'butter'], staple: true },
+  { id: 'blt', title: { en: 'BLT Sandwich', es: 'Sándwich BLT', fr: 'Sandwich BLT', de: 'BLT-Sandwich' }, ing: ['bread', 'bacon', 'lettuce', 'tomato'], staple: true },
+  { id: 'frittata', title: { en: 'Veggie Frittata', es: 'Frittata de verduras', fr: 'Frittata aux légumes', de: 'Gemüse-Frittata' }, ing: ['eggs', 'potato', 'pepper', 'cheese'], staple: true },
+  { id: 'teriyaki_salmon', title: { en: 'Teriyaki Salmon', es: 'Salmón teriyaki', fr: 'Saumon teriyaki', de: 'Teriyaki-Lachs' }, ing: ['salmon', 'rice', 'soy_sauce', 'broccoli'] },
+  { id: 'minestrone', title: { en: 'Minestrone Soup', es: 'Sopa minestrone', fr: 'Soupe minestrone', de: 'Minestrone-Suppe' }, ing: ['pasta', 'beans', 'tomato', 'carrot', 'onion'] },
+  { id: 'pesto_pasta', title: { en: 'Pesto Pasta', es: 'Pasta al pesto', fr: 'Pâtes au pesto', de: 'Pesto-Pasta' }, ing: ['pasta', 'basil', 'cheese', 'garlic'], staple: true },
+  { id: 'chicken_quesadilla', title: { en: 'Chicken Quesadilla', es: 'Quesadilla de pollo', fr: 'Quesadilla au poulet', de: 'Hähnchen-Quesadilla' }, ing: ['tortilla', 'chicken', 'cheese', 'pepper'] },
+  { id: 'shepherds_pie', title: { en: "Shepherd's Pie", es: 'Pastel de carne', fr: 'Hachis Parmentier', de: 'Shepherd’s Pie' }, ing: ['ground_beef', 'potato', 'carrot', 'peas', 'onion'] },
+  { id: 'fish_tacos', title: { en: 'Fish Tacos', es: 'Tacos de pescado', fr: 'Tacos de poisson', de: 'Fisch-Tacos' }, ing: ['fish', 'tortilla', 'lettuce', 'lemon'] },
+  { id: 'noodle_stirfry', title: { en: 'Noodle Stir-Fry', es: 'Fideos salteados', fr: 'Nouilles sautées', de: 'Gebratene Nudeln' }, ing: ['noodles', 'eggs', 'carrot', 'soy_sauce', 'spinach'] },
+  { id: 'greek_salad', title: { en: 'Greek Salad', es: 'Ensalada griega', fr: 'Salade grecque', de: 'Griechischer Salat' }, ing: ['cucumber', 'tomato', 'onion', 'cheese'] },
+  { id: 'sausage_peppers', title: { en: 'Sausage & Peppers', es: 'Salchichas con pimientos', fr: 'Saucisses aux poivrons', de: 'Wurst mit Paprika' }, ing: ['sausage', 'pepper', 'onion', 'bread'] },
+  { id: 'zucchini_pasta', title: { en: 'Zucchini Pasta', es: 'Pasta con calabacín', fr: 'Pâtes aux courgettes', de: 'Zucchini-Pasta' }, ing: ['pasta', 'zucchini', 'tomato', 'garlic'], staple: true },
 ];
 
 export interface MealSuggestion {
