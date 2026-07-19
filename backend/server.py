@@ -2164,6 +2164,21 @@ async def list_cards(status: Optional[str] = Query(default=None), user=Depends(r
     return rows
 
 
+@app.get("/api/cards/shared")
+async def list_shared_with_coparent(user=Depends(require_user)):
+    """Everything the requester has shared — i.e. exactly what their co-parent
+    can see from them. A reassurance view: private items never appear here."""
+    database = get_db()
+    rows = []
+    cursor = database["cards"].find(
+        {"family_id": user["family_id"], "created_by_user_id": user["user_id"], "shared": True},
+        {"_id": 0},
+    ).sort("due_date", 1)
+    async for item in cursor:
+        rows.append(public_card(item))
+    return rows
+
+
 @app.post("/api/cards")
 async def create_card(payload: CardIn, user=Depends(require_user)):
     database = get_db()

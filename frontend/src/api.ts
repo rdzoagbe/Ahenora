@@ -692,6 +692,8 @@ export const api = {
       return r;
     });
   },
+  // Everything you've shared — exactly what your co-parent can see from you.
+  sharedWithCoparent: () => request<Card[]>('/cards/shared'),
   // Share a private item with the co-parent (notifies them). Returns the updated card.
   shareCard: (id: string) => {
     cache.invalidatePrefix('listCards');

@@ -5,7 +5,7 @@ import { useFocusEffect } from 'expo-router';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import { CalendarDays, Car, CheckCircle2, ChevronLeft, ChevronRight, Clock, ExternalLink, MapPin, Plus, RefreshCw, Trash2, User, Users, Video, X } from 'lucide-react-native';
+import { CalendarDays, Car, CheckCircle2, ChevronLeft, ChevronRight, Clock, ExternalLink, Eye, Lock, MapPin, Plus, RefreshCw, Trash2, User, Users, Video, X } from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
@@ -207,6 +207,8 @@ export default function Calendar() {
   const [refreshing, setRefreshing] = useState(false);
   const [carpools, setCarpools] = useState<Carpool[]>([]);
   const [childNames, setChildNames] = useState<Set<string>>(new Set());
+  const [coparentViewOpen, setCoparentViewOpen] = useState(false);
+  const [sharedItems, setSharedItems] = useState<Card[] | null>(null);
   const handledCalendarResponseRef = useRef(false);
 
   const webClientId =
@@ -254,6 +256,16 @@ export default function Calendar() {
     await load();
     setRefreshing(false);
   }, [load]);
+
+  const openCoparentView = useCallback(async () => {
+    setCoparentViewOpen(true);
+    setSharedItems(null);
+    try {
+      setSharedItems(await api.sharedWithCoparent());
+    } catch {
+      setSharedItems([]);
+    }
+  }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
@@ -571,6 +583,12 @@ export default function Calendar() {
             </KitCard>
           </PressScale>
 
+          {/* Privacy reassurance: see exactly what the co-parent can see from you */}
+          <PressScale testID="calendar-coparent-view" onPress={openCoparentView} style={styles.coparentLink}>
+            <Lock color={ui.muted} size={14} />
+            <Text style={styles.coparentLinkText}>{t('cal_coparent_view_link')}</Text>
+          </PressScale>
+
           {/* Month grid */}
           <KitCard style={styles.calCard}>
             <View style={styles.monthHeader}>
@@ -851,6 +869,40 @@ export default function Calendar() {
           </>
         ) : null}
       </KeyboardAwareBottomSheet>
+
+      {/* "What your co-parent can see" — only your own shared items appear here. */}
+      <KeyboardAwareBottomSheet visible={coparentViewOpen} onClose={() => setCoparentViewOpen(false)} contentStyle={styles.detailSheet}>
+        <View style={styles.detailHeader}>
+          <View style={styles.coparentTitleWrap}>
+            <Eye color={ui.orange} size={20} />
+            <Text style={styles.detailTitle}>{t('cal_coparent_view_title')}</Text>
+          </View>
+          <PressScale onPress={() => setCoparentViewOpen(false)} style={styles.closeBtn}>
+            <X color={ui.text} size={20} />
+          </PressScale>
+        </View>
+        <Text style={styles.coparentSubtitle}>{t('cal_coparent_view_subtitle')}</Text>
+        {sharedItems === null ? (
+          <ActivityIndicator color={ui.orange} size="small" style={{ marginTop: 24 }} />
+        ) : sharedItems.length === 0 ? (
+          <View style={styles.coparentEmpty}>
+            <Lock color={ui.muted} size={26} />
+            <Text style={styles.coparentEmptyText}>{t('cal_coparent_view_empty')}</Text>
+          </View>
+        ) : (
+          <View style={styles.coparentList}>
+            {sharedItems.map((c, i) => (
+              <View key={c.card_id} style={[styles.coparentRow, i < sharedItems.length - 1 && styles.coparentRowBorder]}>
+                <Users color={ui.mintText} size={17} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.coparentRowTitle} numberOfLines={1}>{cleanText(c.title)}</Text>
+                  {c.due_date ? <Text style={styles.coparentRowMeta}>{formatDateTime(c.due_date)}</Text> : null}
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
+      </KeyboardAwareBottomSheet>
     </SwipeableTabView>
   );
 }
@@ -920,6 +972,17 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   shareNudgeText: { color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 14, lineHeight: 20 },
   shareNudgeBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 46, borderRadius: 99, backgroundColor: ui.orange },
   shareNudgeBtnText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
+  coparentLink: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 12, paddingVertical: 6 },
+  coparentLinkText: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 13 },
+  coparentTitleWrap: { flexDirection: 'row', alignItems: 'center', gap: 9, flex: 1 },
+  coparentSubtitle: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 19, marginTop: 4, marginBottom: 4 },
+  coparentEmpty: { alignItems: 'center', gap: 12, paddingVertical: 34 },
+  coparentEmptyText: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 14, textAlign: 'center', paddingHorizontal: 24, lineHeight: 20 },
+  coparentList: { marginTop: 12 },
+  coparentRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13 },
+  coparentRowBorder: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: ui.line },
+  coparentRowTitle: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 15 },
+  coparentRowMeta: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, marginTop: 2 },
 
   carpoolSection: { marginTop: 24 },
   carpoolHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
