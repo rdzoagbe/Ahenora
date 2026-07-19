@@ -86,11 +86,20 @@ Before building anything new, watch the wider audience.
 - ✅ PricingView: real purchase + **Restore purchases** flows (fallback alert until billing build); downgrade points to Play subscriptions.
 - ✅ Conversion: **free peek at meal suggestions** — locked families see the 7 dinners; "Add" prompts the upgrade.
 
-**Remaining (user/store setup, then one AAB):**
-1. Play Console → create subscriptions `premium_monthly` ($6.99) + `premium_yearly` ($49.99).
-2. RevenueCat account → link Play (service credentials), entitlement **`premium`** attached to both products, default Offering with monthly+annual packages.
-3. Keys: `EXPO_PUBLIC_REVENUECAT_ANDROID_KEY` (EAS env), `RC_WEBHOOK_SECRET` (Railway + RC webhook config → `https://<railway-app>/api/billing/revenuecat-webhook`).
-4. Build fresh AAB (billing natives) — fold into the post-approval production build.
+**Store setup — done 2026-07-19:**
+- ✅ RevenueCat project + Play app (`Household COO (Play Store)`, package `com.householdcoo.app`).
+- ✅ Google Cloud service account `revenuecat@household-coo-cd91e.iam.gserviceaccount.com` (project Household-Coo), JSON key uploaded to RevenueCat, invited in Play Console (view app info + financial data + manage orders), **Google Play Android Developer API** enabled.
+- ⏳ RC shows "credentials need attention" — normal propagation (up to ~36 h) + clears fully once products exist. Skipped: Google developer notifications (webhook covers us), custom URL scheme, financial reports bucket.
+
+**IN PROGRESS (Option B: billing build for the closed test) — sequence (in order):**
+1. **Build the billing AAB now** (`eas-build.yml`, production profile) and upload to the **closed testing track**. It carries the billing natives → the Play "Subscriptions" page unlocks only after this build is uploaded (needs the BILLING permission — the 2026-07-16 build predates it). Prereq: put the RC public SDK key (`goog_…`) into `eas.json` env as `EXPO_PUBLIC_REVENUECAT_ANDROID_KEY` first, so testers can sandbox-test purchases.
+2. Upload AAB to Play (closed track first is fine), then **Monetize with Play → Products → Subscriptions**: create `premium_monthly` (base plan `monthly`, auto-renew, $6.99) and `premium_yearly` (base plan `yearly`, $49.99); **activate** both. If prompted, complete the merchant/payments profile.
+3. RevenueCat: import both products → entitlement **`premium`** (exact lowercase) attached to both → `default` Offering with **Monthly** + **Annual** packages.
+4. Keys (this flips billing LIVE and ends the testers' free-Premium window + preview banners, and locks `/subscription/change`):
+   - RC public SDK key (`goog_…`, from the RC Play-app page → Public API Key) → EAS env `EXPO_PUBLIC_REVENUECAT_ANDROID_KEY` **before** the build in step 1 (or rebuild after setting it).
+   - Invent a long random secret → RC webhook config (`https://household-coo-production.up.railway.app/api/billing/revenuecat-webhook`, Authorization header) **and** Railway `RC_WEBHOOK_SECRET` (same value).
+5. Verify end-to-end: sandbox purchase with a license tester → RC dashboard shows it → webhook flips family plan to executive → app unlocks Premium.
+- ⚠️ Step 4's Railway secret is the single switch — do it deliberately at launch, never casually.
 
 ### Phase 2 — Web version (iPhone family access)
 - `expo export --platform web` → free static hosting (Vercel/Netlify/GitHub Pages).
