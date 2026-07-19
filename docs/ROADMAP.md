@@ -91,15 +91,15 @@ Before building anything new, watch the wider audience.
 - ✅ Google Cloud service account `revenuecat@household-coo-cd91e.iam.gserviceaccount.com` (project Household-Coo), JSON key uploaded to RevenueCat, invited in Play Console (view app info + financial data + manage orders), **Google Play Android Developer API** enabled.
 - ⏳ RC shows "credentials need attention" — normal propagation (up to ~36 h) + clears fully once products exist. Skipped: Google developer notifications (webhook covers us), custom URL scheme, financial reports bucket.
 
-**IN PROGRESS (Option B: billing build for the closed test) — sequence (in order):**
-1. **Build the billing AAB now** (`eas-build.yml`, production profile) and upload to the **closed testing track**. It carries the billing natives → the Play "Subscriptions" page unlocks only after this build is uploaded (needs the BILLING permission — the 2026-07-16 build predates it). Prereq: put the RC public SDK key (`goog_…`) into `eas.json` env as `EXPO_PUBLIC_REVENUECAT_ANDROID_KEY` first, so testers can sandbox-test purchases.
-2. Upload AAB to Play (closed track first is fine), then **Monetize with Play → Products → Subscriptions**: create `premium_monthly` (base plan `monthly`, auto-renew, $6.99) and `premium_yearly` (base plan `yearly`, $49.99); **activate** both. If prompted, complete the merchant/payments profile.
-3. RevenueCat: import both products → entitlement **`premium`** (exact lowercase) attached to both → `default` Offering with **Monthly** + **Annual** packages.
-4. Keys (this flips billing LIVE and ends the testers' free-Premium window + preview banners, and locks `/subscription/change`):
-   - RC public SDK key (`goog_…`, from the RC Play-app page → Public API Key) → EAS env `EXPO_PUBLIC_REVENUECAT_ANDROID_KEY` **before** the build in step 1 (or rebuild after setting it).
-   - Invent a long random secret → RC webhook config (`https://household-coo-production.up.railway.app/api/billing/revenuecat-webhook`, Authorization header) **and** Railway `RC_WEBHOOK_SECRET` (same value).
-5. Verify end-to-end: sandbox purchase with a license tester → RC dashboard shows it → webhook flips family plan to executive → app unlocks Premium.
-- ⚠️ Step 4's Railway secret is the single switch — do it deliberately at launch, never casually.
+**Billing FULLY STAGED — completed 2026-07-19 (Option B):**
+- ✅ Billing AAB built (`eas-build.yml` production, run 29692170322) with `EXPO_PUBLIC_REVENUECAT_ANDROID_KEY` baked into `eas.json` (public `goog_` key — safe in repo); uploaded to the closed testing track.
+- ✅ Play subscription: **ONE subscription `premium_monthly`** (display name "Premium") holding BOTH base plans — Google's recommended model. `monthly` ($6.99, grace 7d) + `yearly` ($49.99, grace 14d), both **Active**, prices applied to all countries via suggestions with manual overrides **France/EUR 6,99 €/49,99 €** and **US $6.99/$49.99** (sticker-price-first: customer sees the marketing number, VAT comes out of it). NOTE: there is NO separate `premium_yearly` Play product — RevenueCat product ids are `premium_monthly:monthly` and `premium_monthly:yearly`.
+- ✅ RevenueCat: Test Store dummies deleted; entitlement **`premium`** ↔ both Play products; `default` offering: `$rc_monthly` → `premium_monthly:monthly`, `$rc_annual` → `premium_monthly:yearly` (monthly set as backwards-compat fallback — never used, SDK is v10); lifetime package removed.
+
+**THE ONE REMAINING SWITCH (launch day, deliberate):**
+1. Invent a long random secret → RevenueCat webhook config (`https://household-coo-production.up.railway.app/api/billing/revenuecat-webhook`, Authorization header) **and** Railway `RC_WEBHOOK_SECRET` (same value). This single act: enables real plan sync, ends testers' free-Premium window + preview banners, and locks `/subscription/change`.
+2. Verify end-to-end: sandbox purchase with a license tester (Play Console → Settings → License testing) → RC dashboard shows the purchase → webhook flips family plan to executive → app unlocks Premium.
+- ⚠️ Never set the Railway secret casually — it is the launch switch.
 
 ### Phase 2 — Web version (iPhone family access)
 - `expo export --platform web` → free static hosting (Vercel/Netlify/GitHub Pages).
