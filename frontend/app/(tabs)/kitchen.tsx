@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TextInput, ScrollView, ActivityIndicator } from 'react-native';
+import { Alert, View, Text, StyleSheet, TextInput, ScrollView, ActivityIndicator } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Plus, X, Trash2, ShoppingCart, Check, UtensilsCrossed, Bell, ChevronDown, History, RotateCcw, Sparkles } from 'lucide-react-native';
 
@@ -86,11 +86,19 @@ export default function Kitchen() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const addShopItem = useCallback(async () => {
-    if (!shopInput.trim()) return;
+    // "milk, eggs, bread" (or one per line) adds them all in one tap.
+    const names = shopInput.split(/[,;\n]/).map((s) => s.trim()).filter(Boolean);
+    if (names.length === 0) return;
     setAddingShop(true);
     try {
-      const item = await api.addShoppingItem({ name: shopInput.trim() });
-      setShopItems((prev) => [item, ...prev]);
+      if (names.length === 1) {
+        const item = await api.addShoppingItem({ name: names[0] });
+        setShopItems((prev) => [item, ...prev]);
+      } else {
+        const r = await api.bulkAddShopping(names);
+        setShopItems(await api.listShopping().catch(() => []));
+        showToast(`${r.added} ${t('vault_ingredients_added_to_list')}`, 'success');
+      }
       setShopInput('');
     } catch {
       showToast(t('vault_could_not_add_item'), 'error');
@@ -130,6 +138,49 @@ export default function Kitchen() {
       load();
     }
   }, [shopItems, load, showToast]);
+
+  const clearAllShop = useCallback(() => {
+    if (shopItems.length === 0) return;
+    Alert.alert(t('kitchen_clear_shop_q'), t('kitchen_clear_shop_body'), [
+      { text: t('vault_cancel'), style: 'cancel' },
+      {
+        text: t('kitchen_clear_all'),
+        style: 'destructive',
+        onPress: async () => {
+          setShopItems([]);
+          try {
+            await api.clearAllShopping();
+            setShopHistory(await api.listShoppingHistory().catch(() => []));
+            showToast(t('kitchen_cleared'), 'success');
+          } catch {
+            showToast(t('vault_could_not_update'), 'error');
+            load();
+          }
+        },
+      },
+    ]);
+  }, [shopItems.length, load, showToast, t]);
+
+  const clearAllMealsPlan = useCallback(() => {
+    if (meals.length === 0) return;
+    Alert.alert(t('kitchen_clear_meal_q'), t('kitchen_clear_meal_body'), [
+      { text: t('vault_cancel'), style: 'cancel' },
+      {
+        text: t('kitchen_clear_all'),
+        style: 'destructive',
+        onPress: async () => {
+          setMeals([]);
+          try {
+            await api.clearAllMeals();
+            showToast(t('kitchen_cleared'), 'success');
+          } catch {
+            showToast(t('vault_could_not_update'), 'error');
+            load();
+          }
+        },
+      },
+    ]);
+  }, [meals.length, load, showToast, t]);
 
   const addMeal = useCallback(async () => {
     if (!mealTitle.trim()) return;
@@ -439,6 +490,13 @@ export default function Kitchen() {
               ) : null}
 
               {shopItems.length === 0 ? <Text style={styles.empty}>{t('vault_shop_empty')}</Text> : null}
+
+              {shopItems.length > 1 ? (
+                <PressScale testID="shop-clear-all" onPress={clearAllShop} style={styles.clearAllBtn}>
+                  <Trash2 color={ui.danger} size={14} />
+                  <Text style={styles.clearAllText}>{t('kitchen_clear_all')}</Text>
+                </PressScale>
+              ) : null}
             </View>
           </>
         ) : (
@@ -449,27 +507,28 @@ export default function Kitchen() {
                 <UtensilsCrossed color={ui.lavenderText} size={20} />
                 <Text style={styles.secTitle}>{t('vault_meal_planner')}</Text>
               </View>
-              {mealLocked ? (
-                <LockBadge onPress={() => promptUpgrade('meal_planner')} />
-              ) : (
-                <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
-                  <PressScale testID="meal-suggest" onPress={openSuggest} style={styles.histBtn}>
-                    <Sparkles color={ui.lavenderText} size={18} />
-                  </PressScale>
-                  <PressScale testID="meal-history" onPress={openMealHistory} style={styles.histBtn}>
-                    <History color={ui.muted} size={18} />
-                  </PressScale>
-                  {meals.length > 0 ? (
-                    <PressScale onPress={syncMealsToShopping} style={styles.clearBtn}>
-                      <Text style={styles.clearBtnText}>{t('vault_sync_to_list')}</Text>
-                    </PressScale>
-                  ) : null}
-                  <PressScale onPress={() => setShowMealAdd(true)} style={[styles.clearBtn, { backgroundColor: ui.lavender }]}>
-                    <Text style={[styles.clearBtnText, { color: ui.lavenderText }]}>{t('vault_add_short')}</Text>
-                  </PressScale>
-                </View>
-              )}
+              {mealLocked ? <LockBadge onPress={() => promptUpgrade('meal_planner')} /> : null}
             </View>
+
+            {/* Actions get their own wrapping row so "Sync to list" is never cut off. */}
+            {!mealLocked ? (
+              <View style={styles.mealActions}>
+                <PressScale testID="meal-suggest" onPress={openSuggest} style={styles.histBtn}>
+                  <Sparkles color={ui.lavenderText} size={18} />
+                </PressScale>
+                <PressScale testID="meal-history" onPress={openMealHistory} style={styles.histBtn}>
+                  <History color={ui.muted} size={18} />
+                </PressScale>
+                {meals.length > 0 ? (
+                  <PressScale onPress={syncMealsToShopping} style={styles.clearBtn}>
+                    <Text style={styles.clearBtnText}>{t('vault_sync_to_list')}</Text>
+                  </PressScale>
+                ) : null}
+                <PressScale onPress={() => setShowMealAdd(true)} style={[styles.clearBtn, { backgroundColor: ui.lavender }]}>
+                  <Text style={[styles.clearBtnText, { color: ui.lavenderText }]}>{t('vault_add_short')}</Text>
+                </PressScale>
+              </View>
+            ) : null}
 
             <View style={styles.card}>
               {DAYS.filter((d) => (mealsByDay[d] || []).length > 0).map((day) => (
@@ -496,6 +555,13 @@ export default function Kitchen() {
                     <Text style={styles.suggestCtaText}>{t('kitchen_suggest_week')}</Text>
                   </PressScale>
                 </View>
+              ) : null}
+
+              {meals.length > 1 ? (
+                <PressScale testID="meal-clear-all" onPress={clearAllMealsPlan} style={styles.clearAllBtn}>
+                  <Trash2 color={ui.danger} size={14} />
+                  <Text style={styles.clearAllText}>{t('kitchen_clear_all')}</Text>
+                </PressScale>
               ) : null}
             </View>
             {meals.length > 0 ? <Text style={styles.mealTip}>{t('kitchen_sync_tip')}</Text> : null}
@@ -746,6 +812,9 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   mealDayLabel: { color: ui.lavenderText, fontFamily: 'Inter_800ExtraBold', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 8, marginBottom: 2 },
   mealTip: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, lineHeight: 19, marginTop: 12 },
   mealEmptyWrap: { alignItems: 'center', paddingVertical: 6 },
+  mealActions: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
+  clearAllBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 12, paddingVertical: 9, borderRadius: 99, backgroundColor: ui.dangerSoft },
+  clearAllText: { color: ui.danger, fontFamily: 'Inter_700Bold', fontSize: 13 },
   suggestCta: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 18, paddingVertical: 12, borderRadius: 99, backgroundColor: ui.lavenderText, marginTop: 4 },
   suggestCtaText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
   suggestSub: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 13.5, lineHeight: 20, marginBottom: 8 },

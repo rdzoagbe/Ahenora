@@ -3366,6 +3366,26 @@ async def update_shopping_item(item_id: str, payload: ShoppingItemPatchIn, user=
     return public_shopping_item(doc)
 
 
+# Registered before /{item_id} so "all" isn't captured as an item id.
+@app.delete("/api/shopping/all")
+async def clear_all_shopping(user=Depends(require_user)):
+    database = get_db()
+    # Archive the list before wiping so it can be restored from history.
+    items = await database["shopping_list"].find(
+        {"family_id": user["family_id"]}, {"_id": 0, "name": 1}
+    ).to_list(500)
+    names = [i.get("name", "") for i in items if i.get("name")]
+    if names:
+        await database["shopping_history"].insert_one({
+            "history_id": new_id("shist"),
+            "family_id": user["family_id"],
+            "items": names,
+            "created_at": utcnow(),
+        })
+    result = await database["shopping_list"].delete_many({"family_id": user["family_id"]})
+    return {"deleted": result.deleted_count}
+
+
 @app.delete("/api/shopping/{item_id}")
 async def delete_shopping_item(item_id: str, user=Depends(require_user)):
     database = get_db()
@@ -3377,11 +3397,11 @@ async def delete_shopping_item(item_id: str, user=Depends(require_user)):
     return {"ok": True}
 
 
-@app.delete("/api/shopping")
 def public_shopping_history(h: dict) -> dict:
     return {"history_id": h["history_id"], "items": h.get("items", []), "created_at": iso(h["created_at"])}
 
 
+@app.delete("/api/shopping")
 async def clear_checked_shopping(user=Depends(require_user)):
     database = get_db()
     # Archive the finished trip (checked items) before clearing, so it can be reused.
@@ -3768,6 +3788,13 @@ async def create_meal(body: MealPlanIn, user: dict = Depends(require_user), data
     }
     await database["meals"].insert_one(meal)
     return public_meal(meal)
+
+
+# Registered before /{meal_id} so "all" isn't captured as a meal id.
+@app.delete("/api/meals/all")
+async def clear_all_meals(user: dict = Depends(require_user), database=Depends(get_db)):
+    result = await database["meals"].delete_many({"family_id": user["family_id"]})
+    return {"deleted": result.deleted_count}
 
 
 @app.delete("/api/meals/{meal_id}")
