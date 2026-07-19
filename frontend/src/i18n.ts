@@ -12,6 +12,9 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  "preview_banner_title": "You're previewing Premium — free during testing",
+  "preview_banner_body": "At launch this becomes part of Premium ($6.99/mo or $49.99/yr).",
+  "preview_banner_cta": "See plans",
   "price_downgrade_title": "Manage in Google Play",
   "price_downgrade_msg": "To cancel or downgrade, open Google Play → Payments & subscriptions. You keep Premium until the period ends.",
   "price_purchase_done_title": "Welcome to Premium! 🎉",
@@ -892,6 +895,9 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  "preview_banner_title": "Estás probando Premium — gratis durante las pruebas",
+  "preview_banner_body": "En el lanzamiento esto formará parte de Premium (6,99 $/mes o 49,99 $/año).",
+  "preview_banner_cta": "Ver planes",
   "price_downgrade_title": "Gestionar en Google Play",
   "price_downgrade_msg": "Para cancelar o bajar de plan, abre Google Play → Pagos y suscripciones. Mantienes Premium hasta el final del periodo.",
   "price_purchase_done_title": "¡Bienvenido a Premium! 🎉",
@@ -1766,6 +1772,9 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  "preview_banner_title": "Vous découvrez Premium — gratuit pendant les tests",
+  "preview_banner_body": "Au lancement, ceci fera partie de Premium (6,99 $/mois ou 49,99 $/an).",
+  "preview_banner_cta": "Voir les offres",
   "price_downgrade_title": "Gérer dans Google Play",
   "price_downgrade_msg": "Pour annuler ou rétrograder, ouvrez Google Play → Paiements et abonnements. Vous gardez Premium jusqu’à la fin de la période.",
   "price_purchase_done_title": "Bienvenue dans Premium ! 🎉",
@@ -2640,6 +2649,9 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  "preview_banner_title": "Du testest Premium — kostenlos während der Testphase",
+  "preview_banner_body": "Zum Start wird dies Teil von Premium (6,99 $/Monat oder 49,99 $/Jahr).",
+  "preview_banner_cta": "Tarife ansehen",
   "price_downgrade_title": "In Google Play verwalten",
   "price_downgrade_msg": "Zum Kündigen oder Herabstufen öffne Google Play → Zahlungen & Abos. Premium bleibt bis zum Ende des Zeitraums aktiv.",
   "price_purchase_done_title": "Willkommen bei Premium! 🎉",

@@ -15,7 +15,7 @@ import { TabScreen } from '../../src/components/TabScreen';
 import { Card as KitCard, IconTile, ScreenHeader, UI, useUI, UIColors } from '../../src/components/Kit';
 import { useStore } from '../../src/store';
 import { api, logEvent, CalendarImportResult, Card, Carpool } from '../../src/api';
-import { usePremiumGate, LockBadge } from '../../src/components/PremiumGate';
+import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { sendLocalNotification, syncCalendarNightly } from '../../src/notifications';
 
 WebBrowser.maybeCompleteAuthSession();
@@ -689,6 +689,7 @@ export default function Calendar() {
           )}
 
           {/* Carpool Coordinator */}
+          {!carpoolLocked ? <View style={{ marginTop: 18 }}><PremiumPreviewBanner /></View> : null}
           {carpoolLocked ? (
             <View style={styles.carpoolSection}>
               <View style={styles.carpoolHeader}>

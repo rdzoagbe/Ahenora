@@ -44,7 +44,7 @@ import { Card, IconTile, ProgressBar, ScreenHeader, UI, useUI, UIColors } from '
 
 import { useStore } from '../../src/store';
 import { api, logEvent, AllowanceConfig, Chore, FamilyMember, Reward, Routine, StarTransaction } from '../../src/api';
-import { usePremiumGate, LockBadge } from '../../src/components/PremiumGate';
+import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { logger } from '../../src/logger';
 
 type ToastState = { message: string; tone: ToastTone };
@@ -773,6 +773,7 @@ export default function Kids() {
                 <Text style={styles.featureHeaderText}>{t('kids_allowance')}</Text>
                 {allowanceLocked ? <LockBadge onPress={() => promptUpgrade('allowance')} /> : null}
               </View>
+              <PremiumPreviewBanner />
               <Card style={styles.cardPad}>
                 {allowanceLocked ? (
                   <PressScale onPress={() => promptUpgrade('allowance')} style={styles.allowanceRow}>

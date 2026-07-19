@@ -13,7 +13,7 @@ import { ScreenHeader, useUI, UIColors } from '../../src/components/Kit';
 
 import { useStore } from '../../src/store';
 import { api, MealPlan, ShoppingItem, ShoppingHistoryEntry, SavedMealPlan } from '../../src/api';
-import { usePremiumGate, LockBadge } from '../../src/components/PremiumGate';
+import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { logger } from '../../src/logger';
 import { suggestWeek, MealSuggestion, SuggestLang } from '../../src/mealSuggestions';
 
@@ -522,6 +522,8 @@ export default function Kitchen() {
                 </PressScale>
               </View>
             ) : null}
+
+            <PremiumPreviewBanner />
 
             {/* Actions get their own wrapping row so "Sync to list" is never cut off. */}
             {!mealLocked ? (
