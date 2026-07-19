@@ -12,6 +12,11 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  "cal_new_agenda_title": "New on your agenda",
+  "cal_new_agenda_generic": "Something new was added to your calendar.",
+  "cal_new_agenda_count": "{count} new items were added to your calendar.",
+  "cal_nightly_title": "Tomorrow on your agenda",
+  "cal_nightly_body": "You have {count} thing(s) planned tomorrow. Tap to review.",
   "kitchen_restore_last": "Restore from your last list?",
   "kitchen_review": "Review",
   "kitchen_restore_items": "Restore items",
@@ -856,6 +861,11 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  "cal_new_agenda_title": "Novedad en tu agenda",
+  "cal_new_agenda_generic": "Se añadió algo nuevo a tu calendario.",
+  "cal_new_agenda_count": "Se añadieron {count} elementos nuevos a tu calendario.",
+  "cal_nightly_title": "Mañana en tu agenda",
+  "cal_nightly_body": "Tienes {count} cosa(s) para mañana. Toca para revisar.",
   "kitchen_restore_last": "¿Restaurar tu última lista?",
   "kitchen_review": "Revisar",
   "kitchen_restore_items": "Restaurar artículos",
@@ -1694,6 +1704,11 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  "cal_new_agenda_title": "Nouveau dans votre agenda",
+  "cal_new_agenda_generic": "Un nouvel élément a été ajouté à votre calendrier.",
+  "cal_new_agenda_count": "{count} nouveaux éléments ont été ajoutés à votre calendrier.",
+  "cal_nightly_title": "Demain dans votre agenda",
+  "cal_nightly_body": "Vous avez {count} chose(s) prévue(s) demain. Touchez pour voir.",
   "kitchen_restore_last": "Restaurer ta dernière liste ?",
   "kitchen_review": "Voir",
   "kitchen_restore_items": "Restaurer des articles",
@@ -2532,6 +2547,11 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  "cal_new_agenda_title": "Neu in deinem Kalender",
+  "cal_new_agenda_generic": "Etwas Neues wurde zu deinem Kalender hinzugefügt.",
+  "cal_new_agenda_count": "{count} neue Einträge wurden zu deinem Kalender hinzugefügt.",
+  "cal_nightly_title": "Morgen in deinem Kalender",
+  "cal_nightly_body": "Du hast morgen {count} Termin(e). Tippe zum Ansehen.",
   "kitchen_restore_last": "Letzte Liste wiederherstellen?",
   "kitchen_review": "Ansehen",
   "kitchen_restore_items": "Artikel wiederherstellen",
