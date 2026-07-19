@@ -650,29 +650,29 @@ export default function Kitchen() {
           <PressScale onPress={() => setShowSuggest(false)} style={styles.iconBtn}><X color={ui.text} size={20} /></PressScale>
         </View>
         <Text style={styles.suggestSub}>{t('kitchen_suggest_sub')}</Text>
-        <ScrollView style={{ maxHeight: 400 }} showsVerticalScrollIndicator={false}>
-          {suggestions.map((s) => {
-            const added = addedSuggest.has(s.recipeId);
-            return (
-              <View key={s.recipeId} style={styles.suggestRow}>
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={styles.suggestDay}>{s.day.charAt(0).toUpperCase() + s.day.slice(1)}</Text>
-                  <Text style={styles.suggestTitle}>{s.title}</Text>
-                  {s.haveLabels.length > 0 ? (
-                    <Text style={styles.suggestHave} numberOfLines={2}>{t('kitchen_suggest_have')}: {s.haveLabels.join(', ')}</Text>
-                  ) : null}
-                  {s.needLabels.length > 0 ? (
-                    <Text style={styles.suggestNeed} numberOfLines={2}>{t('kitchen_suggest_need')}: {s.needLabels.join(', ')}</Text>
-                  ) : null}
-                </View>
-                <PressScale testID={`suggest-add-${s.recipeId}`} onPress={() => acceptSuggestion(s)} disabled={added} style={[styles.suggestAddBtn, added && styles.suggestAddedBtn]}>
-                  {added ? <Check color={ui.mintText} size={15} /> : <Plus color={ui.lavenderText} size={15} />}
-                  <Text style={[styles.suggestAddText, added && { color: ui.mintText }]}>{added ? t('kitchen_suggest_added') : t('kitchen_suggest_add')}</Text>
-                </PressScale>
+        {/* No inner ScrollView here — the sheet itself scrolls; nesting two
+            vertical scrollers makes the list unscrollable on Android. */}
+        {suggestions.map((s) => {
+          const added = addedSuggest.has(s.recipeId);
+          return (
+            <View key={s.recipeId} style={styles.suggestRow}>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.suggestDay}>{s.day.charAt(0).toUpperCase() + s.day.slice(1)}</Text>
+                <Text style={styles.suggestTitle}>{s.title}</Text>
+                {s.haveLabels.length > 0 ? (
+                  <Text style={styles.suggestHave} numberOfLines={2}>{t('kitchen_suggest_have')}: {s.haveLabels.join(', ')}</Text>
+                ) : null}
+                {s.needLabels.length > 0 ? (
+                  <Text style={styles.suggestNeed} numberOfLines={2}>{t('kitchen_suggest_need')}: {s.needLabels.join(', ')}</Text>
+                ) : null}
               </View>
-            );
-          })}
-        </ScrollView>
+              <PressScale testID={`suggest-add-${s.recipeId}`} onPress={() => acceptSuggestion(s)} disabled={added} style={[styles.suggestAddBtn, added && styles.suggestAddedBtn]}>
+                {added ? <Check color={ui.mintText} size={15} /> : <Plus color={ui.lavenderText} size={15} />}
+                <Text style={[styles.suggestAddText, added && { color: ui.mintText }]}>{added ? t('kitchen_suggest_added') : t('kitchen_suggest_add')}</Text>
+              </PressScale>
+            </View>
+          );
+        })}
         <PressScale testID="suggest-add-all" onPress={acceptAllSuggestions} style={styles.suggestAllBtn}>
           <Text style={styles.suggestAllText}>{t('kitchen_suggest_add_all')}</Text>
         </PressScale>
