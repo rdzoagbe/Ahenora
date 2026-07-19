@@ -199,6 +199,8 @@ export interface Card {
   google_event_id?: string | null;
   google_ical_uid?: string | null;
   external_source?: string | null;
+  shared?: boolean;
+  created_by_user_id?: string | null;
 }
 
 export interface HandoffNote {
@@ -683,9 +685,17 @@ export const api = {
       return r;
     });
   },
-  updateCard: (id: string, data: Partial<Pick<Card, 'type' | 'title' | 'description' | 'assignee' | 'due_date' | 'status' | 'recurrence' | 'reminder_minutes'>>) => {
+  updateCard: (id: string, data: Partial<Pick<Card, 'type' | 'title' | 'description' | 'assignee' | 'due_date' | 'status' | 'recurrence' | 'reminder_minutes' | 'shared'>>) => {
     cache.invalidatePrefix('listCards');
     return request<Card>(`/cards/${id}`, { method: 'PATCH', body: data }).then((r) => {
+      cache.invalidatePrefix('listCards');
+      return r;
+    });
+  },
+  // Share a private item with the co-parent (notifies them). Returns the updated card.
+  shareCard: (id: string) => {
+    cache.invalidatePrefix('listCards');
+    return request<Card>(`/cards/${id}/share`, { method: 'POST' }).then((r) => {
       cache.invalidatePrefix('listCards');
       return r;
     });
