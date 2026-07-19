@@ -261,6 +261,7 @@ def apply_admin_subscription(subscription: dict) -> dict:
     admin_sub["admin_unlocked"] = True
     admin_sub["limits"] = {
         "max_members": 999,
+        "max_children": 999,
         "ai_scans_per_month": 999999,
         "vault_bytes": 50 * 1024 * 1024 * 1024,
         "weekly_brief": True,
@@ -304,21 +305,22 @@ async def _gemini_vision(prompt: str, image_base64: str, system: str = "") -> st
     return (response.text or "").strip()
 
 
+# The two launch tiers. Children are metered (role-aware: parents/caregivers
+# never count against a "child" limit); max_members stays as a generous total
+# safety cap. "family_office" is retired — any family doc still carrying it
+# resolves to "executive" via plan_catalog_for().
 PLAN_CATALOG = {
     "village": {
         "price_monthly": 0.0,
         "price_yearly": 0.0,
         "limits": {
-            # TESTING WINDOW: caps relaxed so closed-test families can explore
-            # freely (a tester hit the 3-member wall adding a 3rd child with no
-            # way to upgrade). Role-aware enforcement (parents free, children
-            # metered 1/4/10) ships with Play Billing — see docs/ROADMAP.md.
             "max_members": 10,
+            "max_children": 2,
             "ai_scans_per_month": 5,
-            "vault_bytes": 20 * 1024 * 1024,
+            "vault_bytes": 25 * 1024 * 1024,
             "weekly_brief": False,
             "multi_property": False,
-            # Premium feature flags (Executive+ only)
+            # Premium feature flags
             "meal_planner": False,
             "allowance": False,
             "carpool": False,
@@ -326,29 +328,15 @@ PLAN_CATALOG = {
         },
     },
     "executive": {
-        "price_monthly": 8.99,
-        "price_yearly": 69.99,
+        "price_monthly": 6.99,
+        "price_yearly": 49.99,
         "limits": {
-            "max_members": 8,
+            "max_members": 12,
+            "max_children": 5,
             "ai_scans_per_month": 100,
-            "vault_bytes": 250 * 1024 * 1024,
+            "vault_bytes": 500 * 1024 * 1024,
             "weekly_brief": True,
             "multi_property": False,
-            "meal_planner": True,
-            "allowance": True,
-            "carpool": True,
-            "weekly_report": True,
-        },
-    },
-    "family_office": {
-        "price_monthly": 19.99,
-        "price_yearly": 179.99,
-        "limits": {
-            "max_members": 20,
-            "ai_scans_per_month": 1000,
-            "vault_bytes": 2 * 1024 * 1024 * 1024,
-            "weekly_brief": True,
-            "multi_property": True,
             "meal_planner": True,
             "allowance": True,
             "carpool": True,
@@ -357,13 +345,25 @@ PLAN_CATALOG = {
     },
 }
 
+
+def plan_catalog_for(plan: str) -> dict:
+    """Resolve a stored plan name to a catalog entry. Unknown/retired paid
+    plans (e.g. legacy "family_office") map to executive so no family ever
+    loses paid features; anything else falls back to the free tier."""
+    if plan in PLAN_CATALOG:
+        return PLAN_CATALOG[plan]
+    if plan == "family_office":
+        return PLAN_CATALOG["executive"]
+    return PLAN_CATALOG["village"]
+
+
 # Features gated behind paid plans. Maps the feature flag to a user-facing
 # upgrade message used when a free-tier family hits the gate (HTTP 402).
 PREMIUM_FEATURE_MESSAGES = {
-    "meal_planner": "Meal Planner is available on Executive and Family Office plans.",
-    "allowance": "Allowance Tracker is available on Executive and Family Office plans.",
-    "carpool": "Carpool Coordinator is available on Executive and Family Office plans.",
-    "weekly_report": "Weekly Report is available on Executive and Family Office plans.",
+    "meal_planner": "Meal Planner is available on Premium.",
+    "allowance": "Pocket money tracking is available on Premium.",
+    "carpool": "Carpool Coordinator is available on Premium.",
+    "weekly_report": "Weekly Report is available on Premium.",
 }
 
 
@@ -456,7 +456,10 @@ async def build_subscription(family_id: str):
     database = get_db()
     family = await get_family_doc(family_id)
     members_count = await database["family_members"].count_documents({"family_id": family_id})
-    catalog = PLAN_CATALOG[family["plan"]]
+    children_count = await database["family_members"].count_documents(
+        {"family_id": family_id, "role": {"$regex": "^child$", "$options": "i"}}
+    )
+    catalog = plan_catalog_for(family["plan"])
     return {
         "plan": family["plan"],
         "billing_cycle": family["billing_cycle"],
@@ -466,6 +469,7 @@ async def build_subscription(family_id: str):
         "ai_scans_period_start": iso(family.get("ai_scans_period_start")),
         "vault_bytes_used": family.get("vault_bytes_used", 0),
         "members_count": members_count,
+        "children_count": children_count,
         "limits": catalog["limits"],
         "price_monthly": catalog["price_monthly"],
         "price_yearly": catalog["price_yearly"],
@@ -1658,14 +1662,19 @@ async def create_family_member(payload: ChildIn, user=Depends(require_user)):
 
     subscription = await build_subscription(user["family_id"])
     if not is_admin_user(user):
-        members_count = await database["family_members"].count_documents({"family_id": user["family_id"]})
-        if members_count >= subscription["limits"]["max_members"]:
+        # Role-aware metering: only children count against the child limit
+        # (parents/caregivers are never the meter). Free = 2, Premium = 5.
+        children_count = await database["family_members"].count_documents(
+            {"family_id": user["family_id"], "role": {"$regex": "^child$", "$options": "i"}}
+        )
+        max_children = subscription["limits"].get("max_children", 2)
+        if children_count >= max_children:
             plan_limit_error(
-                feature="family_members",
+                feature="max_children",
                 current_plan=subscription["plan"],
-                message="Your current plan has reached its member limit.",
-                limit=subscription["limits"]["max_members"],
-                used=members_count,
+                message="Upgrade to Premium to add more children (up to 5).",
+                limit=max_children,
+                used=children_count,
             )
 
     member = {
@@ -2901,6 +2910,11 @@ async def get_subscription(user=Depends(require_user)):
 @app.post("/api/subscription/change")
 async def change_subscription(payload: SubscriptionChangeIn, user=Depends(require_user)):
     database = get_db()
+    # Once real billing is configured (RevenueCat webhook secret present),
+    # plans are set ONLY by verified purchase events — the self-serve switcher
+    # from the testing window locks itself for non-admins automatically.
+    if os.environ.get("RC_WEBHOOK_SECRET") and not is_admin_user(user):
+        raise HTTPException(status_code=403, detail="Plans change via the store purchase flow")
     if payload.plan not in PLAN_CATALOG:
         raise HTTPException(status_code=400, detail="Invalid plan")
     if payload.billing_cycle not in ("monthly", "yearly"):
@@ -2919,6 +2933,71 @@ async def change_subscription(payload: SubscriptionChangeIn, user=Depends(requir
         upsert=True,
     )
     return await build_subscription(user["family_id"])
+
+
+# -----------------------------------------------------------------------------
+# Billing (RevenueCat)
+# -----------------------------------------------------------------------------
+# Events that mean the family currently holds (or regains) Premium, and events
+# that mean access has actually ended. CANCELLATION only turns off auto-renew —
+# access continues until EXPIRATION, so it does NOT downgrade.
+RC_PREMIUM_EVENTS = {"INITIAL_PURCHASE", "RENEWAL", "UNCANCELLATION", "PRODUCT_CHANGE", "NON_RENEWING_PURCHASE"}
+RC_DOWNGRADE_EVENTS = {"EXPIRATION"}
+
+
+@app.post("/api/billing/revenuecat-webhook")
+async def revenuecat_webhook(payload: dict, authorization: Optional[str] = Header(default=None)):
+    """RevenueCat server-to-server events — the single source of truth for who
+    has Premium once billing is live. app_user_id is our user_id (the app calls
+    Purchases.logIn(user_id)), which maps to the family that gets the plan."""
+    secret = os.environ.get("RC_WEBHOOK_SECRET", "")
+    if not secret:
+        raise HTTPException(status_code=503, detail="Billing not configured")
+    supplied = (authorization or "").strip()
+    if supplied.startswith("Bearer "):
+        supplied = supplied[7:]
+    if not secrets.compare_digest(supplied, secret):
+        raise HTTPException(status_code=401, detail="Bad webhook signature")
+
+    database = get_db()
+    event = (payload or {}).get("event") or {}
+    event_type = event.get("type", "")
+    app_user_id = event.get("app_user_id") or ""
+
+    user = await database["users"].find_one({"user_id": app_user_id}, {"_id": 0})
+    if not user:
+        # Unknown user (e.g. sandbox/anonymous id) — acknowledge so RC stops
+        # retrying; nothing to update on our side.
+        log.warning("RC webhook for unknown app_user_id=%s type=%s", app_user_id, event_type)
+        return {"ok": True, "matched": False}
+
+    product_id = (event.get("product_id") or "").lower()
+    cycle = "yearly" if ("year" in product_id or "annual" in product_id) else "monthly"
+    changes = {
+        "rc_last_event": event_type,
+        "rc_product_id": event.get("product_id"),
+        "rc_event_at": utcnow(),
+        "updated_at": utcnow(),
+    }
+    exp_ms = event.get("expiration_at_ms")
+    if exp_ms:
+        try:
+            changes["rc_expires_at"] = datetime.fromtimestamp(int(exp_ms) / 1000, tz=timezone.utc)
+        except (ValueError, TypeError, OSError):
+            pass
+
+    if event_type in RC_PREMIUM_EVENTS:
+        changes["plan"] = "executive"
+        changes["billing_cycle"] = cycle
+    elif event_type in RC_DOWNGRADE_EVENTS:
+        changes["plan"] = "village"
+    # Other events (CANCELLATION, BILLING_ISSUE, TRANSFER, TEST) just record state.
+
+    await database["families"].update_one(
+        {"family_id": user["family_id"]}, {"$set": changes}
+    )
+    log.info("RC webhook applied: family=%s type=%s plan=%s", user["family_id"], event_type, changes.get("plan", "unchanged"))
+    return {"ok": True, "matched": True}
 
 
 # -----------------------------------------------------------------------------

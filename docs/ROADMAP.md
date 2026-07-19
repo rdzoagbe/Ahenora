@@ -79,12 +79,18 @@ Before building anything new, watch the wider audience.
 - Feature freeze lifts → batch the held **Dependabot** updates one small, verified PR at a time.
 
 ### Phase 1 — Monetization (Google Play Billing)  *— highest ROI, do first*
-Already scaffolded: pricing decided, `PLAN_CATALOG` exists, "coming soon" upgrade alerts in place.
-1. Create the two subscriptions in Play Console — **Executive** and **Family Office**, each monthly + yearly ($8.99/$69.99, $19.99/$179.99).
-2. Add **RevenueCat** (handles receipt validation, entitlements, renewals — needs a build). Alt: `react-native-iap`.
-3. **Backend:** entitlement webhook sets the family's plan; **restore real member limits** in `PLAN_CATALOG` (Village was relaxed to 10 for testing) and enforce **parents uncounted, kids metered 1/4/10**.
-4. **Frontend:** replace `promptUpgrade` alerts with the real purchase sheet; unlock gated features off the entitlement.
-- Native build required. **Phase 4 AI features monetize through this — Billing lands first.**
+**CODE COMPLETE** — shipped ahead of store setup; everything is inert until the keys exist:
+- ✅ `PLAN_CATALOG` collapsed to **2 tiers** ($6.99/$49.99); role-aware child metering (**parents never counted; children 2 free / 5 Premium**); legacy `family_office` resolves to executive.
+- ✅ **RevenueCat webhook** `POST /api/billing/revenuecat-webhook` (auth: `RC_WEBHOOK_SECRET`) = single source of truth for the family plan. CANCELLATION keeps access until EXPIRATION. Self-serve `/subscription/change` **auto-locks for non-admins** the moment `RC_WEBHOOK_SECRET` is set.
+- ✅ `react-native-purchases` installed (native → needs the next AAB); `src/billing.ts` no-ops gracefully on builds without it (OTA-safe).
+- ✅ PricingView: real purchase + **Restore purchases** flows (fallback alert until billing build); downgrade points to Play subscriptions.
+- ✅ Conversion: **free peek at meal suggestions** — locked families see the 7 dinners; "Add" prompts the upgrade.
+
+**Remaining (user/store setup, then one AAB):**
+1. Play Console → create subscriptions `premium_monthly` ($6.99) + `premium_yearly` ($49.99).
+2. RevenueCat account → link Play (service credentials), entitlement **`premium`** attached to both products, default Offering with monthly+annual packages.
+3. Keys: `EXPO_PUBLIC_REVENUECAT_ANDROID_KEY` (EAS env), `RC_WEBHOOK_SECRET` (Railway + RC webhook config → `https://<railway-app>/api/billing/revenuecat-webhook`).
+4. Build fresh AAB (billing natives) — fold into the post-approval production build.
 
 ### Phase 2 — Web version (iPhone family access)
 - `expo export --platform web` → free static hosting (Vercel/Netlify/GitHub Pages).

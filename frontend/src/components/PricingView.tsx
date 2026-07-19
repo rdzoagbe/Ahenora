@@ -20,6 +20,7 @@ import { PressScale } from './PressScale';
 import { useUI, UIColors } from './Kit';
 import { useStore } from '../store';
 import { Plan, BillingCycle } from '../api';
+import { purchasePremium, restorePurchases } from '../billing';
 
 // Two tiers at launch: Free + Premium (Family Office deferred — see ROADMAP).
 const PLAN_ORDER: Plan[] = ['village', 'executive'];
@@ -36,13 +37,14 @@ interface Props {
 }
 
 export function PricingView({ embedded = false, onAuthRequired }: Props) {
-  const { t, subscription, user } = useStore();
+  const { t, subscription, user, refreshSubscription } = useStore();
   const ui = useUI();
   const styles = useMemo(() => createStyles(ui), [ui]);
   const [cycle, setCycle] = useState<BillingCycle>('yearly');
+  const [busy, setBusy] = useState(false);
   const currentPlan: Plan = subscription?.plan ?? 'village';
 
-  const handleChoose = (plan: Plan) => {
+  const handleChoose = async (plan: Plan) => {
     if (!user) {
       onAuthRequired?.();
       return;
@@ -53,10 +55,51 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
       return;
     }
 
-    Alert.alert(
-      t('price_coming_soon_title'),
-      t('price_coming_soon_msg')
-    );
+    // Downgrades are managed in the Play Store subscription screen, not here.
+    if (plan === 'village') {
+      Alert.alert(t('price_downgrade_title'), t('price_downgrade_msg'));
+      return;
+    }
+
+    if (busy) return;
+    setBusy(true);
+    try {
+      const res = await purchasePremium(user.user_id, cycle);
+      if (!res.available) {
+        // Build without billing natives / store not configured yet.
+        Alert.alert(t('price_coming_soon_title'), t('price_coming_soon_msg'));
+        return;
+      }
+      if (res.cancelled) return;
+      if (res.ok && res.premium) {
+        await refreshSubscription().catch(() => undefined);
+        Alert.alert(t('price_purchase_done_title'), t('price_purchase_done_msg'));
+      } else {
+        Alert.alert(t('price_purchase_failed_title'), t('price_purchase_failed_msg'));
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleRestore = async () => {
+    if (!user || busy) return;
+    setBusy(true);
+    try {
+      const res = await restorePurchases(user.user_id);
+      if (!res.available) {
+        Alert.alert(t('price_coming_soon_title'), t('price_coming_soon_msg'));
+        return;
+      }
+      if (res.ok && res.premium) {
+        await refreshSubscription().catch(() => undefined);
+        Alert.alert(t('price_purchase_done_title'), t('price_purchase_done_msg'));
+      } else {
+        Alert.alert(t('price_restore_title'), t('price_restore_none'));
+      }
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -79,6 +122,11 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
           <Text style={styles.billingNote}>
             {t('price_billing_note')}
           </Text>
+          {user ? (
+            <PressScale onPress={handleRestore} disabled={busy} style={styles.restoreLink}>
+              <Text style={styles.restoreLinkText}>{t('price_restore_title')}</Text>
+            </PressScale>
+          ) : null}
         </View>
 
         <View style={styles.cardsContainer}>
@@ -421,6 +469,8 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     marginTop: 10,
     paddingHorizontal: 20,
   },
+  restoreLink: { alignSelf: 'center', paddingVertical: 8, paddingHorizontal: 12 },
+  restoreLinkText: { color: ui.orange, fontFamily: 'Inter_700Bold', fontSize: 13 },
   savingsText: {
     color: ui.mintText,
     fontFamily: 'Inter_600SemiBold',
