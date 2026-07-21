@@ -117,6 +117,14 @@ Before building anything new, watch the wider audience.
 - **AI Chef (fridge scan):** photograph groceries → reuse the **Gemini vision pipeline** (same as document scan), new prompt → one-tap add missing items to the shopping list. Lives in the **Kitchen tab**. Mostly a new prompt + UI (OTA-friendly).
 - **AI Gift Concierge:** ① birthday field on members → "birthday in 3 days" **feed card** (also retention idea #5), ② Gemini gift suggestions with budget, ③ birthday message + notification, ④ retailer **affiliate link-outs** for revenue (no gift-card *issuance* — payments regulation).
 
+### Phase 5 — Family Operations Suite (deep-value differentiators for busy/large families)
+Post-launch bets that make the app the thing a parent reaches for in a real moment — not on any earlier phase. Ordered by value.
+- **Kid Health Card + Caregiver Mode (flagship, do first in this phase):** a structured, per-child health record — allergies, meds + doses, blood type, pediatrician/dentist, vaccination dates, sizes, emergency contacts — pullable in an ER or handed to a grandparent. Pairs with a shareable, temporary **read-only "Caregiver Mode"** screen for a babysitter/grandparent: allergies, meds, emergency contacts, bedtime routines, house rules, wifi, tonight's dinner, who to call. Stacks on the Vault + the existing co-parent sharing model. Strong **Premium** feature; genuinely absent from competitors. Backend: per-child health docs + a scoped share token (like the invite-link tokens). Mostly OTA (forms + a share sheet).
+- **"Out the door" morning checklist:** per-kid, per-day launch list (water bottle, signed slip, gym kit, homework, library book Tuesdays) that **resets every morning**. Different shape from event-based cards — recurring daily items. OTA-friendly.
+- **"Who has the kids / who's on duty" schedule:** first-class parenting-time / on-duty schedule ("Dad this weekend, Mom next"; "who's on pickup/bedtime tonight"). Big for the separated co-parents we now serve well, useful for together-parents too. Could be a real category differentiator vs generic family apps.
+- **Sibling turn-rotation:** small, cheap, delightful — whose turn for front seat, dinner pick, movie choice. Defuses daily "it's not fair!" fights. Low effort, high charm.
+- **Contacts hub** (folds into Caregiver Mode): pediatrician, dentist, school, other parents, babysitters, emergency — one place, shareable.
+
 ### Parked (only if users ask)
 - **Kid logins** (children checking off their own chores) — flips Play audience to mixed → Families-program compliance. Revisit only on demand.
 - **Tech debt at real scale (~1k users):** vault files base64-in-Mongo → object storage; split the 3,700-line `server.py`; Mongo indexes on `family_id`; PBKDF2 iteration bump.
@@ -124,7 +132,7 @@ Before building anything new, watch the wider audience.
 ### How we execute
 - Same rhythm as the build-out: small branch → `tsc`/`jest`/`py_compile` → PR → merge → **OTA** for JS, **EAS build** for anything native.
 - **New for production:** staged rollouts; watch crash-free rate; always flag build-vs-OTA before shipping.
-- **Recommended sequence:** Stabilize → **Billing** → **Web** → **Polish** → **AI**.
+- **Recommended sequence:** Stabilize → **Billing** (done) → **Web** → **Polish** → **AI** → **Family Ops Suite**.
 
 ---
 
