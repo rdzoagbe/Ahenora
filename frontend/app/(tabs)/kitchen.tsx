@@ -1,7 +1,9 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, View, Text, StyleSheet, TextInput, ScrollView, ActivityIndicator } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { Plus, X, Trash2, ShoppingCart, Check, UtensilsCrossed, Bell, ChevronDown, History, RotateCcw, Sparkles } from 'lucide-react-native';
+import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
+import { Plus, X, Trash2, ShoppingCart, Check, UtensilsCrossed, Bell, ChevronDown, History, RotateCcw, Sparkles, Sun } from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { PressScale } from '../../src/components/PressScale';
@@ -21,6 +23,8 @@ type ToastState = { message: string; tone: ToastTone };
 type KitchenView = 'shop' | 'meal';
 
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+const KEEP_AWAKE_TAG = 'kitchen-screen';
+const KEEP_AWAKE_KEY = 'coo_keep_screen_on';
 
 export default function Kitchen() {
   const { t, lang } = useStore();
@@ -84,6 +88,32 @@ export default function Kitchen() {
   }, [load]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  // Keep the screen awake while shopping / following a recipe — the phone
+  // shouldn't dim mid-aisle or on step 3. On by default; a toggle lets users
+  // opt out (persisted). Only held while the Kitchen tab is focused, so it
+  // never drains battery elsewhere.
+  const [keepAwake, setKeepAwake] = useState(true);
+  useEffect(() => {
+    AsyncStorage.getItem(KEEP_AWAKE_KEY)
+      .then((v) => { if (v === '0') setKeepAwake(false); })
+      .catch(() => undefined);
+  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      if (keepAwake) activateKeepAwakeAsync(KEEP_AWAKE_TAG).catch(() => undefined);
+      return () => { deactivateKeepAwake(KEEP_AWAKE_TAG).catch(() => undefined); };
+    }, [keepAwake]),
+  );
+  const toggleKeepAwake = useCallback(() => {
+    setKeepAwake((prev) => {
+      const next = !prev;
+      AsyncStorage.setItem(KEEP_AWAKE_KEY, next ? '1' : '0').catch(() => undefined);
+      if (next) activateKeepAwakeAsync(KEEP_AWAKE_TAG).catch(() => undefined);
+      else deactivateKeepAwake(KEEP_AWAKE_TAG).catch(() => undefined);
+      return next;
+    });
+  }, []);
 
   const addShopItem = useCallback(async () => {
     // "milk, eggs, bread" (or one per line) adds them all in one tap.
@@ -414,6 +444,14 @@ export default function Kitchen() {
             </View>
           ) : null}
         </View>
+
+        {/* Keep the screen awake while shopping / cooking */}
+        <PressScale testID="kitchen-keep-awake" onPress={toggleKeepAwake} style={[styles.keepAwake, keepAwake && styles.keepAwakeOn]}>
+          <Sun color={keepAwake ? ui.orange : ui.muted} size={16} />
+          <Text style={[styles.keepAwakeText, keepAwake && { color: ui.orange }]}>
+            {keepAwake ? t('kitchen_screen_on') : t('kitchen_screen_on_off')}
+          </Text>
+        </PressScale>
 
         {/* SHOPPING LIST */}
         {view === 'shop' ? (
@@ -826,6 +864,9 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   empty: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 13, textAlign: 'center', paddingVertical: 14 },
   mealDayLabel: { color: ui.lavenderText, fontFamily: 'Inter_800ExtraBold', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 8, marginBottom: 2 },
   mealTip: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, lineHeight: 19, marginTop: 12 },
+  keepAwake: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 6, marginTop: 12, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 99, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.card },
+  keepAwakeOn: { borderColor: ui.orange + '55', backgroundColor: ui.orangeSoft },
+  keepAwakeText: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 12.5 },
   mealEmptyWrap: { alignItems: 'center', paddingVertical: 6 },
   mealActions: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
   clearAllBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 12, paddingVertical: 9, borderRadius: 99, backgroundColor: ui.dangerSoft },

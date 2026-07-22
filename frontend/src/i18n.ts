@@ -12,6 +12,8 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  "kitchen_screen_on": "Screen stays on",
+  "kitchen_screen_on_off": "Keep screen on",
   "preview_banner_title": "You're previewing Premium — free during testing",
   "preview_banner_body": "At launch this becomes part of Premium ($6.99/mo or $49.99/yr).",
   "preview_banner_cta": "See plans",
@@ -895,6 +897,8 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  "kitchen_screen_on": "Pantalla siempre activa",
+  "kitchen_screen_on_off": "Mantener pantalla activa",
   "preview_banner_title": "Estás probando Premium — gratis durante las pruebas",
   "preview_banner_body": "En el lanzamiento esto formará parte de Premium (6,99 $/mes o 49,99 $/año).",
   "preview_banner_cta": "Ver planes",
@@ -1772,6 +1776,8 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  "kitchen_screen_on": "Écran toujours allumé",
+  "kitchen_screen_on_off": "Garder l’écran allumé",
   "preview_banner_title": "Vous découvrez Premium — gratuit pendant les tests",
   "preview_banner_body": "Au lancement, ceci fera partie de Premium (6,99 $/mois ou 49,99 $/an).",
   "preview_banner_cta": "Voir les offres",
@@ -2649,6 +2655,8 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  "kitchen_screen_on": "Bildschirm bleibt an",
+  "kitchen_screen_on_off": "Bildschirm anlassen",
   "preview_banner_title": "Du testest Premium — kostenlos während der Testphase",
   "preview_banner_body": "Zum Start wird dies Teil von Premium (6,99 $/Monat oder 49,99 $/Jahr).",
   "preview_banner_cta": "Tarife ansehen",
