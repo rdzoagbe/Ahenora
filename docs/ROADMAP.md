@@ -107,6 +107,15 @@ Before building anything new, watch the wider audience.
 - Add the **web origin** to Google OAuth allowed origins + backend `ALLOWED_ORIGINS` (CORS).
 - Positioning: companion access for iPhone family members — not a full iOS app (that's the $99/yr Apple program, later, when revenue justifies).
 
+**Native iOS app (later, when revenue justifies — NO Mac required):**
+- Build/ship entirely from the cloud: **EAS Build compiles iOS on Expo's macOS servers** (`eas build --platform ios`), `eas submit --platform ios` uploads to App Store Connect, listing/review done in-browser. EAS generates + manages signing certs/provisioning profiles in the cloud (the thing that used to need a Mac). Same pipeline as our Android AAB.
+- Cost: **Apple Developer Program $99/yr (recurring**, vs Google's one-time $25).
+- iOS-specific work (code/config, not hardware), required before it'll pass review:
+  - **Sign in with Apple** — Apple mandates it as an option whenever a third-party login is offered, and we use Google Sign-In. Must add.
+  - **Apple IAP** — purchases must use StoreKit, not Play Billing. RevenueCat abstracts both, but set up products a 2nd time in App Store Connect + an iOS RC app.
+  - **In-app account deletion** button (accounts exist → App Store guideline).
+  - Verify native modules are iOS-compatible; review is slower/pickier than Google.
+
 ### Phase 3 — Platform polish (ranking + engagement)
 - **Android home-screen widget** (today's tasks) — native build. `react-native-android-widget` or a small native module + config plugin.
 - **Tablet / landscape** — unlock the portrait lock in `app.json`; lean on existing `useBreakpoint` responsive layouts; polish large screens (Play ranking factor). Native build for the orientation change.
