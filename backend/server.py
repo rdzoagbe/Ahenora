@@ -2892,6 +2892,201 @@ async def import_google_calendar(payload: CalendarImportIn, user=Depends(require
     }
 
 
+def _parse_ms_event_start(event: dict):
+    start = event.get("start") or {}
+    dt_str = str(start.get("dateTime") or "").strip()
+    if not dt_str:
+        return None
+    # Graph returns up to 7 fractional digits; Python's fromisoformat takes 6.
+    if "." in dt_str:
+        head, frac = dt_str.split(".", 1)
+        frac = "".join(ch for ch in frac if ch.isdigit())[:6]
+        dt_str = f"{head}.{frac}" if frac else head
+    try:
+        dt = datetime.fromisoformat(dt_str)
+    except ValueError:
+        return None
+    # We request Prefer: outlook.timezone="UTC", so naive values are UTC.
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _ms_event_contacts(event: dict) -> list[dict]:
+    seen: set[str] = set()
+    contacts: list[dict] = []
+    org = (event.get("organizer") or {}).get("emailAddress") or {}
+    people = [org] + [(a.get("emailAddress") or {}) for a in (event.get("attendees") or [])]
+    for person in people:
+        email = str(person.get("address") or "").strip().lower()
+        if email and email not in seen:
+            seen.add(email)
+            contacts.append({"email": email, "name": person.get("name") or email.split("@")[0]})
+    return contacts
+
+
+async def _fetch_microsoft_calendar_events(access_token: str, days: int) -> list[dict]:
+    now = utcnow()
+    start = now.isoformat().replace("+00:00", "Z")
+    end = (now + timedelta(days=days)).isoformat().replace("+00:00", "Z")
+    params = urllib.parse.urlencode({
+        "startDateTime": start,
+        "endDateTime": end,
+        "$orderby": "start/dateTime",
+        "$top": "100",
+        "$select": "id,subject,start,end,location,bodyPreview,webLink,attendees,isCancelled,organizer,iCalUId",
+    })
+    url = f"https://graph.microsoft.com/v1.0/me/calendarView?{params}"
+
+    def _request():
+        req = urllib.request.Request(
+            url,
+            headers={"Authorization": f"Bearer {access_token}", "Prefer": 'outlook.timezone="UTC"'},
+            method="GET",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=20) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8", errors="replace")
+            # Remap upstream auth failures so the app doesn't read them as an
+            # expired session (which would sign the user out).
+            if e.code in (401, 403):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Outlook access was denied or expired. Please reconnect your Microsoft account and try again.",
+                )
+            raise HTTPException(status_code=502, detail=f"Outlook Calendar error: {body[:200]}")
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"Outlook Calendar request failed: {e}")
+
+    data = await asyncio.to_thread(_request)
+    return data.get("value") or []
+
+
+@app.post("/api/calendar/import-microsoft")
+async def import_microsoft_calendar(payload: CalendarImportIn, user=Depends(require_user)):
+    """Import upcoming Outlook/Microsoft events via Graph — mirror of the Google
+    import. Takes a delegated access token from the app (public-client PKCE),
+    so no client secret lives on our side."""
+    database = get_db()
+
+    token = payload.access_token.strip()
+    if not token:
+        raise HTTPException(status_code=400, detail="Microsoft access token is required")
+
+    days = max(1, min(payload.days or 30, 90))
+    events = await _fetch_microsoft_calendar_events(token, days)
+
+    imported = 0
+    skipped = 0
+    contacts_found: dict[str, dict] = {}
+
+    for event in events:
+        if event.get("isCancelled"):
+            skipped += 1
+            continue
+
+        event_id = event.get("id")
+        if not event_id:
+            skipped += 1
+            continue
+
+        start_dt = _parse_ms_event_start(event)
+        if not start_dt:
+            skipped += 1
+            continue
+
+        existing = await database["cards"].find_one(
+            {"family_id": user["family_id"], "ms_event_id": event_id},
+            {"_id": 0},
+        )
+        if existing:
+            skipped += 1
+            continue
+
+        title = (event.get("subject") or "Calendar event").strip()
+        location = ((event.get("location") or {}).get("displayName") or "").strip()
+        web_link = event.get("webLink")
+        contacts = _ms_event_contacts(event)
+
+        for contact in contacts:
+            email = contact["email"]
+            contacts_found[email] = contact
+            await database["calendar_contacts"].update_one(
+                {"family_id": user["family_id"], "email": email},
+                {
+                    "$set": {
+                        "name": contact.get("name") or email.split("@")[0],
+                        "last_seen_at": utcnow(),
+                        "last_event_title": title,
+                    },
+                    "$setOnInsert": {
+                        "family_id": user["family_id"],
+                        "email": email,
+                        "first_seen_at": utcnow(),
+                    },
+                    "$inc": {"event_count": 1},
+                },
+                upsert=True,
+            )
+
+        contact_line = ("People: " + ", ".join([c["email"] for c in contacts[:8]])) if contacts else ""
+        description_parts = [
+            (event.get("bodyPreview") or "").strip(),
+            f"Location: {location}" if location else "",
+            contact_line,
+            f"Outlook: {web_link}" if web_link else "",
+        ]
+
+        card = {
+            "card_id": new_id("card"),
+            "family_id": user["family_id"],
+            "type": "TASK",
+            "title": title,
+            "description": "\n".join([p for p in description_parts if p]),
+            "assignee": user.get("name"),
+            "due_date": start_dt,
+            "status": "OPEN",
+            "source": "CALENDAR",
+            "image_base64": None,
+            "recurrence": "none",
+            "reminder_minutes": 60,
+            "ms_event_id": event_id,
+            "google_ical_uid": event.get("iCalUId"),
+            "external_source": "microsoft_calendar",
+            "created_at": utcnow(),
+            "completed_at": None,
+            # Personal by default — imported events stay private until shared.
+            "created_by_user_id": user["user_id"],
+            "shared": False,
+        }
+
+        await database["cards"].insert_one(card)
+        imported += 1
+
+    contacts = []
+    if contacts_found:
+        cursor = database["calendar_contacts"].find(
+            {"family_id": user["family_id"], "email": {"$in": list(contacts_found.keys())}},
+            {"_id": 0},
+        ).sort("last_seen_at", -1)
+        async for item in cursor:
+            contacts.append(public_calendar_contact(item))
+
+    return {
+        "ok": True,
+        "imported": imported,
+        "skipped": skipped,
+        "events_seen": len(events),
+        "contacts_found": len(contacts_found),
+        "contacts": contacts,
+        "days": days,
+    }
+
+
 @app.get("/api/calendar/contacts")
 async def calendar_contacts(user=Depends(require_user)):
     database = get_db()
