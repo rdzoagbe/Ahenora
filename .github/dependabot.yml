@@ -37,6 +37,12 @@ updates:
           - "typescript"
           - "eslint"
           - "@typescript-eslint/*"
+      # Catch-all: bundle every other npm update (incl. security) into ONE PR
+      # instead of a flood. Assigned after frontend-tooling, so tooling still
+      # groups separately.
+      frontend:
+        patterns:
+          - "*"
 
   - package-ecosystem: "pip"
     directory: "/backend"
@@ -46,6 +52,10 @@ updates:
       time: "09:15"
       timezone: "Europe/Paris"
     open-pull-requests-limit: 3
+    groups:
+      backend:
+        patterns:
+          - "*"
 
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -55,3 +65,7 @@ updates:
       time: "09:30"
       timezone: "Europe/Paris"
     open-pull-requests-limit: 2
+    groups:
+      actions:
+        patterns:
+          - "*"
