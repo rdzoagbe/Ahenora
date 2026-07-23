@@ -609,6 +609,11 @@ export const api = {
       method: 'POST',
       body: { access_token, days },
     }),
+  importMicrosoftCalendar: (access_token: string, days = 30) =>
+    request<CalendarImportResult>('/calendar/import-microsoft', {
+      method: 'POST',
+      body: { access_token, days },
+    }),
   listCalendarContacts: () => request<CalendarContact[]>('/calendar/contacts'),
   // Family
   familyMembers: () => {

@@ -12,6 +12,12 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  "cal_import": "Import calendar",
+  "cal_import_title": "Import calendar",
+  "cal_import_subtitle": "Choose where to bring your events in from.",
+  "cal_import_google": "Google Calendar",
+  "cal_import_outlook": "Outlook / Microsoft",
+  "cal_import_both": "Both",
   "kitchen_screen_on": "Screen stays on",
   "kitchen_screen_on_off": "Keep screen on",
   "preview_banner_title": "You're previewing Premium — free during testing",
@@ -897,6 +903,12 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  "cal_import": "Importar calendario",
+  "cal_import_title": "Importar calendario",
+  "cal_import_subtitle": "Elige de dónde traer tus eventos.",
+  "cal_import_google": "Google Calendar",
+  "cal_import_outlook": "Outlook / Microsoft",
+  "cal_import_both": "Ambos",
   "kitchen_screen_on": "Pantalla siempre activa",
   "kitchen_screen_on_off": "Mantener pantalla activa",
   "preview_banner_title": "Estás probando Premium — gratis durante las pruebas",
@@ -1776,6 +1788,12 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  "cal_import": "Importer l'agenda",
+  "cal_import_title": "Importer un agenda",
+  "cal_import_subtitle": "Choisissez d'où importer vos événements.",
+  "cal_import_google": "Google Agenda",
+  "cal_import_outlook": "Outlook / Microsoft",
+  "cal_import_both": "Les deux",
   "kitchen_screen_on": "Écran toujours allumé",
   "kitchen_screen_on_off": "Garder l’écran allumé",
   "preview_banner_title": "Vous découvrez Premium — gratuit pendant les tests",
@@ -2655,6 +2673,12 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  "cal_import": "Kalender importieren",
+  "cal_import_title": "Kalender importieren",
+  "cal_import_subtitle": "Wähle, woher deine Termine kommen sollen.",
+  "cal_import_google": "Google Kalender",
+  "cal_import_outlook": "Outlook / Microsoft",
+  "cal_import_both": "Beide",
   "kitchen_screen_on": "Bildschirm bleibt an",
   "kitchen_screen_on_off": "Bildschirm anlassen",
   "preview_banner_title": "Du testest Premium — kostenlos während der Testphase",
