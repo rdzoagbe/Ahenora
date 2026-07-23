@@ -3,6 +3,7 @@ import { ActivityIndicator, Alert, Linking, Platform, Pressable, StyleSheet, Tex
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from 'expo-router';
 import * as Google from 'expo-auth-session/providers/google';
+import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { CalendarDays, Car, CheckCircle2, ChevronLeft, ChevronRight, Clock, ExternalLink, Eye, Lock, MapPin, Plus, RefreshCw, Trash2, User, Users, Video, X } from 'lucide-react-native';
@@ -27,6 +28,16 @@ const TYPE_COLOR: Record<string, string> = {
 };
 
 const GOOGLE_CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.events.readonly';
+
+// Microsoft/Outlook import via expo-auth-session (public-client PKCE, no secret).
+// Client ID is public (ships in the app, like the Google IDs); env override wins.
+const MS_CLIENT_ID =
+  process.env.EXPO_PUBLIC_MICROSOFT_CLIENT_ID?.trim() || 'd9a47680-a27e-4b02-8013-bd946c099f9e';
+const MS_DISCOVERY = {
+  authorizationEndpoint: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
+  tokenEndpoint: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+};
+const MS_SCOPES = ['openid', 'profile', 'email', 'offline_access', 'Calendars.Read', 'User.Read'];
 
 // Silent auto-sync: don't re-pull Google more than once every 6h, and remember
 // which upcoming items we've already surfaced so "new on your agenda" only fires
@@ -223,6 +234,13 @@ export default function Calendar() {
     webClientId,
     scopes: ['openid', 'profile', 'email', GOOGLE_CALENDAR_SCOPE],
   });
+
+  const msRedirectUri = useMemo(() => AuthSession.makeRedirectUri({ scheme: 'householdcoo', path: 'auth' }), []);
+  const [msRequest, msResponse, msPromptAsync] = AuthSession.useAuthRequest(
+    { clientId: MS_CLIENT_ID, scopes: MS_SCOPES, redirectUri: msRedirectUri, usePKCE: true },
+    MS_DISCOVERY,
+  );
+  const handledMsResponseRef = useRef(false);
 
   const ui = useUI();
   const styles = useMemo(() => createStyles(ui), [ui]);
@@ -536,6 +554,72 @@ export default function Calendar() {
     }
   };
 
+  // Microsoft/Outlook: exchange the PKCE code for a token, then import via Graph.
+  useEffect(() => {
+    const importMs = async () => {
+      if (!msResponse || handledMsResponseRef.current) return;
+      if (msResponse.type !== 'success') {
+        if (msResponse.type === 'error') Alert.alert(t('cal_calendar_sync_failed'), t('cal_permission_not_granted'));
+        return;
+      }
+      const code = msResponse.params?.code;
+      if (!code || !msRequest) return;
+      handledMsResponseRef.current = true;
+      setSyncing(true);
+      try {
+        const tokenResult = await AuthSession.exchangeCodeAsync(
+          {
+            clientId: MS_CLIENT_ID,
+            code,
+            redirectUri: msRedirectUri,
+            extraParams: msRequest.codeVerifier ? { code_verifier: msRequest.codeVerifier } : {},
+          },
+          MS_DISCOVERY,
+        );
+        const accessToken = tokenResult.accessToken;
+        if (!accessToken) {
+          Alert.alert(t('cal_calendar_sync_failed'), t('cal_google_no_access_token'));
+          return;
+        }
+        const result = await api.importMicrosoftCalendar(accessToken, 30);
+        setSyncResult(result);
+        await load();
+        Alert.alert(t('cal_calendar_synced'), `${result.imported} ${t('cal_events_imported')}. ${result.contacts_found} ${t('cal_people_found')}.`);
+      } catch (e: any) {
+        logger.warn('microsoft calendar sync failed', e);
+        Alert.alert(t('cal_calendar_sync_failed'), e?.message || t('cal_please_try_again'));
+      } finally {
+        setSyncing(false);
+        handledMsResponseRef.current = false;
+      }
+    };
+    importMs();
+  }, [msResponse, load]);
+
+  const syncMicrosoft = async () => {
+    setSyncResult(null);
+    if (!msRequest) {
+      Alert.alert(t('cal_google_not_ready'), t('cal_try_again_moment'));
+      return;
+    }
+    await msPromptAsync();
+  };
+
+  // "Import calendar" → pick a provider. Google keeps its existing flow; Outlook
+  // runs the Microsoft PKCE flow; Both runs Google then Outlook.
+  const openImportPicker = () => {
+    Alert.alert(
+      t('cal_import_title'),
+      t('cal_import_subtitle'),
+      [
+        { text: t('cal_import_google'), onPress: () => { syncCalendar(); } },
+        { text: t('cal_import_outlook'), onPress: () => { syncMicrosoft(); } },
+        { text: t('cal_import_both'), onPress: async () => { await syncCalendar(); await syncMicrosoft(); } },
+        { text: t('cal_cancel'), style: 'cancel' },
+      ],
+    );
+  };
+
   const shiftMonth = (amount: number) => {
     setActiveMonth((current) => new Date(current.getFullYear(), current.getMonth() + amount, 1));
     setSelectedDay(null);
@@ -564,15 +648,15 @@ export default function Calendar() {
             title={monthTitle}
             titleSize={30}
             right={
-              <PressScale testID="sync-google-calendar" onPress={syncCalendar} disabled={syncDisabled} style={[styles.syncBtn, syncDisabled && { opacity: 0.55 }]}>
+              <PressScale testID="sync-google-calendar" onPress={openImportPicker} disabled={syncDisabled} style={[styles.syncBtn, syncDisabled && { opacity: 0.55 }]}>
                 {syncing ? <ActivityIndicator color="#FFFFFF" size="small" /> : <RefreshCw color="#FFFFFF" size={16} />}
-                <Text style={styles.syncText}>{syncing ? t('cal_syncing') : t('cal_sync')}</Text>
+                <Text style={styles.syncText}>{syncing ? t('cal_syncing') : t('cal_import')}</Text>
               </PressScale>
             }
           />
 
           {/* Connection banner (tap to sync — keeps the sync card visible & functional) */}
-          <PressScale testID="calendar-sync-card-button" onPress={syncCalendar} disabled={syncDisabled} style={styles.bannerGap}>
+          <PressScale testID="calendar-sync-card-button" onPress={openImportPicker} disabled={syncDisabled} style={styles.bannerGap}>
             <KitCard style={styles.banner}>
               <View testID="calendar-sync-card" style={styles.bannerInner}>
                 <IconTile bg={ui.orangeSoft} size={40} radius={13}><CalendarDays color={ui.orange} size={20} /></IconTile>
@@ -656,12 +740,12 @@ export default function Calendar() {
               <Text style={styles.emptyHint}>{t('cal_empty_hint')}</Text>
               <PressScale
                 testID="calendar-empty-sync"
-                onPress={syncCalendar}
+                onPress={openImportPicker}
                 disabled={syncDisabled}
                 style={[styles.emptySyncBtn, syncDisabled && { opacity: 0.55 }]}
               >
                 <RefreshCw color={ui.orange} size={15} />
-                <Text style={styles.emptySyncText}>{syncing ? t('cal_syncing') : t('cal_sync')}</Text>
+                <Text style={styles.emptySyncText}>{syncing ? t('cal_syncing') : t('cal_import')}</Text>
               </PressScale>
             </KitCard>
           ) : (
