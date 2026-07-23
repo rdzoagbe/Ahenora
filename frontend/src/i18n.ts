@@ -12,6 +12,8 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  "set_replay_setup": "Replay setup",
+  "set_replay_setup_sub": "Walk through the guided setup again",
   "ob_step_of": "Step {n} of {total}",
   "ob_task_title": "Create your first task",
   "ob_task_hint": "Something small. You can change it later.",
@@ -313,7 +315,7 @@ const en: Dict = {
   acc_calendar_sync: "Calendar sync",
   acc_session_healthy: "Session healthy",
   acc_open_calendar: "Open the family calendar",
-  acc_signin_health: "Sign-in health",
+  acc_signin_health: "Connection status",
   acc_checking: "Checking...",
   acc_verify_session: "Verify token, backend & session",
   acc_check: "Check",
@@ -952,6 +954,8 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  "set_replay_setup": "Repetir configuración",
+  "set_replay_setup_sub": "Vuelve a hacer la configuración guiada",
   "ob_step_of": "Paso {n} de {total}",
   "ob_task_title": "Crea tu primera tarea",
   "ob_task_hint": "Algo sencillo. Puedes cambiarlo luego.",
@@ -1253,7 +1257,7 @@ const es: Dict = {
   acc_calendar_sync: "Sincronización del calendario",
   acc_session_healthy: "Sesión activa",
   acc_open_calendar: "Abrir el calendario familiar",
-  acc_signin_health: "Estado del inicio de sesión",
+  acc_signin_health: "Estado de conexión",
   acc_checking: "Comprobando...",
   acc_verify_session: "Verificar token, servidor y sesión",
   acc_check: "Comprobar",
@@ -1886,6 +1890,8 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  "set_replay_setup": "Refaire la configuration",
+  "set_replay_setup_sub": "Refaites la configuration guidée",
   "ob_step_of": "Étape {n} sur {total}",
   "ob_task_title": "Créez votre première tâche",
   "ob_task_hint": "Quelque chose de simple. Vous pourrez la changer plus tard.",
@@ -2820,6 +2826,8 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  "set_replay_setup": "Einrichtung wiederholen",
+  "set_replay_setup_sub": "Die geführte Einrichtung erneut durchlaufen",
   "ob_step_of": "Schritt {n} von {total}",
   "ob_task_title": "Erstelle deine erste Aufgabe",
   "ob_task_hint": "Etwas Kleines. Du kannst es später ändern.",
@@ -3121,7 +3129,7 @@ const de: Dict = {
   acc_calendar_sync: "Kalendersynchronisierung",
   acc_session_healthy: "Sitzung aktiv",
   acc_open_calendar: "Familienkalender öffnen",
-  acc_signin_health: "Anmeldestatus",
+  acc_signin_health: "Verbindungsstatus",
   acc_checking: "Wird geprüft...",
   acc_verify_session: "Token, Backend & Sitzung prüfen",
   acc_check: "Prüfen",

@@ -652,6 +652,14 @@ export default function Settings() {
           <SectionTitle style={styles.sectionGap}>{t('set_more')}</SectionTitle>
           <Card style={styles.cardPad}>
             <NavRow
+              testID="settings-replay-setup"
+              tile={<IconTile bg={ui.orangeSoft}><Sparkles color={ui.orange} size={18} /></IconTile>}
+              title={t('set_replay_setup')}
+              subtitle={t('set_replay_setup_sub')}
+              right={<ChevronRight color={ui.muted} size={18} />}
+              onPress={() => router.push('/onboarding')}
+            />
+            <NavRow
               testID="settings-completed-history-toggle"
               tile={<IconTile bg={ui.soft}><CalendarDays color={ui.text} size={18} /></IconTile>}
               title={t('set_completed_history')}
