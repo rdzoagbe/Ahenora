@@ -116,6 +116,17 @@ Before building anything new, watch the wider audience.
   - **In-app account deletion** button (accounts exist → App Store guideline).
   - Verify native modules are iOS-compatible; review is slower/pickier than Google.
 
+### Phase 2b — Outlook / Microsoft calendar import (meet families where they are)
+Many parents live in work-Outlook, and co-parents are often split (one Google, one Microsoft). The Calendar "Sync" becomes **"Import calendar"** with a provider dropdown: **Google · Outlook · Both**.
+- **Backend: DONE** — `POST /api/calendar/import-microsoft` (Microsoft Graph `/me/calendarView`, mirror of the Google import; dedup by `ms_event_id`, `external_source: "microsoft_calendar"`, private-by-default). Takes a delegated token from the app — no secret server-side.
+- **Frontend (to build):** Microsoft sign-in via **`expo-auth-session`** (already in the build → OTA-safe, no new native module), PKCE public-client flow, scopes `Calendars.Read offline_access openid profile email User.Read`; provider dropdown; "Both" runs both flows.
+- **Azure app registration (Household COO, client ID `d9a47680-…`) — user action needed:**
+  1. **Supported account types → "any org directory + personal Microsoft accounts"** (currently "Multiple organizations" = work/school only → would exclude outlook.com/hotmail family users). **Blocker.**
+  2. Add a **mobile/public-client redirect URI** (Authentication → Add platform → Mobile) — exact value TBD from the Expo scheme.
+  3. **API permissions → Microsoft Graph → Calendars.Read** (delegated) + offline_access/openid/profile/email.
+  4. **No certificate / client secret** — mobile is a public client (PKCE). Leave Certificates & secrets empty.
+  5. Multi-tenant + personal accounts may need **publisher verification (MPN ID)** to avoid consent friction.
+
 ### Phase 3 — Platform polish (ranking + engagement)
 - **Android home-screen widget** (today's tasks) — native build. `react-native-android-widget` or a small native module + config plugin.
 - **Tablet / landscape** — unlock the portrait lock in `app.json`; lean on existing `useBreakpoint` responsive layouts; polish large screens (Play ranking factor). Native build for the orientation change.
