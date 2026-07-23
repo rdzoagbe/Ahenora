@@ -127,6 +127,13 @@ Many parents live in work-Outlook, and co-parents are often split (one Google, o
   4. **No certificate / client secret** — mobile is a public client (PKCE). Leave Certificates & secrets empty.
   5. Multi-tenant + personal accounts may need **publisher verification (MPN ID)** to avoid consent friction.
 
+### Phase 2c — "Sign in with Microsoft" (post-launch auth enhancement)
+Natural follow-on to Outlook import, but a **separate concern**: import gets a *calendar access token*; sign-in needs an *identity token* + account creation. Import already works for Google/email users **without** this, so it's a convenience, not a gap.
+- **Mostly reuse** — the Azure app + `expo-auth-session` plumbing exist, and we already request `openid`/`email` scopes. Frontend is ~80% there.
+- **Backend (the real work):** verify the Microsoft ID token (issuer/audience/JWKS, mirror the Google ID-token path) → find-or-create user.
+- **The wrinkle — account linking:** dedup by email so a parent who signed up with Google and later uses "Sign in with Microsoft" (or a different email) doesn't create a duplicate account/family. This is why it's **post-launch, not pre-launch** — auth changes lock people out if rushed.
+- Do it once Google + email conversion data is in and the app is stable; ship with careful identity testing.
+
 ### Phase 3 — Platform polish (ranking + engagement)
 - **Android home-screen widget** (today's tasks) — native build. `react-native-android-widget` or a small native module + config plugin.
 - **Tablet / landscape** — unlock the portrait lock in `app.json`; lean on existing `useBreakpoint` responsive layouts; polish large screens (Play ranking factor). Native build for the orientation change.
