@@ -1905,7 +1905,7 @@ const fr: Dict = {
   "ob_invite_title": "Invitez un membre de la famille",
   "ob_invite_hint": "Facultatif. Vous pouvez inviter quelqu’un plus tard depuis les Réglages.",
   "ob_invite_placeholder": "conjoint@email.com",
-  "ob_ready_title": "Vous êtes prêt.",
+  "ob_ready_title": "Tout est prêt.",
   "ob_ready_hint": "Votre foyer est configuré. Respirez — on s’occupe du reste.",
   "ob_go_dashboard": "Aller au tableau de bord",
   "ob_chip_task": "Première tâche",
