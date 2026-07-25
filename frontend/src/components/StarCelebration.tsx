@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { Animated, StyleSheet, Text } from 'react-native';
 import { useStore } from '../store';
 
@@ -34,6 +34,10 @@ export function StarCelebration({ content, onDone }: Props) {
   const scale = useRef(new Animated.Value(0.3)).current;
   const opacity = useRef(new Animated.Value(0)).current;
   const rise = useRef(new Animated.Value(0)).current;
+  // The parent passes an inline onDone; keep it in a ref so a mid-celebration
+  // re-render (e.g. the history refresh) can't restart the animation.
+  const onDoneRef = useRef(onDone);
+  onDoneRef.current = onDone;
 
   useEffect(() => {
     if (!content) return;
@@ -51,20 +55,24 @@ export function StarCelebration({ content, onDone }: Props) {
         Animated.timing(rise, { toValue: -26, duration: 350, useNativeDriver: true }),
       ]),
     ]).start(({ finished }) => {
-      if (finished) onDone();
+      if (finished) onDoneRef.current();
     });
-  }, [content, scale, opacity, rise, onDone]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [content]);
+
+  // Chore-specific praise when we know the chore; otherwise rotate the generic
+  // pool. Picked once per celebration (not per render) so the line never
+  // switches mid-animation. Hook stays above the early return (rules of hooks).
+  const isStars = content?.kind === 'stars';
+  const chorePool = content?.kind === 'stars' && content.chore ? CHORE_PRAISE[content.chore] : null;
+  const pool = chorePool ?? PRAISE_KEYS;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const praiseIndex = useMemo(() => Math.floor(Date.now() / 1000) % pool.length, [content]);
 
   if (content === null) return null;
 
-  const isStars = content.kind === 'stars';
   const burst = isStars ? '🎉' : '🎁';
-  const headline = isStars ? `+${content.amount} ⭐` : content.title;
-  // Chore-specific praise when we know the chore; otherwise rotate the generic
-  // pool. Seeded by the clock so repeats of the same chore vary.
-  const chorePool = isStars && content.chore ? CHORE_PRAISE[content.chore] : null;
-  const pool = chorePool ?? PRAISE_KEYS;
-  const praiseIndex = Math.floor(Date.now() / 1000) % pool.length;
+  const headline = content.kind === 'stars' ? `+${content.amount} ⭐` : content.title;
   const subtitle = isStars ? t(pool[praiseIndex]) : t('kids_reward_enjoy');
 
   return (
