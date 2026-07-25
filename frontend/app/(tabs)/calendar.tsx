@@ -604,7 +604,7 @@ export default function Calendar() {
             </View>
 
             <View style={[styles.weekHeader, { width: gridWidth }]}>
-              {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, index) => (
+              {['day_sunday', 'day_monday', 'day_tuesday', 'day_wednesday', 'day_thursday', 'day_friday', 'day_saturday'].map((k) => t(k).charAt(0).toUpperCase()).map((day, index) => (
                 <Text key={`${day}-${index}`} style={[styles.weekLabel, { width: daySize }]}>{day}</Text>
               ))}
             </View>

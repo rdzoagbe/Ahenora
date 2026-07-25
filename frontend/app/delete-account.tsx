@@ -7,7 +7,7 @@ import { useStore } from '../src/store';
 const SUPPORT_EMAIL = 'rolanddzoagbe@gmail.com';
 
 export default function DeleteAccountScreen() {
-  const { user, theme } = useStore();
+  const { user, theme, t } = useStore();
   const [email, setEmail] = useState(user?.email || '');
   const [reason, setReason] = useState('');
 
@@ -62,7 +62,7 @@ export default function DeleteAccountScreen() {
         ]}
       />
       <View style={[styles.floatingForm, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder, shadowColor: theme.colors.shadow }]}>
-        <Text style={[styles.formTitle, { color: theme.colors.text }]}>Deletion request</Text>
+        <Text style={[styles.formTitle, { color: theme.colors.text }]}>{t('del_title')}</Text>
         <TextInput
           testID="delete-account-email"
           value={email}
@@ -70,7 +70,7 @@ export default function DeleteAccountScreen() {
           autoCapitalize="none"
           autoCorrect={false}
           keyboardType="email-address"
-          placeholder="your.email@example.com"
+          placeholder={t('del_email_ph')}
           placeholderTextColor={theme.colors.textSoft}
           style={[styles.input, { color: theme.colors.text, backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}
         />
@@ -78,13 +78,13 @@ export default function DeleteAccountScreen() {
           testID="delete-account-reason"
           value={reason}
           onChangeText={setReason}
-          placeholder="Reason, optional"
+          placeholder={t('del_reason_ph')}
           placeholderTextColor={theme.colors.textSoft}
           style={[styles.input, styles.reasonInput, { color: theme.colors.text, backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}
           multiline
         />
         <PressScale testID="send-delete-account-request" onPress={sendDeletionRequest} style={[styles.button, { backgroundColor: theme.colors.primary }]}>
-          <Text style={[styles.buttonText, { color: theme.colors.primaryText }]}>Email deletion request</Text>
+          <Text style={[styles.buttonText, { color: theme.colors.primaryText }]}>{t('del_button')}</Text>
         </PressScale>
         <Text style={[styles.help, { color: theme.colors.textMuted }]}>Support: {SUPPORT_EMAIL}</Text>
       </View>

@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
+import { useStore } from '../src/store';
 
 // Redirect target for the Microsoft/Outlook OAuth flow (householdcoo://auth).
 // Completing the auth session here hands the code back to the pending
@@ -11,6 +12,7 @@ WebBrowser.maybeCompleteAuthSession();
 
 export default function AuthRedirect() {
   const router = useRouter();
+  const { t } = useStore();
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -22,7 +24,7 @@ export default function AuthRedirect() {
   return (
     <View style={styles.container}>
       <ActivityIndicator color="#fff" />
-      <Text style={styles.text}>Finishing calendar connection…</Text>
+      <Text style={styles.text}>{t('auth_finishing')}</Text>
     </View>
   );
 }

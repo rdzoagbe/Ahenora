@@ -12,6 +12,20 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  "day_monday": "Monday",
+  "day_tuesday": "Tuesday",
+  "day_wednesday": "Wednesday",
+  "day_thursday": "Thursday",
+  "day_friday": "Friday",
+  "day_saturday": "Saturday",
+  "day_sunday": "Sunday",
+  "set_completed_card": "completed card",
+  "set_completed_cards": "completed cards",
+  "auth_finishing": "Finishing calendar connection…",
+  "del_title": "Deletion request",
+  "del_email_ph": "your.email@example.com",
+  "del_reason_ph": "Reason (optional)",
+  "del_button": "Email deletion request",
   "feed_pill_imported": "Calendar",
   "type_birthday": "Birthday",
   "type_school": "School",
@@ -919,6 +933,20 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  "day_monday": "Lunes",
+  "day_tuesday": "Martes",
+  "day_wednesday": "Miércoles",
+  "day_thursday": "Jueves",
+  "day_friday": "Viernes",
+  "day_saturday": "Sábado",
+  "day_sunday": "Domingo",
+  "set_completed_card": "tarjeta completada",
+  "set_completed_cards": "tarjetas completadas",
+  "auth_finishing": "Finalizando la conexión del calendario…",
+  "del_title": "Solicitud de eliminación",
+  "del_email_ph": "tu.correo@ejemplo.com",
+  "del_reason_ph": "Motivo (opcional)",
+  "del_button": "Enviar solicitud de eliminación",
   "feed_pill_imported": "Calendario",
   "type_birthday": "Cumpleaños",
   "type_school": "Escuela",
@@ -1820,6 +1848,20 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  "day_monday": "Lundi",
+  "day_tuesday": "Mardi",
+  "day_wednesday": "Mercredi",
+  "day_thursday": "Jeudi",
+  "day_friday": "Vendredi",
+  "day_saturday": "Samedi",
+  "day_sunday": "Dimanche",
+  "set_completed_card": "carte terminée",
+  "set_completed_cards": "cartes terminées",
+  "auth_finishing": "Finalisation de la connexion du calendrier…",
+  "del_title": "Demande de suppression",
+  "del_email_ph": "votre.email@exemple.com",
+  "del_reason_ph": "Motif (facultatif)",
+  "del_button": "Envoyer la demande de suppression",
   "feed_pill_imported": "Agenda",
   "type_birthday": "Anniversaire",
   "type_school": "École",
@@ -2721,6 +2763,20 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  "day_monday": "Montag",
+  "day_tuesday": "Dienstag",
+  "day_wednesday": "Mittwoch",
+  "day_thursday": "Donnerstag",
+  "day_friday": "Freitag",
+  "day_saturday": "Samstag",
+  "day_sunday": "Sonntag",
+  "set_completed_card": "erledigte Karte",
+  "set_completed_cards": "erledigte Karten",
+  "auth_finishing": "Kalenderverbindung wird abgeschlossen…",
+  "del_title": "Löschantrag",
+  "del_email_ph": "deine.email@beispiel.com",
+  "del_reason_ph": "Grund (optional)",
+  "del_button": "Löschantrag per E-Mail senden",
   "feed_pill_imported": "Kalender",
   "type_birthday": "Geburtstag",
   "type_school": "Schule",
