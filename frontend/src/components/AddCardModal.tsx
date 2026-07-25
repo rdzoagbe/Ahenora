@@ -188,7 +188,7 @@ export function AddCardModal({
               </PressScale>
             </View>
 
-            <ScrollView style={{ maxHeight: 520 }} keyboardShouldPersistTaps="handled">
+            <ScrollView style={{ flexShrink: 1 }} keyboardShouldPersistTaps="handled">
               {initialDraft?.transcript ? (
                 <View style={[styles.transcriptBox, { backgroundColor: theme.colors.accentSoft, borderColor: theme.colors.cardBorder }]}> 
                   <Text style={[styles.transcriptLabel, { color: theme.colors.textMuted }]}>{t('transcript')}</Text>
@@ -373,6 +373,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     padding: 24,
     paddingBottom: 34,
+    // Never taller than the screen (minus status bar): the middle scrolls,
+    // the Cancel/Save footer stays visible on every phone size.
+    maxHeight: '90%',
     shadowOpacity: 0.18,
     shadowRadius: 24,
     shadowOffset: { width: 0, height: -10 },
