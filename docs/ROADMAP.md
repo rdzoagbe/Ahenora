@@ -135,6 +135,7 @@ Natural follow-on to Outlook import, but a **separate concern**: import gets a *
 - Do it once Google + email conversion data is in and the app is stable; ship with careful identity testing.
 
 ### Phase 3 — Platform polish (ranking + engagement)
+- **Edge-to-edge / full-screen (bundle into the LAUNCH AAB):** draw behind transparent status + nav bars (`app.json` android `edgeToEdge: true`, Expo SDK 54 supports it). Native change — no OTA effect. REQUIRES a safe-area audit of all 6 tabs + every bottom sheet (content must pad itself or it lands under the nav bar), then verify on the closed track before promoting. The premium 2026 look; Google pushes it.
 - **Android home-screen widget** (today's tasks) — native build. `react-native-android-widget` or a small native module + config plugin.
 - **Tablet / landscape** — unlock the portrait lock in `app.json`; lean on existing `useBreakpoint` responsive layouts; polish large screens (Play ranking factor). Native build for the orientation change.
 - **Crash-report mapping** — upload deobfuscation `mapping.txt` (or add Sentry) so production crashes are readable.
