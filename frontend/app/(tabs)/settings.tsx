@@ -655,7 +655,7 @@ export default function Settings() {
               testID="settings-completed-history-toggle"
               tile={<IconTile bg={ui.soft}><CalendarDays color={ui.text} size={18} /></IconTile>}
               title={t('set_completed_history')}
-              subtitle={`${completedCards.length} completed card${completedCards.length === 1 ? '' : 's'}`}
+              subtitle={`${completedCards.length} ${completedCards.length === 1 ? t('set_completed_card') : t('set_completed_cards')}`}
               right={<Chevron open={expandHistory} />}
               onPress={() => setExpandHistory((v) => !v)}
             />

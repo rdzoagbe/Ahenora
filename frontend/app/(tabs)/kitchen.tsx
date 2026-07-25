@@ -586,7 +586,7 @@ export default function Kitchen() {
             <View style={styles.card}>
               {DAYS.filter((d) => (mealsByDay[d] || []).length > 0).map((day) => (
                 <View key={day}>
-                  <Text style={styles.mealDayLabel}>{day.charAt(0).toUpperCase() + day.slice(1)}</Text>
+                  <Text style={styles.mealDayLabel}>{t(`day_${day}`)}</Text>
                   {mealsByDay[day].map((meal) => (
                     <View key={meal.meal_id} style={styles.row}>
                       <View style={{ flex: 1 }}>
@@ -744,7 +744,7 @@ export default function Kitchen() {
           <View style={{ flexDirection: 'row', gap: 8 }}>
             {DAYS.map((d) => (
               <PressScale key={d} onPress={() => setMealDay(d)} style={[styles.mealDayChip, mealDay === d && styles.mealDayChipActive]}>
-                <Text style={[styles.mealDayChipText, mealDay === d && styles.mealDayChipTextActive]}>{d.slice(0, 3)}</Text>
+                <Text style={[styles.mealDayChipText, mealDay === d && styles.mealDayChipTextActive]}>{t(`day_${d}`).slice(0, 3)}</Text>
               </PressScale>
             ))}
           </View>
@@ -776,7 +776,7 @@ export default function Kitchen() {
           return (
             <View key={s.recipeId} style={styles.suggestRow}>
               <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={styles.suggestDay}>{s.day.charAt(0).toUpperCase() + s.day.slice(1)}</Text>
+                <Text style={styles.suggestDay}>{t(`day_${s.day}`)}</Text>
                 <Text style={styles.suggestTitle}>{s.title}</Text>
                 {s.haveLabels.length > 0 ? (
                   <Text style={styles.suggestHave} numberOfLines={2}>{t('kitchen_suggest_have')}: {s.haveLabels.join(', ')}</Text>
