@@ -2265,7 +2265,7 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
             changes["stars_awarded"] = True
 
     if payload.type is not None:
-        if payload.type not in {"SIGN_SLIP", "RSVP", "TASK"}:
+        if payload.type not in {"SIGN_SLIP", "RSVP", "TASK", "BIRTHDAY", "SCHOOL", "APPOINTMENT", "VACATION"}:
             raise HTTPException(status_code=400, detail="Invalid card type")
         changes["type"] = payload.type
 

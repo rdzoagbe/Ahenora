@@ -127,6 +127,10 @@ function timeEmoji() {
 function statusCopy(type: CardType, ui: UIColors, t: TFunc) {
   if (type === 'SIGN_SLIP') return { label: t('feed_status_sign'), bg: ui.orangeSoft, fg: ui.orange };
   if (type === 'RSVP') return { label: t('feed_status_rsvp'), bg: ui.lavender, fg: ui.lavenderText };
+  if (type === 'BIRTHDAY') return { label: t('type_birthday'), bg: ui.gold, fg: ui.goldText };
+  if (type === 'SCHOOL') return { label: t('type_school'), bg: ui.lavender, fg: ui.lavenderText };
+  if (type === 'APPOINTMENT') return { label: t('type_appointment'), bg: ui.orangeSoft, fg: ui.orange };
+  if (type === 'VACATION') return { label: t('type_vacation'), bg: ui.mint, fg: ui.mintText };
   return { label: t('feed_status_task'), bg: ui.mint, fg: ui.mintText };
 }
 
@@ -409,7 +413,11 @@ export default function Feed() {
     const today = new Date();
 
     if (activeTab === 'today') {
-      return uniqueCards([...dashboard.overdue, ...dashboard.todayCards]).sort((a, b) => (dueTime(a) || 0) - (dueTime(b) || 0));
+      // Undated tasks are "anytime today" — a freshly added task with no due
+      // date must be visible immediately, not hidden until the All tab.
+      const undated = activeCards.filter((card) => dueTime(card) === null);
+      return uniqueCards([...dashboard.overdue, ...dashboard.todayCards, ...undated])
+        .sort((a, b) => (dueTime(a) ?? Number.MAX_SAFE_INTEGER) - (dueTime(b) ?? Number.MAX_SAFE_INTEGER));
     }
 
     if (activeTab === 'upcoming') {
@@ -431,7 +439,7 @@ export default function Feed() {
     });
   }, [activeTab, activeCards, dashboard]);
 
-  const visibleCards = tabCards.slice(0, 5);
+  const visibleCards = tabCards.slice(0, 8);
   const firstName = (user?.name || '').split(' ')[0] || '';
   const headline = greetingFallback(firstName, t);
   const alertCount = dashboard.priority.length;

@@ -177,7 +177,7 @@ async function request<T = unknown>(
   throw lastError;
 }
 
-export type CardType = 'SIGN_SLIP' | 'RSVP' | 'TASK';
+export type CardType = 'SIGN_SLIP' | 'RSVP' | 'TASK' | 'BIRTHDAY' | 'SCHOOL' | 'APPOINTMENT' | 'VACATION';
 export type CardStatus = 'OPEN' | 'DONE';
 export type Recurrence = 'none' | 'daily' | 'weekly' | 'monthly';
 

@@ -26,6 +26,10 @@ const TYPE_COLOR: Record<string, string> = {
   SIGN_SLIP: UI.orange,
   RSVP: UI.lavenderText,
   TASK: UI.mintText,
+  BIRTHDAY: UI.goldText,
+  SCHOOL: UI.lavenderText,
+  APPOINTMENT: UI.orange,
+  VACATION: UI.mintText,
 };
 
 const GOOGLE_CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.events.readonly';
