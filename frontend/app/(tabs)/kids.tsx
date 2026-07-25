@@ -61,9 +61,9 @@ const REWARD_IDEAS = [
 ] as const;
 
 const QUICK_ADDS = [
-  { labelKey: 'qa_bed', amount: 2, Icon: Bed, bg: UI.mint, tint: UI.mintText },
-  { labelKey: 'qa_read', amount: 3, Icon: BookOpen, bg: UI.lavender, tint: UI.lavenderText },
-  { labelKey: 'qa_table', amount: 2, Icon: Utensils, bg: UI.orangeSoft, tint: UI.orange },
+  { labelKey: 'qa_bed', chore: 'bed' as const, amount: 2, Icon: Bed, bg: UI.mint, tint: UI.mintText },
+  { labelKey: 'qa_read', chore: 'read' as const, amount: 3, Icon: BookOpen, bg: UI.lavender, tint: UI.lavenderText },
+  { labelKey: 'qa_table', chore: 'table' as const, amount: 2, Icon: Utensils, bg: UI.orangeSoft, tint: UI.orange },
 ];
 
 const CHILD_TINTS = [UI.orange, UI.lavenderText, UI.mintText, UI.goldText];
@@ -387,7 +387,7 @@ export default function Kids() {
     }
   };
 
-  const quickAdd = async (reason: string, amount: number) => {
+  const quickAdd = async (reason: string, amount: number, chore?: 'bed' | 'read' | 'table') => {
     if (!activeChild) { showToast(t('kids_select_child_first'), 'error'); return; }
     if (starActionRef.current) return;
     starActionRef.current = true;
@@ -395,7 +395,7 @@ export default function Kids() {
       const result = await api.adjustMemberStars(activeChild.member_id, { delta: amount, reason });
       setMembers((prev) => prev.map((member) => (member.member_id === result.member.member_id ? result.member : member)));
       showToast(`${t('kids_added')} ${amount} ${t('stars')} · ${reason}`, 'success');
-      setCelebration({ kind: 'stars', amount });
+      setCelebration({ kind: 'stars', amount, chore });
       await refreshHistory(activeChild.member_id);
     } catch (e: any) {
       logger.warn('Quick add failed:', e?.message || e);
@@ -633,7 +633,7 @@ export default function Kids() {
                       <Text style={styles.blockLabel}>{t('kids_quick_add')}</Text>
                       <View style={styles.quickAddRow}>
                         {QUICK_ADDS.map((q) => (
-                          <PressScale key={q.labelKey} testID={`quick-add-${q.labelKey}`} onPress={() => quickAdd(t(q.labelKey), q.amount)} style={styles.quickAddChip}>
+                          <PressScale key={q.labelKey} testID={`quick-add-${q.labelKey}`} onPress={() => quickAdd(t(q.labelKey), q.amount, q.chore)} style={styles.quickAddChip}>
                             <IconTile bg={q.bg} size={30} radius={9}><q.Icon color={q.tint} size={15} /></IconTile>
                             <Text style={styles.quickAddText} numberOfLines={1}>{t(q.labelKey)}</Text>
                             <Text style={styles.quickAddAmt}>+{q.amount}</Text>
