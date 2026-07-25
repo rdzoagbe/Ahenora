@@ -12,6 +12,10 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  "type_birthday": "Birthday",
+  "type_school": "School",
+  "type_appointment": "Appointment",
+  "type_vacation": "Vacation",
   "qa_praise_bed_1": "Amazing — you'll sleep like royalty tonight! 👑",
   "qa_praise_bed_2": "Cozy bed, sweet dreams. Nice work! 😴",
   "qa_praise_read_1": "Your brain just levelled up! 🧠✨",
@@ -914,6 +918,10 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  "type_birthday": "Cumpleaños",
+  "type_school": "Escuela",
+  "type_appointment": "Cita",
+  "type_vacation": "Vacaciones",
   "qa_praise_bed_1": "¡Increíble! Esta noche dormirás como la realeza. 👑",
   "qa_praise_bed_2": "Cama lista, dulces sueños. ¡Bien hecho! 😴",
   "qa_praise_read_1": "¡Tu cerebro acaba de subir de nivel! 🧠✨",
@@ -1810,6 +1818,10 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  "type_birthday": "Anniversaire",
+  "type_school": "École",
+  "type_appointment": "Rendez-vous",
+  "type_vacation": "Vacances",
   "qa_praise_bed_1": "Génial — ce soir tu vas dormir royalement ! 👑",
   "qa_praise_bed_2": "Lit douillet, doux rêves. Bien joué ! 😴",
   "qa_praise_read_1": "Ton cerveau vient de passer au niveau supérieur ! 🧠✨",
@@ -2706,6 +2718,10 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  "type_birthday": "Geburtstag",
+  "type_school": "Schule",
+  "type_appointment": "Termin",
+  "type_vacation": "Urlaub",
   "qa_praise_bed_1": "Stark — heute schläfst du königlich! 👑",
   "qa_praise_bed_2": "Gemütliches Bett, süße Träume. Gut gemacht! 😴",
   "qa_praise_read_1": "Dein Gehirn ist gerade ein Level aufgestiegen! 🧠✨",

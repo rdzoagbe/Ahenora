@@ -12,11 +12,11 @@ import {
   Keyboard,
   Alert,
 } from 'react-native';
-import { X, FileSignature, Mail, ListTodo, Repeat, Bell, Sparkles } from 'lucide-react-native';
+import { X, FileSignature, Mail, ListTodo, Repeat, Bell, Sparkles, Cake, School, Stethoscope, Plane } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
 import { PressScale } from './PressScale';
 import { useStore } from '../store';
-import { api, CardType, Recurrence } from '../api';
+import { api, CardType, FamilyMember, Recurrence } from '../api';
 import { logger } from '../logger';
 
 interface VoiceDraft {
@@ -39,10 +39,14 @@ interface Props {
   initialDraft?: VoiceDraft | null;
 }
 
-const TYPES: { key: CardType; color: string; icon: any }[] = [
-  { key: 'SIGN_SLIP', color: '#F97316', icon: FileSignature },
-  { key: 'RSVP', color: '#6366F1', icon: Mail },
-  { key: 'TASK', color: '#10B981', icon: ListTodo },
+const TYPES: { key: CardType; labelKey: string; color: string; icon: any }[] = [
+  { key: 'TASK', labelKey: 'task', color: '#10B981', icon: ListTodo },
+  { key: 'SIGN_SLIP', labelKey: 'sign_slip', color: '#F97316', icon: FileSignature },
+  { key: 'RSVP', labelKey: 'rsvp', color: '#6366F1', icon: Mail },
+  { key: 'BIRTHDAY', labelKey: 'type_birthday', color: '#EAB308', icon: Cake },
+  { key: 'SCHOOL', labelKey: 'type_school', color: '#8B5CF6', icon: School },
+  { key: 'APPOINTMENT', labelKey: 'type_appointment', color: '#F97316', icon: Stethoscope },
+  { key: 'VACATION', labelKey: 'type_vacation', color: '#14B8A6', icon: Plane },
 ];
 
 const RECURRENCES: Recurrence[] = ['none', 'daily', 'weekly', 'monthly'];
@@ -70,6 +74,12 @@ export function AddCardModal({
   const [saving, setSaving] = useState(false);
   const [suggestedAssignee, setSuggestedAssignee] = useState<string>('');
   const [suggestLoading, setSuggestLoading] = useState(false);
+  const [members, setMembers] = useState<FamilyMember[]>([]);
+
+  useEffect(() => {
+    if (!visible) return;
+    api.familyMembers().then(setMembers).catch(() => setMembers([]));
+  }, [visible]);
 
   useEffect(() => {
     if (!visible) return;
@@ -212,12 +222,9 @@ export function AddCardModal({
                           styles.typeLabel,
                           { color: active ? typ.color : theme.colors.textMuted },
                         ]}
+                        numberOfLines={1}
                       >
-                        {typ.key === 'SIGN_SLIP'
-                          ? t('sign_slip')
-                          : typ.key === 'RSVP'
-                          ? t('rsvp')
-                          : t('task')}
+                        {t(typ.labelKey)}
                       </Text>
                     </PressScale>
                   );
@@ -246,14 +253,32 @@ export function AddCardModal({
               />
 
               <Text style={[styles.label, { color: theme.colors.textMuted }]}>{t('assignee')}</Text>
-              <TextInput
-                testID="input-assignee"
-                value={assignee}
-                onChangeText={setAssignee}
-                placeholder={t('assignee')}
-                placeholderTextColor={theme.colors.textSoft}
-                style={[styles.input, { color: theme.colors.text, backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}
-              />
+              {members.length > 0 ? (
+                <View style={styles.pillRow}>
+                  {members.map((m) => {
+                    const active = assignee.trim().toLowerCase() === m.name.trim().toLowerCase();
+                    return (
+                      <PressScale
+                        key={m.member_id}
+                        testID={`assign-${m.member_id}`}
+                        onPress={() => setAssignee(active ? '' : m.name)}
+                        style={[styles.pill, { borderColor: theme.colors.cardBorder, backgroundColor: active ? theme.colors.primary : theme.colors.bgSoft }]}
+                      >
+                        <Text style={[styles.pillText, { color: active ? theme.colors.primaryText : theme.colors.textMuted }]}>{m.name}</Text>
+                      </PressScale>
+                    );
+                  })}
+                </View>
+              ) : (
+                <TextInput
+                  testID="input-assignee"
+                  value={assignee}
+                  onChangeText={setAssignee}
+                  placeholder={t('assignee')}
+                  placeholderTextColor={theme.colors.textSoft}
+                  style={[styles.input, { color: theme.colors.text, backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}
+                />
+              )}
               {suggestedAssignee || suggestLoading ? (
                 <View style={styles.suggestRow}>
                   <Sparkles color={theme.colors.accent} size={11} />
@@ -396,16 +421,18 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   rowHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 },
-  typeRow: { flexDirection: 'row', gap: 10 },
+  typeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 9 },
   typeBtn: {
-    flex: 1,
+    flexBasis: '30%',
+    flexGrow: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
     borderRadius: 16,
     paddingVertical: 12,
-    gap: 8,
+    paddingHorizontal: 6,
+    gap: 6,
   },
   typeLabel: { fontFamily: 'Inter_700Bold', fontSize: 12 },
   input: {
