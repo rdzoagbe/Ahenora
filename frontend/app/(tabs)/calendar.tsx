@@ -681,7 +681,10 @@ export default function Calendar() {
                     </View>
                     <View style={[styles.eventBar, { backgroundColor: color }]} />
                     <View style={{ flex: 1, minWidth: 0 }}>
-                      <Text style={styles.eventTitle} numberOfLines={1}>{cleanText(card.title)}</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        {card.source === 'CALENDAR' ? <CalendarDays color={ui.muted} size={12} /> : null}
+                        <Text style={[styles.eventTitle, { flexShrink: 1 }]} numberOfLines={1}>{cleanText(card.title)}</Text>
+                      </View>
                       <Text style={styles.eventSub} numberOfLines={1}>{sub}</Text>
                     </View>
                   </PressScale>
