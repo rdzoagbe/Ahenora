@@ -14,6 +14,7 @@ import {
   AlertTriangle,
   BarChart3,
   Bell,
+  CalendarDays,
   Camera,
   CheckCircle2,
   ChevronRight,
@@ -124,7 +125,10 @@ function timeEmoji() {
   return '🌙';
 }
 
-function statusCopy(type: CardType, ui: UIColors, t: TFunc) {
+function statusCopy(type: CardType, ui: UIColors, t: TFunc, imported?: boolean) {
+  // Imported agenda items read as neutral gray — colored pills mean "added by
+  // the family", gray means "came from a connected calendar".
+  if (imported) return { label: t('feed_pill_imported'), bg: ui.soft, fg: ui.muted };
   if (type === 'SIGN_SLIP') return { label: t('feed_status_sign'), bg: ui.orangeSoft, fg: ui.orange };
   if (type === 'RSVP') return { label: t('feed_status_rsvp'), bg: ui.lavender, fg: ui.lavenderText };
   if (type === 'BIRTHDAY') return { label: t('type_birthday'), bg: ui.gold, fg: ui.goldText };
@@ -151,7 +155,8 @@ function greetingFallback(name: string, t: TFunc) {
 function TaskRow({ card, onOpen, onComplete, styles }: { card: Card; onOpen: () => void; onComplete: () => void; styles: ReturnType<typeof createStyles> }) {
   const ui = useUI();
   const { t } = useStore();
-  const status = statusCopy(card.type, ui, t);
+  const imported = card.source === 'CALENDAR';
+  const status = statusCopy(card.type, ui, t, imported);
   return (
     <PressScale style={styles.taskRow} onPress={onOpen} testID={`feed-card-${card.card_id}`}>
       <PressScale
@@ -164,7 +169,10 @@ function TaskRow({ card, onOpen, onComplete, styles }: { card: Card; onOpen: () 
         {card.status === 'DONE' ? <CheckCircle2 size={18} color={ui.orange} /> : null}
       </PressScale>
       <View style={styles.taskBody}>
-        <Text style={styles.taskTitle} numberOfLines={1}>{card.title}</Text>
+        <View style={styles.taskTitleRow}>
+          {imported ? <CalendarDays color={ui.muted} size={13} /> : null}
+          <Text style={[styles.taskTitle, { flexShrink: 1 }]} numberOfLines={1}>{card.title}</Text>
+        </View>
         <Text style={styles.taskMeta} numberOfLines={1}>{cardMeta(card, t)}</Text>
       </View>
       <View style={[styles.statusPill, { backgroundColor: status.bg }]}>
@@ -1365,6 +1373,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
+  taskTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   taskTitle: {
     color: ui.text,
     fontFamily: 'Inter_800ExtraBold',

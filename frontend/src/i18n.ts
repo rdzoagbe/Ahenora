@@ -12,6 +12,7 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  "feed_pill_imported": "Calendar",
   "type_birthday": "Birthday",
   "type_school": "School",
   "type_appointment": "Appointment",
@@ -918,6 +919,7 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  "feed_pill_imported": "Calendario",
   "type_birthday": "Cumpleaños",
   "type_school": "Escuela",
   "type_appointment": "Cita",
@@ -1818,6 +1820,7 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  "feed_pill_imported": "Agenda",
   "type_birthday": "Anniversaire",
   "type_school": "École",
   "type_appointment": "Rendez-vous",
@@ -2718,6 +2721,7 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  "feed_pill_imported": "Kalender",
   "type_birthday": "Geburtstag",
   "type_school": "Schule",
   "type_appointment": "Termin",
