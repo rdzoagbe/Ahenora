@@ -2,6 +2,7 @@ import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -17,6 +18,8 @@ import {
   CheckCircle2,
   ChevronRight,
   Clock,
+  ExternalLink,
+  MapPin,
   Megaphone,
   MessageSquare,
   Mic,
@@ -24,11 +27,13 @@ import {
   Star,
   Trash2,
   User,
+  Users,
   X,
   Zap,
 } from 'lucide-react-native';
 
 import { useBreakpoint } from '../../src/responsive';
+import { cleanText, openExternal, parseDescription } from '../../src/eventDescription';
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { PressScale } from '../../src/components/PressScale';
 import { AddCardModal } from '../../src/components/AddCardModal';
@@ -97,6 +102,18 @@ function feedDateLine() {
   return new Date().toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
 }
 
+// "in 25 min" / "in 3 h" countdown for the detail sheet — only when the item is
+// due within the next 24h (that's when a countdown actually helps).
+function relativeDue(date: string | null | undefined, t: (k: string, p?: Record<string, string | number>) => string) {
+  if (!date) return null;
+  const due = new Date(date).getTime();
+  if (Number.isNaN(due)) return null;
+  const diffMin = Math.round((due - Date.now()) / 60000);
+  if (diffMin <= 0 || diffMin > 24 * 60) return null;
+  if (diffMin < 60) return t('feed_in_min', { n: diffMin });
+  return t('feed_in_h', { n: Math.round(diffMin / 60) });
+}
+
 // A small emoji that tracks the time of day, matching the greeting.
 function timeEmoji() {
   const h = new Date().getHours();
@@ -114,7 +131,10 @@ function statusCopy(type: CardType, ui: UIColors, t: TFunc) {
 }
 
 function cardMeta(card: Card, t: TFunc) {
-  const parts = [card.assignee, card.description, formatDayLine(card.due_date, t)].filter(Boolean);
+  // Use the parsed description text (URLs/Location/People stripped) so list
+  // rows never show raw links — the detail sheet renders those as chips.
+  const desc = parseDescription(card.description, t).text.split('\n')[0];
+  const parts = [card.assignee, desc, formatDayLine(card.due_date, t)].filter(Boolean);
   return parts.join(' · ');
 }
 
@@ -886,33 +906,76 @@ export default function Feed() {
       />
 
       <KeyboardAwareBottomSheet visible={!!selectedCard} onClose={() => setSelectedCard(null)} contentStyle={styles.detailSheet}>
-        {selectedCard ? (
-          <>
-            <View style={styles.detailHeader}>
-              <Text style={styles.detailTitle}>{selectedCard.title}</Text>
-              <PressScale onPress={() => setSelectedCard(null)} style={styles.closeBtn} testID="feed-detail-close">
-                <X color={ui.text} size={20} />
+        {selectedCard ? (() => {
+          const parts = parseDescription(selectedCard.description, t);
+          const rel = relativeDue(selectedCard.due_date, t);
+          return (
+            <>
+              <View style={styles.detailHeader}>
+                <Text style={styles.detailTitle}>{cleanText(selectedCard.title)}</Text>
+                <PressScale onPress={() => setSelectedCard(null)} style={styles.closeBtn} testID="feed-detail-close">
+                  <X color={ui.text} size={20} />
+                </PressScale>
+              </View>
+
+              {/* Time card — the most important fact, promoted and unmissable */}
+              <View style={styles.whenCard}>
+                <Clock color={ui.orange} size={17} />
+                <Text style={styles.whenText}>{formatDayLine(selectedCard.due_date, t)}</Text>
+                {rel ? <View style={styles.whenPill}><Text style={styles.whenPillText}>{rel}</Text></View> : null}
+              </View>
+
+              <View style={styles.detailMetaRow}>
+                <User color={ui.muted} size={17} />
+                <Text style={styles.detailMetaText}>{selectedCard.assignee || t('feed_unassigned')}</Text>
+              </View>
+
+              {/* Structured chips: location → Maps, links → browser */}
+              {parts.location ? (
+                <PressScale
+                  onPress={() => {
+                    const q = encodeURIComponent(parts.location!);
+                    openExternal(Platform.OS === 'ios' ? `maps:?q=${q}` : `geo:0,0?q=${q}`, t);
+                  }}
+                  style={styles.detailChip}
+                >
+                  <MapPin color={ui.orange} size={16} />
+                  <Text style={styles.detailChipText} numberOfLines={2}>{parts.location}</Text>
+                  <ExternalLink color={ui.muted} size={13} />
+                </PressScale>
+              ) : null}
+              {parts.links.map((link, i) => (
+                <PressScale key={i} onPress={() => openExternal(link.url, t)} style={styles.detailChip}>
+                  <ExternalLink color={ui.orange} size={16} />
+                  <Text style={styles.detailChipText} numberOfLines={1}>{link.label}</Text>
+                  <ExternalLink color={ui.muted} size={13} />
+                </PressScale>
+              ))}
+              {parts.people ? (
+                <View style={styles.detailMetaRow}>
+                  <Users color={ui.muted} size={17} />
+                  <Text style={styles.detailMetaText} numberOfLines={2}>{parts.people}</Text>
+                </View>
+              ) : null}
+
+              {/* Description exactly once, cleaned of the extracted lines */}
+              {parts.text ? (
+                <View style={styles.detailBody}>
+                  <Text style={styles.detailDescription}>{parts.text}</Text>
+                </View>
+              ) : !parts.location && parts.links.length === 0 && !parts.people ? (
+                <View style={styles.detailBody}>
+                  <Text style={[styles.detailDescription, { color: ui.muted }]}>{t('feed_no_details')}</Text>
+                </View>
+              ) : null}
+
+              <PressScale testID="feed-complete-card" onPress={completeSelected} style={styles.completeBtn}>
+                <CheckCircle2 color="#FFFFFF" size={18} />
+                <Text style={styles.completeBtnText}>{t('feed_mark_done')}</Text>
               </PressScale>
-            </View>
-            <View style={styles.detailMetaRow}>
-              <Clock color={ui.muted} size={17} />
-              <Text style={styles.detailMetaText}>{cardMeta(selectedCard, t)}</Text>
-            </View>
-            <View style={styles.detailMetaRow}>
-              <User color={ui.muted} size={17} />
-              <Text style={styles.detailMetaText}>{selectedCard.assignee || t('feed_unassigned')}</Text>
-            </View>
-            <View style={styles.detailBody}>
-              <Text style={[styles.detailDescription, !selectedCard.description && { color: ui.muted }]}>
-                {selectedCard.description || t('feed_no_details')}
-              </Text>
-            </View>
-            <PressScale testID="feed-complete-card" onPress={completeSelected} style={styles.completeBtn}>
-              <CheckCircle2 color="#FFFFFF" size={18} />
-              <Text style={styles.completeBtnText}>{t('feed_mark_done')}</Text>
-            </PressScale>
-          </>
-        ) : null}
+            </>
+          );
+        })() : null}
       </KeyboardAwareBottomSheet>
 
       <KeyboardAwareBottomSheet visible={showAlerts} onClose={() => setShowAlerts(false)} contentStyle={styles.detailSheet}>
@@ -985,6 +1048,12 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   detailTitle: { flex: 1, color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 24, lineHeight: 30, letterSpacing: -0.4 },
   closeBtn: { width: 42, height: 42, borderRadius: 9999, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft, alignItems: 'center', justifyContent: 'center' },
   detailMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 14 },
+  whenCard: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 16, paddingHorizontal: 15, paddingVertical: 13, borderRadius: 16, backgroundColor: ui.orangeSoft, borderWidth: 1, borderColor: ui.orange + '40' },
+  whenText: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 16, letterSpacing: -0.2 },
+  whenPill: { marginLeft: 'auto', backgroundColor: ui.orange + '22', borderRadius: 99, paddingHorizontal: 10, paddingVertical: 4 },
+  whenPillText: { color: ui.orange, fontFamily: 'Inter_700Bold', fontSize: 12.5 },
+  detailChip: { flexDirection: 'row', alignItems: 'center', gap: 11, marginTop: 10, paddingHorizontal: 15, paddingVertical: 13, borderRadius: 16, backgroundColor: ui.soft, borderWidth: 1, borderColor: ui.line },
+  detailChipText: { flex: 1, color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
   detailMetaText: { flex: 1, color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 15, lineHeight: 21 },
   detailBody: { marginTop: 16, gap: 10 },
   detailDescription: { color: ui.text, fontFamily: 'Inter_500Medium', fontSize: 16, lineHeight: 24 },
