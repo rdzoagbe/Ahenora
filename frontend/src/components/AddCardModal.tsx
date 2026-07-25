@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { X, FileSignature, Mail, ListTodo, Repeat, Bell, Sparkles, Cake, School, Stethoscope, Plane } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PressScale } from './PressScale';
 import { useStore } from '../store';
 import { api, CardType, FamilyMember, Recurrence } from '../api';
@@ -65,6 +66,7 @@ export function AddCardModal({
   initialDraft = null,
 }: Props) {
   const { t, theme } = useStore();
+  const insets = useSafeAreaInsets();
   const [type, setType] = useState<CardType>('TASK');
   const [title, setTitle] = useState('');
   const [desc, setDesc] = useState('');
@@ -180,7 +182,7 @@ export function AddCardModal({
         style={styles.container}
       >
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-          <View style={[styles.sheet, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder, shadowColor: theme.colors.shadow }]}> 
+          <View style={[styles.sheet, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder, shadowColor: theme.colors.shadow, paddingBottom: 16 + Math.max(insets.bottom, 14) }]}> 
             <View style={styles.header}>
               <Text style={[styles.heading, { color: theme.colors.text }]}>{t('add_card')}</Text>
               <PressScale testID="close-add-card" onPress={onClose} style={[styles.closeBtn, { borderColor: theme.colors.cardBorder }]}> 
@@ -352,9 +354,9 @@ export function AddCardModal({
                 testID="save-add-card"
                 onPress={handleSave}
                 disabled={saving || !title.trim()}
-                style={[styles.saveBtn, { backgroundColor: theme.colors.primary }, (!title.trim() || saving) && { opacity: 0.5 }]}
+                style={[styles.saveBtn, (!title.trim() || saving) && { opacity: 0.5 }]}
               >
-                <Text style={[styles.saveText, { color: theme.colors.primaryText }]}>{saving ? '...' : t('save')}</Text>
+                <Text style={styles.saveText}>{saving ? '...' : t('save')}</Text>
               </PressScale>
             </View>
           </View>
@@ -372,10 +374,10 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 28,
     borderWidth: 1,
     padding: 24,
-    paddingBottom: 34,
-    // Never taller than the screen (minus status bar): the middle scrolls,
-    // the Cancel/Save footer stays visible on every phone size.
-    maxHeight: '90%',
+    // Bottom padding set inline from the safe-area inset (nav bar height).
+    // Never taller than the screen: the middle scrolls, the footer stays
+    // visible on every phone size.
+    maxHeight: '88%',
     shadowOpacity: 0.18,
     shadowRadius: 24,
     shadowOffset: { width: 0, height: -10 },
@@ -496,6 +498,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingVertical: 14,
     alignItems: 'center',
+    backgroundColor: '#F97316',
   },
-  saveText: { fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
+  saveText: { fontFamily: 'Inter_800ExtraBold', fontSize: 15, color: '#FFFFFF' },
 });
