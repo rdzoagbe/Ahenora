@@ -12,7 +12,7 @@ import {
   Keyboard,
   Alert,
 } from 'react-native';
-import { X, FileSignature, Mail, ListTodo, Repeat, Bell, Sparkles, Cake, School, Stethoscope, Plane } from 'lucide-react-native';
+import { X, FileSignature, Mail, ListTodo, Repeat, Bell, Sparkles, Cake, School, Stethoscope, Plane, Check } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PressScale } from './PressScale';
@@ -346,17 +346,21 @@ export function AddCardModal({
               </View>
             </ScrollView>
 
+            {/* Stacked full-width buttons — mirrors the proven "Mark as done"
+                pattern (no flex-pair rows, whose labels failed to paint on some
+                Android renderers via PressScale's style duplication). */}
             <View style={styles.footer}>
-              <PressScale testID="cancel-add-card" onPress={onClose} style={[styles.cancelBtn, { borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}> 
-                <Text style={[styles.cancelText, { color: theme.colors.text }]}>{t('cancel')}</Text>
-              </PressScale>
               <PressScale
                 testID="save-add-card"
                 onPress={handleSave}
                 disabled={saving || !title.trim()}
                 style={[styles.saveBtn, (!title.trim() || saving) && { opacity: 0.5 }]}
               >
+                <Check color="#FFFFFF" size={18} />
                 <Text style={styles.saveText}>{saving ? '...' : t('save')}</Text>
+              </PressScale>
+              <PressScale testID="cancel-add-card" onPress={onClose} style={[styles.cancelBtn, { borderColor: theme.colors.cardBorder }]}>
+                <Text style={[styles.cancelText, { color: theme.colors.textMuted }]}>{t('cancel')}</Text>
               </PressScale>
             </View>
           </View>
@@ -481,24 +485,25 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   footer: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 18,
+    marginTop: 16,
+    gap: 10,
   },
   cancelBtn: {
-    flex: 1,
+    minHeight: 46,
     borderWidth: 1,
-    borderRadius: 14,
-    paddingVertical: 14,
+    borderRadius: 99,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   cancelText: { fontFamily: 'Inter_700Bold', fontSize: 15 },
   saveBtn: {
-    flex: 1,
-    borderRadius: 14,
-    paddingVertical: 14,
+    minHeight: 54,
+    borderRadius: 99,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: 9,
     backgroundColor: '#F97316',
   },
-  saveText: { fontFamily: 'Inter_800ExtraBold', fontSize: 15, color: '#FFFFFF' },
+  saveText: { fontFamily: 'Inter_800ExtraBold', fontSize: 16, color: '#FFFFFF' },
 });
