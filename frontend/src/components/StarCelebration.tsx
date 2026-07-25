@@ -2,9 +2,9 @@ import React, { useEffect, useRef } from 'react';
 import { Animated, StyleSheet, Text } from 'react-native';
 import { useStore } from '../store';
 
-/** What to celebrate: stars earned, or a reward redeemed. */
+/** What to celebrate: stars earned (optionally for a known chore), or a reward redeemed. */
 export type CelebrationContent =
-  | { kind: 'stars'; amount: number }
+  | { kind: 'stars'; amount: number; chore?: 'bed' | 'read' | 'table' }
   | { kind: 'reward'; title: string };
 
 interface Props {
@@ -12,7 +12,16 @@ interface Props {
   onDone: () => void;
 }
 
-const PRAISE_KEYS = ['kids_praise_1', 'kids_praise_2', 'kids_praise_3'];
+const PRAISE_KEYS = ['kids_praise_1', 'kids_praise_2', 'kids_praise_3', 'kids_praise_4', 'kids_praise_5', 'kids_praise_6'];
+
+// Chore-specific praise ties the effort to its own little payoff ("made bed →
+// sleep like a king"), which lands far better with kids than a generic "good
+// job". Two variants each so it doesn't feel canned.
+const CHORE_PRAISE: Record<string, string[]> = {
+  bed: ['qa_praise_bed_1', 'qa_praise_bed_2'],
+  read: ['qa_praise_read_1', 'qa_praise_read_2'],
+  table: ['qa_praise_table_1', 'qa_praise_table_2'],
+};
 
 /**
  * A lightweight celebratory burst shown when stars are awarded
@@ -36,7 +45,7 @@ export function StarCelebration({ content, onDone }: Props) {
         Animated.spring(scale, { toValue: 1, friction: 4, tension: 120, useNativeDriver: true }),
         Animated.timing(opacity, { toValue: 1, duration: 180, useNativeDriver: true }),
       ]),
-      Animated.delay(1100),
+      Animated.delay(1700),
       Animated.parallel([
         Animated.timing(opacity, { toValue: 0, duration: 350, useNativeDriver: true }),
         Animated.timing(rise, { toValue: -26, duration: 350, useNativeDriver: true }),
@@ -51,9 +60,12 @@ export function StarCelebration({ content, onDone }: Props) {
   const isStars = content.kind === 'stars';
   const burst = isStars ? '🎉' : '🎁';
   const headline = isStars ? `+${content.amount} ⭐` : content.title;
-  // Vary the praise line per burst without needing randomness at render time.
-  const praiseIndex = isStars ? Math.abs(content.amount) % PRAISE_KEYS.length : 0;
-  const subtitle = isStars ? t(PRAISE_KEYS[praiseIndex]) : t('kids_reward_enjoy');
+  // Chore-specific praise when we know the chore; otherwise rotate the generic
+  // pool. Seeded by the clock so repeats of the same chore vary.
+  const chorePool = isStars && content.chore ? CHORE_PRAISE[content.chore] : null;
+  const pool = chorePool ?? PRAISE_KEYS;
+  const praiseIndex = Math.floor(Date.now() / 1000) % pool.length;
+  const subtitle = isStars ? t(pool[praiseIndex]) : t('kids_reward_enjoy');
 
   return (
     <Animated.View
