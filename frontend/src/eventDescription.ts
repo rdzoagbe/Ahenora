@@ -7,10 +7,11 @@ import { Alert, Linking } from 'react-native';
 export type TFunc = (key: string) => string;
 
 export async function openExternal(url: string, t: TFunc) {
-  // Never let a failed openURL become an unhandled rejection with no feedback.
+  // Do NOT pre-check with canOpenURL: on Android 11+ package-visibility rules
+  // make it return false for https/geo unless the manifest declares <queries>,
+  // which produced false "no app available" alerts. openURL itself needs no
+  // visibility — just try it and only alert on a real failure.
   try {
-    const ok = await Linking.canOpenURL(url).catch(() => true);
-    if (ok === false) throw new Error('unsupported');
     await Linking.openURL(url);
   } catch {
     Alert.alert(t('cal_couldnt_open'), t('cal_no_app_available'));
