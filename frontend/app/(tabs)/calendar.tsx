@@ -18,6 +18,7 @@ import { useStore } from '../../src/store';
 import { api, logEvent, CalendarImportResult, Card, Carpool } from '../../src/api';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { sendLocalNotification, syncCalendarNightly } from '../../src/notifications';
+import { cleanText, openExternal, parseDescription } from '../../src/eventDescription';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -46,8 +47,6 @@ const AUTOSYNC_AT_KEY = 'coo_cal_autosync_at';
 const CAL_SEEN_KEY = 'coo_cal_seen_ids';
 const AUTOSYNC_MIN_GAP_MS = 6 * 60 * 60 * 1000;
 
-type TFunc = (key: string) => string;
-
 function startOfLocalDay(date: Date) {
   const d = new Date(date);
   d.setHours(0, 0, 0, 0);
@@ -65,91 +64,6 @@ function dateKey(date: Date) {
 function cardDateKey(card: Card) {
   if (!card.due_date) return '';
   return dateKey(new Date(card.due_date));
-}
-
-async function openExternal(url: string, t: TFunc) {
-  // Never let a failed openURL become an unhandled rejection with no feedback.
-  try {
-    const ok = await Linking.canOpenURL(url).catch(() => true);
-    if (ok === false) throw new Error('unsupported');
-    await Linking.openURL(url);
-  } catch {
-    Alert.alert(t('cal_couldnt_open'), t('cal_no_app_available'));
-  }
-}
-
-function cleanText(value?: string | null) {
-  return (value || '').replace(/Ãƒâ€šÃ‚Â·/g, '-').replace(/Â/g, '').trim();
-}
-
-function linkLabel(url: string, t: TFunc): string {
-  if (/teams\.microsoft|teams\.live/i.test(url)) return t('cal_teams_meeting');
-  if (/zoom\.us/i.test(url)) return t('cal_zoom_meeting');
-  if (/meet\.google/i.test(url)) return t('cal_google_meet');
-  if (/calendar\.google/i.test(url)) return t('cal_view_in_google_calendar');
-  if (/webex/i.test(url)) return t('cal_webex_meeting');
-  return t('cal_open_link');
-}
-
-function isVideoLink(url: string): boolean {
-  return /teams\.microsoft|teams\.live|zoom\.us|meet\.google|webex/i.test(url);
-}
-
-interface DescriptionParts {
-  text: string;
-  location: string | null;
-  people: string | null;
-  links: { url: string; label: string; isVideo: boolean }[];
-}
-
-function parseDescription(raw: string | null | undefined, t: TFunc): DescriptionParts {
-  if (!raw) return { text: '', location: null, people: null, links: [] };
-  const cleaned = cleanText(raw);
-  const lines = cleaned.split('\n');
-  let location: string | null = null;
-  let people: string | null = null;
-  const links: DescriptionParts['links'] = [];
-  const textLines: string[] = [];
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-
-    if (/^Location:\s*/i.test(trimmed)) {
-      const loc = trimmed.replace(/^Location:\s*/i, '').trim();
-      if (loc && !/^https?:\/\//i.test(loc)) {
-        location = loc;
-      } else if (loc) {
-        links.push({ url: loc, label: linkLabel(loc, t), isVideo: isVideoLink(loc) });
-      }
-      continue;
-    }
-
-    if (/^People:\s*/i.test(trimmed)) {
-      people = trimmed.replace(/^People:\s*/i, '').trim();
-      continue;
-    }
-
-    if (/^Google Calendar:\s*/i.test(trimmed)) {
-      const url = trimmed.replace(/^Google Calendar:\s*/i, '').trim();
-      if (url) links.push({ url, label: t('cal_view_in_google_calendar'), isVideo: false });
-      continue;
-    }
-
-    const urlMatch = trimmed.match(/https?:\/\/[^\s]+/g);
-    if (urlMatch) {
-      for (const url of urlMatch) {
-        links.push({ url, label: linkLabel(url, t), isVideo: isVideoLink(url) });
-      }
-      const remaining = trimmed.replace(/https?:\/\/[^\s]+/g, '').trim();
-      if (remaining) textLines.push(remaining);
-      continue;
-    }
-
-    textLines.push(trimmed);
-  }
-
-  return { text: textLines.join('\n').trim(), location, people, links };
 }
 
 function timeParts(value?: string | null) {

@@ -12,6 +12,8 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  "feed_in_min": "in {n} min",
+  "feed_in_h": "in {n} h",
   "cal_import": "Import calendar",
   "cal_import_title": "Import calendar",
   "cal_import_subtitle": "Choose where to bring your events in from.",
@@ -903,6 +905,8 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  "feed_in_min": "en {n} min",
+  "feed_in_h": "en {n} h",
   "cal_import": "Importar calendario",
   "cal_import_title": "Importar calendario",
   "cal_import_subtitle": "Elige de dónde traer tus eventos.",
@@ -1788,6 +1792,8 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  "feed_in_min": "dans {n} min",
+  "feed_in_h": "dans {n} h",
   "cal_import": "Importer l'agenda",
   "cal_import_title": "Importer un agenda",
   "cal_import_subtitle": "Choisissez d'où importer vos événements.",
@@ -2673,6 +2679,8 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  "feed_in_min": "in {n} Min.",
+  "feed_in_h": "in {n} Std.",
   "cal_import": "Kalender importieren",
   "cal_import_title": "Kalender importieren",
   "cal_import_subtitle": "Wähle, woher deine Termine kommen sollen.",
