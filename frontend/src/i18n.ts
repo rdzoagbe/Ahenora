@@ -12,7 +12,7 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
-  "qa_praise_bed_1": "Amazing — you'll sleep like a king tonight! 👑",
+  "qa_praise_bed_1": "Amazing — you'll sleep like royalty tonight! 👑",
   "qa_praise_bed_2": "Cozy bed, sweet dreams. Nice work! 😴",
   "qa_praise_read_1": "Your brain just levelled up! 🧠✨",
   "qa_praise_read_2": "Every page makes you smarter. Keep going! 📚",
@@ -914,11 +914,11 @@ const en: Dict = {
 };
 
 const es: Dict = {
-  "qa_praise_bed_1": "¡Increíble! Esta noche dormirás como un rey. 👑",
+  "qa_praise_bed_1": "¡Increíble! Esta noche dormirás como la realeza. 👑",
   "qa_praise_bed_2": "Cama lista, dulces sueños. ¡Bien hecho! 😴",
   "qa_praise_read_1": "¡Tu cerebro acaba de subir de nivel! 🧠✨",
-  "qa_praise_read_2": "Cada página te hace más listo. ¡Sigue así! 📚",
-  "qa_praise_table_1": "¡El mejor ayudante del chef! La cena ya sabe mejor. 🍽️",
+  "qa_praise_read_2": "Cada página te hace más inteligente. ¡Sigue así! 📚",
+  "qa_praise_table_1": "¡Ayudas al chef como nadie! La cena ya sabe mejor. 🍽️",
   "qa_praise_table_2": "Qué mesa tan bonita. ¡Hora de estar en familia! ✨",
   "kids_praise_4": "¡Estás que ardes! 🔥",
   "kids_praise_5": "¡Jugada de superestrella! 🌟",
@@ -1810,15 +1810,15 @@ const es: Dict = {
 };
 
 const fr: Dict = {
-  "qa_praise_bed_1": "Génial — tu vas dormir comme un roi ce soir ! 👑",
+  "qa_praise_bed_1": "Génial — ce soir tu vas dormir royalement ! 👑",
   "qa_praise_bed_2": "Lit douillet, doux rêves. Bien joué ! 😴",
   "qa_praise_read_1": "Ton cerveau vient de passer au niveau supérieur ! 🧠✨",
-  "qa_praise_read_2": "Chaque page te rend plus malin. Continue ! 📚",
-  "qa_praise_table_1": "Meilleur commis du chef — le dîner sera encore meilleur ! 🍽️",
+  "qa_praise_read_2": "Chaque page nourrit ton cerveau. Continue ! 📚",
+  "qa_praise_table_1": "Le chef a de la chance de t'avoir — le dîner sera encore meilleur ! 🍽️",
   "qa_praise_table_2": "Quelle belle table ! Place au moment en famille. ✨",
   "kids_praise_4": "Tu es en feu ! 🔥",
-  "kids_praise_5": "Un vrai champion ! 🌟",
-  "kids_praise_6": "Tape-là ! ✋",
+  "kids_praise_5": "Quel talent ! 🌟",
+  "kids_praise_6": "Tope là ! ✋",
   "feed_in_min": "dans {n} min",
   "feed_in_h": "dans {n} h",
   "cal_import": "Importer l'agenda",
@@ -2706,11 +2706,11 @@ const fr: Dict = {
 };
 
 const de: Dict = {
-  "qa_praise_bed_1": "Stark — heute schläfst du wie ein König! 👑",
+  "qa_praise_bed_1": "Stark — heute schläfst du königlich! 👑",
   "qa_praise_bed_2": "Gemütliches Bett, süße Träume. Gut gemacht! 😴",
   "qa_praise_read_1": "Dein Gehirn ist gerade ein Level aufgestiegen! 🧠✨",
   "qa_praise_read_2": "Jede Seite macht dich schlauer. Weiter so! 📚",
-  "qa_praise_table_1": "Bester Küchenhelfer — das Essen schmeckt gleich besser! 🍽️",
+  "qa_praise_table_1": "Beste Hilfe in der Küche — das Essen schmeckt gleich besser! 🍽️",
   "qa_praise_table_2": "Was für ein schöner Tisch. Familienzeit ist angerichtet! ✨",
   "kids_praise_4": "Du bist on fire! 🔥",
   "kids_praise_5": "Superstar-Move! 🌟",
