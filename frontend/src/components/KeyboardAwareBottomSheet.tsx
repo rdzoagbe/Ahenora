@@ -66,6 +66,9 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'flex-end',
     backgroundColor: 'rgba(0,0,0,0.45)',
+    // Tall sheets grow to full height; keep them below the status bar so
+    // titles never hide under the clock.
+    paddingTop: 56,
   },
   content: {
     borderTopLeftRadius: 24,
