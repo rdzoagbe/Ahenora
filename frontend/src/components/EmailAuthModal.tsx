@@ -8,9 +8,9 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
-  Clipboard,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
+import * as Crypto from 'expo-crypto';
 import { X, Mail, Check, ShieldCheck } from 'lucide-react-native';
 
 import { PressScale } from './PressScale';
@@ -50,11 +50,19 @@ export function EmailAuthModal({ visible, onClose, onSuccess, inviteToken }: Pro
     const digits = '23456789';
     const special = '!@#$%&*?';
     const all = upper + lower + digits + special;
-    const pick = (s: string) => s[Math.floor(Math.random() * s.length)];
+    // Rejection sampling keeps the crypto draw uniform (no modulo bias).
+    const randomInt = (max: number) => {
+      const limit = Math.floor(0x100000000 / max) * max;
+      const buf = new Uint32Array(1);
+      let v = Crypto.getRandomValues(buf)[0];
+      while (v >= limit) v = Crypto.getRandomValues(buf)[0];
+      return v % max;
+    };
+    const pick = (s: string) => s[randomInt(s.length)];
     const parts = [pick(upper), pick(lower), pick(digits), pick(special)];
     for (let i = parts.length; i < 12; i++) parts.push(pick(all));
     for (let i = parts.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
+      const j = randomInt(i + 1);
       [parts[i], parts[j]] = [parts[j], parts[i]];
     }
     const strong = parts.join('');
