@@ -12,6 +12,7 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  offline_banner: 'You\'re offline',
   "set_replay_setup": "Replay setup",
   "set_replay_setup_sub": "Walk through the guided setup again",
   "ob_step_of": "Step {n} of {total}",
@@ -954,6 +955,7 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  offline_banner: 'Sin conexión',
   "set_replay_setup": "Repetir configuración",
   "set_replay_setup_sub": "Vuelve a hacer la configuración guiada",
   "ob_step_of": "Paso {n} de {total}",
@@ -1890,6 +1892,7 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  offline_banner: 'Vous êtes hors ligne',
   "set_replay_setup": "Refaire la configuration",
   "set_replay_setup_sub": "Refaites la configuration guidée",
   "ob_step_of": "Étape {n} sur {total}",
@@ -2826,6 +2829,7 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  offline_banner: 'Du bist offline',
   "set_replay_setup": "Einrichtung wiederholen",
   "set_replay_setup_sub": "Die geführte Einrichtung erneut durchlaufen",
   "ob_step_of": "Schritt {n} von {total}",
