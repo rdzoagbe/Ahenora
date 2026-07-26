@@ -1,15 +1,17 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
+import { useStore } from '../store';
 
 export function OfflineBanner() {
   const { isConnected } = useNetworkStatus();
+  const { t } = useStore();
 
   if (isConnected) return null;
 
   return (
     <View style={styles.banner}>
-      <Text style={styles.text}>{"You're offline"}</Text>
+      <Text style={styles.text}>{t('offline_banner')}</Text>
     </View>
   );
 }
