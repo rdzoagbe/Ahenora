@@ -12,6 +12,19 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  tour_skip: 'Skip',
+  tour_next: 'Next',
+  tour_start: 'Get started',
+  tour1_t: 'Everything in one place',
+  tour1_s: 'Tasks, school papers, appointments and reminders — the whole household in a single shared feed.',
+  tour2_t: 'Two calendars, zero clashes',
+  tour2_s: 'Import Google and Outlook calendars. Private by default — share with your co-parent only what you choose.',
+  tour3_t: 'Dinner, solved',
+  tour3_s: 'A shopping list the whole family updates, and meal ideas built from what you actually bought.',
+  tour4_t: 'Kids love helping',
+  tour4_s: 'Chores earn stars, stars earn rewards they pick themselves. A cheer for every finished chore.',
+  tour5_t: 'Built for busy parents',
+  tour5_s: 'Add anything in two seconds with photo or voice. Leave handoff notes for your co-parent. Calm, not chaos.',
   offline_banner: 'You\'re offline',
   "set_replay_setup": "Replay setup",
   "set_replay_setup_sub": "Walk through the guided setup again",
@@ -955,6 +968,19 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  tour_skip: 'Omitir',
+  tour_next: 'Siguiente',
+  tour_start: 'Empezar',
+  tour1_t: 'Todo en un solo lugar',
+  tour1_s: 'Tareas, papeles del colegio, citas y recordatorios: todo el hogar en un solo espacio compartido.',
+  tour2_t: 'Dos calendarios, cero choques',
+  tour2_s: 'Importa los calendarios de Google y Outlook. Privado por defecto: comparte con tu copadre solo lo que elijas.',
+  tour3_t: 'La cena, resuelta',
+  tour3_s: 'Una lista de compras que actualiza toda la familia e ideas de comidas según lo que realmente compraste.',
+  tour4_t: 'A los niños les encanta ayudar',
+  tour4_s: 'Las tareas dan estrellas y las estrellas dan premios que ellos mismos eligen. Un aplauso por cada tarea hecha.',
+  tour5_t: 'Hecho para padres ocupados',
+  tour5_s: 'Añade lo que sea en dos segundos con foto o voz. Deja notas de relevo a tu copadre. Calma, no caos.',
   offline_banner: 'Sin conexión',
   "set_replay_setup": "Repetir configuración",
   "set_replay_setup_sub": "Vuelve a hacer la configuración guiada",
@@ -1892,6 +1918,19 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  tour_skip: 'Passer',
+  tour_next: 'Suivant',
+  tour_start: 'Commencer',
+  tour1_t: 'Tout au même endroit',
+  tour1_s: 'Tâches, papiers d\'école, rendez-vous et rappels — tout le foyer dans un seul fil partagé.',
+  tour2_t: 'Deux agendas, zéro conflit',
+  tour2_s: 'Importez vos agendas Google et Outlook. Privé par défaut — partagez avec votre coparent uniquement ce que vous choisissez.',
+  tour3_t: 'Le dîner, c\'est réglé',
+  tour3_s: 'Une liste de courses mise à jour par toute la famille, et des idées de repas basées sur ce que vous avez vraiment acheté.',
+  tour4_t: 'Les enfants adorent aider',
+  tour4_s: 'Les corvées rapportent des étoiles, les étoiles des récompenses qu\'ils choisissent eux-mêmes. Un bravo à chaque corvée terminée.',
+  tour5_t: 'Pensé pour les parents débordés',
+  tour5_s: 'Ajoutez tout en deux secondes par photo ou par la voix. Laissez des notes de relais à votre coparent. Du calme, pas du chaos.',
   offline_banner: 'Vous êtes hors ligne',
   "set_replay_setup": "Refaire la configuration",
   "set_replay_setup_sub": "Refaites la configuration guidée",
@@ -2829,6 +2868,19 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  tour_skip: 'Überspringen',
+  tour_next: 'Weiter',
+  tour_start: 'Loslegen',
+  tour1_t: 'Alles an einem Ort',
+  tour1_s: 'Aufgaben, Schulzettel, Termine und Erinnerungen — der ganze Haushalt in einem gemeinsamen Feed.',
+  tour2_t: 'Zwei Kalender, null Konflikte',
+  tour2_s: 'Importiere Google- und Outlook-Kalender. Standardmäßig privat — teile mit dem Co-Elternteil nur, was du möchtest.',
+  tour3_t: 'Abendessen? Gelöst.',
+  tour3_s: 'Eine Einkaufsliste für die ganze Familie und Essensideen aus dem, was ihr wirklich gekauft habt.',
+  tour4_t: 'Kinder helfen gern',
+  tour4_s: 'Aufgaben bringen Sterne, Sterne bringen Belohnungen, die sie selbst aussuchen. Ein Jubel für jede erledigte Aufgabe.',
+  tour5_t: 'Für vielbeschäftigte Eltern',
+  tour5_s: 'Füge alles in zwei Sekunden per Foto oder Sprache hinzu. Hinterlasse Übergabenotizen für den Co-Elternteil. Ruhe statt Chaos.',
   offline_banner: 'Du bist offline',
   "set_replay_setup": "Einrichtung wiederholen",
   "set_replay_setup_sub": "Die geführte Einrichtung erneut durchlaufen",
