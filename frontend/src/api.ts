@@ -603,7 +603,7 @@ export const api = {
       inviter_name: string;
       email?: string;
       expires_at?: string | null;
-    }>(`/family/invite/${token}`),
+    }>(`/family/invite/${encodeURIComponent(token)}`),
   importGoogleCalendar: (access_token: string, days = 30) =>
     request<CalendarImportResult>('/calendar/import', {
       method: 'POST',
