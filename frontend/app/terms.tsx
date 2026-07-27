@@ -6,11 +6,11 @@ export default function TermsScreen() {
     <LegalPage
       title="Terms & Support"
       subtitle="Terms of use, acceptable use, support contact, and important limitations for the Household COO app."
-      updatedAt="May 2026"
+      updatedAt="July 2026"
       sections={[
         {
           title: 'About this app',
-          body: 'Household COO is available on Google Play. Some features may be marked as coming soon as we continue to add and improve functionality.',
+          body: 'Household COO is available on Google Play. We continuously add and improve functionality; features may change between updates.',
         },
         {
           title: 'Your responsibilities',
@@ -23,18 +23,18 @@ export default function TermsScreen() {
         },
         {
           title: 'Subscriptions and payments',
-          body: 'Paid subscriptions are not active unless clearly stated in the app and processed through an approved payment flow (Google Play Billing).',
+          body: 'Premium subscriptions are billed through Google Play Billing at the price shown before purchase. Subscriptions renew automatically until cancelled in Google Play; cancelling keeps Premium until the end of the paid period. Refunds follow Google Play policy.',
         },
         {
           title: 'Availability',
-          body: 'The app and backend may be unavailable during maintenance, testing, or infrastructure incidents. We aim to provide a reliable service but do not guarantee uninterrupted availability during the testing period.',
+          body: 'The app and backend may be unavailable during maintenance or infrastructure incidents. We aim to provide a reliable service but do not guarantee uninterrupted availability.',
         },
         {
           title: 'Support',
           body: 'For support, deletion requests, or privacy questions, contact: rolanddzoagbe@gmail.com. Include your Household COO account email and a short description of the issue.',
         },
       ]}
-      footer="These terms are intentionally lightweight for internal and closed testing and should be reviewed before public production launch."
+      footer="These terms may be updated as Household COO evolves. Material changes will be announced in the app before they take effect."
     />
   );
 }
