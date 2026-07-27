@@ -26,11 +26,17 @@ export interface BillingResult {
 
 const ENTITLEMENT_ID = 'premium';
 
+// RevenueCat public Android SDK key (safe to embed — public by design, same
+// pattern as the Google/Microsoft client IDs). The env override exists for
+// forks/testing; the fallback keeps OTA bundles working even when the update
+// pipeline doesn't inject env vars.
+const FALLBACK_ANDROID_KEY = 'goog_wiMoDbBhcLrvPdUSRbZqXDhKkQi';
+
 let configuredFor: string | null = null;
 
 async function getPurchases(): Promise<any | null> {
   if (Platform.OS === 'web') return null;
-  const apiKey = process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY?.trim();
+  const apiKey = process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY?.trim() || FALLBACK_ANDROID_KEY;
   if (!apiKey) return null;
   try {
     const mod: any = await import('react-native-purchases');
