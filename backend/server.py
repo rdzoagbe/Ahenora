@@ -107,6 +107,25 @@ app.add_middleware(
 )
 
 
+@app.on_event("startup")
+async def reset_testing_window_plans():
+    # Cleanup for when real billing goes live: a paid plan stored without any
+    # RevenueCat event came from the testing window's self-serve switcher, not
+    # from a purchase — reset it so launch gating is honest. Idempotent: real
+    # subscribers always carry rc_last_event (set by the webhook).
+    if db is None or not os.environ.get("RC_WEBHOOK_SECRET"):
+        return
+    try:
+        result = await db["families"].update_many(
+            {"plan": {"$ne": "village"}, "rc_last_event": {"$exists": False}},
+            {"$set": {"plan": "village", "updated_at": datetime.now(timezone.utc)}},
+        )
+        if result.modified_count:
+            log.info("Reset %d testing-window plan(s) to village", result.modified_count)
+    except Exception as exc:  # pragma: no cover - startup must never crash the app
+        log.warning("Testing-window plan reset skipped: %s", exc)
+
+
 # -----------------------------------------------------------------------------
 # Rate limiting (in-memory, per-IP)
 # -----------------------------------------------------------------------------

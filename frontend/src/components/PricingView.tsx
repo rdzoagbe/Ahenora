@@ -282,7 +282,7 @@ function PlanCard({
       </View>
       {!isFree && cycle === 'yearly' ? (
         <Text style={styles.yearlyNote}>
-          ${price.toFixed(2)} {t('pricing_billed_yearly')} · {t('price_preview_only')}
+          ${price.toFixed(2)} {t('pricing_billed_yearly')}
         </Text>
       ) : null}
 
@@ -309,12 +309,12 @@ function PlanCard({
           onPress={onChoose}
           style={[
             styles.cta,
-            styles.ctaDisabled,
+            isFree ? styles.ctaDisabled : styles.ctaUpgrade,
           ]}
         >
-          <Lock color="#fff" size={14} />
+          {isFree ? null : <Crown color="#fff" size={14} />}
           <Text style={[styles.ctaText, { color: '#fff' }]}>
-            {isFree ? t('pricing_get_started') : t('price_coming_soon_cta')}
+            {isFree ? t('pricing_get_started') : t('pricing_upgrade')}
           </Text>
         </PressScale>
       )}
@@ -607,6 +607,9 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.08)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.15)',
+  },
+  ctaUpgrade: {
+    backgroundColor: '#F56519',
   },
   ctaCurrent: {
     backgroundColor: 'rgba(52,211,153,0.18)',
