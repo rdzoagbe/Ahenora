@@ -9,10 +9,13 @@ import * as Linking from 'expo-linking';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { Globe, Sparkles, ShieldCheck, Crown, ArrowRight, Mail } from 'lucide-react-native';
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 import { AmbientBackground } from '../src/components/AmbientBackground';
 import { EmailAuthModal } from '../src/components/EmailAuthModal';
 import { LanguageModal } from '../src/components/LanguageModal';
 import { PressScale } from '../src/components/PressScale';
+import { ValueTour } from '../src/components/ValueTour';
 import { useStore } from '../src/store';
 import { logger } from '../src/logger';
 
@@ -65,6 +68,26 @@ export default function Landing() {
   const [signingIn, setSigningIn] = useState(false);
   const [inviteToken, setInviteToken] = useState<string | null>(null);
   const [invitedBy, setInvitedBy] = useState<string | null>(null);
+  const [showTour, setShowTour] = useState(false);
+
+  // First-launch value tour: shown once before the sign-in screen. Invited
+  // users skip it — they already know why they're here.
+  useEffect(() => {
+    AsyncStorage.getItem('coo_value_tour_seen')
+      .then((seen) => {
+        if (!seen) setShowTour(true);
+      })
+      .catch(() => {
+        // Storage unavailable — just show the sign-in screen.
+      });
+  }, []);
+
+  const dismissTour = () => {
+    setShowTour(false);
+    AsyncStorage.setItem('coo_value_tour_seen', '1').catch(() => {
+      // Best-effort; worst case the tour shows again next launch.
+    });
+  };
 
   const FALLBACK_WEB = '243255248169-cei972lc7kmfig6tmjb6l2nlmgqkjf22.apps.googleusercontent.com';
   const FALLBACK_ANDROID = '243255248169-n4l7es5ecr3j85v00dia2icp9kjo7umh.apps.googleusercontent.com';
@@ -398,6 +421,8 @@ export default function Landing() {
           <Text style={[styles.foot, { color: theme.colors.textSoft }]}>{t('land_footer')}</Text>
         </View>
       </SafeAreaView>
+
+      {showTour && !inviteToken ? <ValueTour onDone={dismissTour} /> : null}
 
       <LanguageModal visible={showLang} onClose={() => setShowLang(false)} />
       <EmailAuthModal
