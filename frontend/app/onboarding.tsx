@@ -158,7 +158,7 @@ export default function Onboarding() {
             <View>
               <View style={[styles.badge, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
                 <ListChecks color={theme.colors.accent} size={13} />
-                <Text style={[styles.badgeText, { color: theme.colors.text }]}>{t('ob_step_of', { n: 1, total: 4 })}</Text>
+                <Text style={[styles.badgeText, { color: theme.colors.text }]}>{t('ob_step_of', { n: 2, total: 5 })}</Text>
               </View>
               <Text style={[styles.title, { color: theme.colors.text }]}>{t('ob_task_title')}</Text>
               <Text style={[styles.sub, { color: theme.colors.textMuted }]}>{t('ob_task_hint')}</Text>
@@ -180,7 +180,7 @@ export default function Onboarding() {
             <View>
               <View style={[styles.badge, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
                 <ShoppingCart color={theme.colors.accent} size={13} />
-                <Text style={[styles.badgeText, { color: theme.colors.text }]}>{t('ob_step_of', { n: 2, total: 4 })}</Text>
+                <Text style={[styles.badgeText, { color: theme.colors.text }]}>{t('ob_step_of', { n: 3, total: 5 })}</Text>
               </View>
               <Text style={[styles.title, { color: theme.colors.text }]}>{t('ob_shop_title')}</Text>
               <Text style={[styles.sub, { color: theme.colors.textMuted }]}>{t('ob_shop_hint')}</Text>
@@ -224,7 +224,7 @@ export default function Onboarding() {
             <View>
               <View style={[styles.badge, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
                 <UserPlus color={theme.colors.accent} size={13} />
-                <Text style={[styles.badgeText, { color: theme.colors.text }]}>{t('ob_step_of', { n: 3, total: 4 })}</Text>
+                <Text style={[styles.badgeText, { color: theme.colors.text }]}>{t('ob_step_of', { n: 4, total: 5 })}</Text>
               </View>
               <Text style={[styles.title, { color: theme.colors.text }]}>{t('ob_invite_title')}</Text>
               <Text style={[styles.sub, { color: theme.colors.textMuted }]}>{t('ob_invite_hint')}</Text>
@@ -263,8 +263,8 @@ export default function Onboarding() {
         {/* Footer actions */}
         <View style={styles.footer}>
           {!isLast ? (
-            <PressScale testID="onboarding-skip" onPress={() => (step === 0 ? setStep(totalSteps - 1) : next())} style={styles.skipBtn}>
-              <Text style={[styles.skipText, { color: theme.colors.textMuted }]}>{step === 0 ? t('ob_skip') : t('ob_skip_for_now')}</Text>
+            <PressScale testID="onboarding-skip" onPress={next} style={styles.skipBtn}>
+              <Text style={[styles.skipText, { color: theme.colors.textMuted }]}>{t('ob_skip_for_now')}</Text>
             </PressScale>
           ) : (
             <View style={{ flex: 1 }} />
