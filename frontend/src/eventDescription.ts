@@ -6,13 +6,23 @@ import { Alert, Linking } from 'react-native';
 
 export type TFunc = (key: string) => string;
 
+// Only these schemes may be opened. Links can come from imported (untrusted)
+// calendar events, so we refuse app-scheme payloads like intent:, tel:, sms:,
+// or file: that a crafted event could smuggle into a tappable chip.
+const SAFE_LINK_SCHEME = /^(https?|geo|mailto):/i;
+
 export async function openExternal(url: string, t: TFunc) {
+  const trimmed = (url || '').trim();
+  if (!SAFE_LINK_SCHEME.test(trimmed)) {
+    Alert.alert(t('cal_couldnt_open'), t('cal_no_app_available'));
+    return;
+  }
   // Do NOT pre-check with canOpenURL: on Android 11+ package-visibility rules
   // make it return false for https/geo unless the manifest declares <queries>,
   // which produced false "no app available" alerts. openURL itself needs no
   // visibility — just try it and only alert on a real failure.
   try {
-    await Linking.openURL(url);
+    await Linking.openURL(trimmed);
   } catch {
     Alert.alert(t('cal_couldnt_open'), t('cal_no_app_available'));
   }

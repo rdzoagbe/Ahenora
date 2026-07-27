@@ -270,7 +270,8 @@ export default function Vault() {
       const mime = doc.mime_type || (match ? match[1] : 'image/jpeg');
       const EXT: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'application/pdf': 'pdf' };
       const ext = EXT[mime] || 'bin';
-      const fileUri = `${FS.cacheDirectory}${doc.doc_id}.${ext}`;
+      const safeId = String(doc.doc_id || "doc").replace(/[^A-Za-z0-9_-]/g, "_");
+      const fileUri = `${FS.cacheDirectory}${safeId}.${ext}`;
       await FS.writeAsStringAsync(fileUri, match ? match[2] : data, { encoding: FS.EncodingType.Base64 });
       await Sharing.shareAsync(fileUri, { mimeType: mime, dialogTitle: doc.title });
       logEvent('vault_shared');
@@ -291,7 +292,8 @@ export default function Vault() {
       const mime = doc.mime_type || (match ? match[1] : 'application/octet-stream');
       const EXT: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'application/pdf': 'pdf' };
       const ext = EXT[mime] || 'bin';
-      const fileUri = `${FS.cacheDirectory}${doc.doc_id}.${ext}`;
+      const safeId = String(doc.doc_id || "doc").replace(/[^A-Za-z0-9_-]/g, "_");
+      const fileUri = `${FS.cacheDirectory}${safeId}.${ext}`;
       await FS.writeAsStringAsync(fileUri, match ? match[2] : data, { encoding: FS.EncodingType.Base64 });
 
       if (Platform.OS === 'android') {

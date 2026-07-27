@@ -1,5 +1,6 @@
 import os
 import io
+import re
 import json
 import base64
 import asyncio
@@ -138,6 +139,40 @@ RATE_LIMIT_AUTH_MAX = int(os.environ.get("RATE_LIMIT_AUTH_MAX", "60"))
 
 _rate_buckets: dict[str, list[float]] = defaultdict(list)
 
+# Per-identity failed-auth tracker (keyed by email or member, NOT by IP), so an
+# attacker cannot sidestep brute-force protection by spoofing X-Forwarded-For or
+# rotating IPs. In-process; resets on redeploy, which is acceptable for a
+# lockout backstop layered on top of the per-IP limiter.
+_auth_fail: dict[str, list[float]] = defaultdict(list)
+AUTH_FAIL_MAX = int(os.environ.get("AUTH_FAIL_MAX", "8"))
+AUTH_FAIL_WINDOW = int(os.environ.get("AUTH_FAIL_WINDOW", "900"))  # 15 minutes
+
+
+def _auth_locked(identity: str) -> bool:
+    import time
+
+    now = time.time()
+    hits = [t for t in _auth_fail.get(identity, []) if t > now - AUTH_FAIL_WINDOW]
+    if hits:
+        _auth_fail[identity] = hits
+    else:
+        _auth_fail.pop(identity, None)
+    return len(hits) >= AUTH_FAIL_MAX
+
+
+def _auth_record_fail(identity: str) -> None:
+    import time
+
+    _auth_fail[identity].append(time.time())
+    # Bound memory against identity-spray: drop the oldest keys wholesale.
+    if len(_auth_fail) > 20000:
+        for k in list(_auth_fail.keys())[:10000]:
+            _auth_fail.pop(k, None)
+
+
+def _auth_clear(identity: str) -> None:
+    _auth_fail.pop(identity, None)
+
 
 def _client_ip(request: Request) -> str:
     forwarded = request.headers.get("x-forwarded-for")
@@ -171,6 +206,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         bucket.append(now)
         _rate_buckets[key] = bucket
 
+        # Evict empty buckets so path/IP spray can't grow memory unbounded.
+        if len(_rate_buckets) > 50000:
+            for k, v in list(_rate_buckets.items()):
+                if not _prune(v, now):
+                    _rate_buckets.pop(k, None)
+
         return await call_next(request)
 
 
@@ -194,7 +235,11 @@ def parse_dt(value: Optional[str]) -> Optional[datetime]:
     if not value:
         return None
     value = value.replace("Z", "+00:00")
-    dt = datetime.fromisoformat(value)
+    try:
+        dt = datetime.fromisoformat(value)
+    except (ValueError, TypeError):
+        # Malformed client input must be a 400, not an unhandled 500.
+        raise HTTPException(status_code=400, detail="Invalid date format")
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(timezone.utc)
@@ -1375,7 +1420,10 @@ async def exchange_session(payload: SessionIn):
     if not token_info:
         if isinstance(last_error, asyncio.TimeoutError):
             raise HTTPException(status_code=504, detail="Timed out reaching Google to verify sign-in")
-        raise HTTPException(status_code=401, detail=f"Invalid Google token: {last_error}")
+        # Log the specific reason server-side; return a generic message so the
+        # accepted audience / client-ID details aren't reflected to the client.
+        log.warning("Google token verification failed: %s", last_error)
+        raise HTTPException(status_code=401, detail="Could not verify Google sign-in. Please try again.")
 
     google_sub = token_info["sub"]
     email = token_info.get("email", "")
@@ -1616,15 +1664,24 @@ async def login_email(payload: EmailLoginIn):
     database = get_db()
 
     email = payload.email.strip().lower()
+    identity = f"login:{email}"
+    if _auth_locked(identity):
+        raise HTTPException(status_code=429, detail="Too many attempts. Please try again later.")
+
     user = await database["users"].find_one({"email": email}, {"_id": 0})
     if not user or not user.get("password_hash"):
+        # Distinct hint is intentional UX (many users sign up with Google);
+        # email existence is low-sensitivity here. Still counts toward lockout.
+        _auth_record_fail(identity)
         raise HTTPException(
             status_code=401,
             detail="No password account found for this email. Try Google sign-in.",
         )
     if not verify_password(payload.password or "", user["password_hash"]):
+        _auth_record_fail(identity)
         raise HTTPException(status_code=401, detail="Incorrect email or password")
 
+    _auth_clear(identity)
     raw_session = await _issue_session(database, user["user_id"])
     return {"user": public_user(user), "session_token": raw_session}
 
@@ -1881,9 +1938,15 @@ async def verify_member_pin(member_id: str, payload: PinIn, user=Depends(require
     if not member.get("pin_hash"):
         return {"ok": True, "has_pin": False}
 
-    if sha256(payload.pin.strip()) != member["pin_hash"]:
+    identity = f"pin:{member_id}"
+    if _auth_locked(identity):
+        raise HTTPException(status_code=429, detail="Too many attempts. Please try again later.")
+
+    if not secrets.compare_digest(sha256(payload.pin.strip()), member["pin_hash"]):
+        _auth_record_fail(identity)
         raise HTTPException(status_code=401, detail="Invalid PIN")
 
+    _auth_clear(identity)
     return {"ok": True, "has_pin": True}
 
 
@@ -4194,7 +4257,7 @@ async def sync_meals_to_shopping(user: dict = Depends(require_user), database=De
     added = 0
     for name in unique:
         existing = await database["shopping_list"].find_one(
-            {"family_id": user["family_id"], "name": {"$regex": f"^{name}$", "$options": "i"}}
+            {"family_id": user["family_id"], "name": {"$regex": f"^{re.escape(name)}$", "$options": "i"}}
         )
         if not existing:
             item = {

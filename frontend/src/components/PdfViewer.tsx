@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { View, ActivityIndicator, StyleSheet, Text } from 'react-native';
 import { WebView } from 'react-native-webview';
 
@@ -55,9 +55,19 @@ function buildHtml(raw: string) {
 </script></body></html>`;
 }
 
+// Strict base64 alphabet only. The raw value is interpolated into a JS string
+// literal inside the WebView HTML, so anything outside this set (a quote or
+// newline) could break out of the string context — reject it instead.
+const BASE64_ONLY = /^[A-Za-z0-9+/=\s]*$/;
+
 export function PdfViewer({ base64, onError }: Props) {
   const raw = useMemo(() => (base64.includes(',') ? base64.split(',')[1] : base64), [base64]);
-  const html = useMemo(() => buildHtml(raw), [raw]);
+  const safe = useMemo(() => (BASE64_ONLY.test(raw) ? raw.replace(/\s+/g, '') : null), [raw]);
+  const html = useMemo(() => (safe ? buildHtml(safe) : ''), [safe]);
+
+  useEffect(() => {
+    if (safe === null) onError?.();
+  }, [safe, onError]);
   const [loading, setLoading] = useState(true);
 
   return (
