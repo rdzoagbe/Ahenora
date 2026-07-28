@@ -57,7 +57,9 @@ export function SundayBriefModal({ visible, onClose }: Props) {
       </ImageBackground>
       <View style={styles.container}>
         <View style={styles.topBar}>
-          <PressScale testID="close-brief" onPress={onClose} style={[styles.closeBtn, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}> 
+          <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('close')} testID="close-brief" onPress={onClose} style={[styles.closeBtn, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}> 
             <X color={theme.colors.text} size={18} />
           </PressScale>
         </View>

@@ -352,7 +352,9 @@ export default function Vault() {
             eyebrow={t('vault_secure_storage')}
             title={t('vault')}
             right={
-              <PressScale onPress={() => router.navigate('/(tabs)/feed')} style={styles.bellWrap}>
+              <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('a11y_notifications')} onPress={() => router.navigate('/(tabs)/feed')} style={styles.bellWrap}>
                 <Bell color={ui.text} size={24} />
               </PressScale>
             }
@@ -466,7 +468,9 @@ export default function Vault() {
       <KeyboardAwareBottomSheet visible={showAdd} onClose={closeAdd} contentStyle={styles.sheet}>
         <View style={styles.sheetHeader}>
           <Text style={styles.sheetTitle}>{t('add_document')}</Text>
-          <PressScale testID="vault-close" onPress={closeAdd} style={styles.iconBtn}>
+          <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('close')} testID="vault-close" onPress={closeAdd} style={styles.iconBtn}>
             <X color={ui.text} size={20} />
           </PressScale>
         </View>
@@ -534,13 +538,19 @@ export default function Vault() {
             <View style={styles.previewTop}>
               <Text style={styles.previewTitle}>{preview.title}</Text>
               <View style={styles.previewActions}>
-                <PressScale testID="preview-share" onPress={() => shareDoc(preview)} style={styles.previewIconBtn}>
+                <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('a11y_share')} testID="preview-share" onPress={() => shareDoc(preview)} style={styles.previewIconBtn}>
                   <Share2 color="#fff" size={20} />
                 </PressScale>
-                <PressScale testID="preview-delete" onPress={() => confirmRemove(preview)} style={styles.previewIconBtn}>
+                <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('a11y_delete')} testID="preview-delete" onPress={() => confirmRemove(preview)} style={styles.previewIconBtn}>
                   <Trash2 color="#EF4444" size={20} />
                 </PressScale>
-                <PressScale testID="preview-close" onPress={() => setPreview(null)} style={styles.previewIconBtn}>
+                <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('close')} testID="preview-close" onPress={() => setPreview(null)} style={styles.previewIconBtn}>
                   <X color="#fff" size={20} />
                 </PressScale>
               </View>

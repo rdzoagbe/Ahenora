@@ -25,7 +25,7 @@ export default function DateTimePickerSheet({
   onChange,
   onClose,
 }: DateTimePickerSheetProps) {
-  const { theme } = useStore();
+  const { theme, t } = useStore();
   const c = theme.colors;
   const [dateText, setDateText] = useState('');
   const [timeText, setTimeText] = useState('18:00');
@@ -72,7 +72,9 @@ export default function DateTimePickerSheet({
           <CalendarClock color={c.accent} size={18} />
           <Text style={[styles.title, { color: c.text }]}>Schedule card</Text>
         </View>
-        <PressScale testID="close-date-picker" onPress={onClose} style={[styles.iconBtn, { borderColor: c.cardBorder }]}>
+        <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('close')} testID="close-date-picker" onPress={onClose} style={[styles.iconBtn, { borderColor: c.cardBorder }]}>
           <X color={c.text} size={18} />
         </PressScale>
       </View>

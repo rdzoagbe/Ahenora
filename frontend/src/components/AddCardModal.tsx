@@ -185,7 +185,9 @@ export function AddCardModal({
           <View style={[styles.sheet, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder, shadowColor: theme.colors.shadow, paddingBottom: 16 + Math.max(insets.bottom, 14) }]}> 
             <View style={styles.header}>
               <Text style={[styles.heading, { color: theme.colors.text }]}>{t('add_card')}</Text>
-              <PressScale testID="close-add-card" onPress={onClose} style={[styles.closeBtn, { borderColor: theme.colors.cardBorder }]}> 
+              <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('close')} testID="close-add-card" onPress={onClose} style={[styles.closeBtn, { borderColor: theme.colors.cardBorder }]}> 
                 <X color={theme.colors.text} size={18} />
               </PressScale>
             </View>

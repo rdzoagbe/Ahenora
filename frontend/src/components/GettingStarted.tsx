@@ -66,7 +66,9 @@ export function GettingStarted({ hasMember, hasCard, hasDoc, onAddMember, onAddC
             <Text style={styles.sub}>{doneCount}/{steps.length} {t('gs_done')}</Text>
           </View>
         </View>
-        <PressScale testID="gs-dismiss" onPress={dismiss} style={styles.dismiss}>
+        <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('close')} testID="gs-dismiss" onPress={dismiss} style={styles.dismiss}>
           <X color={ui.muted} size={16} />
         </PressScale>
       </View>

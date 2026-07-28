@@ -412,7 +412,9 @@ export default function Kitchen() {
           eyebrow={t('kitchen_eyebrow')}
           title={t('kitchen')}
           right={
-            <PressScale onPress={() => router.navigate('/(tabs)/feed')} style={styles.bellWrap}>
+            <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('a11y_notifications')} onPress={() => router.navigate('/(tabs)/feed')} style={styles.bellWrap}>
               <Bell color={ui.text} size={24} />
             </PressScale>
           }
@@ -507,7 +509,9 @@ export default function Kitchen() {
                   returnKeyType="done"
                   onSubmitEditing={addShopItem}
                 />
-                <PressScale onPress={addShopItem} disabled={addingShop || !shopInput.trim()} style={[styles.shopAddBtn, (!shopInput.trim() || addingShop) && { opacity: 0.4 }]}>
+                <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('a11y_add')} onPress={addShopItem} disabled={addingShop || !shopInput.trim()} style={[styles.shopAddBtn, (!shopInput.trim() || addingShop) && { opacity: 0.4 }]}>
                   <Plus color="#FFFFFF" size={18} />
                 </PressScale>
               </View>
@@ -517,7 +521,9 @@ export default function Kitchen() {
                   <View style={styles.numBadge}><Text style={styles.numText}>{index + 1}</Text></View>
                   <Text style={styles.rowText}>{item.name}</Text>
                   {item.category ? <Text style={styles.rowCat}>{catLabel(item.category, t)}</Text> : null}
-                  <PressScale onPress={() => deleteShopItem(item.item_id)} style={{ padding: 4 }}>
+                  <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('a11y_delete')} onPress={() => deleteShopItem(item.item_id)} style={{ padding: 4 }}>
                     <Trash2 color={ui.muted} size={15} />
                   </PressScale>
                 </PressScale>
@@ -531,7 +537,9 @@ export default function Kitchen() {
                     <PressScale key={item.item_id} onPress={() => toggleShopItem(item)} style={styles.row}>
                       <Check color={ui.mintText} size={20} />
                       <Text style={[styles.rowText, styles.rowTextDone]}>{item.name}</Text>
-                      <PressScale onPress={() => deleteShopItem(item.item_id)} style={{ padding: 4 }}>
+                      <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('a11y_delete')} onPress={() => deleteShopItem(item.item_id)} style={{ padding: 4 }}>
                         <Trash2 color={ui.muted} size={15} />
                       </PressScale>
                     </PressScale>
@@ -603,7 +611,9 @@ export default function Kitchen() {
                         <Text style={styles.rowText}>{meal.title}</Text>
                         {meal.ingredients.length > 0 ? <Text style={styles.rowCat}>{meal.ingredients.join(', ')}</Text> : null}
                       </View>
-                      <PressScale onPress={() => deleteMeal(meal.meal_id)} style={{ padding: 4 }}>
+                      <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('a11y_delete')} onPress={() => deleteMeal(meal.meal_id)} style={{ padding: 4 }}>
                         <Trash2 color={ui.muted} size={15} />
                       </PressScale>
                     </View>
@@ -638,7 +648,9 @@ export default function Kitchen() {
       <KeyboardAwareBottomSheet visible={showShopHistory} onClose={() => setShowShopHistory(false)} contentStyle={styles.sheet}>
         <View style={styles.sheetHeader}>
           <Text style={styles.sheetTitle}>{t('kitchen_past_lists')}</Text>
-          <PressScale onPress={() => setShowShopHistory(false)} style={styles.iconBtn}><X color={ui.text} size={20} /></PressScale>
+          <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('close')} onPress={() => setShowShopHistory(false)} style={styles.iconBtn}><X color={ui.text} size={20} /></PressScale>
         </View>
         {histLoading ? (
           <ActivityIndicator color={ui.orange} style={{ marginVertical: 24 }} />
@@ -655,7 +667,9 @@ export default function Kitchen() {
                 <RotateCcw color={ui.orange} size={14} />
                 <Text style={styles.reuseText}>{t('kitchen_reuse')}</Text>
               </PressScale>
-              <PressScale onPress={() => deleteShopTrip(h.history_id)} style={{ padding: 6 }}>
+              <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('a11y_delete')} onPress={() => deleteShopTrip(h.history_id)} style={{ padding: 6 }}>
                 <Trash2 color={ui.muted} size={15} />
               </PressScale>
             </View>
@@ -667,7 +681,9 @@ export default function Kitchen() {
       <KeyboardAwareBottomSheet visible={restoreEntry !== null} onClose={() => setRestoreEntry(null)} contentStyle={styles.sheet}>
         <View style={styles.sheetHeader}>
           <Text style={styles.sheetTitle}>{t('kitchen_restore_items')}</Text>
-          <PressScale onPress={() => setRestoreEntry(null)} style={styles.iconBtn}><X color={ui.text} size={20} /></PressScale>
+          <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('close')} onPress={() => setRestoreEntry(null)} style={styles.iconBtn}><X color={ui.text} size={20} /></PressScale>
         </View>
         {restoreEntry ? (
           <>
@@ -705,7 +721,9 @@ export default function Kitchen() {
       <KeyboardAwareBottomSheet visible={showMealHistory} onClose={() => setShowMealHistory(false)} contentStyle={styles.sheet}>
         <View style={styles.sheetHeader}>
           <Text style={styles.sheetTitle}>{t('kitchen_saved_plans')}</Text>
-          <PressScale onPress={() => setShowMealHistory(false)} style={styles.iconBtn}><X color={ui.text} size={20} /></PressScale>
+          <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('close')} onPress={() => setShowMealHistory(false)} style={styles.iconBtn}><X color={ui.text} size={20} /></PressScale>
         </View>
         <View style={styles.savePlanRow}>
           <TextInput
@@ -736,7 +754,9 @@ export default function Kitchen() {
                 <RotateCcw color={ui.orange} size={14} />
                 <Text style={styles.reuseText}>{t('kitchen_reuse')}</Text>
               </PressScale>
-              <PressScale onPress={() => deletePlan(p.plan_id)} style={{ padding: 6 }}>
+              <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('a11y_delete')} onPress={() => deletePlan(p.plan_id)} style={{ padding: 6 }}>
                 <Trash2 color={ui.muted} size={15} />
               </PressScale>
             </View>
@@ -747,7 +767,9 @@ export default function Kitchen() {
       <KeyboardAwareBottomSheet visible={showMealAdd} onClose={() => setShowMealAdd(false)} contentStyle={styles.sheet}>
         <View style={styles.sheetHeader}>
           <Text style={styles.sheetTitle}>{t('vault_add_meal')}</Text>
-          <PressScale onPress={() => setShowMealAdd(false)} style={styles.iconBtn}><X color={ui.text} size={20} /></PressScale>
+          <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('close')} onPress={() => setShowMealAdd(false)} style={styles.iconBtn}><X color={ui.text} size={20} /></PressScale>
         </View>
         <Text style={styles.label}>{t('vault_day')}</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
@@ -776,7 +798,9 @@ export default function Kitchen() {
             <Sparkles color={ui.lavenderText} size={20} />
             <Text style={styles.sheetTitle}>{t('kitchen_suggest_title')}</Text>
           </View>
-          <PressScale onPress={() => setShowSuggest(false)} style={styles.iconBtn}><X color={ui.text} size={20} /></PressScale>
+          <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('close')} onPress={() => setShowSuggest(false)} style={styles.iconBtn}><X color={ui.text} size={20} /></PressScale>
         </View>
         <Text style={styles.suggestSub}>{t('kitchen_suggest_sub')}</Text>
         {/* No inner ScrollView here — the sheet itself scrolls; nesting two

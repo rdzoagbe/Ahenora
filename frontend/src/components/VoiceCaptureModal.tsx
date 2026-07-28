@@ -43,7 +43,9 @@ export function VoiceCaptureModal({ visible, onClose }: Props) {
               <Text style={[styles.badgeText, { color: theme.colors.text }]}>{t('voice_capture')}</Text>
             </View>
 
-            <PressScale testID="voice-close" onPress={onClose} style={[styles.iconBtn, { borderColor: theme.colors.cardBorder }]}> 
+            <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('close')} testID="voice-close" onPress={onClose} style={[styles.iconBtn, { borderColor: theme.colors.cardBorder }]}> 
               <X color={theme.colors.text} size={18} />
             </PressScale>
           </View>

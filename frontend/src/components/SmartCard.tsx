@@ -168,6 +168,8 @@ export function SmartCard({ card, onComplete, onDelete }: Props) {
         </PressScale>
 
         <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('a11y_delete')}
           testID={`delete-${card.card_id}`}
           onPress={onDelete}
           style={[styles.deleteBtn, { borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}

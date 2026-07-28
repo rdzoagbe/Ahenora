@@ -64,7 +64,9 @@ export function PinPadModal({ visible, mode, title, subtitle, onClose, onSubmit 
               <Lock color={c.text} size={12} />
               <Text style={[styles.badgeText, { color: c.text }]}>{mode === 'set' ? t('pin_set') : t('pin_enter')}</Text>
             </View>
-            <PressScale testID="pin-close" onPress={onClose} style={[styles.closeBtn, { borderColor: c.cardBorder }]}>
+            <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('close')} testID="pin-close" onPress={onClose} style={[styles.closeBtn, { borderColor: c.cardBorder }]}>
               <X color={c.text} size={18} />
             </PressScale>
           </View>

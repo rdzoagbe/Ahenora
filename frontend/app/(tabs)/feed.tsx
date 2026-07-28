@@ -695,7 +695,9 @@ export default function Feed() {
                     onSubmitEditing={addNote}
                     multiline={false}
                   />
-                  <PressScale onPress={addNote} disabled={savingNote || !noteText.trim()} style={[styles.noteSendBtn, (!noteText.trim() || savingNote) && { opacity: 0.4 }]}>
+                  <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('a11y_add')} onPress={addNote} disabled={savingNote || !noteText.trim()} style={[styles.noteSendBtn, (!noteText.trim() || savingNote) && { opacity: 0.4 }]}>
                     <Plus color="#FFFFFF" size={18} />
                   </PressScale>
                 </View>
@@ -705,7 +707,9 @@ export default function Feed() {
                       <Text style={styles.noteText}>{note.text}</Text>
                       <Text style={styles.noteMeta}>{note.author_name} · {new Date(note.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}</Text>
                     </View>
-                    <PressScale onPress={() => removeNote(note.note_id)} style={{ padding: 4 }}>
+                    <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('a11y_delete')} onPress={() => removeNote(note.note_id)} style={{ padding: 4 }}>
                       <Trash2 color={ui.muted} size={15} />
                     </PressScale>
                   </View>
@@ -793,7 +797,9 @@ export default function Feed() {
                   returnKeyType="send"
                   onSubmitEditing={addAnnouncement}
                 />
-                <PressScale onPress={addAnnouncement} disabled={savingAnn || !annText.trim()} style={[styles.noteSendBtn, (!annText.trim() || savingAnn) && { opacity: 0.4 }]}>
+                <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('a11y_add')} onPress={addAnnouncement} disabled={savingAnn || !annText.trim()} style={[styles.noteSendBtn, (!annText.trim() || savingAnn) && { opacity: 0.4 }]}>
                   <Plus color="#FFFFFF" size={18} />
                 </PressScale>
               </View>
@@ -806,7 +812,9 @@ export default function Feed() {
                     <Text style={styles.noteText}>{ann.text}</Text>
                     <Text style={styles.noteMeta}>{ann.author_name} · {new Date(ann.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}</Text>
                   </View>
-                  <PressScale onPress={() => removeAnnouncement(ann.announcement_id)} style={{ padding: 4 }}>
+                  <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('a11y_delete')} onPress={() => removeAnnouncement(ann.announcement_id)} style={{ padding: 4 }}>
                     <Trash2 color={ui.muted} size={15} />
                   </PressScale>
                 </View>
@@ -931,7 +939,9 @@ export default function Feed() {
             <>
               <View style={styles.detailHeader}>
                 <Text style={styles.detailTitle}>{cleanText(selectedCard.title)}</Text>
-                <PressScale onPress={() => setSelectedCard(null)} style={styles.closeBtn} testID="feed-detail-close">
+                <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('close')} onPress={() => setSelectedCard(null)} style={styles.closeBtn} testID="feed-detail-close">
                   <X color={ui.text} size={20} />
                 </PressScale>
               </View>
@@ -999,7 +1009,9 @@ export default function Feed() {
       <KeyboardAwareBottomSheet visible={showAlerts} onClose={() => setShowAlerts(false)} contentStyle={styles.detailSheet}>
         <View style={styles.detailHeader}>
           <Text style={styles.detailTitle}>{t('feed_needs_attention')}</Text>
-          <PressScale onPress={() => setShowAlerts(false)} style={styles.closeBtn} testID="feed-alerts-close">
+          <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('close')} onPress={() => setShowAlerts(false)} style={styles.closeBtn} testID="feed-alerts-close">
             <X color={ui.text} size={20} />
           </PressScale>
         </View>

@@ -28,7 +28,9 @@ export function LanguageModal({ visible, onClose }: Props) {
         <View style={[styles.sheet, { backgroundColor: c.card, borderColor: c.cardBorder }]}>
           <View style={styles.header}>
             <Text style={[styles.heading, { color: c.text }]}>{t('language')}</Text>
-            <PressScale testID="close-lang" onPress={onClose} style={[styles.closeBtn, { borderColor: c.cardBorder }]}>
+            <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('close')} testID="close-lang" onPress={onClose} style={[styles.closeBtn, { borderColor: c.cardBorder }]}>
               <X color={c.text} size={18} />
             </PressScale>
           </View>
