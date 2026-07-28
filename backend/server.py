@@ -28,7 +28,7 @@ except ImportError:
     genai = None
 import PIL.Image
 
-from ai_models import is_model_not_found, model_candidates
+from ai_models import is_model_not_found, model_candidates, summarize_ai_error
 from ai_safety import (
     MAX_INGREDIENT_LEN,
     RECIPE_SYSTEM_PROMPT,
@@ -1474,7 +1474,7 @@ async def health_ai(probe: int = 0):
         "model_env": GEMINI_MODEL or None,
         "model_resolved": _gemini_state["model"],
         "model_candidates": model_candidates(GEMINI_MODEL, _gemini_state["model"] or ""),
-        "last_error": _gemini_state["last_error"],
+        "last_error": summarize_ai_error(_gemini_state["last_error"]),
         # Everything below funnels through the same client, so one probe
         # vouches for the plumbing of all of them.
         "features": [
@@ -1501,12 +1501,16 @@ async def health_ai(probe: int = 0):
                 "reply": reply[:40],
                 "model": _gemini_state["model"],
             }
-        except Exception as exc:  # noqa: BLE001 — reported, not hidden
-            status["probe"] = {"ok": False, "error": str(exc)[:300]}
+        except Exception as exc:  # noqa: BLE001 — categorised below, full text logged
+            # Raw exception text can carry stack frames and internal detail;
+            # an unauthenticated endpoint only gets the category. The full
+            # text is in the logs for whoever operates the server.
+            log.warning("ai health probe failed: %s", exc)
+            status["probe"] = {"ok": False, "error": summarize_ai_error(str(exc))}
         # The probe may have just resolved (or changed) the model — report the
         # state after the probe, not the snapshot from before it.
         status["model_resolved"] = _gemini_state["model"]
-        status["last_error"] = _gemini_state["last_error"]
+        status["last_error"] = summarize_ai_error(_gemini_state["last_error"])
 
     return status
 

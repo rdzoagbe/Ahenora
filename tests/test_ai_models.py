@@ -69,3 +69,28 @@ class IsModelNotFound(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SummarizeAiError(unittest.TestCase):
+    def test_categorises_the_failures_an_operator_must_tell_apart(self):
+        from ai_models import summarize_ai_error
+        cases = [
+            ("404 models/gemini-1.5-flash is not found", "model_not_found"),
+            ("API key not valid. Please pass a valid API key.", "invalid_api_key"),
+            ("403 permission denied on resource project", "permission_denied"),
+            ("429 Resource has been exhausted", "quota_exhausted"),
+            ("response blocked by safety settings", "blocked_by_safety"),
+            ("Deadline exceeded while waiting", "network_error"),
+            ("", "none"),
+            (None, "none"),
+            ("something entirely novel", "error"),
+        ]
+        for raw, expected in cases:
+            self.assertEqual(summarize_ai_error(raw), expected, repr(raw))
+
+    def test_never_echoes_the_input(self):
+        # The whole point: whatever the exception says, it must not come back.
+        from ai_models import summarize_ai_error
+        secret = "Traceback: /app/secret_path/server.py line 42, key=AIzaSyFAKE"
+        self.assertNotIn("AIza", summarize_ai_error(secret))
+        self.assertLess(len(summarize_ai_error(secret)), 30)

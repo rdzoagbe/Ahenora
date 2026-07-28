@@ -106,7 +106,7 @@ class HealthAiProbe(unittest.TestCase):
         server.genai = type("G", (), {"GenerativeModel": _Quota})()
         status = self.probe()
         self.assertFalse(status["probe"]["ok"])
-        self.assertIn("quota", status["probe"]["error"])
+        self.assertEqual(status["probe"]["error"], "quota_exhausted")
         self.assertEqual(len(fake.calls), 1)
 
     def test_probe_is_rate_limited(self):

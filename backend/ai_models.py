@@ -58,3 +58,30 @@ def is_model_not_found(error_text: str) -> bool:
         or ("is not supported" in s and "model" in s)
         or "has been deprecated" in s
     )
+
+
+def summarize_ai_error(error_text: str) -> str:
+    """A short, safe category for an AI failure, fit for an unauthenticated
+    diagnostic response.
+
+    Raw exception text can carry stack frames, internal URLs and project ids —
+    CodeQL rightly flags returning it to external callers. The operator only
+    needs to know which *kind* of failure occurred; the full text belongs in
+    the server logs.
+    """
+    s = (error_text or "").lower()
+    if not s:
+        return "none"
+    if is_model_not_found(s):
+        return "model_not_found"
+    if "api key" in s or "api_key" in s or "unauthenticated" in s or "401" in s:
+        return "invalid_api_key"
+    if "permission" in s or "403" in s:
+        return "permission_denied"
+    if "quota" in s or "429" in s or "exhausted" in s or "rate limit" in s:
+        return "quota_exhausted"
+    if "safety" in s or "blocked" in s:
+        return "blocked_by_safety"
+    if "deadline" in s or "timeout" in s or "timed out" in s or "unavailable" in s or "connection" in s:
+        return "network_error"
+    return "error"
