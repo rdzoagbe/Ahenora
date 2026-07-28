@@ -205,10 +205,18 @@ class ValidateSuggestions(unittest.TestCase):
         )
         self.assertEqual(meals[0]["uses"], ["rice"])
 
-    def test_drops_a_repeated_dish(self):
+    def test_a_repeated_dish_drops_below_seven_and_falls_back(self):
+        # A duplicate title is removed; that leaves six, which would blank a day,
+        # so the gate rejects the whole week and the caller uses the offline
+        # engine (which always returns seven).
         data = week()
         data["meals"][1]["title"] = data["meals"][0]["title"]
-        meals = validate_suggestions(data, self.OWNED)
+        with self.assertRaises(UnsafeRecipe):
+            validate_suggestions(data, self.OWNED)
+
+    def test_a_full_week_of_distinct_dishes_passes(self):
+        meals = validate_suggestions(week(), self.OWNED)
+        self.assertEqual(len(meals), 7)
         titles = [m["title"].lower() for m in meals]
         self.assertEqual(len(titles), len(set(titles)))
 

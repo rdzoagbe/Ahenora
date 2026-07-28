@@ -12,6 +12,7 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  kitchen_shop_cleared_plan_kept: 'List cleared. Your meal plan was kept.',
   kitchen_clear_shop_plan_body: 'Every item is removed (saved to your history first). Your current meal plan is saved for reuse and the planner is cleared too, ready for a fresh week.',
   kitchen_shop_cleared_plan_saved: 'List cleared. Meal plan saved for reuse.',
   kitchen_auto_plan_name: 'Week of {date}',
@@ -1008,6 +1009,7 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  kitchen_shop_cleared_plan_kept: 'Lista vaciada. Tu menú se ha conservado.',
   kitchen_clear_shop_plan_body: 'Se elimina cada artículo (se guarda antes en tu historial). Tu menú actual se guarda para reutilizarlo y el planificador se vacía, listo para una nueva semana.',
   kitchen_shop_cleared_plan_saved: 'Lista vaciada. Menú guardado para reutilizar.',
   kitchen_auto_plan_name: 'Semana del {date}',
@@ -1998,6 +2000,7 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  kitchen_shop_cleared_plan_kept: 'Liste vidée. Votre menu a été conservé.',
   kitchen_clear_shop_plan_body: 'Chaque article est retiré (enregistré dans l’historique d’abord). Votre menu actuel est sauvegardé pour être réutilisé, et le planificateur est vidé pour repartir sur une nouvelle semaine.',
   kitchen_shop_cleared_plan_saved: 'Liste vidée. Menu enregistré pour réutilisation.',
   kitchen_auto_plan_name: 'Semaine du {date}',
@@ -2988,6 +2991,7 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  kitchen_shop_cleared_plan_kept: 'Liste geleert. Dein Essensplan wurde behalten.',
   kitchen_clear_shop_plan_body: 'Jeder Artikel wird entfernt (zuvor im Verlauf gespeichert). Dein aktueller Essensplan wird zur Wiederverwendung gesichert und der Planer geleert — bereit für eine neue Woche.',
   kitchen_shop_cleared_plan_saved: 'Liste geleert. Essensplan zur Wiederverwendung gespeichert.',
   kitchen_auto_plan_name: 'Woche vom {date}',

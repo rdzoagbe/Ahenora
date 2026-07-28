@@ -1,5 +1,5 @@
 import { suggestWeek, localizedMealTitle, localizedMealIngredients, RECIPE_IDS, resolveRecipeId, allRecipes, searchRecipes, recipeIngredients } from '../mealSuggestions';
-import { quantityFor, hasQuantity } from '../recipeQuantities';
+import { quantityFor, hasQuantity, shoppingNameFor } from '../recipeQuantities';
 import { RECIPE_METHODS, recipeMethod } from '../recipeSteps';
 
 describe('suggestWeek', () => {
@@ -357,5 +357,23 @@ describe('asking again (offline engine)', () => {
   it('defaults to the first variant when none is given', () => {
     expect(suggestWeek(LIST, 'en').map((s) => s.recipeId))
       .toEqual(suggestWeek(LIST, 'en', [], 0).map((s) => s.recipeId));
+  });
+});
+
+describe('shoppingNameFor (add-missing list names)', () => {
+  it('puts weights before the item and counts after it', () => {
+    expect(shoppingNameFor('rice', 'rice', 4, 'en')).toBe('300 g rice');
+    expect(shoppingNameFor('eggs', 'eggs', 3, 'en')).toBe('eggs ×6');
+  });
+
+  it('never writes "to taste" onto the list', () => {
+    // The bug: seasonings became "to taste curry" / "selon le goût basilic".
+    expect(shoppingNameFor('curry', 'curry', 4, 'en')).toBe('curry');
+    expect(shoppingNameFor('basil', 'basilic', 4, 'fr')).toBe('basilic');
+    expect(shoppingNameFor('chili', 'piment', 4, 'fr')).toBe('piment');
+  });
+
+  it('falls back to the bare label for an unknown ingredient', () => {
+    expect(shoppingNameFor('unobtainium', 'moon dust', 4, 'en')).toBe('moon dust');
   });
 });

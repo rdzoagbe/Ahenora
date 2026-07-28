@@ -4650,7 +4650,9 @@ async def sync_meals_to_shopping(user: dict = Depends(require_user), database=De
                 "item_id": new_id("shop"),
                 "family_id": user["family_id"],
                 "name": name,
-                "category": "Groceries",
+                # "Other" (not the non-existent "Groceries") so the app's
+                # name-based aisle derivation kicks in on display.
+                "category": "Other",
                 "checked": False,
                 "added_by": user.get("name", ""),
                 "created_at": utcnow(),

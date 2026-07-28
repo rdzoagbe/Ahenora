@@ -18,7 +18,7 @@ import { api, MealPlan, ShoppingItem, ShoppingHistoryEntry, SavedMealPlan } from
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { logger } from '../../src/logger';
 import { suggestWeek, MealSuggestion, SuggestLang, localizedMealTitle, localizedMealIngredients, resolveRecipeId, recipeIngredients, searchRecipes } from '../../src/mealSuggestions';
-import { quantityFor } from '../../src/recipeQuantities';
+import { quantityFor, shoppingNameFor } from '../../src/recipeQuantities';
 import { categoriseShoppingItem } from '../../src/shoppingCategories';
 import { recipeMethod } from '../../src/recipeSteps';
 
@@ -241,13 +241,25 @@ export default function Kitchen() {
                   .saveMealPlan(dated)
                   .then(() => true)
                   .catch(() => false);
-                await api.clearAllMeals();
-                if (planSaved) setSavedPlans(await api.listSavedPlans().catch(() => savedPlans));
+                // Only clear the planner if the plan was safely saved. If the
+                // save failed, keep the meals rather than deleting them unsaved.
+                if (planSaved) {
+                  await api.clearAllMeals();
+                  setSavedPlans(await api.listSavedPlans().catch(() => savedPlans));
+                } else {
+                  // Put the optimistically-cleared meals back on screen.
+                  setMeals(clearedMeals);
+                }
               }
               setShopHistory(await api.listShoppingHistory().catch(() => []));
-              // Only promise the plan was saved when it really was.
+              // Only promise the plan was saved when it really was; if a plan
+              // existed but couldn't be saved, it's been kept, not lost.
               showToast(
-                planSaved ? t('kitchen_shop_cleared_plan_saved') : t('kitchen_cleared'),
+                hasPlan && planSaved
+                  ? t('kitchen_shop_cleared_plan_saved')
+                  : hasPlan
+                    ? t('kitchen_shop_cleared_plan_kept')
+                    : t('kitchen_cleared'),
                 'success',
               );
             } catch {
@@ -436,6 +448,13 @@ export default function Kitchen() {
       setShowSuggest(false);
       showToast(`${created.length} ${t('kitchen_meals_added')}`, 'success');
     } catch {
+      // The batch failed as a whole — un-mark the rows so they read as
+      // addable again rather than a lying green check.
+      setAddedSuggest((prev) => {
+        const n = new Set(prev);
+        toAdd.forEach((s) => n.delete(sugKey(s)));
+        return n;
+      });
       setMeals(await api.listMeals().catch(() => []));
       showToast(t('vault_could_not_add_meal'), 'error');
     }
@@ -443,8 +462,18 @@ export default function Kitchen() {
 
   const addMissingToList = useCallback(async (recipeId: string) => {
     const needed = recipeIngredients(recipeId, suggestLang);
-    const have = new Set(shopItems.map((i) => i.name.trim().toLowerCase()));
-    const missing = needed.filter((n) => !have.has(n.label.trim().toLowerCase()));
+    // The list stores amount-prefixed names ("600 g chicken"), so an exact
+    // match on the bare label ("chicken") never fires and a second tap
+    // duplicated the whole recipe. Match on whether the ingredient word already
+    // appears in any list item instead.
+    const listWords = shopItems.map(
+      (i) => ` ${i.name.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim()} `,
+    );
+    const alreadyHave = (label: string) => {
+      const l = label.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+      return listWords.some((n) => n.includes(` ${l} `));
+    };
+    const missing = needed.filter((n) => !alreadyHave(n.label));
 
     if (missing.length === 0) {
       showToast(t('cook_nothing_missing'), 'info');
@@ -453,11 +482,10 @@ export default function Kitchen() {
 
     try {
       // The amount goes on the list too — "400 g rice" is what you need at the
-      // shop, "rice" is what you already knew.
+      // shop. Seasonings ("curry", "basil") go on bare, without "to taste".
       const created = await Promise.all(
         missing.map((m) => {
-          const qty = quantityFor(m.id, servings, suggestLang);
-          const name = qty && !qty.startsWith('×') ? `${qty} ${m.label}` : qty ? `${m.label} ${qty}` : m.label;
+          const name = shoppingNameFor(m.id, m.label, servings, suggestLang);
           return api.addShoppingItem({ name, category: categoriseShoppingItem(name) || undefined });
         }),
       );
