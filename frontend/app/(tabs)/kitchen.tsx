@@ -211,25 +211,55 @@ export default function Kitchen() {
 
   const clearAllShop = useCallback(() => {
     if (shopItems.length === 0) return;
-    Alert.alert(t('kitchen_clear_shop_q'), t('kitchen_clear_shop_body'), [
-      { text: t('vault_cancel'), style: 'cancel' },
-      {
-        text: t('kitchen_clear_all'),
-        style: 'destructive',
-        onPress: async () => {
-          setShopItems([]);
-          try {
-            await api.clearAllShopping();
-            setShopHistory(await api.listShoppingHistory().catch(() => []));
-            showToast(t('kitchen_cleared'), 'success');
-          } catch {
-            showToast(t('vault_could_not_update'), 'error');
-            load();
-          }
+    // Clearing the list is the "new week" gesture, so the meal plan built from
+    // it goes stale at the same moment. Save it for reuse, then clear the
+    // planner alongside the list — but only mention that when there is a plan.
+    const hasPlan = meals.length > 0;
+    Alert.alert(
+      t('kitchen_clear_shop_q'),
+      hasPlan ? t('kitchen_clear_shop_plan_body') : t('kitchen_clear_shop_body'),
+      [
+        { text: t('vault_cancel'), style: 'cancel' },
+        {
+          text: t('kitchen_clear_all'),
+          style: 'destructive',
+          onPress: async () => {
+            setShopItems([]);
+            const clearedMeals = meals;
+            if (hasPlan) setMeals([]);
+            try {
+              await api.clearAllShopping();
+              let planSaved = false;
+              if (hasPlan) {
+                // Snapshot the current plan under a dated name, then clear it.
+                // saveMealPlan reads the live meals server-side, so save before
+                // clearing.
+                const dated = t('kitchen_auto_plan_name', {
+                  date: new Date().toLocaleDateString(),
+                });
+                planSaved = await api
+                  .saveMealPlan(dated)
+                  .then(() => true)
+                  .catch(() => false);
+                await api.clearAllMeals();
+                if (planSaved) setSavedPlans(await api.listSavedPlans().catch(() => savedPlans));
+              }
+              setShopHistory(await api.listShoppingHistory().catch(() => []));
+              // Only promise the plan was saved when it really was.
+              showToast(
+                planSaved ? t('kitchen_shop_cleared_plan_saved') : t('kitchen_cleared'),
+                'success',
+              );
+            } catch {
+              showToast(t('vault_could_not_update'), 'error');
+              if (hasPlan) setMeals(clearedMeals);
+              load();
+            }
+          },
         },
-      },
-    ]);
-  }, [shopItems.length, load, showToast, t]);
+      ],
+    );
+  }, [shopItems.length, meals, savedPlans, load, showToast, t]);
 
   const clearAllMealsPlan = useCallback(() => {
     if (meals.length === 0) return;
@@ -1192,7 +1222,21 @@ export default function Kitchen() {
       </KeyboardAwareBottomSheet>
 
       {/* Suggest a week of meals from your shopping */}
-      <KeyboardAwareBottomSheet visible={showSuggest} onClose={() => setShowSuggest(false)} contentStyle={styles.sheet}>
+      <KeyboardAwareBottomSheet
+        visible={showSuggest}
+        onClose={() => setShowSuggest(false)}
+        contentStyle={styles.sheet}
+        footer={
+          <PressScale
+            testID="suggest-add-all"
+            onPress={acceptAllSuggestions}
+            disabled={suggestLoading}
+            style={[styles.suggestAllBtn, suggestLoading && { opacity: 0.5 }]}
+          >
+            <Text style={styles.suggestAllText}>{t('kitchen_suggest_add_all')}</Text>
+          </PressScale>
+        }
+      >
         <View style={styles.sheetHeader}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
             <Sparkles color={ui.lavenderText} size={20} />
@@ -1248,9 +1292,6 @@ export default function Kitchen() {
             </View>
           );
         })}
-        <PressScale testID="suggest-add-all" onPress={acceptAllSuggestions} disabled={suggestLoading} style={[styles.suggestAllBtn, suggestLoading && { opacity: 0.5 }]}>
-          <Text style={styles.suggestAllText}>{t('kitchen_suggest_add_all')}</Text>
-        </PressScale>
       </KeyboardAwareBottomSheet>
 
       <LoadingOverlay visible={loading} label={t('vault_loading')} />
@@ -1338,7 +1379,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   suggestAddBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 13, paddingVertical: 8, borderRadius: 99, backgroundColor: ui.lavender },
   suggestAddedBtn: { backgroundColor: ui.mintText + '22' },
   suggestAddText: { color: ui.lavenderText, fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
-  suggestAllBtn: { alignItems: 'center', justifyContent: 'center', minHeight: 52, borderRadius: 99, backgroundColor: ui.lavenderText, marginTop: 16 },
+  suggestAllBtn: { alignItems: 'center', justifyContent: 'center', minHeight: 52, borderRadius: 99, backgroundColor: ui.lavenderText },
   suggestAllText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
 
   sheet: { backgroundColor: ui.card, borderTopLeftRadius: 34, borderTopRightRadius: 34, borderWidth: 1, borderColor: ui.line, padding: 26, paddingBottom: 140 },
