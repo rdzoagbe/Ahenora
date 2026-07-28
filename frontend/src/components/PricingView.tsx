@@ -313,7 +313,9 @@ function PlanCard({
           ]}
         >
           {isFree ? null : <Crown color="#fff" size={14} />}
-          <Text style={[styles.ctaText, { color: '#fff' }]}>
+          {/* The free plan's button sits on a themed surface, so its label must
+              follow the theme; the Premium button keeps white on orange. */}
+          <Text style={[styles.ctaText, isFree ? styles.ctaTextThemed : styles.ctaTextOnAccent]}>
             {isFree ? t('pricing_get_started') : t('pricing_upgrade')}
           </Text>
         </PressScale>
@@ -335,8 +337,8 @@ const PLAN_THEMES: Record<
   village: {
     icon: Users,
     iconBg: 'rgba(99,102,241,0.15)',
-    iconColor: '#A5B4FC',
-    gradient: ['rgba(30,32,48,0.95)', 'rgba(20,22,34,0.98)'] as const,
+    iconColor: '#6366F1',
+    gradient: ['rgba(99,102,241,0.10)', 'rgba(99,102,241,0.04)'] as const,
     features: [
       'pf_free_1',
       'pf_free_2',
@@ -349,7 +351,7 @@ const PLAN_THEMES: Record<
   executive: {
     icon: Briefcase,
     iconBg: 'rgba(16,185,129,0.18)',
-    iconColor: '#34D399',
+    iconColor: '#059669',
     gradient: ['rgba(16,185,129,0.15)', 'rgba(99,102,241,0.15)'] as const,
     features: [
       'pf_prem_1',
@@ -482,13 +484,15 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     position: 'relative',
     borderRadius: 24,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: ui.line,
     padding: 22,
     overflow: 'hidden',
     // Solid base so the translucent gradients render over a readable surface
     // (previously the cards relied on a BlurView that rendered as a grey
-    // "glass mirror" sheet on Android).
-    backgroundColor: '#13141d',
+    // "glass mirror" sheet on Android). Theme-driven so the pricing screen —
+    // the one place we ask for money — doesn't render dark cards on the light
+    // canvas its own wrapper paints.
+    backgroundColor: ui.card,
   },
   cardFeatured: {
     borderColor: 'rgba(52,211,153,0.4)',
@@ -524,18 +528,18 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   planNameRow: { flex: 1 },
   planName: {
-    color: '#fff',
+    color: ui.text,
     fontFamily: 'PlayfairDisplay_400Regular_Italic',
     fontSize: 22,
   },
   planTag: {
-    color: 'rgba(255,255,255,0.5)',
+    color: ui.muted,
     fontFamily: 'Inter_400Regular',
     fontSize: 11,
     marginTop: 2,
   },
   planDesc: {
-    color: 'rgba(255,255,255,0.7)',
+    color: ui.muted,
     fontFamily: 'Inter_400Regular',
     fontSize: 13,
     lineHeight: 19,
@@ -547,31 +551,31 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     gap: 2,
   },
   priceSymbol: {
-    color: 'rgba(255,255,255,0.7)',
+    color: ui.muted,
     fontFamily: 'Inter_500Medium',
     fontSize: 16,
     marginBottom: 10,
   },
   priceValue: {
-    color: '#fff',
+    color: ui.text,
     fontFamily: 'PlayfairDisplay_400Regular_Italic',
     fontSize: 44,
     lineHeight: 50,
   },
   pricePer: {
-    color: 'rgba(255,255,255,0.55)',
+    color: ui.muted,
     fontFamily: 'Inter_400Regular',
     fontSize: 13,
     marginBottom: 12,
     marginLeft: 4,
   },
   freeText: {
-    color: '#fff',
+    color: ui.text,
     fontFamily: 'PlayfairDisplay_400Regular_Italic',
     fontSize: 40,
   },
   yearlyNote: {
-    color: 'rgba(255,255,255,0.45)',
+    color: ui.muted,
     fontFamily: 'Inter_400Regular',
     fontSize: 11,
     marginTop: 2,
@@ -583,13 +587,13 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     width: 18,
     height: 18,
     borderRadius: 9999,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: ui.soft,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 1,
   },
   featureText: {
-    color: 'rgba(255,255,255,0.88)',
+    color: ui.text,
     fontFamily: 'Inter_400Regular',
     fontSize: 13,
     flex: 1,
@@ -604,13 +608,17 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     borderRadius: 9999,
   },
   ctaDisabled: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: ui.soft,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
+    borderColor: ui.line,
   },
   ctaUpgrade: {
     backgroundColor: '#F56519',
   },
+  // Label colours for the two CTA surfaces: themed text on the free plan's
+  // neutral button, white on the orange Premium button.
+  ctaTextThemed: { color: ui.text },
+  ctaTextOnAccent: { color: '#fff' },
   ctaCurrent: {
     backgroundColor: 'rgba(52,211,153,0.18)',
     borderWidth: 1,
