@@ -195,6 +195,36 @@ export function suggestWeek(ownedNames: string[], lang: SuggestLang): MealSugges
 
 const RECIPES_BY_ID: Record<string, Recipe> = Object.fromEntries(RECIPES.map((r) => [r.id, r]));
 
+// Every library title, in every language, pointing back at its recipe.
+const TITLE_TO_ID: Record<string, string> = {};
+for (const r of RECIPES) {
+  for (const lang of ['en', 'es', 'fr', 'de'] as SuggestLang[]) {
+    TITLE_TO_ID[norm(r.title[lang])] = r.id;
+  }
+}
+
+/**
+ * Recover the recipe behind a meal that was saved before recipe ids existed.
+ *
+ * Meals created by earlier builds stored only their rendered title, so they
+ * cannot show a cooking method even when it is a dish we ship. Matching the
+ * stored text back against every library title, in every language, recovers
+ * most of them — a plan built in French still resolves after the app is
+ * switched to English.
+ *
+ * Exact match only, after stripping accents and punctuation. A fuzzy match
+ * that showed the wrong method for someone else's dinner would be worse than
+ * showing none.
+ */
+export function resolveRecipeId(
+  recipeId: string | null | undefined,
+  storedTitle: string,
+): string | null {
+  if (recipeId) return recipeId;
+  if (!storedTitle) return null;
+  return TITLE_TO_ID[norm(storedTitle)] ?? null;
+}
+
 /** Every recipe the library ships. Used to assert the method data stays in step. */
 export const RECIPE_IDS: string[] = RECIPES.map((r) => r.id);
 
@@ -211,8 +241,9 @@ export function localizedMealTitle(
   storedTitle: string,
   lang: SuggestLang,
 ): string {
-  if (!recipeId) return storedTitle;
-  return RECIPES_BY_ID[recipeId]?.title[lang] ?? storedTitle;
+  const id = resolveRecipeId(recipeId, storedTitle);
+  if (!id) return storedTitle;
+  return RECIPES_BY_ID[id]?.title[lang] ?? storedTitle;
 }
 
 /** Ingredient labels for a saved meal, localized the same way. */
@@ -220,9 +251,11 @@ export function localizedMealIngredients(
   recipeId: string | null | undefined,
   storedIngredients: string[],
   lang: SuggestLang,
+  storedTitle = '',
 ): string[] {
-  if (!recipeId) return storedIngredients;
-  const recipe = RECIPES_BY_ID[recipeId];
+  const id = resolveRecipeId(recipeId, storedTitle);
+  if (!id) return storedIngredients;
+  const recipe = RECIPES_BY_ID[id];
   if (!recipe) return storedIngredients;
   return recipe.ing.map((id) => ING[id]?.label[lang] ?? id);
 }
