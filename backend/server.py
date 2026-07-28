@@ -28,6 +28,16 @@ except ImportError:
     genai = None
 import PIL.Image
 
+from ai_safety import (
+    RECIPE_SYSTEM_PROMPT,
+    UnsafeRecipe,
+    build_recipe_prompt,
+    extract_json,
+    sanitize_ingredients,
+    sanitize_user_text,
+    validate_recipe,
+)
+
 
 # -----------------------------------------------------------------------------
 # Config
@@ -874,6 +884,8 @@ def public_meal(m: dict) -> dict:
         "ingredients": m.get("ingredients", []),
         "notes": m.get("notes"),
         "recipe_id": m.get("recipe_id"),
+        # Generated methods, cached per language: {"en": {minutes, steps}, ...}
+        "ai_recipe": m.get("ai_recipe") or {},
         "created_at": iso(m["created_at"]),
     }
 
@@ -4310,6 +4322,93 @@ async def delete_saved_plan(plan_id: str, user: dict = Depends(require_user), da
         {"plan_id": plan_id, "family_id": user["family_id"]}
     )
     return {"ok": True}
+
+
+RECIPE_LANGUAGE_NAMES = {
+    "en": "English",
+    "es": "Spanish",
+    "fr": "French",
+    "de": "German",
+}
+
+
+@app.post("/api/meals/{meal_id}/recipe")
+async def generate_meal_recipe(
+    meal_id: str,
+    lang: str = "en",
+    user: dict = Depends(require_user),
+    database=Depends(get_db),
+):
+    """Write a cooking method for a meal the family typed themselves.
+
+    The curated library covers 38 dishes and ships in the app; this covers
+    everything else. Results are cached on the meal per language, so opening
+    the same recipe again costs nothing and returns instantly.
+    """
+    await require_feature(user, "meal_planner")
+
+    language = lang if lang in RECIPE_LANGUAGE_NAMES else "en"
+
+    meal = await database["meals"].find_one(
+        {"meal_id": meal_id, "family_id": user["family_id"]}, {"_id": 0}
+    )
+    if not meal:
+        raise HTTPException(404, "Not found")
+
+    cached = (meal.get("ai_recipe") or {}).get(language)
+    if cached:
+        return {"recipe": cached, "cached": True}
+
+    if not GOOGLE_API_KEY:
+        raise HTTPException(503, "Recipe suggestions are unavailable right now.")
+
+    sub = await build_subscription(user["family_id"])
+    family = await get_family_doc(user["family_id"])
+    # Metered against the same monthly AI allowance as document scanning, so a
+    # family has one number to understand rather than two.
+    if not is_admin_user(user) and family.get("ai_scans_used", 0) >= sub["limits"]["ai_scans_per_month"]:
+        plan_limit_error(
+            feature="ai_scans",
+            current_plan=sub["plan"],
+            limit=sub["limits"]["ai_scans_per_month"],
+            used=family.get("ai_scans_used", 0),
+            message="AI limit reached for this billing period.",
+        )
+
+    title = sanitize_user_text(meal.get("title", ""))
+    if len(title) < 2:
+        raise HTTPException(400, "This meal needs a name first.")
+    ingredients = sanitize_ingredients(meal.get("ingredients", []))
+
+    try:
+        text = await _gemini_text(
+            build_recipe_prompt(title, ingredients, RECIPE_LANGUAGE_NAMES[language]),
+            system=RECIPE_SYSTEM_PROMPT,
+        )
+        parsed = extract_json(text)
+        if parsed is None:
+            raise UnsafeRecipe("unparseable")
+        recipe = validate_recipe(parsed)
+    except UnsafeRecipe as exc:
+        # The specific check that failed is useful to us and meaningless to the
+        # user, so it is logged and not returned.
+        log.info("recipe rejected by safety gate: %s", exc.reason)
+        raise HTTPException(422, "We could not write a recipe for this one.")
+    except Exception as exc:
+        log.warning("recipe generation failed: %s", exc)
+        raise HTTPException(502, "We could not write a recipe for this one.")
+
+    await database["meals"].update_one(
+        {"meal_id": meal_id, "family_id": user["family_id"]},
+        {"$set": {f"ai_recipe.{language}": recipe}},
+    )
+    if not is_admin_user(user):
+        await database["families"].update_one(
+            {"family_id": user["family_id"]},
+            {"$inc": {"ai_scans_used": 1}, "$set": {"updated_at": utcnow()}},
+        )
+
+    return {"recipe": recipe, "cached": False}
 
 
 @app.post("/api/meals/sync-shopping")

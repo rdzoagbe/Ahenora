@@ -12,6 +12,10 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  cook_generate: 'Write me a recipe',
+  cook_generating: 'Writing the steps…',
+  cook_ai_note: 'Written by AI from the meal name. Read it through before you cook.',
+  cook_failed: 'We could not write a recipe for this one.',
   cook_it: 'Cook it',
   cook_method: 'Method',
   cook_you_need: 'You will need',
@@ -985,6 +989,10 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  cook_generate: 'Escríbeme una receta',
+  cook_generating: 'Escribiendo los pasos…',
+  cook_ai_note: 'Escrito por IA a partir del nombre del plato. Léelo antes de cocinar.',
+  cook_failed: 'No hemos podido escribir una receta para este plato.',
   cook_it: 'Cómo se hace',
   cook_method: 'Preparación',
   cook_you_need: 'Necesitas',
@@ -1952,6 +1960,10 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  cook_generate: 'Écrire une recette',
+  cook_generating: 'Rédaction des étapes…',
+  cook_ai_note: 'Rédigé par l’IA à partir du nom du plat. Relisez avant de cuisiner.',
+  cook_failed: 'Nous n’avons pas pu écrire de recette pour ce plat.',
   cook_it: 'La recette',
   cook_method: 'Préparation',
   cook_you_need: 'Il vous faut',
@@ -2919,6 +2931,10 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  cook_generate: 'Rezept schreiben lassen',
+  cook_generating: 'Schritte werden geschrieben…',
+  cook_ai_note: 'Von der KI anhand des Gerichtnamens verfasst. Vor dem Kochen durchlesen.',
+  cook_failed: 'Für dieses Gericht konnten wir kein Rezept schreiben.',
   cook_it: 'Zubereiten',
   cook_method: 'Zubereitung',
   cook_you_need: 'Du brauchst',

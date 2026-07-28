@@ -1,0 +1,50 @@
+name: Backend CI
+
+# The AI safety gate stands between a language model and a parent cooking for
+# their children. It needs to fail the build when it breaks, not be verified by
+# hand and quietly rot.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/**'
+      - 'tests/**'
+      - '.github/workflows/backend-ci.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'backend/**'
+      - 'tests/**'
+      - '.github/workflows/backend-ci.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: backend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend-ci:
+    name: Backend checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Byte-compile the backend
+        run: python -m compileall -q backend
+
+      # ai_safety.py depends only on the standard library, by design — the gate
+      # should not be able to fail because an install failed.
+      - name: Run safety gate tests
+        run: python -m unittest discover -s tests -v

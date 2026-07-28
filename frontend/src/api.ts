@@ -293,6 +293,8 @@ export interface MealPlan {
   /** Set when the meal came from the suggestion library, so its title can be
    *  re-rendered in the current language instead of frozen at creation time. */
   recipe_id?: string | null;
+  /** Generated cooking methods, cached per language. */
+  ai_recipe?: Record<string, { minutes: number; steps: string[] }>;
   created_at: string;
 }
 
@@ -956,6 +958,11 @@ export const api = {
     request<MealPlan>('/meals', { method: 'POST', body: data }),
   deleteMeal: (id: string) => request<{ ok: boolean }>(`/meals/${id}`, { method: 'DELETE' }),
   clearAllMeals: () => request<{ deleted: number }>('/meals/all', { method: 'DELETE' }),
+  generateMealRecipe: (mealId: string, lang: string) =>
+    request<{ recipe: { minutes: number; steps: string[] }; cached: boolean }>(
+      `/meals/${mealId}/recipe?lang=${encodeURIComponent(lang)}`,
+      { method: 'POST' },
+    ),
   syncMealsToShopping: () => request<{ ok: boolean; added: number }>('/meals/sync-shopping', { method: 'POST' }),
   saveMealPlan: (name: string) => request<SavedMealPlan>('/meals/save', { method: 'POST', body: { name } }),
   listSavedPlans: () => request<SavedMealPlan[]>('/meals/saved'),
