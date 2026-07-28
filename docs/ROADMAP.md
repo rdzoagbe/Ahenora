@@ -5,22 +5,46 @@ Last updated: July 2026.
 
 ---
 
-## Where we are
+## Where we are — 🚀 LAUNCHED
 
-- **Closed testing live** on Google Play (personal dev account → requires **12+ testers opted in for 14 continuous days** before production access can be requested).
-- App is feature-complete for launch: onboarding, full **EN/FR/ES/DE** localization (715 keys/locale), morning digest, usage metrics, robustness-hardened UI.
-- **Delivery pipeline:** push to `main` → auto **OTA update** to testers (JS changes, seconds). Native changes → `EAS Build (Android)` workflow (manual trigger) → AAB → Play Console upload. Auto-submit to Play activates once the `GOOGLE_SERVICE_ACCOUNT_KEY` secret is added.
+- **Production release live on Google Play** (July 2026): release **29 (1.0.0)**, full rollout to 176+ countries, package `com.householdcoo.app`. First production review passed → public.
+- **Real billing is on:** Google Play Billing via RevenueCat, `RC_WEBHOOK_SECRET` set on Railway (the launch switch), verified end-to-end with a real purchase. Free (Village) + Premium tiers enforced; testing-window free-Premium ended.
+- **Store presence refreshed:** new "Spark Portal" app icon, 30-second promo video (YouTube), framed EN + FR phone screenshots, IARC content rating live (rated for everyone).
+- App is feature-complete: value-tour onboarding + guided setup, full **EN/FR/ES/DE** localization (~745 keys/locale), Google + Outlook calendar import (private-by-default), meal suggestions, kids' stars, vault, morning digest, usage metrics, edge-to-edge display, crypto-secure auth, launch-night security hardening.
+- **Delivery pipeline:** push to `main` → auto **OTA update** (JS changes, seconds; testers/users need two full relaunches). Native changes → `EAS Build (Android)` workflow (manual trigger) → AAB → auto-submitted to the Play closed track (promote to Production to publish).
 
-## Launch checklist (current sprint)
+## Post-launch — what's left (master list, ordered)
 
-- [ ] 12+ testers opted in via https://play.google.com/apps/testing/com.householdcoo.app (Gmail added in Play Console **first**)
-- [ ] Countries enabled on the closed track (France added for diaspora testers; simplest: all countries)
-- [ ] 14 continuous days at 12+ testers
-- [ ] Apply for production access (answer recruitment/feedback questions honestly — real testers, real bug reports)
-- [ ] **Email deliverability — add DMARC record** to the sending domain `joblytics-ai.com` (Squarespace DNS): TXT record, host `_dmarc`, value `v=DMARC1; p=none; rua=mailto:<you>@joblytics-ai.com`. Resend already sets SPF+DKIM; DMARC lifts inbox placement. Also click "Not spam" on the first tester invites to warm up sender reputation.
-- [ ] Final production AAB → production track → Google review → **public launch** 🚀
+### A. Stabilization — first 1–2 weeks (do before any new feature)
+- [ ] **Confirm database backups exist** — #1 risk; verify Mongo snapshots / scheduled `mongodump` to external storage.
+- [ ] Watch **Play Console** crash-free rate, ANRs, reviews; fix real-user issues via OTA.
+- [ ] **Clear Dependabot vulnerabilities** (18 open) one verified PR at a time, incl. **Expo SDK 54 → 57** (needs a new AAB).
+- [ ] **Verify the Play Data Safety form** matches what the app actually collects (protects against suspension).
 
-> **Email sending — status & notes.** Invites send via Resend from a from-address on the **verified** domain `joblytics-ai.com` (`INVITE_FROM_EMAIL`). Two bugs fixed during closed testing: a stray trailing space in the `GOOGLE_API_KEY` Railway variable name (unrelated, broke AI features), and a missing `User-Agent` header on the Resend request (caused `403 error 1010`, blocked all sends). Email template is now light/transactional with `List-Unsubscribe` headers. Remaining: DMARC (above) + reputation warm-up. Public-launch polish: move sending to a **matching** domain (e.g. `householdcoo.app`) so the sender brand matches the app.
+### B. Small open promises (quick, mostly OTA)
+- [ ] **Allergen/safety note** on the meal planner **+ AI-safety checklist as a blocking gate** on the future AI Chef (moderation, age-appropriateness, prompt-injection resistance must ship *with* any AI recipe generation).
+- [ ] **Kids "how stars work" + Vault "why upload"** first-use explainers.
+- [ ] **Meal suggestions stored by recipe-id** so they re-translate on language switch.
+- [ ] **Every-4-days audit email** (blocked on the Gmail connector; posts in chat until then).
+- [ ] **Landing-page copy/CTA** polish pass.
+- [ ] **UI/UX consistency pass** (from the design review): reconcile the two brand oranges (`#F26A1B` vs `#F56519`), make pricing cards theme-aware (currently always dark), add accessibility labels to in-app tab buttons, enlarge sub-44px destructive tap targets.
+
+### C. Your-side (non-code)
+- [ ] **DMARC record** on the sending domain `joblytics-ai.com` (Squarespace DNS): TXT, host `_dmarc`, value `v=DMARC1; p=none; rua=mailto:<you>@joblytics-ai.com`. Resend already sets SPF+DKIM; DMARC lifts inbox placement so invite emails don't land in spam.
+- [ ] **Prince** — friendly credit/consent conversation for the onboarding ideas.
+- [ ] **Tell testers/users** about Settings → Replay setup.
+
+### D. Feature phases (recommended order) — see detail below
+- [ ] **Phase 2 — Web version** (biggest reach: iPhone + desktop via browser, no Apple/$99).
+- [ ] **Phase 2c — Sign in with Microsoft** (small follow-on; account-linking care = post-launch).
+- [ ] **Phase 3 — Platform polish** (widget, tablet/landscape, crash-report mapping).
+- [ ] **Phase 4 — AI food & gifting** (recipe steps → AI Chef fridge scan → Gift Concierge).
+- [ ] **Phase 5 — Family Ops Suite** (Kid Health Card + Caregiver Mode flagship, then the rest).
+- [ ] **Native iOS app** — only when revenue justifies the $99/yr (no Mac; EAS builds it in the cloud).
+
+### E. Parked (only if users ask) — see bottom
+
+> **Email sending — status & notes.** Invites send via Resend from a from-address on the **verified** domain `joblytics-ai.com` (`INVITE_FROM_EMAIL`). Two bugs fixed during closed testing: a stray trailing space in the `GOOGLE_API_KEY` Railway variable name (broke AI features), and a missing `User-Agent` header on the Resend request (`403 error 1010`, blocked all sends). Email template is light/transactional with `List-Unsubscribe` headers. Remaining: DMARC (above) + reputation warm-up. Polish: move sending to a **matching** domain (`householdcoo.app`) so the sender brand matches the app.
 
 ## Pricing & gating (decided)
 
@@ -71,14 +95,16 @@ localization, tax, and payouts (15% fee) — **no Stripe** for in-app subscripti
 Ordered by what to do first. Each item notes **how** we build it and whether it
 ships via **OTA** (JS only) or needs a **native build** (EAS Build → AAB).
 
-### Step 0 — Launch stabilization (first ~1–2 weeks)
-Before building anything new, watch the wider audience.
-- **Staged production rollout** (~20% → 50% → 100% over a few days), not 100% at once.
+### Step 0 — Launch stabilization (first ~1–2 weeks) — IN PROGRESS
+Before building anything new, watch the wider audience. (See the "Post-launch — what's left · A" checklist at the top.)
+- Production launched at **full rollout** (first release, no existing users to protect — acceptable).
 - Watch **Play Console** crash-free rate + ANRs, reviews, and **Settings → Usage analytics**.
 - Fix whatever real users surface via OTA.
 - Feature freeze lifts → batch the held **Dependabot** updates one small, verified PR at a time.
+- **Confirm DB backups** before anything else.
 
-### Phase 1 — Monetization (Google Play Billing)  *— highest ROI, do first*
+### Phase 1 — Monetization (Google Play Billing) — ✅ SHIPPED & LIVE
+Real billing is live in production (`RC_WEBHOOK_SECRET` set, verified with a real purchase). Historical detail retained below.
 **CODE COMPLETE** — shipped ahead of store setup; everything is inert until the keys exist:
 - ✅ `PLAN_CATALOG` collapsed to **2 tiers** ($6.99/$49.99); role-aware child metering (**parents never counted; children 2 free / 5 Premium**); legacy `family_office` resolves to executive.
 - ✅ **RevenueCat webhook** `POST /api/billing/revenuecat-webhook` (auth: `RC_WEBHOOK_SECRET`) = single source of truth for the family plan. CANCELLATION keeps access until EXPIRATION. Self-serve `/subscription/change` **auto-locks for non-admins** the moment `RC_WEBHOOK_SECRET` is set.
@@ -101,7 +127,8 @@ Before building anything new, watch the wider audience.
 2. Verify end-to-end: sandbox purchase with a license tester (Play Console → Settings → License testing) → RC dashboard shows the purchase → webhook flips family plan to executive → app unlocks Premium.
 - ⚠️ Never set the Railway secret casually — it is the launch switch.
 
-### Phase 2 — Web version (iPhone family access)
+### Phase 2 — Web version (iPhone family access) *— free iPhone reach, NO Apple, NO $99, NO Mac*
+> **Why this before native iOS:** the web build lets iPhone AND desktop users open the app in a browser (e.g. `app.householdcoo.app`) with zero Apple involvement — no App Store, no $99/yr developer program, no Mac. iPhone users can "Add to Home Screen" for an app-like full-screen icon. Trade-offs (the actual build work): it's a **companion, not a native app** — not searchable in the App Store (share the link), iOS Safari push notifications are limited, and camera/scan/file-share need web fallbacks. Covers ~90% of what an iPhone parent needs (tasks/calendar/lists), so it solves the co-parent-on-iPhone gap cheaply. Native iOS stays deferred until revenue justifies it.
 - `expo export --platform web` → free static hosting (Vercel/Netlify/GitHub Pages).
 - Work is **guarding native-only modules** for web (document-picker, sharing, intent-launcher, PDF/WebView) with web fallbacks.
 - Add the **web origin** to Google OAuth allowed origins + backend `ALLOWED_ORIGINS` (CORS).
@@ -135,7 +162,7 @@ Natural follow-on to Outlook import, but a **separate concern**: import gets a *
 - Do it once Google + email conversion data is in and the app is stable; ship with careful identity testing.
 
 ### Phase 3 — Platform polish (ranking + engagement)
-- **Edge-to-edge / full-screen (bundle into the LAUNCH AAB):** draw behind transparent status + nav bars (`app.json` android `edgeToEdge: true`, Expo SDK 54 supports it). Native change — no OTA effect. REQUIRES a safe-area audit of all 6 tabs + every bottom sheet (content must pad itself or it lands under the nav bar), then verify on the closed track before promoting. The premium 2026 look; Google pushes it.
+- ✅ **Edge-to-edge / full-screen — DONE (shipped in launch AAB):** `edgeToEdgeEnabled: true`; safe-area audit completed across all tabs + sheets (offline banner, tab-bar clearance, localized). Live.
 - **Android home-screen widget** (today's tasks) — native build. `react-native-android-widget` or a small native module + config plugin.
 - **Tablet / landscape** — unlock the portrait lock in `app.json`; lean on existing `useBreakpoint` responsive layouts; polish large screens (Play ranking factor). Native build for the orientation change.
 - **Crash-report mapping** — upload deobfuscation `mapping.txt` (or add Sentry) so production crashes are readable.
