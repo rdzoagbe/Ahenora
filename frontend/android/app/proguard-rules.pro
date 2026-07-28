@@ -30,3 +30,27 @@
 # Keep line numbers for crash reporting
 -keepattributes SourceFile,LineNumberTable
 -renamesourcefileattribute SourceFile
+
+# R8 is enabled from version 39 onward. The rules above cover React Native,
+# Hermes, Expo, Kotlin and OkHttp. These add the paid-for paths, where a
+# stripped class costs money rather than causing a visible crash: billing must
+# keep working, and sign-in must keep working, or the app is unusable.
+
+# RevenueCat — purchases and entitlements are resolved reflectively.
+-keep class com.revenuecat.purchases.** { *; }
+-dontwarn com.revenuecat.purchases.**
+
+# Google Play Billing.
+-keep class com.android.billingclient.** { *; }
+-dontwarn com.android.billingclient.**
+
+# Google Sign-In and the Play Services auth surface it sits on.
+-keep class com.google.android.gms.auth.** { *; }
+-keep class com.google.android.gms.common.** { *; }
+-dontwarn com.google.android.gms.**
+
+# Gson/Moshi-style reflection over model classes used by the above.
+-keepattributes Signature, *Annotation*, EnclosingMethod, InnerClasses
+-keepclassmembers class * {
+    @com.google.gson.annotations.SerializedName <fields>;
+}
