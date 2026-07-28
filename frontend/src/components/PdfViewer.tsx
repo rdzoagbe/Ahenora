@@ -95,6 +95,6 @@ export function PdfViewer({ base64, onError }: Props) {
 const styles = StyleSheet.create({
   wrap: { flex: 1, borderRadius: 18, overflow: 'hidden', backgroundColor: '#1b1d22' },
   web: { flex: 1, backgroundColor: '#1b1d22' },
-  loading: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', gap: 10 },
+  loading: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center', gap: 10 },
   loadingText: { color: '#fff', fontFamily: 'Inter_600SemiBold', fontSize: 14 },
 });

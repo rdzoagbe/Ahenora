@@ -65,7 +65,7 @@ export function VoiceCaptureModal({ visible, onClose }: Props) {
 }
 
 const styles = StyleSheet.create({
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(8,9,16,0.54)' },
+  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(8,9,16,0.54)' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
   sheet: {
     width: '100%',

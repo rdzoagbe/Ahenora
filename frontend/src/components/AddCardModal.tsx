@@ -371,7 +371,7 @@ export function AddCardModal({
 }
 
 const styles = StyleSheet.create({
-  backdrop: { ...StyleSheet.absoluteFillObject },
+  backdrop: { ...StyleSheet.absoluteFill },
   container: { flex: 1, justifyContent: 'flex-end' },
   sheet: {
     borderTopLeftRadius: 28,

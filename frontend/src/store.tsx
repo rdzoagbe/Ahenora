@@ -42,7 +42,11 @@ const StoreContext = createContext<StoreState | null>(null);
 const APPEARANCE_STORAGE_KEY = 'coo_appearance_mode_minimal_light_v5';
 
 export function StoreProvider({ children }: { children: React.ReactNode }) {
-  const systemScheme = useColorScheme();
+  // RN 0.86 widened ColorSchemeName to include 'unspecified'; the theme helpers
+  // only understand light/dark/null, so normalize the new value to null (which
+  // they already treat as "no preference").
+  const rawScheme = useColorScheme();
+  const systemScheme = rawScheme === 'light' || rawScheme === 'dark' ? rawScheme : null;
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [lang, setLangState] = useState<Lang>('en');

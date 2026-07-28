@@ -438,7 +438,7 @@ export default function Landing() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   splash: { alignItems: 'center', justifyContent: 'center' },
-  overlay: { ...StyleSheet.absoluteFillObject },
+  overlay: { ...StyleSheet.absoluteFill },
   safe: { flex: 1, paddingHorizontal: 22 },
   top: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 6 },
   logoRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },

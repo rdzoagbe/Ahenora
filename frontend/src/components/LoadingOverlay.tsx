@@ -26,7 +26,7 @@ export default function LoadingOverlay({
 
 const styles = StyleSheet.create({
   wrap: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 40,
     alignItems: 'center',
     justifyContent: 'center',

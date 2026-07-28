@@ -323,7 +323,7 @@ const styles = StyleSheet.create({
   diagValue: { flex: 1, textAlign: 'right', fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
   diagError: { color: UI.danger, fontFamily: 'Inter_700Bold', fontSize: 13, lineHeight: 19, marginTop: 4 },
 
-  modalBackdrop: { ...StyleSheet.absoluteFillObject },
+  modalBackdrop: { ...StyleSheet.absoluteFill },
   modalCenter: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 },
   modalSheet: { width: '100%', maxWidth: 400, borderRadius: 22, borderWidth: 1, padding: 24, shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.15, shadowRadius: 24, elevation: 16 },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },

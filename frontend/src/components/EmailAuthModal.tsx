@@ -248,7 +248,7 @@ function PasswordHint({ met, label, color }: { met: boolean; label: string; colo
 }
 
 const styles = StyleSheet.create({
-  backdrop: { ...StyleSheet.absoluteFillObject },
+  backdrop: { ...StyleSheet.absoluteFill },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 22 },
   sheet: {
     width: '100%',

@@ -37,7 +37,7 @@ export function ValueTour({ onDone }: Props) {
   };
 
   return (
-    <View style={[StyleSheet.absoluteFillObject, styles.root, { backgroundColor: c.bg }]} testID="value-tour">
+    <View style={[StyleSheet.absoluteFill, styles.root, { backgroundColor: c.bg }]} testID="value-tour">
       <View style={[styles.topRow, { paddingTop: insets.top + 10 }]}>
         <View style={styles.logoRow}>
           <View style={[styles.logoDot, { backgroundColor: c.accent }]} />
