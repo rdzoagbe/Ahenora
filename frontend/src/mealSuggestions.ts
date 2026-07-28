@@ -195,6 +195,9 @@ export function suggestWeek(ownedNames: string[], lang: SuggestLang): MealSugges
 
 const RECIPES_BY_ID: Record<string, Recipe> = Object.fromEntries(RECIPES.map((r) => [r.id, r]));
 
+/** Every recipe the library ships. Used to assert the method data stays in step. */
+export const RECIPE_IDS: string[] = RECIPES.map((r) => r.id);
+
 /**
  * Title for a saved meal, in the language the user is reading right now.
  *

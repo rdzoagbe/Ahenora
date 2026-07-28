@@ -3,7 +3,7 @@ import { Alert, View, Text, StyleSheet, TextInput, ScrollView, ActivityIndicator
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
-import { Plus, X, Trash2, ShoppingCart, Check, UtensilsCrossed, Bell, ChevronDown, History, RotateCcw, Sparkles, Sun } from 'lucide-react-native';
+import { Plus, X, Trash2, ShoppingCart, Check, UtensilsCrossed, Bell, ChevronDown, History, RotateCcw, Sparkles, Sun, ChefHat, Clock, AlertTriangle } from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { PressScale } from '../../src/components/PressScale';
@@ -18,6 +18,7 @@ import { api, MealPlan, ShoppingItem, ShoppingHistoryEntry, SavedMealPlan } from
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { logger } from '../../src/logger';
 import { suggestWeek, MealSuggestion, SuggestLang, localizedMealTitle, localizedMealIngredients } from '../../src/mealSuggestions';
+import { recipeMethod } from '../../src/recipeSteps';
 
 type ToastState = { message: string; tone: ToastTone };
 type KitchenView = 'shop' | 'meal';
@@ -39,6 +40,8 @@ const KEEP_AWAKE_KEY = 'coo_keep_screen_on';
 export default function Kitchen() {
   const { t, lang } = useStore();
   // The food library covers en/es/fr/de; anything else falls back to English.
+  // Recipe id currently open in the Cook sheet, with the title to head it.
+  const [cookingRecipe, setCookingRecipe] = useState<{ recipeId: string; title: string } | null>(null);
   const suggestLang = useMemo<SuggestLang>(
     () => (['en', 'es', 'fr', 'de'].includes(lang) ? (lang as SuggestLang) : 'en'),
     [lang],
@@ -615,6 +618,21 @@ export default function Kitchen() {
                       <View style={{ flex: 1 }}>
                         <Text style={styles.rowText}>{localizedMealTitle(meal.recipe_id, meal.title, suggestLang)}</Text>
                         {meal.ingredients.length > 0 ? <Text style={styles.rowCat}>{localizedMealIngredients(meal.recipe_id, meal.ingredients, suggestLang).join(', ')}</Text> : null}
+                        {/* Only offered where we actually have a method — a dead
+                            button on a meal the parent typed themselves is worse
+                            than no button. */}
+                        {recipeMethod(meal.recipe_id, suggestLang) ? (
+                          <PressScale
+                            testID={`cook-${meal.meal_id}`}
+                            accessibilityRole="button"
+                            onPress={() => setCookingRecipe({ recipeId: meal.recipe_id!, title: localizedMealTitle(meal.recipe_id, meal.title, suggestLang) })}
+                            hitSlop={8}
+                            style={styles.cookLink}
+                          >
+                            <ChefHat color={ui.orange} size={13} />
+                            <Text style={styles.cookLinkText}>{t('cook_it')}</Text>
+                          </PressScale>
+                        ) : null}
                       </View>
                       <PressScale
                   accessibilityRole="button"
@@ -767,6 +785,60 @@ export default function Kitchen() {
             </View>
           ))
         )}
+      </KeyboardAwareBottomSheet>
+
+      {/* Cook it — method for a meal from the suggestion library */}
+      <KeyboardAwareBottomSheet visible={cookingRecipe !== null} onClose={() => setCookingRecipe(null)} contentStyle={styles.sheet}>
+        {(() => {
+          const method = cookingRecipe ? recipeMethod(cookingRecipe.recipeId, suggestLang) : null;
+          if (!cookingRecipe || !method) return null;
+          const ingredients = localizedMealIngredients(cookingRecipe.recipeId, [], suggestLang);
+          return (
+            <>
+              <View style={styles.sheetHeader}>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.sheetTitle} numberOfLines={2}>{cookingRecipe.title}</Text>
+                  <View style={styles.cookMeta}>
+                    <Clock color={ui.muted} size={13} />
+                    <Text style={styles.cookMetaText}>{t('cook_minutes', { n: method.minutes })}</Text>
+                  </View>
+                </View>
+                <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('close')}
+                  onPress={() => setCookingRecipe(null)}
+                  style={styles.iconBtn}
+                >
+                  <X color={ui.text} size={20} />
+                </PressScale>
+              </View>
+
+              {ingredients.length > 0 ? (
+                <>
+                  <Text style={styles.cookSectionTitle}>{t('cook_you_need')}</Text>
+                  <Text style={styles.cookIngredients}>{ingredients.join(' · ')}</Text>
+                </>
+              ) : null}
+
+              <Text style={styles.cookSectionTitle}>{t('cook_method')}</Text>
+              {method.steps.map((step, i) => (
+                <View key={i} style={styles.cookStep}>
+                  <View style={styles.cookStepNum}>
+                    <Text style={styles.cookStepNumText}>{i + 1}</Text>
+                  </View>
+                  <Text style={styles.cookStepText}>{step}</Text>
+                </View>
+              ))}
+
+              {/* Stated every time rather than once: the person cooking may not
+                  be the parent who planned the week. */}
+              <View style={styles.cookAllergen}>
+                <AlertTriangle color={ui.muted} size={14} />
+                <Text style={styles.cookAllergenText}>{t('cook_allergen_note')}</Text>
+              </View>
+            </>
+          );
+        })()}
       </KeyboardAwareBottomSheet>
 
       <KeyboardAwareBottomSheet visible={showMealAdd} onClose={() => setShowMealAdd(false)} contentStyle={styles.sheet}>
@@ -925,6 +997,18 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   suggestAllText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
 
   sheet: { backgroundColor: ui.card, borderTopLeftRadius: 34, borderTopRightRadius: 34, borderWidth: 1, borderColor: ui.line, padding: 26, paddingBottom: 140 },
+  cookLink: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6 },
+  cookLinkText: { color: ui.orange, fontFamily: 'Inter_600SemiBold', fontSize: 13 },
+  cookMeta: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 },
+  cookMetaText: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 13 },
+  cookSectionTitle: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 15, marginTop: 18, marginBottom: 8 },
+  cookIngredients: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 14, lineHeight: 20 },
+  cookStep: { flexDirection: 'row', gap: 12, marginBottom: 12, alignItems: 'flex-start' },
+  cookStepNum: { width: 24, height: 24, borderRadius: 12, backgroundColor: ui.orangeSoft, alignItems: 'center', justifyContent: 'center' },
+  cookStepNumText: { color: ui.orange, fontFamily: 'Inter_700Bold', fontSize: 13 },
+  cookStepText: { flex: 1, color: ui.text, fontFamily: 'Inter_500Medium', fontSize: 15, lineHeight: 22 },
+  cookAllergen: { flexDirection: 'row', gap: 8, alignItems: 'flex-start', marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: ui.line },
+  cookAllergenText: { flex: 1, color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 18 },
   sheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   sheetTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 24, letterSpacing: -0.4 },
   iconBtn: { padding: 9, borderRadius: 9999, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft },

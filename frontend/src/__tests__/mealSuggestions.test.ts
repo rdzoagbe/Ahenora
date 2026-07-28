@@ -1,4 +1,5 @@
-import { suggestWeek, localizedMealTitle, localizedMealIngredients } from '../mealSuggestions';
+import { suggestWeek, localizedMealTitle, localizedMealIngredients, RECIPE_IDS } from '../mealSuggestions';
+import { RECIPE_METHODS, recipeMethod } from '../recipeSteps';
 
 describe('suggestWeek', () => {
   it('always returns 7 dinners across the week', () => {
@@ -52,5 +53,43 @@ describe('suggestWeek', () => {
     // A plan saved by a newer build whose recipe we no longer ship.
     expect(localizedMealTitle('removed_recipe', 'Mystery dinner', 'en')).toBe('Mystery dinner');
     expect(localizedMealIngredients('removed_recipe', ['rice'], 'fr')).toEqual(['rice']);
+  });
+});
+
+describe('recipe methods', () => {
+  it('ships a method for every recipe in the library', () => {
+    const missing = RECIPE_IDS.filter((id) => !RECIPE_METHODS[id]);
+    expect(missing).toEqual([]);
+  });
+
+  it('ships every method in all four languages, with real steps', () => {
+    for (const id of RECIPE_IDS) {
+      const method = RECIPE_METHODS[id];
+      expect(method.minutes).toBeGreaterThan(0);
+      for (const lang of ['en', 'es', 'fr', 'de'] as const) {
+        const steps = method.steps[lang];
+        expect(Array.isArray(steps)).toBe(true);
+        expect(steps.length).toBeGreaterThanOrEqual(3);
+        // An untranslated placeholder is worse than no translation at all.
+        steps.forEach((s) => expect(s.trim().length).toBeGreaterThan(10));
+      }
+      // Every language should describe the same number of steps.
+      const counts = (['en', 'es', 'fr', 'de'] as const).map((l) => method.steps[l].length);
+      expect(new Set(counts).size).toBe(1);
+    }
+  });
+
+  it('returns nothing for a typed meal or a recipe we no longer ship', () => {
+    expect(recipeMethod(null, 'en')).toBeNull();
+    expect(recipeMethod(undefined, 'fr')).toBeNull();
+    expect(recipeMethod('removed_recipe', 'de')).toBeNull();
+  });
+
+  it('returns the method in the language asked for', () => {
+    const fr = recipeMethod('bolognese', 'fr');
+    const en = recipeMethod('bolognese', 'en');
+    expect(fr!.steps[0]).toContain('pâtes');
+    expect(en!.steps[0]).toContain('pasta');
+    expect(fr!.minutes).toBe(en!.minutes);
   });
 });
