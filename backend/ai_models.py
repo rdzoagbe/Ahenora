@@ -85,3 +85,17 @@ def summarize_ai_error(error_text: str) -> str:
     if "deadline" in s or "timeout" in s or "timed out" in s or "unavailable" in s or "connection" in s:
         return "network_error"
     return "error"
+
+
+def should_try_next_model(error_text: str) -> bool:
+    """Whether a failure justifies trying the next model candidate.
+
+    Two categories advance. A retired model obviously does. So does a quota
+    error, which is the non-obvious one: Gemini quotas are per model, and a
+    free-tier key can have zero quota for the newest model while having plenty
+    for an older one — observed in production as a 429 on the very first call
+    ever made. Auth, permission, safety and network failures are account- or
+    content-wide; retrying those against other models triples the pain for no
+    benefit.
+    """
+    return summarize_ai_error(error_text) in ("model_not_found", "quota_exhausted")

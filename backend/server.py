@@ -28,7 +28,7 @@ except ImportError:
     genai = None
 import PIL.Image
 
-from ai_models import is_model_not_found, model_candidates, summarize_ai_error
+from ai_models import model_candidates, should_try_next_model, summarize_ai_error
 from ai_safety import (
     MAX_INGREDIENT_LEN,
     RECIPE_SYSTEM_PROMPT,
@@ -389,7 +389,7 @@ GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "").strip()
 # Which model actually answered, and the last per-model failure. Written by
 # _gemini_generate, read by /api/health/ai so production can say which model it
 # is really on instead of us assuming.
-_gemini_state = {"model": None, "last_error": None}
+_gemini_state = {"model": None, "last_error": None, "errors": {}}
 
 
 def _gemini(system: str = ""):
@@ -416,13 +416,18 @@ async def _gemini_generate(contents, system: str = "") -> str:
                 log.info("gemini model resolved to %s", name)
             _gemini_state["model"] = name
             _gemini_state["last_error"] = None
+            _gemini_state["errors"].pop(name, None)
             return (response.text or "").strip()
         except Exception as exc:  # noqa: BLE001 — classified below
             _gemini_state["last_error"] = f"{name}: {exc}"[:300]
+            # Per-model failure map, so /api/health/ai can show whether one
+            # model is out of quota or the whole key is.
+            _gemini_state["errors"][name] = summarize_ai_error(str(exc))
             last_error = exc
-            if not is_model_not_found(str(exc)):
+            if not should_try_next_model(str(exc)):
                 raise
-            log.warning("gemini model %s unavailable, trying next candidate", name)
+            log.warning("gemini model %s unavailable (%s), trying next candidate",
+                        name, _gemini_state["errors"][name])
     raise last_error if last_error else RuntimeError("no gemini model candidates")
 
 
@@ -1475,6 +1480,7 @@ async def health_ai(probe: int = 0):
         "model_resolved": _gemini_state["model"],
         "model_candidates": model_candidates(GEMINI_MODEL, _gemini_state["model"] or ""),
         "last_error": summarize_ai_error(_gemini_state["last_error"]),
+        "model_errors": dict(_gemini_state["errors"]),
         # Everything below funnels through the same client, so one probe
         # vouches for the plumbing of all of them.
         "features": [
@@ -1511,6 +1517,7 @@ async def health_ai(probe: int = 0):
         # state after the probe, not the snapshot from before it.
         status["model_resolved"] = _gemini_state["model"]
         status["last_error"] = summarize_ai_error(_gemini_state["last_error"])
+        status["model_errors"] = dict(_gemini_state["errors"])
 
     return status
 
