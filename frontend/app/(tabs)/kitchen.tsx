@@ -19,6 +19,7 @@ import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/compo
 import { logger } from '../../src/logger';
 import { suggestWeek, MealSuggestion, SuggestLang, localizedMealTitle, localizedMealIngredients, resolveRecipeId, recipeIngredients, searchRecipes } from '../../src/mealSuggestions';
 import { quantityFor } from '../../src/recipeQuantities';
+import { categoriseShoppingItem } from '../../src/shoppingCategories';
 import { recipeMethod } from '../../src/recipeSteps';
 
 type ToastState = { message: string; tone: ToastTone };
@@ -157,10 +158,10 @@ export default function Kitchen() {
     setAddingShop(true);
     try {
       if (names.length === 1) {
-        const item = await api.addShoppingItem({ name: names[0] });
+        const item = await api.addShoppingItem({ name: names[0], category: categoriseShoppingItem(names[0]) || undefined });
         setShopItems((prev) => [item, ...prev]);
       } else {
-        const r = await api.bulkAddShopping(names);
+        const r = await api.bulkAddShopping(names, names.map((n) => categoriseShoppingItem(n) || undefined));
         setShopItems(await api.listShopping().catch(() => []));
         showToast(`${r.added} ${t('vault_ingredients_added_to_list')}`, 'success');
       }
@@ -286,11 +287,13 @@ export default function Kitchen() {
   const openSuggest = useCallback(() => {
     // Draw on the current list plus recent shopping trips so suggestions reflect
     // what the family actually buys, not just today's list.
-    const owned = [
-      ...shopItems.map((i) => i.name),
-      ...shopHistory.slice(0, 6).flatMap((h) => h.items),
-    ];
-    setSuggestions(suggestWeek(owned, suggestLang));
+    setSuggestions(
+      suggestWeek(
+        shopItems.map((i) => i.name),
+        suggestLang,
+        shopHistory.slice(0, 6).flatMap((h) => h.items),
+      ),
+    );
     setAddedSuggest(new Set());
     setShowSuggest(true);
   }, [shopItems, shopHistory, suggestLang]);
@@ -345,7 +348,7 @@ export default function Kitchen() {
         missing.map((m) => {
           const qty = quantityFor(m.id, servings, suggestLang);
           const name = qty && !qty.startsWith('×') ? `${qty} ${m.label}` : qty ? `${m.label} ${qty}` : m.label;
-          return api.addShoppingItem({ name });
+          return api.addShoppingItem({ name, category: categoriseShoppingItem(name) || undefined });
         }),
       );
       setShopItems((prev) => [...prev, ...created]);
@@ -427,7 +430,7 @@ export default function Kitchen() {
     const names = restoreEntry.items.filter((_, i) => restoreSel.has(i));
     if (names.length === 0) { setRestoreEntry(null); return; }
     try {
-      const r = await api.bulkAddShopping(names);
+      const r = await api.bulkAddShopping(names, names.map((n) => categoriseShoppingItem(n) || undefined));
       setRestoreEntry(null);
       setShopItems(await api.listShopping().catch(() => []));
       showToast(`${r.added} ${t('vault_ingredients_added_to_list')}`, 'success');
@@ -615,7 +618,15 @@ export default function Kitchen() {
                 <PressScale key={item.item_id} onPress={() => toggleShopItem(item)} style={styles.row}>
                   <View style={styles.numBadge}><Text style={styles.numText}>{index + 1}</Text></View>
                   <Text style={styles.rowText}>{item.name}</Text>
-                  {item.category ? <Text style={styles.rowCat}>{catLabel(item.category, t)}</Text> : null}
+                  {(() => {
+                    // Everything stored before this shipped is "Other", because the
+                    // app never sent a category. Derive from the name in that case
+                    // so existing lists gain aisles without a data migration.
+                    const cat = item.category && item.category !== 'Other'
+                      ? item.category
+                      : categoriseShoppingItem(item.name) || item.category;
+                    return cat ? <Text style={styles.rowCat}>{catLabel(cat, t)}</Text> : null;
+                  })()}
                   <PressScale
                   accessibilityRole="button"
                   accessibilityLabel={t('a11y_delete')} onPress={() => deleteShopItem(item.item_id)} hitSlop={12} style={{ padding: 4 }}>

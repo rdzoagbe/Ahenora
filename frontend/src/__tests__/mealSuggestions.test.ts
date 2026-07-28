@@ -263,3 +263,36 @@ describe('quantities', () => {
     expect(Array.from(missing)).toEqual([]);
   });
 });
+
+describe('what you have versus what ranks the week', () => {
+  it('only calls it "have" if it is on the list right now', () => {
+    // Tortillas bought last month are not in the kitchen tonight. Before this
+    // split, the sheet claimed the family had them.
+    const week = suggestWeek(['ground beef', 'tomatoes'], 'en', ['tortillas', 'cheese', 'lettuce']);
+    const claimed = new Set(week.flatMap((s) => s.haveLabels));
+    expect(claimed.has('tortillas')).toBe(false);
+    expect(claimed.has('cheese')).toBe(false);
+    expect(claimed.has('ground beef')).toBe(true);
+  });
+
+  it('still uses history to decide what to suggest', () => {
+    // A family that regularly buys tortillas should still see tacos, even on a
+    // week they have not bought any yet.
+    const withHistory = suggestWeek(['ground beef'], 'en', ['tortillas', 'cheese', 'lettuce', 'onion']);
+    expect(withHistory.map((s) => s.recipeId)).toContain('tacos');
+  });
+
+  it('lists everything not currently owned as still needed', () => {
+    const week = suggestWeek(['ground beef'], 'en', ['tortillas']);
+    const tacos = week.find((s) => s.recipeId === 'tacos');
+    expect(tacos!.needLabels).toContain('tortillas');
+    expect(tacos!.haveLabels).not.toContain('tortillas');
+    expect(tacos!.haveLabels.length + tacos!.needLabels.length).toBe(tacos!.allLabels.length);
+  });
+
+  it('behaves as before when no history is passed', () => {
+    const week = suggestWeek(['pasta', 'ground beef'], 'en');
+    const bolo = week.find((s) => s.recipeId === 'bolognese');
+    expect(bolo!.haveLabels).toContain('pasta');
+  });
+});

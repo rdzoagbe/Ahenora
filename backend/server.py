@@ -3905,6 +3905,10 @@ async def delete_shopping_history(history_id: str, user=Depends(require_user)):
 
 class BulkShoppingIn(BaseModel):
     names: list[str]
+    # Aisle per name, same order. The multilingual matching lives in the app,
+    # so the client classifies and the server stores. Short, missing or
+    # unrecognised entries fall back to "Other".
+    categories: list[str] = []
 
 
 @app.post("/api/shopping/bulk")
@@ -3917,16 +3921,17 @@ async def bulk_add_shopping(body: BulkShoppingIn, user=Depends(require_user)):
     ).to_list(500)
     have = {(e.get("name") or "").strip().lower() for e in existing}
     added = 0
-    for raw in body.names:
+    for index, raw in enumerate(body.names):
         name = (raw or "").strip()
         if not name or name.lower() in have:
             continue
         have.add(name.lower())
+        supplied = body.categories[index] if index < len(body.categories) else None
         await database["shopping_list"].insert_one({
             "item_id": new_id("shop"),
             "family_id": user["family_id"],
             "name": name,
-            "category": "Other",
+            "category": supplied if supplied in SHOPPING_CATEGORIES else "Other",
             "checked": False,
             "added_by": user.get("name", ""),
             "created_at": utcnow(),

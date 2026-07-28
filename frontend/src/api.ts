@@ -916,8 +916,11 @@ export const api = {
     request<{ ok: boolean }>(`/shopping/${itemId}`, { method: 'DELETE' }),
   clearCheckedShopping: () =>
     request<{ deleted: number }>('/shopping', { method: 'DELETE' }),
-  bulkAddShopping: (names: string[]) =>
-    request<{ ok: boolean; added: number }>('/shopping/bulk', { method: 'POST', body: { names } }),
+  bulkAddShopping: (names: string[], categories?: (string | undefined)[]) =>
+    request<{ ok: boolean; added: number }>('/shopping/bulk', {
+      method: 'POST',
+      body: { names, categories: categories?.map((c) => c || 'Other') || [] },
+    }),
   // Wipes the whole list (it's archived to history first, so it's recoverable).
   clearAllShopping: () => request<{ deleted: number }>('/shopping/all', { method: 'DELETE' }),
   listShoppingHistory: () => request<ShoppingHistoryEntry[]>('/shopping/history'),

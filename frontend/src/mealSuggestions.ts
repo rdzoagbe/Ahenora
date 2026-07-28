@@ -194,21 +194,36 @@ export interface MealSuggestion {
  * Propose 7 dinners for the week from what the family has bought.
  * @param ownedNames current shopping-list item names + recent history names.
  */
-export function suggestWeek(ownedNames: string[], lang: SuggestLang): MealSuggestion[] {
-  const ownedWords = ownedNames
-    .map((n) => norm(n))
-    .filter(Boolean)
-    .map((s) => s.split(' '));
+export function suggestWeek(
+  ownedNames: string[],
+  lang: SuggestLang,
+  historyNames: string[] = [],
+): MealSuggestion[] {
+  const toWords = (names: string[]) =>
+    names.map((n) => norm(n)).filter(Boolean).map((v) => v.split(' '));
 
-  const hasIngredient = (id: string): boolean => {
+  // Two different questions, previously answered by one list.
+  //
+  // Ranking asks "what does this family cook?", and past shopping trips are
+  // good evidence for that. "You have" asks "what is in the kitchen right
+  // now?", and a tortilla bought three weeks ago is not an answer. Merging
+  // them meant the suggestion sheet told families they had things they had
+  // never bought.
+  const rankingWords = toWords([...ownedNames, ...historyNames]);
+  const ownedWords = toWords(ownedNames);
+
+  const matches = (id: string, words: string[][]): boolean => {
     const ing = ING[id];
     if (!ing) return false;
-    const excluded = (words: string[]) =>
-      (ing.not || []).some((term) => ` ${words.join(' ')} `.includes(` ${term} `));
+    const excluded = (w: string[]) =>
+      (ing.not || []).some((term) => ` ${w.join(' ')} `.includes(` ${term} `));
     return ing.match.some((term) =>
-      ownedWords.some((words) => itemMatchesTerm(words, term) && !excluded(words)),
+      words.some((w) => itemMatchesTerm(w, term) && !excluded(w)),
     );
   };
+
+  const hasIngredient = (id: string): boolean => matches(id, rankingWords);
+  const hasRightNow = (id: string): boolean => matches(id, ownedWords);
 
   const scored = RECIPES.map((r) => {
     const matchedIds = r.ing.filter(hasIngredient);
@@ -220,12 +235,15 @@ export function suggestWeek(ownedNames: string[], lang: SuggestLang): MealSugges
   );
 
   return scored.slice(0, 7).map((s, i) => {
-    const need = s.r.ing.filter((id) => !s.matchedIds.includes(id));
+    // "Have" is only what is on the list now; everything else is still to buy,
+    // even if the family bought it last month.
+    const have = s.r.ing.filter(hasRightNow);
+    const need = s.r.ing.filter((id) => !have.includes(id));
     return {
       day: DAYS[i],
       recipeId: s.r.id,
       title: s.r.title[lang],
-      haveLabels: s.matchedIds.map((id) => ING[id].label[lang]),
+      haveLabels: have.map((id) => ING[id].label[lang]),
       needLabels: need.map((id) => ING[id].label[lang]),
       allLabels: s.r.ing.map((id) => ING[id].label[lang]),
       matched: s.matched,
@@ -303,6 +321,17 @@ export function searchRecipes(
     const recipe = RECIPES_BY_ID[r.id];
     return recipe.ing.some((id) => (ING[id]?.match || []).some((term) => term.includes(q)));
   });
+}
+
+/** Match terms per ingredient, for callers that classify shopping items rather
+ *  than plan meals. Exposed so the aisle mapping does not have to restate 57
+ *  ingredients in four languages and then drift from this one. */
+export function ingredientCategoryTerms(): { id: string; terms: string[]; not: string[] }[] {
+  return Object.entries(ING).map(([id, ing]) => ({
+    id,
+    terms: ing.match,
+    not: ing.not || [],
+  }));
 }
 
 /** Every recipe the library ships. Used to assert the method data stays in step. */
