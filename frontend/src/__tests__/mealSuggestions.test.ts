@@ -127,3 +127,58 @@ describe('resolveRecipeId', () => {
     expect(localizedMealTitle(null, "Mum's Sunday roast", 'fr')).toBe("Mum's Sunday roast");
   });
 });
+
+describe('a West African shopping list', () => {
+  // The list that exposed the gap: the library only knew a European pantry, so
+  // a household shopping for yam, okra, garden eggs and corn flour was offered
+  // shepherd's pie, BLTs and minestrone.
+  const LIST = [
+    'Sweet potato', "Yam's", 'Porc ribs', 'Corn flour', 'Okro', 'Bell peppers',
+    'Garden eggs', 'Tomatoes', 'Rice', 'Chicken thighs', 'Maïs', 'Beef',
+  ];
+
+  it('proposes mostly dishes from that kitchen', () => {
+    const week = suggestWeek(LIST, 'en');
+    const african = week.filter((s) =>
+      ['jollof_rice', 'chicken_yassa', 'groundnut_stew', 'okra_soup', 'yam_tomato', 'red_red',
+       'garden_egg_stew', 'grilled_tilapia', 'attieke_fish', 'banku_okra', 'peanut_spinach',
+       'sweet_potato_chicken'].includes(s.recipeId),
+    );
+    expect(african.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('actually uses the ingredients that were bought', () => {
+    const week = suggestWeek(LIST, 'en');
+    const used = new Set(week.flatMap((s) => s.haveLabels));
+    for (const staple of ['yam', 'okra', 'corn flour', 'sweet potato']) {
+      expect(Array.from(used)).toContain(staple);
+    }
+  });
+
+  it('never claims the family has something they did not buy', () => {
+    const week = suggestWeek(LIST, 'en');
+    const claimed = new Set(week.flatMap((s) => s.haveLabels));
+    // These were all wrongly claimed before: "garden eggs" read as eggs,
+    // "sweet potato" as potatoes, "corn flour" as corn.
+    expect(claimed.has('eggs')).toBe(false);
+    expect(claimed.has('potatoes')).toBe(false);
+    expect(claimed.has('corn')).toBe(false);
+  });
+
+  it('still reads the list written in French', () => {
+    const week = suggestWeek(
+      ['Igname', 'Gombo', 'Farine de maïs', 'Patate douce', 'Tomates', 'Riz', 'Poulet'],
+      'fr',
+    );
+    const used = new Set(week.flatMap((s) => s.haveLabels));
+    expect(Array.from(used)).toContain('igname');
+    expect(Array.from(used)).toContain('gombo');
+  });
+
+  it('does not confuse a specific ingredient for its generic namesake', () => {
+    expect(new Set(suggestWeek(['Sweet potato'], 'en').flatMap((s) => s.haveLabels)).has('potatoes')).toBe(false);
+    expect(new Set(suggestWeek(['Potatoes'], 'en').flatMap((s) => s.haveLabels)).has('potatoes')).toBe(true);
+    expect(new Set(suggestWeek(['Corn flour'], 'en').flatMap((s) => s.haveLabels)).has('corn')).toBe(false);
+    expect(new Set(suggestWeek(['Corn'], 'en').flatMap((s) => s.haveLabels)).has('corn')).toBe(true);
+  });
+});
