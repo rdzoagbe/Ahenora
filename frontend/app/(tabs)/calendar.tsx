@@ -724,7 +724,9 @@ export default function Calendar() {
                       <Text style={styles.carpoolName}>{cp.title}</Text>
                       <Text style={styles.carpoolSub}>{cp.day_of_week} · {cp.time} · {cp.driver_name}{cp.pickup_kids.length > 0 ? ` · ${cp.pickup_kids.join(', ')}` : ''}</Text>
                     </View>
-                    <PressScale onPress={async () => {
+                    <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('a11y_delete')} onPress={async () => {
                       setCarpools((prev) => prev.filter((c) => c.carpool_id !== cp.carpool_id));
                       try { await api.deleteCarpool(cp.carpool_id); } catch { load(); }
                     }} style={{ padding: 4 }}>
@@ -744,7 +746,9 @@ export default function Calendar() {
           <>
             <View style={styles.detailHeader}>
               <Text style={styles.detailTitle}>{cleanText(selectedCard.title)}</Text>
-              <PressScale onPress={() => setSelectedCard(null)} style={styles.closeBtn}>
+              <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('close')} onPress={() => setSelectedCard(null)} style={styles.closeBtn}>
                 <X color={ui.text} size={20} />
               </PressScale>
             </View>
@@ -883,7 +887,9 @@ export default function Calendar() {
             <Eye color={ui.orange} size={20} />
             <Text style={styles.detailTitle}>{t('cal_coparent_view_title')}</Text>
           </View>
-          <PressScale onPress={() => setCoparentViewOpen(false)} style={styles.closeBtn}>
+          <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('close')} onPress={() => setCoparentViewOpen(false)} style={styles.closeBtn}>
             <X color={ui.text} size={20} />
           </PressScale>
         </View>

@@ -27,7 +27,9 @@ export function UpgradeModal() {
               <Sparkles color={theme.colors.accent} size={12} />
               <Text style={[styles.badgeText, { color: theme.colors.accent }]}>{t('upgrade_needed')}</Text>
             </View>
-            <PressScale testID="upgrade-close" onPress={dismissUpgradePrompt} style={[styles.closeBtn, { borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}> 
+            <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('close')} testID="upgrade-close" onPress={dismissUpgradePrompt} style={[styles.closeBtn, { borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}> 
               <X color={theme.colors.text} size={18} />
             </PressScale>
           </View>

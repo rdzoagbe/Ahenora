@@ -558,7 +558,9 @@ export default function Kids() {
             eyebrow={t('kids_eyebrow_family')}
             title={t('kids_title')}
             right={
-              <PressScale onPress={() => router.navigate('/(tabs)/feed')} style={styles.bellWrap}>
+              <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('a11y_notifications')} onPress={() => router.navigate('/(tabs)/feed')} style={styles.bellWrap}>
                 <Bell color={ui.text} size={24} />
               </PressScale>
             }
@@ -682,7 +684,9 @@ export default function Kids() {
                                     <Text style={styles.rewardRedeemText}>{t('redeem')}</Text>
                                   </PressScale>
                                 ) : (
-                                  <PressScale testID={`edit-reward-${reward.reward_id}`} onPress={() => openEditReward(reward)} style={styles.rewardEdit}>
+                                  <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('a11y_edit')} testID={`edit-reward-${reward.reward_id}`} onPress={() => openEditReward(reward)} style={styles.rewardEdit}>
                                     <Pencil color={ui.muted} size={14} />
                                   </PressScale>
                                 )}
@@ -758,7 +762,9 @@ export default function Kids() {
                       <Play color="#FFFFFF" size={14} />
                       <Text style={styles.featureActionText}>{t('kids_done')}</Text>
                     </PressScale>
-                    <PressScale onPress={() => deleteRoutine(rtn.routine_id)} style={{ padding: 4, marginLeft: 6 }}>
+                    <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('a11y_delete')} onPress={() => deleteRoutine(rtn.routine_id)} style={{ padding: 4, marginLeft: 6 }}>
                       <Trash2 color={ui.muted} size={15} />
                     </PressScale>
                   </View>
@@ -832,7 +838,9 @@ export default function Kids() {
                         <Text style={styles.featureActionText}>{t('kids_rotate')}</Text>
                       </PressScale>
                     ) : null}
-                    <PressScale onPress={() => deleteChore(chore.chore_id)} style={{ padding: 4, marginLeft: 6 }}>
+                    <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('a11y_delete')} onPress={() => deleteChore(chore.chore_id)} style={{ padding: 4, marginLeft: 6 }}>
                       <Trash2 color={ui.muted} size={15} />
                     </PressScale>
                   </View>
@@ -848,7 +856,9 @@ export default function Kids() {
       <KeyboardAwareBottomSheet visible={showChildSheet} onClose={() => setShowChildSheet(false)} contentStyle={styles.sheet}>
         <View style={styles.sheetHeader}>
           <Text style={styles.sheetTitle}>{t('kids_add_child_title')}</Text>
-          <PressScale testID="close-child-sheet" onPress={() => setShowChildSheet(false)} style={styles.iconBtn}><X color={ui.text} size={20} /></PressScale>
+          <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('close')} testID="close-child-sheet" onPress={() => setShowChildSheet(false)} style={styles.iconBtn}><X color={ui.text} size={20} /></PressScale>
         </View>
         <Text style={styles.label}>{t('kids_child_name')}</Text>
         <TextInput testID="child-name" value={childName} onChangeText={setChildName} placeholder={t('kids_child_name_placeholder')} placeholderTextColor={ui.muted} style={styles.input} returnKeyType="next" />
@@ -866,7 +876,9 @@ export default function Kids() {
       <KeyboardAwareBottomSheet visible={showRewardSheet} onClose={closeRewardSheet} contentStyle={styles.sheet}>
         <View style={styles.sheetHeader}>
           <Text style={styles.sheetTitle}>{rewardMode === 'edit' ? t('kids_edit_reward') : t('kids_add_reward_title')}</Text>
-          <PressScale testID="close-reward" onPress={closeRewardSheet} style={styles.iconBtn}><X color={ui.text} size={20} /></PressScale>
+          <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('close')} testID="close-reward" onPress={closeRewardSheet} style={styles.iconBtn}><X color={ui.text} size={20} /></PressScale>
         </View>
         <Text style={styles.label}>{t('kids_reward_title')}</Text>
         <TextInput testID="reward-title" value={rewardTitle} onChangeText={setRewardTitle} placeholder={t('kids_reward_title_placeholder')} placeholderTextColor={ui.muted} style={styles.input} returnKeyType="next" />
@@ -897,7 +909,9 @@ export default function Kids() {
       <KeyboardAwareBottomSheet visible={showStarSheet} onClose={() => setShowStarSheet(false)} contentStyle={styles.sheet}>
         <View style={styles.sheetHeader}>
           <Text style={styles.sheetTitle}>{starMode === 'add' ? t('kids_add_stars') : t('kids_remove_stars')}</Text>
-          <PressScale testID="close-stars" onPress={() => setShowStarSheet(false)} style={styles.iconBtn}><X color={ui.text} size={20} /></PressScale>
+          <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('close')} testID="close-stars" onPress={() => setShowStarSheet(false)} style={styles.iconBtn}><X color={ui.text} size={20} /></PressScale>
         </View>
         <Text style={styles.sheetHelp}>{t('kids_for')} {activeChild?.name || t('kids_selected_child')}</Text>
         <Text style={styles.label}>{t('kids_amount')}</Text>
@@ -913,7 +927,9 @@ export default function Kids() {
       <KeyboardAwareBottomSheet visible={showFixSheet} onClose={() => setShowFixSheet(false)} contentStyle={styles.sheet}>
         <View style={styles.sheetHeader}>
           <Text style={styles.sheetTitle}>{t('kids_fix_balance')}</Text>
-          <PressScale testID="close-fix" onPress={() => setShowFixSheet(false)} style={styles.iconBtn}><X color={ui.text} size={20} /></PressScale>
+          <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('close')} testID="close-fix" onPress={() => setShowFixSheet(false)} style={styles.iconBtn}><X color={ui.text} size={20} /></PressScale>
         </View>
         <Text style={styles.sheetHelp}>{t('kids_fix_help', { name: activeChild?.name || '' })}</Text>
         <Text style={styles.label}>{t('kids_correct_total')}</Text>
@@ -927,7 +943,9 @@ export default function Kids() {
       <KeyboardAwareBottomSheet visible={showAllowanceSheet} onClose={() => setShowAllowanceSheet(false)} contentStyle={styles.sheet}>
         <View style={styles.sheetHeader}>
           <Text style={styles.sheetTitle}>{t('kids_set_allowance')}</Text>
-          <PressScale testID="close-allowance" onPress={() => setShowAllowanceSheet(false)} style={styles.iconBtn}><X color={ui.text} size={20} /></PressScale>
+          <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('close')} testID="close-allowance" onPress={() => setShowAllowanceSheet(false)} style={styles.iconBtn}><X color={ui.text} size={20} /></PressScale>
         </View>
         <Text style={styles.sheetHelp}>{t('kids_for')} {activeChild?.name || t('kids_selected_child')}</Text>
         <Text style={styles.label}>{t('kids_amount')}</Text>

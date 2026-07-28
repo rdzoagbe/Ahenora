@@ -140,7 +140,9 @@ export function EmailAuthModal({ visible, onClose, onSuccess, inviteToken }: Pro
             <Text style={[styles.title, { color: c.text }]}>
               {mode === 'signup' ? t('email_create_title') : t('email_welcome_back')}
             </Text>
-            <PressScale onPress={close} style={[styles.closeBtn, { borderColor: c.cardBorder, backgroundColor: c.bgSoft }]}>
+            <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('close')} onPress={close} style={[styles.closeBtn, { borderColor: c.cardBorder, backgroundColor: c.bgSoft }]}>
               <X color={c.text} size={18} />
             </PressScale>
           </View>

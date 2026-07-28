@@ -240,7 +240,9 @@ export default function AccountScreen() {
           <View style={[styles.modalSheet, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder, shadowColor: theme.colors.shadow }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: theme.colors.text }]}>{t('acc_contact_support')}</Text>
-              <PressScale onPress={() => setSupportOpen(false)} style={[styles.modalCloseBtn, { borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}>
+              <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('close')} onPress={() => setSupportOpen(false)} style={[styles.modalCloseBtn, { borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}>
                 <X color={theme.colors.text} size={18} />
               </PressScale>
             </View>

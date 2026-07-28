@@ -120,7 +120,9 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
               <Sparkles color={theme.colors.accent} size={12} />
               <Text style={[styles.badgeText, { color: theme.colors.text }]}>{t('cam_quick_action')}</Text>
             </View>
-            <PressScale testID="cam-close" onPress={onClose} style={[styles.iconBtn, { borderColor: theme.colors.cardBorder }]} disabled={scanning}>
+            <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('close')} testID="cam-close" onPress={onClose} style={[styles.iconBtn, { borderColor: theme.colors.cardBorder }]} disabled={scanning}>
               <X color={theme.colors.text} size={18} />
             </PressScale>
           </View>

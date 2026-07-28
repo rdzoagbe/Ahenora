@@ -539,7 +539,9 @@ export default function Settings() {
                         <Text style={styles.ghostBtnText}>{t('set_share')}</Text>
                       </PressScale>
                     ) : null}
-                    <PressScale testID={`revoke-invite-${invite.invite_id}`} onPress={() => revokeInvite(invite)} style={styles.iconGhostBtn}>
+                    <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('a11y_delete')} testID={`revoke-invite-${invite.invite_id}`} onPress={() => revokeInvite(invite)} style={styles.iconGhostBtn}>
                       <Trash2 color={ui.danger} size={16} />
                     </PressScale>
                   </View>
@@ -562,7 +564,9 @@ export default function Settings() {
             {expandChildren ? (
               <View style={styles.expandBox}>
                 {childMembers.length === 0 ? <Text style={styles.emptyText}>{t('set_no_children')}</Text> : childMembers.map((m) => (
-                  <PressScale key={m.member_id} testID={`set-pin-${m.member_id}`} onPress={() => setPinMember(m)} style={styles.inviteRow}>
+                  <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('a11y_lock')} key={m.member_id} testID={`set-pin-${m.member_id}`} onPress={() => setPinMember(m)} style={styles.inviteRow}>
                     <MiniRow initial={m.name[0]?.toUpperCase()} name={m.name} sub={m.has_pin ? t('set_pin_set') : t('set_no_pin')} />
                     {m.has_pin ? <Lock color={ui.orange} size={16} /> : <ChevronRight color={ui.muted} size={18} />}
                   </PressScale>
@@ -612,7 +616,9 @@ export default function Settings() {
                       name={exp.description}
                       sub={`$${exp.amount.toFixed(2)} · ${exp.category} · ${exp.paid_by_name}`}
                     />
-                    <PressScale onPress={() => removeExpense(exp.expense_id)} style={{ padding: 4 }}>
+                    <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('a11y_delete')} onPress={() => removeExpense(exp.expense_id)} style={{ padding: 4 }}>
                       <Trash2 color={ui.muted} size={15} />
                     </PressScale>
                   </View>
@@ -773,7 +779,9 @@ export default function Settings() {
       <KeyboardAwareBottomSheet visible={showInvite} onClose={() => setShowInvite(false)} contentStyle={styles.sheet}>
         <View style={styles.sheetHeader}>
           <Text style={styles.sheetTitle}>{t('set_invite_coparent')}</Text>
-          <PressScale testID="close-invite" onPress={() => setShowInvite(false)} style={styles.iconBtn}>
+          <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('close')} testID="close-invite" onPress={() => setShowInvite(false)} style={styles.iconBtn}>
             <X color={ui.text} size={22} />
           </PressScale>
         </View>
@@ -871,7 +879,9 @@ export default function Settings() {
       <KeyboardAwareBottomSheet visible={showExpenseAdd} onClose={() => setShowExpenseAdd(false)} contentStyle={styles.sheet}>
         <View style={styles.sheetHeader}>
           <Text style={styles.sheetTitle}>{t('set_add_expense_title')}</Text>
-          <PressScale testID="close-expense" onPress={() => setShowExpenseAdd(false)} style={styles.iconBtn}>
+          <PressScale
+                  accessibilityRole="button"
+                  accessibilityLabel={t('close')} testID="close-expense" onPress={() => setShowExpenseAdd(false)} style={styles.iconBtn}>
             <X color={ui.text} size={22} />
           </PressScale>
         </View>

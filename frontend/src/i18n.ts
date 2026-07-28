@@ -12,6 +12,13 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  a11y_delete: 'Delete',
+  a11y_add: 'Add',
+  a11y_edit: 'Edit',
+  a11y_share: 'Share',
+  a11y_notifications: 'Notifications',
+  a11y_more: 'More',
+  a11y_lock: 'Lock',
   shopcat_other: 'Other',
   tour_skip: 'Skip',
   tour_next: 'Next',
@@ -967,6 +974,13 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  a11y_delete: 'Eliminar',
+  a11y_add: 'Añadir',
+  a11y_edit: 'Editar',
+  a11y_share: 'Compartir',
+  a11y_notifications: 'Notificaciones',
+  a11y_more: 'Más',
+  a11y_lock: 'Bloquear',
   shopcat_other: 'Otros',
   tour_skip: 'Omitir',
   tour_next: 'Siguiente',
@@ -1916,6 +1930,13 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  a11y_delete: 'Supprimer',
+  a11y_add: 'Ajouter',
+  a11y_edit: 'Modifier',
+  a11y_share: 'Partager',
+  a11y_notifications: 'Notifications',
+  a11y_more: 'Plus',
+  a11y_lock: 'Verrouiller',
   shopcat_other: 'Autre',
   tour_skip: 'Passer',
   tour_next: 'Suivant',
@@ -2865,6 +2886,13 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  a11y_delete: 'Löschen',
+  a11y_add: 'Hinzufügen',
+  a11y_edit: 'Bearbeiten',
+  a11y_share: 'Teilen',
+  a11y_notifications: 'Benachrichtigungen',
+  a11y_more: 'Mehr',
+  a11y_lock: 'Sperren',
   shopcat_other: 'Sonstiges',
   tour_skip: 'Überspringen',
   tour_next: 'Weiter',
