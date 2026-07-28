@@ -59,6 +59,7 @@ class HealthAiProbe(unittest.TestCase):
     def setUp(self):
         server._gemini_state["model"] = None
         server._gemini_state["last_error"] = None
+        server._gemini_state["errors"] = {}
         server._AI_PROBE["last"] = None
         self._genai = server.genai
 
@@ -90,23 +91,33 @@ class HealthAiProbe(unittest.TestCase):
         self.assertEqual(fake.calls[-1], "gemini-2.0-flash")
         self.assertEqual(fake.calls.count("gemini-2.5-flash"), 1)
 
-    def test_a_real_failure_is_reported_not_retried(self):
-        # A quota error against model one must NOT cascade to models two and
-        # three — that would triple the cost of every outage.
-        fake = FakeModelFactory()
-        fake.dead = set()
+    def test_per_model_quota_walks_the_chain(self):
+        # The production case: the newest model 429s on a free-tier key, but an
+        # older model still has quota. The chain must keep walking.
+        fake = FakeModelFactory(
+            dead={"gemini-2.5-flash"}, dead_error="429 You exceeded your current quota"
+        )
+        server.genai = type("G", (), {"GenerativeModel": fake})()
+        status = self.probe()
+        self.assertTrue(status["probe"]["ok"], status)
+        self.assertEqual(status["model_resolved"], "gemini-2.0-flash")
+        self.assertEqual(status["model_errors"], {"gemini-2.5-flash": "quota_exhausted"})
 
-        class _Quota:
+    def test_an_account_failure_is_reported_not_retried(self):
+        # A bad key fails identically on every model — one call, fail fast.
+        fake = FakeModelFactory()
+
+        class _BadKey:
             def __init__(self, model_name, system_instruction=None):
                 fake.calls.append(model_name)
 
             def generate_content(self, contents):
-                raise RuntimeError("429 quota exceeded")
+                raise RuntimeError("API key not valid. Please pass a valid API key.")
 
-        server.genai = type("G", (), {"GenerativeModel": _Quota})()
+        server.genai = type("G", (), {"GenerativeModel": _BadKey})()
         status = self.probe()
         self.assertFalse(status["probe"]["ok"])
-        self.assertEqual(status["probe"]["error"], "quota_exhausted")
+        self.assertEqual(status["probe"]["error"], "invalid_api_key")
         self.assertEqual(len(fake.calls), 1)
 
     def test_probe_is_rate_limited(self):

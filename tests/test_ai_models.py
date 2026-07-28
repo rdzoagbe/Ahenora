@@ -53,18 +53,35 @@ class IsModelNotFound(unittest.TestCase):
             self.assertTrue(is_model_not_found(msg), msg)
 
     def test_real_failures_are_not_retryable(self):
-        # Falling through to another model must not happen for quota, safety
-        # or network errors — that would triple the pain for no benefit.
         for msg in [
             "429 Resource has been exhausted",
-            "quota exceeded for quota metric",
             "safety settings blocked this response",
             "deadline exceeded",
-            "connection reset by peer",
             "",
             None,
         ]:
             self.assertFalse(is_model_not_found(msg), repr(msg))
+
+
+class ShouldTryNextModel(unittest.TestCase):
+    def test_retirement_and_quota_advance_the_chain(self):
+        from ai_models import should_try_next_model
+        # Quota is the non-obvious one: Gemini quotas are per model, so a key
+        # with zero quota for the newest model may still have plenty for an
+        # older one — seen in production as a 429 on the first call ever made.
+        self.assertTrue(should_try_next_model("404 model is not found"))
+        self.assertTrue(should_try_next_model("429 You exceeded your current quota"))
+
+    def test_account_and_content_failures_fail_fast(self):
+        from ai_models import should_try_next_model
+        # These are account- or content-wide; other models fail identically.
+        for msg in [
+            "API key not valid. Please pass a valid API key.",
+            "403 permission denied",
+            "response blocked by safety settings",
+            "deadline exceeded",
+        ]:
+            self.assertFalse(should_try_next_model(msg), msg)
 
 
 if __name__ == "__main__":
