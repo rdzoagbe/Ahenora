@@ -86,7 +86,30 @@ ALLOWED_ORIGINS = [
 if GOOGLE_API_KEY and genai:
     genai.configure(api_key=GOOGLE_API_KEY)
 
-mongo = AsyncIOMotorClient(MONGO_URL, serverSelectionTimeoutMS=5000) if MONGO_URL else None
+# Connection resilience: after the Atlas M0 -> M10 migration the running process
+# held connections to servers that no longer existed, so every query waited out
+# the full server-selection timeout and the app returned 500s until a manual
+# restart. These settings let the driver notice a dead/changed topology quickly,
+# recycle stale sockets on its own, and bound how long any single operation can
+# hang, so a database blip degrades instead of cascading.
+mongo = (
+    AsyncIOMotorClient(
+        MONGO_URL,
+        serverSelectionTimeoutMS=5000,
+        connectTimeoutMS=5000,
+        socketTimeoutMS=20000,
+        # Recycle idle sockets so a silently-dead connection is never reused.
+        maxIdleTimeMS=30000,
+        heartbeatFrequencyMS=10000,
+        retryWrites=True,
+        retryReads=True,
+        maxPoolSize=50,
+        minPoolSize=0,
+        appname="household-coo-backend",
+    )
+    if MONGO_URL
+    else None
+)
 db: Any = mongo[DB_NAME] if mongo else None
 
 import logging
@@ -1372,22 +1395,47 @@ class ChoreIn(BaseModel):
 # -----------------------------------------------------------------------------
 @app.get("/")
 async def root():
+    # Deliberately minimal: this endpoint is public, so it must not disclose
+    # which integrations/keys are configured (that inventory is a free recon
+    # gift to an attacker). Config detail moved to the admin-only /api/health.
+    return {"status": "online", "message": "Household COO Backend is live"}
+
+
+@app.get("/api/health")
+async def health():
+    """Liveness + real database check for uptime monitoring.
+
+    Actually pings MongoDB rather than just reporting that a URL is set, so a
+    dead/stale connection surfaces here (503) instead of as user-facing 500s.
+    """
+    if db is None:
+        return JSONResponse(status_code=503, content={"status": "error", "database": "unconfigured"})
+    try:
+        start = utcnow()
+        await asyncio.wait_for(db.command("ping"), timeout=5)
+        elapsed_ms = int((utcnow() - start).total_seconds() * 1000)
+        return {"status": "ok", "database": "ok", "db_latency_ms": elapsed_ms}
+    except (asyncio.TimeoutError, Exception) as exc:  # noqa: B014 - report any failure
+        log.warning("Health check database ping failed: %s", exc)
+        return JSONResponse(status_code=503, content={"status": "error", "database": "unreachable"})
+
+
+@app.get("/api/health/config")
+async def health_config(user=Depends(require_user)):
+    """Admin-only configuration inventory (was previously public on `/`)."""
+    if not is_admin_user(user):
+        raise HTTPException(status_code=403, detail="Admin only")
     return {
-        "status": "online",
-        "message": "Household COO Backend is live",
         "api_configured": bool(GOOGLE_API_KEY),
         "db_configured": bool(MONGO_URL),
         "backend_version": "pricing_gating_v1",
-        "invite_routes": True,
-        "calendar_sync": True,
-        "notifications": True,
-        "pricing_gating": True,
         "email_configured": bool(RESEND_API_KEY and INVITE_FROM_EMAIL),
         "admin_access_enabled": bool(ADMIN_EMAILS),
         "voice_configured": bool(GOOGLE_API_KEY and genai),
         "google_web_configured": bool(GOOGLE_WEB_CLIENT_ID),
         "google_android_configured": bool(GOOGLE_ANDROID_CLIENT_ID),
         "google_client_ids_count": len(GOOGLE_CLIENT_IDS),
+        "billing_configured": bool(os.environ.get("RC_WEBHOOK_SECRET")),
     }
 
 # -----------------------------------------------------------------------------
