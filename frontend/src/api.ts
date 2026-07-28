@@ -290,6 +290,9 @@ export interface MealPlan {
   title: string;
   ingredients: string[];
   notes?: string;
+  /** Set when the meal came from the suggestion library, so its title can be
+   *  re-rendered in the current language instead of frozen at creation time. */
+  recipe_id?: string | null;
   created_at: string;
 }
 
@@ -949,7 +952,7 @@ export const api = {
 
   // Meal Planner
   listMeals: () => request<MealPlan[]>('/meals'),
-  createMeal: (data: { day: string; meal_type?: string; title: string; ingredients?: string[]; notes?: string }) =>
+  createMeal: (data: { day: string; meal_type?: string; title: string; ingredients?: string[]; notes?: string; recipe_id?: string }) =>
     request<MealPlan>('/meals', { method: 'POST', body: data }),
   deleteMeal: (id: string) => request<{ ok: boolean }>(`/meals/${id}`, { method: 'DELETE' }),
   clearAllMeals: () => request<{ deleted: number }>('/meals/all', { method: 'DELETE' }),

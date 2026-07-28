@@ -873,6 +873,7 @@ def public_meal(m: dict) -> dict:
         "title": m["title"],
         "ingredients": m.get("ingredients", []),
         "notes": m.get("notes"),
+        "recipe_id": m.get("recipe_id"),
         "created_at": iso(m["created_at"]),
     }
 
@@ -1353,6 +1354,11 @@ class MealPlanIn(BaseModel):
     title: str
     ingredients: list = []  # [str]
     notes: Optional[str] = None
+    # Set when the meal came from the built-in suggestion library. The client
+    # re-renders the title from that library in the current language, so a
+    # plan created in French still reads correctly after switching to English.
+    # Absent for meals the user typed themselves — those keep `title` verbatim.
+    recipe_id: Optional[str] = None
 
 
 class CarpoolIn(BaseModel):
@@ -4204,6 +4210,7 @@ async def create_meal(body: MealPlanIn, user: dict = Depends(require_user), data
         "title": body.title,
         "ingredients": body.ingredients,
         "notes": body.notes,
+        "recipe_id": body.recipe_id,
         "created_at": utcnow(),
     }
     await database["meals"].insert_one(meal)
@@ -4239,9 +4246,17 @@ def public_saved_plan(pl: dict) -> dict:
 async def save_meal_plan(body: SavedPlanIn, user: dict = Depends(require_user), database=Depends(get_db)):
     await require_feature(user, "meal_planner")
     meals = await database["meals"].find(
-        {"family_id": user["family_id"]}, {"_id": 0, "day": 1, "title": 1, "ingredients": 1}
+        {"family_id": user["family_id"]}, {"_id": 0, "day": 1, "title": 1, "ingredients": 1, "recipe_id": 1}
     ).to_list(200)
-    snapshot = [{"day": m.get("day"), "title": m.get("title", ""), "ingredients": m.get("ingredients", [])} for m in meals]
+    snapshot = [
+        {
+            "day": m.get("day"),
+            "title": m.get("title", ""),
+            "ingredients": m.get("ingredients", []),
+            "recipe_id": m.get("recipe_id"),
+        }
+        for m in meals
+    ]
     plan = {
         "plan_id": new_id("mplan"),
         "family_id": user["family_id"],
@@ -4282,6 +4297,7 @@ async def reuse_saved_plan(plan_id: str, user: dict = Depends(require_user), dat
             "title": m.get("title", ""),
             "ingredients": m.get("ingredients", []),
             "notes": None,
+            "recipe_id": m.get("recipe_id"),
             "created_at": utcnow(),
         })
         added += 1

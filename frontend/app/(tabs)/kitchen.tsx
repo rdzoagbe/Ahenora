@@ -17,7 +17,7 @@ import { useStore } from '../../src/store';
 import { api, MealPlan, ShoppingItem, ShoppingHistoryEntry, SavedMealPlan } from '../../src/api';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { logger } from '../../src/logger';
-import { suggestWeek, MealSuggestion, SuggestLang } from '../../src/mealSuggestions';
+import { suggestWeek, MealSuggestion, SuggestLang, localizedMealTitle, localizedMealIngredients } from '../../src/mealSuggestions';
 
 type ToastState = { message: string; tone: ToastTone };
 type KitchenView = 'shop' | 'meal';
@@ -38,6 +38,11 @@ const KEEP_AWAKE_KEY = 'coo_keep_screen_on';
 
 export default function Kitchen() {
   const { t, lang } = useStore();
+  // The food library covers en/es/fr/de; anything else falls back to English.
+  const suggestLang = useMemo<SuggestLang>(
+    () => (['en', 'es', 'fr', 'de'].includes(lang) ? (lang as SuggestLang) : 'en'),
+    [lang],
+  );
   const { isLocked, promptUpgrade } = usePremiumGate();
   const mealLocked = isLocked('meal_planner');
   const router = useRouter();
@@ -265,10 +270,10 @@ export default function Kitchen() {
       ...shopItems.map((i) => i.name),
       ...shopHistory.slice(0, 6).flatMap((h) => h.items),
     ];
-    setSuggestions(suggestWeek(owned, (lang as SuggestLang) || 'en'));
+    setSuggestions(suggestWeek(owned, suggestLang));
     setAddedSuggest(new Set());
     setShowSuggest(true);
-  }, [shopItems, shopHistory, lang]);
+  }, [shopItems, shopHistory, suggestLang]);
 
   const acceptSuggestion = useCallback(async (sug: MealSuggestion) => {
     if (mealLocked) { promptUpgrade('meal_planner'); return; }
@@ -292,7 +297,7 @@ export default function Kitchen() {
     setAddedSuggest((prev) => { const n = new Set(prev); toAdd.forEach((s) => n.add(s.recipeId)); return n; });
     try {
       const created = await Promise.all(
-        toAdd.map((s) => api.createMeal({ day: s.day, title: s.title, ingredients: s.allLabels })),
+        toAdd.map((s) => api.createMeal({ day: s.day, title: s.title, ingredients: s.allLabels, recipe_id: s.recipeId })),
       );
       setMeals((prev) => [...prev, ...created]);
       setShowSuggest(false);
@@ -608,8 +613,8 @@ export default function Kitchen() {
                   {mealsByDay[day].map((meal) => (
                     <View key={meal.meal_id} style={styles.row}>
                       <View style={{ flex: 1 }}>
-                        <Text style={styles.rowText}>{meal.title}</Text>
-                        {meal.ingredients.length > 0 ? <Text style={styles.rowCat}>{meal.ingredients.join(', ')}</Text> : null}
+                        <Text style={styles.rowText}>{localizedMealTitle(meal.recipe_id, meal.title, suggestLang)}</Text>
+                        {meal.ingredients.length > 0 ? <Text style={styles.rowCat}>{localizedMealIngredients(meal.recipe_id, meal.ingredients, suggestLang).join(', ')}</Text> : null}
                       </View>
                       <PressScale
                   accessibilityRole="button"
