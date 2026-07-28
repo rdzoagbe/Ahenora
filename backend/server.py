@@ -28,6 +28,7 @@ except ImportError:
     genai = None
 import PIL.Image
 
+from ai_models import is_model_not_found, model_candidates
 from ai_safety import (
     MAX_INGREDIENT_LEN,
     RECIPE_SYSTEM_PROMPT,
@@ -383,27 +384,58 @@ def get_db() -> Any:
     return db
 
 
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "").strip()
+
+# Which model actually answered, and the last per-model failure. Written by
+# _gemini_generate, read by /api/health/ai so production can say which model it
+# is really on instead of us assuming.
+_gemini_state = {"model": None, "last_error": None}
+
+
 def _gemini(system: str = ""):
-    return genai.GenerativeModel(
-        model_name="gemini-1.5-flash",
-        system_instruction=system or None,
-    )
+    """A model handle for callers that must drive generate_content themselves
+    (the voice upload path). Uses the proven model when one is known."""
+    name = _gemini_state["model"] or model_candidates(GEMINI_MODEL)[0]
+    return genai.GenerativeModel(model_name=name, system_instruction=system or None)
+
+
+async def _gemini_generate(contents, system: str = "") -> str:
+    """Generate with model fallback.
+
+    Tries the proven model first, then the operator override, then the built-in
+    list. Only a NOT_FOUND-style error moves to the next candidate — anything
+    else (quota, safety, network) is a real failure and re-raised immediately,
+    because retrying it against three models triples the pain for no benefit.
+    """
+    last_error = None
+    for name in model_candidates(GEMINI_MODEL, _gemini_state["model"] or ""):
+        model = genai.GenerativeModel(model_name=name, system_instruction=system or None)
+        try:
+            response = await asyncio.to_thread(model.generate_content, contents)
+            if _gemini_state["model"] != name:
+                log.info("gemini model resolved to %s", name)
+            _gemini_state["model"] = name
+            _gemini_state["last_error"] = None
+            return (response.text or "").strip()
+        except Exception as exc:  # noqa: BLE001 — classified below
+            _gemini_state["last_error"] = f"{name}: {exc}"[:300]
+            last_error = exc
+            if not is_model_not_found(str(exc)):
+                raise
+            log.warning("gemini model %s unavailable, trying next candidate", name)
+    raise last_error if last_error else RuntimeError("no gemini model candidates")
 
 
 async def _gemini_text(prompt: str, system: str = "") -> str:
-    model = _gemini(system)
-    response = await asyncio.to_thread(model.generate_content, prompt)
-    return (response.text or "").strip()
+    return await _gemini_generate(prompt, system)
 
 
 async def _gemini_vision(prompt: str, image_base64: str, system: str = "") -> str:
-    model = _gemini(system)
     if "," in image_base64:
         image_base64 = image_base64.split(",")[-1]
     img_bytes = base64.b64decode(image_base64)
     img = PIL.Image.open(io.BytesIO(img_bytes))
-    response = await asyncio.to_thread(model.generate_content, [prompt, img])
-    return (response.text or "").strip()
+    return await _gemini_generate([prompt, img], system)
 
 
 # The two launch tiers. Children are metered (role-aware: parents/caregivers
@@ -1423,6 +1455,62 @@ async def root():
     return {"status": "online", "message": "Household COO Backend is live"}
 
 
+_AI_PROBE = {"last": None}
+
+
+@app.get("/api/health/ai")
+async def health_ai(probe: int = 0):
+    """Whether the AI features can work, verified from production itself.
+
+    Every AI feature degrades gracefully, which is right for users and terrible
+    for diagnosis: a retired model name failed every call for weeks while each
+    feature quietly showed its fallback. This endpoint makes the plumbing
+    observable. With ?probe=1 it performs one tiny real generation, so
+    "working" means answered, not configured.
+    """
+    status = {
+        "key_configured": bool(GOOGLE_API_KEY),
+        "library_loaded": bool(genai),
+        "model_env": GEMINI_MODEL or None,
+        "model_resolved": _gemini_state["model"],
+        "model_candidates": model_candidates(GEMINI_MODEL, _gemini_state["model"] or ""),
+        "last_error": _gemini_state["last_error"],
+        # Everything below funnels through the same client, so one probe
+        # vouches for the plumbing of all of them.
+        "features": [
+            "vision_extract", "voice_transcribe", "suggest_assignee",
+            "morning_brief", "meal_recipe", "meal_suggestions",
+        ],
+    }
+
+    if probe:
+        if not GOOGLE_API_KEY or not genai:
+            status["probe"] = {"ok": False, "error": "GOOGLE_API_KEY missing or library not loaded"}
+            return status
+        # One probe a minute, globally. Enough to diagnose, too slow to farm.
+        now = utcnow()
+        last = _AI_PROBE["last"]
+        if last and (now - last).total_seconds() < 60:
+            status["probe"] = {"skipped": "rate limited, try again in a minute"}
+            return status
+        _AI_PROBE["last"] = now
+        try:
+            reply = await _gemini_generate("Reply with exactly one word: OK")
+            status["probe"] = {
+                "ok": "ok" in reply.lower(),
+                "reply": reply[:40],
+                "model": _gemini_state["model"],
+            }
+        except Exception as exc:  # noqa: BLE001 — reported, not hidden
+            status["probe"] = {"ok": False, "error": str(exc)[:300]}
+        # The probe may have just resolved (or changed) the model — report the
+        # state after the probe, not the snapshot from before it.
+        status["model_resolved"] = _gemini_state["model"]
+        status["last_error"] = _gemini_state["last_error"]
+
+    return status
+
+
 @app.api_route("/api/health", methods=["GET", "HEAD"])
 async def health():
     """Liveness + real database check for uptime monitoring.
@@ -2304,10 +2392,15 @@ Task description: {payload.description}
 Return only one exact name from the list, or return an empty string.
 """.strip()
 
-    result = await _gemini_text(
-        prompt,
-        system="You are assigning family tasks. Return only one exact name or empty string.",
-    )
+    try:
+        result = await _gemini_text(
+            prompt,
+            system="You are assigning family tasks. Return only one exact name or empty string.",
+        )
+    except Exception as exc:  # noqa: BLE001 — degrade like the no-key path, never 500
+        log.warning("ai assign failed: %s", exc)
+        parent = next((m for m in members if m["role"].lower() == "parent"), members[0])
+        return {"assignee": parent["name"]}
     result = result.strip().replace('"', "")
     if result not in names:
         result = ""
@@ -3452,7 +3545,15 @@ Open items:
 {chr(10).join(lines)}
 """.strip()
 
-    brief = await _gemini_text(prompt)
+    try:
+        brief = await _gemini_text(prompt)
+    except Exception as exc:  # noqa: BLE001 — degrade like the no-key path, never 500
+        log.warning("weekly brief generation failed: %s", exc)
+        brief = (
+            "This week's household priorities are: "
+            + "; ".join([c["title"] for c in cards[:5]])
+            + ". Focus first on items with dates, assign open tasks clearly, and close one quick win today."
+        )
     return {"brief": brief, "generated_at": iso(utcnow())}
 
 
@@ -3591,24 +3692,14 @@ Rules:
 - Return valid JSON only. No markdown.
 """.strip()
 
-    model = _gemini(
-        "You convert spoken household instructions into structured task/card JSON."
-    )
-
-    def _generate_inline():
-        return model.generate_content(
-            [
-                prompt,
-                {
-                    "mime_type": mime_type or "audio/aac",
-                    "data": audio_bytes,
-                },
-            ]
-        )
+    voice_system = "You convert spoken household instructions into structured task/card JSON."
+    model = _gemini(voice_system)
 
     try:
-        response = await asyncio.to_thread(_generate_inline)
-        text = (response.text or "").strip()
+        text = await _gemini_generate(
+            [prompt, {"mime_type": mime_type or "audio/aac", "data": audio_bytes}],
+            system=voice_system,
+        )
     except Exception as first_error:
         if not hasattr(genai, "upload_file"):
             raise HTTPException(
