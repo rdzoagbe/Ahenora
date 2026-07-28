@@ -12,6 +12,9 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  kitchen_ai_planning: 'Planning your week…',
+  kitchen_ai_fallback: 'Showing our own ideas — we could not reach the meal planner.',
+  kitchen_new_ideas: 'Different ideas',
   cook_servings: 'For how many',
   cook_amounts_note: 'Amounts are a shopping guide, not exact measures.',
   cook_add_missing: 'Add what I am missing to the list',
@@ -998,6 +1001,9 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  kitchen_ai_planning: 'Preparando tu semana…',
+  kitchen_ai_fallback: 'Mostramos nuestras propias ideas: no hemos podido conectar.',
+  kitchen_new_ideas: 'Otras ideas',
   cook_servings: 'Para cuántos',
   cook_amounts_note: 'Las cantidades son una guía para la compra, no medidas exactas.',
   cook_add_missing: 'Añadir lo que me falta a la lista',
@@ -1978,6 +1984,9 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  kitchen_ai_planning: 'Composition de votre semaine…',
+  kitchen_ai_fallback: 'Voici nos propres idées — le planificateur est injoignable.',
+  kitchen_new_ideas: 'D’autres idées',
   cook_servings: 'Pour combien',
   cook_amounts_note: 'Les quantités sont un repère pour les courses, pas des mesures exactes.',
   cook_add_missing: 'Ajouter ce qui me manque à la liste',
@@ -2958,6 +2967,9 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  kitchen_ai_planning: 'Deine Woche wird geplant…',
+  kitchen_ai_fallback: 'Wir zeigen eigene Ideen — der Planer war nicht erreichbar.',
+  kitchen_new_ideas: 'Andere Ideen',
   cook_servings: 'Für wie viele',
   cook_amounts_note: 'Die Mengen sind ein Einkaufsrichtwert, keine genauen Maße.',
   cook_add_missing: 'Fehlendes auf die Liste setzen',

@@ -29,7 +29,11 @@ except ImportError:
 import PIL.Image
 
 from ai_safety import (
+    MAX_INGREDIENT_LEN,
     RECIPE_SYSTEM_PROMPT,
+    SUGGEST_SYSTEM_PROMPT,
+    build_suggest_prompt,
+    validate_suggestions,
     UnsafeRecipe,
     build_recipe_prompt,
     extract_json,
@@ -4414,6 +4418,97 @@ async def generate_meal_recipe(
         )
 
     return {"recipe": recipe, "cached": False}
+
+
+@app.post("/api/meals/suggest-ai")
+async def suggest_meals_ai(
+    lang: str = "en",
+    user: dict = Depends(require_user),
+    database=Depends(get_db),
+):
+    """Propose a week of dinners from the family's actual shopping list.
+
+    The offline engine can only rank the 38-plus dishes we ship, so the same
+    list always produced the same week — and never a dish we had not thought
+    to include. This asks for real meals built from what the family bought.
+
+    The app falls back to the offline engine whenever this fails, so a bad
+    response, a missing key or a spent quota degrades to the old behaviour
+    rather than to nothing.
+    """
+    await require_feature(user, "meal_planner")
+
+    language = lang if lang in RECIPE_LANGUAGE_NAMES else "en"
+
+    if not GOOGLE_API_KEY:
+        raise HTTPException(503, "Meal ideas are unavailable right now.")
+
+    items = []
+    async for row in database["shopping_list"].find(
+        {"family_id": user["family_id"], "checked": False}, {"_id": 0, "name": 1}
+    ):
+        name = sanitize_user_text(row.get("name") or "", MAX_INGREDIENT_LEN)
+        if name:
+            items.append(name)
+
+    # Recent trips too: a family's staples are not all on today's list.
+    if len(items) < 6:
+        async for row in database["shopping_history"].find(
+            {"family_id": user["family_id"]}, {"_id": 0, "items": 1}
+        ).sort("created_at", -1).limit(3):
+            for raw in (row.get("items") or [])[:20]:
+                name = sanitize_user_text(raw or "", MAX_INGREDIENT_LEN)
+                if name and name not in items:
+                    items.append(name)
+
+    items = items[:40]
+    if len(items) < 3:
+        raise HTTPException(422, "Add a few things to your shopping list first.")
+
+    sub = await build_subscription(user["family_id"])
+    family = await get_family_doc(user["family_id"])
+    if not is_admin_user(user) and family.get("ai_scans_used", 0) >= sub["limits"]["ai_scans_per_month"]:
+        plan_limit_error(
+            feature="ai_scans",
+            current_plan=sub["plan"],
+            limit=sub["limits"]["ai_scans_per_month"],
+            used=family.get("ai_scans_used", 0),
+            message="AI limit reached for this billing period.",
+        )
+
+    # Anything already on the plan is excluded, so asking twice in a week gives
+    # a different week rather than the same one again.
+    planned = []
+    async for row in database["meals"].find(
+        {"family_id": user["family_id"]}, {"_id": 0, "title": 1}
+    ).limit(20):
+        title = sanitize_user_text(row.get("title") or "")
+        if title:
+            planned.append(title)
+
+    try:
+        text = await _gemini_text(
+            build_suggest_prompt(items, RECIPE_LANGUAGE_NAMES[language], planned),
+            system=SUGGEST_SYSTEM_PROMPT,
+        )
+        parsed = extract_json(text)
+        if parsed is None:
+            raise UnsafeRecipe("unparseable")
+        meals = validate_suggestions(parsed, items)
+    except UnsafeRecipe as exc:
+        log.info("meal suggestions rejected by safety gate: %s", exc.reason)
+        raise HTTPException(422, "We could not plan a week from this list.")
+    except Exception as exc:
+        log.warning("meal suggestion generation failed: %s", exc)
+        raise HTTPException(502, "We could not plan a week from this list.")
+
+    if not is_admin_user(user):
+        await database["families"].update_one(
+            {"family_id": user["family_id"]},
+            {"$inc": {"ai_scans_used": 1}, "$set": {"updated_at": utcnow()}},
+        )
+
+    return {"meals": meals}
 
 
 @app.post("/api/meals/sync-shopping")

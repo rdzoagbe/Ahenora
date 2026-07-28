@@ -182,7 +182,8 @@ const RECIPES: Recipe[] = [
 
 export interface MealSuggestion {
   day: string;
-  recipeId: string;
+  /** Null for AI-proposed dishes, which are not in the built-in library. */
+  recipeId: string | null;
   title: string;
   haveLabels: string[];
   needLabels: string[];
