@@ -199,6 +199,10 @@ export function suggestWeek(
   ownedNames: string[],
   lang: SuggestLang,
   historyNames: string[] = [],
+  /** Bump to get a different week from the same list. Dishes that match the
+   *  shopping list equally well are genuinely interchangeable, so rotating
+   *  between them is honest variety rather than a shuffle for its own sake. */
+  variant = 0,
 ): MealSuggestion[] {
   const toWords = (names: string[]) =>
     names.map((n) => norm(n)).filter(Boolean).map((v) => v.split(' '));
@@ -235,7 +239,27 @@ export function suggestWeek(
     (a, b) => b.matched - a.matched || b.ratio - a.ratio || (b.r.staple ? 1 : 0) - (a.r.staple ? 1 : 0),
   );
 
-  return scored.slice(0, 7).map((s, i) => {
+  // Ranking alone always returned the same seven, so asking again changed
+  // nothing. Rotate within each group of equally-scored dishes: the week stays
+  // as well matched to the shopping list, but a second ask gives a different
+  // set of dinners rather than the same list re-rendered.
+  const rotated: typeof scored = [];
+  for (let i = 0; i < scored.length; ) {
+    let j = i;
+    while (
+      j < scored.length &&
+      scored[j].matched === scored[i].matched &&
+      scored[j].ratio === scored[i].ratio
+    ) {
+      j += 1;
+    }
+    const group = scored.slice(i, j);
+    const offset = group.length > 1 ? variant % group.length : 0;
+    rotated.push(...group.slice(offset), ...group.slice(0, offset));
+    i = j;
+  }
+
+  return rotated.slice(0, 7).map((s, i) => {
     // "Have" is only what is on the list now; everything else is still to buy,
     // even if the family bought it last month.
     const have = s.r.ing.filter(hasRightNow);

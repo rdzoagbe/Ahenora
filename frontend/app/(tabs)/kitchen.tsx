@@ -98,6 +98,8 @@ export default function Kitchen() {
   const [showSuggest, setShowSuggest] = useState(false);
   const [suggestLoading, setSuggestLoading] = useState(false);
   const [suggestFellBack, setSuggestFellBack] = useState(false);
+  const [suggestError, setSuggestError] = useState<string | null>(null);
+  const [suggestVariant, setSuggestVariant] = useState(0);
   const [suggestions, setSuggestions] = useState<MealSuggestion[]>([]);
   const [addedSuggest, setAddedSuggest] = useState<Set<string>>(new Set());
 
@@ -290,18 +292,20 @@ export default function Kitchen() {
   // week for the same list. Kept as the fallback: it works with no signal, no
   // quota and no key, so a failure downgrades rather than empties the screen.
   const localWeek = useCallback(
-    () =>
+    (variant = 0) =>
       suggestWeek(
         shopItems.map((i) => i.name),
         suggestLang,
         shopHistory.slice(0, 6).flatMap((h) => h.items),
+        variant,
       ),
     [shopItems, shopHistory, suggestLang],
   );
 
-  const loadSuggestions = useCallback(async () => {
+  const loadSuggestions = useCallback(async (variant = 0) => {
     setSuggestLoading(true);
     setSuggestFellBack(false);
+    setSuggestError(null);
     try {
       const { meals } = await api.suggestMealsAI(suggestLang);
       setSuggestions(
@@ -315,21 +319,41 @@ export default function Kitchen() {
           matched: m.uses.length,
         })),
       );
-    } catch {
+    } catch (e: any) {
       // Locked plan, spent quota, no signal, or a response the gate rejected.
-      setSuggestions(localWeek());
+      // Which one matters: "add more to your list" and "the planner is down"
+      // need different things from the user, and a single vague line taught us
+      // nothing when this failed in the field.
+      const status = e?.status;
+      setSuggestions(localWeek(variant));
       setSuggestFellBack(true);
+      setSuggestError(
+        status === 404 ? t('kitchen_ai_not_deployed')
+        : status === 422 ? t('kitchen_ai_list_too_short')
+        : status === 402 ? t('kitchen_ai_limit')
+        : status === 503 ? t('kitchen_ai_unavailable')
+        : null,
+      );
     } finally {
       setSuggestLoading(false);
     }
-  }, [suggestLang, localWeek]);
+  }, [suggestLang, localWeek, t]);
 
   const openSuggest = useCallback(() => {
     setAddedSuggest(new Set());
-    setSuggestions(localWeek());
+    setSuggestVariant(0);
+    setSuggestions(localWeek(0));
     setShowSuggest(true);
-    loadSuggestions();
+    loadSuggestions(0);
   }, [localWeek, loadSuggestions]);
+
+  // "Different ideas" must change something even when the AI planner is
+  // unreachable, which is exactly when a repeated week is most annoying.
+  const askAgain = useCallback(() => {
+    const next = suggestVariant + 1;
+    setSuggestVariant(next);
+    loadSuggestions(next);
+  }, [suggestVariant, loadSuggestions]);
 
   const acceptSuggestion = useCallback(async (sug: MealSuggestion) => {
     if (mealLocked) { promptUpgrade('meal_planner'); return; }
@@ -1166,7 +1190,11 @@ export default function Kitchen() {
                   accessibilityLabel={t('close')} onPress={() => setShowSuggest(false)} style={styles.iconBtn}><X color={ui.text} size={20} /></PressScale>
         </View>
         <Text style={styles.suggestSub}>
-          {suggestLoading ? t('kitchen_ai_planning') : suggestFellBack ? t('kitchen_ai_fallback') : t('kitchen_suggest_sub')}
+          {suggestLoading
+            ? t('kitchen_ai_planning')
+            : suggestFellBack
+              ? (suggestError || t('kitchen_ai_fallback'))
+              : t('kitchen_suggest_sub')}
         </Text>
 
         {/* Ask again for a different week. The server excludes anything already
@@ -1175,7 +1203,7 @@ export default function Kitchen() {
           <PressScale
             testID="suggest-again"
             accessibilityRole="button"
-            onPress={loadSuggestions}
+            onPress={askAgain}
             style={styles.againBtn}
           >
             <Sparkles color={ui.orange} size={14} />

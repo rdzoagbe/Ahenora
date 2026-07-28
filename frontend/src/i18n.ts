@@ -12,6 +12,10 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  kitchen_ai_not_deployed: 'Showing our own ideas — the meal planner is not available on this server yet.',
+  kitchen_ai_list_too_short: 'Showing our own ideas — add a few more things to your shopping list for tailored meals.',
+  kitchen_ai_limit: 'Showing our own ideas — you have used this month\\u2019s AI allowance.',
+  kitchen_ai_unavailable: 'Showing our own ideas — the meal planner is temporarily unavailable.',
   kitchen_ai_planning: 'Planning your week…',
   kitchen_ai_fallback: 'Showing our own ideas — we could not reach the meal planner.',
   kitchen_new_ideas: 'Different ideas',
@@ -1001,6 +1005,10 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  kitchen_ai_not_deployed: 'Mostramos nuestras propias ideas: el planificador aún no está disponible en este servidor.',
+  kitchen_ai_list_too_short: 'Mostramos nuestras propias ideas: añade algo más a tu lista para menús a medida.',
+  kitchen_ai_limit: 'Mostramos nuestras propias ideas: has agotado tu cuota de IA del mes.',
+  kitchen_ai_unavailable: 'Mostramos nuestras propias ideas: el planificador no está disponible ahora mismo.',
   kitchen_ai_planning: 'Preparando tu semana…',
   kitchen_ai_fallback: 'Mostramos nuestras propias ideas: no hemos podido conectar.',
   kitchen_new_ideas: 'Otras ideas',
@@ -1984,6 +1992,10 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  kitchen_ai_not_deployed: 'Voici nos propres idées — le planificateur n’est pas encore disponible sur ce serveur.',
+  kitchen_ai_list_too_short: 'Voici nos propres idées — ajoutez quelques articles à votre liste pour des repas sur mesure.',
+  kitchen_ai_limit: 'Voici nos propres idées — votre quota d’IA du mois est épuisé.',
+  kitchen_ai_unavailable: 'Voici nos propres idées — le planificateur est temporairement indisponible.',
   kitchen_ai_planning: 'Composition de votre semaine…',
   kitchen_ai_fallback: 'Voici nos propres idées — le planificateur est injoignable.',
   kitchen_new_ideas: 'D’autres idées',
@@ -2967,6 +2979,10 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  kitchen_ai_not_deployed: 'Wir zeigen eigene Ideen — der Planer ist auf diesem Server noch nicht verfügbar.',
+  kitchen_ai_list_too_short: 'Wir zeigen eigene Ideen — ergänze deine Einkaufsliste für passgenaue Gerichte.',
+  kitchen_ai_limit: 'Wir zeigen eigene Ideen — dein KI-Kontingent für diesen Monat ist aufgebraucht.',
+  kitchen_ai_unavailable: 'Wir zeigen eigene Ideen — der Planer ist vorübergehend nicht erreichbar.',
   kitchen_ai_planning: 'Deine Woche wird geplant…',
   kitchen_ai_fallback: 'Wir zeigen eigene Ideen — der Planer war nicht erreichbar.',
   kitchen_new_ideas: 'Andere Ideen',
