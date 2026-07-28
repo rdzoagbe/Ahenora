@@ -50,6 +50,7 @@ import { useUI, UIColors } from '../../src/components/Kit';
 import { api, logEvent, Announcement, Card, CardType, FamilyMember, HandoffNote, Template, WeeklyReport } from '../../src/api';
 import { syncCardReminderNotifications, syncMorningDigest, syncDinnerReminder, syncSundayRecap, ensureAskedNotificationPermissionOnce } from '../../src/notifications';
 import { logger } from '../../src/logger';
+import { recordWin } from '../../src/reviewPrompt';
 
 interface VoiceDraft {
   transcript: string;
@@ -471,6 +472,7 @@ export default function Feed() {
     setCards((prev) => (next === 'DONE' ? prev.filter((c) => c.card_id !== card.card_id) : prev.map((c) => (c.card_id === card.card_id ? { ...c, status: next, completed_at: null } : c))));
     try {
       await api.updateCard(card.card_id, { status: next });
+      if (next === 'DONE') recordWin();
     } catch {
       pendingDismissRef.current.delete(card.card_id);
       Alert.alert(t('feed_could_not_update'), t('feed_change_not_saved'));

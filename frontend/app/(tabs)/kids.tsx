@@ -46,6 +46,7 @@ import { useStore } from '../../src/store';
 import { api, logEvent, AllowanceConfig, Chore, FamilyMember, Reward, Routine, StarTransaction } from '../../src/api';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { logger } from '../../src/logger';
+import { recordWin } from '../../src/reviewPrompt';
 
 type ToastState = { message: string; tone: ToastTone };
 type RewardSheetMode = 'create' | 'edit';
@@ -396,6 +397,7 @@ export default function Kids() {
       setMembers((prev) => prev.map((member) => (member.member_id === result.member.member_id ? result.member : member)));
       showToast(`${t('kids_added')} ${amount} ${t('stars')} · ${reason}`, 'success');
       setCelebration({ kind: 'stars', amount, chore });
+      recordWin();
       await refreshHistory(activeChild.member_id);
     } catch (e: any) {
       logger.warn('Quick add failed:', e?.message || e);
