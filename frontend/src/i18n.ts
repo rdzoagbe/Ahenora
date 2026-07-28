@@ -12,6 +12,12 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  tip_got_it: 'Got it',
+  tip_dismiss: 'Dismiss tip',
+  kids_tip_title: 'How stars work',
+  kids_tip_msg: 'Give your child stars for chores they finish. Stars build up, then they swap them for a reward you\'ve set — screen time, a treat, pocket money. You decide what a star is worth.',
+  vault_tip_title: 'Why keep documents here',
+  vault_tip_msg: 'Photograph passports, insurance papers, prescriptions or school letters and they stay in one private place — findable in seconds when someone asks, and shared with your co-parent instead of sitting in one phone.',
   a11y_delete: 'Delete',
   a11y_add: 'Add',
   a11y_edit: 'Edit',
@@ -974,6 +980,12 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  tip_got_it: 'Entendido',
+  tip_dismiss: 'Ocultar consejo',
+  kids_tip_title: 'Cómo funcionan las estrellas',
+  kids_tip_msg: 'Da estrellas a tu hijo por las tareas que completa. Las estrellas se acumulan y luego las cambia por una recompensa que tú hayas definido: tiempo de pantalla, un capricho, paga semanal. Tú decides cuánto vale una estrella.',
+  vault_tip_title: 'Por qué guardar documentos aquí',
+  vault_tip_msg: 'Fotografía pasaportes, pólizas de seguro, recetas médicas o cartas del colegio y todo queda en un único lugar privado: localizable en segundos y compartido con tu co-madre o co-padre, en vez de guardado en un solo teléfono.',
   a11y_delete: 'Eliminar',
   a11y_add: 'Añadir',
   a11y_edit: 'Editar',
@@ -1930,6 +1942,12 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  tip_got_it: 'J\'ai compris',
+  tip_dismiss: 'Masquer l\'astuce',
+  kids_tip_title: 'Comment fonctionnent les étoiles',
+  kids_tip_msg: 'Donnez des étoiles à votre enfant pour les tâches accomplies. Les étoiles s\'accumulent, puis il les échange contre une récompense que vous avez définie — temps d\'écran, gourmandise, argent de poche. C\'est vous qui fixez la valeur d\'une étoile.',
+  vault_tip_title: 'Pourquoi ranger vos documents ici',
+  vault_tip_msg: 'Photographiez passeports, contrats d\'assurance, ordonnances ou courriers de l\'école : tout reste au même endroit, en privé — retrouvable en quelques secondes et partagé avec votre co-parent, au lieu de dormir dans un seul téléphone.',
   a11y_delete: 'Supprimer',
   a11y_add: 'Ajouter',
   a11y_edit: 'Modifier',
@@ -2886,6 +2904,12 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  tip_got_it: 'Alles klar',
+  tip_dismiss: 'Hinweis ausblenden',
+  kids_tip_title: 'So funktionieren Sterne',
+  kids_tip_msg: 'Vergib Sterne für erledigte Aufgaben. Die Sterne sammeln sich an und werden gegen eine Belohnung eingetauscht, die du festlegst — Bildschirmzeit, eine Kleinigkeit, Taschengeld. Du bestimmst, was ein Stern wert ist.',
+  vault_tip_title: 'Warum Dokumente hierher gehören',
+  vault_tip_msg: 'Fotografiere Pässe, Versicherungsunterlagen, Rezepte oder Schulbriefe — alles bleibt an einem privaten Ort: in Sekunden auffindbar und mit dem Co-Elternteil geteilt, statt nur auf einem Handy zu liegen.',
   a11y_delete: 'Löschen',
   a11y_add: 'Hinzufügen',
   a11y_edit: 'Bearbeiten',

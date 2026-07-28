@@ -24,6 +24,7 @@ import AppToast, { ToastTone } from '../../src/components/AppToast';
 import LoadingOverlay from '../../src/components/LoadingOverlay';
 import { TabScreen } from '../../src/components/TabScreen';
 import { PdfViewer } from '../../src/components/PdfViewer';
+import FirstRunTip from '../../src/components/FirstRunTip';
 import { HtmlDocViewer } from '../../src/components/HtmlDocViewer';
 import { Badge, Card, IconTile, ProgressBar, ScreenHeader, UI, useUI, UIColors } from '../../src/components/Kit';
 
@@ -358,6 +359,14 @@ export default function Vault() {
                 <Bell color={ui.text} size={24} />
               </PressScale>
             }
+          />
+
+          <FirstRunTip
+            id="vault_why"
+            testID="vault-first-run-tip"
+            title={t('vault_tip_title')}
+            message={t('vault_tip_msg')}
+            icon={<Shield color={ui.orange} size={20} />}
           />
 
           {/* Category filter chips */}
