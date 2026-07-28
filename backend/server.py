@@ -399,19 +399,26 @@ def _gemini(system: str = ""):
     return genai.GenerativeModel(model_name=name, system_instruction=system or None)
 
 
-async def _gemini_generate(contents, system: str = "") -> str:
+async def _gemini_generate(contents, system: str = "", temperature: float = None) -> str:
     """Generate with model fallback.
 
     Tries the proven model first, then the operator override, then the built-in
     list. Only a NOT_FOUND-style error moves to the next candidate — anything
     else (quota, safety, network) is a real failure and re-raised immediately,
     because retrying it against three models triples the pain for no benefit.
+
+    `temperature` is optional; when set it controls sampling diversity, which
+    the meal planner raises for repeat "different ideas" asks.
     """
+    gen_config = {"temperature": temperature} if temperature is not None else None
     last_error = None
     for name in model_candidates(GEMINI_MODEL, _gemini_state["model"] or ""):
         model = genai.GenerativeModel(model_name=name, system_instruction=system or None)
         try:
-            response = await asyncio.to_thread(model.generate_content, contents)
+            response = await asyncio.to_thread(
+                lambda m=model: m.generate_content(contents, generation_config=gen_config)
+                if gen_config else m.generate_content(contents)
+            )
             if _gemini_state["model"] != name:
                 log.info("gemini model resolved to %s", name)
             _gemini_state["model"] = name
@@ -431,8 +438,8 @@ async def _gemini_generate(contents, system: str = "") -> str:
     raise last_error if last_error else RuntimeError("no gemini model candidates")
 
 
-async def _gemini_text(prompt: str, system: str = "") -> str:
-    return await _gemini_generate(prompt, system)
+async def _gemini_text(prompt: str, system: str = "", temperature: float = None) -> str:
+    return await _gemini_generate(prompt, system, temperature=temperature)
 
 
 async def _gemini_vision(prompt: str, image_base64: str, system: str = "") -> str:
@@ -4525,6 +4532,7 @@ async def generate_meal_recipe(
 @app.post("/api/meals/suggest-ai")
 async def suggest_meals_ai(
     lang: str = "en",
+    variant: int = 0,
     user: dict = Depends(require_user),
     database=Depends(get_db),
 ):
@@ -4588,10 +4596,19 @@ async def suggest_meals_ai(
         if title:
             planned.append(title)
 
+    # variant is the "different ideas" counter from the client. Bounded so a
+    # hostile value cannot blow up the prompt, and used both to change the
+    # prompt bytes and to raise sampling temperature after the first ask.
+    variant = max(0, min(int(variant or 0), 20))
+
     try:
         text = await _gemini_text(
-            build_suggest_prompt(items, RECIPE_LANGUAGE_NAMES[language], planned),
+            build_suggest_prompt(
+                items, RECIPE_LANGUAGE_NAMES[language], planned, variant=variant
+            ),
             system=SUGGEST_SYSTEM_PROMPT,
+            # First ask stays focused; repeat asks lean into variety.
+            temperature=0.4 if variant == 0 else 1.0,
         )
         parsed = extract_json(text)
         if parsed is None:

@@ -263,14 +263,29 @@ def build_suggest_prompt(
     items: list,
     language_name: str,
     avoid_titles: list = None,
+    variant: int = 0,
 ) -> str:
-    """Assemble the user half of the prompt from sanitised input."""
+    """Assemble the user half of the prompt from sanitised input.
+
+    `variant` is the "different ideas" counter. Without it, every press sent a
+    byte-identical prompt and only Gemini sampling noise varied the result — so
+    users saw the same week back. A non-zero variant both changes the prompt
+    bytes and asks, in words, for a genuinely different set of dinners.
+    """
     lines = ["Shopping list:"]
     lines.extend(f"- {item}" for item in items)
     if avoid_titles:
         lines.append("")
         lines.append("Already planned this week, do not propose these again:")
         lines.extend(f"- {t}" for t in avoid_titles)
+    if variant and variant > 0:
+        lines.append("")
+        lines.append(
+            f"This is idea set number {variant + 1}. The family has already seen "
+            f"{variant} earlier set(s) and wants something different. Propose a "
+            f"completely different seven dinners — different dishes, ideally a "
+            f"different style of cooking — still built from the same shopping list."
+        )
     lines.append("")
     lines.append(f"Write the dish names in {language_name}.")
     return "\n".join(lines)

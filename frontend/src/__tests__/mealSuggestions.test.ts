@@ -297,30 +297,58 @@ describe('what you have versus what ranks the week', () => {
   });
 });
 
-describe('asking again', () => {
-  const LIST = ['rice', 'tomatoes', 'onion', 'chicken', 'beef', 'bell peppers'];
+describe('asking again (offline engine)', () => {
+  // The reported list, which is what exposed the "same dishes, different days"
+  // bug in the first attempt at variety.
+  const LIST = ['Sweet potato', "Yam's", 'Porc ribs', 'Corn flour', 'Okro',
+                'Bell peppers', 'Garden eggs', 'Tomatoes', 'Rice',
+                'Chicken thighs', 'Maïs', 'Beef'];
 
-  it('gives a different week the second time', () => {
-    const first = suggestWeek(LIST, 'en', [], 0).map((s) => s.recipeId);
+  it('proposes different dishes, not the same ones on different days', () => {
+    // The first attempt only reordered the week: five of seven dishes came back
+    // identical and merely swapped days. Comparing sets, not sequences, is what
+    // catches that.
+    const first = new Set(suggestWeek(LIST, 'en', [], 0).map((s) => s.recipeId));
     const second = suggestWeek(LIST, 'en', [], 1).map((s) => s.recipeId);
-    expect(second).not.toEqual(first);
+    const repeated = second.filter((id) => first.has(id!)).length;
+    expect(repeated).toBe(0);
   });
 
-  it('keeps the week just as well matched to the list', () => {
-    // Variety must not cost relevance — rotation only happens inside groups
-    // of dishes that scored identically.
-    const first = suggestWeek(LIST, 'en', [], 0);
-    const second = suggestWeek(LIST, 'en', [], 1);
-    const total = (w: typeof first) => w.reduce((n, s) => n + s.matched, 0);
-    expect(total(second)).toBe(total(first));
+  it('keeps going for several asks before coming back around', () => {
+    const seen = [0, 1, 2, 3].map((v) =>
+      new Set(suggestWeek(LIST, 'en', [], v).map((s) => s.recipeId)),
+    );
+    for (let a = 0; a < seen.length; a += 1) {
+      for (let b = a + 1; b < seen.length; b += 1) {
+        const shared = [...seen[a]].filter((id) => seen[b].has(id));
+        expect(shared).toEqual([]);
+      }
+    }
+    // Then wraps back to the best week rather than running out.
+    expect(suggestWeek(LIST, 'en', [], 4).map((s) => s.recipeId))
+      .toEqual(suggestWeek(LIST, 'en', [], 0).map((s) => s.recipeId));
   });
 
-  it('is stable for the same variant', () => {
+  it('never proposes a dish with nothing from the list in it', () => {
+    // Variety costs some match quality by design. The floor is that every dish
+    // still uses at least one thing the family actually bought.
+    for (const variant of [0, 1, 2, 3]) {
+      for (const meal of suggestWeek(LIST, 'en', [], variant)) {
+        expect(meal.haveLabels.length).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it('puts the best-matched week first', () => {
+    const total = (v: number) =>
+      suggestWeek(LIST, 'en', [], v).reduce((n, s) => n + s.haveLabels.length, 0);
+    expect(total(0)).toBeGreaterThan(total(1));
+    expect(total(1)).toBeGreaterThanOrEqual(total(2));
+  });
+
+  it('is stable for the same variant, and always returns a full week', () => {
     expect(suggestWeek(LIST, 'en', [], 3).map((s) => s.recipeId))
       .toEqual(suggestWeek(LIST, 'en', [], 3).map((s) => s.recipeId));
-  });
-
-  it('still returns a full week however many times you ask', () => {
     for (const variant of [0, 1, 2, 5, 11, 50]) {
       expect(suggestWeek(LIST, 'en', [], variant)).toHaveLength(7);
     }

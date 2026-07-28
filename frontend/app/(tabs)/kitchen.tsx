@@ -288,6 +288,15 @@ export default function Kitchen() {
   }, [showToast]);
 
   // ── Suggest a week of meals from what you've bought (rule-based, offline) ──
+  // A suggestion's identity is the dish, not the weekday it landed on. Keying
+  // the "added" flag on the day meant that after "Different ideas" swapped the
+  // dishes, a day still read "Added" beside a dish that was never added, and
+  // Add-all silently skipped it. recipeId for library dishes, title for AI ones.
+  const sugKey = useCallback(
+    (s: MealSuggestion) => `${s.recipeId ?? ''}|${s.title}`,
+    [],
+  );
+
   // The offline engine ranks the built-in library and always returns the same
   // week for the same list. Kept as the fallback: it works with no signal, no
   // quota and no key, so a failure downgrades rather than empties the screen.
@@ -307,7 +316,7 @@ export default function Kitchen() {
     setSuggestFellBack(false);
     setSuggestError(null);
     try {
-      const { meals } = await api.suggestMealsAI(suggestLang);
+      const { meals } = await api.suggestMealsAI(suggestLang, variant);
       setSuggestions(
         meals.map((m) => ({
           day: m.day,
@@ -352,13 +361,17 @@ export default function Kitchen() {
   const askAgain = useCallback(() => {
     const next = suggestVariant + 1;
     setSuggestVariant(next);
+    // The dishes are about to change wholesale; drop the added-flags so none
+    // are left pointing at a dish that is no longer on screen.
+    setAddedSuggest(new Set());
     loadSuggestions(next);
   }, [suggestVariant, loadSuggestions]);
 
   const acceptSuggestion = useCallback(async (sug: MealSuggestion) => {
     if (mealLocked) { promptUpgrade('meal_planner'); return; }
-    if (addedSuggest.has(sug.day)) return;
-    setAddedSuggest((prev) => new Set(prev).add(sug.day));
+    const key = sugKey(sug);
+    if (addedSuggest.has(key)) return;
+    setAddedSuggest((prev) => new Set(prev).add(key));
     try {
       const created = await api.createMeal({
         day: sug.day,
@@ -368,18 +381,18 @@ export default function Kitchen() {
       });
       setMeals((prev) => [...prev, created]);
     } catch {
-      setAddedSuggest((prev) => { const n = new Set(prev); n.delete(sug.day); return n; });
+      setAddedSuggest((prev) => { const n = new Set(prev); n.delete(key); return n; });
       showToast(t('vault_could_not_add_meal'), 'error');
     }
-  }, [addedSuggest, mealLocked, promptUpgrade, showToast, t]);
+  }, [addedSuggest, mealLocked, promptUpgrade, showToast, t, sugKey]);
 
   const acceptAllSuggestions = useCallback(async () => {
     if (mealLocked) { promptUpgrade('meal_planner'); return; }
     // Only fill days that don't already have a meal, so we never clobber a plan.
     const busyDays = new Set(meals.map((m) => m.day));
-    const toAdd = suggestions.filter((s) => !addedSuggest.has(s.day) && !busyDays.has(s.day));
+    const toAdd = suggestions.filter((s) => !addedSuggest.has(sugKey(s)) && !busyDays.has(s.day));
     if (toAdd.length === 0) { setShowSuggest(false); return; }
-    setAddedSuggest((prev) => { const n = new Set(prev); toAdd.forEach((s) => n.add(s.day)); return n; });
+    setAddedSuggest((prev) => { const n = new Set(prev); toAdd.forEach((s) => n.add(sugKey(s))); return n; });
     try {
       const created = await Promise.all(
         toAdd.map((s) => api.createMeal({
@@ -396,7 +409,7 @@ export default function Kitchen() {
       setMeals(await api.listMeals().catch(() => []));
       showToast(t('vault_could_not_add_meal'), 'error');
     }
-  }, [suggestions, addedSuggest, meals, mealLocked, promptUpgrade, showToast, t]);
+  }, [suggestions, addedSuggest, meals, mealLocked, promptUpgrade, showToast, t, sugKey]);
 
   const addMissingToList = useCallback(async (recipeId: string) => {
     const needed = recipeIngredients(recipeId, suggestLang);
@@ -1215,9 +1228,9 @@ export default function Kitchen() {
         {/* No inner ScrollView here — the sheet itself scrolls; nesting two
             vertical scrollers makes the list unscrollable on Android. */}
         {suggestions.map((s) => {
-          const added = addedSuggest.has(s.day);
+          const added = addedSuggest.has(sugKey(s));
           return (
-            <View key={s.day} style={styles.suggestRow}>
+            <View key={sugKey(s)} style={styles.suggestRow}>
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={styles.suggestDay}>{t(`day_${s.day}`)}</Text>
                 <Text style={styles.suggestTitle}>{s.title}</Text>
@@ -1228,14 +1241,14 @@ export default function Kitchen() {
                   <Text style={styles.suggestNeed} numberOfLines={2}>{t('kitchen_suggest_need')}: {s.needLabels.join(', ')}</Text>
                 ) : null}
               </View>
-              <PressScale testID={`suggest-add-${s.recipeId}`} onPress={() => acceptSuggestion(s)} disabled={added} style={[styles.suggestAddBtn, added && styles.suggestAddedBtn]}>
+              <PressScale testID={`suggest-add-${s.recipeId}`} onPress={() => acceptSuggestion(s)} disabled={added || suggestLoading} style={[styles.suggestAddBtn, added && styles.suggestAddedBtn, suggestLoading && { opacity: 0.5 }]}>
                 {added ? <Check color={ui.mintText} size={15} /> : <Plus color={ui.lavenderText} size={15} />}
                 <Text style={[styles.suggestAddText, added && { color: ui.mintText }]}>{added ? t('kitchen_suggest_added') : t('kitchen_suggest_add')}</Text>
               </PressScale>
             </View>
           );
         })}
-        <PressScale testID="suggest-add-all" onPress={acceptAllSuggestions} style={styles.suggestAllBtn}>
+        <PressScale testID="suggest-add-all" onPress={acceptAllSuggestions} disabled={suggestLoading} style={[styles.suggestAllBtn, suggestLoading && { opacity: 0.5 }]}>
           <Text style={styles.suggestAllText}>{t('kitchen_suggest_add_all')}</Text>
         </PressScale>
       </KeyboardAwareBottomSheet>

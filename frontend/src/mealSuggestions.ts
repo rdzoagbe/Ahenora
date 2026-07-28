@@ -17,6 +17,13 @@ type Loc = Record<SuggestLang, string>;
 
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 
+// How far down the ranking "different ideas" may reach in the OFFLINE engine.
+// Four weeks of genuinely different dinners from a fifty-recipe library, while
+// keeping every proposal inside the better-matched half — past that,
+// suggestions stop having much to do with the shopping list. (The AI path
+// varies differently: it re-prompts the model per ask.)
+const SUGGEST_POOL = 28;
+
 interface Ingredient {
   label: Loc;
   match: string[]; // accent-free, lowercase terms across en/es/fr/de
@@ -239,27 +246,23 @@ export function suggestWeek(
     (a, b) => b.matched - a.matched || b.ratio - a.ratio || (b.r.staple ? 1 : 0) - (a.r.staple ? 1 : 0),
   );
 
-  // Ranking alone always returned the same seven, so asking again changed
-  // nothing. Rotate within each group of equally-scored dishes: the week stays
-  // as well matched to the shopping list, but a second ask gives a different
-  // set of dinners rather than the same list re-rendered.
-  const rotated: typeof scored = [];
-  for (let i = 0; i < scored.length; ) {
-    let j = i;
-    while (
-      j < scored.length &&
-      scored[j].matched === scored[i].matched &&
-      scored[j].ratio === scored[i].ratio
-    ) {
-      j += 1;
-    }
-    const group = scored.slice(i, j);
-    const offset = group.length > 1 ? variant % group.length : 0;
-    rotated.push(...group.slice(offset), ...group.slice(0, offset));
-    i = j;
-  }
+  // Asking again has to change the dinners, not just the days they fall on.
+  //
+  // A first attempt rotated within groups of equally-scored dishes, which
+  // barely worked: the best-matched recipes have unique scores, so they sat in
+  // groups of one and never moved — five of seven dishes came back identical
+  // and merely swapped days.
+  //
+  // The window moves through the ranking instead. Variant 0 is the best seven,
+  // variant 1 the next seven, and so on, wrapping around a bounded pool of top
+  // candidates. That does cost some match quality — which is the point. A
+  // second ask means "show me something else", and the honest way to do that is
+  // to go further down a list already sorted by how well things match.
+  const pool = scored.slice(0, Math.max(7, Math.min(SUGGEST_POOL, scored.length)));
+  const start = (Math.max(0, Math.floor(variant)) * 7) % pool.length;
+  const chosen = Array.from({ length: 7 }, (_, i) => pool[(start + i) % pool.length]);
 
-  return rotated.slice(0, 7).map((s, i) => {
+  return chosen.map((s, i) => {
     // "Have" is only what is on the list now; everything else is still to buy,
     // even if the family bought it last month.
     const have = s.r.ing.filter(hasRightNow);
