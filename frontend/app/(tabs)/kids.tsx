@@ -37,6 +37,7 @@ import { StarCelebration, CelebrationContent } from '../../src/components/StarCe
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
 import AppToast, { ToastTone } from '../../src/components/AppToast';
 import EmptyState from '../../src/components/EmptyState';
+import FirstRunTip from '../../src/components/FirstRunTip';
 import ErrorState from '../../src/components/ErrorState';
 import LoadingOverlay from '../../src/components/LoadingOverlay';
 import { TabScreen } from '../../src/components/TabScreen';
@@ -565,6 +566,18 @@ export default function Kids() {
               </PressScale>
             }
           />
+
+          {/* Only once the screen has something to explain — a tip above an
+              error or a blank slate is noise. */}
+          {!showBlockingError && !loading && children.length > 0 ? (
+            <FirstRunTip
+              id="kids_stars"
+              testID="kids-first-run-tip"
+              title={t('kids_tip_title')}
+              message={t('kids_tip_msg')}
+              icon={<Star color={ui.star} size={20} fill={ui.star} />}
+            />
+          ) : null}
 
           {showBlockingError ? (
             <ErrorState title={t('kids_page_unavailable')} message={errorMessage || t('kids_load_error')} onRetry={load} />
