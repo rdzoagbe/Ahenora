@@ -369,8 +369,13 @@ def validate_suggestions(parsed: dict, owned: list) -> list:
             "minutes": minutes,
         })
 
-    if not meals:
-        raise UnsafeRecipe("no usable meals")
+    # A short week (from dedup dropping repeats) would leave a blank day in the
+    # planner. Require a full seven; anything less falls back to the offline
+    # engine, which always returns a complete week.
+    if len(meals) < len(DAYS_IN_ORDER):
+        raise UnsafeRecipe(f"short week: {len(meals)}")
+
+    meals = meals[: len(DAYS_IN_ORDER)]
 
     # One dish per day, in order, however the model chose to label them.
     for i, meal in enumerate(meals):

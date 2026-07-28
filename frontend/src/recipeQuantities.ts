@@ -155,3 +155,24 @@ export function quantityFor(
 export function hasQuantity(ingredientId: string): boolean {
   return ingredientId in PER_PERSON;
 }
+
+/**
+ * A shopping-list-ready name for an ingredient: the amount attached the way a
+ * human writes it. "400 g rice", "×4 eggs", or — for seasonings, which have no
+ * sensible amount — just "curry" (not "to taste curry", which is junk on a
+ * list). Returns the bare label for anything we can't price.
+ */
+export function shoppingNameFor(
+  ingredientId: string,
+  label: string,
+  servings: number,
+  lang: SuggestLang,
+): string {
+  const per = PER_PERSON[ingredientId];
+  // No entry, or a "to taste" seasoning: the amount is meaningless on a list.
+  if (!per || per.unit === 'taste') return label;
+  const qty = quantityFor(ingredientId, servings, lang);
+  if (!qty) return label;
+  // Counts read after the item ("eggs ×4"); weights and volumes read before it.
+  return per.unit === 'count' ? `${label} ${qty}` : `${qty} ${label}`;
+}
