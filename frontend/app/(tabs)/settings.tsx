@@ -522,7 +522,7 @@ export default function Settings() {
                       <PressScale
                         testID={`remove-member-${m.member_id}`}
                         onPress={() => removeMember(m)}
-                        style={{ padding: 4 }}
+                        hitSlop={12} style={{ padding: 4 }}
                         accessibilityLabel={`${t('set_remove')} ${m.name}`}
                       >
                         <Trash2 color={ui.muted} size={15} />
@@ -618,7 +618,7 @@ export default function Settings() {
                     />
                     <PressScale
                   accessibilityRole="button"
-                  accessibilityLabel={t('a11y_delete')} onPress={() => removeExpense(exp.expense_id)} style={{ padding: 4 }}>
+                  accessibilityLabel={t('a11y_delete')} onPress={() => removeExpense(exp.expense_id)} hitSlop={12} style={{ padding: 4 }}>
                       <Trash2 color={ui.muted} size={15} />
                     </PressScale>
                   </View>

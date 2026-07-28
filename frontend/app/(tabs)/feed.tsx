@@ -709,7 +709,7 @@ export default function Feed() {
                     </View>
                     <PressScale
                   accessibilityRole="button"
-                  accessibilityLabel={t('a11y_delete')} onPress={() => removeNote(note.note_id)} style={{ padding: 4 }}>
+                  accessibilityLabel={t('a11y_delete')} onPress={() => removeNote(note.note_id)} hitSlop={12} style={{ padding: 4 }}>
                       <Trash2 color={ui.muted} size={15} />
                     </PressScale>
                   </View>
@@ -814,7 +814,7 @@ export default function Feed() {
                   </View>
                   <PressScale
                   accessibilityRole="button"
-                  accessibilityLabel={t('a11y_delete')} onPress={() => removeAnnouncement(ann.announcement_id)} style={{ padding: 4 }}>
+                  accessibilityLabel={t('a11y_delete')} onPress={() => removeAnnouncement(ann.announcement_id)} hitSlop={12} style={{ padding: 4 }}>
                     <Trash2 color={ui.muted} size={15} />
                   </PressScale>
                 </View>
@@ -1303,7 +1303,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     minHeight: 72,
     borderRadius: 22,
     borderWidth: 1,
-    borderColor: '#FFD5C2',
+    borderColor: 'rgba(245,101,25,0.30)',
     backgroundColor: ui.orangeSoft,
     paddingHorizontal: 14,
     flexDirection: 'row',
@@ -1379,7 +1379,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     height: 26,
     borderRadius: 99,
     borderWidth: 1.3,
-    borderColor: '#D9D5CF',
+    borderColor: ui.line,
     alignItems: 'center',
     justifyContent: 'center',
   },

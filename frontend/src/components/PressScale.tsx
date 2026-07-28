@@ -2,6 +2,7 @@ import React, { useRef } from 'react';
 import {
   AccessibilityRole,
   Animated,
+  Insets,
   Pressable,
   ViewStyle,
   StyleProp,
@@ -40,9 +41,14 @@ interface Props {
   accessibilityLabel?: string;
   accessibilityRole?: AccessibilityRole;
   accessibilityHint?: string;
+  /**
+   * Expands the touchable area beyond the visual bounds without affecting
+   * layout — used to bring small icon buttons up to a comfortable target size.
+   */
+  hitSlop?: number | Insets;
 }
 
-export function PressScale({ onPress, children, style, testID, disabled, accessibilityLabel, accessibilityRole, accessibilityHint }: Props) {
+export function PressScale({ onPress, children, style, testID, disabled, accessibilityLabel, accessibilityRole, accessibilityHint, hitSlop }: Props) {
   const scale = useRef(new Animated.Value(1)).current;
   const { layout, visual } = splitStyles(style);
 
@@ -60,6 +66,7 @@ export function PressScale({ onPress, children, style, testID, disabled, accessi
       onPressIn={onIn}
       onPressOut={onOut}
       disabled={disabled}
+      hitSlop={hitSlop}
       style={layout}
       accessibilityLabel={accessibilityLabel}
       accessibilityRole={accessibilityRole}

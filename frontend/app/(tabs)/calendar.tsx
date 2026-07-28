@@ -729,7 +729,7 @@ export default function Calendar() {
                   accessibilityLabel={t('a11y_delete')} onPress={async () => {
                       setCarpools((prev) => prev.filter((c) => c.carpool_id !== cp.carpool_id));
                       try { await api.deleteCarpool(cp.carpool_id); } catch { load(); }
-                    }} style={{ padding: 4 }}>
+                    }} hitSlop={12} style={{ padding: 4 }}>
                       <Trash2 color={ui.muted} size={15} />
                     </PressScale>
                   </View>
