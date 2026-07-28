@@ -608,7 +608,7 @@ export default function Kids() {
                           testID="kids-fix-balance"
                           onPress={() => { setFixValue(String(stars)); setShowFixSheet(true); }}
                           accessibilityLabel={t('kids_fix_balance')}
-                          style={{ padding: 4 }}
+                          hitSlop={12} style={{ padding: 4 }}
                         >
                           <Pencil color={ui.muted} size={14} />
                         </PressScale>

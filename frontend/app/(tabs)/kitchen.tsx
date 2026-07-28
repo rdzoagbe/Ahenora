@@ -523,7 +523,7 @@ export default function Kitchen() {
                   {item.category ? <Text style={styles.rowCat}>{catLabel(item.category, t)}</Text> : null}
                   <PressScale
                   accessibilityRole="button"
-                  accessibilityLabel={t('a11y_delete')} onPress={() => deleteShopItem(item.item_id)} style={{ padding: 4 }}>
+                  accessibilityLabel={t('a11y_delete')} onPress={() => deleteShopItem(item.item_id)} hitSlop={12} style={{ padding: 4 }}>
                     <Trash2 color={ui.muted} size={15} />
                   </PressScale>
                 </PressScale>
@@ -539,7 +539,7 @@ export default function Kitchen() {
                       <Text style={[styles.rowText, styles.rowTextDone]}>{item.name}</Text>
                       <PressScale
                   accessibilityRole="button"
-                  accessibilityLabel={t('a11y_delete')} onPress={() => deleteShopItem(item.item_id)} style={{ padding: 4 }}>
+                  accessibilityLabel={t('a11y_delete')} onPress={() => deleteShopItem(item.item_id)} hitSlop={12} style={{ padding: 4 }}>
                         <Trash2 color={ui.muted} size={15} />
                       </PressScale>
                     </PressScale>
@@ -613,7 +613,7 @@ export default function Kitchen() {
                       </View>
                       <PressScale
                   accessibilityRole="button"
-                  accessibilityLabel={t('a11y_delete')} onPress={() => deleteMeal(meal.meal_id)} style={{ padding: 4 }}>
+                  accessibilityLabel={t('a11y_delete')} onPress={() => deleteMeal(meal.meal_id)} hitSlop={12} style={{ padding: 4 }}>
                         <Trash2 color={ui.muted} size={15} />
                       </PressScale>
                     </View>
@@ -669,7 +669,7 @@ export default function Kitchen() {
               </PressScale>
               <PressScale
                   accessibilityRole="button"
-                  accessibilityLabel={t('a11y_delete')} onPress={() => deleteShopTrip(h.history_id)} style={{ padding: 6 }}>
+                  accessibilityLabel={t('a11y_delete')} onPress={() => deleteShopTrip(h.history_id)} hitSlop={12} style={{ padding: 6 }}>
                 <Trash2 color={ui.muted} size={15} />
               </PressScale>
             </View>
@@ -756,7 +756,7 @@ export default function Kitchen() {
               </PressScale>
               <PressScale
                   accessibilityRole="button"
-                  accessibilityLabel={t('a11y_delete')} onPress={() => deletePlan(p.plan_id)} style={{ padding: 6 }}>
+                  accessibilityLabel={t('a11y_delete')} onPress={() => deletePlan(p.plan_id)} hitSlop={12} style={{ padding: 6 }}>
                 <Trash2 color={ui.muted} size={15} />
               </PressScale>
             </View>

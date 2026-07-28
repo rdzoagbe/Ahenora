@@ -195,7 +195,7 @@ export default function Onboarding() {
                       placeholderTextColor={theme.colors.textSoft}
                       style={[styles.input, { color: theme.colors.text }]}
                     />
-                    <PressScale onPress={() => removeShop(i)} style={{ padding: 6 }}>
+                    <PressScale onPress={() => removeShop(i)} hitSlop={12} style={{ padding: 6 }}>
                       <X color={theme.colors.textSoft} size={16} />
                     </PressScale>
                   </View>
