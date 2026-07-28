@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Household COO — the family operations app</title>
+<meta name="description" content="One shared, private place for tasks, calendars, kids' chores, meals and documents. Built for busy families and co-parents across two homes.">
+<link rel="icon" href="assets/icon.png">
+
+<meta property="og:title" content="Household COO — the family operations app">
+<meta property="og:description" content="One shared, private place for tasks, calendars, kids' chores, meals and documents. Built for busy families and co-parents across two homes.">
+<meta property="og:image" content="https://rdzoagbe.github.io/Household-COO/assets/icon.png">
+<meta property="og:url" content="https://rdzoagbe.github.io/Household-COO/">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+
+<style>
+  :root {
+    --bg: #ffffff;
+    --surface: #f7f7f9;
+    --text: #17181f;
+    --muted: #5c6070;
+    --line: #e6e7ec;
+    --brand: #F56519;
+    --brand-deep: #d94f0c;
+    --ink: #0b0e1a;
+    --radius: 16px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0b0e1a;
+      --surface: #14172a;
+      --text: #f2f3f7;
+      --muted: #a2a7bb;
+      --line: #262a41;
+      --brand: #ff8442;
+      --brand-deep: #ff6a2f;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1060px; margin: 0 auto; padding: 0 22px; }
+  a { color: var(--brand); }
+
+  /* ---------- header ---------- */
+  header {
+    position: sticky; top: 0; z-index: 20;
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: saturate(180%) blur(12px);
+    border-bottom: 1px solid var(--line);
+  }
+  .nav { display: flex; align-items: center; gap: 12px; padding: 12px 0; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; text-decoration: none; color: var(--text); }
+  .brand img { width: 32px; height: 32px; border-radius: 8px; }
+  .nav-spacer { flex: 1; }
+  .nav a.quiet { color: var(--muted); text-decoration: none; font-size: 15px; }
+  .nav a.quiet:hover { color: var(--text); }
+
+  /* ---------- buttons ---------- */
+  .btn {
+    display: inline-block; padding: 13px 22px; border-radius: 999px;
+    font-weight: 600; text-decoration: none; font-size: 16px;
+    background: var(--brand); color: #fff; border: 1px solid transparent;
+    transition: transform .12s ease, background .12s ease;
+  }
+  .btn:hover { background: var(--brand-deep); transform: translateY(-1px); }
+  .btn.ghost { background: transparent; color: var(--text); border-color: var(--line); }
+  .btn.ghost:hover { background: var(--surface); }
+  .btn.sm { padding: 9px 16px; font-size: 15px; }
+
+  /* ---------- hero ---------- */
+  .hero { padding: 72px 0 56px; }
+  .hero-grid { display: grid; grid-template-columns: 1.05fr .95fr; gap: 48px; align-items: center; }
+  .eyebrow {
+    display: inline-block; font-size: 13px; font-weight: 600; letter-spacing: .06em;
+    text-transform: uppercase; color: var(--brand);
+    background: color-mix(in srgb, var(--brand) 12%, transparent);
+    padding: 6px 12px; border-radius: 999px; margin-bottom: 18px;
+  }
+  h1 { font-size: clamp(34px, 5vw, 52px); line-height: 1.1; letter-spacing: -0.02em; margin: 0 0 18px; }
+  .lede { font-size: 19px; color: var(--muted); margin: 0 0 28px; max-width: 34em; }
+  .cta-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .cta-note { font-size: 14px; color: var(--muted); margin-top: 14px; }
+
+  .phone-stack { display: flex; gap: 16px; justify-content: center; }
+  .phone {
+    width: 100%; max-width: 232px; border-radius: 22px; border: 1px solid var(--line);
+    box-shadow: 0 18px 50px rgba(11,14,26,.16); display: block;
+  }
+  .phone.offset { margin-top: 34px; }
+  @media (prefers-color-scheme: dark) {
+    .phone { box-shadow: 0 18px 50px rgba(0,0,0,.5); }
+  }
+
+  /* ---------- sections ---------- */
+  section { padding: 64px 0; }
+  .section-head { max-width: 42em; margin-bottom: 36px; }
+  h2 { font-size: clamp(26px, 3.4vw, 34px); letter-spacing: -0.02em; margin: 0 0 12px; }
+  .section-head p { color: var(--muted); font-size: 17px; margin: 0; }
+
+  .alt { background: var(--surface); border-block: 1px solid var(--line); }
+
+  /* ---------- feature grid ---------- */
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+  .card {
+    background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 24px;
+  }
+  .card h3 { margin: 0 0 8px; font-size: 18px; }
+  .card p { margin: 0; color: var(--muted); font-size: 15px; }
+  .card .ico {
+    width: 40px; height: 40px; border-radius: 11px; display: grid; place-items: center;
+    background: color-mix(in srgb, var(--brand) 13%, transparent);
+    margin-bottom: 14px; font-size: 20px;
+  }
+
+  /* ---------- shots ---------- */
+  .shots { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
+  .shots img { width: 100%; border-radius: 16px; border: 1px solid var(--line); display: block; }
+  .shots figure { margin: 0; }
+  .shots figcaption { font-size: 14px; color: var(--muted); margin-top: 10px; text-align: center; }
+
+  /* ---------- pricing ---------- */
+  .plans { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; max-width: 720px; }
+  .plan { border: 1px solid var(--line); border-radius: var(--radius); padding: 26px; background: var(--bg); }
+  .plan.featured { border-color: var(--brand); }
+  .plan h3 { margin: 0 0 4px; font-size: 20px; }
+  .price { font-size: 32px; font-weight: 700; letter-spacing: -0.02em; margin: 8px 0 4px; }
+  .price span { font-size: 15px; font-weight: 500; color: var(--muted); }
+  .plan ul { padding-left: 18px; margin: 16px 0 0; color: var(--muted); font-size: 15px; }
+  .plan li { margin: 6px 0; }
+
+  /* ---------- footer ---------- */
+  footer { border-top: 1px solid var(--line); padding: 36px 0 56px; color: var(--muted); font-size: 14px; }
+  .foot-links { display: flex; flex-wrap: wrap; gap: 18px; margin-bottom: 14px; }
+  .foot-links a { color: var(--muted); text-decoration: none; }
+  .foot-links a:hover { color: var(--text); text-decoration: underline; }
+
+  @media (max-width: 900px) {
+    .hero-grid { grid-template-columns: 1fr; gap: 36px; }
+    .grid { grid-template-columns: repeat(2, 1fr); }
+    .shots { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 620px) {
+    .hero { padding: 48px 0 40px; }
+    .grid, .plans { grid-template-columns: 1fr; }
+    .nav a.quiet { display: none; }
+    /* Two side-by-side phones overflow a narrow viewport — show one, centred. */
+    .phone.offset { display: none; }
+    .phone { max-width: 260px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap nav">
+    <a class="brand" href="#top"><img src="assets/icon.png" alt=""> Household COO</a>
+    <div class="nav-spacer"></div>
+    <a class="quiet" href="#features">Features</a>
+    <a class="quiet" href="#plans">Pricing</a>
+    <a class="btn sm" href="https://play.google.com/store/apps/details?id=com.householdcoo.app">Get the app</a>
+  </div>
+</header>
+
+<main id="top">
+
+  <div class="wrap hero">
+    <div class="hero-grid">
+      <div>
+        <span class="eyebrow">Now on Google Play</span>
+        <h1>The household runs on someone's memory. Make it run on something better.</h1>
+        <p class="lede">
+          Household COO puts tasks, the family calendar, kids' chores, meals and school
+          paperwork in one shared, private place — so nothing depends on one parent
+          remembering it. Works across two homes, for co-parents who need to stay
+          coordinated without staying in touch.
+        </p>
+        <div class="cta-row">
+          <a class="btn" href="https://play.google.com/store/apps/details?id=com.householdcoo.app">Get it on Google Play</a>
+          <a class="btn ghost" href="https://youtu.be/oMPo0knHBsg">Watch the 30-second tour</a>
+        </div>
+        <p class="cta-note">Free to start · No ads · Your household data is never sold</p>
+      </div>
+      <div class="phone-stack">
+        <img class="phone" src="assets/shot-feed.jpg" alt="The Household COO feed showing today's tasks and family activity" width="500" height="989" loading="eager">
+        <img class="phone offset" src="assets/shot-kids.jpg" alt="The Kids screen showing chores, stars and rewards" width="500" height="989" loading="lazy">
+      </div>
+    </div>
+  </div>
+
+  <section class="alt" id="features">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>Everything a household actually needs</h2>
+        <p>Not another to-do list. The specific things that fall through the cracks in a busy family.</p>
+      </div>
+      <div class="grid">
+        <div class="card">
+          <div class="ico">📋</div>
+          <h3>Tasks that come back</h3>
+          <p>Sign slips, RSVPs, bin night. Assign them, set reminders, and let recurring routines return on their own.</p>
+        </div>
+        <div class="card">
+          <div class="ico">📅</div>
+          <h3>One shared calendar</h3>
+          <p>Import Google or Outlook so events become actionable cards. Everyone sees the same week.</p>
+        </div>
+        <div class="card">
+          <div class="ico">⭐</div>
+          <h3>Kids, chores and stars</h3>
+          <p>Chores with stars, rewards and pocket money — so routines stick without the daily negotiation.</p>
+        </div>
+        <div class="card">
+          <div class="ico">🍽️</div>
+          <h3>Meals and shopping</h3>
+          <p>Plan the week's dinners and turn them into a shared shopping list nobody has to retype.</p>
+        </div>
+        <div class="card">
+          <div class="ico">📄</div>
+          <h3>Scan the paperwork</h3>
+          <p>Photograph a school letter or appointment card and turn it straight into a task or a saved document.</p>
+        </div>
+        <div class="card">
+          <div class="ico">🔒</div>
+          <h3>A vault for documents</h3>
+          <p>Passports, insurance, medical records — organised by category, private to your household.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <div class="section-head">
+        <h2>Built for two homes as easily as one</h2>
+        <p>
+          Separated and co-parenting families carry the same load twice — two houses, two
+          calendars, two versions of what was agreed. Household COO gives both parents the
+          same shared source of truth, without either one having to chase the other for it.
+        </p>
+      </div>
+      <div class="shots">
+        <figure>
+          <img src="assets/shot-feed.jpg" alt="Feed screen with today's tasks" width="500" height="989" loading="lazy">
+          <figcaption>Today, at a glance</figcaption>
+        </figure>
+        <figure>
+          <img src="assets/shot-calendar.jpg" alt="Shared family calendar" width="500" height="989" loading="lazy">
+          <figcaption>The shared calendar</figcaption>
+        </figure>
+        <figure>
+          <img src="assets/shot-kids.jpg" alt="Kids chores, stars and rewards" width="500" height="989" loading="lazy">
+          <figcaption>Chores and rewards</figcaption>
+        </figure>
+        <figure>
+          <img src="assets/shot-kitchen.jpg" alt="Meal planner and shopping list" width="500" height="989" loading="lazy">
+          <figcaption>Meals and shopping</figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <section class="alt" id="plans">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>Simple plans</h2>
+        <p>Both parents are always free. We only ever meter on household size — never on the features that keep your family coordinated.</p>
+      </div>
+      <div class="plans">
+        <div class="plan">
+          <h3>Free</h3>
+          <div class="price">$0</div>
+          <ul>
+            <li>Both parents, up to 2 children</li>
+            <li>Tasks, calendar and shared lists</li>
+            <li>Kids' chores, stars and rewards</li>
+            <li>View any document you've saved</li>
+            <li>All reminders and nudges</li>
+          </ul>
+        </div>
+        <div class="plan featured">
+          <h3>Premium</h3>
+          <div class="price">$6.99 <span>/ month · $49.99 / year</span></div>
+          <ul>
+            <li>Everything in Free, plus:</li>
+            <li>Up to 5 children and caregivers</li>
+            <li>Meal planner and saved plans</li>
+            <li>Pocket money and weekly report</li>
+            <li>Carpool and a larger document vault</li>
+          </ul>
+        </div>
+      </div>
+      <p class="cta-note">Subscriptions are billed through Google Play and can be cancelled there at any time.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap" style="text-align:center">
+      <h2>Start with tonight</h2>
+      <p class="lede" style="margin: 0 auto 26px">
+        Add one thing you'd otherwise have to remember. That's the whole first step.
+      </p>
+      <a class="btn" href="https://play.google.com/store/apps/details?id=com.householdcoo.app">Get it on Google Play</a>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="foot-links">
+      <a href="privacy.html">Privacy Policy</a>
+      <a href="delete-account.html">Delete your account</a>
+      <a href="https://play.google.com/store/apps/details?id=com.householdcoo.app">Google Play</a>
+      <a href="https://youtu.be/oMPo0knHBsg">Promo video</a>
+      <a href="mailto:rolanddzoagbe@gmail.com">Support</a>
+    </div>
+    <div>© 2026 Dzoagbe Labs · Household COO · Available in English, French, Spanish and German.</div>
+  </div>
+</footer>
+
+</body>
+</html>

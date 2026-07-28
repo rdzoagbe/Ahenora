@@ -1,33 +1,48 @@
 # Household COO — Product Roadmap & Decisions
 
 The single source of truth for what's decided, what's parked, and what comes next.
-Last updated: July 2026.
 
 ---
 
 ## Where we are — 🚀 LAUNCHED
+Last updated: 28 July 2026.
 
-- **Production release live on Google Play** (July 2026): release **29 (1.0.0)**, full rollout to 176+ countries, package `com.householdcoo.app`. First production review passed → public.
-- **Real billing is on:** Google Play Billing via RevenueCat, `RC_WEBHOOK_SECRET` set on Railway (the launch switch), verified end-to-end with a real purchase. Free (Village) + Premium tiers enforced; testing-window free-Premium ended.
-- **Store presence refreshed:** new "Spark Portal" app icon, 30-second promo video (YouTube), framed EN + FR phone screenshots, IARC content rating live (rated for everyone).
-- App is feature-complete: value-tour onboarding + guided setup, full **EN/FR/ES/DE** localization (~745 keys/locale), Google + Outlook calendar import (private-by-default), meal suggestions, kids' stars, vault, morning digest, usage metrics, edge-to-edge display, crypto-secure auth, launch-night security hardening.
-- **Delivery pipeline:** push to `main` → auto **OTA update** (JS changes, seconds; testers/users need two full relaunches). Native changes → `EAS Build (Android)` workflow (manual trigger) → AAB → auto-submitted to the Play closed track (promote to Production to publish).
+- **Production release live on Google Play**: release **32 (1.0.0)**, full rollout to 176 of 177 countries, package `com.householdcoo.app`. **Production access granted** — no longer gated behind closed testing.
+- **Real billing is on:** Google Play Billing via RevenueCat, verified end-to-end with a real purchase. Free (Village) + Premium tiers enforced. **First revenue recorded** (July 2026).
+- **Expo SDK 57 / RN 0.86** shipped 28 July — device-verified on the Internal testing track (version 38) before promotion.
+- **Store presence:** "Spark Portal" app icon, 30-second promo video (YouTube), framed EN screenshots, IARC rating, co-parenting-led ASO listing.
+- App is feature-complete: value-tour onboarding + guided setup, full **EN/FR/ES/DE** localization (~751 keys/locale), Google + Outlook calendar import, meal suggestions, kids' stars, vault, morning digest, usage metrics, edge-to-edge, in-app review prompt.
+- **Delivery pipeline:** push to `main` → auto **OTA update** (JS changes; users need two full relaunches). Native changes → `EAS Build (Android)` workflow → AAB → auto-submit to the Play production track as a **draft**.
+- **Infrastructure:** MongoDB Atlas **M10 dedicated with backups Active**; UptimeRobot on `/api/health` (accepts GET **and HEAD**).
+
+### ⚠️ Live obligations with deadlines
+- **Developer Profile completion — by 26 August 2026.** Play warns the profile *and all apps* will be removed. Needs developer icon (512×512), header image (4096×2304), promotional text. Assets produced 28 July; upload outstanding.
+- **Payments hold** — bank account verification pending (Google micro-deposit sent ~28 July; enter the exact amount to clear). Payouts run monthly around the 15th.
+- Tax: France ✅ accepted · Ireland ✅ accepted · tax-residency document ⏳ in review · **United States ❌ not filed** (unfiled = 30% withholding on US earnings; W-8BEN with France treaty claim → 0%).
 
 ## Post-launch — what's left (master list, ordered)
 
-### A. Stabilization — first 1–2 weeks (do before any new feature)
-- [ ] **Confirm database backups exist** — #1 risk; verify Mongo snapshots / scheduled `mongodump` to external storage.
-- [ ] Watch **Play Console** crash-free rate, ANRs, reviews; fix real-user issues via OTA.
-- [ ] **Clear Dependabot vulnerabilities** (18 open) one verified PR at a time, incl. **Expo SDK 54 → 57** (needs a new AAB).
-- [ ] **Verify the Play Data Safety form** matches what the app actually collects (protects against suspension).
+### A. Stabilization — ✅ COMPLETE
+- [x] **Database backups** — Atlas upgraded free M0 → **M10 dedicated, backups Active**.
+- [x] **Uptime monitoring** — UptimeRobot on `/api/health`; endpoint accepts HEAD (#231).
+- [x] **Expo SDK 54 → 57** — shipped (#236), device-verified before promotion.
+- [x] **Play Data Safety form** — corrected and re-submitted; Google review passed.
+- [x] **Play policy rejection (Photo/Video Permissions)** — broad media permissions removed from the committed manifest (#225); CI guard added so it cannot regress (#226).
+- [ ] Watch **Play Console** crash-free rate, ANRs and reviews; fix real-user issues via OTA. *(ongoing, not a task that closes)*
+- [ ] **Remaining Dependabot PRs** (#213 #215 #216 #217 #218) — merge the safe ones now that the SDK upgrade has landed.
 
 ### B. Small open promises (quick, mostly OTA)
-- [ ] **Allergen/safety note** on the meal planner **+ AI-safety checklist as a blocking gate** on the future AI Chef (moderation, age-appropriateness, prompt-injection resistance must ship *with* any AI recipe generation).
-- [ ] **Kids "how stars work" + Vault "why upload"** first-use explainers.
+- [x] **UI/UX consistency pass** — pricing cards theme-aware (#233), accessibility labels on icon-only buttons (#234), sub-44px tap targets enlarged + theme-blind borders fixed (#235).
+- [x] **In-app review prompt** — asks after 5 real wins, once per install, degrades gracefully (#232).
+- [x] **Public account-deletion page** — required by Play Data Safety; covers full and partial deletion (#229, #230).
+- [x] **Security hardening** — identity lockout, `re.escape` on user-supplied regex, constant-time PIN compare, generic OAuth errors (#223, #228).
+- [x] **Meal planner / shopping list translations** — untranslated strings swept.
+- [ ] **Kids "how stars work" + Vault "why upload"** first-use explainers. *(needs a decision on tone and placement)*
+- [ ] **Allergen/safety note** on the meal planner **+ AI-safety checklist as a blocking gate** on any future AI Chef.
 - [ ] **Meal suggestions stored by recipe-id** so they re-translate on language switch.
+- [ ] **Landing page** — no `index.html` exists, so the GitHub Pages root 404s. Blocks the "Developer website" field and the marketing push.
 - [ ] **Every-4-days audit email** (blocked on the Gmail connector; posts in chat until then).
-- [ ] **Landing-page copy/CTA** polish pass.
-- [ ] **UI/UX consistency pass** (from the design review): reconcile the two brand oranges (`#F26A1B` vs `#F56519`), make pricing cards theme-aware (currently always dark), add accessibility labels to in-app tab buttons, enlarge sub-44px destructive tap targets.
+- [ ] `RECORD_AUDIO` / `MODIFY_AUDIO_SETTINGS` removal — needs `tools:node="remove"`, rides with the next native build.
 
 ### C. Your-side (non-code)
 - [ ] **DMARC record** on the sending domain `joblytics-ai.com` (Squarespace DNS): TXT, host `_dmarc`, value `v=DMARC1; p=none; rua=mailto:<you>@joblytics-ai.com`. Resend already sets SPF+DKIM; DMARC lifts inbox placement so invite emails don't land in spam.
