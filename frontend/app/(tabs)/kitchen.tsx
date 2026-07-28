@@ -40,8 +40,12 @@ const KEEP_AWAKE_KEY = 'coo_keep_screen_on';
 export default function Kitchen() {
   const { t, lang } = useStore();
   // The food library covers en/es/fr/de; anything else falls back to English.
+  // Generated methods held for this session, keyed by meal id. The server
+  // caches them too; this just avoids a round trip while the sheet is open.
+  const [aiRecipes, setAiRecipes] = useState<Record<string, { minutes: number; steps: string[] }>>({});
+  const [generatingFor, setGeneratingFor] = useState<string | null>(null);
   // Recipe id currently open in the Cook sheet, with the title to head it.
-  const [cookingRecipe, setCookingRecipe] = useState<{ recipeId: string; title: string } | null>(null);
+  const [cookingRecipe, setCookingRecipe] = useState<{ recipeId: string | null; mealId?: string; title: string } | null>(null);
   const suggestLang = useMemo<SuggestLang>(
     () => (['en', 'es', 'fr', 'de'].includes(lang) ? (lang as SuggestLang) : 'en'),
     [lang],
@@ -310,6 +314,30 @@ export default function Kitchen() {
       showToast(t('vault_could_not_add_meal'), 'error');
     }
   }, [suggestions, addedSuggest, meals, mealLocked, promptUpgrade, showToast, t]);
+
+  const generateRecipe = useCallback(async (meal: MealPlan) => {
+    const title = localizedMealTitle(meal.recipe_id, meal.title, suggestLang);
+    setCookingRecipe({ recipeId: null, mealId: meal.meal_id, title });
+
+    // Already generated for this language, either this session or a previous one.
+    const known = aiRecipes[meal.meal_id] || meal.ai_recipe?.[suggestLang];
+    if (known) {
+      setAiRecipes((prev) => ({ ...prev, [meal.meal_id]: known }));
+      return;
+    }
+
+    setGeneratingFor(meal.meal_id);
+    try {
+      const { recipe } = await api.generateMealRecipe(meal.meal_id, suggestLang);
+      setAiRecipes((prev) => ({ ...prev, [meal.meal_id]: recipe }));
+    } catch (e: any) {
+      // Close the sheet rather than leave it sitting empty.
+      setCookingRecipe(null);
+      showToast(e?.message || t('cook_failed'), 'error');
+    } finally {
+      setGeneratingFor(null);
+    }
+  }, [aiRecipes, suggestLang, showToast, t]);
 
   // ── History: past shopping trips + saved meal plans ──
   const openShopHistory = useCallback(async () => {
@@ -632,7 +660,26 @@ export default function Kitchen() {
                             <ChefHat color={ui.orange} size={13} />
                             <Text style={styles.cookLinkText}>{t('cook_it')}</Text>
                           </PressScale>
-                        ) : null}
+                        ) : (
+                          /* No method in the library — offer to write one. */
+                          <PressScale
+                            testID={`cook-ai-${meal.meal_id}`}
+                            accessibilityRole="button"
+                            onPress={() => generateRecipe(meal)}
+                            disabled={generatingFor === meal.meal_id}
+                            hitSlop={8}
+                            style={styles.cookLink}
+                          >
+                            {generatingFor === meal.meal_id ? (
+                              <ActivityIndicator color={ui.orange} size="small" />
+                            ) : (
+                              <Sparkles color={ui.orange} size={13} />
+                            )}
+                            <Text style={styles.cookLinkText}>
+                              {generatingFor === meal.meal_id ? t('cook_generating') : t('cook_generate')}
+                            </Text>
+                          </PressScale>
+                        )}
                       </View>
                       <PressScale
                   accessibilityRole="button"
@@ -790,8 +837,11 @@ export default function Kitchen() {
       {/* Cook it — method for a meal from the suggestion library */}
       <KeyboardAwareBottomSheet visible={cookingRecipe !== null} onClose={() => setCookingRecipe(null)} contentStyle={styles.sheet}>
         {(() => {
-          const method = cookingRecipe ? recipeMethod(cookingRecipe.recipeId, suggestLang) : null;
-          if (!cookingRecipe || !method) return null;
+          if (!cookingRecipe) return null;
+          const generated = cookingRecipe.mealId ? aiRecipes[cookingRecipe.mealId] : undefined;
+          const method = recipeMethod(cookingRecipe.recipeId, suggestLang) ?? generated ?? null;
+          if (!method) return null;
+          const isGenerated = !cookingRecipe.recipeId;
           const ingredients = localizedMealIngredients(cookingRecipe.recipeId, [], suggestLang, cookingRecipe.title);
           return (
             <>
@@ -834,7 +884,9 @@ export default function Kitchen() {
                   be the parent who planned the week. */}
               <View style={styles.cookAllergen}>
                 <AlertTriangle color={ui.muted} size={14} />
-                <Text style={styles.cookAllergenText}>{t('cook_allergen_note')}</Text>
+                <Text style={styles.cookAllergenText}>
+                  {isGenerated ? `${t('cook_ai_note')} ${t('cook_allergen_note')}` : t('cook_allergen_note')}
+                </Text>
               </View>
             </>
           );
