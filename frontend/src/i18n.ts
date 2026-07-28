@@ -12,6 +12,7 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  shopcat_other: 'Other',
   tour_skip: 'Skip',
   tour_next: 'Next',
   tour_start: 'Get started',
@@ -966,6 +967,7 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  shopcat_other: 'Otros',
   tour_skip: 'Omitir',
   tour_next: 'Siguiente',
   tour_start: 'Empezar',
@@ -1914,6 +1916,7 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  shopcat_other: 'Autre',
   tour_skip: 'Passer',
   tour_next: 'Suivant',
   tour_start: 'Commencer',
@@ -2862,6 +2865,7 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  shopcat_other: 'Sonstiges',
   tour_skip: 'Überspringen',
   tour_next: 'Weiter',
   tour_start: 'Loslegen',

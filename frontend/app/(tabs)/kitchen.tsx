@@ -23,6 +23,16 @@ type ToastState = { message: string; tone: ToastTone };
 type KitchenView = 'shop' | 'meal';
 
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+
+// Translate a stored shopping category label. Known categories map to an i18n
+// key (shopcat_*); anything the user set themselves falls back to the raw text,
+// since t() returns the key unchanged when there's no translation.
+function catLabel(cat: string, t: (k: string) => string): string {
+  const key = 'shopcat_' + cat.toLowerCase().replace(/\s+/g, '_');
+  const val = t(key);
+  return val === key ? cat : val;
+}
+
 const KEEP_AWAKE_TAG = 'kitchen-screen';
 const KEEP_AWAKE_KEY = 'coo_keep_screen_on';
 
@@ -506,7 +516,7 @@ export default function Kitchen() {
                 <PressScale key={item.item_id} onPress={() => toggleShopItem(item)} style={styles.row}>
                   <View style={styles.numBadge}><Text style={styles.numText}>{index + 1}</Text></View>
                   <Text style={styles.rowText}>{item.name}</Text>
-                  {item.category ? <Text style={styles.rowCat}>{item.category}</Text> : null}
+                  {item.category ? <Text style={styles.rowCat}>{catLabel(item.category, t)}</Text> : null}
                   <PressScale onPress={() => deleteShopItem(item.item_id)} style={{ padding: 4 }}>
                     <Trash2 color={ui.muted} size={15} />
                   </PressScale>
