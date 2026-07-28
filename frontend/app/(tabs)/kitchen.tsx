@@ -96,6 +96,8 @@ export default function Kitchen() {
   const [restoreEntry, setRestoreEntry] = useState<ShoppingHistoryEntry | null>(null);
   const [restoreSel, setRestoreSel] = useState<Set<number>>(new Set());
   const [showSuggest, setShowSuggest] = useState(false);
+  const [suggestLoading, setSuggestLoading] = useState(false);
+  const [suggestFellBack, setSuggestFellBack] = useState(false);
   const [suggestions, setSuggestions] = useState<MealSuggestion[]>([]);
   const [addedSuggest, setAddedSuggest] = useState<Set<string>>(new Set());
 
@@ -284,29 +286,65 @@ export default function Kitchen() {
   }, [showToast]);
 
   // ── Suggest a week of meals from what you've bought (rule-based, offline) ──
-  const openSuggest = useCallback(() => {
-    // Draw on the current list plus recent shopping trips so suggestions reflect
-    // what the family actually buys, not just today's list.
-    setSuggestions(
+  // The offline engine ranks the built-in library and always returns the same
+  // week for the same list. Kept as the fallback: it works with no signal, no
+  // quota and no key, so a failure downgrades rather than empties the screen.
+  const localWeek = useCallback(
+    () =>
       suggestWeek(
         shopItems.map((i) => i.name),
         suggestLang,
         shopHistory.slice(0, 6).flatMap((h) => h.items),
       ),
-    );
+    [shopItems, shopHistory, suggestLang],
+  );
+
+  const loadSuggestions = useCallback(async () => {
+    setSuggestLoading(true);
+    setSuggestFellBack(false);
+    try {
+      const { meals } = await api.suggestMealsAI(suggestLang);
+      setSuggestions(
+        meals.map((m) => ({
+          day: m.day,
+          recipeId: null,
+          title: m.title,
+          haveLabels: m.uses,
+          needLabels: m.need,
+          allLabels: [...m.uses, ...m.need],
+          matched: m.uses.length,
+        })),
+      );
+    } catch {
+      // Locked plan, spent quota, no signal, or a response the gate rejected.
+      setSuggestions(localWeek());
+      setSuggestFellBack(true);
+    } finally {
+      setSuggestLoading(false);
+    }
+  }, [suggestLang, localWeek]);
+
+  const openSuggest = useCallback(() => {
     setAddedSuggest(new Set());
+    setSuggestions(localWeek());
     setShowSuggest(true);
-  }, [shopItems, shopHistory, suggestLang]);
+    loadSuggestions();
+  }, [localWeek, loadSuggestions]);
 
   const acceptSuggestion = useCallback(async (sug: MealSuggestion) => {
     if (mealLocked) { promptUpgrade('meal_planner'); return; }
-    if (addedSuggest.has(sug.recipeId)) return;
-    setAddedSuggest((prev) => new Set(prev).add(sug.recipeId));
+    if (addedSuggest.has(sug.day)) return;
+    setAddedSuggest((prev) => new Set(prev).add(sug.day));
     try {
-      const created = await api.createMeal({ day: sug.day, title: sug.title, ingredients: sug.allLabels });
+      const created = await api.createMeal({
+        day: sug.day,
+        title: sug.title,
+        ingredients: sug.allLabels,
+        recipe_id: sug.recipeId || undefined,
+      });
       setMeals((prev) => [...prev, created]);
     } catch {
-      setAddedSuggest((prev) => { const n = new Set(prev); n.delete(sug.recipeId); return n; });
+      setAddedSuggest((prev) => { const n = new Set(prev); n.delete(sug.day); return n; });
       showToast(t('vault_could_not_add_meal'), 'error');
     }
   }, [addedSuggest, mealLocked, promptUpgrade, showToast, t]);
@@ -315,12 +353,17 @@ export default function Kitchen() {
     if (mealLocked) { promptUpgrade('meal_planner'); return; }
     // Only fill days that don't already have a meal, so we never clobber a plan.
     const busyDays = new Set(meals.map((m) => m.day));
-    const toAdd = suggestions.filter((s) => !addedSuggest.has(s.recipeId) && !busyDays.has(s.day));
+    const toAdd = suggestions.filter((s) => !addedSuggest.has(s.day) && !busyDays.has(s.day));
     if (toAdd.length === 0) { setShowSuggest(false); return; }
-    setAddedSuggest((prev) => { const n = new Set(prev); toAdd.forEach((s) => n.add(s.recipeId)); return n; });
+    setAddedSuggest((prev) => { const n = new Set(prev); toAdd.forEach((s) => n.add(s.day)); return n; });
     try {
       const created = await Promise.all(
-        toAdd.map((s) => api.createMeal({ day: s.day, title: s.title, ingredients: s.allLabels, recipe_id: s.recipeId })),
+        toAdd.map((s) => api.createMeal({
+          day: s.day,
+          title: s.title,
+          ingredients: s.allLabels,
+          recipe_id: s.recipeId || undefined,
+        })),
       );
       setMeals((prev) => [...prev, ...created]);
       setShowSuggest(false);
@@ -1122,13 +1165,31 @@ export default function Kitchen() {
                   accessibilityRole="button"
                   accessibilityLabel={t('close')} onPress={() => setShowSuggest(false)} style={styles.iconBtn}><X color={ui.text} size={20} /></PressScale>
         </View>
-        <Text style={styles.suggestSub}>{t('kitchen_suggest_sub')}</Text>
+        <Text style={styles.suggestSub}>
+          {suggestLoading ? t('kitchen_ai_planning') : suggestFellBack ? t('kitchen_ai_fallback') : t('kitchen_suggest_sub')}
+        </Text>
+
+        {/* Ask again for a different week. The server excludes anything already
+            planned, so this genuinely varies rather than reshuffling. */}
+        {!suggestLoading ? (
+          <PressScale
+            testID="suggest-again"
+            accessibilityRole="button"
+            onPress={loadSuggestions}
+            style={styles.againBtn}
+          >
+            <Sparkles color={ui.orange} size={14} />
+            <Text style={styles.againText}>{t('kitchen_new_ideas')}</Text>
+          </PressScale>
+        ) : (
+          <ActivityIndicator color={ui.orange} style={{ marginVertical: 12 }} />
+        )}
         {/* No inner ScrollView here — the sheet itself scrolls; nesting two
             vertical scrollers makes the list unscrollable on Android. */}
         {suggestions.map((s) => {
-          const added = addedSuggest.has(s.recipeId);
+          const added = addedSuggest.has(s.day);
           return (
-            <View key={s.recipeId} style={styles.suggestRow}>
+            <View key={s.day} style={styles.suggestRow}>
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={styles.suggestDay}>{t(`day_${s.day}`)}</Text>
                 <Text style={styles.suggestTitle}>{s.title}</Text>
@@ -1257,6 +1318,8 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   browseDayChipActive: { backgroundColor: ui.orange },
   browseDayText: { color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 13 },
   browseDayTextActive: { color: '#FFFFFF' },
+  againBtn: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 6, marginTop: 10, marginBottom: 4, paddingVertical: 7, paddingHorizontal: 12, borderRadius: 999, borderWidth: 1, borderColor: ui.orange },
+  againText: { color: ui.orange, fontFamily: 'Inter_600SemiBold', fontSize: 13 },
   cookLink: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6 },
   cookLinkText: { color: ui.orange, fontFamily: 'Inter_600SemiBold', fontSize: 13 },
   cookMeta: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 },

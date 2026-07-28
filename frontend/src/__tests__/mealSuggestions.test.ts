@@ -143,7 +143,7 @@ describe('a West African shopping list', () => {
     const african = week.filter((s) =>
       ['jollof_rice', 'chicken_yassa', 'groundnut_stew', 'okra_soup', 'yam_tomato', 'red_red',
        'garden_egg_stew', 'grilled_tilapia', 'attieke_fish', 'banku_okra', 'peanut_spinach',
-       'sweet_potato_chicken'].includes(s.recipeId),
+       'sweet_potato_chicken'].includes(s.recipeId || ''),
     );
     expect(african.length).toBeGreaterThanOrEqual(4);
   });

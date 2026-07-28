@@ -961,6 +961,11 @@ export const api = {
     request<MealPlan>('/meals', { method: 'POST', body: data }),
   deleteMeal: (id: string) => request<{ ok: boolean }>(`/meals/${id}`, { method: 'DELETE' }),
   clearAllMeals: () => request<{ deleted: number }>('/meals/all', { method: 'DELETE' }),
+  suggestMealsAI: (lang: string) =>
+    request<{ meals: { day: string; title: string; uses: string[]; need: string[]; minutes: number }[] }>(
+      `/meals/suggest-ai?lang=${encodeURIComponent(lang)}`,
+      { method: 'POST' },
+    ),
   generateMealRecipe: (mealId: string, lang: string) =>
     request<{ recipe: { minutes: number; steps: string[] }; cached: boolean }>(
       `/meals/${mealId}/recipe?lang=${encodeURIComponent(lang)}`,
