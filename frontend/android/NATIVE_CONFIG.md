@@ -1,7 +1,7 @@
 # ⚠️ Native Android config — read before changing icons, permissions, or splash
 
 This project commits a native `android/` folder (bare/prebuild workflow). That
-has one consequence that has already caused **two production incidents**:
+has one consequence that has already caused **three production incidents**:
 
 > **`app.json` is NOT the source of truth for anything native.** The committed
 > files under `android/app/src/main/` are what actually ship. Editing `app.json`
@@ -17,6 +17,12 @@ has one consequence that has already caused **two production incidents**:
    `assets/images/*.png` only. The committed `res/mipmap-*/` launcher icons were
    never regenerated, so every build shipped the old mascot while the Play *store
    listing* icon (uploaded separately in Console) showed the new one.
+3. **Old splash logo flashing on launch:** the `expo-splash-screen` plugin in
+   `app.json` correctly pointed at the new `monochrome.png`, but the committed
+   `res/drawable-*/splashscreen_logo.png` files still held the old house-and-headset
+   mascot. Every build showed the old logo for the second the app took to boot,
+   even with the new launcher icon. Fixed by regenerating all five density PNGs
+   directly from the Spark Portal glyph.
 
 ## The rule
 When you change any of the following, you MUST edit the **native files**, not
