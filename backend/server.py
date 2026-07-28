@@ -1401,12 +1401,16 @@ async def root():
     return {"status": "online", "message": "Household COO Backend is live"}
 
 
-@app.get("/api/health")
+@app.api_route("/api/health", methods=["GET", "HEAD"])
 async def health():
     """Liveness + real database check for uptime monitoring.
 
     Actually pings MongoDB rather than just reporting that a URL is set, so a
     dead/stale connection surfaces here (503) instead of as user-facing 500s.
+
+    HEAD is accepted as well as GET: uptime monitors (UptimeRobot and friends)
+    default to HEAD, and a GET-only route answers 405, which they report as an
+    outage even while the service is healthy.
     """
     if db is None:
         return JSONResponse(status_code=503, content={"status": "error", "database": "unconfigured"})
