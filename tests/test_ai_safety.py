@@ -264,6 +264,20 @@ class BuildSuggestPrompt(unittest.TestCase):
         self.assertIn("rice", prompt)
         self.assertIn("English", prompt)
 
+    def test_variant_zero_adds_no_variation_line(self):
+        # First ask should stay focused — no "give me something different" noise.
+        p0 = build_suggest_prompt(["rice", "beef"], "English", [], variant=0)
+        self.assertNotIn("different", p0.lower())
+
+    def test_variant_changes_the_prompt_and_asks_for_variety(self):
+        # The bug: every "different ideas" press sent a byte-identical prompt.
+        p0 = build_suggest_prompt(["rice", "beef"], "English", [], variant=0)
+        p1 = build_suggest_prompt(["rice", "beef"], "English", [], variant=1)
+        p2 = build_suggest_prompt(["rice", "beef"], "English", [], variant=2)
+        self.assertNotEqual(p0, p1)
+        self.assertNotEqual(p1, p2)
+        self.assertIn("different", p1.lower())
+
 
 if __name__ == "__main__":
     unittest.main()
