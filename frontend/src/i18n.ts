@@ -12,6 +12,9 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  kitchen_clear_shop_plan_body: 'Every item is removed (saved to your history first). Your current meal plan is saved for reuse and the planner is cleared too, ready for a fresh week.',
+  kitchen_shop_cleared_plan_saved: 'List cleared. Meal plan saved for reuse.',
+  kitchen_auto_plan_name: 'Week of {date}',
   kitchen_ai_not_deployed: 'Showing our own ideas — the meal planner is not available on this server yet.',
   kitchen_ai_list_too_short: 'Showing our own ideas — add a few more things to your shopping list for tailored meals.',
   kitchen_ai_limit: 'Showing our own ideas — you have used this month\\u2019s AI allowance.',
@@ -1005,6 +1008,9 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  kitchen_clear_shop_plan_body: 'Se elimina cada artículo (se guarda antes en tu historial). Tu menú actual se guarda para reutilizarlo y el planificador se vacía, listo para una nueva semana.',
+  kitchen_shop_cleared_plan_saved: 'Lista vaciada. Menú guardado para reutilizar.',
+  kitchen_auto_plan_name: 'Semana del {date}',
   kitchen_ai_not_deployed: 'Mostramos nuestras propias ideas: el planificador aún no está disponible en este servidor.',
   kitchen_ai_list_too_short: 'Mostramos nuestras propias ideas: añade algo más a tu lista para menús a medida.',
   kitchen_ai_limit: 'Mostramos nuestras propias ideas: has agotado tu cuota de IA del mes.',
@@ -1992,6 +1998,9 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  kitchen_clear_shop_plan_body: 'Chaque article est retiré (enregistré dans l’historique d’abord). Votre menu actuel est sauvegardé pour être réutilisé, et le planificateur est vidé pour repartir sur une nouvelle semaine.',
+  kitchen_shop_cleared_plan_saved: 'Liste vidée. Menu enregistré pour réutilisation.',
+  kitchen_auto_plan_name: 'Semaine du {date}',
   kitchen_ai_not_deployed: 'Voici nos propres idées — le planificateur n’est pas encore disponible sur ce serveur.',
   kitchen_ai_list_too_short: 'Voici nos propres idées — ajoutez quelques articles à votre liste pour des repas sur mesure.',
   kitchen_ai_limit: 'Voici nos propres idées — votre quota d’IA du mois est épuisé.',
@@ -2979,6 +2988,9 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  kitchen_clear_shop_plan_body: 'Jeder Artikel wird entfernt (zuvor im Verlauf gespeichert). Dein aktueller Essensplan wird zur Wiederverwendung gesichert und der Planer geleert — bereit für eine neue Woche.',
+  kitchen_shop_cleared_plan_saved: 'Liste geleert. Essensplan zur Wiederverwendung gespeichert.',
+  kitchen_auto_plan_name: 'Woche vom {date}',
   kitchen_ai_not_deployed: 'Wir zeigen eigene Ideen — der Planer ist auf diesem Server noch nicht verfügbar.',
   kitchen_ai_list_too_short: 'Wir zeigen eigene Ideen — ergänze deine Einkaufsliste für passgenaue Gerichte.',
   kitchen_ai_limit: 'Wir zeigen eigene Ideen — dein KI-Kontingent für diesen Monat ist aufgebraucht.',
