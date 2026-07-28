@@ -192,3 +192,34 @@ export function suggestWeek(ownedNames: string[], lang: SuggestLang): MealSugges
     };
   });
 }
+
+const RECIPES_BY_ID: Record<string, Recipe> = Object.fromEntries(RECIPES.map((r) => [r.id, r]));
+
+/**
+ * Title for a saved meal, in the language the user is reading right now.
+ *
+ * Meals accepted from the suggestion library are stored with their `recipe_id`,
+ * so their title can be looked up again rather than replayed in whatever
+ * language happened to be active when the plan was made. Meals the user typed
+ * themselves have no recipe id, and their own words are returned untouched.
+ */
+export function localizedMealTitle(
+  recipeId: string | null | undefined,
+  storedTitle: string,
+  lang: SuggestLang,
+): string {
+  if (!recipeId) return storedTitle;
+  return RECIPES_BY_ID[recipeId]?.title[lang] ?? storedTitle;
+}
+
+/** Ingredient labels for a saved meal, localized the same way. */
+export function localizedMealIngredients(
+  recipeId: string | null | undefined,
+  storedIngredients: string[],
+  lang: SuggestLang,
+): string[] {
+  if (!recipeId) return storedIngredients;
+  const recipe = RECIPES_BY_ID[recipeId];
+  if (!recipe) return storedIngredients;
+  return recipe.ing.map((id) => ING[id]?.label[lang] ?? id);
+}
