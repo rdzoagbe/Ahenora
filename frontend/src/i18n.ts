@@ -12,6 +12,11 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  cook_it: 'Cook it',
+  cook_method: 'Method',
+  cook_you_need: 'You will need',
+  cook_minutes: '{n} min',
+  cook_allergen_note: 'Check the ingredients against any allergies in your family before cooking.',
   tip_got_it: 'Got it',
   tip_dismiss: 'Dismiss tip',
   kids_tip_title: 'How stars work',
@@ -980,6 +985,11 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  cook_it: 'Cómo se hace',
+  cook_method: 'Preparación',
+  cook_you_need: 'Necesitas',
+  cook_minutes: '{n} min',
+  cook_allergen_note: 'Revisa los ingredientes según las alergias de tu familia antes de cocinar.',
   tip_got_it: 'Entendido',
   tip_dismiss: 'Ocultar consejo',
   kids_tip_title: 'Cómo funcionan las estrellas',
@@ -1942,6 +1952,11 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  cook_it: 'La recette',
+  cook_method: 'Préparation',
+  cook_you_need: 'Il vous faut',
+  cook_minutes: '{n} min',
+  cook_allergen_note: 'Vérifiez les ingrédients au regard des allergies de votre famille avant de cuisiner.',
   tip_got_it: 'J\'ai compris',
   tip_dismiss: 'Masquer l\'astuce',
   kids_tip_title: 'Comment fonctionnent les étoiles',
@@ -2904,6 +2919,11 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  cook_it: 'Zubereiten',
+  cook_method: 'Zubereitung',
+  cook_you_need: 'Du brauchst',
+  cook_minutes: '{n} Min.',
+  cook_allergen_note: 'Prüfe die Zutaten auf Allergien in deiner Familie, bevor du kochst.',
   tip_got_it: 'Alles klar',
   tip_dismiss: 'Hinweis ausblenden',
   kids_tip_title: 'So funktionieren Sterne',
