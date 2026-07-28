@@ -17,7 +17,7 @@ import { useStore } from '../../src/store';
 import { api, MealPlan, ShoppingItem, ShoppingHistoryEntry, SavedMealPlan } from '../../src/api';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { logger } from '../../src/logger';
-import { suggestWeek, MealSuggestion, SuggestLang, localizedMealTitle, localizedMealIngredients } from '../../src/mealSuggestions';
+import { suggestWeek, MealSuggestion, SuggestLang, localizedMealTitle, localizedMealIngredients, resolveRecipeId } from '../../src/mealSuggestions';
 import { recipeMethod } from '../../src/recipeSteps';
 
 type ToastState = { message: string; tone: ToastTone };
@@ -617,15 +617,15 @@ export default function Kitchen() {
                     <View key={meal.meal_id} style={styles.row}>
                       <View style={{ flex: 1 }}>
                         <Text style={styles.rowText}>{localizedMealTitle(meal.recipe_id, meal.title, suggestLang)}</Text>
-                        {meal.ingredients.length > 0 ? <Text style={styles.rowCat}>{localizedMealIngredients(meal.recipe_id, meal.ingredients, suggestLang).join(', ')}</Text> : null}
+                        {meal.ingredients.length > 0 ? <Text style={styles.rowCat}>{localizedMealIngredients(meal.recipe_id, meal.ingredients, suggestLang, meal.title).join(', ')}</Text> : null}
                         {/* Only offered where we actually have a method — a dead
                             button on a meal the parent typed themselves is worse
                             than no button. */}
-                        {recipeMethod(meal.recipe_id, suggestLang) ? (
+                        {recipeMethod(resolveRecipeId(meal.recipe_id, meal.title), suggestLang) ? (
                           <PressScale
                             testID={`cook-${meal.meal_id}`}
                             accessibilityRole="button"
-                            onPress={() => setCookingRecipe({ recipeId: meal.recipe_id!, title: localizedMealTitle(meal.recipe_id, meal.title, suggestLang) })}
+                            onPress={() => setCookingRecipe({ recipeId: resolveRecipeId(meal.recipe_id, meal.title)!, title: localizedMealTitle(meal.recipe_id, meal.title, suggestLang) })}
                             hitSlop={8}
                             style={styles.cookLink}
                           >
@@ -792,7 +792,7 @@ export default function Kitchen() {
         {(() => {
           const method = cookingRecipe ? recipeMethod(cookingRecipe.recipeId, suggestLang) : null;
           if (!cookingRecipe || !method) return null;
-          const ingredients = localizedMealIngredients(cookingRecipe.recipeId, [], suggestLang);
+          const ingredients = localizedMealIngredients(cookingRecipe.recipeId, [], suggestLang, cookingRecipe.title);
           return (
             <>
               <View style={styles.sheetHeader}>

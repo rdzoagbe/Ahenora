@@ -1,4 +1,4 @@
-import { suggestWeek, localizedMealTitle, localizedMealIngredients, RECIPE_IDS } from '../mealSuggestions';
+import { suggestWeek, localizedMealTitle, localizedMealIngredients, RECIPE_IDS, resolveRecipeId } from '../mealSuggestions';
 import { RECIPE_METHODS, recipeMethod } from '../recipeSteps';
 
 describe('suggestWeek', () => {
@@ -91,5 +91,39 @@ describe('recipe methods', () => {
     expect(fr!.steps[0]).toContain('pâtes');
     expect(en!.steps[0]).toContain('pasta');
     expect(fr!.minutes).toBe(en!.minutes);
+  });
+});
+
+describe('resolveRecipeId', () => {
+  it('recovers the recipe from a meal saved before recipe ids existed', () => {
+    expect(resolveRecipeId(null, 'Spaghetti Bolognese')).toBe('bolognese');
+    expect(resolveRecipeId(undefined, 'Chicken Curry')).toBe('chicken_curry');
+  });
+
+  it('recovers it whatever language the meal was saved in', () => {
+    expect(resolveRecipeId(null, 'Spaghettis bolognaise')).toBe('bolognese');
+    expect(resolveRecipeId(null, 'Espaguetis boloñesa')).toBe('bolognese');
+    expect(resolveRecipeId(null, 'Curry de poulet')).toBe('chicken_curry');
+  });
+
+  it('shrugs off accents, case and punctuation', () => {
+    expect(resolveRecipeId(null, 'ESPAGUETIS BOLONESA')).toBe('bolognese');
+    expect(resolveRecipeId(null, "Shepherd's Pie")).toBe('shepherds_pie');
+  });
+
+  it('prefers a stored id over guessing from the title', () => {
+    expect(resolveRecipeId('tacos', 'Spaghetti Bolognese')).toBe('tacos');
+  });
+
+  it('returns null rather than guessing at a meal we do not ship', () => {
+    // A wrong method for someone else's dinner is worse than no method.
+    expect(resolveRecipeId(null, "Mum's Sunday roast")).toBeNull();
+    expect(resolveRecipeId(null, 'Spaghetti with something else')).toBeNull();
+    expect(resolveRecipeId(null, '')).toBeNull();
+  });
+
+  it('lets an old meal re-translate once its recipe is recovered', () => {
+    expect(localizedMealTitle(null, 'Spaghettis bolognaise', 'en')).toBe('Spaghetti Bolognese');
+    expect(localizedMealTitle(null, "Mum's Sunday roast", 'fr')).toBe("Mum's Sunday roast");
   });
 });
