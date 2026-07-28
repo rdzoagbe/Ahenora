@@ -12,6 +12,15 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  cook_servings: 'For how many',
+  cook_amounts_note: 'Amounts are a shopping guide, not exact measures.',
+  cook_add_missing: 'Add what I am missing to the list',
+  cook_added_to_list: '{n} added to your shopping list',
+  cook_nothing_missing: 'You already have everything.',
+  browse_recipes: 'All recipes',
+  browse_search: 'Search a dish or an ingredient…',
+  browse_none: 'Nothing matched. Try an ingredient instead.',
+  browse_add_to_day: 'Add to',
   cook_generate: 'Write me a recipe',
   cook_generating: 'Writing the steps…',
   cook_ai_note: 'Written by AI from the meal name. Read it through before you cook.',
@@ -989,6 +998,15 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  cook_servings: 'Para cuántos',
+  cook_amounts_note: 'Las cantidades son una guía para la compra, no medidas exactas.',
+  cook_add_missing: 'Añadir lo que me falta a la lista',
+  cook_added_to_list: '{n} añadido(s) a tu lista de la compra',
+  cook_nothing_missing: 'Ya lo tienes todo.',
+  browse_recipes: 'Todas las recetas',
+  browse_search: 'Busca un plato o un ingrediente…',
+  browse_none: 'Sin resultados. Prueba con un ingrediente.',
+  browse_add_to_day: 'Añadir a',
   cook_generate: 'Escríbeme una receta',
   cook_generating: 'Escribiendo los pasos…',
   cook_ai_note: 'Escrito por IA a partir del nombre del plato. Léelo antes de cocinar.',
@@ -1960,6 +1978,15 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  cook_servings: 'Pour combien',
+  cook_amounts_note: 'Les quantités sont un repère pour les courses, pas des mesures exactes.',
+  cook_add_missing: 'Ajouter ce qui me manque à la liste',
+  cook_added_to_list: '{n} ajouté(s) à votre liste de courses',
+  cook_nothing_missing: 'Vous avez déjà tout.',
+  browse_recipes: 'Toutes les recettes',
+  browse_search: 'Chercher un plat ou un ingrédient…',
+  browse_none: 'Aucun résultat. Essayez avec un ingrédient.',
+  browse_add_to_day: 'Ajouter à',
   cook_generate: 'Écrire une recette',
   cook_generating: 'Rédaction des étapes…',
   cook_ai_note: 'Rédigé par l’IA à partir du nom du plat. Relisez avant de cuisiner.',
@@ -2931,6 +2958,15 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  cook_servings: 'Für wie viele',
+  cook_amounts_note: 'Die Mengen sind ein Einkaufsrichtwert, keine genauen Maße.',
+  cook_add_missing: 'Fehlendes auf die Liste setzen',
+  cook_added_to_list: '{n} zur Einkaufsliste hinzugefügt',
+  cook_nothing_missing: 'Du hast schon alles.',
+  browse_recipes: 'Alle Rezepte',
+  browse_search: 'Gericht oder Zutat suchen…',
+  browse_none: 'Nichts gefunden. Versuch es mit einer Zutat.',
+  browse_add_to_day: 'Hinzufügen zu',
   cook_generate: 'Rezept schreiben lassen',
   cook_generating: 'Schritte werden geschrieben…',
   cook_ai_note: 'Von der KI anhand des Gerichtnamens verfasst. Vor dem Kochen durchlesen.',

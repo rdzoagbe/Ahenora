@@ -1,4 +1,5 @@
-import { suggestWeek, localizedMealTitle, localizedMealIngredients, RECIPE_IDS, resolveRecipeId } from '../mealSuggestions';
+import { suggestWeek, localizedMealTitle, localizedMealIngredients, RECIPE_IDS, resolveRecipeId, allRecipes, searchRecipes, recipeIngredients } from '../mealSuggestions';
+import { quantityFor, hasQuantity } from '../recipeQuantities';
 import { RECIPE_METHODS, recipeMethod } from '../recipeSteps';
 
 describe('suggestWeek', () => {
@@ -180,5 +181,85 @@ describe('a West African shopping list', () => {
     expect(new Set(suggestWeek(['Potatoes'], 'en').flatMap((s) => s.haveLabels)).has('potatoes')).toBe(true);
     expect(new Set(suggestWeek(['Corn flour'], 'en').flatMap((s) => s.haveLabels)).has('corn')).toBe(false);
     expect(new Set(suggestWeek(['Corn'], 'en').flatMap((s) => s.haveLabels)).has('corn')).toBe(true);
+  });
+});
+
+describe('recipe browsing and search', () => {
+  it('lists the whole library, not just a week of it', () => {
+    expect(allRecipes('en').length).toBe(RECIPE_IDS.length);
+    expect(searchRecipes('', 'en').length).toBe(RECIPE_IDS.length);
+  });
+
+  it('finds a dish by its name', () => {
+    expect(searchRecipes('jollof', 'en').map((r) => r.id)).toContain('jollof_rice');
+    expect(searchRecipes('YASSA', 'en').map((r) => r.id)).toContain('chicken_yassa');
+  });
+
+  it('finds a dish by an ingredient', () => {
+    expect(searchRecipes('okra', 'en').map((r) => r.id)).toContain('okra_soup');
+    expect(searchRecipes('yam', 'en').map((r) => r.id)).toContain('yam_tomato');
+  });
+
+  it('searches across languages, not just the one on screen', () => {
+    // French speaker with the app in English, or vice versa.
+    expect(searchRecipes('gombo', 'en').map((r) => r.id)).toContain('okra_soup');
+    expect(searchRecipes('igname', 'en').map((r) => r.id)).toContain('yam_tomato');
+    expect(searchRecipes('poulet', 'en').length).toBeGreaterThan(0);
+  });
+
+  it('returns nothing rather than everything for a miss', () => {
+    expect(searchRecipes('zzzznotadish', 'en')).toEqual([]);
+  });
+
+  it('gives ingredients as id and label so amounts can be paired to them', () => {
+    const ing = recipeIngredients('jollof_rice', 'fr');
+    expect(ing.map((i) => i.id)).toContain('rice');
+    expect(ing.find((i) => i.id === 'rice')!.label).toBe('riz');
+    expect(recipeIngredients(null, 'en')).toEqual([]);
+    expect(recipeIngredients('not_a_recipe', 'en')).toEqual([]);
+  });
+});
+
+describe('quantities', () => {
+  it('scales with the number of people', () => {
+    expect(quantityFor('rice', 2, 'en')).toBe('150 g');
+    expect(quantityFor('rice', 4, 'en')).toBe('300 g');
+    expect(quantityFor('chicken', 4, 'en')).toBe('600 g');
+  });
+
+  it('switches to kilos and litres when the number gets silly', () => {
+    expect(quantityFor('yam', 4, 'en')).toBe('1 kg');
+    expect(quantityFor('potato', 6, 'en')).toBe('1.2 kg');
+  });
+
+  it('counts whole things instead of weighing them', () => {
+    expect(quantityFor('eggs', 3, 'en')).toBe('×6');
+    expect(quantityFor('onion', 1, 'en')).toBe('×½');
+    expect(quantityFor('onion', 3, 'en')).toBe('×1½');
+  });
+
+  it('refuses to invent precision for seasonings', () => {
+    expect(quantityFor('chili', 4, 'en')).toBe('to taste');
+    expect(quantityFor('chili', 4, 'fr')).toBe('selon le goût');
+    expect(quantityFor('ginger', 4, 'de')).toBe('nach Geschmack');
+  });
+
+  it('rounds up, so a shopping list never comes up short', () => {
+    // 3 people x 75g rice = 225g, which rounds to 225 not 200.
+    expect(quantityFor('rice', 3, 'en')).toBe('225 g');
+  });
+
+  it('says nothing rather than something wrong for an unknown ingredient', () => {
+    expect(quantityFor('unobtainium', 4, 'en')).toBeNull();
+  });
+
+  it('covers every ingredient used by every recipe', () => {
+    const missing = new Set<string>();
+    for (const id of RECIPE_IDS) {
+      for (const ing of recipeIngredients(id, 'en')) {
+        if (!hasQuantity(ing.id)) missing.add(ing.id);
+      }
+    }
+    expect(Array.from(missing)).toEqual([]);
   });
 });

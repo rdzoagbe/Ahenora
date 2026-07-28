@@ -265,6 +265,46 @@ export function resolveRecipeId(
   return TITLE_TO_ID[norm(storedTitle)] ?? null;
 }
 
+/** A recipe's ingredients as id + localized label, so callers can pair each one
+ *  with an amount without re-deriving the ids from display text. */
+export function recipeIngredients(
+  recipeId: string | null | undefined,
+  lang: SuggestLang,
+): { id: string; label: string }[] {
+  if (!recipeId) return [];
+  const recipe = RECIPES_BY_ID[recipeId];
+  if (!recipe) return [];
+  return recipe.ing.map((id) => ({ id, label: ING[id]?.label[lang] ?? id }));
+}
+
+/** Every recipe, for the browse-and-search list. */
+export function allRecipes(lang: SuggestLang): { id: string; title: string; ingredients: string[] }[] {
+  return RECIPES.map((r) => ({
+    id: r.id,
+    title: r.title[lang],
+    ingredients: r.ing.map((id) => ING[id]?.label[lang] ?? id),
+  }));
+}
+
+/** Case- and accent-insensitive search over titles and ingredient names, so
+ *  "gombo", "okra" and "Okra Soup" all find the same dish. */
+export function searchRecipes(
+  query: string,
+  lang: SuggestLang,
+): { id: string; title: string; ingredients: string[] }[] {
+  const q = norm(query);
+  const all = allRecipes(lang);
+  if (!q) return all;
+  return all.filter((r) => {
+    if (norm(r.title).includes(q)) return true;
+    if (r.ingredients.some((i) => norm(i).includes(q))) return true;
+    // Also match the other languages' words, so a French speaker with the app
+    // in English still finds "gombo".
+    const recipe = RECIPES_BY_ID[r.id];
+    return recipe.ing.some((id) => (ING[id]?.match || []).some((term) => term.includes(q)));
+  });
+}
+
 /** Every recipe the library ships. Used to assert the method data stays in step. */
 export const RECIPE_IDS: string[] = RECIPES.map((r) => r.id);
 
