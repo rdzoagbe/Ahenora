@@ -64,7 +64,7 @@ export function LanguageModal({ visible, onClose }: Props) {
 }
 
 const styles = StyleSheet.create({
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)' },
+  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.45)' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
   sheet: {
     width: '100%',

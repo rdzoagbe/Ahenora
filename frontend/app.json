@@ -7,8 +7,7 @@
     "icon": "./assets/images/icon.png",
     "scheme": "householdcoo",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
-    "runtimeVersion": "1.0.0",
+    "runtimeVersion": "2.0.0",
     "updates": {
       "url": "https://u.expo.dev/e84e02e4-5335-433f-a39c-3539c473a0dd"
     },
@@ -27,7 +26,6 @@
         "backgroundImage": "./assets/images/adaptive-background.png",
         "monochromeImage": "./assets/images/monochrome.png"
       },
-      "edgeToEdgeEnabled": true,
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.POST_NOTIFICATIONS"

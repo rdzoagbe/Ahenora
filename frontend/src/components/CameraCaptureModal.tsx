@@ -185,7 +185,7 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
 }
 
 const styles = StyleSheet.create({
-  backdrop: { ...StyleSheet.absoluteFillObject },
+  backdrop: { ...StyleSheet.absoluteFill },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
   sheet: {
     width: '100%',
@@ -232,7 +232,7 @@ const styles = StyleSheet.create({
   emptyStage: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24, gap: 10 },
   emptyStageText: { fontFamily: 'Inter_600SemiBold', fontSize: 13, textAlign: 'center', lineHeight: 19 },
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: 'center',
     justifyContent: 'center',
   },

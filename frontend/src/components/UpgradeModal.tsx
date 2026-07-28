@@ -64,7 +64,7 @@ export function handlePlanLimitError(err: any, showUpgradePrompt: (f: string, m:
 }
 
 const styles = StyleSheet.create({
-  backdrop: { ...StyleSheet.absoluteFillObject },
+  backdrop: { ...StyleSheet.absoluteFill },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
   sheet: {
     width: '100%',

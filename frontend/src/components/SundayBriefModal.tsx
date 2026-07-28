@@ -136,7 +136,7 @@ export function SundayBriefModal({ visible, onClose }: Props) {
 }
 
 const styles = StyleSheet.create({
-  overlay: { ...StyleSheet.absoluteFillObject },
+  overlay: { ...StyleSheet.absoluteFill },
   container: { flex: 1, paddingHorizontal: 24, paddingTop: 60, paddingBottom: 40 },
   topBar: { flexDirection: 'row', justifyContent: 'flex-end' },
   closeBtn: {

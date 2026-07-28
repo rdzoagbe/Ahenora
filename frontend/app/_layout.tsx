@@ -26,7 +26,9 @@ function RootNavigator() {
 
   return (
     <>
-      <StatusBar style={resolvedAppearance === 'light' ? 'dark' : 'light'} translucent backgroundColor="transparent" />
+      {/* SDK 57 removed `translucent`/`backgroundColor`: Android is always
+          edge-to-edge now, so the status bar is inherently transparent. */}
+      <StatusBar style={resolvedAppearance === 'light' ? 'dark' : 'light'} />
       <UpgradeModal />
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.colors.bg } }}>
         <Stack.Screen name="index" />

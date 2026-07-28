@@ -34,7 +34,7 @@ export function AmbientBackground() {
 
 const styles = StyleSheet.create({
   base: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   glow: {
     position: 'absolute',

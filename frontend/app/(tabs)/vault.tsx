@@ -637,7 +637,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   fab: { position: 'absolute', right: 22, bottom: 102, width: 61, height: 61, borderRadius: 999, backgroundColor: ui.orange, alignItems: 'center', justifyContent: 'center', shadowColor: '#000000', shadowOpacity: 0.18, shadowRadius: 16, shadowOffset: { width: 0, height: 10 }, elevation: 7, zIndex: 30 },
   fabPressed: { backgroundColor: '#D9530F', transform: [{ scale: 0.96 }] },
 
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(8,9,16,0.5)' },
+  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(8,9,16,0.5)' },
   sheet: { backgroundColor: ui.card, borderTopLeftRadius: 34, borderTopRightRadius: 34, borderWidth: 1, borderColor: ui.line, padding: 26, paddingBottom: 140 },
   sheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   sheetTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 24, letterSpacing: -0.4 },
@@ -654,7 +654,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   pickEmpty: { borderStyle: 'dashed' },
   pickFile: { gap: 10, paddingHorizontal: 20 },
   pickFileName: { color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 14, textAlign: 'center' },
-  pickImg: { ...StyleSheet.absoluteFillObject, resizeMode: 'cover' },
+  pickImg: { ...StyleSheet.absoluteFill, resizeMode: 'cover' },
   pickText: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
   sheetFooter: { flexDirection: 'row', gap: 12, marginTop: 22 },
   cancelBtn: { flex: 1, borderWidth: 1, borderColor: ui.line, borderRadius: 18, paddingVertical: 15, alignItems: 'center' },
