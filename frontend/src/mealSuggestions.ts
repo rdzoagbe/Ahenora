@@ -20,6 +20,11 @@ const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'
 interface Ingredient {
   label: Loc;
   match: string[]; // accent-free, lowercase terms across en/es/fr/de
+  // Phrases that look like a match but name a different ingredient. "Sweet
+  // potato" contains the word "potato" and "corn flour" contains "corn", so
+  // without this a shopping list of yam and corn flour reads as a European
+  // pantry and gets shepherd's pie.
+  not?: string[];
 }
 
 // Strip common accents without relying on String.prototype.normalize (Hermes).
@@ -55,10 +60,10 @@ const ING: Record<string, Ingredient> = {
   fish: { label: { en: 'fish', es: 'pescado', fr: 'poisson', de: 'Fisch' }, match: ['fish', 'pescado', 'poisson', 'fisch', 'cod', 'bacalao'] },
   salmon: { label: { en: 'salmon', es: 'salmón', fr: 'saumon', de: 'Lachs' }, match: ['salmon', 'saumon', 'lachs'] },
   shrimp: { label: { en: 'shrimp', es: 'gambas', fr: 'crevettes', de: 'Garnelen' }, match: ['shrimp', 'prawn', 'gambas', 'camarones', 'crevettes', 'garnelen'] },
-  eggs: { label: { en: 'eggs', es: 'huevos', fr: 'œufs', de: 'Eier' }, match: ['egg', 'eggs', 'huevo', 'huevos', 'oeuf', 'oeufs', 'ei', 'eier'] },
+  eggs: { label: { en: 'eggs', es: 'huevos', fr: 'œufs', de: 'Eier' }, match: ['egg', 'eggs', 'huevo', 'huevos', 'oeuf', 'oeufs', 'ei', 'eier'], not: ['garden egg', 'garden eggs'] },
   pasta: { label: { en: 'pasta', es: 'pasta', fr: 'pâtes', de: 'Nudeln' }, match: ['pasta', 'spaghetti', 'penne', 'pates', 'nudeln', 'macaroni', 'fusilli'] },
   rice: { label: { en: 'rice', es: 'arroz', fr: 'riz', de: 'Reis' }, match: ['rice', 'arroz', 'riz', 'reis'] },
-  potato: { label: { en: 'potatoes', es: 'patatas', fr: 'pommes de terre', de: 'Kartoffeln' }, match: ['potato', 'potatoes', 'patata', 'patatas', 'papa', 'pomme de terre', 'pommes de terre', 'kartoffel', 'kartoffeln'] },
+  potato: { label: { en: 'potatoes', es: 'patatas', fr: 'pommes de terre', de: 'Kartoffeln' }, match: ['potato', 'potatoes', 'patata', 'patatas', 'papa', 'pomme de terre', 'pommes de terre', 'kartoffel', 'kartoffeln'], not: ['sweet potato', 'sweet potatoes', 'patate douce', 'patates douces', 'susskartoffel'] },
   tomato: { label: { en: 'tomatoes', es: 'tomates', fr: 'tomates', de: 'Tomaten' }, match: ['tomato', 'tomatoes', 'tomate', 'tomates', 'tomaten'] },
   onion: { label: { en: 'onion', es: 'cebolla', fr: 'oignon', de: 'Zwiebel' }, match: ['onion', 'cebolla', 'oignon', 'zwiebel', 'zwiebeln'] },
   garlic: { label: { en: 'garlic', es: 'ajo', fr: 'ail', de: 'Knoblauch' }, match: ['garlic', 'ajo', 'ail', 'knoblauch'] },
@@ -76,7 +81,7 @@ const ING: Record<string, Ingredient> = {
   beans: { label: { en: 'beans', es: 'frijoles', fr: 'haricots', de: 'Bohnen' }, match: ['beans', 'frijoles', 'judias', 'alubias', 'haricots', 'bohnen'] },
   chickpeas: { label: { en: 'chickpeas', es: 'garbanzos', fr: 'pois chiches', de: 'Kichererbsen' }, match: ['chickpea', 'chickpeas', 'garbanzos', 'pois chiches', 'kichererbsen'] },
   lentils: { label: { en: 'lentils', es: 'lentejas', fr: 'lentilles', de: 'Linsen' }, match: ['lentil', 'lentils', 'lentejas', 'lentilles', 'linsen'] },
-  corn: { label: { en: 'corn', es: 'maíz', fr: 'maïs', de: 'Mais' }, match: ['corn', 'maiz', 'mais'] },
+  corn: { label: { en: 'corn', es: 'maíz', fr: 'maïs', de: 'Mais' }, match: ['corn', 'maiz', 'mais'], not: ['corn flour', 'cornflour', 'maize flour', 'farine de mais', 'semoule de mais', 'harina de maiz'] },
   mushroom: { label: { en: 'mushrooms', es: 'champiñones', fr: 'champignons', de: 'Pilze' }, match: ['mushroom', 'mushrooms', 'champinon', 'champinones', 'champignon', 'champignons', 'pilz', 'pilze', 'seta'] },
   avocado: { label: { en: 'avocado', es: 'aguacate', fr: 'avocat', de: 'Avocado' }, match: ['avocado', 'aguacate', 'avocat'] },
   lemon: { label: { en: 'lemon', es: 'limón', fr: 'citron', de: 'Zitrone' }, match: ['lemon', 'limon', 'citron', 'zitrone'] },
@@ -93,6 +98,22 @@ const ING: Record<string, Ingredient> = {
   milk: { label: { en: 'milk', es: 'leche', fr: 'lait', de: 'Milch' }, match: ['milk', 'leche', 'lait', 'milch'] },
   cucumber: { label: { en: 'cucumber', es: 'pepino', fr: 'concombre', de: 'Gurke' }, match: ['cucumber', 'pepino', 'concombre', 'gurke'] },
   zucchini: { label: { en: 'zucchini', es: 'calabacín', fr: 'courgette', de: 'Zucchini' }, match: ['zucchini', 'calabacin', 'courgette'] },
+  // West African / Afro-Caribbean staples. The library began with a European
+  // and American pantry, which left families shopping for yam, okra or plantain
+  // with no matching dinners at all. Match terms cover English, French, Spanish
+  // and German plus the spellings people actually write on a list ("okro",
+  // "attieke", "groundnut").
+  yam: { label: { en: 'yam', es: 'ñame', fr: 'igname', de: 'Yamswurzel' }, match: ['yam', 'yams', 'igname', 'ignames', 'yamswurzel'] },
+  sweet_potato: { label: { en: 'sweet potato', es: 'boniato', fr: 'patate douce', de: 'Süßkartoffel' }, match: ['sweet potato', 'sweet potatoes', 'patate douce', 'patates douces', 'boniato', 'batata', 'susskartoffel'] },
+  plantain: { label: { en: 'plantain', es: 'plátano macho', fr: 'banane plantain', de: 'Kochbanane' }, match: ['plantain', 'plantains', 'banane plantain', 'bananes plantains', 'platano macho', 'kochbanane', 'alloco'] },
+  cassava: { label: { en: 'cassava', es: 'yuca', fr: 'manioc', de: 'Maniok' }, match: ['cassava', 'manioc', 'yuca', 'maniok', 'attieke', 'gari', 'tapioca'] },
+  okra: { label: { en: 'okra', es: 'quimbombó', fr: 'gombo', de: 'Okra' }, match: ['okra', 'okro', 'okras', 'gombo', 'gombos', 'quimbombo'] },
+  garden_egg: { label: { en: 'garden eggs', es: 'berenjena', fr: 'aubergine', de: 'Aubergine' }, match: ['garden egg', 'garden eggs', 'aubergine', 'aubergines', 'eggplant', 'eggplants', 'berenjena', 'berenjenas'] },
+  corn_flour: { label: { en: 'corn flour', es: 'harina de maíz', fr: 'farine de maïs', de: 'Maismehl' }, match: ['corn flour', 'cornflour', 'maize flour', 'farine de mais', 'semoule de mais', 'harina de maiz', 'maismehl', 'banku', 'fufu'] },
+  peanut: { label: { en: 'peanuts', es: 'cacahuetes', fr: 'arachide', de: 'Erdnüsse' }, match: ['peanut', 'peanuts', 'groundnut', 'groundnuts', 'arachide', 'arachides', 'cacahuete', 'cacahuetes', 'erdnuss', 'erdnusse', 'peanut butter'] },
+  palm_oil: { label: { en: 'palm oil', es: 'aceite de palma', fr: 'huile de palme', de: 'Palmöl' }, match: ['palm oil', 'red oil', 'huile de palme', 'aceite de palma', 'palmol'] },
+  ginger: { label: { en: 'ginger', es: 'jengibre', fr: 'gingembre', de: 'Ingwer' }, match: ['ginger', 'gingembre', 'jengibre', 'ingwer'] },
+  chili: { label: { en: 'chilli', es: 'chile', fr: 'piment', de: 'Chili' }, match: ['chilli', 'chili', 'chile', 'piment', 'piments', 'scotch bonnet', 'habanero', 'pili pili'] },
   sausage: { label: { en: 'sausage', es: 'salchicha', fr: 'saucisse', de: 'Wurst' }, match: ['sausage', 'salchicha', 'chorizo', 'saucisse', 'wurst', 'bratwurst'] },
 };
 
@@ -141,6 +162,21 @@ const RECIPES: Recipe[] = [
   { id: 'noodle_stirfry', title: { en: 'Noodle Stir-Fry', es: 'Fideos salteados', fr: 'Nouilles sautées', de: 'Gebratene Nudeln' }, ing: ['noodles', 'eggs', 'carrot', 'soy_sauce', 'spinach'] },
   { id: 'greek_salad', title: { en: 'Greek Salad', es: 'Ensalada griega', fr: 'Salade grecque', de: 'Griechischer Salat' }, ing: ['cucumber', 'tomato', 'onion', 'cheese'] },
   { id: 'sausage_peppers', title: { en: 'Sausage & Peppers', es: 'Salchichas con pimientos', fr: 'Saucisses aux poivrons', de: 'Wurst mit Paprika' }, ing: ['sausage', 'pepper', 'onion', 'bread'] },
+  // West African and Afro-Caribbean dinners. Added after a household shopping
+  // for yam, okra, garden eggs and corn flour was offered a week of shepherd's
+  // pie and BLTs — the library only knew a European pantry.
+  { id: 'jollof_rice', title: { en: 'Jollof Rice', es: 'Arroz jollof', fr: 'Riz jollof', de: 'Jollof-Reis' }, ing: ['rice', 'tomato', 'onion', 'pepper', 'chicken'], staple: true },
+  { id: 'chicken_yassa', title: { en: 'Chicken Yassa', es: 'Pollo yassa', fr: 'Poulet yassa', de: 'Yassa-Hähnchen' }, ing: ['chicken', 'onion', 'lemon', 'rice', 'chili'] },
+  { id: 'groundnut_stew', title: { en: 'Groundnut Stew', es: 'Guiso de cacahuete', fr: 'Mafé à l’arachide', de: 'Erdnusseintopf' }, ing: ['beef', 'peanut', 'tomato', 'onion', 'rice'] },
+  { id: 'okra_soup', title: { en: 'Okra Soup', es: 'Sopa de quimbombó', fr: 'Sauce gombo', de: 'Okra-Suppe' }, ing: ['okra', 'fish', 'tomato', 'onion', 'palm_oil'] },
+  { id: 'yam_tomato', title: { en: 'Boiled Yam & Tomato Sauce', es: 'Ñame con salsa de tomate', fr: 'Igname sauce tomate', de: 'Yamswurzel mit Tomatensauce' }, ing: ['yam', 'tomato', 'onion', 'fish'], staple: true },
+  { id: 'red_red', title: { en: 'Red Red — Beans & Fried Plantain', es: 'Frijoles con plátano frito', fr: 'Haricots et bananes plantains frites', de: 'Bohnen mit gebratener Kochbanane' }, ing: ['beans', 'plantain', 'tomato', 'onion', 'palm_oil'] },
+  { id: 'garden_egg_stew', title: { en: 'Garden Egg Stew', es: 'Guiso de berenjena', fr: 'Sauce d’aubergines', de: 'Auberginen-Eintopf' }, ing: ['garden_egg', 'tomato', 'onion', 'fish'] },
+  { id: 'grilled_tilapia', title: { en: 'Grilled Fish & Pepper Sauce', es: 'Pescado a la parrilla con salsa picante', fr: 'Poisson braisé sauce piment', de: 'Gegrillter Fisch mit Chilisauce' }, ing: ['fish', 'chili', 'onion', 'lemon'] },
+  { id: 'attieke_fish', title: { en: 'Attiéké & Fish', es: 'Attiéké con pescado', fr: 'Attiéké poisson', de: 'Attiéké mit Fisch' }, ing: ['cassava', 'fish', 'tomato', 'onion'] },
+  { id: 'banku_okra', title: { en: 'Banku & Okra', es: 'Banku con quimbombó', fr: 'Banku au gombo', de: 'Banku mit Okra' }, ing: ['corn_flour', 'okra', 'fish', 'tomato'] },
+  { id: 'peanut_spinach', title: { en: 'Spinach & Peanut Stew', es: 'Guiso de espinacas y cacahuete', fr: 'Sauce épinards arachide', de: 'Spinat-Erdnuss-Eintopf' }, ing: ['spinach', 'peanut', 'tomato', 'onion', 'rice'], staple: true },
+  { id: 'sweet_potato_chicken', title: { en: 'Roast Sweet Potato & Chicken', es: 'Boniato asado con pollo', fr: 'Patates douces rôties et poulet', de: 'Ofen-Süßkartoffeln mit Hähnchen' }, ing: ['sweet_potato', 'chicken', 'onion', 'pepper'], staple: true },
   { id: 'zucchini_pasta', title: { en: 'Zucchini Pasta', es: 'Pasta con calabacín', fr: 'Pâtes aux courgettes', de: 'Zucchini-Pasta' }, ing: ['pasta', 'zucchini', 'tomato', 'garlic'], staple: true },
 ];
 
@@ -167,7 +203,11 @@ export function suggestWeek(ownedNames: string[], lang: SuggestLang): MealSugges
   const hasIngredient = (id: string): boolean => {
     const ing = ING[id];
     if (!ing) return false;
-    return ing.match.some((term) => ownedWords.some((words) => itemMatchesTerm(words, term)));
+    const excluded = (words: string[]) =>
+      (ing.not || []).some((term) => ` ${words.join(' ')} `.includes(` ${term} `));
+    return ing.match.some((term) =>
+      ownedWords.some((words) => itemMatchesTerm(words, term) && !excluded(words)),
+    );
   };
 
   const scored = RECIPES.map((r) => {
