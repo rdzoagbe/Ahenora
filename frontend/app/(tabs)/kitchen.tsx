@@ -3,7 +3,7 @@ import { Alert, View, Text, StyleSheet, TextInput, ScrollView, ActivityIndicator
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
-import { Plus, X, Trash2, ShoppingCart, Check, UtensilsCrossed, Bell, ChevronDown, History, RotateCcw, Sparkles, Sun, ChefHat, Clock, AlertTriangle } from 'lucide-react-native';
+import { Plus, X, Trash2, ShoppingCart, Check, UtensilsCrossed, Bell, ChevronDown, History, RotateCcw, Sparkles, Sun, ChefHat, Clock, AlertTriangle, Search, Minus, BookOpen } from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { PressScale } from '../../src/components/PressScale';
@@ -17,7 +17,8 @@ import { useStore } from '../../src/store';
 import { api, MealPlan, ShoppingItem, ShoppingHistoryEntry, SavedMealPlan } from '../../src/api';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { logger } from '../../src/logger';
-import { suggestWeek, MealSuggestion, SuggestLang, localizedMealTitle, localizedMealIngredients, resolveRecipeId } from '../../src/mealSuggestions';
+import { suggestWeek, MealSuggestion, SuggestLang, localizedMealTitle, localizedMealIngredients, resolveRecipeId, recipeIngredients, searchRecipes } from '../../src/mealSuggestions';
+import { quantityFor } from '../../src/recipeQuantities';
 import { recipeMethod } from '../../src/recipeSteps';
 
 type ToastState = { message: string; tone: ToastTone };
@@ -38,8 +39,20 @@ const KEEP_AWAKE_TAG = 'kitchen-screen';
 const KEEP_AWAKE_KEY = 'coo_keep_screen_on';
 
 export default function Kitchen() {
-  const { t, lang } = useStore();
+  const { t, lang, subscription } = useStore();
   // The food library covers en/es/fr/de; anything else falls back to English.
+  // How many people the amounts are scaled for. Defaults to the household and
+  // is adjustable, because who is actually eating changes night to night.
+  // Derived, not stored: show the household we know about until the user says
+  // otherwise, since who is eating tonight is not always everyone. Deriving
+  // avoids an effect that would fight the user's choice whenever the
+  // subscription refreshed.
+  const [servingsOverride, setServingsOverride] = useState<number | null>(null);
+  const servings = servingsOverride ?? Math.max(1, Math.min(12, subscription?.members_count || 4));
+  const setServings = setServingsOverride;
+  const [showBrowse, setShowBrowse] = useState(false);
+  const [browseQuery, setBrowseQuery] = useState('');
+  const [browseDay, setBrowseDay] = useState('monday');
   // Generated methods held for this session, keyed by meal id. The server
   // caches them too; this just avoids a round trip while the sheet is open.
   const [aiRecipes, setAiRecipes] = useState<Record<string, { minutes: number; steps: string[] }>>({});
@@ -314,6 +327,52 @@ export default function Kitchen() {
       showToast(t('vault_could_not_add_meal'), 'error');
     }
   }, [suggestions, addedSuggest, meals, mealLocked, promptUpgrade, showToast, t]);
+
+  const addMissingToList = useCallback(async (recipeId: string) => {
+    const needed = recipeIngredients(recipeId, suggestLang);
+    const have = new Set(shopItems.map((i) => i.name.trim().toLowerCase()));
+    const missing = needed.filter((n) => !have.has(n.label.trim().toLowerCase()));
+
+    if (missing.length === 0) {
+      showToast(t('cook_nothing_missing'), 'info');
+      return;
+    }
+
+    try {
+      // The amount goes on the list too — "400 g rice" is what you need at the
+      // shop, "rice" is what you already knew.
+      const created = await Promise.all(
+        missing.map((m) => {
+          const qty = quantityFor(m.id, servings, suggestLang);
+          const name = qty && !qty.startsWith('×') ? `${qty} ${m.label}` : qty ? `${m.label} ${qty}` : m.label;
+          return api.addShoppingItem({ name });
+        }),
+      );
+      setShopItems((prev) => [...prev, ...created]);
+      showToast(t('cook_added_to_list', { n: created.length }), 'success');
+    } catch {
+      setShopItems(await api.listShopping().catch(() => []));
+      showToast(t('vault_could_not_add_meal'), 'error');
+    }
+  }, [shopItems, servings, suggestLang, showToast, t]);
+
+  const addRecipeToDay = useCallback(async (recipeId: string, title: string, day: string) => {
+    if (mealLocked) { promptUpgrade('meal_planner'); return; }
+    try {
+      const created = await api.createMeal({
+        day,
+        title,
+        ingredients: recipeIngredients(recipeId, suggestLang).map((i) => i.label),
+        recipe_id: recipeId,
+      });
+      setMeals((prev) => [...prev, created]);
+      setShowBrowse(false);
+      setBrowseQuery('');
+      showToast(`1 ${t('kitchen_meals_added')}`, 'success');
+    } catch {
+      showToast(t('vault_could_not_add_meal'), 'error');
+    }
+  }, [mealLocked, promptUpgrade, suggestLang, showToast, t]);
 
   const generateRecipe = useCallback(async (meal: MealPlan) => {
     const title = localizedMealTitle(meal.recipe_id, meal.title, suggestLang);
@@ -631,6 +690,10 @@ export default function Kitchen() {
                     <Text style={styles.clearBtnText}>{t('vault_sync_to_list')}</Text>
                   </PressScale>
                 ) : null}
+                <PressScale testID="browse-recipes" onPress={() => setShowBrowse(true)} style={[styles.clearBtn, { backgroundColor: ui.soft }]}>
+                  <BookOpen color={ui.text} size={14} />
+                  <Text style={[styles.clearBtnText, { color: ui.text }]}>{t('browse_recipes')}</Text>
+                </PressScale>
                 <PressScale onPress={() => setShowMealAdd(true)} style={[styles.clearBtn, { backgroundColor: ui.lavender }]}>
                   <Text style={[styles.clearBtnText, { color: ui.lavenderText }]}>{t('vault_add_short')}</Text>
                 </PressScale>
@@ -834,6 +897,74 @@ export default function Kitchen() {
         )}
       </KeyboardAwareBottomSheet>
 
+      {/* Browse every recipe, search it, and drop one on any day */}
+      <KeyboardAwareBottomSheet visible={showBrowse} onClose={() => { setShowBrowse(false); setBrowseQuery(''); }} contentStyle={styles.sheet}>
+        <View style={styles.sheetHeader}>
+          <Text style={styles.sheetTitle}>{t('browse_recipes')}</Text>
+          <PressScale
+            accessibilityRole="button"
+            accessibilityLabel={t('close')}
+            onPress={() => { setShowBrowse(false); setBrowseQuery(''); }}
+            style={styles.iconBtn}
+          >
+            <X color={ui.text} size={20} />
+          </PressScale>
+        </View>
+
+        <View style={styles.savePlanRow}>
+          <Search color={ui.muted} size={18} />
+          <TextInput
+            value={browseQuery}
+            onChangeText={setBrowseQuery}
+            placeholder={t('browse_search')}
+            placeholderTextColor={ui.muted}
+            style={[styles.shopInput, { flex: 1 }]}
+            autoCorrect={false}
+          />
+        </View>
+
+        {/* Which day the next pick lands on. */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 4 }}>
+          {DAYS.map((d) => (
+            <PressScale
+              key={d}
+              testID={`browse-day-${d}`}
+              onPress={() => setBrowseDay(d)}
+              style={[styles.browseDayChip, browseDay === d && styles.browseDayChipActive]}
+            >
+              <Text style={[styles.browseDayText, browseDay === d && styles.browseDayTextActive]}>
+                {t(`day_${d}`)}
+              </Text>
+            </PressScale>
+          ))}
+        </ScrollView>
+
+        {(() => {
+          const results = searchRecipes(browseQuery, suggestLang);
+          if (results.length === 0) {
+            return <Text style={styles.histEmpty}>{t('browse_none')}</Text>;
+          }
+          return results.map((r) => (
+            <View key={r.id} style={styles.browseRow}>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.browseTitle}>{r.title}</Text>
+                <Text style={styles.browseIng} numberOfLines={1}>{r.ingredients.join(', ')}</Text>
+              </View>
+              <PressScale
+                testID={`browse-add-${r.id}`}
+                accessibilityRole="button"
+                accessibilityLabel={`${t('browse_add_to_day')} ${t(`day_${browseDay}`)}`}
+                onPress={() => addRecipeToDay(r.id, r.title, browseDay)}
+                style={styles.reuseBtn}
+              >
+                <Plus color={ui.orange} size={14} />
+                <Text style={styles.reuseText}>{t('vault_add_short')}</Text>
+              </PressScale>
+            </View>
+          ));
+        })()}
+      </KeyboardAwareBottomSheet>
+
       {/* Cook it — method for a meal from the suggestion library */}
       <KeyboardAwareBottomSheet visible={cookingRecipe !== null} onClose={() => setCookingRecipe(null)} contentStyle={styles.sheet}>
         {(() => {
@@ -863,7 +994,56 @@ export default function Kitchen() {
                 </PressScale>
               </View>
 
-              {ingredients.length > 0 ? (
+              {cookingRecipe.recipeId ? (
+                <>
+                  <View style={styles.servingsRow}>
+                    <Text style={styles.cookSectionTitle}>{t('cook_servings')}</Text>
+                    <View style={styles.stepper}>
+                      <PressScale
+                        accessibilityRole="button"
+                        accessibilityLabel="-"
+                        onPress={() => setServings(Math.max(1, servings - 1))}
+                        hitSlop={10}
+                        style={styles.stepBtn}
+                      >
+                        <Minus color={ui.text} size={16} />
+                      </PressScale>
+                      <Text style={styles.stepCount}>{servings}</Text>
+                      <PressScale
+                        accessibilityRole="button"
+                        accessibilityLabel="+"
+                        onPress={() => setServings(Math.min(12, servings + 1))}
+                        hitSlop={10}
+                        style={styles.stepBtn}
+                      >
+                        <Plus color={ui.text} size={16} />
+                      </PressScale>
+                    </View>
+                  </View>
+
+                  <Text style={styles.cookSectionTitle}>{t('cook_you_need')}</Text>
+                  {recipeIngredients(cookingRecipe.recipeId, suggestLang).map((ing) => {
+                    const qty = quantityFor(ing.id, servings, suggestLang);
+                    return (
+                      <View key={ing.id} style={styles.qtyRow}>
+                        <Text style={styles.qtyName}>{ing.label}</Text>
+                        {qty ? <Text style={styles.qtyAmount}>{qty}</Text> : null}
+                      </View>
+                    );
+                  })}
+                  <Text style={styles.qtyNote}>{t('cook_amounts_note')}</Text>
+
+                  <PressScale
+                    testID="cook-add-missing"
+                    accessibilityRole="button"
+                    onPress={() => addMissingToList(cookingRecipe.recipeId!)}
+                    style={styles.addMissingBtn}
+                  >
+                    <ShoppingCart color={ui.orange} size={15} />
+                    <Text style={styles.addMissingText}>{t('cook_add_missing')}</Text>
+                  </PressScale>
+                </>
+              ) : ingredients.length > 0 ? (
                 <>
                   <Text style={styles.cookSectionTitle}>{t('cook_you_need')}</Text>
                   <Text style={styles.cookIngredients}>{ingredients.join(' · ')}</Text>
@@ -1049,6 +1229,23 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   suggestAllText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
 
   sheet: { backgroundColor: ui.card, borderTopLeftRadius: 34, borderTopRightRadius: 34, borderWidth: 1, borderColor: ui.line, padding: 26, paddingBottom: 140 },
+  servingsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  stepper: { flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 18, backgroundColor: ui.soft, borderRadius: 999, paddingHorizontal: 6, paddingVertical: 4 },
+  stepBtn: { padding: 6 },
+  stepCount: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 16, minWidth: 20, textAlign: 'center' },
+  qtyRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: ui.line },
+  qtyName: { flex: 1, color: ui.text, fontFamily: 'Inter_500Medium', fontSize: 15 },
+  qtyAmount: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
+  qtyNote: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 8, fontStyle: 'italic' },
+  addMissingBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 14, paddingVertical: 12, borderRadius: 999, borderWidth: 1, borderColor: ui.orange },
+  addMissingText: { color: ui.orange, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
+  browseRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: ui.line },
+  browseTitle: { color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 15 },
+  browseIng: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 2 },
+  browseDayChip: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, backgroundColor: ui.soft, marginRight: 8 },
+  browseDayChipActive: { backgroundColor: ui.orange },
+  browseDayText: { color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 13 },
+  browseDayTextActive: { color: '#FFFFFF' },
   cookLink: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6 },
   cookLinkText: { color: ui.orange, fontFamily: 'Inter_600SemiBold', fontSize: 13 },
   cookMeta: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 },
