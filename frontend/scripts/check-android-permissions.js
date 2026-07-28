@@ -19,9 +19,12 @@ const FORBIDDEN = [
 const xml = fs.readFileSync(MANIFEST, 'utf8');
 const problems = [];
 
+// Escape every regex metacharacter (backslash included), not just dots.
+const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 for (const perm of FORBIDDEN) {
   // Match the <uses-permission ...> element for this permission, if any.
-  const re = new RegExp(`<uses-permission[^>]*android:name="${perm.replace(/\./g, '\\.')}"[^>]*/?>`, 'g');
+  const re = new RegExp(`<uses-permission[^>]*android:name="${escapeRegExp(perm)}"[^>]*/?>`, 'g');
   const matches = xml.match(re) || [];
   for (const m of matches) {
     if (!/tools:node\s*=\s*"remove"/.test(m)) {
