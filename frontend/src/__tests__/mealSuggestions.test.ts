@@ -296,3 +296,38 @@ describe('what you have versus what ranks the week', () => {
     expect(bolo!.haveLabels).toContain('pasta');
   });
 });
+
+describe('asking again', () => {
+  const LIST = ['rice', 'tomatoes', 'onion', 'chicken', 'beef', 'bell peppers'];
+
+  it('gives a different week the second time', () => {
+    const first = suggestWeek(LIST, 'en', [], 0).map((s) => s.recipeId);
+    const second = suggestWeek(LIST, 'en', [], 1).map((s) => s.recipeId);
+    expect(second).not.toEqual(first);
+  });
+
+  it('keeps the week just as well matched to the list', () => {
+    // Variety must not cost relevance — rotation only happens inside groups
+    // of dishes that scored identically.
+    const first = suggestWeek(LIST, 'en', [], 0);
+    const second = suggestWeek(LIST, 'en', [], 1);
+    const total = (w: typeof first) => w.reduce((n, s) => n + s.matched, 0);
+    expect(total(second)).toBe(total(first));
+  });
+
+  it('is stable for the same variant', () => {
+    expect(suggestWeek(LIST, 'en', [], 3).map((s) => s.recipeId))
+      .toEqual(suggestWeek(LIST, 'en', [], 3).map((s) => s.recipeId));
+  });
+
+  it('still returns a full week however many times you ask', () => {
+    for (const variant of [0, 1, 2, 5, 11, 50]) {
+      expect(suggestWeek(LIST, 'en', [], variant)).toHaveLength(7);
+    }
+  });
+
+  it('defaults to the first variant when none is given', () => {
+    expect(suggestWeek(LIST, 'en').map((s) => s.recipeId))
+      .toEqual(suggestWeek(LIST, 'en', [], 0).map((s) => s.recipeId));
+  });
+});
