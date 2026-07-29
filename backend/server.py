@@ -755,6 +755,25 @@ def public_reward(reward: dict) -> dict:
 
 
 
+def public_redemption(r: dict) -> dict:
+    return {
+        "redemption_id": r["redemption_id"],
+        "family_id": r["family_id"],
+        "member_id": r["member_id"],
+        "reward_id": r.get("reward_id"),
+        # The title is copied, not looked up: a reward can be renamed or
+        # deleted after a child has earned it, and what was promised should not
+        # change or vanish underneath them.
+        "reward_title": r.get("reward_title", ""),
+        "reward_icon": r.get("reward_icon"),
+        "cost_stars": int(r.get("cost_stars", 0) or 0),
+        "status": r.get("status", "pending"),
+        "created_at": iso(r["created_at"]),
+        "fulfilled_at": iso(r.get("fulfilled_at")) if r.get("fulfilled_at") else None,
+        "cancelled_at": iso(r.get("cancelled_at")) if r.get("cancelled_at") else None,
+    }
+
+
 def public_star_transaction(transaction: dict) -> dict:
     return {
         "transaction_id": transaction["transaction_id"],
@@ -2060,6 +2079,11 @@ async def delete_family_member(member_id: str, user=Depends(require_user)):
     await database["star_transactions"].delete_many(
         {"member_id": member_id, "family_id": user["family_id"]}
     )
+    # Otherwise a removed child leaves outstanding rewards on the parent's list
+    # with no name to attach them to.
+    await database["redemptions"].delete_many(
+        {"member_id": member_id, "family_id": user["family_id"]}
+    )
     return {"ok": True}
 
 
@@ -3073,11 +3097,146 @@ async def redeem_reward(reward_id: str, payload: RedeemIn, user=Depends(require_
     }
     await database["star_transactions"].insert_one(transaction)
 
+    # Spending the stars is only half of it — somebody still has to hand over
+    # the ice cream. Without a record the promise lived in the parent's head,
+    # and a child who had paid had no way to show they were still owed it.
+    redemption = {
+        "redemption_id": new_id("redemption"),
+        "family_id": user["family_id"],
+        "member_id": member["member_id"],
+        "reward_id": reward["reward_id"],
+        "reward_title": reward.get("title") or "",
+        "reward_icon": reward.get("icon"),
+        "cost_stars": cost,
+        "status": "pending",
+        "created_at": utcnow(),
+        "created_by_user_id": user["user_id"],
+        "fulfilled_at": None,
+    }
+    await database["redemptions"].insert_one(redemption)
+
     member = await database["family_members"].find_one({"member_id": member["member_id"]}, {"_id": 0})
     return {
         "ok": True,
         "member": public_member(member),
         "transaction": public_star_transaction(transaction),
+        "redemption": public_redemption(redemption),
+    }
+
+
+# -----------------------------------------------------------------------------
+# Redemptions — what has been paid for and not yet handed over
+# -----------------------------------------------------------------------------
+@app.get("/api/redemptions")
+async def list_redemptions(status: Optional[str] = None, user=Depends(require_user)):
+    database = get_db()
+    query: dict = {"family_id": user["family_id"]}
+    if status is not None:
+        # Reject an unknown value rather than quietly ignoring the filter: a
+        # typo returning every status looks like the filter worked.
+        if status not in ("pending", "fulfilled", "cancelled"):
+            raise HTTPException(status_code=400, detail="Unknown redemption status")
+        query["status"] = status
+
+    cursor = database["redemptions"].find(query, {"_id": 0}).sort("created_at", -1).limit(500)
+    return [public_redemption(item) async for item in cursor]
+
+
+@app.post("/api/redemptions/{redemption_id}/fulfil")
+async def fulfil_redemption(redemption_id: str, user=Depends(require_user)):
+    database = get_db()
+
+    # The filter carries the "still pending" rule so two parents both tapping
+    # Given produce one state change, not two, and the second gets a clear
+    # answer instead of silently overwriting the first one's timestamp.
+    result = await database["redemptions"].update_one(
+        {
+            "redemption_id": redemption_id,
+            "family_id": user["family_id"],
+            "status": "pending",
+        },
+        {
+            "$set": {
+                "status": "fulfilled",
+                "fulfilled_at": utcnow(),
+                "fulfilled_by_user_id": user["user_id"],
+            }
+        },
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Redemption not found or already settled")
+
+    updated = await database["redemptions"].find_one({"redemption_id": redemption_id}, {"_id": 0})
+    return public_redemption(updated)
+
+
+@app.post("/api/redemptions/{redemption_id}/cancel")
+async def cancel_redemption(redemption_id: str, user=Depends(require_user)):
+    """Give the stars back when a reward cannot be delivered.
+
+    A parent may promise a trip to the cinema and then find it sold out. The
+    honest resolution is to return what the child paid, not to quietly mark it
+    given, so this refunds the stars and writes the refund to the ledger where
+    the child can see it.
+    """
+    database = get_db()
+
+    result = await database["redemptions"].update_one(
+        {
+            "redemption_id": redemption_id,
+            "family_id": user["family_id"],
+            "status": "pending",
+        },
+        {
+            "$set": {
+                "status": "cancelled",
+                "cancelled_at": utcnow(),
+                "cancelled_by_user_id": user["user_id"],
+            }
+        },
+    )
+    # Claim the redemption before touching the balance. If two parents cancel
+    # at once only one update matches, so the stars are refunded exactly once.
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Redemption not found or already settled")
+
+    redemption = await database["redemptions"].find_one({"redemption_id": redemption_id}, {"_id": 0})
+    cost = int(redemption.get("cost_stars", 0) or 0)
+
+    transaction = None
+    if cost > 0:
+        credited = await database["family_members"].update_one(
+            {"member_id": redemption["member_id"], "family_id": user["family_id"]},
+            {"$inc": {"stars": cost}},
+        )
+        # Only write the ledger row if the balance actually moved. If the child
+        # was removed between claiming the redemption and crediting it, an
+        # unconditional insert would leave a +60 in the history that no balance
+        # ever received, and the ledger would stop reconciling.
+        if credited.matched_count:
+            transaction = {
+                "transaction_id": new_id("star"),
+                "family_id": user["family_id"],
+                "member_id": redemption["member_id"],
+                "delta": cost,
+                # The bare title, matching the spend entry. An English word like
+                # "Refund:" would sit untranslated in a German family's ledger,
+                # and the + sign against the earlier − already tells the story.
+                "reason": redemption.get("reward_title") or "",
+                "created_by_user_id": user["user_id"],
+                "created_by_name": user.get("name"),
+                "created_at": utcnow(),
+            }
+            await database["star_transactions"].insert_one(transaction)
+
+    member = await database["family_members"].find_one(
+        {"member_id": redemption["member_id"], "family_id": user["family_id"]}, {"_id": 0}
+    )
+    return {
+        "ok": True,
+        "redemption": public_redemption(redemption),
+        "member": public_member(member) if member else None,
+        "transaction": public_star_transaction(transaction) if transaction else None,
     }
 
 

@@ -45,10 +45,11 @@ import { TabScreen } from '../../src/components/TabScreen';
 import { Card, IconTile, ProgressBar, ScreenHeader, UI, useUI, UIColors } from '../../src/components/Kit';
 
 import { useStore } from '../../src/store';
-import { api, logEvent, AllowanceConfig, AllowanceTxn, Chore, FamilyMember, Reward, Routine, StarTransaction } from '../../src/api';
+import { api, logEvent, AllowanceConfig, AllowanceTxn, Chore, FamilyMember, Redemption, Reward, Routine, StarTransaction } from '../../src/api';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { logger } from '../../src/logger';
 import { recordWin } from '../../src/reviewPrompt';
+import { isAlreadySettled, mergeRedemptions, restoreRedemption, sortByNewest } from '../../src/redemptions';
 
 type ToastState = { message: string; tone: ToastTone };
 type RewardSheetMode = 'create' | 'edit';
@@ -156,6 +157,22 @@ export default function Kids() {
   const choreDoneRef = useRef(false);
   const routineDoneRef = useRef(false);
 
+  // Rewards that have been paid for but not yet handed over. Spending the
+  // stars was never the end of the story — somebody still owes the child a
+  // trip to the cinema — and before this the promise lived only in a parent's
+  // memory.
+  const [redemptions, setRedemptions] = useState<Redemption[]>([]);
+  // Per row, not one flag for the list: settling one reward must not silently
+  // swallow a tap on the next one.
+  const settlingIdsRef = useRef<Set<string>>(new Set());
+  // The screen reloads on focus and that fetch is deliberately not awaited, so
+  // it can resolve after the list has already moved on. These two say what this
+  // device did in the meantime, and a landing fetch is reconciled against them
+  // rather than trusted wholesale — otherwise a reward settled a moment ago
+  // reappears, and one redeemed a moment ago vanishes.
+  const settledIdsRef = useRef<Set<string>>(new Set());
+  const addedIdsRef = useRef<Set<string>>(new Set());
+
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [allowances, setAllowances] = useState<AllowanceConfig[]>([]);
   const [balances, setBalances] = useState<Record<string, number>>({});
@@ -166,6 +183,17 @@ export default function Kids() {
   const stars = activeChild?.stars || 0;
   const iconSuggestions = useMemo(() => suggestedIcons(rewardTitle), [rewardTitle]);
   const sortedRewards = useMemo(() => [...rewards].sort((a, b) => (stars / b.cost_stars) - (stars / a.cost_stars)), [rewards, stars]);
+  const pendingRedemptions = useMemo(
+    () => redemptions.filter((r) => r.status === 'pending' && r.member_id === activeChild?.member_id),
+    [redemptions, activeChild?.member_id],
+  );
+  const owedByChild = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const r of redemptions) {
+      if (r.status === 'pending') counts[r.member_id] = (counts[r.member_id] || 0) + 1;
+    }
+    return counts;
+  }, [redemptions]);
   const weeklyStars = useMemo(() => {
     const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
     return historyItems.filter((h) => h.created_at && new Date(h.created_at).getTime() >= weekAgo).reduce((sum, h) => sum + h.delta, 0);
@@ -216,11 +244,18 @@ export default function Kids() {
       setSelectedChild(nextSelected);
       await refreshHistory(nextSelected);
 
-      Promise.allSettled([api.listRoutines(), api.listAllowances(), api.listChores()])
-        .then(async ([rtnRes, alwRes, choreRes]) => {
+      Promise.allSettled([api.listRoutines(), api.listAllowances(), api.listChores(), api.listRedemptions('pending')])
+        .then(async ([rtnRes, alwRes, choreRes, redRes]) => {
           if (rtnRes.status === 'fulfilled') setRoutines(rtnRes.value);
           if (alwRes.status === 'fulfilled') setAllowances(alwRes.value);
           if (choreRes.status === 'fulfilled') setChores(choreRes.value);
+          // A server that predates redemptions 404s here; an older app should
+          // still show stars rather than an error, so a failure just leaves
+          // the section hidden.
+          if (redRes.status === 'fulfilled') {
+            setRedemptions((prev) =>
+              mergeRedemptions(prev, redRes.value, settledIdsRef.current, addedIdsRef.current));
+          }
           const kids = m.filter((x) => x.role?.toLowerCase() === 'child');
           const bals: Record<string, number> = {};
           for (const kid of kids) {
@@ -517,6 +552,11 @@ export default function Kids() {
     try {
       const res = await api.redeemReward(reward.reward_id, activeChild.member_id);
       setMembers((prev) => prev.map((m) => (m.member_id === res.member.member_id ? res.member : m)));
+      if (res.redemption) {
+        const created = res.redemption;
+        addedIdsRef.current.add(created.redemption_id);
+        setRedemptions((prev) => sortByNewest([created, ...prev]));
+      }
       showToast(`${t('redeemed')} ${reward.title}`, 'success');
       setCelebration({ kind: 'reward', title: reward.title });
       await refreshHistory(activeChild.member_id);
@@ -533,6 +573,80 @@ export default function Kids() {
     if ((activeChild.stars || 0) < reward.cost_stars) { showToast(t('not_enough_stars'), 'error'); return; }
     if (activeChild.has_pin) { setPinPromptReward(reward); return; }
     await doRedeem(reward);
+  };
+
+  // Marking a reward as handed over. The row leaves the list immediately —
+  // the server has the final word, so a failure puts it back rather than
+  // leaving the parent staring at a row that is already settled.
+  const markGiven = useCallback(async (redemption: Redemption) => {
+    const id = redemption.redemption_id;
+    if (settlingIdsRef.current.has(id)) return;
+    settlingIdsRef.current.add(id);
+    settledIdsRef.current.add(id);
+    addedIdsRef.current.delete(id);
+    setRedemptions((prev) => prev.filter((r) => r.redemption_id !== id));
+    try {
+      await api.fulfilRedemption(id);
+      showToast(t('kids_redemption_given_toast', { title: redemption.reward_title }), 'success');
+    } catch (e: any) {
+      logger.warn('Mark redemption given failed:', e?.message || e);
+      // Already settled by the other parent: the row is right to be gone, and
+      // putting it back would give this device a button that can never work.
+      if (isAlreadySettled(e)) {
+        showToast(t('kids_redemption_already_settled'), 'info');
+      } else {
+        settledIdsRef.current.delete(id);
+        setRedemptions((prev) => restoreRedemption(prev, redemption));
+        showToast(t('kids_redemption_error'), 'error');
+      }
+    } finally {
+      settlingIdsRef.current.delete(id);
+    }
+  }, [showToast, t]);
+
+  // Sometimes the cinema is sold out. Returning the stars is the honest
+  // answer; quietly marking it given is not.
+  const refundRedemption = useCallback(async (redemption: Redemption) => {
+    const id = redemption.redemption_id;
+    if (settlingIdsRef.current.has(id)) return;
+    settlingIdsRef.current.add(id);
+    settledIdsRef.current.add(id);
+    addedIdsRef.current.delete(id);
+    setRedemptions((prev) => prev.filter((r) => r.redemption_id !== id));
+    try {
+      const res = await api.cancelRedemption(id);
+      if (res.member) setMembers((prev) => prev.map((m) => (m.member_id === res.member!.member_id ? res.member! : m)));
+      // The server declines to credit a child who is no longer there, and says
+      // so by returning no ledger entry. Claiming a refund landed when it did
+      // not would be worse than saying nothing.
+      if (res.transaction) {
+        showToast(t('kids_redemption_refunded_toast', { n: redemption.cost_stars }), 'success');
+      }
+      await refreshHistory(redemption.member_id);
+    } catch (e: any) {
+      logger.warn('Refund redemption failed:', e?.message || e);
+      if (isAlreadySettled(e)) {
+        showToast(t('kids_redemption_already_settled'), 'info');
+      } else {
+        settledIdsRef.current.delete(id);
+        setRedemptions((prev) => restoreRedemption(prev, redemption));
+        showToast(t('kids_redemption_error'), 'error');
+      }
+    } finally {
+      settlingIdsRef.current.delete(id);
+    }
+  }, [refreshHistory, showToast, t]);
+
+  const confirmRefund = (redemption: Redemption) => {
+    if (Platform.OS === 'web') { refundRedemption(redemption); return; }
+    Alert.alert(
+      t('kids_redemption_refund'),
+      t('kids_redemption_refund_confirm', { title: redemption.reward_title, n: redemption.cost_stars }),
+      [
+        { text: t('cancel'), style: 'cancel' },
+        { text: t('kids_redemption_refund'), style: 'destructive', onPress: () => refundRedemption(redemption) },
+      ],
+    );
   };
 
   // Finishing a chore pays whoever it currently sits with, then hands it on.
@@ -690,11 +804,24 @@ export default function Kids() {
                 {children.map((child, index) => {
                   const active = child.member_id === activeChild?.member_id;
                   const tint = CHILD_TINTS[index % CHILD_TINTS.length];
+                  // Outstanding rewards live under one child's tab, so without
+                  // a mark here a parent with three children would never learn
+                  // they still owe the one they aren't looking at.
+                  const owed = owedByChild[child.member_id] || 0;
                   return (
                     <PressScale key={child.member_id} testID={`child-${child.member_id}`} onPress={() => setSelectedChild(child.member_id)} style={[styles.childChip, active ? styles.childChipActive : styles.childChipIdle]}>
                       <View style={[styles.childAvatar, { backgroundColor: tint }]}>
                         <Text style={styles.childAvatarText}>{child.name[0]?.toUpperCase()}</Text>
                         {child.has_pin ? <View style={styles.lockBadge}><Lock color={ui.bg} size={8} /></View> : null}
+                        {owed > 0 ? (
+                          <View
+                            testID={`child-owed-${child.member_id}`}
+                            accessibilityLabel={t('kids_redemption_owed_badge', { n: owed })}
+                            style={styles.owedBadge}
+                          >
+                            <Text style={styles.owedBadgeText}>{owed}</Text>
+                          </View>
+                        ) : null}
                       </View>
                       <Text style={[styles.childChipText, { color: active ? ui.bg : ui.text }]}>{child.name}</Text>
                     </PressScale>
@@ -750,6 +877,48 @@ export default function Kids() {
                   {/* Rewards tab */}
                   {kidsTab === 'rewards' && (
                     <>
+                      {/* Owed, not yet given. Hidden when there is nothing
+                          outstanding, so it reads as a reminder rather than
+                          another empty box. */}
+                      {pendingRedemptions.length > 0 && (
+                        <>
+                          <Text style={[styles.blockTitle, styles.pendingHead]}>{t('kids_redemptions_pending')}</Text>
+                          <Card style={styles.cardPad}>
+                            {pendingRedemptions.map((r, index, arr) => (
+                              <View key={r.redemption_id} style={[styles.rewardRow, index < arr.length - 1 && styles.rewardRowBorder]}>
+                                <IconTile bg={ui.orangeSoft} size={42} radius={13}>
+                                  <Text style={styles.rewardEmoji}>{r.reward_icon || DEFAULT_REWARD_ICON}</Text>
+                                </IconTile>
+                                <View style={{ flex: 1, minWidth: 0 }}>
+                                  <Text style={styles.pendingTitle} numberOfLines={1}>{r.reward_title}</Text>
+                                  <Text style={styles.pendingMeta} numberOfLines={1}>
+                                    {t('kids_redemption_paid', { n: r.cost_stars })}
+                                  </Text>
+                                </View>
+                                <PressScale
+                                  accessibilityRole="button"
+                                  accessibilityLabel={t('kids_redemption_refund')}
+                                  testID={`refund-redemption-${r.redemption_id}`}
+                                  onPress={() => confirmRefund(r)}
+                                  hitSlop={8}
+                                  style={styles.rewardEdit}
+                                >
+                                  <RotateCcw color={ui.muted} size={14} />
+                                </PressScale>
+                                <PressScale
+                                  accessibilityRole="button"
+                                  testID={`give-redemption-${r.redemption_id}`}
+                                  onPress={() => markGiven(r)}
+                                  style={styles.rewardRedeem}
+                                >
+                                  <Text style={styles.rewardRedeemText}>{t('kids_redemption_given')}</Text>
+                                </PressScale>
+                              </View>
+                            ))}
+                          </Card>
+                        </>
+                      )}
+
                       <Text style={styles.blockLabel}>{t('kids_quick_add')}</Text>
                       <View style={styles.quickAddRow}>
                         {QUICK_ADDS.map((q) => (
@@ -1304,6 +1473,14 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   rewardRedeem: { backgroundColor: ui.text, borderRadius: 99, paddingHorizontal: 14, paddingVertical: 9 },
   rewardRedeemText: { color: ui.bg, fontFamily: 'Inter_800ExtraBold', fontSize: 12.5 },
   rewardEdit: { width: 34, height: 34, borderRadius: 99, borderWidth: 1, borderColor: ui.line, alignItems: 'center', justifyContent: 'center' },
+
+  // Outstanding redemptions. Deliberately not reusing rewardTitle: that one
+  // carries flex:1 for a row layout and would stretch vertically here.
+  pendingHead: { marginTop: 6, marginBottom: 10 },
+  pendingTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 14.5 },
+  pendingMeta: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 12, marginTop: 3 },
+  owedBadge: { position: 'absolute', top: -3, right: -3, minWidth: 15, height: 15, paddingHorizontal: 3, borderRadius: 99, backgroundColor: ui.orange, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: ui.card },
+  owedBadgeText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 8.5 },
 
   ideaScroll: { marginHorizontal: -20 },
   ideaRow: { gap: 10, paddingHorizontal: 20 },
