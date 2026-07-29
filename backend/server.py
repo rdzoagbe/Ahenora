@@ -409,15 +409,35 @@ def _discover_models() -> list:
     """
     if not GOOGLE_API_KEY or not genai:
         return []
+    # Substrings that mark a model as NOT a plain text generator (image, audio,
+    # robotics, research, etc.). These are demoted to the very end rather than
+    # dropped: a text model is always preferred, but if — on this frozen SDK —
+    # none of the text aliases resolve, a proven-working image model is a far
+    # better last resort than the feature going dark.
+    NON_TEXT = (
+        "image", "tts", "audio", "veo", "imagen", "lyria", "nano-banana",
+        "robotics", "embedding", "aqa", "computer-use", "deep-research",
+        "antigravity", "omni",
+    )
+
+    def rank(name: str) -> tuple:
+        # Lower sorts first. Non-text last; then clean flash, flash-lite, pro,
+        # rest; stable names before -preview; then alphabetical.
+        n = name.lower()
+        non_text = 1 if any(bad in n for bad in NON_TEXT) else 0
+        family = 0 if ("flash" in n and "lite" not in n) else 1 if "flash" in n else 2 if "pro" in n else 3
+        preview = 1 if "preview" in n else 0
+        latest = 0 if n.endswith("-latest") else 1  # stable aliases first
+        return (non_text, family, preview, latest, name)
+
     try:
         names = []
         for m in genai.list_models():
             methods = getattr(m, "supported_generation_methods", []) or []
-            if "generateContent" in methods:
-                # Names come back as "models/gemini-x"; strip the prefix.
-                names.append(m.name.split("/", 1)[-1])
-        # Prefer flash-class models (cheapest, fastest) but keep the rest.
-        names.sort(key=lambda n: (0 if "flash" in n else 1, n))
+            if "generateContent" not in methods:
+                continue
+            names.append(m.name.split("/", 1)[-1])
+        names.sort(key=rank)
         return names
     except Exception as exc:  # noqa: BLE001 — reported by the caller
         _gemini_state["last_error"] = f"list_models: {exc}"[:300]
