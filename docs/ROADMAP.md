@@ -5,7 +5,7 @@ The single source of truth for what's decided, what's parked, and what comes nex
 ---
 
 ## Where we are — 🚀 LAUNCHED
-Last updated: 28 July 2026.
+Last updated: 29 July 2026.
 
 - **Production release live on Google Play**: release **32 (1.0.0)**, full rollout to 176 of 177 countries, package `com.householdcoo.app`. **Production access granted** — no longer gated behind closed testing.
 - **Real billing is on:** Google Play Billing via RevenueCat, verified end-to-end with a real purchase. Free (Village) + Premium tiers enforced. **First revenue recorded** (July 2026).
@@ -15,10 +15,11 @@ Last updated: 28 July 2026.
 - **Delivery pipeline:** push to `main` → auto **OTA update** (JS changes; users need two full relaunches). Native changes → `EAS Build (Android)` workflow → AAB → auto-submit to the Play production track as a **draft**.
 - **Infrastructure:** MongoDB Atlas **M10 dedicated with backups Active**; UptimeRobot on `/api/health` (accepts GET **and HEAD**).
 
-### ⚠️ Live obligations with deadlines
-- **Developer Profile completion — by 26 August 2026.** Play warns the profile *and all apps* will be removed. Needs developer icon (512×512), header image (4096×2304), promotional text. Assets produced 28 July; upload outstanding.
-- **Payments hold** — bank account verification pending (Google micro-deposit sent ~28 July; enter the exact amount to clear). Payouts run monthly around the 15th.
-- Tax: France ✅ accepted · Ireland ✅ accepted · tax-residency document ⏳ in review · **United States ❌ not filed** (unfiled = 30% withholding on US earnings; W-8BEN with France treaty claim → 0%).
+### Live obligations — ✅ all clear
+- [x] **Developer Profile — complete** (verified in Play Console 29 July). Developer icon, header image, featured app, developer website (`rdzoagbe.github.io/Household-COO/`) and promotional text all set. The 26 August removal warning no longer applies.
+- [x] **United States tax — W-8BEN approved** (submitted 28 July, valid to 31 December 2029). France treaty claim accepted: **0% withholding** on all three rate categories (motion picture/TV, other copyright, services), with Certificate of Non-US Activities and Affidavit of Unchanged Status on file. The 30% withholding is gone.
+- [x] Tax: France ✅ · Ireland ✅ · United States ✅.
+- [x] **Payments — cleared** (verified 29 July). Bank account registered (FR IBAN ending 0147), no verification prompt outstanding. First earnings recorded: **€4.96** on 29 July, above the €1.00 payout threshold, so payouts run monthly from around the 15th.
 
 ## Post-launch — what's left (master list, ordered)
 
