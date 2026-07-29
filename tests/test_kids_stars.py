@@ -417,6 +417,29 @@ class RedemptionFulfilment(unittest.TestCase):
         self.assertEqual(rows[0]["reward_icon"], "🎬")
         self.assertEqual(rows[0]["cost_stars"], 60)
 
+    def test_listing_never_leaks_another_family(self):
+        db = self._install()
+        self._redeem(db)
+        db["redemptions"].rows.append({
+            "redemption_id": "red_other", "family_id": "fam2", "member_id": "kidX",
+            "reward_title": "Not yours", "cost_stars": 10, "status": "pending",
+            "created_at": server.utcnow(),
+        })
+
+        mine = asyncio.run(server.list_redemptions(user=self.USER))
+        self.assertEqual([r["reward_title"] for r in mine], ["Cinema trip"])
+
+        theirs = asyncio.run(server.list_redemptions(user=self.OTHER))
+        self.assertEqual([r["reward_title"] for r in theirs], ["Not yours"])
+
+    def test_an_unknown_status_filter_is_rejected(self):
+        # Quietly ignoring it would return every status while looking filtered.
+        db = self._install()
+        self._redeem(db)
+        with self.assertRaises(HTTPException) as ctx:
+            asyncio.run(server.list_redemptions(status="pendign", user=self.USER))
+        self.assertEqual(ctx.exception.status_code, 400)
+
     def test_listing_can_be_narrowed_to_what_is_outstanding(self):
         db = self._install()
         self._redeem(db)
@@ -523,6 +546,21 @@ class RedemptionFulfilment(unittest.TestCase):
 
         results = asyncio.run(race())
         self.assertEqual(len([r for r in results if not isinstance(r, Exception)]), 1)
+
+    def test_a_refund_with_nobody_to_credit_writes_no_ledger_entry(self):
+        # If the child is removed between claiming the redemption and crediting
+        # it, an unconditional insert would leave a +60 in the history that no
+        # balance ever received, and the ledger would stop reconciling.
+        db = self._install()
+        self._redeem(db)
+        rid = self._only(db)["redemption_id"]
+        db["family_members"].rows.clear()
+
+        result = asyncio.run(server.cancel_redemption(rid, user=self.USER))
+
+        self.assertIsNone(result["member"])
+        self.assertIsNone(result["transaction"])
+        self.assertEqual([t["delta"] for t in db["star_transactions"].rows], [-60])
 
     # ---- tidying up -------------------------------------------------------
 

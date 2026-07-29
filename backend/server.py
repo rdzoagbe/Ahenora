@@ -3131,10 +3131,14 @@ async def redeem_reward(reward_id: str, payload: RedeemIn, user=Depends(require_
 async def list_redemptions(status: Optional[str] = None, user=Depends(require_user)):
     database = get_db()
     query: dict = {"family_id": user["family_id"]}
-    if status in ("pending", "fulfilled", "cancelled"):
+    if status is not None:
+        # Reject an unknown value rather than quietly ignoring the filter: a
+        # typo returning every status looks like the filter worked.
+        if status not in ("pending", "fulfilled", "cancelled"):
+            raise HTTPException(status_code=400, detail="Unknown redemption status")
         query["status"] = status
 
-    cursor = database["redemptions"].find(query, {"_id": 0}).sort("created_at", -1).limit(100)
+    cursor = database["redemptions"].find(query, {"_id": 0}).sort("created_at", -1).limit(500)
     return [public_redemption(item) async for item in cursor]
 
 
@@ -3201,24 +3205,29 @@ async def cancel_redemption(redemption_id: str, user=Depends(require_user)):
 
     transaction = None
     if cost > 0:
-        await database["family_members"].update_one(
+        credited = await database["family_members"].update_one(
             {"member_id": redemption["member_id"], "family_id": user["family_id"]},
             {"$inc": {"stars": cost}},
         )
-        transaction = {
-            "transaction_id": new_id("star"),
-            "family_id": user["family_id"],
-            "member_id": redemption["member_id"],
-            "delta": cost,
-            # The bare title, matching the spend entry. An English word like
-            # "Refund:" would sit untranslated in a German family's ledger,
-            # and the + sign against the earlier − already tells the story.
-            "reason": redemption.get("reward_title") or "",
-            "created_by_user_id": user["user_id"],
-            "created_by_name": user.get("name"),
-            "created_at": utcnow(),
-        }
-        await database["star_transactions"].insert_one(transaction)
+        # Only write the ledger row if the balance actually moved. If the child
+        # was removed between claiming the redemption and crediting it, an
+        # unconditional insert would leave a +60 in the history that no balance
+        # ever received, and the ledger would stop reconciling.
+        if credited.matched_count:
+            transaction = {
+                "transaction_id": new_id("star"),
+                "family_id": user["family_id"],
+                "member_id": redemption["member_id"],
+                "delta": cost,
+                # The bare title, matching the spend entry. An English word like
+                # "Refund:" would sit untranslated in a German family's ledger,
+                # and the + sign against the earlier − already tells the story.
+                "reason": redemption.get("reward_title") or "",
+                "created_by_user_id": user["user_id"],
+                "created_by_name": user.get("name"),
+                "created_at": utcnow(),
+            }
+            await database["star_transactions"].insert_one(transaction)
 
     member = await database["family_members"].find_one(
         {"member_id": redemption["member_id"], "family_id": user["family_id"]}, {"_id": 0}

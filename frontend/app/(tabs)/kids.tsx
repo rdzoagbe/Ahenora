@@ -49,6 +49,7 @@ import { api, logEvent, AllowanceConfig, AllowanceTxn, Chore, FamilyMember, Rede
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { logger } from '../../src/logger';
 import { recordWin } from '../../src/reviewPrompt';
+import { isAlreadySettled, mergeRedemptions, restoreRedemption, sortByNewest } from '../../src/redemptions';
 
 type ToastState = { message: string; tone: ToastTone };
 type RewardSheetMode = 'create' | 'edit';
@@ -161,11 +162,16 @@ export default function Kids() {
   // trip to the cinema — and before this the promise lived only in a parent's
   // memory.
   const [redemptions, setRedemptions] = useState<Redemption[]>([]);
-  const settlingRef = useRef(false);
-  // The screen reloads on focus, and that fetch is deliberately not awaited.
-  // Settling a reward within a second of arriving would otherwise have the
-  // in-flight "still pending" list put the row straight back on screen.
+  // Per row, not one flag for the list: settling one reward must not silently
+  // swallow a tap on the next one.
+  const settlingIdsRef = useRef<Set<string>>(new Set());
+  // The screen reloads on focus and that fetch is deliberately not awaited, so
+  // it can resolve after the list has already moved on. These two say what this
+  // device did in the meantime, and a landing fetch is reconciled against them
+  // rather than trusted wholesale — otherwise a reward settled a moment ago
+  // reappears, and one redeemed a moment ago vanishes.
   const settledIdsRef = useRef<Set<string>>(new Set());
+  const addedIdsRef = useRef<Set<string>>(new Set());
 
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [allowances, setAllowances] = useState<AllowanceConfig[]>([]);
@@ -247,7 +253,8 @@ export default function Kids() {
           // still show stars rather than an error, so a failure just leaves
           // the section hidden.
           if (redRes.status === 'fulfilled') {
-            setRedemptions(redRes.value.filter((r) => !settledIdsRef.current.has(r.redemption_id)));
+            setRedemptions((prev) =>
+              mergeRedemptions(prev, redRes.value, settledIdsRef.current, addedIdsRef.current));
           }
           const kids = m.filter((x) => x.role?.toLowerCase() === 'child');
           const bals: Record<string, number> = {};
@@ -545,7 +552,11 @@ export default function Kids() {
     try {
       const res = await api.redeemReward(reward.reward_id, activeChild.member_id);
       setMembers((prev) => prev.map((m) => (m.member_id === res.member.member_id ? res.member : m)));
-      if (res.redemption) setRedemptions((prev) => [res.redemption as Redemption, ...prev]);
+      if (res.redemption) {
+        const created = res.redemption;
+        addedIdsRef.current.add(created.redemption_id);
+        setRedemptions((prev) => sortByNewest([created, ...prev]));
+      }
       showToast(`${t('redeemed')} ${reward.title}`, 'success');
       setCelebration({ kind: 'reward', title: reward.title });
       await refreshHistory(activeChild.member_id);
@@ -568,46 +579,63 @@ export default function Kids() {
   // the server has the final word, so a failure puts it back rather than
   // leaving the parent staring at a row that is already settled.
   const markGiven = useCallback(async (redemption: Redemption) => {
-    if (settlingRef.current) return;
-    settlingRef.current = true;
-    const previous = redemptions;
-    settledIdsRef.current.add(redemption.redemption_id);
-    setRedemptions((prev) => prev.filter((r) => r.redemption_id !== redemption.redemption_id));
+    const id = redemption.redemption_id;
+    if (settlingIdsRef.current.has(id)) return;
+    settlingIdsRef.current.add(id);
+    settledIdsRef.current.add(id);
+    addedIdsRef.current.delete(id);
+    setRedemptions((prev) => prev.filter((r) => r.redemption_id !== id));
     try {
-      await api.fulfilRedemption(redemption.redemption_id);
+      await api.fulfilRedemption(id);
       showToast(t('kids_redemption_given_toast', { title: redemption.reward_title }), 'success');
     } catch (e: any) {
       logger.warn('Mark redemption given failed:', e?.message || e);
-      settledIdsRef.current.delete(redemption.redemption_id);
-      setRedemptions(previous);
-      showToast(t('kids_redemption_error'), 'error');
+      // Already settled by the other parent: the row is right to be gone, and
+      // putting it back would give this device a button that can never work.
+      if (isAlreadySettled(e)) {
+        showToast(t('kids_redemption_already_settled'), 'info');
+      } else {
+        settledIdsRef.current.delete(id);
+        setRedemptions((prev) => restoreRedemption(prev, redemption));
+        showToast(t('kids_redemption_error'), 'error');
+      }
     } finally {
-      settlingRef.current = false;
+      settlingIdsRef.current.delete(id);
     }
-  }, [redemptions, showToast, t]);
+  }, [showToast, t]);
 
   // Sometimes the cinema is sold out. Returning the stars is the honest
   // answer; quietly marking it given is not.
   const refundRedemption = useCallback(async (redemption: Redemption) => {
-    if (settlingRef.current) return;
-    settlingRef.current = true;
-    const previous = redemptions;
-    settledIdsRef.current.add(redemption.redemption_id);
-    setRedemptions((prev) => prev.filter((r) => r.redemption_id !== redemption.redemption_id));
+    const id = redemption.redemption_id;
+    if (settlingIdsRef.current.has(id)) return;
+    settlingIdsRef.current.add(id);
+    settledIdsRef.current.add(id);
+    addedIdsRef.current.delete(id);
+    setRedemptions((prev) => prev.filter((r) => r.redemption_id !== id));
     try {
-      const res = await api.cancelRedemption(redemption.redemption_id);
+      const res = await api.cancelRedemption(id);
       if (res.member) setMembers((prev) => prev.map((m) => (m.member_id === res.member!.member_id ? res.member! : m)));
-      showToast(t('kids_redemption_refunded_toast', { n: redemption.cost_stars }), 'success');
+      // The server declines to credit a child who is no longer there, and says
+      // so by returning no ledger entry. Claiming a refund landed when it did
+      // not would be worse than saying nothing.
+      if (res.transaction) {
+        showToast(t('kids_redemption_refunded_toast', { n: redemption.cost_stars }), 'success');
+      }
       await refreshHistory(redemption.member_id);
     } catch (e: any) {
       logger.warn('Refund redemption failed:', e?.message || e);
-      settledIdsRef.current.delete(redemption.redemption_id);
-      setRedemptions(previous);
-      showToast(t('kids_redemption_error'), 'error');
+      if (isAlreadySettled(e)) {
+        showToast(t('kids_redemption_already_settled'), 'info');
+      } else {
+        settledIdsRef.current.delete(id);
+        setRedemptions((prev) => restoreRedemption(prev, redemption));
+        showToast(t('kids_redemption_error'), 'error');
+      }
     } finally {
-      settlingRef.current = false;
+      settlingIdsRef.current.delete(id);
     }
-  }, [redemptions, refreshHistory, showToast, t]);
+  }, [refreshHistory, showToast, t]);
 
   const confirmRefund = (redemption: Redemption) => {
     if (Platform.OS === 'web') { refundRedemption(redemption); return; }

@@ -12,6 +12,7 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  kids_redemption_already_settled: 'Someone already sorted that one.',
   kids_redemption_owed_badge: '{n} reward(s) still to give',
   kids_redemptions_pending: 'Waiting to be given',
   kids_redemption_paid: 'Paid {n} ⭐',
@@ -1034,6 +1035,7 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  kids_redemption_already_settled: 'Alguien ya se encargó de eso.',
   kids_redemption_owed_badge: '{n} premio(s) por entregar',
   kids_redemptions_pending: 'Pendiente de entregar',
   kids_redemption_paid: 'Pagó {n} ⭐',
@@ -2050,6 +2052,7 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  kids_redemption_already_settled: 'Quelqu\u2019un s\u2019en est déjà occupé.',
   kids_redemption_owed_badge: '{n} récompense(s) à remettre',
   kids_redemptions_pending: 'À remettre',
   kids_redemption_paid: 'Payé {n} ⭐',
@@ -3066,6 +3069,7 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  kids_redemption_already_settled: 'Das hat schon jemand erledigt.',
   kids_redemption_owed_badge: '{n} Belohnung(en) noch einzulösen',
   kids_redemptions_pending: 'Noch einzulösen',
   kids_redemption_paid: '{n} ⭐ bezahlt',

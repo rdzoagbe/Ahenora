@@ -801,10 +801,14 @@ export const api = {
   },
   cancelRedemption: (id: string) => {
     cache.invalidate('familyMembers');
-    return request<{ ok: boolean; redemption: Redemption; member: FamilyMember | null }>(
-      `/redemptions/${id}/cancel`,
-      { method: 'POST' }
-    );
+    // `transaction` is null when there was nobody left to credit — the server
+    // declines to write a refund to the ledger that no balance received.
+    return request<{
+      ok: boolean;
+      redemption: Redemption;
+      member: FamilyMember | null;
+      transaction: StarTransaction | null;
+    }>(`/redemptions/${id}/cancel`, { method: 'POST' });
   },
   // Conflicts
   conflicts: (due_date: string, exclude_id?: string) =>
