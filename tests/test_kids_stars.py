@@ -12,6 +12,7 @@ stdlib-only); runs wherever `pip install -r backend/requirements.txt` has been.
 
 import asyncio
 import os
+import re
 import sys
 import unittest
 
@@ -41,6 +42,17 @@ class FakeCollection:
             if isinstance(cond, dict):
                 if "$gte" in cond and not (value is not None and value >= cond["$gte"]):
                     return False
+                if "$ne" in cond and value == cond["$ne"]:
+                    return False
+                if "$regex" in cond:
+                    flags = re.I if "i" in (cond.get("$options") or "") else 0
+                    if not isinstance(value, str) or not re.search(cond["$regex"], value, flags):
+                        return False
+            # Mongo matches a scalar against an array field by membership, which
+            # is how a chore's assigned_members is queried.
+            elif isinstance(value, list):
+                if cond not in value:
+                    return False
             elif value != cond:
                 return False
         return True
@@ -67,6 +79,18 @@ class FakeCollection:
                     row[field] = value
                 return type("R", (), {"matched_count": 1, "modified_count": 1})()
         return type("R", (), {"matched_count": 0, "modified_count": 0})()
+
+    async def update_many(self, query, update):
+        await asyncio.sleep(0)
+        touched = 0
+        for row in self.rows:
+            if self._matches(row, query):
+                for field, amount in (update.get("$inc") or {}).items():
+                    row[field] = row.get(field, 0) + amount
+                for field, value in (update.get("$set") or {}).items():
+                    row[field] = value
+                touched += 1
+        return type("R", (), {"matched_count": touched, "modified_count": touched})()
 
     async def delete_one(self, query):
         for index, row in enumerate(self.rows):
@@ -353,6 +377,240 @@ class ChoresAndRoutinesAwardStars(unittest.TestCase):
         self.assertEqual(result["stars_awarded"], 0)
         self.assertEqual(len(db["routine_logs"].rows), 1)
         self.assertEqual(db["star_transactions"].rows, [])
+
+
+@unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
+class ManagingAChild(unittest.TestCase):
+    """A typo at setup used to be permanent short of deleting the child — which
+    would have taken their stars with it — and a forgotten PIN locked them out
+    of redeeming with no way back."""
+
+    USER = {"family_id": "fam1", "user_id": "u1", "name": "Parent", "role": "parent"}
+    OTHER = {"family_id": "fam2", "user_id": "u2", "name": "Stranger", "role": "parent"}
+
+    def setUp(self):
+        self._get_db = server.get_db
+
+    def tearDown(self):
+        server.get_db = self._get_db
+
+    def _install(self, **over):
+        row = {"member_id": "kid1", "family_id": "fam1", "name": "Ama",
+               "role": "child", "stars": 40, "pin_hash": None}
+        row.update(over)
+        db = FakeDB(family_members=[row], star_transactions=[], redemptions=[])
+        server.get_db = lambda: db
+        return db
+
+    def _patch(self, db, user=None, **fields):
+        payload = type("P", (), {"name": None, "avatar": None, **fields})()
+        return asyncio.run(server.update_family_member("kid1", payload, user=user or self.USER))
+
+    def test_renaming_keeps_the_stars(self):
+        # The reason this endpoint exists: the alternative was delete-and-recreate.
+        db = self._install()
+        result = self._patch(db, name="Amara")
+        self.assertEqual(result["name"], "Amara")
+        self.assertEqual(result["stars"], 40)
+        self.assertEqual(db["family_members"].rows[0]["name"], "Amara")
+
+    def test_a_blank_name_is_rejected(self):
+        db = self._install()
+        with self.assertRaises(HTTPException) as ctx:
+            self._patch(db, name="   ")
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertEqual(db["family_members"].rows[0]["name"], "Ama")
+
+    def test_a_name_is_trimmed(self):
+        db = self._install()
+        self.assertEqual(self._patch(db, name="  Kofi  ")["name"], "Kofi")
+
+    def test_an_absurd_name_is_rejected(self):
+        db = self._install()
+        with self.assertRaises(HTTPException):
+            self._patch(db, name="x" * 200)
+
+    def test_an_empty_patch_changes_nothing(self):
+        db = self._install()
+        self.assertEqual(self._patch(db)["name"], "Ama")
+        self.assertEqual(db["family_members"].rows[0]["stars"], 40)
+
+    def test_the_patch_model_accepts_nothing_but_name_and_avatar(self):
+        # Stars move through the audited endpoint that writes a ledger entry,
+        # so the model itself must refuse them — testing only the handler body
+        # would stay green the day somebody adds a stars field to the model.
+        self.assertEqual(set(server.MemberPatchIn.model_fields), {"name", "avatar"})
+
+    def test_stars_survive_an_attempt_to_set_them(self):
+        db = self._install()
+        self._patch(db, name="Ama", stars=99999)
+        self.assertEqual(db["family_members"].rows[0]["stars"], 40)
+        self.assertEqual(db["star_transactions"].rows, [])
+
+    def test_an_oversized_avatar_is_rejected(self):
+        db = self._install()
+        with self.assertRaises(HTTPException):
+            self._patch(db, avatar="x" * 5000)
+
+    # ---- renaming must not break who gets paid ---------------------------
+
+    def test_renaming_follows_through_to_cards_that_name_the_child(self):
+        # Cards address a child by name and decide who earned a star by looking
+        # that name up. Renaming without this left every existing card pointing
+        # at a name nobody answers to: the lookup misses, the card is still
+        # flagged paid, and the child gets nothing — silently, forever.
+        db = self._install()
+        db["cards"].rows.extend([
+            {"card_id": "c1", "family_id": "fam1", "assignee": "Ama", "type": "TASK"},
+            {"card_id": "c2", "family_id": "fam1", "assignee": "Kofi", "type": "TASK"},
+            {"card_id": "c3", "family_id": "fam2", "assignee": "Ama", "type": "TASK"},
+        ])
+        self._patch(db, name="Amara")
+
+        by_id = {c["card_id"]: c["assignee"] for c in db["cards"].rows}
+        self.assertEqual(by_id["c1"], "Amara")
+        self.assertEqual(by_id["c2"], "Kofi", "another child's card must not move")
+        self.assertEqual(by_id["c3"], "Ama", "another family's card must not move")
+
+    def test_renaming_updates_the_denormalised_copies(self):
+        db = self._install()
+        db["handoff_notes"].rows.append(
+            {"note_id": "n1", "family_id": "fam1", "member_id": "kid1", "member_name": "Ama"})
+        db["expenses"].rows.append(
+            {"expense_id": "e1", "family_id": "fam1", "child_member_id": "kid1", "child_name": "Ama"})
+        self._patch(db, name="Amara")
+        self.assertEqual(db["handoff_notes"].rows[0]["member_name"], "Amara")
+        self.assertEqual(db["expenses"].rows[0]["child_name"], "Amara")
+
+    def test_a_name_already_taken_is_refused(self):
+        # Two children answering to the same name makes "who earned this star"
+        # unanswerable, because the card lookup is by name.
+        db = self._install()
+        db["family_members"].rows.append(
+            {"member_id": "kid2", "family_id": "fam1", "name": "Kofi", "role": "child", "stars": 0})
+        with self.assertRaises(HTTPException) as ctx:
+            self._patch(db, name="kofi")
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertEqual(db["family_members"].rows[0]["name"], "Ama")
+
+    def test_the_same_name_in_another_family_is_fine(self):
+        db = self._install()
+        db["family_members"].rows.append(
+            {"member_id": "kidX", "family_id": "fam2", "name": "Kofi", "role": "child", "stars": 0})
+        self.assertEqual(self._patch(db, name="Kofi")["name"], "Kofi")
+
+    def test_correcting_your_own_capitalisation_is_allowed(self):
+        # "ama" -> "Ama" must not read as a clash with yourself.
+        db = self._install()
+        self.assertEqual(self._patch(db, name="AMA")["name"], "AMA")
+
+    def test_another_family_cannot_rename_a_child(self):
+        db = self._install()
+        with self.assertRaises(HTTPException) as ctx:
+            self._patch(db, user=self.OTHER, name="Hacked")
+        self.assertEqual(ctx.exception.status_code, 404)
+        self.assertEqual(db["family_members"].rows[0]["name"], "Ama")
+
+    def test_a_forgotten_pin_can_be_cleared(self):
+        db = self._install(pin_hash=server.sha256("1234"))
+        result = asyncio.run(server.remove_member_pin("kid1", user=self.USER))
+        self.assertFalse(result["has_pin"])
+        self.assertIsNone(db["family_members"].rows[0]["pin_hash"])
+
+    def test_clearing_a_pin_does_not_touch_the_stars(self):
+        db = self._install(pin_hash=server.sha256("1234"))
+        asyncio.run(server.remove_member_pin("kid1", user=self.USER))
+        self.assertEqual(db["family_members"].rows[0]["stars"], 40)
+
+    def test_another_family_cannot_clear_a_pin(self):
+        db = self._install(pin_hash=server.sha256("1234"))
+        with self.assertRaises(HTTPException):
+            asyncio.run(server.remove_member_pin("kid1", user=self.OTHER))
+        self.assertIsNotNone(db["family_members"].rows[0]["pin_hash"])
+
+    # ---- deleting a child ------------------------------------------------
+
+    def _with_shared_things(self):
+        db = self._install()
+        db["family_members"].rows.append(
+            {"member_id": "kid2", "family_id": "fam1", "name": "Kofi", "role": "child", "stars": 5})
+        db["chores"].rows.append({
+            "chore_id": "c1", "family_id": "fam1", "title": "Bins out",
+            "assigned_members": ["kid1", "kid2"], "current_assignee": "kid1", "star_reward": 5,
+        })
+        db["routines"].rows.append(
+            {"routine_id": "rt1", "family_id": "fam1", "name": "Bedtime", "member_id": "kid1"})
+        db["allowances"].rows.append(
+            {"allowance_id": "a1", "family_id": "fam1", "member_id": "kid1", "amount": 5})
+        db["allowance_txns"].rows.append(
+            {"txn_id": "t1", "family_id": "fam1", "member_id": "kid1", "amount": 5})
+        db["star_transactions"].rows.append(
+            {"transaction_id": "s1", "family_id": "fam1", "member_id": "kid1", "delta": 10})
+        return db
+
+    def test_another_family_cannot_delete_a_child(self):
+        db = self._install()
+        with self.assertRaises(HTTPException) as ctx:
+            asyncio.run(server.delete_family_member("kid1", user=self.OTHER))
+        self.assertEqual(ctx.exception.status_code, 404)
+        self.assertEqual(len(db["family_members"].rows), 1)
+
+    def test_a_signed_in_account_cannot_be_deleted_here(self):
+        # Removing a co-parent's account from a member list would orphan their
+        # login; account deletion is a different, deliberate flow.
+        db = self._install(user_id="u9")
+        with self.assertRaises(HTTPException) as ctx:
+            asyncio.run(server.delete_family_member("kid1", user=self.USER))
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertEqual(len(db["family_members"].rows), 1)
+
+    def test_deleting_takes_only_what_was_theirs(self):
+        db = self._with_shared_things()
+        asyncio.run(server.delete_family_member("kid1", user=self.USER))
+
+        self.assertEqual([m["member_id"] for m in db["family_members"].rows], ["kid2"])
+        for gone in ("star_transactions", "allowances", "allowance_txns", "redemptions"):
+            self.assertEqual(db[gone].rows, [], gone)
+
+    def test_a_chore_they_held_passes_to_whoever_is_left(self):
+        # A chore left holding a dead member id rendered as a raw "member_a3f9…"
+        # on the wheel and paid nobody on completion while reporting success.
+        db = self._with_shared_things()
+        asyncio.run(server.delete_family_member("kid1", user=self.USER))
+
+        chore = db["chores"].rows[0]
+        self.assertEqual(chore["assigned_members"], ["kid2"])
+        self.assertEqual(chore["current_assignee"], "kid2")
+
+    def test_a_chore_only_they_did_is_left_unassigned_not_deleted(self):
+        # The work still needs doing; it just belongs to nobody for now.
+        db = self._install()
+        db["chores"].rows.append({
+            "chore_id": "c1", "family_id": "fam1", "title": "Feed cat",
+            "assigned_members": ["kid1"], "current_assignee": "kid1", "star_reward": 3,
+        })
+        asyncio.run(server.delete_family_member("kid1", user=self.USER))
+
+        chore = db["chores"].rows[0]
+        self.assertEqual(chore["assigned_members"], [])
+        self.assertIsNone(chore["current_assignee"])
+
+    def test_their_routine_survives_unassigned(self):
+        db = self._with_shared_things()
+        asyncio.run(server.delete_family_member("kid1", user=self.USER))
+        routine = db["routines"].rows[0]
+        self.assertEqual(routine["name"], "Bedtime")
+        self.assertIsNone(routine["member_id"])
+
+    def test_the_expense_record_survives_the_person(self):
+        # The name is denormalised precisely so history outlives the member.
+        db = self._install()
+        db["expenses"].rows.append({
+            "expense_id": "e1", "family_id": "fam1",
+            "child_member_id": "kid1", "child_name": "Ama", "amount": 12,
+        })
+        asyncio.run(server.delete_family_member("kid1", user=self.USER))
+        self.assertEqual(db["expenses"].rows[0]["child_name"], "Ama")
 
 
 @unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")

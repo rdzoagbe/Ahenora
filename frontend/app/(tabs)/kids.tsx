@@ -18,6 +18,7 @@ import {
   Lock,
   Pencil,
   MinusCircle,
+  MoreHorizontal,
   Bell,
   Bed,
   BookOpen,
@@ -50,6 +51,7 @@ import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/compo
 import { logger } from '../../src/logger';
 import { recordWin } from '../../src/reviewPrompt';
 import { isAlreadySettled, mergeRedemptions, restoreRedemption, sortByNewest } from '../../src/redemptions';
+import { webConfirm } from '../../src/confirm';
 
 type ToastState = { message: string; tone: ToastTone };
 type RewardSheetMode = 'create' | 'edit';
@@ -118,6 +120,13 @@ export default function Kids() {
   const [childName, setChildName] = useState('');
   const [childStartingStars, setChildStartingStars] = useState('0');
   const [childPin, setChildPin] = useState('');
+
+  // Correcting a child after setup. A typo used to be permanent short of
+  // deleting them — which would have taken their stars with it — and a
+  // forgotten PIN locked them out of redeeming with no way back.
+  const [showManageSheet, setShowManageSheet] = useState(false);
+  const [manageName, setManageName] = useState('');
+  const [managePin, setManagePin] = useState('');
 
   const [showRewardSheet, setShowRewardSheet] = useState(false);
   const [rewardMode, setRewardMode] = useState<RewardSheetMode>('create');
@@ -364,6 +373,121 @@ export default function Kids() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const openManageSheet = () => {
+    if (!activeChild) { showToast(t('kids_select_child_first'), 'error'); return; }
+    setManageName(activeChild.name);
+    setManagePin('');
+    setShowManageSheet(true);
+  };
+
+  const saveManagedChild = async () => {
+    if (!activeChild) return;
+    const name = manageName.trim();
+    const pin = managePin.trim();
+
+    if (!name) { showToast(t('kids_name_required'), 'error'); return; }
+    if (pin && !/^\d{4}$/.test(pin)) { showToast(t('kids_pin_4_digits'), 'error'); return; }
+
+    setSaving(true);
+    try {
+      // Two calls with no transaction between them, so each is applied as it
+      // lands rather than at the end: if the second fails, the screen still
+      // shows what the first actually changed.
+      if (name !== activeChild.name) {
+        const updated = await api.updateFamilyMember(activeChild.member_id, { name });
+        setMembers((prev) => prev.map((m) => (m.member_id === updated.member_id ? updated : m)));
+      }
+      // The PIN box opens blank and is only sent when typed, so saving a
+      // rename never silently rewrites a PIN the parent did not touch.
+      if (pin) {
+        await api.setMemberPin(activeChild.member_id, pin);
+        setMembers((prev) => prev.map((m) => (
+          m.member_id === activeChild.member_id ? { ...m, has_pin: true } : m
+        )));
+      }
+      setShowManageSheet(false);
+      showToast(t('kids_child_updated'), 'success');
+    } catch (e: any) {
+      logger.warn('Update child failed:', e?.message || e);
+      showToast(e?.message || t('kids_child_update_error'), 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // A PIN is the only thing standing between a child and spending their own
+  // stars, and this sheet is one tap from the Redeem button they are looking
+  // at. Removing it asks first, the same as any other undoing of a control.
+  const confirmClearPin = () => {
+    if (!activeChild) return;
+    const message = t('kids_remove_pin_confirm', { name: activeChild.name });
+    if (Platform.OS === 'web') {
+      if (webConfirm(message)) clearChildPin();
+      return;
+    }
+    Alert.alert(t('kids_remove_pin'), message, [
+      { text: t('cancel'), style: 'cancel' },
+      { text: t('kids_remove_pin'), style: 'destructive', onPress: () => clearChildPin() },
+    ]);
+  };
+
+  const clearChildPin = async () => {
+    if (!activeChild) return;
+    setSaving(true);
+    try {
+      await api.removeMemberPin(activeChild.member_id);
+      setMembers((prev) => prev.map((m) => (
+        m.member_id === activeChild.member_id ? { ...m, has_pin: false } : m
+      )));
+      setManagePin('');
+      showToast(t('kids_pin_removed'), 'success');
+    } catch (e: any) {
+      logger.warn('Remove PIN failed:', e?.message || e);
+      showToast(e?.message || t('kids_child_update_error'), 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const removeChild = async (child: FamilyMember) => {
+    setSaving(true);
+    try {
+      await api.deleteFamilyMember(child.member_id);
+      setMembers((prev) => prev.filter((m) => m.member_id !== child.member_id));
+      // Their outstanding rewards went with them on the server; drop ours too
+      // rather than leave rows pointing at a child who is no longer listed.
+      setRedemptions((prev) => prev.filter((r) => r.member_id !== child.member_id));
+      setSelectedChild(null);
+      setShowManageSheet(false);
+      showToast(t('kids_child_removed', { name: child.name }), 'success');
+      await load();
+    } catch (e: any) {
+      logger.warn('Delete child failed:', e?.message || e);
+      showToast(e?.message || t('kids_child_remove_error'), 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const confirmRemoveChild = () => {
+    if (!activeChild) return;
+    const child = activeChild;
+    // Spelled out rather than a bare "Are you sure?": this takes the child's
+    // stars and their whole history with it, and there is no undo. Web gets a
+    // real prompt too — the shortcut other delete flows take is survivable for
+    // a reward and not for a child.
+    const title = t('kids_remove_child_title', { name: child.name });
+    const message = t('kids_remove_child_msg', { name: child.name, n: child.stars || 0 });
+    if (Platform.OS === 'web') {
+      if (webConfirm(`${title}\n\n${message}`)) removeChild(child);
+      return;
+    }
+    Alert.alert(title, message, [
+      { text: t('cancel'), style: 'cancel' },
+      { text: t('kids_delete'), style: 'destructive', onPress: () => removeChild(child) },
+    ]);
   };
 
   const saveReward = async () => {
@@ -844,7 +968,22 @@ export default function Kids() {
                       {/* Built from a template, not string concatenation: the
                           English possessive 's has no equivalent in fr/es/de,
                           where it reads "Les étoiles de X". */}
-                      <Text style={styles.walletLabel}>{t('kids_childs_stars', { name: activeChild.name })}</Text>
+                      <View style={styles.walletLabelRow}>
+                        <Text style={styles.walletLabel} numberOfLines={1}>{t('kids_childs_stars', { name: activeChild.name })}</Text>
+                        {/* Beside the name, because it manages the child. The
+                            pencil below sits beside the balance, because that
+                            is what it corrects. */}
+                        <PressScale
+                          testID="kids-manage-child"
+                          accessibilityRole="button"
+                          accessibilityLabel={t('kids_manage_child')}
+                          onPress={openManageSheet}
+                          hitSlop={12}
+                          style={{ padding: 2 }}
+                        >
+                          <MoreHorizontal color={ui.muted} size={16} />
+                        </PressScale>
+                      </View>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                         <Text style={styles.walletCount}>{stars}</Text>
                         <PressScale
@@ -1170,7 +1309,7 @@ export default function Kids() {
                   accessibilityLabel={t('close')} testID="close-child-sheet" onPress={() => setShowChildSheet(false)} style={styles.iconBtn}><X color={ui.text} size={20} /></PressScale>
         </View>
         <Text style={styles.label}>{t('kids_child_name')}</Text>
-        <TextInput testID="child-name" value={childName} onChangeText={setChildName} placeholder={t('kids_child_name_placeholder')} placeholderTextColor={ui.muted} style={styles.input} returnKeyType="next" />
+        <TextInput testID="child-name" maxLength={60} value={childName} onChangeText={setChildName} placeholder={t('kids_child_name_placeholder')} placeholderTextColor={ui.muted} style={styles.input} returnKeyType="next" />
         <Text style={styles.label}>{t('kids_starting_stars')}</Text>
         <TextInput testID="child-starting-stars" value={childStartingStars} onChangeText={(v) => setChildStartingStars(cleanNumber(v))} keyboardType="number-pad" placeholder="0" placeholderTextColor={ui.muted} style={styles.input} />
         <Text style={styles.label}>{t('kids_pin_optional')}</Text>
@@ -1178,6 +1317,70 @@ export default function Kids() {
         <View style={styles.sheetFooter}>
           <PressScale testID="cancel-child" onPress={() => setShowChildSheet(false)} style={styles.cancelBtn}><Text style={styles.cancelText}>{t('cancel')}</Text></PressScale>
           <PressScale testID="save-child" onPress={createChild} disabled={saving || !childName.trim()} style={[styles.saveBtn, (!childName.trim() || saving) && { opacity: 0.5 }]}><Text style={styles.saveText}>{saving ? '...' : t('kids_save_child')}</Text></PressScale>
+        </View>
+      </KeyboardAwareBottomSheet>
+
+      {/* Manage child sheet */}
+      <KeyboardAwareBottomSheet visible={showManageSheet} onClose={() => setShowManageSheet(false)} contentStyle={styles.sheet}>
+        <View style={styles.sheetHeader}>
+          <Text style={styles.sheetTitle}>{t('kids_manage_child')}</Text>
+          <PressScale
+            accessibilityRole="button"
+            accessibilityLabel={t('close')}
+            testID="close-manage-child"
+            onPress={() => setShowManageSheet(false)}
+            style={styles.iconBtn}
+          >
+            <X color={ui.text} size={20} />
+          </PressScale>
+        </View>
+
+        <Text style={styles.label}>{t('kids_child_name')}</Text>
+        <TextInput
+          testID="manage-child-name" maxLength={60}
+          value={manageName}
+          onChangeText={setManageName}
+          placeholder={t('kids_child_name_placeholder')}
+          placeholderTextColor={ui.muted}
+          style={styles.input}
+          returnKeyType="done"
+        />
+
+        <Text style={styles.label}>
+          {activeChild?.has_pin ? t('kids_change_pin') : t('kids_set_pin')}
+        </Text>
+        <TextInput
+          testID="manage-child-pin"
+          value={managePin}
+          onChangeText={(v) => setManagePin(cleanNumber(v).slice(0, 4))}
+          keyboardType="number-pad"
+          secureTextEntry
+          placeholder={t('kids_pin_placeholder')}
+          placeholderTextColor={ui.muted}
+          style={styles.input}
+        />
+        <Text style={styles.helperText}>
+          {activeChild?.has_pin ? t('kids_pin_set_help') : t('kids_pin_none_help')}
+        </Text>
+        {activeChild?.has_pin ? (
+          <PressScale testID="manage-child-remove-pin" onPress={confirmClearPin} disabled={saving} style={styles.inlineLink}>
+            <Text style={styles.inlineLinkText}>{t('kids_remove_pin')}</Text>
+          </PressScale>
+        ) : null}
+
+        <View style={styles.sheetFooter}>
+          <PressScale testID="manage-child-delete" onPress={confirmRemoveChild} disabled={saving} style={[styles.deleteBtn, saving && { opacity: 0.5 }]}>
+            <Trash2 color={ui.danger} size={17} />
+            <Text style={styles.deleteText}>{t('kids_delete')}</Text>
+          </PressScale>
+          <PressScale
+            testID="manage-child-save"
+            onPress={saveManagedChild}
+            disabled={saving || !manageName.trim()}
+            style={[styles.saveBtn, (!manageName.trim() || saving) && { opacity: 0.5 }]}
+          >
+            <Text style={styles.saveText}>{saving ? '...' : t('save')}</Text>
+          </PressScale>
         </View>
       </KeyboardAwareBottomSheet>
 
@@ -1437,7 +1640,11 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   walletCard: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16, marginTop: 18 },
   walletAvatar: { width: 52, height: 52, borderRadius: 99, alignItems: 'center', justifyContent: 'center' },
   walletAvatarText: { fontFamily: 'Inter_800ExtraBold', fontSize: 20 },
-  walletLabel: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 13 },
+  walletLabel: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 13, flexShrink: 1 },
+  walletLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  helperText: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 6, lineHeight: 17 },
+  inlineLink: { alignSelf: 'flex-start', paddingVertical: 8, paddingHorizontal: 2 },
+  inlineLinkText: { color: ui.danger, fontFamily: 'Inter_700Bold', fontSize: 13 },
   walletCount: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 30, lineHeight: 35, marginTop: 1 },
   redeemBtn: { backgroundColor: ui.text, borderRadius: 99, paddingHorizontal: 20, paddingVertical: 13 },
   redeemText: { color: ui.bg, fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
