@@ -266,6 +266,8 @@ export interface Routine {
   name: string;
   steps: RoutineStep[];
   member_id?: string;
+  /** Stars the child earns for completing it. */
+  star_reward?: number;
   created_at: string;
 }
 
@@ -368,6 +370,8 @@ export interface Chore {
   assigned_members: string[];
   current_assignee?: string;
   rotate: boolean;
+  /** Stars the assignee earns for finishing it. */
+  star_reward?: number;
   last_rotated?: string;
   created_at: string;
 }
@@ -953,7 +957,10 @@ export const api = {
   createRoutine: (data: { name: string; steps: { label: string; duration_seconds: number }[]; member_id?: string }) =>
     request<Routine>('/routines', { method: 'POST', body: data }),
   deleteRoutine: (id: string) => request<{ ok: boolean }>(`/routines/${id}`, { method: 'DELETE' }),
-  logRoutineCompletion: (id: string) => request<{ ok: boolean }>(`/routines/${id}/log`, { method: 'POST' }),
+  logRoutineCompletion: (id: string) =>
+    request<{ ok: boolean; stars_awarded: number; member_id?: string }>(
+      `/routines/${id}/log`, { method: 'POST' },
+    ),
 
   // Meal Planner
   listMeals: () => request<MealPlan[]>('/meals'),
@@ -1017,5 +1024,10 @@ export const api = {
   createChore: (data: { title: string; frequency?: string; assigned_members?: string[]; rotate?: boolean }) =>
     request<Chore>('/chores', { method: 'POST', body: data }),
   rotateChore: (id: string) => request<Chore>(`/chores/${id}/rotate`, { method: 'POST' }),
+  // "Done": pays the current assignee, then hands the chore on.
+  completeChore: (id: string) =>
+    request<{ ok: boolean; chore: Chore; stars_awarded: number; member_id?: string }>(
+      `/chores/${id}/complete`, { method: 'POST' },
+    ),
   deleteChore: (id: string) => request<{ ok: boolean }>(`/chores/${id}`, { method: 'DELETE' }),
 };

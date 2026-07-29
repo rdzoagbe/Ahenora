@@ -12,6 +12,10 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  kids_chore_done: 'Done',
+  kids_stars_earned: '+{n} ⭐ for {name}',
+  kids_chore_done_error: 'Could not complete the chore.',
+  kids_worth: 'worth {n} ⭐',
   kids_money_title: 'Pocket money',
   kids_money_in: 'Money in',
   kids_money_out: 'Money out',
@@ -1021,6 +1025,10 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  kids_chore_done: 'Hecho',
+  kids_stars_earned: '+{n} ⭐ para {name}',
+  kids_chore_done_error: 'No se pudo completar la tarea.',
+  kids_worth: 'vale {n} ⭐',
   kids_money_title: 'Dinero de bolsillo',
   kids_money_in: 'Dinero recibido',
   kids_money_out: 'Dinero gastado',
@@ -2024,6 +2032,10 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  kids_chore_done: 'Fait',
+  kids_stars_earned: '+{n} ⭐ pour {name}',
+  kids_chore_done_error: 'Impossible de valider la tâche.',
+  kids_worth: 'vaut {n} ⭐',
   kids_money_title: 'Argent de poche',
   kids_money_in: 'Argent reçu',
   kids_money_out: 'Argent dépensé',
@@ -3027,6 +3039,10 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  kids_chore_done: 'Erledigt',
+  kids_stars_earned: '+{n} ⭐ für {name}',
+  kids_chore_done_error: 'Aufgabe konnte nicht abgeschlossen werden.',
+  kids_worth: '{n} ⭐ wert',
   kids_money_title: 'Taschengeld',
   kids_money_in: 'Geld erhalten',
   kids_money_out: 'Geld ausgegeben',
