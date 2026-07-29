@@ -37,12 +37,12 @@ Last updated: 28 July 2026.
 - [x] **Public account-deletion page** — required by Play Data Safety; covers full and partial deletion (#229, #230).
 - [x] **Security hardening** — identity lockout, `re.escape` on user-supplied regex, constant-time PIN compare, generic OAuth errors (#223, #228).
 - [x] **Meal planner / shopping list translations** — untranslated strings swept.
-- [ ] **Kids "how stars work" + Vault "why upload"** first-use explainers. *(needs a decision on tone and placement)*
-- [ ] **Allergen/safety note** on the meal planner **+ AI-safety checklist as a blocking gate** on any future AI Chef.
-- [ ] **Meal suggestions stored by recipe-id** so they re-translate on language switch.
-- [ ] **Landing page** — no `index.html` exists, so the GitHub Pages root 404s. Blocks the "Developer website" field and the marketing push.
+- [x] **Kids "how stars work" + Vault "why upload"** first-use explainers — `FirstRunTip` on both tabs.
+- [x] **Allergen/safety note** on the meal planner — in the Cook sheet, and now in the suggestions sheet too, because "Add all to planner" commits a week without opening a single dish. **AI-safety checklist** written as a blocking gate: `docs/AI_SAFETY_CHECKLIST.md`.
+- [x] **Meal suggestions stored by recipe-id** so they re-translate on language switch.
+- [x] **Landing page** — `docs/index.html` live on GitHub Pages.
 - [ ] **Every-4-days audit email** (blocked on the Gmail connector; posts in chat until then).
-- [ ] `RECORD_AUDIO` / `MODIFY_AUDIO_SETTINGS` removal — needs `tools:node="remove"`, rides with the next native build.
+- [x] `RECORD_AUDIO` / `MODIFY_AUDIO_SETTINGS` removal — `tools:node="remove"` in the manifest; ships with v40.
 
 ### C. Your-side (non-code)
 - [ ] **DMARC record** on the sending domain `joblytics-ai.com` (Squarespace DNS): TXT, host `_dmarc`, value `v=DMARC1; p=none; rua=mailto:<you>@joblytics-ai.com`. Resend already sets SPF+DKIM; DMARC lifts inbox placement so invite emails don't land in spam.

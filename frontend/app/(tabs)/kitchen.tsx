@@ -1305,6 +1305,17 @@ export default function Kitchen() {
         ) : (
           <ActivityIndicator color={ui.orange} style={{ marginVertical: 12 }} />
         )}
+        {/* Stated here as well as in the recipe, because "Add all to planner"
+            commits a whole week without opening a single dish — which is the
+            path most people take, and the one where nobody would otherwise see
+            an ingredient list at all. */}
+        {!suggestLoading && suggestions.length > 0 ? (
+          <View style={styles.suggestAllergen}>
+            <AlertTriangle color={ui.muted} size={13} />
+            <Text style={styles.suggestAllergenText}>{t('suggest_allergen_note')}</Text>
+          </View>
+        ) : null}
+
         {/* No inner ScrollView here — the sheet itself scrolls; nesting two
             vertical scrollers makes the list unscrollable on Android. */}
         {suggestions.map((s) => {
@@ -1449,6 +1460,8 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   cookStepNumText: { color: ui.orange, fontFamily: 'Inter_700Bold', fontSize: 13 },
   cookStepText: { flex: 1, color: ui.text, fontFamily: 'Inter_500Medium', fontSize: 15, lineHeight: 22 },
   cookAllergen: { flexDirection: 'row', gap: 8, alignItems: 'flex-start', marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: ui.line },
+  suggestAllergen: { flexDirection: 'row', gap: 8, alignItems: 'flex-start', marginTop: 4, marginBottom: 12 },
+  suggestAllergenText: { flex: 1, color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, lineHeight: 17 },
   cookAllergenText: { flex: 1, color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 18 },
   sheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   sheetTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 24, letterSpacing: -0.4 },
