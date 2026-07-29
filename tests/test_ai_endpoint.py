@@ -22,6 +22,12 @@ except ImportError:
 if HAVE_DEPS:
     os.environ.setdefault("GOOGLE_API_KEY", "test-key-not-real")
     import server
+    from ai_models import DEFAULT_CANDIDATES
+
+    # These tests are about the fallback mechanism, not about which models
+    # happen to be current. Naming models literally meant every routine change
+    # to the candidate list broke tests that were not testing the list.
+    FIRST, SECOND, THIRD = DEFAULT_CANDIDATES[0], DEFAULT_CANDIDATES[1], DEFAULT_CANDIDATES[2]
 
 
 class FakeResponse:
@@ -115,34 +121,32 @@ class HealthAiProbe(unittest.TestCase):
     def test_walks_past_retired_models_to_one_that_answers(self):
         # The production incident: the first candidates are retired. The loop
         # must reach a live one and remember it.
-        fake = self.install(FakeClient(dead={"gemini-2.5-flash", "gemini-2.0-flash"}))
+        fake = self.install(FakeClient(dead={FIRST, SECOND}))
         status = self.probe()
         self.assertTrue(status["probe"]["ok"], status)
-        self.assertEqual(status["model_resolved"], "gemini-1.5-flash")
-        self.assertEqual(
-            fake.calls, ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
-        )
+        self.assertEqual(status["model_resolved"], THIRD)
+        self.assertEqual(fake.calls, [FIRST, SECOND, THIRD])
 
     def test_remembers_the_proven_model_across_calls(self):
-        fake = self.install(FakeClient(dead={"gemini-2.5-flash"}))
+        fake = self.install(FakeClient(dead={FIRST}))
         self.probe()
         server._AI_PROBE["last"] = None  # step around the rate limiter
         self.probe()
         # Second probe goes straight to the model that worked — one call.
-        self.assertEqual(fake.calls[-1], "gemini-2.0-flash")
-        self.assertEqual(fake.calls.count("gemini-2.5-flash"), 1)
+        self.assertEqual(fake.calls[-1], SECOND)
+        self.assertEqual(fake.calls.count(FIRST), 1)
 
     def test_per_model_quota_walks_the_chain(self):
         # The production case: the newest model 429s on a free-tier key, but an
         # older model still has quota. The chain must keep walking.
         self.install(FakeClient(
-            dead={"gemini-2.5-flash"},
+            dead={FIRST},
             dead_error="429 RESOURCE_EXHAUSTED. You exceeded your current quota",
         ))
         status = self.probe()
         self.assertTrue(status["probe"]["ok"], status)
-        self.assertEqual(status["model_resolved"], "gemini-2.0-flash")
-        self.assertEqual(status["model_errors"], {"gemini-2.5-flash": "quota_exhausted"})
+        self.assertEqual(status["model_resolved"], SECOND)
+        self.assertEqual(status["model_errors"], {FIRST: "quota_exhausted"})
 
     def test_an_account_failure_is_reported_not_retried(self):
         # A bad key fails identically on every model — one call, fail fast.
