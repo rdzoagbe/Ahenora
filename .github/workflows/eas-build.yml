@@ -19,6 +19,14 @@ on:
         required: true
         default: true
         type: boolean
+      track:
+        description: 'Which Play track to submit to'
+        required: true
+        default: 'internal'
+        type: choice
+        options:
+          - internal
+          - production
 
 concurrency:
   group: eas-build-${{ github.ref }}
@@ -64,20 +72,43 @@ jobs:
             --profile "${{ github.event.inputs.profile }}" \
             --non-interactive
 
+      # Runs unconditionally so that "why is my build not on Play?" is always
+      # answered on the run page. A build that succeeds and then quietly does
+      # not ship is the worst outcome: it looks green, and you only find out
+      # days later when you go looking for it on your phone.
       - name: Check Google Play submit configuration
         id: submit_cfg
-        if: ${{ github.event.inputs.submit == 'true' && github.event.inputs.profile == 'production' }}
         working-directory: frontend
         env:
           GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
+          WANT_SUBMIT: ${{ github.event.inputs.submit }}
+          PROFILE: ${{ github.event.inputs.profile }}
+          TRACK: ${{ github.event.inputs.track }}
         run: |
-          if [ -z "$GOOGLE_SERVICE_ACCOUNT_KEY" ]; then
-            echo "GOOGLE_SERVICE_ACCOUNT_KEY secret is not set — skipping auto-submit."
-            echo "Add it to enable build -> Google Play in one step."
+          reason=""
+          if [ "$WANT_SUBMIT" != "true" ]; then
+            reason="'Auto-submit' was left off when this run was started."
+          elif [ "$PROFILE" != "production" ]; then
+            reason="Profile was '$PROFILE'; only 'production' builds an app bundle Play will accept."
+          elif [ -z "$GOOGLE_SERVICE_ACCOUNT_KEY" ]; then
+            reason="The GOOGLE_SERVICE_ACCOUNT_KEY secret is not set (Settings > Secrets and variables > Actions)."
+          fi
+
+          if [ -n "$reason" ]; then
             echo "submit=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=Build was NOT sent to Google Play::$reason"
+            {
+              echo "### ⚠️ Built, but not submitted to Google Play"
+              echo ""
+              echo "$reason"
+              echo ""
+              echo "The app bundle is on Expo and can be downloaded from the EAS dashboard"
+              echo "and uploaded to Play Console by hand."
+            } >> "$GITHUB_STEP_SUMMARY"
           else
             printf '%s' "$GOOGLE_SERVICE_ACCOUNT_KEY" > play-service-account.json
             echo "submit=true" >> "$GITHUB_OUTPUT"
+            echo "### Submitting to the **$TRACK** track" >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Submit latest build to Google Play
@@ -86,9 +117,14 @@ jobs:
         run: |
           npx eas-cli@latest submit \
             --platform android \
-            --profile production \
+            --profile "${{ github.event.inputs.track }}" \
             --latest \
             --non-interactive
+
+      - name: Confirm what landed where
+        if: ${{ steps.submit_cfg.outputs.submit == 'true' }}
+        run: |
+          echo "Submitted to the ${{ github.event.inputs.track }} track." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Clean up service account key
         if: ${{ always() }}
