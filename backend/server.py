@@ -2071,8 +2071,7 @@ async def adjust_member_stars(member_id: str, payload: StarAdjustmentIn, user=De
         raise HTTPException(status_code=400, detail="Star adjustment cannot be zero")
 
     current_stars = int(member.get("stars", 0))
-    new_total = current_stars + delta
-    if new_total < 0:
+    if current_stars + delta < 0:
         raise HTTPException(status_code=400, detail="Stars cannot go below zero")
 
     reason = (payload.reason or "").strip()
@@ -2090,12 +2089,21 @@ async def adjust_member_stars(member_id: str, payload: StarAdjustmentIn, user=De
         "created_at": utcnow(),
     }
 
-    await database["family_members"].update_one(
-        {"member_id": member_id},
-        {"$set": {"stars": new_total}},
-    )
+    # Increment rather than write a total computed from an earlier read: two
+    # concurrent adjustments both read the same balance and the second $set
+    # overwrote the first, silently losing one. For removals the filter also
+    # carries the "cannot go below zero" rule, so the database enforces it even
+    # when two removals race.
+    star_filter = {"member_id": member_id, "family_id": user["family_id"]}
+    if delta < 0:
+        star_filter["stars"] = {"$gte": -delta}
+    result = await database["family_members"].update_one(star_filter, {"$inc": {"stars": delta}})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=400, detail="Stars cannot go below zero")
+
     await database["star_transactions"].insert_one(transaction)
     updated = await database["family_members"].find_one({"member_id": member_id}, {"_id": 0})
+    new_total = int(updated.get("stars", 0)) if updated else current_stars + delta
 
     if delta > 0:
         await send_star_milestone_alert(user["family_id"], member.get("name", "Your child"), current_stars, new_total)
@@ -2982,15 +2990,45 @@ async def redeem_reward(reward_id: str, payload: RedeemIn, user=Depends(require_
     if not reward or not member:
         raise HTTPException(status_code=404, detail="Reward or member not found")
 
-    if member.get("stars", 0) < reward["cost_stars"]:
+    cost = int(reward["cost_stars"])
+
+    # Atomic guarded decrement. Checking the balance and then decrementing in
+    # two steps let two taps (or two devices) both pass the check and both
+    # spend, driving the balance negative. The filter carries the check, so the
+    # database rejects the second one.
+    result = await database["family_members"].update_one(
+        {
+            "member_id": member["member_id"],
+            "family_id": user["family_id"],
+            "stars": {"$gte": cost},
+        },
+        {"$inc": {"stars": -cost}},
+    )
+    if result.matched_count == 0:
         raise HTTPException(status_code=400, detail="Not enough stars")
 
-    await database["family_members"].update_one(
-        {"member_id": member["member_id"]},
-        {"$inc": {"stars": -reward["cost_stars"]}},
-    )
+    # A redemption is a star movement and belongs in the ledger. Without this
+    # the balance dropped with nothing in Recent Activity to explain it, and
+    # the weekly total — computed from history — counted awards but never
+    # spends, so the ledger stopped reconciling with the balance.
+    transaction = {
+        "transaction_id": new_id("star"),
+        "family_id": user["family_id"],
+        "member_id": member["member_id"],
+        "delta": -cost,
+        "reason": reward.get("title") or "Reward redeemed",
+        "created_by_user_id": user["user_id"],
+        "created_by_name": user.get("name"),
+        "created_at": utcnow(),
+    }
+    await database["star_transactions"].insert_one(transaction)
+
     member = await database["family_members"].find_one({"member_id": member["member_id"]}, {"_id": 0})
-    return {"ok": True, "member": public_member(member)}
+    return {
+        "ok": True,
+        "member": public_member(member),
+        "transaction": public_star_transaction(transaction),
+    }
 
 
 

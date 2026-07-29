@@ -12,6 +12,17 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  kids_money_title: 'Pocket money',
+  kids_money_in: 'Money in',
+  kids_money_out: 'Money out',
+  kids_money_amount: 'Amount',
+  kids_money_note: 'What for?',
+  kids_money_saved: 'Recorded.',
+  kids_money_none: 'No pocket money recorded yet.',
+  kids_money_record: 'Record',
+  kids_money_recent: 'Recent',
+  kids_childs_stars: '{name}’s stars',
+  kids_childs_pin: '{name}’s PIN',
   kitchen_suggest_need_items: 'Add a few things to your shopping list first — meal ideas are built from it.',
   kitchen_shop_cleared_plan_kept: 'List cleared. Your meal plan was kept.',
   kitchen_clear_shop_plan_body: 'Every item is removed (saved to your history first). Your current meal plan is saved for reuse and the planner is cleared too, ready for a fresh week.',
@@ -1010,6 +1021,17 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  kids_money_title: 'Dinero de bolsillo',
+  kids_money_in: 'Dinero recibido',
+  kids_money_out: 'Dinero gastado',
+  kids_money_amount: 'Importe',
+  kids_money_note: '¿Para qué?',
+  kids_money_saved: 'Registrado.',
+  kids_money_none: 'Aún no hay movimientos registrados.',
+  kids_money_record: 'Registrar',
+  kids_money_recent: 'Reciente',
+  kids_childs_stars: 'Estrellas de {name}',
+  kids_childs_pin: 'PIN de {name}',
   kitchen_suggest_need_items: 'Añade antes algunas cosas a tu lista de la compra — las ideas de comidas se basan en ella.',
   kitchen_shop_cleared_plan_kept: 'Lista vaciada. Tu menú se ha conservado.',
   kitchen_clear_shop_plan_body: 'Se elimina cada artículo (se guarda antes en tu historial). Tu menú actual se guarda para reutilizarlo y el planificador se vacía, listo para una nueva semana.',
@@ -2002,6 +2024,17 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  kids_money_title: 'Argent de poche',
+  kids_money_in: 'Argent reçu',
+  kids_money_out: 'Argent dépensé',
+  kids_money_amount: 'Montant',
+  kids_money_note: 'Pour quoi ?',
+  kids_money_saved: 'Enregistré.',
+  kids_money_none: 'Aucun mouvement enregistré pour l’instant.',
+  kids_money_record: 'Enregistrer',
+  kids_money_recent: 'Récent',
+  kids_childs_stars: 'Les étoiles de {name}',
+  kids_childs_pin: 'Code de {name}',
   kitchen_suggest_need_items: 'Ajoutez d’abord quelques articles à votre liste de courses — les idées de repas s’en inspirent.',
   kitchen_shop_cleared_plan_kept: 'Liste vidée. Votre menu a été conservé.',
   kitchen_clear_shop_plan_body: 'Chaque article est retiré (enregistré dans l’historique d’abord). Votre menu actuel est sauvegardé pour être réutilisé, et le planificateur est vidé pour repartir sur une nouvelle semaine.',
@@ -2994,6 +3027,17 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  kids_money_title: 'Taschengeld',
+  kids_money_in: 'Geld erhalten',
+  kids_money_out: 'Geld ausgegeben',
+  kids_money_amount: 'Betrag',
+  kids_money_note: 'Wofür?',
+  kids_money_saved: 'Erfasst.',
+  kids_money_none: 'Noch keine Bewegungen erfasst.',
+  kids_money_record: 'Erfassen',
+  kids_money_recent: 'Zuletzt',
+  kids_childs_stars: 'Sterne von {name}',
+  kids_childs_pin: 'PIN von {name}',
   kitchen_suggest_need_items: 'Setze zuerst ein paar Dinge auf deine Einkaufsliste — die Essensideen entstehen daraus.',
   kitchen_shop_cleared_plan_kept: 'Liste geleert. Dein Essensplan wurde behalten.',
   kitchen_clear_shop_plan_body: 'Jeder Artikel wird entfernt (zuvor im Verlauf gespeichert). Dein aktueller Essensplan wird zur Wiederverwendung gesichert und der Planer geleert — bereit für eine neue Woche.',
