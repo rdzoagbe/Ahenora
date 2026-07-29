@@ -319,6 +319,11 @@ export interface AllowanceConfig {
   amount: number;
   frequency: string;
   created_at: string;
+  /** Null until the first payment is recorded. */
+  last_paid_at?: string | null;
+  /** When the next payment is payable. A new allowance is due immediately. */
+  next_due_at: string;
+  is_due: boolean;
 }
 
 export interface AllowanceTxn {
@@ -1029,6 +1034,9 @@ export const api = {
 
   // Allowance
   listAllowances: () => request<AllowanceConfig[]>('/allowances'),
+  payAllowance: (member_id: string) =>
+    request<{ ok: boolean; transaction: AllowanceTxn; allowance: AllowanceConfig }>(
+      `/allowances/${member_id}/pay`, { method: 'POST' }),
   setAllowance: (data: { member_id: string; amount: number; frequency?: string }) =>
     request<AllowanceConfig>('/allowances', { method: 'POST', body: data }),
   deleteAllowance: (memberId: string) => request<{ ok: boolean }>(`/allowances/${memberId}`, { method: 'DELETE' }),
