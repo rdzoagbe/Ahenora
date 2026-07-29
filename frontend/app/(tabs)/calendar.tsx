@@ -594,11 +594,11 @@ export default function Calendar() {
           {/* Month grid */}
           <KitCard style={styles.calCard}>
             <View style={styles.monthHeader}>
-              <PressScale testID="prev-month" onPress={() => shiftMonth(-1)} style={styles.monthNav}>
+              <PressScale testID="prev-month" accessibilityRole="button" accessibilityLabel={t('a11y_prev_month')} onPress={() => shiftMonth(-1)} style={styles.monthNav}>
                 <ChevronLeft color={ui.text} size={20} />
               </PressScale>
               <Text style={styles.monthTitle}>{monthTitle}</Text>
-              <PressScale testID="next-month" onPress={() => shiftMonth(1)} style={styles.monthNav}>
+              <PressScale testID="next-month" accessibilityRole="button" accessibilityLabel={t('a11y_next_month')} onPress={() => shiftMonth(1)} style={styles.monthNav}>
                 <ChevronRight color={ui.text} size={20} />
               </PressScale>
             </View>

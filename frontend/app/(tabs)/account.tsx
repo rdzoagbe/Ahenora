@@ -119,7 +119,7 @@ export default function AccountScreen() {
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
           {/* Header */}
           <View style={styles.navRow}>
-            <PressScale testID="account-back" onPress={goBack} style={styles.backBtn}>
+            <PressScale testID="account-back" accessibilityRole="button" accessibilityLabel={t('a11y_back')} onPress={goBack} style={styles.backBtn}>
               <ChevronLeft color={UI.text} size={22} />
             </PressScale>
             <Text style={styles.navTitle}>{t('acc_title')}</Text>
