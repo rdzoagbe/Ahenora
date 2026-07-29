@@ -391,12 +391,20 @@ export default function Kitchen() {
   }, [suggestLang, localWeek, t]);
 
   const openSuggest = useCallback(() => {
+    // Meal ideas are built FROM the shopping list. With nothing (or nearly
+    // nothing) on it, both engines would only be guessing — the offline one
+    // pads the week with staples and the AI one used to lean on old history —
+    // so the honest behaviour is to ask for a list first, not to invent one.
+    if (shopItems.length < 3) {
+      showToast(t('kitchen_suggest_need_items'), 'info');
+      return;
+    }
     setAddedSuggest(new Set());
     setSuggestVariant(0);
     setSuggestions(localWeek(0));
     setShowSuggest(true);
     loadSuggestions(0);
-  }, [localWeek, loadSuggestions]);
+  }, [shopItems.length, localWeek, loadSuggestions, showToast, t]);
 
   // "Different ideas" must change something even when the AI planner is
   // unreachable, which is exactly when a repeated week is most annoying.
