@@ -883,6 +883,8 @@ export default function Feed() {
         style={({ pressed }) => [styles.fab, pressed && styles.fabPressed]}
         onPress={openManual}
         testID="feed-fab-add"
+        accessibilityRole="button"
+        accessibilityLabel={t('a11y_add')}
       >
         <Plus color="#FFFFFF" size={31} />
       </Pressable>

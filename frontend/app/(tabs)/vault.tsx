@@ -470,6 +470,8 @@ export default function Vault() {
         style={({ pressed }) => [styles.fab, pressed && styles.fabPressed]}
         onPress={openAdd}
         testID="vault-add"
+        accessibilityRole="button"
+        accessibilityLabel={t('a11y_add')}
       >
         <Plus color="#FFFFFF" size={28} />
       </Pressable>

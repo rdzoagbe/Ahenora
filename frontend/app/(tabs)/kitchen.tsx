@@ -718,7 +718,7 @@ export default function Kitchen() {
                 <Text style={styles.secTitle}>{t('vault_shopping_list')}</Text>
               </View>
               <View style={styles.secRight}>
-                <PressScale testID="shop-history" onPress={openShopHistory} style={styles.histBtn}>
+                <PressScale testID="shop-history" accessibilityRole="button" accessibilityLabel={t('a11y_history')} onPress={openShopHistory} style={styles.histBtn}>
                   <History color={ui.muted} size={18} />
                 </PressScale>
                 {checkedItems.length > 0 ? (

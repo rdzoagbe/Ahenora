@@ -12,6 +12,10 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  a11y_back: 'Go back',
+  a11y_history: 'Previous shopping trips',
+  a11y_prev_month: 'Previous month',
+  a11y_next_month: 'Next month',
   kids_remove_pin_confirm: 'Remove {name}\u2019s PIN? They will be able to spend stars without confirming.',
   kids_manage_child: 'Manage child',
   kids_child_updated: 'Saved',
@@ -1049,6 +1053,10 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  a11y_back: 'Volver',
+  a11y_history: 'Compras anteriores',
+  a11y_prev_month: 'Mes anterior',
+  a11y_next_month: 'Mes siguiente',
   kids_remove_pin_confirm: '¿Quitar el PIN de {name}? Podrá gastar estrellas sin confirmar.',
   kids_manage_child: 'Gestionar hijo/a',
   kids_child_updated: 'Guardado',
@@ -2080,6 +2088,10 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  a11y_back: 'Retour',
+  a11y_history: 'Courses précédentes',
+  a11y_prev_month: 'Mois précédent',
+  a11y_next_month: 'Mois suivant',
   kids_remove_pin_confirm: 'Supprimer le code de {name} ? Il/elle pourra dépenser des étoiles sans confirmation.',
   kids_manage_child: 'Gérer l\u2019enfant',
   kids_child_updated: 'Enregistré',
@@ -3111,6 +3123,10 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  a11y_back: 'Zurück',
+  a11y_history: 'Frühere Einkäufe',
+  a11y_prev_month: 'Vorheriger Monat',
+  a11y_next_month: 'Nächster Monat',
   kids_remove_pin_confirm: 'PIN von {name} entfernen? Sterne lassen sich dann ohne Bestätigung ausgeben.',
   kids_manage_child: 'Kind verwalten',
   kids_child_updated: 'Gespeichert',
