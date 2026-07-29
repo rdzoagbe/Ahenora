@@ -19,9 +19,22 @@ from ai_models import (  # noqa: E402
 
 
 class ModelCandidates(unittest.TestCase):
-    def test_defaults_run_newest_first(self):
+    def test_defaults_are_used_in_order(self):
         self.assertEqual(model_candidates(), DEFAULT_CANDIDATES)
-        self.assertEqual(DEFAULT_CANDIDATES[0], "gemini-2.5-flash")
+
+    def test_the_first_default_is_an_alias_not_a_pinned_version(self):
+        """The rule this module exists to enforce.
+
+        A pinned version at the front goes stale the moment Google retires it,
+        and every process then burns a failed API call before the chain finds a
+        live model — which is exactly what production was doing with three
+        pinned names at the front. An alias like "gemini-flash-latest" is moved
+        by Google to whatever the current model is, so it does not rot.
+        """
+        self.assertTrue(
+            DEFAULT_CANDIDATES[0].endswith("-latest"),
+            f"first candidate {DEFAULT_CANDIDATES[0]!r} should be a -latest alias",
+        )
 
     def test_operator_override_goes_before_defaults(self):
         self.assertEqual(model_candidates("my-model")[0], "my-model")

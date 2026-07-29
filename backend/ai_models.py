@@ -22,12 +22,21 @@ verified by hand.
 
 from __future__ import annotations
 
-# Newest first. When Google retires the front of this list, the fallback keeps
-# the app alive on the next one while we update the default.
+# Aliases first, then pinned versions. When Google retires the front of this
+# list the fallback keeps the app alive on the next one, but leading with an
+# alias means that mostly should not happen in the first place.
+#
+# Production evidence for the order: on the live key every one of the three
+# pinned names below answers NOT_FOUND, while "gemini-flash-latest" works.
+# Google moves that alias to whatever the current flash model is, so it does
+# not go stale the way a version number does — which is the whole point of the
+# rule at the top of this file. Leading with the pinned names cost three failed
+# API calls on every process start before the chain found a live model.
 DEFAULT_CANDIDATES = [
+    "gemini-flash-latest",
+    "gemini-flash-lite-latest",
     "gemini-2.5-flash",
     "gemini-2.0-flash",
-    "gemini-1.5-flash",
 ]
 
 
