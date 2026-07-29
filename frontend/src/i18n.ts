@@ -12,6 +12,12 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  kids_allowance_due_now: 'Due now',
+  kids_allowance_due_on: 'Next due {date}',
+  kids_allowance_pay_now: 'Pay now',
+  kids_allowance_paid: 'Pocket money recorded — ${amount}',
+  kids_show_all_rewards: 'Show all {n} rewards',
+  kids_show_fewer: 'Show fewer',
   suggest_allergen_note: 'Ideas only — check every dish against any allergies in your family before you plan the week.',
   a11y_back: 'Go back',
   a11y_history: 'Previous shopping trips',
@@ -1054,6 +1060,12 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  kids_allowance_due_now: 'Toca ahora',
+  kids_allowance_due_on: 'Próximo: {date}',
+  kids_allowance_pay_now: 'Pagar',
+  kids_allowance_paid: 'Paga registrada: ${amount}',
+  kids_show_all_rewards: 'Ver los {n} premios',
+  kids_show_fewer: 'Ver menos',
   suggest_allergen_note: 'Solo son ideas: revisa cada plato según las alergias de tu familia antes de planificar la semana.',
   a11y_back: 'Volver',
   a11y_history: 'Compras anteriores',
@@ -2090,6 +2102,12 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  kids_allowance_due_now: 'À verser',
+  kids_allowance_due_on: 'Prochain : {date}',
+  kids_allowance_pay_now: 'Verser',
+  kids_allowance_paid: 'Argent de poche enregistré : {amount} $',
+  kids_show_all_rewards: 'Voir les {n} récompenses',
+  kids_show_fewer: 'Voir moins',
   suggest_allergen_note: 'Ce ne sont que des idées : vérifiez chaque plat au regard des allergies de votre famille avant de planifier la semaine.',
   a11y_back: 'Retour',
   a11y_history: 'Courses précédentes',
@@ -3126,6 +3144,12 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  kids_allowance_due_now: 'Jetzt fällig',
+  kids_allowance_due_on: 'Nächste: {date}',
+  kids_allowance_pay_now: 'Auszahlen',
+  kids_allowance_paid: 'Taschengeld erfasst: {amount} $',
+  kids_show_all_rewards: 'Alle {n} Belohnungen',
+  kids_show_fewer: 'Weniger anzeigen',
   suggest_allergen_note: 'Nur Vorschläge — prüfen Sie jedes Gericht auf Allergien in Ihrer Familie, bevor Sie die Woche planen.',
   a11y_back: 'Zurück',
   a11y_history: 'Frühere Einkäufe',

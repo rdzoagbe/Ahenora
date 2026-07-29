@@ -53,6 +53,13 @@ import { recordWin } from '../../src/reviewPrompt';
 import { isAlreadySettled, mergeRedemptions, restoreRedemption, sortByNewest } from '../../src/redemptions';
 import { webConfirm } from '../../src/confirm';
 
+/** "Sat 2 Aug" — short enough for a subtitle, unambiguous about which day. */
+function formatDueDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+}
+
 type ToastState = { message: string; tone: ToastTone };
 type RewardSheetMode = 'create' | 'edit';
 type StarMode = 'add' | 'remove';
@@ -148,6 +155,9 @@ export default function Kids() {
   const [showFixSheet, setShowFixSheet] = useState(false);
   const [fixValue, setFixValue] = useState('');
   const [showAllowanceSheet, setShowAllowanceSheet] = useState(false);
+  // The list was capped at five with nothing to say so. A reward a child is
+  // saving towards being invisible defeats the point of the page.
+  const [showAllRewards, setShowAllRewards] = useState(false);
   const [alwAmount, setAlwAmount] = useState('');
   const [alwFrequency, setAlwFrequency] = useState('weekly');
 
@@ -605,6 +615,29 @@ export default function Kids() {
       setSaving(false);
     }
   };
+
+  // Pocket money is recorded when it is actually handed over, not accrued on a
+  // timer. A balance that says €20 when the tin holds €5 is worse than no
+  // tracker, so this is a prompt the parent answers rather than a schedule.
+  const payAllowanceNow = useCallback(async () => {
+    if (!activeChild || moneySavingRef.current) return;
+    moneySavingRef.current = true;
+    try {
+      const res = await api.payAllowance(activeChild.member_id);
+      setAllowances((prev) => prev.map((a) =>
+        a.member_id === res.allowance.member_id ? res.allowance : a));
+      setBalances((prev) => ({
+        ...prev,
+        [activeChild.member_id]: (prev[activeChild.member_id] || 0) + res.transaction.amount,
+      }));
+      showToast(t('kids_allowance_paid', { amount: res.transaction.amount }), 'success');
+    } catch (e: any) {
+      logger.warn('Pay allowance failed:', e?.message || e);
+      showToast(e?.message || t('kids_allowance_error'), 'error');
+    } finally {
+      moneySavingRef.current = false;
+    }
+  }, [activeChild, showToast, t]);
 
   const openMoneySheet = useCallback(async () => {
     if (!activeChild) return;
@@ -1086,7 +1119,7 @@ export default function Kids() {
                         </Card>
                       ) : (
                         <Card style={styles.cardPad}>
-                          {sortedRewards.slice(0, 5).map((reward, index, arr) => {
+                          {(showAllRewards ? sortedRewards : sortedRewards.slice(0, 5)).map((reward, index, arr) => {
                             const pct = Math.min(100, Math.round((stars / reward.cost_stars) * 100));
                             const affordable = stars >= reward.cost_stars;
                             return (
@@ -1117,6 +1150,19 @@ export default function Kids() {
                               </View>
                             );
                           })}
+                          {sortedRewards.length > 5 ? (
+                            <PressScale
+                              testID="kids-toggle-all-rewards"
+                              onPress={() => setShowAllRewards((v) => !v)}
+                              style={styles.showAllBtn}
+                            >
+                              <Text style={styles.showAllText}>
+                                {showAllRewards
+                                  ? t('kids_show_fewer')
+                                  : t('kids_show_all_rewards', { n: sortedRewards.length })}
+                              </Text>
+                            </PressScale>
+                          ) : null}
                         </Card>
                       )}
 
@@ -1232,7 +1278,26 @@ export default function Kids() {
                       <Text style={styles.featureRowSub}>
                         {childAllowance ? `$${childAllowance.amount}/${t('kids_freq_' + childAllowance.frequency)}` : t('kids_no_allowance_set')}
                       </Text>
+                      {/* Setting an amount used to do nothing on its own. This
+                          is the line that tells a parent the app is keeping
+                          count, and whether anything is owed today. */}
+                      {childAllowance ? (
+                        <Text style={styles.allowanceDue}>
+                          {childAllowance.is_due
+                            ? t('kids_allowance_due_now')
+                            : t('kids_allowance_due_on', { date: formatDueDate(childAllowance.next_due_at) })}
+                        </Text>
+                      ) : null}
                     </PressScale>
+                    {childAllowance?.is_due ? (
+                      <PressScale
+                        testID="kids-pay-allowance"
+                        onPress={payAllowanceNow}
+                        style={styles.payNowBtn}
+                      >
+                        <Text style={styles.payNowText}>{t('kids_allowance_pay_now')}</Text>
+                      </PressScale>
+                    ) : null}
                     <PressScale
                       testID="kids-set-allowance"
                       onPress={() => {
@@ -1755,4 +1820,9 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   featureActionText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 12 },
   allowanceRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12 },
   allowanceBalance: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 28 },
+  allowanceDue: { color: ui.orange, fontFamily: 'Inter_700Bold', fontSize: 12, marginTop: 3 },
+  payNowBtn: { backgroundColor: ui.orange, borderRadius: 99, paddingHorizontal: 14, paddingVertical: 9 },
+  payNowText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 12.5 },
+  showAllBtn: { alignItems: 'center', paddingVertical: 13, borderTopWidth: 1, borderTopColor: ui.line },
+  showAllText: { color: ui.orange, fontFamily: 'Inter_700Bold', fontSize: 13 },
 });

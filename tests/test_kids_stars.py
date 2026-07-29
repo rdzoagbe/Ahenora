@@ -15,6 +15,7 @@ import os
 import re
 import sys
 import unittest
+from datetime import timedelta
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "backend"))
 
@@ -48,6 +49,11 @@ class FakeCollection:
                     flags = re.I if "i" in (cond.get("$options") or "") else 0
                     if not isinstance(value, str) or not re.search(cond["$regex"], value, flags):
                         return False
+                # Claiming a period the first time filters on the field being
+                # absent, so without this the fake matches every racer and the
+                # double-pay guard looks broken when it is not.
+                if "$exists" in cond and (key in row) != cond["$exists"]:
+                    return False
             # Mongo matches a scalar against an array field by membership, which
             # is how a chore's assigned_members is queried.
             elif isinstance(value, list):
@@ -829,6 +835,117 @@ class RedemptionFulfilment(unittest.TestCase):
         self._redeem(db)
         asyncio.run(server.delete_family_member("kid1", user=self.USER))
         self.assertEqual(db["redemptions"].rows, [])
+
+
+@unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
+class PocketMoney(unittest.TestCase):
+    """Setting an allowance used to be a note to nobody: the config was stored
+    and never read again, so the balance sat at zero until a parent remembered
+    to record every payment by hand."""
+
+    USER = {"family_id": "fam1", "user_id": "u1", "name": "Parent", "role": "parent"}
+    OTHER = {"family_id": "fam2", "user_id": "u2", "name": "Stranger", "role": "parent"}
+
+    def setUp(self):
+        self._feature = server.require_feature
+
+        async def _allow(*a, **k):
+            return {"plan": "premium"}
+
+        server.require_feature = _allow
+
+    def tearDown(self):
+        server.require_feature = self._feature
+
+    def _db(self, amount=5.0, frequency="weekly", last_paid=None, age_days=0):
+        row = {
+            "allowance_id": "alw1", "family_id": "fam1", "member_id": "kid1",
+            "amount": amount, "frequency": frequency,
+            "created_at": server.utcnow() - timedelta(days=age_days),
+        }
+        if last_paid is not None:
+            row["last_paid_at"] = last_paid
+        return FakeDB(allowances=[row], allowance_txns=[])
+
+    def _pay(self, db, user=None):
+        return asyncio.run(server.pay_allowance("kid1", user=user or self.USER, database=db))
+
+    # ---- when it is due -------------------------------------------------
+
+    def test_a_new_allowance_is_payable_immediately(self):
+        # Otherwise setting one up does nothing visible for a week, which is
+        # how it came to look broken in the first place.
+        db = self._db()
+        cfg = server.public_allowance_config(db["allowances"].rows[0])
+        self.assertTrue(cfg["is_due"])
+        self.assertIsNone(cfg["last_paid_at"])
+
+    def test_it_is_not_due_again_the_same_week(self):
+        db = self._db(last_paid=server.utcnow() - timedelta(days=2))
+        self.assertFalse(server.public_allowance_config(db["allowances"].rows[0])["is_due"])
+
+    def test_it_is_due_again_after_the_period(self):
+        db = self._db(last_paid=server.utcnow() - timedelta(days=8))
+        self.assertTrue(server.public_allowance_config(db["allowances"].rows[0])["is_due"])
+
+    def test_monthly_waits_a_month_not_a_week(self):
+        db = self._db(frequency="monthly", last_paid=server.utcnow() - timedelta(days=10))
+        self.assertFalse(server.public_allowance_config(db["allowances"].rows[0])["is_due"])
+
+    # ---- paying ---------------------------------------------------------
+
+    def test_paying_records_the_money_and_stamps_the_period(self):
+        db = self._db(amount=5.0)
+        result = self._pay(db)
+
+        self.assertEqual(result["transaction"]["amount"], 5.0)
+        self.assertEqual(result["transaction"]["txn_type"], "deposit")
+        self.assertEqual(len(db["allowance_txns"].rows), 1)
+        self.assertIsNotNone(db["allowances"].rows[0]["last_paid_at"])
+        self.assertFalse(result["allowance"]["is_due"])
+
+    def test_the_balance_follows_from_the_payment(self):
+        db = self._db(amount=5.0)
+        self._pay(db)
+        balance = asyncio.run(server.get_allowance_balance("kid1", user=self.USER, database=db))
+        self.assertEqual(balance["balance"], 5.0)
+
+    def test_paying_twice_in_one_period_is_refused(self):
+        db = self._db()
+        self._pay(db)
+        with self.assertRaises(HTTPException) as ctx:
+            self._pay(db)
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertEqual(len(db["allowance_txns"].rows), 1)
+
+    def test_two_taps_at_once_pay_once(self):
+        # Claiming the period before writing the money is what makes this safe;
+        # writing first would credit a child twice for one week.
+        db = self._db()
+
+        async def race():
+            return await asyncio.gather(
+                server.pay_allowance("kid1", user=self.USER, database=db),
+                server.pay_allowance("kid1", user=self.USER, database=db),
+                return_exceptions=True,
+            )
+
+        results = asyncio.run(race())
+        ok = [r for r in results if not isinstance(r, Exception)]
+        self.assertEqual(len(ok), 1, "exactly one payment should land")
+        self.assertEqual(len(db["allowance_txns"].rows), 1)
+
+    def test_a_child_with_no_allowance_set_cannot_be_paid(self):
+        db = FakeDB(allowances=[], allowance_txns=[])
+        with self.assertRaises(HTTPException) as ctx:
+            self._pay(db)
+        self.assertEqual(ctx.exception.status_code, 404)
+
+    def test_another_family_cannot_pay_it(self):
+        db = self._db()
+        with self.assertRaises(HTTPException):
+            self._pay(db, user=self.OTHER)
+        self.assertEqual(db["allowance_txns"].rows, [])
 
 
 if __name__ == "__main__":

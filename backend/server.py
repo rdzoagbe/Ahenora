@@ -1067,7 +1067,27 @@ def public_carpool(c: dict) -> dict:
     }
 
 
+ALLOWANCE_PERIOD_DAYS = {"weekly": 7, "biweekly": 14, "monthly": 30}
+
+
+def allowance_next_due(a: dict) -> datetime:
+    """When this allowance is next payable.
+
+    Counted from the last payment, or from when it was set up if it has never
+    been paid — so a freshly configured allowance is due immediately rather
+    than making a parent wait a week before the feature does anything.
+    """
+    days = ALLOWANCE_PERIOD_DAYS.get(a.get("frequency", "weekly"), 7)
+    since = a.get("last_paid_at") or a.get("created_at")
+    return since + timedelta(days=days) if a.get("last_paid_at") else since
+
+
 def public_allowance_config(a: dict) -> dict:
+    # Setting an amount used to be a note to nobody: the config was stored and
+    # never read again, so the balance sat at zero until a parent remembered to
+    # record every payment by hand. These two fields are what turn it into
+    # something the app can prompt about.
+    due = allowance_next_due(a)
     return {
         "allowance_id": a["allowance_id"],
         "family_id": a["family_id"],
@@ -1075,6 +1095,9 @@ def public_allowance_config(a: dict) -> dict:
         "amount": a["amount"],
         "frequency": a.get("frequency", "weekly"),
         "created_at": iso(a["created_at"]),
+        "last_paid_at": iso(a["last_paid_at"]) if a.get("last_paid_at") else None,
+        "next_due_at": iso(due),
+        "is_due": due <= utcnow(),
     }
 
 
@@ -5286,6 +5309,53 @@ async def add_allowance_transaction(body: AllowanceTxnIn, user: dict = Depends(r
     }
     await database["allowance_txns"].insert_one(txn)
     return public_allowance_txn(txn)
+
+
+@app.post("/api/allowances/{member_id}/pay")
+async def pay_allowance(member_id: str, user: dict = Depends(require_user), database=Depends(get_db)):
+    """Record this period's pocket money in one tap.
+
+    Deliberately not automatic. An accrual on a timer would credit money that
+    may never have physically changed hands, and a child's balance that says
+    €20 when the tin holds €5 is worse than no tracker at all. A parent presses
+    this when they actually hand it over.
+    """
+    await require_feature(user, "allowance")
+    config = await database["allowances"].find_one(
+        {"family_id": user["family_id"], "member_id": member_id}, {"_id": 0}
+    )
+    if not config:
+        raise HTTPException(status_code=404, detail="No allowance set for this child")
+
+    due = allowance_next_due(config)
+    if due > utcnow():
+        raise HTTPException(status_code=400, detail="Not due yet")
+
+    # Claim the period before writing the money, and carry the previous
+    # last_paid_at in the filter so two taps — or two parents — settle it once.
+    previous = config.get("last_paid_at")
+    claim = {"allowance_id": config["allowance_id"], "family_id": user["family_id"]}
+    claim["last_paid_at"] = previous if previous else {"$exists": False}
+    result = await database["allowances"].update_one(claim, {"$set": {"last_paid_at": utcnow()}})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=409, detail="Already paid for this period")
+
+    txn = {
+        "txn_id": new_id("atxn"),
+        "family_id": user["family_id"],
+        "member_id": member_id,
+        "amount": config["amount"],
+        "description": "Pocket money",
+        "txn_type": "deposit",
+        "created_at": utcnow(),
+    }
+    await database["allowance_txns"].insert_one(txn)
+
+    updated = await database["allowances"].find_one(
+        {"allowance_id": config["allowance_id"], "family_id": user["family_id"]}, {"_id": 0}
+    )
+    return {"ok": True, "transaction": public_allowance_txn(txn),
+            "allowance": public_allowance_config(updated)}
 
 
 @app.get("/api/allowances/{member_id}/balance")
