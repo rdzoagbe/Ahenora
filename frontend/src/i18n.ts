@@ -12,6 +12,7 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  kids_remove_pin_confirm: 'Remove {name}\u2019s PIN? They will be able to spend stars without confirming.',
   kids_manage_child: 'Manage child',
   kids_child_updated: 'Saved',
   kids_child_update_error: 'Could not save those changes.',
@@ -1048,6 +1049,7 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  kids_remove_pin_confirm: '¿Quitar el PIN de {name}? Podrá gastar estrellas sin confirmar.',
   kids_manage_child: 'Gestionar hijo/a',
   kids_child_updated: 'Guardado',
   kids_child_update_error: 'No se pudieron guardar los cambios.',
@@ -2078,6 +2080,7 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  kids_remove_pin_confirm: 'Supprimer le code de {name} ? Il/elle pourra dépenser des étoiles sans confirmation.',
   kids_manage_child: 'Gérer l\u2019enfant',
   kids_child_updated: 'Enregistré',
   kids_child_update_error: 'Impossible d\u2019enregistrer ces modifications.',
@@ -3108,6 +3111,7 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  kids_remove_pin_confirm: 'PIN von {name} entfernen? Sterne lassen sich dann ohne Bestätigung ausgeben.',
   kids_manage_child: 'Kind verwalten',
   kids_child_updated: 'Gespeichert',
   kids_child_update_error: 'Änderungen konnten nicht gespeichert werden.',

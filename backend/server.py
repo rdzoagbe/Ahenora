@@ -2021,6 +2021,19 @@ async def create_family_member(payload: ChildIn, user=Depends(require_user)):
     name = payload.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="Child name is required")
+    if len(name) > 60:
+        raise HTTPException(status_code=400, detail="Name is too long")
+    # Same reason as the rename: cards address a child by name, so two children
+    # sharing one makes "who earned this star" unanswerable.
+    clash = await database["family_members"].find_one({
+        "family_id": user["family_id"],
+        "name": {"$regex": f"^{re.escape(name)}$", "$options": "i"},
+    })
+    if clash:
+        raise HTTPException(
+            status_code=400,
+            detail="Somebody in this household already has that name.",
+        )
 
     starting_stars = max(0, int(payload.starting_stars or 0))
     pin = (payload.pin or "").strip()
@@ -2088,6 +2101,7 @@ async def update_family_member(member_id: str, payload: MemberPatchIn, user=Depe
         raise HTTPException(status_code=404, detail="Family member not found")
 
     changes: dict = {}
+    old_name = member.get("name") or ""
 
     if payload.name is not None:
         name = payload.name.strip()
@@ -2095,10 +2109,27 @@ async def update_family_member(member_id: str, payload: MemberPatchIn, user=Depe
             raise HTTPException(status_code=400, detail="Name is required")
         if len(name) > 60:
             raise HTTPException(status_code=400, detail="Name is too long")
+        # Task cards address a child by name, so two children answering to the
+        # same one makes "who earned this star" unanswerable. Only a new clash
+        # is refused — a household that already has two Sams keeps them.
+        if name.lower() != old_name.lower():
+            clash = await database["family_members"].find_one({
+                "family_id": user["family_id"],
+                "member_id": {"$ne": member_id},
+                "name": {"$regex": f"^{re.escape(name)}$", "$options": "i"},
+            })
+            if clash:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Somebody in this household already has that name.",
+                )
         changes["name"] = name
 
     if payload.avatar is not None:
-        changes["avatar"] = payload.avatar.strip() or None
+        avatar = payload.avatar.strip()
+        if len(avatar) > 200:
+            raise HTTPException(status_code=400, detail="Avatar is too long")
+        changes["avatar"] = avatar or None
 
     if not changes:
         return public_member(member)
@@ -2107,15 +2138,38 @@ async def update_family_member(member_id: str, payload: MemberPatchIn, user=Depe
         {"member_id": member_id, "family_id": user["family_id"]},
         {"$set": changes},
     )
-    updated = await database["family_members"].find_one({"member_id": member_id}, {"_id": 0})
+
+    # Several records address this member by name rather than by id — task
+    # cards decide who earned a star by looking the name up. Without this a
+    # rename would quietly break every card already assigned to them: the
+    # lookup misses, the card is still flagged as paid, and nobody is.
+    new_name = changes.get("name")
+    if new_name and new_name != old_name and old_name:
+        await database["cards"].update_many(
+            {"family_id": user["family_id"], "assignee": old_name},
+            {"$set": {"assignee": new_name}},
+        )
+        await database["handoff_notes"].update_many(
+            {"family_id": user["family_id"], "member_id": member_id},
+            {"$set": {"member_name": new_name}},
+        )
+        await database["expenses"].update_many(
+            {"family_id": user["family_id"], "child_member_id": member_id},
+            {"$set": {"child_name": new_name}},
+        )
+
+    updated = await database["family_members"].find_one(
+        {"member_id": member_id, "family_id": user["family_id"]}, {"_id": 0}
+    )
     return public_member(updated)
 
 
 @app.delete("/api/family/members/{member_id}")
 async def delete_family_member(member_id: str, user=Depends(require_user)):
     database = get_db()
+    family_id = user["family_id"]
     member = await database["family_members"].find_one(
-        {"member_id": member_id, "family_id": user["family_id"]},
+        {"member_id": member_id, "family_id": family_id},
         {"_id": 0},
     )
     if not member:
@@ -2126,15 +2180,46 @@ async def delete_family_member(member_id: str, user=Depends(require_user)):
             detail="This member is a signed-in account and cannot be removed here. Use account deletion instead.",
         )
 
-    await database["family_members"].delete_one({"member_id": member_id})
-    await database["star_transactions"].delete_many(
-        {"member_id": member_id, "family_id": user["family_id"]}
+    await database["family_members"].delete_one({"member_id": member_id, "family_id": family_id})
+
+    # Everything that was only ever this child's goes with them.
+    for collection in ("star_transactions", "redemptions", "allowances", "allowance_txns"):
+        await database[collection].delete_many({"member_id": member_id, "family_id": family_id})
+
+    # Shared things stay, but must stop pointing at somebody who is gone. A
+    # chore left holding a dead member id rendered as a raw "member_a3f9…" on
+    # the wheel and, worse, paid nobody on completion while still reporting
+    # success. Hand it to whoever is left instead.
+    async for chore in database["chores"].find(
+        {"family_id": family_id, "assigned_members": member_id}, {"_id": 0}
+    ):
+        remaining = [m for m in (chore.get("assigned_members") or []) if m != member_id]
+        current = chore.get("current_assignee")
+        await database["chores"].update_one(
+            {"chore_id": chore["chore_id"], "family_id": family_id},
+            {"$set": {
+                "assigned_members": remaining,
+                "current_assignee": (
+                    remaining[0] if current == member_id and remaining
+                    else None if current == member_id
+                    else current
+                ),
+            }},
+        )
+    await database["chores"].update_many(
+        {"family_id": family_id, "current_assignee": member_id},
+        {"$set": {"current_assignee": None}},
     )
-    # Otherwise a removed child leaves outstanding rewards on the parent's list
-    # with no name to attach them to.
-    await database["redemptions"].delete_many(
-        {"member_id": member_id, "family_id": user["family_id"]}
+
+    # A routine is a checklist worth keeping; it just belongs to nobody now,
+    # which the completion path already handles.
+    await database["routines"].update_many(
+        {"family_id": family_id, "member_id": member_id},
+        {"$set": {"member_id": None}},
     )
+
+    # Expenses and handoff notes keep their denormalised name, which is exactly
+    # why it is stored — the historical record should survive the person.
     return {"ok": True}
 
 
@@ -2275,7 +2360,7 @@ async def set_member_pin(member_id: str, payload: PinIn, user=Depends(require_us
 
     pin_hash = sha256(pin) if pin else None
     await database["family_members"].update_one(
-        {"member_id": member_id},
+        {"member_id": member_id, "family_id": user["family_id"]},
         {"$set": {"pin_hash": pin_hash}},
     )
     return {"ok": True, "has_pin": bool(pin_hash)}
@@ -2294,7 +2379,7 @@ async def remove_member_pin(member_id: str, user=Depends(require_user)):
         raise HTTPException(status_code=404, detail="Family member not found")
 
     await database["family_members"].update_one(
-        {"member_id": member_id},
+        {"member_id": member_id, "family_id": user["family_id"]},
         {"$set": {"pin_hash": None}},
     )
     return {"ok": True, "has_pin": False}

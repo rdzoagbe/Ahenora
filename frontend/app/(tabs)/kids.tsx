@@ -51,6 +51,7 @@ import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/compo
 import { logger } from '../../src/logger';
 import { recordWin } from '../../src/reviewPrompt';
 import { isAlreadySettled, mergeRedemptions, restoreRedemption, sortByNewest } from '../../src/redemptions';
+import { webConfirm } from '../../src/confirm';
 
 type ToastState = { message: string; tone: ToastTone };
 type RewardSheetMode = 'create' | 'edit';
@@ -416,6 +417,22 @@ export default function Kids() {
     }
   };
 
+  // A PIN is the only thing standing between a child and spending their own
+  // stars, and this sheet is one tap from the Redeem button they are looking
+  // at. Removing it asks first, the same as any other undoing of a control.
+  const confirmClearPin = () => {
+    if (!activeChild) return;
+    const message = t('kids_remove_pin_confirm', { name: activeChild.name });
+    if (Platform.OS === 'web') {
+      if (webConfirm(message)) clearChildPin();
+      return;
+    }
+    Alert.alert(t('kids_remove_pin'), message, [
+      { text: t('cancel'), style: 'cancel' },
+      { text: t('kids_remove_pin'), style: 'destructive', onPress: () => clearChildPin() },
+    ]);
+  };
+
   const clearChildPin = async () => {
     if (!activeChild) return;
     setSaving(true);
@@ -457,17 +474,20 @@ export default function Kids() {
   const confirmRemoveChild = () => {
     if (!activeChild) return;
     const child = activeChild;
-    if (Platform.OS === 'web') { removeChild(child); return; }
     // Spelled out rather than a bare "Are you sure?": this takes the child's
-    // stars and their whole history with it, and there is no undo.
-    Alert.alert(
-      t('kids_remove_child_title', { name: child.name }),
-      t('kids_remove_child_msg', { name: child.name, n: child.stars || 0 }),
-      [
-        { text: t('cancel'), style: 'cancel' },
-        { text: t('kids_delete'), style: 'destructive', onPress: () => removeChild(child) },
-      ],
-    );
+    // stars and their whole history with it, and there is no undo. Web gets a
+    // real prompt too — the shortcut other delete flows take is survivable for
+    // a reward and not for a child.
+    const title = t('kids_remove_child_title', { name: child.name });
+    const message = t('kids_remove_child_msg', { name: child.name, n: child.stars || 0 });
+    if (Platform.OS === 'web') {
+      if (webConfirm(`${title}\n\n${message}`)) removeChild(child);
+      return;
+    }
+    Alert.alert(title, message, [
+      { text: t('cancel'), style: 'cancel' },
+      { text: t('kids_delete'), style: 'destructive', onPress: () => removeChild(child) },
+    ]);
   };
 
   const saveReward = async () => {
@@ -1289,7 +1309,7 @@ export default function Kids() {
                   accessibilityLabel={t('close')} testID="close-child-sheet" onPress={() => setShowChildSheet(false)} style={styles.iconBtn}><X color={ui.text} size={20} /></PressScale>
         </View>
         <Text style={styles.label}>{t('kids_child_name')}</Text>
-        <TextInput testID="child-name" value={childName} onChangeText={setChildName} placeholder={t('kids_child_name_placeholder')} placeholderTextColor={ui.muted} style={styles.input} returnKeyType="next" />
+        <TextInput testID="child-name" maxLength={60} value={childName} onChangeText={setChildName} placeholder={t('kids_child_name_placeholder')} placeholderTextColor={ui.muted} style={styles.input} returnKeyType="next" />
         <Text style={styles.label}>{t('kids_starting_stars')}</Text>
         <TextInput testID="child-starting-stars" value={childStartingStars} onChangeText={(v) => setChildStartingStars(cleanNumber(v))} keyboardType="number-pad" placeholder="0" placeholderTextColor={ui.muted} style={styles.input} />
         <Text style={styles.label}>{t('kids_pin_optional')}</Text>
@@ -1317,7 +1337,7 @@ export default function Kids() {
 
         <Text style={styles.label}>{t('kids_child_name')}</Text>
         <TextInput
-          testID="manage-child-name"
+          testID="manage-child-name" maxLength={60}
           value={manageName}
           onChangeText={setManageName}
           placeholder={t('kids_child_name_placeholder')}
@@ -1343,13 +1363,13 @@ export default function Kids() {
           {activeChild?.has_pin ? t('kids_pin_set_help') : t('kids_pin_none_help')}
         </Text>
         {activeChild?.has_pin ? (
-          <PressScale testID="manage-child-remove-pin" onPress={clearChildPin} disabled={saving} style={styles.inlineLink}>
+          <PressScale testID="manage-child-remove-pin" onPress={confirmClearPin} disabled={saving} style={styles.inlineLink}>
             <Text style={styles.inlineLinkText}>{t('kids_remove_pin')}</Text>
           </PressScale>
         ) : null}
 
         <View style={styles.sheetFooter}>
-          <PressScale testID="manage-child-delete" onPress={confirmRemoveChild} style={styles.deleteBtn}>
+          <PressScale testID="manage-child-delete" onPress={confirmRemoveChild} disabled={saving} style={[styles.deleteBtn, saving && { opacity: 0.5 }]}>
             <Trash2 color={ui.danger} size={17} />
             <Text style={styles.deleteText}>{t('kids_delete')}</Text>
           </PressScale>
