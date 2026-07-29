@@ -389,7 +389,7 @@ GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "").strip()
 # Which model actually answered, and the last per-model failure. Written by
 # _gemini_generate, read by /api/health/ai so production can say which model it
 # is really on instead of us assuming.
-_gemini_state = {"model": None, "last_error": None, "errors": {}}
+_gemini_state = {"model": None, "last_error": None, "errors": {}, "discovered": None}
 
 
 def _gemini(system: str = ""):
@@ -397,6 +397,31 @@ def _gemini(system: str = ""):
     (the voice upload path). Uses the proven model when one is known."""
     name = _gemini_state["model"] or model_candidates(GEMINI_MODEL)[0]
     return genai.GenerativeModel(model_name=name, system_instruction=system or None)
+
+
+def _discover_models() -> list:
+    """Ask the live key which models it can use for generateContent.
+
+    Model names drift (Google renames and retires them), and a hardcoded list
+    goes stale. When every candidate 404s, this is the source of truth: whatever
+    the key is actually entitled to. Returns [] if listing itself fails (which
+    usually means the Generative Language API is not enabled on the project).
+    """
+    if not GOOGLE_API_KEY or not genai:
+        return []
+    try:
+        names = []
+        for m in genai.list_models():
+            methods = getattr(m, "supported_generation_methods", []) or []
+            if "generateContent" in methods:
+                # Names come back as "models/gemini-x"; strip the prefix.
+                names.append(m.name.split("/", 1)[-1])
+        # Prefer flash-class models (cheapest, fastest) but keep the rest.
+        names.sort(key=lambda n: (0 if "flash" in n else 1, n))
+        return names
+    except Exception as exc:  # noqa: BLE001 — reported by the caller
+        _gemini_state["last_error"] = f"list_models: {exc}"[:300]
+        return []
 
 
 async def _gemini_generate(contents, system: str = "", temperature: float = None) -> str:
@@ -412,7 +437,17 @@ async def _gemini_generate(contents, system: str = "", temperature: float = None
     """
     gen_config = {"temperature": temperature} if temperature is not None else None
     last_error = None
-    for name in model_candidates(GEMINI_MODEL, _gemini_state["model"] or ""):
+    candidates = model_candidates(GEMINI_MODEL, _gemini_state["model"] or "")
+    # If none of the built-in names exist for this key, ask the key what it has
+    # and append those. Self-heals against Google renaming/retiring models.
+    discovered = _gemini_state.get("discovered")
+    if discovered is None:
+        discovered = _discover_models()
+        _gemini_state["discovered"] = discovered
+    for name in discovered:
+        if name not in candidates:
+            candidates.append(name)
+    for name in candidates:
         model = genai.GenerativeModel(model_name=name, system_instruction=system or None)
         try:
             response = await asyncio.to_thread(
@@ -1496,7 +1531,13 @@ async def health_ai(probe: int = 0):
         ],
     }
 
+    # Always show what the key can actually use — the fastest way to diagnose
+    # model_not_found is to see the real list.
+    status["available_models"] = _discover_models()
+
     if probe:
+        # Force a fresh discovery on an explicit probe.
+        _gemini_state["discovered"] = None
         if not GOOGLE_API_KEY or not genai:
             status["probe"] = {"ok": False, "error": "GOOGLE_API_KEY missing or library not loaded"}
             return status
