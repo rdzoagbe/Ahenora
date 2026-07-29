@@ -198,7 +198,7 @@ Post-launch bets that make the app the thing a parent reaches for in a real mome
 ### Parked (only if users ask)
 - **Kid logins** (children checking off their own chores) — flips Play audience to mixed → Families-program compliance. Revisit only on demand.
 - **Tech debt at real scale (~1k users):** vault files base64-in-Mongo → object storage; split the 3,700-line `server.py`; Mongo indexes on `family_id`; PBKDF2 iteration bump.
-- **Migrate `google-generativeai` → `google.genai`:** the old SDK is end-of-life (no more updates or fixes). It still works; move before it breaks, not after. The model name is already env-configurable (`GEMINI_MODEL`) with a retirement-fallback chain.
+- ~~**Migrate `google-generativeai` → `google.genai`**~~ — **done.** The old SDK was end-of-life; moved before it broke rather than after. Model discovery, the retirement-fallback chain and `GEMINI_MODEL` all carried over, and generation now uses the SDK's native async surface instead of a worker thread. `/api/health/ai` reports `sdk` and `client_ready` so the swap is visible in production.
 
 ### How we execute
 - Same rhythm as the build-out: small branch → `tsc`/`jest`/`py_compile` → PR → merge → **OTA** for JS, **EAS build** for anything native.

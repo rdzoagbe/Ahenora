@@ -23,9 +23,11 @@ except ImportError:
 from google.oauth2 import id_token as google_id_token
 from google.auth.transport.requests import Request as GoogleRequest
 try:
-    import google.generativeai as genai
+    from google import genai
+    from google.genai import types as genai_types
 except ImportError:
     genai = None
+    genai_types = None
 import PIL.Image
 
 from ai_models import model_candidates, should_try_next_model, summarize_ai_error
@@ -98,8 +100,6 @@ ALLOWED_ORIGINS = [
     "exp://",
 ]
 
-if GOOGLE_API_KEY and genai:
-    genai.configure(api_key=GOOGLE_API_KEY)
 
 # Connection resilience: after the Atlas M0 -> M10 migration the running process
 # held connections to servers that no longer existed, so every query waited out
@@ -389,14 +389,30 @@ GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "").strip()
 # Which model actually answered, and the last per-model failure. Written by
 # _gemini_generate, read by /api/health/ai so production can say which model it
 # is really on instead of us assuming.
-_gemini_state = {"model": None, "last_error": None, "errors": {}, "discovered": None}
+_gemini_state = {"model": None, "last_error": None, "errors": {}, "discovered": None,
+                 "client": None}
 
 
-def _gemini(system: str = ""):
-    """A model handle for callers that must drive generate_content themselves
-    (the voice upload path). Uses the proven model when one is known."""
-    name = _gemini_state["model"] or model_candidates(GEMINI_MODEL)[0]
-    return genai.GenerativeModel(model_name=name, system_instruction=system or None)
+def _gemini_client():
+    """The one client for this process, built on first use.
+
+    The retired google-generativeai package kept the key in module-level global
+    state configured at import; google-genai hangs it on a client instead.
+    Built lazily rather than at import so a transient failure here cannot
+    permanently disable every AI feature for the life of the process — the next
+    call simply tries again.
+    """
+    if _gemini_state["client"] is not None:
+        return _gemini_state["client"]
+    if not GOOGLE_API_KEY or not genai:
+        return None
+    try:
+        _gemini_state["client"] = genai.Client(api_key=GOOGLE_API_KEY)
+    except Exception as exc:  # noqa: BLE001 — surfaced by /api/health/ai
+        _gemini_state["last_error"] = f"client: {exc}"[:300]
+        log.warning("gemini client could not be created: %s", exc)
+        return None
+    return _gemini_state["client"]
 
 
 def _discover_models() -> list:
@@ -407,7 +423,8 @@ def _discover_models() -> list:
     the key is actually entitled to. Returns [] if listing itself fails (which
     usually means the Generative Language API is not enabled on the project).
     """
-    if not GOOGLE_API_KEY or not genai:
+    client = _gemini_client()
+    if not client:
         return []
     # Substrings that mark a model as NOT a plain text generator (image, audio,
     # robotics, research, etc.). These are demoted to the very end rather than
@@ -432,15 +449,28 @@ def _discover_models() -> list:
 
     try:
         names = []
-        for m in genai.list_models():
-            methods = getattr(m, "supported_generation_methods", []) or []
-            if "generateContent" not in methods:
+        # query_base=True asks for the published models rather than tuned ones.
+        # It is the default, but the distinction matters enough to say out loud.
+        for m in client.models.list(config={"query_base": True}):
+            # google-genai renamed this field from supported_generation_methods
+            # to supported_actions. Read both, and — importantly — keep a model
+            # that reports neither. This discovery exists to survive Google
+            # renaming things; a filter that silently empties the list would
+            # disable the very self-healing it is here to provide.
+            actions = (
+                getattr(m, "supported_actions", None)
+                or getattr(m, "supported_generation_methods", None)
+                or []
+            )
+            if actions and "generateContent" not in actions:
                 continue
-            names.append(m.name.split("/", 1)[-1])
+            if not m.name:
+                continue
+            names.append(m.name.split("/")[-1])
         names.sort(key=rank)
         return names
     except Exception as exc:  # noqa: BLE001 — reported by the caller
-        _gemini_state["last_error"] = f"list_models: {exc}"[:300]
+        _gemini_state["last_error"] = f"models.list: {exc}"[:300]
         return []
 
 
@@ -455,7 +485,16 @@ async def _gemini_generate(contents, system: str = "", temperature: float = None
     `temperature` is optional; when set it controls sampling diversity, which
     the meal planner raises for repeat "different ideas" asks.
     """
-    gen_config = {"temperature": temperature} if temperature is not None else None
+    client = _gemini_client()
+    if not client:
+        raise RuntimeError("Gemini is not configured")
+
+    config = {}
+    if system:
+        config["system_instruction"] = system
+    if temperature is not None:
+        config["temperature"] = temperature
+
     last_error = None
     candidates = model_candidates(GEMINI_MODEL, _gemini_state["model"] or "")
     # If none of the built-in names exist for this key, ask the key what it has
@@ -468,11 +507,12 @@ async def _gemini_generate(contents, system: str = "", temperature: float = None
         if name not in candidates:
             candidates.append(name)
     for name in candidates:
-        model = genai.GenerativeModel(model_name=name, system_instruction=system or None)
         try:
-            response = await asyncio.to_thread(
-                lambda m=model: m.generate_content(contents, generation_config=gen_config)
-                if gen_config else m.generate_content(contents)
+            # .aio is natively async, so this no longer needs a worker thread.
+            response = await client.aio.models.generate_content(
+                model=name,
+                contents=contents,
+                config=config or None,
             )
             if _gemini_state["model"] != name:
                 log.info("gemini model resolved to %s", name)
@@ -1576,6 +1616,10 @@ async def health_ai(probe: int = 0):
     status = {
         "key_configured": bool(GOOGLE_API_KEY),
         "library_loaded": bool(genai),
+        # The SDK importing and the client actually building are separate
+        # failures with separate fixes, so report them separately.
+        "client_ready": bool(_gemini_client()),
+        "sdk": "google-genai",
         "model_env": GEMINI_MODEL or None,
         "model_resolved": _gemini_state["model"],
         "model_candidates": model_candidates(GEMINI_MODEL, _gemini_state["model"] or ""),
@@ -1596,8 +1640,8 @@ async def health_ai(probe: int = 0):
     if probe:
         # Force a fresh discovery on an explicit probe.
         _gemini_state["discovered"] = None
-        if not GOOGLE_API_KEY or not genai:
-            status["probe"] = {"ok": False, "error": "GOOGLE_API_KEY missing or library not loaded"}
+        if not _gemini_client():
+            status["probe"] = {"ok": False, "error": "GOOGLE_API_KEY missing or client unavailable"}
             return status
         # One probe a minute, globally. Enough to diagnose, too slow to farm.
         now = utcnow()
@@ -4155,15 +4199,19 @@ Rules:
 """.strip()
 
     voice_system = "You convert spoken household instructions into structured task/card JSON."
-    model = _gemini(voice_system)
 
     try:
         text = await _gemini_generate(
-            [prompt, {"mime_type": mime_type or "audio/aac", "data": audio_bytes}],
+            [prompt, genai_types.Part.from_bytes(
+                data=audio_bytes, mime_type=mime_type or "audio/aac")],
             system=voice_system,
         )
     except Exception as first_error:
-        if not hasattr(genai, "upload_file"):
+        # Inline audio has a request-size ceiling; past it the file has to be
+        # uploaded first. Falling back rather than failing keeps long voice
+        # notes working.
+        client = _gemini_client()
+        if not client:
             raise HTTPException(
                 status_code=500,
                 detail=f"Voice transcription failed: {first_error}",
@@ -4185,13 +4233,14 @@ Rules:
                 tmp.write(audio_bytes)
                 tmp_path = tmp.name
 
-            uploaded = await asyncio.to_thread(
-                genai.upload_file,
-                tmp_path,
-                mime_type=mime_type or None,
+            uploaded = await client.aio.files.upload(
+                file=tmp_path,
+                config={"mime_type": mime_type} if mime_type else None,
             )
-            response = await asyncio.to_thread(model.generate_content, [prompt, uploaded])
-            text = (response.text or "").strip()
+            # Routed through _gemini_generate so the upload path gets the same
+            # model fallback as everything else — previously it was pinned to
+            # one model and went dark on its own when that model was retired.
+            text = await _gemini_generate([prompt, uploaded], system=voice_system)
         except Exception as second_error:
             raise HTTPException(
                 status_code=500,
