@@ -51,7 +51,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [lang, setLangState] = useState<Lang>('en');
   const [subscription, setSubscription] = useState<Subscription | null>(null);
-  const [appearanceMode, setAppearanceMode] = useState<AppearanceMode>('light');
+  // Follow the phone unless the parent has said otherwise. Defaulting to light
+  // meant someone on a dark phone opening this at bedtime — which is when a
+  // family app actually gets opened — got a white screen in the face, and had
+  // to go find a setting to stop it. Anyone who has explicitly chosen light or
+  // dark still keeps that choice: this is only the value before one is stored.
+  const [appearanceMode, setAppearanceMode] = useState<AppearanceMode>('system');
   const [upgradePrompt, setUpgradePrompt] = useState<{
     feature: string;
     message: string;
