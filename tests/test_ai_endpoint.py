@@ -60,6 +60,7 @@ class HealthAiProbe(unittest.TestCase):
         server._gemini_state["model"] = None
         server._gemini_state["last_error"] = None
         server._gemini_state["errors"] = {}
+        server._gemini_state["discovered"] = None
         server._AI_PROBE["last"] = None
         self._genai = server.genai
 
