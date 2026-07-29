@@ -12,6 +12,15 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  kids_redemption_owed_badge: '{n} reward(s) still to give',
+  kids_redemptions_pending: 'Waiting to be given',
+  kids_redemption_paid: 'Paid {n} ⭐',
+  kids_redemption_given: 'Given',
+  kids_redemption_given_toast: '{title} — marked as given',
+  kids_redemption_refund: 'Give stars back',
+  kids_redemption_refund_confirm: 'Return {n} ⭐ for {title}? Use this when a reward can\u2019t happen.',
+  kids_redemption_refunded_toast: '{n} ⭐ given back',
+  kids_redemption_error: 'That did not go through. Please try again.',
   kids_chore_done: 'Done',
   kids_stars_earned: '+{n} ⭐ for {name}',
   kids_chore_done_error: 'Could not complete the chore.',
@@ -1025,6 +1034,15 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  kids_redemption_owed_badge: '{n} premio(s) por entregar',
+  kids_redemptions_pending: 'Pendiente de entregar',
+  kids_redemption_paid: 'Pagó {n} ⭐',
+  kids_redemption_given: 'Entregado',
+  kids_redemption_given_toast: '{title}: marcado como entregado',
+  kids_redemption_refund: 'Devolver estrellas',
+  kids_redemption_refund_confirm: '¿Devolver {n} ⭐ por {title}? Úsalo cuando un premio no se pueda cumplir.',
+  kids_redemption_refunded_toast: 'Se devolvieron {n} ⭐',
+  kids_redemption_error: 'No se pudo completar. Inténtalo de nuevo.',
   kids_chore_done: 'Hecho',
   kids_stars_earned: '+{n} ⭐ para {name}',
   kids_chore_done_error: 'No se pudo completar la tarea.',
@@ -2032,6 +2050,15 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  kids_redemption_owed_badge: '{n} récompense(s) à remettre',
+  kids_redemptions_pending: 'À remettre',
+  kids_redemption_paid: 'Payé {n} ⭐',
+  kids_redemption_given: 'Remis',
+  kids_redemption_given_toast: '{title} : marqué comme remis',
+  kids_redemption_refund: 'Rendre les étoiles',
+  kids_redemption_refund_confirm: 'Rendre {n} ⭐ pour {title} ? À utiliser quand une récompense ne peut pas être honorée.',
+  kids_redemption_refunded_toast: '{n} ⭐ rendues',
+  kids_redemption_error: 'Cela n\u2019a pas fonctionné. Réessayez.',
   kids_chore_done: 'Fait',
   kids_stars_earned: '+{n} ⭐ pour {name}',
   kids_chore_done_error: 'Impossible de valider la tâche.',
@@ -3039,6 +3066,15 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  kids_redemption_owed_badge: '{n} Belohnung(en) noch einzulösen',
+  kids_redemptions_pending: 'Noch einzulösen',
+  kids_redemption_paid: '{n} ⭐ bezahlt',
+  kids_redemption_given: 'Eingelöst',
+  kids_redemption_given_toast: '{title} – als eingelöst markiert',
+  kids_redemption_refund: 'Sterne zurückgeben',
+  kids_redemption_refund_confirm: '{n} ⭐ für {title} zurückgeben? Dafür, wenn eine Belohnung nicht klappt.',
+  kids_redemption_refunded_toast: '{n} ⭐ zurückgegeben',
+  kids_redemption_error: 'Das hat nicht geklappt. Bitte noch einmal versuchen.',
   kids_chore_done: 'Erledigt',
   kids_stars_earned: '+{n} ⭐ für {name}',
   kids_chore_done_error: 'Aufgabe konnte nicht abgeschlossen werden.',

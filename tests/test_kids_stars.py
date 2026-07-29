@@ -68,6 +68,19 @@ class FakeCollection:
                 return type("R", (), {"matched_count": 1, "modified_count": 1})()
         return type("R", (), {"matched_count": 0, "modified_count": 0})()
 
+    async def delete_one(self, query):
+        for index, row in enumerate(self.rows):
+            if self._matches(row, query):
+                del self.rows[index]
+                return type("R", (), {"deleted_count": 1})()
+        return type("R", (), {"deleted_count": 0})()
+
+    async def delete_many(self, query):
+        keep = [r for r in self.rows if not self._matches(r, query)]
+        removed = len(self.rows) - len(keep)
+        self.rows[:] = keep
+        return type("R", (), {"deleted_count": removed})()
+
     def find(self, query=None, projection=None):
         rows = [r for r in self.rows if self._matches(r, query or {})]
 
@@ -340,6 +353,186 @@ class ChoresAndRoutinesAwardStars(unittest.TestCase):
         self.assertEqual(result["stars_awarded"], 0)
         self.assertEqual(len(db["routine_logs"].rows), 1)
         self.assertEqual(db["star_transactions"].rows, [])
+
+
+@unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
+class RedemptionFulfilment(unittest.TestCase):
+    """Spending stars was the whole transaction; nobody tracked whether the
+    reward was ever handed over. These cover the record, the settle, and the
+    refund — including two parents tapping at the same moment."""
+
+    USER = {"family_id": "fam1", "user_id": "u1", "name": "Parent", "role": "parent"}
+    OTHER = {"family_id": "fam2", "user_id": "u2", "name": "Stranger", "role": "parent"}
+
+    def setUp(self):
+        self._get_db = server.get_db
+
+    def tearDown(self):
+        server.get_db = self._get_db
+
+    def _install(self, stars=100, cost=60):
+        db = FakeDB(
+            family_members=[{"member_id": "kid1", "family_id": "fam1", "name": "Ama",
+                             "role": "child", "stars": stars}],
+            rewards=[{"reward_id": "r1", "family_id": "fam1", "title": "Cinema trip",
+                      "cost_stars": cost, "icon": "🎬"}],
+            star_transactions=[],
+            redemptions=[],
+        )
+        server.get_db = lambda: db
+        return db
+
+    def _redeem(self, db):
+        payload = type("P", (), {"member_id": "kid1"})()
+        return asyncio.run(server.redeem_reward("r1", payload, user=self.USER))
+
+    def _only(self, db):
+        return db["redemptions"].rows[0]
+
+    # ---- the record -----------------------------------------------------
+
+    def test_redeeming_records_something_still_owed(self):
+        db = self._install()
+        result = self._redeem(db)
+
+        self.assertEqual(len(db["redemptions"].rows), 1)
+        row = self._only(db)
+        self.assertEqual(row["status"], "pending")
+        self.assertEqual(row["member_id"], "kid1")
+        self.assertEqual(row["cost_stars"], 60)
+        self.assertIsNone(row["fulfilled_at"])
+        # The caller gets it back so the UI can show it without a refetch.
+        self.assertEqual(result["redemption"]["redemption_id"], row["redemption_id"])
+
+    def test_the_promise_survives_the_reward_being_renamed_or_deleted(self):
+        # The title is copied, not looked up: what a child paid for should not
+        # change or vanish underneath them.
+        db = self._install()
+        self._redeem(db)
+        db["rewards"].rows.clear()
+
+        rows = asyncio.run(server.list_redemptions(user=self.USER))
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["reward_title"], "Cinema trip")
+        self.assertEqual(rows[0]["reward_icon"], "🎬")
+        self.assertEqual(rows[0]["cost_stars"], 60)
+
+    def test_listing_can_be_narrowed_to_what_is_outstanding(self):
+        db = self._install()
+        self._redeem(db)
+        asyncio.run(server.fulfil_redemption(self._only(db)["redemption_id"], user=self.USER))
+
+        self.assertEqual(asyncio.run(server.list_redemptions(status="pending", user=self.USER)), [])
+        settled = asyncio.run(server.list_redemptions(status="fulfilled", user=self.USER))
+        self.assertEqual(len(settled), 1)
+
+    # ---- handing it over -------------------------------------------------
+
+    def test_marking_it_given_settles_it_and_stamps_the_time(self):
+        db = self._install()
+        self._redeem(db)
+        result = asyncio.run(server.fulfil_redemption(self._only(db)["redemption_id"], user=self.USER))
+
+        self.assertEqual(result["status"], "fulfilled")
+        self.assertIsNotNone(result["fulfilled_at"])
+        # Settling is not a star movement — the stars were spent at redeem time.
+        self.assertEqual(len(db["star_transactions"].rows), 1)
+        self.assertEqual(db["family_members"].rows[0]["stars"], 40)
+
+    def test_it_cannot_be_given_twice(self):
+        db = self._install()
+        self._redeem(db)
+        rid = self._only(db)["redemption_id"]
+        asyncio.run(server.fulfil_redemption(rid, user=self.USER))
+
+        with self.assertRaises(HTTPException) as ctx:
+            asyncio.run(server.fulfil_redemption(rid, user=self.USER))
+        self.assertEqual(ctx.exception.status_code, 404)
+
+    def test_another_family_cannot_settle_it(self):
+        db = self._install()
+        self._redeem(db)
+        rid = self._only(db)["redemption_id"]
+
+        with self.assertRaises(HTTPException):
+            asyncio.run(server.fulfil_redemption(rid, user=self.OTHER))
+        with self.assertRaises(HTTPException):
+            asyncio.run(server.cancel_redemption(rid, user=self.OTHER))
+        self.assertEqual(self._only(db)["status"], "pending")
+
+    # ---- giving the stars back -------------------------------------------
+
+    def test_cancelling_returns_the_stars_and_says_so_in_the_ledger(self):
+        db = self._install(stars=100, cost=60)
+        self._redeem(db)
+        self.assertEqual(db["family_members"].rows[0]["stars"], 40)
+
+        result = asyncio.run(server.cancel_redemption(self._only(db)["redemption_id"], user=self.USER))
+
+        self.assertEqual(result["redemption"]["status"], "cancelled")
+        self.assertEqual(db["family_members"].rows[0]["stars"], 100)
+        refund = db["star_transactions"].rows[-1]
+        self.assertEqual(refund["delta"], 60)
+        self.assertIn("Cinema trip", refund["reason"])
+        # The ledger still reconciles: -60 then +60 against an unchanged balance.
+        self.assertEqual(100 + sum(t["delta"] for t in db["star_transactions"].rows), 100)
+
+    def test_something_already_given_cannot_be_refunded(self):
+        # Otherwise a child keeps the cinema trip and gets the stars back too.
+        db = self._install()
+        self._redeem(db)
+        rid = self._only(db)["redemption_id"]
+        asyncio.run(server.fulfil_redemption(rid, user=self.USER))
+
+        with self.assertRaises(HTTPException):
+            asyncio.run(server.cancel_redemption(rid, user=self.USER))
+        self.assertEqual(db["family_members"].rows[0]["stars"], 40)
+        self.assertEqual(len(db["star_transactions"].rows), 1)
+
+    def test_two_parents_cancelling_at_once_refund_once(self):
+        # Claiming the redemption before touching the balance is what makes
+        # this safe; refunding first would credit 120 stars for one reward.
+        db = self._install(stars=100, cost=60)
+        self._redeem(db)
+        rid = self._only(db)["redemption_id"]
+
+        async def race():
+            return await asyncio.gather(
+                server.cancel_redemption(rid, user=self.USER),
+                server.cancel_redemption(rid, user=self.USER),
+                return_exceptions=True,
+            )
+
+        results = asyncio.run(race())
+        ok = [r for r in results if not isinstance(r, Exception)]
+        self.assertEqual(len(ok), 1, "exactly one cancel should succeed")
+        self.assertEqual(db["family_members"].rows[0]["stars"], 100)
+        self.assertEqual(len([t for t in db["star_transactions"].rows if t["delta"] > 0]), 1)
+
+    def test_two_parents_marking_it_given_at_once_settle_once(self):
+        db = self._install()
+        self._redeem(db)
+        rid = self._only(db)["redemption_id"]
+
+        async def race():
+            return await asyncio.gather(
+                server.fulfil_redemption(rid, user=self.USER),
+                server.fulfil_redemption(rid, user=self.USER),
+                return_exceptions=True,
+            )
+
+        results = asyncio.run(race())
+        self.assertEqual(len([r for r in results if not isinstance(r, Exception)]), 1)
+
+    # ---- tidying up -------------------------------------------------------
+
+    def test_removing_a_child_clears_what_they_were_owed(self):
+        # Otherwise the parent is left with an outstanding reward and no name
+        # to attach it to.
+        db = self._install()
+        self._redeem(db)
+        asyncio.run(server.delete_family_member("kid1", user=self.USER))
+        self.assertEqual(db["redemptions"].rows, [])
 
 
 if __name__ == "__main__":

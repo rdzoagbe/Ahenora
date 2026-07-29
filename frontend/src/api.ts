@@ -407,6 +407,22 @@ export interface Reward {
   created_at: string;
 }
 
+export interface Redemption {
+  redemption_id: string;
+  family_id: string;
+  member_id: string;
+  reward_id?: string | null;
+  /** Copied at redeem time, so renaming or deleting a reward never rewrites
+   *  what a child was promised. */
+  reward_title: string;
+  reward_icon?: string | null;
+  cost_stars: number;
+  status: 'pending' | 'fulfilled' | 'cancelled';
+  created_at: string;
+  fulfilled_at?: string | null;
+  cancelled_at?: string | null;
+}
+
 export interface StarTransaction {
   transaction_id: string;
   family_id: string;
@@ -772,10 +788,23 @@ export const api = {
   redeemReward: (id: string, member_id: string) => {
     cache.invalidate('listRewards');
     cache.invalidate('familyMembers');
-    return request<{ ok: boolean; member: FamilyMember }>(`/rewards/${id}/redeem`, {
-      method: 'POST',
-      body: { member_id },
-    });
+    return request<{ ok: boolean; member: FamilyMember; redemption?: Redemption }>(
+      `/rewards/${id}/redeem`,
+      { method: 'POST', body: { member_id } }
+    );
+  },
+  // Redemptions — rewards paid for but not yet handed over
+  listRedemptions: (status?: Redemption['status']) =>
+    request<Redemption[]>(`/redemptions${status ? `?status=${status}` : ''}`),
+  fulfilRedemption: (id: string) => {
+    return request<Redemption>(`/redemptions/${id}/fulfil`, { method: 'POST' });
+  },
+  cancelRedemption: (id: string) => {
+    cache.invalidate('familyMembers');
+    return request<{ ok: boolean; redemption: Redemption; member: FamilyMember | null }>(
+      `/redemptions/${id}/cancel`,
+      { method: 'POST' }
+    );
   },
   // Conflicts
   conflicts: (due_date: string, exclude_id?: string) =>
