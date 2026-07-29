@@ -973,6 +973,7 @@ def public_routine(r: dict) -> dict:
         "name": r["name"],
         "steps": r.get("steps", []),
         "member_id": r.get("member_id"),
+        "star_reward": int(r.get("star_reward", 2) or 0),
         "created_at": iso(r["created_at"]),
     }
 
@@ -1050,6 +1051,8 @@ def public_chore(c: dict) -> dict:
         "assigned_members": c.get("assigned_members", []),
         "current_assignee": c.get("current_assignee"),
         "rotate": c.get("rotate", True),
+        # Existing chores predate star rewards; default so old rows still pay.
+        "star_reward": int(c.get("star_reward", 3) or 0),
         "last_rotated": iso(c.get("last_rotated")),
         "created_at": iso(c["created_at"]),
     }
@@ -1456,6 +1459,7 @@ class RoutineIn(BaseModel):
     name: str
     steps: list  # [{"label": str, "duration_seconds": int}]
     member_id: Optional[str] = None
+    star_reward: int = 2
 
 
 class RoutinePatchIn(BaseModel):
@@ -1508,6 +1512,9 @@ class ChoreIn(BaseModel):
     frequency: str = "daily"  # daily, weekly
     assigned_members: list = []  # [member_id, ...]
     rotate: bool = True
+    # Stars the assignee earns for finishing it. Per-chore, so taking the bins
+    # out can be worth more than feeding the cat.
+    star_reward: int = 3
 
 
 
@@ -2054,6 +2061,49 @@ async def delete_family_member(member_id: str, user=Depends(require_user)):
         {"member_id": member_id, "family_id": user["family_id"]}
     )
     return {"ok": True}
+
+
+async def award_stars_to_member(
+    database,
+    family_id: str,
+    member_id: str,
+    delta: int,
+    reason: str,
+    user: dict,
+) -> Optional[dict]:
+    """Award stars and write the matching ledger entry, atomically.
+
+    Shared by everything that can earn a child stars — finished chores,
+    completed routines — so every star movement lands in the ledger that
+    Recent Activity and the weekly total are built from. Silent no-op for a
+    missing member or a non-child (a chore can sit with a parent, and paying a
+    parent in stars would be odd), so callers can award unconditionally
+    without branching.
+    """
+    if not member_id or delta <= 0:
+        return None
+    member = await database["family_members"].find_one(
+        {"member_id": member_id, "family_id": family_id}, {"_id": 0}
+    )
+    if not member or str(member.get("role", "")).lower() != "child":
+        return None
+
+    await database["family_members"].update_one(
+        {"member_id": member_id, "family_id": family_id},
+        {"$inc": {"stars": delta}},
+    )
+    transaction = {
+        "transaction_id": new_id("star"),
+        "family_id": family_id,
+        "member_id": member_id,
+        "delta": delta,
+        "reason": reason,
+        "created_by_user_id": user.get("user_id"),
+        "created_by_name": user.get("name"),
+        "created_at": utcnow(),
+    }
+    await database["star_transactions"].insert_one(transaction)
+    return transaction
 
 
 @app.post("/api/family/members/{member_id}/stars")
@@ -4358,6 +4408,7 @@ async def create_routine(body: RoutineIn, user: dict = Depends(require_user), da
         "name": body.name,
         "steps": body.steps,
         "member_id": body.member_id,
+        "star_reward": max(0, int(body.star_reward or 0)),
         "created_at": utcnow(),
     }
     await database["routines"].insert_one(routine)
@@ -4407,7 +4458,23 @@ async def log_routine_completion(routine_id: str, user: dict = Depends(require_u
         "steps_count": len(routine.get("steps", [])),
     }
     await database["routine_logs"].insert_one(log_entry)
-    return {"ok": True, "log_id": log_entry["log_id"]}
+
+    # Finishing a routine earns stars. Without this the child got a toast and
+    # nothing else, so routines sat outside the economy they were meant to feed.
+    txn = await award_stars_to_member(
+        database,
+        user["family_id"],
+        routine.get("member_id"),
+        int(routine.get("star_reward", 0) or 0),
+        routine.get("name") or "Routine complete",
+        user,
+    )
+    return {
+        "ok": True,
+        "log_id": log_entry["log_id"],
+        "stars_awarded": txn["delta"] if txn else 0,
+        "member_id": routine.get("member_id"),
+    }
 
 
 # -----------------------------------------------------------------------------
@@ -5089,11 +5156,67 @@ async def create_chore(body: ChoreIn, user: dict = Depends(require_user), databa
         "assigned_members": body.assigned_members,
         "current_assignee": body.assigned_members[0] if body.assigned_members else None,
         "rotate": body.rotate,
+        "star_reward": max(0, int(body.star_reward or 0)),
         "last_rotated": utcnow(),
         "created_at": utcnow(),
     }
     await database["chores"].insert_one(chore)
     return public_chore(chore)
+
+
+@app.post("/api/chores/{chore_id}/complete")
+async def complete_chore(chore_id: str, user: dict = Depends(require_user), database=Depends(get_db)):
+    """Mark a chore done: award the person who did it, then pass it on.
+
+    Rotate alone only moves the chore to the next child — it says nothing about
+    the work being done, so chores earned nothing. This is the "done" action:
+    the current assignee is paid first, and only then does the wheel turn, so
+    the stars go to whoever actually did it rather than the next person up.
+    """
+    chore = await database["chores"].find_one(
+        {"chore_id": chore_id, "family_id": user["family_id"]}, {"_id": 0}
+    )
+    if not chore:
+        raise HTTPException(404, "Chore not found")
+
+    doer = chore.get("current_assignee")
+    txn = await award_stars_to_member(
+        database,
+        user["family_id"],
+        doer,
+        int(chore.get("star_reward", 0) or 0),
+        chore.get("title") or "Chore done",
+        user,
+    )
+
+    await database["chore_logs"].insert_one({
+        "log_id": new_id("clog"),
+        "chore_id": chore_id,
+        "family_id": user["family_id"],
+        "member_id": doer,
+        "completed_at": utcnow(),
+        "stars_awarded": txn["delta"] if txn else 0,
+    })
+
+    members = chore.get("assigned_members", [])
+    if chore.get("rotate", True) and len(members) >= 2:
+        try:
+            next_idx = (members.index(doer) + 1) % len(members)
+        except ValueError:
+            next_idx = 0
+        await database["chores"].update_one(
+            {"chore_id": chore_id},
+            {"$set": {"current_assignee": members[next_idx], "last_rotated": utcnow()}},
+        )
+        chore["current_assignee"] = members[next_idx]
+        chore["last_rotated"] = utcnow()
+
+    return {
+        "ok": True,
+        "chore": public_chore(chore),
+        "stars_awarded": txn["delta"] if txn else 0,
+        "member_id": doer,
+    }
 
 
 @app.post("/api/chores/{chore_id}/rotate")

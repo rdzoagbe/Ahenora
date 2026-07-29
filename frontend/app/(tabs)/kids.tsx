@@ -152,6 +152,9 @@ export default function Kids() {
   const starActionRef = useRef(false);
   // Guards a double-tap from recording the same amount twice.
   const moneySavingRef = useRef(false);
+  // A double-tap must not pay the same chore twice.
+  const choreDoneRef = useRef(false);
+  const routineDoneRef = useRef(false);
 
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [allowances, setAllowances] = useState<AllowanceConfig[]>([]);
@@ -170,6 +173,11 @@ export default function Kids() {
 
   const ui = useUI();
   const styles = useMemo(() => createStyles(ui), [ui]);
+
+  const memberName = useCallback((memberId: string) => {
+    const m = members.find((x) => x.member_id === memberId);
+    return m?.name || memberId;
+  }, [members]);
 
   const showToast = useCallback((message: string, tone: ToastTone = 'info') => {
     setToast({ message, tone });
@@ -527,6 +535,32 @@ export default function Kids() {
     await doRedeem(reward);
   };
 
+  // Finishing a chore pays whoever it currently sits with, then hands it on.
+  // Kept separate from rotate: rotating is "pass it to the next child", which
+  // says nothing about the work being done.
+  const completeChore = useCallback(async (choreId: string) => {
+    if (choreDoneRef.current) return;
+    choreDoneRef.current = true;
+    try {
+      const res = await api.completeChore(choreId);
+      setChores((prev) => prev.map((c) => (c.chore_id === choreId ? res.chore : c)));
+      if (res.stars_awarded > 0) {
+        // Reflect the new balance and the ledger entry the award just wrote.
+        await load();
+        showToast(
+          t('kids_stars_earned', { n: res.stars_awarded, name: memberName(res.member_id || '') }),
+          'success',
+        );
+      } else {
+        showToast(t('kids_chore_rotated'), 'success');
+      }
+    } catch {
+      showToast(t('kids_chore_done_error'), 'error');
+    } finally {
+      choreDoneRef.current = false;
+    }
+  }, [load, memberName, showToast, t]);
+
   const rotateChore = useCallback(async (choreId: string) => {
     try {
       const updated = await api.rotateChore(choreId);
@@ -574,11 +608,26 @@ export default function Kids() {
   }, [load, showToast]);
 
   const logRoutine = useCallback(async (id: string) => {
+    if (routineDoneRef.current) return;
+    routineDoneRef.current = true;
     try {
-      await api.logRoutineCompletion(id);
-      showToast(t('kids_routine_completed'), 'success');
-    } catch { showToast(t('kids_log_routine_error'), 'error'); }
-  }, [showToast]);
+      const res = await api.logRoutineCompletion(id);
+      if (res.stars_awarded > 0) {
+        // Pull the new balance and ledger entry the award just wrote.
+        await load();
+        showToast(
+          t('kids_stars_earned', { n: res.stars_awarded, name: memberName(res.member_id || '') }),
+          'success',
+        );
+      } else {
+        showToast(t('kids_routine_completed'), 'success');
+      }
+    } catch {
+      showToast(t('kids_log_routine_error'), 'error');
+    } finally {
+      routineDoneRef.current = false;
+    }
+  }, [load, memberName, showToast, t]);
 
   const childRoutines = useMemo(() => {
     if (!activeChild) return routines;
@@ -591,11 +640,6 @@ export default function Kids() {
   }, [allowances, activeChild]);
 
   const childBalance = activeChild ? (balances[activeChild.member_id] || 0) : 0;
-
-  const memberName = useCallback((memberId: string) => {
-    const m = members.find((x) => x.member_id === memberId);
-    return m?.name || memberId;
-  }, [members]);
 
   const weeklyLine = weeklyStars > 0
     ? `+${weeklyStars} ${t('kids_stars_this_week')} — ${t('kids_keep_it_up')} ✨`
@@ -828,7 +872,10 @@ export default function Kids() {
                   <View key={rtn.routine_id} style={styles.featureRow}>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.featureRowTitle}>{rtn.name}</Text>
-                      <Text style={styles.featureRowSub}>{rtn.steps.length} {t('kids_steps')} · {Math.round(rtn.steps.reduce((s, st) => s + (st.duration_seconds || 0), 0) / 60)} {t('kids_min')}</Text>
+                      <Text style={styles.featureRowSub}>
+                        {rtn.steps.length} {t('kids_steps')} · {Math.round(rtn.steps.reduce((s, st) => s + (st.duration_seconds || 0), 0) / 60)} {t('kids_min')}
+                        {rtn.star_reward ? ` · ${t('kids_worth', { n: rtn.star_reward })}` : ''}
+                      </Text>
                     </View>
                     <PressScale onPress={() => logRoutine(rtn.routine_id)} style={styles.featureActionBtn}>
                       <Play color="#FFFFFF" size={14} />
@@ -910,10 +957,23 @@ export default function Kids() {
                       <Text style={styles.featureRowTitle}>{chore.title}</Text>
                       <Text style={styles.featureRowSub}>
                         {chore.current_assignee ? memberName(chore.current_assignee) : t('kids_unassigned')} · {chore.frequency}
+                        {chore.star_reward ? ` · ${t('kids_worth', { n: chore.star_reward })}` : ''}
                       </Text>
                     </View>
+                    {/* Done pays whoever has it and then passes it on; Rotate
+                        just passes it on. Both are useful — a chore can change
+                        hands without anyone having finished it. */}
+                    <PressScale
+                      testID={`chore-done-${chore.chore_id}`}
+                      accessibilityRole="button"
+                      onPress={() => completeChore(chore.chore_id)}
+                      style={[styles.featureActionBtn, { backgroundColor: ui.mintText }]}
+                    >
+                      <Check color="#FFFFFF" size={14} />
+                      <Text style={styles.featureActionText}>{t('kids_chore_done')}</Text>
+                    </PressScale>
                     {chore.rotate && chore.assigned_members.length > 1 ? (
-                      <PressScale onPress={() => rotateChore(chore.chore_id)} style={styles.featureActionBtn}>
+                      <PressScale onPress={() => rotateChore(chore.chore_id)} style={[styles.featureActionBtn, { marginLeft: 6 }]}>
                         <RotateCcw color="#FFFFFF" size={14} />
                         <Text style={styles.featureActionText}>{t('kids_rotate')}</Text>
                       </PressScale>

@@ -219,5 +219,128 @@ class StarEconomy(unittest.TestCase):
         self.assertEqual(db["star_transactions"].rows, [])
 
 
+@unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
+class ChoresAndRoutinesAwardStars(unittest.TestCase):
+    """Finishing a chore or a routine used to earn nothing but a toast, leaving
+    them outside the star economy they were meant to feed."""
+
+    USER = {"family_id": "fam1", "user_id": "u1", "name": "Parent", "role": "parent"}
+
+    def setUp(self):
+        self._get_db = server.get_db
+
+    def tearDown(self):
+        server.get_db = self._get_db
+
+    def _db(self, members=None, chores=None, routines=None):
+        db = FakeDB(
+            family_members=members if members is not None else [
+                {"member_id": "kid1", "family_id": "fam1", "name": "Ama", "role": "child", "stars": 0},
+                {"member_id": "kid2", "family_id": "fam1", "name": "Kofi", "role": "child", "stars": 0},
+            ],
+            chores=chores or [],
+            routines=routines or [],
+            star_transactions=[],
+            chore_logs=[],
+            routine_logs=[],
+        )
+        server.get_db = lambda: db
+        return db
+
+    def _stars(self, db, member_id):
+        return next(m["stars"] for m in db["family_members"].rows if m["member_id"] == member_id)
+
+    # ---- chores ---------------------------------------------------------
+
+    def test_completing_a_chore_pays_the_child_who_did_it_then_rotates(self):
+        db = self._db(chores=[{
+            "chore_id": "c1", "family_id": "fam1", "title": "Bins out", "frequency": "weekly",
+            "assigned_members": ["kid1", "kid2"], "current_assignee": "kid1",
+            "rotate": True, "star_reward": 5, "created_at": server.utcnow(),
+        }])
+        result = asyncio.run(server.complete_chore("c1", user=self.USER, database=db))
+
+        # Paid the doer, not the next child up.
+        self.assertEqual(result["stars_awarded"], 5)
+        self.assertEqual(self._stars(db, "kid1"), 5)
+        self.assertEqual(self._stars(db, "kid2"), 0)
+        # Then handed the chore on.
+        self.assertEqual(db["chores"].rows[0]["current_assignee"], "kid2")
+
+    def test_a_completed_chore_appears_in_the_ledger(self):
+        db = self._db(chores=[{
+            "chore_id": "c1", "family_id": "fam1", "title": "Bins out", "frequency": "weekly",
+            "assigned_members": ["kid1"], "current_assignee": "kid1",
+            "rotate": True, "star_reward": 5, "created_at": server.utcnow(),
+        }])
+        asyncio.run(server.complete_chore("c1", user=self.USER, database=db))
+        ledger = db["star_transactions"].rows
+        self.assertEqual(len(ledger), 1)
+        self.assertEqual(ledger[0]["delta"], 5)
+        self.assertEqual(ledger[0]["member_id"], "kid1")
+        self.assertIn("Bins out", ledger[0]["reason"])
+
+    def test_a_chore_sitting_with_a_parent_pays_nobody(self):
+        # The wheel can include parents; paying a parent in stars would be odd.
+        db = self._db(
+            members=[{"member_id": "p1", "family_id": "fam1", "name": "Parent",
+                      "role": "parent", "stars": 0}],
+            chores=[{
+                "chore_id": "c1", "family_id": "fam1", "title": "Bins out", "frequency": "weekly",
+                "assigned_members": ["p1"], "current_assignee": "p1",
+                "rotate": True, "star_reward": 5, "created_at": server.utcnow(),
+            }])
+        result = asyncio.run(server.complete_chore("c1", user=self.USER, database=db))
+        self.assertEqual(result["stars_awarded"], 0)
+        self.assertEqual(self._stars(db, "p1"), 0)
+        self.assertEqual(db["star_transactions"].rows, [])
+
+    def test_a_zero_star_chore_still_completes_and_rotates(self):
+        db = self._db(chores=[{
+            "chore_id": "c1", "family_id": "fam1", "title": "Tiny job", "frequency": "daily",
+            "assigned_members": ["kid1", "kid2"], "current_assignee": "kid1",
+            "rotate": True, "star_reward": 0, "created_at": server.utcnow(),
+        }])
+        result = asyncio.run(server.complete_chore("c1", user=self.USER, database=db))
+        self.assertEqual(result["stars_awarded"], 0)
+        self.assertEqual(db["chores"].rows[0]["current_assignee"], "kid2")
+        self.assertEqual(db["star_transactions"].rows, [])
+
+    def test_a_solo_chore_pays_but_does_not_rotate(self):
+        db = self._db(chores=[{
+            "chore_id": "c1", "family_id": "fam1", "title": "Feed cat", "frequency": "daily",
+            "assigned_members": ["kid1"], "current_assignee": "kid1",
+            "rotate": True, "star_reward": 3, "created_at": server.utcnow(),
+        }])
+        asyncio.run(server.complete_chore("c1", user=self.USER, database=db))
+        self.assertEqual(self._stars(db, "kid1"), 3)
+        self.assertEqual(db["chores"].rows[0]["current_assignee"], "kid1")
+
+    # ---- routines -------------------------------------------------------
+
+    def test_completing_a_routine_pays_its_child(self):
+        db = self._db(routines=[{
+            "routine_id": "r1", "family_id": "fam1", "name": "Bedtime",
+            "steps": [{"label": "Teeth"}], "member_id": "kid1",
+            "star_reward": 2, "created_at": server.utcnow(),
+        }])
+        result = asyncio.run(server.log_routine_completion("r1", user=self.USER, database=db))
+        self.assertEqual(result["stars_awarded"], 2)
+        self.assertEqual(self._stars(db, "kid1"), 2)
+        self.assertEqual(len(db["routine_logs"].rows), 1)
+        self.assertEqual(db["star_transactions"].rows[0]["reason"], "Bedtime")
+
+    def test_a_routine_with_no_child_still_logs(self):
+        db = self._db(routines=[{
+            "routine_id": "r1", "family_id": "fam1", "name": "Tidy up",
+            "steps": [], "member_id": None, "star_reward": 2,
+            "created_at": server.utcnow(),
+        }])
+        result = asyncio.run(server.log_routine_completion("r1", user=self.USER, database=db))
+        self.assertEqual(result["stars_awarded"], 0)
+        self.assertEqual(len(db["routine_logs"].rows), 1)
+        self.assertEqual(db["star_transactions"].rows, [])
+
+
 if __name__ == "__main__":
     unittest.main()
