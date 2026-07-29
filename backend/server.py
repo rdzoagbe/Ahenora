@@ -4614,15 +4614,23 @@ async def suggest_meals_ai(
     if not GOOGLE_API_KEY:
         raise HTTPException(503, "Meal ideas are unavailable right now.")
 
+    # The current list only — checked items included, since something ticked
+    # off is a grocery bought this week, not an absent one.
     items = []
     async for row in database["shopping_list"].find(
-        {"family_id": user["family_id"], "checked": False}, {"_id": 0, "name": 1}
+        {"family_id": user["family_id"]}, {"_id": 0, "name": 1}
     ):
         name = sanitize_user_text(row.get("name") or "", MAX_INGREDIENT_LEN)
         if name:
             items.append(name)
 
-    # Recent trips too: a family's staples are not all on today's list.
+    # The minimum is judged on the CURRENT list alone. History used to top the
+    # list up before this check, which meant an empty list with old trips still
+    # produced a week of meals — suggestions from nothing. No list, no meals.
+    if len(items) < 3:
+        raise HTTPException(422, "Add a few things to your shopping list first.")
+
+    # Recent trips only ever enrich a real list; they cannot substitute for one.
     if len(items) < 6:
         async for row in database["shopping_history"].find(
             {"family_id": user["family_id"]}, {"_id": 0, "items": 1}
@@ -4633,8 +4641,6 @@ async def suggest_meals_ai(
                     items.append(name)
 
     items = items[:40]
-    if len(items) < 3:
-        raise HTTPException(422, "Add a few things to your shopping list first.")
 
     sub = await build_subscription(user["family_id"])
     family = await get_family_doc(user["family_id"])

@@ -38,19 +38,18 @@ export default function KeyboardAwareBottomSheet({
 }: KeyboardAwareBottomSheetProps) {
   const { theme } = useStore();
 
+  // The scroll structure is deliberately identical with and without a footer:
+  // an earlier attempt nested the ScrollView inside a height-bounded card and
+  // relied on flex shrinking, which broke scrolling on Android. The footer is
+  // an absolutely-positioned overlay instead, and the content keeps enough
+  // bottom padding that the last row can always be scrolled clear of it.
   const scroll = (
     <ScrollView
       keyboardShouldPersistTaps="handled"
-      // In the footer layout the card is height-bounded; the scroll must be
-      // allowed to shrink so the pinned footer always keeps its space.
-      style={footer ? styles.scrollShrink : undefined}
       contentContainerStyle={[
         styles.content,
         { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder },
         contentStyle,
-        // With a pinned footer the scroll area no longer owns the bottom of the
-        // sheet, so drop its own rounding and heavy bottom padding.
-        footer ? styles.contentWithFooter : null,
       ]}
       showsVerticalScrollIndicator={false}
     >
@@ -67,28 +66,20 @@ export default function KeyboardAwareBottomSheet({
       >
         <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
           <View style={[styles.backdrop, backdropStyle]}>
+            {scroll}
             {footer ? (
-              // Card wraps scroll + a pinned footer so the primary action stays
-              // visible however long the list is.
+              // Pinned as an overlay at the very bottom of the screen, over the
+              // sheet, so the primary action stays visible however long the
+              // list is — without touching the scroll layout at all.
               <View
                 style={[
-                  styles.footerCard,
-                  { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder },
+                  styles.footer,
+                  { backgroundColor: theme.colors.card, borderTopColor: theme.colors.cardBorder },
                 ]}
               >
-                {scroll}
-                <View
-                  style={[
-                    styles.footer,
-                    { backgroundColor: theme.colors.card, borderTopColor: theme.colors.cardBorder },
-                  ]}
-                >
-                  {footer}
-                </View>
+                {footer}
               </View>
-            ) : (
-              scroll
-            )}
+            ) : null}
           </View>
         </TouchableWithoutFeedback>
       </KeyboardAvoidingView>
@@ -115,25 +106,11 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingBottom: 120,
   },
-  // When a footer is pinned, the scroll area sits inside footerCard: no top
-  // rounding of its own, and just enough bottom padding to clear the footer.
-  contentWithFooter: {
-    borderTopLeftRadius: 0,
-    borderTopRightRadius: 0,
-    borderWidth: 0,
-    paddingBottom: 20,
-  },
-  footerCard: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    borderWidth: 1,
-    maxHeight: '92%',
-    overflow: 'hidden',
-  },
-  scrollShrink: {
-    flexShrink: 1,
-  },
   footer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
     borderTopWidth: 1,
     paddingHorizontal: 20,
     paddingTop: 12,

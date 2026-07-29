@@ -200,9 +200,8 @@ class SuggestVariant(unittest.TestCase):
         for name, orig in self._patched.items():
             setattr(server, name, orig)
 
-    def _fake_db(self):
-        # Minimal async-iterable Mongo stand-in: a shopping list of four items,
-        # empty history and meals.
+    def _fake_db(self, shopping_names=("Rice", "Chicken", "Tomatoes", "Onion"), history_items=()):
+        # Minimal async-iterable Mongo stand-in.
         class _Cursor:
             def __init__(self, rows):
                 self._rows = rows
@@ -229,23 +228,27 @@ class SuggestVariant(unittest.TestCase):
             async def update_one(self, *a, **k):
                 return None
 
-        shopping = [{"name": n} for n in ["Rice", "Chicken", "Tomatoes", "Onion"]]
+        shopping = [{"name": n} for n in shopping_names]
+        history = [{"items": list(history_items)}] if history_items else []
 
         class _DB:
             def __getitem__(self, name):
                 if name == "shopping_list":
                     return _Coll(shopping)
+                if name == "shopping_history":
+                    return _Coll(history)
                 return _Coll([])
 
         return _DB()
 
-    def _run(self, variant):
+    def _run(self, variant, db=None):
         user = {"family_id": "fam1", "role": "parent", "is_admin": True,
                 "user_id": "u1", "name": "Parent"}
         # Admin bypasses feature gating and quota; build_subscription/get_family_doc
         # are only reached for non-admins, so admin keeps this test to the AI path.
         return asyncio.run(
-            server.suggest_meals_ai(lang="en", variant=variant, user=user, database=self._fake_db())
+            server.suggest_meals_ai(lang="en", variant=variant, user=user,
+                                    database=db if db is not None else self._fake_db())
         )
 
     def test_prompt_differs_per_variant(self):
@@ -263,6 +266,24 @@ class SuggestVariant(unittest.TestCase):
     def test_returns_seven_meals(self):
         result = self._run(0)
         self.assertEqual(len(result["meals"]), 7)
+
+    def test_empty_list_refuses_even_with_history(self):
+        # The field bug: with nothing on the shopping list, old trips were
+        # topping the list up past the minimum, so an empty list still produced
+        # a week of meals. No list, no meals — history only enriches a real one.
+        from fastapi import HTTPException
+        db = self._fake_db(shopping_names=(),
+                           history_items=("Rice", "Chicken", "Tomatoes", "Onion", "Yam"))
+        with self.assertRaises(HTTPException) as ctx:
+            self._run(0, db=db)
+        self.assertEqual(ctx.exception.status_code, 422)
+
+    def test_two_items_is_still_too_few(self):
+        from fastapi import HTTPException
+        db = self._fake_db(shopping_names=("Rice", "Chicken"), history_items=("Yam",) * 10)
+        with self.assertRaises(HTTPException) as ctx:
+            self._run(0, db=db)
+        self.assertEqual(ctx.exception.status_code, 422)
 
 
 if __name__ == "__main__":
