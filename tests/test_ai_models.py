@@ -105,6 +105,38 @@ class SummarizeAiError(unittest.TestCase):
         for raw, expected in cases:
             self.assertEqual(summarize_ai_error(raw), expected, repr(raw))
 
+    def test_classifies_the_google_genai_error_format(self):
+        """The strings google-genai actually raises.
+
+        Classification is done on error text, so swapping SDKs could have
+        silently broken it — a NOT_FOUND that stopped reading as
+        model_not_found would end the fallback chain and take every AI feature
+        down with the first retired model. These are real
+        `google.genai.errors.APIError` renderings, captured from the installed
+        SDK; they are literals here so Backend CI covers them without needing
+        the package.
+        """
+        from ai_models import summarize_ai_error, should_try_next_model
+        cases = [
+            ("404 NOT_FOUND. {'error': {'code': 404, 'status': 'NOT_FOUND', "
+             "'message': 'models/gemini-1.5-flash is not found'}}", "model_not_found"),
+            ("429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'status': "
+             "'RESOURCE_EXHAUSTED', 'message': 'You exceeded your current quota'}}",
+             "quota_exhausted"),
+            ("403 PERMISSION_DENIED. {'error': {'code': 403, 'status': "
+             "'PERMISSION_DENIED', 'message': 'denied'}}", "permission_denied"),
+            ("400 INVALID_ARGUMENT. {'error': {'code': 400, 'status': "
+             "'INVALID_ARGUMENT', 'message': 'API key not valid. Please pass a "
+             "valid API key.'}}", "invalid_api_key"),
+        ]
+        for raw, expected in cases:
+            self.assertEqual(summarize_ai_error(raw), expected, raw[:40])
+
+        # And the two that must keep walking the candidate list still do.
+        self.assertTrue(should_try_next_model(cases[0][0]))
+        self.assertTrue(should_try_next_model(cases[1][0]))
+        self.assertFalse(should_try_next_model(cases[2][0]))
+
     def test_never_echoes_the_input(self):
         # The whole point: whatever the exception says, it must not come back.
         from ai_models import summarize_ai_error

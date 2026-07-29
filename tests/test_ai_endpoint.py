@@ -29,29 +29,66 @@ class FakeResponse:
         self.text = text
 
 
-class FakeModelFactory:
-    """Stands in for genai.GenerativeModel. Scripted per test: models in
-    `dead` raise a retirement-shaped error, everything else answers OK."""
+class FakeClient:
+    """Stands in for a google-genai Client.
 
-    def __init__(self, dead=(), error="quota exceeded", dead_error="404 model is not found"):
+    Mirrors the surface the server actually uses — `aio.models.generate_content`
+    for generation and `models.list` for discovery — so the tests exercise the
+    real call shape rather than a convenient one. Models named in `dead` raise a
+    retirement-shaped error; everything else answers OK.
+    """
+
+    def __init__(self, dead=(), error="quota exceeded",
+                 dead_error="404 NOT_FOUND. model is not found", listed=()):
         self.dead = set(dead)
         self.error = error
         self.dead_error = dead_error
+        self.listed = list(listed)
         self.calls = []
+        self.captured = []
+        self.aio = _FakeAio(self)
+        self.models = _FakeModelsSync(self)
 
-    def __call__(self, model_name, system_instruction=None):
-        factory = self
+    def _generate(self, model, contents, config):
+        self.calls.append(model)
+        self.captured.append({"model": model, "contents": contents, "config": config})
+        if model in self.dead:
+            raise RuntimeError(self.dead_error)
+        if model == "always-broken":
+            raise RuntimeError(self.error)
+        return FakeResponse(self.reply_for(model, contents, config))
 
-        class _Model:
-            def generate_content(self, contents):
-                factory.calls.append(model_name)
-                if model_name in factory.dead:
-                    raise RuntimeError(factory.dead_error)
-                if model_name == "always-broken":
-                    raise RuntimeError(factory.error)
-                return FakeResponse("OK")
+    def reply_for(self, model, contents, config):
+        return "OK"
 
-        return _Model()
+
+class _FakeAio:
+    def __init__(self, client):
+        self.models = _FakeModelsAsync(client)
+
+
+class _FakeModelsAsync:
+    def __init__(self, client):
+        self._client = client
+
+    async def generate_content(self, *, model, contents, config=None):
+        return self._client._generate(model, contents, config)
+
+
+class _FakeModelsSync:
+    def __init__(self, client):
+        self._client = client
+
+    def list(self, *, config=None):
+        return list(self._client.listed)
+
+
+class FakeModel:
+    """A google-genai types.Model as discovery sees it."""
+
+    def __init__(self, name, supported_actions=("generateContent",)):
+        self.name = name
+        self.supported_actions = list(supported_actions) if supported_actions is not None else None
 
 
 @unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
@@ -62,10 +99,15 @@ class HealthAiProbe(unittest.TestCase):
         server._gemini_state["errors"] = {}
         server._gemini_state["discovered"] = None
         server._AI_PROBE["last"] = None
-        self._genai = server.genai
+        self._client = server._gemini_state["client"]
 
     def tearDown(self):
-        server.genai = self._genai
+        server._gemini_state["client"] = self._client
+
+    def install(self, fake):
+        """Put a fake client where the lazy builder would have put a real one."""
+        server._gemini_state["client"] = fake
+        return fake
 
     def probe(self):
         return asyncio.run(server.health_ai(probe=1))
@@ -73,8 +115,7 @@ class HealthAiProbe(unittest.TestCase):
     def test_walks_past_retired_models_to_one_that_answers(self):
         # The production incident: the first candidates are retired. The loop
         # must reach a live one and remember it.
-        fake = FakeModelFactory(dead={"gemini-2.5-flash", "gemini-2.0-flash"})
-        server.genai = type("G", (), {"GenerativeModel": fake})()
+        fake = self.install(FakeClient(dead={"gemini-2.5-flash", "gemini-2.0-flash"}))
         status = self.probe()
         self.assertTrue(status["probe"]["ok"], status)
         self.assertEqual(status["model_resolved"], "gemini-1.5-flash")
@@ -83,8 +124,7 @@ class HealthAiProbe(unittest.TestCase):
         )
 
     def test_remembers_the_proven_model_across_calls(self):
-        fake = FakeModelFactory(dead={"gemini-2.5-flash"})
-        server.genai = type("G", (), {"GenerativeModel": fake})()
+        fake = self.install(FakeClient(dead={"gemini-2.5-flash"}))
         self.probe()
         server._AI_PROBE["last"] = None  # step around the rate limiter
         self.probe()
@@ -95,10 +135,10 @@ class HealthAiProbe(unittest.TestCase):
     def test_per_model_quota_walks_the_chain(self):
         # The production case: the newest model 429s on a free-tier key, but an
         # older model still has quota. The chain must keep walking.
-        fake = FakeModelFactory(
-            dead={"gemini-2.5-flash"}, dead_error="429 You exceeded your current quota"
-        )
-        server.genai = type("G", (), {"GenerativeModel": fake})()
+        self.install(FakeClient(
+            dead={"gemini-2.5-flash"},
+            dead_error="429 RESOURCE_EXHAUSTED. You exceeded your current quota",
+        ))
         status = self.probe()
         self.assertTrue(status["probe"]["ok"], status)
         self.assertEqual(status["model_resolved"], "gemini-2.0-flash")
@@ -106,35 +146,125 @@ class HealthAiProbe(unittest.TestCase):
 
     def test_an_account_failure_is_reported_not_retried(self):
         # A bad key fails identically on every model — one call, fail fast.
-        fake = FakeModelFactory()
-
-        class _BadKey:
-            def __init__(self, model_name, system_instruction=None):
-                fake.calls.append(model_name)
-
-            def generate_content(self, contents):
+        class _BadKey(FakeClient):
+            def _generate(self, model, contents, config):
+                self.calls.append(model)
                 raise RuntimeError("API key not valid. Please pass a valid API key.")
 
-        server.genai = type("G", (), {"GenerativeModel": _BadKey})()
+        fake = self.install(_BadKey())
         status = self.probe()
         self.assertFalse(status["probe"]["ok"])
         self.assertEqual(status["probe"]["error"], "invalid_api_key")
         self.assertEqual(len(fake.calls), 1)
 
     def test_probe_is_rate_limited(self):
-        fake = FakeModelFactory()
-        server.genai = type("G", (), {"GenerativeModel": fake})()
+        self.install(FakeClient())
         self.probe()
         second = self.probe()
         self.assertIn("skipped", second["probe"])
 
     def test_status_without_probe_is_free(self):
-        fake = FakeModelFactory()
-        server.genai = type("G", (), {"GenerativeModel": fake})()
+        fake = self.install(FakeClient())
         status = asyncio.run(server.health_ai(probe=0))
         self.assertNotIn("probe", status)
         self.assertEqual(fake.calls, [])
         self.assertTrue(status["key_configured"])
+
+    def test_the_system_instruction_travels_on_the_config(self):
+        # google-genai moved system_instruction from the model constructor onto
+        # the per-call config. Dropping it in the move would have quietly
+        # unprompted every AI feature while every call still succeeded.
+        fake = self.install(FakeClient())
+        asyncio.run(server._gemini_generate("hi", system="You are a teapot"))
+        self.assertEqual(fake.captured[0]["config"]["system_instruction"], "You are a teapot")
+
+    def test_no_config_is_sent_when_there_is_nothing_to_configure(self):
+        fake = self.install(FakeClient())
+        asyncio.run(server._gemini_generate("hi"))
+        self.assertIsNone(fake.captured[0]["config"])
+
+    def test_a_missing_client_fails_loudly_rather_than_silently(self):
+        server._gemini_state["client"] = None
+        key = server.GOOGLE_API_KEY
+        server.GOOGLE_API_KEY = ""
+        try:
+            with self.assertRaises(RuntimeError):
+                asyncio.run(server._gemini_generate("hi"))
+        finally:
+            server.GOOGLE_API_KEY = key
+
+
+@unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
+class DiscoverModels(unittest.TestCase):
+    """Discovery is what keeps the app alive when Google renames a model, so it
+    has to read the shapes google-genai actually returns — not the ones the
+    retired package did."""
+
+    def setUp(self):
+        self._client = server._gemini_state["client"]
+        server._gemini_state["last_error"] = None
+
+    def tearDown(self):
+        server._gemini_state["client"] = self._client
+
+    def discover(self, listed):
+        server._gemini_state["client"] = FakeClient(listed=listed)
+        return server._discover_models()
+
+    def test_strips_the_models_prefix(self):
+        # google-genai returns "models/gemini-2.5-flash"; callers need the bare
+        # name. Vertex-style "publishers/google/models/x" must also reduce to x.
+        found = self.discover([
+            FakeModel("models/gemini-2.5-flash"),
+            FakeModel("publishers/google/models/gemini-2.0-flash"),
+        ])
+        self.assertEqual(sorted(found), ["gemini-2.0-flash", "gemini-2.5-flash"])
+
+    def test_reads_the_renamed_actions_field(self):
+        # supported_generation_methods -> supported_actions.
+        found = self.discover([
+            FakeModel("models/gemini-2.5-flash", supported_actions=["generateContent"]),
+            FakeModel("models/text-embedding-004", supported_actions=["embedContent"]),
+        ])
+        self.assertEqual(found, ["gemini-2.5-flash"])
+
+    def test_a_model_reporting_no_actions_is_kept(self):
+        # The trap: if a future SDK stops reporting actions, a strict filter
+        # would empty the list and silently disable the self-healing that
+        # discovery exists to provide. Keep it and let the call decide.
+        found = self.discover([FakeModel("models/gemini-9-flash", supported_actions=None)])
+        self.assertEqual(found, ["gemini-9-flash"])
+
+    def test_text_models_outrank_image_and_tts(self):
+        # A real incident: discovery picked gemini-2.5-flash-image and every
+        # feature got pictures instead of words.
+        found = self.discover([
+            FakeModel("models/gemini-2.5-flash-image"),
+            FakeModel("models/gemini-2.5-flash"),
+            FakeModel("models/gemini-2.5-pro"),
+        ])
+        self.assertEqual(found[0], "gemini-2.5-flash")
+        self.assertEqual(found[-1], "gemini-2.5-flash-image",
+                         "non-text is demoted, never dropped")
+
+    def test_a_listing_failure_is_reported_not_raised(self):
+        class _Broken(FakeClient):
+            pass
+        broken = _Broken()
+        broken.models.list = lambda **k: (_ for _ in ()).throw(RuntimeError("403 permission denied"))
+        server._gemini_state["client"] = broken
+        self.assertEqual(server._discover_models(), [])
+        self.assertEqual(server.summarize_ai_error(server._gemini_state["last_error"]),
+                         "permission_denied")
+
+    def test_no_client_means_no_models(self):
+        server._gemini_state["client"] = None
+        key = server.GOOGLE_API_KEY
+        server.GOOGLE_API_KEY = ""
+        try:
+            self.assertEqual(server._discover_models(), [])
+        finally:
+            server.GOOGLE_API_KEY = key
 
 
 @unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
@@ -148,33 +278,24 @@ class SuggestVariant(unittest.TestCase):
         server._gemini_state["model"] = None
         server._gemini_state["last_error"] = None
         server._gemini_state["errors"] = {}
-        self._genai = server.genai
+        self._client = server._gemini_state["client"]
         self._key = server.GOOGLE_API_KEY
         server.GOOGLE_API_KEY = "test-key"
 
-        self.captured = []
-
-        # A fake genai whose model records the prompt + generation_config it
-        # was handed, and returns a valid seven-meal week.
-        captured = self.captured
-
-        class _Model:
-            def __init__(self, model_name, system_instruction=None):
-                pass
-
-            def generate_content(self, contents, generation_config=None):
-                captured.append({"contents": contents, "config": generation_config})
+        # A fake client that records the contents + config it was handed and
+        # returns a valid seven-meal week.
+        class _Week(FakeClient):
+            def reply_for(self, model, contents, config):
                 import json as _json
                 days = ["monday", "tuesday", "wednesday", "thursday",
                         "friday", "saturday", "sunday"]
                 meals = [{"day": d, "title": f"Dish {i}", "uses": ["rice"],
                           "need": [], "minutes": 20} for i, d in enumerate(days)]
+                return _json.dumps({"meals": meals})
 
-                class _R:
-                    text = _json.dumps({"meals": meals})
-                return _R()
-
-        server.genai = type("G", (), {"GenerativeModel": _Model})()
+        self.fake = _Week()
+        server._gemini_state["client"] = self.fake
+        self.captured = self.fake.captured
 
         # require_feature -> build_subscription -> get_db() needs a live Mongo;
         # stub the two DB-touching helpers so the test stays on the AI path.
@@ -195,7 +316,7 @@ class SuggestVariant(unittest.TestCase):
             setattr(server, fn_name, make_async(impl))
 
     def tearDown(self):
-        server.genai = self._genai
+        server._gemini_state["client"] = self._client
         server.GOOGLE_API_KEY = self._key
         for name, orig in self._patched.items():
             setattr(server, name, orig)
