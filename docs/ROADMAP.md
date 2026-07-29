@@ -15,11 +15,11 @@ Last updated: 29 July 2026.
 - **Delivery pipeline:** push to `main` → auto **OTA update** (JS changes; users need two full relaunches). Native changes → `EAS Build (Android)` workflow → AAB → auto-submit to the Play production track as a **draft**.
 - **Infrastructure:** MongoDB Atlas **M10 dedicated with backups Active**; UptimeRobot on `/api/health` (accepts GET **and HEAD**).
 
-### Live obligations
+### Live obligations — ✅ all clear
 - [x] **Developer Profile — complete** (verified in Play Console 29 July). Developer icon, header image, featured app, developer website (`rdzoagbe.github.io/Household-COO/`) and promotional text all set. The 26 August removal warning no longer applies.
 - [x] **United States tax — W-8BEN approved** (submitted 28 July, valid to 31 December 2029). France treaty claim accepted: **0% withholding** on all three rate categories (motion picture/TV, other copyright, services), with Certificate of Non-US Activities and Affidavit of Unchanged Status on file. The 30% withholding is gone.
 - [x] Tax: France ✅ · Ireland ✅ · United States ✅.
-- [ ] **Payments hold** — bank account verification. Google sent a micro-deposit ~28 July; clearing it needs the exact **amount** entered (not a reference code). Payouts run monthly around the 15th. *Status not independently confirmed — check Google Payments → Settings.*
+- [x] **Payments — cleared** (verified 29 July). Bank account registered (FR IBAN ending 0147), no verification prompt outstanding. First earnings recorded: **€4.96** on 29 July, above the €1.00 payout threshold, so payouts run monthly from around the 15th.
 
 ## Post-launch — what's left (master list, ordered)
 
