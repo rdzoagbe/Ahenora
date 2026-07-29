@@ -7,6 +7,7 @@ import {
   TextInput,
   Platform,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import {
@@ -44,7 +45,7 @@ import { TabScreen } from '../../src/components/TabScreen';
 import { Card, IconTile, ProgressBar, ScreenHeader, UI, useUI, UIColors } from '../../src/components/Kit';
 
 import { useStore } from '../../src/store';
-import { api, logEvent, AllowanceConfig, Chore, FamilyMember, Reward, Routine, StarTransaction } from '../../src/api';
+import { api, logEvent, AllowanceConfig, AllowanceTxn, Chore, FamilyMember, Reward, Routine, StarTransaction } from '../../src/api';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { logger } from '../../src/logger';
 import { recordWin } from '../../src/reviewPrompt';
@@ -139,8 +140,18 @@ export default function Kids() {
   const [showAllowanceSheet, setShowAllowanceSheet] = useState(false);
   const [alwAmount, setAlwAmount] = useState('');
   const [alwFrequency, setAlwFrequency] = useState('weekly');
+
+  // Recording actual money in and out. The balance is derived from these on the
+  // server, so without a way to add them the tracker showed $0.00 forever.
+  const [showMoneySheet, setShowMoneySheet] = useState(false);
+  const [moneyAmount, setMoneyAmount] = useState('');
+  const [moneyNote, setMoneyNote] = useState('');
+  const [moneyTxns, setMoneyTxns] = useState<AllowanceTxn[]>([]);
+  const [moneyLoading, setMoneyLoading] = useState(false);
   // Guards against double-tap double-charging stars (redeem) / double-awarding.
   const starActionRef = useRef(false);
+  // Guards a double-tap from recording the same amount twice.
+  const moneySavingRef = useRef(false);
 
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [allowances, setAllowances] = useState<AllowanceConfig[]>([]);
@@ -428,6 +439,51 @@ export default function Kids() {
     }
   };
 
+  const openMoneySheet = useCallback(async () => {
+    if (!activeChild) return;
+    setMoneyAmount('');
+    setMoneyNote('');
+    setShowMoneySheet(true);
+    setMoneyLoading(true);
+    try {
+      setMoneyTxns(await api.allowanceTransactions(activeChild.member_id));
+    } catch (e: any) {
+      logger.warn('Load pocket money failed:', e?.message || e);
+      setMoneyTxns([]);
+    } finally {
+      setMoneyLoading(false);
+    }
+  }, [activeChild]);
+
+  const recordMoney = useCallback(async (type: 'deposit' | 'withdrawal') => {
+    if (!activeChild) return;
+    const amount = Number((moneyAmount || '').replace(',', '.'));
+    if (!Number.isFinite(amount) || amount <= 0) return;
+    if (moneySavingRef.current) return;
+    moneySavingRef.current = true;
+    try {
+      const txn = await api.addAllowanceTxn({
+        member_id: activeChild.member_id,
+        amount,
+        description: moneyNote.trim() || (type === 'deposit' ? t('kids_money_in') : t('kids_money_out')),
+        txn_type: type,
+      });
+      setMoneyTxns((prev) => [txn, ...prev]);
+      setMoneyAmount('');
+      setMoneyNote('');
+      // Re-derive from the server rather than adding locally, so the figure on
+      // screen is always the one the backend computes.
+      const b = await api.allowanceBalance(activeChild.member_id).catch(() => null);
+      if (b) setBalances((prev) => ({ ...prev, [activeChild.member_id]: b.balance }));
+      showToast(t('kids_money_saved'), 'success');
+    } catch (e: any) {
+      logger.warn('Record pocket money failed:', e?.message || e);
+      showToast(e?.message || t('kids_allowance_error'), 'error');
+    } finally {
+      moneySavingRef.current = false;
+    }
+  }, [activeChild, moneyAmount, moneyNote, showToast, t]);
+
   const saveAllowance = async () => {
     if (!activeChild) return;
     const amount = parseInt(alwAmount || '', 10);
@@ -614,7 +670,10 @@ export default function Kids() {
                       <Text style={[styles.walletAvatarText, { color: ui.orange }]}>{activeChild.name[0]?.toUpperCase()}</Text>
                     </View>
                     <View style={{ flex: 1, minWidth: 0 }}>
-                      <Text style={styles.walletLabel}>{activeChild.name}&apos;s {t('stars')}</Text>
+                      {/* Built from a template, not string concatenation: the
+                          English possessive 's has no equivalent in fr/es/de,
+                          where it reads "Les étoiles de X". */}
+                      <Text style={styles.walletLabel}>{t('kids_childs_stars', { name: activeChild.name })}</Text>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                         <Text style={styles.walletCount}>{stars}</Text>
                         <PressScale
@@ -805,12 +864,20 @@ export default function Kids() {
                   </PressScale>
                 ) : (
                   <View style={styles.allowanceRow}>
-                    <View style={{ flex: 1 }}>
+                    {/* The balance is the way in to recording money — without
+                        somewhere to add transactions it stayed at $0.00. */}
+                    <PressScale
+                      testID="kids-open-money"
+                      accessibilityRole="button"
+                      accessibilityLabel={t('kids_money_title')}
+                      onPress={openMoneySheet}
+                      style={{ flex: 1 }}
+                    >
                       <Text style={styles.allowanceBalance}>${childBalance.toFixed(2)}</Text>
                       <Text style={styles.featureRowSub}>
                         {childAllowance ? `$${childAllowance.amount}/${t('kids_freq_' + childAllowance.frequency)}` : t('kids_no_allowance_set')}
                       </Text>
-                    </View>
+                    </PressScale>
                     <PressScale
                       testID="kids-set-allowance"
                       onPress={() => {
@@ -953,6 +1020,86 @@ export default function Kids() {
         </View>
       </KeyboardAwareBottomSheet>
 
+      {/* Pocket money — record what actually went in and out. The server
+          derives the balance from these, so this is what makes the tracker
+          real rather than a permanent $0.00. */}
+      <KeyboardAwareBottomSheet visible={showMoneySheet} onClose={() => setShowMoneySheet(false)} contentStyle={styles.sheet}>
+        <View style={styles.sheetHeader}>
+          <Text style={styles.sheetTitle}>{t('kids_money_title')}</Text>
+          <PressScale
+            accessibilityRole="button"
+            accessibilityLabel={t('close')}
+            testID="close-money"
+            onPress={() => setShowMoneySheet(false)}
+            style={styles.iconBtn}
+          >
+            <X color={ui.text} size={20} />
+          </PressScale>
+        </View>
+        <Text style={styles.sheetHelp}>
+          {t('kids_for')} {activeChild?.name || t('kids_selected_child')} · ${childBalance.toFixed(2)}
+        </Text>
+
+        <Text style={styles.label}>{t('kids_money_amount')}</Text>
+        <TextInput
+          testID="money-amount"
+          value={moneyAmount}
+          onChangeText={setMoneyAmount}
+          keyboardType="decimal-pad"
+          placeholder="5.00"
+          placeholderTextColor={ui.muted}
+          style={styles.input}
+        />
+
+        <Text style={styles.label}>{t('kids_money_note')}</Text>
+        <TextInput
+          testID="money-note"
+          value={moneyNote}
+          onChangeText={setMoneyNote}
+          placeholder={t('kids_money_note')}
+          placeholderTextColor={ui.muted}
+          style={styles.input}
+        />
+
+        <View style={styles.moneyBtnRow}>
+          <PressScale
+            testID="money-in"
+            onPress={() => recordMoney('deposit')}
+            style={[styles.moneyBtn, { backgroundColor: ui.mint }]}
+          >
+            <Text style={[styles.moneyBtnText, { color: ui.mintText }]}>+ {t('kids_money_in')}</Text>
+          </PressScale>
+          <PressScale
+            testID="money-out"
+            onPress={() => recordMoney('withdrawal')}
+            style={[styles.moneyBtn, { backgroundColor: ui.soft }]}
+          >
+            <Text style={[styles.moneyBtnText, { color: ui.text }]}>− {t('kids_money_out')}</Text>
+          </PressScale>
+        </View>
+
+        <Text style={styles.label}>{t('kids_money_recent')}</Text>
+        {moneyLoading ? (
+          <ActivityIndicator color={ui.goldText} style={{ marginVertical: 16 }} />
+        ) : moneyTxns.length === 0 ? (
+          <Text style={styles.sheetHelp}>{t('kids_money_none')}</Text>
+        ) : (
+          moneyTxns.slice(0, 12).map((txn) => (
+            <View key={txn.txn_id} style={styles.moneyRow}>
+              <Text style={styles.moneyDesc} numberOfLines={1}>{txn.description}</Text>
+              <Text
+                style={[
+                  styles.moneyAmount,
+                  { color: txn.txn_type === 'withdrawal' ? ui.muted : ui.mintText },
+                ]}
+              >
+                {txn.txn_type === 'withdrawal' ? '−' : '+'}${Number(txn.amount).toFixed(2)}
+              </Text>
+            </View>
+          ))
+        )}
+      </KeyboardAwareBottomSheet>
+
       <KeyboardAwareBottomSheet visible={showAllowanceSheet} onClose={() => setShowAllowanceSheet(false)} contentStyle={styles.sheet}>
         <View style={styles.sheetHeader}>
           <Text style={styles.sheetTitle}>{t('kids_set_allowance')}</Text>
@@ -983,7 +1130,7 @@ export default function Kids() {
       <PinPadModal
         visible={pinPromptReward !== null}
         mode="verify"
-        title={activeChild ? `${activeChild.name}'s ${t('kids_pin')}` : t('kids_pin')}
+        title={activeChild ? t('kids_childs_pin', { name: activeChild.name }) : t('kids_pin')}
         subtitle={t('kids_pin_subtitle')}
         onClose={() => setPinPromptReward(null)}
         onSubmit={async (pin) => {
@@ -1123,6 +1270,12 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   emptyMini: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 13, paddingVertical: 14 },
 
   sheet: { backgroundColor: ui.card, borderTopLeftRadius: 34, borderTopRightRadius: 34, borderWidth: 1, borderColor: ui.line, padding: 26, paddingBottom: 140 },
+  moneyBtnRow: { flexDirection: 'row', gap: 10, marginTop: 18 },
+  moneyBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 48, borderRadius: 999 },
+  moneyBtnText: { fontFamily: 'Inter_700Bold', fontSize: 14 },
+  moneyRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: ui.line },
+  moneyDesc: { flex: 1, color: ui.text, fontFamily: 'Inter_500Medium', fontSize: 14 },
+  moneyAmount: { fontFamily: 'Inter_700Bold', fontSize: 14 },
   sheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   sheetTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 24, letterSpacing: -0.4 },
   sheetHelp: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 14, marginBottom: 12 },
