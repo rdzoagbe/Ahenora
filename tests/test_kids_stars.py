@@ -356,6 +356,95 @@ class ChoresAndRoutinesAwardStars(unittest.TestCase):
 
 
 @unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
+class ManagingAChild(unittest.TestCase):
+    """A typo at setup used to be permanent short of deleting the child — which
+    would have taken their stars with it — and a forgotten PIN locked them out
+    of redeeming with no way back."""
+
+    USER = {"family_id": "fam1", "user_id": "u1", "name": "Parent", "role": "parent"}
+    OTHER = {"family_id": "fam2", "user_id": "u2", "name": "Stranger", "role": "parent"}
+
+    def setUp(self):
+        self._get_db = server.get_db
+
+    def tearDown(self):
+        server.get_db = self._get_db
+
+    def _install(self, **over):
+        row = {"member_id": "kid1", "family_id": "fam1", "name": "Ama",
+               "role": "child", "stars": 40, "pin_hash": None}
+        row.update(over)
+        db = FakeDB(family_members=[row], star_transactions=[], redemptions=[])
+        server.get_db = lambda: db
+        return db
+
+    def _patch(self, db, user=None, **fields):
+        payload = type("P", (), {"name": None, "avatar": None, **fields})()
+        return asyncio.run(server.update_family_member("kid1", payload, user=user or self.USER))
+
+    def test_renaming_keeps_the_stars(self):
+        # The reason this endpoint exists: the alternative was delete-and-recreate.
+        db = self._install()
+        result = self._patch(db, name="Amara")
+        self.assertEqual(result["name"], "Amara")
+        self.assertEqual(result["stars"], 40)
+        self.assertEqual(db["family_members"].rows[0]["name"], "Amara")
+
+    def test_a_blank_name_is_rejected(self):
+        db = self._install()
+        with self.assertRaises(HTTPException) as ctx:
+            self._patch(db, name="   ")
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertEqual(db["family_members"].rows[0]["name"], "Ama")
+
+    def test_a_name_is_trimmed(self):
+        db = self._install()
+        self.assertEqual(self._patch(db, name="  Kofi  ")["name"], "Kofi")
+
+    def test_an_absurd_name_is_rejected(self):
+        db = self._install()
+        with self.assertRaises(HTTPException):
+            self._patch(db, name="x" * 200)
+
+    def test_an_empty_patch_changes_nothing(self):
+        db = self._install()
+        self.assertEqual(self._patch(db)["name"], "Ama")
+        self.assertEqual(db["family_members"].rows[0]["stars"], 40)
+
+    def test_stars_cannot_be_set_through_this_endpoint(self):
+        # Stars move through the audited endpoint that writes a ledger entry.
+        # A silent $set here would break the balance the history explains.
+        db = self._install()
+        self._patch(db, name="Ama", stars=99999)
+        self.assertEqual(db["family_members"].rows[0]["stars"], 40)
+        self.assertEqual(db["star_transactions"].rows, [])
+
+    def test_another_family_cannot_rename_a_child(self):
+        db = self._install()
+        with self.assertRaises(HTTPException) as ctx:
+            self._patch(db, user=self.OTHER, name="Hacked")
+        self.assertEqual(ctx.exception.status_code, 404)
+        self.assertEqual(db["family_members"].rows[0]["name"], "Ama")
+
+    def test_a_forgotten_pin_can_be_cleared(self):
+        db = self._install(pin_hash=server.sha256("1234"))
+        result = asyncio.run(server.remove_member_pin("kid1", user=self.USER))
+        self.assertFalse(result["has_pin"])
+        self.assertIsNone(db["family_members"].rows[0]["pin_hash"])
+
+    def test_clearing_a_pin_does_not_touch_the_stars(self):
+        db = self._install(pin_hash=server.sha256("1234"))
+        asyncio.run(server.remove_member_pin("kid1", user=self.USER))
+        self.assertEqual(db["family_members"].rows[0]["stars"], 40)
+
+    def test_another_family_cannot_clear_a_pin(self):
+        db = self._install(pin_hash=server.sha256("1234"))
+        with self.assertRaises(HTTPException):
+            asyncio.run(server.remove_member_pin("kid1", user=self.OTHER))
+        self.assertIsNotNone(db["family_members"].rows[0]["pin_hash"])
+
+
+@unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
 class RedemptionFulfilment(unittest.TestCase):
     """Spending stars was the whole transaction; nobody tracked whether the
     reward was ever handed over. These cover the record, the settle, and the

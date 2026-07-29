@@ -12,6 +12,19 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  kids_manage_child: 'Manage child',
+  kids_child_updated: 'Saved',
+  kids_child_update_error: 'Could not save those changes.',
+  kids_set_pin: 'Set a PIN',
+  kids_change_pin: 'Change PIN',
+  kids_remove_pin: 'Remove PIN',
+  kids_pin_removed: 'PIN removed',
+  kids_pin_set_help: 'Type a new 4-digit PIN to replace the old one, or leave blank to keep it.',
+  kids_pin_none_help: 'A PIN asks your child to confirm before spending stars. Optional.',
+  kids_remove_child_title: 'Remove {name}?',
+  kids_remove_child_msg: 'This deletes {name}, their {n} stars and their whole history. It cannot be undone.',
+  kids_child_removed: '{name} removed',
+  kids_child_remove_error: 'Could not remove that child.',
   kids_redemption_already_settled: 'Someone already sorted that one.',
   kids_redemption_owed_badge: '{n} reward(s) still to give',
   kids_redemptions_pending: 'Waiting to be given',
@@ -1035,6 +1048,19 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  kids_manage_child: 'Gestionar hijo/a',
+  kids_child_updated: 'Guardado',
+  kids_child_update_error: 'No se pudieron guardar los cambios.',
+  kids_set_pin: 'Crear un PIN',
+  kids_change_pin: 'Cambiar PIN',
+  kids_remove_pin: 'Quitar PIN',
+  kids_pin_removed: 'PIN eliminado',
+  kids_pin_set_help: 'Escribe un PIN nuevo de 4 dígitos para reemplazar el anterior, o déjalo vacío para conservarlo.',
+  kids_pin_none_help: 'El PIN pide confirmación antes de gastar estrellas. Es opcional.',
+  kids_remove_child_title: '¿Quitar a {name}?',
+  kids_remove_child_msg: 'Esto elimina a {name}, sus {n} estrellas y todo su historial. No se puede deshacer.',
+  kids_child_removed: '{name} eliminado/a',
+  kids_child_remove_error: 'No se pudo eliminar.',
   kids_redemption_already_settled: 'Alguien ya se encargó de eso.',
   kids_redemption_owed_badge: '{n} premio(s) por entregar',
   kids_redemptions_pending: 'Pendiente de entregar',
@@ -2052,6 +2078,19 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  kids_manage_child: 'Gérer l\u2019enfant',
+  kids_child_updated: 'Enregistré',
+  kids_child_update_error: 'Impossible d\u2019enregistrer ces modifications.',
+  kids_set_pin: 'Définir un code',
+  kids_change_pin: 'Modifier le code',
+  kids_remove_pin: 'Supprimer le code',
+  kids_pin_removed: 'Code supprimé',
+  kids_pin_set_help: 'Saisissez un nouveau code à 4 chiffres pour remplacer l\u2019ancien, ou laissez vide pour le conserver.',
+  kids_pin_none_help: 'Le code demande à votre enfant de confirmer avant de dépenser des étoiles. Facultatif.',
+  kids_remove_child_title: 'Supprimer {name} ?',
+  kids_remove_child_msg: 'Cela supprime {name}, ses {n} étoiles et tout son historique. Action irréversible.',
+  kids_child_removed: '{name} supprimé(e)',
+  kids_child_remove_error: 'Suppression impossible.',
   kids_redemption_already_settled: 'Quelqu\u2019un s\u2019en est déjà occupé.',
   kids_redemption_owed_badge: '{n} récompense(s) à remettre',
   kids_redemptions_pending: 'À remettre',
@@ -3069,6 +3108,19 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  kids_manage_child: 'Kind verwalten',
+  kids_child_updated: 'Gespeichert',
+  kids_child_update_error: 'Änderungen konnten nicht gespeichert werden.',
+  kids_set_pin: 'PIN festlegen',
+  kids_change_pin: 'PIN ändern',
+  kids_remove_pin: 'PIN entfernen',
+  kids_pin_removed: 'PIN entfernt',
+  kids_pin_set_help: 'Neue 4-stellige PIN eingeben, um die alte zu ersetzen — oder leer lassen, um sie zu behalten.',
+  kids_pin_none_help: 'Eine PIN lässt Ihr Kind bestätigen, bevor Sterne ausgegeben werden. Optional.',
+  kids_remove_child_title: '{name} entfernen?',
+  kids_remove_child_msg: 'Damit werden {name}, die {n} Sterne und der gesamte Verlauf gelöscht. Das lässt sich nicht rückgängig machen.',
+  kids_child_removed: '{name} entfernt',
+  kids_child_remove_error: 'Kind konnte nicht entfernt werden.',
   kids_redemption_already_settled: 'Das hat schon jemand erledigt.',
   kids_redemption_owed_badge: '{n} Belohnung(en) noch einzulösen',
   kids_redemptions_pending: 'Noch einzulösen',

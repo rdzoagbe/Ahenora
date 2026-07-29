@@ -1405,6 +1405,18 @@ class ChildIn(BaseModel):
     pin: Optional[str] = None
 
 
+class MemberPatchIn(BaseModel):
+    """Only what a parent can safely correct in place.
+
+    Stars are deliberately absent: they move through the audited endpoint that
+    writes a ledger entry, and a silent $set here would break the balance the
+    history is supposed to explain.
+    """
+
+    name: Optional[str] = None
+    avatar: Optional[str] = None
+
+
 class StarAdjustmentIn(BaseModel):
     delta: int
     reason: Optional[str] = None
@@ -2058,6 +2070,45 @@ async def create_family_member(payload: ChildIn, user=Depends(require_user)):
         await database["star_transactions"].insert_one(transaction)
 
     return public_member(member)
+
+
+@app.patch("/api/family/members/{member_id}")
+async def update_family_member(member_id: str, payload: MemberPatchIn, user=Depends(require_user)):
+    """Correct a child's details — a mistyped name, mostly.
+
+    Without this a typo at setup was permanent short of deleting the child,
+    which would have taken their stars and their history with it.
+    """
+    database = get_db()
+    member = await database["family_members"].find_one(
+        {"member_id": member_id, "family_id": user["family_id"]},
+        {"_id": 0},
+    )
+    if not member:
+        raise HTTPException(status_code=404, detail="Family member not found")
+
+    changes: dict = {}
+
+    if payload.name is not None:
+        name = payload.name.strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Name is required")
+        if len(name) > 60:
+            raise HTTPException(status_code=400, detail="Name is too long")
+        changes["name"] = name
+
+    if payload.avatar is not None:
+        changes["avatar"] = payload.avatar.strip() or None
+
+    if not changes:
+        return public_member(member)
+
+    await database["family_members"].update_one(
+        {"member_id": member_id, "family_id": user["family_id"]},
+        {"$set": changes},
+    )
+    updated = await database["family_members"].find_one({"member_id": member_id}, {"_id": 0})
+    return public_member(updated)
 
 
 @app.delete("/api/family/members/{member_id}")

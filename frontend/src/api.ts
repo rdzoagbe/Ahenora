@@ -675,6 +675,10 @@ export const api = {
   },
   memberStarHistory: (member_id: string) =>
     request<StarTransaction[]>(`/family/members/${member_id}/star-history`),
+  updateFamilyMember: (member_id: string, data: { name?: string; avatar?: string }) => {
+    cache.invalidate('familyMembers');
+    return request<FamilyMember>(`/family/members/${member_id}`, { method: 'PATCH', body: data });
+  },
   setMemberPin: (member_id: string, pin: string) => {
     cache.invalidate('familyMembers');
     return request<{ ok: boolean; has_pin: boolean }>(`/family/members/${member_id}/pin`, {
