@@ -296,7 +296,7 @@ export interface MealPlan {
    *  re-rendered in the current language instead of frozen at creation time. */
   recipe_id?: string | null;
   /** Generated cooking methods, cached per language. */
-  ai_recipe?: Record<string, { minutes: number; steps: string[] }>;
+  ai_recipe?: Record<string, { minutes: number; steps: string[]; servings?: number; ingredients?: { name: string; qty: number | null; unit: string }[]; title?: string }>;
   created_at: string;
 }
 
@@ -1039,6 +1039,21 @@ export const api = {
     request<{ answer: string }>(`/recipes/chef?lang=${encodeURIComponent(lang)}`, {
       method: 'POST',
       body: { title, question },
+    }),
+  captureRecipe: (imageBase64: string) =>
+    request<{
+      captured: {
+        title: string;
+        minutes: number;
+        servings: number;
+        ingredients: { name: string; qty: number | null; unit: string }[];
+        steps: string[];
+      };
+    }>('/recipes/capture', { method: 'POST', body: { image_base64: imageBase64 } }),
+  addMealFromCapture: (day: string, recipe: object, lang: string) =>
+    request<MealPlan>(`/meals/from-capture?lang=${encodeURIComponent(lang)}`, {
+      method: 'POST',
+      body: { day, recipe },
     }),
   syncMealsToShopping: () => request<{ ok: boolean; added: number }>('/meals/sync-shopping', { method: 'POST' }),
   saveMealPlan: (name: string) => request<SavedMealPlan>('/meals/save', { method: 'POST', body: { name } }),

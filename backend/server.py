@@ -49,6 +49,8 @@ from ai_safety import (
     validate_chef_answer,
     SHOPPING_SCAN_SYSTEM_PROMPT,
     validate_shopping_scan,
+    RECIPE_PHOTO_SYSTEM_PROMPT,
+    validate_captured_recipe,
 )
 
 
@@ -5192,6 +5194,110 @@ async def ask_the_chef(
         )
 
     return {"answer": answer}
+
+
+@app.post("/api/recipes/capture")
+async def capture_recipe(
+    payload: dict = Body(...),
+    user: dict = Depends(require_user),
+    database=Depends(get_db),
+):
+    """Read a photo of a printed or handwritten recipe into a structured one.
+
+    Returns the recipe for review only — committing it to the planner goes
+    through /api/meals/from-capture, which re-validates everything.
+    """
+    await require_feature(user, "meal_planner")
+
+    image_b64 = str(payload.get("image_base64") or "")
+    if "," in image_b64:
+        image_b64 = image_b64.split(",")[-1]
+    if len(image_b64) < 100:
+        raise HTTPException(400, "No photo attached.")
+
+    if not GOOGLE_API_KEY:
+        raise HTTPException(503, "Photo capture is unavailable right now.")
+
+    sub = await build_subscription(user["family_id"])
+    family = await get_family_doc(user["family_id"])
+    if not is_admin_user(user) and family.get("ai_scans_used", 0) >= sub["limits"]["ai_scans_per_month"]:
+        plan_limit_error(
+            feature="ai_scans",
+            current_plan=sub["plan"],
+            limit=sub["limits"]["ai_scans_per_month"],
+            used=family.get("ai_scans_used", 0),
+            message="AI limit reached for this billing period.",
+        )
+
+    try:
+        text = await _gemini_vision(
+            "Read the recipe in this photo.",
+            image_b64,
+            system=RECIPE_PHOTO_SYSTEM_PROMPT,
+        )
+        parsed = extract_json(text)
+        if parsed is None:
+            raise UnsafeRecipe("unparseable")
+        captured = validate_captured_recipe(parsed)
+    except UnsafeRecipe as exc:
+        log.info("recipe capture rejected by safety gate: %s", exc.reason)
+        raise HTTPException(422, "We could not read a recipe in that photo.")
+    except Exception as exc:
+        log.warning("recipe capture failed: %s", exc)
+        raise HTTPException(502, "We could not read a recipe in that photo.")
+
+    if not is_admin_user(user):
+        await database["families"].update_one(
+            {"family_id": user["family_id"]},
+            {"$inc": {"ai_scans_used": 1}, "$set": {"updated_at": utcnow()}},
+        )
+
+    return {"captured": captured}
+
+
+@app.post("/api/meals/from-capture")
+async def add_meal_from_capture(
+    payload: dict = Body(...),
+    lang: str = "en",
+    user: dict = Depends(require_user),
+    database=Depends(get_db),
+):
+    """Commit a captured recipe to a day of the week.
+
+    The recipe arrives back from the client, so it passes the same gate
+    again before anything is stored — the round trip through the app is
+    not trusted.
+    """
+    await require_feature(user, "meal_planner")
+
+    day = str(payload.get("day") or "").lower()
+    if day not in DAYS_OF_WEEK:
+        raise HTTPException(400, f"Day must be one of {DAYS_OF_WEEK}")
+    language = lang if lang in RECIPE_LANGUAGE_NAMES else "en"
+
+    try:
+        captured = validate_captured_recipe(payload.get("recipe") or {})
+    except UnsafeRecipe as exc:
+        log.info("captured recipe rejected on commit: %s", exc.reason)
+        raise HTTPException(422, "This recipe did not pass our checks.")
+
+    title = captured.pop("title")
+    meal = {
+        "meal_id": new_id("meal"),
+        "family_id": user["family_id"],
+        "day": day,
+        "meal_type": "dinner",
+        "title": title,
+        "ingredients": [i["name"] for i in captured["ingredients"]],
+        "notes": None,
+        "recipe_id": None,
+        # The structured recipe rides on the meal exactly like an AI-written
+        # one, so the recipe page shows amounts, stepper and steps for free.
+        "ai_recipe": {language: captured},
+        "created_at": utcnow(),
+    }
+    await database["meals"].insert_one(meal)
+    return public_meal(meal)
 
 
 @app.post("/api/meals/suggest-ai")
