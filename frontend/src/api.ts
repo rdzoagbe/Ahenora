@@ -476,6 +476,9 @@ export interface NotificationSettings {
 export interface CalendarImportResult {
   ok: boolean;
   imported: number;
+  // A rescheduled meeting moves its card; a cancelled one removes it.
+  updated?: number;
+  removed?: number;
   skipped: number;
   events_seen: number;
   contacts_found: number;
@@ -877,6 +880,12 @@ export const api = {
       cache.set(cacheKey, data, CACHE_TTL_MS);
       return data;
     });
+  },
+  // Server asks RevenueCat directly and corrects the stored plan — the
+  // self-healing path for a missed webhook. Quiet by design.
+  reconcileBilling: () => {
+    invalidateUsageCaches();
+    return request<Subscription>('/billing/reconcile', { method: 'POST' });
   },
   changeSubscription: (plan: Plan, billing_cycle: BillingCycle) => {
     invalidateUsageCaches();

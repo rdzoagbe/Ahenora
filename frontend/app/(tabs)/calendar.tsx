@@ -167,6 +167,16 @@ export default function Calendar() {
   const daySize = Math.max(40, Math.min(52, Math.floor(calendarContentWidth / 7)));
   const gridWidth = daySize * 7;
 
+  // One sentence for every sync outcome. "0 events imported" alone reads as
+  // "nothing happened" when a meeting actually moved — say what changed.
+  const syncSummary = useCallback((r: CalendarImportResult) => {
+    const parts = [`${r.imported} ${t('cal_events_imported')}`];
+    if (r.updated) parts.push(`${r.updated} ${t('cal_events_updated')}`);
+    if (r.removed) parts.push(`${r.removed} ${t('cal_events_removed')}`);
+    parts.push(`${r.contacts_found} ${t('cal_people_found')}`);
+    return `${parts.join(' · ')}.`;
+  }, [t]);
+
   const load = useCallback(async () => {
     logEvent('calendar_open');
     try {
@@ -224,7 +234,7 @@ export default function Calendar() {
         const result = await api.importGoogleCalendar(accessToken, 30);
         setSyncResult(result);
         await load();
-        Alert.alert(t('cal_calendar_synced'), `${result.imported} ${t('cal_events_imported')}. ${result.contacts_found} ${t('cal_people_found')}.`);
+        Alert.alert(t('cal_calendar_synced'), syncSummary(result));
       } catch (e: any) {
         logger.warn('calendar sync failed', e);
         Alert.alert(t('cal_calendar_sync_failed'), e?.message || t('cal_please_try_again'));
@@ -407,8 +417,8 @@ export default function Calendar() {
         const result = await api.importGoogleCalendar(tokens.accessToken, 30);
         setSyncResult(result);
         await load();
-        setCalendarSyncStatus(`${result.imported} ${t('cal_events_imported')}. ${result.contacts_found} ${t('cal_people_found')}.`);
-        Alert.alert(t('cal_calendar_synced'), `${result.imported} ${t('cal_events_imported')}. ${result.contacts_found} ${t('cal_people_found')}.`);
+        setCalendarSyncStatus(syncSummary(result));
+        Alert.alert(t('cal_calendar_synced'), syncSummary(result));
       } catch (e: any) {
         // User cancelled the Google chooser — not an error, say nothing scary.
         const code = e?.code || '';
@@ -460,8 +470,8 @@ export default function Calendar() {
       setSyncResult(importResult);
       await load();
 
-      setCalendarSyncStatus(`${importResult.imported} ${t('cal_events_imported')}. ${importResult.contacts_found} ${t('cal_people_found')}.`);
-      Alert.alert(t('cal_calendar_synced'), `${importResult.imported} ${t('cal_events_imported')}. ${importResult.contacts_found} ${t('cal_people_found')}.`);
+      setCalendarSyncStatus(syncSummary(importResult));
+      Alert.alert(t('cal_calendar_synced'), syncSummary(importResult));
     } catch (e: any) {
       logger.warn('calendar sync failed', e);
       const message = e?.message || t('cal_please_try_again');
@@ -502,7 +512,7 @@ export default function Calendar() {
         const result = await api.importMicrosoftCalendar(accessToken, 30);
         setSyncResult(result);
         await load();
-        Alert.alert(t('cal_calendar_synced'), `${result.imported} ${t('cal_events_imported')}. ${result.contacts_found} ${t('cal_people_found')}.`);
+        Alert.alert(t('cal_calendar_synced'), syncSummary(result));
       } catch (e: any) {
         logger.warn('microsoft calendar sync failed', e);
         Alert.alert(t('cal_calendar_sync_failed'), e?.message || t('cal_please_try_again'));
@@ -579,7 +589,7 @@ export default function Calendar() {
               <View testID="calendar-sync-card" style={styles.bannerInner}>
                 <IconTile bg={ui.orangeSoft} size={40} radius={13}><CalendarDays color={ui.orange} size={20} /></IconTile>
                 <Text style={styles.bannerText} numberOfLines={2}>
-                  {calendarSyncStatus || (syncResult ? `${syncResult.imported} ${t('cal_events_imported')} · ${syncResult.contacts_found} ${t('cal_people_found')}.` : t('cal_connected_read_only'))}
+                  {calendarSyncStatus || (syncResult ? syncSummary(syncResult) : t('cal_connected_read_only'))}
                 </Text>
               </View>
             </KitCard>

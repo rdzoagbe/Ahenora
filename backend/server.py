@@ -3519,6 +3519,9 @@ async def _fetch_google_calendar_events(access_token: str, days: int) -> list[di
             "singleEvents": "true",
             "orderBy": "startTime",
             "maxResults": "100",
+            # Cancellations must arrive too, or a deleted meeting lives on
+            # in the app forever. Google omits them unless asked.
+            "showDeleted": "true",
         }
     )
 
@@ -3567,15 +3570,31 @@ async def import_google_calendar(payload: CalendarImportIn, user=Depends(require
     events = await _fetch_google_calendar_events(token, days)
 
     imported = 0
+    updated = 0
+    removed = 0
     skipped = 0
     contacts_found: dict[str, dict] = {}
 
     for event in events:
+        event_id = event.get("id")
+
         if event.get("status") == "cancelled":
+            # A meeting that no longer exists must not live on as a card.
+            # Only open, unshared imports are removed — a completed card is
+            # history, and a shared one is the family's now.
+            if event_id:
+                result = await database["cards"].delete_one({
+                    "family_id": user["family_id"],
+                    "google_event_id": event_id,
+                    "status": "OPEN",
+                    "shared": False,
+                })
+                if result.deleted_count:
+                    removed += 1
+                    continue
             skipped += 1
             continue
 
-        event_id = event.get("id")
         if not event_id:
             skipped += 1
             continue
@@ -3585,6 +3604,11 @@ async def import_google_calendar(payload: CalendarImportIn, user=Depends(require
             skipped += 1
             continue
 
+        title = (event.get("summary") or "Calendar event").strip()
+        location = (event.get("location") or "").strip()
+        html_link = event.get("htmlLink")
+        contacts = _event_attendee_contacts(event)
+
         existing = await database["cards"].find_one(
             {
                 "family_id": user["family_id"],
@@ -3593,13 +3617,24 @@ async def import_google_calendar(payload: CalendarImportIn, user=Depends(require
             {"_id": 0},
         )
         if existing:
-            skipped += 1
+            # The field bug: an already-imported event was skipped outright,
+            # so a rescheduled meeting kept its old time in the app forever —
+            # "sync" only ever discovered new events. Mirror what changed;
+            # the card's status stays whatever the family made it.
+            changed = {}
+            if title != existing.get("title"):
+                changed["title"] = title
+            if ensure_aware_utc(existing.get("due_date")) != start_dt:
+                changed["due_date"] = start_dt
+            if changed:
+                await database["cards"].update_one(
+                    {"family_id": user["family_id"], "google_event_id": event_id},
+                    {"$set": changed},
+                )
+                updated += 1
+            else:
+                skipped += 1
             continue
-
-        title = (event.get("summary") or "Calendar event").strip()
-        location = (event.get("location") or "").strip()
-        html_link = event.get("htmlLink")
-        contacts = _event_attendee_contacts(event)
 
         for contact in contacts:
             email = contact["email"]
@@ -3673,6 +3708,8 @@ async def import_google_calendar(payload: CalendarImportIn, user=Depends(require
     return {
         "ok": True,
         "imported": imported,
+        "updated": updated,
+        "removed": removed,
         "skipped": skipped,
         "events_seen": len(events),
         "contacts_found": len(contacts_found),
@@ -3770,15 +3807,30 @@ async def import_microsoft_calendar(payload: CalendarImportIn, user=Depends(requ
     events = await _fetch_microsoft_calendar_events(token, days)
 
     imported = 0
+    updated = 0
+    removed = 0
     skipped = 0
     contacts_found: dict[str, dict] = {}
 
     for event in events:
+        event_id = event.get("id")
+
         if event.get("isCancelled"):
+            # Same rule as the Google import: a cancelled meeting's card goes,
+            # but only while it is still open and unshared.
+            if event_id:
+                result = await database["cards"].delete_one({
+                    "family_id": user["family_id"],
+                    "ms_event_id": event_id,
+                    "status": "OPEN",
+                    "shared": False,
+                })
+                if result.deleted_count:
+                    removed += 1
+                    continue
             skipped += 1
             continue
 
-        event_id = event.get("id")
         if not event_id:
             skipped += 1
             continue
@@ -3793,7 +3845,22 @@ async def import_microsoft_calendar(payload: CalendarImportIn, user=Depends(requ
             {"_id": 0},
         )
         if existing:
-            skipped += 1
+            # Mirror what changed rather than skipping — a rescheduled
+            # meeting must move here too. Status stays the family's call.
+            new_title = (event.get("subject") or "Calendar event").strip()
+            changed = {}
+            if new_title != existing.get("title"):
+                changed["title"] = new_title
+            if ensure_aware_utc(existing.get("due_date")) != start_dt:
+                changed["due_date"] = start_dt
+            if changed:
+                await database["cards"].update_one(
+                    {"family_id": user["family_id"], "ms_event_id": event_id},
+                    {"$set": changed},
+                )
+                updated += 1
+            else:
+                skipped += 1
             continue
 
         title = (event.get("subject") or "Calendar event").strip()
@@ -3868,6 +3935,8 @@ async def import_microsoft_calendar(payload: CalendarImportIn, user=Depends(requ
     return {
         "ok": True,
         "imported": imported,
+        "updated": updated,
+        "removed": removed,
         "skipped": skipped,
         "events_seen": len(events),
         "contacts_found": len(contacts_found),
@@ -3994,6 +4063,94 @@ async def revenuecat_webhook(payload: dict, authorization: Optional[str] = Heade
     )
     log.info("RC webhook applied: family=%s type=%s plan=%s", user["family_id"], event_type, changes.get("plan", "unchanged"))
     return {"ok": True, "matched": True}
+
+
+async def _fetch_rc_subscriber(user_id: str, secret: str) -> dict:
+    """Ask RevenueCat's REST API for a subscriber. Network only — the
+    interpretation lives in rc_entitlement_state so it can be tested."""
+    url = f"https://api.revenuecat.com/v1/subscribers/{urllib.parse.quote(user_id, safe='')}"
+
+    def _request():
+        req = urllib.request.Request(
+            url, headers={"Authorization": f"Bearer {secret}"}, method="GET"
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            raise HTTPException(status_code=502, detail=f"RevenueCat error {e.code}")
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"RevenueCat request failed: {e}")
+
+    return await asyncio.to_thread(_request)
+
+
+def rc_entitlement_state(subscriber: dict, now: datetime) -> tuple[bool, Optional[str]]:
+    """Does this RevenueCat subscriber hold an active entitlement, and for
+    which product? An entitlement with no expiry is lifetime; a malformed
+    expiry is ignored rather than trusted."""
+    entitlements = (subscriber or {}).get("entitlements") or {}
+    for ent in entitlements.values():
+        if not isinstance(ent, dict):
+            continue
+        product = ent.get("product_identifier")
+        exp = ent.get("expires_date")
+        if exp is None:
+            return True, product
+        try:
+            exp_dt = ensure_aware_utc(parse_dt(str(exp)))
+        except Exception:
+            continue
+        if exp_dt and exp_dt > now:
+            return True, product
+    return False, None
+
+
+@app.post("/api/billing/reconcile")
+async def reconcile_billing(user: dict = Depends(require_user)):
+    """Ask RevenueCat directly what this user's subscription really is.
+
+    Webhooks stay the normal source of truth, but a missed webhook used to be
+    permanent: a paying family stayed 'free' until someone noticed. The app
+    calls this quietly when the plans screen opens, so the server corrects
+    itself from RevenueCat's answer — in both directions, with one guard:
+    a downgrade is only applied when the plan verifiably came from billing
+    (the family carries webhook state), so a manually granted plan is never
+    silently revoked by a reconcile.
+    """
+    secret = os.environ.get("REVENUECAT_SECRET_KEY", "")
+    if not secret:
+        raise HTTPException(status_code=503, detail="Billing reconciliation not configured")
+
+    database = get_db()
+    data = await _fetch_rc_subscriber(user["user_id"], secret)
+    active, product = rc_entitlement_state((data or {}).get("subscriber") or {}, utcnow())
+
+    family = await get_family_doc(user["family_id"])
+    changes = {"rc_reconciled_at": utcnow(), "updated_at": utcnow()}
+    if active:
+        product_id = (product or "").lower()
+        changes["plan"] = "executive"
+        changes["billing_cycle"] = "yearly" if ("year" in product_id or "annual" in product_id) else "monthly"
+        changes["rc_product_id"] = product
+    elif family.get("plan") == "executive" and family.get("rc_last_event"):
+        changes["plan"] = "village"
+
+    await database["families"].update_one(
+        {"family_id": user["family_id"]}, {"$set": changes}
+    )
+    if changes.get("plan") and changes["plan"] != family.get("plan"):
+        log.info(
+            "RC reconcile corrected family=%s: %s -> %s",
+            user["family_id"], family.get("plan"), changes["plan"],
+        )
+
+    sub = await build_subscription(user["family_id"])
+    if is_admin_user(user):
+        return apply_admin_subscription(sub)
+    return sub
 
 
 # -----------------------------------------------------------------------------
