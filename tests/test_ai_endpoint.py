@@ -272,6 +272,58 @@ class DiscoverModels(unittest.TestCase):
 
 
 @unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
+class FastRouting(unittest.TestCase):
+    """Simple jobs go to the lite model first; nothing else changes.
+
+    The subtle rule under test: a fast success must NOT be remembered as the
+    proven model, or one chef answer would quietly downgrade every recipe
+    generated after it."""
+
+    def setUp(self):
+        self._client = server._gemini_state["client"]
+        self._model = server._gemini_state["model"]
+        server._gemini_state["model"] = None
+        server._gemini_state["last_error"] = None
+        server._gemini_state["errors"] = {}
+        server._gemini_state["discovered"] = []
+        self.fake = FakeClient()
+        server._gemini_state["client"] = self.fake
+
+    def tearDown(self):
+        server._gemini_state["client"] = self._client
+        server._gemini_state["model"] = self._model
+        server._gemini_state["discovered"] = None
+
+    def test_fast_calls_try_the_lite_model_first(self):
+        asyncio.run(server._gemini_generate("hi", fast=True))
+        self.assertEqual(self.fake.captured[0]["model"], server.FAST_MODEL)
+
+    def test_normal_calls_are_unchanged(self):
+        asyncio.run(server._gemini_generate("hi"))
+        self.assertEqual(self.fake.captured[0]["model"], FIRST)
+
+    def test_a_fast_success_is_not_remembered_as_the_proven_model(self):
+        asyncio.run(server._gemini_generate("hi", fast=True))
+        self.assertIsNone(server._gemini_state["model"])
+        # ...so the next quality call still leads with the strong chain.
+        asyncio.run(server._gemini_generate("hi"))
+        self.assertEqual(self.fake.captured[-1]["model"], FIRST)
+
+    def test_fast_falls_back_when_the_lite_model_is_gone(self):
+        class _NoLite(FakeClient):
+            def reply_for(self, model, contents, config):
+                if model == server.FAST_MODEL:
+                    raise RuntimeError("404 NOT_FOUND: model not found")
+                return "OK"
+        fake = _NoLite()
+        server._gemini_state["client"] = fake
+        out = asyncio.run(server._gemini_generate("hi", fast=True))
+        self.assertEqual(out, "OK")
+        self.assertEqual(fake.captured[0]["model"], server.FAST_MODEL)
+        self.assertNotEqual(fake.captured[1]["model"], server.FAST_MODEL)
+
+
+@unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
 class SuggestVariant(unittest.TestCase):
     """The review's confirmed bug: "different ideas" sent a byte-identical
     request on the AI path, so the variant never left the device and only
