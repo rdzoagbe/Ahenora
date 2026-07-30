@@ -482,7 +482,14 @@ def _discover_models() -> list:
         return []
 
 
-async def _gemini_generate(contents, system: str = "", temperature: float = None) -> str:
+# Simple jobs (a chef substitution, reading a shopping list off a photo) go
+# to the lite model first: roughly twice as fast, and the safety gates do not
+# care which model produced the text they check. Complex jobs (weekly planning,
+# structured recipes) stay on the stronger chain.
+FAST_MODEL = "gemini-flash-lite-latest"
+
+
+async def _gemini_generate(contents, system: str = "", temperature: float = None, fast: bool = False) -> str:
     """Generate with model fallback.
 
     Tries the proven model first, then the operator override, then the built-in
@@ -492,6 +499,10 @@ async def _gemini_generate(contents, system: str = "", temperature: float = None
 
     `temperature` is optional; when set it controls sampling diversity, which
     the meal planner raises for repeat "different ideas" asks.
+
+    `fast` prepends the lite model for latency-sensitive simple jobs. A fast
+    success is deliberately NOT remembered as the proven model — otherwise one
+    chef answer would quietly downgrade every recipe that follows it.
     """
     client = _gemini_client()
     if not client:
@@ -505,6 +516,8 @@ async def _gemini_generate(contents, system: str = "", temperature: float = None
 
     last_error = None
     candidates = model_candidates(GEMINI_MODEL, _gemini_state["model"] or "")
+    if fast:
+        candidates = [FAST_MODEL] + [c for c in candidates if c != FAST_MODEL]
     # If none of the built-in names exist for this key, ask the key what it has
     # and append those. Self-heals against Google renaming/retiring models.
     discovered = _gemini_state.get("discovered")
@@ -522,9 +535,10 @@ async def _gemini_generate(contents, system: str = "", temperature: float = None
                 contents=contents,
                 config=config or None,
             )
-            if _gemini_state["model"] != name:
-                log.info("gemini model resolved to %s", name)
-            _gemini_state["model"] = name
+            if not fast:
+                if _gemini_state["model"] != name:
+                    log.info("gemini model resolved to %s", name)
+                _gemini_state["model"] = name
             _gemini_state["last_error"] = None
             _gemini_state["errors"].pop(name, None)
             return (response.text or "").strip()
@@ -541,16 +555,16 @@ async def _gemini_generate(contents, system: str = "", temperature: float = None
     raise last_error if last_error else RuntimeError("no gemini model candidates")
 
 
-async def _gemini_text(prompt: str, system: str = "", temperature: float = None) -> str:
-    return await _gemini_generate(prompt, system, temperature=temperature)
+async def _gemini_text(prompt: str, system: str = "", temperature: float = None, fast: bool = False) -> str:
+    return await _gemini_generate(prompt, system, temperature=temperature, fast=fast)
 
 
-async def _gemini_vision(prompt: str, image_base64: str, system: str = "") -> str:
+async def _gemini_vision(prompt: str, image_base64: str, system: str = "", fast: bool = False) -> str:
     if "," in image_base64:
         image_base64 = image_base64.split(",")[-1]
     img_bytes = base64.b64decode(image_base64)
     img = PIL.Image.open(io.BytesIO(img_bytes))
-    return await _gemini_generate([prompt, img], system)
+    return await _gemini_generate([prompt, img], system, fast=fast)
 
 
 # The two launch tiers. Children are metered (role-aware: parents/caregivers
@@ -4737,6 +4751,7 @@ async def scan_shopping_list(
             "Read the shopping list in this photo.",
             image_b64,
             system=SHOPPING_SCAN_SYSTEM_PROMPT,
+            fast=True,
         )
         parsed = extract_json(text)
         if parsed is None:
@@ -5332,6 +5347,7 @@ async def ask_the_chef(
         text = await _gemini_text(
             build_chef_prompt(title, question, RECIPE_LANGUAGE_NAMES[language]),
             system=CHEF_SYSTEM_PROMPT,
+            fast=True,
         )
         parsed = extract_json(text)
         if parsed is None:
