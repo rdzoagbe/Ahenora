@@ -12,6 +12,7 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  kids_stars_to_go: '{n} more',
   kids_allowance_due_now: 'Due now',
   kids_allowance_due_on: 'Next due {date}',
   kids_allowance_pay_now: 'Pay now',
@@ -1060,6 +1061,7 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  kids_stars_to_go: 'Faltan {n}',
   kids_allowance_due_now: 'Toca ahora',
   kids_allowance_due_on: 'Próximo: {date}',
   kids_allowance_pay_now: 'Pagar',
@@ -2102,6 +2104,7 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  kids_stars_to_go: 'Encore {n}',
   kids_allowance_due_now: 'À verser',
   kids_allowance_due_on: 'Prochain : {date}',
   kids_allowance_pay_now: 'Verser',
@@ -3144,6 +3147,7 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  kids_stars_to_go: 'Noch {n}',
   kids_allowance_due_now: 'Jetzt fällig',
   kids_allowance_due_on: 'Nächste: {date}',
   kids_allowance_pay_now: 'Auszahlen',
