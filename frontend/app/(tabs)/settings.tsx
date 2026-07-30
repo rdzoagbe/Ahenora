@@ -26,6 +26,7 @@ import {
   X,
 } from 'lucide-react-native';
 
+import AppToast, { ToastTone } from '../../src/components/AppToast';
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { PressScale } from '../../src/components/PressScale';
 import { LanguageModal } from '../../src/components/LanguageModal';
@@ -55,6 +56,11 @@ export default function Settings() {
   const [invites, setInvites] = useState<FamilyInvite[]>([]);
   const [showLang, setShowLang] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
+  const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null);
+  const showToast = useCallback((message: string, tone: ToastTone = 'success') => {
+    setToast({ message, tone });
+    setTimeout(() => setToast(null), 2600);
+  }, []);
   const [inviteMethod, setInviteMethod] = useState<'email' | 'phone' | 'link'>('email');
   const [inviteEmail, setInviteEmail] = useState('');
   const [invitePhone, setInvitePhone] = useState('');
@@ -321,7 +327,9 @@ export default function Settings() {
   );
 
   // Email: send directly through the backend and confirm — no extra steps.
-  const sendEmailInvite = useCallback(async () => {
+  // Plain function: a manual useCallback here makes the React Compiler
+  // skip the whole component (same lesson as the kids page).
+  const sendEmailInvite = async () => {
     const submitted = inviteEmail.trim();
     if (!submitted || !submitted.includes('@')) {
       setInviteError(true);
@@ -334,9 +342,14 @@ export default function Settings() {
     try {
       const res = await api.invite(submitted);
       if (res.sent) {
-        setInviteResult(`${t('set_invite_email_sent')} ${submitted}.`);
+        // Success gets out of the way: close the sheet and confirm with a
+        // toast. Leaving the form open with a note buried mid-sheet read as
+        // "did it work?" and invited double-sends.
+        setInviteResult(null);
         setInviteError(false);
         setInviteEmail('');
+        setShowInvite(false);
+        showToast(`${t('set_invite_email_sent')} ${submitted}.`);
       } else {
         // Delivery not configured / failed — fall back to the shareable link.
         setInviteError(true);
@@ -353,7 +366,7 @@ export default function Settings() {
     } finally {
       setSending(false);
     }
-  }, [inviteEmail, load, user?.is_admin]);
+  };
 
   // Phone: create a link, then hand off to the device's SMS app pre-filled.
   const sendPhoneInvite = useCallback(async () => {
@@ -376,7 +389,9 @@ export default function Settings() {
         // Attempt directly — canOpenURL can falsely report false on Android 11+
         // because of package visibility rules.
         await Linking.openURL(smsUrl);
-        setInviteResult(t('set_invite_sms_opened'));
+        setInviteResult(null);
+        setShowInvite(false);
+        showToast(t('set_invite_sms_opened'));
       } catch {
         // No SMS app (e.g. a tablet) — fall back to the share sheet.
         await shareInviteLink(url, null);
@@ -930,6 +945,7 @@ export default function Settings() {
           </PressScale>
         </View>
       </KeyboardAwareBottomSheet>
+      <AppToast visible={Boolean(toast)} message={toast?.message || null} tone={toast?.tone || 'info'} />
     </SwipeableTabView>
   );
 }
