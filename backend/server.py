@@ -5207,6 +5207,19 @@ async def suggest_meals_ai(
         if title:
             planned.append(title)
 
+    # What the last ask(s) proposed, remembered on the family. This is what
+    # makes reopening the sheet produce a fresh week: the client resets its
+    # "different ideas" counter every open, so without memory here every open
+    # sent an identical prompt at low temperature and got the same week back.
+    seen = []
+    fam_doc = await database["families"].find_one(
+        {"family_id": user["family_id"]}, {"_id": 0, "last_meal_suggestions": 1}
+    ) or {}
+    for raw in (fam_doc.get("last_meal_suggestions") or [])[:14]:
+        title = sanitize_user_text(raw or "")
+        if title:
+            seen.append(title)
+
     # variant is the "different ideas" counter from the client. Bounded so a
     # hostile value cannot blow up the prompt, and used both to change the
     # prompt bytes and to raise sampling temperature after the first ask.
@@ -5215,7 +5228,8 @@ async def suggest_meals_ai(
     try:
         text = await _gemini_text(
             build_suggest_prompt(
-                items, RECIPE_LANGUAGE_NAMES[language], planned, variant=variant
+                items, RECIPE_LANGUAGE_NAMES[language], planned,
+                variant=variant, seen_titles=seen,
             ),
             system=SUGGEST_SYSTEM_PROMPT,
             # First ask stays focused; repeat asks lean into variety.
@@ -5231,6 +5245,15 @@ async def suggest_meals_ai(
     except Exception as exc:
         log.warning("meal suggestion generation failed: %s", exc)
         raise HTTPException(502, "We could not plan a week from this list.")
+
+    # Remember what was proposed (about two weeks' worth, most recent last)
+    # so the next ask — however the client counts — avoids repeating it.
+    # Memory, not metering: stored for admins too.
+    remembered = list(dict.fromkeys(seen + [m["title"] for m in meals]))[-14:]
+    await database["families"].update_one(
+        {"family_id": user["family_id"]},
+        {"$set": {"last_meal_suggestions": remembered}},
+    )
 
     if not is_admin_user(user):
         await database["families"].update_one(
