@@ -1291,9 +1291,9 @@ export default function Kids() {
                       onPress={openMoneySheet}
                       style={{ flex: 1 }}
                     >
-                      <Text style={styles.allowanceBalance}>${childBalance.toFixed(2)}</Text>
+                      <Text style={styles.allowanceBalance}>{t('currency_symbol')}{childBalance.toFixed(2)}</Text>
                       <Text style={styles.featureRowSub}>
-                        {childAllowance ? `$${childAllowance.amount}/${t('kids_freq_' + childAllowance.frequency)}` : t('kids_no_allowance_set')}
+                        {childAllowance ? `${t('currency_symbol')}${childAllowance.amount}/${t('kids_freq_' + childAllowance.frequency)}` : t('kids_no_allowance_set')}
                       </Text>
                       {/* Setting an amount used to do nothing on its own. This
                           is the line that tells a parent the app is keeping
@@ -1551,7 +1551,7 @@ export default function Kids() {
           </PressScale>
         </View>
         <Text style={styles.sheetHelp}>
-          {t('kids_for')} {activeChild?.name || t('kids_selected_child')} · ${childBalance.toFixed(2)}
+          {t('kids_for')} {activeChild?.name || t('kids_selected_child')} · {t('currency_symbol')}{childBalance.toFixed(2)}
         </Text>
 
         <Text style={styles.label}>{t('kids_money_amount')}</Text>
@@ -1607,7 +1607,7 @@ export default function Kids() {
                   { color: txn.txn_type === 'withdrawal' ? ui.muted : ui.mintText },
                 ]}
               >
-                {txn.txn_type === 'withdrawal' ? '−' : '+'}${Number(txn.amount).toFixed(2)}
+                {txn.txn_type === 'withdrawal' ? '−' : '+'}{t('currency_symbol')}{Number(txn.amount).toFixed(2)}
               </Text>
             </View>
           ))

@@ -132,8 +132,11 @@ export default function Settings() {
 
   const memberLimit = entitlements?.max_members ?? subscription?.limits?.max_members ?? 0;
   const memberSlotsUsed = entitlements?.member_slots_used ?? members.length + invites.filter((invite) => invite.status === 'pending').length;
-  const childMembers = useMemo(() => members.filter((m) => m.role === 'Child'), [members]);
-  const adultCount = Math.max(1, members.filter((m) => m.role !== 'Child').length);
+  // Case-insensitive on purpose: the backend queries roles with ^child$/i,
+  // so the client must not be stricter than the server about casing. The
+  // kids page already compares this way.
+  const childMembers = useMemo(() => members.filter((m) => m.role?.toLowerCase() === 'child'), [members]);
+  const adultCount = Math.max(1, members.filter((m) => m.role?.toLowerCase() !== 'child').length);
   const planLabel = subscription?.plan === 'family_office' ? 'Family Office' : subscription?.plan === 'executive' ? 'Executive Family' : 'Village';
   const weeklyBrief = Boolean(entitlements?.weekly_brief || subscription?.limits?.weekly_brief);
   const initial = (user?.name?.[0] || 'C').toUpperCase();
@@ -592,7 +595,7 @@ export default function Settings() {
               testID="settings-expenses-toggle"
               tile={<IconTile bg={ui.gold}><DollarSign color={ui.goldText} size={18} /></IconTile>}
               title={t('set_household_expenses')}
-              subtitle={expenseSummary ? `$${expenseSummary.total.toFixed(0)} last ${expenseSummary.days} days` : t('set_track_shared_costs')}
+              subtitle={expenseSummary ? `${t('currency_symbol')}${expenseSummary.total.toFixed(0)} ${t('set_last_n_days', { n: expenseSummary.days })}` : t('set_track_shared_costs')}
               right={<Chevron open={expandExpenses} />}
               onPress={() => setExpandExpenses((v) => !v)}
               divider={false}
@@ -614,7 +617,7 @@ export default function Settings() {
                     <MiniRow
                       initial="$"
                       name={exp.description}
-                      sub={`$${exp.amount.toFixed(2)} · ${exp.category} · ${exp.paid_by_name}`}
+                      sub={`${t('currency_symbol')}${exp.amount.toFixed(2)} · ${exp.category} · ${exp.paid_by_name}`}
                     />
                     <PressScale
                   accessibilityRole="button"
