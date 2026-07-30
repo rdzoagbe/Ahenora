@@ -164,6 +164,40 @@ class LoginJoinsFamily(unittest.TestCase):
 
 
 @unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
+class SignedInAccept(LoginJoinsFamily):
+    """A logged-in user who opens an invite link never sees the sign-in
+    screen, so acceptance has its own endpoint."""
+
+    def _accept(self, db, token="tok1"):
+        server.get_db = lambda: db
+        wife = {"user_id": "u_wife", "email": "wife@x.com", "name": "Ama",
+                "family_id": "fam_solo", "language": "fr"}
+        return asyncio.run(server.family_invite_accept(
+            server.InviteAcceptIn(token=token), user=wife,
+        ))
+
+    def test_accepting_while_signed_in_joins_and_notifies(self):
+        db = self._db()
+        res = self._accept(db)
+        self.assertTrue(res["joined"])
+        self.assertEqual(res["user"]["family_id"], "fam_main")
+        self.assertIn(("u_wife", "fam_main"), self.added)
+        self.assertEqual(db["family_invites"].rows[0]["status"], "accepted")
+        self.assertEqual(len(self.pushes), 1)
+        self.assertEqual(self.pushes[0]["to"], "ExponentPushToken[roland]")
+
+    def test_accepting_twice_is_harmless(self):
+        db = self._db(invite_status="accepted")
+        db["family_invites"].rows[0]["accepted_by_email"] = "wife@x.com"
+        res = self._accept(db)
+        self.assertTrue(res["ok"])
+        self.assertEqual(self.pushes, [])
+
+    # The three inherited login tests also run against this fixture set,
+    # which is fine — they exercise the same shared join helper.
+
+
+@unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
 class InvitedUserGetsPush(unittest.TestCase):
     def test_existing_account_is_told_in_app(self):
         pushes = []
