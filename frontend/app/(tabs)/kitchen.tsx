@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, View, Text, StyleSheet, TextInput, ScrollView, ActivityIndicator } from 'react-native';
+import { Alert, View, Text, StyleSheet, TextInput, ScrollView, ActivityIndicator, Modal } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
-import { Plus, X, Trash2, ShoppingCart, Check, UtensilsCrossed, Bell, ChevronDown, History, RotateCcw, Sparkles, Sun, ChefHat, Clock, AlertTriangle, Search, Minus, BookOpen } from 'lucide-react-native';
+import { Plus, X, Trash2, ShoppingCart, Check, UtensilsCrossed, Bell, ChevronDown, ChevronLeft, History, RotateCcw, Sparkles, Sun, ChefHat, Clock, AlertTriangle, Search, Minus, BookOpen } from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { PressScale } from '../../src/components/PressScale';
@@ -58,8 +59,10 @@ export default function Kitchen() {
   // caches them too; this just avoids a round trip while the sheet is open.
   const [aiRecipes, setAiRecipes] = useState<Record<string, { minutes: number; steps: string[] }>>({});
   const [generatingFor, setGeneratingFor] = useState<string | null>(null);
-  // Recipe id currently open in the Cook sheet, with the title to head it.
-  const [cookingRecipe, setCookingRecipe] = useState<{ recipeId: string | null; mealId?: string; title: string } | null>(null);
+  // Recipe currently open full-screen. addToDay marks a preview opened from
+  // the browser: the page then carries an "add to that day" action, so a
+  // parent reads the recipe before committing it to the week.
+  const [cookingRecipe, setCookingRecipe] = useState<{ recipeId: string | null; mealId?: string; title: string; addToDay?: string } | null>(null);
   const suggestLang = useMemo<SuggestLang>(
     () => (['en', 'es', 'fr', 'de'].includes(lang) ? (lang as SuggestLang) : 'en'),
     [lang],
@@ -546,6 +549,14 @@ export default function Kitchen() {
       setGeneratingFor(null);
     }
   }, [aiRecipes, suggestLang, showToast, t]);
+
+  // Closing a preview returns to the browser it came from (which was hidden
+  // rather than dismissed — two stacked native modals misbehave on iOS);
+  // closing a recipe opened from the plan just closes.
+  const closeRecipe = useCallback(() => {
+    if (cookingRecipe?.addToDay) setShowBrowse(true);
+    setCookingRecipe(null);
+  }, [cookingRecipe]);
 
   // ── History: past shopping trips + saved meal plans ──
   const openShopHistory = useCallback(async () => {
@@ -1107,12 +1118,33 @@ export default function Kitchen() {
           if (results.length === 0) {
             return <Text style={styles.histEmpty}>{t('browse_none')}</Text>;
           }
-          return results.map((r) => (
+          return results.map((r) => {
+            const method = recipeMethod(r.id, suggestLang);
+            return (
             <View key={r.id} style={styles.browseRow}>
-              <View style={{ flex: 1, minWidth: 0 }}>
+              {/* The row body opens the recipe itself — time, amounts, steps —
+                  so a parent reads before committing it to a day. The browser
+                  is hidden (not dismissed) while the page is up; the page's
+                  back action brings it straight back. */}
+              <PressScale
+                testID={`browse-open-${r.id}`}
+                accessibilityRole="button"
+                accessibilityLabel={r.title}
+                onPress={() => {
+                  setShowBrowse(false);
+                  setCookingRecipe({ recipeId: r.id, title: r.title, addToDay: browseDay });
+                }}
+                style={{ flex: 1, minWidth: 0 }}
+              >
                 <Text style={styles.browseTitle}>{r.title}</Text>
+                {method ? (
+                  <View style={styles.browseMeta}>
+                    <Clock color={ui.muted} size={11} />
+                    <Text style={styles.browseIng}>{t('cook_minutes', { n: method.minutes })}</Text>
+                  </View>
+                ) : null}
                 <Text style={styles.browseIng} numberOfLines={1}>{r.ingredients.join(', ')}</Text>
-              </View>
+              </PressScale>
               <PressScale
                 testID={`browse-add-${r.id}`}
                 accessibilityRole="button"
@@ -1124,117 +1156,153 @@ export default function Kitchen() {
                 <Text style={styles.reuseText}>{t('vault_add_short')}</Text>
               </PressScale>
             </View>
-          ));
-        })()}
-      </KeyboardAwareBottomSheet>
-
-      {/* Cook it — method for a meal from the suggestion library */}
-      <KeyboardAwareBottomSheet visible={cookingRecipe !== null} onClose={() => setCookingRecipe(null)} contentStyle={styles.sheet}>
-        {(() => {
-          if (!cookingRecipe) return null;
-          const generated = cookingRecipe.mealId ? aiRecipes[cookingRecipe.mealId] : undefined;
-          const method = recipeMethod(cookingRecipe.recipeId, suggestLang) ?? generated ?? null;
-          if (!method) return null;
-          const isGenerated = !cookingRecipe.recipeId;
-          const ingredients = localizedMealIngredients(cookingRecipe.recipeId, [], suggestLang, cookingRecipe.title);
-          return (
-            <>
-              <View style={styles.sheetHeader}>
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={styles.sheetTitle} numberOfLines={2}>{cookingRecipe.title}</Text>
-                  <View style={styles.cookMeta}>
-                    <Clock color={ui.muted} size={13} />
-                    <Text style={styles.cookMetaText}>{t('cook_minutes', { n: method.minutes })}</Text>
-                  </View>
-                </View>
-                <PressScale
-                  accessibilityRole="button"
-                  accessibilityLabel={t('close')}
-                  onPress={() => setCookingRecipe(null)}
-                  style={styles.iconBtn}
-                >
-                  <X color={ui.text} size={20} />
-                </PressScale>
-              </View>
-
-              {cookingRecipe.recipeId ? (
-                <>
-                  <View style={styles.servingsRow}>
-                    <Text style={styles.cookSectionTitle}>{t('cook_servings')}</Text>
-                    <View style={styles.stepper}>
-                      <PressScale
-                        accessibilityRole="button"
-                        accessibilityLabel="-"
-                        onPress={() => setServings(Math.max(1, servings - 1))}
-                        hitSlop={10}
-                        style={styles.stepBtn}
-                      >
-                        <Minus color={ui.text} size={16} />
-                      </PressScale>
-                      <Text style={styles.stepCount}>{servings}</Text>
-                      <PressScale
-                        accessibilityRole="button"
-                        accessibilityLabel="+"
-                        onPress={() => setServings(Math.min(12, servings + 1))}
-                        hitSlop={10}
-                        style={styles.stepBtn}
-                      >
-                        <Plus color={ui.text} size={16} />
-                      </PressScale>
-                    </View>
-                  </View>
-
-                  <Text style={styles.cookSectionTitle}>{t('cook_you_need')}</Text>
-                  {recipeIngredients(cookingRecipe.recipeId, suggestLang).map((ing) => {
-                    const qty = quantityFor(ing.id, servings, suggestLang);
-                    return (
-                      <View key={ing.id} style={styles.qtyRow}>
-                        <Text style={styles.qtyName}>{ing.label}</Text>
-                        {qty ? <Text style={styles.qtyAmount}>{qty}</Text> : null}
-                      </View>
-                    );
-                  })}
-                  <Text style={styles.qtyNote}>{t('cook_amounts_note')}</Text>
-
-                  <PressScale
-                    testID="cook-add-missing"
-                    accessibilityRole="button"
-                    onPress={() => addMissingToList(cookingRecipe.recipeId!)}
-                    style={styles.addMissingBtn}
-                  >
-                    <ShoppingCart color={ui.orange} size={15} />
-                    <Text style={styles.addMissingText}>{t('cook_add_missing')}</Text>
-                  </PressScale>
-                </>
-              ) : ingredients.length > 0 ? (
-                <>
-                  <Text style={styles.cookSectionTitle}>{t('cook_you_need')}</Text>
-                  <Text style={styles.cookIngredients}>{ingredients.join(' · ')}</Text>
-                </>
-              ) : null}
-
-              <Text style={styles.cookSectionTitle}>{t('cook_method')}</Text>
-              {method.steps.map((step, i) => (
-                <View key={i} style={styles.cookStep}>
-                  <View style={styles.cookStepNum}>
-                    <Text style={styles.cookStepNumText}>{i + 1}</Text>
-                  </View>
-                  <Text style={styles.cookStepText}>{step}</Text>
-                </View>
-              ))}
-
-              {/* Stated every time rather than once: the person cooking may not
-                  be the parent who planned the week. */}
-              <View style={styles.cookAllergen}>
-                <AlertTriangle color={ui.muted} size={14} />
-                <Text style={styles.cookAllergenText}>
-                  {isGenerated ? `${t('cook_ai_note')} ${t('cook_allergen_note')}` : t('cook_allergen_note')}
-                </Text>
-              </View>
-            </>
           );
+          });
         })()}
       </KeyboardAwareBottomSheet>
+
+      {/* The recipe, full screen. A recipe you cook from deserves the whole
+          display: bigger type, the steps front and centre, and room for the
+          servings maths — the old bottom sheet buried all of it. */}
+      <Modal visible={cookingRecipe !== null} animationType="slide" onRequestClose={closeRecipe}>
+        <SafeAreaView style={styles.recipeSafe} edges={['top', 'bottom']}>
+          {(() => {
+            if (!cookingRecipe) return null;
+            const generated = cookingRecipe.mealId ? aiRecipes[cookingRecipe.mealId] : undefined;
+            const method = recipeMethod(cookingRecipe.recipeId, suggestLang) ?? generated ?? null;
+            const isGenerated = !cookingRecipe.recipeId;
+            const ingredients = localizedMealIngredients(cookingRecipe.recipeId, [], suggestLang, cookingRecipe.title);
+            return (
+              <>
+                <View style={styles.recipeTopBar}>
+                  <PressScale
+                    testID="recipe-back"
+                    accessibilityRole="button"
+                    accessibilityLabel={t('close')}
+                    onPress={closeRecipe}
+                    hitSlop={8}
+                    style={styles.iconBtn}
+                  >
+                    <ChevronLeft color={ui.text} size={24} />
+                  </PressScale>
+                </View>
+
+                {!method ? (
+                  /* The AI is still writing this one. */
+                  <View style={styles.recipeLoading}>
+                    <ActivityIndicator color={ui.orange} size="large" />
+                    <Text style={styles.recipeLoadingText}>{t('cook_generating')}</Text>
+                  </View>
+                ) : (
+                  <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.recipeScroll}>
+                    <Text style={styles.recipeTitle}>{cookingRecipe.title}</Text>
+                    <View style={styles.cookMeta}>
+                      <Clock color={ui.muted} size={14} />
+                      <Text style={styles.cookMetaText}>
+                        {t('cook_minutes', { n: method.minutes })} · {t('recipe_steps_n', { n: method.steps.length })}
+                      </Text>
+                    </View>
+
+                    {cookingRecipe.recipeId ? (
+                      <>
+                        <View style={styles.servingsRow}>
+                          <Text style={styles.cookSectionTitle}>{t('cook_servings')}</Text>
+                          <View style={styles.stepper}>
+                            <PressScale
+                              accessibilityRole="button"
+                              accessibilityLabel="-"
+                              onPress={() => setServings(Math.max(1, servings - 1))}
+                              hitSlop={10}
+                              style={styles.stepBtn}
+                            >
+                              <Minus color={ui.text} size={16} />
+                            </PressScale>
+                            <Text style={styles.stepCount}>{servings}</Text>
+                            <PressScale
+                              accessibilityRole="button"
+                              accessibilityLabel="+"
+                              onPress={() => setServings(Math.min(12, servings + 1))}
+                              hitSlop={10}
+                              style={styles.stepBtn}
+                            >
+                              <Plus color={ui.text} size={16} />
+                            </PressScale>
+                          </View>
+                        </View>
+
+                        <Text style={styles.cookSectionTitle}>{t('cook_you_need')}</Text>
+                        {recipeIngredients(cookingRecipe.recipeId, suggestLang).map((ing) => {
+                          const qty = quantityFor(ing.id, servings, suggestLang);
+                          return (
+                            <View key={ing.id} style={styles.qtyRow}>
+                              <Text style={styles.qtyName}>{ing.label}</Text>
+                              {qty ? <Text style={styles.qtyAmount}>{qty}</Text> : null}
+                            </View>
+                          );
+                        })}
+                        <Text style={styles.qtyNote}>{t('cook_amounts_note')}</Text>
+
+                        <PressScale
+                          testID="cook-add-missing"
+                          accessibilityRole="button"
+                          onPress={() => addMissingToList(cookingRecipe.recipeId!)}
+                          style={styles.addMissingBtn}
+                        >
+                          <ShoppingCart color={ui.orange} size={15} />
+                          <Text style={styles.addMissingText}>{t('cook_add_missing')}</Text>
+                        </PressScale>
+                      </>
+                    ) : ingredients.length > 0 ? (
+                      <>
+                        <Text style={styles.cookSectionTitle}>{t('cook_you_need')}</Text>
+                        <Text style={styles.cookIngredients}>{ingredients.join(' · ')}</Text>
+                      </>
+                    ) : null}
+
+                    <Text style={styles.cookSectionTitle}>{t('cook_method')}</Text>
+                    {method.steps.map((step, i) => (
+                      <View key={i} style={styles.cookStep}>
+                        <View style={styles.cookStepNum}>
+                          <Text style={styles.cookStepNumText}>{i + 1}</Text>
+                        </View>
+                        <Text style={styles.cookStepText}>{step}</Text>
+                      </View>
+                    ))}
+
+                    {/* Stated every time rather than once: the person cooking may not
+                        be the parent who planned the week. */}
+                    <View style={styles.cookAllergen}>
+                      <AlertTriangle color={ui.muted} size={14} />
+                      <Text style={styles.cookAllergenText}>
+                        {isGenerated ? `${t('cook_ai_note')} ${t('cook_allergen_note')}` : t('cook_allergen_note')}
+                      </Text>
+                    </View>
+                  </ScrollView>
+                )}
+
+                {/* Preview from the browser: commit it to the chosen day from
+                    right here, after reading — not before. */}
+                {cookingRecipe.addToDay && cookingRecipe.recipeId && method ? (
+                  <PressScale
+                    testID="recipe-add-day"
+                    accessibilityRole="button"
+                    onPress={() => {
+                      addRecipeToDay(cookingRecipe.recipeId!, cookingRecipe.title, cookingRecipe.addToDay!);
+                      setCookingRecipe(null);
+                    }}
+                    style={styles.recipeAddBtn}
+                  >
+                    <Plus color="#fff" size={16} />
+                    <Text style={styles.recipeAddText}>
+                      {t('browse_add_to_day')} {t(`day_${cookingRecipe.addToDay}`)}
+                    </Text>
+                  </PressScale>
+                ) : null}
+              </>
+            );
+          })()}
+        </SafeAreaView>
+      </Modal>
 
       <KeyboardAwareBottomSheet visible={showMealAdd} onClose={() => setShowMealAdd(false)} contentStyle={styles.sheet}>
         <View style={styles.sheetHeader}>
@@ -1449,6 +1517,16 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   browseRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: ui.line },
   browseTitle: { color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 15 },
   browseIng: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 2 },
+  browseMeta: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  // The recipe as a destination: full screen, generous type, one clear action.
+  recipeSafe: { flex: 1, backgroundColor: ui.bg },
+  recipeTopBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 8 },
+  recipeScroll: { paddingHorizontal: 26, paddingTop: 4, paddingBottom: 60 },
+  recipeTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 28, letterSpacing: -0.5, lineHeight: 34 },
+  recipeLoading: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14 },
+  recipeLoadingText: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 14 },
+  recipeAddBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginHorizontal: 26, marginBottom: 14, paddingVertical: 15, borderRadius: 999, backgroundColor: ui.orange },
+  recipeAddText: { color: '#fff', fontFamily: 'Inter_700Bold', fontSize: 15 },
   browseDayRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
   browseDayChip: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, backgroundColor: ui.soft },
   browseDayChipActive: { backgroundColor: ui.orange },
@@ -1462,10 +1540,11 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   cookMetaText: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 13 },
   cookSectionTitle: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 15, marginTop: 18, marginBottom: 8 },
   cookIngredients: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 14, lineHeight: 20 },
-  cookStep: { flexDirection: 'row', gap: 12, marginBottom: 12, alignItems: 'flex-start' },
-  cookStepNum: { width: 24, height: 24, borderRadius: 12, backgroundColor: ui.orangeSoft, alignItems: 'center', justifyContent: 'center' },
-  cookStepNumText: { color: ui.orange, fontFamily: 'Inter_700Bold', fontSize: 13 },
-  cookStepText: { flex: 1, color: ui.text, fontFamily: 'Inter_500Medium', fontSize: 15, lineHeight: 22 },
+  // Sized to read from a counter with wet hands, not a phone held close.
+  cookStep: { flexDirection: 'row', gap: 14, marginBottom: 16, alignItems: 'flex-start' },
+  cookStepNum: { width: 28, height: 28, borderRadius: 14, backgroundColor: ui.orangeSoft, alignItems: 'center', justifyContent: 'center' },
+  cookStepNumText: { color: ui.orange, fontFamily: 'Inter_700Bold', fontSize: 14 },
+  cookStepText: { flex: 1, color: ui.text, fontFamily: 'Inter_500Medium', fontSize: 16, lineHeight: 25 },
   cookAllergen: { flexDirection: 'row', gap: 8, alignItems: 'flex-start', marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: ui.line },
   suggestAllergen: { flexDirection: 'row', gap: 8, alignItems: 'flex-start', marginTop: 4, marginBottom: 12 },
   suggestAllergenText: { flex: 1, color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, lineHeight: 17 },
