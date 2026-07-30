@@ -323,6 +323,7 @@ class FastRouting(unittest.TestCase):
         self.assertNotEqual(fake.captured[1]["model"], server.FAST_MODEL)
 
 
+@unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
 class SuggestVariant(unittest.TestCase):
     """The review's confirmed bug: "different ideas" sent a byte-identical
     request on the AI path, so the variant never left the device and only
