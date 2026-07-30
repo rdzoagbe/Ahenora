@@ -5,13 +5,13 @@ The single source of truth for what's decided, what's parked, and what comes nex
 ---
 
 ## Where we are — 🚀 LAUNCHED
-Last updated: 29 July 2026.
+Last updated: 30 July 2026.
 
 - **Production release live on Google Play**: release **41 (1.0.0)**, released 29 July 20:13, 176 countries, package `com.householdcoo.app`. First **R8-minified** production build (smaller download, obfuscated), first with the Spark Portal splash + launcher icon in native resources, shipped through the repaired EAS → Play pipeline.
 - **Real billing is on:** Google Play Billing via RevenueCat, verified end-to-end with a real purchase. Free (Village) + Premium tiers enforced. **First revenue recorded** (July 2026).
 - **Expo SDK 57 / RN 0.86** shipped 28 July — device-verified on the Internal testing track (version 38) before promotion.
 - **Store presence:** "Spark Portal" app icon, 30-second promo video (YouTube), framed EN screenshots, IARC rating, co-parenting-led ASO listing.
-- App is feature-complete: value-tour onboarding + guided setup, full **EN/FR/ES/DE** localization (~751 keys/locale), Google + Outlook calendar import, meal suggestions, kids' stars, vault, morning digest, usage metrics, edge-to-edge, in-app review prompt.
+- App is feature-complete: value-tour onboarding + guided setup, full **EN/FR/ES/DE** localization (874 keys/locale, parity-checked), Google + Outlook calendar import, meal suggestions, kids' stars, vault, morning digest, usage metrics, edge-to-edge, in-app review prompt.
 - **Delivery pipeline:** push to `main` → auto **OTA update** (JS changes; users need two full relaunches). Native changes → `EAS Build (Android)` workflow → AAB → auto-submit to the Play production track as a **draft**.
 - **Infrastructure:** MongoDB Atlas **M10 dedicated with backups Active**; UptimeRobot on `/api/health` (accepts GET **and HEAD**).
 
@@ -20,6 +20,17 @@ Last updated: 29 July 2026.
 - [x] **United States tax — W-8BEN approved** (submitted 28 July, valid to 31 December 2029). France treaty claim accepted: **0% withholding** on all three rate categories (motion picture/TV, other copyright, services), with Certificate of Non-US Activities and Affidavit of Unchanged Status on file. The 30% withholding is gone.
 - [x] Tax: France ✅ · Ireland ✅ · United States ✅.
 - [x] **Payments — cleared** (verified 29 July). Bank account registered (FR IBAN ending 0147), no verification prompt outstanding. First earnings recorded: **€4.96** on 29 July, above the €1.00 payout threshold, so payouts run monthly from around the 15th.
+
+### Shipped 30 July (one day, twelve merged PRs)
+- **Recipes redesign (Phase 4 ①②, early by owner decision):** full-screen recipe pages with servings math (#282), AI recipes with validated quantified ingredients (#283), "Ask the chef" Q&A (#284) — all behind the AI-safety gate.
+- **Photo capture:** paper shopping list → reviewed items (#288); printed recipe → structured recipe on the planner, re-validated on commit (#289).
+- **Meal suggestions fixed for real:** server remembers what it proposed so every open gives a new week (#285); honest "planning your week…" state (#287).
+- **Android sheet scrolling** — Touchable-wrapped scrollers froze every tall sheet; fixed at the component level plus a nested-scroller sweep (#281, #286).
+- **Calendar sync mirrors reality:** rescheduled meetings move, renames follow, cancellations remove the card; both Google and Outlook (#293). Field-verified same day.
+- **Billing self-heals:** `POST /api/billing/reconcile` checks RevenueCat directly (`REVENUECAT_SECRET_KEY` on Railway); a missed webhook can no longer strand a paying family; manual grants never auto-revoked (#293).
+- **Faster AI where users wait:** chef answers + list scans lead with the lite model, quality jobs stay on the strong chain (#294).
+- **Foundations:** FastAPI 0.110→0.141 + uvicorn 0.27→0.52 (#291); ten unused backend deps removed (#279); onboarding rewrite (#278); full-app audit → locale currency symbols + role-casing hardening (#290).
+- Backend test suite 173; frontend 86; recipe library 50 dishes.
 
 ## Post-launch — what's left (master list, ordered)
 
@@ -184,8 +195,9 @@ Natural follow-on to Outlook import, but a **separate concern**: import gets a *
 - **Crash-report mapping** — upload deobfuscation `mapping.txt` (or add Sentry) so production crashes are readable.
 
 ### Phase 4 — AI food & gifting (Executive-tier differentiators)
-- **Cooking steps per meal (recipes):** each suggested meal gets a short, parent-friendly recipe — step-by-step instructions + timings — so choosing a dinner also tells you *how to cook it*. Build path: ① add a `steps` field to the `mealSuggestions.ts` library (localized like titles, OTA-friendly, works offline) for the 38 curated meals, shown in a "Cook it" view from the planner/suggestion sheet; ② later, Gemini generates steps for *any* custom meal a parent typed themselves (needs API budget → Premium AI Chef umbrella). Dinner-reminder tie-in: the 17:30 nudge can deep-link straight to tonight's recipe.
-- **AI Chef (fridge scan):** photograph groceries → reuse the **Gemini vision pipeline** (same as document scan), new prompt → one-tap add missing items to the shopping list. Lives in the **Kitchen tab**. Mostly a new prompt + UI (OTA-friendly).
+- [x] **Cooking steps per meal — DELIVERED 30 July, beyond spec** (structured recipes with quantities + servings scaling for curated, AI-written and photographed recipes; "Ask the chef" substitutions). Remaining from the original idea: dinner-reminder deep-link to tonight's recipe.
+- **Cooking steps per meal (original notes):** each suggested meal gets a short, parent-friendly recipe — step-by-step instructions + timings — so choosing a dinner also tells you *how to cook it*. Build path: ① add a `steps` field to the `mealSuggestions.ts` library (localized like titles, OTA-friendly, works offline) for the 38 curated meals, shown in a "Cook it" view from the planner/suggestion sheet; ② later, Gemini generates steps for *any* custom meal a parent typed themselves (needs API budget → Premium AI Chef umbrella). Dinner-reminder tie-in: the 17:30 nudge can deep-link straight to tonight's recipe.
+- **AI Chef (fridge scan):** *(first half exists: the shopping-list photo scan shipped 30 July shares the pipeline — fridge photo → missing items remains.)* photograph groceries → reuse the **Gemini vision pipeline** (same as document scan), new prompt → one-tap add missing items to the shopping list. Lives in the **Kitchen tab**. Mostly a new prompt + UI (OTA-friendly).
 - **AI Gift Concierge:** ① birthday field on members → "birthday in 3 days" **feed card** (also retention idea #5), ② Gemini gift suggestions with budget, ③ birthday message + notification, ④ retailer **affiliate link-outs** for revenue (no gift-card *issuance* — payments regulation).
 
 ### Phase 5 — Family Operations Suite (deep-value differentiators for busy/large families)
