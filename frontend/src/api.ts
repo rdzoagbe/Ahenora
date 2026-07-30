@@ -962,6 +962,11 @@ export const api = {
     request<{ ok: boolean }>(`/shopping/${itemId}`, { method: 'DELETE' }),
   clearCheckedShopping: () =>
     request<{ deleted: number }>('/shopping', { method: 'DELETE' }),
+  scanShoppingList: (imageBase64: string) =>
+    request<{ items: { name: string; unsure: boolean }[] }>('/shopping/scan', {
+      method: 'POST',
+      body: { image_base64: imageBase64 },
+    }),
   bulkAddShopping: (names: string[], categories?: (string | undefined)[]) =>
     request<{ ok: boolean; added: number }>('/shopping/bulk', {
       method: 'POST',

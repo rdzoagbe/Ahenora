@@ -47,6 +47,8 @@ from ai_safety import (
     MAX_QUESTION_LEN,
     build_chef_prompt,
     validate_chef_answer,
+    SHOPPING_SCAN_SYSTEM_PROMPT,
+    validate_shopping_scan,
 )
 
 
@@ -4537,6 +4539,64 @@ async def delete_shopping_history(history_id: str, user=Depends(require_user)):
         {"history_id": history_id, "family_id": user["family_id"]}
     )
     return {"ok": True}
+
+
+@app.post("/api/shopping/scan")
+async def scan_shopping_list(
+    payload: dict = Body(...),
+    user: dict = Depends(require_user),
+    database=Depends(get_db),
+):
+    """Read a photo of a paper shopping list into items.
+
+    Returns candidates only — nothing is added here. The app shows them in a
+    ticked preview (unsure reads come unticked) and commits the selection
+    through the ordinary bulk add, so a misread never lands silently.
+    """
+    image_b64 = str(payload.get("image_base64") or "")
+    if "," in image_b64:
+        image_b64 = image_b64.split(",")[-1]
+    if len(image_b64) < 100:
+        raise HTTPException(400, "No photo attached.")
+
+    if not GOOGLE_API_KEY:
+        raise HTTPException(503, "Photo scanning is unavailable right now.")
+
+    sub = await build_subscription(user["family_id"])
+    family = await get_family_doc(user["family_id"])
+    if not is_admin_user(user) and family.get("ai_scans_used", 0) >= sub["limits"]["ai_scans_per_month"]:
+        plan_limit_error(
+            feature="ai_scans",
+            current_plan=sub["plan"],
+            limit=sub["limits"]["ai_scans_per_month"],
+            used=family.get("ai_scans_used", 0),
+            message="AI scan limit reached for this billing period.",
+        )
+
+    try:
+        text = await _gemini_vision(
+            "Read the shopping list in this photo.",
+            image_b64,
+            system=SHOPPING_SCAN_SYSTEM_PROMPT,
+        )
+        parsed = extract_json(text)
+        if parsed is None:
+            raise UnsafeRecipe("unparseable")
+        items = validate_shopping_scan(parsed)
+    except UnsafeRecipe as exc:
+        log.info("shopping scan rejected by safety gate: %s", exc.reason)
+        raise HTTPException(422, "We could not read a shopping list in that photo.")
+    except Exception as exc:
+        log.warning("shopping scan failed: %s", exc)
+        raise HTTPException(502, "We could not read a shopping list in that photo.")
+
+    if not is_admin_user(user):
+        await database["families"].update_one(
+            {"family_id": user["family_id"]},
+            {"$inc": {"ai_scans_used": 1}, "$set": {"updated_at": utcnow()}},
+        )
+
+    return {"items": items}
 
 
 class BulkShoppingIn(BaseModel):
