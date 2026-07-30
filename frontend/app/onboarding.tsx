@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { ArrowRight, Check, ListChecks, Plus, ShoppingCart, Sparkles, UserPlus, X } from 'lucide-react-native';
+import { ArrowRight, Check, ListChecks, Plus, Sparkles, Star, UserPlus, UtensilsCrossed, X } from 'lucide-react-native';
 
 import { PressScale } from '../src/components/PressScale';
 import { useStore } from '../src/store';
@@ -102,7 +102,7 @@ export default function Onboarding() {
     }
   };
 
-  const totalSteps = 5;
+  const totalSteps = 4;
   const isLast = step === totalSteps - 1;
   const next = () => setStep((s) => Math.min(s + 1, totalSteps - 1));
 
@@ -150,18 +150,40 @@ export default function Onboarding() {
                   );
                 })}
               </View>
+
+              {/* What this app is, before it asks for anything. Four sparse
+                  screens used to stand between install and the app without
+                  once mentioning the meal planner — the one thing competitors
+                  don't do — so it leads here. */}
+              <View style={styles.valueList}>
+                <View style={styles.valueRow}>
+                  <UtensilsCrossed color={theme.colors.accent} size={16} />
+                  <Text style={[styles.valueText, { color: theme.colors.text }]}>{t('ob_value_meals')}</Text>
+                </View>
+                <View style={styles.valueRow}>
+                  <Star color={theme.colors.accent} size={16} />
+                  <Text style={[styles.valueText, { color: theme.colors.text }]}>{t('ob_value_stars')}</Text>
+                </View>
+                <View style={styles.valueRow}>
+                  <UserPlus color={theme.colors.accent} size={16} />
+                  <Text style={[styles.valueText, { color: theme.colors.text }]}>{t('ob_value_feed')}</Text>
+                </View>
+              </View>
             </View>
           ) : null}
 
-          {/* Step 1 — first task */}
+          {/* Step 1 — first task and first list, together. They were two
+              near-empty screens; both are prefilled inputs and belong on one. */}
           {step === 1 ? (
             <View>
               <View style={[styles.badge, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
                 <ListChecks color={theme.colors.accent} size={13} />
-                <Text style={[styles.badgeText, { color: theme.colors.text }]}>{t('ob_step_of', { n: 2, total: 5 })}</Text>
+                <Text style={[styles.badgeText, { color: theme.colors.text }]}>{t('ob_step_of', { n: 2, total: 4 })}</Text>
               </View>
-              <Text style={[styles.title, { color: theme.colors.text }]}>{t('ob_task_title')}</Text>
-              <Text style={[styles.sub, { color: theme.colors.textMuted }]}>{t('ob_task_hint')}</Text>
+              <Text style={[styles.title, { color: theme.colors.text }]}>{t('ob_setup_title')}</Text>
+              <Text style={[styles.sub, { color: theme.colors.textMuted }]}>{t('ob_setup_hint')}</Text>
+
+              <Text style={[styles.sectionLabel, { color: theme.colors.textMuted }]}>{t('ob_sec_task')}</Text>
               <View style={[styles.inputRow, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
                 <TextInput
                   testID="onboarding-task"
@@ -172,62 +194,51 @@ export default function Onboarding() {
                   style={[styles.input, { color: theme.colors.text }]}
                 />
               </View>
-            </View>
-          ) : null}
 
-          {/* Step 2 — shopping list */}
-          {step === 2 ? (
-            <View>
-              <View style={[styles.badge, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
-                <ShoppingCart color={theme.colors.accent} size={13} />
-                <Text style={[styles.badgeText, { color: theme.colors.text }]}>{t('ob_step_of', { n: 3, total: 5 })}</Text>
-              </View>
-              <Text style={[styles.title, { color: theme.colors.text }]}>{t('ob_shop_title')}</Text>
-              <Text style={[styles.sub, { color: theme.colors.textMuted }]}>{t('ob_shop_hint')}</Text>
-              <View style={styles.list}>
-                {shopItems.map((name, i) => (
-                  <View key={i} style={[styles.inputRow, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
-                    <TextInput
-                      testID={`onboarding-shop-${i}`}
-                      value={name}
-                      onChangeText={(v) => updateShop(i, v)}
-                      placeholder={t('ob_shop_placeholder')}
-                      placeholderTextColor={theme.colors.textSoft}
-                      style={[styles.input, { color: theme.colors.text }]}
-                    />
-                    <PressScale onPress={() => removeShop(i)} hitSlop={12} style={{ padding: 6 }}>
-                      <X color={theme.colors.textSoft} size={16} />
-                    </PressScale>
-                  </View>
-                ))}
-                <View style={[styles.inputRow, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
+              <Text style={[styles.sectionLabel, { color: theme.colors.textMuted }]}>{t('ob_sec_shop')}</Text>
+              {shopItems.map((name, i) => (
+                <View key={i} style={[styles.inputRow, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
                   <TextInput
-                    testID="onboarding-shop-draft"
-                    value={shopDraft}
-                    onChangeText={setShopDraft}
-                    onSubmitEditing={addShopDraft}
+                    testID={`onboarding-shop-${i}`}
+                    value={name}
+                    onChangeText={(v) => updateShop(i, v)}
                     placeholder={t('ob_shop_placeholder')}
                     placeholderTextColor={theme.colors.textSoft}
                     style={[styles.input, { color: theme.colors.text }]}
-                    returnKeyType="done"
                   />
-                  <PressScale onPress={addShopDraft} style={[styles.addBtn, { backgroundColor: theme.colors.primary }]}>
-                    <Plus color={theme.colors.primaryText} size={16} />
+                  <PressScale onPress={() => removeShop(i)} hitSlop={12} style={{ padding: 6 }}>
+                    <X color={theme.colors.textSoft} size={16} />
                   </PressScale>
                 </View>
+              ))}
+              <View style={[styles.inputRow, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
+                <TextInput
+                  testID="onboarding-shop-draft"
+                  value={shopDraft}
+                  onChangeText={setShopDraft}
+                  onSubmitEditing={addShopDraft}
+                  placeholder={t('ob_shop_placeholder')}
+                  placeholderTextColor={theme.colors.textSoft}
+                  style={[styles.input, { color: theme.colors.text }]}
+                  returnKeyType="done"
+                />
+                <PressScale onPress={addShopDraft} style={[styles.addBtn, { backgroundColor: theme.colors.primary }]}>
+                  <Plus color={theme.colors.primaryText} size={16} />
+                </PressScale>
               </View>
             </View>
           ) : null}
 
           {/* Step 3 — invite a family member */}
-          {step === 3 ? (
+          {step === 2 ? (
             <View>
               <View style={[styles.badge, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
                 <UserPlus color={theme.colors.accent} size={13} />
-                <Text style={[styles.badgeText, { color: theme.colors.text }]}>{t('ob_step_of', { n: 4, total: 5 })}</Text>
+                <Text style={[styles.badgeText, { color: theme.colors.text }]}>{t('ob_step_of', { n: 3, total: 4 })}</Text>
               </View>
               <Text style={[styles.title, { color: theme.colors.text }]}>{t('ob_invite_title')}</Text>
-              <Text style={[styles.sub, { color: theme.colors.textMuted }]}>{t('ob_invite_hint')}</Text>
+              <Text style={[styles.sub, { color: theme.colors.textMuted }]}>{t('ob_invite_why')}</Text>
+              <Text style={[styles.subSmall, { color: theme.colors.textSoft }]}>{t('ob_invite_hint')}</Text>
               <View style={[styles.inputRow, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
                 <TextInput
                   testID="onboarding-invite"
@@ -243,14 +254,21 @@ export default function Onboarding() {
             </View>
           ) : null}
 
-          {/* Step 4 — you're ready */}
-          {step === 4 ? (
+          {/* Step 3 — you're ready */}
+          {step === 3 ? (
             <View style={styles.readyWrap}>
               <View style={[styles.readyIcon, { backgroundColor: theme.colors.primary }]}>
                 <Sparkles color={theme.colors.primaryText} size={30} />
               </View>
               <Text style={[styles.title, { color: theme.colors.text, textAlign: 'center' }]}>{t('ob_ready_title')}</Text>
               <Text style={[styles.sub, { color: theme.colors.textMuted, textAlign: 'center' }]}>{t('ob_ready_hint')}</Text>
+              {/* Point at one concrete first action, and make it the meal
+                  planner — a "you're done" screen that suggests nothing hands
+                  the person an empty feed and a guess. */}
+              <View style={[styles.tryCard, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
+                <Sparkles color={theme.colors.accent} size={15} />
+                <Text style={[styles.tryText, { color: theme.colors.text }]}>{t('ob_ready_try')}</Text>
+              </View>
               <View style={styles.chips}>
                 {taskTitle.trim() ? <SummaryChip label={t('ob_chip_task')} c={theme.colors} /> : null}
                 {shopItems.some((s) => s.trim()) ? <SummaryChip label={t('ob_chip_shopping')} c={theme.colors} /> : null}
@@ -317,6 +335,13 @@ const createStyles = (c: any) =>
     row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18, paddingVertical: 16, borderRadius: 16, borderWidth: 1 },
     rowText: { fontFamily: 'Inter_600SemiBold', fontSize: 16 },
     inputRow: { flexDirection: 'row', alignItems: 'center', borderRadius: 16, borderWidth: 1, paddingHorizontal: 16, marginTop: 12 },
+    valueList: { marginTop: 26, gap: 14 },
+    valueRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+    valueText: { flex: 1, fontFamily: 'Inter_500Medium', fontSize: 14.5, lineHeight: 20 },
+    sectionLabel: { fontFamily: 'Inter_700Bold', fontSize: 12, letterSpacing: 0.6, textTransform: 'uppercase', marginTop: 20 },
+    subSmall: { fontFamily: 'Inter_400Regular', fontSize: 13, lineHeight: 19, marginTop: 6 },
+    tryCard: { flexDirection: 'row', alignItems: 'flex-start', gap: 9, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, marginTop: 20 },
+    tryText: { flex: 1, fontFamily: 'Inter_600SemiBold', fontSize: 13.5, lineHeight: 19 },
     input: { flex: 1, paddingVertical: 15, fontFamily: 'Inter_500Medium', fontSize: 16 },
     addBtn: { width: 34, height: 34, borderRadius: 9999, alignItems: 'center', justifyContent: 'center' },
     readyWrap: { alignItems: 'center', paddingTop: 40, gap: 4 },

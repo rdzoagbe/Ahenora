@@ -12,6 +12,15 @@ export const LANG_NAMES: Record<Lang, string> = {
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  ob_value_meals: 'Your shopping list becomes the week\u2019s meals — recipes included.',
+  ob_value_stars: 'Chores earn stars. Stars buy rewards you set.',
+  ob_value_feed: 'One shared feed — tasks, dates and lists everyone can see.',
+  ob_setup_title: 'Seed your household',
+  ob_setup_hint: 'A first task and a few groceries. Everything is editable later.',
+  ob_sec_task: 'First task',
+  ob_sec_shop: 'Shopping list',
+  ob_invite_why: 'Households run better with two. They see the same feed, lists and calendar the moment they join.',
+  ob_ready_try: 'First thing to try: open Kitchen and tap \u2728 — it plans the week from your list.',
   kids_stars_to_go: '{n} more',
   kids_allowance_due_now: 'Due now',
   kids_allowance_due_on: 'Next due {date}',
@@ -1061,6 +1070,15 @@ const en: Dict = {
 };
 
 const es: Dict = {
+  ob_value_meals: 'Tu lista de la compra se convierte en las comidas de la semana, con recetas.',
+  ob_value_stars: 'Las tareas dan estrellas. Las estrellas compran los premios que tú decides.',
+  ob_value_feed: 'Un tablón común: tareas, fechas y listas que todos ven.',
+  ob_setup_title: 'Prepara tu hogar',
+  ob_setup_hint: 'Una primera tarea y algunas compras. Todo se puede cambiar después.',
+  ob_sec_task: 'Primera tarea',
+  ob_sec_shop: 'Lista de la compra',
+  ob_invite_why: 'Un hogar funciona mejor entre dos. Verán el mismo tablón, listas y calendario desde el primer momento.',
+  ob_ready_try: 'Prueba esto primero: abre Cocina y toca \u2728 — planifica la semana desde tu lista.',
   kids_stars_to_go: 'Faltan {n}',
   kids_allowance_due_now: 'Toca ahora',
   kids_allowance_due_on: 'Próximo: {date}',
@@ -2104,6 +2122,15 @@ const es: Dict = {
 };
 
 const fr: Dict = {
+  ob_value_meals: 'Votre liste de courses devient les repas de la semaine — recettes comprises.',
+  ob_value_stars: 'Les tâches rapportent des étoiles. Les étoiles s\u2019échangent contre les récompenses que vous fixez.',
+  ob_value_feed: 'Un fil commun — tâches, dates et listes visibles par tous.',
+  ob_setup_title: 'Préparez votre foyer',
+  ob_setup_hint: 'Une première tâche et quelques courses. Tout est modifiable ensuite.',
+  ob_sec_task: 'Première tâche',
+  ob_sec_shop: 'Liste de courses',
+  ob_invite_why: 'Un foyer marche mieux à deux. Dès son arrivée, l\u2019autre voit le même fil, les mêmes listes et le même calendrier.',
+  ob_ready_try: 'À essayer d\u2019abord : ouvrez Cuisine et touchez \u2728 — la semaine se planifie depuis votre liste.',
   kids_stars_to_go: 'Encore {n}',
   kids_allowance_due_now: 'À verser',
   kids_allowance_due_on: 'Prochain : {date}',
@@ -3147,6 +3174,15 @@ const fr: Dict = {
 };
 
 const de: Dict = {
+  ob_value_meals: 'Deine Einkaufsliste wird zum Wochenplan — mit Rezepten.',
+  ob_value_stars: 'Aufgaben bringen Sterne. Sterne kaufen die Belohnungen, die du festlegst.',
+  ob_value_feed: 'Ein gemeinsamer Feed — Aufgaben, Termine und Listen für alle sichtbar.',
+  ob_setup_title: 'Richte deinen Haushalt ein',
+  ob_setup_hint: 'Eine erste Aufgabe und ein paar Einkäufe. Alles lässt sich später ändern.',
+  ob_sec_task: 'Erste Aufgabe',
+  ob_sec_shop: 'Einkaufsliste',
+  ob_invite_why: 'Zu zweit läuft ein Haushalt besser. Ab dem Beitritt sehen beide denselben Feed, dieselben Listen und den Kalender.',
+  ob_ready_try: 'Probier zuerst: Küche öffnen und \u2728 tippen — die Woche wird aus deiner Liste geplant.',
   kids_stars_to_go: 'Noch {n}',
   kids_allowance_due_now: 'Jetzt fällig',
   kids_allowance_due_on: 'Nächste: {date}',
