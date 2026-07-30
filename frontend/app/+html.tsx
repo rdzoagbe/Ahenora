@@ -26,6 +26,86 @@ export default function Root({ children }: PropsWithChildren) {
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="Household COO" />
         <ScrollViewStyleReset />
+        {/* Install affordance, web only. Chrome fires beforeinstallprompt when
+            the manifest + service worker qualify; we catch it and offer our
+            own button. iOS never fires it — Safari only installs via
+            Share > Add to Home Screen — so iPhones get an instruction bar.
+            Hidden inside an installed app, and stays away once dismissed. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+(function () {
+  if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) return;
+  try { if (localStorage.getItem('coo_install_hint_dismissed')) return; } catch (e) { return; }
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('/Household-COO/app/sw.js', { scope: '/Household-COO/app/' }).catch(function () {});
+    });
+  }
+  var fr = (navigator.language || '').toLowerCase().indexOf('fr') === 0;
+  var isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  var deferred = null;
+  function bar(text, btnLabel, onClick) {
+    var el = document.createElement('div');
+    el.id = 'coo-install-bar';
+    el.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;display:flex;align-items:center;gap:10px;padding:10px 14px;padding-top:calc(10px + env(safe-area-inset-top));background:#1A1F27;color:#fff;font:600 13px/1.35 Inter,-apple-system,sans-serif;box-shadow:0 2px 12px rgba(0,0,0,.35)';
+    var dot = document.createElement('span');
+    dot.style.cssText = 'width:14px;height:14px;border-radius:50%;background:#F97C3C;flex:none';
+    var msg = document.createElement('span');
+    msg.style.cssText = 'flex:1;min-width:0';
+    msg.textContent = text;
+    el.appendChild(dot); el.appendChild(msg);
+    if (btnLabel) {
+      var b = document.createElement('button');
+      b.textContent = btnLabel;
+      b.style.cssText = 'background:#F97C3C;color:#fff;border:0;border-radius:999px;padding:7px 14px;font:700 13px Inter,sans-serif';
+      b.onclick = onClick;
+      el.appendChild(b);
+    }
+    var x = document.createElement('button');
+    x.textContent = '\u2715';
+    x.setAttribute('aria-label', fr ? 'Fermer' : 'Close');
+    x.style.cssText = 'background:none;border:0;color:#9AA1AD;font-size:15px;padding:4px 6px';
+    x.onclick = function () { el.remove(); try { localStorage.setItem('coo_install_hint_dismissed', '1'); } catch (e) {} };
+    el.appendChild(x);
+    document.body.appendChild(el);
+    return el;
+  }
+  window.addEventListener('beforeinstallprompt', function (e) {
+    e.preventDefault();
+    deferred = e;
+    if (document.getElementById('coo-install-bar')) return;
+    bar(
+      fr ? "Installez Household COO sur votre \u00e9cran d'accueil." : 'Install Household COO on your home screen.',
+      fr ? 'Installer' : 'Install',
+      function () {
+        if (!deferred) return;
+        deferred.prompt();
+        deferred.userChoice.finally(function () {
+          var el = document.getElementById('coo-install-bar');
+          if (el) el.remove();
+          try { localStorage.setItem('coo_install_hint_dismissed', '1'); } catch (e) {}
+        });
+        deferred = null;
+      }
+    );
+  });
+  if (isIOS) {
+    window.addEventListener('load', function () {
+      setTimeout(function () {
+        if (document.getElementById('coo-install-bar')) return;
+        bar(
+          fr ? "Installez l'appli : touchez Partager, puis \u00ab Sur l'\u00e9cran d'accueil \u00bb." : "Install the app: tap Share, then 'Add to Home Screen'.",
+          null,
+          null
+        );
+      }, 2500);
+    });
+  }
+})();
+`,
+          }}
+        />
         <style
           dangerouslySetInnerHTML={{
             __html: `
