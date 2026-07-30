@@ -13,8 +13,12 @@ export function useBreakpoint() {
   const sidebarW = isDesktop ? 220 : isWide ? 68 : 0;
   // Horizontal page padding
   const px = isDesktop ? 40 : isWide ? 28 : 20;
-  // Max content width (centered on wide screens)
-  const maxW = isDesktop ? 1100 : isWide ? 820 : width;
+  // Max content width (centered on wide screens). On phones there is NO
+  // constraint: width:'100%' already fits, and echoing the window width back
+  // as maxWidth means a degenerate first-paint measurement (seen once on the
+  // web export: the whole Feed squeezed into a ~90px column) becomes a
+  // permanent layout collapse instead of a non-event.
+  const maxW = isDesktop ? 1100 : isWide ? 820 : undefined;
 
   function pick<T>(phone: T, wide: T, desktop?: T): T {
     if (isDesktop && desktop !== undefined) return desktop;

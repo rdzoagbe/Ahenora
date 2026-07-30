@@ -104,6 +104,8 @@ ALLOWED_ORIGINS = [
 ] or [
     "https://household-coo.app",
     "https://www.household-coo.app",
+    # The web companion app lives on GitHub Pages until it earns a domain.
+    "https://rdzoagbe.github.io",
     "householdcoo://",
     "exp://",
 ]
