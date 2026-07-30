@@ -7,7 +7,7 @@ The single source of truth for what's decided, what's parked, and what comes nex
 ## Where we are — 🚀 LAUNCHED
 Last updated: 29 July 2026.
 
-- **Production release live on Google Play**: release **32 (1.0.0)**, full rollout to 176 of 177 countries, package `com.householdcoo.app`. **Production access granted** — no longer gated behind closed testing.
+- **Production release live on Google Play**: release **41 (1.0.0)**, released 29 July 20:13, 176 countries, package `com.householdcoo.app`. First **R8-minified** production build (smaller download, obfuscated), first with the Spark Portal splash + launcher icon in native resources, shipped through the repaired EAS → Play pipeline.
 - **Real billing is on:** Google Play Billing via RevenueCat, verified end-to-end with a real purchase. Free (Village) + Premium tiers enforced. **First revenue recorded** (July 2026).
 - **Expo SDK 57 / RN 0.86** shipped 28 July — device-verified on the Internal testing track (version 38) before promotion.
 - **Store presence:** "Spark Portal" app icon, 30-second promo video (YouTube), framed EN screenshots, IARC rating, co-parenting-led ASO listing.
