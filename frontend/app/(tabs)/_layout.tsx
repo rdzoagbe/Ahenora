@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Home, Calendar as CalendarIcon, Lock, Settings as SettingsIcon, Star, UtensilsCrossed } from 'lucide-react-native';
 import { useStore } from '../../src/store';
 import { useBreakpoint } from '../../src/responsive';
+import { InviteJoinPrompt } from '../../src/components/InviteJoinPrompt';
 
 // ─── Phone: floating pill tab bar ────────────────────────────────────────────
 
@@ -186,6 +187,7 @@ export default function TabLayout() {
       </Tabs>
 
       {isWide && <SidebarNav width={sidebarW} />}
+      <InviteJoinPrompt />
     </>
   );
 }

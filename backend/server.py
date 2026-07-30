@@ -2048,6 +2048,37 @@ async def _resolve_invite(database, invite_token: Optional[str], email: str):
     return invite, invite["family_id"]
 
 
+async def _accept_invite_for_user(database, user: dict, invite: Optional[dict], target_family_id: Optional[str]):
+    """Move `user` into the inviting family and mark the invite accepted.
+
+    Shared by email login and the signed-in accept endpoint so the two paths
+    can never drift. Returns (fresh_user, joined).
+    """
+    email = user.get("email", "")
+    joined = False
+    if target_family_id and target_family_id != user.get("family_id"):
+        await database["users"].update_one(
+            {"user_id": user["user_id"]},
+            {"$set": {"family_id": target_family_id, "updated_at": utcnow()}},
+        )
+        user = await database["users"].find_one({"user_id": user["user_id"]}, {"_id": 0})
+        await add_user_to_family_if_needed(database, user, target_family_id)
+        joined = True
+    if invite and invite.get("status") != "accepted":
+        await database["family_invites"].update_one(
+            {"invite_id": invite["invite_id"]},
+            {"$set": {
+                "status": "accepted",
+                "accepted_at": utcnow(),
+                "accepted_by_user_id": user["user_id"],
+                "accepted_by_email": email,
+                "updated_at": utcnow(),
+            }},
+        )
+        await notify_invite_accepted(database, invite, user.get("name") or email)
+    return user, joined
+
+
 @app.post("/api/auth/register")
 async def register_email(payload: EmailRegisterIn):
     database = get_db()
@@ -2135,25 +2166,7 @@ async def login_email(payload: EmailLoginIn):
     # clicking an invite link could never join the inviting family.
     # Same semantics as Google sign-in and registration now.
     invite, target_family_id = await _resolve_invite(database, payload.invite_token, email)
-    if target_family_id and target_family_id != user.get("family_id"):
-        await database["users"].update_one(
-            {"user_id": user["user_id"]},
-            {"$set": {"family_id": target_family_id, "updated_at": utcnow()}},
-        )
-        user = await database["users"].find_one({"user_id": user["user_id"]}, {"_id": 0})
-        await add_user_to_family_if_needed(database, user, target_family_id)
-    if invite and invite.get("status") != "accepted":
-        await database["family_invites"].update_one(
-            {"invite_id": invite["invite_id"]},
-            {"$set": {
-                "status": "accepted",
-                "accepted_at": utcnow(),
-                "accepted_by_user_id": user["user_id"],
-                "accepted_by_email": email,
-                "updated_at": utcnow(),
-            }},
-        )
-        await notify_invite_accepted(database, invite, user.get("name") or email)
+    user, _ = await _accept_invite_for_user(database, user, invite, target_family_id)
 
     raw_session = await _issue_session(database, user["user_id"])
     return {"user": public_user(user), "session_token": raw_session}
@@ -2782,6 +2795,27 @@ async def family_invite_lookup(token: str):
         "inviter_name": (inviter or {}).get("name") or invite.get("created_by_name") or "A family member",
         "expires_at": iso(invite.get("expires_at")),
     }
+
+
+class InviteAcceptIn(BaseModel):
+    token: str
+
+
+@app.post("/api/family/invite/accept")
+async def family_invite_accept(payload: InviteAcceptIn, user=Depends(require_user)):
+    """Accept an invite while already signed in.
+
+    Invite links open the app for logged-in users too, and those users never
+    pass through the sign-in screen where tokens are otherwise consumed.
+    """
+    database = get_db()
+    invite, target_family_id = await _resolve_invite(
+        database, payload.token, user.get("email", "")
+    )
+    if not invite:
+        raise HTTPException(status_code=404, detail="Invite not found")
+    fresh, joined = await _accept_invite_for_user(database, user, invite, target_family_id)
+    return {"ok": True, "joined": joined, "user": public_user(fresh)}
 
 
 # -----------------------------------------------------------------------------

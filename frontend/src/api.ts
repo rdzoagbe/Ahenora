@@ -637,6 +637,13 @@ export const api = {
       email?: string;
       expires_at?: string | null;
     }>(`/family/invite/${encodeURIComponent(token)}`),
+  acceptInvite: (token: string) => {
+    invalidateUsageCaches();
+    return request<{ ok: boolean; joined: boolean; user: User }>('/family/invite/accept', {
+      method: 'POST',
+      body: { token },
+    });
+  },
   importGoogleCalendar: (access_token: string, days = 30) =>
     request<CalendarImportResult>('/calendar/import', {
       method: 'POST',

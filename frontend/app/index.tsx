@@ -18,32 +18,12 @@ import { PressScale } from '../src/components/PressScale';
 import { ValueTour } from '../src/components/ValueTour';
 import { useStore } from '../src/store';
 import { logger } from '../src/logger';
+import { extractInviteToken } from '../src/invite';
 
 WebBrowser.maybeCompleteAuthSession();
 
 const BG_URL =
   'https://static.prod-images.emergentagent.com/jobs/096ff1e5-0337-4e7f-a0c1-6a43a75126d3/images/6b243a1cf4a6ac9e40857ce24db4ef57d5831d303169f63507bb73111fe11fac.png';
-
-function extractInviteToken(rawUrl?: string | null) {
-  if (!rawUrl) return null;
-
-  try {
-    const parsed = Linking.parse(rawUrl);
-    const token = parsed.queryParams?.invite;
-    if (typeof token === 'string' && token.trim()) return token.trim();
-  } catch {
-    // Fall back to URL parsing below.
-  }
-
-  try {
-    const url = new URL(rawUrl.replace('#', '?'));
-    const token = url.searchParams.get('invite');
-    return token?.trim() || null;
-  } catch {
-    const match = rawUrl.match(/[?#&]invite=([^&#]+)/);
-    return match ? decodeURIComponent(match[1]) : null;
-  }
-}
 
 function authErrorMessage(error: unknown, params?: Record<string, string>, fallback?: string) {
   const candidate = error as { description?: string; code?: string; name?: string } | null | undefined;
