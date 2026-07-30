@@ -1124,28 +1124,45 @@ export default function Kids() {
                             const affordable = stars >= reward.cost_stars;
                             return (
                               <View key={reward.reward_id} style={[styles.rewardRow, index < arr.length - 1 && styles.rewardRowBorder]}>
-                                <IconTile bg={affordable ? ui.orangeSoft : ui.soft} size={42} radius={13}>
-                                  <Text style={styles.rewardEmoji}>{reward.icon || DEFAULT_REWARD_ICON}</Text>
-                                </IconTile>
-                                <View style={{ flex: 1, minWidth: 0 }}>
-                                  <View style={styles.rewardTopRow}>
-                                    <Text style={styles.rewardTitle} numberOfLines={1}>{reward.title}</Text>
-                                    <Text style={[styles.rewardCount, affordable && { color: ui.mintText }]}>{stars} / {reward.cost_stars}</Text>
+                                {/* The row body opens edit, in both states. Before,
+                                    edit was only reachable while a reward was
+                                    UNaffordable — the pencil sat where Redeem
+                                    later appears — so the moment a child could
+                                    afford something, the parent lost the way to
+                                    change it. */}
+                                <PressScale
+                                  accessibilityRole="button"
+                                  accessibilityLabel={t('a11y_edit')}
+                                  testID={`edit-reward-${reward.reward_id}`}
+                                  onPress={() => openEditReward(reward)}
+                                  style={styles.rewardBody}
+                                >
+                                  <IconTile bg={affordable ? ui.orangeSoft : ui.soft} size={42} radius={13}>
+                                    <Text style={styles.rewardEmoji}>{reward.icon || DEFAULT_REWARD_ICON}</Text>
+                                  </IconTile>
+                                  <View style={{ flex: 1, minWidth: 0 }}>
+                                    <View style={styles.rewardTopRow}>
+                                      <Text style={styles.rewardTitle} numberOfLines={1}>{reward.title}</Text>
+                                      <Text style={[styles.rewardCount, affordable && { color: ui.mintText }]}>{stars} / {reward.cost_stars}</Text>
+                                    </View>
+                                    <View style={{ marginTop: 8 }}>
+                                      <ProgressBar pct={pct} color={affordable ? ui.mintText : ui.orange} />
+                                    </View>
                                   </View>
-                                  <View style={{ marginTop: 8 }}>
-                                    <ProgressBar pct={pct} color={affordable ? ui.mintText : ui.orange} />
-                                  </View>
-                                </View>
+                                </PressScale>
                                 {affordable ? (
                                   <PressScale testID={`redeem-reach-${reward.reward_id}`} onPress={() => redeem(reward)} style={styles.rewardRedeem}>
                                     <Text style={styles.rewardRedeemText}>{t('redeem')}</Text>
                                   </PressScale>
                                 ) : (
-                                  <PressScale
-                  accessibilityRole="button"
-                  accessibilityLabel={t('a11y_edit')} testID={`edit-reward-${reward.reward_id}`} onPress={() => openEditReward(reward)} style={styles.rewardEdit}>
-                                    <Pencil color={ui.muted} size={14} />
-                                  </PressScale>
+                                  /* Where Redeem will be, say how far away it is.
+                                     A pencil here read as "the button is missing",
+                                     not "not yet". */
+                                  <View style={styles.rewardToGo}>
+                                    <Text style={styles.rewardToGoText}>
+                                      {t('kids_stars_to_go', { n: reward.cost_stars - stars })}
+                                    </Text>
+                                  </View>
                                 )}
                               </View>
                             );
@@ -1744,6 +1761,9 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   rewardCount: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 12.5 },
   rewardRedeem: { backgroundColor: ui.text, borderRadius: 99, paddingHorizontal: 14, paddingVertical: 9 },
   rewardRedeemText: { color: ui.bg, fontFamily: 'Inter_800ExtraBold', fontSize: 12.5 },
+  rewardBody: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  rewardToGo: { borderRadius: 99, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft, paddingHorizontal: 12, paddingVertical: 9 },
+  rewardToGoText: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 12 },
   rewardEdit: { width: 34, height: 34, borderRadius: 99, borderWidth: 1, borderColor: ui.line, alignItems: 'center', justifyContent: 'center' },
 
   // Outstanding redemptions. Deliberately not reusing rewardTitle: that one
