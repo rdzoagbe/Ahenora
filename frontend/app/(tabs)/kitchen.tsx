@@ -360,6 +360,11 @@ export default function Kitchen() {
     setSuggestLoading(true);
     setSuggestFellBack(false);
     setSuggestError(null);
+    // Clear the previous week rather than leaving it on screen while the AI
+    // thinks. Stale rows under a "planning" spinner read as "same ideas
+    // again" — which is exactly what a user reported. An honest empty
+    // planning state, then the new week arrives all at once.
+    setSuggestions([]);
     try {
       const { meals } = await api.suggestMealsAI(suggestLang, variant);
       setSuggestions(
@@ -404,10 +409,9 @@ export default function Kitchen() {
     }
     setAddedSuggest(new Set());
     setSuggestVariant(0);
-    setSuggestions(localWeek(0));
     setShowSuggest(true);
     loadSuggestions(0);
-  }, [shopItems.length, localWeek, loadSuggestions, showToast, t]);
+  }, [shopItems.length, loadSuggestions, showToast, t]);
 
   // "Different ideas" must change something even when the AI planner is
   // unreachable, which is exactly when a repeated week is most annoying.
