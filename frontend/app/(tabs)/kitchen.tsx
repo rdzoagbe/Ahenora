@@ -1080,8 +1080,14 @@ export default function Kitchen() {
           />
         </View>
 
-        {/* Which day the next pick lands on. */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 4 }}>
+        {/* Which day the next pick lands on. A wrapping row, not a horizontal
+            ScrollView: this sheet's list would not scroll on Android, and the
+            only structural difference from the sheets that do scroll was a
+            nested scroller — the same trap this file already documents for
+            vertical ones. Wrapping also puts all seven days on screen; the
+            scroller showed four and hid the weekend behind a swipe nobody
+            would discover. */}
+        <View style={styles.browseDayRow}>
           {DAYS.map((d) => (
             <PressScale
               key={d}
@@ -1094,7 +1100,7 @@ export default function Kitchen() {
               </Text>
             </PressScale>
           ))}
-        </ScrollView>
+        </View>
 
         {(() => {
           const results = searchRecipes(browseQuery, suggestLang);
@@ -1443,7 +1449,8 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   browseRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: ui.line },
   browseTitle: { color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 15 },
   browseIng: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 2 },
-  browseDayChip: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, backgroundColor: ui.soft, marginRight: 8 },
+  browseDayRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
+  browseDayChip: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, backgroundColor: ui.soft },
   browseDayChipActive: { backgroundColor: ui.orange },
   browseDayText: { color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 13 },
   browseDayTextActive: { color: '#FFFFFF' },
