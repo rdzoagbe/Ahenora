@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -82,6 +82,27 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
     }
   };
 
+  // What the store knows, not what the backend last heard. Plan state here
+  // comes from a RevenueCat webhook, so a single missed event leaves a paying
+  // customer looking like a free one — offered an upgrade they already bought,
+  // and gated out of features they are paying for. Reconciling quietly on open
+  // means the screen shows the truth before it offers anything.
+  const syncedRef = useRef(false);
+  useEffect(() => {
+    if (!user || syncedRef.current) return;
+    syncedRef.current = true;
+    (async () => {
+      try {
+        const res = await restorePurchases(user.user_id);
+        if (res.ok && res.premium) await refreshSubscription().catch(() => undefined);
+      } catch {
+        // Best effort. A device with no billing, or offline, just sees the
+        // plan the backend already believed — never an error for something
+        // the person did not ask for.
+      }
+    })();
+  }, [user, refreshSubscription]);
+
   const handleRestore = async () => {
     if (!user || busy) return;
     setBusy(true);
@@ -137,7 +158,7 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
                 cycle={cycle}
                 isCurrent={plan === currentPlan}
                 onChoose={() => handleChoose(plan)}
-                showCurrentBadge={embedded && plan === currentPlan}
+                showCurrentBadge={plan === currentPlan}
                 t={t}
                 styles={styles}
               />
