@@ -17,7 +17,16 @@ from types import SimpleNamespace
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "backend"))
 
-import server  # noqa: E402
+# CI's backend-checks job runs without the backend dependencies installed;
+# these tests skip there, the same way every other server-importing suite does.
+try:
+    import fastapi  # noqa: F401
+    HAVE_DEPS = True
+except ImportError:
+    HAVE_DEPS = False
+
+if HAVE_DEPS:
+    import server
 
 USER = {"user_id": "u1", "family_id": "fam1", "name": "Roland", "role": "Parent"}
 
@@ -101,6 +110,7 @@ def existing_card(event_id="ev1", title="Dentist", when="2026-08-04T10:00:00Z",
     }
 
 
+@unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
 class GoogleImport(unittest.TestCase):
     def setUp(self):
         self._orig = server._fetch_google_calendar_events
@@ -169,6 +179,7 @@ class GoogleImport(unittest.TestCase):
             self.assertEqual(len(db.cards.rows), 1, card)
 
 
+@unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
 class MicrosoftImport(unittest.TestCase):
     """The Graph mirror gets the same three behaviours."""
 
