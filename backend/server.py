@@ -3519,6 +3519,9 @@ async def _fetch_google_calendar_events(access_token: str, days: int) -> list[di
             "singleEvents": "true",
             "orderBy": "startTime",
             "maxResults": "100",
+            # Cancellations must arrive too, or a deleted meeting lives on
+            # in the app forever. Google omits them unless asked.
+            "showDeleted": "true",
         }
     )
 
@@ -3567,15 +3570,31 @@ async def import_google_calendar(payload: CalendarImportIn, user=Depends(require
     events = await _fetch_google_calendar_events(token, days)
 
     imported = 0
+    updated = 0
+    removed = 0
     skipped = 0
     contacts_found: dict[str, dict] = {}
 
     for event in events:
+        event_id = event.get("id")
+
         if event.get("status") == "cancelled":
+            # A meeting that no longer exists must not live on as a card.
+            # Only open, unshared imports are removed — a completed card is
+            # history, and a shared one is the family's now.
+            if event_id:
+                result = await database["cards"].delete_one({
+                    "family_id": user["family_id"],
+                    "google_event_id": event_id,
+                    "status": "OPEN",
+                    "shared": False,
+                })
+                if result.deleted_count:
+                    removed += 1
+                    continue
             skipped += 1
             continue
 
-        event_id = event.get("id")
         if not event_id:
             skipped += 1
             continue
@@ -3585,6 +3604,11 @@ async def import_google_calendar(payload: CalendarImportIn, user=Depends(require
             skipped += 1
             continue
 
+        title = (event.get("summary") or "Calendar event").strip()
+        location = (event.get("location") or "").strip()
+        html_link = event.get("htmlLink")
+        contacts = _event_attendee_contacts(event)
+
         existing = await database["cards"].find_one(
             {
                 "family_id": user["family_id"],
@@ -3593,13 +3617,24 @@ async def import_google_calendar(payload: CalendarImportIn, user=Depends(require
             {"_id": 0},
         )
         if existing:
-            skipped += 1
+            # The field bug: an already-imported event was skipped outright,
+            # so a rescheduled meeting kept its old time in the app forever —
+            # "sync" only ever discovered new events. Mirror what changed;
+            # the card's status stays whatever the family made it.
+            changed = {}
+            if title != existing.get("title"):
+                changed["title"] = title
+            if ensure_aware_utc(existing.get("due_date")) != start_dt:
+                changed["due_date"] = start_dt
+            if changed:
+                await database["cards"].update_one(
+                    {"family_id": user["family_id"], "google_event_id": event_id},
+                    {"$set": changed},
+                )
+                updated += 1
+            else:
+                skipped += 1
             continue
-
-        title = (event.get("summary") or "Calendar event").strip()
-        location = (event.get("location") or "").strip()
-        html_link = event.get("htmlLink")
-        contacts = _event_attendee_contacts(event)
 
         for contact in contacts:
             email = contact["email"]
@@ -3673,6 +3708,8 @@ async def import_google_calendar(payload: CalendarImportIn, user=Depends(require
     return {
         "ok": True,
         "imported": imported,
+        "updated": updated,
+        "removed": removed,
         "skipped": skipped,
         "events_seen": len(events),
         "contacts_found": len(contacts_found),
@@ -3770,15 +3807,30 @@ async def import_microsoft_calendar(payload: CalendarImportIn, user=Depends(requ
     events = await _fetch_microsoft_calendar_events(token, days)
 
     imported = 0
+    updated = 0
+    removed = 0
     skipped = 0
     contacts_found: dict[str, dict] = {}
 
     for event in events:
+        event_id = event.get("id")
+
         if event.get("isCancelled"):
+            # Same rule as the Google import: a cancelled meeting's card goes,
+            # but only while it is still open and unshared.
+            if event_id:
+                result = await database["cards"].delete_one({
+                    "family_id": user["family_id"],
+                    "ms_event_id": event_id,
+                    "status": "OPEN",
+                    "shared": False,
+                })
+                if result.deleted_count:
+                    removed += 1
+                    continue
             skipped += 1
             continue
 
-        event_id = event.get("id")
         if not event_id:
             skipped += 1
             continue
@@ -3793,7 +3845,22 @@ async def import_microsoft_calendar(payload: CalendarImportIn, user=Depends(requ
             {"_id": 0},
         )
         if existing:
-            skipped += 1
+            # Mirror what changed rather than skipping — a rescheduled
+            # meeting must move here too. Status stays the family's call.
+            new_title = (event.get("subject") or "Calendar event").strip()
+            changed = {}
+            if new_title != existing.get("title"):
+                changed["title"] = new_title
+            if ensure_aware_utc(existing.get("due_date")) != start_dt:
+                changed["due_date"] = start_dt
+            if changed:
+                await database["cards"].update_one(
+                    {"family_id": user["family_id"], "ms_event_id": event_id},
+                    {"$set": changed},
+                )
+                updated += 1
+            else:
+                skipped += 1
             continue
 
         title = (event.get("subject") or "Calendar event").strip()
@@ -3868,6 +3935,8 @@ async def import_microsoft_calendar(payload: CalendarImportIn, user=Depends(requ
     return {
         "ok": True,
         "imported": imported,
+        "updated": updated,
+        "removed": removed,
         "skipped": skipped,
         "events_seen": len(events),
         "contacts_found": len(contacts_found),

@@ -476,6 +476,9 @@ export interface NotificationSettings {
 export interface CalendarImportResult {
   ok: boolean;
   imported: number;
+  // A rescheduled meeting moves its card; a cancelled one removes it.
+  updated?: number;
+  removed?: number;
   skipped: number;
   events_seen: number;
   contacts_found: number;
