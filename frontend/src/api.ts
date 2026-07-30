@@ -881,6 +881,12 @@ export const api = {
       return data;
     });
   },
+  // Server asks RevenueCat directly and corrects the stored plan — the
+  // self-healing path for a missed webhook. Quiet by design.
+  reconcileBilling: () => {
+    invalidateUsageCaches();
+    return request<Subscription>('/billing/reconcile', { method: 'POST' });
+  },
   changeSubscription: (plan: Plan, billing_cycle: BillingCycle) => {
     invalidateUsageCaches();
     return request<Subscription>('/subscription/change', {

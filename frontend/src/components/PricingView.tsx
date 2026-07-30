@@ -19,7 +19,7 @@ import {
 import { PressScale } from './PressScale';
 import { useUI, UIColors } from './Kit';
 import { useStore } from '../store';
-import { Plan, BillingCycle } from '../api';
+import { api, Plan, BillingCycle } from '../api';
 import { purchasePremium, restorePurchases } from '../billing';
 
 // Two tiers at launch: Free + Premium (Family Office deferred — see ROADMAP).
@@ -93,8 +93,13 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
     syncedRef.current = true;
     (async () => {
       try {
-        const res = await restorePurchases(user.user_id);
-        if (res.ok && res.premium) await refreshSubscription().catch(() => undefined);
+        // Two corrections, both quiet: the device replays its receipts, and
+        // the server asks RevenueCat directly. Either alone heals a missed
+        // webhook; together they cover a fresh device with no receipts too.
+        await api.reconcileBilling().catch(() => undefined);
+        await restorePurchases(user.user_id).catch(() => undefined);
+        // Either correction may have changed the stored plan — re-read it.
+        await refreshSubscription().catch(() => undefined);
       } catch {
         // Best effort. A device with no billing, or offline, just sees the
         // plan the backend already believed — never an error for something
