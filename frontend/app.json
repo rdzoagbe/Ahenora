@@ -63,7 +63,8 @@
       "expo-secure-store"
     ],
     "experiments": {
-      "typedRoutes": true
+      "typedRoutes": true,
+      "baseUrl": "/Household-COO/app"
     },
     "extra": {
       "router": {},

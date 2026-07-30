@@ -17,6 +17,14 @@ export default function Root({ children }: PropsWithChildren) {
           If you want to enable scrolling, remove `ScrollViewStyleReset` and
           set `overflow: auto` on the body style below.
         */}
+        {/* PWA: lets iPhone/desktop users install from the browser. Paths are
+            absolute because the web build lives under /Household-COO/app/. */}
+        <link rel="manifest" href="/Household-COO/app/manifest.json" />
+        <link rel="apple-touch-icon" href="/Household-COO/app/apple-touch-icon.png" />
+        <meta name="theme-color" content="#101419" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="Household COO" />
         <ScrollViewStyleReset />
         <style
           dangerouslySetInnerHTML={{

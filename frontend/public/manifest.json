@@ -1,0 +1,12 @@
+{
+  "name": "Household COO",
+  "short_name": "Household COO",
+  "start_url": "/Household-COO/app/",
+  "scope": "/Household-COO/app/",
+  "display": "standalone",
+  "background_color": "#101419",
+  "theme_color": "#F97C3C",
+  "icons": [
+    { "src": "/Household-COO/app/apple-touch-icon.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
