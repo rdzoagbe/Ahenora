@@ -109,7 +109,11 @@ export function EmailAuthModal({ visible, onClose, onSuccess, inviteToken }: Pro
               password,
               invite_token: inviteToken || undefined,
             })
-          : await api.loginWithEmail({ email: trimmedEmail, password });
+          : await api.loginWithEmail({
+              email: trimmedEmail,
+              password,
+              invite_token: inviteToken || undefined,
+            });
 
       await setUserFromAuth(result.user, result.session_token);
       reset();
