@@ -13,7 +13,7 @@ import urllib.request
 import urllib.parse
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
-from fastapi import FastAPI, HTTPException, Depends, Header, UploadFile, File, Query
+from fastapi import FastAPI, HTTPException, Depends, Header, UploadFile, File, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 try:
@@ -43,6 +43,10 @@ from ai_safety import (
     sanitize_ingredients,
     sanitize_user_text,
     validate_recipe,
+    CHEF_SYSTEM_PROMPT,
+    MAX_QUESTION_LEN,
+    build_chef_prompt,
+    validate_chef_answer,
 )
 
 
@@ -5067,6 +5071,67 @@ async def generate_meal_recipe(
         )
 
     return {"recipe": recipe, "cached": False}
+
+
+@app.post("/api/recipes/chef")
+async def ask_the_chef(
+    payload: dict = Body(...),
+    lang: str = "en",
+    user: dict = Depends(require_user),
+    database=Depends(get_db),
+):
+    """Answer one short cooking question about a dish — a substitution, a
+    variation, a timing query.
+
+    Not tied to a meal document: the recipe page also shows curated recipes
+    that were never added to the plan. Not cached: the question is free text,
+    so each ask is metered against the family's AI allowance like a scan.
+    """
+    await require_feature(user, "meal_planner")
+
+    language = lang if lang in RECIPE_LANGUAGE_NAMES else "en"
+    title = sanitize_user_text(str(payload.get("title") or ""))
+    question = sanitize_user_text(str(payload.get("question") or ""), MAX_QUESTION_LEN)
+    if len(title) < 2 or len(question) < 5:
+        raise HTTPException(400, "Ask a question about the dish.")
+
+    if not GOOGLE_API_KEY:
+        raise HTTPException(503, "The chef is unavailable right now.")
+
+    sub = await build_subscription(user["family_id"])
+    family = await get_family_doc(user["family_id"])
+    if not is_admin_user(user) and family.get("ai_scans_used", 0) >= sub["limits"]["ai_scans_per_month"]:
+        plan_limit_error(
+            feature="ai_scans",
+            current_plan=sub["plan"],
+            limit=sub["limits"]["ai_scans_per_month"],
+            used=family.get("ai_scans_used", 0),
+            message="AI limit reached for this billing period.",
+        )
+
+    try:
+        text = await _gemini_text(
+            build_chef_prompt(title, question, RECIPE_LANGUAGE_NAMES[language]),
+            system=CHEF_SYSTEM_PROMPT,
+        )
+        parsed = extract_json(text)
+        if parsed is None:
+            raise UnsafeRecipe("unparseable")
+        answer = validate_chef_answer(parsed)
+    except UnsafeRecipe as exc:
+        log.info("chef answer rejected by safety gate: %s", exc.reason)
+        raise HTTPException(422, "The chef could not answer that one.")
+    except Exception as exc:
+        log.warning("chef answer failed: %s", exc)
+        raise HTTPException(502, "The chef could not answer that one.")
+
+    if not is_admin_user(user):
+        await database["families"].update_one(
+            {"family_id": user["family_id"]},
+            {"$inc": {"ai_scans_used": 1}, "$set": {"updated_at": utcnow()}},
+        )
+
+    return {"answer": answer}
 
 
 @app.post("/api/meals/suggest-ai")

@@ -22,6 +22,8 @@ from ai_safety import (  # noqa: E402
     sanitize_ingredients,
     sanitize_user_text,
     validate_recipe,
+    validate_chef_answer,
+    build_chef_prompt,
 )
 
 
@@ -230,6 +232,42 @@ class ValidateIngredients(unittest.TestCase):
 
     def test_keeps_a_sensible_servings_number(self):
         self.assertEqual(validate_recipe(self.full(servings=2))["servings"], 2)
+
+
+class ValidateChefAnswer(unittest.TestCase):
+    """The "Ask the chef" gate: one short answer, screened like a recipe."""
+
+    def test_accepts_a_reasonable_answer(self):
+        answer = validate_chef_answer(
+            {"answer": "Swap the coconut milk for single cream and a squeeze of lime."}
+        )
+        self.assertTrue(answer.startswith("Swap"))
+
+    def test_collapses_whitespace(self):
+        answer = validate_chef_answer({"answer": "Use  cream\n instead of coconut milk today."})
+        self.assertNotIn("\n", answer)
+        self.assertNotIn("  ", answer)
+
+    def test_honours_a_refusal(self):
+        with self.assertRaises(UnsafeRecipe):
+            validate_chef_answer({"refused": True})
+
+    def test_rejects_blocked_content(self):
+        with self.assertRaises(UnsafeRecipe):
+            validate_chef_answer({"answer": "A drop of bleach will brighten the sauce nicely."})
+        with self.assertRaises(UnsafeRecipe):
+            validate_chef_answer({"answer": "As an AI language model I cannot really taste food."})
+
+    def test_rejects_wrong_shapes_and_lengths(self):
+        for bad in [None, [], {}, {"answer": 42}, {"answer": "Too short"}, {"answer": "x" * 700}]:
+            with self.assertRaises(UnsafeRecipe, msg=repr(bad)):
+                validate_chef_answer(bad)
+
+    def test_prompt_carries_dish_question_and_language(self):
+        prompt = build_chef_prompt("Chicken Yassa", "No lemons - what can I use?", "French")
+        self.assertIn("Chicken Yassa", prompt)
+        self.assertIn("No lemons", prompt)
+        self.assertIn("French", prompt)
 
 
 class ExtractJson(unittest.TestCase):
