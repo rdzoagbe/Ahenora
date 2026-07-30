@@ -157,6 +157,81 @@ class ValidateOutput(unittest.TestCase):
             validate_recipe({"minutes": 0, "steps": steps()["steps"]})
 
 
+class ValidateIngredients(unittest.TestCase):
+    """The quantified half of a recipe, added for the AI-advisor phase."""
+
+    @staticmethod
+    def full(**overrides):
+        base = steps()
+        base["servings"] = 4
+        base["ingredients"] = [
+            {"name": "spaghetti", "qty": 400, "unit": "g"},
+            {"name": "ground beef", "qty": 500, "unit": "g"},
+            {"name": "garlic", "qty": 2, "unit": "cloves"},
+            {"name": "salt", "qty": 0, "unit": "to taste"},
+        ]
+        base.update(overrides)
+        return base
+
+    def test_accepts_a_quantified_recipe(self):
+        result = validate_recipe(self.full())
+        self.assertEqual(result["servings"], 4)
+        self.assertEqual(len(result["ingredients"]), 4)
+        # Plural units normalise to the singular the frontend labels.
+        self.assertEqual(result["ingredients"][2]["unit"], "clove")
+        # "to taste" carries no amount, whatever the model set qty to.
+        self.assertIsNone(result["ingredients"][3]["qty"])
+
+    def test_a_steps_only_recipe_still_passes(self):
+        # Cached pre-advisor recipes and models that drop the key degrade to
+        # the old shape rather than to nothing.
+        result = validate_recipe(steps())
+        self.assertNotIn("ingredients", result)
+        self.assertNotIn("servings", result)
+
+    def test_rejects_absurd_amounts(self):
+        for qty, unit in [(6, "kg"), (40, "tbsp"), (9000, "g"), (0, "g"), (-2, "piece")]:
+            bad = self.full()
+            bad["ingredients"][0] = {"name": "flour", "qty": qty, "unit": unit}
+            with self.assertRaises(UnsafeRecipe, msg=f"{qty} {unit}"):
+                validate_recipe(bad)
+
+    def test_rejects_units_off_the_whitelist(self):
+        for unit in ["handful", "cup", "shot", ""]:
+            bad = self.full()
+            bad["ingredients"][0] = {"name": "flour", "qty": 1, "unit": unit}
+            with self.assertRaises(UnsafeRecipe, msg=unit):
+                validate_recipe(bad)
+
+    def test_blocked_content_in_an_ingredient_name_is_fatal(self):
+        bad = self.full()
+        bad["ingredients"][0] = {"name": "a spoonful of bleach", "qty": 10, "unit": "ml"}
+        with self.assertRaises(UnsafeRecipe):
+            validate_recipe(bad)
+
+    def test_rejects_wrong_ingredient_shapes(self):
+        for ingredients in [
+            "not a list",
+            [],
+            ["not an object"],
+            [{"name": "", "qty": 1, "unit": "g"}],
+            [{"name": "x" * 80, "qty": 1, "unit": "g"}],
+            [{"name": "flour", "qty": "some", "unit": "g"}],
+        ]:
+            with self.assertRaises(UnsafeRecipe, msg=repr(ingredients)):
+                validate_recipe(self.full(ingredients=ingredients))
+
+    def test_repairs_a_silly_servings_number(self):
+        # Amounts stay right relative to each other; 4 is what the prompt
+        # asked amounts to be written for.
+        for silly in [900, 0, -3, "soon", None]:
+            result = validate_recipe(self.full(servings=silly))
+            self.assertEqual(result["servings"], 4, repr(silly))
+
+    def test_keeps_a_sensible_servings_number(self):
+        self.assertEqual(validate_recipe(self.full(servings=2))["servings"], 2)
+
+
 class ExtractJson(unittest.TestCase):
     def test_reads_fenced_and_padded_responses(self):
         payload = '{"minutes": 20, "steps": ["a"]}'
