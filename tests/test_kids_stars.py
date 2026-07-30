@@ -870,6 +870,35 @@ class PocketMoney(unittest.TestCase):
     def _pay(self, db, user=None):
         return asyncio.run(server.pay_allowance("kid1", user=user or self.USER, database=db))
 
+    # ---- the datetimes Mongo actually returns ---------------------------
+
+    def test_a_row_from_the_real_database_does_not_crash(self):
+        """Mongo returns naive datetimes; utcnow() is aware. Comparing the two
+        raises TypeError, and this 500ed the very first time a real row — as
+        opposed to a test fixture, which stored aware datetimes — was
+        serialized. The fixture here is deliberately naive for that reason."""
+        from datetime import datetime as _dt
+        row = {
+            "allowance_id": "alw1", "family_id": "fam1", "member_id": "kid1",
+            "amount": 5.0, "frequency": "weekly",
+            "created_at": _dt.utcnow(),          # naive, as from Mongo
+            "last_paid_at": _dt.utcnow() - timedelta(days=2),
+        }
+        cfg = server.public_allowance_config(row)   # must not raise
+        self.assertFalse(cfg["is_due"])
+        self.assertIsNotNone(cfg["next_due_at"])
+
+    def test_paying_a_naive_row_does_not_crash(self):
+        from datetime import datetime as _dt
+        db = FakeDB(allowance_txns=[], allowances=[{
+            "allowance_id": "alw1", "family_id": "fam1", "member_id": "kid1",
+            "amount": 5.0, "frequency": "weekly",
+            "created_at": _dt.utcnow() - timedelta(days=30),
+            "last_paid_at": _dt.utcnow() - timedelta(days=8),  # naive and due
+        }])
+        result = self._pay(db)
+        self.assertEqual(result["transaction"]["amount"], 5.0)
+
     # ---- when it is due -------------------------------------------------
 
     def test_a_new_allowance_is_payable_immediately(self):
