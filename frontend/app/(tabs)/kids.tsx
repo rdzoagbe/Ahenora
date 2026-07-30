@@ -37,6 +37,8 @@ import { PressScale } from '../../src/components/PressScale';
 import { PinPadModal } from '../../src/components/PinPadModal';
 import { StarCelebration, CelebrationContent } from '../../src/components/StarCelebration';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
+import DateTimePickerSheet from '../../src/components/DateTimePickerSheet';
+import { quickDueDate, toLocalDateInput, toLocalTimeInput } from '../../src/utils/date';
 import AppToast, { ToastTone } from '../../src/components/AppToast';
 import EmptyState from '../../src/components/EmptyState';
 import FirstRunTip from '../../src/components/FirstRunTip';
@@ -708,15 +710,28 @@ export default function Kids() {
   const [showAssignTask, setShowAssignTask] = useState(false);
   const [assignTitle, setAssignTitle] = useState('');
   const [assigningTask, setAssigningTask] = useState(false);
+  // Default: due today at 18:00 — a dated task shows on the calendar and
+  // fires a reminder an hour before; an undated one is just a wish.
+  const [assignDue, setAssignDue] = useState<string | null>(null);
+  const [showAssignDuePicker, setShowAssignDuePicker] = useState(false);
 
   // Plain function on purpose: the React Compiler memoizes it itself, and a
   // manual useCallback here made it skip the whole component.
+  const openAssignTask = () => {
+    setAssignTitle('');
+    setAssignDue(quickDueDate('today'));
+    setShowAssignTask(true);
+  };
+
   const assignTask = async () => {
     const title = assignTitle.trim();
     if (!title || !activeChild || assigningTask) return;
     setAssigningTask(true);
     try {
-      await api.createCard({ type: 'TASK', title, assignee: activeChild.name, shared: true });
+      await api.createCard({
+        type: 'TASK', title, assignee: activeChild.name, shared: true,
+        due_date: assignDue, reminder_minutes: 60,
+      });
       setShowAssignTask(false);
       setAssignTitle('');
       showToast(t('kids_task_assigned', { name: activeChild.name }), 'success');
@@ -1061,7 +1076,7 @@ export default function Kids() {
                   <PressScale
                     testID="kids-assign-task"
                     accessibilityRole="button"
-                    onPress={() => setShowAssignTask(true)}
+                    onPress={openAssignTask}
                     style={styles.assignTaskBtn}
                   >
                     <Plus color={ui.orange} size={15} />
@@ -1575,6 +1590,29 @@ export default function Kids() {
           autoFocus
           onSubmitEditing={assignTask}
         />
+        <View style={styles.assignDueRow}>
+          <PressScale
+            testID="assign-due-open"
+            accessibilityRole="button"
+            onPress={() => setShowAssignDuePicker(true)}
+            style={[styles.assignDueChip, assignDue && styles.assignDueChipActive]}
+          >
+            <Text style={[styles.assignDueText, assignDue && styles.assignDueTextActive]}>
+              {assignDue ? `${toLocalDateInput(assignDue)} · ${toLocalTimeInput(assignDue)}` : t('no_due')}
+            </Text>
+          </PressScale>
+          {assignDue ? (
+            <PressScale
+              testID="assign-due-clear"
+              accessibilityRole="button"
+              accessibilityLabel={t('dt_clear')}
+              onPress={() => setAssignDue(null)}
+              style={styles.assignDueChip}
+            >
+              <Text style={styles.assignDueText}>✕</Text>
+            </PressScale>
+          ) : null}
+        </View>
         <Text style={styles.assignTaskHint}>{activeChild ? t('kids_assign_stars_note', { name: activeChild.name }) : ''}</Text>
         <PressScale
           testID="assign-task-save"
@@ -1586,6 +1624,13 @@ export default function Kids() {
           <Text style={styles.saveText}>{t('kids_assign_confirm')}</Text>
         </PressScale>
       </KeyboardAwareBottomSheet>
+
+      <DateTimePickerSheet
+        visible={showAssignDuePicker}
+        value={assignDue}
+        onChange={setAssignDue}
+        onClose={() => setShowAssignDuePicker(false)}
+      />
 
       <KeyboardAwareBottomSheet visible={showFixSheet} onClose={() => setShowFixSheet(false)} contentStyle={styles.sheet}>
         <View style={styles.sheetHeader}>
@@ -1800,6 +1845,11 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   redeemBtn: { backgroundColor: ui.text, borderRadius: 99, paddingHorizontal: 20, paddingVertical: 13 },
   assignTaskBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 8, paddingVertical: 10, borderRadius: 999, borderWidth: 1, borderColor: ui.orange, backgroundColor: ui.orangeSoft },
   assignTaskText: { color: ui.orange, fontFamily: 'Inter_700Bold', fontSize: 13 },
+  assignDueRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
+  assignDueChip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft },
+  assignDueChipActive: { borderColor: ui.orange, backgroundColor: ui.orangeSoft },
+  assignDueText: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 13 },
+  assignDueTextActive: { color: ui.orange },
   assignTaskHint: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, marginTop: 8, marginBottom: 14, lineHeight: 18 },
   redeemText: { color: ui.bg, fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
   weeklyLine: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 13.5, marginTop: 12, paddingHorizontal: 2 },
