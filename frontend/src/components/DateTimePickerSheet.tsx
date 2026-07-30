@@ -70,7 +70,7 @@ export default function DateTimePickerSheet({
       <View style={styles.header}>
         <View style={styles.titleRow}>
           <CalendarClock color={c.accent} size={18} />
-          <Text style={[styles.title, { color: c.text }]}>Schedule card</Text>
+          <Text style={[styles.title, { color: c.text }]}>{t('dt_title')}</Text>
         </View>
         <PressScale
                   accessibilityRole="button"
@@ -80,22 +80,22 @@ export default function DateTimePickerSheet({
       </View>
 
       <Text style={[styles.help, { color: c.textMuted }]}>
-        Set when this card should appear on the calendar and reminders.
+        {t('dt_help')}
       </Text>
 
       <View style={styles.quickRow}>
         <PressScale testID="due-today" onPress={() => applyQuick('today')} style={[styles.quickBtn, { borderColor: c.accent, backgroundColor: c.accentSoft }]}>
-          <Text style={[styles.quickText, { color: c.accent }]}>Today 18:00</Text>
+          <Text style={[styles.quickText, { color: c.accent }]}>{t('dt_today')}</Text>
         </PressScale>
         <PressScale testID="due-tomorrow" onPress={() => applyQuick('tomorrow')} style={[styles.quickBtn, { borderColor: c.accent, backgroundColor: c.accentSoft }]}>
-          <Text style={[styles.quickText, { color: c.accent }]}>Tomorrow 09:00</Text>
+          <Text style={[styles.quickText, { color: c.accent }]}>{t('dt_tomorrow')}</Text>
         </PressScale>
         <PressScale testID="due-weekend" onPress={() => applyQuick('weekend')} style={[styles.quickBtn, { borderColor: c.accent, backgroundColor: c.accentSoft }]}>
-          <Text style={[styles.quickText, { color: c.accent }]}>Weekend</Text>
+          <Text style={[styles.quickText, { color: c.accent }]}>{t('dt_weekend')}</Text>
         </PressScale>
       </View>
 
-      <Text style={[styles.label, { color: c.textMuted }]}>Date</Text>
+      <Text style={[styles.label, { color: c.textMuted }]}>{t('dt_date')}</Text>
       <TextInput
         testID="due-date-input"
         value={dateText}
@@ -107,7 +107,7 @@ export default function DateTimePickerSheet({
         style={[styles.input, { backgroundColor: c.bgSoft, borderColor: c.cardBorder, color: c.text }]}
       />
 
-      <Text style={[styles.label, { color: c.textMuted }]}>Time</Text>
+      <Text style={[styles.label, { color: c.textMuted }]}>{t('dt_time')}</Text>
       <View style={[styles.timeInputWrap, { backgroundColor: c.bgSoft, borderColor: c.cardBorder }]}>
         <Clock color={c.textMuted} size={14} />
         <TextInput
@@ -127,10 +127,10 @@ export default function DateTimePickerSheet({
       <View style={styles.footer}>
         <PressScale testID="clear-due-date" onPress={clear} style={[styles.clearBtn, { borderColor: c.cardBorder }]}>
           <CalendarX color={c.textMuted} size={15} />
-          <Text style={[styles.clearText, { color: c.textMuted }]}>Clear</Text>
+          <Text style={[styles.clearText, { color: c.textMuted }]}>{t('dt_clear')}</Text>
         </PressScale>
         <PressScale testID="save-due-date" onPress={save} style={[styles.saveBtn, { backgroundColor: c.accent }]}>
-          <Text style={styles.saveText}>Use date</Text>
+          <Text style={styles.saveText}>{t('dt_use')}</Text>
         </PressScale>
       </View>
     </KeyboardAwareBottomSheet>

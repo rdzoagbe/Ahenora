@@ -12,10 +12,12 @@ import {
   Keyboard,
   Alert,
 } from 'react-native';
-import { X, FileSignature, Mail, ListTodo, Repeat, Bell, Sparkles, Cake, School, Stethoscope, Plane, Check } from 'lucide-react-native';
+import { CalendarClock, X, FileSignature, Mail, ListTodo, Repeat, Bell, Sparkles, Cake, School, Stethoscope, Plane, Check } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PressScale } from './PressScale';
+import DateTimePickerSheet from './DateTimePickerSheet';
+import { toLocalDateInput, toLocalTimeInput } from '../utils/date';
 import { useStore } from '../store';
 import { api, CardType, FamilyMember, Recurrence } from '../api';
 import { logger } from '../logger';
@@ -73,6 +75,11 @@ export function AddCardModal({
   const [assignee, setAssignee] = useState('');
   const [recurrence, setRecurrence] = useState<Recurrence>('none');
   const [reminderMins, setReminderMins] = useState<number>(0);
+  // A task without a date is a note. The picker existed but nothing wired
+  // it in — manually created cards could never appear on the calendar or
+  // remind anyone.
+  const [dueDate, setDueDate] = useState<string | null>(null);
+  const [showDuePicker, setShowDuePicker] = useState(false);
   const [saving, setSaving] = useState(false);
   const [suggestedAssignee, setSuggestedAssignee] = useState<string>('');
   const [suggestLoading, setSuggestLoading] = useState(false);
@@ -110,6 +117,7 @@ export function AddCardModal({
         setTitle(initialDraft.title);
         setDesc(initialDraft.description || '');
         setAssignee(initialDraft.assignee || '');
+        setDueDate(initialDraft.due_date || null);
       } else {
         setType('TASK');
         setTitle('');
@@ -132,7 +140,7 @@ export function AddCardModal({
         title: title.trim(),
         description: desc.trim(),
         assignee: assignee.trim(),
-        due_date: initialDraft?.due_date || null,
+        due_date: dueDate,
         source: initialSource,
         image_base64: initialDraft?.image_base64 || null,
         recurrence,
@@ -308,6 +316,32 @@ export function AddCardModal({
               ) : null}
 
               <View style={styles.rowHeader}>
+                <CalendarClock color={theme.colors.textMuted} size={12} />
+                <Text style={[styles.label, { color: theme.colors.textMuted }]}>{t('due_label')}</Text>
+              </View>
+              <View style={styles.pillRow}>
+                <PressScale
+                  testID="open-due-picker"
+                  onPress={() => setShowDuePicker(true)}
+                  style={[styles.pill, { borderColor: theme.colors.cardBorder, backgroundColor: dueDate ? theme.colors.primary : theme.colors.bgSoft }]}
+                >
+                  <Text style={[styles.pillText, { color: dueDate ? theme.colors.primaryText : theme.colors.textMuted }]}>
+                    {dueDate ? `${toLocalDateInput(dueDate)} · ${toLocalTimeInput(dueDate)}` : t('no_due')}
+                  </Text>
+                </PressScale>
+                {dueDate ? (
+                  <PressScale
+                    testID="clear-due"
+                    onPress={() => setDueDate(null)}
+                    accessibilityLabel={t('dt_clear')}
+                    style={[styles.pill, { borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}
+                  >
+                    <Text style={[styles.pillText, { color: theme.colors.textMuted }]}>✕</Text>
+                  </PressScale>
+                ) : null}
+              </View>
+
+              <View style={styles.rowHeader}>
                 <Repeat color={theme.colors.textMuted} size={12} />
                 <Text style={[styles.label, { color: theme.colors.textMuted }]}>{t('recurrence')}</Text>
               </View>
@@ -371,6 +405,12 @@ export function AddCardModal({
             </View>
         </View>
       </KeyboardAvoidingView>
+      <DateTimePickerSheet
+        visible={showDuePicker}
+        value={dueDate}
+        onChange={setDueDate}
+        onClose={() => setShowDuePicker(false)}
+      />
     </Modal>
   );
 }
