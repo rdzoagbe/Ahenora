@@ -418,6 +418,7 @@ def build_suggest_prompt(
     language_name: str,
     avoid_titles: list = None,
     variant: int = 0,
+    seen_titles: list = None,
 ) -> str:
     """Assemble the user half of the prompt from sanitised input.
 
@@ -432,6 +433,13 @@ def build_suggest_prompt(
         lines.append("")
         lines.append("Already planned this week, do not propose these again:")
         lines.extend(f"- {t}" for t in avoid_titles)
+    if seen_titles:
+        # What the previous ask(s) proposed. Without this, every open of the
+        # suggestion sheet sent a byte-identical prompt at low temperature and
+        # got the same week back — "different" was hoped for, not asked for.
+        lines.append("")
+        lines.append("The family has already seen these ideas; propose different dishes:")
+        lines.extend(f"- {t}" for t in seen_titles)
     if variant and variant > 0:
         lines.append("")
         lines.append(

@@ -325,7 +325,7 @@ class SuggestVariant(unittest.TestCase):
         for name, orig in self._patched.items():
             setattr(server, name, orig)
 
-    def _fake_db(self, shopping_names=("Rice", "Chicken", "Tomatoes", "Onion"), history_items=()):
+    def _fake_db(self, shopping_names=("Rice", "Chicken", "Tomatoes", "Onion"), history_items=(), last_suggested=()):
         # Minimal async-iterable Mongo stand-in.
         class _Cursor:
             def __init__(self, rows):
@@ -346,22 +346,34 @@ class SuggestVariant(unittest.TestCase):
         class _Coll:
             def __init__(self, rows):
                 self._rows = rows
+                self.updates = []
 
             def find(self, *a, **k):
                 return _Cursor(self._rows)
 
+            async def find_one(self, *a, **k):
+                return self._rows[0] if self._rows else None
+
             async def update_one(self, *a, **k):
+                self.updates.append((a, k))
                 return None
 
         shopping = [{"name": n} for n in shopping_names]
         history = [{"items": list(history_items)}] if history_items else []
+        families = _Coll(
+            [{"last_meal_suggestions": list(last_suggested)}] if last_suggested else []
+        )
 
         class _DB:
+            families_coll = families
+
             def __getitem__(self, name):
                 if name == "shopping_list":
                     return _Coll(shopping)
                 if name == "shopping_history":
                     return _Coll(history)
+                if name == "families":
+                    return families
                 return _Coll([])
 
         return _DB()
@@ -402,6 +414,31 @@ class SuggestVariant(unittest.TestCase):
         with self.assertRaises(HTTPException) as ctx:
             self._run(0, db=db)
         self.assertEqual(ctx.exception.status_code, 422)
+
+    def test_a_reopened_sheet_avoids_last_weeks_ideas(self):
+        # The field bug: the client resets its variant every open, so without
+        # server-side memory every open sent an identical low-temperature
+        # prompt and the family saw the same week forever.
+        db = self._fake_db(last_suggested=("Beef Tacos", "Okra Stew"))
+        self._run(0, db=db)
+        prompt = self.captured[0]["contents"]
+        self.assertIn("already seen", prompt)
+        self.assertIn("Beef Tacos", prompt)
+        self.assertIn("Okra Stew", prompt)
+
+    def test_remembers_what_it_proposed_for_next_time(self):
+        db = self._fake_db(last_suggested=("Beef Tacos",))
+        self._run(0, db=db)
+        stored = None
+        for a, k in db.families_coll.updates:
+            update = a[1] if len(a) > 1 else k.get("update")
+            if update and "last_meal_suggestions" in update.get("$set", {}):
+                stored = update["$set"]["last_meal_suggestions"]
+        self.assertIsNotNone(stored, "nothing stored on the family")
+        # The old week stays in memory alongside the new seven dishes.
+        self.assertIn("Beef Tacos", stored)
+        for i in range(7):
+            self.assertIn(f"Dish {i}", stored)
 
     def test_two_items_is_still_too_few(self):
         from fastapi import HTTPException
