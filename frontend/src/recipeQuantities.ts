@@ -176,3 +176,67 @@ export function shoppingNameFor(
   // Counts read after the item ("eggs ×4"); weights and volumes read before it.
   return per.unit === 'count' ? `${label} ${qty}` : `${qty} ${label}`;
 }
+
+/**
+ * AI-generated recipes carry their own quantified ingredients, written for a
+ * base number of servings and validated by the backend safety gate (unit
+ * whitelist, per-unit sanity caps). This scales one of those amounts to the
+ * servings the family chose and renders it the same way the curated
+ * quantities render — counts as "×2", weights as "400 g".
+ */
+export interface AiIngredient {
+  name: string;
+  /** null means "to taste" — no amount to scale. */
+  qty: number | null;
+  unit: string;
+}
+
+// Small measures get localized labels; metric units read the same everywhere.
+const UNIT_LABELS: Record<string, Record<SuggestLang, [string, string]>> = {
+  tbsp: { en: ['tbsp', 'tbsp'], es: ['cda', 'cdas'], fr: ['c. à s.', 'c. à s.'], de: ['EL', 'EL'] },
+  tsp: { en: ['tsp', 'tsp'], es: ['cdta', 'cdtas'], fr: ['c. à c.', 'c. à c.'], de: ['TL', 'TL'] },
+  pinch: { en: ['pinch', 'pinches'], es: ['pizca', 'pizcas'], fr: ['pincée', 'pincées'], de: ['Prise', 'Prisen'] },
+  clove: { en: ['clove', 'cloves'], es: ['diente', 'dientes'], fr: ['gousse', 'gousses'], de: ['Zehe', 'Zehen'] },
+  can: { en: ['can', 'cans'], es: ['lata', 'latas'], fr: ['boîte', 'boîtes'], de: ['Dose', 'Dosen'] },
+};
+
+/** Round a scaled amount so it reads like a recipe, not a calculator. */
+const roundScaled = (value: number): number => {
+  if (value >= 100) return Math.round(value / 10) * 10;
+  if (value >= 20) return Math.round(value / 5) * 5;
+  return Math.round(value * 2) / 2;
+};
+
+export function formatAiQuantity(
+  ing: AiIngredient,
+  servings: number,
+  baseServings: number,
+  lang: SuggestLang,
+): string | null {
+  if (ing.qty === null || ing.unit === 'to taste') return TO_TASTE[lang];
+
+  const scaled = (ing.qty * Math.max(1, servings)) / Math.max(1, baseServings);
+
+  if (ing.unit === 'piece') {
+    const formatted = formatCount(scaled);
+    return formatted ? `×${formatted}` : null;
+  }
+  if (ing.unit === 'g' || ing.unit === 'ml') {
+    const n = roundScaled(scaled);
+    if (n <= 0) return null;
+    if (n >= 1000) return `${(n / 1000).toFixed(n % 1000 === 0 ? 0 : 1)} ${ing.unit === 'g' ? 'kg' : 'L'}`;
+    return `${n} ${ing.unit}`;
+  }
+  if (ing.unit === 'kg' || ing.unit === 'l') {
+    const n = Math.round(scaled * 10) / 10;
+    if (n <= 0) return null;
+    return `${n} ${ing.unit === 'l' ? 'L' : 'kg'}`;
+  }
+
+  const labels = UNIT_LABELS[ing.unit];
+  const formatted = formatCount(scaled);
+  if (!formatted) return null;
+  if (!labels) return formatted;
+  const rounded = Math.round(scaled * 2) / 2;
+  return `${formatted} ${labels[lang][rounded > 1 ? 1 : 0]}`;
+}

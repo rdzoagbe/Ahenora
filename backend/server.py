@@ -5043,6 +5043,10 @@ async def generate_meal_recipe(
         if parsed is None:
             raise UnsafeRecipe("unparseable")
         recipe = validate_recipe(parsed)
+        if "ingredients" not in recipe:
+            # Still a usable recipe, but the model ignored half the prompt —
+            # loud in the logs so a quiet downgrade cannot become the norm.
+            log.warning("recipe for %r came back without ingredients", title)
     except UnsafeRecipe as exc:
         # The specific check that failed is useful to us and meaningless to the
         # user, so it is logged and not returned.

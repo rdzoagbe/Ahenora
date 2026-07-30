@@ -19,7 +19,7 @@ import { api, MealPlan, ShoppingItem, ShoppingHistoryEntry, SavedMealPlan } from
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { logger } from '../../src/logger';
 import { suggestWeek, MealSuggestion, SuggestLang, localizedMealTitle, localizedMealIngredients, resolveRecipeId, recipeIngredients, searchRecipes } from '../../src/mealSuggestions';
-import { quantityFor, shoppingNameFor } from '../../src/recipeQuantities';
+import { quantityFor, shoppingNameFor, formatAiQuantity, AiIngredient } from '../../src/recipeQuantities';
 import { categoriseShoppingItem } from '../../src/shoppingCategories';
 import { recipeMethod } from '../../src/recipeSteps';
 
@@ -57,7 +57,7 @@ export default function Kitchen() {
   const [browseDay, setBrowseDay] = useState('monday');
   // Generated methods held for this session, keyed by meal id. The server
   // caches them too; this just avoids a round trip while the sheet is open.
-  const [aiRecipes, setAiRecipes] = useState<Record<string, { minutes: number; steps: string[] }>>({});
+  const [aiRecipes, setAiRecipes] = useState<Record<string, { minutes: number; steps: string[]; servings?: number; ingredients?: AiIngredient[] }>>({});
   const [generatingFor, setGeneratingFor] = useState<string | null>(null);
   // Recipe currently open full-screen. addToDay marks a preview opened from
   // the browser: the page then carries an "add to that day" action, so a
@@ -1251,6 +1251,48 @@ export default function Kitchen() {
                           <ShoppingCart color={ui.orange} size={15} />
                           <Text style={styles.addMissingText}>{t('cook_add_missing')}</Text>
                         </PressScale>
+                      </>
+                    ) : generated?.ingredients?.length ? (
+                      /* AI recipe with quantified ingredients: same servings
+                         maths as the curated library, scaled from the base the
+                         amounts were written for. */
+                      <>
+                        <View style={styles.servingsRow}>
+                          <Text style={styles.cookSectionTitle}>{t('cook_servings')}</Text>
+                          <View style={styles.stepper}>
+                            <PressScale
+                              accessibilityRole="button"
+                              accessibilityLabel="-"
+                              onPress={() => setServings(Math.max(1, servings - 1))}
+                              hitSlop={10}
+                              style={styles.stepBtn}
+                            >
+                              <Minus color={ui.text} size={16} />
+                            </PressScale>
+                            <Text style={styles.stepCount}>{servings}</Text>
+                            <PressScale
+                              accessibilityRole="button"
+                              accessibilityLabel="+"
+                              onPress={() => setServings(Math.min(12, servings + 1))}
+                              hitSlop={10}
+                              style={styles.stepBtn}
+                            >
+                              <Plus color={ui.text} size={16} />
+                            </PressScale>
+                          </View>
+                        </View>
+
+                        <Text style={styles.cookSectionTitle}>{t('cook_you_need')}</Text>
+                        {generated.ingredients.map((ing, idx) => {
+                          const qty = formatAiQuantity(ing, servings, generated.servings || 4, suggestLang);
+                          return (
+                            <View key={idx} style={styles.qtyRow}>
+                              <Text style={styles.qtyName}>{ing.name}</Text>
+                              {qty ? <Text style={styles.qtyAmount}>{qty}</Text> : null}
+                            </View>
+                          );
+                        })}
+                        <Text style={styles.qtyNote}>{t('cook_amounts_note')}</Text>
                       </>
                     ) : ingredients.length > 0 ? (
                       <>

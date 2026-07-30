@@ -1016,7 +1016,17 @@ export const api = {
       { method: 'POST' },
     ),
   generateMealRecipe: (mealId: string, lang: string) =>
-    request<{ recipe: { minutes: number; steps: string[] }; cached: boolean }>(
+    request<{
+      recipe: {
+        minutes: number;
+        steps: string[];
+        // Present on recipes generated since the AI-advisor phase; older
+        // cached ones are steps-only and still render.
+        servings?: number;
+        ingredients?: { name: string; qty: number | null; unit: string }[];
+      };
+      cached: boolean;
+    }>(
       `/meals/${mealId}/recipe?lang=${encodeURIComponent(lang)}`,
       { method: 'POST' },
     ),

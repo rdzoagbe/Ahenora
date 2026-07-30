@@ -90,14 +90,22 @@ def sanitize_ingredients(values: list) -> list:
 # 2. The system prompt
 # ---------------------------------------------------------------------------
 
-RECIPE_SYSTEM_PROMPT = """You write short cooking methods for a family organiser app.
+RECIPE_SYSTEM_PROMPT = """You write short cooking recipes for a family organiser app.
 
-You do exactly one thing: given the name of a dish, return the steps to cook it.
+You do exactly one thing: given the name of a dish, return the ingredients with
+amounts and the steps to cook it.
 
 Rules you must follow:
-- Return JSON only, with keys "minutes" (integer) and "steps" (array of strings).
+- Return JSON only, with keys "minutes" (integer), "servings" (integer),
+  "ingredients" (array) and "steps" (array of strings).
+- "servings" is how many people the amounts feed. Use 4 unless the dish
+  clearly dictates otherwise.
+- Each ingredient is {"name": string, "qty": number, "unit": string}. The unit
+  must be one of exactly: g, kg, ml, l, tbsp, tsp, piece, pinch, clove, can,
+  to taste. Use metric weights and volumes; count whole things as "piece".
+  For "to taste", set qty to 0.
+- Ingredient names are in the same language as the steps.
 - Between 3 and 8 steps. Each step is one short sentence a tired parent can follow.
-- No quantities. Families cook for different numbers of people.
 - Assume an ordinary home kitchen. No specialist equipment.
 - Food safety matters: where meat, poultry, fish, eggs or rice are involved, the
   steps must make safe cooking explicit rather than assumed.
@@ -116,7 +124,7 @@ def build_recipe_prompt(title: str, ingredients: list, language_name: str) -> st
     lines = [f"Dish name: {title}"]
     if ingredients:
         lines.append("Ingredients the family already has: " + ", ".join(ingredients))
-    lines.append(f"Write the steps in {language_name}.")
+    lines.append(f"Write the ingredient names and the steps in {language_name}.")
     return "\n".join(lines)
 
 
@@ -130,6 +138,28 @@ MIN_STEP_LEN = 10
 MAX_STEP_LEN = 240
 MIN_MINUTES = 3
 MAX_MINUTES = 480
+MAX_INGREDIENT_NAME_LEN = 60
+MIN_SERVINGS = 1
+MAX_SERVINGS = 12
+DEFAULT_SERVINGS = 4
+
+# Every unit the model may use, with the largest amount of it that any family
+# recipe could plausibly call for. The cap is a sanity bound, not a cooking
+# opinion: it exists so "2 kg of salt" or "40 tbsp of oil" dies here instead
+# of reaching a kitchen. "to taste" carries no amount at all.
+_UNIT_CAPS = {
+    "g": 5000,
+    "kg": 5,
+    "ml": 5000,
+    "l": 5,
+    "tbsp": 24,
+    "tsp": 24,
+    "piece": 40,
+    "pinch": 6,
+    "clove": 12,
+    "can": 6,
+    "to taste": 0,
+}
 
 # Content that must never reach a family cooking with children, whatever route
 # it arrived by. Deliberately narrow: this catches categorical failures, it is
@@ -186,7 +216,18 @@ def validate_recipe(parsed: dict) -> dict:
     if not (MIN_STEPS <= len(steps) <= MAX_STEPS):
         raise UnsafeRecipe("step count out of range")
 
+    # Amounts are newer than steps: recipes cached before they existed have no
+    # "ingredients" key, and a model that drops the key degrades to a
+    # steps-only recipe (the caller logs it) rather than no recipe at all.
+    # But an ingredients list that IS present must be entirely valid — a
+    # recipe with one absurd amount is worse than a recipe with none.
+    ingredients = None
+    if parsed.get("ingredients") is not None:
+        ingredients = _validate_ingredients(parsed["ingredients"])
+
     haystack = " ".join(steps).lower()
+    if ingredients:
+        haystack += " " + " ".join(i["name"] for i in ingredients).lower()
     for term in _BLOCKED_TERMS:
         if term in haystack:
             raise UnsafeRecipe("blocked content")
@@ -199,7 +240,61 @@ def validate_recipe(parsed: dict) -> dict:
     if not (MIN_MINUTES <= minutes <= MAX_MINUTES):
         raise UnsafeRecipe("minutes out of range")
 
-    return {"minutes": minutes, "steps": steps}
+    result = {"minutes": minutes, "steps": steps}
+    if ingredients:
+        # A silly servings number is repaired rather than fatal, same as a
+        # silly cooking time in the week validator: the amounts are still
+        # right relative to each other, and 4 is the number the prompt asked
+        # amounts to be written for.
+        try:
+            servings = int(parsed.get("servings") or 0)
+        except (TypeError, ValueError):
+            servings = 0
+        if not (MIN_SERVINGS <= servings <= MAX_SERVINGS):
+            servings = DEFAULT_SERVINGS
+        result["servings"] = servings
+        result["ingredients"] = ingredients
+    return result
+
+
+def _validate_ingredients(raw) -> list:
+    """Validate the quantified ingredient list of a generated recipe."""
+    if not isinstance(raw, list):
+        raise UnsafeRecipe("ingredients not a list")
+    if not (1 <= len(raw) <= MAX_INGREDIENTS):
+        raise UnsafeRecipe("ingredient count out of range")
+
+    out = []
+    for item in raw:
+        if not isinstance(item, dict):
+            raise UnsafeRecipe("ingredient not an object")
+
+        name = re.sub(r"\s+", " ", str(item.get("name") or "")).strip()
+        if not (1 <= len(name) <= MAX_INGREDIENT_NAME_LEN):
+            raise UnsafeRecipe("ingredient name length out of range")
+
+        unit = str(item.get("unit") or "").strip().lower()
+        # Models pluralise counts ("2 cloves"); the singular is the unit.
+        if unit.endswith("s") and unit[:-1] in _UNIT_CAPS:
+            unit = unit[:-1]
+        if unit not in _UNIT_CAPS:
+            raise UnsafeRecipe("unit not allowed")
+
+        if unit == "to taste":
+            qty = None
+        else:
+            try:
+                qty = float(item.get("qty"))
+            except (TypeError, ValueError):
+                raise UnsafeRecipe("qty not a number")
+            if not (0 < qty <= _UNIT_CAPS[unit]):
+                raise UnsafeRecipe("qty out of range")
+            qty = round(qty, 2)
+            if qty == int(qty):
+                qty = int(qty)
+
+        out.append({"name": name, "qty": qty, "unit": unit})
+    return out
 
 
 def extract_json(text: str) -> Optional[dict]:
