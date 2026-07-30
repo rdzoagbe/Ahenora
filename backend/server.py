@@ -81,7 +81,14 @@ GOOGLE_CLIENT_IDS = list(dict.fromkeys(GOOGLE_CLIENT_IDS))
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
 SESSION_DAYS = int(os.environ.get("SESSION_DAYS", "7"))
 INVITE_DAYS = int(os.environ.get("INVITE_DAYS", "14"))
-INVITE_BASE_URL = os.environ.get("INVITE_BASE_URL", "householdcoo:///")
+# Invite links must open SOMEWHERE on every device. The old default was the
+# native custom scheme, which does nothing on a phone without the app —
+# an iPhone tapping it got silence. The web companion handles ?invite=
+# end to end, so it is the universal default; the env var can still point
+# elsewhere (e.g. a future custom domain).
+INVITE_BASE_URL = os.environ.get(
+    "INVITE_BASE_URL", "https://rdzoagbe.github.io/Household-COO/app/"
+)
 
 # Email delivery. Resend is used through the standard-library urllib client,
 # so no extra Python package is required.
@@ -1289,6 +1296,71 @@ async def send_star_milestone_alert(family_id: str, member_name: str, old_total:
         log.warning("star milestone alert failed: %s", e)
 
 
+# Pushes around the invitation loop, in the recipient's own language.
+PUSH_I18N = {
+    "en": {
+        "invited_title": "{name} invited you to their household",
+        "invited_body": "Open Household COO and sign in through the invite link to join.",
+        "accepted_title": "{name} accepted your invitation",
+        "accepted_body": "They have joined your household.",
+    },
+    "fr": {
+        "invited_title": "{name} vous invite dans son foyer",
+        "invited_body": "Ouvrez Household COO et connectez-vous via le lien d'invitation pour le rejoindre.",
+        "accepted_title": "{name} a accepté votre invitation",
+        "accepted_body": "Cette personne a rejoint votre foyer.",
+    },
+    "es": {
+        "invited_title": "{name} te invitó a su hogar",
+        "invited_body": "Abre Household COO e inicia sesión con el enlace de invitación para unirte.",
+        "accepted_title": "{name} aceptó tu invitación",
+        "accepted_body": "Ya forma parte de tu hogar.",
+    },
+    "de": {
+        "invited_title": "{name} hat dich in den Haushalt eingeladen",
+        "invited_body": "Öffne Household COO und melde dich über den Einladungslink an, um beizutreten.",
+        "accepted_title": "{name} hat deine Einladung angenommen",
+        "accepted_body": "Die Person ist deinem Haushalt beigetreten.",
+    },
+}
+
+
+async def send_push_to_user(database, user_id: str, title: str, body: str, data: dict):
+    """Push to one specific person's devices. Best effort, never raises."""
+    try:
+        messages = []
+        cursor = database["notification_tokens"].find(
+            {"user_id": user_id, "active": True}, {"_id": 0}
+        )
+        async for token_doc in cursor:
+            token = token_doc.get("token")
+            if token and token.startswith("ExponentPushToken"):
+                messages.append({
+                    "to": token, "sound": "default",
+                    "title": title, "body": body, "data": data,
+                })
+        if messages:
+            await send_expo_push_messages(messages)
+    except Exception as e:
+        log.warning("user push failed: %s", e)
+
+
+async def notify_invite_accepted(database, invite: dict, acceptor_name: str):
+    """Close the loop: the person who sent an invite hears when it lands."""
+    inviter_id = invite.get("created_by_user_id")
+    if not inviter_id:
+        return
+    inviter = await database["users"].find_one({"user_id": inviter_id}, {"_id": 0})
+    lang = (inviter or {}).get("language") or "en"
+    L = PUSH_I18N.get(lang, PUSH_I18N["en"])
+    await send_push_to_user(
+        database, inviter_id,
+        L["accepted_title"].format(name=acceptor_name),
+        L["accepted_body"],
+        {"type": "invite_accepted", "invite_id": invite.get("invite_id")},
+    )
+
+
 async def send_new_card_alert(family_id: str, card: dict, created_by_user_id: Optional[str] = None):
     database = get_db()
     messages = []
@@ -1430,6 +1502,7 @@ class EmailRegisterIn(BaseModel):
 class EmailLoginIn(BaseModel):
     email: str
     password: str
+    invite_token: Optional[str] = None
 
 
 class InviteIn(BaseModel):
@@ -1904,6 +1977,7 @@ async def exchange_session(payload: SessionIn):
                 }
             },
         )
+        await notify_invite_accepted(database, invite, user.get("name") or email)
 
     raw_session = secrets.token_urlsafe(32)
     await database["user_sessions"].insert_one(
@@ -2027,6 +2101,7 @@ async def register_email(payload: EmailRegisterIn):
                 "updated_at": utcnow(),
             }},
         )
+        await notify_invite_accepted(database, invite, name or email)
 
     raw_session = await _issue_session(database, user["user_id"])
     return {"user": public_user(user), "session_token": raw_session}
@@ -2055,6 +2130,31 @@ async def login_email(payload: EmailLoginIn):
         raise HTTPException(status_code=401, detail="Incorrect email or password")
 
     _auth_clear(identity)
+
+    # Login never consumed invite tokens, so an existing email account
+    # clicking an invite link could never join the inviting family.
+    # Same semantics as Google sign-in and registration now.
+    invite, target_family_id = await _resolve_invite(database, payload.invite_token, email)
+    if target_family_id and target_family_id != user.get("family_id"):
+        await database["users"].update_one(
+            {"user_id": user["user_id"]},
+            {"$set": {"family_id": target_family_id, "updated_at": utcnow()}},
+        )
+        user = await database["users"].find_one({"user_id": user["user_id"]}, {"_id": 0})
+        await add_user_to_family_if_needed(database, user, target_family_id)
+    if invite and invite.get("status") != "accepted":
+        await database["family_invites"].update_one(
+            {"invite_id": invite["invite_id"]},
+            {"$set": {
+                "status": "accepted",
+                "accepted_at": utcnow(),
+                "accepted_by_user_id": user["user_id"],
+                "accepted_by_email": email,
+                "updated_at": utcnow(),
+            }},
+        )
+        await notify_invite_accepted(database, invite, user.get("name") or email)
+
     raw_session = await _issue_session(database, user["user_id"])
     return {"user": public_user(user), "session_token": raw_session}
 
@@ -2586,6 +2686,20 @@ async def family_invite(payload: InviteIn, user=Depends(require_user)):
         await database["family_invites"].insert_one(invite)
 
     public = public_invite(invite)
+
+    # If this address already belongs to an account, tell that person inside
+    # the app too — invitation emails are where invitations go to die.
+    invited_user = await database["users"].find_one({"email": email}, {"_id": 0})
+    if invited_user and invited_user.get("family_id") != user["family_id"]:
+        lang = invited_user.get("language") or "en"
+        L = PUSH_I18N.get(lang, PUSH_I18N["en"])
+        await send_push_to_user(
+            database, invited_user["user_id"],
+            L["invited_title"].format(name=user.get("name") or "A parent"),
+            L["invited_body"],
+            {"type": "family_invite", "token": invite["token"]},
+        )
+
     email_result = await send_invite_email(
         email,
         public["invite_url"],
