@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, View, Text, StyleSheet, TextInput, ScrollView, ActivityIndicator, Modal } from 'react-native';
+import { Alert, View, Text, StyleSheet, TextInput, ScrollView, ActivityIndicator, Modal, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
-import { Plus, X, Trash2, ShoppingCart, Check, UtensilsCrossed, Bell, ChevronDown, ChevronLeft, History, RotateCcw, Sparkles, Sun, ChefHat, Clock, AlertTriangle, Search, Minus, BookOpen } from 'lucide-react-native';
+import { Plus, X, Trash2, ShoppingCart, Check, UtensilsCrossed, Bell, ChevronDown, ChevronLeft, History, RotateCcw, Sparkles, Sun, ChefHat, Clock, AlertTriangle, Search, Minus, BookOpen, Camera, Image as ImageIcon } from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { PressScale } from '../../src/components/PressScale';
@@ -157,6 +158,74 @@ export default function Kitchen() {
       return next;
     });
   }, []);
+
+  // ── Snap a paper shopping list into items ──
+  // The photo never adds anything directly: the scan returns candidates, the
+  // sheet shows them ticked (unsure reads unticked), and only the confirmed
+  // selection goes through the ordinary bulk add.
+  const [showScan, setShowScan] = useState(false);
+  const [scanPhase, setScanPhase] = useState<'idle' | 'reading' | 'review'>('idle');
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [scanItems, setScanItems] = useState<{ name: string; unsure: boolean; checked: boolean }[]>([]);
+  const [scanAdding, setScanAdding] = useState(false);
+
+  const openScan = useCallback(() => {
+    setScanPhase('idle');
+    setScanError(null);
+    setScanItems([]);
+    setShowScan(true);
+  }, []);
+
+  const pickScan = useCallback(async (source: 'camera' | 'library') => {
+    setScanError(null);
+    try {
+      if (Platform.OS !== 'web') {
+        if (source === 'camera') {
+          const p = await ImagePicker.requestCameraPermissionsAsync();
+          if (!p.granted) throw new Error(t('cam_camera_permission_denied'));
+        } else {
+          const p = await ImagePicker.requestMediaLibraryPermissionsAsync();
+          if (!p.granted) throw new Error(t('cam_gallery_permission_denied'));
+        }
+      }
+      const res = source === 'camera'
+        ? await ImagePicker.launchCameraAsync({ base64: true, quality: 0.55, mediaTypes: ImagePicker.MediaTypeOptions.Images })
+        : await ImagePicker.launchImageLibraryAsync({ base64: true, quality: 0.55, mediaTypes: ImagePicker.MediaTypeOptions.Images });
+      if (res.canceled || !res.assets?.[0]) return;
+      // Native supplies base64 directly; web supplies a data URL instead.
+      const asset = res.assets[0];
+      const base64 = asset.base64 ?? (asset.uri?.startsWith('data:') ? asset.uri.split(',')[1] : null);
+      if (!base64) return;
+
+      setScanPhase('reading');
+      const { items } = await api.scanShoppingList(base64);
+      setScanItems(items.map((i) => ({ ...i, checked: !i.unsure })));
+      setScanPhase('review');
+    } catch (e: any) {
+      setScanPhase('idle');
+      setScanError(e?.message || t('scan_failed'));
+    }
+  }, [t]);
+
+  const toggleScanItem = useCallback((idx: number) => {
+    setScanItems((prev) => prev.map((it, i) => (i === idx ? { ...it, checked: !it.checked } : it)));
+  }, []);
+
+  const addScannedItems = useCallback(async () => {
+    const picked = scanItems.filter((i) => i.checked).map((i) => i.name);
+    if (picked.length === 0 || scanAdding) return;
+    setScanAdding(true);
+    try {
+      await api.bulkAddShopping(picked, picked.map((n) => categoriseShoppingItem(n) || undefined));
+      setShopItems(await api.listShopping().catch(() => []));
+      setShowScan(false);
+      showToast(t('cook_added_to_list', { n: picked.length }), 'success');
+    } catch {
+      showToast(t('vault_could_not_add_meal'), 'error');
+    } finally {
+      setScanAdding(false);
+    }
+  }, [scanItems, scanAdding, showToast, t]);
 
   const addShopItem = useCallback(async () => {
     // "milk, eggs, bread" (or one per line) adds them all in one tap.
@@ -803,7 +872,19 @@ export default function Kitchen() {
                   accessibilityLabel={t('a11y_add')} onPress={addShopItem} disabled={addingShop || !shopInput.trim()} style={[styles.shopAddBtn, (!shopInput.trim() || addingShop) && { opacity: 0.4 }]}>
                   <Plus color="#FFFFFF" size={18} />
                 </PressScale>
+                <PressScale
+                  testID="shop-scan"
+                  accessibilityRole="button"
+                  accessibilityLabel={t('scan_hint')}
+                  onPress={openScan}
+                  style={styles.shopScanBtn}
+                >
+                  <Camera color={ui.orange} size={18} />
+                </PressScale>
               </View>
+              {/* The legend: without it a camera next to a shopping list could
+                  mean anything. One line says exactly what it does. */}
+              <Text style={styles.scanHint}>{t('scan_hint')}</Text>
 
               {uncheckedItems.map((item, index) => (
                 <PressScale key={item.item_id} onPress={() => toggleShopItem(item)} style={styles.row}>
@@ -1466,6 +1547,91 @@ export default function Kitchen() {
         </View>
       </KeyboardAwareBottomSheet>
 
+      {/* Snap a paper shopping list — reviewable candidates, never a silent add */}
+      <KeyboardAwareBottomSheet
+        visible={showScan}
+        onClose={() => setShowScan(false)}
+        contentStyle={styles.sheet}
+        footer={scanPhase === 'review' ? (
+          <PressScale
+            testID="scan-add"
+            accessibilityRole="button"
+            onPress={addScannedItems}
+            disabled={scanAdding || scanItems.every((i) => !i.checked)}
+            style={[styles.suggestAllBtn, (scanAdding || scanItems.every((i) => !i.checked)) && { opacity: 0.5 }]}
+          >
+            <Text style={styles.suggestAllText}>
+              {t('scan_add_n', { n: scanItems.filter((i) => i.checked).length })}
+            </Text>
+          </PressScale>
+        ) : undefined}
+      >
+        <View style={styles.sheetHeader}>
+          <Text style={styles.sheetTitle}>{t('scan_title')}</Text>
+          <PressScale
+            accessibilityRole="button"
+            accessibilityLabel={t('close')}
+            onPress={() => setShowScan(false)}
+            style={styles.iconBtn}
+          >
+            <X color={ui.text} size={20} />
+          </PressScale>
+        </View>
+
+        {scanPhase === 'reading' ? (
+          <View style={{ alignItems: 'center', paddingVertical: 40, gap: 14 }}>
+            <ActivityIndicator color={ui.orange} size="large" />
+            <Text style={styles.suggestSub}>{t('scan_reading')}</Text>
+          </View>
+        ) : scanPhase === 'review' ? (
+          <>
+            <Text style={styles.suggestSub}>{t('scan_sub', { n: scanItems.length })}</Text>
+            {scanItems.map((item, idx) => (
+              <PressScale
+                key={`${item.name}-${idx}`}
+                testID={`scan-item-${idx}`}
+                accessibilityRole="button"
+                onPress={() => toggleScanItem(idx)}
+                style={styles.scanRow}
+              >
+                <View style={[styles.scanCheck, item.checked && styles.scanCheckOn]}>
+                  {item.checked ? <Check color="#fff" size={14} /> : null}
+                </View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.rowText}>{item.name}</Text>
+                  {item.unsure ? <Text style={styles.scanUnsure}>{t('scan_unsure')}</Text> : null}
+                </View>
+                <Text style={styles.rowCat}>{categoriseShoppingItem(item.name) || ''}</Text>
+              </PressScale>
+            ))}
+            <PressScale
+              accessibilityRole="button"
+              onPress={() => { setScanPhase('idle'); setScanItems([]); }}
+              style={styles.scanRetake}
+            >
+              <Text style={styles.scanRetakeText}>{t('scan_retake')}</Text>
+            </PressScale>
+            <View style={styles.cookAllergen}>
+              <AlertTriangle color={ui.muted} size={14} />
+              <Text style={styles.cookAllergenText}>{t('scan_note')}</Text>
+            </View>
+          </>
+        ) : (
+          <>
+            <Text style={styles.suggestSub}>{t('scan_hint')}</Text>
+            {scanError ? <Text style={styles.scanError}>{scanError}</Text> : null}
+            <PressScale testID="scan-camera" accessibilityRole="button" onPress={() => pickScan('camera')} style={styles.scanSourceBtn}>
+              <Camera color={ui.orange} size={18} />
+              <Text style={styles.scanSourceText}>{t('scan_take')}</Text>
+            </PressScale>
+            <PressScale testID="scan-gallery" accessibilityRole="button" onPress={() => pickScan('library')} style={styles.scanSourceBtn}>
+              <ImageIcon color={ui.orange} size={18} />
+              <Text style={styles.scanSourceText}>{t('scan_gallery')}</Text>
+            </PressScale>
+          </>
+        )}
+      </KeyboardAwareBottomSheet>
+
       {/* Suggest a week of meals from your shopping */}
       <KeyboardAwareBottomSheet
         visible={showSuggest}
@@ -1603,6 +1769,17 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
 
   card: { borderRadius: 20, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, padding: 14, gap: 4 },
   shopInputRow: { flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 6 },
+  shopScanBtn: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: ui.orange, backgroundColor: ui.orangeSoft },
+  scanHint: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 11.5, marginBottom: 10, marginTop: 2 },
+  scanRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: ui.line },
+  scanCheck: { width: 22, height: 22, borderRadius: 7, borderWidth: 1.5, borderColor: ui.line, alignItems: 'center', justifyContent: 'center' },
+  scanCheckOn: { backgroundColor: ui.orange, borderColor: ui.orange },
+  scanUnsure: { color: '#E8B664', fontFamily: 'Inter_600SemiBold', fontSize: 11, marginTop: 1 },
+  scanRetake: { alignItems: 'center', paddingVertical: 12, marginTop: 4 },
+  scanRetakeText: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 13 },
+  scanError: { color: '#E8746A', fontFamily: 'Inter_500Medium', fontSize: 13, marginBottom: 10 },
+  scanSourceBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1, borderColor: ui.orange, borderRadius: 999, paddingVertical: 13, marginTop: 10 },
+  scanSourceText: { color: ui.orange, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
   shopInput: { flex: 1, borderWidth: 1, borderColor: ui.line, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10, fontFamily: 'Inter_500Medium', fontSize: 14, color: ui.text, backgroundColor: ui.soft },
   shopAddBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: ui.orange, alignItems: 'center', justifyContent: 'center' },
   row: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: ui.line },
