@@ -143,6 +143,13 @@ export default function Settings() {
   // kids page already compares this way.
   const childMembers = useMemo(() => members.filter((m) => m.role?.toLowerCase() === 'child'), [members]);
   const adultCount = Math.max(1, members.filter((m) => m.role?.toLowerCase() !== 'child').length);
+  // Adults with their own sign-in are the actual co-parents; PIN-only or
+  // placeholder adults don't count toward the "who parents with whom" line.
+  const coParents = useMemo(
+    () => members.filter((m) => m.role?.toLowerCase() !== 'child' && m.has_account),
+    [members],
+  );
+  const isCoParented = coParents.length >= 2;
   const planLabel = subscription?.plan === 'family_office' ? 'Family Office' : subscription?.plan === 'executive' ? 'Executive Family' : 'Village';
   const weeklyBrief = Boolean(entitlements?.weekly_brief || subscription?.limits?.weekly_brief);
   const initial = (user?.name?.[0] || 'C').toUpperCase();
@@ -528,6 +535,7 @@ export default function Settings() {
               testID="settings-household-toggle"
               tile={<IconTile bg={ui.orangeSoft}><Users color={ui.orange} size={18} /></IconTile>}
               title={t('set_manage_members')}
+              subtitle={isCoParented ? `${t('set_co_parents')}: ${coParents.map((m) => m.name).join(' & ')}` : undefined}
               right={<Chevron open={expandMembers} />}
               onPress={() => setExpandMembers((v) => !v)}
             />
@@ -535,7 +543,15 @@ export default function Settings() {
               <View style={styles.expandBox}>
                 {members.length === 0 ? <Text style={styles.emptyText}>{t('set_no_members_yet')}</Text> : members.map((m) => (
                   <View key={m.member_id} style={styles.inviteRow}>
-                    <MiniRow initial={m.name[0]?.toUpperCase()} name={m.name} sub={m.has_account ? `${m.role} · ${t('set_account')}` : m.role} />
+                    <MiniRow
+                      initial={m.name[0]?.toUpperCase()}
+                      name={m.name}
+                      sub={
+                        isCoParented && coParents.some((p) => p.member_id === m.member_id)
+                          ? `${t('set_co_parent')} · ${t('set_account')}`
+                          : m.has_account ? `${m.role} · ${t('set_account')}` : m.role
+                      }
+                    />
                     {!m.has_account ? (
                       <PressScale
                         testID={`remove-member-${m.member_id}`}
