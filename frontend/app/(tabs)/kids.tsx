@@ -702,6 +702,31 @@ export default function Kids() {
     }
   };
 
+  // One-off task for the child in front of you, without leaving the page.
+  // The Feed's add form always could assign to a kid; nobody found it from
+  // here. Completing the task awards the child 5 stars server-side.
+  const [showAssignTask, setShowAssignTask] = useState(false);
+  const [assignTitle, setAssignTitle] = useState('');
+  const [assigningTask, setAssigningTask] = useState(false);
+
+  // Plain function on purpose: the React Compiler memoizes it itself, and a
+  // manual useCallback here made it skip the whole component.
+  const assignTask = async () => {
+    const title = assignTitle.trim();
+    if (!title || !activeChild || assigningTask) return;
+    setAssigningTask(true);
+    try {
+      await api.createCard({ type: 'TASK', title, assignee: activeChild.name, shared: true });
+      setShowAssignTask(false);
+      setAssignTitle('');
+      showToast(t('kids_task_assigned', { name: activeChild.name }), 'success');
+    } catch (e: any) {
+      showToast(e?.message || t('vault_could_not_add_meal'), 'error');
+    } finally {
+      setAssigningTask(false);
+    }
+  };
+
   const doRedeem = useCallback(async (reward: Reward) => {
     if (!activeChild) return;
     if (starActionRef.current) return;
@@ -1033,6 +1058,15 @@ export default function Kids() {
                       <Text style={styles.redeemText}>{t('redeem')}</Text>
                     </PressScale>
                   </Card>
+                  <PressScale
+                    testID="kids-assign-task"
+                    accessibilityRole="button"
+                    onPress={() => setShowAssignTask(true)}
+                    style={styles.assignTaskBtn}
+                  >
+                    <Plus color={ui.orange} size={15} />
+                    <Text style={styles.assignTaskText}>{t('kids_assign_task', { name: activeChild.name })}</Text>
+                  </PressScale>
                   <Text style={styles.weeklyLine}>{weeklyLine}</Text>
 
                   {/* Tabs */}
@@ -1518,6 +1552,41 @@ export default function Kids() {
         </View>
       </KeyboardAwareBottomSheet>
 
+      {/* Assign a one-off task to the selected child */}
+      <KeyboardAwareBottomSheet visible={showAssignTask} onClose={() => setShowAssignTask(false)} contentStyle={styles.sheet}>
+        <View style={styles.sheetHeader}>
+          <Text style={styles.sheetTitle}>{activeChild ? t('kids_assign_task', { name: activeChild.name }) : ''}</Text>
+          <PressScale
+            accessibilityRole="button"
+            accessibilityLabel={t('close')}
+            onPress={() => setShowAssignTask(false)}
+            style={styles.iconBtn}
+          >
+            <X color={ui.text} size={20} />
+          </PressScale>
+        </View>
+        <TextInput
+          testID="assign-task-title"
+          value={assignTitle}
+          onChangeText={setAssignTitle}
+          placeholder={t('kids_assign_placeholder')}
+          placeholderTextColor={ui.muted}
+          style={styles.input}
+          autoFocus
+          onSubmitEditing={assignTask}
+        />
+        <Text style={styles.assignTaskHint}>{activeChild ? t('kids_assign_stars_note', { name: activeChild.name }) : ''}</Text>
+        <PressScale
+          testID="assign-task-save"
+          accessibilityRole="button"
+          onPress={assignTask}
+          disabled={!assignTitle.trim() || assigningTask}
+          style={[styles.saveBtn, (!assignTitle.trim() || assigningTask) && { opacity: 0.5 }]}
+        >
+          <Text style={styles.saveText}>{t('kids_assign_confirm')}</Text>
+        </PressScale>
+      </KeyboardAwareBottomSheet>
+
       <KeyboardAwareBottomSheet visible={showFixSheet} onClose={() => setShowFixSheet(false)} contentStyle={styles.sheet}>
         <View style={styles.sheetHeader}>
           <Text style={styles.sheetTitle}>{t('kids_fix_balance')}</Text>
@@ -1729,6 +1798,9 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   inlineLinkText: { color: ui.danger, fontFamily: 'Inter_700Bold', fontSize: 13 },
   walletCount: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 30, lineHeight: 35, marginTop: 1 },
   redeemBtn: { backgroundColor: ui.text, borderRadius: 99, paddingHorizontal: 20, paddingVertical: 13 },
+  assignTaskBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 8, paddingVertical: 10, borderRadius: 999, borderWidth: 1, borderColor: ui.orange, backgroundColor: ui.orangeSoft },
+  assignTaskText: { color: ui.orange, fontFamily: 'Inter_700Bold', fontSize: 13 },
+  assignTaskHint: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, marginTop: 8, marginBottom: 14, lineHeight: 18 },
   redeemText: { color: ui.bg, fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
   weeklyLine: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 13.5, marginTop: 12, paddingHorizontal: 2 },
 
