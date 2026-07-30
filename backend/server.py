@@ -1078,7 +1078,10 @@ def allowance_next_due(a: dict) -> datetime:
     than making a parent wait a week before the feature does anything.
     """
     days = ALLOWANCE_PERIOD_DAYS.get(a.get("frequency", "weekly"), 7)
-    since = a.get("last_paid_at") or a.get("created_at")
+    # ensure_aware_utc, not the raw value: Mongo hands back naive datetimes,
+    # utcnow() is aware, and comparing the two raises. This 500ed the very
+    # first time a real row — as opposed to a test fixture — went through.
+    since = ensure_aware_utc(a.get("last_paid_at") or a.get("created_at"))
     return since + timedelta(days=days) if a.get("last_paid_at") else since
 
 
