@@ -471,6 +471,36 @@ export default function Kitchen() {
     }
   }, [suggestions, addedSuggest, meals, mealLocked, promptUpgrade, showToast, t, sugKey]);
 
+  // "Ask the chef" on the recipe page: one bounded question, one short
+  // validated answer. State lives here so it clears with the page.
+  const [chefQuestion, setChefQuestion] = useState('');
+  const [chefAnswer, setChefAnswer] = useState<string | null>(null);
+  const [chefBusy, setChefBusy] = useState(false);
+
+  // Every way onto the recipe page goes through here, so a fresh recipe
+  // never inherits the previous one's chef conversation.
+  const openRecipe = useCallback((next: { recipeId: string | null; mealId?: string; title: string; addToDay?: string }) => {
+    setChefQuestion('');
+    setChefAnswer(null);
+    setCookingRecipe(next);
+  }, []);
+
+  const askChef = useCallback(async (q: string) => {
+    if (!cookingRecipe || chefBusy) return;
+    const question = q.trim();
+    if (question.length < 5) return;
+    setChefBusy(true);
+    setChefAnswer(null);
+    try {
+      const { answer } = await api.askChef(cookingRecipe.title, question, suggestLang);
+      setChefAnswer(answer);
+    } catch (e: any) {
+      showToast(e?.message || t('chef_failed'), 'error');
+    } finally {
+      setChefBusy(false);
+    }
+  }, [cookingRecipe, chefBusy, suggestLang, showToast, t]);
+
   const addMissingToList = useCallback(async (recipeId: string) => {
     const needed = recipeIngredients(recipeId, suggestLang);
     // The list stores amount-prefixed names ("600 g chicken"), so an exact
@@ -528,7 +558,7 @@ export default function Kitchen() {
 
   const generateRecipe = useCallback(async (meal: MealPlan) => {
     const title = localizedMealTitle(meal.recipe_id, meal.title, suggestLang);
-    setCookingRecipe({ recipeId: null, mealId: meal.meal_id, title });
+    openRecipe({ recipeId: null, mealId: meal.meal_id, title });
 
     // Already generated for this language, either this session or a previous one.
     const known = aiRecipes[meal.meal_id] || meal.ai_recipe?.[suggestLang];
@@ -548,7 +578,7 @@ export default function Kitchen() {
     } finally {
       setGeneratingFor(null);
     }
-  }, [aiRecipes, suggestLang, showToast, t]);
+  }, [aiRecipes, suggestLang, showToast, t, openRecipe]);
 
   // Closing a preview returns to the browser it came from (which was hidden
   // rather than dismissed — two stacked native modals misbehave on iOS);
@@ -884,7 +914,7 @@ export default function Kitchen() {
                           <PressScale
                             testID={`cook-${meal.meal_id}`}
                             accessibilityRole="button"
-                            onPress={() => setCookingRecipe({ recipeId: resolveRecipeId(meal.recipe_id, meal.title)!, title: localizedMealTitle(meal.recipe_id, meal.title, suggestLang) })}
+                            onPress={() => openRecipe({ recipeId: resolveRecipeId(meal.recipe_id, meal.title)!, title: localizedMealTitle(meal.recipe_id, meal.title, suggestLang) })}
                             hitSlop={8}
                             style={styles.cookLink}
                           >
@@ -1132,7 +1162,7 @@ export default function Kitchen() {
                 accessibilityLabel={r.title}
                 onPress={() => {
                   setShowBrowse(false);
-                  setCookingRecipe({ recipeId: r.id, title: r.title, addToDay: browseDay });
+                  openRecipe({ recipeId: r.id, title: r.title, addToDay: browseDay });
                 }}
                 style={{ flex: 1, minWidth: 0 }}
               >
@@ -1310,6 +1340,65 @@ export default function Kitchen() {
                         <Text style={styles.cookStepText}>{step}</Text>
                       </View>
                     ))}
+
+                    {/* The advisor half: substitutions, variations, timing.
+                        The question is free text but bounded — sanitised,
+                        length-capped and the answer validated server-side
+                        before it is shown. */}
+                    <Text style={styles.cookSectionTitle}>{t('chef_title')}</Text>
+                    <View style={styles.chefChips}>
+                      <PressScale
+                        testID="chef-chip-veg"
+                        accessibilityRole="button"
+                        onPress={() => askChef(t('chef_chip_veg'))}
+                        disabled={chefBusy}
+                        style={styles.chefChip}
+                      >
+                        <Text style={styles.chefChipText}>{t('chef_chip_veg')}</Text>
+                      </PressScale>
+                      <PressScale
+                        testID="chef-chip-faster"
+                        accessibilityRole="button"
+                        onPress={() => askChef(t('chef_chip_faster'))}
+                        disabled={chefBusy}
+                        style={styles.chefChip}
+                      >
+                        <Text style={styles.chefChipText}>{t('chef_chip_faster')}</Text>
+                      </PressScale>
+                    </View>
+                    <View style={styles.chefAskRow}>
+                      <TextInput
+                        testID="chef-input"
+                        value={chefQuestion}
+                        onChangeText={setChefQuestion}
+                        placeholder={t('chef_placeholder')}
+                        placeholderTextColor={ui.muted}
+                        style={[styles.shopInput, { flex: 1 }]}
+                        maxLength={120}
+                        autoCorrect={false}
+                        onSubmitEditing={() => askChef(chefQuestion)}
+                      />
+                      <PressScale
+                        testID="chef-ask"
+                        accessibilityRole="button"
+                        accessibilityLabel={t('chef_title')}
+                        onPress={() => askChef(chefQuestion)}
+                        disabled={chefBusy}
+                        style={styles.chefAskBtn}
+                      >
+                        {chefBusy ? (
+                          <ActivityIndicator color="#fff" size="small" />
+                        ) : (
+                          <Sparkles color="#fff" size={16} />
+                        )}
+                      </PressScale>
+                    </View>
+                    {chefAnswer ? (
+                      <View testID="chef-answer" style={styles.chefAnswer}>
+                        <Text style={styles.chefAnswerText}>{chefAnswer}</Text>
+                        <Text style={styles.chefAnswerNote}>{t('cook_ai_note')}</Text>
+                      </View>
+                    ) : null}
 
                     {/* Stated every time rather than once: the person cooking may not
                         be the parent who planned the week. */}
@@ -1569,6 +1658,14 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   recipeLoadingText: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 14 },
   recipeAddBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginHorizontal: 26, marginBottom: 14, paddingVertical: 15, borderRadius: 999, backgroundColor: ui.orange },
   recipeAddText: { color: '#fff', fontFamily: 'Inter_700Bold', fontSize: 15 },
+  chefChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
+  chefChip: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, backgroundColor: ui.soft, borderWidth: 1, borderColor: ui.line },
+  chefChipText: { color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 13 },
+  chefAskRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  chefAskBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: ui.orange, alignItems: 'center', justifyContent: 'center' },
+  chefAnswer: { backgroundColor: ui.soft, borderRadius: 14, padding: 14, marginTop: 12 },
+  chefAnswerText: { color: ui.text, fontFamily: 'Inter_500Medium', fontSize: 15, lineHeight: 22 },
+  chefAnswerNote: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 8, fontStyle: 'italic' },
   browseDayRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
   browseDayChip: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, backgroundColor: ui.soft },
   browseDayChipActive: { backgroundColor: ui.orange },

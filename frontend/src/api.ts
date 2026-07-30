@@ -1030,6 +1030,11 @@ export const api = {
       `/meals/${mealId}/recipe?lang=${encodeURIComponent(lang)}`,
       { method: 'POST' },
     ),
+  askChef: (title: string, question: string, lang: string) =>
+    request<{ answer: string }>(`/recipes/chef?lang=${encodeURIComponent(lang)}`, {
+      method: 'POST',
+      body: { title, question },
+    }),
   syncMealsToShopping: () => request<{ ok: boolean; added: number }>('/meals/sync-shopping', { method: 'POST' }),
   saveMealPlan: (name: string) => request<SavedMealPlan>('/meals/save', { method: 'POST', body: { name } }),
   listSavedPlans: () => request<SavedMealPlan[]>('/meals/saved'),
