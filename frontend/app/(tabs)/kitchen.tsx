@@ -227,6 +227,69 @@ export default function Kitchen() {
     }
   }, [scanItems, scanAdding, showToast, t]);
 
+  // ── Capture a printed recipe into the planner ──
+  // Same posture as the list scan: the photo produces a reviewable recipe,
+  // and committing it re-validates everything server-side.
+  type Captured = { title: string; minutes: number; servings: number; ingredients: AiIngredient[]; steps: string[] };
+  const [showCapture, setShowCapture] = useState(false);
+  const [capturePhase, setCapturePhase] = useState<'idle' | 'reading' | 'review'>('idle');
+  const [captureError, setCaptureError] = useState<string | null>(null);
+  const [captured, setCaptured] = useState<Captured | null>(null);
+  const [captureDay, setCaptureDay] = useState('monday');
+  const [captureAdding, setCaptureAdding] = useState(false);
+
+  const openCapture = useCallback(() => {
+    setCapturePhase('idle');
+    setCaptureError(null);
+    setCaptured(null);
+    setShowCapture(true);
+  }, []);
+
+  const pickCapture = useCallback(async (source: 'camera' | 'library') => {
+    setCaptureError(null);
+    try {
+      if (Platform.OS !== 'web') {
+        if (source === 'camera') {
+          const p = await ImagePicker.requestCameraPermissionsAsync();
+          if (!p.granted) throw new Error(t('cam_camera_permission_denied'));
+        } else {
+          const p = await ImagePicker.requestMediaLibraryPermissionsAsync();
+          if (!p.granted) throw new Error(t('cam_gallery_permission_denied'));
+        }
+      }
+      const res = source === 'camera'
+        ? await ImagePicker.launchCameraAsync({ base64: true, quality: 0.55, mediaTypes: ImagePicker.MediaTypeOptions.Images })
+        : await ImagePicker.launchImageLibraryAsync({ base64: true, quality: 0.55, mediaTypes: ImagePicker.MediaTypeOptions.Images });
+      if (res.canceled || !res.assets?.[0]) return;
+      const asset = res.assets[0];
+      const base64 = asset.base64 ?? (asset.uri?.startsWith('data:') ? asset.uri.split(',')[1] : null);
+      if (!base64) return;
+
+      setCapturePhase('reading');
+      const { captured: recipe } = await api.captureRecipe(base64);
+      setCaptured(recipe);
+      setCapturePhase('review');
+    } catch (e: any) {
+      setCapturePhase('idle');
+      setCaptureError(e?.message || t('capture_failed'));
+    }
+  }, [t]);
+
+  const addCapturedMeal = useCallback(async () => {
+    if (!captured || captureAdding) return;
+    setCaptureAdding(true);
+    try {
+      const created = await api.addMealFromCapture(captureDay, captured, suggestLang);
+      setMeals((prev) => [...prev, created]);
+      setShowCapture(false);
+      showToast(`1 ${t('kitchen_meals_added')}`, 'success');
+    } catch (e: any) {
+      showToast(e?.message || t('vault_could_not_add_meal'), 'error');
+    } finally {
+      setCaptureAdding(false);
+    }
+  }, [captured, captureAdding, captureDay, suggestLang, showToast, t]);
+
   const addShopItem = useCallback(async () => {
     // "milk, eggs, bread" (or one per line) adds them all in one tap.
     const names = shopInput.split(/[,;\n]/).map((s) => s.trim()).filter(Boolean);
@@ -630,7 +693,9 @@ export default function Kitchen() {
   }, [mealLocked, promptUpgrade, suggestLang, showToast, t]);
 
   const generateRecipe = useCallback(async (meal: MealPlan) => {
-    const title = localizedMealTitle(meal.recipe_id, meal.title, suggestLang);
+    // A meal with its own recipe keeps its own name — no library aliasing.
+    const hasOwn = !!meal.ai_recipe && Object.keys(meal.ai_recipe).length > 0;
+    const title = hasOwn ? meal.title : localizedMealTitle(meal.recipe_id, meal.title, suggestLang);
     openRecipe({ recipeId: null, mealId: meal.meal_id, title });
 
     // Already generated for this language, either this session or a previous one.
@@ -977,25 +1042,47 @@ export default function Kitchen() {
                   <BookOpen color={ui.text} size={14} />
                   <Text style={[styles.clearBtnText, { color: ui.text }]}>{t('browse_recipes')}</Text>
                 </PressScale>
+                <PressScale testID="capture-recipe" onPress={openCapture} style={[styles.clearBtn, { backgroundColor: ui.orangeSoft, borderWidth: 1, borderColor: ui.orange }]}>
+                  <Camera color={ui.orange} size={14} />
+                  <Text style={[styles.clearBtnText, { color: ui.orange }]}>{t('capture_chip')}</Text>
+                </PressScale>
                 <PressScale onPress={() => setShowMealAdd(true)} style={[styles.clearBtn, { backgroundColor: ui.lavender }]}>
                   <Text style={[styles.clearBtnText, { color: ui.lavenderText }]}>{t('vault_add_short')}</Text>
                 </PressScale>
               </View>
             ) : null}
+            {/* The legend for the camera — same rule as the shopping page:
+                one line saying exactly what it does. */}
+            {!mealLocked ? <Text style={styles.scanHint}>{t('capture_hint')}</Text> : null}
 
             <View style={styles.card}>
               {DAYS.filter((d) => (mealsByDay[d] || []).length > 0).map((day) => (
                 <View key={day}>
                   <Text style={styles.mealDayLabel}>{t(`day_${day}`)}</Text>
-                  {mealsByDay[day].map((meal) => (
+                  {mealsByDay[day].map((meal) => {
+                    // A meal carrying its own recipe (captured from a photo,
+                    // or AI-written) is authoritative: never alias it to a
+                    // library dish that happens to share the name — the
+                    // family wants THEIR version, not ours.
+                    const hasOwnRecipe = !!meal.ai_recipe && Object.keys(meal.ai_recipe).length > 0;
+                    return (
                     <View key={meal.meal_id} style={styles.row}>
                       <View style={{ flex: 1 }}>
-                        <Text style={styles.rowText}>{localizedMealTitle(meal.recipe_id, meal.title, suggestLang)}</Text>
-                        {meal.ingredients.length > 0 ? <Text style={styles.rowCat}>{localizedMealIngredients(meal.recipe_id, meal.ingredients, suggestLang, meal.title).join(', ')}</Text> : null}
-                        {/* Only offered where we actually have a method — a dead
-                            button on a meal the parent typed themselves is worse
-                            than no button. */}
-                        {recipeMethod(resolveRecipeId(meal.recipe_id, meal.title), suggestLang) ? (
+                        <Text style={styles.rowText}>{hasOwnRecipe ? meal.title : localizedMealTitle(meal.recipe_id, meal.title, suggestLang)}</Text>
+                        {meal.ingredients.length > 0 ? <Text style={styles.rowCat}>{hasOwnRecipe ? meal.ingredients.join(', ') : localizedMealIngredients(meal.recipe_id, meal.ingredients, suggestLang, meal.title).join(', ')}</Text> : null}
+                        {hasOwnRecipe ? (
+                          <PressScale
+                            testID={`cook-own-${meal.meal_id}`}
+                            accessibilityRole="button"
+                            onPress={() => generateRecipe(meal)}
+                            disabled={generatingFor === meal.meal_id}
+                            hitSlop={8}
+                            style={styles.cookLink}
+                          >
+                            <ChefHat color={ui.orange} size={13} />
+                            <Text style={styles.cookLinkText}>{t('cook_it')}</Text>
+                          </PressScale>
+                        ) : recipeMethod(resolveRecipeId(meal.recipe_id, meal.title), suggestLang) ? (
                           <PressScale
                             testID={`cook-${meal.meal_id}`}
                             accessibilityRole="button"
@@ -1033,7 +1120,8 @@ export default function Kitchen() {
                         <Trash2 color={ui.muted} size={15} />
                       </PressScale>
                     </View>
-                  ))}
+                    );
+                  })}
                 </View>
               ))}
               {meals.length === 0 ? (
@@ -1632,6 +1720,119 @@ export default function Kitchen() {
         )}
       </KeyboardAwareBottomSheet>
 
+      {/* Capture a printed recipe — review it in full, then commit to a day */}
+      <KeyboardAwareBottomSheet
+        visible={showCapture}
+        onClose={() => setShowCapture(false)}
+        contentStyle={styles.sheet}
+        footer={capturePhase === 'review' && captured ? (
+          <PressScale
+            testID="capture-add"
+            accessibilityRole="button"
+            onPress={addCapturedMeal}
+            disabled={captureAdding}
+            style={[styles.suggestAllBtn, captureAdding && { opacity: 0.5 }]}
+          >
+            <Text style={styles.suggestAllText}>
+              {t('browse_add_to_day')} {t(`day_${captureDay}`)}
+            </Text>
+          </PressScale>
+        ) : undefined}
+      >
+        <View style={styles.sheetHeader}>
+          <Text style={styles.sheetTitle}>{t('capture_title')}</Text>
+          <PressScale
+            accessibilityRole="button"
+            accessibilityLabel={t('close')}
+            onPress={() => setShowCapture(false)}
+            style={styles.iconBtn}
+          >
+            <X color={ui.text} size={20} />
+          </PressScale>
+        </View>
+
+        {capturePhase === 'reading' ? (
+          <View style={{ alignItems: 'center', paddingVertical: 40, gap: 14 }}>
+            <ActivityIndicator color={ui.orange} size="large" />
+            <Text style={styles.suggestSub}>{t('capture_reading')}</Text>
+          </View>
+        ) : capturePhase === 'review' && captured ? (
+          <>
+            <Text style={styles.captureTitle}>{captured.title}</Text>
+            <View style={styles.cookMeta}>
+              <Clock color={ui.muted} size={13} />
+              <Text style={styles.cookMetaText}>
+                {t('cook_minutes', { n: captured.minutes })} · {t('recipe_steps_n', { n: captured.steps.length })}
+              </Text>
+            </View>
+
+            <Text style={styles.cookSectionTitle}>{t('cook_you_need')}</Text>
+            {captured.ingredients.map((ing, idx) => {
+              const qty = formatAiQuantity(ing, captured.servings, captured.servings, suggestLang);
+              return (
+                <View key={idx} style={styles.qtyRow}>
+                  <Text style={styles.qtyName}>{ing.name}</Text>
+                  {qty ? <Text style={styles.qtyAmount}>{qty}</Text> : null}
+                </View>
+              );
+            })}
+
+            <Text style={styles.cookSectionTitle}>{t('cook_method')}</Text>
+            {captured.steps.map((step, i) => (
+              <View key={i} style={styles.cookStep}>
+                <View style={styles.cookStepNum}>
+                  <Text style={styles.cookStepNumText}>{i + 1}</Text>
+                </View>
+                <Text style={styles.cookStepText}>{step}</Text>
+              </View>
+            ))}
+
+            <Text style={styles.cookSectionTitle}>{t('vault_day')}</Text>
+            <View style={styles.browseDayRow}>
+              {DAYS.map((d) => (
+                <PressScale
+                  key={d}
+                  testID={`capture-day-${d}`}
+                  onPress={() => setCaptureDay(d)}
+                  style={[styles.browseDayChip, captureDay === d && styles.browseDayChipActive]}
+                >
+                  <Text style={[styles.browseDayText, captureDay === d && styles.browseDayTextActive]}>
+                    {t(`day_${d}`)}
+                  </Text>
+                </PressScale>
+              ))}
+            </View>
+
+            <PressScale
+              accessibilityRole="button"
+              onPress={() => { setCapturePhase('idle'); setCaptured(null); }}
+              style={styles.scanRetake}
+            >
+              <Text style={styles.scanRetakeText}>{t('scan_retake')}</Text>
+            </PressScale>
+            <View style={styles.cookAllergen}>
+              <AlertTriangle color={ui.muted} size={14} />
+              <Text style={styles.cookAllergenText}>
+                {`${t('capture_note')} ${t('cook_allergen_note')}`}
+              </Text>
+            </View>
+          </>
+        ) : (
+          <>
+            <Text style={styles.suggestSub}>{t('capture_hint')}</Text>
+            {captureError ? <Text style={styles.scanError}>{captureError}</Text> : null}
+            <PressScale testID="capture-camera" accessibilityRole="button" onPress={() => pickCapture('camera')} style={styles.scanSourceBtn}>
+              <Camera color={ui.orange} size={18} />
+              <Text style={styles.scanSourceText}>{t('scan_take')}</Text>
+            </PressScale>
+            <PressScale testID="capture-gallery" accessibilityRole="button" onPress={() => pickCapture('library')} style={styles.scanSourceBtn}>
+              <ImageIcon color={ui.orange} size={18} />
+              <Text style={styles.scanSourceText}>{t('scan_gallery')}</Text>
+            </PressScale>
+          </>
+        )}
+      </KeyboardAwareBottomSheet>
+
       {/* Suggest a week of meals from your shopping */}
       <KeyboardAwareBottomSheet
         visible={showSuggest}
@@ -1780,6 +1981,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   scanError: { color: '#E8746A', fontFamily: 'Inter_500Medium', fontSize: 13, marginBottom: 10 },
   scanSourceBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1, borderColor: ui.orange, borderRadius: 999, paddingVertical: 13, marginTop: 10 },
   scanSourceText: { color: ui.orange, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
+  captureTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 22, letterSpacing: -0.4, lineHeight: 27 },
   shopInput: { flex: 1, borderWidth: 1, borderColor: ui.line, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10, fontFamily: 'Inter_500Medium', fontSize: 14, color: ui.text, backgroundColor: ui.soft },
   shopAddBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: ui.orange, alignItems: 'center', justifyContent: 'center' },
   row: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: ui.line },
