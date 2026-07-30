@@ -4,10 +4,10 @@ import {
   KeyboardAvoidingView,
   Modal,
   Platform,
+  Pressable,
   ScrollView,
   StyleProp,
   StyleSheet,
-  TouchableWithoutFeedback,
   View,
   ViewStyle,
 } from 'react-native';
@@ -46,6 +46,7 @@ export default function KeyboardAwareBottomSheet({
   const scroll = (
     <ScrollView
       keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
       contentContainerStyle={[
         styles.content,
         { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder },
@@ -64,24 +65,33 @@ export default function KeyboardAwareBottomSheet({
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={keyboardVerticalOffset}
       >
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
-          <View style={[styles.backdrop, backdropStyle]}>
-            {scroll}
-            {footer ? (
-              // Pinned as an overlay at the very bottom of the screen, over the
-              // sheet, so the primary action stays visible however long the
-              // list is — without touching the scroll layout at all.
-              <View
-                style={[
-                  styles.footer,
-                  { backgroundColor: theme.colors.card, borderTopColor: theme.colors.cardBorder },
-                ]}
-              >
-                {footer}
-              </View>
-            ) : null}
-          </View>
-        </TouchableWithoutFeedback>
+        <View style={[styles.backdrop, backdropStyle]}>
+          {/* Keyboard dismissal must NOT wrap the sheet: a Touchable around a
+              ScrollView claims the JS responder on touch start, and on Android
+              that blocks the native scroller from ever taking the gesture —
+              every tall sheet froze. The dismiss target is an underlay behind
+              the sheet instead (taps on the dark area only), and dragging the
+              list dismisses the keyboard via keyboardDismissMode. */}
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={Keyboard.dismiss}
+            accessible={false}
+          />
+          {scroll}
+          {footer ? (
+            // Pinned as an overlay at the very bottom of the screen, over the
+            // sheet, so the primary action stays visible however long the
+            // list is — without touching the scroll layout at all.
+            <View
+              style={[
+                styles.footer,
+                { backgroundColor: theme.colors.card, borderTopColor: theme.colors.cardBorder },
+              ]}
+            >
+              {footer}
+            </View>
+          ) : null}
+        </View>
       </KeyboardAvoidingView>
     </Modal>
   );

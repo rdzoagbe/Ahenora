@@ -8,7 +8,7 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
-  TouchableWithoutFeedback,
+  Pressable,
   Keyboard,
   Alert,
 } from 'react-native';
@@ -181,8 +181,12 @@ export function AddCardModal({
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.container}
       >
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-          <View style={[styles.sheet, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder, shadowColor: theme.colors.shadow, paddingBottom: 16 + Math.max(insets.bottom, 14) }]}> 
+        {/* Keyboard dismissal must not wrap the sheet: a Touchable around a
+            ScrollView claims the JS responder on touch start, and on Android
+            that blocks the native scroller — the form froze once it grew
+            taller than the screen. Underlay tap + drag-to-dismiss instead. */}
+        <Pressable style={StyleSheet.absoluteFill} onPress={Keyboard.dismiss} accessible={false} />
+        <View style={[styles.sheet, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder, shadowColor: theme.colors.shadow, paddingBottom: 16 + Math.max(insets.bottom, 14) }]}> 
             <View style={styles.header}>
               <Text style={[styles.heading, { color: theme.colors.text }]}>{t('add_card')}</Text>
               <PressScale
@@ -192,7 +196,7 @@ export function AddCardModal({
               </PressScale>
             </View>
 
-            <ScrollView style={{ flexShrink: 1 }} keyboardShouldPersistTaps="handled">
+            <ScrollView style={{ flexShrink: 1 }} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
               {initialDraft?.transcript ? (
                 <View style={[styles.transcriptBox, { backgroundColor: theme.colors.accentSoft, borderColor: theme.colors.cardBorder }]}> 
                   <Text style={[styles.transcriptLabel, { color: theme.colors.textMuted }]}>{t('transcript')}</Text>
@@ -365,8 +369,7 @@ export function AddCardModal({
                 <Text style={[styles.cancelText, { color: theme.colors.textMuted }]}>{t('cancel')}</Text>
               </PressScale>
             </View>
-          </View>
-        </TouchableWithoutFeedback>
+        </View>
       </KeyboardAvoidingView>
     </Modal>
   );

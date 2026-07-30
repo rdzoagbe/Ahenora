@@ -1443,15 +1443,15 @@ export default function Kitchen() {
                   accessibilityLabel={t('close')} onPress={() => setShowMealAdd(false)} style={styles.iconBtn}><X color={ui.text} size={20} /></PressScale>
         </View>
         <Text style={styles.label}>{t('vault_day')}</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            {DAYS.map((d) => (
-              <PressScale key={d} onPress={() => setMealDay(d)} style={[styles.mealDayChip, mealDay === d && styles.mealDayChipActive]}>
-                <Text style={[styles.mealDayChipText, mealDay === d && styles.mealDayChipTextActive]}>{t(`day_${d}`).slice(0, 3)}</Text>
-              </PressScale>
-            ))}
-          </View>
-        </ScrollView>
+        {/* A wrapping row, not a horizontal ScrollView — nested scrollers
+            freeze the sheet on Android, and wrapping shows all seven days. */}
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
+          {DAYS.map((d) => (
+            <PressScale key={d} onPress={() => setMealDay(d)} style={[styles.mealDayChip, mealDay === d && styles.mealDayChipActive]}>
+              <Text style={[styles.mealDayChipText, mealDay === d && styles.mealDayChipTextActive]}>{t(`day_${d}`).slice(0, 3)}</Text>
+            </PressScale>
+          ))}
+        </View>
         <Text style={styles.label}>{t('vault_meal')}</Text>
         <TextInput value={mealTitle} onChangeText={setMealTitle} placeholder={t('vault_meal_title_placeholder')} placeholderTextColor={ui.muted} style={styles.input} />
         <Text style={styles.label}>{t('vault_ingredients_label')}</Text>
