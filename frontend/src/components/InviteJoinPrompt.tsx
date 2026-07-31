@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Modal, Platform, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Modal, Platform, StyleSheet, Text, View } from 'react-native';
 import * as Linking from 'expo-linking';
 import { UserPlus } from 'lucide-react-native';
 import { useStore } from '../store';
@@ -21,6 +21,7 @@ export function InviteJoinPrompt() {
   const [inviterName, setInviterName] = useState('');
   const [busy, setBusy] = useState(false);
   const [joined, setJoined] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const checked = useRef(false);
 
   useEffect(() => {
@@ -97,6 +98,7 @@ export function InviteJoinPrompt() {
   const accept = async () => {
     if (!token || busy) return;
     setBusy(true);
+    setError(null);
     try {
       await api.acceptInvite(token);
       clearStoredInvite();
@@ -105,9 +107,23 @@ export function InviteJoinPrompt() {
       refreshSubscription();
       setTimeout(() => setToken(null), 1800);
     } catch (e: any) {
-      logger.warn('invite accept failed', e?.message || e);
+      const raw = String(e?.message || '');
+      logger.warn('invite accept failed', raw || e);
+      // An invite this user already accepted is a success, not a failure —
+      // the family switch happened on the first tap.
+      if (raw.startsWith('409')) {
+        clearStoredInvite();
+        setJoined(true);
+        await refreshUser().catch(() => undefined);
+        refreshSubscription();
+        setTimeout(() => setToken(null), 1800);
+        return;
+      }
+      // Anything else stays on screen with a retry: a silent close reads
+      // as "nothing happened" and hides the actual problem.
       setBusy(false);
-      dismiss();
+      const detail = raw.match(/\{.*"detail"\s*:\s*"([^"]+)"/)?.[1];
+      setError(detail || t('invite_join_error'));
     }
   };
 
@@ -129,17 +145,33 @@ export function InviteJoinPrompt() {
                 {t('invite_join_q').replace('{name}', inviterName)}
               </Text>
               <Text style={[styles.note, { color: c.textSoft }]}>{t('invite_join_note')}</Text>
+              {error ? (
+                <Text style={[styles.note, { color: '#EF4444', marginTop: 10 }]}>{error}</Text>
+              ) : null}
               <PressScale
                 testID="invite-join-accept"
                 onPress={accept}
                 disabled={busy}
-                style={[styles.primaryBtn, { backgroundColor: c.accent, opacity: busy ? 0.6 : 1 }]}
+                accessibilityRole="button"
+                accessibilityLabel={t('invite_join_cta')}
+                style={[styles.primaryBtn, { backgroundColor: c.accent, opacity: busy ? 0.7 : 1 }]}
               >
-                <Text style={[styles.primaryBtnText, { color: c.primaryText }]}>
-                  {busy ? '…' : t('invite_join_cta')}
-                </Text>
+                {busy ? (
+                  <ActivityIndicator color={c.primaryText} size="small" />
+                ) : (
+                  <Text style={[styles.primaryBtnText, { color: c.primaryText }]}>
+                    {error ? t('invite_join_retry') : t('invite_join_cta')}
+                  </Text>
+                )}
               </PressScale>
-              <PressScale testID="invite-join-later" onPress={dismiss} disabled={busy} style={styles.ghostBtn}>
+              <PressScale
+                testID="invite-join-later"
+                onPress={dismiss}
+                disabled={busy}
+                accessibilityRole="button"
+                accessibilityLabel={t('invite_join_later')}
+                style={styles.ghostBtn}
+              >
                 <Text style={[styles.ghostBtnText, { color: c.textSoft }]}>{t('invite_join_later')}</Text>
               </PressScale>
             </>
