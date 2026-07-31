@@ -1824,7 +1824,10 @@ async def health():
         start = utcnow()
         await asyncio.wait_for(db.command("ping"), timeout=5)
         elapsed_ms = int((utcnow() - start).total_seconds() * 1000)
-        return {"status": "ok", "database": "ok", "db_latency_ms": elapsed_ms}
+        # invite_flow is a deploy marker: proves which invite generation this
+        # running process carries when a user-side failure needs diagnosing.
+        return {"status": "ok", "database": "ok", "db_latency_ms": elapsed_ms,
+                "invite_flow": "v4"}
     except (asyncio.TimeoutError, Exception) as exc:  # noqa: B014 - report any failure
         log.warning("Health check database ping failed: %s", exc)
         return JSONResponse(status_code=503, content={"status": "error", "database": "unreachable"})
@@ -2087,7 +2090,15 @@ async def _accept_invite_for_user(database, user: dict, invite: Optional[dict], 
                 "updated_at": utcnow(),
             }},
         )
-        await notify_invite_accepted(database, invite, user.get("name") or email)
+        # Bounded: the join must never hang on push delivery. Five seconds is
+        # plenty for exp.host; past that the inviter just misses one push.
+        try:
+            await asyncio.wait_for(
+                notify_invite_accepted(database, invite, user.get("name") or email),
+                timeout=5.0,
+            )
+        except Exception as exc:
+            log.warning("invite acceptance notification skipped: %s", exc)
     return user, joined
 
 
@@ -2874,7 +2885,15 @@ async def family_invite_accept(payload: InviteAcceptIn, user=Depends(require_use
     )
     if not invite:
         raise HTTPException(status_code=404, detail="Invite not found")
-    fresh, joined = await _accept_invite_for_user(database, user, invite, target_family_id)
+    try:
+        fresh, joined = await _accept_invite_for_user(database, user, invite, target_family_id)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        # A plain-text 500 reaches the join card as an unreadable mystery;
+        # a JSON detail is shown to the user verbatim and names the problem.
+        log.exception("invite accept failed")
+        raise HTTPException(status_code=500, detail=f"Join failed: {exc}")
     return {"ok": True, "joined": joined, "user": public_user(fresh)}
 
 
