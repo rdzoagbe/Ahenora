@@ -1,0 +1,54 @@
+name: Production smoke test
+
+# Runs the real invite journey against production after every merge to main
+# (waiting for Railway to finish deploying), on a schedule, and on demand.
+# Requires the SMOKE_PASSWORD repository secret.
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "23 5,17 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: prod-smoke
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check secret
+        id: secret
+        env:
+          SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
+        run: |
+          if [ -z "$SMOKE_PASSWORD" ]; then
+            echo "::warning::SMOKE_PASSWORD secret is not set — production smoke test skipped. Add it under Settings → Secrets and variables → Actions."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Wait for Railway deploy to settle
+        if: steps.secret.outputs.present == 'true' && github.event_name == 'push'
+        run: sleep 180
+
+      - name: Run smoke test against production
+        if: steps.secret.outputs.present == 'true'
+        env:
+          SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
+        run: |
+          # The deploy marker in the checked-out code is what production must
+          # be running before the journey is exercised (push events only —
+          # scheduled runs test whatever is live).
+          if [ "${{ github.event_name }}" = "push" ]; then
+            EXPECTED=$(grep -o '"invite_flow": "[^"]*"' backend/server.py | head -1 | cut -d'"' -f4)
+            export EXPECTED_INVITE_FLOW="$EXPECTED"
+            echo "Expecting deploy marker: $EXPECTED"
+          fi
+          python3 scripts/prod_smoke.py

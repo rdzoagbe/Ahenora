@@ -1833,6 +1833,89 @@ async def health():
         return JSONResponse(status_code=503, content={"status": "error", "database": "unreachable"})
 
 
+class ClientErrorIn(BaseModel):
+    endpoint: str
+    method: Optional[str] = None
+    status: Optional[int] = None
+    message: Optional[str] = None
+    platform: Optional[str] = None
+
+
+@app.post("/api/telemetry/client-error")
+async def report_client_error(payload: ClientErrorIn, user=Depends(require_user)):
+    """Failed requests phone home, so silent breakage stops being silent.
+
+    The invite-accept bug lived on a family iPhone for days and was reported
+    by screenshot; this records the same facts automatically. Clients only
+    send network-level failures and 5xx — semantic 4xx already surface in
+    their own UI.
+    """
+    database = get_db()
+    await database["client_errors"].insert_one({
+        "error_id": new_id("cerr"),
+        "user_id": user["user_id"],
+        "family_id": user.get("family_id"),
+        "name": user.get("name"),
+        "endpoint": str(payload.endpoint)[:120],
+        "method": (payload.method or "")[:8],
+        "status": payload.status,
+        "message": (payload.message or "")[:300],
+        "platform": (payload.platform or "")[:20],
+        "created_at": utcnow(),
+    })
+    # Bounded retention: two weeks is plenty for diagnosis.
+    await database["client_errors"].delete_many(
+        {"created_at": {"$lt": utcnow() - timedelta(days=14)}}
+    )
+    return {"ok": True}
+
+
+@app.get("/api/telemetry/client-errors")
+async def list_client_errors(user=Depends(require_user)):
+    if not is_admin_user(user):
+        raise HTTPException(status_code=403, detail="Admin only")
+    database = get_db()
+    rows = []
+    cursor = database["client_errors"].find({}, {"_id": 0}).sort("created_at", -1).limit(50)
+    async for item in cursor:
+        item["created_at"] = iso(item.get("created_at"))
+        rows.append(item)
+    return rows
+
+
+# Synthetic accounts used by the post-deploy production smoke test. Only
+# emails under this reserved pattern can self-destruct; a real user cannot
+# match it by accident, and matching it on purpose only deletes yourself.
+_SMOKE_EMAIL_RE = re.compile(r"^smoke-[a-z0-9\-]+@household-coo\.smoke$")
+
+
+class SmokeCleanupIn(BaseModel):
+    # Families this account created and abandoned (its pre-join solo family);
+    # deleted only if actually empty by the time everything above is gone.
+    family_ids: Optional[list] = None
+
+
+@app.post("/api/auth/smoke-cleanup")
+async def smoke_cleanup(payload: Optional[SmokeCleanupIn] = Body(None), user=Depends(require_user)):
+    """Self-deletion for smoke-test accounts, so repeated production runs
+    leave no residue (members, invites, sessions, tokens, user, empty family)."""
+    database = get_db()
+    email = (user.get("email") or "").strip().lower()
+    if not _SMOKE_EMAIL_RE.match(email):
+        raise HTTPException(status_code=403, detail="Not a smoke-test account")
+    uid = user["user_id"]
+    await database["family_members"].delete_many({"user_id": uid})
+    await database["family_invites"].delete_many({"email": email})
+    await database["user_sessions"].delete_many({"user_id": uid})
+    await database["notification_tokens"].delete_many({"user_id": uid})
+    await database["users"].delete_many({"user_id": uid})
+    for fid in ((payload.family_ids if payload else None) or [])[:5]:
+        remaining = await database["family_members"].find_one({"family_id": fid}, {"_id": 0})
+        if remaining is None:
+            await database["families"].delete_many({"family_id": fid})
+    return {"ok": True}
+
+
 @app.get("/api/health/config")
 async def health_config(user=Depends(require_user)):
     """Admin-only configuration inventory (was previously public on `/`)."""

@@ -73,6 +73,8 @@ export default function Settings() {
   const [inviteError, setInviteError] = useState(false);
   const [lastInviteUrl, setLastInviteUrl] = useState<string | null>(null);
   const [pinMember, setPinMember] = useState<FamilyMember | null>(null);
+  const [expandClientErrors, setExpandClientErrors] = useState(false);
+  const [clientErrors, setClientErrors] = useState<Awaited<ReturnType<typeof api.listClientErrors>>>([]);
   const [notificationPrefs, setNotificationPrefs] = useState<NotificationSettings>({ card_reminders: false, new_card_alerts: false });
   const [notificationStatus, setNotificationStatus] = useState<string | null>(null);
   const [savingNotifications, setSavingNotifications] = useState(false);
@@ -773,6 +775,40 @@ export default function Settings() {
                 subtitle="Active users & feature usage (admin)"
                 onPress={() => router.push('/metrics')}
               />
+            ) : null}
+
+            {user?.is_admin ? (
+              <>
+                <NavRow
+                  testID="settings-client-errors"
+                  tile={<IconTile bg={ui.orangeSoft}><RotateCcw color={ui.orange} size={18} /></IconTile>}
+                  title="Device errors"
+                  subtitle="Failed requests from family devices (admin)"
+                  right={<Chevron open={expandClientErrors} />}
+                  onPress={() => {
+                    setExpandClientErrors((v) => !v);
+                    if (!expandClientErrors) {
+                      api.listClientErrors().then(setClientErrors).catch(() => setClientErrors([]));
+                    }
+                  }}
+                />
+                {expandClientErrors ? (
+                  <View style={styles.expandBox}>
+                    {clientErrors.length === 0 ? (
+                      <Text style={styles.emptyText}>No device errors recorded.</Text>
+                    ) : clientErrors.map((e) => (
+                      <View key={e.error_id} style={{ paddingVertical: 6 }}>
+                        <Text style={styles.ghostBtnText}>
+                          {`${e.name || '?'} · ${e.platform || '?'} · ${e.method || ''} ${e.endpoint}${e.status ? ` · ${e.status}` : ''}`}
+                        </Text>
+                        <Text style={[styles.emptyText, { marginTop: 2 }]} numberOfLines={2}>
+                          {`${(e.created_at || '').replace('T', ' ').slice(0, 16)} — ${e.message || ''}`}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
+              </>
             ) : null}
 
             <NavRow

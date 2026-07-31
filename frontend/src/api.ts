@@ -89,6 +89,39 @@ export function setUnauthorizedHandler(fn: (() => void) | null) {
   unauthorizedHandler = fn;
 }
 
+// Failed requests phone home (network failures and 5xx only) so breakage on
+// a family device is visible to the admin without a screenshot relay. Plain
+// fetch — going through request() could recurse; throttled; never throws.
+let errorReportTimes: number[] = [];
+function reportClientError(path: string, method: string, status: number | undefined, message: string) {
+  try {
+    if (path.startsWith('/telemetry')) return;
+    const now = Date.now();
+    errorReportTimes = errorReportTimes.filter((t) => now - t < 60_000);
+    if (errorReportTimes.length >= 5) return;
+    errorReportTimes.push(now);
+    tokenStore
+      .get()
+      .then((token) => {
+        if (!token) return;
+        return fetch(`${BASE}/api/telemetry/client-error`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            endpoint: path.split('?')[0],
+            method,
+            status: status ?? null,
+            message: String(message || '').slice(0, 300),
+            platform: Platform.OS,
+          }),
+        });
+      })
+      .catch(() => undefined);
+  } catch {
+    // Telemetry must never interfere with the request it describes.
+  }
+}
+
 async function request<T = unknown>(
   path: string,
   opts: { method?: string; body?: unknown } = {}
@@ -127,11 +160,13 @@ async function request<T = unknown>(
       // cold backend start (Railway wake-up). Never retry a non-GET on timeout:
       // the write may have landed, and a retry could duplicate it.
       if (isAbort && !isGet) {
+        reportClientError(path, opts.method || 'GET', undefined, `timeout: ${(err as Error)?.message || err}`);
         throw err;
       }
       // Network error or GET timeout — retry if we have attempts left.
       lastError = err;
       if (attempt < RETRY_MAX) continue;
+      reportClientError(path, opts.method || 'GET', undefined, `network: ${(err as Error)?.message || err}`);
       throw err;
     } finally {
       clearTimeout(timeoutId);
@@ -173,7 +208,13 @@ async function request<T = unknown>(
     return res.json() as Promise<T>;
   }
 
-  // Should not be reached, but satisfies TypeScript
+  // 5xx retries exhausted.
+  reportClientError(
+    path,
+    opts.method || 'GET',
+    (lastError as { status?: number })?.status,
+    `server: ${(lastError as Error)?.message || lastError}`,
+  );
   throw lastError;
 }
 
@@ -638,6 +679,17 @@ export const api = {
       email?: string;
       expires_at?: string | null;
     }>(`/family/invite/${encodeURIComponent(token)}`),
+  listClientErrors: () =>
+    request<{
+      error_id: string;
+      name?: string | null;
+      endpoint: string;
+      method?: string;
+      status?: number | null;
+      message?: string;
+      platform?: string;
+      created_at?: string | null;
+    }[]>('/telemetry/client-errors'),
   invitesForMe: () =>
     request<{ token: string; inviter_name: string; relationship?: string | null }[]>(
       '/family/invites/for-me',
