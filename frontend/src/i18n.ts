@@ -832,6 +832,9 @@ const en: Dict = {
   invite_join_cta: 'Join household',
   invite_join_later: 'Not now',
   invite_joined_ok: "You've joined the household!",
+  invite_join_error: "Couldn't join — check your connection and try again.",
+  invite_join_retry: 'Try again',
+
   set_send_invite_title: 'Send an invite',
   set_invite_role_ph: 'Their role (optional)',
   set_invite_role_hint: 'Who are they to the family? e.g. grandparent, nanny, brother or sister — they will appear with this role in your household.',
@@ -1943,6 +1946,9 @@ const es: Dict = {
   invite_join_cta: 'Unirme al hogar',
   invite_join_later: 'Ahora no',
   invite_joined_ok: '¡Te has unido al hogar!',
+  invite_join_error: 'No se pudo unir — comprueba tu conexión e inténtalo de nuevo.',
+  invite_join_retry: 'Reintentar',
+
   set_send_invite_title: 'Enviar una invitación',
   set_invite_role_ph: 'Su rol (opcional)',
   set_invite_role_hint: '¿Quién es para la familia? p. ej. abuelo/a, niñera, hermano o hermana — aparecerá con este rol en tu hogar.',
@@ -3048,6 +3054,9 @@ const fr: Dict = {
   invite_join_cta: 'Rejoindre le foyer',
   invite_join_later: 'Pas maintenant',
   invite_joined_ok: 'Vous avez rejoint le foyer !',
+  invite_join_error: "Impossible de rejoindre — vérifiez votre connexion et réessayez.",
+  invite_join_retry: 'Réessayer',
+
   set_send_invite_title: 'Envoyer une invitation',
   set_invite_role_ph: 'Son rôle (optionnel)',
   set_invite_role_hint: 'Qui est-ce pour la famille ? p. ex. grand-parent, nounou, frère ou sœur — la personne apparaîtra avec ce rôle dans votre foyer.',
@@ -4153,6 +4162,9 @@ const de: Dict = {
   invite_join_cta: 'Haushalt beitreten',
   invite_join_later: 'Nicht jetzt',
   invite_joined_ok: 'Du bist dem Haushalt beigetreten!',
+  invite_join_error: 'Beitritt fehlgeschlagen — prüfe deine Verbindung und versuche es erneut.',
+  invite_join_retry: 'Erneut versuchen',
+
   set_send_invite_title: 'Einladung senden',
   set_invite_role_ph: 'Ihre Rolle (optional)',
   set_invite_role_hint: 'Wer ist die Person für die Familie? z. B. Großeltern, Kindermädchen, Bruder oder Schwester — sie erscheint mit dieser Rolle in eurem Haushalt.',
