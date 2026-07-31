@@ -123,7 +123,11 @@ export function InviteJoinPrompt() {
       // as "nothing happened" and hides the actual problem.
       setBusy(false);
       const detail = raw.match(/\{.*"detail"\s*:\s*"([^"]+)"/)?.[1];
-      setError(detail || t('invite_join_error'));
+      // No detail means the request never got a readable answer — keep the
+      // raw reason visible ("Load failed", "aborted"...) so a user screenshot
+      // pinpoints network vs timeout vs server without a debug session.
+      const reason = raw.replace(/[{}"\\]/g, '').trim().slice(0, 90);
+      setError(detail || `${t('invite_join_error')}${reason ? ` (${reason})` : ''}`);
     }
   };
 
