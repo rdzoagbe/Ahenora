@@ -211,6 +211,49 @@ class SignedInAccept(LoginJoinsFamily):
 
 
 @unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
+class InvitesForMe(unittest.TestCase):
+    """Signing in is enough to be told about a waiting invite — the link
+    surviving the junk folder is not a requirement."""
+
+    def test_pending_invite_for_my_email_is_returned(self):
+        db = FakeDB(
+            users=FakeColl([
+                {"user_id": "u_roland", "email": "r@x.com", "name": "Roland",
+                 "family_id": "fam_main"},
+            ]),
+            family_invites=FakeColl([
+                {"invite_id": "inv1", "family_id": "fam_main", "token": "tok1",
+                 "status": "pending", "email": "wife@x.com",
+                 "relationship": "Co-parent",
+                 "created_by_user_id": "u_roland",
+                 "expires_at": server.utcnow() + timedelta(days=5)},
+                # Expired: never surfaced.
+                {"invite_id": "inv2", "family_id": "fam_main", "token": "tok2",
+                 "status": "pending", "email": "wife@x.com",
+                 "created_by_user_id": "u_roland",
+                 "expires_at": server.utcnow() - timedelta(days=1)},
+                # Already in this family: nothing to join.
+                {"invite_id": "inv3", "family_id": "fam_solo", "token": "tok3",
+                 "status": "pending", "email": "wife@x.com",
+                 "created_by_user_id": "u_x",
+                 "expires_at": server.utcnow() + timedelta(days=5)},
+            ]),
+        )
+        _get_db = server.get_db
+        server.get_db = lambda: db
+        try:
+            wife = {"user_id": "u_wife", "email": "wife@x.com",
+                    "family_id": "fam_solo"}
+            rows = asyncio.run(server.invites_for_me(user=wife))
+        finally:
+            server.get_db = _get_db
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["token"], "tok1")
+        self.assertEqual(rows[0]["inviter_name"], "Roland")
+        self.assertEqual(rows[0]["relationship"], "Co-parent")
+
+
+@unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
 class InvitedUserGetsPush(unittest.TestCase):
     def test_existing_account_is_told_in_app(self):
         pushes = []

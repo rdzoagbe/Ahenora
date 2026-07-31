@@ -2783,6 +2783,43 @@ async def family_invites(user=Depends(require_user)):
     return rows
 
 
+@app.get("/api/family/invites/for-me")
+async def invites_for_me(user=Depends(require_user)):
+    """Pending invites addressed to the signed-in user's own email.
+
+    The join prompt asks the server directly instead of relying on the
+    invite link surviving the trip through a junk folder, a cached page
+    or a copy-pasted URL — signing in is enough to be told.
+    """
+    database = get_db()
+    email = (user.get("email") or "").strip().lower()
+    if not email:
+        return []
+
+    rows = []
+    cursor = database["family_invites"].find(
+        {"email": email, "status": "pending"},
+        {"_id": 0},
+    )
+    async for item in cursor:
+        expires_at = ensure_aware_utc(item.get("expires_at"))
+        if expires_at and expires_at < utcnow():
+            continue
+        if item.get("family_id") == user.get("family_id"):
+            continue
+        inviter = await database["users"].find_one(
+            {"user_id": item.get("created_by_user_id")},
+            {"_id": 0},
+        )
+        rows.append({
+            "token": item["token"],
+            "inviter_name": (inviter or {}).get("name")
+                or item.get("created_by_name") or "A family member",
+            "relationship": item.get("relationship"),
+        })
+    return rows
+
+
 @app.delete("/api/family/invites/{invite_id}")
 async def delete_family_invite(invite_id: str, user=Depends(require_user)):
     """Revoke a pending (or any) invite belonging to the caller's family.
