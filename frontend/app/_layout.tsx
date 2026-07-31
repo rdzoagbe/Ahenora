@@ -1,5 +1,8 @@
 import React, { useEffect } from 'react';
 import { Stack } from 'expo-router';
+// Side effect: maps Alert.alert onto browser dialogs on web, where the RN
+// implementation is a no-op and every confirm button silently did nothing.
+import '../src/webAlert';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import { useFonts } from 'expo-font';
