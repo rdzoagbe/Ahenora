@@ -28,8 +28,28 @@ export function InviteJoinPrompt() {
     checked.current = true;
     let cancelled = false;
 
+    // Links are best-effort — they get buried in junk folders and lose their
+    // token across browser contexts. Signing in is enough: when no link token
+    // is at hand, ask the server whether an invite is waiting for this email.
+    const askServer = async () => {
+      try {
+        const waiting = await api.invitesForMe();
+        const first = waiting?.[0];
+        if (first?.token && !cancelled) {
+          setInviterName(first.inviter_name);
+          setToken(first.token);
+        }
+      } catch (e: any) {
+        logger.warn('invites-for-me lookup failed', e?.message || e);
+      }
+    };
+
     const consider = async (candidate: string | null) => {
-      if (!candidate || cancelled) return;
+      if (cancelled) return;
+      if (!candidate) {
+        await askServer();
+        return;
+      }
       try {
         const info = await api.getInvite(candidate);
         if (info.status === 'accepted') {
@@ -43,6 +63,7 @@ export function InviteJoinPrompt() {
       } catch (e: any) {
         logger.warn('pending invite lookup failed', e?.message || e);
         clearStoredInvite();
+        await askServer();
       }
     };
 
@@ -59,7 +80,8 @@ export function InviteJoinPrompt() {
 
     Linking.getInitialURL().then((url) => consider(extractInviteToken(url)));
     const subscription = Linking.addEventListener('url', ({ url }) => {
-      consider(extractInviteToken(url));
+      const fromLink = extractInviteToken(url);
+      if (fromLink) consider(fromLink);
     });
     return () => {
       cancelled = true;

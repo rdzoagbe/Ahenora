@@ -638,6 +638,10 @@ export const api = {
       email?: string;
       expires_at?: string | null;
     }>(`/family/invite/${encodeURIComponent(token)}`),
+  invitesForMe: () =>
+    request<{ token: string; inviter_name: string; relationship?: string | null }[]>(
+      '/family/invites/for-me',
+    ),
   acceptInvite: (token: string) => {
     invalidateUsageCaches();
     return request<{ ok: boolean; joined: boolean; user: User }>('/family/invite/accept', {
