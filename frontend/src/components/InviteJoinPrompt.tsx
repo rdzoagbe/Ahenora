@@ -5,6 +5,7 @@ import { UserPlus } from 'lucide-react-native';
 import { useStore } from '../store';
 import { api } from '../api';
 import { extractInviteToken, clearStoredInvite } from '../invite';
+import { BUILD_TAG } from '../buildInfo';
 import { logger } from '../logger';
 import { PressScale } from './PressScale';
 
@@ -195,6 +196,7 @@ export function InviteJoinPrompt() {
               >
                 <Text style={[styles.ghostBtnText, { color: c.textSoft }]}>{t('invite_join_later')}</Text>
               </PressScale>
+              <Text style={[styles.buildTag, { color: c.textSoft }]}>{BUILD_TAG}</Text>
             </>
           )}
         </View>
@@ -269,5 +271,11 @@ const styles = StyleSheet.create({
   ghostBtnText: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 13,
+  },
+  buildTag: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 10,
+    opacity: 0.55,
+    marginTop: 10,
   },
 });
