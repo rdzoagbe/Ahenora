@@ -2050,6 +2050,7 @@ async def exchange_session(payload: SessionIn):
             "picture": picture,
             "updated_at": utcnow(),
         }
+        old_family_id = user.get("family_id")
         if target_family_id:
             updates["family_id"] = target_family_id
 
@@ -2061,6 +2062,7 @@ async def exchange_session(payload: SessionIn):
 
         if target_family_id:
             await add_user_to_family_if_needed(database, user, target_family_id, invite_member_role(invite))
+            await _bring_children_along(database, old_family_id, target_family_id)
 
     if invite:
         await database["family_invites"].update_one(
@@ -2146,6 +2148,39 @@ async def _resolve_invite(database, invite_token: Optional[str], email: str):
     return invite, invite["family_id"]
 
 
+async def _bring_children_along(database, old_family_id: Optional[str], new_family_id: str):
+    """A parent joining a household brings their kids' profiles with them.
+
+    Field case: the invitee had set up all three children in her own family
+    before joining — accepting must not strand them (or their stars) in an
+    abandoned household. Children whose name already exists in the target
+    family are skipped, so co-parents who each created "Richard" don't end
+    up with two of him.
+    """
+    if not old_family_id or old_family_id == new_family_id:
+        return
+    existing = set()
+    async for member in database["family_members"].find({"family_id": new_family_id}, {"_id": 0}):
+        existing.add((member.get("name") or "").strip().lower())
+    async for member in database["family_members"].find({"family_id": old_family_id}, {"_id": 0}):
+        if (member.get("role") or "").strip().lower() != "child":
+            continue
+        name = (member.get("name") or "").strip().lower()
+        if not name or name in existing:
+            continue
+        existing.add(name)
+        await database["family_members"].update_one(
+            {"member_id": member["member_id"]},
+            {"$set": {"family_id": new_family_id}},
+        )
+        # Their history follows, so balances and past rewards stay visible.
+        for collection in ("star_transactions", "redemptions", "allowances", "allowance_txns"):
+            await database[collection].update_many(
+                {"member_id": member["member_id"]},
+                {"$set": {"family_id": new_family_id}},
+            )
+
+
 async def _accept_invite_for_user(database, user: dict, invite: Optional[dict], target_family_id: Optional[str]):
     """Move `user` into the inviting family and mark the invite accepted.
 
@@ -2155,12 +2190,14 @@ async def _accept_invite_for_user(database, user: dict, invite: Optional[dict], 
     email = user.get("email", "")
     joined = False
     if target_family_id and target_family_id != user.get("family_id"):
+        old_family_id = user.get("family_id")
         await database["users"].update_one(
             {"user_id": user["user_id"]},
             {"$set": {"family_id": target_family_id, "updated_at": utcnow()}},
         )
         user = await database["users"].find_one({"user_id": user["user_id"]}, {"_id": 0})
         await add_user_to_family_if_needed(database, user, target_family_id, invite_member_role(invite))
+        await _bring_children_along(database, old_family_id, target_family_id)
         joined = True
     if invite and invite.get("status") != "accepted":
         await database["family_invites"].update_one(

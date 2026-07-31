@@ -44,6 +44,14 @@ class FakeColl:
     async def insert_one(self, doc):
         self.rows.append(dict(doc))
 
+    async def update_many(self, q, u):
+        n = 0
+        for r in self.rows:
+            if self._match(r, q):
+                r.update(u.get("$set", {}))
+                n += 1
+        return SimpleNamespace(matched_count=n)
+
     async def update_one(self, q, u, upsert=False):
         for r in self.rows:
             if self._match(r, q):
@@ -210,6 +218,37 @@ class SignedInAccept(LoginJoinsFamily):
         db = self._db()
         self._accept(db)
         self.assertEqual(self.added_roles, ["Parent"])
+
+    def test_children_move_with_the_joining_parent(self):
+        # Field case: the invitee had set up the kids in her own family
+        # before joining — they (and their stars) must come along, except a
+        # name that already exists in the target family.
+        db = self._db()
+        db.colls["family_members"] = FakeColl([
+            {"member_id": "m_r", "family_id": "fam_main", "name": "Richard",
+             "role": "Child", "stars": 5},
+            {"member_id": "m_j", "family_id": "fam_solo", "name": "Jonael",
+             "role": "Child", "stars": 12},
+            {"member_id": "m_a", "family_id": "fam_solo", "name": "Arielle",
+             "role": "Child", "stars": 3},
+            # Duplicate of the target's Richard: stays behind.
+            {"member_id": "m_r2", "family_id": "fam_solo", "name": "richard",
+             "role": "Child", "stars": 0},
+            # The invitee's own parent row: not a child, never moved here.
+            {"member_id": "m_w", "family_id": "fam_solo", "name": "Ama",
+             "role": "Parent", "user_id": "u_wife"},
+        ])
+        db.colls["star_transactions"] = FakeColl([
+            {"transaction_id": "s1", "member_id": "m_j", "family_id": "fam_solo"},
+        ])
+        self._accept(db)
+        fam_of = {m["member_id"]: m["family_id"] for m in db["family_members"].rows}
+        self.assertEqual(fam_of["m_j"], "fam_main")
+        self.assertEqual(fam_of["m_a"], "fam_main")
+        self.assertEqual(fam_of["m_r2"], "fam_solo")
+        self.assertEqual(fam_of["m_w"], "fam_solo")
+        # History follows the moved child.
+        self.assertEqual(db["star_transactions"].rows[0]["family_id"], "fam_main")
 
     def test_accepting_twice_is_harmless(self):
         db = self._db(invite_status="accepted")
