@@ -449,6 +449,7 @@ export interface FamilyInvite {
   invite_id: string;
   family_id: string;
   email?: string | null;
+  relationship?: string | null;
   status: 'pending' | 'accepted' | 'expired';
   token?: string;
   invite_url?: string;
@@ -599,7 +600,7 @@ export const api = {
     request('/auth/language', { method: 'PATCH', body: { language } }),
   completeOnboarding: () =>
     request<User>('/auth/complete-onboarding', { method: 'POST' }),
-  invite: (email: string) => {
+  invite: (email: string, relationship?: string) => {
     invalidateUsageCaches();
     return request<{
       ok: boolean;
@@ -613,7 +614,7 @@ export const api = {
       email_error?: string;
     }>('/family/invite', {
       method: 'POST',
-      body: { email },
+      body: relationship ? { email, relationship } : { email },
     });
   },
   createInviteLink: () => {

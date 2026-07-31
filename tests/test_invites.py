@@ -102,9 +102,11 @@ class LoginJoinsFamily(unittest.TestCase):
         server.send_expo_push_messages = fake_push
 
         self.added = []
+        self.added_roles = []
 
-        async def fake_add(database, user, family_id):
+        async def fake_add(database, user, family_id, role=None):
             self.added.append((user["user_id"], family_id))
+            self.added_roles.append(role)
         server.add_user_to_family_if_needed = fake_add
 
     def tearDown(self):
@@ -186,6 +188,17 @@ class SignedInAccept(LoginJoinsFamily):
         self.assertEqual(len(self.pushes), 1)
         self.assertEqual(self.pushes[0]["to"], "ExponentPushToken[roland]")
 
+    def test_relationship_becomes_the_member_role(self):
+        db = self._db()
+        db["family_invites"].rows[0]["relationship"] = "Nanny"
+        self._accept(db)
+        self.assertEqual(self.added_roles, ["Nanny"])
+
+    def test_no_relationship_keeps_the_parent_default(self):
+        db = self._db()
+        self._accept(db)
+        self.assertEqual(self.added_roles, ["Parent"])
+
     def test_accepting_twice_is_harmless(self):
         db = self._db(invite_status="accepted")
         db["family_invites"].rows[0]["accepted_by_email"] = "wife@x.com"
@@ -230,10 +243,10 @@ class InvitedUserGetsPush(unittest.TestCase):
         server.send_invite_email = fake_mail
         server.get_db = lambda: db
         try:
-            payload = server.InviteIn(email="wife@x.com")
+            payload = server.InviteIn(email="wife@x.com", relationship="  Grand   parent ")
             user = {"user_id": "u_roland", "family_id": "fam_main",
                     "name": "Roland", "email": "r@x.com"}
-            asyncio.run(server.family_invite(payload, user=user))
+            result = asyncio.run(server.family_invite(payload, user=user))
         finally:
             server.send_expo_push_messages = _push
             server._enforce_member_slot_limit = _slot
@@ -245,6 +258,9 @@ class InvitedUserGetsPush(unittest.TestCase):
         self.assertIn("Roland", pushes[0]["title"])
         self.assertIn("invite", pushes[0]["title"])  # fr: "vous invite"
         self.assertEqual(pushes[0]["data"]["type"], "family_invite")
+        # The free-text relationship is stored normalised and echoed back.
+        self.assertEqual(result["invite"]["relationship"], "Grand parent")
+        self.assertEqual(db["family_invites"].rows[0]["relationship"], "Grand parent")
 
 
 if __name__ == "__main__":

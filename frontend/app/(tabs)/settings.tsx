@@ -62,6 +62,10 @@ export default function Settings() {
     setTimeout(() => setToast(null), 2600);
   }, []);
   const [inviteMethod, setInviteMethod] = useState<'email' | 'phone' | 'link'>('email');
+  // 'coparent' is the one-tap path inside Manage members; 'family' is the
+  // generic invite with a free-text relationship (grandparent, nanny...).
+  const [inviteMode, setInviteMode] = useState<'coparent' | 'family'>('coparent');
+  const [inviteRole, setInviteRole] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
   const [invitePhone, setInvitePhone] = useState('');
   const [sending, setSending] = useState(false);
@@ -143,10 +147,13 @@ export default function Settings() {
   // kids page already compares this way.
   const childMembers = useMemo(() => members.filter((m) => m.role?.toLowerCase() === 'child'), [members]);
   const adultCount = Math.max(1, members.filter((m) => m.role?.toLowerCase() !== 'child').length);
-  // Adults with their own sign-in are the actual co-parents; PIN-only or
-  // placeholder adults don't count toward the "who parents with whom" line.
+  // Adults with their own sign-in AND a parenting role are the co-parents;
+  // a grandparent or nanny with an account is family, not a co-parent.
   const coParents = useMemo(
-    () => members.filter((m) => m.role?.toLowerCase() !== 'child' && m.has_account),
+    () => members.filter((m) => {
+      const role = m.role?.toLowerCase() || '';
+      return m.has_account && (role === 'parent' || role === 'co-parent');
+    }),
     [members],
   );
   const isCoParented = coParents.length >= 2;
@@ -318,8 +325,10 @@ export default function Settings() {
     router.replace('/');
   };
 
-  const openInvite = (email = '') => {
+  const openInvite = (email = '', mode: 'coparent' | 'family' = 'coparent') => {
     setInviteMethod('email');
+    setInviteMode(mode);
+    setInviteRole('');
     setInviteEmail(email);
     setInvitePhone('');
     setInviteResult(null);
@@ -347,7 +356,10 @@ export default function Settings() {
     setInviteResult(null);
     setInviteError(false);
     try {
-      const res = await api.invite(submitted);
+      const res = await api.invite(
+        submitted,
+        inviteMode === 'family' ? inviteRole.trim() || undefined : undefined,
+      );
       if (res.sent) {
         // Success gets out of the way: close the sheet and confirm with a
         // toast. Leaving the form open with a note buried mid-sheet read as
@@ -566,7 +578,11 @@ export default function Settings() {
                 ))}
                 {invites.filter((i) => i.status === 'pending').map((invite) => (
                   <View key={invite.invite_id} style={styles.inviteRow}>
-                    <MiniRow initial={(invite.email?.[0] || '?').toUpperCase()} name={invite.email || t('set_invite_link')} sub={`${t('set_invite')} · ${invite.status}`} />
+                    <MiniRow
+                      initial={(invite.email?.[0] || '?').toUpperCase()}
+                      name={invite.email || t('set_invite_link')}
+                      sub={`${invite.relationship ? `${invite.relationship} · ` : ''}${t('set_invite')} · ${invite.status}`}
+                    />
                     {invite.invite_url ? (
                       <PressScale onPress={() => shareInviteLink(invite.invite_url, invite.email)} style={styles.ghostBtn}>
                         <Share2 color={ui.text} size={14} />
@@ -613,7 +629,7 @@ export default function Settings() {
               tile={<IconTile bg={ui.mint}><Link2 color={ui.mintText} size={18} /></IconTile>}
               title={t('set_invite_family_member')}
               subtitle={t('set_invite_family_member_sub')}
-              onPress={() => openInvite()}
+              onPress={() => openInvite('', 'family')}
               right={<ChevronRight color={ui.muted} size={18} />}
               divider={false}
             />
@@ -812,7 +828,7 @@ export default function Settings() {
 
       <KeyboardAwareBottomSheet visible={showInvite} onClose={() => setShowInvite(false)} contentStyle={styles.sheet}>
         <View style={styles.sheetHeader}>
-          <Text style={styles.sheetTitle}>{t('set_invite_coparent')}</Text>
+          <Text style={styles.sheetTitle}>{inviteMode === 'family' ? t('set_send_invite_title') : t('set_invite_coparent')}</Text>
           <PressScale
                   accessibilityRole="button"
                   accessibilityLabel={t('close')} testID="close-invite" onPress={() => setShowInvite(false)} style={styles.iconBtn}>
@@ -859,6 +875,24 @@ export default function Settings() {
               returnKeyType="send"
               onSubmitEditing={sendEmailInvite}
             />
+            {inviteMode === 'family' ? (
+              <>
+                <TextInput
+                  testID="invite-role"
+                  value={inviteRole}
+                  onChangeText={setInviteRole}
+                  placeholder={t('set_invite_role_ph')}
+                  placeholderTextColor={ui.muted}
+                  autoCapitalize="words"
+                  autoCorrect={false}
+                  style={styles.input}
+                  returnKeyType="send"
+                  onSubmitEditing={sendEmailInvite}
+                  maxLength={32}
+                />
+                <Text style={styles.inviteHint}>{t('set_invite_role_hint')}</Text>
+              </>
+            ) : null}
             <Text style={styles.inviteHint}>{t('set_invite_email_hint')}</Text>
           </>
         ) : inviteMethod === 'phone' ? (
