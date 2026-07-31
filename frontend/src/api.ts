@@ -701,6 +701,14 @@ export const api = {
       body: { token },
     });
   },
+  // GET twin used when the POST dies in the network layer (some home
+  // networks drop cross-origin POSTs while identical GETs sail through).
+  acceptInviteViaGet: (token: string) => {
+    invalidateUsageCaches();
+    return request<{ ok: boolean; joined: boolean; user: User }>(
+      `/family/invite-accept?token=${encodeURIComponent(token)}`,
+    );
+  },
   importGoogleCalendar: (access_token: string, days = 30) =>
     request<CalendarImportResult>('/calendar/import', {
       method: 'POST',

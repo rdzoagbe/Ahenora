@@ -188,6 +188,18 @@ class SignedInAccept(LoginJoinsFamily):
         self.assertEqual(len(self.pushes), 1)
         self.assertEqual(self.pushes[0]["to"], "ExponentPushToken[roland]")
 
+    def test_get_fallback_behaves_like_the_post(self):
+        # Some home networks drop cross-origin POSTs while GETs pass; the
+        # GET twin must produce the identical result.
+        db = self._db()
+        server.get_db = lambda: db
+        wife = {"user_id": "u_wife", "email": "wife@x.com", "name": "Ama",
+                "family_id": "fam_solo", "language": "fr"}
+        res = asyncio.run(server.family_invite_accept_get(token="tok1", user=wife))
+        self.assertTrue(res["joined"])
+        self.assertEqual(res["user"]["family_id"], "fam_main")
+        self.assertEqual(db["family_invites"].rows[0]["status"], "accepted")
+
     def test_relationship_becomes_the_member_role(self):
         db = self._db()
         db["family_invites"].rows[0]["relationship"] = "Nanny"

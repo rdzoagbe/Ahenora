@@ -2962,9 +2962,27 @@ async def family_invite_accept(payload: InviteAcceptIn, user=Depends(require_use
     Invite links open the app for logged-in users too, and those users never
     pass through the sign-in screen where tokens are otherwise consumed.
     """
+    return await _accept_invite_request(payload.token, user)
+
+
+@app.get("/api/family/invite-accept")
+async def family_invite_accept_get(token: str, user=Depends(require_user)):
+    """GET twin of the accept endpoint, used as an automatic client fallback.
+
+    Seen in the field: an iPhone on home Wi-Fi where every GET to this API
+    succeeded while this one POST died in Safari's network layer ("Load
+    failed"). Whatever drops those POSTs, GETs go through — so the app
+    retries acceptance over the request shape that demonstrably works.
+    Distinct path on purpose: GET /family/invite/accept would be captured
+    by the /family/invite/{token} lookup route.
+    """
+    return await _accept_invite_request(token, user)
+
+
+async def _accept_invite_request(token: str, user: dict):
     database = get_db()
     invite, target_family_id = await _resolve_invite(
-        database, payload.token, user.get("email", "")
+        database, token, user.get("email", "")
     )
     if not invite:
         raise HTTPException(status_code=404, detail="Invite not found")
