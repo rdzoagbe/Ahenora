@@ -981,6 +981,7 @@ def public_invite(invite: dict) -> dict:
         "invite_id": invite["invite_id"],
         "family_id": invite["family_id"],
         "email": invite.get("email"),
+        "relationship": invite.get("relationship"),
         "status": invite.get("status", "pending"),
         "token": invite.get("token"),
         "invite_url": build_invite_url(invite["token"]),
@@ -1175,7 +1176,15 @@ def public_chore(c: dict) -> dict:
 
 
 
-async def add_user_to_family_if_needed(database: Any, user: dict, family_id: str):
+def invite_member_role(invite: Optional[dict]) -> str:
+    """The role a joining member gets: the free-text relationship the inviter
+    wrote ("Grandma", "Nanny", "Brother"...) or the historical default."""
+    raw = re.sub(r"\s+", " ", str((invite or {}).get("relationship") or "").strip())
+    return raw[:32] or "Parent"
+
+
+async def add_user_to_family_if_needed(database: Any, user: dict, family_id: str,
+                                       role: Optional[str] = None):
     existing = await database["family_members"].find_one(
         {
             "family_id": family_id,
@@ -1195,7 +1204,7 @@ async def add_user_to_family_if_needed(database: Any, user: dict, family_id: str
         "user_id": user["user_id"],
         "email": user.get("email", ""),
         "name": user.get("name") or user.get("email") or "Parent",
-        "role": "Parent",
+        "role": role or "Parent",
         "avatar": user.get("picture"),
         "stars": 0,
         "pin_hash": None,
@@ -1507,6 +1516,9 @@ class EmailLoginIn(BaseModel):
 
 class InviteIn(BaseModel):
     email: str
+    # Free text from the inviter: "Grandma", "Nanny", "Brother"... Becomes
+    # the member's displayed role when the invite is accepted.
+    relationship: Optional[str] = None
 
 
 class LanguageIn(BaseModel):
@@ -1937,14 +1949,14 @@ async def exchange_session(payload: SessionIn):
                 "user_id": user["user_id"],
                 "email": email,
                 "name": name,
-                "role": "Parent",
+                "role": invite_member_role(invite),
                 "avatar": picture,
                 "stars": 0,
                 "pin_hash": None,
                 "created_at": utcnow(),
             })
         else:
-            await add_user_to_family_if_needed(database, user, target_family_id)
+            await add_user_to_family_if_needed(database, user, target_family_id, invite_member_role(invite))
     else:
         updates = {
             "email": email,
@@ -1962,7 +1974,7 @@ async def exchange_session(payload: SessionIn):
         user = await database["users"].find_one({"user_id": user["user_id"]}, {"_id": 0})
 
         if target_family_id:
-            await add_user_to_family_if_needed(database, user, target_family_id)
+            await add_user_to_family_if_needed(database, user, target_family_id, invite_member_role(invite))
 
     if invite:
         await database["family_invites"].update_one(
@@ -2062,7 +2074,7 @@ async def _accept_invite_for_user(database, user: dict, invite: Optional[dict], 
             {"$set": {"family_id": target_family_id, "updated_at": utcnow()}},
         )
         user = await database["users"].find_one({"user_id": user["user_id"]}, {"_id": 0})
-        await add_user_to_family_if_needed(database, user, target_family_id)
+        await add_user_to_family_if_needed(database, user, target_family_id, invite_member_role(invite))
         joined = True
     if invite and invite.get("status") != "accepted":
         await database["family_invites"].update_one(
@@ -2119,7 +2131,7 @@ async def register_email(payload: EmailRegisterIn):
     if not target_family_id:
         await _seed_new_family(database, user, family_id, email, name)
     else:
-        await add_user_to_family_if_needed(database, user, target_family_id)
+        await add_user_to_family_if_needed(database, user, target_family_id, invite_member_role(invite))
 
     if invite:
         await database["family_invites"].update_one(
@@ -2640,12 +2652,13 @@ async def _enforce_member_slot_limit(database, user) -> None:
         )
 
 
-def _new_invite_doc(user, email=None) -> dict:
+def _new_invite_doc(user, email=None, relationship=None) -> dict:
     now = utcnow()
     return {
         "invite_id": new_id("invite"),
         "family_id": user["family_id"],
         "email": email,
+        "relationship": relationship,
         "token": secrets.token_urlsafe(24),
         "status": "pending",
         "created_by_user_id": user["user_id"],
@@ -2692,10 +2705,20 @@ async def family_invite(payload: InviteIn, user=Depends(require_user)):
         {"_id": 0},
     )
 
+    relationship = re.sub(r"\s+", " ", (payload.relationship or "").strip())[:32] or None
+
     if existing:
         invite = existing
+        if relationship and invite.get("relationship") != relationship:
+            # Re-sending with a (new) relationship refreshes it — the last
+            # thing the inviter typed is what they meant.
+            await database["family_invites"].update_one(
+                {"invite_id": invite["invite_id"]},
+                {"$set": {"relationship": relationship, "updated_at": utcnow()}},
+            )
+            invite["relationship"] = relationship
     else:
-        invite = _new_invite_doc(user, email=email)
+        invite = _new_invite_doc(user, email=email, relationship=relationship)
         await database["family_invites"].insert_one(invite)
 
     public = public_invite(invite)
