@@ -3016,6 +3016,24 @@ async def family_invite_accept_get(token: str, user=Depends(require_user)):
     return await _accept_invite_request(token, user)
 
 
+@app.post("/api/family/membership")
+async def family_membership_post(payload: InviteAcceptIn, user=Depends(require_user)):
+    """Same as the accept endpoint under a blocklist-proof name.
+
+    Field case: an iPhone content blocker killed both verbs of the accept
+    endpoint ("Load failed" on Wi-Fi AND 5G) while every other API call
+    passed — ad-block filter lists target URLs containing words like
+    "accept". "membership" appears on no list. Old routes stay for old
+    clients.
+    """
+    return await _accept_invite_request(payload.token, user)
+
+
+@app.get("/api/family/membership")
+async def family_membership_get(token: str, user=Depends(require_user)):
+    return await _accept_invite_request(token, user)
+
+
 async def _accept_invite_request(token: str, user: dict):
     database = get_db()
     invite, target_family_id = await _resolve_invite(
