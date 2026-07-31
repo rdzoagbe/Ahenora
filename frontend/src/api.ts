@@ -694,19 +694,22 @@ export const api = {
     request<{ token: string; inviter_name: string; relationship?: string | null }[]>(
       '/family/invites/for-me',
     ),
+  // Deliberately bland path: ad-block filter lists kill URLs containing
+  // words like "accept" ("Load failed" on the invitee's iPhone on both
+  // Wi-Fi and 5G). "membership" appears on no blocklist.
   acceptInvite: (token: string) => {
     invalidateUsageCaches();
-    return request<{ ok: boolean; joined: boolean; user: User }>('/family/invite/accept', {
+    return request<{ ok: boolean; joined: boolean; user: User }>('/family/membership', {
       method: 'POST',
       body: { token },
     });
   },
-  // GET twin used when the POST dies in the network layer (some home
-  // networks drop cross-origin POSTs while identical GETs sail through).
+  // GET twin used when the POST dies in the network layer (some networks
+  // and blockers drop cross-origin POSTs while identical GETs sail through).
   acceptInviteViaGet: (token: string) => {
     invalidateUsageCaches();
     return request<{ ok: boolean; joined: boolean; user: User }>(
-      `/family/invite-accept?token=${encodeURIComponent(token)}`,
+      `/family/membership?token=${encodeURIComponent(token)}`,
     );
   },
   importGoogleCalendar: (access_token: string, days = 30) =>
