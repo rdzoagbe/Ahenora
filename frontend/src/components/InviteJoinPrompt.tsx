@@ -95,29 +95,46 @@ export function InviteJoinPrompt() {
     setToken(null);
   };
 
+  const succeed = async () => {
+    clearStoredInvite();
+    setJoined(true);
+    await refreshUser().catch(() => undefined);
+    refreshSubscription();
+    setTimeout(() => setToken(null), 1800);
+  };
+
   const accept = async () => {
     if (!token || busy) return;
     setBusy(true);
     setError(null);
     try {
       await api.acceptInvite(token);
-      clearStoredInvite();
-      setJoined(true);
-      await refreshUser();
-      refreshSubscription();
-      setTimeout(() => setToken(null), 1800);
+      await succeed();
     } catch (e: any) {
-      const raw = String(e?.message || '');
+      let raw = String(e?.message || '');
       logger.warn('invite accept failed', raw || e);
       // An invite this user already accepted is a success, not a failure —
       // the family switch happened on the first tap.
       if (raw.startsWith('409')) {
-        clearStoredInvite();
-        setJoined(true);
-        await refreshUser().catch(() => undefined);
-        refreshSubscription();
-        setTimeout(() => setToken(null), 1800);
+        await succeed();
         return;
+      }
+      // A network-layer death (no HTTP status at all) has been seen on home
+      // Wi-Fi that drops cross-origin POSTs while GETs pass — retry over GET
+      // before admitting defeat.
+      if (!/^\d{3}:/.test(raw)) {
+        try {
+          await api.acceptInviteViaGet(token);
+          await succeed();
+          return;
+        } catch (e2: any) {
+          raw = String(e2?.message || raw);
+          logger.warn('invite accept GET fallback failed', raw);
+          if (raw.startsWith('409')) {
+            await succeed();
+            return;
+          }
+        }
       }
       // Anything else stays on screen with a retry: a silent close reads
       // as "nothing happened" and hides the actual problem.
