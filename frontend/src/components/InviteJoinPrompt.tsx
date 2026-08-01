@@ -120,20 +120,26 @@ export function InviteJoinPrompt() {
         await succeed();
         return;
       }
-      // A network-layer death (no HTTP status at all) has been seen on home
-      // Wi-Fi that drops cross-origin POSTs while GETs pass — retry over GET
-      // before admitting defeat.
+      // A network-layer death (no HTTP status at all) means something on the
+      // device or network ate the request. Walk the fallbacks: the bland GET,
+      // then the discovery URL itself — which provably works, because it is
+      // the very request that put this card on screen.
       if (!/^\d{3}:/.test(raw)) {
-        try {
-          await api.acceptInviteViaGet(token);
-          await succeed();
-          return;
-        } catch (e2: any) {
-          raw = String(e2?.message || raw);
-          logger.warn('invite accept GET fallback failed', raw);
-          if (raw.startsWith('409')) {
+        for (const attempt of [api.acceptInviteViaGet, api.acceptInviteViaDiscovery]) {
+          try {
+            await attempt(token);
             await succeed();
             return;
+          } catch (e2: any) {
+            raw = String(e2?.message || raw);
+            logger.warn('invite accept fallback failed', raw);
+            if (raw.startsWith('409')) {
+              await succeed();
+              return;
+            }
+            // A real HTTP answer (4xx/5xx) is a verdict, not a blocked
+            // pipe — stop walking and show it.
+            if (/^\d{3}:/.test(raw)) break;
           }
         }
       }

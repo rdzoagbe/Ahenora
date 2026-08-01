@@ -196,6 +196,17 @@ class SignedInAccept(LoginJoinsFamily):
         self.assertEqual(len(self.pushes), 1)
         self.assertEqual(self.pushes[0]["to"], "ExponentPushToken[roland]")
 
+    def test_redeem_over_the_discovery_url_joins(self):
+        # The last-resort path: accepting over the same URL that listed the
+        # invite, which by construction passes the device's blockers.
+        db = self._db()
+        server.get_db = lambda: db
+        wife = {"user_id": "u_wife", "email": "wife@x.com", "name": "Ama",
+                "family_id": "fam_solo", "language": "fr"}
+        res = asyncio.run(server.invites_for_me(redeem="tok1", user=wife))
+        self.assertTrue(res["joined"])
+        self.assertEqual(db["family_invites"].rows[0]["status"], "accepted")
+
     def test_membership_alias_behaves_identically(self):
         # The blocklist-proof route must be the same accept in every way.
         db = self._db()

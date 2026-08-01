@@ -2915,13 +2915,21 @@ async def family_invites(user=Depends(require_user)):
 
 
 @app.get("/api/family/invites/for-me")
-async def invites_for_me(user=Depends(require_user)):
+async def invites_for_me(redeem: Optional[str] = None, user=Depends(require_user)):
     """Pending invites addressed to the signed-in user's own email.
 
     The join prompt asks the server directly instead of relying on the
     invite link surviving the trip through a junk folder, a cached page
     or a copy-pasted URL — signing in is enough to be told.
+
+    ?redeem=<token> accepts over THIS URL. The once-and-for-all invariant:
+    the card only appears because this exact request succeeded moments
+    earlier, so this request shape provably passes whatever blockers and
+    middleboxes the device has — anyone who can SEE the offer can take it.
+    Dedicated endpoints kept dying one content-blocker word at a time.
     """
+    if redeem:
+        return await _accept_invite_request(redeem, user)
     database = get_db()
     email = (user.get("email") or "").strip().lower()
     if not email:
