@@ -982,6 +982,7 @@ def public_invite(invite: dict) -> dict:
         "family_id": invite["family_id"],
         "email": invite.get("email"),
         "relationship": invite.get("relationship"),
+        "label": invite.get("label"),
         "status": invite.get("status", "pending"),
         "token": invite.get("token"),
         "invite_url": build_invite_url(invite["token"]),
@@ -2783,13 +2784,14 @@ async def _enforce_member_slot_limit(database, user) -> None:
         )
 
 
-def _new_invite_doc(user, email=None, relationship=None) -> dict:
+def _new_invite_doc(user, email=None, relationship=None, label=None) -> dict:
     now = utcnow()
     return {
         "invite_id": new_id("invite"),
         "family_id": user["family_id"],
         "email": email,
         "relationship": relationship,
+        "label": label,
         "token": secrets.token_urlsafe(24),
         "status": "pending",
         "created_by_user_id": user["user_id"],
@@ -2804,14 +2806,33 @@ def _new_invite_doc(user, email=None, relationship=None) -> dict:
     }
 
 
+class InviteLinkIn(BaseModel):
+    # Who this link is meant for and what role they get on accepting —
+    # a bare anonymous link gives the inviter no way to tell links apart
+    # or control what the holder becomes.
+    relationship: Optional[str] = None
+    label: Optional[str] = None
+
+
+def _clean_invite_text(value: Optional[str], cap: int = 32) -> Optional[str]:
+    return re.sub(r"\s+", " ", (value or "").strip())[:cap] or None
+
+
 @app.post("/api/family/invite/link")
-async def family_invite_link(user=Depends(require_user)):
+async def family_invite_link(payload: Optional[InviteLinkIn] = Body(None), user=Depends(require_user)):
     """Create a shareable invite link with no email attached — used by the
     Phone (SMS) and Share-link options, which deliver the link from the
-    inviter's own device."""
+    inviter's own device. Carries an optional intended-recipient label and
+    relationship; whoever accepts is recorded (accepted_by_email), so the
+    inviter can always see which account used which link."""
     database = get_db()
     await _enforce_member_slot_limit(database, user)
-    invite = _new_invite_doc(user, email=None)
+    invite = _new_invite_doc(
+        user,
+        email=None,
+        relationship=_clean_invite_text(payload.relationship if payload else None),
+        label=_clean_invite_text(payload.label if payload else None, cap=48),
+    )
     await database["family_invites"].insert_one(invite)
     public = public_invite(invite)
     return {"ok": True, "invite": public, "invite_url": public["invite_url"]}
@@ -2836,7 +2857,7 @@ async def family_invite(payload: InviteIn, user=Depends(require_user)):
         {"_id": 0},
     )
 
-    relationship = re.sub(r"\s+", " ", (payload.relationship or "").strip())[:32] or None
+    relationship = _clean_invite_text(payload.relationship)
 
     if existing:
         invite = existing
