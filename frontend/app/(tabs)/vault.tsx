@@ -653,27 +653,40 @@ export default function Vault() {
               {preview.file_name ? ` · ${preview.file_name}` : ''}
               {preview.owner_name ? ` · ${preview.owner_name}` : ''}
             </Text>
-            <PressScale
-              testID="preview-visibility"
-              onPress={() => toggleVisibility(preview)}
-              style={styles.previewVisibilityRow}
-            >
-              {(preview.visibility || 'shared') === 'private' ? (
-                <Lock color="#fff" size={15} />
-              ) : (
-                <Users color="#fff" size={15} />
-              )}
-              <Text style={styles.previewVisibilityText}>
-                {(preview.visibility || 'shared') === 'private'
-                  ? t('vault_private_hint')
-                  : t('vault_shared_hint')}
-              </Text>
-              <Text style={styles.previewVisibilityCta}>
-                {(preview.visibility || 'shared') === 'private'
-                  ? t('vault_make_shared')
-                  : t('vault_make_private')}
-              </Text>
-            </PressScale>
+            {/* Status and action were one dim pill and unreadable on the
+                blurred backdrop: now a legible state line plus a real
+                button, each with its own contrast. */}
+            <View style={styles.visibilityBlock}>
+              <View style={styles.visibilityState}>
+                {(preview.visibility || 'shared') === 'private' ? (
+                  <Lock color="#FFFFFF" size={16} />
+                ) : (
+                  <Users color="#FFFFFF" size={16} />
+                )}
+                <Text style={styles.visibilityStateText}>
+                  {(preview.visibility || 'shared') === 'private'
+                    ? `${t('vault_private')} · ${t('vault_private_hint')}`
+                    : `${t('vault_shared')} · ${t('vault_shared_hint')}`}
+                </Text>
+              </View>
+              <PressScale
+                testID="preview-visibility"
+                onPress={() => toggleVisibility(preview)}
+                accessibilityRole="button"
+                style={styles.visibilityBtn}
+              >
+                {(preview.visibility || 'shared') === 'private' ? (
+                  <Users color="#111827" size={17} />
+                ) : (
+                  <Lock color="#111827" size={17} />
+                )}
+                <Text style={styles.visibilityBtnText}>
+                  {(preview.visibility || 'shared') === 'private'
+                    ? t('vault_make_shared')
+                    : t('vault_make_private')}
+                </Text>
+              </PressScale>
+            </View>
             {isImageDoc(preview) ? (
               <Image source={{ uri: preview.image_base64 }} style={styles.previewImg} />
             ) : isPdfDoc(preview) && !pdfFailed ? (
@@ -787,14 +800,24 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   visChipActive: { backgroundColor: ui.text, borderColor: ui.text },
   visChipText: { fontFamily: 'Inter_700Bold', fontSize: 13 },
-  previewVisibilityRow: {
+  visibilityBlock: { alignSelf: 'stretch', alignItems: 'center', gap: 10, marginTop: 12, marginBottom: 4 },
+  visibilityState: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    alignSelf: 'center', marginTop: 6, marginBottom: 2,
-    paddingVertical: 8, paddingHorizontal: 14,
-    borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.14)',
+    paddingVertical: 9, paddingHorizontal: 16, borderRadius: 12,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)',
   },
-  previewVisibilityText: { color: 'rgba(255,255,255,0.86)', fontFamily: 'Inter_500Medium', fontSize: 12 },
-  previewVisibilityCta: { color: '#fff', fontFamily: 'Inter_800ExtraBold', fontSize: 12 },
+  visibilityStateText: {
+    color: '#FFFFFF', fontFamily: 'Inter_700Bold', fontSize: 14, letterSpacing: -0.1,
+  },
+  visibilityBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    paddingVertical: 13, paddingHorizontal: 22, borderRadius: 14,
+    backgroundColor: '#FFFFFF', minWidth: 220,
+  },
+  visibilityBtnText: {
+    color: '#111827', fontFamily: 'Inter_800ExtraBold', fontSize: 15, letterSpacing: -0.2,
+  },
   previewMeta: { color: 'rgba(255,255,255,0.7)', fontFamily: 'Inter_600SemiBold', fontSize: 13, marginBottom: 14, marginTop: -6 },
   previewPdfWrap: { flex: 1, width: '100%' },
   previewExternalRow: { alignSelf: 'center', marginTop: 10, paddingVertical: 8, paddingHorizontal: 14 },

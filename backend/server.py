@@ -5207,6 +5207,10 @@ async def clear_all_shopping(user=Depends(require_user)):
         {"family_id": user["family_id"]}, {"_id": 0, "name": 1}
     ).to_list(500)
     names = [i.get("name", "") for i in items if i.get("name")]
+    # "Clear all" means all: older archives go too, so the restore banner
+    # never lingers with lists from weeks ago. The list being cleared right
+    # now is still archived, because an accidental clear must be undoable.
+    await database["shopping_history"].delete_many({"family_id": user["family_id"]})
     if names:
         await database["shopping_history"].insert_one({
             "history_id": new_id("shist"),
@@ -5286,6 +5290,15 @@ async def reuse_shopping_history(history_id: str, user=Depends(require_user)):
         })
         added += 1
     return {"ok": True, "added": added}
+
+
+@app.delete("/api/shopping/history")
+async def clear_shopping_history(user=Depends(require_user)):
+    """Wipe every archived list for the family — the restore banner's
+    "no thanks, ever" for households that never reuse an old list."""
+    database = get_db()
+    result = await database["shopping_history"].delete_many({"family_id": user["family_id"]})
+    return {"ok": True, "deleted": result.deleted_count}
 
 
 @app.delete("/api/shopping/history/{history_id}")

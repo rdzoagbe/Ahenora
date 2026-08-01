@@ -1102,6 +1102,8 @@ export const api = {
     request<{ ok: boolean; added: number }>(`/shopping/history/${id}/reuse`, { method: 'POST' }),
   deleteShoppingHistory: (id: string) =>
     request<{ ok: boolean }>(`/shopping/history/${id}`, { method: 'DELETE' }),
+  clearShoppingHistory: () =>
+    request<{ ok: boolean; deleted: number }>('/shopping/history', { method: 'DELETE' }),
 
   // Expenses
   listExpenses: (days = 30) => request<Expense[]>(`/expenses?days=${days}`),

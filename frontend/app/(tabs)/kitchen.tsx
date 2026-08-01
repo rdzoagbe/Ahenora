@@ -809,6 +809,35 @@ export default function Kitchen() {
     try { await api.deleteShoppingHistory(id); } catch { /* best effort */ }
   }, []);
 
+  // "Never show me old lists again." Plain function: manual memo would
+  // block the React Compiler on this screen.
+  const clearShopHistory = () => {
+    if (shopHistory.length === 0) return;
+    Alert.alert(
+      t('kitchen_clear_history_q'),
+      t('kitchen_clear_history_body'),
+      [
+        { text: t('vault_cancel'), style: 'cancel' },
+        {
+          text: t('kitchen_clear_all'),
+          style: 'destructive',
+          onPress: async () => {
+            const previous = shopHistory;
+            setShopHistory([]);
+            setShowShopHistory(false);
+            try {
+              await api.clearShoppingHistory();
+              showToast(t('kitchen_history_cleared'), 'success');
+            } catch {
+              setShopHistory(previous);
+              showToast(t('vault_could_not_delete_restored'), 'error');
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const openMealHistory = useCallback(async () => {
     setShowMealHistory(true);
     setHistLoading(true);
@@ -960,6 +989,18 @@ export default function Kitchen() {
                   <Text style={styles.restoreSub} numberOfLines={1}>{histDate(shopHistory[0].created_at)} · {shopHistory[0].items.length} {shopHistory[0].items.length === 1 ? t('vault_item') : t('vault_items')}</Text>
                 </View>
                 <Text style={styles.restoreCta}>{t('kitchen_review')}</Text>
+                {/* Dismissing is deleting: the banner came back on every
+                    visit with no way to say "I don't want this list". */}
+                <PressScale
+                  testID="restore-dismiss"
+                  accessibilityRole="button"
+                  accessibilityLabel={t('a11y_delete')}
+                  onPress={() => deleteShopTrip(shopHistory[0].history_id)}
+                  hitSlop={12}
+                  style={styles.restoreDismiss}
+                >
+                  <X color={ui.muted} size={16} />
+                </PressScale>
               </PressScale>
             ) : null}
 
@@ -1283,6 +1324,12 @@ export default function Kitchen() {
             </View>
           ))
         )}
+        {shopHistory.length > 0 ? (
+          <PressScale testID="shop-history-clear" onPress={clearShopHistory} style={styles.clearAllBtn}>
+            <Trash2 color={ui.danger} size={14} />
+            <Text style={styles.clearAllText}>{t('kitchen_clear_history')}</Text>
+          </PressScale>
+        ) : null}
       </KeyboardAwareBottomSheet>
 
       {/* Restore items from a past list — selectable */}
@@ -2123,6 +2170,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   keepAwakeText: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 12.5 },
   mealEmptyWrap: { alignItems: 'center', paddingVertical: 6 },
   mealActions: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
+  restoreDismiss: { padding: 4, marginLeft: 2 },
   shopFooterRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
   selectModeBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
