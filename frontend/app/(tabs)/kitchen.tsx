@@ -211,21 +211,27 @@ export default function Kitchen() {
     setScanItems((prev) => prev.map((it, i) => (i === idx ? { ...it, checked: !it.checked } : it)));
   }, []);
 
+  // Snapping this week's paper list usually means REPLACING last week's,
+  // not appending to it — offered right where the decision is made.
+  const [scanReplace, setScanReplace] = useState(false);
+
   const addScannedItems = useCallback(async () => {
     const picked = scanItems.filter((i) => i.checked).map((i) => i.name);
     if (picked.length === 0 || scanAdding) return;
     setScanAdding(true);
     try {
+      if (scanReplace) await api.clearAllShopping();
       await api.bulkAddShopping(picked, picked.map((n) => categoriseShoppingItem(n) || undefined));
       setShopItems(await api.listShopping().catch(() => []));
       setShowScan(false);
+      setScanReplace(false);
       showToast(t('cook_added_to_list', { n: picked.length }), 'success');
     } catch {
       showToast(t('vault_could_not_add_meal'), 'error');
     } finally {
       setScanAdding(false);
     }
-  }, [scanItems, scanAdding, showToast, t]);
+  }, [scanItems, scanAdding, scanReplace, showToast, t]);
 
   // ── Capture a printed recipe into the planner ──
   // Same posture as the list scan: the photo produces a reviewable recipe,
@@ -1790,6 +1796,24 @@ export default function Kitchen() {
                 <Text style={styles.rowCat}>{categoriseShoppingItem(item.name) || ''}</Text>
               </PressScale>
             ))}
+            {shopItems.length > 0 ? (
+              <PressScale
+                testID="scan-replace"
+                accessibilityRole="button"
+                onPress={() => setScanReplace((v) => !v)}
+                style={styles.scanRow}
+              >
+                <View style={[styles.scanCheck, scanReplace && styles.scanCheckOn]}>
+                  {scanReplace ? <Check color="#fff" size={14} /> : null}
+                </View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.rowText}>{t('scan_replace_list')}</Text>
+                  <Text style={styles.scanUnsure}>
+                    {t('scan_replace_hint', { n: shopItems.length })}
+                  </Text>
+                </View>
+              </PressScale>
+            ) : null}
             <PressScale
               accessibilityRole="button"
               onPress={() => { setScanPhase('idle'); setScanItems([]); }}
