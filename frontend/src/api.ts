@@ -712,6 +712,16 @@ export const api = {
       `/family/membership?token=${encodeURIComponent(token)}`,
     );
   },
+  // Last-resort accept over the discovery URL itself. The join card only
+  // exists because THIS exact request succeeded moments earlier, so this
+  // request shape provably passes whatever the device blocks — anyone who
+  // can see the offer can take it.
+  acceptInviteViaDiscovery: (token: string) => {
+    invalidateUsageCaches();
+    return request<{ ok: boolean; joined: boolean; user: User }>(
+      `/family/invites/for-me?redeem=${encodeURIComponent(token)}`,
+    );
+  },
   importGoogleCalendar: (access_token: string, days = 30) =>
     request<CalendarImportResult>('/calendar/import', {
       method: 'POST',
