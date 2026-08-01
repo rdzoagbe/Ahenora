@@ -50,7 +50,11 @@ async def make_persona(browser, width, height, token, blocker=False):
     async def route(ro):
         url = ro.request.url
         path = url.split("/api/", 1)[1]
-        if blocker and ("membership" in path.split("?")[0] or "accept" in path.split("?")[0]):
+        base, _, query = path.partition("?")
+        # The field blocker matched path words AND query strings — kill both,
+        # so only a request byte-identical in URL to a proven one survives.
+        if blocker and ("membership" in base or "accept" in base
+                        or "redeem" in query or "token=" in query):
             await ro.abort("failed")  # the content blocker at work
             return
         # Proxy the real bundle's API calls to the local real backend.
@@ -58,7 +62,7 @@ async def make_persona(browser, width, height, token, blocker=False):
             f"{API}/{path}",
             method=ro.request.method,
             headers={k: v for k, v in ro.request.headers.items()
-                     if k.lower() in ("content-type", "authorization")},
+                     if k.lower() not in ("host", "content-length", "origin", "referer")},
             data=ro.request.post_data,
         )
         await ro.fulfill(status=resp.status, content_type="application/json",
