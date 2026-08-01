@@ -51,9 +51,10 @@ async def make_persona(browser, width, height, token, blocker=False):
         url = ro.request.url
         path = url.split("/api/", 1)[1]
         base, _, query = path.partition("?")
-        # The field blocker matched path words AND query strings — kill both,
-        # so only a request byte-identical in URL to a proven one survives.
-        if blocker and ("membership" in base or "accept" in base
+        # The real device's telemetry showed keyword filtering: every URL
+        # containing "invite" or "membership" dies, GET and POST alike,
+        # plus suspicious query strings. Only bland URLs survive.
+        if blocker and ("membership" in base or "accept" in base or "invite" in base
                         or "redeem" in query or "token=" in query):
             await ro.abort("failed")  # the content blocker at work
             return
@@ -78,10 +79,13 @@ async def main():
 
     # ---- Real-backend account setup (registration itself is covered by 194
     # unit tests and the production smoke test; UI drives the journey) ----
+    import uuid
+    run = uuid.uuid4().hex[:6]
+    mail_a, mail_b = f"a-{run}@sim.test", f"b-{run}@sim.test"
     a = api("POST", "/auth/register",
-            {"name": "Roland Sim", "email": "a@sim.test", "password": "password123"})
+            {"name": "Roland Sim", "email": mail_a, "password": "password123"})
     b = api("POST", "/auth/register",
-            {"name": "Keigh Sim", "email": "b@sim.test", "password": "password123"})
+            {"name": "Keigh Sim", "email": mail_b, "password": "password123"})
     tok_a, tok_b = a["session_token"], b["session_token"]
     api("POST", "/auth/complete-onboarding", {}, tok_a)
     api("POST", "/auth/complete-onboarding", {}, tok_b)
@@ -107,7 +111,7 @@ async def main():
         await android.wait_for_timeout(2000)
         await android.click("text=Invite a family member")
         await android.wait_for_timeout(800)
-        await android.fill('[data-testid="invite-email"]', "b@sim.test")
+        await android.fill('[data-testid="invite-email"]', mail_b)
         await android.fill('[data-testid="invite-role"]', "Co-parent")
         await android.click('[data-testid="send-invite"]')
         await android.wait_for_timeout(2000)
@@ -118,7 +122,7 @@ async def main():
         await android.click('[data-testid="settings-household-toggle"]')
         await android.wait_for_timeout(800)
         body = await android.inner_text("body")
-        r["A_pending_invite_with_role"] = "b@sim.test" in body and "Co-parent ·" in body
+        r["A_pending_invite_with_role"] = mail_b in body and "Co-parent ·" in body
 
         # ---- iPhone/invitee, content blocker active: no link, just opens ----
         await iphone.goto(f"{WEB}/feed", wait_until="networkidle")

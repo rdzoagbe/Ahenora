@@ -207,6 +207,19 @@ class SignedInAccept(LoginJoinsFamily):
         self.assertTrue(res["joined"])
         self.assertEqual(db["family_invites"].rows[0]["status"], "accepted")
 
+    def test_bland_updates_url_lists_and_confirms(self):
+        # The keyword-filtered device: /family/updates must both discover
+        # (no header) and accept (X-Confirm header).
+        db = self._db()
+        server.get_db = lambda: db
+        wife = {"user_id": "u_wife", "email": "wife@x.com", "name": "Ama",
+                "family_id": "fam_solo", "language": "fr"}
+        rows = asyncio.run(server.family_updates(user=dict(wife)))
+        self.assertEqual([r["token"] for r in rows], ["tok1"])
+        res = asyncio.run(server.family_updates(x_confirm="tok1", user=dict(wife)))
+        self.assertTrue(res["joined"])
+        self.assertEqual(db["family_invites"].rows[0]["status"], "accepted")
+
     def test_redeem_via_header_when_blockers_match_query_strings(self):
         db = self._db()
         server.get_db = lambda: db
