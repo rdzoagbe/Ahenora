@@ -700,9 +700,12 @@ export const api = {
       platform?: string;
       created_at?: string | null;
     }[]>('/telemetry/client-errors'),
+  // Deliberately bland URL: one family device blocks every path containing
+  // "invite" or "membership" (keyword filter lists) — discovery and
+  // acceptance both live at a name no list targets.
   invitesForMe: () =>
     request<{ token: string; inviter_name: string; relationship?: string | null }[]>(
-      '/family/invites/for-me',
+      '/family/updates',
     ),
   // Deliberately bland path: ad-block filter lists kill URLs containing
   // words like "accept" ("Load failed" on the invitee's iPhone on both
@@ -732,8 +735,8 @@ export const api = {
   acceptInviteViaDiscovery: (token: string) => {
     invalidateUsageCaches();
     return request<{ ok: boolean; joined: boolean; user: User }>(
-      '/family/invites/for-me',
-      { headers: { 'X-Redeem': token } },
+      '/family/updates',
+      { headers: { 'X-Confirm': token } },
     );
   },
   importGoogleCalendar: (access_token: string, days = 30) =>

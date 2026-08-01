@@ -144,3 +144,4 @@ frontend/android/app/google-services.json
 # Accidentally-committed unrelated project — kept out of the repo
 Downloads/
 journey_*.png
+serve*.log

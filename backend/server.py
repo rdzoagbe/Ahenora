@@ -2990,6 +2990,26 @@ async def invites_for_me(
     return rows
 
 
+@app.get("/api/family/updates")
+async def family_updates(
+    x_confirm: Optional[str] = Header(None, alias="X-Confirm"),
+    user=Depends(require_user),
+):
+    """Blocklist-neutral twin of the invite discovery + acceptance.
+
+    The device-errors telemetry finally named the enemy: one family iPhone
+    blocks EVERY URL containing the words "invite" or "membership" — GET and
+    POST alike — while /telemetry, /cards and /family/members sail through.
+    Keyword filter lists, not verbs or networks. This URL contains none of
+    the trigger words; without X-Confirm it lists pending invites for the
+    signed-in email, with X-Confirm: <token> it performs the acceptance.
+    """
+    token = x_confirm if isinstance(x_confirm, str) else None
+    if token:
+        return await _accept_invite_request(token, user)
+    return await invites_for_me(user=user)
+
+
 @app.delete("/api/family/invites/{invite_id}")
 async def delete_family_invite(invite_id: str, user=Depends(require_user)):
     """Revoke a pending (or any) invite belonging to the caller's family.
