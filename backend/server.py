@@ -894,6 +894,12 @@ def public_vault_doc(doc: dict) -> dict:
         "image_base64": doc["image_base64"],
         "mime_type": doc.get("mime_type") or "image/jpeg",
         "file_name": doc.get("file_name"),
+        # Documents are private to their uploader unless explicitly shared.
+        # Legacy docs (uploaded before this existed) carry neither field and
+        # stay family-visible until someone claims them — see list_vault.
+        "visibility": doc.get("visibility") or "shared",
+        "owner_user_id": doc.get("owner_user_id"),
+        "owner_name": doc.get("owner_name"),
         "created_at": iso(doc["created_at"]),
     }
 
@@ -1594,6 +1600,13 @@ class VaultIn(BaseModel):
     image_base64: str
     mime_type: Optional[str] = None
     file_name: Optional[str] = None
+    # "private" (default) or "shared". A co-parent joining a household must
+    # not inherit sight of documents nobody chose to share.
+    visibility: Optional[str] = None
+
+
+class VaultVisibilityIn(BaseModel):
+    visibility: str
 
 
 class RewardIn(BaseModel):
@@ -3594,13 +3607,54 @@ async def card_conflicts(
 # -----------------------------------------------------------------------------
 # Vault
 # -----------------------------------------------------------------------------
+def _may_see_vault_doc(doc: dict, user: dict) -> bool:
+    """Shared docs, your own docs, and unclaimed legacy docs (no owner)."""
+    if (doc.get("visibility") or "shared") == "shared":
+        return True
+    return doc.get("owner_user_id") in (None, user["user_id"])
+
+
 @app.get("/api/vault")
 async def list_vault(user=Depends(require_user)):
     database = get_db()
     rows = []
     async for item in database["vault"].find({"family_id": user["family_id"]}, {"_id": 0}).sort("created_at", -1):
-        rows.append(public_vault_doc(item))
+        if _may_see_vault_doc(item, user):
+            rows.append(public_vault_doc(item))
     return rows
+
+
+@app.patch("/api/vault/{doc_id}/visibility")
+async def set_vault_visibility(doc_id: str, payload: VaultVisibilityIn, user=Depends(require_user)):
+    """Flip a document between private and shared.
+
+    Allowed for the owner, and for any member on an unclaimed legacy doc —
+    claiming it makes the caller its owner, which is how a family converts
+    documents uploaded before this feature into genuinely private ones.
+    """
+    database = get_db()
+    visibility = "private" if payload.visibility == "private" else "shared"
+    doc = await database["vault"].find_one(
+        {"doc_id": doc_id, "family_id": user["family_id"]}, {"_id": 0}
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    owner = doc.get("owner_user_id")
+    if owner not in (None, user["user_id"]):
+        raise HTTPException(status_code=403, detail="Only the owner can change this document")
+    await database["vault"].update_one(
+        {"doc_id": doc_id, "family_id": user["family_id"]},
+        {"$set": {
+            "visibility": visibility,
+            "owner_user_id": owner or user["user_id"],
+            "owner_name": doc.get("owner_name") or user.get("name"),
+            "updated_at": utcnow(),
+        }},
+    )
+    fresh = await database["vault"].find_one(
+        {"doc_id": doc_id, "family_id": user["family_id"]}, {"_id": 0}
+    )
+    return public_vault_doc(fresh)
 
 
 @app.post("/api/vault")
@@ -3627,6 +3681,11 @@ async def create_vault_doc(payload: VaultIn, user=Depends(require_user)):
         "image_base64": payload.image_base64,
         "mime_type": payload.mime_type or "image/jpeg",
         "file_name": payload.file_name,
+        # Private unless the uploader says otherwise: a passport scan is not
+        # household news just because the household shares an app.
+        "visibility": "shared" if payload.visibility == "shared" else "private",
+        "owner_user_id": user["user_id"],
+        "owner_name": user.get("name"),
         "created_at": utcnow(),
     }
     await database["vault"].insert_one(doc)
@@ -3692,7 +3751,7 @@ async def render_vault_doc(doc_id: str, user=Depends(require_user)):
     doc = await database["vault"].find_one(
         {"doc_id": doc_id, "family_id": user["family_id"]}, {"_id": 0}
     )
-    if not doc:
+    if not doc or not _may_see_vault_doc(doc, user):
         raise HTTPException(status_code=404, detail="Document not found")
     mime = doc.get("mime_type") or "image/jpeg"
     if mime.startswith("image/"):
@@ -3718,6 +3777,8 @@ async def delete_vault_doc(doc_id: str, user=Depends(require_user)):
         {"doc_id": doc_id, "family_id": user["family_id"]},
         {"_id": 0},
     )
+    if doc and doc.get("owner_user_id") not in (None, user["user_id"]):
+        raise HTTPException(status_code=403, detail="Only the owner can delete this document")
     if doc:
         size = len(doc["image_base64"].encode("utf-8"))
         await database["vault"].delete_one({"doc_id": doc_id})
@@ -6381,6 +6442,9 @@ async def vault_expiry_alerts(user: dict = Depends(require_user), database=Depen
     ).to_list(500)
     alerts = []
     for doc in docs:
+        # An expiry reminder leaks a document's title too — same rule as the list.
+        if not _may_see_vault_doc(doc, user):
+            continue
         exp = doc.get("expiry_date")
         if exp:
             exp_dt = ensure_aware_utc(exp)
@@ -6403,6 +6467,11 @@ async def set_vault_expiry(doc_id: str, expiry_date: str = Query(...), user: dic
     exp_dt = parse_dt(expiry_date)
     if not exp_dt:
         raise HTTPException(400, "Invalid date format")
+    existing = await database["vault"].find_one(
+        {"doc_id": doc_id, "family_id": user["family_id"]}, {"_id": 0}
+    )
+    if existing and not _may_see_vault_doc(existing, user):
+        raise HTTPException(404, "Document not found")
     result = await database["vault"].update_one(
         {"doc_id": doc_id, "family_id": user["family_id"]},
         {"$set": {"expiry_date": exp_dt}},

@@ -5,7 +5,7 @@ import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
-import { Plus, X, Trash2, ShoppingCart, Check, UtensilsCrossed, Bell, ChevronDown, ChevronLeft, History, RotateCcw, Sparkles, Sun, ChefHat, Clock, AlertTriangle, Search, Minus, BookOpen, Camera, Image as ImageIcon } from 'lucide-react-native';
+import { Plus, X, Trash2, ShoppingCart, Check, UtensilsCrossed, Bell, ChevronDown, ChevronLeft, History, RotateCcw, Sparkles, Sun, ChefHat, Clock, AlertTriangle, Search, Minus, BookOpen, Camera, Image as ImageIcon , ListChecks} from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { PressScale } from '../../src/components/PressScale';
@@ -211,21 +211,27 @@ export default function Kitchen() {
     setScanItems((prev) => prev.map((it, i) => (i === idx ? { ...it, checked: !it.checked } : it)));
   }, []);
 
+  // Snapping this week's paper list usually means REPLACING last week's,
+  // not appending to it — offered right where the decision is made.
+  const [scanReplace, setScanReplace] = useState(false);
+
   const addScannedItems = useCallback(async () => {
     const picked = scanItems.filter((i) => i.checked).map((i) => i.name);
     if (picked.length === 0 || scanAdding) return;
     setScanAdding(true);
     try {
+      if (scanReplace) await api.clearAllShopping();
       await api.bulkAddShopping(picked, picked.map((n) => categoriseShoppingItem(n) || undefined));
       setShopItems(await api.listShopping().catch(() => []));
       setShowScan(false);
+      setScanReplace(false);
       showToast(t('cook_added_to_list', { n: picked.length }), 'success');
     } catch {
       showToast(t('vault_could_not_add_meal'), 'error');
     } finally {
       setScanAdding(false);
     }
-  }, [scanItems, scanAdding, showToast, t]);
+  }, [scanItems, scanAdding, scanReplace, showToast, t]);
 
   // ── Capture a printed recipe into the planner ──
   // Same posture as the list scan: the photo produces a reviewable recipe,
@@ -331,6 +337,40 @@ export default function Kitchen() {
       load();
     }
   }, [load, showToast]);
+
+  // Multi-select: pick a few items and delete just those, instead of the
+  // all-or-nothing "clear the whole list". Plain functions — a manual
+  // useCallback here makes the React Compiler skip the whole screen.
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  const exitSelect = () => {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  };
+
+  const toggleSelected = (itemId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(itemId)) next.delete(itemId);
+      else next.add(itemId);
+      return next;
+    });
+  };
+
+  const deleteSelected = async () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    setShopItems((prev) => prev.filter((i) => !selectedIds.has(i.item_id)));
+    exitSelect();
+    try {
+      await Promise.all(ids.map((id) => api.deleteShoppingItem(id)));
+      showToast(`${ids.length} ${t('kitchen_items_removed')}`, 'success');
+    } catch {
+      showToast(t('vault_could_not_delete_restored'), 'error');
+      load();
+    }
+  };
 
   const clearChecked = useCallback(async () => {
     const checkedIds = new Set(shopItems.filter((i) => i.checked).map((i) => i.item_id));
@@ -954,8 +994,19 @@ export default function Kitchen() {
               <Text style={styles.scanHint}>{t('scan_hint')}</Text>
 
               {uncheckedItems.map((item, index) => (
-                <PressScale key={item.item_id} onPress={() => toggleShopItem(item)} style={styles.row}>
-                  <View style={styles.numBadge}><Text style={styles.numText}>{index + 1}</Text></View>
+                <PressScale
+                  key={item.item_id}
+                  onPress={() => (selectMode ? toggleSelected(item.item_id) : toggleShopItem(item))}
+                  onLongPress={() => { setSelectMode(true); toggleSelected(item.item_id); }}
+                  style={[styles.row, selectMode && selectedIds.has(item.item_id) && styles.rowSelected]}
+                >
+                  {selectMode ? (
+                    <View style={[styles.selBox, selectedIds.has(item.item_id) && styles.selBoxOn]}>
+                      {selectedIds.has(item.item_id) ? <Check color={ui.bg} size={13} /> : null}
+                    </View>
+                  ) : (
+                    <View style={styles.numBadge}><Text style={styles.numText}>{index + 1}</Text></View>
+                  )}
                   <Text style={styles.rowText}>{item.name}</Text>
                   {(() => {
                     // Everything stored before this shipped is "Other", because the
@@ -979,8 +1030,19 @@ export default function Kitchen() {
                 <>
                   <View style={styles.divider}><Text style={styles.dividerText}>{t('vault_done')} ({checkedItems.length})</Text></View>
                   {checkedItems.map((item) => (
-                    <PressScale key={item.item_id} onPress={() => toggleShopItem(item)} style={styles.row}>
-                      <Check color={ui.mintText} size={20} />
+                    <PressScale
+                      key={item.item_id}
+                      onPress={() => (selectMode ? toggleSelected(item.item_id) : toggleShopItem(item))}
+                      onLongPress={() => { setSelectMode(true); toggleSelected(item.item_id); }}
+                      style={[styles.row, selectMode && selectedIds.has(item.item_id) && styles.rowSelected]}
+                    >
+                      {selectMode ? (
+                        <View style={[styles.selBox, selectedIds.has(item.item_id) && styles.selBoxOn]}>
+                          {selectedIds.has(item.item_id) ? <Check color={ui.bg} size={13} /> : null}
+                        </View>
+                      ) : (
+                        <Check color={ui.mintText} size={20} />
+                      )}
                       <Text style={[styles.rowText, styles.rowTextDone]}>{item.name}</Text>
                       <PressScale
                   accessibilityRole="button"
@@ -994,11 +1056,51 @@ export default function Kitchen() {
 
               {shopItems.length === 0 ? <Text style={styles.empty}>{t('vault_shop_empty')}</Text> : null}
 
-              {shopItems.length > 1 ? (
-                <PressScale testID="shop-clear-all" onPress={clearAllShop} style={styles.clearAllBtn}>
-                  <Trash2 color={ui.danger} size={14} />
-                  <Text style={styles.clearAllText}>{t('kitchen_clear_all')}</Text>
-                </PressScale>
+              {shopItems.length > 0 ? (
+                selectMode ? (
+                  <View style={styles.selBar}>
+                    <PressScale testID="shop-select-cancel" onPress={exitSelect} style={styles.selCancelBtn}>
+                      <Text style={styles.selCancelText}>{t('cancel')}</Text>
+                    </PressScale>
+                    <PressScale
+                      testID="shop-select-all"
+                      onPress={() => setSelectedIds(
+                        selectedIds.size === shopItems.length
+                          ? new Set()
+                          : new Set(shopItems.map((i) => i.item_id)),
+                      )}
+                      style={styles.selCancelBtn}
+                    >
+                      <Text style={styles.selCancelText}>
+                        {selectedIds.size === shopItems.length ? t('kitchen_select_none') : t('kitchen_select_all')}
+                      </Text>
+                    </PressScale>
+                    <PressScale
+                      testID="shop-delete-selected"
+                      onPress={deleteSelected}
+                      disabled={selectedIds.size === 0}
+                      style={[styles.selDeleteBtn, selectedIds.size === 0 && { opacity: 0.45 }]}
+                    >
+                      <Trash2 color="#FFFFFF" size={14} />
+                      <Text style={styles.selDeleteText}>
+                        {t('kitchen_delete_selected')}{selectedIds.size ? ` (${selectedIds.size})` : ''}
+                      </Text>
+                    </PressScale>
+                  </View>
+                ) : (
+                  <View style={styles.shopFooterRow}>
+                    <PressScale testID="shop-select-mode" onPress={() => setSelectMode(true)} style={styles.selectModeBtn}>
+                      <ListChecks color={ui.text} size={14} />
+                      <Text style={styles.selectModeText}>{t('kitchen_select_items')}</Text>
+                    </PressScale>
+                    {shopItems.length > 1 ? (
+                      <PressScale testID="shop-clear-all" onPress={clearAllShop} style={styles.clearAllBtn}>
+                        <Trash2 color={ui.danger} size={14} />
+                        <Text style={styles.clearAllText}>{t('kitchen_clear_all')}</Text>
+                      </PressScale>
+                    ) : null}
+                  </View>
+                )
               ) : null}
             </View>
           </>
@@ -1694,6 +1796,24 @@ export default function Kitchen() {
                 <Text style={styles.rowCat}>{categoriseShoppingItem(item.name) || ''}</Text>
               </PressScale>
             ))}
+            {shopItems.length > 0 ? (
+              <PressScale
+                testID="scan-replace"
+                accessibilityRole="button"
+                onPress={() => setScanReplace((v) => !v)}
+                style={styles.scanRow}
+              >
+                <View style={[styles.scanCheck, scanReplace && styles.scanCheckOn]}>
+                  {scanReplace ? <Check color="#fff" size={14} /> : null}
+                </View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.rowText}>{t('scan_replace_list')}</Text>
+                  <Text style={styles.scanUnsure}>
+                    {t('scan_replace_hint', { n: shopItems.length })}
+                  </Text>
+                </View>
+              </PressScale>
+            ) : null}
             <PressScale
               accessibilityRole="button"
               onPress={() => { setScanPhase('idle'); setScanItems([]); }}
@@ -2003,6 +2123,32 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   keepAwakeText: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 12.5 },
   mealEmptyWrap: { alignItems: 'center', paddingVertical: 6 },
   mealActions: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
+  shopFooterRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  selectModeBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingVertical: 9, paddingHorizontal: 14, borderRadius: 999,
+    borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft,
+  },
+  selectModeText: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 12 },
+  rowSelected: { backgroundColor: ui.orangeSoft },
+  selBox: {
+    width: 22, height: 22, borderRadius: 6,
+    borderWidth: 2, borderColor: ui.muted,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  selBoxOn: { backgroundColor: ui.orange, borderColor: ui.orange },
+  selBar: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  selCancelBtn: {
+    paddingVertical: 9, paddingHorizontal: 14, borderRadius: 999,
+    borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft,
+  },
+  selCancelText: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 12 },
+  selDeleteBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingVertical: 9, paddingHorizontal: 14, borderRadius: 999,
+    backgroundColor: ui.danger,
+  },
+  selDeleteText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 12 },
   clearAllBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 12, paddingVertical: 9, borderRadius: 99, backgroundColor: ui.dangerSoft },
   clearAllText: { color: ui.danger, fontFamily: 'Inter_700Bold', fontSize: 13 },
   suggestCta: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 18, paddingVertical: 12, borderRadius: 99, backgroundColor: ui.lavenderText, marginTop: 4 },

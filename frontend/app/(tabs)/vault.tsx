@@ -15,7 +15,7 @@ import {
 import { BlurView } from 'expo-blur';
 import { useFocusEffect, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { Plus, X, Trash2, Stethoscope, BookOpen, Shield, Scale, Bell, Folder, ChevronRight, FileText, AlertTriangle, Share2, Image as ImageIcon } from 'lucide-react-native';
+import { Plus, X, Trash2, Stethoscope, BookOpen, Shield, Scale, Bell, Folder, ChevronRight, FileText, AlertTriangle, Share2, Image as ImageIcon, Lock, Users } from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { PressScale } from '../../src/components/PressScale';
@@ -30,7 +30,7 @@ import { Badge, Card, IconTile, ProgressBar, ScreenHeader, UI, useUI, UIColors }
 
 import { useStore } from '../../src/store';
 
-import { api, logEvent, Entitlements, ExpiryAlert, VaultDoc } from '../../src/api';
+import { api, logEvent, Entitlements, ExpiryAlert, VaultDoc, VaultVisibility } from '../../src/api';
 import { logger } from '../../src/logger';
 
 const CATEGORIES = [
@@ -92,6 +92,23 @@ export default function Vault() {
     }
   };
   const [filter, setFilter] = useState<string>('All');
+  const [visibility, setVisibility] = useState<VaultVisibility>('private');
+
+  // Flip a document between private and shared. On a legacy document (no
+  // owner recorded) this also claims it, which is how documents uploaded
+  // before this feature become genuinely private.
+  const toggleVisibility = async (doc: VaultDoc) => {
+    const next: VaultVisibility = (doc.visibility || 'shared') === 'shared' ? 'private' : 'shared';
+    try {
+      const updated = await api.setVaultVisibility(doc.doc_id, next);
+      setDocs((prev) => prev.map((d) => (d.doc_id === doc.doc_id ? updated : d)));
+      setPreview((p) => (p && p.doc_id === doc.doc_id ? updated : p));
+      showToast(next === 'private' ? t('vault_now_private') : t('vault_now_shared'), 'success');
+    } catch (e: any) {
+      const detail = String(e?.message || '').match(/\{.*"detail"\s*:\s*"([^"]+)"/)?.[1];
+      showToast(detail || t('vault_could_not_save'), 'error');
+    }
+  };
 
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState('Medical');
@@ -127,11 +144,12 @@ export default function Vault() {
     }
   }, [showToast]);
 
-  const handleRefresh = useCallback(async () => {
+  // Plain function: the manual memo here blocked React Compiler on this screen.
+  const handleRefresh = async () => {
     setRefreshing(true);
     await load();
     setRefreshing(false);
-  }, [load]);
+  };
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
@@ -216,17 +234,43 @@ export default function Vault() {
     }
   };
 
+  const visibilityPicker = (
+    <View style={styles.visRow}>
+      {(['private', 'shared'] as VaultVisibility[]).map((v) => {
+        const active = visibility === v;
+        return (
+          <PressScale
+            key={v}
+            testID={`vault-visibility-${v}`}
+            onPress={() => setVisibility(v)}
+            style={[styles.visChip, active && styles.visChipActive]}
+          >
+            {v === 'private' ? (
+              <Lock color={active ? ui.bg : ui.muted} size={14} />
+            ) : (
+              <Users color={active ? ui.bg : ui.muted} size={14} />
+            )}
+            <Text style={[styles.visChipText, { color: active ? ui.bg : ui.muted }]}>
+              {v === 'private' ? t('vault_private') : t('vault_shared')}
+            </Text>
+          </PressScale>
+        );
+      })}
+    </View>
+  );
+
   const save = async () => {
     if (!title.trim() || !image) return;
     setSaving(true);
     try {
-      const created = await api.createVaultDoc({ title: title.trim(), category, image_base64: image, mime_type: mimeType, file_name: fileName || undefined });
+      const created = await api.createVaultDoc({ title: title.trim(), category, image_base64: image, mime_type: mimeType, file_name: fileName || undefined, visibility });
       setDocs((prev) => [created, ...prev]);
       setTitle('');
       setImage(null);
       setMimeType('image/jpeg');
       setFileName(null);
       setCategory('Medical');
+      setVisibility('private');
       setShowAdd(false);
       showToast(t('vault_document_saved'), 'success');
       logEvent('vault_added');
@@ -285,7 +329,37 @@ export default function Vault() {
   // Open a document for *reading* (not sharing): PDFs/files launch in the
   // phone's viewer. On Android we fire a VIEW intent so it opens directly;
   // elsewhere (and on older builds) we fall back to the share/quick-look sheet.
-  const openDoc = useCallback(async (doc: VaultDoc) => {
+  // Plain function: a manual useCallback here makes the React Compiler skip
+  // the whole screen (same lesson as the kids and settings pages).
+  const openDoc = async (doc: VaultDoc) => {
+    // Web has no expo-file-system: the whole native path below throws there,
+    // which is why opening any document on the web app only ever produced an
+    // error toast. Browsers open a blob URL in a new tab instead.
+    if (Platform.OS === 'web') {
+      try {
+        const data = doc.image_base64 || '';
+        const match = data.match(/^data:([\w/+.-]+);base64,(.+)$/);
+        const mime = doc.mime_type || (match ? match[1] : 'application/octet-stream');
+        const binary = atob(match ? match[2] : data);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+        const url = URL.createObjectURL(new Blob([bytes], { type: mime }));
+        const opened = window.open(url, '_blank');
+        if (!opened) {
+          // Popup blocked — fall back to a download so the file still arrives.
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = doc.file_name || doc.title || 'document';
+          a.click();
+        }
+        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+        logEvent('vault_shared');
+      } catch (e: any) {
+        logger.warn('Open doc (web) failed:', e?.message || e);
+        showToast(t('vault_open_error'), 'error');
+      }
+      return;
+    }
     try {
       const FS = require('expo-file-system/legacy');
       const data = doc.image_base64 || '';
@@ -327,7 +401,7 @@ export default function Vault() {
       logger.warn('Open doc failed:', e?.message || e);
       showToast(t('vault_open_error'), 'error');
     }
-  }, [showToast, t]);
+  };
 
   const confirmRemove = (doc: VaultDoc) => {
     Alert.alert(
@@ -428,6 +502,11 @@ export default function Vault() {
                       <Text style={styles.listTitle} numberOfLines={1}>{d.title}</Text>
                       <View style={styles.listMeta}>
                         <Badge label={d.category.toUpperCase()} bg={cat.soft} color={cat.tone} />
+                        {(d.visibility || 'shared') === 'private' ? (
+                          <Badge label={t('vault_private')} bg={ui.soft} color={ui.muted} />
+                        ) : (
+                          <Badge label={t('vault_shared')} bg={ui.mint} color={ui.mintText} />
+                        )}
                         <Text style={styles.listDate}>{updatedLine(d.created_at, t)}</Text>
                       </View>
                     </View>
@@ -503,6 +582,9 @@ export default function Vault() {
           })}
         </View>
 
+        <Text style={styles.label}>{t('vault_who_can_see')}</Text>
+        {visibilityPicker}
+
         <View style={styles.pickRow}>
           <PressScale testID="vault-pick-photo" onPress={pickImage} style={styles.pickOption}>
             <ImageIcon color={ui.orange} size={20} />
@@ -569,7 +651,29 @@ export default function Vault() {
             <Text style={styles.previewMeta}>
               {t(preview.category.toLowerCase())} · {updatedLine(preview.created_at, t)}
               {preview.file_name ? ` · ${preview.file_name}` : ''}
+              {preview.owner_name ? ` · ${preview.owner_name}` : ''}
             </Text>
+            <PressScale
+              testID="preview-visibility"
+              onPress={() => toggleVisibility(preview)}
+              style={styles.previewVisibilityRow}
+            >
+              {(preview.visibility || 'shared') === 'private' ? (
+                <Lock color="#fff" size={15} />
+              ) : (
+                <Users color="#fff" size={15} />
+              )}
+              <Text style={styles.previewVisibilityText}>
+                {(preview.visibility || 'shared') === 'private'
+                  ? t('vault_private_hint')
+                  : t('vault_shared_hint')}
+              </Text>
+              <Text style={styles.previewVisibilityCta}>
+                {(preview.visibility || 'shared') === 'private'
+                  ? t('vault_make_shared')
+                  : t('vault_make_private')}
+              </Text>
+            </PressScale>
             {isImageDoc(preview) ? (
               <Image source={{ uri: preview.image_base64 }} style={styles.previewImg} />
             ) : isPdfDoc(preview) && !pdfFailed ? (
@@ -675,6 +779,22 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   previewWrap: { flex: 1, padding: 24, justifyContent: 'center' },
   previewTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
   previewTitle: { flex: 1, color: '#fff', fontFamily: 'Inter_800ExtraBold', fontSize: 24 },
+  visRow: { flexDirection: 'row', gap: 8, marginBottom: 4 },
+  visChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingVertical: 9, paddingHorizontal: 14,
+    borderRadius: 999, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft,
+  },
+  visChipActive: { backgroundColor: ui.text, borderColor: ui.text },
+  visChipText: { fontFamily: 'Inter_700Bold', fontSize: 13 },
+  previewVisibilityRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    alignSelf: 'center', marginTop: 6, marginBottom: 2,
+    paddingVertical: 8, paddingHorizontal: 14,
+    borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.14)',
+  },
+  previewVisibilityText: { color: 'rgba(255,255,255,0.86)', fontFamily: 'Inter_500Medium', fontSize: 12 },
+  previewVisibilityCta: { color: '#fff', fontFamily: 'Inter_800ExtraBold', fontSize: 12 },
   previewMeta: { color: 'rgba(255,255,255,0.7)', fontFamily: 'Inter_600SemiBold', fontSize: 13, marginBottom: 14, marginTop: -6 },
   previewPdfWrap: { flex: 1, width: '100%' },
   previewExternalRow: { alignSelf: 'center', marginTop: 10, paddingVertical: 8, paddingHorizontal: 14 },

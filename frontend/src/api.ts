@@ -530,6 +530,8 @@ export interface CalendarImportResult {
   days: number;
 }
 
+export type VaultVisibility = 'private' | 'shared';
+
 export interface VaultDoc {
   doc_id: string;
   family_id: string;
@@ -538,6 +540,9 @@ export interface VaultDoc {
   image_base64: string;
   mime_type?: string;
   file_name?: string | null;
+  visibility?: VaultVisibility;
+  owner_user_id?: string | null;
+  owner_name?: string | null;
   created_at: string;
 }
 
@@ -865,7 +870,14 @@ export const api = {
       return data;
     });
   },
-  createVaultDoc: (data: { title: string; category: string; image_base64: string; mime_type?: string; file_name?: string }) => {
+  setVaultVisibility: (docId: string, visibility: VaultVisibility) => {
+    cache.invalidate('listVault');
+    return request<VaultDoc>(`/vault/${docId}/visibility`, {
+      method: 'PATCH',
+      body: { visibility },
+    });
+  },
+  createVaultDoc: (data: { title: string; category: string; image_base64: string; mime_type?: string; file_name?: string; visibility?: VaultVisibility }) => {
     cache.invalidate('listVault');
     invalidateUsageCaches();
     return request<VaultDoc>('/vault', { method: 'POST', body: data });
