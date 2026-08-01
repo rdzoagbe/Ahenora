@@ -2982,6 +2982,57 @@ async def delete_family_invite(invite_id: str, user=Depends(require_user)):
     return {"ok": True}
 
 
+@app.post("/api/family/invites/{invite_id}/complete")
+async def complete_family_invite(invite_id: str, user=Depends(require_user)):
+    """The inviter finishes the join from THEIR device.
+
+    Field saga: the invitee's iPhone killed every write-shaped request no
+    matter the verb, path or header, across Wi-Fi and 5G — her device could
+    read the invitation but never deliver the acceptance. The join is a
+    server-side operation; nothing about it requires the invitee's network
+    to work. The inviter taps "Add now" on the pending invite, the server
+    runs the exact same acceptance path (family switch, children migration,
+    notifications), and the invitee's device only has to read the result.
+    Guarded: the invite must belong to the caller's family, be pending, be
+    addressed to an email, and that email must already have an account.
+    """
+    database = get_db()
+    invite = await database["family_invites"].find_one(
+        {"invite_id": invite_id, "family_id": user["family_id"]}, {"_id": 0}
+    )
+    if not invite:
+        raise HTTPException(status_code=404, detail="Invite not found")
+    if invite.get("status") == "accepted":
+        raise HTTPException(status_code=409, detail="Invite has already been accepted")
+    email = (invite.get("email") or "").strip().lower()
+    if not email:
+        raise HTTPException(status_code=400, detail="This invite has no email address")
+    invitee = await database["users"].find_one({"email": email}, {"_id": 0})
+    if not invitee:
+        raise HTTPException(
+            status_code=404,
+            detail="No account with this email yet — they need to sign up first.",
+        )
+    if invitee.get("family_id") == user["family_id"]:
+        raise HTTPException(status_code=409, detail="They are already in your household")
+    fresh, joined = await _accept_invite_for_user(
+        database, invitee, invite, user["family_id"]
+    )
+    # Tell the invitee in-app, best effort — their device reads fine.
+    try:
+        lang = fresh.get("language") or "en"
+        L = PUSH_I18N.get(lang, PUSH_I18N["en"])
+        await asyncio.wait_for(send_push_to_user(
+            database, fresh["user_id"],
+            L["invited_title"].format(name=user.get("name") or "A parent"),
+            L["invited_body"],
+            {"type": "family_joined"},
+        ), timeout=5.0)
+    except Exception as exc:
+        log.warning("invite completion push skipped: %s", exc)
+    return {"ok": True, "joined": joined, "member_email": email}
+
+
 @app.get("/api/family/invite/{token}")
 async def family_invite_lookup(token: str):
     database = get_db()

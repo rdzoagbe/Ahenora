@@ -292,6 +292,45 @@ class SignedInAccept(LoginJoinsFamily):
 
 
 @unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
+class InviterCompletesJoin(LoginJoinsFamily):
+    """The invitee's device could read but never write: the inviter finishes
+    the join from their own device and the server does the rest."""
+
+    ROLAND = {"user_id": "u_roland", "family_id": "fam_main",
+              "name": "Roland", "email": "r@x.com"}
+
+    def test_add_now_moves_the_existing_account(self):
+        db = self._db()
+        server.get_db = lambda: db
+        res = asyncio.run(server.complete_family_invite("inv1", user=dict(self.ROLAND)))
+        self.assertTrue(res["joined"])
+        wife = db["users"].rows[0]
+        self.assertEqual(wife["family_id"], "fam_main")
+        self.assertEqual(db["family_invites"].rows[0]["status"], "accepted")
+        self.assertIn(("u_wife", "fam_main"), self.added)
+
+    def test_no_account_yet_is_a_clear_error(self):
+        db = self._db()
+        db["family_invites"].rows[0]["email"] = "nobody@x.com"
+        server.get_db = lambda: db
+        from fastapi import HTTPException
+        with self.assertRaises(HTTPException) as ctx:
+            asyncio.run(server.complete_family_invite("inv1", user=dict(self.ROLAND)))
+        self.assertEqual(ctx.exception.status_code, 404)
+        self.assertIn("sign up", ctx.exception.detail)
+
+    def test_cannot_complete_another_familys_invite(self):
+        db = self._db()
+        server.get_db = lambda: db
+        stranger = {"user_id": "u_x", "family_id": "fam_other", "name": "X",
+                    "email": "x@x.com"}
+        from fastapi import HTTPException
+        with self.assertRaises(HTTPException) as ctx:
+            asyncio.run(server.complete_family_invite("inv1", user=stranger))
+        self.assertEqual(ctx.exception.status_code, 404)
+
+
+@unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
 class InvitesForMe(unittest.TestCase):
     """Signing in is enough to be told about a waiting invite — the link
     surviving the junk folder is not a requirement."""
