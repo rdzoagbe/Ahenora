@@ -370,6 +370,29 @@ def is_admin_user(user: dict) -> bool:
     return is_admin_email(user.get("email", ""))
 
 
+# Tester privileges belong to the HOUSEHOLD, not the email: the founder's
+# co-parent joined his family and still saw the Free plan, because the
+# admin override was per-user while every real subscription is per-family.
+# Cached briefly — build_subscription runs on nearly every request.
+_ADMIN_FAMILY_CACHE: dict = {}
+
+
+async def family_has_admin(database, family_id: str) -> bool:
+    if not ADMIN_EMAILS or not family_id:
+        return False
+    now = utcnow().timestamp()
+    cached = _ADMIN_FAMILY_CACHE.get(family_id)
+    if cached and now - cached[0] < 60:
+        return cached[1]
+    has_admin = False
+    async for member in database["users"].find({"family_id": family_id}, {"_id": 0, "email": 1}):
+        if is_admin_email(member.get("email", "")):
+            has_admin = True
+            break
+    _ADMIN_FAMILY_CACHE[family_id] = (now, has_admin)
+    return has_admin
+
+
 def apply_admin_subscription(subscription: dict) -> dict:
     # Admin/tester accounts keep their own family data, but plan limits are bypassed
     # so the founder can test every feature without changing customer billing rules.
@@ -738,10 +761,14 @@ async def build_subscription(family_id: str):
     # aren't blocked by the child cap. Gates enforce automatically the moment
     # billing is configured — same trigger that locks /subscription/change.
     testing_window = not os.environ.get("RC_WEBHOOK_SECRET")
-    if testing_window:
+    # A household containing an admin/tester account is a tester household:
+    # everyone in it shares the top plan, exactly like a real purchase would
+    # be shared. Fixes the co-parent seeing Free next to the founder.
+    admin_household = await family_has_admin(database, family_id)
+    if testing_window or admin_household:
         limits = PLAN_CATALOG["executive"]["limits"]
     return {
-        "plan": family["plan"],
+        "plan": "family_office" if admin_household else family["plan"],
         # Lets the app show "you're previewing Premium free" notices so launch
         # gating never feels like a surprise takeaway.
         "testing_window": testing_window,
