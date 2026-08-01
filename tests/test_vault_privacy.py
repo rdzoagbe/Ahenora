@@ -131,3 +131,45 @@ class VaultPrivacy(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
+class ShoppingHistoryHousekeeping(unittest.TestCase):
+    """Clearing the list must not leave weeks of old archives behind, and a
+    family must be able to wipe them outright."""
+
+    def setUp(self):
+        self.db = FakeDatabase()
+        self._get_db = server.get_db
+        server.get_db = lambda: self.db
+
+    def tearDown(self):
+        server.get_db = self._get_db
+
+    def _hist(self):
+        return asyncio.run(self.db["shopping_history"].find({}).to_list(None))
+
+    def test_clear_all_keeps_one_undo_point_and_drops_older_archives(self):
+        asyncio.run(self.db["shopping_history"].insert_one(
+            {"history_id": "old1", "family_id": "fam1", "items": ["Ancient"],
+             "created_at": server.utcnow()}))
+        for name in ("Rice", "Beans"):
+            asyncio.run(self.db["shopping_list"].insert_one(
+                {"item_id": f"i_{name}", "family_id": "fam1", "name": name}))
+        asyncio.run(server.clear_all_shopping(user=dict(ROLAND)))
+        rows = self._hist()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(sorted(rows[0]["items"]), ["Beans", "Rice"])
+        self.assertEqual(
+            asyncio.run(self.db["shopping_list"].find({}).to_list(None)), [])
+
+    def test_clear_history_removes_everything_for_that_family_only(self):
+        asyncio.run(self.db["shopping_history"].insert_one(
+            {"history_id": "h1", "family_id": "fam1", "items": ["A"],
+             "created_at": server.utcnow()}))
+        asyncio.run(self.db["shopping_history"].insert_one(
+            {"history_id": "h2", "family_id": "fam2", "items": ["B"],
+             "created_at": server.utcnow()}))
+        res = asyncio.run(server.clear_shopping_history(user=dict(ROLAND)))
+        self.assertTrue(res["ok"])
+        self.assertEqual([h["history_id"] for h in self._hist()], ["h2"])
