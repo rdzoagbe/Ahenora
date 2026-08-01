@@ -557,7 +557,9 @@ export default function Kitchen() {
   }, [suggestVariant, loadSuggestions]);
 
   const acceptSuggestion = useCallback(async (sug: MealSuggestion) => {
-    if (mealLocked) { promptUpgrade('meal_planner'); return; }
+    // Close the sheet first: on web the root upgrade dialog stacks BELOW an
+    // open sheet, so prompting under it looked like nothing happened.
+    if (mealLocked) { setShowSuggest(false); promptUpgrade('meal_planner'); return; }
     const key = sugKey(sug);
     if (addedSuggest.has(key)) return;
     setAddedSuggest((prev) => new Set(prev).add(key));
@@ -576,7 +578,7 @@ export default function Kitchen() {
   }, [addedSuggest, mealLocked, promptUpgrade, showToast, t, sugKey]);
 
   const acceptAllSuggestions = useCallback(async () => {
-    if (mealLocked) { promptUpgrade('meal_planner'); return; }
+    if (mealLocked) { setShowSuggest(false); promptUpgrade('meal_planner'); return; }
     // Only fill days that don't already have a meal, so we never clobber a plan.
     const busyDays = new Set(meals.map((m) => m.day));
     const toAdd = suggestions.filter((s) => !addedSuggest.has(sugKey(s)) && !busyDays.has(s.day));
@@ -675,7 +677,7 @@ export default function Kitchen() {
   }, [shopItems, servings, suggestLang, showToast, t]);
 
   const addRecipeToDay = useCallback(async (recipeId: string, title: string, day: string) => {
-    if (mealLocked) { promptUpgrade('meal_planner'); return; }
+    if (mealLocked) { setShowBrowse(false); promptUpgrade('meal_planner'); return; }
     try {
       const created = await api.createMeal({
         day,
