@@ -2915,21 +2915,31 @@ async def family_invites(user=Depends(require_user)):
 
 
 @app.get("/api/family/invites/for-me")
-async def invites_for_me(redeem: Optional[str] = None, user=Depends(require_user)):
+async def invites_for_me(
+    redeem: Optional[str] = None,
+    x_redeem: Optional[str] = Header(None, alias="X-Redeem"),
+    user=Depends(require_user),
+):
     """Pending invites addressed to the signed-in user's own email.
 
     The join prompt asks the server directly instead of relying on the
     invite link surviving the trip through a junk folder, a cached page
     or a copy-pasted URL — signing in is enough to be told.
 
-    ?redeem=<token> accepts over THIS URL. The once-and-for-all invariant:
-    the card only appears because this exact request succeeded moments
-    earlier, so this request shape provably passes whatever blockers and
-    middleboxes the device has — anyone who can SEE the offer can take it.
-    Dedicated endpoints kept dying one content-blocker word at a time.
+    ?redeem=<token> — or the X-Redeem header — accepts over THIS URL. The
+    once-and-for-all invariant: the card only appears because this exact
+    request succeeded moments earlier, so this request shape provably passes
+    whatever blockers and middleboxes the device has — anyone who can SEE
+    the offer can take it. The header variant exists because one field
+    blocker also matched query strings; content-blocker rules match URLs
+    and cannot see headers, making the header request byte-identical in URL
+    and method to the proven one.
     """
-    if redeem:
-        return await _accept_invite_request(redeem, user)
+    # isinstance guard: called outside FastAPI (tests), x_redeem is the
+    # Header default object, not a string.
+    redeem_token = redeem or (x_redeem if isinstance(x_redeem, str) else None)
+    if redeem_token:
+        return await _accept_invite_request(redeem_token, user)
     database = get_db()
     email = (user.get("email") or "").strip().lower()
     if not email:

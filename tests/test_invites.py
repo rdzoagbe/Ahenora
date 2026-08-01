@@ -207,6 +207,15 @@ class SignedInAccept(LoginJoinsFamily):
         self.assertTrue(res["joined"])
         self.assertEqual(db["family_invites"].rows[0]["status"], "accepted")
 
+    def test_redeem_via_header_when_blockers_match_query_strings(self):
+        db = self._db()
+        server.get_db = lambda: db
+        wife = {"user_id": "u_wife", "email": "wife@x.com", "name": "Ama",
+                "family_id": "fam_solo", "language": "fr"}
+        res = asyncio.run(server.invites_for_me(x_redeem="tok1", user=wife))
+        self.assertTrue(res["joined"])
+        self.assertEqual(db["family_invites"].rows[0]["status"], "accepted")
+
     def test_membership_alias_behaves_identically(self):
         # The blocklist-proof route must be the same accept in every way.
         db = self._db()

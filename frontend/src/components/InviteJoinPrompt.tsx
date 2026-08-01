@@ -104,12 +104,21 @@ export function InviteJoinPrompt() {
     setTimeout(() => setToken(null), 1800);
   };
 
+  // A 200 alone is not a join: if a fallback lands on a server that ignores
+  // its redeem marker, the discovery URL answers with the plain invite list.
+  // Only an explicit join response counts.
+  const confirmJoined = (res: { ok?: boolean; user?: unknown } | unknown) => {
+    if (!res || (res as { ok?: boolean }).ok !== true) {
+      throw new Error('unexpected response shape from join');
+    }
+  };
+
   const accept = async () => {
     if (!token || busy) return;
     setBusy(true);
     setError(null);
     try {
-      await api.acceptInvite(token);
+      confirmJoined(await api.acceptInvite(token));
       await succeed();
     } catch (e: any) {
       let raw = String(e?.message || '');
@@ -127,7 +136,7 @@ export function InviteJoinPrompt() {
       if (!/^\d{3}:/.test(raw)) {
         for (const attempt of [api.acceptInviteViaGet, api.acceptInviteViaDiscovery]) {
           try {
-            await attempt(token);
+            confirmJoined(await attempt(token));
             await succeed();
             return;
           } catch (e2: any) {

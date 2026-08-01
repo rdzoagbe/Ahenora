@@ -124,11 +124,12 @@ function reportClientError(path: string, method: string, status: number | undefi
 
 async function request<T = unknown>(
   path: string,
-  opts: { method?: string; body?: unknown } = {}
+  opts: { method?: string; body?: unknown; headers?: Record<string, string> } = {}
 ): Promise<T> {
   const token = await tokenStore.get();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    ...(opts.headers || {}),
   };
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
@@ -715,11 +716,15 @@ export const api = {
   // Last-resort accept over the discovery URL itself. The join card only
   // exists because THIS exact request succeeded moments earlier, so this
   // request shape provably passes whatever the device blocks — anyone who
-  // can see the offer can take it.
+  // can see the offer can take it. The token rides a HEADER, not the query:
+  // one field blocker matched query strings too, and content-blocker rules
+  // match URLs but cannot see headers — this request is byte-identical in
+  // URL and method to the one that populated the card.
   acceptInviteViaDiscovery: (token: string) => {
     invalidateUsageCaches();
     return request<{ ok: boolean; joined: boolean; user: User }>(
-      `/family/invites/for-me?redeem=${encodeURIComponent(token)}`,
+      '/family/invites/for-me',
+      { headers: { 'X-Redeem': token } },
     );
   },
   importGoogleCalendar: (access_token: string, days = 30) =>
