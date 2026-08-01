@@ -66,6 +66,7 @@ export default function Settings() {
   // generic invite with a free-text relationship (grandparent, nanny...).
   const [inviteMode, setInviteMode] = useState<'coparent' | 'family'>('coparent');
   const [inviteRole, setInviteRole] = useState('');
+  const [inviteLabel, setInviteLabel] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
   const [invitePhone, setInvitePhone] = useState('');
   const [sending, setSending] = useState(false);
@@ -357,6 +358,7 @@ export default function Settings() {
     setInviteMethod('email');
     setInviteMode(mode);
     setInviteRole('');
+    setInviteLabel('');
     setInviteEmail(email);
     setInvitePhone('');
     setInviteResult(null);
@@ -416,7 +418,8 @@ export default function Settings() {
   };
 
   // Phone: create a link, then hand off to the device's SMS app pre-filled.
-  const sendPhoneInvite = useCallback(async () => {
+  // Plain function: manual useCallback trips the React Compiler here.
+  const sendPhoneInvite = async () => {
     const phone = invitePhone.trim();
     if (phone.replace(/[^0-9]/g, '').length < 6) {
       setInviteError(true);
@@ -427,7 +430,10 @@ export default function Settings() {
     setInviteResult(null);
     setInviteError(false);
     try {
-      const res = await api.createInviteLink();
+      const res = await api.createInviteLink({
+        relationship: inviteMode === 'family' ? inviteRole.trim() || undefined : undefined,
+        label: phone,
+      });
       const url = res.invite_url;
       setLastInviteUrl(url);
       const sep = Platform.OS === 'ios' ? '&' : '?';
@@ -450,17 +456,31 @@ export default function Settings() {
     } finally {
       setSending(false);
     }
-  }, [invitePhone, inviteMessage, shareInviteLink, load]);
+  };
 
-  // Link: create a link and open the native share sheet.
-  const shareNewLink = useCallback(async () => {
+  // Link: create a named, role-carrying link. On web it goes straight to the
+  // clipboard; on native the share sheet opens (its own Copy included).
+  // Plain function: manual useCallback trips the React Compiler here.
+  const shareNewLink = async () => {
     setSending(true);
     setInviteResult(null);
     setInviteError(false);
     try {
-      const res = await api.createInviteLink();
+      const res = await api.createInviteLink({
+        relationship: inviteMode === 'family' ? inviteRole.trim() || undefined : undefined,
+        label: inviteLabel.trim() || undefined,
+      });
       setLastInviteUrl(res.invite_url);
-      await shareInviteLink(res.invite_url, null);
+      if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) {
+        try {
+          await navigator.clipboard.writeText(res.invite_url);
+          showToast(t('set_link_copied'));
+        } catch {
+          await shareInviteLink(res.invite_url, null);
+        }
+      } else {
+        await shareInviteLink(res.invite_url, null);
+      }
       await load();
     } catch (error: any) {
       setInviteError(true);
@@ -468,7 +488,7 @@ export default function Settings() {
     } finally {
       setSending(false);
     }
-  }, [shareInviteLink, load]);
+  };
 
   return (
     <SwipeableTabView style={styles.container}>
@@ -607,8 +627,8 @@ export default function Settings() {
                 {invites.filter((i) => i.status === 'pending').map((invite) => (
                   <View key={invite.invite_id} style={styles.inviteRow}>
                     <MiniRow
-                      initial={(invite.email?.[0] || '?').toUpperCase()}
-                      name={invite.email || t('set_invite_link')}
+                      initial={((invite.email || invite.label)?.[0] || '?').toUpperCase()}
+                      name={invite.email || invite.label || t('set_invite_link')}
                       sub={`${invite.relationship ? `${invite.relationship} · ` : ''}${t('set_invite')} · ${invite.status}`}
                     />
                     {invite.email ? (
@@ -622,9 +642,21 @@ export default function Settings() {
                       </PressScale>
                     ) : null}
                     {invite.invite_url ? (
-                      <PressScale onPress={() => shareInviteLink(invite.invite_url, invite.email)} style={styles.ghostBtn}>
+                      <PressScale
+                        onPress={async () => {
+                          if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) {
+                            try {
+                              await navigator.clipboard.writeText(invite.invite_url!);
+                              showToast(t('set_link_copied'));
+                              return;
+                            } catch { /* fall through to share */ }
+                          }
+                          await shareInviteLink(invite.invite_url, invite.email);
+                        }}
+                        style={styles.ghostBtn}
+                      >
                         <Share2 color={ui.text} size={14} />
-                        <Text style={styles.ghostBtnText}>{t('set_share')}</Text>
+                        <Text style={styles.ghostBtnText}>{Platform.OS === 'web' ? t('set_copy') : t('set_share')}</Text>
                       </PressScale>
                     ) : null}
                     <PressScale
@@ -947,24 +979,6 @@ export default function Settings() {
               returnKeyType="send"
               onSubmitEditing={sendEmailInvite}
             />
-            {inviteMode === 'family' ? (
-              <>
-                <TextInput
-                  testID="invite-role"
-                  value={inviteRole}
-                  onChangeText={setInviteRole}
-                  placeholder={t('set_invite_role_ph')}
-                  placeholderTextColor={ui.muted}
-                  autoCapitalize="words"
-                  autoCorrect={false}
-                  style={styles.input}
-                  returnKeyType="send"
-                  onSubmitEditing={sendEmailInvite}
-                  maxLength={32}
-                />
-                <Text style={styles.inviteHint}>{t('set_invite_role_hint')}</Text>
-              </>
-            ) : null}
             <Text style={styles.inviteHint}>{t('set_invite_email_hint')}</Text>
           </>
         ) : inviteMethod === 'phone' ? (
@@ -985,8 +999,40 @@ export default function Settings() {
             <Text style={styles.inviteHint}>{t('set_invite_phone_hint')}</Text>
           </>
         ) : (
-          <Text style={styles.inviteHint}>{t('set_invite_link_hint')}</Text>
+          <>
+            <TextInput
+              testID="invite-label"
+              value={inviteLabel}
+              onChangeText={setInviteLabel}
+              placeholder={t('set_invite_link_for_ph')}
+              placeholderTextColor={ui.muted}
+              autoCapitalize="words"
+              autoCorrect={false}
+              style={styles.input}
+              maxLength={48}
+            />
+            <Text style={styles.inviteHint}>{t('set_invite_link_hint')}</Text>
+          </>
         )}
+
+        {inviteMode === 'family' ? (
+          <>
+            <TextInput
+              testID="invite-role"
+              value={inviteRole}
+              onChangeText={setInviteRole}
+              placeholder={t('set_invite_role_ph')}
+              placeholderTextColor={ui.muted}
+              autoCapitalize="words"
+              autoCorrect={false}
+              style={styles.input}
+              returnKeyType={inviteMethod === 'email' ? 'send' : 'done'}
+              onSubmitEditing={inviteMethod === 'email' ? sendEmailInvite : undefined}
+              maxLength={32}
+            />
+            <Text style={styles.inviteHint}>{t('set_invite_role_hint')}</Text>
+          </>
+        ) : null}
 
         {inviteResult ? (
           <Text style={[styles.note, inviteError && { color: ui.danger }]}>{inviteResult}</Text>

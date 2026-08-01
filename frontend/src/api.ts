@@ -492,6 +492,7 @@ export interface FamilyInvite {
   family_id: string;
   email?: string | null;
   relationship?: string | null;
+  label?: string | null;
   status: 'pending' | 'accepted' | 'expired';
   token?: string;
   invite_url?: string;
@@ -659,10 +660,11 @@ export const api = {
       body: relationship ? { email, relationship } : { email },
     });
   },
-  createInviteLink: () => {
+  createInviteLink: (opts?: { relationship?: string; label?: string }) => {
     invalidateUsageCaches();
     return request<{ ok: boolean; invite: FamilyInvite; invite_url: string }>('/family/invite/link', {
       method: 'POST',
+      body: opts && (opts.relationship || opts.label) ? opts : {},
     });
   },
   getMetricsSummary: (days = 14) =>

@@ -292,6 +292,34 @@ class SignedInAccept(LoginJoinsFamily):
 
 
 @unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
+class NamedShareLinks(unittest.TestCase):
+    """A share link carries who it's for and what role they get."""
+
+    def test_link_stores_label_and_relationship(self):
+        db = FakeDB(family_invites=FakeColl())
+        _get_db, _slot = server.get_db, server._enforce_member_slot_limit
+
+        async def fake_slot(d, u):
+            return None
+        server.get_db = lambda: db
+        server._enforce_member_slot_limit = fake_slot
+        try:
+            payload = server.InviteLinkIn(relationship="  Nanny ", label=" For  Grandma ")
+            res = asyncio.run(server.family_invite_link(payload, user={
+                "user_id": "u1", "family_id": "fam1", "name": "Roland"}))
+        finally:
+            server.get_db = _get_db
+            server._enforce_member_slot_limit = _slot
+        self.assertEqual(res["invite"]["relationship"], "Nanny")
+        self.assertEqual(res["invite"]["label"], "For Grandma")
+        self.assertTrue(res["invite_url"].startswith("https://"))
+        row = db["family_invites"].rows[0]
+        self.assertEqual(row["label"], "For Grandma")
+        # Whoever accepts becomes exactly this role.
+        self.assertEqual(server.invite_member_role(row), "Nanny")
+
+
+@unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
 class InviterCompletesJoin(LoginJoinsFamily):
     """The invitee's device could read but never write: the inviter finishes
     the join from their own device and the server does the rest."""
