@@ -101,7 +101,7 @@ async def main():
         await android.goto(f"{WEB}/kitchen", wait_until="networkidle")
         await android.wait_for_timeout(2500)
         shop = android.get_by_placeholder("Add items — commas for several")
-        await shop.fill("Plantain x6")
+        await shop.fill("Plantain x6, Rice 1kg, Tomatoes x4, Chicken 600g")
         await shop.press("Enter")
         await android.wait_for_timeout(1500)
         r["A_shopping_item_added"] = "Plantain x6" in await android.inner_text("body")
@@ -123,6 +123,30 @@ async def main():
         await android.wait_for_timeout(800)
         body = await android.inner_text("body")
         r["A_pending_invite_with_role"] = mail_b in body and "Co-parent ·" in body
+
+        # ---- Gating, FREE state (billing live: no testing window). By
+        # design the suggestions sheet OPENS as a free peek; the gate fires
+        # on ADDING the week to the planner. ----
+        async def open_meal_suggest(page):
+            await page.goto(f"{WEB}/kitchen", wait_until="networkidle")
+            await page.wait_for_timeout(2000)
+            await page.click('[data-testid="kitchen-switch"]')
+            await page.wait_for_timeout(500)
+            await page.click('[data-testid="kitchen-pick-meal"]')
+            await page.wait_for_timeout(1200)
+            await page.click('[data-testid="meal-suggest"]')
+            await page.wait_for_timeout(6000)
+            return await page.inner_text("body")
+
+        await open_meal_suggest(android)
+        r["A_free_peek_shows_dinners"] = await android.locator(
+            '[data-testid="suggest-add-all"]').count() == 1
+        await android.click('[data-testid="suggest-add-all"]')
+        await android.wait_for_timeout(2500)
+        body = await android.inner_text("body")
+        r["A_free_add_is_gated"] = "Upgrade needed" in body
+        await android.click('[data-testid="upgrade-close"]')
+        await android.wait_for_timeout(500)
 
         # ---- iPhone/invitee, content blocker active: no link, just opens ----
         await iphone.goto(f"{WEB}/feed", wait_until="networkidle")
@@ -152,6 +176,42 @@ async def main():
         r["A_child_moved_over"] = "Jonael Sim" in body
         r["A_no_more_pending"] = "pending" not in body
         await android.screenshot(path="journey_android_family.png")
+
+        # ---- Household turns tester/premium: an admin account joins ----
+        inv = api("POST", "/family/invite",
+                  {"email": "e2e-admin@sim.test", "relationship": "Admin"}, tok_a)
+        admin_token_val = inv["invite"]["token"]
+        try:
+            api("POST", "/auth/register",
+                {"name": "Admin Sim", "email": "e2e-admin@sim.test",
+                 "password": "password123", "invite_token": admin_token_val})
+        except urllib.error.HTTPError:
+            api("POST", "/auth/login",
+                {"email": "e2e-admin@sim.test", "password": "password123",
+                 "invite_token": admin_token_val})
+        # The admin-household check is cached for 60s — wait it out.
+        await asyncio.sleep(61)
+
+        # ---- Gating, PREMIUM state: the same Add-all must now WORK on
+        # both personas, blocker included ----
+        for name, page in (("A_android", android), ("B_iphone", iphone)):
+            await open_meal_suggest(page)
+            # Without an AI key the suggest endpoint 503s and the client
+            # retries with backoff before falling back to the offline
+            # engine — wait out the loading state before adding.
+            await page.wait_for_timeout(10000)
+            if await page.locator('[data-testid="suggest-add-all"]').count():
+                await page.click('[data-testid="suggest-add-all"]')
+            await page.wait_for_timeout(5000)
+            body = await page.inner_text("body")
+            r[f"{name}_premium_add_not_gated"] = "Upgrade needed" not in body
+            # Meals in the planner make "Sync to list" appear — proof the
+            # week actually landed, not just that no dialog showed.
+            r[f"{name}_premium_week_added"] = "Sync to list" in body
+        await iphone.goto(f"{WEB}/settings", wait_until="networkidle")
+        await iphone.wait_for_timeout(2500)
+        r["B_sees_family_office"] = "Family Office" in await iphone.inner_text("body")
+        await iphone.screenshot(path="journey_iphone_premium.png")
         await browser.close()
 
     # ---- Backend truth: family unification and role ----
@@ -159,6 +219,8 @@ async def main():
     roles = {m["name"]: m["role"] for m in members}
     r["server_keigh_is_coparent"] = roles.get("Keigh Sim") == "Co-parent"
     r["server_child_in_family"] = roles.get("Jonael Sim") == "Child"
+    sub = api("GET", "/subscription", token=tok_b)
+    r["server_household_shares_top_plan"] = sub.get("plan") == "family_office"
 
     for k, v in r.items():
         print(f"{k}: {v}")

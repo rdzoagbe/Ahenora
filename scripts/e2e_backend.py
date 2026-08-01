@@ -12,10 +12,16 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "backend"))
 sys.path.insert(0, os.path.dirname(__file__))
 
+# Billing "live": gates enforce exactly as in production (no free window).
+os.environ.setdefault("RC_WEBHOOK_SECRET", "e2e-gating-live")
+
 import server  # noqa: E402
 from fake_mongo import FakeDatabase  # noqa: E402
 
 server.db = FakeDatabase()
+# A fixed tester identity the journey can bring into a household to flip it
+# premium — exercising the household-level admin elevation end to end.
+server.ADMIN_EMAILS = set(server.ADMIN_EMAILS) | {"e2e-admin@sim.test"}
 
 if __name__ == "__main__":
     import uvicorn
