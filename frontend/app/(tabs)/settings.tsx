@@ -185,6 +185,32 @@ export default function Settings() {
     );
   }, []);
 
+  // The inviter completes the join from their own device — built for the
+  // household whose invitee's phone could read the invite but never deliver
+  // the acceptance. Plain function (React Compiler: no manual useCallback).
+  const completeInvite = (invite: FamilyInvite) => {
+    Alert.alert(
+      t('set_invite_add_now_title'),
+      `${t('set_invite_add_now_msg')} ${invite.email}`,
+      [
+        { text: t('cancel'), style: 'cancel' },
+        {
+          text: t('set_invite_add_now'),
+          onPress: async () => {
+            try {
+              await api.completeInvite(invite.invite_id);
+              showToast(t('set_invite_add_now_done'));
+              await load();
+            } catch (error: any) {
+              const detail = String(error?.message || '').match(/\{.*"detail"\s*:\s*"([^"]+)"/)?.[1];
+              showToast(detail || t('set_error'), 'error');
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const revokeInvite = useCallback((invite: FamilyInvite) => {
     Alert.alert(
       t('set_revoke_invite_title'),
@@ -585,6 +611,16 @@ export default function Settings() {
                       name={invite.email || t('set_invite_link')}
                       sub={`${invite.relationship ? `${invite.relationship} · ` : ''}${t('set_invite')} · ${invite.status}`}
                     />
+                    {invite.email ? (
+                      <PressScale
+                        testID={`complete-invite-${invite.invite_id}`}
+                        onPress={() => completeInvite(invite)}
+                        style={[styles.ghostBtn, { backgroundColor: ui.orangeSoft }]}
+                      >
+                        <UserPlus color={ui.orange} size={14} />
+                        <Text style={[styles.ghostBtnText, { color: ui.orange }]}>{t('set_invite_add_now')}</Text>
+                      </PressScale>
+                    ) : null}
                     {invite.invite_url ? (
                       <PressScale onPress={() => shareInviteLink(invite.invite_url, invite.email)} style={styles.ghostBtn}>
                         <Share2 color={ui.text} size={14} />
