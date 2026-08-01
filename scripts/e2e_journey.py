@@ -166,6 +166,77 @@ async def main():
         await iphone.wait_for_timeout(2500)
         r["B_sees_shared_shopping"] = "Plantain x6" in await iphone.inner_text("body")
 
+        # ---- Vault privacy: a shared household is not a shared filing
+        # cabinet. Uploads happen over the API (a file picker cannot be
+        # driven headlessly); the UI controls and the visibility rules are
+        # what this asserts. ----
+        api("POST", "/vault", {"title": "Payslip private", "category": "Legal",
+                               "image_base64": "data:image/jpeg;base64,AAAA"}, tok_a)
+        api("POST", "/vault", {"title": "Shared insurance", "category": "Legal",
+                               "image_base64": "data:image/jpeg;base64,AAAA",
+                               "visibility": "shared"}, tok_a)
+        await android.goto(f"{WEB}/vault", wait_until="networkidle")
+        await android.wait_for_timeout(2500)
+        await android.click('[data-testid="vault-add"]')
+        await android.wait_for_timeout(900)
+        r["A_vault_visibility_picker"] = await android.locator(
+            '[data-testid="vault-visibility-private"]').count() == 1
+        await android.keyboard.press("Escape")
+        await android.wait_for_timeout(600)
+
+        await iphone.goto(f"{WEB}/vault", wait_until="networkidle")
+        await iphone.wait_for_timeout(2500)
+        body = await iphone.inner_text("body")
+        r["B_vault_private_hidden"] = "Payslip private" not in body
+        r["B_vault_shared_visible"] = "Shared insurance" in body
+
+        # The owner un-shares from the preview; it vanishes for the other.
+        await android.goto(f"{WEB}/vault", wait_until="networkidle")
+        await android.wait_for_timeout(2500)
+        await android.click("text=Shared insurance")
+        await android.wait_for_timeout(1200)
+        r["A_vault_toggle_present"] = await android.locator(
+            '[data-testid="preview-visibility"]').count() == 1
+        await android.click('[data-testid="preview-visibility"]')
+        await android.wait_for_timeout(1800)
+        await iphone.reload(wait_until="networkidle")
+        await iphone.wait_for_timeout(2500)
+        r["B_vault_unshared_now_hidden"] = "Shared insurance" not in await iphone.inner_text("body")
+
+        # ---- Shopping: multi-select deletes only what was picked ----
+        await iphone.goto(f"{WEB}/kitchen", wait_until="networkidle")
+        await iphone.wait_for_timeout(2500)
+        if await iphone.get_by_placeholder("Add items — commas for several").count() == 0:
+            await iphone.click('[data-testid="kitchen-switch"]')
+            await iphone.wait_for_timeout(600)
+            await iphone.click('[data-testid="kitchen-pick-shop"]')
+            await iphone.wait_for_timeout(1500)
+        shop_b = iphone.get_by_placeholder("Add items — commas for several")
+        await shop_b.fill("Okra, Palm oil")
+        await shop_b.press("Enter")
+        await iphone.wait_for_timeout(2000)
+        await iphone.click('[data-testid="shop-select-mode"]')
+        await iphone.wait_for_timeout(600)
+        await iphone.click("text=Okra")
+        await iphone.wait_for_timeout(400)
+        await iphone.click('[data-testid="shop-delete-selected"]')
+        await iphone.wait_for_timeout(2500)
+        body = await iphone.inner_text("body")
+        r["B_selected_item_deleted"] = "Okra" not in body
+        r["B_unselected_items_kept"] = "Palm oil" in body and "Plantain x6" in body
+
+        # ---- Clear all: one undo point, older archives swept ----
+        api("DELETE", "/shopping/all", None, tok_a)  # clears + archives
+        await iphone.reload(wait_until="networkidle")
+        await iphone.wait_for_timeout(2500)
+        r["B_restore_banner_after_clear"] = "Restore" in await iphone.inner_text("body")
+        hist = api("GET", "/shopping/history", token=tok_a)
+        r["one_archive_only"] = len(hist) == 1
+        # Dismissing the banner deletes that archive for good.
+        await iphone.click('[data-testid="restore-dismiss"]')
+        await iphone.wait_for_timeout(2000)
+        r["dismiss_removes_archive"] = len(api("GET", "/shopping/history", token=tok_a)) == 0
+
         # ---- Android/inviter: co-parents, moved child, accepted invite ----
         await android.goto(f"{WEB}/settings", wait_until="networkidle")
         await android.wait_for_timeout(2500)
@@ -191,6 +262,11 @@ async def main():
                  "invite_token": admin_token_val})
         # The admin-household check is cached for 60s — wait it out.
         await asyncio.sleep(61)
+
+        # The shopping phases above emptied the list, and meal ideas are
+        # built FROM the list — re-stock it before the premium phase.
+        api("POST", "/shopping/bulk",
+            {"names": ["Rice 1kg", "Chicken 600g", "Tomatoes x4", "Onion x2"]}, tok_a)
 
         # ---- Gating, PREMIUM state: the same Add-all must now WORK on
         # both personas, blocker included ----

@@ -185,7 +185,7 @@ function TaskRow({ card, onOpen, onComplete, styles }: { card: Card; onOpen: () 
 }
 
 export default function Feed() {
-  const { user, t } = useStore();
+  const { user, t, subscription } = useStore();
   const { isLocked, promptUpgrade } = usePremiumGate();
   const reportLocked = isLocked('weekly_report');
   const { px, maxW } = useBreakpoint();
@@ -270,7 +270,13 @@ export default function Feed() {
       if (templatesResult.status === 'fulfilled') setTemplates(templatesResult.value);
       if (annResult.status === 'fulfilled') setAnnouncements(annResult.value);
 
-      if (!reportLocked) api.weeklyReport().then(setReport).catch(() => undefined);
+      // Only when the plan is KNOWN to allow it: isLocked() answers false
+      // while the subscription is still loading (so the UI never flashes a
+      // lock), which made every free household fire a guaranteed 402 on
+      // each feed load.
+      if (subscription && !reportLocked) {
+        api.weeklyReport().then(setReport).catch(() => undefined);
+      }
 
       if (cardsResult.status === 'fulfilled') {
         api
@@ -352,7 +358,7 @@ export default function Feed() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [t]);
+  }, [t, subscription, reportLocked]);
 
   useFocusEffect(
     useCallback(() => {
