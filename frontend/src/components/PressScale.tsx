@@ -34,6 +34,8 @@ function splitStyles(style?: StyleProp<ViewStyle>): { layout: ViewStyle; visual:
 
 interface Props {
   onPress?: (e: GestureResponderEvent) => void;
+  /** Optional long-press, e.g. to enter a multi-select mode from a row. */
+  onLongPress?: (e: GestureResponderEvent) => void;
   children: React.ReactNode;
   style?: StyleProp<ViewStyle>;
   testID?: string;
@@ -48,7 +50,7 @@ interface Props {
   hitSlop?: number | Insets;
 }
 
-export function PressScale({ onPress, children, style, testID, disabled, accessibilityLabel, accessibilityRole, accessibilityHint, hitSlop }: Props) {
+export function PressScale({ onPress, onLongPress, children, style, testID, disabled, accessibilityLabel, accessibilityRole, accessibilityHint, hitSlop }: Props) {
   const scale = useRef(new Animated.Value(1)).current;
   const { layout, visual } = splitStyles(style);
 
@@ -63,6 +65,7 @@ export function PressScale({ onPress, children, style, testID, disabled, accessi
     <Pressable
       testID={testID}
       onPress={onPress}
+      onLongPress={onLongPress}
       onPressIn={onIn}
       onPressOut={onOut}
       disabled={disabled}
