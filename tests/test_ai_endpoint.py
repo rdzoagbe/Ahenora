@@ -22,6 +22,12 @@ except ImportError:
 if HAVE_DEPS:
     os.environ.setdefault("GOOGLE_API_KEY", "test-key-not-real")
     import server
+    # Import order must not decide whether the key looks configured. This file
+    # used to rely on being the first module to import server: the env var is
+    # read at import time, so a test file sorting earlier in the alphabet left
+    # server.GOOGLE_API_KEY empty and failed the "key is configured" check.
+    if not server.GOOGLE_API_KEY:
+        server.GOOGLE_API_KEY = "test-key-not-real"
     from ai_models import DEFAULT_CANDIDATES
 
     # These tests are about the fallback mechanism, not about which models
