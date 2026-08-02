@@ -498,7 +498,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     paddingHorizontal: 20,
   },
   restoreLink: { alignSelf: 'center', paddingVertical: 8, paddingHorizontal: 12 },
-  restoreLinkText: { color: ui.orange, fontFamily: 'Inter_700Bold', fontSize: 13 },
+  restoreLinkText: { color: ui.orangeText, fontFamily: 'Inter_700Bold', fontSize: 13 },
   savingsText: {
     color: ui.mintText,
     fontFamily: 'Inter_600SemiBold',

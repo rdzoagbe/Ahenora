@@ -87,7 +87,7 @@ const createStyles = (ui: UIColors) =>
     badgeText: {
       fontSize: 11,
       fontWeight: '700',
-      color: ui.orange,
+      color: ui.orangeText,
     },
     preview: {
       flexDirection: 'row',
@@ -103,5 +103,5 @@ const createStyles = (ui: UIColors) =>
     },
     previewTitle: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 13 },
     previewBody: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12, lineHeight: 17, marginTop: 1 },
-    previewCta: { color: ui.orange, fontFamily: 'Inter_800ExtraBold', fontSize: 12 },
+    previewCta: { color: ui.orangeText, fontFamily: 'Inter_800ExtraBold', fontSize: 12 },
   });

@@ -135,11 +135,11 @@ function statusCopy(type: CardType, ui: UIColors, t: TFunc, imported?: boolean) 
   // Imported agenda items read as neutral gray — colored pills mean "added by
   // the family", gray means "came from a connected calendar".
   if (imported) return { label: t('feed_pill_imported'), bg: ui.soft, fg: ui.muted };
-  if (type === 'SIGN_SLIP') return { label: t('feed_status_sign'), bg: ui.orangeSoft, fg: ui.orange };
+  if (type === 'SIGN_SLIP') return { label: t('feed_status_sign'), bg: ui.orangeSoft, fg: ui.orangeText };
   if (type === 'RSVP') return { label: t('feed_status_rsvp'), bg: ui.lavender, fg: ui.lavenderText };
   if (type === 'BIRTHDAY') return { label: t('type_birthday'), bg: ui.gold, fg: ui.goldText };
   if (type === 'SCHOOL') return { label: t('type_school'), bg: ui.lavender, fg: ui.lavenderText };
-  if (type === 'APPOINTMENT') return { label: t('type_appointment'), bg: ui.orangeSoft, fg: ui.orange };
+  if (type === 'APPOINTMENT') return { label: t('type_appointment'), bg: ui.orangeSoft, fg: ui.orangeText };
   if (type === 'VACATION') return { label: t('type_vacation'), bg: ui.mint, fg: ui.mintText };
   return { label: t('feed_status_task'), bg: ui.mint, fg: ui.mintText };
 }
@@ -738,7 +738,7 @@ export default function Feed() {
               </View>
               <View style={styles.statDivider} />
               <View style={styles.statCell}>
-                <Text style={[styles.statNumber, { color: ui.orange }]}>{dashboard.signSlips.length}</Text>
+                <Text style={[styles.statNumber, { color: ui.orangeText }]}>{dashboard.signSlips.length}</Text>
                 <Text style={styles.statLabel} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.7}>{t('feed_sign_slips')}</Text>
               </View>
               <View style={styles.statDivider} />
@@ -854,7 +854,7 @@ export default function Feed() {
                   <Text style={[styles.pastBtnText, { color: ui.muted }]}>{t('feed_keep')}</Text>
                 </PressScale>
                 <PressScale testID="feed-past-clear" onPress={clearPastEvents} style={[styles.pastBtn, { backgroundColor: ui.orangeSoft }]}>
-                  <Text style={[styles.pastBtnText, { color: ui.orange }]}>{t('feed_clear')}</Text>
+                  <Text style={[styles.pastBtnText, { color: ui.orangeText }]}>{t('feed_clear')}</Text>
                 </PressScale>
               </View>
             ) : null}
@@ -888,7 +888,7 @@ export default function Feed() {
                     style={[styles.emptyScanBtn, { backgroundColor: ui.orangeSoft, borderColor: ui.orange + '40' }]}
                   >
                     <Camera color={ui.orange} size={15} />
-                    <Text style={[styles.emptyScanText, { color: ui.orange }]}>{t('feed_try_scan')}</Text>
+                    <Text style={[styles.emptyScanText, { color: ui.orangeText }]}>{t('feed_try_scan')}</Text>
                   </PressScale>
                 </View>
               ) : (
@@ -972,7 +972,7 @@ export default function Feed() {
                     <Text style={styles.reportLabel}>{t('feed_report_overdue')}</Text>
                   </View>
                   <View style={styles.reportCell}>
-                    <Text style={[styles.reportNum, { color: ui.orange }]}>{report.stars_earned}</Text>
+                    <Text style={[styles.reportNum, { color: ui.orangeText }]}>{report.stars_earned}</Text>
                     <Text style={styles.reportLabel}>{t('feed_report_stars')}</Text>
                   </View>
                 </View>
@@ -1203,13 +1203,13 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   whenCard: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 16, paddingHorizontal: 15, paddingVertical: 13, borderRadius: 16, backgroundColor: ui.orangeSoft, borderWidth: 1, borderColor: ui.orange + '40' },
   whenText: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 16, letterSpacing: -0.2 },
   whenPill: { marginLeft: 'auto', backgroundColor: ui.orange + '22', borderRadius: 99, paddingHorizontal: 10, paddingVertical: 4 },
-  whenPillText: { color: ui.orange, fontFamily: 'Inter_700Bold', fontSize: 12.5 },
+  whenPillText: { color: ui.orangeText, fontFamily: 'Inter_700Bold', fontSize: 12.5 },
   detailChip: { flexDirection: 'row', alignItems: 'center', gap: 11, marginTop: 10, paddingHorizontal: 15, paddingVertical: 13, borderRadius: 16, backgroundColor: ui.soft, borderWidth: 1, borderColor: ui.line },
   detailChipText: { flex: 1, color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
   detailMetaText: { flex: 1, color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 15, lineHeight: 21 },
   detailBody: { marginTop: 16, gap: 10 },
   detailDescription: { color: ui.text, fontFamily: 'Inter_500Medium', fontSize: 16, lineHeight: 24 },
-  completeBtn: { marginTop: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, minHeight: 54, borderRadius: 99, backgroundColor: ui.orange },
+  completeBtn: { marginTop: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, minHeight: 54, borderRadius: 99, backgroundColor: ui.orangeDeep },
   completeBtnText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 16 },
   container: {
     flex: 1,
@@ -1236,7 +1236,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     letterSpacing: 0.1,
   },
   sun: {
-    color: ui.orange,
+    color: ui.orangeText,
   },
   topActions: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   bellWrap: {
@@ -1254,7 +1254,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     borderRadius: 99,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: ui.orange,
+    backgroundColor: ui.orangeDeep,
     paddingHorizontal: 5,
   },
   bellBadgeText: {
@@ -1365,7 +1365,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   actionPillAccent: {
     borderWidth: 0,
-    backgroundColor: ui.orange,
+    backgroundColor: ui.orangeDeep,
   },
   actionDot: {
     width: 30,
@@ -1438,7 +1438,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 99,
-    backgroundColor: ui.orange,
+    backgroundColor: ui.orangeDeep,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1475,7 +1475,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     right: 0,
     height: 2,
     borderRadius: 99,
-    backgroundColor: ui.orange,
+    backgroundColor: ui.orangeDeep,
   },
   listCard: {
     overflow: 'hidden',
@@ -1575,7 +1575,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     width: 61,
     height: 61,
     borderRadius: 999,
-    backgroundColor: ui.orange,
+    backgroundColor: ui.orangeDeep,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000000',
@@ -1623,7 +1623,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   assignedTitle: { flex: 1, color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 15.5, letterSpacing: -0.2 },
   assignedCount: {
-    color: ui.orange, fontFamily: 'Inter_800ExtraBold', fontSize: 12,
+    color: ui.orangeText, fontFamily: 'Inter_800ExtraBold', fontSize: 12,
     backgroundColor: ui.orangeSoft, paddingHorizontal: 9, paddingVertical: 3, borderRadius: 999,
     overflow: 'hidden',
   },
@@ -1689,7 +1689,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 12,
-    backgroundColor: ui.orange,
+    backgroundColor: ui.orangeDeep,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1781,7 +1781,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     alignItems: 'center',
   },
   reportSpentText: {
-    color: ui.orange,
+    color: ui.orangeText,
     fontFamily: 'Inter_700Bold',
     fontSize: 14,
   },

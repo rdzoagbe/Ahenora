@@ -311,7 +311,7 @@ const createStyles = (ui: UIColors) =>
   navTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 20, letterSpacing: -0.3 },
 
   profileCard: { alignItems: 'center', paddingVertical: 22, paddingHorizontal: 18, marginBottom: 18 },
-  avatar: { width: 66, height: 66, borderRadius: 99, backgroundColor: ui.orange, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+  avatar: { width: 66, height: 66, borderRadius: 99, backgroundColor: ui.orangeDeep, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
   avatarText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 26 },
   name: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 19, lineHeight: 24 },
   email: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 14, marginTop: 3 },
@@ -324,7 +324,7 @@ const createStyles = (ui: UIColors) =>
   rowTitle: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 14.5 },
   rowSub: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, marginTop: 2 },
   googleG: { color: ui.blueText, fontFamily: 'Inter_800ExtraBold', fontSize: 18 },
-  actionLink: { color: ui.orange, fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
+  actionLink: { color: ui.orangeText, fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
 
   diagCard: { marginTop: 12, paddingVertical: 14, gap: 9 },
   diagLine: { flexDirection: 'row', justifyContent: 'space-between', gap: 14 },

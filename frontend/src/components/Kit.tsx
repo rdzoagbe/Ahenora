@@ -5,24 +5,47 @@ import { PressScale } from './PressScale';
 import { useStore } from '../store';
 
 // ── Static accent palette (same in light & dark) ──
+//
+// Two kinds of colour live here and they are NOT interchangeable:
+//
+//   fills — orange, mint, lavender, gold, blue, star. These paint buttons,
+//           tiles and chips. They carry the brand and are chosen to look
+//           right, not to be read.
+//   ink   — text, muted, and every *Text. These are read, so each one clears
+//           WCAG AA (4.5:1) against BOTH the surface it normally sits on and
+//           its own soft tint — the tint is the harder case, because it drags
+//           the background toward the ink.
+//
+// A measured sweep (scripts/e2e_contrast.py) found 162 pieces of unreadable
+// text across the app, nearly all of it ink drawn in a fill colour: muted at
+// 3.2:1, accents on their own tints between 2.8:1 and 3.9:1. Keeping the two
+// roles apart is what stops that coming back — which is why orange now has an
+// orangeText twin, like every other accent already had.
 export const UI = {
   bg: '#F6F3EE',
   card: '#FFFFFF',
   text: '#101318',
-  muted: '#8A909A',
+  muted: '#5F656E',
   soft: '#F1EFEA',
   line: '#E6E1DA',
   orange: '#F56519',
+  orangeText: '#B8410A',
+  // The brand orange with WHITE on it reads at 3.1:1 — fine as a surface,
+  // not fine as a background for a label. This deeper orange is used only
+  // where white text or a white glyph sits on the fill (buttons, avatar
+  // circles, today's date pill); every other orange surface keeps the vivid
+  // brand value above.
+  orangeDeep: '#CA470A',
   orangeSoft: '#FFF0E7',
   mint: '#DFF7EC',
-  mintText: '#0FA36B',
+  mintText: '#0A7D52',
   lavender: '#EDEBFF',
-  lavenderText: '#6B5CFF',
+  lavenderText: '#5A48E8',
   gold: '#FBEFD6',
-  goldText: '#B7791F',
+  goldText: '#8A5A0F',
   blue: '#E8F0FE',
-  blueText: '#1A73E8',
-  danger: '#DC2626',
+  blueText: '#1558C0',
+  danger: '#C81E1E',
   dangerSoft: 'rgba(220,38,38,0.10)',
   star: '#F59E0B',
 };
@@ -42,6 +65,10 @@ export function useUI(): UIColors {
       soft: theme.colors.bgSoft,
       line: theme.colors.cardBorder,
       orange: UI.orange,
+      orangeDeep: UI.orangeDeep,
+      // Dark mode moves ink the other way: the brand orange reads at 2.8:1 on
+      // its own tint here, so orange TEXT is lightened rather than darkened.
+      orangeText: '#FF9A63',
       orangeSoft: 'rgba(245,101,25,0.15)',
       mint: 'rgba(15,163,107,0.15)',
       mintText: '#34D399',
@@ -51,7 +78,7 @@ export function useUI(): UIColors {
       goldText: '#FBBF24',
       blue: 'rgba(26,115,232,0.15)',
       blueText: '#60A5FA',
-      danger: '#EF4444',
+      danger: '#F87171',
       dangerSoft: 'rgba(239,68,68,0.15)',
       star: '#F59E0B',
     };
