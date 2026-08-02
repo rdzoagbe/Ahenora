@@ -2009,6 +2009,26 @@ class ClientErrorIn(BaseModel):
     platform: Optional[str] = None
 
 
+@app.get("/api/telemetry/invite-routes")
+async def invite_route_stats(user=Depends(require_user)):
+    """Which of the five acceptance doors real devices actually get through.
+
+    The point of counting: the routes exist because one blocked iPhone
+    refused specific request shapes, and they cannot be deleted on a hunch —
+    old app builds still call them. These counts are what turns "probably
+    nobody uses this one" into something a later session can act on.
+    """
+    if not is_admin_email(user.get("email", "")):
+        raise HTTPException(status_code=403, detail="Admins only")
+    database = get_db()
+    rows = []
+    async for row in database["invite_route_stats"].find({}, {"_id": 0}):
+        rows.append({"route": row.get("route") or "unknown",
+                     "count": int(row.get("count") or 0)})
+    rows.sort(key=lambda r: -r["count"])
+    return {"routes": rows, "total": sum(r["count"] for r in rows)}
+
+
 @app.post("/api/telemetry/client-error")
 async def report_client_error(payload: ClientErrorIn, user=Depends(require_user)):
     """Failed requests phone home, so silent breakage stops being silent.
@@ -3507,7 +3527,7 @@ async def family_updates(
     """
     token = x_confirm if isinstance(x_confirm, str) else None
     if token:
-        return await _accept_invite_request(token, user)
+        return await _accept_invite_request(token, user, via="discovery")
     return await invites_for_me(user=user)
 
 
@@ -3625,7 +3645,7 @@ async def family_invite_accept(payload: InviteAcceptIn, user=Depends(require_use
     Invite links open the app for logged-in users too, and those users never
     pass through the sign-in screen where tokens are otherwise consumed.
     """
-    return await _accept_invite_request(payload.token, user)
+    return await _accept_invite_request(payload.token, user, via="invite-accept-post")
 
 
 @app.get("/api/family/invite-accept")
@@ -3639,7 +3659,7 @@ async def family_invite_accept_get(token: str, user=Depends(require_user)):
     Distinct path on purpose: GET /family/invite/accept would be captured
     by the /family/invite/{token} lookup route.
     """
-    return await _accept_invite_request(token, user)
+    return await _accept_invite_request(token, user, via="invite-accept-get")
 
 
 @app.post("/api/family/membership")
@@ -3652,15 +3672,24 @@ async def family_membership_post(payload: InviteAcceptIn, user=Depends(require_u
     "accept". "membership" appears on no list. Old routes stay for old
     clients.
     """
-    return await _accept_invite_request(payload.token, user)
+    return await _accept_invite_request(payload.token, user, via="membership-post")
 
 
 @app.get("/api/family/membership")
 async def family_membership_get(token: str, user=Depends(require_user)):
-    return await _accept_invite_request(token, user)
+    return await _accept_invite_request(token, user, via="membership-get")
 
 
-async def _accept_invite_request(token: str, user: dict):
+async def _accept_invite_request(token: str, user: dict, via: str = "unknown"):
+    """`via` names the door this acceptance came through.
+
+    Five routes exist because a blocked iPhone refused specific request
+    SHAPES, and none can be deleted on a hunch: they are reachable from app
+    builds already on people's phones. Counting which ones real devices
+    actually succeed on turns that hunch into evidence — so a later session
+    can retire the dead ones knowing whose phone it is about to break, or
+    knowing it breaks nobody.
+    """
     database = get_db()
     invite, target_family_id = await _resolve_invite(
         database, token, user.get("email", "")
@@ -3669,6 +3698,16 @@ async def _accept_invite_request(token: str, user: dict):
         raise HTTPException(status_code=404, detail="Invite not found")
     try:
         fresh, joined = await _accept_invite_for_user(database, user, invite, target_family_id)
+        # Counted on success, including the idempotent repeat where the user
+        # was already a member: the question is which request SHAPES reach
+        # the server on real devices, and a 200 answers that either way.
+        # Deliberately not counted on failure — that would measure which
+        # doors people knock on, not which ones open.
+        try:
+            await database["invite_route_stats"].update_one(
+                {"route": via}, {"$inc": {"count": 1}}, upsert=True)
+        except Exception as exc:  # noqa: BLE001 — a counter must never fail a join
+            log.warning("invite route not counted (%s): %s", via, exc)
     except HTTPException:
         raise
     except Exception as exc:
