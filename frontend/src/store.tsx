@@ -8,7 +8,8 @@ import React, {
 } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useColorScheme } from 'react-native';
-import { api, User, tokenStore, Subscription, setUnauthorizedHandler, warmupBackend } from './api';
+import { api, User, tokenStore, Subscription, resetOfflineState, setUnauthorizedHandler, warmupBackend } from './api';
+import { clearSnapshots } from './offline';
 import { Lang, SUPPORTED_LANGS, translate } from './i18n';
 import { AppearanceMode, AppTheme, getTheme, resolveAppearance, ResolvedAppearance } from './theme';
 import { logger } from './logger';
@@ -161,6 +162,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }
 
     await tokenStore.clear();
+    // A shared or resold phone must not keep the last household's lists.
+    await clearSnapshots().catch(() => undefined);
+    resetOfflineState();
     setUser(null);
     setSubscription(null);
     setLoading(false);
