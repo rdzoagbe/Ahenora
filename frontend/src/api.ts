@@ -14,15 +14,27 @@ const RAW_BACKEND = process.env.EXPO_PUBLIC_BACKEND_URL;
 // Guard against a stale/wrong env value baked in at bundle time (CI secrets or
 // EAS environment variables carrying the retired "-backend-" Railway subdomain,
 // which 404s "Application not found" and breaks every sign-in). Any value that
-// doesn't resolve to the real backend falls back to the known-good URL.
-export const BASE =
-  typeof RAW_BACKEND === "string" &&
-  RAW_BACKEND.trim().startsWith("https://") &&
-  !RAW_BACKEND.includes("household-coo-backend-production")
-    ? RAW_BACKEND.trim().replace(/\/+$/, "")
-    : PROD_BACKEND;
-if (BASE === PROD_BACKEND && RAW_BACKEND !== PROD_BACKEND) {
-  console.warn("EXPO_PUBLIC_BACKEND_URL missing or invalid — using production fallback");
+// doesn't resolve to a usable backend falls back to the known-good URL.
+//
+// Loopback is allowed over plain http, and that is not a loosening. Requiring
+// https meant a developer pointing at their own machine —
+// EXPO_PUBLIC_BACKEND_URL=http://localhost:8000 — was silently ignored and the
+// app talked to PRODUCTION instead: reading, and writing, real families' data
+// while they believed they were local. A test build did exactly that here for
+// months. Everything not loopback still has to be https.
+const LOOPBACK = /^http:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/;
+const trimmedBackend = typeof RAW_BACKEND === "string"
+  ? RAW_BACKEND.trim().replace(/\/+$/, "")
+  : "";
+const backendUsable =
+  (trimmedBackend.startsWith("https://") || LOOPBACK.test(trimmedBackend)) &&
+  !trimmedBackend.includes("household-coo-backend-production");
+export const BASE = backendUsable ? trimmedBackend : PROD_BACKEND;
+if (!backendUsable && RAW_BACKEND !== PROD_BACKEND) {
+  console.warn(
+    `EXPO_PUBLIC_BACKEND_URL ${RAW_BACKEND ? `(${RAW_BACKEND}) is not usable` : "is missing"}`
+    + " — falling back to production",
+  );
 }
 
 const TOKEN_KEY = 'coo_session_token';

@@ -165,3 +165,38 @@ describe('api.listCards', () => {
     expect(url).toBe('https://test-backend.example.com/api/cards?status=OPEN');
   });
 });
+
+describe('the backend URL guard', () => {
+  // Requiring https meant EXPO_PUBLIC_BACKEND_URL=http://localhost:8000 was
+  // silently ignored and the app talked to PRODUCTION instead — a developer
+  // pointing at their own machine would read and write real families' data
+  // believing they were local. Loopback is allowed; nothing else over http is.
+  const LOOPBACK = /^http:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/;
+  const usable = (raw: string) => {
+    const trimmed = raw.trim().replace(/\/+$/, '');
+    return (
+      (trimmed.startsWith('https://') || LOOPBACK.test(trimmed)) &&
+      !trimmed.includes('household-coo-backend-production')
+    );
+  };
+
+  it('accepts a developer pointing at their own machine', () => {
+    expect(usable('http://localhost:8000')).toBe(true);
+    expect(usable('http://127.0.0.1:8800')).toBe(true);
+    expect(usable('http://127.0.0.1:8800/')).toBe(true);
+  });
+
+  it('accepts a real https backend', () => {
+    expect(usable('https://household-coo-production.up.railway.app')).toBe(true);
+  });
+
+  it('refuses plain http to anywhere that is not this machine', () => {
+    expect(usable('http://example.com')).toBe(false);
+    // A hostname that merely STARTS with the loopback address is not loopback.
+    expect(usable('http://127.0.0.1.evil.com')).toBe(false);
+  });
+
+  it('still refuses the retired subdomain that 404s every sign-in', () => {
+    expect(usable('https://household-coo-backend-production.up.railway.app')).toBe(false);
+  });
+});
