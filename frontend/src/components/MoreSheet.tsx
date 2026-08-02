@@ -1,5 +1,6 @@
 import React from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ChevronRight, Lock, Settings as SettingsIcon, User, X } from 'lucide-react-native';
 
@@ -18,6 +19,7 @@ export function MoreSheet({ visible, onClose }: { visible: boolean; onClose: () 
   const ui = useUI();
   const { t } = useStore();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const styles = createStyles(ui);
 
   const go = (path: string) => {
@@ -39,7 +41,10 @@ export function MoreSheet({ visible, onClose }: { visible: boolean; onClose: () 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel={t('close')} />
-      <View style={styles.panel}>
+      {/* The bottom pad clears the phone's own navigation bar: without it
+          the last row sat underneath Android's gesture bar and read as a
+          half-drawn sheet. */}
+      <View style={[styles.panel, { paddingBottom: Math.max(insets.bottom, 16) + 18 }]}>
         <View style={styles.grabber} />
         <View style={styles.header}>
           <Text style={styles.title}>{t('nav_more')}</Text>
@@ -82,26 +87,39 @@ export function MoreSheet({ visible, onClose }: { visible: boolean; onClose: () 
 
 const createStyles = (ui: UIColors) =>
   StyleSheet.create({
-    backdrop: { ...StyleSheet.absoluteFill as object, backgroundColor: 'rgba(8,9,16,0.45)' },
+    // Heavier than the app's other scrims on purpose: in dark mode the sheet
+    // and the page behind it are nearly the same value, and the panel has to
+    // read as a layer above the screen rather than part of it.
+    // Spelled out rather than spreading StyleSheet.absoluteFill: that constant
+    // is an opaque registered style, so spreading it yields nothing — the
+    // scrim had no position and no size, which is why the screen behind the
+    // sheet never dimmed and tapping outside never closed it.
+    backdrop: {
+      position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+      backgroundColor: 'rgba(0,0,0,0.62)',
+    },
     panel: {
       position: 'absolute', left: 0, right: 0, bottom: 0,
-      backgroundColor: ui.bg,
+      backgroundColor: ui.card,
       borderTopLeftRadius: 26, borderTopRightRadius: 26,
-      paddingHorizontal: 18, paddingTop: 10, paddingBottom: 34, gap: 8,
+      borderTopWidth: 1, borderColor: ui.line,
+      paddingHorizontal: 18, paddingTop: 12, gap: 10,
+      shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 28,
+      shadowOffset: { width: 0, height: -8 }, elevation: 24,
     },
     grabber: {
-      alignSelf: 'center', width: 42, height: 4, borderRadius: 2,
-      backgroundColor: ui.line, marginBottom: 6,
+      alignSelf: 'center', width: 44, height: 5, borderRadius: 3,
+      backgroundColor: ui.muted, opacity: 0.5, marginBottom: 8,
     },
     header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
-    title: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 19, letterSpacing: -0.3 },
+    title: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 21, letterSpacing: -0.4 },
     iconBtn: { padding: 6, borderRadius: 999, backgroundColor: ui.soft },
     row: {
-      flexDirection: 'row', alignItems: 'center', gap: 13,
-      backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line,
-      borderRadius: 16, paddingVertical: 13, paddingHorizontal: 14,
+      flexDirection: 'row', alignItems: 'center', gap: 14,
+      backgroundColor: ui.soft, borderWidth: 1, borderColor: ui.line,
+      borderRadius: 16, paddingVertical: 15, paddingHorizontal: 14,
     },
-    tile: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-    rowTitle: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 15 },
-    rowSub: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 1 },
+    tile: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+    rowTitle: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 16 },
+    rowSub: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, marginTop: 2 },
   });
