@@ -706,6 +706,8 @@ export interface FamilyProfile {
   role: string;
   is_child: boolean;
   has_pin: boolean;
+  /** The row belonging to whoever is holding the phone. */
+  is_me: boolean;
 }
 
 export interface KidChore { card_id: string; title: string; due_date: string | null }

@@ -3247,7 +3247,11 @@ async def list_profiles(user=Depends(require_user)):
             parent_pin = True
         rows.append({"member_id": m["member_id"], "name": m.get("name") or "",
                      "role": m.get("role") or "Parent", "is_child": is_child,
-                     "has_pin": bool(m.get("pin_hash"))})
+                     "has_pin": bool(m.get("pin_hash")),
+                     # Which row is the person holding the phone — so the
+                     # hand-over sheet can offer to set THEIR PIN inline
+                     # rather than sending them off to find it.
+                     "is_me": m.get("user_id") == user["user_id"]})
     return {"profiles": rows, "kid_mode_ready": parent_pin}
 
 

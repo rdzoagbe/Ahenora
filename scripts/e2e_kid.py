@@ -44,11 +44,9 @@ async def main():
     tok = u["session_token"]
     api("POST", "/auth/complete-onboarding", {}, tok)
 
-    # A grown-up PIN has to exist before kid mode is offered at all.
-    members = api("GET", "/family/members", None, tok)
-    parent = [m for m in members if (m.get("role") or "").lower() != "child"][0]
-    api("PUT", f"/family/members/{parent['member_id']}/pin", {"pin": "9999"}, tok)
-
+    # Deliberately NO parent PIN yet: the sheet has to be able to create one
+    # itself. Telling a parent to go and find a setting on another screen is
+    # the app failing to do its job, and this proves it does not.
     ama = api("POST", "/family/members", {"name": "Ama", "role": "Child",
                                           "starting_stars": 30, "pin": "1234"}, tok)
     api("POST", "/rewards", {"title": "Ice cream", "cost_stars": 10, "icon": "🍦"}, tok)
@@ -86,6 +84,22 @@ async def main():
         r["more_offers_hand_over"] = await p.locator('[data-testid="more-kid"]').count() == 1
         await p.click('[data-testid="more-kid"]')
         await p.wait_for_timeout(1800)
+
+        # --- the way out has to exist before the way in ----------------------
+        r["asks_for_a_parent_pin_first"] = await p.locator(
+            '[data-testid="handover-parent-pin"]').count() == 1
+        await p.fill('[data-testid="handover-parent-pin"]', "12")
+        await p.click('[data-testid="handover-save-parent-pin"]')
+        await p.wait_for_timeout(900)
+        r["rejects_a_short_pin"] = await p.locator(
+            '[data-testid="handover-parent-pin"]').count() == 1
+        await p.fill('[data-testid="handover-parent-pin"]', "9999")
+        await p.click('[data-testid="handover-save-parent-pin"]')
+        await p.wait_for_timeout(2500)
+        r["setting_it_here_unlocks_the_picker"] = await p.locator(
+            f'[data-testid="handover-{ama["member_id"]}"]').count() == 1
+        await p.screenshot(path="kid_picker.png")
+
         sheet = await p.inner_text("body")
         r["picker_lists_the_child"] = "Ama" in sheet
 
