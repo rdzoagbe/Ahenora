@@ -70,15 +70,27 @@ jobs:
       # Built here rather than trusting the committed docs/app: the point is to
       # test THIS commit's source, and a stale export would quietly test the
       # last one instead.
+      # One source of truth for the port: the bundle bakes the backend URL in at
+      # build time, so the export and the runner cannot be allowed to disagree
+      # about where it is.
       - name: Export the web build
         working-directory: frontend
         env:
           EXPO_PUBLIC_BUILD_TAG: ci-${{ github.sha }}
+          # Without this the bundle falls back to the PRODUCTION backend, and
+          # the app's cold-start warm-up pings a real host from a test — which
+          # CI blocks as cross-origin, and which we should never be doing from
+          # a test in the first place. Pointing it at the page's own origin
+          # keeps the warm-up same-origin and silent; /api/** is intercepted by
+          # the harnesses regardless of host.
+          EXPO_PUBLIC_BACKEND_URL: http://127.0.0.1:8800
         run: |
           npx expo export --platform web --output-dir ../docs/app --clear
           cp ../docs/app/+not-found.html ../docs/app/404.html
 
       - name: Run the harnesses
+        env:
+          HARNESS_WEB_PORT: 8800
         run: python3 scripts/run_harnesses.py
 
       # Every harness photographs what it saw. On a failure those images are

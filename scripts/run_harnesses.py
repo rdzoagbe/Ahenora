@@ -8,15 +8,27 @@ replace. This is what CI invokes.
 Each harness gets its own fresh backend so a failure in one cannot poison the
 next, and so the order they run in never changes the result.
 
+Export the web build with the matching backend URL before running this, or the
+app will phone production from inside a test:
+
+    cd frontend && EXPO_PUBLIC_BACKEND_URL=http://127.0.0.1:8800 \\
+      npx expo export --platform web --output-dir ../docs/app --clear
+
 Usage:  python3 scripts/run_harnesses.py [--only nav,kid] [--web-port N]
 """
 import argparse
+import functools
 import os
 import subprocess
 import sys
 import time
 import urllib.error
 import urllib.request
+
+# Unbuffered: subprocesses write straight to the shared descriptor, so a
+# buffered print() here means every header lands at the end of the log,
+# detached from the output it labels. That is precisely when logs are read.
+print = functools.partial(print, flush=True)  # noqa: A001
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, ".."))
@@ -62,7 +74,11 @@ def wait_for(url: str, timeout: float = 60.0, need_ok: bool = False) -> bool:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", default="", help="comma-separated harness names")
-    ap.add_argument("--web-port", type=int, default=8800)
+    # Must match the port baked into the export's EXPO_PUBLIC_BACKEND_URL: the
+    # bundle learns its backend at BUILD time, so a runner on a different port
+    # would leave the app pointing somewhere that is not there.
+    ap.add_argument("--web-port", type=int,
+                    default=int(os.environ.get("HARNESS_WEB_PORT", "8800")))
     ap.add_argument("--api-port", type=int, default=8801)
     args = ap.parse_args()
 

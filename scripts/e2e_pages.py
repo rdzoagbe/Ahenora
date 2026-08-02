@@ -71,6 +71,14 @@ async def main():
                     failures.append(f"{label}/{p}: marker '{MARKERS[p]}' missing")
                 if len(body.strip()) < 40:
                     failures.append(f"{label}/{p}: page looks empty")
+                # The connectivity check pings an external host by design, so
+                # its failures are environmental rather than product bugs.
+                # ERR_TUNNEL is one development sandbox's proxy refusing that
+                # same ping — and it once swallowed a real failure: a build
+                # pointed at the PRODUCTION backend phoned home from inside a
+                # test, and CI's CORS error looked nothing like ERR_TUNNEL, so
+                # it passed here for months and failed the moment it ran
+                # anywhere else. Keep this list to genuinely external noise.
                 noise = ("clients3.google.com", "ERR_TUNNEL", "favicon", "manifest")
                 real = [e for e in errs if not any(n in e for n in noise)]
                 if real:
