@@ -818,14 +818,14 @@ def public_member(member: dict) -> dict:
 # Structured, not prose: the client composes the sentence in the reader's own
 # language, so a French co-parent doesn't read an English activity feed.
 ACTIVITY_KINDS = {
-    "task_created", "task_done", "stars_awarded", "member_joined",
-    "week_planned", "list_cleared", "doc_shared",
+    "task_created", "task_done", "task_assigned", "stars_awarded",
+    "member_joined", "week_planned", "list_cleared", "doc_shared",
 }
 ACTIVITY_KEEP = 60
 
 
 async def log_activity(database, user: dict, kind: str, subject: str = "",
-                       amount: Optional[int] = None) -> None:
+                       amount: Optional[int] = None, target: str = "") -> None:
     """Record who did what, for the household feed.
 
     The app could always say a task was done; it could never say by whom, so
@@ -847,6 +847,9 @@ async def log_activity(database, user: dict, kind: str, subject: str = "",
             "kind": kind,
             "subject": (subject or "")[:80],
             "amount": amount,
+            # Who it landed on, for events that are about a person as well as
+            # a thing — "Roland gave Keigh the school run".
+            "target": (target or "")[:60],
             "created_at": utcnow(),
         })
     except Exception as exc:  # noqa: BLE001 — never break the caller
@@ -861,6 +864,7 @@ def public_activity(row: dict) -> dict:
         "kind": row.get("kind"),
         "subject": row.get("subject") or "",
         "amount": row.get("amount"),
+        "target": row.get("target") or "",
         "created_at": iso(row.get("created_at")),
     }
 
@@ -1397,24 +1401,36 @@ PUSH_I18N = {
         "invited_body": "Open Household COO and sign in through the invite link to join.",
         "accepted_title": "{name} accepted your invitation",
         "accepted_body": "They have joined your household.",
+        "assigned_title": "{name} handed you something",
+        "assigned_body": "{title}",
+        "assigned_body_due": "{title} — due {due}",
     },
     "fr": {
         "invited_title": "{name} vous invite dans son foyer",
         "invited_body": "Ouvrez Household COO et connectez-vous via le lien d'invitation pour le rejoindre.",
         "accepted_title": "{name} a accepté votre invitation",
         "accepted_body": "Cette personne a rejoint votre foyer.",
+        "assigned_title": "{name} vous a confié quelque chose",
+        "assigned_body": "{title}",
+        "assigned_body_due": "{title} — pour le {due}",
     },
     "es": {
         "invited_title": "{name} te invitó a su hogar",
         "invited_body": "Abre Household COO e inicia sesión con el enlace de invitación para unirte.",
         "accepted_title": "{name} aceptó tu invitación",
         "accepted_body": "Ya forma parte de tu hogar.",
+        "assigned_title": "{name} te ha encargado algo",
+        "assigned_body": "{title}",
+        "assigned_body_due": "{title} — para el {due}",
     },
     "de": {
         "invited_title": "{name} hat dich in den Haushalt eingeladen",
         "invited_body": "Öffne Household COO und melde dich über den Einladungslink an, um beizutreten.",
         "accepted_title": "{name} hat deine Einladung angenommen",
         "accepted_body": "Die Person ist deinem Haushalt beigetreten.",
+        "assigned_title": "{name} hat dir etwas übergeben",
+        "assigned_body": "{title}",
+        "assigned_body_due": "{title} — fällig am {due}",
     },
 }
 
@@ -1453,6 +1469,56 @@ async def notify_invite_accepted(database, invite: dict, acceptor_name: str):
         L["accepted_body"],
         {"type": "invite_accepted", "invite_id": invite.get("invite_id")},
     )
+
+
+async def resolve_member_user_id(database, family_id: str, name: str) -> Optional[str]:
+    """The user behind an assignee name, if that name belongs to a grown-up
+    with a login. Children are members but not users, so they resolve to None."""
+    wanted = (name or "").strip().lower()
+    if not wanted:
+        return None
+    cursor = database["family_members"].find({"family_id": family_id}, {"_id": 0})
+    async for member in cursor:
+        if (member.get("name") or "").strip().lower() == wanted:
+            return member.get("user_id")
+    return None
+
+
+async def notify_assignment(database, actor: dict, card: dict, assignee_name: str) -> None:
+    """Tell someone a job just landed on them.
+
+    Hand-off was the quiet failure in this app: one parent would assign
+    something and the other would find out days later, by opening the app and
+    noticing their own name — or not noticing. Writing a name into a field is
+    not communication.
+
+    Silent in two cases, both deliberate: assigning something to yourself,
+    which needs no announcement, and a private item, which is nobody else's
+    business until it is shared.
+    """
+    try:
+        if not card.get("shared"):
+            return
+        target_id = await resolve_member_user_id(database, card["family_id"], assignee_name)
+        if not target_id or target_id == actor.get("user_id"):
+            return
+        target = await database["users"].find_one({"user_id": target_id}, {"_id": 0})
+        lang = (target or {}).get("language") or "en"
+        L = PUSH_I18N.get(lang, PUSH_I18N["en"])
+        title = (card.get("title") or "").strip()
+        due = ensure_aware_utc(card.get("due_date"))
+        body = (
+            L["assigned_body_due"].format(title=title, due=due.strftime("%d/%m"))
+            if due else L["assigned_body"].format(title=title)
+        )
+        await send_push_to_user(
+            database, target_id,
+            L["assigned_title"].format(name=actor.get("name") or "Someone"),
+            body,
+            {"type": "task_assigned", "card_id": card.get("card_id")},
+        )
+    except Exception as e:
+        log.warning("assignment notification failed: %s", e)
 
 
 async def send_new_card_alert(family_id: str, card: dict, created_by_user_id: Optional[str] = None):
@@ -3535,6 +3601,39 @@ async def list_shared_with_coparent(user=Depends(require_user)):
     return rows
 
 
+@app.get("/api/cards/mine")
+async def list_assigned_to_me(user=Depends(require_user)):
+    """What is actually on my plate, soonest first.
+
+    Assignment used to be a word in a field that nobody read. This is the
+    other half of a hand-off: a place to look that answers "what did they
+    give me?" without scrolling the whole household's feed.
+
+    Matched on name because that is what the assignee field holds — and it is
+    kept in step by the member-rename path, which rewrites every card.
+    """
+    database = get_db()
+    my_name = (user.get("name") or "").strip().lower()
+    if not my_name:
+        return []
+    rows = []
+    cursor = database["cards"].find({
+        "family_id": user["family_id"],
+        "status": {"$ne": "DONE"},
+        "$or": [
+            {"shared": True},
+            {"created_by_user_id": user["user_id"]},
+            {"created_by_user_id": {"$exists": False}},
+        ],
+    }, {"_id": 0})
+    async for item in cursor:
+        if (item.get("assignee") or "").strip().lower() == my_name:
+            rows.append(public_card(item))
+    # Anything with a date first, in date order; undated work after it.
+    rows.sort(key=lambda c: (c["due_date"] is None, c["due_date"] or ""))
+    return rows
+
+
 @app.post("/api/cards")
 async def create_card(payload: CardIn, user=Depends(require_user)):
     database = get_db()
@@ -3570,6 +3669,10 @@ async def create_card(payload: CardIn, user=Depends(require_user)):
             await send_new_card_alert(user["family_id"], doc, created_by_user_id=user["user_id"])
         except Exception as e:
             log.warning("new card alert failed: %s", e)
+
+    if doc.get("assignee") and doc.get("shared"):
+        await log_activity(database, user, "task_assigned", doc["title"], target=doc["assignee"])
+        await notify_assignment(database, user, doc, doc["assignee"])
 
     return public_card(doc)
 
@@ -3653,6 +3756,17 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
 
     if changes.get("status") == "DONE" and card["status"] != "DONE":
         await log_activity(database, user, "task_done", card.get("title", ""))
+
+    # A hand-off: the name changed, so somebody has just been given a job.
+    # Only on a real change — re-saving a card without touching the assignee
+    # must not ping them again.
+    new_assignee = changes.get("assignee")
+    if new_assignee and new_assignee != card.get("assignee"):
+        merged = {**card, **changes}
+        if merged.get("shared"):
+            await log_activity(database, user, "task_assigned",
+                               merged.get("title", ""), target=new_assignee)
+        await notify_assignment(database, user, merged, new_assignee)
 
     # When a recurring card is completed, spawn its next occurrence.
     if (

@@ -671,9 +671,11 @@ export interface ActivityEntry {
   activity_id: string;
   actor_name: string;
   actor_user_id?: string | null;
-  kind: 'task_created' | 'task_done' | 'stars_awarded' | 'member_joined'
-      | 'week_planned' | 'list_cleared' | 'doc_shared';
+  kind: 'task_created' | 'task_done' | 'task_assigned' | 'stars_awarded'
+      | 'member_joined' | 'week_planned' | 'list_cleared' | 'doc_shared';
   subject: string;
+  /** Who the event landed on, for the ones that are about a person too. */
+  target?: string;
   amount?: number | null;
   created_at: string;
 }
@@ -1011,6 +1013,7 @@ export const api = {
     request<ActivityEntry[]>(`/activity?limit=${limit}`),
   search: (q: string) =>
     request<SearchResponse>(`/search?q=${encodeURIComponent(q)}`),
+  listAssignedToMe: () => request<Card[]>('/cards/mine'),
   listVault: () => {
     const cacheKey = 'listVault';
     const cached = cache.get<VaultDoc[]>(cacheKey);
