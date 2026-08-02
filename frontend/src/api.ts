@@ -2,6 +2,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 import { cache } from './cache';
+import {
+  clearSnapshots, enqueueWrite, flushQueue, isQueueablePath, isSnapshotPath, loadSnapshot,
+  queuedCount, saveSnapshot,
+} from './offline';
 
 const CACHE_TTL_MS = 30_000;
 
@@ -81,6 +85,62 @@ export function warmupBackend(): void {
   fetch(BASE, { method: 'GET', signal: controller.signal }).catch(() => undefined);
 }
 
+// Screens show a quiet "showing your last saved copy" line when reads are
+// being served from disk, and a "will sync" note while writes are waiting.
+export interface OfflineState {
+  /** The last read this app served came off the disk, not the server. */
+  fromCache: boolean;
+  /** Writes made with no signal, still waiting to reach the server. */
+  pending: number;
+}
+
+let offlineState: OfflineState = { fromCache: false, pending: 0 };
+const offlineListeners = new Set<(state: OfflineState) => void>();
+
+export function getOfflineState(): OfflineState {
+  return offlineState;
+}
+export function isServingFromCache(): boolean {
+  return offlineState.fromCache;
+}
+export function onOfflineStateChange(fn: (state: OfflineState) => void): () => void {
+  offlineListeners.add(fn);
+  return () => offlineListeners.delete(fn);
+}
+function patchOfflineState(next: Partial<OfflineState>) {
+  const merged = { ...offlineState, ...next };
+  if (merged.fromCache === offlineState.fromCache && merged.pending === offlineState.pending) return;
+  offlineState = merged;
+  offlineListeners.forEach((fn) => {
+    try { fn(merged); } catch { /* a listener must not break a request */ }
+  });
+}
+function setServingFromCache(value: boolean) {
+  patchOfflineState({ fromCache: value });
+}
+/**
+ * Re-read what is waiting and tell anyone listening. Asynchronous on purpose:
+ * a screen can call this on mount without changing what it renders first.
+ */
+export function refreshOfflineState(): void {
+  queuedCount()
+    .then((pending) => {
+      // Force a notification even when nothing moved, so a component that
+      // mounted with neutral state learns the truth.
+      offlineState = { ...offlineState, pending };
+      offlineListeners.forEach((fn) => {
+        try { fn(offlineState); } catch { /* a listener must not break a request */ }
+      });
+    })
+    .catch(() => undefined);
+}
+// At launch the queue may already hold work from a previous, offline session.
+refreshOfflineState();
+/** Sign-out wipes the disk copies, so the banner must not keep describing them. */
+export function resetOfflineState(): void {
+  patchOfflineState({ fromCache: false, pending: 0 });
+}
+
 // The store registers a handler so an expired session (401) mid-session can
 // clear auth state and route back to the landing screen, instead of leaving
 // screens silently blank until the app is restarted.
@@ -120,6 +180,33 @@ function reportClientError(path: string, method: string, status: number | undefi
   } catch {
     // Telemetry must never interfere with the request it describes.
   }
+}
+
+// Replaying uses a bare fetch: going back through request() would re-queue a
+// failure and loop.
+let draining = false;
+function drainQueue(): void {
+  if (draining) return;
+  draining = true;
+  flushQueue(async (path, method, body) => {
+    const token = await tokenStore.get();
+    const res = await fetch(`${BASE}/api${path}`, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+    return res.json().catch(() => ({}));
+  })
+    .then(({ sent, left }) => {
+      if (sent > 0) cache.clear();
+      patchOfflineState({ pending: left });
+    })
+    .catch(() => undefined)
+    .finally(() => { draining = false; });
 }
 
 async function request<T = unknown>(
@@ -168,6 +255,23 @@ async function request<T = unknown>(
       lastError = err;
       if (attempt < RETRY_MAX) continue;
       reportClientError(path, opts.method || 'GET', undefined, `network: ${(err as Error)?.message || err}`);
+
+      // Out of attempts. A shopping list you cannot read in the shop is the
+      // one failure a household app cannot afford: serve the last copy.
+      if (isGet && isSnapshotPath(path)) {
+        const snap = await loadSnapshot<T>(path);
+        if (snap) {
+          setServingFromCache(true);
+          return snap.data;
+        }
+      }
+      // Ticking something off with no signal is remembered, not lost. Only
+      // writes that state a final value are queued (see offline.ts).
+      if (!isGet && isQueueablePath(path, opts.method || 'GET')) {
+        await enqueueWrite(path, opts.method || 'PATCH', opts.body);
+        patchOfflineState({ fromCache: true, pending: await queuedCount() });
+        return ({ ...(opts.body as object), queued: true } as unknown) as T;
+      }
       throw err;
     } finally {
       clearTimeout(timeoutId);
@@ -188,6 +292,11 @@ async function request<T = unknown>(
       if (res.status === 401 && !path.startsWith('/auth/')) {
         await tokenStore.clear().catch(() => undefined);
         cache.clear();
+        // A revoked session must not leave a readable copy of the household
+        // behind — including the remembered identity that would let a cold
+        // offline launch walk straight back in.
+        await clearSnapshots().catch(() => undefined);
+        resetOfflineState();
         if (unauthorizedHandler) unauthorizedHandler();
       }
       if (res.status === 402) {
@@ -206,7 +315,15 @@ async function request<T = unknown>(
       throw Object.assign(new Error(`${res.status}: ${text}`), { status: res.status });
     }
     if (res.status === 204) return {} as T;
-    return res.json() as Promise<T>;
+    const payload = (await res.json()) as T;
+    // A good answer means the connection is back: keep the copy, tell the UI,
+    // and push out anything that was ticked off while offline.
+    setServingFromCache(false);
+    if ((!opts.method || opts.method === 'GET') && isSnapshotPath(path)) {
+      saveSnapshot(path, payload).catch(() => undefined);
+    }
+    drainQueue();
+    return payload;
   }
 
   // 5xx retries exhausted.
