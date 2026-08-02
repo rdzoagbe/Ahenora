@@ -3599,6 +3599,21 @@ class InviteAcceptIn(BaseModel):
     token: str
 
 
+# Five doors onto one room, and none of them is redundant.
+#
+# _accept_invite_request is the whole feature; everything below is a different
+# URL and verb pointing at it, because a real family iPhone with a content
+# blocker refused specific SHAPES of request rather than failing outright.
+# Which door a given device can walk through is not knowable in advance.
+#
+# The order the CLIENT tries them is where the thinking now lives (see
+# InviteJoinPrompt): the discovery URL first, because the join card is only on
+# screen if that exact request just succeeded.
+#
+# Before deleting any of these: they are reachable by app builds already on
+# people's phones, which update on their own schedule and not ours. Before
+# ADDING a sixth: check the client's ordered list first — the answer is
+# almost certainly ordering, not another door.
 @app.post("/api/family/invite/accept")
 async def family_invite_accept(payload: InviteAcceptIn, user=Depends(require_user)):
     """Accept an invite while already signed in.

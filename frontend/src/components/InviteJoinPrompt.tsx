@@ -113,55 +113,68 @@ export function InviteJoinPrompt() {
     }
   };
 
+  /**
+   * Three ways to say yes, tried in the order most likely to survive the
+   * device in front of us.
+   *
+   * The discovery URL goes FIRST, which is the opposite of how this started.
+   * It is not a fallback: this card is on screen only because GET
+   * /family/updates just succeeded, so that exact URL and method are the one
+   * request shape we have proof passes on this phone — and the token rides a
+   * header, which content-blocker rules cannot see. The bland POST and its
+   * GET twin follow for the invite-link path, where no discovery call
+   * preceded us.
+   *
+   * Order matters more than it looks. Every attempt carries three retries
+   * with backoff, so each dead route costs about 7s when the device refuses
+   * fast ("Load failed") and about two minutes when it swallows the request
+   * silently and each try has to time out. Leading with routes this phone
+   * cannot use bought nothing but that wait — and a wait with no feedback is
+   * how someone decides the app is broken.
+   */
+  const ROUTES: { name: string; call: (token: string) => Promise<unknown> }[] = [
+    { name: 'discovery', call: api.acceptInviteViaDiscovery },
+    { name: 'membership-post', call: api.acceptInvite },
+    { name: 'membership-get', call: api.acceptInviteViaGet },
+  ];
+
   const accept = async () => {
     if (!token || busy) return;
     setBusy(true);
     setError(null);
-    try {
-      confirmJoined(await api.acceptInvite(token));
-      await succeed();
-    } catch (e: any) {
-      let raw = String(e?.message || '');
-      logger.warn('invite accept failed', raw || e);
-      // An invite this user already accepted is a success, not a failure —
-      // the family switch happened on the first tap.
-      if (raw.startsWith('409')) {
+
+    let raw = '';
+    for (const route of ROUTES) {
+      try {
+        confirmJoined(await route.call(token));
+        logger.info('invite accepted via', route.name);
         await succeed();
         return;
-      }
-      // A network-layer death (no HTTP status at all) means something on the
-      // device or network ate the request. Walk the fallbacks: the bland GET,
-      // then the discovery URL itself — which provably works, because it is
-      // the very request that put this card on screen.
-      if (!/^\d{3}:/.test(raw)) {
-        for (const attempt of [api.acceptInviteViaGet, api.acceptInviteViaDiscovery]) {
-          try {
-            confirmJoined(await attempt(token));
-            await succeed();
-            return;
-          } catch (e2: any) {
-            raw = String(e2?.message || raw);
-            logger.warn('invite accept fallback failed', raw);
-            if (raw.startsWith('409')) {
-              await succeed();
-              return;
-            }
-            // A real HTTP answer (4xx/5xx) is a verdict, not a blocked
-            // pipe — stop walking and show it.
-            if (/^\d{3}:/.test(raw)) break;
-          }
+      } catch (e: any) {
+        raw = String(e?.message || '');
+        logger.warn(`invite accept failed via ${route.name}`, raw || e);
+        // An invite this user already accepted is a success, not a failure —
+        // the family switch happened on the first tap.
+        if (raw.startsWith('409')) {
+          await succeed();
+          return;
         }
+        // A real HTTP answer (4xx/5xx) is a verdict, not a blocked pipe.
+        // Only a network-layer death — no status at all — is worth trying a
+        // different request shape for.
+        if (/^\d{3}:/.test(raw)) break;
       }
-      // Anything else stays on screen with a retry: a silent close reads
-      // as "nothing happened" and hides the actual problem.
-      setBusy(false);
-      const detail = raw.match(/\{.*"detail"\s*:\s*"([^"]+)"/)?.[1];
-      // No detail means the request never got a readable answer — keep the
-      // raw reason visible ("Load failed", "aborted"...) so a user screenshot
-      // pinpoints network vs timeout vs server without a debug session.
-      const reason = raw.replace(/[{}"\\]/g, '').trim().slice(0, 90);
-      setError(detail || `${t('invite_join_error')}${reason ? ` (${reason})` : ''}`);
     }
+
+    // Anything else stays on screen with a retry: a silent close reads as
+    // "nothing happened" and hides the actual problem.
+    setBusy(false);
+    const detail = raw.match(/\{.*"detail"\s*:\s*"([^"]+)"/)?.[1];
+    // No detail means the request never got a readable answer — keep the raw
+    // reason visible ("Load failed", "aborted"...) so a user screenshot
+    // pinpoints network vs timeout vs server without a debug session.
+    const reason = raw.replace(/[{}"\\]/g, '').trim().slice(0, 90);
+    setError(detail || `${t('invite_join_error')}${reason ? ` (${reason})` : ''}`);
   };
 
   if (!token) return null;
