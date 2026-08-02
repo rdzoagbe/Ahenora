@@ -1,12 +1,13 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { ChevronRight, Lock, Search as SearchIcon, Settings as SettingsIcon, User, X } from 'lucide-react-native';
+import { ChevronRight, Lock, Search as SearchIcon, Settings as SettingsIcon, Smile, User, X } from 'lucide-react-native';
 
 import { PressScale } from './PressScale';
 import { useUI, UIColors } from './Kit';
 import { useStore } from '../store';
+import { HandOverSheet } from './HandOverSheet';
 
 /**
  * Destinations that don't earn a permanent seat in a five-slot phone bar.
@@ -16,6 +17,7 @@ import { useStore } from '../store';
  * another 10px label.
  */
 export function MoreSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+  const [handOver, setHandOver] = useState(false);
   const ui = useUI();
   const { t } = useStore();
   const router = useRouter();
@@ -32,6 +34,8 @@ export function MoreSheet({ visible, onClose }: { visible: boolean; onClose: () 
   const items = [
     { key: 'search', icon: SearchIcon, tone: ui.orange, soft: ui.orangeSoft,
       title: t('search_title'), sub: t('search_eyebrow'), path: '/(tabs)/search' },
+    { key: 'kid', icon: Smile, tone: ui.mintText, soft: ui.mint,
+      title: t('kid_hand_over'), sub: t('kid_hand_over_sub'), path: '' },
     { key: 'vault', icon: Lock, tone: ui.lavenderText, soft: ui.lavender,
       title: t('vault'), sub: t('nav_more_vault_sub'), path: '/(tabs)/vault' },
     { key: 'settings', icon: SettingsIcon, tone: ui.orange, soft: ui.orangeSoft,
@@ -41,7 +45,8 @@ export function MoreSheet({ visible, onClose }: { visible: boolean; onClose: () 
   ];
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <>
+      <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel={t('close')} />
       {/* The bottom pad clears the phone's own navigation bar: without it
           the last row sat underneath Android's gesture bar and read as a
@@ -68,7 +73,12 @@ export function MoreSheet({ visible, onClose }: { visible: boolean; onClose: () 
               key={item.key}
               testID={`more-${item.key}`}
               accessibilityRole="button"
-              onPress={() => go(item.path)}
+              onPress={() => {
+                // The hand-over is a sheet, not a destination: it has to sit
+                // above this panel rather than replace the screen behind it.
+                if (!item.path) { onClose(); setTimeout(() => setHandOver(true), 160); return; }
+                go(item.path);
+              }}
               style={styles.row}
             >
               <View style={[styles.tile, { backgroundColor: item.soft }]}>
@@ -83,7 +93,9 @@ export function MoreSheet({ visible, onClose }: { visible: boolean; onClose: () 
           );
         })}
       </View>
-    </Modal>
+      </Modal>
+      <HandOverSheet visible={handOver} onClose={() => setHandOver(false)} />
+    </>
   );
 }
 

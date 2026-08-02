@@ -1620,6 +1620,16 @@ async def require_user(authorization: str = Header(default="")):
     if not session:
         raise HTTPException(status_code=401, detail="Invalid or expired session")
 
+    # A child's session is deliberately worthless here. Kid access rides on the
+    # parent's account, so a child token that satisfied require_user would
+    # inherit the whole household — the vault, the calendar, the co-parent's
+    # private items. Refusing it in the one place every route already depends
+    # on means the ~150 endpoints below are all protected by default, and a
+    # new endpoint written next month is protected without anyone remembering
+    # to think about it. Fail closed, once, centrally.
+    if session.get("kind") == "child":
+        raise HTTPException(status_code=403, detail="Not available in kid mode")
+
     user = await database["users"].find_one({"user_id": session["user_id"]}, {"_id": 0})
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
@@ -3172,6 +3182,225 @@ def _search_hit(kind: str, item_id: str, title: str, subtitle: str = "",
                 when: str = "", status: str = "") -> dict:
     return {"kind": kind, "id": item_id, "title": title,
             "subtitle": subtitle, "when": when, "status": status}
+
+
+# -----------------------------------------------------------------------------
+# Kid mode
+#
+# A child does not get an account. They get a profile on a device a parent has
+# already signed into, entered with their own PIN, and a much smaller app:
+# their stars, their chores, their rewards. Not the household.
+#
+# The session they hold is a real session row marked kind="child", which
+# require_user refuses outright — so the only doors a child token opens are
+# the handful below, and each one re-checks the member it belongs to.
+# -----------------------------------------------------------------------------
+
+
+class ChildSessionIn(BaseModel):
+    member_id: str
+    pin: str
+
+
+class ParentPinIn(BaseModel):
+    pin: str
+
+
+async def require_child(authorization: str = Header(default="")):
+    """Resolve a kid-mode session to the child it belongs to."""
+    database = get_db()
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing bearer token")
+    token = authorization.replace("Bearer ", "", 1).strip()
+    session = await database["user_sessions"].find_one(
+        {"token_hash": sha256(token), "expires_at": {"$gt": utcnow()}}, {"_id": 0})
+    if not session or session.get("kind") != "child":
+        raise HTTPException(status_code=401, detail="Not a kid session")
+    member = await database["family_members"].find_one(
+        {"member_id": session.get("member_id")}, {"_id": 0})
+    if not member:
+        raise HTTPException(status_code=401, detail="Profile not found")
+    return {"member": member, "family_id": member["family_id"],
+            "parent_user_id": session.get("user_id")}
+
+
+async def _family_parent_pin_hashes(database, family_id: str) -> list:
+    hashes = []
+    async for m in database["family_members"].find({"family_id": family_id}, {"_id": 0}):
+        if (m.get("role") or "").lower() != "child" and m.get("pin_hash"):
+            hashes.append(m["pin_hash"])
+    return hashes
+
+
+@app.get("/api/family/profiles")
+async def list_profiles(user=Depends(require_user)):
+    """Who could be using this device — the "Who's this?" picker.
+
+    Kid mode is only offered once a grown-up has a PIN of their own; without
+    one, handing the tablet to a child would be a one-way door.
+    """
+    database = get_db()
+    rows, parent_pin = [], False
+    async for m in database["family_members"].find({"family_id": user["family_id"]}, {"_id": 0}):
+        is_child = (m.get("role") or "").lower() == "child"
+        if not is_child and m.get("pin_hash"):
+            parent_pin = True
+        rows.append({"member_id": m["member_id"], "name": m.get("name") or "",
+                     "role": m.get("role") or "Parent", "is_child": is_child,
+                     "has_pin": bool(m.get("pin_hash"))})
+    return {"profiles": rows, "kid_mode_ready": parent_pin}
+
+
+@app.post("/api/kid/session")
+async def start_kid_session(payload: ChildSessionIn, user=Depends(require_user)):
+    """Swap this device into a child's view. Requires the child's own PIN."""
+    database = get_db()
+    member = await database["family_members"].find_one(
+        {"member_id": payload.member_id, "family_id": user["family_id"]}, {"_id": 0})
+    if not member or (member.get("role") or "").lower() != "child":
+        raise HTTPException(status_code=404, detail="Child not found")
+    if not member.get("pin_hash"):
+        raise HTTPException(status_code=400, detail="This child has no PIN yet")
+    if not await _family_parent_pin_hashes(database, user["family_id"]):
+        raise HTTPException(status_code=400, detail="Set a parent PIN first")
+
+    identity = f"kid:{member['member_id']}"
+    if _auth_locked(identity):
+        raise HTTPException(status_code=429, detail="Too many attempts. Please try again later.")
+    if not secrets.compare_digest(sha256(payload.pin.strip()), member["pin_hash"]):
+        _auth_record_fail(identity)
+        raise HTTPException(status_code=401, detail="Invalid PIN")
+    _auth_clear(identity)
+
+    raw = secrets.token_urlsafe(32)
+    await database["user_sessions"].insert_one({
+        "session_id": new_id("sess"),
+        "user_id": user["user_id"],
+        "member_id": member["member_id"],
+        "kind": "child",
+        "token_hash": sha256(raw),
+        # Short by design: a device left in kid mode returns to a locked
+        # picker the next day rather than staying open indefinitely.
+        "expires_at": utcnow() + timedelta(days=1),
+        "created_at": utcnow(),
+    })
+    return {"session_token": raw, "member": public_member(member)}
+
+
+@app.post("/api/kid/exit")
+async def exit_kid_session(payload: ParentPinIn, child=Depends(require_child)):
+    """Leave kid mode. A grown-up's PIN, so a child cannot let themselves out."""
+    database = get_db()
+    hashes = await _family_parent_pin_hashes(database, child["family_id"])
+    identity = f"kidexit:{child['family_id']}"
+    if _auth_locked(identity):
+        raise HTTPException(status_code=429, detail="Too many attempts. Please try again later.")
+    given = sha256(payload.pin.strip())
+    if not any(secrets.compare_digest(given, h) for h in hashes):
+        _auth_record_fail(identity)
+        raise HTTPException(status_code=401, detail="Invalid PIN")
+    _auth_clear(identity)
+    return {"ok": True}
+
+
+@app.get("/api/kid/home")
+async def kid_home(child=Depends(require_child)):
+    """Everything a child's app shows, in one call.
+
+    Scoped to this child on the server, not filtered on the device: their
+    stars, the chores with their name on them, what they can spend on, and
+    what they are still owed.
+    """
+    database = get_db()
+    member = child["member"]
+    name = (member.get("name") or "").strip().lower()
+
+    chores = []
+    async for card in database["cards"].find(
+        {"family_id": child["family_id"], "status": {"$ne": "DONE"}, "shared": True},
+        {"_id": 0},
+    ):
+        if (card.get("assignee") or "").strip().lower() == name:
+            chores.append({"card_id": card["card_id"], "title": card.get("title") or "",
+                           "due_date": iso(card.get("due_date"))})
+    chores.sort(key=lambda c: (c["due_date"] is None, c["due_date"] or ""))
+
+    rewards = [public_reward(r) async for r in
+               database["rewards"].find({"family_id": child["family_id"]}, {"_id": 0})]
+    rewards.sort(key=lambda r: r["cost_stars"])
+
+    owed = [public_redemption(r) async for r in database["redemptions"].find(
+        {"family_id": child["family_id"], "member_id": member["member_id"],
+         "status": "pending"}, {"_id": 0})]
+
+    return {"name": member.get("name") or "", "stars": int(member.get("stars") or 0),
+            "chores": chores, "rewards": rewards, "owed": owed}
+
+
+@app.post("/api/kid/chores/{card_id}/done")
+async def kid_finish_chore(card_id: str, child=Depends(require_child)):
+    """Tick off a chore. Only one with this child's name on it, and only ever
+    to DONE — a child can finish their own jobs, not reopen or edit them."""
+    database = get_db()
+    member = child["member"]
+    card = await database["cards"].find_one(
+        {"card_id": card_id, "family_id": child["family_id"]}, {"_id": 0})
+    if not card or not card.get("shared"):
+        raise HTTPException(status_code=404, detail="Not found")
+    if (card.get("assignee") or "").strip().lower() != (member.get("name") or "").strip().lower():
+        raise HTTPException(status_code=403, detail="That is not yours to finish")
+
+    await database["cards"].update_one({"card_id": card_id}, {"$set": {
+        "status": "DONE", "completed_at": utcnow(),
+        "completed_by_name": member.get("name") or "", "completed_by_user_id": None}})
+    await log_activity(database, {"family_id": child["family_id"], "user_id": None,
+                                  "name": member.get("name") or ""},
+                       "task_done", card.get("title", ""))
+    return {"ok": True}
+
+
+@app.post("/api/kid/rewards/{reward_id}/request")
+async def kid_request_reward(reward_id: str, child=Depends(require_child)):
+    """Spend stars on a reward.
+
+    The same atomic guarded decrement the parent-side path uses: checking the
+    balance and then subtracting in two steps lets two taps both pass, so the
+    filter carries the check and the database rejects the second.
+    """
+    database = get_db()
+    member = child["member"]
+    reward = await database["rewards"].find_one(
+        {"reward_id": reward_id, "family_id": child["family_id"]}, {"_id": 0})
+    if not reward:
+        raise HTTPException(status_code=404, detail="Reward not found")
+    cost = int(reward["cost_stars"])
+
+    result = await database["family_members"].update_one(
+        {"member_id": member["member_id"], "family_id": child["family_id"],
+         "stars": {"$gte": cost}},
+        {"$inc": {"stars": -cost}},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=400, detail="Not enough stars")
+
+    await database["star_transactions"].insert_one({
+        "transaction_id": new_id("star"), "family_id": child["family_id"],
+        "member_id": member["member_id"], "delta": -cost,
+        "reason": reward.get("title") or "Reward redeemed",
+        "created_by_user_id": None, "created_by_name": member.get("name"),
+        "created_at": utcnow()})
+    redemption = {
+        "redemption_id": new_id("redemption"), "family_id": child["family_id"],
+        "member_id": member["member_id"], "reward_id": reward["reward_id"],
+        "reward_title": reward.get("title") or "", "reward_icon": reward.get("icon"),
+        "cost_stars": cost, "status": "pending", "created_at": utcnow(),
+        "created_by_user_id": None, "fulfilled_at": None}
+    await database["redemptions"].insert_one(redemption)
+
+    fresh = await database["family_members"].find_one(
+        {"member_id": member["member_id"]}, {"_id": 0})
+    return {"ok": True, "stars": int(fresh.get("stars") or 0),
+            "redemption": public_redemption(redemption)}
 
 
 @app.get("/api/search")
