@@ -238,6 +238,7 @@ export interface Card {
   reminder_minutes: number;
   created_at: string;
   completed_at?: string | null;
+  completed_by_name?: string | null;
   google_event_id?: string | null;
   google_ical_uid?: string | null;
   external_source?: string | null;
@@ -531,6 +532,17 @@ export interface CalendarImportResult {
 }
 
 export type VaultVisibility = 'private' | 'shared';
+
+export interface ActivityEntry {
+  activity_id: string;
+  actor_name: string;
+  actor_user_id?: string | null;
+  kind: 'task_created' | 'task_done' | 'stars_awarded' | 'member_joined'
+      | 'week_planned' | 'list_cleared' | 'doc_shared';
+  subject: string;
+  amount?: number | null;
+  created_at: string;
+}
 
 export interface VaultDoc {
   doc_id: string;
@@ -861,6 +873,8 @@ export const api = {
     });
   },
   // Vault
+  listActivity: (limit = 12) =>
+    request<ActivityEntry[]>(`/activity?limit=${limit}`),
   listVault: () => {
     const cacheKey = 'listVault';
     const cached = cache.get<VaultDoc[]>(cacheKey);

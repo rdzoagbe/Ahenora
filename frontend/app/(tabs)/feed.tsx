@@ -20,6 +20,7 @@ import {
   ChevronRight,
   Clock,
   ExternalLink,
+  History,
   MapPin,
   Megaphone,
   MessageSquare,
@@ -47,7 +48,7 @@ import { StreakChip } from '../../src/components/StreakChip';
 import { useStore } from '../../src/store';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { useUI, UIColors } from '../../src/components/Kit';
-import { api, logEvent, Announcement, Card, CardType, FamilyMember, HandoffNote, Template, WeeklyReport } from '../../src/api';
+import { api, logEvent, ActivityEntry, Announcement, Card, CardType, FamilyMember, HandoffNote, Template, WeeklyReport } from '../../src/api';
 import { syncCardReminderNotifications, syncMorningDigest, syncDinnerReminder, syncSundayRecap, ensureAskedNotificationPermissionOnce } from '../../src/notifications';
 import { logger } from '../../src/logger';
 import { recordWin } from '../../src/reviewPrompt';
@@ -86,7 +87,7 @@ function uniqueCards(cards: Card[]) {
   });
 }
 
-type TFunc = (key: string) => string;
+type TFunc = (key: string, params?: Record<string, string | number>) => string;
 
 function formatDayLine(date: string | null | undefined, t: TFunc) {
   if (!date) return t('feed_no_deadline');
@@ -147,6 +148,35 @@ function cardMeta(card: Card, t: TFunc) {
   return parts.join(' · ');
 }
 
+/**
+ * The server stores what happened, not a sentence about it — so a French
+ * co-parent reads a French feed and an English one reads English.
+ */
+function activityPhrase(entry: ActivityEntry, t: TFunc): string {
+  switch (entry.kind) {
+    case 'task_done': return t('act_task_done', { subject: entry.subject });
+    case 'task_created': return t('act_task_created', { subject: entry.subject });
+    case 'stars_awarded':
+      return t('act_stars_awarded', { n: String(entry.amount ?? 0), subject: entry.subject });
+    case 'member_joined': return t('act_member_joined');
+    case 'list_cleared': return t('act_list_cleared', { n: String(entry.amount ?? 0) });
+    case 'week_planned': return t('act_week_planned');
+    case 'doc_shared': return t('act_doc_shared', { subject: entry.subject });
+    default: return '';
+  }
+}
+
+function shortWhen(iso: string, t: TFunc): string {
+  const then = new Date(iso).getTime();
+  if (!Number.isFinite(then)) return '';
+  const mins = Math.max(0, Math.round((Date.now() - then) / 60000));
+  if (mins < 1) return t('when_now');
+  if (mins < 60) return t('when_minutes', { n: String(mins) });
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return t('when_hours', { n: String(hours) });
+  return t('when_days', { n: String(Math.round(hours / 24)) });
+}
+
 function greetingFallback(name: string, t: TFunc) {
   const hour = new Date().getHours();
   const prefix = hour < 12 ? t('feed_good_morning') : hour < 18 ? t('feed_good_afternoon') : t('feed_good_evening');
@@ -186,6 +216,7 @@ function TaskRow({ card, onOpen, onComplete, styles }: { card: Card; onOpen: () 
 
 export default function Feed() {
   const { user, t, subscription } = useStore();
+  const [activity, setActivity] = useState<ActivityEntry[]>([]);
   const { isLocked, promptUpgrade } = usePremiumGate();
   const reportLocked = isLocked('weekly_report');
   const { px, maxW } = useBreakpoint();
@@ -269,6 +300,10 @@ export default function Feed() {
       if (notesResult.status === 'fulfilled') setNotes(notesResult.value);
       if (templatesResult.status === 'fulfilled') setTemplates(templatesResult.value);
       if (annResult.status === 'fulfilled') setAnnouncements(annResult.value);
+
+      // Who did what, lately. Best effort: an empty strip is better than a
+      // failed feed.
+      api.listActivity(8).then(setActivity).catch(() => undefined);
 
       // Only when the plan is KNOWN to allow it: isLocked() answers false
       // while the subscription is still loading (so the UI never flashes a
@@ -680,6 +715,29 @@ export default function Feed() {
                 <Text style={styles.statLabel} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.7}>{t('feed_this_week')}</Text>
               </View>
             </View>
+
+            {/* Who did what. The app could always show that the bins task was
+                gone; it could never say who dealt with it, which is the first
+                thing a co-parent wants to know. */}
+            {activity.length > 0 ? (
+              <View style={styles.activityCard}>
+                <View style={styles.activityHead}>
+                  <History color={ui.mintText} size={17} />
+                  <Text style={styles.activityTitle}>{t('feed_activity_title')}</Text>
+                </View>
+                {activity.slice(0, 5).map((entry) => (
+                  <View key={entry.activity_id} style={styles.activityRow}>
+                    <View style={styles.activityDot} />
+                    <Text style={styles.activityText} numberOfLines={2}>
+                      <Text style={styles.activityActor}>{entry.actor_name || t('feed_activity_someone')}</Text>
+                      {' '}
+                      {activityPhrase(entry, t)}
+                    </Text>
+                    <Text style={styles.activityWhen}>{shortWhen(entry.created_at, t)}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
 
             {/* Handoff notes */}
             <PressScale onPress={() => setExpandNotes((v) => !v)} style={styles.notesHeader}>
@@ -1497,6 +1555,20 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     fontSize: 13,
     maxWidth: 120,
   },
+  activityCard: {
+    backgroundColor: ui.card, borderRadius: 18, borderWidth: 1, borderColor: ui.line,
+    padding: 14, gap: 10, marginBottom: 12,
+  },
+  activityHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  activityTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 15, letterSpacing: -0.2 },
+  activityRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 9 },
+  activityDot: {
+    width: 6, height: 6, borderRadius: 3, backgroundColor: ui.mintText,
+    marginTop: 7, flex: 0,
+  },
+  activityText: { flex: 1, color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 18 },
+  activityActor: { color: ui.text, fontFamily: 'Inter_700Bold' },
+  activityWhen: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 11, marginTop: 2 },
   notesHeader: {
     flexDirection: 'row',
     alignItems: 'center',

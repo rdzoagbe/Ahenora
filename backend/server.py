@@ -815,6 +815,56 @@ def public_member(member: dict) -> dict:
     }
 
 
+# Structured, not prose: the client composes the sentence in the reader's own
+# language, so a French co-parent doesn't read an English activity feed.
+ACTIVITY_KINDS = {
+    "task_created", "task_done", "stars_awarded", "member_joined",
+    "week_planned", "list_cleared", "doc_shared",
+}
+ACTIVITY_KEEP = 60
+
+
+async def log_activity(database, user: dict, kind: str, subject: str = "",
+                       amount: Optional[int] = None) -> None:
+    """Record who did what, for the household feed.
+
+    The app could always say a task was done; it could never say by whom, so
+    a co-parent opening the app found chores mysteriously finished. Best
+    effort on purpose — an unrecorded line must never fail the action it
+    describes.
+    """
+    if kind not in ACTIVITY_KINDS:
+        return
+    try:
+        family_id = user.get("family_id")
+        if not family_id:
+            return
+        await database["activity"].insert_one({
+            "activity_id": new_id("act"),
+            "family_id": family_id,
+            "actor_user_id": user.get("user_id"),
+            "actor_name": user.get("name") or "",
+            "kind": kind,
+            "subject": (subject or "")[:80],
+            "amount": amount,
+            "created_at": utcnow(),
+        })
+    except Exception as exc:  # noqa: BLE001 — never break the caller
+        log.warning("activity not recorded (%s): %s", kind, exc)
+
+
+def public_activity(row: dict) -> dict:
+    return {
+        "activity_id": row["activity_id"],
+        "actor_name": row.get("actor_name") or "",
+        "actor_user_id": row.get("actor_user_id"),
+        "kind": row.get("kind"),
+        "subject": row.get("subject") or "",
+        "amount": row.get("amount"),
+        "created_at": iso(row.get("created_at")),
+    }
+
+
 def public_card(card: dict) -> dict:
     return {
         "card_id": card["card_id"],
@@ -831,6 +881,7 @@ def public_card(card: dict) -> dict:
         "reminder_minutes": card.get("reminder_minutes", 60),
         "created_at": iso(card["created_at"]),
         "completed_at": iso(card.get("completed_at")),
+        "completed_by_name": card.get("completed_by_name"),
         "google_event_id": card.get("google_event_id"),
         "google_ical_uid": card.get("google_ical_uid"),
         "external_source": card.get("external_source"),
@@ -2239,6 +2290,10 @@ async def _accept_invite_for_user(database, user: dict, invite: Optional[dict], 
         user = await database["users"].find_one({"user_id": user["user_id"]}, {"_id": 0})
         await add_user_to_family_if_needed(database, user, target_family_id, invite_member_role(invite))
         await _bring_children_along(database, old_family_id, target_family_id)
+        await log_activity(database, {"family_id": target_family_id,
+                                      "user_id": user["user_id"],
+                                      "name": user.get("name")},
+                           "member_joined", user.get("name") or "")
         joined = True
     if invite and invite.get("status") != "accepted":
         await database["family_invites"].update_one(
@@ -2643,6 +2698,7 @@ async def award_stars_to_member(
         {"member_id": member_id, "family_id": family_id},
         {"$inc": {"stars": delta}},
     )
+    await log_activity(database, user, "stars_awarded", member.get("name", ""), delta)
     transaction = {
         "transaction_id": new_id("star"),
         "family_id": family_id,
@@ -3030,6 +3086,19 @@ async def invites_for_me(
     return rows
 
 
+@app.get("/api/activity")
+async def list_activity(limit: int = 12, user=Depends(require_user)):
+    """What happened in this household lately, newest first."""
+    database = get_db()
+    rows = []
+    cursor = database["activity"].find(
+        {"family_id": user["family_id"]}, {"_id": 0}
+    ).sort("created_at", -1).limit(max(1, min(limit, 50)))
+    async for row in cursor:
+        rows.append(public_activity(row))
+    return rows
+
+
 @app.get("/api/family/updates")
 async def family_updates(
     x_confirm: Optional[str] = Header(None, alias="X-Confirm"),
@@ -3397,6 +3466,9 @@ async def create_card(payload: CardIn, user=Depends(require_user)):
         "shared": bool(payload.shared),
     }
     await database["cards"].insert_one(doc)
+    if doc.get("shared"):
+        # Private items are nobody else's business, so they are not announced.
+        await log_activity(database, user, "task_created", doc.get("title", ""))
 
     # Only ping the co-parent when the item is actually shared — private items
     # are silent by design.
@@ -3426,7 +3498,11 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
         if payload.status not in {"OPEN", "DONE"}:
             raise HTTPException(status_code=400, detail="Invalid card status")
         changes["status"] = payload.status
-        changes["completed_at"] = utcnow() if payload.status == "DONE" else None
+        done = payload.status == "DONE"
+        changes["completed_at"] = utcnow() if done else None
+        # Who ticked it off — the question a co-parent actually asks.
+        changes["completed_by_user_id"] = user["user_id"] if done else None
+        changes["completed_by_name"] = (user.get("name") or "") if done else None
         award_child = (
             card["status"] != "DONE"
             and payload.status == "DONE"
@@ -3481,6 +3557,9 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
 
     await database["cards"].update_one({"card_id": card_id}, {"$set": changes})
     updated = await database["cards"].find_one({"card_id": card_id}, {"_id": 0})
+
+    if changes.get("status") == "DONE" and card["status"] != "DONE":
+        await log_activity(database, user, "task_done", card.get("title", ""))
 
     # When a recurring card is completed, spawn its next occurrence.
     if (
@@ -5219,6 +5298,8 @@ async def clear_all_shopping(user=Depends(require_user)):
             "created_at": utcnow(),
         })
     result = await database["shopping_list"].delete_many({"family_id": user["family_id"]})
+    if names:
+        await log_activity(database, user, "list_cleared", "", len(names))
     return {"deleted": result.deleted_count}
 
 
