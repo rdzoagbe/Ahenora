@@ -638,7 +638,7 @@ export default function Settings() {
                         style={[styles.ghostBtn, { backgroundColor: ui.orangeSoft }]}
                       >
                         <UserPlus color={ui.orange} size={14} />
-                        <Text style={[styles.ghostBtnText, { color: ui.orange }]}>{t('set_invite_add_now')}</Text>
+                        <Text style={[styles.ghostBtnText, { color: ui.orangeText }]}>{t('set_invite_add_now')}</Text>
                       </PressScale>
                     ) : null}
                     {invite.invite_url ? (
@@ -1124,13 +1124,13 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   headerGap: { marginTop: 18 },
 
   profileCard: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16 },
-  avatar: { width: 52, height: 52, borderRadius: 99, backgroundColor: ui.orange, alignItems: 'center', justifyContent: 'center' },
+  avatar: { width: 52, height: 52, borderRadius: 99, backgroundColor: ui.orangeDeep, alignItems: 'center', justifyContent: 'center' },
   avatarImg: { width: 52, height: 52, borderRadius: 99 },
   avatarText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 21 },
   profileName: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 18 },
   profileEmail: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 13, marginTop: 2 },
   adminBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6, alignSelf: 'flex-start', backgroundColor: ui.orangeSoft, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 99 },
-  adminBadgeText: { color: ui.orange, fontFamily: 'Inter_800ExtraBold', fontSize: 11 },
+  adminBadgeText: { color: ui.orangeText, fontFamily: 'Inter_800ExtraBold', fontSize: 11 },
 
   planCard: { flexDirection: 'row', alignItems: 'center', padding: 18, gap: 14 },
   planCol: { flex: 1 },
@@ -1181,13 +1181,13 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   sheetFooter: { flexDirection: 'row', gap: 12, marginTop: 18 },
   cancelBtn: { flex: 1, minHeight: 54, borderRadius: 99, borderWidth: 1, borderColor: ui.line, alignItems: 'center', justifyContent: 'center' },
   cancelText: { color: ui.muted, fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
-  primaryButton: { flex: 1, minHeight: 54, borderRadius: 99, paddingHorizontal: 18, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 9, backgroundColor: ui.orange },
+  primaryButton: { flex: 1, minHeight: 54, borderRadius: 99, paddingHorizontal: 18, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 9, backgroundColor: ui.orangeDeep },
   primaryButtonText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
 
   expSummary: { borderRadius: 14, backgroundColor: ui.soft, padding: 12, gap: 6, marginBottom: 6 },
   expSumRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   expSumName: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 14 },
-  expSumAmt: { color: ui.orange, fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
+  expSumAmt: { color: ui.orangeText, fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
   expCatRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
   expCatChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 99, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft },
   expCatChipActive: { backgroundColor: ui.gold, borderColor: ui.goldText },

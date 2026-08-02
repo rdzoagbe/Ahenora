@@ -635,7 +635,7 @@ export default function Calendar() {
                     <Text
                       style={[
                         styles.dayNumber,
-                        { color: selected ? '#FFFFFF' : !inMonth ? ui.line : isToday ? ui.orange : ui.text },
+                        { color: selected ? '#FFFFFF' : !inMonth ? ui.muted : isToday ? ui.orangeText : ui.text },
                       ]}
                     >
                       {date.getDate()}
@@ -932,7 +932,7 @@ export default function Calendar() {
 const createStyles = (ui: UIColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: ui.bg },
   scroll: { paddingHorizontal: 20, paddingTop: 8 },
-  syncBtn: { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: ui.orange, borderRadius: 99, paddingHorizontal: 18, paddingVertical: 11 },
+  syncBtn: { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: ui.orangeDeep, borderRadius: 99, paddingHorizontal: 18, paddingVertical: 11 },
   syncText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
 
   bannerGap: { marginTop: 18 },
@@ -948,7 +948,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   weekLabel: { textAlign: 'center', fontFamily: 'Inter_700Bold', fontSize: 12, color: ui.muted },
   monthGrid: { flexDirection: 'row', flexWrap: 'wrap', alignSelf: 'center' },
   dayCell: { alignItems: 'center', justifyContent: 'center', borderRadius: 14 },
-  dayCellSelected: { backgroundColor: ui.orange },
+  dayCellSelected: { backgroundColor: ui.orangeDeep },
   dayNumber: { fontFamily: 'Inter_700Bold', fontSize: 15.5, includeFontPadding: false, textAlign: 'center' },
   dayDot: { marginTop: 5, width: 5, height: 5, borderRadius: 99 },
   dayDotSpacer: { marginTop: 5, width: 5, height: 5 },
@@ -962,7 +962,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   emptyText: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 17, textAlign: 'center' },
   emptyHint: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 13.5, lineHeight: 20, textAlign: 'center', marginTop: 6 },
   emptySyncBtn: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 16, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 99, borderWidth: 1, borderColor: ui.orange + '55', backgroundColor: ui.orangeSoft },
-  emptySyncText: { color: ui.orange, fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
+  emptySyncText: { color: ui.orangeText, fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
 
   timelineCard: { paddingHorizontal: 16 },
   eventRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14 },
@@ -984,15 +984,15 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   detailDescription: { color: ui.text, fontFamily: 'Inter_500Medium', fontSize: 16, lineHeight: 24 },
   detailChip: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 14, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft },
   detailChipText: { flex: 1, color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 14, lineHeight: 20 },
-  completeBtn: { marginTop: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, minHeight: 54, borderRadius: 99, backgroundColor: ui.orange },
+  completeBtn: { marginTop: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, minHeight: 54, borderRadius: 99, backgroundColor: ui.orangeDeep },
   completeBtnText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 16 },
   shareBtn: { marginTop: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 50, borderRadius: 99, borderWidth: 1.5, borderColor: ui.orange + '66', backgroundColor: ui.orangeSoft },
-  shareBtnText: { color: ui.orange, fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
+  shareBtnText: { color: ui.orangeText, fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
   sharedBadge: { marginTop: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 46, borderRadius: 99, backgroundColor: ui.mintText + '1E' },
   sharedBadgeText: { color: ui.mintText, fontFamily: 'Inter_700Bold', fontSize: 14 },
   shareNudge: { marginTop: 20, padding: 14, borderRadius: 18, borderWidth: 1.5, borderColor: ui.orange + '55', backgroundColor: ui.orangeSoft, gap: 12 },
   shareNudgeText: { color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 14, lineHeight: 20 },
-  shareNudgeBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 46, borderRadius: 99, backgroundColor: ui.orange },
+  shareNudgeBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 46, borderRadius: 99, backgroundColor: ui.orangeDeep },
   shareNudgeBtnText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
   coparentLink: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 12, paddingVertical: 6 },
   coparentLinkText: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 13 },

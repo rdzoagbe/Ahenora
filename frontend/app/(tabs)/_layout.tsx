@@ -18,7 +18,10 @@ import { MoreSheet } from '../../src/components/MoreSheet';
  */
 function TabIcon({ focused, Icon, label }: { focused: boolean; Icon: any; label: string }) {
   const { theme } = useStore();
-  const color = focused ? theme.colors.accent : theme.colors.textSoft;
+  // accentInk, not accent: the focused tab sits on an accentSoft pill, and the
+  // brand orange on its own tint measures 2.7:1 — the label was decorative
+  // rather than readable.
+  const color = focused ? theme.colors.accentInk : theme.colors.textSoft;
 
   return (
     <View
@@ -81,7 +84,7 @@ function SidebarNav({ width }: { width: number }) {
       {NAV_ITEMS.map(({ name, Icon, labelKey }) => {
         const active = pathname === `/${name}` || pathname.endsWith(name);
         const iconColor = light
-          ? active ? theme.colors.accent : theme.colors.textSoft
+          ? active ? theme.colors.accentInk : theme.colors.textSoft
           : active ? theme.colors.primaryText : theme.colors.textSoft;
 
         return (

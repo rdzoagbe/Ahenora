@@ -954,7 +954,7 @@ export default function Kitchen() {
         {/* Keep the screen awake while shopping / cooking */}
         <PressScale testID="kitchen-keep-awake" onPress={toggleKeepAwake} style={[styles.keepAwake, keepAwake && styles.keepAwakeOn]}>
           <Sun color={keepAwake ? ui.orange : ui.muted} size={16} />
-          <Text style={[styles.keepAwakeText, keepAwake && { color: ui.orange }]}>
+          <Text style={[styles.keepAwakeText, keepAwake && { color: ui.orangeText }]}>
             {keepAwake ? t('kitchen_screen_on') : t('kitchen_screen_on_off')}
           </Text>
         </PressScale>
@@ -1189,7 +1189,7 @@ export default function Kitchen() {
                 </PressScale>
                 <PressScale testID="capture-recipe" onPress={openCapture} style={[styles.clearBtn, { backgroundColor: ui.orangeSoft, borderWidth: 1, borderColor: ui.orange }]}>
                   <Camera color={ui.orange} size={14} />
-                  <Text style={[styles.clearBtnText, { color: ui.orange }]}>{t('capture_chip')}</Text>
+                  <Text style={[styles.clearBtnText, { color: ui.orangeText }]}>{t('capture_chip')}</Text>
                 </PressScale>
                 <PressScale onPress={() => setShowMealAdd(true)} style={[styles.clearBtn, { backgroundColor: ui.lavender }]}>
                   <Text style={[styles.clearBtnText, { color: ui.lavenderText }]}>{t('vault_add_short')}</Text>
@@ -2117,19 +2117,19 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   histSub: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, marginTop: 2 },
   histEmpty: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 14, textAlign: 'center', paddingVertical: 24 },
   reuseBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 99, backgroundColor: ui.orangeSoft },
-  reuseText: { color: ui.orange, fontFamily: 'Inter_800ExtraBold', fontSize: 12 },
+  reuseText: { color: ui.orangeText, fontFamily: 'Inter_800ExtraBold', fontSize: 12 },
   savePlanRow: { flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 8 },
   restoreBanner: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: ui.orangeSoft, borderRadius: 16, paddingVertical: 12, paddingHorizontal: 14, marginBottom: 12 },
   restoreIcon: { width: 38, height: 38, borderRadius: 11, backgroundColor: ui.card, alignItems: 'center', justifyContent: 'center' },
   restoreTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
   restoreSub: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, marginTop: 1 },
-  restoreCta: { color: ui.orange, fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
+  restoreCta: { color: ui.orangeText, fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
   restoreSelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
   restoreSelText: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 13 },
   selAllBtn: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 99, backgroundColor: ui.soft, borderWidth: 1, borderColor: ui.line },
   selAllText: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 12.5 },
   checkbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 1.5, borderColor: ui.line, alignItems: 'center', justifyContent: 'center' },
-  checkboxOn: { backgroundColor: ui.orange, borderColor: ui.orange },
+  checkboxOn: { backgroundColor: ui.orangeDeep, borderColor: ui.orange },
   secLeft: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   secTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 19, letterSpacing: -0.3 },
   secCount: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
@@ -2143,19 +2143,19 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   scanHint: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 11.5, marginBottom: 10, marginTop: 2 },
   scanRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: ui.line },
   scanCheck: { width: 22, height: 22, borderRadius: 7, borderWidth: 1.5, borderColor: ui.line, alignItems: 'center', justifyContent: 'center' },
-  scanCheckOn: { backgroundColor: ui.orange, borderColor: ui.orange },
+  scanCheckOn: { backgroundColor: ui.orangeDeep, borderColor: ui.orange },
   scanUnsure: { color: '#E8B664', fontFamily: 'Inter_600SemiBold', fontSize: 11, marginTop: 1 },
   scanRetake: { alignItems: 'center', paddingVertical: 12, marginTop: 4 },
   scanRetakeText: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 13 },
   scanError: { color: '#E8746A', fontFamily: 'Inter_500Medium', fontSize: 13, marginBottom: 10 },
   scanSourceBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1, borderColor: ui.orange, borderRadius: 999, paddingVertical: 13, marginTop: 10 },
-  scanSourceText: { color: ui.orange, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
+  scanSourceText: { color: ui.orangeText, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
   captureTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 22, letterSpacing: -0.4, lineHeight: 27 },
   shopInput: { flex: 1, borderWidth: 1, borderColor: ui.line, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10, fontFamily: 'Inter_500Medium', fontSize: 14, color: ui.text, backgroundColor: ui.soft },
-  shopAddBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: ui.orange, alignItems: 'center', justifyContent: 'center' },
+  shopAddBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: ui.orangeDeep, alignItems: 'center', justifyContent: 'center' },
   row: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: ui.line },
   numBadge: { width: 24, height: 24, borderRadius: 99, backgroundColor: ui.orangeSoft, alignItems: 'center', justifyContent: 'center' },
-  numText: { color: ui.orange, fontFamily: 'Inter_800ExtraBold', fontSize: 12 },
+  numText: { color: ui.orangeText, fontFamily: 'Inter_800ExtraBold', fontSize: 12 },
   hint: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12, textAlign: 'center', paddingTop: 10 },
   rowText: { flex: 1, color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 15 },
   rowTextDone: { textDecorationLine: 'line-through', color: ui.muted },
@@ -2184,7 +2184,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     borderWidth: 2, borderColor: ui.muted,
     alignItems: 'center', justifyContent: 'center',
   },
-  selBoxOn: { backgroundColor: ui.orange, borderColor: ui.orange },
+  selBoxOn: { backgroundColor: ui.orangeDeep, borderColor: ui.orange },
   selBar: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
   selCancelBtn: {
     paddingVertical: 9, paddingHorizontal: 14, borderRadius: 999,
@@ -2223,7 +2223,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   qtyAmount: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
   qtyNote: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 8, fontStyle: 'italic' },
   addMissingBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 14, paddingVertical: 12, borderRadius: 999, borderWidth: 1, borderColor: ui.orange },
-  addMissingText: { color: ui.orange, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
+  addMissingText: { color: ui.orangeText, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
   browseRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: ui.line },
   browseTitle: { color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 15 },
   browseIng: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 2 },
@@ -2235,25 +2235,25 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   recipeTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 28, letterSpacing: -0.5, lineHeight: 34 },
   recipeLoading: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14 },
   recipeLoadingText: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 14 },
-  recipeAddBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginHorizontal: 26, marginBottom: 14, paddingVertical: 15, borderRadius: 999, backgroundColor: ui.orange },
+  recipeAddBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginHorizontal: 26, marginBottom: 14, paddingVertical: 15, borderRadius: 999, backgroundColor: ui.orangeDeep },
   recipeAddText: { color: '#fff', fontFamily: 'Inter_700Bold', fontSize: 15 },
   chefChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
   chefChip: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, backgroundColor: ui.soft, borderWidth: 1, borderColor: ui.line },
   chefChipText: { color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 13 },
   chefAskRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  chefAskBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: ui.orange, alignItems: 'center', justifyContent: 'center' },
+  chefAskBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: ui.orangeDeep, alignItems: 'center', justifyContent: 'center' },
   chefAnswer: { backgroundColor: ui.soft, borderRadius: 14, padding: 14, marginTop: 12 },
   chefAnswerText: { color: ui.text, fontFamily: 'Inter_500Medium', fontSize: 15, lineHeight: 22 },
   chefAnswerNote: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 8, fontStyle: 'italic' },
   browseDayRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
   browseDayChip: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, backgroundColor: ui.soft },
-  browseDayChipActive: { backgroundColor: ui.orange },
+  browseDayChipActive: { backgroundColor: ui.orangeDeep },
   browseDayText: { color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 13 },
   browseDayTextActive: { color: '#FFFFFF' },
   againBtn: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 6, marginTop: 10, marginBottom: 4, paddingVertical: 7, paddingHorizontal: 12, borderRadius: 999, borderWidth: 1, borderColor: ui.orange },
-  againText: { color: ui.orange, fontFamily: 'Inter_600SemiBold', fontSize: 13 },
+  againText: { color: ui.orangeText, fontFamily: 'Inter_600SemiBold', fontSize: 13 },
   cookLink: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6 },
-  cookLinkText: { color: ui.orange, fontFamily: 'Inter_600SemiBold', fontSize: 13 },
+  cookLinkText: { color: ui.orangeText, fontFamily: 'Inter_600SemiBold', fontSize: 13 },
   cookMeta: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 },
   cookMetaText: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 13 },
   cookSectionTitle: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 15, marginTop: 18, marginBottom: 8 },
@@ -2261,7 +2261,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   // Sized to read from a counter with wet hands, not a phone held close.
   cookStep: { flexDirection: 'row', gap: 14, marginBottom: 16, alignItems: 'flex-start' },
   cookStepNum: { width: 28, height: 28, borderRadius: 14, backgroundColor: ui.orangeSoft, alignItems: 'center', justifyContent: 'center' },
-  cookStepNumText: { color: ui.orange, fontFamily: 'Inter_700Bold', fontSize: 14 },
+  cookStepNumText: { color: ui.orangeText, fontFamily: 'Inter_700Bold', fontSize: 14 },
   cookStepText: { flex: 1, color: ui.text, fontFamily: 'Inter_500Medium', fontSize: 16, lineHeight: 25 },
   cookAllergen: { flexDirection: 'row', gap: 8, alignItems: 'flex-start', marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: ui.line },
   suggestAllergen: { flexDirection: 'row', gap: 8, alignItems: 'flex-start', marginTop: 4, marginBottom: 12 },
@@ -2279,6 +2279,6 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   sheetFooter: { flexDirection: 'row', gap: 12, marginTop: 22 },
   cancelBtn: { flex: 1, borderWidth: 1, borderColor: ui.line, borderRadius: 18, paddingVertical: 15, alignItems: 'center' },
   cancelText: { color: ui.muted, fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
-  saveBtn: { flex: 1, borderRadius: 18, paddingVertical: 15, alignItems: 'center', backgroundColor: ui.orange },
+  saveBtn: { flex: 1, borderRadius: 18, paddingVertical: 15, alignItems: 'center', backgroundColor: ui.orangeDeep },
   saveText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
 });

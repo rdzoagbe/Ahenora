@@ -81,7 +81,10 @@ const QUICK_ADDS = [
   { labelKey: 'qa_table', chore: 'table' as const, amount: 2, Icon: Utensils, bg: UI.orangeSoft, tint: UI.orange },
 ];
 
-const CHILD_TINTS = [UI.orange, UI.lavenderText, UI.mintText, UI.goldText];
+// Each child's initial is set in WHITE on their tint, so every entry has to be
+// dark enough to carry it — orangeDeep rather than the brand orange, which
+// reads at 3.1:1 under white.
+const CHILD_TINTS = [UI.orangeDeep, UI.lavenderText, UI.mintText, UI.goldText];
 
 const ICON_LIBRARY: { match: string[]; icons: string[] }[] = [
   { match: ['pizza', 'dinner', 'restaurant', 'food'], icons: [String.fromCodePoint(0x1F355), String.fromCodePoint(0x1F37D), String.fromCodePoint(0x1F389), String.fromCodePoint(0x1F354)] },
@@ -1035,7 +1038,7 @@ export default function Kids() {
                   {/* Wallet */}
                   <Card style={styles.walletCard}>
                     <View style={[styles.walletAvatar, { backgroundColor: ui.orangeSoft }]}>
-                      <Text style={[styles.walletAvatarText, { color: ui.orange }]}>{activeChild.name[0]?.toUpperCase()}</Text>
+                      <Text style={[styles.walletAvatarText, { color: ui.orangeText }]}>{activeChild.name[0]?.toUpperCase()}</Text>
                     </View>
                     <View style={{ flex: 1, minWidth: 0 }}>
                       {/* Built from a template, not string concatenation: the
@@ -1264,7 +1267,7 @@ export default function Kids() {
                           </PressScale>
                         ))}
                         <PressScale testID="quick-stars-custom" onPress={() => openStarSheet('add', '')} style={[styles.quickStarBtn, { backgroundColor: ui.orangeSoft, borderColor: ui.orange }]}>
-                          <Text style={[styles.quickStarText, { color: ui.orange }]}>{t('kids_other')}</Text>
+                          <Text style={[styles.quickStarText, { color: ui.orangeText }]}>{t('kids_other')}</Text>
                         </PressScale>
                       </View>
                       <RecentActivity items={historyItems.slice(0, 6)} loading={historyLoading} />
@@ -1844,12 +1847,12 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   walletCount: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 30, lineHeight: 35, marginTop: 1 },
   redeemBtn: { backgroundColor: ui.text, borderRadius: 99, paddingHorizontal: 20, paddingVertical: 13 },
   assignTaskBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 8, paddingVertical: 10, borderRadius: 999, borderWidth: 1, borderColor: ui.orange, backgroundColor: ui.orangeSoft },
-  assignTaskText: { color: ui.orange, fontFamily: 'Inter_700Bold', fontSize: 13 },
+  assignTaskText: { color: ui.orangeText, fontFamily: 'Inter_700Bold', fontSize: 13 },
   assignDueRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
   assignDueChip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft },
   assignDueChipActive: { borderColor: ui.orange, backgroundColor: ui.orangeSoft },
   assignDueText: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 13 },
-  assignDueTextActive: { color: ui.orange },
+  assignDueTextActive: { color: ui.orangeText },
   assignTaskHint: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, marginTop: 8, marginBottom: 14, lineHeight: 18 },
   redeemText: { color: ui.bg, fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
   weeklyLine: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 13.5, marginTop: 12, paddingHorizontal: 2 },
@@ -1862,7 +1865,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   blockHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 22, marginBottom: 10 },
   blockTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 17, letterSpacing: -0.2 },
   newLink: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  newLinkText: { color: ui.orange, fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
+  newLinkText: { color: ui.orangeText, fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
   cardPad: { paddingHorizontal: 16 },
 
   quickAddRow: { flexDirection: 'row', gap: 10 },
@@ -1872,7 +1875,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
 
   emptyRewards: { alignItems: 'center', paddingVertical: 24, gap: 12 },
   emptyRewardsText: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
-  emptyRewardsBtn: { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: ui.orange, paddingHorizontal: 16, paddingVertical: 11, borderRadius: 99 },
+  emptyRewardsBtn: { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: ui.orangeDeep, paddingHorizontal: 16, paddingVertical: 11, borderRadius: 99 },
   emptyRewardsBtnText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
 
   rewardRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13 },
@@ -1893,7 +1896,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   pendingHead: { marginTop: 6, marginBottom: 10 },
   pendingTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 14.5 },
   pendingMeta: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 12, marginTop: 3 },
-  owedBadge: { position: 'absolute', top: -3, right: -3, minWidth: 15, height: 15, paddingHorizontal: 3, borderRadius: 99, backgroundColor: ui.orange, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: ui.card },
+  owedBadge: { position: 'absolute', top: -3, right: -3, minWidth: 15, height: 15, paddingHorizontal: 3, borderRadius: 99, backgroundColor: ui.orangeDeep, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: ui.card },
   owedBadgeText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 8.5 },
 
   ideaScroll: { marginHorizontal: -20 },
@@ -1944,7 +1947,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   cancelText: { color: ui.muted, fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
   deleteBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderWidth: 1, borderColor: 'rgba(220,38,38,0.35)', backgroundColor: ui.dangerSoft, borderRadius: 18, paddingVertical: 15 },
   deleteText: { color: ui.danger, fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
-  saveBtn: { flex: 1, borderRadius: 18, paddingVertical: 15, alignItems: 'center', backgroundColor: ui.orange },
+  saveBtn: { flex: 1, borderRadius: 18, paddingVertical: 15, alignItems: 'center', backgroundColor: ui.orangeDeep },
   saveText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
 
   featureHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 22, marginBottom: 10 },
@@ -1958,13 +1961,13 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   freqChipText: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 13 },
   freqChipTextActive: { color: ui.bg },
   pocketTip: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 19, marginTop: 14 },
-  featureActionBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: ui.orange, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 99 },
+  featureActionBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: ui.orangeDeep, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 99 },
   featureActionText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 12 },
   allowanceRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12 },
   allowanceBalance: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 28 },
-  allowanceDue: { color: ui.orange, fontFamily: 'Inter_700Bold', fontSize: 12, marginTop: 3 },
-  payNowBtn: { backgroundColor: ui.orange, borderRadius: 99, paddingHorizontal: 14, paddingVertical: 9 },
+  allowanceDue: { color: ui.orangeText, fontFamily: 'Inter_700Bold', fontSize: 12, marginTop: 3 },
+  payNowBtn: { backgroundColor: ui.orangeDeep, borderRadius: 99, paddingHorizontal: 14, paddingVertical: 9 },
   payNowText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 12.5 },
   showAllBtn: { alignItems: 'center', paddingVertical: 13, borderTopWidth: 1, borderTopColor: ui.line },
-  showAllText: { color: ui.orange, fontFamily: 'Inter_700Bold', fontSize: 13 },
+  showAllText: { color: ui.orangeText, fontFamily: 'Inter_700Bold', fontSize: 13 },
 });

@@ -19,6 +19,8 @@ export interface AppTheme {
     primaryText: string;
     accent: string;
     accentSoft: string;
+    /** The accent as INK — legible on accentSoft, where the fill accent is not. */
+    accentInk: string;
     success: string;
     shadow: string;
   };
@@ -47,14 +49,19 @@ export const lightTheme: AppTheme = {
     cardBorder: 'rgba(31,35,35,0.08)',
     glassTint: '#FFFFFF',
     text: '#202323',
-    textMuted: '#747B7C',
-    textSoft: '#A0A6A7',
+    // Both greys were chosen by eye and both failed a measured contrast sweep
+    // (4.3:1 and 2.5:1 on white). textSoft is the quieter of the two and marks
+    // inactive controls, so it clears the 3:1 bar WCAG sets for those rather
+    // than the 4.5:1 for body text.
+    textMuted: '#5F6667',
+    textSoft: '#767D7E',
     tabBar: '#FFFFFF',
     tabBorder: 'rgba(31,35,35,0.08)',
     primary: '#202323',
     primaryText: '#FFFFFF',
     accent: '#F26A1B',
     accentSoft: 'rgba(242,106,27,0.12)',
+    accentInk: '#B8410A',
     success: '#11B886',
     shadow: '#202323',
   },
@@ -84,6 +91,7 @@ export const darkTheme: AppTheme = {
     primaryText: '#202323',
     accent: '#F26A1B',
     accentSoft: 'rgba(242,106,27,0.18)',
+    accentInk: '#FF9A63',
     success: '#22C55E',
     shadow: '#000000',
   },

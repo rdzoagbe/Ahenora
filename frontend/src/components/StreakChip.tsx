@@ -62,5 +62,5 @@ export function StreakChip() {
 const createStyles = (ui: UIColors) => StyleSheet.create({
   chip: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', backgroundColor: ui.orangeSoft, borderRadius: 99, paddingHorizontal: 12, paddingVertical: 7, marginTop: 12 },
   fire: { fontSize: 14 },
-  text: { color: ui.orange, fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
+  text: { color: ui.orangeText, fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
 });
