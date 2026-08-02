@@ -1,48 +1,41 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Tabs, usePathname, useRouter } from 'expo-router';
 import { View, StyleSheet, Text, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Home, Calendar as CalendarIcon, Lock, Settings as SettingsIcon, Star, UtensilsCrossed } from 'lucide-react-native';
+import { Home, Calendar as CalendarIcon, Lock, Settings as SettingsIcon, Star, UtensilsCrossed, MoreHorizontal } from 'lucide-react-native';
 import { useStore } from '../../src/store';
 import { useBreakpoint } from '../../src/responsive';
 import { InviteJoinPrompt } from '../../src/components/InviteJoinPrompt';
+import { MoreSheet } from '../../src/components/MoreSheet';
 
 // ─── Phone: floating pill tab bar ────────────────────────────────────────────
 
+/**
+ * One tab. Only the ACTIVE tab spells its name: six shrunken 10px words was
+ * the noisiest thing on the screen, and a bar that says where you are reads
+ * faster than one that lists where you could go. Inactive tabs get the room
+ * back as icon size and touch area.
+ */
 function TabIcon({ focused, Icon, label }: { focused: boolean; Icon: any; label: string }) {
   const { theme } = useStore();
-  const light = theme.mode === 'light';
+  const color = focused ? theme.colors.accent : theme.colors.textSoft;
 
-  if (light) {
-    const color = focused ? theme.colors.accent : theme.colors.textSoft;
-    return (
-      <View style={styles.tabItem}>
-        <Icon color={color} size={21} strokeWidth={focused ? 2.4 : 2} />
+  return (
+    <View
+      style={[
+        styles.tabItem,
+        focused && { backgroundColor: theme.mode === 'light' ? theme.colors.accentSoft : theme.colors.bgSoft },
+      ]}
+    >
+      <Icon color={color} size={focused ? 22 : 24} strokeWidth={focused ? 2.5 : 2} />
+      {focused ? (
         <Text
-          style={[styles.tabLabel, { color, fontFamily: focused ? 'Inter_800ExtraBold' : 'Inter_600SemiBold' }]}
-          numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}
+          style={[styles.tabLabel, { color }]}
+          numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}
         >
           {label}
         </Text>
-      </View>
-    );
-  }
-
-  const activeColor = theme.colors.accent;
-  const inactiveColor = theme.colors.textSoft;
-
-  return (
-    <View style={[styles.tabItem, focused && { backgroundColor: theme.colors.bgSoft }]}>
-      <Icon color={focused ? activeColor : inactiveColor} size={21} strokeWidth={focused ? 2.5 : 2.1} />
-      <Text
-        style={[
-          styles.tabLabel,
-          { color: focused ? activeColor : inactiveColor, fontFamily: focused ? 'Inter_800ExtraBold' : 'Inter_600SemiBold' },
-        ]}
-        numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}
-      >
-        {label}
-      </Text>
+      ) : null}
     </View>
   );
 }
@@ -118,6 +111,69 @@ function SidebarNav({ width }: { width: number }) {
   );
 }
 
+// ─── Phone: the bar itself ───────────────────────────────────────────────────
+
+const PHONE_TABS = [
+  { name: 'feed', Icon: Home, labelKey: 'feed' },
+  { name: 'calendar', Icon: CalendarIcon, labelKey: 'calendar' },
+  { name: 'kids', Icon: Star, labelKey: 'kids' },
+  { name: 'kitchen', Icon: UtensilsCrossed, labelKey: 'kitchen' },
+] as const;
+
+/**
+ * Four destinations and a More button. Rendering the bar ourselves rather
+ * than styling the default one is what lets the fifth slot open a sheet
+ * instead of navigating: on web the built-in tab buttons are anchors, and an
+ * anchor navigates whatever the press handler says.
+ */
+function PhoneTabBar({ state, navigation, style, onMore, moreActive }: {
+  state: { index: number; routes: { key: string; name: string }[] };
+  navigation: any;
+  style: object;
+  onMore: () => void;
+  moreActive: boolean;
+}) {
+  const { t } = useStore();
+  const current = state.routes[state.index]?.name;
+  // Vault, Settings and Account have no seat here, so the More button owns
+  // the active state while you are on one of them.
+  const onHiddenRoute = !PHONE_TABS.some((tab) => tab.name === current);
+
+  return (
+    <View style={[style, styles.bar]}>
+      {PHONE_TABS.map(({ name, Icon, labelKey }) => {
+        const focused = current === name;
+        return (
+          <TouchableOpacity
+            key={name}
+            testID={`tab-${name}`}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: focused }}
+            accessibilityLabel={t(labelKey)}
+            activeOpacity={0.75}
+            style={styles.barSlot}
+            onPress={() => {
+              if (!focused) navigation.navigate(name);
+            }}
+          >
+            <TabIcon focused={focused} Icon={Icon} label={t(labelKey)} />
+          </TouchableOpacity>
+        );
+      })}
+      <TouchableOpacity
+        testID="tab-more"
+        accessibilityRole="button"
+        accessibilityLabel={t('nav_more')}
+        activeOpacity={0.75}
+        style={styles.barSlot}
+        onPress={onMore}
+      >
+        <TabIcon focused={moreActive || onHiddenRoute} Icon={MoreHorizontal} label={t('nav_more')} />
+      </TouchableOpacity>
+    </View>
+  );
+}
+
 // ─── Root layout ─────────────────────────────────────────────────────────────
 
 // Session-scoped guard so a new user is sent through onboarding at most once —
@@ -129,6 +185,7 @@ export default function TabLayout() {
   const { isWide, sidebarW } = useBreakpoint();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const [moreOpen, setMoreOpen] = useState(false);
 
   // If the session is cleared (logout or expiry), return to the landing screen.
   useEffect(() => {
@@ -152,8 +209,8 @@ export default function TabLayout() {
     left: 20,
     right: 20,
     bottom: Math.max(insets.bottom, 14),
-    height: 78,
-    borderRadius: 32,
+    height: 74,
+    borderRadius: 30,
     backgroundColor: theme.colors.tabBar,
     borderTopWidth: 0,
     borderWidth: 1,
@@ -164,7 +221,6 @@ export default function TabLayout() {
     shadowRadius: 22,
     shadowOffset: { width: 0, height: 12 },
     paddingHorizontal: 6,
-    paddingTop: 8,
   };
 
   return (
@@ -172,21 +228,32 @@ export default function TabLayout() {
       <Tabs
         screenOptions={{
           headerShown: false,
-          tabBarShowLabel: false,
           sceneStyle: isWide ? { marginLeft: sidebarW } : undefined,
-          tabBarStyle: isWide ? { display: 'none' } : floatingTabStyle,
         }}
+        tabBar={(props) =>
+          isWide ? null : (
+            <PhoneTabBar
+              state={props.state}
+              navigation={props.navigation}
+              style={floatingTabStyle}
+              onMore={() => setMoreOpen(true)}
+              moreActive={moreOpen}
+            />
+          )
+        }
       >
-        <Tabs.Screen name="feed"     options={{ tabBarAccessibilityLabel: t('feed'), tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={Home}          label={t('feed')} /> }} />
-        <Tabs.Screen name="calendar" options={{ tabBarAccessibilityLabel: t('calendar'), tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={CalendarIcon}  label={t('calendar')} /> }} />
-        <Tabs.Screen name="kids"     options={{ tabBarAccessibilityLabel: t('kids'), tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={Star}          label={t('kids')} /> }} />
-        <Tabs.Screen name="kitchen"  options={{ tabBarAccessibilityLabel: t('kitchen'), tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={UtensilsCrossed} label={t('kitchen')} /> }} />
-        <Tabs.Screen name="vault"    options={{ tabBarAccessibilityLabel: t('vault'), tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={Lock}          label={t('vault')} /> }} />
-        <Tabs.Screen name="settings" options={{ tabBarAccessibilityLabel: t('settings'), tabBarIcon: ({ focused }) => <TabIcon focused={focused} Icon={SettingsIcon}  label={t('settings')} /> }} />
+        <Tabs.Screen name="feed" />
+        <Tabs.Screen name="calendar" />
+        <Tabs.Screen name="kids" />
+        <Tabs.Screen name="kitchen" />
+        {/* Routable, but not seats in the bar — they live in the More sheet. */}
+        <Tabs.Screen name="vault"    options={{ href: null }} />
+        <Tabs.Screen name="settings" options={{ href: null }} />
         <Tabs.Screen name="account"  options={{ href: null }} />
       </Tabs>
 
       {isWide && <SidebarNav width={sidebarW} />}
+      <MoreSheet visible={moreOpen} onClose={() => setMoreOpen(false)} />
       <InviteJoinPrompt />
     </>
   );
@@ -196,17 +263,25 @@ export default function TabLayout() {
 
 const styles = StyleSheet.create({
   // Phone tab bar items
+  bar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+  },
+  barSlot: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   tabItem: {
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
-    minWidth: 58,
-    height: 60,
+    gap: 3,
+    minWidth: 62,
+    paddingHorizontal: 12,
+    height: 54,
     borderRadius: 9999,
   },
   tabLabel: {
-    fontSize: 10,
-    letterSpacing: 0.1,
+    fontSize: 11,
+    fontFamily: 'Inter_800ExtraBold',
+    letterSpacing: -0.1,
   },
 
   // Sidebar
