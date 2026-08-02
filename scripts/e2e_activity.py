@@ -2,6 +2,8 @@
 import asyncio, json, sys, urllib.request
 from playwright.async_api import async_playwright
 
+from e2e_browser import launch_chromium
+
 WEB = f"http://127.0.0.1:{sys.argv[1]}/Household-COO/app"
 API = f"http://127.0.0.1:{sys.argv[2]}/api"
 
@@ -37,7 +39,7 @@ async def main():
     card = api("POST", "/cards", {"type": "TASK", "title": "Bins out", "shared": True}, tok_a)
 
     async with async_playwright() as pw:
-        br = await pw.chromium.launch(executable_path="/opt/pw-browsers/chromium")
+        br = await launch_chromium(pw)
         keigh = await persona(br, tok_b, 390, 844)
         roland = await persona(br, tok_a, 412, 915)
 

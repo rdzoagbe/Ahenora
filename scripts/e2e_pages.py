@@ -2,6 +2,8 @@
 import asyncio, json, sys, urllib.request
 from playwright.async_api import async_playwright
 
+from e2e_browser import launch_chromium
+
 WEB = f"http://127.0.0.1:{sys.argv[1]}/Household-COO/app"
 API = f"http://127.0.0.1:{sys.argv[2]}/api"
 PAGES = ["feed", "calendar", "kids", "kitchen", "vault", "settings", "account"]
@@ -38,7 +40,7 @@ async def main():
 
     failures, checked = [], 0
     async with async_playwright() as pw:
-        browser = await pw.chromium.launch(executable_path="/opt/pw-browsers/chromium")
+        browser = await launch_chromium(pw)
         for label, token, size in (("android", tok_a, (412, 915)), ("iphone", tok_b, (390, 844))):
             ctx = await browser.new_context(viewport={"width": size[0], "height": size[1]})
             page = await ctx.new_page()
