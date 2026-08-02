@@ -27,7 +27,10 @@ export function HandOverSheet({ visible, onClose }: { visible: boolean; onClose:
   const styles = createStyles(ui);
 
   const [profiles, setProfiles] = useState<FamilyProfile[]>([]);
+  const [me, setMe] = useState<FamilyProfile | null>(null);
   const [ready, setReady] = useState(true);
+  const [newParentPin, setNewParentPin] = useState('');
+  const [saving, setSaving] = useState(false);
   const [chosen, setChosen] = useState<FamilyProfile | null>(null);
   const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -36,6 +39,7 @@ export function HandOverSheet({ visible, onClose }: { visible: boolean; onClose:
     try {
       const out = await api.listProfiles();
       setProfiles(out.profiles.filter((p) => p.is_child));
+      setMe(out.profiles.find((p) => p.is_me) || null);
       setReady(out.kid_mode_ready);
     } catch (e) {
       logger.warn('profiles failed', e);
@@ -45,6 +49,31 @@ export function HandOverSheet({ visible, onClose }: { visible: boolean; onClose:
   useEffect(() => { if (visible) load(); }, [visible, load]);
 
   const reset = () => { setChosen(null); setPin(''); setError(null); };
+
+  /**
+   * The way out has to exist before the way in.
+   *
+   * This used to be a sentence telling the parent to go and find the PIN
+   * setting on another screen — which is a fair description of the app
+   * failing to do its job. The requirement is real, so the sheet satisfies
+   * it here, in the four seconds it takes, at the exact moment it matters.
+   */
+  const saveParentPin = async () => {
+    if (!me || saving) return;
+    const value = newParentPin.trim();
+    if (!/^\d{4}$/.test(value)) { setError(t('kids_pin_4_digits')); return; }
+    setSaving(true);
+    setError(null);
+    try {
+      await api.setMemberPin(me.member_id, value);
+      setNewParentPin('');
+      await load();
+    } catch {
+      setError(t('kid_pin_save_failed'));
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const go = async () => {
     if (!chosen) return;
@@ -82,7 +111,31 @@ export function HandOverSheet({ visible, onClose }: { visible: boolean; onClose:
         </View>
 
         {!ready ? (
-          <Text style={styles.note}>{t('kid_need_parent_pin')}</Text>
+          <>
+            <Text style={styles.note}>{t('kid_need_parent_pin')}</Text>
+            <TextInput
+              testID="handover-parent-pin"
+              value={newParentPin}
+              onChangeText={(v) => { setNewParentPin(v); setError(null); }}
+              placeholder="••••"
+              placeholderTextColor={ui.muted}
+              keyboardType="number-pad"
+              secureTextEntry
+              maxLength={4}
+              style={[styles.pinInput, error && { borderColor: ui.danger }]}
+            />
+            {error ? <Text style={styles.error}>{error}</Text> : null}
+            <PressScale
+              testID="handover-save-parent-pin"
+              accessibilityRole="button"
+              onPress={saveParentPin}
+              style={styles.primaryBtn}
+            >
+              <Text style={styles.primaryBtnText}>
+                {saving ? t('kid_saving') : t('kid_set_my_pin')}
+              </Text>
+            </PressScale>
+          </>
         ) : chosen ? (
           <>
             <Text style={styles.note}>{t('kid_enter_pin', { name: chosen.name })}</Text>
