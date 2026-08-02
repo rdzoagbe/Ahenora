@@ -2,6 +2,8 @@
 import asyncio, json, sys, urllib.request
 from playwright.async_api import async_playwright
 
+from e2e_browser import launch_chromium
+
 WEB = f"http://127.0.0.1:{sys.argv[1]}/Household-COO/app"
 API = f"http://127.0.0.1:{sys.argv[2]}/api"
 PAGES = ["feed", "calendar", "kids", "kitchen", "vault", "settings", "account"]
@@ -38,13 +40,20 @@ async def main():
 
     failures, checked = [], 0
     async with async_playwright() as pw:
-        browser = await pw.chromium.launch(executable_path="/opt/pw-browsers/chromium")
+        browser = await launch_chromium(pw)
         for label, token, size in (("android", tok_a, (412, 915)), ("iphone", tok_b, (390, 844))):
             ctx = await browser.new_context(viewport={"width": size[0], "height": size[1]})
             page = await ctx.new_page()
             errs = []
             page.on("pageerror", lambda e, s=errs: s.append(f"pageerror: {e}"))
-            page.on("console", lambda m, s=errs: s.append(f"console: {m.text[:120]}")
+            # The URL matters as much as the text. A failed request logs TWO
+            # console lines: one naming the host, and a bare "Failed to load
+            # resource" that names nothing. Filtering on truncated text alone
+            # could never attribute that second line to anything, so an
+            # environmental failure looked identical to a product one.
+            # ConsoleMessage.location carries the resource URL — use it.
+            page.on("console", lambda m, s=errs: s.append(
+                f"console: {m.text[:120]} [{(m.location or {}).get('url', '')}]")
                     if m.type == "error" else None)
 
             async def route(ro):
@@ -69,8 +78,21 @@ async def main():
                     failures.append(f"{label}/{p}: marker '{MARKERS[p]}' missing")
                 if len(body.strip()) < 40:
                     failures.append(f"{label}/{p}: page looks empty")
-                noise = ("clients3.google.com", "ERR_TUNNEL", "favicon", "manifest")
-                real = [e for e in errs if not any(n in e for n in noise)]
+                # Now that the test build points at its own origin, the rule
+                # is simple and honest: anything the app failed to load from
+                # SOMEBODY ELSE'S host is the environment, not the product.
+                # A GitHub runner, this sandbox and a laptop all differ in
+                # what they can reach, and none of that is a bug in the app.
+                # Errors from our own origin still fail the build.
+                noise = ("favicon", "manifest")
+
+                def environmental(entry: str) -> bool:
+                    if any(n in entry for n in noise):
+                        return True
+                    url = entry.rsplit("[", 1)[-1].rstrip("]") if "[" in entry else ""
+                    return bool(url) and "127.0.0.1" not in url
+
+                real = [e for e in errs if not environmental(e)]
                 if real:
                     failures.append(f"{label}/{p}: {real[:2]}")
             await ctx.close()

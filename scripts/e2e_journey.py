@@ -27,6 +27,8 @@ import urllib.request
 
 from playwright.async_api import async_playwright
 
+from e2e_browser import launch_chromium
+
 WEB = f"http://127.0.0.1:{sys.argv[1] if len(sys.argv) > 1 else '8945'}/Household-COO/app"
 API = f"http://127.0.0.1:{sys.argv[2] if len(sys.argv) > 2 else '8991'}/api"
 
@@ -93,7 +95,7 @@ async def main():
     api("POST", "/family/members", {"name": "Jonael Sim", "role": "Child"}, tok_b)
 
     async with async_playwright() as pw:
-        browser = await pw.chromium.launch(executable_path="/opt/pw-browsers/chromium")
+        browser = await launch_chromium(pw)
         _, android = await make_persona(browser, 412, 915, tok_a)
         _, iphone = await make_persona(browser, 390, 844, tok_b, blocker=True)
 

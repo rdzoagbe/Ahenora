@@ -2,6 +2,8 @@
 import asyncio, json, sys, urllib.request
 from playwright.async_api import async_playwright
 
+from e2e_browser import launch_chromium
+
 WEB = f"http://127.0.0.1:{sys.argv[1]}/Household-COO/app"
 API = f"http://127.0.0.1:{sys.argv[2]}/api"
 
@@ -19,7 +21,7 @@ async def main():
     api("POST", "/auth/complete-onboarding", {}, tok)
 
     async with async_playwright() as pw:
-        b = await pw.chromium.launch(executable_path="/opt/pw-browsers/chromium")
+        b = await launch_chromium(pw)
         ctx = await b.new_context(viewport={"width": 390, "height": 844})
         p = await ctx.new_page()
         errs = []

@@ -16,6 +16,8 @@ Usage:  python3 scripts/e2e_handoff.py <web_port> <api_port>
 import asyncio, json, sys, urllib.request, uuid
 from playwright.async_api import async_playwright
 
+from e2e_browser import launch_chromium
+
 WEB = f"http://127.0.0.1:{sys.argv[1]}/Household-COO/app"
 API = f"http://127.0.0.1:{sys.argv[2]}/api"
 
@@ -110,7 +112,7 @@ async def main():
     r["server_gives_her_only_hers"] = [c["title"] for c in server_mine] == ["School run Tuesday"]
 
     async with async_playwright() as pw:
-        br = await pw.chromium.launch(executable_path="/opt/pw-browsers/chromium")
+        br = await launch_chromium(pw)
 
         # --- her side of the hand-off --------------------------------------
         keigh = await persona(br, tok_b)

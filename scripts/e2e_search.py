@@ -11,6 +11,8 @@ Usage:  python3 scripts/e2e_search.py <web_port> <api_port>
 import asyncio, json, sys, urllib.request, uuid
 from playwright.async_api import async_playwright
 
+from e2e_browser import launch_chromium
+
 WEB = f"http://127.0.0.1:{sys.argv[1]}/Household-COO/app"
 API = f"http://127.0.0.1:{sys.argv[2]}/api"
 
@@ -80,7 +82,7 @@ async def main():
     api("PATCH", f"/vault/{doc['doc_id']}/visibility", {"visibility": "private"}, tok_b)
 
     async with async_playwright() as pw:
-        br = await pw.chromium.launch(executable_path="/opt/pw-browsers/chromium")
+        br = await launch_chromium(pw)
         roland = await persona(br, tok_a)
         errs = []
         roland.on("pageerror", lambda e: errs.append(str(e)))
