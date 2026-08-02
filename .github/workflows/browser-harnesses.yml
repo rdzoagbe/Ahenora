@@ -1,0 +1,93 @@
+name: Browser harnesses
+
+# Nine harnesses drive the real app in a real browser against the real
+# backend. They exist because unit tests kept passing while the app was
+# broken in front of a parent: an unreadable screen, a list that vanished
+# with the signal, a tab that navigated instead of opening a sheet, a child
+# PIN that signed the parent out. Every one of those was found here.
+#
+# Until this workflow they only ran when somebody remembered. That is a
+# habit, not a safety net, and habits are what a verification suite exists
+# to replace.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - 'backend/**'
+      - 'scripts/**'
+      - '.github/workflows/browser-harnesses.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - 'backend/**'
+      - 'scripts/**'
+      - '.github/workflows/browser-harnesses.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: harnesses-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  harnesses:
+    name: Browser harnesses
+    runs-on: ubuntu-latest
+    # The journey harness alone drives two personas through a full invite and
+    # week of planning; the whole suite is minutes, not seconds.
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Install Playwright and a browser
+        run: |
+          pip install playwright
+          python -m playwright install --with-deps chromium
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      # Built here rather than trusting the committed docs/app: the point is to
+      # test THIS commit's source, and a stale export would quietly test the
+      # last one instead.
+      - name: Export the web build
+        working-directory: frontend
+        env:
+          EXPO_PUBLIC_BUILD_TAG: ci-${{ github.sha }}
+        run: |
+          npx expo export --platform web --output-dir ../docs/app --clear
+          cp ../docs/app/+not-found.html ../docs/app/404.html
+
+      - name: Run the harnesses
+        run: python3 scripts/run_harnesses.py
+
+      # Every harness photographs what it saw. On a failure those images are
+      # the difference between "contrast check failed" and seeing the screen.
+      - name: Upload what the browser saw
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: harness-screenshots
+          path: '*.png'
+          if-no-files-found: ignore
+          retention-days: 7
