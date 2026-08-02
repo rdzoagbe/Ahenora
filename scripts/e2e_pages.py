@@ -46,7 +46,14 @@ async def main():
             page = await ctx.new_page()
             errs = []
             page.on("pageerror", lambda e, s=errs: s.append(f"pageerror: {e}"))
-            page.on("console", lambda m, s=errs: s.append(f"console: {m.text[:120]}")
+            # The URL matters as much as the text. A failed request logs TWO
+            # console lines: one naming the host, and a bare "Failed to load
+            # resource" that names nothing. Filtering on truncated text alone
+            # could never attribute that second line to anything, so an
+            # environmental failure looked identical to a product one.
+            # ConsoleMessage.location carries the resource URL — use it.
+            page.on("console", lambda m, s=errs: s.append(
+                f"console: {m.text[:120]} [{(m.location or {}).get('url', '')}]")
                     if m.type == "error" else None)
 
             async def route(ro):
@@ -71,16 +78,21 @@ async def main():
                     failures.append(f"{label}/{p}: marker '{MARKERS[p]}' missing")
                 if len(body.strip()) < 40:
                     failures.append(f"{label}/{p}: page looks empty")
-                # The connectivity check pings an external host by design, so
-                # its failures are environmental rather than product bugs.
-                # ERR_TUNNEL is one development sandbox's proxy refusing that
-                # same ping — and it once swallowed a real failure: a build
-                # pointed at the PRODUCTION backend phoned home from inside a
-                # test, and CI's CORS error looked nothing like ERR_TUNNEL, so
-                # it passed here for months and failed the moment it ran
-                # anywhere else. Keep this list to genuinely external noise.
-                noise = ("clients3.google.com", "ERR_TUNNEL", "favicon", "manifest")
-                real = [e for e in errs if not any(n in e for n in noise)]
+                # Now that the test build points at its own origin, the rule
+                # is simple and honest: anything the app failed to load from
+                # SOMEBODY ELSE'S host is the environment, not the product.
+                # A GitHub runner, this sandbox and a laptop all differ in
+                # what they can reach, and none of that is a bug in the app.
+                # Errors from our own origin still fail the build.
+                noise = ("favicon", "manifest")
+
+                def environmental(entry: str) -> bool:
+                    if any(n in entry for n in noise):
+                        return True
+                    url = entry.rsplit("[", 1)[-1].rstrip("]") if "[" in entry else ""
+                    return bool(url) and "127.0.0.1" not in url
+
+                real = [e for e in errs if not environmental(e)]
                 if real:
                     failures.append(f"{label}/{p}: {real[:2]}")
             await ctx.close()

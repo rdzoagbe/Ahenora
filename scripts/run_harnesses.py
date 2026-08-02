@@ -103,7 +103,7 @@ def main() -> int:
         web.kill()
         return 1
 
-    results, api_port = {}, args.api_port
+    results, detail, api_port = {}, {}, args.api_port
     try:
         for harness in wanted:
             # A fresh backend per harness: shared state between them would
@@ -122,11 +122,20 @@ def main() -> int:
 
             print(f"\n=== {name} " + "=" * (60 - len(name)))
             started = time.time()
+            # Captured as well as echoed: a failing harness's reasons are
+            # hundreds of lines above the summary in a CI log, which meant
+            # reading a failure took several round trips to find the one line
+            # that mattered. Keep it and reprint it at the bottom.
             proc = subprocess.run(
                 [sys.executable, os.path.join(HERE, harness),
                  str(args.web_port), str(api_port)],
-                cwd=ROOT)
+                cwd=ROOT, capture_output=True, text=True)
+            print(proc.stdout, end="")
+            if proc.stderr:
+                print(proc.stderr, end="")
             results[name] = proc.returncode == 0
+            if not results[name]:
+                detail[name] = (proc.stdout + proc.stderr).strip().splitlines()
             print(f"--- {name}: {'PASS' if results[name] else 'FAIL'} "
                   f"({time.time() - started:.0f}s)")
             api.terminate()
@@ -147,6 +156,13 @@ def main() -> int:
     failed = [n for n, ok in results.items() if not ok]
     print("=" * 68)
     if failed:
+        # Repeat the reasons here so the end of the log is enough to act on.
+        for name in failed:
+            lines = [ln for ln in detail.get(name, []) if "True" not in ln]
+            print(f"\nwhy {name} failed:")
+            for ln in lines[-25:]:
+                print(f"    {ln}")
+        print()
         print(f"{len(failed)} of {len(results)} harnesses failed: {', '.join(failed)}")
         return 1
     print(f"all {len(results)} harnesses passed")
