@@ -19,7 +19,7 @@ import {
 } from 'lucide-react-native';
 
 import { PressScale } from '../../src/components/PressScale';
-import { Badge, Card, IconTile, SectionTitle, UI } from '../../src/components/Kit';
+import { Badge, Card, IconTile, SectionTitle, useUI, UIColors } from '../../src/components/Kit';
 import { useStore } from '../../src/store';
 import { AuthDiagnosticResult, runAuthDiagnostics } from '../../src/authDiagnostics';
 import { api } from '../../src/api';
@@ -43,14 +43,16 @@ function ListRow({
   testID?: string;
   divider?: boolean;
 }) {
+  const ui = useUI();
+  const styles = createStyles(ui);
   return (
     <PressScale testID={testID} onPress={onPress} style={[styles.row, divider && styles.rowDivider]}>
       {tile}
       <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={[styles.rowTitle, danger && { color: UI.danger }]} numberOfLines={1}>{title}</Text>
+        <Text style={[styles.rowTitle, danger && { color: ui.danger }]} numberOfLines={1}>{title}</Text>
         {subtitle ? <Text style={styles.rowSub} numberOfLines={1}>{subtitle}</Text> : null}
       </View>
-      {right !== undefined ? right : <ChevronRight color={UI.muted} size={18} />}
+      {right !== undefined ? right : <ChevronRight color={ui.muted} size={18} />}
     </PressScale>
   );
 }
@@ -59,6 +61,8 @@ export default function AccountScreen() {
   const router = useRouter();
   const { user, logout, refreshUser, t } = useStore();
   const { theme } = useStore();
+  const ui = useUI();
+  const styles = createStyles(ui);
   const [diagnostics, setDiagnostics] = useState<AuthDiagnosticResult | null>(null);
   const [checking, setChecking] = useState(false);
   const [supportOpen, setSupportOpen] = useState(false);
@@ -120,7 +124,7 @@ export default function AccountScreen() {
           {/* Header */}
           <View style={styles.navRow}>
             <PressScale testID="account-back" accessibilityRole="button" accessibilityLabel={t('a11y_back')} onPress={goBack} style={styles.backBtn}>
-              <ChevronLeft color={UI.text} size={22} />
+              <ChevronLeft color={ui.text} size={22} />
             </PressScale>
             <Text style={styles.navTitle}>{t('acc_title')}</Text>
             <View style={styles.backBtn} />
@@ -134,8 +138,8 @@ export default function AccountScreen() {
             <Text style={styles.name} numberOfLines={1}>{name}</Text>
             <Text style={styles.email} numberOfLines={1}>{email}</Text>
             <View style={styles.badgeRow}>
-              <Badge label={t('acc_badge_owner')} bg={UI.soft} color={UI.muted} />
-              <Badge label={t('acc_badge_verified')} bg={UI.mint} color={UI.mintText} />
+              <Badge label={t('acc_badge_owner')} bg={ui.soft} color={ui.muted} />
+              <Badge label={t('acc_badge_verified')} bg={ui.mint} color={ui.mintText} />
             </View>
           </Card>
 
@@ -143,20 +147,20 @@ export default function AccountScreen() {
           <SectionTitle style={styles.sectionGap}>{t('acc_section_signin')}</SectionTitle>
           <Card style={styles.cardPad}>
             <ListRow
-              tile={<IconTile bg={UI.blue}><Text style={styles.googleG}>G</Text></IconTile>}
+              tile={<IconTile bg={ui.blue}><Text style={styles.googleG}>G</Text></IconTile>}
               title={t('acc_google_account')}
               subtitle={user?.email ? `${t('acc_connected')} · ${user.email}` : t('acc_not_connected')}
-              right={<CheckCircle2 color={UI.mintText} size={20} />}
+              right={<CheckCircle2 color={ui.mintText} size={20} />}
             />
             <ListRow
-              tile={<IconTile bg={UI.mint}><CalendarCheck color={UI.mintText} size={18} /></IconTile>}
+              tile={<IconTile bg={ui.mint}><CalendarCheck color={ui.mintText} size={18} /></IconTile>}
               title={t('acc_calendar_sync')}
               subtitle={diagnostics?.session_valid ? t('acc_session_healthy') : t('acc_open_calendar')}
               onPress={() => router.navigate('/(tabs)/calendar')}
             />
             <ListRow
               testID="run-auth-diagnostics"
-              tile={<IconTile bg={UI.orangeSoft}><ShieldCheck color={UI.orange} size={18} /></IconTile>}
+              tile={<IconTile bg={ui.orangeSoft}><ShieldCheck color={ui.orange} size={18} /></IconTile>}
               title={t('acc_signin_health')}
               subtitle={checking ? t('acc_checking') : t('acc_verify_session')}
               right={
@@ -165,7 +169,7 @@ export default function AccountScreen() {
               onPress={checkSession}
             />
             <ListRow
-              tile={<IconTile bg={UI.soft}><KeyRound color={UI.text} size={18} /></IconTile>}
+              tile={<IconTile bg={ui.soft}><KeyRound color={ui.text} size={18} /></IconTile>}
               title={t('acc_change_password')}
               subtitle={t('acc_change_password_sub')}
               divider={false}
@@ -187,19 +191,19 @@ export default function AccountScreen() {
           <SectionTitle style={styles.sectionGap}>{t('acc_section_legal')}</SectionTitle>
           <Card style={styles.cardPad}>
             <ListRow
-              tile={<IconTile bg={UI.orangeSoft}><LifeBuoy color={UI.orange} size={18} /></IconTile>}
+              tile={<IconTile bg={ui.orangeSoft}><LifeBuoy color={ui.orange} size={18} /></IconTile>}
               title={t('acc_contact_support')}
               onPress={() => setSupportOpen(true)}
             />
             <ListRow
               testID="open-terms-support"
-              tile={<IconTile bg={UI.orangeSoft}><FileText color={UI.orange} size={18} /></IconTile>}
+              tile={<IconTile bg={ui.orangeSoft}><FileText color={ui.orange} size={18} /></IconTile>}
               title={t('acc_terms')}
               onPress={() => router.push('/terms')}
             />
             <ListRow
               testID="open-privacy-policy"
-              tile={<IconTile bg={UI.orangeSoft}><ShieldCheck color={UI.orange} size={18} /></IconTile>}
+              tile={<IconTile bg={ui.orangeSoft}><ShieldCheck color={ui.orange} size={18} /></IconTile>}
               title={t('acc_privacy')}
               onPress={() => router.push('/privacy')}
               divider={false}
@@ -207,11 +211,11 @@ export default function AccountScreen() {
           </Card>
 
           {/* Account actions */}
-          <SectionTitle style={[styles.sectionGap, { color: UI.danger }]}>{t('acc_section_actions')}</SectionTitle>
+          <SectionTitle style={[styles.sectionGap, { color: ui.danger }]}>{t('acc_section_actions')}</SectionTitle>
           <Card style={[styles.cardPad, { borderColor: 'rgba(220,38,38,0.18)' }]}>
             <ListRow
               testID="account-logout"
-              tile={<IconTile bg={UI.dangerSoft}><LogOut color={UI.danger} size={18} /></IconTile>}
+              tile={<IconTile bg={ui.dangerSoft}><LogOut color={ui.danger} size={18} /></IconTile>}
               title={t('acc_logout')}
               danger
               right={null}
@@ -219,7 +223,7 @@ export default function AccountScreen() {
             />
             <ListRow
               testID="open-account-deletion"
-              tile={<IconTile bg={UI.dangerSoft}><Trash2 color={UI.danger} size={18} /></IconTile>}
+              tile={<IconTile bg={ui.dangerSoft}><Trash2 color={ui.danger} size={18} /></IconTile>}
               title={t('acc_delete_account')}
               danger
               right={null}
@@ -288,42 +292,45 @@ export default function AccountScreen() {
 }
 
 function DiagLine({ label, value, good }: { label: string; value: string; good?: boolean }) {
+  const ui = useUI();
+  const styles = createStyles(ui);
   return (
     <View style={styles.diagLine}>
       <Text style={styles.diagLabel}>{label}</Text>
-      <Text style={[styles.diagValue, { color: good === false ? UI.danger : good === true ? UI.mintText : UI.text }]}>{value}</Text>
+      <Text style={[styles.diagValue, { color: good === false ? ui.danger : good === true ? ui.mintText : ui.text }]}>{value}</Text>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: UI.bg },
+const createStyles = (ui: UIColors) =>
+  StyleSheet.create({
+  container: { flex: 1, backgroundColor: ui.bg },
   scroll: { paddingHorizontal: 20, paddingTop: 6, paddingBottom: 190 },
   navRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 44, marginBottom: 14 },
   backBtn: { width: 40, height: 40, borderRadius: 99, alignItems: 'center', justifyContent: 'center' },
-  navTitle: { color: UI.text, fontFamily: 'Inter_800ExtraBold', fontSize: 20, letterSpacing: -0.3 },
+  navTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 20, letterSpacing: -0.3 },
 
   profileCard: { alignItems: 'center', paddingVertical: 22, paddingHorizontal: 18, marginBottom: 18 },
-  avatar: { width: 66, height: 66, borderRadius: 99, backgroundColor: UI.orange, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+  avatar: { width: 66, height: 66, borderRadius: 99, backgroundColor: ui.orange, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
   avatarText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 26 },
-  name: { color: UI.text, fontFamily: 'Inter_800ExtraBold', fontSize: 19, lineHeight: 24 },
-  email: { color: UI.muted, fontFamily: 'Inter_500Medium', fontSize: 14, marginTop: 3 },
+  name: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 19, lineHeight: 24 },
+  email: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 14, marginTop: 3 },
   badgeRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
 
   sectionGap: { marginTop: 6, marginBottom: 10 },
   cardPad: { paddingHorizontal: 16 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 13, paddingVertical: 13 },
-  rowDivider: { borderBottomWidth: 1, borderBottomColor: UI.line },
-  rowTitle: { color: UI.text, fontFamily: 'Inter_700Bold', fontSize: 14.5 },
-  rowSub: { color: UI.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, marginTop: 2 },
-  googleG: { color: UI.blueText, fontFamily: 'Inter_800ExtraBold', fontSize: 18 },
-  actionLink: { color: UI.orange, fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
+  rowDivider: { borderBottomWidth: 1, borderBottomColor: ui.line },
+  rowTitle: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 14.5 },
+  rowSub: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, marginTop: 2 },
+  googleG: { color: ui.blueText, fontFamily: 'Inter_800ExtraBold', fontSize: 18 },
+  actionLink: { color: ui.orange, fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
 
   diagCard: { marginTop: 12, paddingVertical: 14, gap: 9 },
   diagLine: { flexDirection: 'row', justifyContent: 'space-between', gap: 14 },
-  diagLabel: { color: UI.muted, fontFamily: 'Inter_600SemiBold', fontSize: 13 },
+  diagLabel: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 13 },
   diagValue: { flex: 1, textAlign: 'right', fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
-  diagError: { color: UI.danger, fontFamily: 'Inter_700Bold', fontSize: 13, lineHeight: 19, marginTop: 4 },
+  diagError: { color: ui.danger, fontFamily: 'Inter_700Bold', fontSize: 13, lineHeight: 19, marginTop: 4 },
 
   modalBackdrop: { ...StyleSheet.absoluteFill },
   modalCenter: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 },

@@ -15,6 +15,7 @@ import {
   BarChart3,
   Bell,
   Search as SearchIcon,
+  UserCheck,
   CalendarDays,
   Camera,
   CheckCircle2,
@@ -102,8 +103,9 @@ function formatDayLine(date: string | null | undefined, t: TFunc) {
   return `${due.toLocaleDateString([], { month: 'short', day: 'numeric' })} · ${time}`;
 }
 
-function feedDateLine() {
-  return new Date().toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+function feedDateLine(now: Date | null) {
+  if (!now) return '';
+  return now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
 }
 
 // "in 25 min" / "in 3 h" countdown for the detail sheet — only when the item is
@@ -119,8 +121,9 @@ function relativeDue(date: string | null | undefined, t: (k: string, p?: Record<
 }
 
 // A small emoji that tracks the time of day, matching the greeting.
-function timeEmoji() {
-  const h = new Date().getHours();
+function timeEmoji(now: Date | null) {
+  if (!now) return '';
+  const h = now.getHours();
   if (h < 6) return '🌙';
   if (h < 12) return '☀️';
   if (h < 18) return '🌤️';
@@ -157,6 +160,8 @@ function activityPhrase(entry: ActivityEntry, t: TFunc): string {
   switch (entry.kind) {
     case 'task_done': return t('act_task_done', { subject: entry.subject });
     case 'task_created': return t('act_task_created', { subject: entry.subject });
+    case 'task_assigned':
+      return t('act_task_assigned', { subject: entry.subject, target: entry.target || '' });
     case 'stars_awarded':
       return t('act_stars_awarded', { n: String(entry.amount ?? 0), subject: entry.subject });
     case 'member_joined': return t('act_member_joined');
@@ -178,8 +183,9 @@ function shortWhen(iso: string, t: TFunc): string {
   return t('when_days', { n: String(Math.round(hours / 24)) });
 }
 
-function greetingFallback(name: string, t: TFunc) {
-  const hour = new Date().getHours();
+function greetingFallback(name: string, t: TFunc, now: Date | null) {
+  if (!now) return name || '';
+  const hour = now.getHours();
   const prefix = hour < 12 ? t('feed_good_morning') : hour < 18 ? t('feed_good_afternoon') : t('feed_good_evening');
   return `${prefix},${name ? `\n${name}` : ''}`;
 }
@@ -218,6 +224,13 @@ function TaskRow({ card, onOpen, onComplete, styles }: { card: Card; onOpen: () 
 export default function Feed() {
   const { user, t, subscription } = useStore();
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
+  const [assigned, setAssigned] = useState<Card[]>([]);
+  // The web build is prerendered at BUILD time. Anything derived from "now" —
+  // the date line, the greeting, the sun or moon — then disagrees with what
+  // the browser computes, and React throws away the entire server render as a
+  // hydration mismatch. So the first paint carries nothing time-dependent and
+  // this fills it in immediately after.
+  const [now, setNow] = useState<Date | null>(null);
   const { isLocked, promptUpgrade } = usePremiumGate();
   const reportLocked = isLocked('weekly_report');
   const { px, maxW } = useBreakpoint();
@@ -305,6 +318,13 @@ export default function Feed() {
       // Who did what, lately. Best effort: an empty strip is better than a
       // failed feed.
       api.listActivity(8).then(setActivity).catch(() => undefined);
+
+      // What was handed to me. Same best-effort rule: this strip never gets
+      // to take the feed down with it.
+      api.listAssignedToMe().then(setAssigned).catch(() => undefined);
+
+      // Safe here rather than on first paint — see the `now` state above.
+      setNow(new Date());
 
       // Only when the plan is KNOWN to allow it: isLocked() answers false
       // while the subscription is still loading (so the UI never flashes a
@@ -492,7 +512,7 @@ export default function Feed() {
 
   const visibleCards = tabCards.slice(0, 8);
   const firstName = (user?.name || '').split(' ')[0] || '';
-  const headline = greetingFallback(firstName, t);
+  const headline = greetingFallback(firstName, t, now);
   const alertCount = dashboard.priority.length;
   const alertText = alertCount > 0
     ? `${alertCount} ${alertCount === 1 ? t('feed_thing_needs') : t('feed_things_need')} — ${dashboard.priority[0]?.title || t('feed_review_list')}.`
@@ -619,7 +639,7 @@ export default function Feed() {
       >
           <View style={[styles.page, { maxWidth: maxW }]}>
             <View style={styles.topMetaRow}>
-              <Text style={styles.dateText}>{feedDateLine()} <Text style={styles.sun}>{timeEmoji()}</Text></Text>
+              <Text style={styles.dateText}>{feedDateLine(now)} <Text style={styles.sun}>{timeEmoji(now)}</Text></Text>
               <View style={styles.topActions}>
                 <PressScale
                   testID="feed-search"
@@ -727,6 +747,30 @@ export default function Feed() {
                 <Text style={styles.statLabel} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.7}>{t('feed_this_week')}</Text>
               </View>
             </View>
+
+            {/* What was handed to you. Assignment used to be a word typed
+                into a field that nobody read; this is the place that answers
+                "what did they give me?" without reading the whole household's
+                feed. Hidden entirely when nothing is on your plate — an empty
+                card that says "nothing assigned" is just noise. */}
+            {assigned.length > 0 ? (
+              <View style={styles.assignedCard} testID="feed-assigned">
+                <View style={styles.activityHead}>
+                  <UserCheck color={ui.orange} size={17} />
+                  <Text style={styles.assignedTitle}>{t('feed_assigned_title')}</Text>
+                  <Text style={styles.assignedCount}>{assigned.length}</Text>
+                </View>
+                {assigned.slice(0, 4).map((card) => (
+                  <TaskRow
+                    key={card.card_id}
+                    card={card}
+                    onOpen={() => setSelectedCard(card)}
+                    onComplete={() => toggle(card)}
+                    styles={styles}
+                  />
+                ))}
+              </View>
+            ) : null}
 
             {/* Who did what. The app could always show that the bins task was
                 gone; it could never say who dealt with it, which is the first
@@ -1567,6 +1611,21 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     fontFamily: 'Inter_700Bold',
     fontSize: 13,
     maxWidth: 120,
+  },
+  assignedCard: {
+    backgroundColor: ui.card,
+    borderWidth: 1,
+    borderColor: ui.orangeSoft,
+    borderRadius: 20,
+    padding: 14,
+    marginTop: 18,
+    gap: 4,
+  },
+  assignedTitle: { flex: 1, color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 15.5, letterSpacing: -0.2 },
+  assignedCount: {
+    color: ui.orange, fontFamily: 'Inter_800ExtraBold', fontSize: 12,
+    backgroundColor: ui.orangeSoft, paddingHorizontal: 9, paddingVertical: 3, borderRadius: 999,
+    overflow: 'hidden',
   },
   activityCard: {
     backgroundColor: ui.card, borderRadius: 18, borderWidth: 1, borderColor: ui.line,
