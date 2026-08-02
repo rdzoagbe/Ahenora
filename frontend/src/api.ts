@@ -67,6 +67,49 @@ export const tokenStore = {
   },
 };
 
+/**
+ * Kid mode swaps which token this device is using. The parent's token is set
+ * aside rather than thrown away, so coming back out is a PIN rather than a
+ * fresh sign-in — and it lives in SecureStore alongside the real one, not in
+ * memory, so it survives the app being closed while a child is using it.
+ */
+const PARENT_TOKEN_KEY = 'coo_parent_token';
+
+export const kidMode = {
+  async enter(childToken: string): Promise<void> {
+    const parent = await tokenStore.get();
+    if (parent) {
+      try {
+        await SecureStore.setItemAsync(PARENT_TOKEN_KEY, parent);
+      } catch {
+        if (Platform.OS === 'web') await AsyncStorage.setItem(PARENT_TOKEN_KEY, parent);
+      }
+    }
+    await tokenStore.set(childToken);
+    cache.clear();
+  },
+  async storedParentToken(): Promise<string | null> {
+    try {
+      const t = await SecureStore.getItemAsync(PARENT_TOKEN_KEY);
+      if (t) return t;
+    } catch { /* fall through to the web path */ }
+    try { return await AsyncStorage.getItem(PARENT_TOKEN_KEY); } catch { return null; }
+  },
+  async isActive(): Promise<boolean> {
+    return (await kidMode.storedParentToken()) !== null;
+  },
+  /** Hand the device back. The PIN check has already happened on the server. */
+  async leave(): Promise<boolean> {
+    const parent = await kidMode.storedParentToken();
+    if (!parent) return false;
+    await tokenStore.set(parent);
+    await SecureStore.deleteItemAsync(PARENT_TOKEN_KEY).catch(() => undefined);
+    await AsyncStorage.removeItem(PARENT_TOKEN_KEY).catch(() => undefined);
+    cache.clear();
+    return true;
+  },
+};
+
 const REQUEST_TIMEOUT_MS = 30_000;
 
 const RETRY_MAX = 3;
@@ -289,7 +332,14 @@ async function request<T = unknown>(
       // Clear the token and let the app return to the landing screen. Auth
       // endpoints (login/register/session) use 401 for bad credentials, so
       // they must not trigger a global sign-out.
-      if (res.status === 401 && !path.startsWith('/auth/')) {
+      // 401 means two different things. On most endpoints it means the
+      // session died and the app should return to the landing screen. On
+      // these it means "wrong credentials" — a mistyped password, or a child
+      // fumbling their PIN — and signing the household out over a typo would
+      // be absurd. A wrong kid PIN used to log the parent out entirely.
+      const CREDENTIAL_PATHS = ['/auth/', '/kid/session', '/kid/exit'];
+      const isCredentialCheck = CREDENTIAL_PATHS.some((p) => path.startsWith(p));
+      if (res.status === 401 && !isCredentialCheck) {
         await tokenStore.clear().catch(() => undefined);
         cache.clear();
         // A revoked session must not leave a readable copy of the household
@@ -649,6 +699,24 @@ export interface CalendarImportResult {
 }
 
 export type VaultVisibility = 'private' | 'shared';
+
+export interface FamilyProfile {
+  member_id: string;
+  name: string;
+  role: string;
+  is_child: boolean;
+  has_pin: boolean;
+}
+
+export interface KidChore { card_id: string; title: string; due_date: string | null }
+
+export interface KidHome {
+  name: string;
+  stars: number;
+  chores: KidChore[];
+  rewards: Reward[];
+  owed: Redemption[];
+}
 
 export type SearchKind = 'task' | 'event' | 'note' | 'document' | 'shopping' | 'meal';
 
@@ -1014,6 +1082,23 @@ export const api = {
   search: (q: string) =>
     request<SearchResponse>(`/search?q=${encodeURIComponent(q)}`),
   listAssignedToMe: () => request<Card[]>('/cards/mine'),
+
+  // Kid mode. The session a child holds is refused by every other endpoint
+  // on the server, so these are the only doors it opens.
+  listProfiles: () =>
+    request<{ profiles: FamilyProfile[]; kid_mode_ready: boolean }>('/family/profiles'),
+  startKidSession: (member_id: string, pin: string) =>
+    request<{ session_token: string; member: FamilyMember }>('/kid/session', {
+      method: 'POST', body: { member_id, pin },
+    }),
+  exitKidSession: (pin: string) =>
+    request<{ ok: boolean }>('/kid/exit', { method: 'POST', body: { pin } }),
+  kidHome: () => request<KidHome>('/kid/home'),
+  kidFinishChore: (cardId: string) =>
+    request<{ ok: boolean }>(`/kid/chores/${cardId}/done`, { method: 'POST' }),
+  kidRequestReward: (rewardId: string) =>
+    request<{ ok: boolean; stars: number; redemption: Redemption }>(
+      `/kid/rewards/${rewardId}/request`, { method: 'POST' }),
   listVault: () => {
     const cacheKey = 'listVault';
     const cached = cache.get<VaultDoc[]>(cacheKey);
