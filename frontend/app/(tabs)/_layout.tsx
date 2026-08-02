@@ -250,6 +250,8 @@ export default function TabLayout() {
         <Tabs.Screen name="vault"    options={{ href: null }} />
         <Tabs.Screen name="settings" options={{ href: null }} />
         <Tabs.Screen name="account"  options={{ href: null }} />
+        {/* Reached from the feed header and the More sheet, never a tab. */}
+        <Tabs.Screen name="search"   options={{ href: null }} />
       </Tabs>
 
       {isWide && <SidebarNav width={sidebarW} />}

@@ -3099,6 +3099,99 @@ async def list_activity(limit: int = 12, user=Depends(require_user)):
     return rows
 
 
+SEARCH_LIMIT = 40
+
+
+def _search_hit(kind: str, item_id: str, title: str, subtitle: str = "",
+                when: str = "", status: str = "") -> dict:
+    return {"kind": kind, "id": item_id, "title": title,
+            "subtitle": subtitle, "when": when, "status": status}
+
+
+@app.get("/api/search")
+async def search_everything(q: str = Query(default=""), user=Depends(require_user)):
+    """One box for "where did I put the school form".
+
+    A household's knowledge is scattered across five screens by the time it is
+    two weeks old — a task here, a photographed letter in the vault, a note
+    about the plumber, a meal plan with the recipe in it. Remembering WHICH
+    screen is the app's problem, not the parent's.
+
+    Matching is done in Python rather than with a database regex on purpose:
+    the visibility rules are not expressible as one query (private cards, the
+    vault's owner/visibility/legacy triple), and re-implementing them in a
+    query language is exactly how a search box leaks a co-parent's private
+    documents. Every result goes through the same predicate the owning screen
+    uses. A family's data is small enough that this costs nothing.
+    """
+    needle = (q or "").strip().lower()
+    if len(needle) < 2:
+        return {"query": q, "results": [], "truncated": False}
+
+    database = get_db()
+    hits: List[dict] = []
+
+    def matches(*fields) -> bool:
+        return any(needle in str(f or "").lower() for f in fields)
+
+    # Tasks, events and notes — same visibility rule as the feed.
+    cursor = database["cards"].find({
+        "family_id": user["family_id"],
+        "$or": [
+            {"shared": True},
+            {"created_by_user_id": user["user_id"]},
+            {"created_by_user_id": {"$exists": False}},
+        ],
+    }, {"_id": 0}).sort("created_at", -1)
+    async for row in cursor:
+        if matches(row.get("title"), row.get("description"), row.get("assignee")):
+            hits.append(_search_hit(
+                (row.get("type") or "TASK").lower(),
+                row["card_id"],
+                row.get("title") or "",
+                row.get("description") or row.get("assignee") or "",
+                iso(row.get("due_date")) or "",
+                row.get("status") or "",
+            ))
+
+    # Documents — never widen what the vault itself would show.
+    async for row in database["vault"].find({"family_id": user["family_id"]}, {"_id": 0}).sort("created_at", -1):
+        if not _may_see_vault_doc(row, user):
+            continue
+        if matches(row.get("title"), row.get("category"), row.get("file_name")):
+            hits.append(_search_hit(
+                "document", row["doc_id"], row.get("title") or "",
+                row.get("category") or "", iso(row.get("created_at")) or "",
+                row.get("visibility") or "shared",
+            ))
+
+    async for row in database["shopping_list"].find({"family_id": user["family_id"]}, {"_id": 0}):
+        if matches(row.get("name"), row.get("category")):
+            hits.append(_search_hit(
+                "shopping", row["item_id"], row.get("name") or "",
+                row.get("category") or "", "",
+                "done" if row.get("checked") else "open",
+            ))
+
+    async for row in database["meals"].find({"family_id": user["family_id"]}, {"_id": 0}):
+        if matches(row.get("title"), row.get("notes"), " ".join(row.get("ingredients") or [])):
+            hits.append(_search_hit(
+                "meal", row["meal_id"], row.get("title") or "",
+                row.get("notes") or "", row.get("day") or "",
+                row.get("meal_type") or "",
+            ))
+
+    # A title match is what someone typing two words is almost always after;
+    # a body match is the fallback. Within each, keep the order the screens
+    # use (newest first).
+    hits.sort(key=lambda h: 0 if needle in h["title"].lower() else 1)
+    return {
+        "query": q,
+        "results": hits[:SEARCH_LIMIT],
+        "truncated": len(hits) > SEARCH_LIMIT,
+    }
+
+
 @app.get("/api/family/updates")
 async def family_updates(
     x_confirm: Optional[str] = Header(None, alias="X-Confirm"),
