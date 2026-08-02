@@ -14,6 +14,7 @@ import {
   AlertTriangle,
   BarChart3,
   Bell,
+  Search as SearchIcon,
   CalendarDays,
   Camera,
   CheckCircle2,
@@ -619,17 +620,28 @@ export default function Feed() {
           <View style={[styles.page, { maxWidth: maxW }]}>
             <View style={styles.topMetaRow}>
               <Text style={styles.dateText}>{feedDateLine()} <Text style={styles.sun}>{timeEmoji()}</Text></Text>
-              <PressScale
-                testID="feed-bell"
-                onPress={() => setShowAlerts(true)}
-                style={styles.bellWrap}
-                accessibilityLabel={t('feed_view_alerts')}
-              >
-                <Bell color={ui.text} size={25} />
-                {alertCount > 0 ? (
-                  <View style={styles.bellBadge}><Text style={styles.bellBadgeText}>{Math.min(alertCount, 9)}</Text></View>
-                ) : null}
-              </PressScale>
+              <View style={styles.topActions}>
+                <PressScale
+                  testID="feed-search"
+                  onPress={() => router.navigate('/(tabs)/search' as never)}
+                  style={styles.bellWrap}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('search_title')}
+                >
+                  <SearchIcon color={ui.text} size={24} />
+                </PressScale>
+                <PressScale
+                  testID="feed-bell"
+                  onPress={() => setShowAlerts(true)}
+                  style={styles.bellWrap}
+                  accessibilityLabel={t('feed_view_alerts')}
+                >
+                  <Bell color={ui.text} size={25} />
+                  {alertCount > 0 ? (
+                    <View style={styles.bellBadge}><Text style={styles.bellBadgeText}>{Math.min(alertCount, 9)}</Text></View>
+                  ) : null}
+                </PressScale>
+              </View>
             </View>
 
             <StreakChip />
@@ -1182,6 +1194,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   sun: {
     color: ui.orange,
   },
+  topActions: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   bellWrap: {
     width: 42,
     height: 42,

@@ -650,6 +650,23 @@ export interface CalendarImportResult {
 
 export type VaultVisibility = 'private' | 'shared';
 
+export type SearchKind = 'task' | 'event' | 'note' | 'document' | 'shopping' | 'meal';
+
+export interface SearchHit {
+  kind: SearchKind;
+  id: string;
+  title: string;
+  subtitle: string;
+  when: string;
+  status: string;
+}
+
+export interface SearchResponse {
+  query: string;
+  results: SearchHit[];
+  truncated: boolean;
+}
+
 export interface ActivityEntry {
   activity_id: string;
   actor_name: string;
@@ -992,6 +1009,8 @@ export const api = {
   // Vault
   listActivity: (limit = 12) =>
     request<ActivityEntry[]>(`/activity?limit=${limit}`),
+  search: (q: string) =>
+    request<SearchResponse>(`/search?q=${encodeURIComponent(q)}`),
   listVault: () => {
     const cacheKey = 'listVault';
     const cached = cache.get<VaultDoc[]>(cacheKey);

@@ -2,7 +2,7 @@ import React from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { ChevronRight, Lock, Settings as SettingsIcon, User, X } from 'lucide-react-native';
+import { ChevronRight, Lock, Search as SearchIcon, Settings as SettingsIcon, User, X } from 'lucide-react-native';
 
 import { PressScale } from './PressScale';
 import { useUI, UIColors } from './Kit';
@@ -30,6 +30,8 @@ export function MoreSheet({ visible, onClose }: { visible: boolean; onClose: () 
   };
 
   const items = [
+    { key: 'search', icon: SearchIcon, tone: ui.orange, soft: ui.orangeSoft,
+      title: t('search_title'), sub: t('search_eyebrow'), path: '/(tabs)/search' },
     { key: 'vault', icon: Lock, tone: ui.lavenderText, soft: ui.lavender,
       title: t('vault'), sub: t('nav_more_vault_sub'), path: '/(tabs)/vault' },
     { key: 'settings', icon: SettingsIcon, tone: ui.orange, soft: ui.orangeSoft,
