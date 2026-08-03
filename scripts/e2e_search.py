@@ -88,7 +88,7 @@ async def main():
         roland.on("pageerror", lambda e: errs.append(str(e)))
 
         # Reachable from the feed, not buried in a menu.
-        await roland.goto(f"{WEB}/feed", wait_until="networkidle")
+        await roland.goto(f"{WEB}/feed", wait_until="domcontentloaded")
         await roland.wait_for_timeout(3000)
         r["feed_offers_search"] = await roland.locator('[data-testid="feed-search"]').count() == 1
         await roland.click('[data-testid="feed-search"]')
@@ -119,7 +119,7 @@ async def main():
 
         # And the owner can still find her own.
         keigh = await persona(br, tok_b)
-        await keigh.goto(f"{WEB}/search", wait_until="networkidle")
+        await keigh.goto(f"{WEB}/search", wait_until="domcontentloaded")
         await keigh.wait_for_timeout(3000)
         body = await look_for(keigh, "medical")
         r["owner_still_finds_her_own"] = "Medical results" in body

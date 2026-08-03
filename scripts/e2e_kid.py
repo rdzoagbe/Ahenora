@@ -79,7 +79,7 @@ async def main():
         await p.add_init_script(f"localStorage.setItem('coo_session_token','{tok}');")
 
         # --- handing the device over ---------------------------------------
-        await p.goto(f"{WEB}/feed", wait_until="networkidle")
+        await p.goto(f"{WEB}/feed", wait_until="domcontentloaded")
         await p.wait_for_timeout(3500)
         await p.click('[data-testid="tab-more"]')
         await p.wait_for_timeout(1200)

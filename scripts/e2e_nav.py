@@ -37,7 +37,7 @@ async def main():
         await p.route("**/api/**", route)
         await p.add_init_script(f"localStorage.setItem('coo_session_token','{tok}');")
 
-        await p.goto(f"{WEB}/feed", wait_until="networkidle")
+        await p.goto(f"{WEB}/feed", wait_until="domcontentloaded")
         await p.wait_for_timeout(3000)
         bar = await p.inner_text("body")
         # Only the active tab spells its name; the others are icons.
@@ -69,7 +69,7 @@ async def main():
 
         # The four daily tabs still work
         for label, marker in (("calendar", "Calendar"), ("kids", "Kids"), ("kitchen", "Kitchen")):
-            await p.goto(f"{WEB}/{label}", wait_until="networkidle")
+            await p.goto(f"{WEB}/{label}", wait_until="domcontentloaded")
             await p.wait_for_timeout(2200)
             r[f"tab_{label}_ok"] = marker in await p.inner_text("body")
 
