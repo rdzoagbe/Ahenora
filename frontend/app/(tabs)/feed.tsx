@@ -511,6 +511,11 @@ export default function Feed() {
   }, [activeTab, activeCards, dashboard]);
 
   const visibleCards = tabCards.slice(0, 8);
+  // Hand-offs lead the list; everything else follows. Split rather than
+  // duplicated, so a task with your name on it appears exactly once.
+  const handedIds = new Set(assigned.map((c) => c.card_id));
+  const handedToMe = visibleCards.filter((c) => handedIds.has(c.card_id));
+  const restOfList = visibleCards.filter((c) => !handedIds.has(c.card_id));
   const firstName = (user?.name || '').split(' ')[0] || '';
   const headline = greetingFallback(firstName, t, now);
   const alertCount = dashboard.priority.length;
@@ -748,30 +753,6 @@ export default function Feed() {
               </View>
             </View>
 
-            {/* What was handed to you. Assignment used to be a word typed
-                into a field that nobody read; this is the place that answers
-                "what did they give me?" without reading the whole household's
-                feed. Hidden entirely when nothing is on your plate — an empty
-                card that says "nothing assigned" is just noise. */}
-            {assigned.length > 0 ? (
-              <View style={styles.assignedCard} testID="feed-assigned">
-                <View style={styles.activityHead}>
-                  <UserCheck color={ui.orange} size={17} />
-                  <Text style={styles.assignedTitle}>{t('feed_assigned_title')}</Text>
-                  <Text style={styles.assignedCount}>{assigned.length}</Text>
-                </View>
-                {assigned.slice(0, 4).map((card) => (
-                  <TaskRow
-                    key={card.card_id}
-                    card={card}
-                    onOpen={() => setSelectedCard(card)}
-                    onComplete={() => toggle(card)}
-                    styles={styles}
-                  />
-                ))}
-              </View>
-            ) : null}
-
             {/* Who did what. The app could always show that the bins task was
                 gone; it could never say who dealt with it, which is the first
                 thing a co-parent wants to know. */}
@@ -892,12 +873,36 @@ export default function Feed() {
                   </PressScale>
                 </View>
               ) : (
-                visibleCards.map((card, index) => (
-                  <View key={card.card_id}>
-                    <TaskRow card={card} onOpen={() => setSelectedCard(card)} onComplete={() => toggle(card)} styles={styles} />
-                    {index < visibleCards.length - 1 ? <View style={styles.rowDivider} /> : null}
-                  </View>
-                ))
+                <>
+                  {/* Work somebody handed you is still WORK, so it belongs in
+                      the list rather than in a box above it. As its own card
+                      it pushed the actual task list a full screen further
+                      down — the feed's whole job is what is happening today,
+                      and today's tasks had ended up last. Pinned here it
+                      keeps its emphasis and costs no extra height. Filtered
+                      against the rows below so nothing appears twice. */}
+                  {handedToMe.length > 0 ? (
+                    <View testID="feed-assigned">
+                      <View style={styles.handedHeader}>
+                        <UserCheck color={ui.orangeText} size={15} />
+                        <Text style={styles.handedTitle}>{t('feed_assigned_title')}</Text>
+                        <Text style={styles.handedCount}>{handedToMe.length}</Text>
+                      </View>
+                      {handedToMe.map((card) => (
+                        <View key={card.card_id}>
+                          <TaskRow card={card} onOpen={() => setSelectedCard(card)} onComplete={() => toggle(card)} styles={styles} />
+                          <View style={styles.rowDivider} />
+                        </View>
+                      ))}
+                    </View>
+                  ) : null}
+                  {restOfList.map((card, index) => (
+                    <View key={card.card_id}>
+                      <TaskRow card={card} onOpen={() => setSelectedCard(card)} onComplete={() => toggle(card)} styles={styles} />
+                      {index < restOfList.length - 1 ? <View style={styles.rowDivider} /> : null}
+                    </View>
+                  ))}
+                </>
               )}
             </View>
 
@@ -1612,20 +1617,21 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     fontSize: 13,
     maxWidth: 120,
   },
-  assignedCard: {
-    backgroundColor: ui.card,
-    borderWidth: 1,
-    borderColor: ui.orangeSoft,
-    borderRadius: 20,
-    padding: 14,
-    marginTop: 18,
-    gap: 4,
+  // An in-list group header, not a card: the hand-off group lives inside the
+  // task list now, so it needs a label with the weight of a section marker
+  // rather than the chrome of a container.
+  handedHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 7,
+    paddingHorizontal: 14, paddingTop: 12, paddingBottom: 6,
   },
-  assignedTitle: { flex: 1, color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 15.5, letterSpacing: -0.2 },
-  assignedCount: {
-    color: ui.orangeText, fontFamily: 'Inter_800ExtraBold', fontSize: 12,
-    backgroundColor: ui.orangeSoft, paddingHorizontal: 9, paddingVertical: 3, borderRadius: 999,
-    overflow: 'hidden',
+  handedTitle: {
+    flex: 1, color: ui.orangeText, fontFamily: 'Inter_800ExtraBold',
+    fontSize: 11.5, letterSpacing: 0.8, textTransform: 'uppercase',
+  },
+  handedCount: {
+    color: ui.orangeText, fontFamily: 'Inter_800ExtraBold', fontSize: 11.5,
+    backgroundColor: ui.orangeSoft, paddingHorizontal: 8, paddingVertical: 2,
+    borderRadius: 999, overflow: 'hidden',
   },
   activityCard: {
     backgroundColor: ui.card, borderRadius: 18, borderWidth: 1, borderColor: ui.line,
