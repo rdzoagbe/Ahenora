@@ -118,7 +118,7 @@ async def main():
         keigh = await persona(br, tok_b)
         errs = []
         keigh.on("pageerror", lambda e: errs.append(str(e)))
-        await keigh.goto(f"{WEB}/feed", wait_until="networkidle")
+        await keigh.goto(f"{WEB}/feed", wait_until="domcontentloaded")
         await keigh.wait_for_timeout(4000)
         body = await keigh.inner_text("body")
         # Case-folded. The label is uppercased in CSS and inner_text returns
@@ -136,7 +136,7 @@ async def main():
 
         # --- his side: the household record --------------------------------
         roland = await persona(br, tok_a)
-        await roland.goto(f"{WEB}/feed", wait_until="networkidle")
+        await roland.goto(f"{WEB}/feed", wait_until="domcontentloaded")
         await roland.wait_for_timeout(4000)
         body = await roland.inner_text("body")
         r["record_names_who_it_went_to"] = "gave Keigh H" in body
@@ -145,7 +145,7 @@ async def main():
         dark = await persona(br, tok_a, appearance="dark")
         dark_errs = []
         dark.on("pageerror", lambda e: dark_errs.append(str(e)))
-        await dark.goto(f"{WEB}/account", wait_until="networkidle")
+        await dark.goto(f"{WEB}/account", wait_until="domcontentloaded")
         await dark.wait_for_timeout(4000)
         await dark.screenshot(path="handoff_account_dark.png")
 
@@ -161,7 +161,7 @@ async def main():
 
         # And light mode did not regress.
         light = await persona(br, tok_a, appearance="light")
-        await light.goto(f"{WEB}/account", wait_until="networkidle")
+        await light.goto(f"{WEB}/account", wait_until="domcontentloaded")
         await light.wait_for_timeout(4000)
         s = await sample(light, "Google account")
         r["light_account_still_readable"] = bool(s) and contrast(s["fg"], s["bg"]) >= 4.5

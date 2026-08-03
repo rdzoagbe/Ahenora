@@ -67,7 +67,7 @@ async def main():
         await p.add_init_script(f"localStorage.setItem('coo_session_token','{tok}');")
 
         # --- 1. one good visit, so there is something to remember -----------
-        await p.goto(f"{WEB}/kitchen", wait_until="networkidle")
+        await p.goto(f"{WEB}/kitchen", wait_until="domcontentloaded")
         await p.wait_for_timeout(4000)
         body = await p.inner_text("body")
         r["online_list_renders"] = "Milk" in body and "Olive oil" in body
@@ -101,7 +101,7 @@ async def main():
 
         # --- 4. the signal returns -----------------------------------------
         online["v"] = True
-        await p.goto(f"{WEB}/kitchen", wait_until="networkidle")
+        await p.goto(f"{WEB}/kitchen", wait_until="domcontentloaded")
         await p.wait_for_timeout(8000)
         queue = await p.evaluate("localStorage.getItem('coo_offline_queue')")
         r["queue_drained"] = queue in (None, "[]")

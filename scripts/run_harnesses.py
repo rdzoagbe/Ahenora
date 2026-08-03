@@ -8,6 +8,12 @@ replace. This is what CI invokes.
 Each harness gets its own fresh backend so a failure in one cannot poison the
 next, and so the order they run in never changes the result.
 
+Navigation waits on domcontentloaded, never networkidle. The app health-checks
+every 30 seconds by design, so there is no such thing as an idle network here —
+networkidle only ever worked by landing in the gaps between pings, and on a
+loaded CI runner it eventually did not. Every harness follows its goto with an
+explicit wait anyway; that is what gives the app time to render.
+
 Export the web build with the matching backend URL before running this, or the
 app will phone production from inside a test:
 

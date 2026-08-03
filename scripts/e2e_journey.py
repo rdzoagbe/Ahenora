@@ -100,7 +100,7 @@ async def main():
         _, iphone = await make_persona(browser, 390, 844, tok_b, blocker=True)
 
         # ---- Android/inviter: add a shopping item through the UI ----
-        await android.goto(f"{WEB}/kitchen", wait_until="networkidle")
+        await android.goto(f"{WEB}/kitchen", wait_until="domcontentloaded")
         await android.wait_for_timeout(2500)
         shop = android.get_by_placeholder("Add items — commas for several")
         await shop.fill("Plantain x6, Rice 1kg, Tomatoes x4, Chicken 600g")
@@ -109,7 +109,7 @@ async def main():
         r["A_shopping_item_added"] = "Plantain x6" in await android.inner_text("body")
 
         # ---- Android/inviter: send the invitation via the real form ----
-        await android.goto(f"{WEB}/settings", wait_until="networkidle")
+        await android.goto(f"{WEB}/settings", wait_until="domcontentloaded")
         await android.wait_for_timeout(2000)
         await android.click("text=Invite a family member")
         await android.wait_for_timeout(800)
@@ -130,7 +130,7 @@ async def main():
         # design the suggestions sheet OPENS as a free peek; the gate fires
         # on ADDING the week to the planner. ----
         async def open_meal_suggest(page):
-            await page.goto(f"{WEB}/kitchen", wait_until="networkidle")
+            await page.goto(f"{WEB}/kitchen", wait_until="domcontentloaded")
             await page.wait_for_timeout(2000)
             await page.click('[data-testid="kitchen-switch"]')
             await page.wait_for_timeout(500)
@@ -151,7 +151,7 @@ async def main():
         await android.wait_for_timeout(500)
 
         # ---- iPhone/invitee, content blocker active: no link, just opens ----
-        await iphone.goto(f"{WEB}/feed", wait_until="networkidle")
+        await iphone.goto(f"{WEB}/feed", wait_until="domcontentloaded")
         await iphone.wait_for_timeout(3000)
         body = await iphone.inner_text("body")
         r["B_join_card_appeared_without_link"] = "Roland Sim" in body
@@ -164,7 +164,7 @@ async def main():
         await iphone.screenshot(path="journey_iphone_joined.png")
 
         # ---- iPhone/invitee: the shared household is really shared ----
-        await iphone.goto(f"{WEB}/kitchen", wait_until="networkidle")
+        await iphone.goto(f"{WEB}/kitchen", wait_until="domcontentloaded")
         await iphone.wait_for_timeout(2500)
         r["B_sees_shared_shopping"] = "Plantain x6" in await iphone.inner_text("body")
 
@@ -177,7 +177,7 @@ async def main():
         api("POST", "/vault", {"title": "Shared insurance", "category": "Legal",
                                "image_base64": "data:image/jpeg;base64,AAAA",
                                "visibility": "shared"}, tok_a)
-        await android.goto(f"{WEB}/vault", wait_until="networkidle")
+        await android.goto(f"{WEB}/vault", wait_until="domcontentloaded")
         await android.wait_for_timeout(2500)
         await android.click('[data-testid="vault-add"]')
         await android.wait_for_timeout(900)
@@ -186,14 +186,14 @@ async def main():
         await android.keyboard.press("Escape")
         await android.wait_for_timeout(600)
 
-        await iphone.goto(f"{WEB}/vault", wait_until="networkidle")
+        await iphone.goto(f"{WEB}/vault", wait_until="domcontentloaded")
         await iphone.wait_for_timeout(2500)
         body = await iphone.inner_text("body")
         r["B_vault_private_hidden"] = "Payslip private" not in body
         r["B_vault_shared_visible"] = "Shared insurance" in body
 
         # The owner un-shares from the preview; it vanishes for the other.
-        await android.goto(f"{WEB}/vault", wait_until="networkidle")
+        await android.goto(f"{WEB}/vault", wait_until="domcontentloaded")
         await android.wait_for_timeout(2500)
         await android.click("text=Shared insurance")
         await android.wait_for_timeout(1200)
@@ -201,12 +201,12 @@ async def main():
             '[data-testid="preview-visibility"]').count() == 1
         await android.click('[data-testid="preview-visibility"]')
         await android.wait_for_timeout(1800)
-        await iphone.reload(wait_until="networkidle")
+        await iphone.reload(wait_until="domcontentloaded")
         await iphone.wait_for_timeout(2500)
         r["B_vault_unshared_now_hidden"] = "Shared insurance" not in await iphone.inner_text("body")
 
         # ---- Shopping: multi-select deletes only what was picked ----
-        await iphone.goto(f"{WEB}/kitchen", wait_until="networkidle")
+        await iphone.goto(f"{WEB}/kitchen", wait_until="domcontentloaded")
         await iphone.wait_for_timeout(2500)
         if await iphone.get_by_placeholder("Add items — commas for several").count() == 0:
             await iphone.click('[data-testid="kitchen-switch"]')
@@ -229,7 +229,7 @@ async def main():
 
         # ---- Clear all: one undo point, older archives swept ----
         api("DELETE", "/shopping/all", None, tok_a)  # clears + archives
-        await iphone.reload(wait_until="networkidle")
+        await iphone.reload(wait_until="domcontentloaded")
         await iphone.wait_for_timeout(2500)
         r["B_restore_banner_after_clear"] = "Restore" in await iphone.inner_text("body")
         hist = api("GET", "/shopping/history", token=tok_a)
@@ -240,7 +240,7 @@ async def main():
         r["dismiss_removes_archive"] = len(api("GET", "/shopping/history", token=tok_a)) == 0
 
         # ---- Android/inviter: co-parents, moved child, accepted invite ----
-        await android.goto(f"{WEB}/settings", wait_until="networkidle")
+        await android.goto(f"{WEB}/settings", wait_until="domcontentloaded")
         await android.wait_for_timeout(2500)
         await android.click('[data-testid="settings-household-toggle"]')
         await android.wait_for_timeout(1000)
@@ -286,7 +286,7 @@ async def main():
             # Meals in the planner make "Sync to list" appear — proof the
             # week actually landed, not just that no dialog showed.
             r[f"{name}_premium_week_added"] = "Sync to list" in body
-        await iphone.goto(f"{WEB}/settings", wait_until="networkidle")
+        await iphone.goto(f"{WEB}/settings", wait_until="domcontentloaded")
         await iphone.wait_for_timeout(2500)
         r["B_sees_family_office"] = "Family Office" in await iphone.inner_text("body")
         await iphone.screenshot(path="journey_iphone_premium.png")

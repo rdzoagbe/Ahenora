@@ -70,7 +70,7 @@ async def main():
             await page.add_init_script(f"localStorage.setItem('coo_session_token','{token}');")
             for p in PAGES:
                 errs.clear()
-                await page.goto(f"{WEB}/{p}", wait_until="networkidle")
+                await page.goto(f"{WEB}/{p}", wait_until="domcontentloaded")
                 await page.wait_for_timeout(2600)
                 body = await page.inner_text("body")
                 checked += 1

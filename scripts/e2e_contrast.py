@@ -168,7 +168,7 @@ async def main():
         for mode in MODES:
             page = await persona(br, tok, mode)
             for screen in SCREENS:
-                await page.goto(f"{WEB}/{screen}", wait_until="networkidle")
+                await page.goto(f"{WEB}/{screen}", wait_until="domcontentloaded")
                 await page.wait_for_timeout(3500)
                 rows = await page.evaluate(MEASURE_JS)
                 measured += len(rows)

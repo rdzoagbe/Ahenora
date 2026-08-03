@@ -44,13 +44,13 @@ async def main():
         roland = await persona(br, tok_a, 412, 915)
 
         # Keigh ticks it off from her device, through the UI.
-        await keigh.goto(f"{WEB}/feed", wait_until="networkidle")
+        await keigh.goto(f"{WEB}/feed", wait_until="domcontentloaded")
         await keigh.wait_for_timeout(3000)
         r["K_sees_shared_task"] = "Bins out" in await keigh.inner_text("body")
         api("PATCH", f"/cards/{card['card_id']}", {"status": "DONE"}, tok_b)
 
         # Roland opens his feed and learns who did it.
-        await roland.goto(f"{WEB}/feed", wait_until="networkidle")
+        await roland.goto(f"{WEB}/feed", wait_until="domcontentloaded")
         await roland.wait_for_timeout(3500)
         body = await roland.inner_text("body")
         r["R_sees_activity_section"] = "In the household" in body
@@ -60,7 +60,7 @@ async def main():
 
         # And in French, from the same stored events.
         api("PATCH", "/auth/language", {"language": "fr"}, tok_a)
-        await roland.reload(wait_until="networkidle")
+        await roland.reload(wait_until="domcontentloaded")
         await roland.wait_for_timeout(3500)
         body = await roland.inner_text("body")
         r["R_reads_it_in_french"] = "Dans le foyer" in body and "a terminé" in body
