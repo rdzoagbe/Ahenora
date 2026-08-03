@@ -113,3 +113,41 @@ describe('sortByNewest', () => {
     expect(ids(input)).toEqual(['a', 'c', 'b']);
   });
 });
+
+describe('quick reward ideas', () => {
+  // "Rewards in reach" and "Quick reward ideas" sit a few rows apart on the
+  // Kids screen, and both were offering Movie night and Ice cream at once —
+  // the second list inviting a parent to create what the first was already
+  // tracking. A suggestion for something you already have is not a suggestion.
+  const IDEAS = [
+    { titleKey: 'ri_pizza', label: 'Pizza night' },
+    { titleKey: 'ri_movie', label: 'Movie night' },
+    { titleKey: 'ri_icecream', label: 'Ice cream treat' },
+    { titleKey: 'ri_game', label: 'Game time' },
+  ];
+  const unused = (existing: string[]) => {
+    const have = new Set(existing.map((r) => r.trim().toLowerCase()));
+    return IDEAS.filter((i) => !have.has(i.label.trim().toLowerCase())).map((i) => i.label);
+  };
+
+  it('offers everything to a family with no rewards yet', () => {
+    expect(unused([])).toHaveLength(4);
+  });
+
+  it('stops offering a reward the family already created', () => {
+    expect(unused(['Movie night'])).not.toContain('Movie night');
+    expect(unused(['Movie night'])).toContain('Pizza night');
+  });
+
+  it('ignores case and stray spacing, because parents type both', () => {
+    expect(unused(['  movie NIGHT '])).not.toContain('Movie night');
+  });
+
+  it('leaves nothing to suggest once all four exist, so the block can hide', () => {
+    expect(unused(['Pizza night', 'Movie night', 'Ice cream treat', 'Game time'])).toEqual([]);
+  });
+
+  it('does not confuse a differently-named reward for one of its own', () => {
+    expect(unused(['Movie night at the cinema'])).toContain('Movie night');
+  });
+});

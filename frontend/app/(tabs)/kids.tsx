@@ -121,6 +121,7 @@ export default function Kids() {
 
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [rewards, setRewards] = useState<Reward[]>([]);
+
   const [historyItems, setHistoryItems] = useState<StarTransaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -207,6 +208,16 @@ export default function Kids() {
   const stars = activeChild?.stars || 0;
   const iconSuggestions = useMemo(() => suggestedIcons(rewardTitle), [rewardTitle]);
   const sortedRewards = useMemo(() => [...rewards].sort((a, b) => (stars / b.cost_stars) - (stars / a.cost_stars)), [rewards, stars]);
+  // Suggestions for rewards the family already has are not suggestions.
+  // "Rewards in reach" and "Quick reward ideas" sit a few rows apart, and
+  // both were offering Movie night and Ice cream at the same time — the
+  // second list inviting you to create what the first was already tracking.
+  // Compared on the translated title, because that is the text a parent is
+  // looking at and the text the chip would prefill.
+  const unusedRewardIdeas = useMemo(() => {
+    const have = new Set(rewards.map((r) => (r.title || '').trim().toLowerCase()));
+    return REWARD_IDEAS.filter((idea) => !have.has(t(idea.titleKey).trim().toLowerCase()));
+  }, [rewards, t]);
   const pendingRedemptions = useMemo(
     () => redemptions.filter((r) => r.status === 'pending' && r.member_id === activeChild?.member_id),
     [redemptions, activeChild?.member_id],
@@ -1235,9 +1246,11 @@ export default function Kids() {
                         </Card>
                       )}
 
+                      {unusedRewardIdeas.length > 0 ? (
+                      <>
                       <Text style={styles.blockLabel}>{t('kids_quick_reward_ideas')}</Text>
                       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.ideaRow} style={styles.ideaScroll}>
-                        {REWARD_IDEAS.map((idea) => (
+                        {unusedRewardIdeas.map((idea) => (
                           <PressScale key={idea.titleKey} testID={idea.titleKey} onPress={() => { setRewardMode('create'); setEditingReward(null); setRewardTitle(t(idea.titleKey)); setRewardCost(String(idea.cost_stars)); setRewardIcon(idea.icon); setShowRewardSheet(true); }} style={styles.ideaChip}>
                             <Text style={styles.ideaEmoji}>{idea.icon}</Text>
                             <Text style={styles.ideaTitle} numberOfLines={1}>{t(idea.titleKey)}</Text>
@@ -1245,6 +1258,8 @@ export default function Kids() {
                           </PressScale>
                         ))}
                       </ScrollView>
+                      </>
+                      ) : null}
 
                       <RecentActivity items={historyItems.slice(0, 4)} loading={historyLoading} />
                     </>
