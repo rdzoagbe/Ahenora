@@ -42,6 +42,10 @@ ROOT = os.path.abspath(os.path.join(HERE, ".."))
 # Ordered cheapest-first: a broken export or a dead route shows up in seconds
 # rather than after the slowest harness has finished.
 HARNESSES = [
+    # First, and cheap: a brand-new household with nothing in it. Every other
+    # harness seeds content to exercise a feature, so day one — which is the
+    # whole of a new family's first session — went unlooked-at for months.
+    "e2e_firstrun.py",
     "e2e_pages.py",
     "e2e_nav.py",
     "e2e_activity.py",
