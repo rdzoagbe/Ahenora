@@ -7,6 +7,7 @@ import { X } from 'lucide-react-native';
 import { PressScale } from './PressScale';
 import { useUI, UIColors } from './Kit';
 import { useStore } from '../store';
+import { useKeyboardHeight } from '../hooks/useKeyboardHeight';
 import { api, FamilyProfile, kidMode } from '../api';
 import { logger } from '../logger';
 
@@ -24,6 +25,7 @@ export function HandOverSheet({ visible, onClose }: { visible: boolean; onClose:
   const { t } = useStore();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const keyboard = useKeyboardHeight();
   const styles = createStyles(ui);
 
   const [profiles, setProfiles] = useState<FamilyProfile[]>([]);
@@ -95,7 +97,20 @@ export function HandOverSheet({ visible, onClose }: { visible: boolean; onClose:
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel={t('close')} />
-      <View style={[styles.panel, { paddingBottom: Math.max(insets.bottom, 16) + 18 }]}>
+      {/* Lifted clear of the keyboard. This panel is anchored to the bottom
+          of the screen, so the PIN field inside it opened the keypad directly
+          on top of itself — you tapped the box and it vanished under the
+          numbers. The safe-area pad is only needed while the keyboard is
+          down; once it is up, the keyboard covers that ground already. */}
+      <View
+        style={[
+          styles.panel,
+          {
+            bottom: keyboard,
+            paddingBottom: keyboard > 0 ? 18 : Math.max(insets.bottom, 16) + 18,
+          },
+        ]}
+      >
         <View style={styles.grabber} />
         <View style={styles.header}>
           <Text style={styles.title}>{chosen ? chosen.name : t('kid_who_is_this')}</Text>

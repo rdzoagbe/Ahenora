@@ -7,6 +7,7 @@ import { Check, Gift, LogOut, Star } from 'lucide-react-native';
 import { PressScale } from '../src/components/PressScale';
 import { useUI, UIColors } from '../src/components/Kit';
 import { useStore } from '../src/store';
+import { useKeyboardHeight } from '../src/hooks/useKeyboardHeight';
 import { api, kidMode, KidHome } from '../src/api';
 import { logger } from '../src/logger';
 
@@ -25,6 +26,7 @@ export default function KidScreen() {
   const ui = useUI();
   const { t } = useStore();
   const router = useRouter();
+  const keyboard = useKeyboardHeight();
   const styles = createStyles(ui);
 
   const [home, setHome] = useState<KidHome | null>(null);
@@ -191,7 +193,10 @@ export default function KidScreen() {
           themselves out into the household. */}
       <Modal visible={exitOpen} transparent animationType="fade" onRequestClose={() => setExitOpen(false)}>
         <View style={styles.backdrop} />
-        <View style={styles.modalCenter}>
+        {/* Centred in what is LEFT of the screen, not the whole of it: with
+            the keypad up, centring against the full height puts the card
+            behind it. */}
+        <View style={[styles.modalCenter, { paddingBottom: keyboard }]}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>{t('kid_hand_back')}</Text>
             <Text style={styles.modalBody}>{t('kid_hand_back_help')}</Text>
