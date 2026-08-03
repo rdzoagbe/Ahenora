@@ -895,11 +895,20 @@ export default function Feed() {
               </View>
             ) : null}
 
-            <PressScale style={styles.alertBanner} onPress={() => setActiveTab('today')}>
-              <View style={styles.alertIcon}><Star color="#FFFFFF" fill="#FFFFFF" size={19} /></View>
-              <Text style={styles.alertText} numberOfLines={2}>{alertText}</Text>
-              <ChevronRight color={ui.text} size={22} />
-            </PressScale>
+            {/* Only when something actually needs attention. This banner
+                names the most pressing item and jumps to it, which is worth
+                a card — but with nothing critical it said "your household is
+                moving calmly" a few rows under a list already saying
+                "Nothing urgent today", and offered a tap that led back to
+                the tab you were on. The reassurance still exists; it is just
+                said once, in the place that owns it. */}
+            {alertCount > 0 ? (
+              <PressScale style={styles.alertBanner} onPress={() => setActiveTab('today')}>
+                <View style={styles.alertIcon}><Star color="#FFFFFF" fill="#FFFFFF" size={19} /></View>
+                <Text style={styles.alertText} numberOfLines={2}>{alertText}</Text>
+                <ChevronRight color={ui.text} size={22} />
+              </PressScale>
+            ) : null}
 
             {pastEvents.length > 0 && !pastPromptDismissed ? (
               <View style={[styles.pastBanner, { backgroundColor: ui.soft, borderColor: ui.line }]}>
