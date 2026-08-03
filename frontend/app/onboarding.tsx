@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { ArrowRight, Check, ListChecks, Plus, Sparkles, Star, UserPlus, UtensilsCrossed, X } from 'lucide-react-native';
+import { ArrowRight, Check, LayoutGrid, ListChecks, Lock, Plus, Sparkles, Star, UserPlus, UtensilsCrossed, X } from 'lucide-react-native';
 
 import { PressScale } from '../src/components/PressScale';
 import { useStore } from '../src/store';
@@ -151,22 +151,27 @@ export default function Onboarding() {
                 })}
               </View>
 
-              {/* What this app is, before it asks for anything. Four sparse
-                  screens used to stand between install and the app without
-                  once mentioning the meal planner — the one thing competitors
-                  don't do — so it leads here. */}
+              {/* What this app is, before it asks for anything.
+                  The middle line is the one that matters and it was missing:
+                  every task and document is private until it is shared, and
+                  the copy here used to promise the opposite — "one shared
+                  feed, everything everyone can see" — which was true before
+                  per-item privacy shipped and has been quietly wrong since.
+                  A parent reading that at the invite step concludes their
+                  private things are already on the family feed, which is the
+                  most costly thing this app could get wrong about itself. */}
               <View style={styles.valueList}>
                 <View style={styles.valueRow}>
-                  <UtensilsCrossed color={theme.colors.accent} size={16} />
-                  <Text style={[styles.valueText, { color: theme.colors.text }]}>{t('ob_value_meals')}</Text>
+                  <LayoutGrid color={theme.colors.accent} size={16} />
+                  <Text style={[styles.valueText, { color: theme.colors.text }]}>{t('ob_value_feed')}</Text>
+                </View>
+                <View style={styles.valueRow}>
+                  <Lock color={theme.colors.accent} size={16} />
+                  <Text style={[styles.valueText, { color: theme.colors.text }]}>{t('ob_value_private')}</Text>
                 </View>
                 <View style={styles.valueRow}>
                   <Star color={theme.colors.accent} size={16} />
                   <Text style={[styles.valueText, { color: theme.colors.text }]}>{t('ob_value_stars')}</Text>
-                </View>
-                <View style={styles.valueRow}>
-                  <UserPlus color={theme.colors.accent} size={16} />
-                  <Text style={[styles.valueText, { color: theme.colors.text }]}>{t('ob_value_feed')}</Text>
                 </View>
               </View>
             </View>
