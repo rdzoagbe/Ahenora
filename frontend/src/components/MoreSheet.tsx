@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { ChevronRight, Lock, Search as SearchIcon, Settings as SettingsIcon, Smile, User, X } from 'lucide-react-native';
+import { ChevronRight, Lock, Settings as SettingsIcon, Smile, User, X } from 'lucide-react-native';
 
 import { PressScale } from './PressScale';
 import { useUI, UIColors } from './Kit';
@@ -15,6 +15,12 @@ import { HandOverSheet } from './HandOverSheet';
  * here buys back the width the four daily tabs were starving for — and gives
  * everything we add next (expenses, carpool) somewhere to land that isn't
  * another 10px label.
+ *
+ * Destinations, though — not tools. Search briefly lived here as well as in
+ * the feed header, which bought nothing: from any other tab it is two taps
+ * either way, More then Search or Feed then the search icon. Duplication
+ * dressed up as coverage, making this list longer for every parent who opens
+ * it looking for the vault.
  */
 export function MoreSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const [handOver, setHandOver] = useState(false);
@@ -32,8 +38,6 @@ export function MoreSheet({ visible, onClose }: { visible: boolean; onClose: () 
   };
 
   const items = [
-    { key: 'search', icon: SearchIcon, tone: ui.orange, soft: ui.orangeSoft,
-      title: t('search_title'), sub: t('search_eyebrow'), path: '/(tabs)/search' },
     { key: 'kid', icon: Smile, tone: ui.mintText, soft: ui.mint,
       title: t('kid_hand_over'), sub: t('kid_hand_over_sub'), path: '' },
     { key: 'vault', icon: Lock, tone: ui.lavenderText, soft: ui.lavender,
