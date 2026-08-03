@@ -513,6 +513,16 @@ export default function Feed() {
   const visibleCards = tabCards.slice(0, 8);
   // Hand-offs lead the list; everything else follows. Split rather than
   // duplicated, so a task with your name on it appears exactly once.
+  // "Keigh gave Roland the swimming kit" is not news to Roland when the task
+  // is sitting under HANDED TO YOU a few rows above. Somebody ELSE being
+  // given something still is, so only the lines about me are dropped. Four
+  // rows rather than five: this is a glance at what the household has been
+  // up to, not a ledger.
+  const myName = (user?.name || '').trim().toLowerCase();
+  const householdActivity = activity
+    .filter((e) => !(e.kind === 'task_assigned'
+                     && (e.target || '').trim().toLowerCase() === myName))
+    .slice(0, 4);
   const handedIds = new Set(assigned.map((c) => c.card_id));
   const handedToMe = visibleCards.filter((c) => handedIds.has(c.card_id));
   const restOfList = visibleCards.filter((c) => !handedIds.has(c.card_id));
@@ -736,33 +746,99 @@ export default function Feed() {
               </View>
             ) : null}
 
-            <View style={styles.statsStrip}>
-              <View style={styles.statCell}>
-                <Text style={styles.statNumber}>{dashboard.todayCards.length}</Text>
-                <Text style={styles.statLabel} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.7}>{t('feed_due_today')}</Text>
-              </View>
-              <View style={styles.statDivider} />
-              <View style={styles.statCell}>
-                <Text style={[styles.statNumber, { color: ui.orangeText }]}>{dashboard.signSlips.length}</Text>
-                <Text style={styles.statLabel} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.7}>{t('feed_sign_slips')}</Text>
-              </View>
-              <View style={styles.statDivider} />
-              <View style={styles.statCell}>
-                <Text style={styles.statNumber}>{dashboard.weekCards.length}</Text>
-                <Text style={styles.statLabel} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.7}>{t('feed_this_week')}</Text>
-              </View>
+            {/* The stats strip lived here: "Due today / Sign slips / This
+                week" — three numbers sitting above the task list that shows
+                those same items, under a tab row that already splits them
+                Today / Upcoming / All. It spent about 90px of the first
+                screen restating what the next 90px showed properly.
+                Counting is not a feature when the things being counted are
+                right there. */}
+
+            <View style={styles.tabRow}>
+              {(['today', 'upcoming', 'all'] as const).map((tab) => (
+                <PressScale key={tab} onPress={() => setActiveTab(tab)} style={styles.tabItem} testID={`feed-tab-${tab}`}>
+                  <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>{tab === 'today' ? t('feed_today') : tab === 'upcoming' ? t('feed_upcoming') : t('feed_all')}</Text>
+                  {activeTab === tab ? <View style={styles.tabUnderline} /> : null}
+                </PressScale>
+              ))}
             </View>
 
+            <View style={styles.listCard}>
+              {loading ? (
+                <ActivityIndicator color={ui.orange} style={{ paddingVertical: 32 }} />
+              ) : loadError && visibleCards.length === 0 ? (
+                <PressScale onPress={handleRefresh} style={styles.emptyBox}>
+                  <AlertTriangle color={ui.orange} size={22} />
+                  <Text style={styles.emptyTitle}>{t('feed_load_failed_title')}</Text>
+                  <Text style={styles.emptySub}>{t('feed_load_failed_sub')}</Text>
+                </PressScale>
+              ) : visibleCards.length === 0 ? (
+                <View style={styles.emptyBox}>
+                  <CheckCircle2 color={ui.mintText} size={22} />
+                  <Text style={styles.emptyTitle}>{activeTab === 'today' ? t('feed_nothing_urgent') : t('feed_nothing_to_show')}</Text>
+                  <Text style={styles.emptySub}>{t('feed_empty_hint')}</Text>
+                  <PressScale
+                    testID="feed-empty-scan"
+                    onPress={() => setShowCamera(true)}
+                    style={[styles.emptyScanBtn, { backgroundColor: ui.orangeSoft, borderColor: ui.orange + '40' }]}
+                  >
+                    <Camera color={ui.orange} size={15} />
+                    <Text style={[styles.emptyScanText, { color: ui.orangeText }]}>{t('feed_try_scan')}</Text>
+                  </PressScale>
+                </View>
+              ) : (
+                <>
+                  {/* Work somebody handed you is still WORK, so it belongs in
+                      the list rather than in a box above it. As its own card
+                      it pushed the actual task list a full screen further
+                      down — the feed's whole job is what is happening today,
+                      and today's tasks had ended up last. Pinned here it
+                      keeps its emphasis and costs no extra height. Filtered
+                      against the rows below so nothing appears twice. */}
+                  {handedToMe.length > 0 ? (
+                    <View testID="feed-assigned">
+                      <View style={styles.handedHeader}>
+                        <UserCheck color={ui.orangeText} size={15} />
+                        <Text style={styles.handedTitle}>{t('feed_assigned_title')}</Text>
+                        <Text style={styles.handedCount}>{handedToMe.length}</Text>
+                      </View>
+                      {handedToMe.map((card) => (
+                        <View key={card.card_id}>
+                          <TaskRow card={card} onOpen={() => setSelectedCard(card)} onComplete={() => toggle(card)} styles={styles} />
+                          <View style={styles.rowDivider} />
+                        </View>
+                      ))}
+                    </View>
+                  ) : null}
+                  {restOfList.map((card, index) => (
+                    <View key={card.card_id}>
+                      <TaskRow card={card} onOpen={() => setSelectedCard(card)} onComplete={() => toggle(card)} styles={styles} />
+                      {index < restOfList.length - 1 ? <View style={styles.rowDivider} /> : null}
+                    </View>
+                  ))}
+                </>
+              )}
+            </View>
+
+            {/* Retrospective sections live BELOW the task list, not
+                above it. A feed answers "what do I have to do today";
+                a log of what already happened and a notes box are
+                worth having but are not that answer, and while they
+                sat on top a two-week-old household opened the app to
+                five lines of history with its actual work off-screen.
+                The activity strip also double-reported: "Keigh gave
+                Roland the swimming kit" directly above a list already
+                showing that task under HANDED TO YOU. */}
             {/* Who did what. The app could always show that the bins task was
                 gone; it could never say who dealt with it, which is the first
                 thing a co-parent wants to know. */}
-            {activity.length > 0 ? (
+            {householdActivity.length > 0 ? (
               <View style={styles.activityCard}>
                 <View style={styles.activityHead}>
                   <History color={ui.mintText} size={17} />
                   <Text style={styles.activityTitle}>{t('feed_activity_title')}</Text>
                 </View>
-                {activity.slice(0, 5).map((entry) => (
+                {householdActivity.map((entry) => (
                   <View key={entry.activity_id} style={styles.activityRow}>
                     <View style={styles.activityDot} />
                     <Text style={styles.activityText} numberOfLines={2}>
@@ -840,71 +916,6 @@ export default function Feed() {
               </View>
             ) : null}
 
-            <View style={styles.tabRow}>
-              {(['today', 'upcoming', 'all'] as const).map((tab) => (
-                <PressScale key={tab} onPress={() => setActiveTab(tab)} style={styles.tabItem} testID={`feed-tab-${tab}`}>
-                  <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>{tab === 'today' ? t('feed_today') : tab === 'upcoming' ? t('feed_upcoming') : t('feed_all')}</Text>
-                  {activeTab === tab ? <View style={styles.tabUnderline} /> : null}
-                </PressScale>
-              ))}
-            </View>
-
-            <View style={styles.listCard}>
-              {loading ? (
-                <ActivityIndicator color={ui.orange} style={{ paddingVertical: 32 }} />
-              ) : loadError && visibleCards.length === 0 ? (
-                <PressScale onPress={handleRefresh} style={styles.emptyBox}>
-                  <AlertTriangle color={ui.orange} size={22} />
-                  <Text style={styles.emptyTitle}>{t('feed_load_failed_title')}</Text>
-                  <Text style={styles.emptySub}>{t('feed_load_failed_sub')}</Text>
-                </PressScale>
-              ) : visibleCards.length === 0 ? (
-                <View style={styles.emptyBox}>
-                  <CheckCircle2 color={ui.mintText} size={22} />
-                  <Text style={styles.emptyTitle}>{activeTab === 'today' ? t('feed_nothing_urgent') : t('feed_nothing_to_show')}</Text>
-                  <Text style={styles.emptySub}>{t('feed_empty_hint')}</Text>
-                  <PressScale
-                    testID="feed-empty-scan"
-                    onPress={() => setShowCamera(true)}
-                    style={[styles.emptyScanBtn, { backgroundColor: ui.orangeSoft, borderColor: ui.orange + '40' }]}
-                  >
-                    <Camera color={ui.orange} size={15} />
-                    <Text style={[styles.emptyScanText, { color: ui.orangeText }]}>{t('feed_try_scan')}</Text>
-                  </PressScale>
-                </View>
-              ) : (
-                <>
-                  {/* Work somebody handed you is still WORK, so it belongs in
-                      the list rather than in a box above it. As its own card
-                      it pushed the actual task list a full screen further
-                      down — the feed's whole job is what is happening today,
-                      and today's tasks had ended up last. Pinned here it
-                      keeps its emphasis and costs no extra height. Filtered
-                      against the rows below so nothing appears twice. */}
-                  {handedToMe.length > 0 ? (
-                    <View testID="feed-assigned">
-                      <View style={styles.handedHeader}>
-                        <UserCheck color={ui.orangeText} size={15} />
-                        <Text style={styles.handedTitle}>{t('feed_assigned_title')}</Text>
-                        <Text style={styles.handedCount}>{handedToMe.length}</Text>
-                      </View>
-                      {handedToMe.map((card) => (
-                        <View key={card.card_id}>
-                          <TaskRow card={card} onOpen={() => setSelectedCard(card)} onComplete={() => toggle(card)} styles={styles} />
-                          <View style={styles.rowDivider} />
-                        </View>
-                      ))}
-                    </View>
-                  ) : null}
-                  {restOfList.map((card, index) => (
-                    <View key={card.card_id}>
-                      <TaskRow card={card} onOpen={() => setSelectedCard(card)} onComplete={() => toggle(card)} styles={styles} />
-                      {index < restOfList.length - 1 ? <View style={styles.rowDivider} /> : null}
-                    </View>
-                  ))}
-                </>
-              )}
-            </View>
 
             {/* Announcements */}
             <View style={styles.sectionHeader}>
@@ -1388,44 +1399,6 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     color: '#FFFFFF',
     fontFamily: 'Inter_800ExtraBold',
     fontSize: 14,
-  },
-  statsStrip: {
-    minHeight: 78,
-    borderRadius: 23,
-    backgroundColor: ui.card,
-    borderWidth: 1,
-    borderColor: ui.line,
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 14,
-    shadowColor: '#000000',
-    shadowOpacity: 0.05,
-    shadowRadius: 15,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 2,
-  },
-  statCell: {
-    minWidth: 0,
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  statNumber: {
-    color: ui.text,
-    fontFamily: 'Inter_800ExtraBold',
-    fontSize: 25,
-    lineHeight: 29,
-  },
-  statLabel: {
-    color: ui.muted,
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 12,
-    marginTop: 3,
-  },
-  statDivider: {
-    width: 1,
-    height: 34,
-    backgroundColor: ui.line,
   },
   alertBanner: {
     minHeight: 72,
