@@ -121,7 +121,11 @@ async def main():
         await keigh.goto(f"{WEB}/feed", wait_until="networkidle")
         await keigh.wait_for_timeout(4000)
         body = await keigh.inner_text("body")
-        r["she_sees_the_handoff_section"] = "Handed to you" in body
+        # Case-folded. The label is uppercased in CSS and inner_text returns
+        # what is RENDERED, not what the source says — this assertion has now
+        # broken twice on that, once here and once in the kid harness, so it
+        # is worth being explicit rather than clever.
+        r["she_sees_the_handoff_section"] = "handed to you" in body.lower()
         r["his_private_item_stays_hidden"] = "Surprise party venue" not in body
         # Scoped to the section itself: "Bins out" is shared, so it rightly
         # appears elsewhere on her feed — it just is not on HER plate.
