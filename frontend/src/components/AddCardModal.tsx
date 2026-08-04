@@ -159,6 +159,7 @@ export function AddCardModal({
     const wantsVault =
       initialSource === 'CAMERA' &&
       !!initialDraft?.image_base64 &&
+      !!initialDraft?.vault_category &&
       initialDraft?.save_to_vault !== false;
 
     onCreated();
@@ -169,7 +170,11 @@ export function AddCardModal({
       try {
         await api.createVaultDoc({
           title: title.trim() || initialDraft!.title || t('addcard_scanned_document'),
-          category: initialDraft!.vault_category || 'School',
+          // No fallback drawer. "School" used to be the default here, which
+          // is how a gas bill was filed with the permission slips; the
+          // capture sheet now asks, and nothing reaches the vault without
+          // an answer.
+          category: initialDraft!.vault_category!,
           image_base64: initialDraft!.image_base64!,
         });
         Alert.alert(t('addcard_saved_title'), t('addcard_saved_vault_message'));

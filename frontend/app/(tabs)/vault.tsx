@@ -15,7 +15,7 @@ import {
 import { BlurView } from 'expo-blur';
 import { useFocusEffect, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { Plus, X, Trash2, Stethoscope, BookOpen, Shield, Scale, Bell, Folder, ChevronRight, FileText, AlertTriangle, Share2, Image as ImageIcon, Lock, Users } from 'lucide-react-native';
+import { Plus, X, Trash2, Shield, Bell, Folder, ChevronRight, FileText, AlertTriangle, Share2, Image as ImageIcon, Lock, Users } from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { PressScale } from '../../src/components/PressScale';
@@ -27,18 +27,16 @@ import { PdfViewer } from '../../src/components/PdfViewer';
 import FirstRunTip from '../../src/components/FirstRunTip';
 import { HtmlDocViewer } from '../../src/components/HtmlDocViewer';
 import { Badge, Card, IconTile, ProgressBar, ScreenHeader, UI, useUI, UIColors } from '../../src/components/Kit';
+import { CATEGORY_STATIC } from '../../src/documentCategories';
 
 import { useStore } from '../../src/store';
 
 import { api, logEvent, Entitlements, ExpiryAlert, VaultDoc, VaultVisibility } from '../../src/api';
 import { logger } from '../../src/logger';
 
-const CATEGORIES = [
-  { key: 'Medical', icon: Stethoscope, tone: UI.orange, soft: UI.orangeSoft },
-  { key: 'School', icon: BookOpen, tone: UI.lavenderText, soft: UI.lavender },
-  { key: 'Insurance', icon: Shield, tone: UI.mintText, soft: UI.mint },
-  { key: 'Legal', icon: Scale, tone: UI.goldText, soft: UI.gold },
-];
+// The drawers now live in one module shared with the scan router, so the
+// list the model is offered and the list the screen renders cannot drift.
+const CATEGORIES = CATEGORY_STATIC;
 
 function catInfo(key: string) {
   return CATEGORIES.find((c) => c.key === key) || CATEGORIES[0];

@@ -51,6 +51,9 @@ from ai_safety import (
     validate_shopping_scan,
     RECIPE_PHOTO_SYSTEM_PROMPT,
     validate_captured_recipe,
+    VAULT_CATEGORIES,
+    build_document_scan_prompt,
+    validate_document_scan,
 )
 
 
@@ -5446,44 +5449,81 @@ async def vision_extract(payload: VisionIn, user=Depends(require_user)):
     async for m in database["family_members"].find({"family_id": user["family_id"]}, {"_id": 0}):
         members.append(m["name"])
 
+    # What the family gets if the model says nothing usable: a card they can
+    # edit, and no category. The old fallback guessed "School", which is how
+    # a gas bill ended up filed with the permission slips — a guess presented
+    # as an answer is worse than an honest blank.
     fallback = {
+        "kind": "document",
         "type": "TASK",
-        "title": "Review scanned document",
-        "description": "Scanned item captured for review.",
-        "assignee": members[0] if members else "",
+        "title": "Scanned document",
+        "description": "",
+        "assignee": "",
         "due_date": None,
-        "vault_category": "School",
+        "vault_category": "",
+        "amount": None,
         "save_to_vault": True,
+        "understood": False,
     }
 
-    if GOOGLE_API_KEY:
-        prompt = f"""
-Extract a household action card from this image.
-Return JSON only with keys:
-type, title, description, assignee, due_date, vault_category, save_to_vault
+    if not GOOGLE_API_KEY:
+        return fallback
 
-Rules:
-- type must be one of SIGN_SLIP, RSVP, TASK
-- assignee must be one of: {", ".join(members) if members else ""}
-- due_date must be ISO string or null
-- vault_category must be one of Medical, School, Insurance, Legal
-- save_to_vault must be true for documents worth keeping
-"""
-        try:
-            text = await _gemini_vision(prompt, payload.image_base64)
-            text = text.strip().removeprefix("```json").removesuffix("```").strip()
-            parsed = json.loads(text)
-            fallback.update(parsed)
-        except Exception:
-            pass
+    extracted = None
+    try:
+        text = await _gemini_vision(
+            "Read this household document.",
+            payload.image_base64,
+            system=build_document_scan_prompt(members),
+        )
+        parsed = extract_json(text)
+        if parsed is None:
+            raise UnsafeRecipe("unparseable")
+        extracted = validate_document_scan(parsed, members)
+    except UnsafeRecipe as exc:
+        log.info("document scan rejected by safety gate: %s", exc.reason)
+    except Exception as exc:
+        log.warning("document scan failed: %s", exc)
 
+    # The scan is charged whether or not it produced something, because it
+    # cost what it cost. What must never happen is charging twice for one
+    # photograph, which is why the recipe pass below runs inside this request
+    # rather than sending the client off to /api/recipes/capture.
     if not is_admin_user(user):
         await database["families"].update_one(
             {"family_id": user["family_id"]},
             {"$inc": {"ai_scans_used": 1}, "$set": {"updated_at": utcnow()}},
         )
 
-    return fallback
+    if extracted is None:
+        return fallback
+
+    result = {**extracted, "understood": True}
+
+    if result["kind"] == "recipe":
+        # A recipe is the one kind of document where filing it is not the
+        # point — the ingredients are. Read it properly with the prompt that
+        # already exists for photographed recipes; if that second pass fails,
+        # this quietly stays a document, which is still a true description
+        # of a photograph of a cookbook page.
+        try:
+            text = await _gemini_vision(
+                "Read the recipe in this photo.",
+                payload.image_base64,
+                system=RECIPE_PHOTO_SYSTEM_PROMPT,
+            )
+            parsed = extract_json(text)
+            if parsed is None:
+                raise UnsafeRecipe("unparseable")
+            result["recipe"] = validate_captured_recipe(parsed)
+        except UnsafeRecipe as exc:
+            log.info("recipe pass rejected by safety gate: %s", exc.reason)
+            result["kind"] = "document"
+        except Exception as exc:
+            log.warning("recipe pass failed: %s", exc)
+            result["kind"] = "document"
+
+    return result
 
 
 

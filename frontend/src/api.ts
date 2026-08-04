@@ -776,6 +776,37 @@ export interface VaultDoc {
   created_at: string;
 }
 
+export interface CapturedRecipe {
+  title: string;
+  minutes: number;
+  servings: number;
+  ingredients: { name: string; qty: number | null; unit: string }[];
+  steps: string[];
+}
+
+/**
+ * What one photograph turned out to be.
+ *
+ * `understood` is the honest field: false means the scan ran and produced
+ * nothing usable, so the app should ask rather than present a guess. An
+ * empty `vault_category` means the same thing about the drawer — the old
+ * endpoint defaulted to "School", which is how a gas bill ended up filed
+ * with the permission slips.
+ */
+export interface ScanResult {
+  kind: 'document' | 'recipe';
+  type: CardType;
+  title: string;
+  description: string;
+  assignee: string;
+  due_date?: string | null;
+  vault_category?: string;
+  amount?: string | null;
+  save_to_vault?: boolean;
+  understood?: boolean;
+  recipe?: CapturedRecipe;
+}
+
 export type Plan = 'village' | 'executive' | 'family_office';
 export type BillingCycle = 'monthly' | 'yearly';
 
@@ -1198,15 +1229,7 @@ export const api = {
   // Vision
   visionExtract: (image_base64: string) => {
     invalidateUsageCaches();
-    return request<{
-      type: CardType;
-      title: string;
-      description: string;
-      assignee: string;
-      due_date?: string | null;
-      vault_category?: string;
-      save_to_vault?: boolean;
-    }>('/vision/extract', { method: 'POST', body: { image_base64 } });
+    return request<ScanResult>('/vision/extract', { method: 'POST', body: { image_base64 } });
   },
   // Brief
   weeklyBrief: () =>
