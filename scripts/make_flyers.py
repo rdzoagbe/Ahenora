@@ -2,16 +2,24 @@
 
 The copy lives in docs/TIKTOK_FLYERS.md; this is the same copy, typeset.
 
-Why render them here rather than in a design tool: these flyers are almost
-entirely type, and type is exactly what generated designs get wrong — a
-headline reflows, an apostrophe turns into a box, an em dash lands at the
-start of a line. Laying them out in HTML and photographing the result with
-the browser we already have means the words are pixel-identical to what is
-written below, every time, and re-rendering after an edit costs seconds.
+These follow the printed A4 flyer's design language rather than inventing a
+second one: the orange rules top and bottom, the dot-and-caps logo lockup,
+an upright serif headline with one phrase in orange, a grey supporting line,
+and — the part that actually sells it — a photograph of the real app.
 
-It also keeps the flyers on-brand by construction: the fonts are the app's
-own font files and the colours are the app's own ink, so the flyer and the
-first screen after install look like the same object.
+An earlier version of these was type only, on the theory that a screenshot
+asks a viewer to squint at a UI they have no reason to care about yet. That
+was wrong for this product. The screenshots are the evidence; without them
+the flyers were five nicely-set assertions, and they looked like they came
+from a different company than the flyer already in use.
+
+Why render here rather than in a design tool: these are mostly type, and type
+is what generated designs get wrong — a headline reflows, an apostrophe turns
+into a box, a line breaks in the wrong place. Laying them out in HTML and
+photographing the result with the browser we already have means the words are
+pixel-identical to what is written below, every time.
+
+Screenshots come from scripts/make_flyer_shots.py and must exist first.
 
 Output: docs/store-assets/tiktok/*.png at 1080x1920, TikTok's native size.
 
@@ -31,171 +39,183 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, ".."))
 FONTS = os.path.join(ROOT, "frontend", "node_modules", "@expo-google-fonts")
 OUT = os.path.join(ROOT, "docs", "store-assets", "tiktok")
+SHOTS = os.path.join(OUT, "shots")
 
-CREAM = "#F6F3EE"
-INK = "#26221E"
-ORANGE_DEEP = "#C2410C"   # on cream this clears WCAG AA, which the flyers
-ORANGE = "#F56519"        # inherit from the app's palette rules
-GREY = "#6B6259"
+# The printed flyer's palette, unchanged. A flyer and the first screen after
+# install should look like the same object.
+CREAM = "#FDFAF6"
+PEACH = "#FBEADF"
+INK = "#101318"
+ORANGE = "#F56519"
+ORANGE_DEEP = "#C2410C"
+GREY = "#5F656E"
 
-# Each flyer is one thought: the situation, then the turn. The gap between
-# the two lines is the design — it is where the reader finishes the joke
-# before the flyer does, so it is deliberately larger than it looks like it
-# should be.
+# Each flyer is one thought: the situation, then the turn. `highlight` is the
+# phrase that goes orange inside the headline — one per flyer, the way the
+# printed one puts "chaos" in orange and nothing else.
 FLYERS = [
     {
         "slug": "1-mental-load",
-        "setup": "You’re not disorganised.",
-        "turn": "You’re just the only one who remembers.",
-        "support": "Everything in one place — tasks, dates, "
-                   "and the school letter in your bag.",
         "kicker": "The invisible job",
+        "head": "You’re not disorganised.",
+        "highlight": "You’re the only one who remembers.",
+        "support": "Tasks, dates and the school letter in your bag — "
+                   "in one place both parents can see.",
+        "caption": "Your day at a glance",
     },
     {
         "slug": "2-privacy",
-        "setup": "He can see the shopping list.",
-        "turn": "Not my therapy appointment.",
-        "support": "Every task and document is private until you share it.",
         "kicker": "Private by default",
+        "head": "He can see the shopping list.",
+        "highlight": "Not my therapy appointment.",
+        "support": "Every task and document is private until you share it.",
+        "caption": "Yours until you say otherwise",
     },
     {
         "slug": "3-handoff",
-        "setup": "“I thought YOU were picking her up.”",
-        "turn": "Hand it over. They actually get told.",
-        "support": "Assign a task and it lands on their phone, "
-                   "not in a group chat.",
         "kicker": "Who is actually doing it",
+        "head": "“I thought YOU were picking her up.”",
+        "highlight": "Assign it. They get told.",
+        "support": "It lands on their phone, not in a group chat — "
+                   "with a name against it.",
+        "caption": "One calendar, both parents",
     },
     {
         "slug": "4-offline",
-        "setup": "No signal in the shop. Basement aisle. Nothing.",
-        "turn": "The list was still there.",
-        "support": "The list, the tasks, the lot. Ticks catch up "
-                   "when you’re back.",
         "kicker": "Works offline",
+        "head": "No signal in the shop.",
+        "highlight": "The list was still there.",
+        "support": "Basement aisle, no bars. The list, the tasks, the lot — "
+                   "ticks catch up when you’re back.",
+        "caption": "Sorted by aisle, works with no bars",
     },
     {
         "slug": "5-kid-mode",
-        "setup": "He tidied his room. Without being asked.",
-        "turn": "Twice.",
+        "kicker": "Their own little app",
+        "head": "He tidied his room. Without being asked.",
+        "highlight": "Twice.",
         "support": "Their chores, their stars, their PIN. "
                    "Nothing else in the house.",
-        "kicker": "Their own little app",
+        "caption": "Stars they can actually spend",
     },
 ]
+
+
+def data_uri(path: str, mime: str) -> str:
+    with open(path, "rb") as fh:
+        return f"data:{mime};base64,{base64.b64encode(fh.read()).decode()}"
 
 
 def font_face(family: str, path_glob: str, style: str = "normal",
               weight: int = 400) -> str:
     """Inline a font file as a data URI.
 
-    The renderer has no network and no system copy of these faces, so a
-    plain @font-face URL would silently fall back to DejaVu and the flyer
-    would come out looking like a Linux dialog box. Embedding the bytes
-    removes the possibility.
+    The renderer has no network and no system copy of these faces, so a plain
+    @font-face URL would silently fall back to DejaVu and the flyer would come
+    out looking like a Linux dialog box. Embedding the bytes removes the
+    possibility.
     """
     matches = glob.glob(os.path.join(FONTS, path_glob))
     if not matches:
         raise SystemExit(f"font not found: {path_glob}")
-    with open(matches[0], "rb") as fh:
-        b64 = base64.b64encode(fh.read()).decode()
     return (f"@font-face{{font-family:'{family}';font-style:{style};"
             f"font-weight:{weight};"
-            f"src:url(data:font/ttf;base64,{b64}) format('truetype');}}")
+            f"src:url({data_uri(matches[0], 'font/ttf')}) format('truetype');}}")
 
 
 def build_css() -> str:
     return "".join([
-        font_face("Playfair", "playfair-display/700Bold_Italic/*.ttf",
-                  style="italic", weight=700),
+        font_face("Playfair", "playfair-display/700Bold/*.ttf", weight=700),
+        font_face("Playfair", "playfair-display/900Black/*.ttf", weight=900),
         font_face("Inter", "inter/800ExtraBold/*.ttf", weight=800),
-        font_face("Inter", "inter/500Medium/*.ttf", weight=500),
         font_face("Inter", "inter/700Bold/*.ttf", weight=700),
+        font_face("Inter", "inter/500Medium/*.ttf", weight=500),
     ])
 
 
-def page(flyer: dict, css: str) -> str:
-    # Everything lives in the top 1440px and is centred within it. TikTok
-    # stacks the caption, the username, the sound and three buttons over the
-    # bottom of every video, so the last quarter of the frame is not a design
-    # decision — it is somebody else's furniture. Centring inside what is
-    # left is what stops the flyer reading as top-heavy with a dead half.
+def page(flyer: dict, css: str, shot: str) -> str:
+    # Everything that must be read lives in the top 1440px. TikTok stacks its
+    # caption, username, sound and buttons over the bottom quarter of every
+    # video — that region is somebody else's furniture, not a design choice.
+    # The phone deliberately runs past it and off the frame: a screen that
+    # continues past the edge reads as a real screen rather than a cutout.
     return f"""<html><head><meta charset="utf-8"><style>
 {css}
 * {{ margin:0; padding:0; box-sizing:border-box; }}
 body {{
-  width:1080px; height:1920px; background:{CREAM};
+  width:1080px; height:1920px;
+  background:linear-gradient(170deg, {CREAM} 0%, {CREAM} 42%, {PEACH} 100%);
   font-kerning:normal; -webkit-font-smoothing:antialiased;
+  position:relative; overflow:hidden;
 }}
-.frame {{
-  height:1440px; padding:0 96px;
-  display:flex; flex-direction:column; justify-content:center;
+.rule {{ position:absolute; left:0; right:0; height:26px; background:{ORANGE}; }}
+.rule.top {{ top:0; }}
+.rule.bottom {{ bottom:0; }}
+.frame {{ padding:118px 88px 0 88px; }}
+.lockup {{ display:flex; align-items:center; gap:20px; margin-bottom:44px; }}
+.dot {{ width:34px; height:34px; border-radius:999px; background:{ORANGE}; }}
+.lockup span {{
+  font-family:Inter, sans-serif; font-weight:800; font-size:31px;
+  letter-spacing:5px; color:{INK};
 }}
 .kicker {{
-  font-family:Inter, sans-serif; font-weight:700; font-size:30px;
+  font-family:Inter, sans-serif; font-weight:700; font-size:27px;
   letter-spacing:4px; text-transform:uppercase; color:{ORANGE_DEEP};
-  opacity:0.85; margin-bottom:44px;
+  margin-bottom:26px;
 }}
-.setup {{
-  font-family:Playfair, serif; font-style:italic; font-weight:700;
-  font-size:86px; line-height:1.16; color:{INK}; letter-spacing:-1px;
+.head {{
+  font-family:Playfair, serif; font-weight:900; font-size:82px;
+  line-height:1.1; color:{INK}; letter-spacing:-1.5px;
 }}
-.gap {{ height:64px; }}
-.turn {{
-  font-family:Inter, sans-serif; font-weight:800;
-  font-size:96px; line-height:1.1; color:{ORANGE_DEEP};
-  letter-spacing:-3px;
-}}
-.rule {{
-  width:150px; height:5px; background:{ORANGE}; opacity:0.55;
-  margin:76px 0 40px 0; border-radius:3px;
-}}
+.head em {{ font-style:normal; color:{ORANGE_DEEP}; }}
 .support {{
-  font-family:Inter, sans-serif; font-weight:500;
-  font-size:38px; line-height:1.5; color:{GREY}; max-width:820px;
+  font-family:Inter, sans-serif; font-weight:500; font-size:34px;
+  line-height:1.5; color:{GREY}; margin-top:26px; max-width:880px;
 }}
-.badge {{
-  margin-top:96px;
-  align-self:flex-start; display:flex; align-items:center; gap:16px;
-  background:{ORANGE}; border-radius:999px; padding:22px 40px;
+.stage {{ margin-top:44px; display:flex; justify-content:center; }}
+/* The device. A dark bezel and a real shadow, because a screenshot pasted
+   flat onto a background reads as a picture of a website. */
+.phone {{
+  width:560px; height:1180px; overflow:hidden;
+  border:13px solid #16181D; border-radius:56px 56px 0 0;
+  border-bottom:0;
+  box-shadow:0 34px 70px rgba(16,19,24,0.24);
+  background:#16181D;
 }}
-.badge span {{
-  font-family:Inter, sans-serif; font-weight:800; font-size:36px;
-  color:#FFFFFF; letter-spacing:-0.5px;
-}}
-.roof {{ width:38px; height:38px; }}
+.phone img {{ width:100%; display:block; }}
 </style></head><body>
+<div class="rule top"></div>
 <div class="frame">
-<div class="kicker">{flyer['kicker']}</div>
-<div class="setup">{flyer['setup']}</div>
-<div class="gap"></div>
-<div class="turn">{flyer['turn']}</div>
-<div class="rule"></div>
-<div class="support">{flyer['support']}</div>
-<div class="badge">
-  <svg class="roof" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF"
-       stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M3 10.5 12 3l9 7.5"/><path d="M5 10v10h14V10"/>
-    <path d="M10 20v-6h4v6"/>
-  </svg>
-  <span>Household COO</span>
+  <div class="lockup"><div class="dot"></div><span>HOUSEHOLD COO</span></div>
+  <div class="kicker">{flyer['kicker']}</div>
+  <div class="head">{flyer['head']} <em>{flyer['highlight']}</em></div>
+  <div class="support">{flyer['support']}</div>
+  <div class="stage"><div class="phone"><img src="{shot}"></div></div>
 </div>
-</div>
+<div class="rule bottom"></div>
 </body></html>"""
 
 
 async def main() -> int:
     os.makedirs(OUT, exist_ok=True)
+    missing = [f["slug"] for f in FLYERS
+               if not os.path.exists(os.path.join(SHOTS, f"{f['slug']}.png"))]
+    if missing:
+        raise SystemExit(
+            "No app screenshots for: " + ", ".join(missing) +
+            "\nRun scripts/make_flyer_shots.py first — the flyers show the "
+            "real app, so they cannot be built without it.")
+
     css = build_css()
     async with async_playwright() as pw:
         br = await launch_chromium(pw)
         ctx = await br.new_context(
-            viewport={"width": 1080, "height": 1920},
-            device_scale_factor=1)
+            viewport={"width": 1080, "height": 1920}, device_scale_factor=1)
         page_obj = await ctx.new_page()
         for flyer in FLYERS:
-            await page_obj.set_content(page(flyer, css))
-            await page_obj.wait_for_timeout(400)
+            shot = data_uri(os.path.join(SHOTS, f"{flyer['slug']}.png"), "image/png")
+            await page_obj.set_content(page(flyer, css, shot))
+            await page_obj.wait_for_timeout(500)
             path = os.path.join(OUT, f"{flyer['slug']}.png")
             await page_obj.screenshot(path=path)
             print(f"wrote {os.path.relpath(path, ROOT)}")
