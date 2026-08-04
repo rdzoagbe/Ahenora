@@ -148,3 +148,17 @@ export function categoriseShoppingItem(name: string): ShoppingCategory | null {
 
   return best ? (best as { category: ShoppingCategory }).category : null;
 }
+
+/**
+ * How a photographed ingredient reads on a shopping list.
+ *
+ * A recipe carries structured amounts, but nobody writes "Tomatoes, qty 400,
+ * unit g" on a list. "to taste" items carry no amount at all, which is why a
+ * qty of 0 has to mean "no number" rather than "zero of these".
+ */
+export function shoppingLabel(item: { name: string; qty: number | null; unit: string }) {
+  const qty = item.qty ?? 0;
+  if (!qty || item.unit === 'to taste') return item.name;
+  if (item.unit === 'piece') return `${item.name} x${qty}`;
+  return `${item.name} ${qty}${item.unit}`;
+}
