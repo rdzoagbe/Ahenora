@@ -143,5 +143,12 @@ frontend/android/app/google-services.json
 
 # Accidentally-committed unrelated project — kept out of the repo
 Downloads/
+# Harness screenshots. Every browser harness photographs what it checked and
+# drops the file in the repo root; only journey_*.png was ignored, so the
+# other nine left a drift of untracked images after each run. They are
+# evidence for the run that made them and nothing more — root level only, so
+# real artwork under docs/ is unaffected.
+/*.png
+# The journey harness runs from frontend/, so its shots land a level down.
 journey_*.png
 serve*.log
