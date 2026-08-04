@@ -118,7 +118,7 @@ document never drift apart.
 >
 > **The list was still there.**
 >
-> — Works offline. Ticks catch up when you're back.
+> — The list, the tasks, the lot. Ticks catch up when you're back.
 
 **Caption**
 
