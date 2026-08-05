@@ -105,7 +105,7 @@ class LoginJoinsFamily(unittest.TestCase):
         self._get_db = server.get_db
         self._add = server.add_user_to_family_if_needed
 
-        async def fake_push(messages):
+        async def fake_push(messages, database=None):
             self.pushes.extend(messages)
         server.send_expo_push_messages = fake_push
 
@@ -423,7 +423,7 @@ class InvitedUserGetsPush(unittest.TestCase):
         _mail = server.send_invite_email
         _get_db = server.get_db
 
-        async def fake_push(messages):
+        async def fake_push(messages, database=None):
             pushes.extend(messages)
 
         async def fake_slot(db, user):

@@ -74,7 +74,7 @@ export function AddCardModal({
   const [desc, setDesc] = useState('');
   const [assignee, setAssignee] = useState('');
   const [recurrence, setRecurrence] = useState<Recurrence>('none');
-  const [reminderMins, setReminderMins] = useState<number>(0);
+  const [reminderMins, setReminderMins] = useState<number>(15);
   // A task without a date is a note. The picker existed but nothing wired
   // it in — manually created cards could never appear on the calendar or
   // remind anyone.
@@ -125,7 +125,11 @@ export function AddCardModal({
         setAssignee('');
       }
       setRecurrence('none');
-      setReminderMins(0);
+      // Default to a 15-minute reminder rather than none: a dated event with
+      // no reminder is the "I never got a heads-up" complaint. It only fires
+      // when the card actually has a due date, and the picker still offers
+      // None for anyone who wants silence.
+      setReminderMins(15);
     }
   }, [visible, initialDraft]);
 
