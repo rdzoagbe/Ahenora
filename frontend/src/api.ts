@@ -445,6 +445,9 @@ export interface Card {
   external_source?: string | null;
   shared?: boolean;
   created_by_user_id?: string | null;
+  // Set only by the shared-visibility view: who shared this item. Used to
+  // name the person in the "what you see of them" direction.
+  shared_by_name?: string;
 }
 
 export interface HandoffNote {
@@ -1127,7 +1130,8 @@ export const api = {
     });
   },
   // Everything you've shared — exactly what your co-parent can see from you.
-  sharedWithCoparent: () => request<Card[]>('/cards/shared'),
+  sharedWithCoparent: (direction: 'out' | 'in' = 'out') =>
+    request<Card[]>(`/cards/shared?direction=${direction}`),
   // Share a private item with the co-parent (notifies them). Returns the updated card.
   shareCard: (id: string) => {
     cache.invalidatePrefix('listCards');
