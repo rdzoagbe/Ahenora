@@ -137,7 +137,24 @@ async function setReminderMap(map: Record<string, string>) {
   await AsyncStorage.setItem(REMINDER_IDS_KEY, JSON.stringify(map));
 }
 
-export async function cancelAllCardReminderNotifications() {
+// Serialise each reminder set's read→cancel→reschedule cycle. A screen's
+// `load()` can fire one of these before the previous run finished (a
+// re-entrant focus effect, or a pay-then-reload). Two overlapping runs each
+// read the same id map, cancel the same ids, then schedule fresh
+// notifications — and whichever run's ids the last write doesn't keep are
+// orphaned on the device (never in the map, so never cancelled): duplicate
+// reminders now, and a slow leak toward the OS's scheduled-notification cap.
+// Chaining on a per-key promise makes the whole cycle atomic. `.then(run, run)`
+// runs the next job whether the previous settled or threw, so one failure
+// never wedges the chain.
+const scheduleLocks: Record<string, Promise<unknown>> = {};
+function withScheduleLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const run = (scheduleLocks[key] ?? Promise.resolve()).then(fn, fn);
+  scheduleLocks[key] = run.catch(() => undefined);
+  return run;
+}
+
+async function cancelAllCardRemindersUnlocked() {
   const map = await getReminderMap();
   const Notifications = await getNotificationsModule();
 
@@ -152,9 +169,17 @@ export async function cancelAllCardReminderNotifications() {
   await setReminderMap({});
 }
 
+export async function cancelAllCardReminderNotifications() {
+  return withScheduleLock('cards', cancelAllCardRemindersUnlocked);
+}
+
 export async function syncCardReminderNotifications(cards: Card[], enabled: boolean) {
+  return withScheduleLock('cards', () => syncCardReminderNotificationsUnlocked(cards, enabled));
+}
+
+async function syncCardReminderNotificationsUnlocked(cards: Card[], enabled: boolean) {
   if (!enabled) {
-    await cancelAllCardReminderNotifications();
+    await cancelAllCardRemindersUnlocked();
     return { scheduled: 0 };
   }
 
@@ -169,7 +194,7 @@ export async function syncCardReminderNotifications(cards: Card[], enabled: bool
   }
 
   await configureNotificationChannels();
-  await cancelAllCardReminderNotifications();
+  await cancelAllCardRemindersUnlocked();
 
   const nextMap: Record<string, string> = {};
   const now = Date.now();
@@ -234,6 +259,13 @@ async function getAllowanceMap(): Promise<Record<string, string>> {
  * built by the caller (which has the translator); this only schedules.
  */
 export async function syncAllowanceReminders(
+  items: { id: string; fireAt: number; title: string; body: string }[],
+  enabled: boolean,
+): Promise<{ scheduled: number }> {
+  return withScheduleLock('allowance', () => syncAllowanceRemindersUnlocked(items, enabled));
+}
+
+async function syncAllowanceRemindersUnlocked(
   items: { id: string; fireAt: number; title: string; body: string }[],
   enabled: boolean,
 ): Promise<{ scheduled: number }> {

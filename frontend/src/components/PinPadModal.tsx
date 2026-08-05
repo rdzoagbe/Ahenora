@@ -51,7 +51,10 @@ export function PinPadModal({ visible, mode, title, subtitle, onClose, onSubmit 
     setPin((p) => p.slice(0, -1));
   };
 
-  const DANGER = '#DC2626';
+  // The shared danger token clears AA in both themes (light #C81E1E 5.74:1,
+  // dark #F87171 6.13:1 on the sheet); the old hardcoded #DC2626 failed at
+  // 3.51:1 in dark. This modal was missed by the danger-token migration.
+  const DANGER = c.danger;
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>

@@ -85,6 +85,17 @@ describe('the write queue', () => {
     expect(sent).toEqual([{ checked: true }]);
   });
 
+  it('merges partial edits to the same item so no field is lost', async () => {
+    // Tick then rename the same item offline: the rename must not erase the
+    // tick. Both are partial PATCH bodies, so the queued entry carries both.
+    await enqueueWrite('/shopping/s1', 'PATCH', { checked: true });
+    await enqueueWrite('/shopping/s1', 'PATCH', { name: 'Milk 2%' });
+    expect(await queuedCount()).toBe(1);
+    const sent: unknown[] = [];
+    await flushQueue(async (_p, _m, body) => { sent.push(body); });
+    expect(sent).toEqual([{ checked: true, name: 'Milk 2%' }]);
+  });
+
   it('replays everything once the connection is back, oldest first', async () => {
     await enqueueWrite('/cards/c1', 'PATCH', { status: 'DONE' });
     await enqueueWrite('/shopping/s1', 'PATCH', { checked: true });

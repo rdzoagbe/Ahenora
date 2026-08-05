@@ -90,6 +90,10 @@ function SidebarNav({ width }: { width: number }) {
         const iconColor = light
           ? active ? theme.colors.accentInk : theme.colors.textSoft
           : active ? theme.colors.primaryText : theme.colors.textSoft;
+        // The label is text and must clear AA (4.5:1); textSoft (4.2:1) only
+        // clears the 3:1 icon bar. Give the label textMuted when inactive so a
+        // persistent nav destination is legible, while the icon can stay soft.
+        const labelColor = active ? iconColor : theme.colors.textMuted;
 
         return (
           <TouchableOpacity
@@ -107,7 +111,7 @@ function SidebarNav({ width }: { width: number }) {
           >
             <Icon color={iconColor} size={20} strokeWidth={active ? 2.5 : 2.0} />
             {isDesktop && (
-              <Text style={[styles.sidebarLabel, { color: iconColor }]}>
+              <Text style={[styles.sidebarLabel, { color: labelColor }]}>
                 {t(labelKey)}
               </Text>
             )}

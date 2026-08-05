@@ -160,6 +160,26 @@ class KidMode(unittest.TestCase):
         self.assertEqual(fresh["status"], "DONE")
         self.assertEqual(fresh["completed_by_name"], "Ama")
 
+    def test_finishing_your_own_chore_earns_stars_and_ticks_the_week(self):
+        # Self-completion in kid mode must actually pay — it used to set DONE and
+        # award nothing, so the whole kid-mode earning loop produced zero.
+        card = self._chore("Tidy room")
+        token = self._enter()["session_token"]
+        asyncio.run(server.kid_finish_chore(card["card_id"], child=self._child(token)))
+        m = asyncio.run(self.db["family_members"].find_one({"member_id": "m_ama"}, {"_id": 0}))
+        self.assertEqual(m["stars"], 25)          # 20 + 5 for the chore
+        self.assertEqual(m["week_earned"], 5)     # weekly meter ticked
+        ledger = asyncio.run(self.db["star_transactions"].find_one({"member_id": "m_ama"}))
+        self.assertIsNotNone(ledger)              # movement is in the ledger
+
+    def test_a_finished_chore_cannot_be_paid_twice(self):
+        card = self._chore("Tidy room")
+        token = self._enter()["session_token"]
+        asyncio.run(server.kid_finish_chore(card["card_id"], child=self._child(token)))
+        asyncio.run(server.kid_finish_chore(card["card_id"], child=self._child(token)))
+        m = asyncio.run(self.db["family_members"].find_one({"member_id": "m_ama"}, {"_id": 0}))
+        self.assertEqual(m["stars"], 25)          # still just one award
+
     def test_they_cannot_finish_somebody_elses(self):
         card = self._chore("Do the taxes", assignee="Roland")
         token = self._enter()["session_token"]
