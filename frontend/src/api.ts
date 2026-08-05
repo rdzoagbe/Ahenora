@@ -1178,6 +1178,10 @@ export const api = {
     }),
   exitKidSession: (pin: string) =>
     request<{ ok: boolean }>('/kid/exit', { method: 'POST', body: { pin } }),
+  // Way out when the parent PIN is forgotten: a parent's account credentials,
+  // which a child does not have. Clears the forgotten PIN on success.
+  exitKidForgotPin: (email: string, password: string) =>
+    request<{ ok: boolean }>('/kid/exit-forgot-pin', { method: 'POST', body: { email, password } }),
   kidHome: () => request<KidHome>('/kid/home'),
   kidFinishChore: (cardId: string) =>
     request<{ ok: boolean }>(`/kid/chores/${cardId}/done`, { method: 'POST' }),

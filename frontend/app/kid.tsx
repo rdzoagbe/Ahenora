@@ -34,6 +34,17 @@ export default function KidScreen() {
   const [exitOpen, setExitOpen] = useState(false);
   const [pin, setPin] = useState('');
   const [pinError, setPinError] = useState(false);
+  // The way out when the PIN is forgotten: a parent's account login.
+  const [forgot, setForgot] = useState(false);
+  const [fEmail, setFEmail] = useState('');
+  const [fPassword, setFPassword] = useState('');
+  const [fError, setFError] = useState<string | null>(null);
+  const [fBusy, setFBusy] = useState(false);
+
+  const closeExit = () => {
+    setExitOpen(false); setPin(''); setPinError(false);
+    setForgot(false); setFEmail(''); setFPassword(''); setFError(null);
+  };
 
   const load = useCallback(async () => {
     try {
@@ -81,8 +92,27 @@ export default function KidScreen() {
       return;
     }
     await kidMode.leave();
-    setExitOpen(false);
-    setPin('');
+    closeExit();
+    router.replace('/(tabs)/feed');
+  };
+
+  const leaveWithPassword = async () => {
+    if (fBusy) return;
+    setFError(null);
+    const email = fEmail.trim();
+    if (!email || !fPassword) { setFError(t('kid_forgot_fields')); return; }
+    setFBusy(true);
+    try {
+      await api.exitKidForgotPin(email, fPassword);
+    } catch (e: any) {
+      setFError(e?.status === 429 ? t('kid_locked_out') : t('kid_forgot_bad'));
+      setFBusy(false);
+      return;
+    }
+    await kidMode.leave();
+    closeExit();
+    // The PIN was cleared server-side; the hand-over sheet will ask for a new
+    // one before the device can go back to a child.
     router.replace('/(tabs)/feed');
   };
 
@@ -198,28 +228,69 @@ export default function KidScreen() {
             behind it. */}
         <View style={[styles.modalCenter, { paddingBottom: keyboard }]}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>{t('kid_hand_back')}</Text>
-            <Text style={styles.modalBody}>{t('kid_hand_back_help')}</Text>
-            <TextInput
-              testID="kid-exit-pin"
-              value={pin}
-              onChangeText={(v) => { setPin(v); setPinError(false); }}
-              placeholder="••••"
-              placeholderTextColor={ui.muted}
-              keyboardType="number-pad"
-              secureTextEntry
-              maxLength={4}
-              style={[styles.pinInput, pinError && { borderColor: ui.danger }]}
-            />
-            {pinError ? <Text style={styles.pinError}>{t('kid_wrong_pin')}</Text> : null}
-            <View style={styles.modalRow}>
-              <PressScale onPress={() => { setExitOpen(false); setPin(''); }} style={styles.ghostBtn}>
-                <Text style={styles.ghostBtnText}>{t('cancel')}</Text>
-              </PressScale>
-              <PressScale testID="kid-exit-confirm" onPress={leave} style={styles.primaryBtn}>
-                <Text style={styles.primaryBtnText}>{t('kid_hand_back_go')}</Text>
-              </PressScale>
-            </View>
+            {forgot ? (
+              <>
+                <Text style={styles.modalTitle}>{t('kid_forgot_title')}</Text>
+                <Text style={styles.modalBody}>{t('kid_forgot_help')}</Text>
+                <TextInput
+                  testID="kid-forgot-email"
+                  value={fEmail}
+                  onChangeText={(v) => { setFEmail(v); setFError(null); }}
+                  placeholder={t('set_email_placeholder')}
+                  placeholderTextColor={ui.muted}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  style={[styles.textInput, fError && { borderColor: ui.danger }]}
+                />
+                <TextInput
+                  testID="kid-forgot-password"
+                  value={fPassword}
+                  onChangeText={(v) => { setFPassword(v); setFError(null); }}
+                  placeholder={t('email_password_placeholder_login')}
+                  placeholderTextColor={ui.muted}
+                  secureTextEntry
+                  style={[styles.textInput, { marginTop: 10 }, fError && { borderColor: ui.danger }]}
+                />
+                {fError ? <Text style={styles.pinError}>{fError}</Text> : null}
+                <View style={styles.modalRow}>
+                  <PressScale onPress={() => { setForgot(false); setFError(null); }} style={styles.ghostBtn}>
+                    <Text style={styles.ghostBtnText}>{t('back')}</Text>
+                  </PressScale>
+                  <PressScale testID="kid-forgot-confirm" onPress={leaveWithPassword} style={styles.primaryBtn}>
+                    <Text style={styles.primaryBtnText}>{fBusy ? t('kid_saving') : t('kid_forgot_go')}</Text>
+                  </PressScale>
+                </View>
+              </>
+            ) : (
+              <>
+                <Text style={styles.modalTitle}>{t('kid_hand_back')}</Text>
+                <Text style={styles.modalBody}>{t('kid_hand_back_help')}</Text>
+                <TextInput
+                  testID="kid-exit-pin"
+                  value={pin}
+                  onChangeText={(v) => { setPin(v); setPinError(false); }}
+                  placeholder="••••"
+                  placeholderTextColor={ui.muted}
+                  keyboardType="number-pad"
+                  secureTextEntry
+                  maxLength={4}
+                  style={[styles.pinInput, pinError && { borderColor: ui.danger }]}
+                />
+                {pinError ? <Text style={styles.pinError}>{t('kid_wrong_pin')}</Text> : null}
+                <PressScale testID="kid-forgot-pin" onPress={() => { setForgot(true); setPinError(false); }} style={styles.forgotLink}>
+                  <Text style={styles.forgotLinkText}>{t('kid_forgot_pin')}</Text>
+                </PressScale>
+                <View style={styles.modalRow}>
+                  <PressScale onPress={closeExit} style={styles.ghostBtn}>
+                    <Text style={styles.ghostBtnText}>{t('cancel')}</Text>
+                  </PressScale>
+                  <PressScale testID="kid-exit-confirm" onPress={leave} style={styles.primaryBtn}>
+                    <Text style={styles.primaryBtnText}>{t('kid_hand_back_go')}</Text>
+                  </PressScale>
+                </View>
+              </>
+            )}
           </View>
         </View>
       </Modal>
@@ -292,7 +363,15 @@ const createStyles = (ui: UIColors) =>
       letterSpacing: 10, paddingVertical: 12, marginTop: 4,
       outlineStyle: 'none' as never,
     },
-    pinError: { color: ui.danger, fontFamily: 'Inter_700Bold', fontSize: 13 },
+    pinError: { color: ui.danger, fontFamily: 'Inter_700Bold', fontSize: 13, marginTop: 8 },
+    textInput: {
+      borderWidth: 1, borderColor: ui.line, borderRadius: 14, backgroundColor: ui.soft,
+      color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 16,
+      paddingVertical: 13, paddingHorizontal: 14, marginTop: 4,
+      outlineStyle: 'none' as never,
+    },
+    forgotLink: { alignSelf: 'center', paddingVertical: 10, marginTop: 2 },
+    forgotLinkText: { color: ui.orangeText, fontFamily: 'Inter_700Bold', fontSize: 13.5 },
     modalRow: { flexDirection: 'row', gap: 10, marginTop: 6 },
     ghostBtn: {
       flex: 1, borderRadius: 16, paddingVertical: 14, alignItems: 'center',

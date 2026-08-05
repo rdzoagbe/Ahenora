@@ -41,6 +41,9 @@ const StoreContext = createContext<StoreState | null>(null);
 
 // v5 forces a fresh light/minimal default for existing local installs that cached premium-dark mode.
 const APPEARANCE_STORAGE_KEY = 'coo_appearance_mode_minimal_light_v5';
+// Set once an account has ever signed in on this device; survives sign-out so
+// the auth screen can open on Log In for a returning user. See setUserFromAuth.
+export const RETURNING_USER_KEY = 'coo_has_account';
 
 export function StoreProvider({ children }: { children: React.ReactNode }) {
   // RN 0.86 widened ColorSchemeName to include 'unspecified'; the theme helpers
@@ -175,6 +178,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
     const savedToken = await tokenStore.get();
     logger.info('Session token saved:', savedToken ? 'yes' : 'no');
+
+    // Remember that this device has an account, so the next visit after a
+    // sign-out opens on Log In rather than Sign Up. Deliberately durable —
+    // NOT cleared on sign-out or a 401 — because "have you ever had an account
+    // here" is exactly the question the auth screen needs to answer.
+    AsyncStorage.setItem(RETURNING_USER_KEY, '1').catch(() => undefined);
 
     setUser(u);
 
