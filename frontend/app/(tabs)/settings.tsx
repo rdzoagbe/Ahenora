@@ -1,5 +1,7 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { Alert, Image, Linking, Platform, Share, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Linking, Platform, Share, StyleSheet, Text, TextInput, View } from 'react-native';
+import Constants from 'expo-constants';
+import * as Updates from 'expo-updates';
 import { useFocusEffect, useRouter } from 'expo-router';
 import {
   BarChart3,
@@ -56,6 +58,8 @@ export default function Settings() {
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [invites, setInvites] = useState<FamilyInvite[]>([]);
   const [showLang, setShowLang] = useState(false);
+  const [updateState, setUpdateState] = useState<'idle' | 'checking' | 'downloading'>('idle');
+  const [updateNote, setUpdateNote] = useState<string | null>(null);
   const [showInvite, setShowInvite] = useState(false);
   const { toast, showToast } = useToast(2600);
   const [inviteMethod, setInviteMethod] = useState<'email' | 'phone' | 'link'>('email');
@@ -131,6 +135,55 @@ export default function Settings() {
       logger.warn('settings load failed', error);
     }
   }, []);
+
+  /**
+   * What this device is actually running.
+   *
+   * The store version alone is not the answer, because updates land over the
+   * air on top of it — two phones on the same store build can be showing
+   * different apps. The update's own id is the part that distinguishes them,
+   * so it is shown alongside, short enough to read out.
+   */
+  const versionLabel = useMemo(() => {
+    const store = Constants.expoConfig?.version || '—';
+    const update = Updates.isEmbeddedLaunch ? null : (Updates.updateId || '').slice(0, 8);
+    return update ? `${store} · ${update}` : store;
+  }, []);
+
+  /**
+   * Fetch the newest published build and restart into it.
+   *
+   * Updates otherwise arrive silently and apply on the NEXT launch, which from
+   * the outside looks exactly like nothing happening — you close the app,
+   * reopen it, and the old screen is still there because the download only
+   * just finished. This does the whole thing on demand and says which of the
+   * three outcomes happened, so "am I up to date?" is answerable.
+   */
+  const checkForUpdates = useCallback(async () => {
+    if (__DEV__ || !Updates.isEnabled) {
+      setUpdateNote(t('set_update_unavailable'));
+      return;
+    }
+    setUpdateNote(null);
+    setUpdateState('checking');
+    try {
+      const check = await Updates.checkForUpdateAsync();
+      if (!check.isAvailable) {
+        setUpdateState('idle');
+        setUpdateNote(t('set_update_current'));
+        return;
+      }
+      setUpdateState('downloading');
+      await Updates.fetchUpdateAsync();
+      // Restarting is the only way the new bundle takes effect; doing it here
+      // rather than asking the user to close the app twice is the entire point.
+      await Updates.reloadAsync();
+    } catch (e: any) {
+      logger.warn('update check failed', e);
+      setUpdateState('idle');
+      setUpdateNote(t('set_update_failed'));
+    }
+  }, [t]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -898,6 +951,36 @@ export default function Settings() {
             ) : null}
           </Card>
 
+          {/* App version + a way to pull the latest one in by hand.
+              Updates arrive over the air and apply on the NEXT launch, which
+              from the outside is indistinguishable from nothing happening —
+              there was no way to see which version you were on or to ask for
+              a newer one, so "is my app up to date?" had no answer. This gives
+              both: the version you are running, and a button that fetches and
+              restarts into the newest build on the spot. */}
+          <Card>
+            <View style={styles.updateRow}>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.updateTitle}>{t('set_app_version')}</Text>
+                <Text style={styles.updateVersion} numberOfLines={2}>{versionLabel}</Text>
+              </View>
+              <PressScale
+                testID="check-updates"
+                accessibilityRole="button"
+                onPress={checkForUpdates}
+                disabled={updateState === 'checking' || updateState === 'downloading'}
+                style={styles.updateBtn}
+              >
+                {updateState === 'checking' || updateState === 'downloading' ? (
+                  <ActivityIndicator color={ui.orangeText} size="small" />
+                ) : (
+                  <Text style={styles.updateBtnText}>{t('set_check_updates')}</Text>
+                )}
+              </PressScale>
+            </View>
+            {updateNote ? <Text style={styles.updateNote}>{updateNote}</Text> : null}
+          </Card>
+
           {/* Logout */}
           <PressScale testID="logout" onPress={doLogout} style={styles.logoutBtn}>
             <LogOut color={ui.danger} size={20} />
@@ -1161,6 +1244,12 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingTop: 4, paddingBottom: 10 },
   testRow: { flexDirection: 'row', gap: 10, width: '100%', marginTop: 2 },
 
+  updateRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  updateTitle: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 14 },
+  updateVersion: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, marginTop: 3 },
+  updateBtn: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 999, borderWidth: 1, borderColor: ui.orange, minWidth: 104, alignItems: 'center' },
+  updateBtnText: { color: ui.orangeText, fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
+  updateNote: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, lineHeight: 18, marginTop: 10 },
   logoutBtn: { marginTop: 26, minHeight: 54, borderRadius: 99, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, backgroundColor: ui.dangerSoft },
   logoutText: { color: ui.danger, fontFamily: 'Inter_800ExtraBold', fontSize: 16 },
 
