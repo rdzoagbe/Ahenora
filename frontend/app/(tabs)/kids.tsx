@@ -77,6 +77,16 @@ const REWARD_IDEAS = [
   { titleKey: 'ri_game', cost_stars: 60, icon: String.fromCodePoint(0x1F3AE) },
 ] as const;
 
+/**
+ * What a good week comes to.
+ *
+ * The three quick jobs are worth 7 a day, so a full week of them lands on 49 —
+ * this target is that week, rounded to a number a child can hold in their head,
+ * and it sits just above what the jobs alone give so the last star comes from
+ * something asked for. It is what the cheaper rewards are priced against.
+ */
+const WEEKLY_TARGET = 50;
+
 const QUICK_ADDS = [
   { labelKey: 'qa_bed', chore: 'bed' as const, amount: 2, Icon: Bed, bg: UI.mint, tint: UI.mintText },
   { labelKey: 'qa_read', chore: 'read' as const, amount: 3, Icon: BookOpen, bg: UI.lavender, tint: UI.lavenderText },
@@ -1238,7 +1248,27 @@ export default function Kids() {
                         <Text style={styles.weekPickText}>{t('kids_pick_weekend')}</Text>
                       </PressScale>
                     ) : (
-                      <Text style={styles.weekEmptyHint}>{t('kids_weekend_hint')}</Text>
+                      /* No weekend treat picked yet: the week still has a point.
+                         A full week of the quick jobs comes to about this, so
+                         the target is reachable by doing them — the maths always
+                         worked, it was just never on screen. */
+                      <View style={styles.weekGoalWrap}>
+                        <View style={styles.weekGoalRow}>
+                          <Text style={styles.weekGoalTitle} numberOfLines={1}>{t('kids_week_target_title')}</Text>
+                          <Text style={styles.weekGoalCount}>{weekEarned} / {WEEKLY_TARGET}</Text>
+                        </View>
+                        <View style={{ marginTop: 8 }}>
+                          <ProgressBar
+                            pct={Math.min(100, Math.round((weekEarned / WEEKLY_TARGET) * 100))}
+                            color={weekEarned >= WEEKLY_TARGET ? ui.mintText : ui.orange}
+                          />
+                        </View>
+                        <Text style={styles.weekGoalHint}>
+                          {weekEarned >= WEEKLY_TARGET
+                            ? t('kids_week_target_done')
+                            : t('kids_week_target_to_go', { n: WEEKLY_TARGET - weekEarned })}
+                        </Text>
+                      </View>
                     )}
 
                     {/* Momentum, at a glance: one cell per day of the week,
@@ -1454,9 +1484,11 @@ export default function Kids() {
                         </Card>
                       )}
 
+                      {/* The ready-made ideas ride under the same "Rewards in
+                          reach" heading rather than as their own titled block:
+                          they are more of that list, not a new subject, and one
+                          less heading is one less thing to scroll past. */}
                       {unusedRewardIdeas.length > 0 ? (
-                      <>
-                      <Text style={styles.blockLabel}>{t('kids_quick_reward_ideas')}</Text>
                       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.ideaRow} style={styles.ideaScroll}>
                         {unusedRewardIdeas.map((idea) => (
                           <PressScale key={idea.titleKey} testID={idea.titleKey} onPress={() => { setRewardMode('create'); setEditingReward(null); setRewardTitle(t(idea.titleKey)); setRewardCost(String(idea.cost_stars)); setRewardIcon(idea.icon); setRewardWeekend(false); setShowRewardSheet(true); }} style={styles.ideaChip}>
@@ -1466,10 +1498,7 @@ export default function Kids() {
                           </PressScale>
                         ))}
                       </ScrollView>
-                      </>
                       ) : null}
-
-                      <RecentActivity items={historyItems.slice(0, 4)} loading={historyLoading} />
                     </>
                   )}
 
@@ -1481,7 +1510,16 @@ export default function Kids() {
                           <Plus color={ui.bg} size={16} />
                           <Text style={styles.addStarsText}>{t('kids_add_stars')}</Text>
                         </PressScale>
-
+                        {/* The other half of the same conversation. The sheet,
+                            the required reason and the guarded decrement all
+                            already existed — only this way in was missing, so a
+                            parent could praise but never answer a bad week.
+                            Deliberately the quieter of the two buttons: giving
+                            is the point, taking is the exception. */}
+                        <PressScale testID="kids-remove-stars" onPress={() => openStarSheet('remove', '5')} style={styles.removeStarsBtn}>
+                          <Minus color={ui.muted} size={16} />
+                          <Text style={styles.removeStarsText}>{t('kids_remove_stars')}</Text>
+                        </PressScale>
                       </View>
                       <View style={styles.quickRow}>
                         {['5', '10', '20'].map((amount) => (
@@ -1493,7 +1531,6 @@ export default function Kids() {
                           <Text style={[styles.quickStarText, { color: ui.orangeText }]}>{t('kids_other')}</Text>
                         </PressScale>
                       </View>
-                      <RecentActivity items={historyItems.slice(0, 6)} loading={historyLoading} />
                     </>
                   )}
 
