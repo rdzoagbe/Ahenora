@@ -40,9 +40,12 @@ async def main():
         await p.goto(f"{WEB}/feed", wait_until="domcontentloaded")
         await p.wait_for_timeout(3000)
         bar = await p.inner_text("body")
-        # Only the active tab spells its name; the others are icons.
+        # Every tab spells its name under the icon — a bar you have to tap to
+        # learn is doing half its job. (This replaced an earlier "only the
+        # active tab is named" rule; the label discipline is now that all five
+        # are always visible, and the contrast harness guards their legibility.)
         r["active_tab_named"] = "Feed" in bar
-        r["inactive_labels_gone"] = "Calendar" not in bar and "Kitchen" not in bar
+        r["all_tabs_named"] = all(w in bar for w in ("Feed", "Calendar", "Kids", "Kitchen"))
         r["more_button_present"] = await p.locator('[data-testid="tab-more"]').count() == 1
         await p.screenshot(path="nav_feed.png")
 

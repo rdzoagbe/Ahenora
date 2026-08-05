@@ -3431,6 +3431,11 @@ class ParentPinIn(BaseModel):
     pin: str
 
 
+class KidForgotPinIn(BaseModel):
+    email: str
+    password: str
+
+
 async def require_child(authorization: str = Header(default="")):
     """Resolve a kid-mode session to the child it belongs to."""
     database = get_db()
@@ -3529,6 +3534,45 @@ async def exit_kid_session(payload: ParentPinIn, child=Depends(require_child)):
         _auth_record_fail(identity)
         raise HTTPException(status_code=401, detail="Invalid PIN")
     _auth_clear(identity)
+    return {"ok": True}
+
+
+@app.post("/api/kid/exit-forgot-pin")
+async def exit_kid_forgot_pin(payload: KidForgotPinIn, child=Depends(require_child)):
+    """Leave kid mode when the parent PIN has been forgotten.
+
+    Without this, a parent who forgot the PIN was locked in the child's app
+    with no way out — the one-way door the PIN was meant to prevent, turned on
+    the grown-up. A child cannot use it: it needs a PARENT'S account email and
+    password (a real credential the child does not have), not the PIN. On
+    success the forgotten PIN is cleared so a fresh one is set next time.
+    """
+    database = get_db()
+    identity = f"kidexitpw:{child['family_id']}"
+    if _auth_locked(identity):
+        raise HTTPException(status_code=429, detail="Too many attempts. Please try again later.")
+
+    email = (payload.email or "").strip().lower()
+    account = await database["users"].find_one({"email": email}, {"_id": 0})
+    member = None
+    if account and account.get("family_id") == child["family_id"]:
+        member = await database["family_members"].find_one(
+            {"family_id": child["family_id"], "user_id": account["user_id"]}, {"_id": 0})
+
+    ok = bool(
+        account and member
+        and (member.get("role") or "").lower() != "child"
+        and account.get("password_hash")
+        and verify_password(payload.password or "", account["password_hash"])
+    )
+    if not ok:
+        _auth_record_fail(identity)
+        raise HTTPException(status_code=401, detail="Email or password not recognised.")
+
+    _auth_clear(identity)
+    # Clear the forgotten PIN so the hand-over sheet prompts for a new one.
+    await database["family_members"].update_one(
+        {"member_id": member["member_id"]}, {"$set": {"pin_hash": None}})
     return {"ok": True}
 
 

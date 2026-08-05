@@ -129,7 +129,19 @@ export default function Calendar() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<CalendarImportResult | null>(null);
+  // Lets the user back out of a sync that is taking too long. The in-flight
+  // request is allowed to finish server-side (the import is an idempotent
+  // upsert, so a late completion is harmless), but once cancelled its result
+  // is ignored and the screen is handed straight back — no more staring at a
+  // spinner with no way out.
+  const syncCancelledRef = useRef(false);
   const [calendarSyncStatus, setCalendarSyncStatus] = useState<string | null>(null);
+  const cancelSync = useCallback(() => {
+    syncCancelledRef.current = true;
+    setSyncing(false);
+    setCalendarSyncStatus(null);
+    logEvent('calendar_import_cancelled');
+  }, []);
   const [activeMonth, setActiveMonth] = useState(() => new Date());
   const [selectedDay, setSelectedDay] = useState<string | null>(dateKey(new Date()));
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
@@ -253,9 +265,11 @@ export default function Calendar() {
         handledCalendarResponseRef.current = false;
         return;
       }
+      syncCancelledRef.current = false;
       setSyncing(true);
       try {
         const result = await api.importGoogleCalendar(accessToken, 30);
+        if (syncCancelledRef.current) return;
         setSyncResult(result);
         await load();
         Alert.alert(t('cal_calendar_synced'), syncSummary(result));
@@ -389,6 +403,7 @@ export default function Calendar() {
       }
 
       try {
+        syncCancelledRef.current = false;
         setSyncing(true);
         setCalendarSyncStatus(t('cal_opening_native_permission'));
 
@@ -439,6 +454,7 @@ export default function Calendar() {
 
         setCalendarSyncStatus(t('cal_importing_events'));
         const result = await api.importGoogleCalendar(tokens.accessToken, 30);
+        if (syncCancelledRef.current) return;
         setSyncResult(result);
         await load();
         setCalendarSyncStatus(syncSummary(result));
@@ -487,10 +503,12 @@ export default function Calendar() {
         return;
       }
 
+      syncCancelledRef.current = false;
       setSyncing(true);
       setCalendarSyncStatus(t('cal_importing_events'));
 
       const importResult = await api.importGoogleCalendar(accessToken, 30);
+      if (syncCancelledRef.current) return;
       setSyncResult(importResult);
       await load();
 
@@ -517,6 +535,7 @@ export default function Calendar() {
       const code = msResponse.params?.code;
       if (!code || !msRequest) return;
       handledMsResponseRef.current = true;
+      syncCancelledRef.current = false;
       setSyncing(true);
       try {
         const tokenResult = await AuthSession.exchangeCodeAsync(
@@ -534,6 +553,7 @@ export default function Calendar() {
           return;
         }
         const result = await api.importMicrosoftCalendar(accessToken, 30);
+        if (syncCancelledRef.current) return;
         setSyncResult(result);
         await load();
         Alert.alert(t('cal_calendar_synced'), syncSummary(result));
@@ -600,10 +620,18 @@ export default function Calendar() {
             title={monthTitle}
             titleSize={30}
             right={
-              <PressScale testID="sync-google-calendar" onPress={openImportPicker} disabled={syncDisabled} style={[styles.syncBtn, syncDisabled && { opacity: 0.55 }]}>
-                {syncing ? <ActivityIndicator color="#FFFFFF" size="small" /> : <RefreshCw color="#FFFFFF" size={16} />}
-                <Text style={styles.syncText}>{syncing ? t('cal_syncing') : t('cal_import')}</Text>
-              </PressScale>
+              syncing ? (
+                // While a sync is in flight the button becomes the way out.
+                <PressScale testID="cancel-calendar-sync" onPress={cancelSync} style={[styles.syncBtn, { backgroundColor: ui.soft, borderWidth: 1, borderColor: ui.line }]}>
+                  <ActivityIndicator color={ui.orangeText} size="small" />
+                  <Text style={[styles.syncText, { color: ui.orangeText }]}>{t('cal_cancel')}</Text>
+                </PressScale>
+              ) : (
+                <PressScale testID="sync-google-calendar" onPress={openImportPicker} disabled={syncDisabled} style={[styles.syncBtn, syncDisabled && { opacity: 0.55 }]}>
+                  <RefreshCw color="#FFFFFF" size={16} />
+                  <Text style={styles.syncText}>{t('cal_import')}</Text>
+                </PressScale>
+              )
             }
           />
 

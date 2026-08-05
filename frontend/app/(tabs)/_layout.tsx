@@ -11,17 +11,23 @@ import { MoreSheet } from '../../src/components/MoreSheet';
 // ─── Phone: floating pill tab bar ────────────────────────────────────────────
 
 /**
- * One tab. Only the ACTIVE tab spells its name: six shrunken 10px words was
- * the noisiest thing on the screen, and a bar that says where you are reads
- * faster than one that lists where you could go. Inactive tabs get the room
- * back as icon size and touch area.
+ * One tab. Every tab spells its name under the icon — a bar you have to tap
+ * to learn is a bar doing half its job. The active one gets the accent pill
+ * and ink; the rest sit quiet in muted text, so five small labels read as a
+ * legend rather than noise. (Only five seats — four destinations and More —
+ * so there is room for all of them.)
  */
 function TabIcon({ focused, Icon, label }: { focused: boolean; Icon: any; label: string }) {
   const { theme } = useStore();
   // accentInk, not accent: the focused tab sits on an accentSoft pill, and the
-  // brand orange on its own tint measures 2.7:1 — the label was decorative
-  // rather than readable.
-  const color = focused ? theme.colors.accentInk : theme.colors.textSoft;
+  // brand orange on its own tint measures 2.7:1 — the label would be
+  // decorative rather than readable.
+  const iconColor = focused ? theme.colors.accentInk : theme.colors.textSoft;
+  // The label is now always shown, so it must clear the 4.5:1 AA bar for
+  // small text — textSoft (4.2:1) is fine for an icon but not for a word.
+  // textMuted is the readable-ink twin; the icon stays quieter to keep the
+  // active/inactive hierarchy.
+  const labelColor = focused ? theme.colors.accentInk : theme.colors.textMuted;
 
   return (
     <View
@@ -30,15 +36,13 @@ function TabIcon({ focused, Icon, label }: { focused: boolean; Icon: any; label:
         focused && { backgroundColor: theme.mode === 'light' ? theme.colors.accentSoft : theme.colors.bgSoft },
       ]}
     >
-      <Icon color={color} size={focused ? 22 : 24} strokeWidth={focused ? 2.5 : 2} />
-      {focused ? (
-        <Text
-          style={[styles.tabLabel, { color }]}
-          numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}
-        >
-          {label}
-        </Text>
-      ) : null}
+      <Icon color={iconColor} size={22} strokeWidth={focused ? 2.5 : 2} />
+      <Text
+        style={[styles.tabLabel, { color: labelColor, fontFamily: focused ? 'Inter_800ExtraBold' : 'Inter_600SemiBold' }]}
+        numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}
+      >
+        {label}
+      </Text>
     </View>
   );
 }

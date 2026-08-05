@@ -113,7 +113,11 @@ export function HandOverSheet({ visible, onClose }: { visible: boolean; onClose:
       >
         <View style={styles.grabber} />
         <View style={styles.header}>
-          <Text style={styles.title}>{chosen ? chosen.name : t('kid_who_is_this')}</Text>
+          {/* Name the moment plainly when a PIN is still needed — "Who's using
+              this?" over a PIN field read as a puzzle rather than a setup step. */}
+          <Text style={styles.title}>
+            {chosen ? chosen.name : !ready ? t('kid_set_pin_first_title') : t('kid_who_is_this')}
+          </Text>
           <PressScale
             testID="handover-close"
             accessibilityRole="button"

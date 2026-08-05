@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   Modal,
   View,
@@ -14,7 +15,7 @@ import * as Crypto from 'expo-crypto';
 import { X, Mail, Check, ShieldCheck } from 'lucide-react-native';
 
 import { PressScale } from './PressScale';
-import { useStore } from '../store';
+import { useStore, RETURNING_USER_KEY } from '../store';
 import { logger } from '../logger';
 
 interface Props {
@@ -30,12 +31,29 @@ export function EmailAuthModal({ visible, onClose, onSuccess, inviteToken }: Pro
   const { theme, setUserFromAuth, t } = useStore();
   const c = theme.colors;
 
-  const [mode, setMode] = useState<Mode>('signup');
+  // An invite is a join, so it opens on Sign Up. Otherwise default to Log In
+  // for anyone who has signed in on this device before — the returning user
+  // signing back in after a sign-out is the common case, and landing them on
+  // Sign Up asked them to create a second account. A genuinely new device with
+  // no history still opens on Sign Up.
+  const [mode, setMode] = useState<Mode>(inviteToken ? 'signup' : 'login');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Refine the default once we can read the device's history. Initial state
+  // above is Log In (the common returning case, never flashing Sign Up at
+  // them); this switches a genuinely new, uninvited device to Sign Up.
+  useEffect(() => {
+    if (!visible || inviteToken) return;
+    let cancelled = false;
+    AsyncStorage.getItem(RETURNING_USER_KEY)
+      .then((seen) => { if (!cancelled && !seen) setMode('signup'); })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [visible, inviteToken]);
 
   const hasLength = password.length >= 8;
   const hasUpper = /[A-Z]/.test(password);
