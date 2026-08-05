@@ -1424,7 +1424,41 @@ async def get_notification_settings_doc(user_id: str) -> dict:
     return settings
 
 
-async def send_expo_push_messages(messages: list[dict]) -> dict:
+def _latest_token_per_user(docs: list[dict]) -> list[dict]:
+    """One push token per person — the most recently registered.
+
+    A device's Expo token changes across reinstalls and some updates, and the
+    old value is left in the table as `active`. Nothing here ever deactivated
+    it, so a co-parent who had reinstalled a few times accumulated several
+    live-looking tokens, and every family push fanned out to all of them:
+    one event, a handful of notifications. Collapsing to the newest token per
+    user makes it one person, one push. Dead tokens are separately retired
+    when Expo reports them (see send_expo_push_messages).
+    """
+    EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+    best: dict[str, dict] = {}
+    for d in docs:
+        uid = d.get("user_id")
+        if not uid:
+            continue
+        cur = best.get(uid)
+        if cur is None or (_coerce_dt(d.get("updated_at")) or EPOCH) >= (
+                _coerce_dt(cur.get("updated_at")) or EPOCH):
+            best[uid] = d
+    return list(best.values())
+
+
+async def _deactivate_dead_tokens(database, tokens: list[str]) -> None:
+    """Retire tokens Expo says are gone, so they stop being pushed to."""
+    for token in tokens:
+        try:
+            await database["notification_tokens"].update_one(
+                {"token": token}, {"$set": {"active": False, "updated_at": utcnow()}})
+        except Exception:
+            pass
+
+
+async def send_expo_push_messages(messages: list[dict], database=None) -> dict:
     if not messages:
         return {"sent": 0, "skipped": True}
 
@@ -1452,7 +1486,26 @@ async def send_expo_push_messages(messages: list[dict]) -> dict:
         except Exception as e:
             return {"sent": 0, "error": str(e)}
 
-    return await asyncio.to_thread(_send)
+    result = await asyncio.to_thread(_send)
+
+    # Expo returns one ticket per message, in order. A DeviceNotRegistered
+    # ticket means that token is dead — retire it so it stops fanning out
+    # future pushes. Best effort; never let cleanup break the send.
+    if database is not None:
+        try:
+            tickets = (result.get("response") or {}).get("data") or []
+            dead = []
+            for msg, ticket in zip(messages, tickets):
+                if isinstance(ticket, dict) and ticket.get("status") == "error" \
+                        and (ticket.get("details") or {}).get("error") == "DeviceNotRegistered":
+                    if msg.get("to"):
+                        dead.append(msg["to"])
+            if dead:
+                await _deactivate_dead_tokens(database, dead)
+        except Exception:
+            pass
+
+    return result
 
 
 STAR_MILESTONE = 50
@@ -1466,10 +1519,9 @@ async def send_star_milestone_alert(family_id: str, member_name: str, old_total:
         milestone = (new_total // STAR_MILESTONE) * STAR_MILESTONE
         database = get_db()
         messages = []
-        cursor = database["notification_tokens"].find(
-            {"family_id": family_id, "active": True}, {"_id": 0}
-        )
-        async for token_doc in cursor:
+        docs = [d async for d in database["notification_tokens"].find(
+            {"family_id": family_id, "active": True}, {"_id": 0})]
+        for token_doc in _latest_token_per_user(docs):
             token = token_doc.get("token")
             if not token or not token.startswith("ExponentPushToken"):
                 continue
@@ -1481,7 +1533,7 @@ async def send_star_milestone_alert(family_id: str, member_name: str, old_total:
                 "data": {"type": "star_milestone", "family_id": family_id},
             })
         if messages:
-            await send_expo_push_messages(messages)
+            await send_expo_push_messages(messages, database)
     except Exception as e:
         log.warning("star milestone alert failed: %s", e)
 
@@ -1530,11 +1582,12 @@ PUSH_I18N = {
 async def send_push_to_user(database, user_id: str, title: str, body: str, data: dict):
     """Push to one specific person's devices. Best effort, never raises."""
     try:
+        docs = [d async for d in database["notification_tokens"].find(
+            {"user_id": user_id, "active": True}, {"_id": 0})]
         messages = []
-        cursor = database["notification_tokens"].find(
-            {"user_id": user_id, "active": True}, {"_id": 0}
-        )
-        async for token_doc in cursor:
+        # One device per person: newest token only, so accumulated stale
+        # tokens from past installs don't each fire their own notification.
+        for token_doc in _latest_token_per_user(docs):
             token = token_doc.get("token")
             if token and token.startswith("ExponentPushToken"):
                 messages.append({
@@ -1542,7 +1595,7 @@ async def send_push_to_user(database, user_id: str, title: str, body: str, data:
                     "title": title, "body": body, "data": data,
                 })
         if messages:
-            await send_expo_push_messages(messages)
+            await send_expo_push_messages(messages, database)
     except Exception as e:
         log.warning("user push failed: %s", e)
 
@@ -1613,27 +1666,27 @@ async def notify_assignment(database, actor: dict, card: dict, assignee_name: st
         log.warning("assignment notification failed: %s", e)
 
 
-async def send_new_card_alert(family_id: str, card: dict, created_by_user_id: Optional[str] = None):
+async def send_new_card_alert(family_id: str, card: dict, created_by_user_id: Optional[str] = None,
+                              exclude_user_ids: Optional[set] = None):
     database = get_db()
     messages = []
+    # The creator never needs telling, and anyone excluded (the assignee) is
+    # getting the more specific hand-off push instead — sending both would be
+    # two notifications for one event.
+    skip = set(exclude_user_ids or ())
+    if created_by_user_id:
+        skip.add(created_by_user_id)
 
-    cursor = database["notification_tokens"].find(
-        {
-            "family_id": family_id,
-            "active": True,
-        },
-        {"_id": 0},
-    )
+    docs = [d async for d in database["notification_tokens"].find(
+        {"family_id": family_id, "active": True}, {"_id": 0})]
 
-    async for token_doc in cursor:
-        if created_by_user_id and token_doc.get("user_id") == created_by_user_id:
+    for token_doc in _latest_token_per_user(docs):
+        uid = token_doc.get("user_id")
+        if uid in skip:
             continue
 
         prefs = await database["notification_settings"].find_one(
-            {"user_id": token_doc.get("user_id")},
-            {"_id": 0},
-        )
-
+            {"user_id": uid}, {"_id": 0})
         if not prefs or not prefs.get("new_card_alerts"):
             continue
 
@@ -1656,7 +1709,7 @@ async def send_new_card_alert(family_id: str, card: dict, created_by_user_id: Op
         )
 
     if messages:
-        await send_expo_push_messages(messages)
+        await send_expo_push_messages(messages, database)
 
 
 async def send_coparent_alert(family_id: str, title: str, body: str, data_type: str, created_by_user_id: Optional[str] = None):
@@ -1670,15 +1723,14 @@ async def send_coparent_alert(family_id: str, title: str, body: str, data_type: 
     if len(preview) > 120:
         preview = preview[:117].rstrip() + "…"
 
-    cursor = database["notification_tokens"].find(
-        {"family_id": family_id, "active": True}, {"_id": 0}
-    )
-    async for token_doc in cursor:
-        if created_by_user_id and token_doc.get("user_id") == created_by_user_id:
+    docs = [d async for d in database["notification_tokens"].find(
+        {"family_id": family_id, "active": True}, {"_id": 0})]
+    for token_doc in _latest_token_per_user(docs):
+        uid = token_doc.get("user_id")
+        if created_by_user_id and uid == created_by_user_id:
             continue
         prefs = await database["notification_settings"].find_one(
-            {"user_id": token_doc.get("user_id")}, {"_id": 0}
-        )
+            {"user_id": uid}, {"_id": 0})
         if not prefs or not prefs.get("new_card_alerts"):
             continue
         token = token_doc.get("token")
@@ -1695,7 +1747,7 @@ async def send_coparent_alert(family_id: str, title: str, body: str, data_type: 
         )
 
     if messages:
-        await send_expo_push_messages(messages)
+        await send_expo_push_messages(messages, database)
 
 
 async def require_user(authorization: str = Header(default="")):
@@ -3937,12 +3989,10 @@ async def register_notification_token(payload: NotificationTokenIn, user=Depends
 async def test_notification(user=Depends(require_user)):
     database = get_db()
     messages = []
-    cursor = database["notification_tokens"].find(
-        {"user_id": user["user_id"], "active": True},
-        {"_id": 0},
-    )
+    docs = [d async for d in database["notification_tokens"].find(
+        {"user_id": user["user_id"], "active": True}, {"_id": 0})]
 
-    async for token_doc in cursor:
+    for token_doc in _latest_token_per_user(docs):
         token = token_doc.get("token")
         if token and token.startswith("ExponentPushToken"):
             messages.append(
@@ -3955,7 +4005,7 @@ async def test_notification(user=Depends(require_user)):
                 }
             )
 
-    result = await send_expo_push_messages(messages)
+    result = await send_expo_push_messages(messages, database)
     return {"ok": True, "tokens": len(messages), "result": result}
 
 
@@ -4146,9 +4196,18 @@ async def create_card(payload: CardIn, user=Depends(require_user)):
 
     # Only ping the co-parent when the item is actually shared — private items
     # are silent by design.
+    # The assignee gets the hand-off push below; excluding them here means one
+    # person never receives both a "new card" alert and an "assigned to you"
+    # push for the same card.
+    assignee_uid = None
+    if doc.get("assignee") and doc.get("shared"):
+        assignee_uid = await resolve_member_user_id(database, user["family_id"], doc["assignee"])
+
     if doc.get("shared"):
         try:
-            await send_new_card_alert(user["family_id"], doc, created_by_user_id=user["user_id"])
+            await send_new_card_alert(
+                user["family_id"], doc, created_by_user_id=user["user_id"],
+                exclude_user_ids={assignee_uid} if assignee_uid else None)
         except Exception as e:
             log.warning("new card alert failed: %s", e)
 
