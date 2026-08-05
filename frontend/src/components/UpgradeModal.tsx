@@ -25,7 +25,7 @@ export function UpgradeModal() {
           <View style={styles.headerRow}>
             <View style={[styles.badge, { backgroundColor: theme.colors.accentSoft, borderColor: theme.colors.cardBorder }]}> 
               <Sparkles color={theme.colors.accent} size={12} />
-              <Text style={[styles.badgeText, { color: theme.colors.accent }]}>{t('upgrade_needed')}</Text>
+              <Text style={[styles.badgeText, { color: theme.colors.accentInk }]}>{t('upgrade_needed')}</Text>
             </View>
             <PressScale
                   accessibilityRole="button"

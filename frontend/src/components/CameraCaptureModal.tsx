@@ -242,7 +242,7 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
                 })}
               </ScrollView>
 
-              {err ? <Text style={styles.errText}>{err}</Text> : null}
+              {err ? <Text style={[styles.errText, { color: theme.colors.danger }]}>{err}</Text> : null}
 
               <View style={styles.controls}>
                 <PressScale
@@ -273,9 +273,13 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
                 <Image
                   source={{ uri: preview }}
                   style={[styles.thumb, { borderColor: theme.colors.cardBorder }]}
+                  accessibilityLabel={t('cam_photo_preview_a11y')}
                 />
               ) : null}
-              <Text style={[styles.heading, { color: theme.colors.text }]}>
+              {/* A scanned document title can be a whole sentence; without a
+                  cap it wrapped far enough to push the Continue button off a
+                  small screen. */}
+              <Text style={[styles.heading, { color: theme.colors.text }]} numberOfLines={2}>
                 {scan?.title || t('cam_scanned_document')}
               </Text>
               <Text style={[styles.sub, { color: theme.colors.textMuted }]}>
@@ -345,7 +349,7 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
 
               <View style={[styles.stage, { borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}>
                 {preview ? (
-                  <Image source={{ uri: preview }} style={styles.preview} />
+                  <Image source={{ uri: preview }} style={styles.preview} accessibilityLabel={t('cam_photo_preview_a11y')} />
                 ) : (
                   <View style={styles.emptyStage}>
                     <Camera color={theme.colors.textSoft} size={36} />
@@ -362,7 +366,7 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
 
               {phase === 'error' && (
                 <View style={[styles.errorBox, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
-                  <Text style={styles.errText}>{err}</Text>
+                  <Text style={[styles.errText, { color: theme.colors.danger }]}>{err}</Text>
                   <Text style={[styles.errHelp, { color: theme.colors.textMuted }]}>{t('cam_error_help')}</Text>
                 </View>
               )}
@@ -449,7 +453,7 @@ const styles = StyleSheet.create({
   },
   overlayText: { fontFamily: 'Inter_700Bold', fontSize: 13, marginTop: 12 },
   errorBox: { borderWidth: 1, borderRadius: 18, padding: 12, marginBottom: 12 },
-  errText: { color: '#F97316', fontFamily: 'Inter_700Bold', fontSize: 13, lineHeight: 19 },
+  errText: { fontFamily: 'Inter_700Bold', fontSize: 13, lineHeight: 19 },
   errHelp: { fontFamily: 'Inter_500Medium', fontSize: 12, lineHeight: 18, marginTop: 4 },
   thumb: {
     width: 76,

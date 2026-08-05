@@ -39,7 +39,8 @@ import { StarCelebration, CelebrationContent } from '../../src/components/StarCe
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
 import DateTimePickerSheet from '../../src/components/DateTimePickerSheet';
 import { quickDueDate, toLocalDateInput, toLocalTimeInput } from '../../src/utils/date';
-import AppToast, { ToastTone } from '../../src/components/AppToast';
+import AppToast from '../../src/components/AppToast';
+import { useToast } from '../../src/hooks/useToast';
 import EmptyState from '../../src/components/EmptyState';
 import FirstRunTip from '../../src/components/FirstRunTip';
 import ErrorState from '../../src/components/ErrorState';
@@ -62,7 +63,6 @@ function formatDueDate(iso: string): string {
   return d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
-type ToastState = { message: string; tone: ToastTone };
 type RewardSheetMode = 'create' | 'edit';
 type StarMode = 'add' | 'remove';
 
@@ -155,7 +155,7 @@ export default function Kids() {
 
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [toast, setToast] = useState<ToastState | null>(null);
+  const { toast, showToast } = useToast();
   const [pinPromptReward, setPinPromptReward] = useState<Reward | null>(null);
   const [celebration, setCelebration] = useState<CelebrationContent | null>(null);
   const [showFixSheet, setShowFixSheet] = useState(false);
@@ -242,10 +242,6 @@ export default function Kids() {
     return m?.name || memberId;
   }, [members]);
 
-  const showToast = useCallback((message: string, tone: ToastTone = 'info') => {
-    setToast({ message, tone });
-    setTimeout(() => setToast(null), 2300);
-  }, []);
 
   const refreshHistory = useCallback(async (memberId?: string | null) => {
     if (!memberId) {

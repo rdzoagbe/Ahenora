@@ -122,7 +122,7 @@ export default function DateTimePickerSheet({
         />
       </View>
 
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {error ? <Text style={[styles.error, { color: c.danger }]}>{error}</Text> : null}
 
       <View style={styles.footer}>
         <PressScale testID="clear-due-date" onPress={clear} style={[styles.clearBtn, { borderColor: c.cardBorder }]}>
@@ -165,7 +165,7 @@ const styles = StyleSheet.create({
   input: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, fontFamily: 'Inter_400Regular', fontSize: 15 },
   timeInputWrap: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14 },
   timeInput: { flex: 1, paddingVertical: 12, fontFamily: 'Inter_400Regular', fontSize: 15 },
-  error: { marginTop: 10, color: '#DC2626', fontFamily: 'Inter_500Medium', fontSize: 12 },
+  error: { marginTop: 10, fontFamily: 'Inter_500Medium', fontSize: 12 },
   footer: { flexDirection: 'row', gap: 12, marginTop: 20 },
   clearBtn: {
     flex: 1, borderWidth: 1, borderRadius: 14, paddingVertical: 14,

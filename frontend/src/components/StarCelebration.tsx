@@ -90,7 +90,7 @@ export function StarCelebration({ content, onDone }: Props) {
       ]}
     >
       <Text style={styles.burst}>{burst}</Text>
-      <Text style={[styles.amount, { color: theme.colors.accent }]} numberOfLines={2}>{headline}</Text>
+      <Text style={[styles.amount, { color: theme.colors.accentInk }]} numberOfLines={2}>{headline}</Text>
       <Text style={[styles.praise, { color: theme.colors.text }]}>{subtitle}</Text>
     </Animated.View>
   );

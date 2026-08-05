@@ -952,7 +952,7 @@ export default function Feed() {
                 <View key={ann.announcement_id} style={styles.noteRow}>
                   <View style={{ flex: 1 }}>
                     {ann.priority === 'urgent' ? (
-                      <View style={styles.urgentBadge}><AlertTriangle color="#DC2626" size={12} /><Text style={styles.urgentText}>{t('feed_urgent')}</Text></View>
+                      <View style={styles.urgentBadge}><AlertTriangle color={ui.danger} size={12} /><Text style={styles.urgentText}>{t('feed_urgent')}</Text></View>
                     ) : null}
                     <Text style={styles.noteText}>{ann.text}</Text>
                     <Text style={styles.noteMeta}>{ann.author_name} · {new Date(ann.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}</Text>
@@ -993,7 +993,7 @@ export default function Feed() {
                     <Text style={styles.reportLabel}>{t('feed_report_created')}</Text>
                   </View>
                   <View style={styles.reportCell}>
-                    <Text style={[styles.reportNum, report.tasks_overdue > 0 && { color: '#DC2626' }]}>{report.tasks_overdue}</Text>
+                    <Text style={[styles.reportNum, report.tasks_overdue > 0 && { color: ui.danger }]}>{report.tasks_overdue}</Text>
                     <Text style={styles.reportLabel}>{t('feed_report_overdue')}</Text>
                   </View>
                   <View style={styles.reportCell}>
@@ -1046,7 +1046,12 @@ export default function Feed() {
             assignee: draft.assignee,
             due_date: draft.due_date || null,
             image_base64: draft.image_base64 || null,
-            vault_category: draft.vault_category || 'School',
+            // Pass the modal's decision through untouched. The '|| School'
+            // that used to sit here re-filed an uncategorised document under
+            // School — the exact mis-filing the capture rewrite removed — and
+            // was masked only because save_to_vault happens to be false when
+            // the category is empty. One line from undoing the invariant.
+            vault_category: draft.vault_category || '',
             save_to_vault: draft.save_to_vault !== false,
           });
           setAddSource('CAMERA');
@@ -1729,7 +1734,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     marginBottom: 3,
   },
   urgentText: {
-    color: '#DC2626',
+    color: ui.danger,
     fontFamily: 'Inter_800ExtraBold',
     fontSize: 11,
   },

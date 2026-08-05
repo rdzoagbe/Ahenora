@@ -22,6 +22,10 @@ export interface AppTheme {
     /** The accent as INK — legible on accentSoft, where the fill accent is not. */
     accentInk: string;
     success: string;
+    // Error ink that clears WCAG AA in both themes. Components used to hardcode
+    // #EF4444 / #DC2626, which fail on their surfaces and never adapt to dark;
+    // this is the shared token, matching the ui palette's danger.
+    danger: string;
     shadow: string;
   };
   ambient: {
@@ -63,6 +67,7 @@ export const lightTheme: AppTheme = {
     accentSoft: 'rgba(242,106,27,0.12)',
     accentInk: '#B8410A',
     success: '#11B886',
+    danger: '#C81E1E',
     shadow: '#202323',
   },
   ambient: {
@@ -93,6 +98,7 @@ export const darkTheme: AppTheme = {
     accentSoft: 'rgba(242,106,27,0.18)',
     accentInk: '#FF9A63',
     success: '#22C55E',
+    danger: '#F87171',
     shadow: '#000000',
   },
   ambient: {

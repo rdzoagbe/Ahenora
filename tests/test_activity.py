@@ -76,6 +76,21 @@ class ActivityLog(unittest.TestCase):
         self._card(ROLAND, "Therapy appointment", shared=False)
         self.assertEqual(self._feed_for(ROLAND), [])
 
+    def test_finishing_a_private_task_does_not_leak_its_title(self):
+        # The feed is family-wide, so completing a private card must not put
+        # its title where the co-parent can read it. Only creation was covered
+        # before; the completion path had the same hole and did leak.
+        card = self._card(ROLAND, "Consult divorce lawyer", shared=False)
+        asyncio.run(server.update_card(
+            card["card_id"], server.CardPatchIn(status="DONE"), user=dict(ROLAND)))
+        self.assertEqual(self._feed_for(KEIGH), [])
+
+    def test_finishing_a_shared_task_still_announces_it(self):
+        card = self._card(ROLAND, "Bins out", shared=True)
+        asyncio.run(server.update_card(
+            card["card_id"], server.CardPatchIn(status="DONE"), user=dict(KEIGH)))
+        self.assertEqual(self._feed_for(KEIGH)[0]["kind"], "task_done")
+
     def test_another_household_sees_nothing(self):
         card = self._card(ROLAND, "Bins out")
         asyncio.run(server.update_card(

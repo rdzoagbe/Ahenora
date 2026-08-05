@@ -20,7 +20,8 @@ import { Plus, X, Trash2, Shield, Bell, Folder, ChevronRight, FileText, AlertTri
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { PressScale } from '../../src/components/PressScale';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
-import AppToast, { ToastTone } from '../../src/components/AppToast';
+import AppToast from '../../src/components/AppToast';
+import { useToast } from '../../src/hooks/useToast';
 import LoadingOverlay from '../../src/components/LoadingOverlay';
 import { TabScreen } from '../../src/components/TabScreen';
 import { PdfViewer } from '../../src/components/PdfViewer';
@@ -60,7 +61,6 @@ function updatedLine(iso: string, t: (k: string) => string) {
   return `${t('vault_updated')} ${d.toLocaleDateString([], { month: 'short', day: '2-digit' })}`;
 }
 
-type ToastState = { message: string; tone: ToastTone };
 
 export default function Vault() {
   const { t } = useStore();
@@ -115,14 +115,9 @@ export default function Vault() {
   const [fileName, setFileName] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [toast, setToast] = useState<ToastState | null>(null);
+  const { toast, showToast } = useToast();
   const [expiryAlerts, setExpiryAlerts] = useState<ExpiryAlert[]>([]);
   const [entitlements, setEntitlements] = useState<Entitlements | null>(null);
-
-  const showToast = useCallback((message: string, tone: ToastTone = 'info') => {
-    setToast({ message, tone });
-    setTimeout(() => setToast(null), 2300);
-  }, []);
 
   const load = useCallback(async () => {
     try {

@@ -26,7 +26,8 @@ import {
   X,
 } from 'lucide-react-native';
 
-import AppToast, { ToastTone } from '../../src/components/AppToast';
+import AppToast from '../../src/components/AppToast';
+import { useToast } from '../../src/hooks/useToast';
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { PressScale } from '../../src/components/PressScale';
 import { LanguageModal } from '../../src/components/LanguageModal';
@@ -56,11 +57,7 @@ export default function Settings() {
   const [invites, setInvites] = useState<FamilyInvite[]>([]);
   const [showLang, setShowLang] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
-  const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null);
-  const showToast = useCallback((message: string, tone: ToastTone = 'success') => {
-    setToast({ message, tone });
-    setTimeout(() => setToast(null), 2600);
-  }, []);
+  const { toast, showToast } = useToast(2600);
   const [inviteMethod, setInviteMethod] = useState<'email' | 'phone' | 'link'>('email');
   // 'coparent' is the one-tap path inside Manage members; 'family' is the
   // generic invite with a free-text relationship (grandparent, nanny...).
@@ -200,7 +197,7 @@ export default function Settings() {
           onPress: async () => {
             try {
               await api.completeInvite(invite.invite_id);
-              showToast(t('set_invite_add_now_done'));
+              showToast(t('set_invite_add_now_done'), 'success');
               await load();
             } catch (error: any) {
               const detail = String(error?.message || '').match(/\{.*"detail"\s*:\s*"([^"]+)"/)?.[1];
@@ -398,7 +395,7 @@ export default function Settings() {
         setInviteError(false);
         setInviteEmail('');
         setShowInvite(false);
-        showToast(`${t('set_invite_email_sent')} ${submitted}.`);
+        showToast(`${t('set_invite_email_sent')} ${submitted}.`, 'success');
       } else {
         // Delivery not configured / failed — fall back to the shareable link.
         setInviteError(true);
@@ -444,7 +441,7 @@ export default function Settings() {
         await Linking.openURL(smsUrl);
         setInviteResult(null);
         setShowInvite(false);
-        showToast(t('set_invite_sms_opened'));
+        showToast(t('set_invite_sms_opened'), 'success');
       } catch {
         // No SMS app (e.g. a tablet) — fall back to the share sheet.
         await shareInviteLink(url, null);
@@ -474,7 +471,7 @@ export default function Settings() {
       if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) {
         try {
           await navigator.clipboard.writeText(res.invite_url);
-          showToast(t('set_link_copied'));
+          showToast(t('set_link_copied'), 'success');
         } catch {
           await shareInviteLink(res.invite_url, null);
         }
@@ -647,7 +644,7 @@ export default function Settings() {
                           if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) {
                             try {
                               await navigator.clipboard.writeText(invite.invite_url!);
-                              showToast(t('set_link_copied'));
+                              showToast(t('set_link_copied'), 'success');
                               return;
                             } catch { /* fall through to share */ }
                           }
