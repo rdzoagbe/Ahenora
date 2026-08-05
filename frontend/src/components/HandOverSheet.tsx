@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { X } from 'lucide-react-native';
@@ -26,6 +26,7 @@ export function HandOverSheet({ visible, onClose }: { visible: boolean; onClose:
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const keyboard = useKeyboardHeight();
+  const { height: windowHeight } = useWindowDimensions();
   const styles = createStyles(ui);
 
   const [profiles, setProfiles] = useState<FamilyProfile[]>([]);
@@ -112,6 +113,20 @@ export function HandOverSheet({ visible, onClose }: { visible: boolean; onClose:
         ]}
       >
         <View style={styles.grabber} />
+        {/* The body scrolls inside a bounded panel.
+            Whether the keypad is escaped by the measured lift above or by the
+            window resizing underneath us differs by platform and by Android
+            setting, and when neither wins the sheet ends up flush against the
+            keys with its confirm button clipped in half — a PIN you cannot
+            finish setting, which locks the parent out of handing the device
+            over at all. Capping the height and letting the content scroll
+            makes the button reachable however that argument turns out. */}
+        <ScrollView
+          style={{ maxHeight: Math.max(180, windowHeight - keyboard - 180) }}
+          contentContainerStyle={styles.scrollBody}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
         <View style={styles.header}>
           {/* Name the moment plainly when a PIN is still needed — "Who's using
               this?" over a PIN field read as a puzzle rather than a setup step. */}
@@ -207,6 +222,7 @@ export function HandOverSheet({ visible, onClose }: { visible: boolean; onClose:
             ) : null}
           </>
         )}
+        </ScrollView>
       </View>
     </Modal>
   );
@@ -223,10 +239,13 @@ const createStyles = (ui: UIColors) =>
       backgroundColor: ui.card,
       borderTopLeftRadius: 26, borderTopRightRadius: 26,
       borderTopWidth: 1, borderColor: ui.line,
-      paddingHorizontal: 18, paddingTop: 12, gap: 10,
+      paddingHorizontal: 18, paddingTop: 12,
       shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 28,
       shadowOffset: { width: 0, height: -8 }, elevation: 24,
     },
+    // The gap that used to live on the panel now lives here, because the
+    // panel's direct child is the scroll view rather than the content itself.
+    scrollBody: { gap: 10, paddingBottom: 4 },
     grabber: {
       alignSelf: 'center', width: 44, height: 5, borderRadius: 3,
       backgroundColor: ui.muted, opacity: 0.5, marginBottom: 8,
