@@ -1796,7 +1796,9 @@ export default function Kitchen() {
             style={[styles.suggestAllBtn, (scanAdding || scanItems.every((i) => !i.checked)) && { opacity: 0.5 }]}
           >
             <Text style={styles.suggestAllText}>
-              {t('scan_add_n', { n: scanItems.filter((i) => i.checked).length })}
+              {scanItems.filter((i) => i.checked).length === 1
+                ? t('scan_add_one')
+                : t('scan_add_n', { n: scanItems.filter((i) => i.checked).length })}
             </Text>
           </PressScale>
         ) : undefined}
@@ -1820,7 +1822,7 @@ export default function Kitchen() {
           </View>
         ) : scanPhase === 'review' ? (
           <>
-            <Text style={styles.suggestSub}>{t('scan_sub', { n: scanItems.length })}</Text>
+            <Text style={styles.suggestSub}>{scanItems.length === 1 ? t('scan_sub_one') : t('scan_sub', { n: scanItems.length })}</Text>
             {scanItems.map((item, idx) => (
               <PressScale
                 key={`${item.name}-${idx}`}
@@ -1852,7 +1854,9 @@ export default function Kitchen() {
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.rowText}>{t('scan_replace_list')}</Text>
                   <Text style={styles.scanUnsure}>
-                    {t('scan_replace_hint', { n: shopItems.length })}
+                    {shopItems.length === 1
+                      ? t('scan_replace_hint_one')
+                      : t('scan_replace_hint', { n: shopItems.length })}
                   </Text>
                 </View>
               </PressScale>
