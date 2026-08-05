@@ -44,12 +44,24 @@ const MS_DISCOVERY = {
 };
 const MS_SCOPES = ['openid', 'profile', 'email', 'offline_access', 'Calendars.Read', 'User.Read'];
 
-// Silent auto-sync: don't re-pull Google more than once every 6h, and remember
-// which upcoming items we've already surfaced so "new on your agenda" only fires
-// for genuinely new events (never on an idempotent re-import).
-const AUTOSYNC_AT_KEY = 'coo_cal_autosync_at';
+// Morning auto-sync: at most once a day, and only on the first open from 7am
+// local onwards, so the calendar is already pulled in when someone looks in
+// the morning. A true 7am-while-closed fetch is not possible — the app keeps
+// no server-side calendar credentials (offlineAccess: false) and mobile OSes
+// do not grant reliable scheduled background execution — so this fires on the
+// first morning open instead, which is when a person actually looks. The seen
+// set remembers which upcoming items were already surfaced so "new on your
+// agenda" only fires for genuinely new events, never on an idempotent re-pull.
+const AUTOSYNC_DAY_KEY = 'coo_cal_autosync_day';   // YYYY-MM-DD of the last morning pull
 const CAL_SEEN_KEY = 'coo_cal_seen_ids';
-const AUTOSYNC_MIN_GAP_MS = 6 * 60 * 60 * 1000;
+const MORNING_HOUR = 7;
+
+function localDayKey(date: Date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
 
 function startOfLocalDay(date: Date) {
   const d = new Date(date);
@@ -129,6 +141,9 @@ export default function Calendar() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<CalendarImportResult | null>(null);
+  // Shown after the morning auto-pull: a quiet, dismissible note that the day
+  // came in on its own, with a nudge to the Import button to double-check.
+  const [morningNotice, setMorningNotice] = useState(false);
   // Lets the user back out of a sync that is taking too long. The in-flight
   // request is allowed to finish server-side (the import is an idempotent
   // upsert, so a late completion is harmless), but once cancelled its result
@@ -295,8 +310,13 @@ export default function Calendar() {
     if (autoSyncedRef.current) return;
     autoSyncedRef.current = true;
     try {
-      const lastRaw = await AsyncStorage.getItem(AUTOSYNC_AT_KEY).catch(() => null);
-      if (Date.now() - Number(lastRaw || 0) < AUTOSYNC_MIN_GAP_MS) return;
+      // Morning only, once a day. Before 7am we leave it for later; after,
+      // the first open of the day does the pull and nothing else does.
+      const now = new Date();
+      if (now.getHours() < MORNING_HOUR) return;
+      const today = localDayKey(now);
+      const lastDay = await AsyncStorage.getItem(AUTOSYNC_DAY_KEY).catch(() => null);
+      if (lastDay === today) return;
       if (!webClientId) return;
 
       GoogleSignin.configure({ webClientId, scopes: ['profile', 'email', GOOGLE_CALENDAR_SCOPE], offlineAccess: false });
@@ -314,8 +334,10 @@ export default function Calendar() {
       if (!tokens.accessToken) return;
 
       const result = await api.importGoogleCalendar(tokens.accessToken, 30);
-      await AsyncStorage.setItem(AUTOSYNC_AT_KEY, String(Date.now())).catch(() => undefined);
+      await AsyncStorage.setItem(AUTOSYNC_DAY_KEY, today).catch(() => undefined);
       setSyncResult(result);
+      // Say plainly that it happened, and point at the button to double-check.
+      setMorningNotice(true);
 
       const list = await api.listCards();
       const open = list.filter((card) => card.status === 'OPEN' && card.due_date);
@@ -635,8 +657,26 @@ export default function Calendar() {
             }
           />
 
+          {/* Morning auto-import notice — dismissible; also clears if they tap Import. */}
+          {morningNotice ? (
+            <View testID="calendar-morning-notice" style={styles.morningNotice}>
+              <CalendarDays color={ui.mintText} size={18} />
+              <Text style={styles.morningNoticeText}>{t('cal_morning_imported')}</Text>
+              <PressScale
+                testID="calendar-morning-dismiss"
+                accessibilityRole="button"
+                accessibilityLabel={t('close')}
+                onPress={() => setMorningNotice(false)}
+                hitSlop={10}
+                style={styles.morningDismiss}
+              >
+                <X color={ui.muted} size={16} />
+              </PressScale>
+            </View>
+          ) : null}
+
           {/* Connection banner (tap to sync — keeps the sync card visible & functional) */}
-          <PressScale testID="calendar-sync-card-button" onPress={openImportPicker} disabled={syncDisabled} style={styles.bannerGap}>
+          <PressScale testID="calendar-sync-card-button" onPress={() => { setMorningNotice(false); openImportPicker(); }} disabled={syncDisabled} style={styles.bannerGap}>
             <KitCard style={styles.banner}>
               <View testID="calendar-sync-card" style={styles.bannerInner}>
                 <IconTile bg={ui.orangeSoft} size={40} radius={13}><CalendarDays color={ui.orange} size={20} /></IconTile>
@@ -1045,6 +1085,12 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   syncBtn: { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: ui.orangeDeep, borderRadius: 99, paddingHorizontal: 18, paddingVertical: 11 },
   syncText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
 
+  morningNotice: {
+    flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 16,
+    backgroundColor: ui.mint, borderRadius: 14, paddingVertical: 11, paddingHorizontal: 13,
+  },
+  morningNoticeText: { flex: 1, color: ui.mintText, fontFamily: 'Inter_600SemiBold', fontSize: 12.5, lineHeight: 17 },
+  morningDismiss: { padding: 2 },
   bannerGap: { marginTop: 18 },
   banner: { padding: 14 },
   bannerInner: { flexDirection: 'row', alignItems: 'center', gap: 12 },

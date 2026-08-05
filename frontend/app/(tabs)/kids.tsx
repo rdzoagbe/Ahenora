@@ -34,6 +34,7 @@ import {
 } from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
+import { syncAllowanceReminders } from '../../src/notifications';
 import { PressScale } from '../../src/components/PressScale';
 import { PinPadModal } from '../../src/components/PinPadModal';
 import { StarCelebration, CelebrationContent } from '../../src/components/StarCelebration';
@@ -288,7 +289,25 @@ export default function Kids() {
       Promise.allSettled([api.listRoutines(), api.listAllowances(), api.listChores(), api.listRedemptions('pending')])
         .then(async ([rtnRes, alwRes, choreRes, redRes]) => {
           if (rtnRes.status === 'fulfilled') setRoutines(rtnRes.value);
-          if (alwRes.status === 'fulfilled') setAllowances(alwRes.value);
+          if (alwRes.status === 'fulfilled') {
+            setAllowances(alwRes.value);
+            // A day-before nudge for each child's pocket money — easy to forget
+            // because it is a date, not a task. Scheduled on-device, so it fires
+            // even with the app closed; re-synced on every load so a changed
+            // amount or frequency never leaves a stale reminder behind.
+            const reminders = alwRes.value
+              .filter((a) => a.amount > 0 && a.next_due_at)
+              .map((a) => ({
+                id: a.allowance_id,
+                fireAt: new Date(a.next_due_at).getTime() - 24 * 60 * 60 * 1000,
+                title: t('kids_allowance_reminder_title'),
+                body: t('kids_allowance_reminder_body', {
+                  name: m.find((x) => x.member_id === a.member_id)?.name || '',
+                  amount: `${t('currency_symbol')}${a.amount}`,
+                }),
+              }));
+            syncAllowanceReminders(reminders, true).catch(() => undefined);
+          }
           if (choreRes.status === 'fulfilled') setChores(choreRes.value);
           // A server that predates redemptions 404s here; an older app should
           // still show stars rather than an error, so a failure just leaves
@@ -648,20 +667,37 @@ export default function Kids() {
     moneySavingRef.current = true;
     try {
       const res = await api.payAllowance(activeChild.member_id);
-      setAllowances((prev) => prev.map((a) =>
-        a.member_id === res.allowance.member_id ? res.allowance : a));
+      const nextAllowances = allowances.map((a) =>
+        a.member_id === res.allowance.member_id ? res.allowance : a);
+      setAllowances(nextAllowances);
       setBalances((prev) => ({
         ...prev,
         [activeChild.member_id]: (prev[activeChild.member_id] || 0) + res.transaction.amount,
       }));
       showToast(t('kids_allowance_paid', { amount: res.transaction.amount }), 'success');
+      // Paying moves the next-due date forward, so reschedule the day-before
+      // reminders now rather than waiting for the next screen load.
+      syncAllowanceReminders(
+        nextAllowances
+          .filter((a) => a.amount > 0 && a.next_due_at)
+          .map((a) => ({
+            id: a.allowance_id,
+            fireAt: new Date(a.next_due_at).getTime() - 24 * 60 * 60 * 1000,
+            title: t('kids_allowance_reminder_title'),
+            body: t('kids_allowance_reminder_body', {
+              name: members.find((x) => x.member_id === a.member_id)?.name || '',
+              amount: `${t('currency_symbol')}${a.amount}`,
+            }),
+          })),
+        true,
+      ).catch(() => undefined);
     } catch (e: any) {
       logger.warn('Pay allowance failed:', e?.message || e);
       showToast(e?.message || t('kids_allowance_error'), 'error');
     } finally {
       moneySavingRef.current = false;
     }
-  }, [activeChild, showToast, t]);
+  }, [activeChild, allowances, members, showToast, t]);
 
   const openMoneySheet = useCallback(async () => {
     if (!activeChild) return;
