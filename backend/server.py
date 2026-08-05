@@ -33,6 +33,7 @@ import PIL.Image
 from ai_models import model_candidates, should_try_next_model, summarize_ai_error
 from ai_safety import (
     MAX_INGREDIENT_LEN,
+    VEGETARIAN,
     RECIPE_SYSTEM_PROMPT,
     SUGGEST_SYSTEM_PROMPT,
     build_suggest_prompt,
@@ -6799,18 +6800,43 @@ RECIPE_LANGUAGE_NAMES = {
 }
 
 
+def normalize_diet(value) -> str:
+    """Only "vegetarian" is a real diet today; everything else is "no diet".
+
+    A closed set rather than free text — the diet only ever picks a fixed prompt
+    clause we wrote, never carries user words into the model.
+    """
+    return VEGETARIAN if str(value or "").strip().lower() == VEGETARIAN else ""
+
+
+def recipe_slot(diet: str) -> str:
+    """Where a generated recipe caches on the meal doc.
+
+    Vegetarian recipes live in their own slot so a veg rewrite never returns the
+    cached omnivore version, and a plain "Cook it" never returns the veg one.
+    """
+    return f"ai_recipe_{diet}" if diet else "ai_recipe"
+
+
 @app.post("/api/meals/{meal_id}/recipe")
 async def generate_meal_recipe(
     meal_id: str,
     lang: str = "en",
+    diet: str = "",
+    variant: int = 0,
     user: dict = Depends(require_user),
     database=Depends(get_db),
 ):
     """Write a cooking method for a meal the family typed themselves.
 
-    The curated library covers 38 dishes and ships in the app; this covers
-    everything else. Results are cached on the meal per language, so opening
-    the same recipe again costs nothing and returns instantly.
+    The curated library covers ~50 dishes and ships in the app; this covers
+    everything else. Results are cached on the meal per language (and per diet),
+    so opening the same recipe again costs nothing and returns instantly.
+
+    `diet` ("vegetarian") rewrites the ingredients and steps into that diet
+    rather than commenting on it, and caches in its own slot so it never clashes
+    with the plain version. `variant` (>0) asks for a different take on the same
+    dish and deliberately skips the cache so "Different recipe" is always fresh.
     """
     await require_feature(user, "meal_planner")
 
@@ -6822,15 +6848,23 @@ async def generate_meal_recipe(
     if not meal:
         raise HTTPException(404, "Not found")
 
-    cached = (meal.get("ai_recipe") or {}).get(language)
-    if cached:
-        return {"recipe": cached, "cached": True}
+    family = await get_family_doc(user["family_id"])
+    # An explicit per-recipe diet wins; otherwise a vegetarian household gets
+    # vegetarian recipes without having to ask each time.
+    diet = normalize_diet(diet) or normalize_diet(family.get("diet"))
+    variant = max(0, min(int(variant or 0), 20))
+    slot = recipe_slot(diet)
+
+    cached = (meal.get(slot) or {}).get(language)
+    # A "different recipe" (variant>0) is a deliberate ask for something fresh,
+    # so it skips the cache; everything else serves the cached copy free.
+    if cached and not variant:
+        return {"recipe": cached, "cached": True, "diet": diet}
 
     if not GOOGLE_API_KEY:
         raise HTTPException(503, "Recipe suggestions are unavailable right now.")
 
     sub = await build_subscription(user["family_id"])
-    family = await get_family_doc(user["family_id"])
     # Metered against the same monthly AI allowance as document scanning, so a
     # family has one number to understand rather than two.
     if not is_admin_user(user) and family.get("ai_scans_used", 0) >= sub["limits"]["ai_scans_per_month"]:
@@ -6849,8 +6883,15 @@ async def generate_meal_recipe(
 
     try:
         text = await _gemini_text(
-            build_recipe_prompt(title, ingredients, RECIPE_LANGUAGE_NAMES[language]),
+            build_recipe_prompt(title, ingredients, RECIPE_LANGUAGE_NAMES[language],
+                                diet=diet, variant=variant),
             system=RECIPE_SYSTEM_PROMPT,
+            # The lite model turns a dish name into a structured recipe quickly,
+            # and the validator guards the shape either way — so "Cook it"
+            # returns sooner. A "different recipe" also runs a little hotter so
+            # the variety is real, not sampling noise.
+            fast=True,
+            temperature=0.9 if variant else None,
         )
         parsed = extract_json(text)
         if parsed is None:
@@ -6871,7 +6912,7 @@ async def generate_meal_recipe(
 
     await database["meals"].update_one(
         {"meal_id": meal_id, "family_id": user["family_id"]},
-        {"$set": {f"ai_recipe.{language}": recipe}},
+        {"$set": {f"{slot}.{language}": recipe}},
     )
     if not is_admin_user(user):
         # Guarded so two concurrent scans cannot both push the counter past the
@@ -6884,7 +6925,31 @@ async def generate_meal_recipe(
             {"$inc": {"ai_scans_used": 1}, "$set": {"updated_at": utcnow()}},
         )
 
-    return {"recipe": recipe, "cached": False}
+    return {"recipe": recipe, "cached": False, "diet": diet}
+
+
+class DietIn(BaseModel):
+    diet: str = ""
+
+
+@app.get("/api/meals/diet")
+async def get_meal_diet(user=Depends(require_user), database=Depends(get_db)):
+    """The household's cooking diet, read on the Kitchen tab."""
+    family = await get_family_doc(user["family_id"])
+    return {"diet": normalize_diet(family.get("diet"))}
+
+
+@app.put("/api/meals/diet")
+async def set_meal_diet(payload: DietIn, user=Depends(require_user), database=Depends(get_db)):
+    """Set the household's cooking diet. Vegetarian makes new recipes and the
+    weekly suggestions come out vegetarian without asking each time. A closed
+    set, so only "vegetarian" or "" (no diet) is ever stored."""
+    diet = normalize_diet(payload.diet)
+    await database["families"].update_one(
+        {"family_id": user["family_id"]},
+        {"$set": {"diet": diet, "updated_at": utcnow()}},
+    )
+    return {"diet": diet}
 
 
 @app.post("/api/recipes/chef")
@@ -7161,6 +7226,7 @@ async def suggest_meals_ai(
             build_suggest_prompt(
                 items, RECIPE_LANGUAGE_NAMES[language], planned,
                 variant=variant, seen_titles=seen,
+                diet=normalize_diet(family.get("diet")),
             ),
             system=SUGGEST_SYSTEM_PROMPT,
             # First ask stays focused; repeat asks lean into variety.

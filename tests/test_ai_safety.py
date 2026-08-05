@@ -16,6 +16,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "backend"))
 from ai_safety import (  # noqa: E402
     DAYS_IN_ORDER,
     UnsafeRecipe,
+    VEGETARIAN,
+    build_recipe_prompt,
     build_suggest_prompt,
     validate_suggestions,
     extract_json,
@@ -489,6 +491,41 @@ class BuildSuggestPrompt(unittest.TestCase):
         self.assertNotEqual(p0, p1)
         self.assertNotEqual(p1, p2)
         self.assertIn("different", p1.lower())
+
+
+class BuildRecipePrompt(unittest.TestCase):
+    def test_plain_recipe_has_no_diet_or_variant_line(self):
+        p = build_recipe_prompt("Chicken curry", [], "English")
+        self.assertIn("Chicken curry", p)
+        self.assertIn("English", p)
+        self.assertNotIn("vegetarian", p.lower())
+        self.assertNotIn("different take", p.lower())
+
+    def test_vegetarian_asks_to_rewrite_the_ingredients(self):
+        # The headline: a vegetarian recipe must be told to REPLACE meat, not
+        # merely comment on it.
+        p = build_recipe_prompt("Chicken curry", [], "English", diet=VEGETARIAN)
+        self.assertIn("vegetarian", p.lower())
+        self.assertIn("replace", p.lower())
+        self.assertIn("no meat", p.lower())
+
+    def test_variant_asks_for_a_different_take(self):
+        base = build_recipe_prompt("Chicken curry", [], "English")
+        varied = build_recipe_prompt("Chicken curry", [], "English", variant=1)
+        self.assertNotEqual(base, varied)
+        self.assertIn("different take", varied.lower())
+
+    def test_vegetarian_and_variant_compose(self):
+        p = build_recipe_prompt("Chicken curry", [], "English", diet=VEGETARIAN, variant=2)
+        self.assertIn("vegetarian", p.lower())
+        self.assertIn("different take", p.lower())
+
+
+class BuildSuggestPromptDiet(unittest.TestCase):
+    def test_vegetarian_household_asks_for_meatfree_dinners(self):
+        p = build_suggest_prompt(["rice", "chicken"], "English", diet=VEGETARIAN)
+        self.assertIn("vegetarian", p.lower())
+        self.assertNotIn("vegetarian", build_suggest_prompt(["rice"], "English").lower())
 
 
 class DocumentScanTests(unittest.TestCase):

@@ -119,11 +119,45 @@ Rules you must follow:
 Return no prose, no markdown, no explanation. JSON only."""
 
 
-def build_recipe_prompt(title: str, ingredients: list, language_name: str) -> str:
-    """Assemble the user-facing half of the prompt from sanitised input."""
+# The one supported diet today. A closed set, not free text, so the prompt line
+# is fixed by us and never carries user-supplied instructions.
+VEGETARIAN = "vegetarian"
+
+_VEGETARIAN_CLAUSE = (
+    "Write a strictly vegetarian version of this dish: use no meat, poultry, "
+    "fish or seafood, and no meat stock or gelatine. Replace any such ingredient "
+    "with a suitable vegetarian substitute — for example tofu, beans, lentils, "
+    "mushrooms, chickpeas, paneer or halloumi — and adjust the amounts and the "
+    "steps to match. Keep it recognisably the same dish."
+)
+
+_VARIANT_CLAUSE = (
+    "Give a different take from the usual version of this dish: vary the method "
+    "or some of the ingredients while keeping it recognisably the same dish."
+)
+
+
+def build_recipe_prompt(
+    title: str,
+    ingredients: list,
+    language_name: str,
+    diet: str = "",
+    variant: int = 0,
+) -> str:
+    """Assemble the user-facing half of the prompt from sanitised input.
+
+    `diet` is a closed set (only "vegetarian" today): when set, the model is
+    told to rewrite the ingredients and steps into that diet rather than merely
+    comment on it. `variant` asks for a different take on the same dish, so a
+    "different recipe" tap does not return the same method back.
+    """
     lines = [f"Dish name: {title}"]
     if ingredients:
         lines.append("Ingredients the family already has: " + ", ".join(ingredients))
+    if diet == VEGETARIAN:
+        lines.append(_VEGETARIAN_CLAUSE)
+    if variant and variant > 0:
+        lines.append(_VARIANT_CLAUSE)
     lines.append(f"Write the ingredient names and the steps in {language_name}.")
     return "\n".join(lines)
 
@@ -674,6 +708,7 @@ def build_suggest_prompt(
     avoid_titles: list = None,
     variant: int = 0,
     seen_titles: list = None,
+    diet: str = "",
 ) -> str:
     """Assemble the user half of the prompt from sanitised input.
 
@@ -684,6 +719,12 @@ def build_suggest_prompt(
     """
     lines = ["Shopping list:"]
     lines.extend(f"- {item}" for item in items)
+    if diet == VEGETARIAN:
+        lines.append("")
+        lines.append(
+            "Every dinner must be vegetarian: no meat, poultry, fish or seafood "
+            "in any of them."
+        )
     if avoid_titles:
         lines.append("")
         lines.append("Already planned this week, do not propose these again:")

@@ -543,9 +543,22 @@ export interface MealPlan {
    *  re-rendered in the current language instead of frozen at creation time. */
   recipe_id?: string | null;
   /** Generated cooking methods, cached per language. */
-  ai_recipe?: Record<string, { minutes: number; steps: string[]; servings?: number; ingredients?: { name: string; qty: number | null; unit: string }[]; title?: string }>;
+  ai_recipe?: Record<string, AiRecipe>;
+  /** Vegetarian rewrites, cached per language in their own slot so they never
+   *  clash with the omnivore version above. */
+  ai_recipe_vegetarian?: Record<string, AiRecipe>;
   created_at: string;
 }
+
+export interface AiRecipe {
+  minutes: number;
+  steps: string[];
+  servings?: number;
+  ingredients?: { name: string; qty: number | null; unit: string }[];
+  title?: string;
+}
+
+export type Diet = '' | 'vegetarian';
 
 export interface Carpool {
   carpool_id: string;
@@ -1464,21 +1477,15 @@ export const api = {
       `/meals/suggest-ai?lang=${encodeURIComponent(lang)}&variant=${variant}`,
       { method: 'POST' },
     ),
-  generateMealRecipe: (mealId: string, lang: string) =>
-    request<{
-      recipe: {
-        minutes: number;
-        steps: string[];
-        // Present on recipes generated since the AI-advisor phase; older
-        // cached ones are steps-only and still render.
-        servings?: number;
-        ingredients?: { name: string; qty: number | null; unit: string }[];
-      };
-      cached: boolean;
-    }>(
-      `/meals/${mealId}/recipe?lang=${encodeURIComponent(lang)}`,
+  generateMealRecipe: (mealId: string, lang: string, diet: Diet = '', variant = 0) =>
+    request<{ recipe: AiRecipe; cached: boolean; diet: Diet }>(
+      `/meals/${mealId}/recipe?lang=${encodeURIComponent(lang)}`
+        + `&diet=${encodeURIComponent(diet)}&variant=${variant}`,
       { method: 'POST' },
     ),
+  getMealDiet: () => request<{ diet: Diet }>('/meals/diet'),
+  setMealDiet: (diet: Diet) =>
+    request<{ diet: Diet }>('/meals/diet', { method: 'PUT', body: { diet } }),
   askChef: (title: string, question: string, lang: string) =>
     request<{ answer: string }>(`/recipes/chef?lang=${encodeURIComponent(lang)}`, {
       method: 'POST',
