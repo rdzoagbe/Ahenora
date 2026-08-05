@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from fastapi import FastAPI, HTTPException, Depends, Header, UploadFile, File, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 try:
     from motor.motor_asyncio import AsyncIOMotorClient
 except ImportError:
@@ -747,6 +747,50 @@ async def get_family_doc(family_id: str):
         family["ai_scans_used"] = 0
         family["ai_scans_period_start"] = now
     return family
+
+
+async def charge_ai_scan(user) -> None:
+    """Charge one AI scan against the family's monthly allowance, atomically.
+
+    The paid AI routes read ai_scans_used, compare, then $inc later — two
+    separate operations, so two concurrent scans could both read 9/10, both
+    pass, and both increment to 11. This does it in one guarded update: the
+    increment only lands while the family is still under the limit at write
+    time, the same way the money paths guard their decrements. Over the limit
+    (or on a race that took the last slot) it raises the upgrade wall. Admins
+    never count.
+    """
+    database = get_db()
+    if is_admin_user(user):
+        return
+    sub = await build_subscription(user["family_id"])
+    limit = sub["limits"]["ai_scans_per_month"]
+    result = await database["families"].update_one(
+        {"family_id": user["family_id"], "ai_scans_used": {"$lt": limit}},
+        {"$inc": {"ai_scans_used": 1}, "$set": {"updated_at": utcnow()}},
+    )
+    if result.modified_count == 0:
+        plan_limit_error(
+            feature="ai_scans",
+            current_plan=sub["plan"],
+            limit=limit,
+            used=limit,
+            message="AI scan limit reached for this billing period.",
+        )
+
+
+async def ai_scans_remaining(user) -> int:
+    """How many scans are left, without charging one.
+
+    For cheap, auto-fired helpers (assign) that should quietly fall back to a
+    non-AI answer when a family is out — rather than raise the upgrade wall a
+    deliberate document scan does, or burn a document-scan slot on a helper
+    the user never explicitly asked for.
+    """
+    if is_admin_user(user):
+        return 1
+    sub = await build_subscription(user["family_id"])
+    return max(0, sub["limits"]["ai_scans_per_month"] - sub["ai_scans_used"])
 
 
 async def build_subscription(family_id: str):
@@ -1783,8 +1827,16 @@ class SubscriptionChangeIn(BaseModel):
     billing_cycle: str
 
 
+# A photo the app captures at quality 0.55 is well under a megabyte; the vault
+# caps uploads against the storage quota, but the vision endpoints decoded the
+# whole base64 string into memory (and shipped it to Gemini) with no ceiling at
+# all. ~10 MB of image is ~14 MB of base64 — generous for a phone photo, and a
+# firm wall against a body sized to exhaust memory.
+MAX_IMAGE_B64_CHARS = 14 * 1024 * 1024
+
+
 class VisionIn(BaseModel):
-    image_base64: str
+    image_base64: str = Field(max_length=MAX_IMAGE_B64_CHARS)
 
 class CalendarImportIn(BaseModel):
     access_token: str
@@ -1819,7 +1871,10 @@ class ShoppingItemPatchIn(BaseModel):
 
 class ExpenseIn(BaseModel):
     description: str
-    amount: float
+    # A negative expense silently skews the split totals; nobody spends a
+    # negative amount, and an upper bound keeps a fat-fingered figure out of
+    # the aggregation.
+    amount: float = Field(ge=0, le=1_000_000)
     category: str = "General"
     child_member_id: Optional[str] = None
 
@@ -3823,9 +3878,17 @@ async def ai_assign(payload: AiAssignIn, user=Depends(require_user)):
 
     names = [m["name"] for m in members]
 
-    if not GOOGLE_API_KEY:
+    def local_pick():
         parent = next((m for m in members if m["role"].lower() == "parent"), members[0])
         return {"assignee": parent["name"]}
+
+    # Assign is fired automatically as you type a card, not asked for the way a
+    # document scan is. So when a family is out of AI scans it quietly falls
+    # back to the local pick rather than raising the upgrade wall or burning a
+    # document-scan slot on a helper. This also closes the only other unmetered
+    # paid-AI route: an over-quota family can no longer drive Gemini calls here.
+    if not GOOGLE_API_KEY or await ai_scans_remaining(user) <= 0:
+        return local_pick()
 
     prompt = f"""
 Choose the best assignee from this list only: {", ".join(names)}.
@@ -3841,8 +3904,7 @@ Return only one exact name from the list, or return an empty string.
         )
     except Exception as exc:  # noqa: BLE001 — degrade like the no-key path, never 500
         log.warning("ai assign failed: %s", exc)
-        parent = next((m for m in members if m["role"].lower() == "parent"), members[0])
-        return {"assignee": parent["name"]}
+        return local_pick()
     result = result.strip().replace('"', "")
     if result not in names:
         result = ""
@@ -4045,7 +4107,15 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
     updated = await database["cards"].find_one({"card_id": card_id}, {"_id": 0})
 
     if changes.get("status") == "DONE" and card["status"] != "DONE":
-        await log_activity(database, user, "task_done", card.get("title", ""))
+        # A private card's title must not surface in the family activity feed.
+        # /api/activity returns the whole household's feed to any co-parent, so
+        # a private "Consult divorce lawyer" marked done would disclose its
+        # title. Every other activity/notify in this file is gated on `shared`
+        # (create_card, the task_assigned log just below) — this one was the
+        # single omission.
+        merged = {**card, **changes}
+        if merged.get("shared"):
+            await log_activity(database, user, "task_done", card.get("title", ""))
 
     # A hand-off: the name changed, so somebody has just been given a job.
     # Only on a real change — re-saving a card without touching the assignee
@@ -4053,10 +4123,14 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
     new_assignee = changes.get("assignee")
     if new_assignee and new_assignee != card.get("assignee"):
         merged = {**card, **changes}
+        # Both the feed entry and the push carry the card title, so both are
+        # gated: a private card handed to the co-parent must not announce
+        # itself. (They could not open it anyway — it is private — so the
+        # notification would only leak the title with no way to act on it.)
         if merged.get("shared"):
             await log_activity(database, user, "task_assigned",
                                merged.get("title", ""), target=new_assignee)
-        await notify_assignment(database, user, merged, new_assignee)
+            await notify_assignment(database, user, merged, new_assignee)
 
     # When a recurring card is completed, spawn its next occurrence.
     if (
@@ -5490,8 +5564,13 @@ async def vision_extract(payload: VisionIn, user=Depends(require_user)):
     # photograph, which is why the recipe pass below runs inside this request
     # rather than sending the client off to /api/recipes/capture.
     if not is_admin_user(user):
+        # Guarded so two concurrent scans cannot both push the counter past the
+        # limit: the increment only lands while the family is still under it.
+        # A request that raced past the last slot did its work already — it goes
+        # through uncharged rather than over-counting.
         await database["families"].update_one(
-            {"family_id": user["family_id"]},
+            {"family_id": user["family_id"],
+             "ai_scans_used": {"$lt": sub["limits"]["ai_scans_per_month"]}},
             {"$inc": {"ai_scans_used": 1}, "$set": {"updated_at": utcnow()}},
         )
 
@@ -5677,6 +5756,12 @@ async def voice_transcribe(audio: UploadFile = File(...), user=Depends(require_u
 
     if len(audio_bytes) > MAX_VOICE_AUDIO_BYTES:
         raise HTTPException(status_code=413, detail="Recording is too large")
+
+    # A voice note is a billed multimodal Gemini call, so it counts against the
+    # monthly AI allowance like every other scan. This was the one paid AI
+    # route that neither gated nor metered — a family out of scans could
+    # transcribe without limit. Charged before the call, atomically.
+    await charge_ai_scan(user)
 
     members = []
     async for member in database["family_members"].find(
@@ -5942,6 +6027,8 @@ async def scan_shopping_list(
         image_b64 = image_b64.split(",")[-1]
     if len(image_b64) < 100:
         raise HTTPException(400, "No photo attached.")
+    if len(image_b64) > MAX_IMAGE_B64_CHARS:
+        raise HTTPException(413, "That photo is too large.")
 
     if not GOOGLE_API_KEY:
         raise HTTPException(503, "Photo scanning is unavailable right now.")
@@ -5976,8 +6063,13 @@ async def scan_shopping_list(
         raise HTTPException(502, "We could not read a shopping list in that photo.")
 
     if not is_admin_user(user):
+        # Guarded so two concurrent scans cannot both push the counter past the
+        # limit: the increment only lands while the family is still under it.
+        # A request that raced past the last slot did its work already — it goes
+        # through uncharged rather than over-counting.
         await database["families"].update_one(
-            {"family_id": user["family_id"]},
+            {"family_id": user["family_id"],
+             "ai_scans_used": {"$lt": sub["limits"]["ai_scans_per_month"]}},
             {"$inc": {"ai_scans_used": 1}, "$set": {"updated_at": utcnow()}},
         )
 
@@ -5985,11 +6077,14 @@ async def scan_shopping_list(
 
 
 class BulkShoppingIn(BaseModel):
-    names: list[str]
+    # One insert per name, so an uncapped list is one request that drives
+    # arbitrarily many writes. A household shopping list is dozens of items,
+    # not thousands; 200 is well clear of any real list and a firm ceiling.
+    names: list[str] = Field(max_length=200)
     # Aisle per name, same order. The multilingual matching lives in the app,
     # so the client classifies and the server stores. Short, missing or
     # unrecognised entries fall back to "Other".
-    categories: list[str] = []
+    categories: list[str] = Field(default=[], max_length=200)
 
 
 @app.post("/api/shopping/bulk")
@@ -6510,8 +6605,13 @@ async def generate_meal_recipe(
         {"$set": {f"ai_recipe.{language}": recipe}},
     )
     if not is_admin_user(user):
+        # Guarded so two concurrent scans cannot both push the counter past the
+        # limit: the increment only lands while the family is still under it.
+        # A request that raced past the last slot did its work already — it goes
+        # through uncharged rather than over-counting.
         await database["families"].update_one(
-            {"family_id": user["family_id"]},
+            {"family_id": user["family_id"],
+             "ai_scans_used": {"$lt": sub["limits"]["ai_scans_per_month"]}},
             {"$inc": {"ai_scans_used": 1}, "$set": {"updated_at": utcnow()}},
         )
 
@@ -6572,8 +6672,13 @@ async def ask_the_chef(
         raise HTTPException(502, "The chef could not answer that one.")
 
     if not is_admin_user(user):
+        # Guarded so two concurrent scans cannot both push the counter past the
+        # limit: the increment only lands while the family is still under it.
+        # A request that raced past the last slot did its work already — it goes
+        # through uncharged rather than over-counting.
         await database["families"].update_one(
-            {"family_id": user["family_id"]},
+            {"family_id": user["family_id"],
+             "ai_scans_used": {"$lt": sub["limits"]["ai_scans_per_month"]}},
             {"$inc": {"ai_scans_used": 1}, "$set": {"updated_at": utcnow()}},
         )
 
@@ -6598,6 +6703,8 @@ async def capture_recipe(
         image_b64 = image_b64.split(",")[-1]
     if len(image_b64) < 100:
         raise HTTPException(400, "No photo attached.")
+    if len(image_b64) > MAX_IMAGE_B64_CHARS:
+        raise HTTPException(413, "That photo is too large.")
 
     if not GOOGLE_API_KEY:
         raise HTTPException(503, "Photo capture is unavailable right now.")
@@ -6631,8 +6738,13 @@ async def capture_recipe(
         raise HTTPException(502, "We could not read a recipe in that photo.")
 
     if not is_admin_user(user):
+        # Guarded so two concurrent scans cannot both push the counter past the
+        # limit: the increment only lands while the family is still under it.
+        # A request that raced past the last slot did its work already — it goes
+        # through uncharged rather than over-counting.
         await database["families"].update_one(
-            {"family_id": user["family_id"]},
+            {"family_id": user["family_id"],
+             "ai_scans_used": {"$lt": sub["limits"]["ai_scans_per_month"]}},
             {"$inc": {"ai_scans_used": 1}, "$set": {"updated_at": utcnow()}},
         )
 
@@ -6806,8 +6918,13 @@ async def suggest_meals_ai(
     )
 
     if not is_admin_user(user):
+        # Guarded so two concurrent scans cannot both push the counter past the
+        # limit: the increment only lands while the family is still under it.
+        # A request that raced past the last slot did its work already — it goes
+        # through uncharged rather than over-counting.
         await database["families"].update_one(
-            {"family_id": user["family_id"]},
+            {"family_id": user["family_id"],
+             "ai_scans_used": {"$lt": sub["limits"]["ai_scans_per_month"]}},
             {"$inc": {"ai_scans_used": 1}, "$set": {"updated_at": utcnow()}},
         )
 
