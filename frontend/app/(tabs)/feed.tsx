@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -9,6 +9,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useRouter } from 'expo-router';
 import {
   AlertTriangle,
@@ -221,6 +222,8 @@ function TaskRow({ card, onOpen, onComplete, styles }: { card: Card; onOpen: () 
   );
 }
 
+const ANN_SEEN_KEY = 'coo_family_board_seen_at';
+
 export default function Feed() {
   const { user, t, subscription } = useStore();
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
@@ -263,6 +266,14 @@ export default function Feed() {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [annText, setAnnText] = useState('');
   const [savingAnn, setSavingAnn] = useState(false);
+  // "Don't miss it": the Family Board carries an unread marker until each
+  // person has actually seen it. A push already fires when one is posted; this
+  // is the visible half, so a co-parent who didn't tap the notification still
+  // sees the board is new. The baseline (the newest post they'd already seen)
+  // is per device, loaded on focus and advanced to the newest on blur — so the
+  // marker shows while they're looking and is gone next time.
+  const [annSeenAt, setAnnSeenAt] = useState<number | null>(null);
+  const newestAnnRef = useRef(0);
   const [report, setReport] = useState<WeeklyReport | null>(null);
   const [expandReport, setExpandReport] = useState(false);
   const [loadError, setLoadError] = useState(false);
@@ -421,6 +432,42 @@ export default function Feed() {
       load();
     }, [load])
   );
+
+  // Family-board unread tracking. On focus, snapshot the baseline from disk (so
+  // the marker reflects what arrived since last time). On blur, advance the
+  // baseline to the newest post seen — clearing the marker for next visit
+  // without clearing it out from under someone who is still looking.
+  useFocusEffect(
+    useCallback(() => {
+      AsyncStorage.getItem(ANN_SEEN_KEY)
+        .then((v) => setAnnSeenAt(v ? Number(v) : 0))
+        .catch(() => setAnnSeenAt(0));
+      return () => {
+        if (newestAnnRef.current > 0) {
+          AsyncStorage.setItem(ANN_SEEN_KEY, String(newestAnnRef.current)).catch(() => undefined);
+        }
+      };
+    }, [])
+  );
+
+  // Keep the newest-post timestamp current for the blur handler, and on the
+  // very first run ever (no baseline yet) treat everything already there as
+  // seen — a new install should not open to a board full of "unread".
+  useEffect(() => {
+    const newest = announcements.reduce(
+      (max, a) => Math.max(max, new Date(a.created_at).getTime() || 0), 0);
+    newestAnnRef.current = newest;
+    if (annSeenAt === 0 && newest > 0) {
+      AsyncStorage.getItem(ANN_SEEN_KEY).then((v) => {
+        if (!v) { AsyncStorage.setItem(ANN_SEEN_KEY, String(newest)).catch(() => undefined); setAnnSeenAt(newest); }
+      }).catch(() => undefined);
+    }
+  }, [announcements, annSeenAt]);
+
+  const unreadAnnouncements = useMemo(() => {
+    if (annSeenAt == null) return 0;
+    return announcements.filter((a) => (new Date(a.created_at).getTime() || 0) > annSeenAt).length;
+  }, [announcements, annSeenAt]);
 
   const activeCards = useMemo(() => cards.filter((card) => card.status === 'OPEN'), [cards]);
 
@@ -627,6 +674,10 @@ export default function Feed() {
       const created = await api.createAnnouncement({ text: annText.trim() });
       setAnnouncements((prev) => [created, ...prev]);
       setAnnText('');
+      // My own post is not "unread" to me: advance the baseline past it.
+      const at = new Date(created.created_at).getTime() || Date.now();
+      setAnnSeenAt((prev) => Math.max(prev ?? 0, at));
+      AsyncStorage.setItem(ANN_SEEN_KEY, String(at)).catch(() => undefined);
     } catch {
       Alert.alert(t('feed_error'), t('feed_could_not_post'));
     } finally {
@@ -930,6 +981,13 @@ export default function Feed() {
             <View style={styles.sectionHeader}>
               <Megaphone color={ui.orange} size={18} />
               <Text style={styles.sectionHeaderText}>{t('feed_family_board')}</Text>
+              {unreadAnnouncements > 0 ? (
+                <View testID="board-unread-badge" style={styles.boardUnread}>
+                  <Text style={styles.boardUnreadText}>
+                    {t('feed_board_unread', { n: unreadAnnouncements })}
+                  </Text>
+                </View>
+              ) : null}
             </View>
             <View style={styles.notesCard}>
               <View style={styles.noteInputRow}>
@@ -948,12 +1006,17 @@ export default function Feed() {
                   <Plus color="#FFFFFF" size={18} />
                 </PressScale>
               </View>
-              {announcements.slice(0, 5).map((ann) => (
-                <View key={ann.announcement_id} style={styles.noteRow}>
+              {announcements.slice(0, 5).map((ann) => {
+                const isNew = annSeenAt != null && (new Date(ann.created_at).getTime() || 0) > annSeenAt;
+                return (
+                <View key={ann.announcement_id} style={[styles.noteRow, isNew && styles.boardRowNew]}>
                   <View style={{ flex: 1 }}>
-                    {ann.priority === 'urgent' ? (
-                      <View style={styles.urgentBadge}><AlertTriangle color={ui.danger} size={12} /><Text style={styles.urgentText}>{t('feed_urgent')}</Text></View>
-                    ) : null}
+                    <View style={styles.boardTagRow}>
+                      {ann.priority === 'urgent' ? (
+                        <View style={styles.urgentBadge}><AlertTriangle color={ui.danger} size={12} /><Text style={styles.urgentText}>{t('feed_urgent')}</Text></View>
+                      ) : null}
+                      {isNew ? <View style={styles.boardNewTag}><Text style={styles.boardNewTagText}>{t('feed_board_new')}</Text></View> : null}
+                    </View>
                     <Text style={styles.noteText}>{ann.text}</Text>
                     <Text style={styles.noteMeta}>{ann.author_name} · {new Date(ann.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}</Text>
                   </View>
@@ -963,7 +1026,8 @@ export default function Feed() {
                     <Trash2 color={ui.muted} size={15} />
                   </PressScale>
                 </View>
-              ))}
+                );
+              })}
               {announcements.length === 0 ? <Text style={styles.noteEmpty}>{t('feed_no_announcements')}</Text> : null}
             </View>
 
@@ -1738,6 +1802,18 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     fontFamily: 'Inter_800ExtraBold',
     fontSize: 11,
   },
+  boardUnread: {
+    backgroundColor: ui.orangeDeep, borderRadius: 999,
+    paddingHorizontal: 9, paddingVertical: 3, minWidth: 22, alignItems: 'center',
+  },
+  boardUnreadText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 11 },
+  boardRowNew: {
+    marginHorizontal: -8, paddingHorizontal: 8, borderRadius: 12,
+    backgroundColor: ui.orangeSoft,
+  },
+  boardTagRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 3 },
+  boardNewTag: { backgroundColor: ui.orangeDeep, borderRadius: 999, paddingHorizontal: 7, paddingVertical: 2 },
+  boardNewTagText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 9.5, letterSpacing: 0.4, textTransform: 'uppercase' },
   reportCard: {
     borderRadius: 20,
     backgroundColor: ui.card,

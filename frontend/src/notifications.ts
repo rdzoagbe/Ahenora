@@ -212,6 +212,70 @@ export async function syncCardReminderNotifications(cards: Card[], enabled: bool
   return { scheduled: Object.keys(nextMap).length };
 }
 
+const ALLOWANCE_IDS_KEY = 'coo_scheduled_allowance_reminder_ids';
+
+async function getAllowanceMap(): Promise<Record<string, string>> {
+  try {
+    const raw = await AsyncStorage.getItem(ALLOWANCE_IDS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * A heads-up the day before each child's pocket money is due.
+ *
+ * Pocket money is easy to forget — it is not a task with a card, just a date
+ * that quietly comes around. This schedules one local notification per child,
+ * a day before the next payment is due, so the parent is reminded to hand it
+ * over. Cancel-and-reschedule like the card reminders, so a changed amount or
+ * frequency never leaves a stale reminder behind. The message strings are
+ * built by the caller (which has the translator); this only schedules.
+ */
+export async function syncAllowanceReminders(
+  items: { id: string; fireAt: number; title: string; body: string }[],
+  enabled: boolean,
+): Promise<{ scheduled: number }> {
+  const Notifications = await getNotificationsModule();
+  const map = await getAllowanceMap();
+
+  if (Notifications) {
+    await Promise.all(Object.values(map).map((id) =>
+      Notifications.cancelScheduledNotificationAsync(id).catch(() => undefined)));
+  }
+  await AsyncStorage.setItem(ALLOWANCE_IDS_KEY, JSON.stringify({})).catch(() => undefined);
+
+  if (!enabled || !Notifications) return { scheduled: 0 };
+  const permissions = await Notifications.getPermissionsAsync();
+  if (permissions.status !== 'granted') return { scheduled: 0 };
+  await configureNotificationChannels();
+
+  const next: Record<string, string> = {};
+  const now = Date.now();
+  for (const item of items) {
+    // Skip anything already in the past or under a minute away — a reminder for
+    // a moment that has passed is noise.
+    if (item.fireAt <= now + 60 * 1000) continue;
+    const id = await Notifications.scheduleNotificationAsync({
+      content: {
+        title: item.title,
+        body: item.body,
+        sound: true,
+        data: { type: 'allowance_reminder', allowance_id: item.id },
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: new Date(item.fireAt),
+        channelId: 'card-reminders',
+      } as any,
+    });
+    next[item.id] = id;
+  }
+  await AsyncStorage.setItem(ALLOWANCE_IDS_KEY, JSON.stringify(next)).catch(() => undefined);
+  return { scheduled: Object.keys(next).length };
+}
+
 const NOTIF_ASKED_KEY = 'coo_notif_permission_asked';
 
 /**
