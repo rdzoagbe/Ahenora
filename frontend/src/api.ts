@@ -646,6 +646,10 @@ export interface FamilyMember {
   role: string;
   avatar?: string | null;
   stars: number;
+  /** Stars earned since Monday — the meter that gates weekend treats and drives
+   *  the weekly ring. The `stars` field above is the untouched saved bank. */
+  week_earned?: number;
+  weekend_goal_reward_id?: string | null;
   has_pin?: boolean;
   has_account?: boolean;
 }
@@ -656,6 +660,8 @@ export interface Reward {
   title: string;
   cost_stars: number;
   icon?: string | null;
+  /** A weekend treat is paid from this week's earnings, not just the bank. */
+  weekend?: boolean;
   created_at: string;
 }
 
@@ -752,6 +758,8 @@ export interface KidChore { card_id: string; title: string; due_date: string | n
 export interface KidHome {
   name: string;
   stars: number;
+  week_earned?: number;
+  weekend_goal_reward_id?: string | null;
   chores: KidChore[];
   rewards: Reward[];
   owed: Redemption[];
@@ -1064,6 +1072,12 @@ export const api = {
     invalidateUsageCaches();
     return request(`/family/members/${member_id}`, { method: 'DELETE' });
   },
+  setWeekendGoal: (member_id: string, reward_id: string | null) => {
+    cache.invalidate('familyMembers');
+    return request<FamilyMember>(`/family/members/${member_id}/weekend-goal`, {
+      method: 'PUT', body: { reward_id },
+    });
+  },
   adjustMemberStars: (member_id: string, data: { delta: number; reason?: string }) => {
     cache.invalidate('familyMembers');
     return request<{ ok: boolean; member: FamilyMember; transaction: StarTransaction }>(
@@ -1208,11 +1222,11 @@ export const api = {
       return data;
     });
   },
-  createReward: (data: { title: string; cost_stars: number; icon?: string }) => {
+  createReward: (data: { title: string; cost_stars: number; icon?: string; weekend?: boolean }) => {
     cache.invalidate('listRewards');
     return request<Reward>('/rewards', { method: 'POST', body: data });
   },
-  updateReward: (id: string, data: { title?: string; cost_stars?: number; icon?: string }) => {
+  updateReward: (id: string, data: { title?: string; cost_stars?: number; icon?: string; weekend?: boolean }) => {
     cache.invalidate('listRewards');
     return request<Reward>(`/rewards/${id}`, { method: 'PATCH', body: data });
   },

@@ -856,10 +856,51 @@ def public_member(member: dict) -> dict:
         "name": member["name"],
         "role": member["role"],
         "avatar": member.get("avatar"),
+        # `stars` is the saved bank — the child's whole balance, unchanged by
+        # the weekly rhythm. `week_earned` is a meter of stars earned since this
+        # week began (Monday), clamped at zero; it gates the weekend treats and
+        # drives the progress ring, and never holds stars of its own — nothing
+        # is ever lost to a reset.
         "stars": member.get("stars", 0),
+        "week_earned": max(0, int(member.get("week_earned", 0) or 0)),
+        "weekend_goal_reward_id": member.get("weekend_goal_reward_id"),
         "has_pin": bool(member.get("pin_hash")),
         "has_account": bool(member.get("user_id")),
     }
+
+
+def current_week_start():
+    """Monday 00:00 UTC of the current week.
+
+    The reset boundary for the weekly earned-meter. UTC rather than the family's
+    timezone is a deliberate v1 simplification: it means the week turns over at
+    the same instant everywhere, which is a few hours off local midnight for
+    some families but never loses or double-counts a star.
+    """
+    now = utcnow()
+    monday = now - timedelta(days=now.weekday())
+    return monday.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+async def roll_week_if_stale(database, member: dict) -> dict:
+    """Reset the weekly earned-meter when a new week has begun.
+
+    Lazy, like the AI-scan period: checked whenever a child's stars are read or
+    changed, so no scheduled job is needed. Only the meter resets — the bank
+    (`stars`) is untouched, because every earned star was banked when it was
+    earned. "Leftover" weekly stars were never a separate pile to lose; they
+    are already in the bank, and the meter simply starts counting again.
+    """
+    start = current_week_start()
+    member_start = _coerce_dt(member.get("week_start"))
+    if member_start is not None and member_start >= start:
+        return member
+    await database["family_members"].update_one(
+        {"member_id": member["member_id"], "family_id": member["family_id"]},
+        {"$set": {"week_earned": 0, "week_start": start}},
+    )
+    member = {**member, "week_earned": 0, "week_start": start}
+    return member
 
 
 # Structured, not prose: the client composes the sentence in the reader's own
@@ -950,6 +991,10 @@ def public_reward(reward: dict) -> dict:
         "title": reward["title"],
         "cost_stars": reward["cost_stars"],
         "icon": reward.get("icon"),
+        # A weekend treat is bought with this week's earnings — it needs stars
+        # earned since Monday, not just a big enough bank. Everything else is a
+        # saved-up reward, paid from the bank with no weekly requirement.
+        "weekend": bool(reward.get("weekend", False)),
         "created_at": iso(reward["created_at"]),
     }
 
@@ -1787,6 +1832,7 @@ class RewardIn(BaseModel):
     title: str
     cost_stars: int
     icon: Optional[str] = None
+    weekend: bool = False
 
 
 class ChildIn(BaseModel):
@@ -1816,6 +1862,7 @@ class RewardPatchIn(BaseModel):
     title: Optional[str] = None
     cost_stars: Optional[int] = None
     icon: Optional[str] = None
+    weekend: Optional[bool] = None
 
 
 class RedeemIn(BaseModel):
@@ -2611,8 +2658,42 @@ async def family_members(user=Depends(require_user)):
     rows = []
     cursor = database["family_members"].find({"family_id": user["family_id"]}, {"_id": 0})
     async for item in cursor:
+        # Roll a child's weekly meter over on read, so the Kids screen always
+        # shows this week's earnings rather than a stale count from last week.
+        if str(item.get("role", "")).lower() == "child":
+            item = await roll_week_if_stale(database, item)
         rows.append(public_member(item))
     return rows
+
+
+@app.put("/api/family/members/{member_id}/weekend-goal")
+async def set_weekend_goal(member_id: str, payload: dict = Body(...), user=Depends(require_user)):
+    """Pin (or clear) the weekend treat a child is working toward this week.
+
+    Only drives the progress ring; it commits nothing and costs nothing. A
+    reward_id of null clears it. The reward must be a weekend treat in this
+    family, so the ring can never point at a saved-up reward the weekly meter
+    does not gate.
+    """
+    database = get_db()
+    member = await database["family_members"].find_one(
+        {"member_id": member_id, "family_id": user["family_id"]}, {"_id": 0})
+    if not member:
+        raise HTTPException(status_code=404, detail="Family member not found")
+
+    reward_id = payload.get("reward_id")
+    if reward_id:
+        reward = await database["rewards"].find_one(
+            {"reward_id": reward_id, "family_id": user["family_id"]}, {"_id": 0})
+        if not reward or not reward.get("weekend"):
+            raise HTTPException(status_code=400, detail="That isn't a weekend treat.")
+
+    await database["family_members"].update_one(
+        {"member_id": member_id, "family_id": user["family_id"]},
+        {"$set": {"weekend_goal_reward_id": reward_id or None}},
+    )
+    updated = await database["family_members"].find_one({"member_id": member_id}, {"_id": 0})
+    return public_member(updated)
 
 
 @app.post("/api/family/members")
@@ -2848,9 +2929,13 @@ async def award_stars_to_member(
     if not member or str(member.get("role", "")).lower() != "child":
         return None
 
+    # Roll the weekly meter first so a star earned in a fresh week counts toward
+    # the new week, not the old one. Earning banks the star (stars) and also
+    # ticks the this-week meter (week_earned) that gates weekend treats.
+    member = await roll_week_if_stale(database, member)
     await database["family_members"].update_one(
         {"member_id": member_id, "family_id": family_id},
-        {"$inc": {"stars": delta}},
+        {"$inc": {"stars": delta, "week_earned": delta}},
     )
     await log_activity(database, user, "stars_awarded", member.get("name", ""), delta)
     transaction = {
@@ -2889,6 +2974,8 @@ async def adjust_member_stars(member_id: str, payload: StarAdjustmentIn, user=De
     if delta < 0 and not reason:
         raise HTTPException(status_code=400, detail="Reason is required when removing stars")
 
+    member = await roll_week_if_stale(database, member)
+
     transaction = {
         "transaction_id": new_id("star"),
         "family_id": user["family_id"],
@@ -2905,10 +2992,18 @@ async def adjust_member_stars(member_id: str, payload: StarAdjustmentIn, user=De
     # overwrote the first, silently losing one. For removals the filter also
     # carries the "cannot go below zero" rule, so the database enforces it even
     # when two removals race.
+    #
+    # A positive adjustment is a child earning — it banks AND ticks the weekly
+    # meter, exactly like a finished chore. A removal is a correction against
+    # the bank only; it leaves the meter alone, so undoing a mis-award does not
+    # quietly hand back a weekend treat the child never earned.
     star_filter = {"member_id": member_id, "family_id": user["family_id"]}
-    if delta < 0:
+    inc = {"stars": delta}
+    if delta > 0:
+        inc["week_earned"] = delta
+    else:
         star_filter["stars"] = {"$gte": -delta}
-    result = await database["family_members"].update_one(star_filter, {"$inc": {"stars": delta}})
+    result = await database["family_members"].update_one(star_filter, {"$inc": inc})
     if result.matched_count == 0:
         raise HTTPException(status_code=400, detail="Stars cannot go below zero")
 
@@ -3394,7 +3489,7 @@ async def kid_home(child=Depends(require_child)):
     what they are still owed.
     """
     database = get_db()
-    member = child["member"]
+    member = await roll_week_if_stale(database, child["member"])
     name = (member.get("name") or "").strip().lower()
 
     chores = []
@@ -3416,6 +3511,8 @@ async def kid_home(child=Depends(require_child)):
          "status": "pending"}, {"_id": 0})]
 
     return {"name": member.get("name") or "", "stars": int(member.get("stars") or 0),
+            "week_earned": max(0, int(member.get("week_earned") or 0)),
+            "weekend_goal_reward_id": member.get("weekend_goal_reward_id"),
             "chores": chores, "rewards": rewards, "owed": owed}
 
 
@@ -4493,6 +4590,7 @@ async def create_reward(payload: RewardIn, user=Depends(require_user)):
         "title": payload.title,
         "cost_stars": payload.cost_stars,
         "icon": payload.icon,
+        "weekend": bool(payload.weekend),
         "created_at": utcnow(),
     }
     await database["rewards"].insert_one(reward)
@@ -4524,6 +4622,9 @@ async def update_reward(reward_id: str, payload: RewardPatchIn, user=Depends(req
 
     if payload.icon is not None:
         changes["icon"] = payload.icon.strip() or None
+
+    if payload.weekend is not None:
+        changes["weekend"] = bool(payload.weekend)
 
     if not changes:
         return public_reward(reward)
@@ -4559,20 +4660,33 @@ async def redeem_reward(reward_id: str, payload: RedeemIn, user=Depends(require_
         raise HTTPException(status_code=404, detail="Reward or member not found")
 
     cost = int(reward["cost_stars"])
+    member = await roll_week_if_stale(database, member)
 
     # Atomic guarded decrement. Checking the balance and then decrementing in
     # two steps let two taps (or two devices) both pass the check and both
     # spend, driving the balance negative. The filter carries the check, so the
     # database rejects the second one.
-    result = await database["family_members"].update_one(
-        {
-            "member_id": member["member_id"],
-            "family_id": user["family_id"],
-            "stars": {"$gte": cost},
-        },
-        {"$inc": {"stars": -cost}},
-    )
+    #
+    # A weekend treat carries a second gate: the child must have earned enough
+    # THIS WEEK (week_earned), not merely have a big enough bank. Redeeming one
+    # spends the bank and also draws down the weekly meter, so the same week's
+    # earnings can't fund two weekend treats. A saved-up (non-weekend) reward
+    # has no weekly gate and leaves the meter alone.
+    star_filter = {
+        "member_id": member["member_id"],
+        "family_id": user["family_id"],
+        "stars": {"$gte": cost},
+    }
+    inc = {"stars": -cost}
+    if reward.get("weekend"):
+        star_filter["week_earned"] = {"$gte": cost}
+        inc["week_earned"] = -cost
+    result = await database["family_members"].update_one(star_filter, {"$inc": inc})
     if result.matched_count == 0:
+        if reward.get("weekend"):
+            raise HTTPException(
+                status_code=400,
+                detail="Not enough stars earned this week for a weekend treat.")
         raise HTTPException(status_code=400, detail="Not enough stars")
 
     # A redemption is a star movement and belongs in the ledger. Without this
