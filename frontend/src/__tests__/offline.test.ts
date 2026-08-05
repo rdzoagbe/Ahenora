@@ -110,6 +110,34 @@ describe('the write queue', () => {
     expect(await queuedCount()).toBe(0);
   });
 
+  it('keeps a write through a transient server error (5xx)', async () => {
+    // The classic loss: ticked off in a basement, replayed the instant the
+    // phone reconnects — exactly when the backend is mid-cold-start and
+    // answering 503. That is not a refusal of the change; keep it.
+    await enqueueWrite('/cards/c1', 'PATCH', { status: 'DONE' });
+    const result = await flushQueue(async () => {
+      throw Object.assign(new Error('503: service unavailable'), { status: 503 });
+    });
+    expect(result).toEqual({ sent: 0, left: 1 });
+    expect(await queuedCount()).toBe(1);
+  });
+
+  it('keeps a write that was rate-limited (429)', async () => {
+    await enqueueWrite('/shopping/s1', 'PATCH', { checked: true });
+    const result = await flushQueue(async () => {
+      throw Object.assign(new Error('429: too many requests'), { status: 429 });
+    });
+    expect(result).toEqual({ sent: 0, left: 1 });
+  });
+
+  it('drops a 4xx even when the error carries only a message', async () => {
+    // drainQueue throws `${status}: ...` without a status field; the parse
+    // fallback must still recognise a final refusal.
+    await enqueueWrite('/cards/c1', 'PATCH', { status: 'DONE' });
+    const result = await flushQueue(async () => { throw new Error('403: forbidden'); });
+    expect(result).toEqual({ sent: 1, left: 0 });
+  });
+
   it('does nothing at all when there is nothing waiting', async () => {
     const send = jest.fn();
     expect(await flushQueue(send)).toEqual({ sent: 0, left: 0 });

@@ -128,9 +128,28 @@ export async function queuedCount(): Promise<number> {
 }
 
 /**
- * Replay what was done offline, oldest first. Anything the server answers —
- * success or a real refusal — is dropped; only entries that fail on the wire
- * stay queued for the next attempt.
+ * A replayed write is dropped only when the server gives a FINAL answer — a
+ * 4xx that says this request is wrong and always will be (gone, forbidden,
+ * a bad value). A 5xx or a 429 is temporary: the backend was down, deploying,
+ * cold-starting or rate-limiting, and the same request will succeed once it
+ * recovers. Those must stay queued.
+ *
+ * This was the bug: any 3-digit status counted as "the server had an opinion",
+ * so a checkbox ticked off in a basement and replayed the instant the phone
+ * reconnected — exactly when the backend is most likely mid-cold-start and
+ * answering 503 — was silently discarded. The tick reverted and nothing said
+ * so. 429 is deliberately kept too: being rate-limited is not a refusal of the
+ * change.
+ */
+function isFinalRefusal(status: number): boolean {
+  if (status === 429) return false;      // rate-limited: try again later
+  return status >= 400 && status < 500;  // 4xx: a permanent client-side no
+}
+
+/**
+ * Replay what was done offline, oldest first. A final 4xx refusal is dropped;
+ * a transient server error (5xx/429) and any on-the-wire failure stay queued
+ * for the next attempt.
  */
 export async function flushQueue(
   send: (path: string, method: string, body?: unknown) => Promise<unknown>,
@@ -145,13 +164,13 @@ export async function flushQueue(
       await send(item.path, item.method, item.body);
       sent += 1;
     } catch (e: any) {
-      const message = String(e?.message || '');
-      if (/^\d{3}:/.test(message)) {
-        // The server had an opinion (gone, forbidden, invalid): replaying it
-        // again tomorrow will not change that answer.
-        logger.warn('queued write rejected, dropping', item.path, message);
+      const status = Number(e?.status ?? String(e?.message || '').match(/^(\d{3}):/)?.[1]);
+      if (Number.isFinite(status) && isFinalRefusal(status)) {
+        // A permanent no: replaying it tomorrow will not change the answer.
+        logger.warn('queued write refused, dropping', item.path, status);
         sent += 1;
       } else {
+        // Transient (5xx/429) or a network failure: keep it for next time.
         remaining.push(item);
       }
     }

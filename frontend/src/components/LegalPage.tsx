@@ -40,7 +40,7 @@ export function LegalPage({ title, subtitle, updatedAt, sections, footer }: Lega
             <Text style={[styles.backText, { color: theme.colors.text }]}>Back</Text>
           </PressScale>
 
-          <Text style={[styles.eyebrow, { color: theme.colors.accent }]}>Household COO</Text>
+          <Text style={[styles.eyebrow, { color: theme.colors.accentInk }]}>Household COO</Text>
           <Text style={[styles.title, { color: theme.colors.text }]}>{title}</Text>
           <Text style={[styles.subtitle, { color: theme.colors.textMuted }]}>{subtitle}</Text>
           <Text style={[styles.updated, { color: theme.colors.textSoft }]}>Last updated: {updatedAt}</Text>
@@ -51,7 +51,7 @@ export function LegalPage({ title, subtitle, updatedAt, sections, footer }: Lega
               {Array.isArray(section.body) ? (
                 section.body.map((item) => (
                   <View key={item} style={styles.bulletRow}>
-                    <Text style={[styles.bullet, { color: theme.colors.accent }]}>•</Text>
+                    <Text style={[styles.bullet, { color: theme.colors.accentInk }]}>•</Text>
                     <Text style={[styles.body, { color: theme.colors.textMuted }]}>{item}</Text>
                   </View>
                 ))

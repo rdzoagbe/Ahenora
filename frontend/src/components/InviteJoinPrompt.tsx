@@ -196,7 +196,7 @@ export function InviteJoinPrompt() {
               </Text>
               <Text style={[styles.note, { color: c.textSoft }]}>{t('invite_join_note')}</Text>
               {error ? (
-                <Text style={[styles.note, { color: '#EF4444', marginTop: 10 }]}>{error}</Text>
+                <Text style={[styles.note, { color: c.danger, marginTop: 10 }]}>{error}</Text>
               ) : null}
               <PressScale
                 testID="invite-join-accept"

@@ -67,7 +67,7 @@ export function SundayBriefModal({ visible, onClose }: Props) {
         <View style={styles.content}>
           <View style={[styles.badge, { backgroundColor: theme.colors.accentSoft, borderColor: theme.colors.cardBorder }]}> 
             <Sparkles color={theme.colors.accent} size={14} />
-            <Text style={[styles.badgeText, { color: theme.colors.accent }]}>AI · Gemini 3 Flash</Text>
+            <Text style={[styles.badgeText, { color: theme.colors.accentInk }]}>AI · Gemini 3 Flash</Text>
           </View>
           <Text style={[styles.heading, { color: theme.colors.text }]}>{t('sunday_brief')}</Text>
           <Text style={[styles.sub, { color: theme.colors.textMuted }]}>{t('sunday_brief_subtitle')}</Text>

@@ -10,7 +10,8 @@ import { Plus, X, Trash2, ShoppingCart, Check, UtensilsCrossed, Bell, ChevronDow
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { PressScale } from '../../src/components/PressScale';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
-import AppToast, { ToastTone } from '../../src/components/AppToast';
+import AppToast from '../../src/components/AppToast';
+import { useToast } from '../../src/hooks/useToast';
 import LoadingOverlay from '../../src/components/LoadingOverlay';
 import { TabScreen } from '../../src/components/TabScreen';
 import { ScreenHeader, useUI, UIColors } from '../../src/components/Kit';
@@ -24,7 +25,6 @@ import { quantityFor, shoppingNameFor, formatAiQuantity, AiIngredient } from '..
 import { categoriseShoppingItem } from '../../src/shoppingCategories';
 import { recipeMethod } from '../../src/recipeSteps';
 
-type ToastState = { message: string; tone: ToastTone };
 type KitchenView = 'shop' | 'meal';
 
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
@@ -78,7 +78,7 @@ export default function Kitchen() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [toast, setToast] = useState<ToastState | null>(null);
+  const { toast, showToast } = useToast();
 
   const [shopItems, setShopItems] = useState<ShoppingItem[]>([]);
   const [shopInput, setShopInput] = useState('');
@@ -107,10 +107,6 @@ export default function Kitchen() {
   const [suggestions, setSuggestions] = useState<MealSuggestion[]>([]);
   const [addedSuggest, setAddedSuggest] = useState<Set<string>>(new Set());
 
-  const showToast = useCallback((message: string, tone: ToastTone = 'info') => {
-    setToast({ message, tone });
-    setTimeout(() => setToast(null), 2300);
-  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -2144,10 +2140,13 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   scanRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: ui.line },
   scanCheck: { width: 22, height: 22, borderRadius: 7, borderWidth: 1.5, borderColor: ui.line, alignItems: 'center', justifyContent: 'center' },
   scanCheckOn: { backgroundColor: ui.orangeDeep, borderColor: ui.orange },
-  scanUnsure: { color: '#E8B664', fontFamily: 'Inter_600SemiBold', fontSize: 11, marginTop: 1 },
+  // Ink, not fill: the hardcoded gold here read at ~1.7:1 on the sheet and
+  // never adapted to dark. goldText is the AA-clearing twin.
+  scanUnsure: { color: ui.goldText, fontFamily: 'Inter_600SemiBold', fontSize: 11, marginTop: 1 },
   scanRetake: { alignItems: 'center', paddingVertical: 12, marginTop: 4 },
   scanRetakeText: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 13 },
-  scanError: { color: '#E8746A', fontFamily: 'Inter_500Medium', fontSize: 13, marginBottom: 10 },
+  // An error a parent has to read; the hardcoded salmon failed AA at 13px.
+  scanError: { color: ui.danger, fontFamily: 'Inter_500Medium', fontSize: 13, marginBottom: 10 },
   scanSourceBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1, borderColor: ui.orange, borderRadius: 999, paddingVertical: 13, marginTop: 10 },
   scanSourceText: { color: ui.orangeText, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
   captureTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 22, letterSpacing: -0.4, lineHeight: 27 },

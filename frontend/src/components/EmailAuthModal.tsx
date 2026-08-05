@@ -225,7 +225,7 @@ export function EmailAuthModal({ visible, onClose, onSuccess, inviteToken }: Pro
             </View>
           ) : null}
 
-          {error ? <Text style={[styles.error, { color: '#EF4444' }]}>{error}</Text> : null}
+          {error ? <Text style={[styles.error, { color: c.danger }]}>{error}</Text> : null}
 
           <PressScale onPress={submit} disabled={busy} style={[styles.submitBtn, { backgroundColor: c.primary, opacity: busy ? 0.6 : 1 }]}>
             {busy ? (

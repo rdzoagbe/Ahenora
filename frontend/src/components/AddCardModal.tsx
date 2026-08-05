@@ -313,7 +313,7 @@ export function AddCardModal({
                         onPress={() => setAssignee(suggestedAssignee)}
                         style={[styles.suggestChip, { borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.accentSoft }]}
                       >
-                        <Text style={[styles.suggestChipText, { color: theme.colors.accent }]}>{suggestedAssignee}</Text>
+                        <Text style={[styles.suggestChipText, { color: theme.colors.accentInk }]}>{suggestedAssignee}</Text>
                       </PressScale>
                     </>
                   )}

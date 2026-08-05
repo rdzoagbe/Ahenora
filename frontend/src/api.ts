@@ -253,7 +253,11 @@ function drainQueue(): void {
       },
       body: body ? JSON.stringify(body) : undefined,
     });
-    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+    if (!res.ok) {
+      // Carry the status so flushQueue can tell a permanent 4xx refusal (drop)
+      // from a transient 5xx/429 (keep queued) without parsing the message.
+      throw Object.assign(new Error(`${res.status}: ${await res.text()}`), { status: res.status });
+    }
     return res.json().catch(() => ({}));
   })
     .then(({ sent, left }) => {
@@ -332,10 +336,28 @@ async function request<T = unknown>(
       clearTimeout(timeoutId);
     }
 
-    // Retry on 5xx server errors
-    if (res.status >= 500 && res.status < 600 && attempt < RETRY_MAX) {
-      lastError = Object.assign(new Error(`${res.status}`), { status: res.status });
-      continue;
+    // Retry on 5xx — but only GETs. A non-GET may have committed server-side
+    // before the error surfaced, so retrying it risks a duplicate write (a
+    // second card, a second allowance payment). This is the same rule the
+    // timeout path above applies; it was missing here.
+    if (res.status >= 500 && res.status < 600) {
+      const is5xxGet = !opts.method || opts.method.toUpperCase() === 'GET';
+      if (is5xxGet && attempt < RETRY_MAX) {
+        lastError = Object.assign(new Error(`${res.status}`), { status: res.status });
+        continue;
+      }
+      // Out of retries, or a write we won't retry. A reachable-but-erroring
+      // backend is still an outage from where the user stands, so serve the
+      // last good copy of a readable list rather than an error screen — the
+      // same fallback the network-error path already gives, previously denied
+      // whenever the outage happened to be a 5xx instead of a dropped socket.
+      if (is5xxGet && isSnapshotPath(path)) {
+        const snap = await loadSnapshot<T>(path);
+        if (snap) {
+          setServingFromCache(true);
+          return snap.data;
+        }
+      }
     }
 
     if (!res.ok) {
