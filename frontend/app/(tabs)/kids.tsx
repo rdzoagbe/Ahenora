@@ -1273,6 +1273,14 @@ export default function Kids() {
                         </View>
                       ))}
                     </View>
+
+                    {/* Says the quiet part out loud. The card counts a week that
+                        starts over, sitting under a balance that does not — and
+                        nothing on screen said so, which is exactly the anxiety
+                        the soft-weekly design existed to avoid. Saving is the
+                        same one balance, so this states the rule rather than
+                        printing the number a second time as a "saved bank". */}
+                    <Text style={styles.weekResetNote}>{t('kids_week_resets_note')}</Text>
                   </Card>
 
                   {/* Tabs */}
@@ -2116,6 +2124,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   weekDayMarkToday: { color: ui.orangeText },
   weekDayLetter: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 10, marginTop: 2 },
   weekDayLetterToday: { color: ui.orangeText },
+  weekResetNote: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 11.5, lineHeight: 16, marginTop: 12 },
 
   weekendTagRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 6 },
   weekendTag: { backgroundColor: ui.gold, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
