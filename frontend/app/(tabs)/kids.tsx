@@ -30,6 +30,7 @@ import {
   RotateCcw,
   Play,
   ChevronRight,
+  Target,
 } from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
@@ -147,6 +148,7 @@ export default function Kids() {
   const [rewardTitle, setRewardTitle] = useState('');
   const [rewardCost, setRewardCost] = useState('50');
   const [rewardIcon, setRewardIcon] = useState(DEFAULT_REWARD_ICON);
+  const [rewardWeekend, setRewardWeekend] = useState(false);
 
   const [showStarSheet, setShowStarSheet] = useState(false);
   const [starMode, setStarMode] = useState<StarMode>('add');
@@ -206,6 +208,18 @@ export default function Kids() {
   const children = useMemo(() => members.filter((m) => m.role?.toLowerCase() === 'child'), [members]);
   const activeChild = children.find((c) => c.member_id === selectedChild) || children[0];
   const stars = activeChild?.stars || 0;
+  // The bank is `stars`; the weekly meter is `week_earned`. A weekend treat is
+  // measured against the week's earnings, everything else against the bank.
+  const weekEarned = activeChild?.week_earned || 0;
+  const rewardBasis = useCallback(
+    (reward: Reward) => (reward.weekend ? weekEarned : stars),
+    [weekEarned, stars],
+  );
+  const weekendGoal = useMemo(
+    () => rewards.find((r) => r.reward_id === activeChild?.weekend_goal_reward_id && r.weekend) || null,
+    [rewards, activeChild?.weekend_goal_reward_id],
+  );
+  const hasWeekendTreats = useMemo(() => rewards.some((r) => r.weekend), [rewards]);
   const iconSuggestions = useMemo(() => suggestedIcons(rewardTitle), [rewardTitle]);
   const sortedRewards = useMemo(() => [...rewards].sort((a, b) => (stars / b.cost_stars) - (stars / a.cost_stars)), [rewards, stars]);
   // Suggestions for rewards the family already has are not suggestions.
@@ -229,10 +243,6 @@ export default function Kids() {
     }
     return counts;
   }, [redemptions]);
-  const weeklyStars = useMemo(() => {
-    const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-    return historyItems.filter((h) => h.created_at && new Date(h.created_at).getTime() >= weekAgo).reduce((sum, h) => sum + h.delta, 0);
-  }, [historyItems]);
 
   const ui = useUI();
   const styles = useMemo(() => createStyles(ui), [ui]);
@@ -330,6 +340,7 @@ export default function Kids() {
     setRewardTitle('');
     setRewardCost('50');
     setRewardIcon(DEFAULT_REWARD_ICON);
+    setRewardWeekend(false);
     setShowRewardSheet(true);
   };
 
@@ -339,6 +350,7 @@ export default function Kids() {
     setRewardTitle(reward.title);
     setRewardCost(String(reward.cost_stars));
     setRewardIcon(reward.icon || DEFAULT_REWARD_ICON);
+    setRewardWeekend(!!reward.weekend);
     setShowRewardSheet(true);
   };
 
@@ -522,11 +534,11 @@ export default function Kids() {
     setSaving(true);
     try {
       if (rewardMode === 'edit' && editingReward) {
-        const updated = await api.updateReward(editingReward.reward_id, { title, cost_stars: cost, icon });
+        const updated = await api.updateReward(editingReward.reward_id, { title, cost_stars: cost, icon, weekend: rewardWeekend });
         setRewards((prev) => prev.map((r) => (r.reward_id === updated.reward_id ? updated : r)));
         showToast(t('kids_reward_updated'), 'success');
       } else {
-        const created = await api.createReward({ title, cost_stars: cost, icon });
+        const created = await api.createReward({ title, cost_stars: cost, icon, weekend: rewardWeekend });
         setRewards((prev) => [created, ...prev]);
         showToast(t('kids_reward_created'), 'success');
       }
@@ -777,10 +789,29 @@ export default function Kids() {
 
   const redeem = async (reward: Reward) => {
     if (!activeChild) return;
-    if ((activeChild.stars || 0) < reward.cost_stars) { showToast(t('not_enough_stars'), 'error'); return; }
+    const basis = reward.weekend ? (activeChild.week_earned || 0) : (activeChild.stars || 0);
+    if (basis < reward.cost_stars) {
+      showToast(reward.weekend ? t('kids_weekend_not_earned') : t('not_enough_stars'), 'error');
+      return;
+    }
     if (activeChild.has_pin) { setPinPromptReward(reward); return; }
     await doRedeem(reward);
   };
+
+  // Pin (or clear) the weekend treat a child is working toward this week. Only
+  // drives the ring — nothing is spent — so it updates optimistically.
+  const setWeekendGoal = useCallback(async (rewardId: string | null) => {
+    if (!activeChild) return;
+    const memberId = activeChild.member_id;
+    setMembers((prev) => prev.map((m) =>
+      m.member_id === memberId ? { ...m, weekend_goal_reward_id: rewardId } : m));
+    try {
+      await api.setWeekendGoal(memberId, rewardId);
+    } catch (e: any) {
+      logger.warn('set weekend goal failed', e);
+      load();
+    }
+  }, [activeChild, load]);
 
   // Marking a reward as handed over. The row leaves the list immediately —
   // the server has the final word, so a failure puts it back rather than
@@ -962,12 +993,6 @@ export default function Kids() {
 
   const childBalance = activeChild ? (balances[activeChild.member_id] || 0) : 0;
 
-  const weeklyLine = weeklyStars > 0
-    ? `+${weeklyStars} ${t('kids_stars_this_week')} — ${t('kids_keep_it_up')} ✨`
-    : weeklyStars < 0
-      ? `${weeklyStars} ${t('kids_stars_this_week')}`
-      : `${t('kids_fresh_week')} ✨`;
-
   return (
     <SwipeableTabView style={styles.container}>
       <TabScreen
@@ -1092,7 +1117,54 @@ export default function Kids() {
                     <Plus color={ui.orange} size={15} />
                     <Text style={styles.assignTaskText}>{t('kids_assign_task', { name: activeChild.name })}</Text>
                   </PressScale>
-                  <Text style={styles.weeklyLine}>{weeklyLine}</Text>
+                  {/* This week: the meter that gates the weekend treat. The
+                      saved bank sits in the card above; this is the fresh run
+                      at a weekend payoff that resets each Monday. */}
+                  <Card style={styles.weekCard}>
+                    <View style={styles.weekTop}>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={styles.weekLabel}>{t('kids_this_week')}</Text>
+                        <Text style={styles.weekNum}>
+                          {weekEarned} <Text style={styles.weekNumUnit}>{t('kids_stars_earned_unit')}</Text>
+                        </Text>
+                      </View>
+                      {weekendGoal ? (
+                        weekEarned >= weekendGoal.cost_stars ? (
+                          <PressScale testID="kids-cash-in" onPress={() => redeem(weekendGoal)} style={styles.cashInBtn}>
+                            <Text style={styles.cashInText}>{t('kids_cash_in')}</Text>
+                          </PressScale>
+                        ) : null
+                      ) : null}
+                    </View>
+
+                    {weekendGoal ? (
+                      <View style={styles.weekGoalWrap}>
+                        <View style={styles.weekGoalRow}>
+                          <Text style={styles.weekGoalTitle} numberOfLines={1}>
+                            {weekendGoal.icon || DEFAULT_REWARD_ICON} {weekendGoal.title}
+                          </Text>
+                          <Text style={styles.weekGoalCount}>{weekEarned} / {weekendGoal.cost_stars}</Text>
+                        </View>
+                        <View style={{ marginTop: 8 }}>
+                          <ProgressBar
+                            pct={Math.min(100, Math.round((weekEarned / weekendGoal.cost_stars) * 100))}
+                            color={weekEarned >= weekendGoal.cost_stars ? ui.mintText : ui.orange}
+                          />
+                        </View>
+                        <Text style={styles.weekGoalHint}>
+                          {weekEarned >= weekendGoal.cost_stars
+                            ? t('kids_weekend_ready')
+                            : t('kids_weekend_to_go', { n: weekendGoal.cost_stars - weekEarned })}
+                        </Text>
+                      </View>
+                    ) : hasWeekendTreats ? (
+                      <PressScale testID="kids-pick-weekend" onPress={() => setKidsTab('rewards')} style={styles.weekPick}>
+                        <Text style={styles.weekPickText}>{t('kids_pick_weekend')}</Text>
+                      </PressScale>
+                    ) : (
+                      <Text style={styles.weekEmptyHint}>{t('kids_weekend_hint')}</Text>
+                    )}
+                  </Card>
 
                   {/* Tabs */}
                   <View style={styles.tabRow}>
@@ -1179,8 +1251,12 @@ export default function Kids() {
                       ) : (
                         <Card style={styles.cardPad}>
                           {(showAllRewards ? sortedRewards : sortedRewards.slice(0, 5)).map((reward, index, arr) => {
-                            const pct = Math.min(100, Math.round((stars / reward.cost_stars) * 100));
-                            const affordable = stars >= reward.cost_stars;
+                            // A weekend treat is measured against this week's
+                            // earnings; every other reward against the bank.
+                            const basis = rewardBasis(reward);
+                            const pct = Math.min(100, Math.round((basis / reward.cost_stars) * 100));
+                            const affordable = basis >= reward.cost_stars;
+                            const isGoal = weekendGoal?.reward_id === reward.reward_id;
                             return (
                               <View key={reward.reward_id} style={[styles.rewardRow, index < arr.length - 1 && styles.rewardRowBorder]}>
                                 {/* The row body opens edit, in both states. Before,
@@ -1202,8 +1278,27 @@ export default function Kids() {
                                   <View style={{ flex: 1, minWidth: 0 }}>
                                     <View style={styles.rewardTopRow}>
                                       <Text style={styles.rewardTitle} numberOfLines={1}>{reward.title}</Text>
-                                      <Text style={[styles.rewardCount, affordable && { color: ui.mintText }]}>{stars} / {reward.cost_stars}</Text>
+                                      <Text style={[styles.rewardCount, affordable && { color: ui.mintText }]}>{basis} / {reward.cost_stars}</Text>
                                     </View>
+                                    {reward.weekend ? (
+                                      <View style={styles.weekendTagRow}>
+                                        <View style={styles.weekendTag}>
+                                          <Text style={styles.weekendTagText}>{t('kids_weekend_tag')}</Text>
+                                        </View>
+                                        <PressScale
+                                          testID={`weekend-goal-${reward.reward_id}`}
+                                          accessibilityRole="button"
+                                          onPress={() => setWeekendGoal(isGoal ? null : reward.reward_id)}
+                                          hitSlop={8}
+                                          style={styles.goalPin}
+                                        >
+                                          <Target color={isGoal ? ui.orangeText : ui.muted} size={13} />
+                                          <Text style={[styles.goalPinText, isGoal && { color: ui.orangeText }]}>
+                                            {isGoal ? t('kids_this_weeks_goal') : t('kids_set_goal')}
+                                          </Text>
+                                        </PressScale>
+                                      </View>
+                                    ) : null}
                                     <View style={{ marginTop: 8 }}>
                                       <ProgressBar pct={pct} color={affordable ? ui.mintText : ui.orange} />
                                     </View>
@@ -1219,7 +1314,7 @@ export default function Kids() {
                                      not "not yet". */
                                   <View style={styles.rewardToGo}>
                                     <Text style={styles.rewardToGoText}>
-                                      {t('kids_stars_to_go', { n: reward.cost_stars - stars })}
+                                      {t('kids_stars_to_go', { n: reward.cost_stars - basis })}
                                     </Text>
                                   </View>
                                 )}
@@ -1247,7 +1342,7 @@ export default function Kids() {
                       <Text style={styles.blockLabel}>{t('kids_quick_reward_ideas')}</Text>
                       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.ideaRow} style={styles.ideaScroll}>
                         {unusedRewardIdeas.map((idea) => (
-                          <PressScale key={idea.titleKey} testID={idea.titleKey} onPress={() => { setRewardMode('create'); setEditingReward(null); setRewardTitle(t(idea.titleKey)); setRewardCost(String(idea.cost_stars)); setRewardIcon(idea.icon); setShowRewardSheet(true); }} style={styles.ideaChip}>
+                          <PressScale key={idea.titleKey} testID={idea.titleKey} onPress={() => { setRewardMode('create'); setEditingReward(null); setRewardTitle(t(idea.titleKey)); setRewardCost(String(idea.cost_stars)); setRewardIcon(idea.icon); setRewardWeekend(false); setShowRewardSheet(true); }} style={styles.ideaChip}>
                             <Text style={styles.ideaEmoji}>{idea.icon}</Text>
                             <Text style={styles.ideaTitle} numberOfLines={1}>{t(idea.titleKey)}</Text>
                             <Text style={styles.ideaCost}>{idea.cost_stars} {t('stars')}</Text>
@@ -1549,6 +1644,26 @@ export default function Kids() {
         </View>
         <Text style={styles.label}>{t('kids_cost_in_stars')}</Text>
         <TextInput testID="reward-cost" value={rewardCost} onChangeText={(v) => setRewardCost(cleanNumber(v))} keyboardType="number-pad" placeholder="50" placeholderTextColor={ui.muted} style={styles.input} />
+
+        {/* Weekend treat vs saved-up reward. A weekend treat is bought with
+            this week's earnings, so a child has to earn it fresh each week;
+            everything else is paid from the saved bank. */}
+        <PressScale
+          testID="reward-weekend-toggle"
+          accessibilityRole="button"
+          accessibilityLabel={t('kids_weekend_treat')}
+          onPress={() => setRewardWeekend((v) => !v)}
+          style={[styles.weekendToggle, { borderColor: rewardWeekend ? ui.orange : ui.line, backgroundColor: rewardWeekend ? ui.orangeSoft : ui.soft }]}
+        >
+          <View style={{ flex: 1 }}>
+            <Text style={styles.weekendToggleTitle}>{t('kids_weekend_treat')}</Text>
+            <Text style={styles.weekendToggleSub}>{t('kids_weekend_treat_help')}</Text>
+          </View>
+          <View style={[styles.switchTrack, { backgroundColor: rewardWeekend ? ui.orangeDeep : ui.line }]}>
+            <View style={[styles.switchThumb, rewardWeekend && styles.switchThumbOn]} />
+          </View>
+        </PressScale>
+
         <View style={styles.sheetFooter}>
           {rewardMode === 'edit' && editingReward ? (
             <PressScale testID="delete-reward" onPress={() => confirmRemoveReward(editingReward)} style={styles.deleteBtn}>
@@ -1867,6 +1982,35 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   assignTaskHint: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, marginTop: 8, marginBottom: 14, lineHeight: 18 },
   redeemText: { color: ui.bg, fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
   weeklyLine: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 13.5, marginTop: 12, paddingHorizontal: 2 },
+
+  weekCard: { marginTop: 12, padding: 16 },
+  weekTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  weekLabel: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 11.5, letterSpacing: 1, textTransform: 'uppercase' },
+  weekNum: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 28, marginTop: 2 },
+  weekNumUnit: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 13 },
+  cashInBtn: { backgroundColor: ui.orangeDeep, borderRadius: 999, paddingHorizontal: 16, paddingVertical: 10 },
+  cashInText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
+  weekGoalWrap: { marginTop: 14 },
+  weekGoalRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  weekGoalTitle: { flex: 1, color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 14 },
+  weekGoalCount: { color: ui.muted, fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
+  weekGoalHint: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 12, marginTop: 8 },
+  weekPick: { marginTop: 12, alignSelf: 'flex-start' },
+  weekPickText: { color: ui.orangeText, fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
+  weekEmptyHint: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, lineHeight: 18, marginTop: 10 },
+
+  weekendTagRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 6 },
+  weekendTag: { backgroundColor: ui.gold, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
+  weekendTagText: { color: ui.goldText, fontFamily: 'Inter_800ExtraBold', fontSize: 9.5, letterSpacing: 0.4, textTransform: 'uppercase' },
+  goalPin: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  goalPinText: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 11 },
+
+  weekendToggle: { flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1, borderRadius: 16, padding: 14, marginTop: 14 },
+  weekendToggleTitle: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 14 },
+  weekendToggleSub: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12, lineHeight: 17, marginTop: 3 },
+  switchTrack: { width: 46, height: 28, borderRadius: 999, padding: 3, justifyContent: 'center' },
+  switchThumb: { width: 22, height: 22, borderRadius: 999, backgroundColor: '#FFFFFF' },
+  switchThumbOn: { alignSelf: 'flex-end' },
 
   tabRow: { flexDirection: 'row', gap: 26, borderBottomWidth: 1, borderBottomColor: ui.line, marginTop: 18 },
   tabBtn: { paddingTop: 6, paddingBottom: 12, borderBottomWidth: 2, borderBottomColor: 'transparent' },
