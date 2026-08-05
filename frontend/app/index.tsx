@@ -388,17 +388,17 @@ export default function Landing() {
 
           <View style={styles.secureRow}>
             <ShieldCheck color={theme.colors.textSoft} size={12} />
-            <Text style={[styles.secureText, { color: theme.colors.textSoft }]}>{t('land_secure_note')}</Text>
+            <Text style={[styles.secureText, { color: theme.colors.textMuted }]}>{t('land_secure_note')}</Text>
           </View>
 
           <View style={styles.adminNote}>
             <Crown color="#F59E0B" size={12} />
-            <Text style={[styles.adminNoteText, { color: theme.colors.textSoft }]}>{t('land_premium_note')}</Text>
+            <Text style={[styles.adminNoteText, { color: theme.colors.textMuted }]}>{t('land_premium_note')}</Text>
           </View>
         </View>
 
         <View style={styles.footer}>
-          <Text style={[styles.foot, { color: theme.colors.textSoft }]}>{t('land_footer')}</Text>
+          <Text style={[styles.foot, { color: theme.colors.textMuted }]}>{t('land_footer')}</Text>
         </View>
       </SafeAreaView>
 

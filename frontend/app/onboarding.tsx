@@ -243,7 +243,7 @@ export default function Onboarding() {
               </View>
               <Text style={[styles.title, { color: theme.colors.text }]}>{t('ob_invite_title')}</Text>
               <Text style={[styles.sub, { color: theme.colors.textMuted }]}>{t('ob_invite_why')}</Text>
-              <Text style={[styles.subSmall, { color: theme.colors.textSoft }]}>{t('ob_invite_hint')}</Text>
+              <Text style={[styles.subSmall, { color: theme.colors.textMuted }]}>{t('ob_invite_hint')}</Text>
               <View style={[styles.inputRow, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
                 <TextInput
                   testID="onboarding-invite"

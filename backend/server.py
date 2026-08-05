@@ -1840,6 +1840,14 @@ class AiAssignIn(BaseModel):
     type: str = "TASK"
 
 
+# A photo the app captures at quality 0.55 is well under a megabyte; the vault
+# caps uploads against the storage quota, but a JSON body is buffered whole in
+# memory before any quota check can run, so an image field with no ceiling is a
+# body sized to exhaust memory. ~10 MB of image is ~14 MB of base64 — generous
+# for a phone photo, and a firm wall rejected at validation time.
+MAX_IMAGE_B64_CHARS = 14 * 1024 * 1024
+
+
 class CardIn(BaseModel):
     type: str = "TASK"
     title: str
@@ -1847,7 +1855,7 @@ class CardIn(BaseModel):
     assignee: Optional[str] = None
     due_date: Optional[str] = None
     source: str = "MANUAL"
-    image_base64: Optional[str] = None
+    image_base64: Optional[str] = Field(default=None, max_length=MAX_IMAGE_B64_CHARS)
     recurrence: str = "none"
     reminder_minutes: int = 60
     shared: bool = False
@@ -1868,7 +1876,7 @@ class CardPatchIn(BaseModel):
 class VaultIn(BaseModel):
     title: str
     category: str
-    image_base64: str
+    image_base64: str = Field(max_length=MAX_IMAGE_B64_CHARS)
     mime_type: Optional[str] = None
     file_name: Optional[str] = None
     # "private" (default) or "shared". A co-parent joining a household must
@@ -1924,14 +1932,6 @@ class RedeemIn(BaseModel):
 class SubscriptionChangeIn(BaseModel):
     plan: str
     billing_cycle: str
-
-
-# A photo the app captures at quality 0.55 is well under a megabyte; the vault
-# caps uploads against the storage quota, but the vision endpoints decoded the
-# whole base64 string into memory (and shipped it to Gemini) with no ceiling at
-# all. ~10 MB of image is ~14 MB of base64 — generous for a phone photo, and a
-# firm wall against a body sized to exhaust memory.
-MAX_IMAGE_B64_CHARS = 14 * 1024 * 1024
 
 
 class VisionIn(BaseModel):

@@ -43,7 +43,7 @@ export function LegalPage({ title, subtitle, updatedAt, sections, footer }: Lega
           <Text style={[styles.eyebrow, { color: theme.colors.accentInk }]}>Household COO</Text>
           <Text style={[styles.title, { color: theme.colors.text }]}>{title}</Text>
           <Text style={[styles.subtitle, { color: theme.colors.textMuted }]}>{subtitle}</Text>
-          <Text style={[styles.updated, { color: theme.colors.textSoft }]}>Last updated: {updatedAt}</Text>
+          <Text style={[styles.updated, { color: theme.colors.textMuted }]}>Last updated: {updatedAt}</Text>
 
           {sections.map((section) => (
             <View key={section.title} style={[styles.card, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder, shadowColor: theme.colors.shadow }]}> 
@@ -61,7 +61,7 @@ export function LegalPage({ title, subtitle, updatedAt, sections, footer }: Lega
             </View>
           ))}
 
-          {footer ? <Text style={[styles.footer, { color: theme.colors.textSoft }]}>{footer}</Text> : null}
+          {footer ? <Text style={[styles.footer, { color: theme.colors.textMuted }]}>{footer}</Text> : null}
           <View style={{ height: 80 }} />
         </ScrollView>
       </SafeAreaView>
