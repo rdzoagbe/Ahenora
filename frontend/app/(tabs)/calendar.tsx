@@ -415,6 +415,21 @@ export default function Calendar() {
     return date.toLocaleDateString(locale, { weekday: 'long', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   };
 
+  /**
+   * The same moment, short enough to sit beside a tag without truncating.
+   *
+   * The sharing rows carry an icon, a title, a "Shared" tag and an action, so
+   * the long form ("Saturday, August 8 at 03:00 PM") had nowhere to go and
+   * ellipsized away the time — the one part a co-parent actually reads.
+   */
+  const formatDateTimeShort = (value?: string | null) => {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return date.toLocaleDateString(locale, { weekday: 'short', month: 'short', day: 'numeric' })
+      + ' · ' + date.toLocaleTimeString(locale, { hour: 'numeric', minute: '2-digit' });
+  };
+
   const syncCalendar = async () => {
     setSyncResult(null);
 
@@ -995,6 +1010,10 @@ export default function Calendar() {
       <KeyboardAwareBottomSheet visible={coparentViewOpen} onClose={() => setCoparentViewOpen(false)} contentStyle={styles.detailSheet}>
         {(() => {
           const items = shareDir === 'out' ? sharedOut : sharedIn;
+          // Everything of yours the co-parent cannot see. Counted from the
+          // agenda already in hand, so the panel states both halves of the
+          // rule: what they see, and how much stays yours.
+          const privateCount = cards.filter((c) => !c.shared).length;
           return (
         <>
         <View style={styles.detailHeader}>
@@ -1043,17 +1062,33 @@ export default function Calendar() {
             </Text>
           </View>
         ) : (
+          <>
+          <Text style={styles.shareCountLabel}>
+            {shareDir === 'out'
+              ? t('cal_share_count_out', { n: items.length })
+              : t('cal_share_count_in', { n: items.length })}
+          </Text>
           <View style={styles.coparentList}>
             {items.map((c, i) => (
               <View key={c.card_id} style={[styles.coparentRow, i < items.length - 1 && styles.coparentRowBorder]}>
                 <Users color={ui.mintText} size={17} />
-                <View style={{ flex: 1 }}>
+                {/* minWidth:0 lets this column actually shrink, so a long title
+                    ellipsizes instead of squeezing itself down to one letter. */}
+                <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.coparentRowTitle} numberOfLines={1}>{cleanText(c.title)}</Text>
-                  <Text style={styles.coparentRowMeta} numberOfLines={1}>
-                    {shareDir === 'in' && c.shared_by_name
-                      ? t('cal_share_by', { name: c.shared_by_name }) + (c.due_date ? ' · ' + formatDateTime(c.due_date) : '')
-                      : (c.due_date ? formatDateTime(c.due_date) : t('cal_share_no_date'))}
-                  </Text>
+                  {/* The "Shared" tag rides on the meta line rather than as a
+                      third column: it still says plainly why the item is
+                      visible, without stealing width from the title. */}
+                  <View style={styles.shareMetaRow}>
+                    <View style={styles.shareTag}>
+                      <Text style={styles.shareTagText}>{t('cal_share_tag_shared')}</Text>
+                    </View>
+                    <Text style={styles.coparentRowMeta} numberOfLines={1}>
+                      {shareDir === 'in' && c.shared_by_name
+                        ? t('cal_share_by', { name: c.shared_by_name }) + (c.due_date ? ' · ' + formatDateTimeShort(c.due_date) : '')
+                        : (c.due_date ? formatDateTimeShort(c.due_date) : t('cal_share_no_date'))}
+                    </Text>
+                  </View>
                 </View>
                 {shareDir === 'out' ? (
                   <PressScale
@@ -1068,15 +1103,20 @@ export default function Calendar() {
                       {makingPrivate === c.card_id ? t('cal_share_making_private') : t('cal_share_make_private')}
                     </Text>
                   </PressScale>
-                ) : (
-                  <View style={styles.shareTag}>
-                    <Text style={styles.shareTagText}>{t('cal_share_tag_shared')}</Text>
-                  </View>
-                )}
+                ) : null}
               </View>
             ))}
           </View>
+          </>
         )}
+
+        {/* The other half of the promise: how much stays yours. Stated only on
+            your own side — what the co-parent keeps private is not yours to count. */}
+        {shareDir === 'out' && items !== null && privateCount > 0 ? (
+          <Text style={styles.sharePrivateNote}>
+            {t('cal_share_private_note', { n: privateCount })}
+          </Text>
+        ) : null}
         </>
           );
         })()}
@@ -1166,7 +1206,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   coparentRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13 },
   coparentRowBorder: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: ui.line },
   coparentRowTitle: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 15 },
-  coparentRowMeta: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, marginTop: 2 },
+  coparentRowMeta: { flex: 1, minWidth: 0, color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5 },
 
   shareSeg: { flexDirection: 'row', backgroundColor: ui.soft, borderRadius: 14, borderWidth: 1, borderColor: ui.line, padding: 4, gap: 4, marginTop: 14 },
   shareSegBtn: { flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 10 },
@@ -1177,8 +1217,11 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   shareRuleText: { flex: 1, color: ui.orangeText, fontFamily: 'Inter_600SemiBold', fontSize: 12.5, lineHeight: 18 },
   makePrivateBtn: { paddingVertical: 6, paddingHorizontal: 4 },
   makePrivateText: { color: ui.orangeText, fontFamily: 'Inter_800ExtraBold', fontSize: 12.5 },
-  shareTag: { backgroundColor: ui.mint, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 },
+  shareTag: { backgroundColor: ui.mint, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 },
   shareTagText: { color: ui.mintText, fontFamily: 'Inter_800ExtraBold', fontSize: 10, letterSpacing: 0.4, textTransform: 'uppercase' },
+  shareMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 4 },
+  shareCountLabel: { color: ui.muted, fontFamily: 'Inter_800ExtraBold', fontSize: 11, letterSpacing: 0.5, textTransform: 'uppercase', marginTop: 16 },
+  sharePrivateNote: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, lineHeight: 18, textAlign: 'center', marginTop: 14, paddingHorizontal: 8 },
 
   carpoolSection: { marginTop: 24 },
   carpoolHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
