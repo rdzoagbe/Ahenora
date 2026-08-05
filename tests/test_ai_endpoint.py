@@ -506,5 +506,130 @@ class SuggestVariant(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 422)
 
 
+@unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
+class RecipeDietGeneration(unittest.TestCase):
+    """Vegetarian genuinely rewrites the recipe and caches in its own slot; a
+    vegetarian household gets it by default; a "different recipe" runs hotter
+    and skips the cache."""
+
+    def setUp(self):
+        server._gemini_state["model"] = None
+        server._gemini_state["last_error"] = None
+        server._gemini_state["errors"] = {}
+        self._client = server._gemini_state["client"]
+        self._key = server.GOOGLE_API_KEY
+        server.GOOGLE_API_KEY = "test-key"
+
+        import json as _json
+
+        class _Recipe(FakeClient):
+            def reply_for(self, model, contents, config):
+                return _json.dumps({
+                    "minutes": 25, "servings": 4,
+                    "ingredients": [{"name": "tofu", "qty": 400, "unit": "g"}],
+                    "steps": ["Press the tofu well.", "Fry it until golden.",
+                              "Simmer in the sauce for ten minutes."],
+                })
+
+        self.fake = _Recipe()
+        server._gemini_state["client"] = self.fake
+        self.captured = self.fake.captured
+
+        self._patched = {}
+        for name, impl in [
+            ("require_feature", lambda user, feature: {"plan": "premium"}),
+            ("build_subscription", lambda fid: {"plan": "premium", "limits": {"ai_scans_per_month": 999}}),
+        ]:
+            self._patched[name] = getattr(server, name)
+
+            def make_async(impl):
+                async def _f(*a, **k):
+                    return impl(*a, **k)
+                return _f
+            setattr(server, name, make_async(impl))
+        self._get_family = server.get_family_doc
+
+    def tearDown(self):
+        server._gemini_state["client"] = self._client
+        server.GOOGLE_API_KEY = self._key
+        server.get_family_doc = self._get_family
+        for name, orig in self._patched.items():
+            setattr(server, name, orig)
+
+    def _run(self, meal, diet="", variant=0, family_diet=""):
+        updates = []
+
+        class _Coll:
+            def __init__(self, doc):
+                self._doc = doc
+
+            async def find_one(self, *a, **k):
+                return dict(self._doc) if self._doc else None
+
+            async def update_one(self, *a, **k):
+                updates.append(a)
+                return None
+
+        class _DB:
+            def __getitem__(self, name):
+                return _Coll(meal if name == "meals" else None)
+
+        async def _fam(fid):
+            return {"ai_scans_used": 0, "diet": family_diet}
+        server.get_family_doc = _fam
+
+        user = {"family_id": "fam1", "role": "parent", "is_admin": True,
+                "user_id": "u1", "name": "Parent"}
+        result = asyncio.run(server.generate_meal_recipe(
+            meal_id="m1", lang="en", diet=diet, variant=variant, user=user, database=_DB()))
+        self.last_updates = updates
+        return result
+
+    def _set_keys(self):
+        """Every field written by any update_one during the last run."""
+        return [k for a in self.last_updates for k in (a[1].get("$set") or {})]
+
+    def _base_meal(self, **extra):
+        meal = {"meal_id": "m1", "family_id": "fam1", "title": "Chicken curry",
+                "ingredients": []}
+        meal.update(extra)
+        return meal
+
+    def test_vegetarian_rewrites_and_caches_in_its_own_slot(self):
+        result = self._run(self._base_meal(), diet="vegetarian")
+        self.assertEqual(result["diet"], "vegetarian")
+        # The prompt actually asked for a rewrite, not advice.
+        self.assertIn("vegetarian", self.captured[-1]["contents"].lower())
+        # And it cached under the vegetarian slot, not the omnivore one.
+        self.assertIn("ai_recipe_vegetarian.en", self._set_keys())
+        self.assertNotIn("ai_recipe.en", self._set_keys())
+
+    def test_plain_cook_it_uses_the_omnivore_slot(self):
+        result = self._run(self._base_meal(), diet="")
+        self.assertEqual(result["diet"], "")
+        self.assertNotIn("vegetarian", self.captured[-1]["contents"].lower())
+        self.assertIn("ai_recipe.en", self._set_keys())
+
+    def test_a_vegetarian_household_gets_veg_by_default(self):
+        result = self._run(self._base_meal(), diet="", family_diet="vegetarian")
+        self.assertEqual(result["diet"], "vegetarian")
+        self.assertIn("vegetarian", self.captured[-1]["contents"].lower())
+
+    def test_a_cached_vegetarian_recipe_returns_free_without_the_model(self):
+        cached = {"minutes": 20, "steps": ["a", "b", "c"]}
+        meal = self._base_meal(ai_recipe_vegetarian={"en": cached})
+        result = self._run(meal, diet="vegetarian")
+        self.assertTrue(result["cached"])
+        self.assertEqual(result["recipe"], cached)
+        self.assertEqual(len(self.captured), 0)   # model was never called
+
+    def test_different_recipe_skips_the_cache_and_runs_hotter(self):
+        meal = self._base_meal(ai_recipe={"en": {"minutes": 20, "steps": ["a", "b", "c"]}})
+        result = self._run(meal, diet="", variant=1)
+        self.assertFalse(result["cached"])        # regenerated despite the cache
+        self.assertIn("different take", self.captured[-1]["contents"].lower())
+        self.assertEqual(self.captured[-1]["config"]["temperature"], 0.9)
+
+
 if __name__ == "__main__":
     unittest.main()

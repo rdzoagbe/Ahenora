@@ -5,7 +5,7 @@ import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
-import { Plus, X, Trash2, ShoppingCart, Check, UtensilsCrossed, Bell, ChevronDown, ChevronLeft, History, RotateCcw, Sparkles, Sun, ChefHat, Clock, AlertTriangle, Search, Minus, BookOpen, Camera, Image as ImageIcon , ListChecks} from 'lucide-react-native';
+import { Plus, X, Trash2, ShoppingCart, Check, UtensilsCrossed, Bell, ChevronDown, ChevronLeft, History, RotateCcw, Sparkles, Sun, ChefHat, Clock, AlertTriangle, Search, Minus, BookOpen, Camera, Image as ImageIcon , ListChecks, Leaf, Shuffle} from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { PressScale } from '../../src/components/PressScale';
@@ -17,7 +17,7 @@ import { TabScreen } from '../../src/components/TabScreen';
 import { ScreenHeader, useUI, UIColors } from '../../src/components/Kit';
 
 import { useStore } from '../../src/store';
-import { api, MealPlan, ShoppingItem, ShoppingHistoryEntry, SavedMealPlan } from '../../src/api';
+import { api, MealPlan, ShoppingItem, ShoppingHistoryEntry, SavedMealPlan, Diet } from '../../src/api';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { logger } from '../../src/logger';
 import { suggestWeek, MealSuggestion, SuggestLang, localizedMealTitle, localizedMealIngredients, resolveRecipeId, recipeIngredients, searchRecipes } from '../../src/mealSuggestions';
@@ -60,6 +60,15 @@ export default function Kitchen() {
   // caches them too; this just avoids a round trip while the sheet is open.
   const [aiRecipes, setAiRecipes] = useState<Record<string, { minutes: number; steps: string[]; servings?: number; ingredients?: AiIngredient[] }>>({});
   const [generatingFor, setGeneratingFor] = useState<string | null>(null);
+  // The diet and variant of the recipe currently on screen, and whether a
+  // rewrite/regenerate is in flight. A vegetarian rewrite really re-cooks the
+  // ingredients and steps, so this drives the badge and which action shows.
+  const [recipeDiet, setRecipeDiet] = useState<Diet>('');
+  const [recipeVariant, setRecipeVariant] = useState(0);
+  const [regenBusy, setRegenBusy] = useState(false);
+  // The household's cooking diet. Vegetarian makes new recipes and the weekly
+  // suggestions come out vegetarian without asking each time.
+  const [householdDiet, setHouseholdDiet] = useState<Diet>('');
   // Recipe currently open full-screen. addToDay marks a preview opened from
   // the browser: the page then carries an "add to that day" action, so a
   // parent reads the recipe before committing it to the week.
@@ -110,10 +119,13 @@ export default function Kitchen() {
 
   const load = useCallback(async () => {
     try {
-      const [shopRes, mealRes, histRes] = await Promise.allSettled([api.listShopping(), api.listMeals(), api.listShoppingHistory()]);
+      const [shopRes, mealRes, histRes, dietRes] = await Promise.allSettled([
+        api.listShopping(), api.listMeals(), api.listShoppingHistory(), api.getMealDiet(),
+      ]);
       if (shopRes.status === 'fulfilled') setShopItems(shopRes.value);
       if (mealRes.status === 'fulfilled') setMeals(mealRes.value);
       if (histRes.status === 'fulfilled') setShopHistory(histRes.value);
+      if (dietRes.status === 'fulfilled') setHouseholdDiet(dietRes.value.diet);
     } catch (e: any) {
       logger.warn('Kitchen load failed:', e?.message || e);
     } finally {
@@ -735,9 +747,17 @@ export default function Kitchen() {
     const hasOwn = !!meal.ai_recipe && Object.keys(meal.ai_recipe).length > 0;
     const title = hasOwn ? meal.title : localizedMealTitle(meal.recipe_id, meal.title, suggestLang);
     openRecipe({ recipeId: null, mealId: meal.meal_id, title });
+    setRecipeVariant(0);
 
-    // Already generated for this language, either this session or a previous one.
-    const known = aiRecipes[meal.meal_id] || meal.ai_recipe?.[suggestLang];
+    // A vegetarian household gets the vegetarian version by default; the veg and
+    // omnivore recipes cache in separate slots on the meal so neither shadows
+    // the other.
+    const want: Diet = householdDiet;
+    setRecipeDiet(want);
+    const cached = want === 'vegetarian'
+      ? meal.ai_recipe_vegetarian?.[suggestLang]
+      : meal.ai_recipe?.[suggestLang];
+    const known = aiRecipes[meal.meal_id] || cached;
     if (known) {
       setAiRecipes((prev) => ({ ...prev, [meal.meal_id]: known }));
       return;
@@ -745,8 +765,9 @@ export default function Kitchen() {
 
     setGeneratingFor(meal.meal_id);
     try {
-      const { recipe } = await api.generateMealRecipe(meal.meal_id, suggestLang);
+      const { recipe, diet } = await api.generateMealRecipe(meal.meal_id, suggestLang, want);
       setAiRecipes((prev) => ({ ...prev, [meal.meal_id]: recipe }));
+      setRecipeDiet(diet);
     } catch (e: any) {
       // Close the sheet rather than leave it sitting empty.
       setCookingRecipe(null);
@@ -754,7 +775,42 @@ export default function Kitchen() {
     } finally {
       setGeneratingFor(null);
     }
-  }, [aiRecipes, suggestLang, showToast, t, openRecipe]);
+  }, [aiRecipes, householdDiet, suggestLang, showToast, t, openRecipe]);
+
+  // Rewrite the recipe already on screen. Vegetarian genuinely swaps the
+  // ingredients and steps (not just advice); "different recipe" asks for a
+  // fresh take on the same dish. Both go through the one generate path and
+  // cache, so re-opening is instant.
+  const regenerateRecipe = useCallback(async (opts: { diet?: Diet; variant?: number }) => {
+    const mealId = cookingRecipe?.mealId;
+    if (!mealId || regenBusy) return;
+    const diet = opts.diet !== undefined ? opts.diet : recipeDiet;
+    const variant = opts.variant !== undefined ? opts.variant : 0;
+    setRegenBusy(true);
+    try {
+      const { recipe, diet: applied } = await api.generateMealRecipe(mealId, suggestLang, diet, variant);
+      setAiRecipes((prev) => ({ ...prev, [mealId]: recipe }));
+      setRecipeDiet(applied);
+      setRecipeVariant(variant);
+    } catch (e: any) {
+      showToast(e?.message || t('cook_failed'), 'error');
+    } finally {
+      setRegenBusy(false);
+    }
+  }, [cookingRecipe, regenBusy, recipeDiet, suggestLang, showToast, t]);
+
+  // The household diet toggle. Persists server-side and is what makes the
+  // weekly suggestions and new recipes come out vegetarian by default.
+  const toggleHouseholdDiet = useCallback(async () => {
+    const next: Diet = householdDiet === 'vegetarian' ? '' : 'vegetarian';
+    setHouseholdDiet(next);
+    try {
+      await api.setMealDiet(next);
+    } catch (e: any) {
+      setHouseholdDiet(householdDiet);   // revert on failure
+      showToast(e?.message || t('cook_failed'), 'error');
+    }
+  }, [householdDiet, showToast, t]);
 
   // Closing a preview returns to the browser it came from (which was hidden
   // rather than dismissed — two stacked native modals misbehave on iOS);
@@ -1546,6 +1602,12 @@ export default function Kitchen() {
                 ) : (
                   <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.recipeScroll}>
                     <Text style={styles.recipeTitle}>{cookingRecipe.title}</Text>
+                    {isGenerated && recipeDiet === 'vegetarian' ? (
+                      <View testID="recipe-veg-badge" style={styles.vegBadge}>
+                        <Leaf color={ui.mintText} size={12} />
+                        <Text style={styles.vegBadgeText}>{t('recipe_vegetarian')}</Text>
+                      </View>
+                    ) : null}
                     <View style={styles.cookMeta}>
                       <Clock color={ui.muted} size={14} />
                       <Text style={styles.cookMetaText}>
@@ -1661,21 +1723,58 @@ export default function Kitchen() {
                       </View>
                     ))}
 
+                    {/* AI recipes can be re-cooked: vegetarian genuinely rewrites
+                        the ingredients and steps, and "different recipe" asks for
+                        a fresh take on the same dish. Curated library dishes are
+                        fixed, so these only show for generated recipes. */}
+                    {isGenerated && cookingRecipe.mealId ? (
+                      <View style={styles.recipeActions}>
+                        {recipeDiet !== 'vegetarian' ? (
+                          <PressScale
+                            testID="recipe-make-veg"
+                            accessibilityRole="button"
+                            onPress={() => regenerateRecipe({ diet: 'vegetarian', variant: 0 })}
+                            disabled={regenBusy}
+                            style={styles.recipeActionBtn}
+                          >
+                            <Leaf color={ui.mintText} size={15} />
+                            <Text style={styles.recipeActionText}>{t('cook_make_veg')}</Text>
+                          </PressScale>
+                        ) : null}
+                        <PressScale
+                          testID="recipe-different"
+                          accessibilityRole="button"
+                          onPress={() => regenerateRecipe({ variant: recipeVariant + 1 })}
+                          disabled={regenBusy}
+                          style={styles.recipeActionBtn}
+                        >
+                          <Shuffle color={ui.orange} size={15} />
+                          <Text style={styles.recipeActionText}>{t('cook_different')}</Text>
+                        </PressScale>
+                        {regenBusy ? <ActivityIndicator color={ui.orange} size="small" /> : null}
+                      </View>
+                    ) : null}
+
                     {/* The advisor half: substitutions, variations, timing.
                         The question is free text but bounded — sanitised,
                         length-capped and the answer validated server-side
                         before it is shown. */}
                     <Text style={styles.cookSectionTitle}>{t('chef_title')}</Text>
                     <View style={styles.chefChips}>
-                      <PressScale
-                        testID="chef-chip-veg"
-                        accessibilityRole="button"
-                        onPress={() => askChef(t('chef_chip_veg'))}
-                        disabled={chefBusy}
-                        style={styles.chefChip}
-                      >
-                        <Text style={styles.chefChipText}>{t('chef_chip_veg')}</Text>
-                      </PressScale>
+                      {/* On an AI recipe, "make it vegetarian" is a real rewrite
+                          above, not advice — so this advice chip only shows for
+                          curated dishes, which cannot be regenerated. */}
+                      {!isGenerated ? (
+                        <PressScale
+                          testID="chef-chip-veg"
+                          accessibilityRole="button"
+                          onPress={() => askChef(t('chef_chip_veg'))}
+                          disabled={chefBusy}
+                          style={styles.chefChip}
+                        >
+                          <Text style={styles.chefChipText}>{t('chef_chip_veg')}</Text>
+                        </PressScale>
+                      ) : null}
                       <PressScale
                         testID="chef-chip-faster"
                         accessibilityRole="button"
@@ -2050,6 +2149,22 @@ export default function Kitchen() {
         ) : (
           <ActivityIndicator color={ui.orange} style={{ marginVertical: 12 }} />
         )}
+
+        {/* A vegetarian household turns this on once; the week comes back
+            vegetarian and so do the recipes, without asking each time. */}
+        <PressScale
+          testID="suggest-veg-toggle"
+          accessibilityRole="button"
+          accessibilityLabel={t('kitchen_veg_household')}
+          onPress={async () => { await toggleHouseholdDiet(); loadSuggestions(suggestVariant); }}
+          style={[styles.vegToggle, householdDiet === 'vegetarian' && styles.vegToggleOn]}
+        >
+          <Leaf color={householdDiet === 'vegetarian' ? ui.mintText : ui.muted} size={14} />
+          <Text style={[styles.vegToggleText, householdDiet === 'vegetarian' && { color: ui.mintText }]}>
+            {t('kitchen_veg_household')}
+          </Text>
+        </PressScale>
+
         {/* Stated here as well as in the recipe, because "Add all to planner"
             commits a whole week without opening a single dish — which is the
             path most people take, and the one where nobody would otherwise see
@@ -2243,6 +2358,14 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   chefChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
   chefChip: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, backgroundColor: ui.soft, borderWidth: 1, borderColor: ui.line },
   chefChipText: { color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 13 },
+  recipeActions: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginTop: 14 },
+  recipeActionBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 13, borderRadius: 999, backgroundColor: ui.soft, borderWidth: 1, borderColor: ui.line },
+  recipeActionText: { color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 13 },
+  vegBadge: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 5, marginTop: 8, paddingVertical: 4, paddingHorizontal: 10, borderRadius: 999, backgroundColor: ui.mint },
+  vegBadgeText: { color: ui.mintText, fontFamily: 'Inter_700Bold', fontSize: 12, letterSpacing: 0.2 },
+  vegToggle: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 6, marginTop: 4, marginBottom: 4, paddingVertical: 7, paddingHorizontal: 12, borderRadius: 999, borderWidth: 1, borderColor: ui.line },
+  vegToggleOn: { borderColor: ui.mintText, backgroundColor: ui.mint },
+  vegToggleText: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 13 },
   chefAskRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   chefAskBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: ui.orangeDeep, alignItems: 'center', justifyContent: 'center' },
   chefAnswer: { backgroundColor: ui.soft, borderRadius: 14, padding: 14, marginTop: 12 },
