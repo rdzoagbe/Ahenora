@@ -5,7 +5,7 @@ simulator patches `server.db` with FakeDatabase() and every handler runs its
 actual code against this. Supports exactly the surface server.py uses:
 find_one / insert_one / update_one / update_many / delete_one / delete_many /
 count_documents / find().sort().limit() (async iteration + to_list), query
-operators $exists $gt $gte $lt $lte $in $ne $or $regex(+$options i), update
+operators $exists $gt $gte $lt $lte $in $nin $ne $or $regex(+$options i), update
 operators $set $inc, and db.command("ping").
 """
 
@@ -32,6 +32,9 @@ def _match_condition(value, cond):
                     return False
             elif op == "$in":
                 if value not in arg:
+                    return False
+            elif op == "$nin":
+                if value in arg:
                     return False
             elif op == "$ne":
                 if value == arg:

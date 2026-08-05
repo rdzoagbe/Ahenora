@@ -3939,17 +3939,50 @@ async def list_cards(status: Optional[str] = Query(default=None), user=Depends(r
 
 
 @app.get("/api/cards/shared")
-async def list_shared_with_coparent(user=Depends(require_user)):
-    """Everything the requester has shared — i.e. exactly what their co-parent
-    can see from them. A reassurance view: private items never appear here."""
+async def list_shared_with_coparent(direction: str = "out", user=Depends(require_user)):
+    """The two sides of a sharing agreement.
+
+    `out` (the default, and what the old single-direction view showed): what
+    the requester has shared — exactly what their co-parent can see from them.
+    `in`: what the OTHER adults in the family have shared with the requester —
+    so the transparency runs both ways and reads as a mutual arrangement rather
+    than a one-way disclosure. Private items never appear in either direction.
+
+    Legacy cards with no recorded owner were visible to the whole family; they
+    belong to nobody in particular, so they are deliberately left out of both
+    lists — "shared by you" and "shared by them" are both claims about a person,
+    and there is no person to name.
+    """
     database = get_db()
+    if direction == "in":
+        query = {
+            "family_id": user["family_id"],
+            "shared": True,
+            "created_by_user_id": {"$nin": [user["user_id"], None]},
+        }
+    else:
+        query = {
+            "family_id": user["family_id"],
+            "created_by_user_id": user["user_id"],
+            "shared": True,
+        }
+
+    # Resolve owner user_id -> member name once, so the "in" view can say who
+    # shared each item without the client holding a user_id lookup.
+    names: dict = {}
+    async for m in database["family_members"].find(
+        {"family_id": user["family_id"], "user_id": {"$exists": True}},
+        {"_id": 0, "user_id": 1, "name": 1},
+    ):
+        if m.get("user_id"):
+            names[m["user_id"]] = m.get("name", "")
+
     rows = []
-    cursor = database["cards"].find(
-        {"family_id": user["family_id"], "created_by_user_id": user["user_id"], "shared": True},
-        {"_id": 0},
-    ).sort("due_date", 1)
+    cursor = database["cards"].find(query, {"_id": 0}).sort("due_date", 1)
     async for item in cursor:
-        rows.append(public_card(item))
+        card = public_card(item)
+        card["shared_by_name"] = names.get(item.get("created_by_user_id"), "")
+        rows.append(card)
     return rows
 
 

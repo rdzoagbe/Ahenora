@@ -137,7 +137,10 @@ export default function Calendar() {
   const [carpools, setCarpools] = useState<Carpool[]>([]);
   const [childNames, setChildNames] = useState<Set<string>>(new Set());
   const [coparentViewOpen, setCoparentViewOpen] = useState(false);
-  const [sharedItems, setSharedItems] = useState<Card[] | null>(null);
+  const [shareDir, setShareDir] = useState<'out' | 'in'>('out');
+  const [sharedOut, setSharedOut] = useState<Card[] | null>(null);
+  const [sharedIn, setSharedIn] = useState<Card[] | null>(null);
+  const [makingPrivate, setMakingPrivate] = useState<string | null>(null);
   const handledCalendarResponseRef = useRef(false);
 
   const webClientId =
@@ -205,13 +208,34 @@ export default function Calendar() {
 
   const openCoparentView = useCallback(async () => {
     setCoparentViewOpen(true);
-    setSharedItems(null);
-    try {
-      setSharedItems(await api.sharedWithCoparent());
-    } catch {
-      setSharedItems([]);
-    }
+    setShareDir('out');
+    setSharedOut(null);
+    setSharedIn(null);
+    // Load both directions up front: the toggle is instant, and the second
+    // list is small. A failed fetch shows the empty state, not an error.
+    api.sharedWithCoparent('out').then(setSharedOut).catch(() => setSharedOut([]));
+    api.sharedWithCoparent('in').then(setSharedIn).catch(() => setSharedIn([]));
   }, []);
+
+  /**
+   * Pull a shared item back to private, from the reassurance view itself.
+   *
+   * Only ever offered on your own items (the "they see of you" side), so the
+   * server's owner check always passes; the list updates in place so the item
+   * visibly leaves the co-parent's view the moment you tap.
+   */
+  const makePrivateFromView = useCallback(async (card: Card) => {
+    setMakingPrivate(card.card_id);
+    try {
+      await api.updateCard(card.card_id, { shared: false });
+      setSharedOut((prev) => (prev ? prev.filter((c) => c.card_id !== card.card_id) : prev));
+      await load();
+    } catch (e) {
+      logger.warn('make private failed', e);
+    } finally {
+      setMakingPrivate(null);
+    }
+  }, [load]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
@@ -595,10 +619,10 @@ export default function Calendar() {
             </KitCard>
           </PressScale>
 
-          {/* Privacy reassurance: see exactly what the co-parent can see from you */}
+          {/* Two-way sharing view: what you share with each other */}
           <PressScale testID="calendar-coparent-view" onPress={openCoparentView} style={styles.coparentLink}>
             <Lock color={ui.muted} size={14} />
-            <Text style={styles.coparentLinkText}>{t('cal_coparent_view_link')}</Text>
+            <Text style={styles.coparentLinkText}>{t('cal_share_view_link')}</Text>
           </PressScale>
 
           {/* Month grid */}
@@ -890,12 +914,19 @@ export default function Calendar() {
         ) : null}
       </KeyboardAwareBottomSheet>
 
-      {/* "What your co-parent can see" — only your own shared items appear here. */}
+      {/* "What you share with each other" — a two-way, mutual view. The `out`
+          side is your own shared items (what they see of you) with an inline
+          way to pull each back private; the `in` side is what they've shared
+          with you, read-only. Private items never appear in either. */}
       <KeyboardAwareBottomSheet visible={coparentViewOpen} onClose={() => setCoparentViewOpen(false)} contentStyle={styles.detailSheet}>
+        {(() => {
+          const items = shareDir === 'out' ? sharedOut : sharedIn;
+          return (
+        <>
         <View style={styles.detailHeader}>
           <View style={styles.coparentTitleWrap}>
             <Eye color={ui.orange} size={20} />
-            <Text style={styles.detailTitle}>{t('cal_coparent_view_title')}</Text>
+            <Text style={styles.detailTitle}>{t('cal_share_view_title')}</Text>
           </View>
           <PressScale
                   accessibilityRole="button"
@@ -903,27 +934,78 @@ export default function Calendar() {
             <X color={ui.text} size={20} />
           </PressScale>
         </View>
-        <Text style={styles.coparentSubtitle}>{t('cal_coparent_view_subtitle')}</Text>
-        {sharedItems === null ? (
+
+        <View style={styles.shareSeg}>
+          <PressScale
+            testID="share-dir-out"
+            accessibilityRole="button"
+            onPress={() => setShareDir('out')}
+            style={[styles.shareSegBtn, shareDir === 'out' && styles.shareSegOn]}
+          >
+            <Text style={[styles.shareSegText, shareDir === 'out' && styles.shareSegTextOn]}>{t('cal_share_out')}</Text>
+          </PressScale>
+          <PressScale
+            testID="share-dir-in"
+            accessibilityRole="button"
+            onPress={() => setShareDir('in')}
+            style={[styles.shareSegBtn, shareDir === 'in' && styles.shareSegOn]}
+          >
+            <Text style={[styles.shareSegText, shareDir === 'in' && styles.shareSegTextOn]}>{t('cal_share_in')}</Text>
+          </PressScale>
+        </View>
+
+        <View style={styles.shareRule}>
+          <Lock color={ui.orangeText} size={15} />
+          <Text style={styles.shareRuleText}>{t('cal_share_rule')}</Text>
+        </View>
+
+        {items === null ? (
           <ActivityIndicator color={ui.orange} size="small" style={{ marginTop: 24 }} />
-        ) : sharedItems.length === 0 ? (
+        ) : items.length === 0 ? (
           <View style={styles.coparentEmpty}>
             <Lock color={ui.muted} size={26} />
-            <Text style={styles.coparentEmptyText}>{t('cal_coparent_view_empty')}</Text>
+            <Text style={styles.coparentEmptyText}>
+              {shareDir === 'out' ? t('cal_share_out_empty') : t('cal_share_in_empty')}
+            </Text>
           </View>
         ) : (
           <View style={styles.coparentList}>
-            {sharedItems.map((c, i) => (
-              <View key={c.card_id} style={[styles.coparentRow, i < sharedItems.length - 1 && styles.coparentRowBorder]}>
+            {items.map((c, i) => (
+              <View key={c.card_id} style={[styles.coparentRow, i < items.length - 1 && styles.coparentRowBorder]}>
                 <Users color={ui.mintText} size={17} />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.coparentRowTitle} numberOfLines={1}>{cleanText(c.title)}</Text>
-                  {c.due_date ? <Text style={styles.coparentRowMeta}>{formatDateTime(c.due_date)}</Text> : null}
+                  <Text style={styles.coparentRowMeta} numberOfLines={1}>
+                    {shareDir === 'in' && c.shared_by_name
+                      ? t('cal_share_by', { name: c.shared_by_name }) + (c.due_date ? ' · ' + formatDateTime(c.due_date) : '')
+                      : (c.due_date ? formatDateTime(c.due_date) : t('cal_share_no_date'))}
+                  </Text>
                 </View>
+                {shareDir === 'out' ? (
+                  <PressScale
+                    testID={`share-make-private-${c.card_id}`}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('cal_share_make_private')}
+                    disabled={makingPrivate === c.card_id}
+                    onPress={() => makePrivateFromView(c)}
+                    style={styles.makePrivateBtn}
+                  >
+                    <Text style={styles.makePrivateText}>
+                      {makingPrivate === c.card_id ? t('cal_share_making_private') : t('cal_share_make_private')}
+                    </Text>
+                  </PressScale>
+                ) : (
+                  <View style={styles.shareTag}>
+                    <Text style={styles.shareTagText}>{t('cal_share_tag_shared')}</Text>
+                  </View>
+                )}
               </View>
             ))}
           </View>
         )}
+        </>
+          );
+        })()}
       </KeyboardAwareBottomSheet>
     </SwipeableTabView>
   );
@@ -1005,6 +1087,18 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   coparentRowBorder: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: ui.line },
   coparentRowTitle: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 15 },
   coparentRowMeta: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, marginTop: 2 },
+
+  shareSeg: { flexDirection: 'row', backgroundColor: ui.soft, borderRadius: 14, borderWidth: 1, borderColor: ui.line, padding: 4, gap: 4, marginTop: 14 },
+  shareSegBtn: { flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 10 },
+  shareSegOn: { backgroundColor: ui.card },
+  shareSegText: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 12.5 },
+  shareSegTextOn: { color: ui.text },
+  shareRule: { flexDirection: 'row', alignItems: 'center', gap: 9, backgroundColor: ui.orangeSoft, borderRadius: 14, paddingHorizontal: 13, paddingVertical: 11, marginTop: 14 },
+  shareRuleText: { flex: 1, color: ui.orangeText, fontFamily: 'Inter_600SemiBold', fontSize: 12.5, lineHeight: 18 },
+  makePrivateBtn: { paddingVertical: 6, paddingHorizontal: 4 },
+  makePrivateText: { color: ui.orangeText, fontFamily: 'Inter_800ExtraBold', fontSize: 12.5 },
+  shareTag: { backgroundColor: ui.mint, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 },
+  shareTagText: { color: ui.mintText, fontFamily: 'Inter_800ExtraBold', fontSize: 10, letterSpacing: 0.4, textTransform: 'uppercase' },
 
   carpoolSection: { marginTop: 24 },
   carpoolHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
