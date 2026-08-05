@@ -47,7 +47,13 @@ export function EmailAuthModal({ visible, onClose, onSuccess, inviteToken }: Pro
   // above is Log In (the common returning case, never flashing Sign Up at
   // them); this switches a genuinely new, uninvited device to Sign Up.
   useEffect(() => {
-    if (!visible || inviteToken) return;
+    if (!visible) return;
+    // The invite loads asynchronously after mount, so `inviteToken` is null on
+    // the first render and the initial state captured Log In. When it arrives
+    // this effect re-runs (it's a dep) and flips to Sign Up — an invite is a
+    // join. Early-returning on a truthy token used to leave an invited new
+    // user stranded on the Log In tab, where their non-existent account failed.
+    if (inviteToken) { setMode('signup'); return; }
     let cancelled = false;
     AsyncStorage.getItem(RETURNING_USER_KEY)
       .then((seen) => { if (!cancelled && !seen) setMode('signup'); })

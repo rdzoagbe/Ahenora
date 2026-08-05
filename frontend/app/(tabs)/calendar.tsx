@@ -376,7 +376,8 @@ export default function Calendar() {
     const tomorrowKey = dateKey(tomorrow);
     const count = cards.filter((c) => cardDateKey(c) === tomorrowKey).length;
     const content = count > 0
-      ? { title: t('cal_nightly_title'), body: t('cal_nightly_body', { count }) }
+      ? { title: t('cal_nightly_title'),
+          body: count === 1 ? t('cal_nightly_body_one') : t('cal_nightly_body', { count }) }
       : null;
     syncCalendarNightly(true, content).catch(() => undefined);
   }, [cards, t]);

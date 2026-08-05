@@ -113,13 +113,24 @@ async function writeQueue(items: QueuedWrite[]): Promise<void> {
   }
 }
 
+const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+  !!v && typeof v === 'object' && !Array.isArray(v);
+
 export async function enqueueWrite(path: string, method: string, body?: unknown): Promise<void> {
   const items = await readQueue();
   const base = path.split('?')[0];
-  // One entry per target: the last thing you said about an item is what you
-  // meant, and replaying three toggles of the same checkbox is noise.
+  // One entry per target: replaying three toggles of the same checkbox is
+  // noise. But these are *partial* PATCH bodies — a later {name} must not erase
+  // an earlier {checked} for the same item — so merge the fields (newest wins
+  // per field) rather than replacing the whole body. Ticking then renaming a
+  // shopping item offline used to drop the tick on reconnect.
+  const prior = items.find((i) => i.path.split('?')[0] === base);
   const kept = items.filter((i) => i.path.split('?')[0] !== base);
-  kept.push({ id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, path, method, body, at: Date.now() });
+  const mergedBody =
+    prior && isPlainObject(prior.body) && isPlainObject(body)
+      ? { ...prior.body, ...body }
+      : body;
+  kept.push({ id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, path, method, body: mergedBody, at: Date.now() });
   await writeQueue(kept);
 }
 

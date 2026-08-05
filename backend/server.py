@@ -3625,12 +3625,26 @@ async def kid_finish_chore(card_id: str, child=Depends(require_child)):
     if (card.get("assignee") or "").strip().lower() != (member.get("name") or "").strip().lower():
         raise HTTPException(status_code=403, detail="That is not yours to finish")
 
+    already = card.get("status") == "DONE" or bool(card.get("stars_awarded"))
     await database["cards"].update_one({"card_id": card_id}, {"$set": {
         "status": "DONE", "completed_at": utcnow(),
-        "completed_by_name": member.get("name") or "", "completed_by_user_id": None}})
+        "completed_by_name": member.get("name") or "", "completed_by_user_id": None,
+        "stars_awarded": True}})
     await log_activity(database, {"family_id": child["family_id"], "user_id": None,
                                   "name": member.get("name") or ""},
                        "task_done", card.get("title", ""))
+    # Finishing your own chore earns the same 5 stars the parent-marked path
+    # grants, through the shared helper so it ticks the weekly meter and writes
+    # the ledger. Without this a child in kid mode saw "done" but earned
+    # nothing, and the card was already DONE so no parent award could follow.
+    # Guarded so a re-tap on an already-finished chore can't pay twice.
+    if not already:
+        old_stars = int(member.get("stars", 0))
+        actor = {"family_id": child["family_id"], "user_id": None, "name": member.get("name") or ""}
+        await award_stars_to_member(database, child["family_id"], member["member_id"], 5,
+                                    card.get("title") or "Chore done", actor)
+        await send_star_milestone_alert(child["family_id"], member.get("name", "Your child"),
+                                        old_stars, old_stars + 5)
     return {"ok": True}
 
 
@@ -4403,11 +4417,16 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
             {"_id": 0},
         )
         if member:
-            await database["family_members"].update_one(
-                {"member_id": member["member_id"]},
-                {"$inc": {"stars": 5}},
-            )
             old_stars = int(member.get("stars", 0))
+            # Route through the shared helper so a finished chore ticks the
+            # weekly meter (week_earned, which gates weekend treats) and writes
+            # the star ledger — a raw $inc banked the stars but left both
+            # untouched, silently locking the weekend payoff and letting the
+            # ledger sum diverge from the balance.
+            await award_stars_to_member(
+                database, user["family_id"], member["member_id"], 5,
+                card.get("title") or "Chore done", user,
+            )
             await send_star_milestone_alert(user["family_id"], member.get("name", "Your child"), old_stars, old_stars + 5)
 
     return public_card(updated)

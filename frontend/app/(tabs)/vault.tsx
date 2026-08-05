@@ -520,17 +520,25 @@ export default function Vault() {
                 <Text style={styles.recentTotal}>{expiryAlerts.length} {expiryAlerts.length === 1 ? t('vault_alert') : t('vault_alerts')}</Text>
               </View>
               <View style={styles.shopCard}>
-                {expiryAlerts.slice(0, 6).map((alert) => (
-                  <View key={alert.doc_id} style={styles.shopRow}>
-                    <View style={[styles.expiryDot, { backgroundColor: alert.status === 'expired' ? '#DC2626' : alert.status === 'urgent' ? '#F59E0B' : ui.mintText }]} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.shopItemText}>{alert.title}</Text>
-                      <Text style={styles.shopCat}>
-                        {alert.status === 'expired' ? `${t('vault_expired')} ${Math.abs(alert.days_left)} ${t('vault_days_ago')}` : `${alert.days_left} ${t('vault_days_left')}`} · {alert.category}
-                      </Text>
+                {expiryAlerts.slice(0, 6).map((alert) => {
+                  const expired = alert.status === 'expired';
+                  const n = expired ? Math.abs(alert.days_left) : alert.days_left;
+                  const unit = expired
+                    ? t(n === 1 ? 'vault_day_ago' : 'vault_days_ago')
+                    : t(n === 1 ? 'vault_day_left' : 'vault_days_left');
+                  const when = expired ? `${t('vault_expired')} ${n} ${unit}` : `${n} ${unit}`;
+                  return (
+                    <View key={alert.doc_id} style={styles.shopRow}>
+                      <View style={[styles.expiryDot, { backgroundColor: alert.status === 'expired' ? '#DC2626' : alert.status === 'urgent' ? '#F59E0B' : ui.mintText }]} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.shopItemText}>{alert.title}</Text>
+                        <Text style={styles.shopCat}>
+                          {when} · {alert.category}
+                        </Text>
+                      </View>
                     </View>
-                  </View>
-                ))}
+                  );
+                })}
               </View>
             </>
           ) : null}

@@ -143,12 +143,19 @@ async def main():
         tidy = [c for c in cards if c["title"] == "Tidy your room"][0]
         r["her_tick_off_reached_the_server"] = tidy["status"] == "DONE"
         r["it_is_recorded_as_hers"] = tidy.get("completed_by_name") == "Ama"
+        # Finishing her own job pays 5 stars (30 -> 35). Kid-mode
+        # self-completion earns, the same as a parent marking it done — it used
+        # to award nothing, leaving the whole earning loop dead.
+        earned = [m for m in api("GET", "/family/members", None, tok)
+                  if m["member_id"] == ama["member_id"]][0]
+        r["finishing_her_job_earned_stars"] = earned["stars"] == 35
 
         await p.click('text=Ice cream')
         await p.wait_for_timeout(3500)
         fresh = [m for m in api("GET", "/family/members", None, tok)
                  if m["member_id"] == ama["member_id"]][0]
-        r["spending_stars_worked"] = fresh["stars"] == 20
+        # 35 earned minus the 10-star Ice cream.
+        r["spending_stars_worked"] = fresh["stars"] == 25
         body = await p.inner_text("body")
         # Case-folded: the section label is uppercased in CSS, and inner_text
         # returns what is rendered, not what the source says.

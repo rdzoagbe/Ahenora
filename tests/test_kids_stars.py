@@ -359,6 +359,40 @@ class ChoresAndRoutinesAwardStars(unittest.TestCase):
         self.assertEqual(self._stars(db, "kid1"), 3)
         self.assertEqual(db["chores"].rows[0]["current_assignee"], "kid1")
 
+    # ---- assigned task cards --------------------------------------------
+
+    def test_marking_a_task_card_done_pays_the_child_and_ticks_the_week(self):
+        # Completing an assigned task card is a primary earning path. It used to
+        # bank +5 with a raw $inc that skipped the weekly meter and the ledger,
+        # so weekend treats (gated on week_earned) stayed locked and the ledger
+        # diverged from the balance. It now routes through the shared helper.
+        db = self._db()
+        db["cards"].rows.append({
+            "card_id": "card1", "family_id": "fam1", "type": "TASK",
+            "title": "Tidy room", "assignee": "Ama", "status": "OPEN",
+            "source": "MANUAL", "shared": True, "created_by_user_id": "u1",
+            "created_at": server.utcnow(),
+        })
+        _alert = server.send_star_milestone_alert
+
+        async def _no_alert(*a, **k):
+            return None
+
+        server.send_star_milestone_alert = _no_alert
+        try:
+            asyncio.run(server.update_card(
+                "card1", server.CardPatchIn(status="DONE"), user=self.USER))
+        finally:
+            server.send_star_milestone_alert = _alert
+
+        self.assertEqual(self._stars(db, "kid1"), 5)
+        member = next(m for m in db["family_members"].rows if m["member_id"] == "kid1")
+        self.assertEqual(member["week_earned"], 5)
+        ledger = db["star_transactions"].rows
+        self.assertEqual(len(ledger), 1)
+        self.assertEqual(ledger[0]["delta"], 5)
+        self.assertEqual(ledger[0]["member_id"], "kid1")
+
     # ---- routines -------------------------------------------------------
 
     def test_completing_a_routine_pays_its_child(self):
