@@ -221,6 +221,46 @@ export default function Kids() {
     [rewards, activeChild?.weekend_goal_reward_id],
   );
   const hasWeekendTreats = useMemo(() => rewards.some((r) => r.weekend), [rewards]);
+
+  /**
+   * One cell per day of the current week, Monday first, carrying the stars
+   * earned that day.
+   *
+   * Built from the star ledger already loaded for this child, so the row costs
+   * nothing extra. Only positive movements count: a correction that removes
+   * stars is not a day's effort undone, and showing it as one would read as a
+   * punishment on the child's own screen.
+   */
+  const weekDayCells = useMemo(() => {
+    const now = new Date();
+    const monday = new Date(now);
+    monday.setHours(0, 0, 0, 0);
+    // getDay(): 0 = Sunday. Shift so the week starts on Monday.
+    monday.setDate(monday.getDate() - ((now.getDay() + 6) % 7));
+
+    const dayKey = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    const earnedByDay: Record<string, number> = {};
+    historyItems.forEach((txn) => {
+      if (!txn.created_at || txn.delta <= 0) return;
+      const when = new Date(txn.created_at);
+      if (Number.isNaN(when.getTime()) || when < monday) return;
+      const k = dayKey(when);
+      earnedByDay[k] = (earnedByDay[k] || 0) + txn.delta;
+    });
+
+    const todayKey = dayKey(now);
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      const k = dayKey(d);
+      return {
+        key: k,
+        letter: d.toLocaleDateString(undefined, { weekday: 'narrow' }),
+        earned: earnedByDay[k] || 0,
+        isToday: k === todayKey,
+      };
+    });
+  }, [historyItems]);
   const iconSuggestions = useMemo(() => suggestedIcons(rewardTitle), [rewardTitle]);
   const sortedRewards = useMemo(() => [...rewards].sort((a, b) => (stars / b.cost_stars) - (stars / a.cost_stars)), [rewards, stars]);
   // Suggestions for rewards the family already has are not suggestions.
@@ -1200,6 +1240,39 @@ export default function Kids() {
                     ) : (
                       <Text style={styles.weekEmptyHint}>{t('kids_weekend_hint')}</Text>
                     )}
+
+                    {/* Momentum, at a glance: one cell per day of the week,
+                        filling in as stars are earned. A child reads their own
+                        run without reading a number. Built from the star ledger
+                        already loaded for this child — no extra request. */}
+                    <View style={styles.weekDays}>
+                      {weekDayCells.map((d) => (
+                        <View
+                          key={d.key}
+                          style={[
+                            styles.weekDay,
+                            d.earned > 0 && styles.weekDayDone,
+                            d.isToday && styles.weekDayToday,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.weekDayMark,
+                              d.earned > 0 && styles.weekDayMarkDone,
+                              d.isToday && styles.weekDayMarkToday,
+                            ]}
+                          >
+                            {/* A finished day just needs to read as "done"; the
+                                running count only matters for today, and a tick
+                                keeps the row calm however big a day was. */}
+                            {d.earned <= 0 ? '·' : d.isToday ? (d.earned > 99 ? '99+' : d.earned) : '✓'}
+                          </Text>
+                          <Text style={[styles.weekDayLetter, d.isToday && styles.weekDayLetterToday]}>
+                            {d.letter}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
                   </Card>
 
                   {/* Tabs */}
@@ -2034,6 +2107,15 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   weekPick: { marginTop: 12, alignSelf: 'flex-start' },
   weekPickText: { color: ui.orangeText, fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
   weekEmptyHint: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, lineHeight: 18, marginTop: 10 },
+  weekDays: { flexDirection: 'row', justifyContent: 'space-between', gap: 6, marginTop: 14 },
+  weekDay: { flex: 1, alignItems: 'center', paddingVertical: 7, borderRadius: 12, backgroundColor: ui.soft },
+  weekDayDone: { backgroundColor: ui.orangeSoft },
+  weekDayToday: { borderWidth: 1.5, borderColor: ui.orange },
+  weekDayMark: { color: ui.muted, fontFamily: 'Inter_800ExtraBold', fontSize: 13, lineHeight: 17 },
+  weekDayMarkDone: { color: ui.orangeText },
+  weekDayMarkToday: { color: ui.orangeText },
+  weekDayLetter: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 10, marginTop: 2 },
+  weekDayLetterToday: { color: ui.orangeText },
 
   weekendTagRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 6 },
   weekendTag: { backgroundColor: ui.gold, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
