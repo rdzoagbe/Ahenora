@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Modal,
   View,
@@ -53,8 +53,14 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
   const [skipped, setSkipped] = useState<Set<number>>(new Set());
   const [adding, setAdding] = useState(false);
 
+  // Tags each scan so a result that lands after the sheet was closed (Android
+  // hardware back mid-scan) is dropped instead of setting a stale confirm step
+  // with no image. Bumped on close and at the start of each new pick.
+  const scanReqRef = useRef(0);
+
   useEffect(() => {
     if (!visible) {
+      scanReqRef.current += 1;
       setPhase('idle');
       setPreview(null);
       setErr(null);
@@ -98,11 +104,13 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
       const asset = res.assets[0];
       const imageBase64 = asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri;
 
+      const myReq = ++scanReqRef.current;
       setPreview(imageBase64);
       setPhase('scanning');
 
       try {
         const result = await api.visionExtract(imageBase64);
+        if (scanReqRef.current !== myReq) return;   // sheet closed mid-scan
         setScan(result);
         setCategory(result.vault_category || '');
         if (result.kind === 'recipe' && result.recipe) {
@@ -112,6 +120,7 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
           setPhase('confirm');
         }
       } catch (e: any) {
+        if (scanReqRef.current !== myReq) return;   // sheet closed mid-scan
         /**
          * Running out of AI credit must not cost you the photograph.
          *

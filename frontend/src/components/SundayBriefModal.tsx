@@ -95,7 +95,7 @@ export function SundayBriefModal({ visible, onClose }: Props) {
               >
                 <Text style={[styles.briefText, { color: theme.colors.text }]}>{brief}</Text>
                 {generatedAt ? (
-                  <Text style={[styles.generatedAt, { color: theme.colors.textSoft }]}> 
+                  <Text style={[styles.generatedAt, { color: theme.colors.textMuted }]}>
                     {new Date(generatedAt).toLocaleString()}
                   </Text>
                 ) : null}

@@ -514,7 +514,12 @@ export default function Calendar() {
 
     try {
       setCalendarSyncStatus(t('cal_opening_connection'));
-      handledCalendarResponseRef.current = false;
+      // Claim the response before prompting. promptCalendarAsync also pushes a
+      // new calendarResponse into state, which fires the import effect above —
+      // and this handler already imports below with its own status and cancel
+      // handling. Leaving the ref false let both run, importing the same events
+      // twice. Marking it handled keeps this path the single importer.
+      handledCalendarResponseRef.current = true;
 
       const result = (await promptCalendarAsync()) as any;
       const accessToken = result?.authentication?.accessToken || result?.params?.access_token || result?.params?.accessToken;

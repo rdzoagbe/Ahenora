@@ -674,7 +674,7 @@ export default function Kids() {
         ...prev,
         [activeChild.member_id]: (prev[activeChild.member_id] || 0) + res.transaction.amount,
       }));
-      showToast(t('kids_allowance_paid', { amount: res.transaction.amount }), 'success');
+      showToast(t('kids_allowance_paid', { amount: `${t('currency_symbol')}${res.transaction.amount}` }), 'success');
       // Paying moves the next-due date forward, so reschedule the day-before
       // reminders now rather than waiting for the next screen load.
       syncAllowanceReminders(
