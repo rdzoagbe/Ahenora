@@ -10,6 +10,59 @@ operators $set $inc, and db.command("ping").
 """
 
 import re
+from datetime import datetime
+
+
+def _bsonify(value):
+    """Store a value the way MongoDB would hand it back.
+
+    Specifically: BSON has no timezone. A datetime written to a real database
+    comes back NAIVE, and comparing it against an aware `utcnow()` raises
+    TypeError. This double used to keep the exact objects it was given, tzinfo
+    and all, which made it kinder than the thing it stands in for — so a
+    comparison that crashed in production passed every test here.
+
+    That is the failure mode a test double exists to prevent, so it now drops
+    tzinfo on write, exactly as the wire format does. The server sets
+    tz_aware=True on the real client and gets aware datetimes back; this
+    reproduces the raw behaviour underneath, which is the stricter of the two
+    and therefore the right one to test against.
+    """
+    if isinstance(value, datetime):
+        return value.replace(tzinfo=None) if value.tzinfo else value
+    if isinstance(value, dict):
+        return {k: _bsonify(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_bsonify(v) for v in value]
+    return value
+
+
+def _cmp_pair(value, arg):
+    """Line two values up the way the database compares them.
+
+    A query like {"expires_at": {"$gt": utcnow()}} is evaluated by MongoDB
+    server-side, on BSON instants — the aware/naive distinction is a Python
+    representation detail that never reaches it, so such a query simply works.
+    Only comparisons performed IN PYTHON, on a value already read back, can
+    hit the naive-vs-aware TypeError.
+
+    So the two are modelled separately and deliberately: reads hand back naive
+    datetimes (see _bsonify), which is what makes a Python-side `stored <
+    utcnow()` blow up here exactly as it does in production — while query
+    operators normalise first, because that mismatch is not real.
+    """
+    if isinstance(value, datetime) and isinstance(arg, datetime):
+        if value.tzinfo and not arg.tzinfo:
+            value = value.replace(tzinfo=None)
+        elif arg.tzinfo and not value.tzinfo:
+            arg = arg.replace(tzinfo=None)
+    return value, arg
+
+
+def _eq(value, arg):
+    """Equality, over instants rather than representations."""
+    left, right = _cmp_pair(value, arg)
+    return left == right
 
 
 def _match_condition(value, cond):
@@ -19,25 +72,29 @@ def _match_condition(value, cond):
                 if bool(value is not None) != bool(arg):
                     return False
             elif op == "$gt":
-                if value is None or not value > arg:
+                left, right = _cmp_pair(value, arg)
+                if value is None or not left > right:
                     return False
             elif op == "$gte":
-                if value is None or not value >= arg:
+                left, right = _cmp_pair(value, arg)
+                if value is None or not left >= right:
                     return False
             elif op == "$lt":
-                if value is None or not value < arg:
+                left, right = _cmp_pair(value, arg)
+                if value is None or not left < right:
                     return False
             elif op == "$lte":
-                if value is None or not value <= arg:
+                left, right = _cmp_pair(value, arg)
+                if value is None or not left <= right:
                     return False
             elif op == "$in":
-                if value not in arg:
+                if not any(_eq(value, a) for a in arg):
                     return False
             elif op == "$nin":
-                if value in arg:
+                if any(_eq(value, a) for a in arg):
                     return False
             elif op == "$ne":
-                if value == arg:
+                if _eq(value, arg):
                     return False
             elif op == "$regex":
                 flags = re.I if "i" in (cond.get("$options") or "") else 0
@@ -48,7 +105,7 @@ def _match_condition(value, cond):
             else:
                 raise NotImplementedError(f"query operator {op}")
         return True
-    return value == cond
+    return _eq(value, cond)
 
 
 def _matches(doc, query):
@@ -116,12 +173,12 @@ class FakeCollection:
         return None
 
     async def insert_one(self, doc):
-        self.rows.append(dict(doc))
+        self.rows.append(_bsonify(dict(doc)))
         return _Result(1)
 
     def _apply(self, row, update):
         for key, value in (update.get("$set") or {}).items():
-            row[key] = value
+            row[key] = _bsonify(value)
         for key, value in (update.get("$inc") or {}).items():
             row[key] = (row.get(key) or 0) + value
 

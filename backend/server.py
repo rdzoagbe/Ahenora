@@ -137,6 +137,14 @@ mongo = (
         # Recycle idle sockets so a silently-dead connection is never reused.
         maxIdleTimeMS=30000,
         heartbeatFrequencyMS=10000,
+        # Datetimes come back timezone-aware. Without this, BSON round-trips
+        # strip the tzinfo and every stored datetime returns NAIVE, while
+        # utcnow() is aware — so `stored < utcnow()` raises TypeError. That is
+        # not a theoretical worry: it took out invite acceptance in production
+        # (`expires_at < utcnow()` in _resolve_invite) while every local test
+        # passed, because the in-memory test double hands back the very objects
+        # it was given, tzinfo intact. The fake was kinder than reality.
+        tz_aware=True,
         retryWrites=True,
         retryReads=True,
         maxPoolSize=50,
@@ -2372,7 +2380,7 @@ async def exchange_session(payload: SessionIn):
         if not invite:
             raise HTTPException(status_code=404, detail="Invite not found")
 
-        if invite.get("expires_at") and invite["expires_at"] < utcnow():
+        if invite.get("expires_at") and _expired(invite["expires_at"]):
             await database["family_invites"].update_one(
                 {"invite_id": invite["invite_id"]},
                 {"$set": {"status": "expired", "updated_at": utcnow()}},
@@ -2524,7 +2532,7 @@ async def _resolve_invite(database, invite_token: Optional[str], email: str):
     invite = await database["family_invites"].find_one({"token": invite_token}, {"_id": 0})
     if not invite:
         raise HTTPException(status_code=404, detail="Invite not found")
-    if invite.get("expires_at") and invite["expires_at"] < utcnow():
+    if invite.get("expires_at") and _expired(invite["expires_at"]):
         await database["family_invites"].update_one(
             {"invite_id": invite["invite_id"]},
             {"$set": {"status": "expired", "updated_at": utcnow()}},
@@ -2611,6 +2619,23 @@ async def _accept_invite_for_user(database, user: dict, invite: Optional[dict], 
         except Exception as exc:
             log.warning("invite acceptance notification skipped: %s", exc)
     return user, joined
+
+
+def _expired(value) -> bool:
+    """Has this stored timestamp already passed?
+
+    Always via _coerce_dt, never a bare `stored < utcnow()`. BSON carries no
+    timezone, so a datetime read back from Mongo can be naive while utcnow()
+    is aware, and comparing the two raises TypeError rather than returning
+    False. That is not hypothetical: it is what took invite acceptance down in
+    production, as an unhandled 500 on the one endpoint a new co-parent needs.
+
+    The client now sets tz_aware=True, which fixes the same thing one layer
+    lower — but correctness here should not depend on a connection flag set
+    600 lines away, and a stored value can also be an ISO string.
+    """
+    parsed = _coerce_dt(value)
+    return bool(parsed and parsed < utcnow())
 
 
 @app.post("/api/auth/register")
@@ -3484,7 +3509,7 @@ async def family_invites(user=Depends(require_user)):
 
     async for item in cursor:
         expires_at = ensure_aware_utc(item.get("expires_at"))
-        if item.get("status") == "pending" and expires_at and expires_at < utcnow():
+        if item.get("status") == "pending" and expires_at and _expired(expires_at):
             item["expires_at"] = expires_at
             item["status"] = "expired"
             await database["family_invites"].update_one(
@@ -3534,7 +3559,7 @@ async def invites_for_me(
     )
     async for item in cursor:
         expires_at = ensure_aware_utc(item.get("expires_at"))
-        if expires_at and expires_at < utcnow():
+        if expires_at and _expired(expires_at):
             continue
         if item.get("family_id") == user.get("family_id"):
             continue
@@ -4052,7 +4077,7 @@ async def family_invite_lookup(token: str):
     if not invite:
         raise HTTPException(status_code=404, detail="Invite not found")
 
-    if invite.get("expires_at") and invite["expires_at"] < utcnow():
+    if invite.get("expires_at") and _expired(invite["expires_at"]):
         raise HTTPException(status_code=410, detail="Invite has expired")
 
     inviter = await database["users"].find_one(
@@ -7731,7 +7756,7 @@ async def pay_allowance(member_id: str, user: dict = Depends(require_user), data
         raise HTTPException(status_code=404, detail="No allowance set for this child")
 
     due = allowance_next_due(config)
-    if due > utcnow():
+    if (_coerce_dt(due) or utcnow()) > utcnow():
         raise HTTPException(status_code=400, detail="Not due yet")
 
     # Claim the period before writing the money, and carry the previous
