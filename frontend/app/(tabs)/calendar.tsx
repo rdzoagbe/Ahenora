@@ -168,9 +168,11 @@ export default function Calendar() {
   const [refreshing, setRefreshing] = useState(false);
   const [carpools, setCarpools] = useState<Carpool[]>([]);
   const [childNames, setChildNames] = useState<Set<string>>(new Set());
-  const [coparentViewOpen, setCoparentViewOpen] = useState(false);
   const [importPickerOpen, setImportPickerOpen] = useState(false);
   const [shareCounts, setShareCounts] = useState<{ shared_out: number; shared_in: number; private: number } | null>(null);
+  // Collapsed by default. The panel is above the calendar now, and a family
+  // sharing twenty items would otherwise bury the month grid under a list.
+  const [shareExpanded, setShareExpanded] = useState(false);
   const [shareDir, setShareDir] = useState<'out' | 'in'>('out');
   const [sharedOut, setSharedOut] = useState<Card[] | null>(null);
   const [sharedIn, setSharedIn] = useState<Card[] | null>(null);
@@ -228,6 +230,13 @@ export default function Calendar() {
         api.sharingSummary(),
       ]);
       if (sharedRes.status === 'fulfilled') setShareCounts(sharedRes.value);
+      // Both directions, loaded with the screen. The panel is on the page now,
+      // not behind a tap, so its data has to arrive with everything else.
+      // Deliberately NOT cleared to null first: that would flash a spinner
+      // above the calendar on every visit and every pull-to-refresh, which is
+      // worse than briefly showing the previous — correct — list.
+      api.sharedWithCoparent('out').then(setSharedOut).catch(() => setSharedOut([]));
+      api.sharedWithCoparent('in').then(setSharedIn).catch(() => setSharedIn([]));
       if (cardsRes.status === 'fulfilled') setCards(cardsRes.value.filter((card) => card.status === 'OPEN' && card.due_date));
       if (carpoolRes.status === 'fulfilled') setCarpools(carpoolRes.value);
       if (membersRes.status === 'fulfilled') {
@@ -249,17 +258,6 @@ export default function Calendar() {
     await load();
     setRefreshing(false);
   }, [load]);
-
-  const openCoparentView = useCallback(async () => {
-    setCoparentViewOpen(true);
-    setShareDir('out');
-    setSharedOut(null);
-    setSharedIn(null);
-    // Load both directions up front: the toggle is instant, and the second
-    // list is small. A failed fetch shows the empty state, not an error.
-    api.sharedWithCoparent('out').then(setSharedOut).catch(() => setSharedOut([]));
-    api.sharedWithCoparent('in').then(setSharedIn).catch(() => setSharedIn([]));
-  }, []);
 
   /**
    * Pull a shared item back to private, from the reassurance view itself.
@@ -753,30 +751,140 @@ export default function Calendar() {
             </KitCard>
           </PressScale>
 
-          {/* Two-way sharing view: what you share with each other */}
-          {/* The way into the sharing panel, built like something you can press.
-              It used to be centred grey text under a small lock — indisti-
-              nguishable from a caption, so the whole two-way view sat behind
-              something nobody had a reason to tap. Same card shape as the
-              import banner above it, with a count of what is visible and a
-              chevron, because the affordance IS the feature: privacy you
-              cannot find is privacy you do not trust. */}
-          <PressScale testID="calendar-coparent-view" onPress={openCoparentView} style={styles.bannerGap}>
-            <KitCard style={styles.banner}>
-              <View style={styles.bannerInner}>
-                <IconTile bg={ui.mint} size={40} radius={13}><Lock color={ui.mintText} size={18} /></IconTile>
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={styles.coparentLinkTitle}>{t('cal_share_view_link')}</Text>
-                  <Text style={styles.coparentLinkSub} numberOfLines={2}>
-                    {shareCounts
-                      ? t('cal_share_view_sub', { n: shareCounts.shared_out })
-                      : t('cal_share_view_sub_unknown')}
-                  </Text>
-                </View>
-                <ChevronRight color={ui.muted} size={18} />
+          {/* "What you share with each other" — a two-way, mutual view, and
+              the first thing on the page rather than something behind a tap.
+              It was a card that opened a sheet, which meant the one control
+              that answers "can my co-parent see this?" was invisible until
+              you went looking. Privacy you cannot find is privacy you do not
+              trust, so it lives here now, above the calendar it describes.
+              The `out` side is your own shared items with an inline way to
+              pull each back private; the `in` side is what they have shared
+              with you, read-only. Private items appear in neither. */}
+          <KitCard style={[styles.bannerGap, styles.sharePanel]}>
+            {(() => {
+              const items = shareDir === 'out' ? sharedOut : sharedIn;
+              // Everything of yours the co-parent cannot see. Counted from the
+              // agenda already in hand, so the panel states both halves of the
+              // rule: what they see, and how much stays yours.
+              const privateCount = shareCounts?.private ?? 0;
+              // Inline, this list sits between the header and the calendar, so
+              // an unbounded map would push the month grid off the bottom of a
+              // phone. Show a handful and offer the rest.
+              const shown = shareExpanded ? items : items?.slice(0, 3) ?? null;
+              const hidden = (items?.length ?? 0) - (shown?.length ?? 0);
+              return (
+              <>
+            <View style={styles.shareHead}>
+              <Eye color={ui.orange} size={18} />
+              <Text style={styles.shareTitle}>{t('cal_share_view_title')}</Text>
+            </View>
+
+            <View style={styles.shareSeg}>
+              <PressScale
+                testID="share-dir-out"
+                accessibilityRole="button"
+                onPress={() => { setShareDir('out'); setShareExpanded(false); }}
+                style={[styles.shareSegBtn, shareDir === 'out' && styles.shareSegOn]}
+              >
+                <Text style={[styles.shareSegText, shareDir === 'out' && styles.shareSegTextOn]}>{t('cal_share_out')}</Text>
+              </PressScale>
+              <PressScale
+                testID="share-dir-in"
+                accessibilityRole="button"
+                onPress={() => { setShareDir('in'); setShareExpanded(false); }}
+                style={[styles.shareSegBtn, shareDir === 'in' && styles.shareSegOn]}
+              >
+                <Text style={[styles.shareSegText, shareDir === 'in' && styles.shareSegTextOn]}>{t('cal_share_in')}</Text>
+              </PressScale>
+            </View>
+
+            <View style={styles.shareRule}>
+              <Lock color={ui.orangeText} size={15} />
+              <Text style={styles.shareRuleText}>{t('cal_share_rule')}</Text>
+            </View>
+
+            {items === null ? (
+              <ActivityIndicator color={ui.orange} size="small" style={{ marginTop: 24 }} />
+            ) : items.length === 0 ? (
+              <View style={styles.coparentEmpty}>
+                <Lock color={ui.muted} size={26} />
+                <Text style={styles.coparentEmptyText}>
+                  {shareDir === 'out' ? t('cal_share_out_empty') : t('cal_share_in_empty')}
+                </Text>
               </View>
-            </KitCard>
-          </PressScale>
+            ) : (
+              <>
+              <Text style={styles.shareCountLabel}>
+                {shareDir === 'out'
+                  ? (items.length === 1 ? t('cal_share_count_out_one') : t('cal_share_count_out', { n: items.length }))
+                  : (items.length === 1 ? t('cal_share_count_in_one') : t('cal_share_count_in', { n: items.length }))}
+              </Text>
+              <View style={styles.coparentList}>
+                {(shown ?? []).map((c, i) => (
+                  <View key={c.card_id} style={[styles.coparentRow, i < (shown ?? []).length - 1 && styles.coparentRowBorder]}>
+                    <Users color={ui.mintText} size={17} />
+                    {/* minWidth:0 lets this column actually shrink, so a long title
+                        ellipsizes instead of squeezing itself down to one letter. */}
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={styles.coparentRowTitle} numberOfLines={1}>{cleanText(c.title)}</Text>
+                      {/* The "Shared" tag rides on the meta line rather than as a
+                          third column: it still says plainly why the item is
+                          visible, without stealing width from the title. */}
+                      <View style={styles.shareMetaRow}>
+                        {shareDir === 'out' ? (
+                          <View style={styles.shareTag}>
+                            <Text style={styles.shareTagText}>{t('cal_share_tag_shared')}</Text>
+                          </View>
+                        ) : null}
+                        <Text style={styles.coparentRowMeta} numberOfLines={1}>
+                          {shareDir === 'in' && c.shared_by_name
+                            ? t('cal_share_by', { name: c.shared_by_name }) + (c.due_date ? ' · ' + formatDateTimeShort(c.due_date) : '')
+                            : (c.due_date ? formatDateTimeShort(c.due_date) : t('cal_share_no_date'))}
+                        </Text>
+                      </View>
+                    </View>
+                    {shareDir === 'out' ? (
+                      <PressScale
+                        testID={`share-make-private-${c.card_id}`}
+                        accessibilityRole="button"
+                        accessibilityLabel={t('cal_share_make_private')}
+                        disabled={makingPrivate === c.card_id}
+                        onPress={() => makePrivateFromView(c)}
+                        hitSlop={10}
+                        style={styles.makePrivateBtn}
+                      >
+                        <Text style={styles.makePrivateText}>
+                          {makingPrivate === c.card_id ? t('cal_share_making_private') : t('cal_share_make_private')}
+                        </Text>
+                      </PressScale>
+                    ) : null}
+                  </View>
+                ))}
+              </View>
+              </>
+            )}
+
+            {/* The other half of the promise: how much stays yours. Stated only on
+                your own side — what the co-parent keeps private is not yours to count. */}
+            {shareDir === 'out' && items !== null && privateCount > 0 ? (
+              <Text style={styles.sharePrivateNote}>
+                {privateCount === 1 ? t('cal_share_private_note_one') : t('cal_share_private_note', { n: privateCount })}
+              </Text>
+            ) : null}
+              {hidden > 0 ? (
+                <PressScale
+                  testID="share-show-all"
+                  accessibilityRole="button"
+                  onPress={() => setShareExpanded(true)}
+                  style={styles.shareMoreBtn}
+                >
+                  <Text style={styles.shareMoreText}>{t('cal_share_show_all', { n: hidden })}</Text>
+                </PressScale>
+              ) : null}
+              </>
+              );
+            })()}
+          </KitCard>
 
           {/* Month grid */}
           <KitCard style={styles.calCard}>
@@ -1067,10 +1175,6 @@ export default function Calendar() {
         ) : null}
       </KeyboardAwareBottomSheet>
 
-      {/* "What you share with each other" — a two-way, mutual view. The `out`
-          side is your own shared items (what they see of you) with an inline
-          way to pull each back private; the `in` side is what they've shared
-          with you, read-only. Private items never appear in either. */}
       {/* Where to import from. Every option plus a way out — the alert this
           replaces could only ever show three buttons on Android, which is
           exactly how many sources there are, so "Cancel" was dropped. */}
@@ -1119,123 +1223,6 @@ export default function Calendar() {
         </PressScale>
       </KeyboardAwareBottomSheet>
 
-      <KeyboardAwareBottomSheet visible={coparentViewOpen} onClose={() => setCoparentViewOpen(false)} contentStyle={styles.detailSheet}>
-        {(() => {
-          const items = shareDir === 'out' ? sharedOut : sharedIn;
-          // Everything of yours the co-parent cannot see. Counted from the
-          // agenda already in hand, so the panel states both halves of the
-          // rule: what they see, and how much stays yours.
-          const privateCount = shareCounts?.private ?? 0;
-          return (
-        <>
-        <View style={styles.detailHeader}>
-          <View style={styles.coparentTitleWrap}>
-            <Eye color={ui.orange} size={20} />
-            <Text style={styles.detailTitle}>{t('cal_share_view_title')}</Text>
-          </View>
-          <PressScale
-                  accessibilityRole="button"
-                  accessibilityLabel={t('close')} onPress={() => setCoparentViewOpen(false)} style={styles.closeBtn}>
-            <X color={ui.text} size={20} />
-          </PressScale>
-        </View>
-
-        <View style={styles.shareSeg}>
-          <PressScale
-            testID="share-dir-out"
-            accessibilityRole="button"
-            onPress={() => setShareDir('out')}
-            style={[styles.shareSegBtn, shareDir === 'out' && styles.shareSegOn]}
-          >
-            <Text style={[styles.shareSegText, shareDir === 'out' && styles.shareSegTextOn]}>{t('cal_share_out')}</Text>
-          </PressScale>
-          <PressScale
-            testID="share-dir-in"
-            accessibilityRole="button"
-            onPress={() => setShareDir('in')}
-            style={[styles.shareSegBtn, shareDir === 'in' && styles.shareSegOn]}
-          >
-            <Text style={[styles.shareSegText, shareDir === 'in' && styles.shareSegTextOn]}>{t('cal_share_in')}</Text>
-          </PressScale>
-        </View>
-
-        <View style={styles.shareRule}>
-          <Lock color={ui.orangeText} size={15} />
-          <Text style={styles.shareRuleText}>{t('cal_share_rule')}</Text>
-        </View>
-
-        {items === null ? (
-          <ActivityIndicator color={ui.orange} size="small" style={{ marginTop: 24 }} />
-        ) : items.length === 0 ? (
-          <View style={styles.coparentEmpty}>
-            <Lock color={ui.muted} size={26} />
-            <Text style={styles.coparentEmptyText}>
-              {shareDir === 'out' ? t('cal_share_out_empty') : t('cal_share_in_empty')}
-            </Text>
-          </View>
-        ) : (
-          <>
-          <Text style={styles.shareCountLabel}>
-            {shareDir === 'out'
-              ? (items.length === 1 ? t('cal_share_count_out_one') : t('cal_share_count_out', { n: items.length }))
-              : (items.length === 1 ? t('cal_share_count_in_one') : t('cal_share_count_in', { n: items.length }))}
-          </Text>
-          <View style={styles.coparentList}>
-            {items.map((c, i) => (
-              <View key={c.card_id} style={[styles.coparentRow, i < items.length - 1 && styles.coparentRowBorder]}>
-                <Users color={ui.mintText} size={17} />
-                {/* minWidth:0 lets this column actually shrink, so a long title
-                    ellipsizes instead of squeezing itself down to one letter. */}
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={styles.coparentRowTitle} numberOfLines={1}>{cleanText(c.title)}</Text>
-                  {/* The "Shared" tag rides on the meta line rather than as a
-                      third column: it still says plainly why the item is
-                      visible, without stealing width from the title. */}
-                  <View style={styles.shareMetaRow}>
-                    {shareDir === 'out' ? (
-                      <View style={styles.shareTag}>
-                        <Text style={styles.shareTagText}>{t('cal_share_tag_shared')}</Text>
-                      </View>
-                    ) : null}
-                    <Text style={styles.coparentRowMeta} numberOfLines={1}>
-                      {shareDir === 'in' && c.shared_by_name
-                        ? t('cal_share_by', { name: c.shared_by_name }) + (c.due_date ? ' · ' + formatDateTimeShort(c.due_date) : '')
-                        : (c.due_date ? formatDateTimeShort(c.due_date) : t('cal_share_no_date'))}
-                    </Text>
-                  </View>
-                </View>
-                {shareDir === 'out' ? (
-                  <PressScale
-                    testID={`share-make-private-${c.card_id}`}
-                    accessibilityRole="button"
-                    accessibilityLabel={t('cal_share_make_private')}
-                    disabled={makingPrivate === c.card_id}
-                    onPress={() => makePrivateFromView(c)}
-                    hitSlop={10}
-                    style={styles.makePrivateBtn}
-                  >
-                    <Text style={styles.makePrivateText}>
-                      {makingPrivate === c.card_id ? t('cal_share_making_private') : t('cal_share_make_private')}
-                    </Text>
-                  </PressScale>
-                ) : null}
-              </View>
-            ))}
-          </View>
-          </>
-        )}
-
-        {/* The other half of the promise: how much stays yours. Stated only on
-            your own side — what the co-parent keeps private is not yours to count. */}
-        {shareDir === 'out' && items !== null && privateCount > 0 ? (
-          <Text style={styles.sharePrivateNote}>
-            {privateCount === 1 ? t('cal_share_private_note_one') : t('cal_share_private_note', { n: privateCount })}
-          </Text>
-        ) : null}
-        </>
-          );
-        })()}
-      </KeyboardAwareBottomSheet>
     </SwipeableTabView>
   );
 }
@@ -1329,6 +1316,11 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   coparentRowTitle: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 15 },
   coparentRowMeta: { flex: 1, minWidth: 0, color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5 },
 
+  sharePanel: { padding: 16 },
+  shareHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  shareTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 17 },
+  shareMoreBtn: { alignItems: 'center', paddingVertical: 11, marginTop: 4 },
+  shareMoreText: { color: ui.orangeText, fontFamily: 'Inter_700Bold', fontSize: 13 },
   shareSeg: { flexDirection: 'row', backgroundColor: ui.soft, borderRadius: 14, borderWidth: 1, borderColor: ui.line, padding: 4, gap: 4, marginTop: 14 },
   shareSegBtn: { flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 10 },
   // The design's central mechanic is knowing which way you are facing. This

@@ -1,13 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { X } from 'lucide-react-native';
 
 import { PressScale } from './PressScale';
+import { PinPad } from './PinPad';
 import { useUI, UIColors } from './Kit';
 import { useStore } from '../store';
-import { useKeyboardHeight } from '../hooks/useKeyboardHeight';
 import { api, FamilyProfile, kidMode } from '../api';
 import { logger } from '../logger';
 
@@ -25,7 +25,6 @@ export function HandOverSheet({ visible, onClose }: { visible: boolean; onClose:
   const { t } = useStore();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const keyboard = useKeyboardHeight();
   const { height: windowHeight } = useWindowDimensions();
   const styles = createStyles(ui);
 
@@ -125,31 +124,19 @@ export function HandOverSheet({ visible, onClose }: { visible: boolean; onClose:
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel={t('close')} />
-      {/* Lifted clear of the keyboard. This panel is anchored to the bottom
-          of the screen, so the PIN field inside it opened the keypad directly
-          on top of itself — you tapped the box and it vanished under the
-          numbers. The safe-area pad is only needed while the keyboard is
-          down; once it is up, the keyboard covers that ground already. */}
-      <View
-        style={[
-          styles.panel,
-          {
-            bottom: keyboard,
-            paddingBottom: keyboard > 0 ? 18 : Math.max(insets.bottom, 16) + 18,
-          },
-        ]}
-      >
+      {/* Sits still. This panel used to shift up by the measured keyboard
+          height, which is the right idea and the wrong input: Android reported
+          zero on a real phone, so the panel stayed flush to the bottom and the
+          confirm button lived under the keys. The digits are entered on an
+          in-app pad now, no system keyboard opens over anything, and there is
+          nothing left to measure or get wrong. */}
+      <View style={[styles.panel, { paddingBottom: Math.max(insets.bottom, 16) + 18 }]}>
         <View style={styles.grabber} />
-        {/* The body scrolls inside a bounded panel.
-            Whether the keypad is escaped by the measured lift above or by the
-            window resizing underneath us differs by platform and by Android
-            setting, and when neither wins the sheet ends up flush against the
-            keys with its confirm button clipped in half — a PIN you cannot
-            finish setting, which locks the parent out of handing the device
-            over at all. Capping the height and letting the content scroll
-            makes the button reachable however that argument turns out. */}
+        {/* Still capped and scrollable, but now for an ordinary reason: a
+            household with several children plus a keypad can outgrow a short
+            phone. The bound is the window, not a keyboard measurement. */}
         <ScrollView
-          style={{ maxHeight: Math.max(180, windowHeight - keyboard - 180) }}
+          style={{ maxHeight: Math.max(240, windowHeight * 0.8) }}
           contentContainerStyle={styles.scrollBody}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
@@ -174,69 +161,44 @@ export function HandOverSheet({ visible, onClose }: { visible: boolean; onClose:
         {!ready ? (
           <>
             <Text style={styles.note}>{t('kid_need_parent_pin')}</Text>
-            <TextInput
-              testID="handover-parent-pin"
-              value={newParentPin}
-              /* Submits itself on the fourth digit.
-                 The confirm button sits at the bottom of a sheet the keypad
-                 opens over, and on some Android builds neither the measured
-                 lift nor the window resize gets it clear — it ends up clipped
-                 in half and the PIN cannot be finished. A four-digit field has
-                 exactly one moment it can be complete, so it does not need a
-                 button to be pressed; the button stays for anyone who wants
-                 it. Nothing here depends on measuring the keyboard. */
-              onChangeText={(v) => {
-                setNewParentPin(v);
+            <PinPad
+              pin={newParentPin}
+              error={error}
+              disabled={saving}
+              colors={{ text: ui.text, muted: ui.muted, line: ui.line, danger: ui.danger }}
+              onBack={() => { setNewParentPin((v) => v.slice(0, -1)); setError(null); }}
+              onDigit={(d) => {
+                // Saves itself on the fourth digit. Four digits have exactly
+                // one moment they are complete, so there is no button to hunt
+                // for — and the value is passed through rather than read back
+                // from state, which has not re-rendered yet.
+                const next = (newParentPin + d).slice(0, 4);
+                setNewParentPin(next);
                 setError(null);
-                if (/^\d{4}$/.test(v.trim())) saveParentPin(v.trim());
+                if (next.length === 4) saveParentPin(next);
               }}
-              placeholder="••••"
-              placeholderTextColor={ui.muted}
-              keyboardType="number-pad"
-              secureTextEntry
-              maxLength={4}
-              style={[styles.pinInput, error && { borderColor: ui.danger }]}
             />
-            {error ? <Text style={styles.error}>{error}</Text> : null}
-            <PressScale
-              testID="handover-save-parent-pin"
-              accessibilityRole="button"
-              onPress={() => saveParentPin()}
-              style={styles.primaryBtn}
-            >
-              <Text style={styles.primaryBtnText}>
-                {saving ? t('kid_saving') : t('kid_set_my_pin')}
-              </Text>
-            </PressScale>
+            {saving ? <Text style={styles.note}>{t('kid_saving')}</Text> : null}
           </>
         ) : chosen ? (
           <>
             <Text style={styles.note}>{t('kid_enter_pin', { name: chosen.name })}</Text>
-            <TextInput
-              testID="handover-pin"
-              value={pin}
-              onChangeText={(v) => {
-                setPin(v);
+            <PinPad
+              pin={pin}
+              error={error}
+              disabled={entering}
+              colors={{ text: ui.text, muted: ui.muted, line: ui.line, danger: ui.danger }}
+              onBack={() => { setPin((v) => v.slice(0, -1)); setError(null); }}
+              onDigit={(d) => {
+                const next = (pin + d).slice(0, 4);
+                setPin(next);
                 setError(null);
-                if (/^\d{4}$/.test(v.trim())) go(v.trim());
+                if (next.length === 4) go(next);
               }}
-              placeholder="••••"
-              placeholderTextColor={ui.muted}
-              keyboardType="number-pad"
-              secureTextEntry
-              maxLength={4}
-              autoFocus
-              style={[styles.pinInput, error && { borderColor: ui.danger }]}
             />
-            {error ? <Text style={styles.error}>{error}</Text> : null}
-            <View style={styles.row}>
-              <PressScale onPress={reset} style={styles.ghostBtn}>
-                <Text style={styles.ghostBtnText}>{t('back')}</Text>
-              </PressScale>
-              <PressScale testID="handover-go" onPress={() => go()} style={styles.primaryBtn}>
-                <Text style={styles.primaryBtnText}>{t('kid_open')}</Text>
-              </PressScale>
-            </View>
+            <PressScale testID="handover-back" onPress={reset} style={styles.ghostBtn}>
+              <Text style={styles.ghostBtnText}>{t('back')}</Text>
+            </PressScale>
           </>
         ) : (
           <>

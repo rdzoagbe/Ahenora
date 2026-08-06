@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { Modal, View, Text, StyleSheet } from 'react-native';
 import { BlurView } from 'expo-blur';
-import { X, Lock, Delete } from 'lucide-react-native';
+import { X, Lock } from 'lucide-react-native';
 import { PressScale } from './PressScale';
+import { PinPad } from './PinPad';
 import { useStore } from '../store';
 
 interface Props {
@@ -77,36 +78,17 @@ export function PinPadModal({ visible, mode, title, subtitle, onClose, onSubmit 
           <Text style={[styles.heading, { color: c.text }]}>{title}</Text>
           {subtitle ? <Text style={[styles.sub, { color: c.textMuted }]}>{subtitle}</Text> : null}
 
-          <View style={styles.dotsRow}>
-            {[0, 1, 2, 3].map((i) => (
-              <View
-                key={i}
-                style={[
-                  styles.dot,
-                  { borderColor: c.cardBorder },
-                  i < pin.length && { backgroundColor: c.text, borderColor: c.text },
-                  err ? { borderColor: DANGER } : undefined,
-                ]}
-              />
-            ))}
-          </View>
-
-          {err ? <Text style={[styles.errText, { color: DANGER }]}>{err}</Text> : null}
-
-          <View style={styles.pad}>
-            {['1','2','3','4','5','6','7','8','9'].map((d) => (
-              <PressScale key={d} testID={`pin-${d}`} onPress={() => pressDigit(d)} style={styles.key}>
-                <Text style={[styles.keyText, { color: c.text }]}>{d}</Text>
-              </PressScale>
-            ))}
-            <View style={styles.key} />
-            <PressScale testID="pin-0" onPress={() => pressDigit('0')} style={styles.key}>
-              <Text style={[styles.keyText, { color: c.text }]}>0</Text>
-            </PressScale>
-            <PressScale testID="pin-back" onPress={back} style={styles.key}>
-              <Delete color={c.textMuted} size={22} />
-            </PressScale>
-          </View>
+          {/* The same pad the hand-over sheet uses. It was duplicated here,
+              which is how one copy could be fixed and the other left buried
+              under Android's keyboard for weeks. */}
+          <PinPad
+            pin={pin}
+            error={err}
+            disabled={busy}
+            colors={{ text: c.text, muted: c.textMuted, line: c.cardBorder, danger: DANGER }}
+            onDigit={pressDigit}
+            onBack={back}
+          />
         </View>
       </View>
     </Modal>
@@ -137,18 +119,4 @@ const styles = StyleSheet.create({
     fontSize: 26, marginTop: 16,
   },
   sub: { fontFamily: 'Inter_400Regular', fontSize: 13, marginTop: 4 },
-  dotsRow: { flexDirection: 'row', gap: 16, justifyContent: 'center', marginTop: 22, marginBottom: 10 },
-  dot: {
-    width: 14, height: 14, borderRadius: 9999,
-    borderWidth: 1.5,
-  },
-  errText: { textAlign: 'center', fontFamily: 'Inter_500Medium', fontSize: 12, marginBottom: 4 },
-  pad: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 10 },
-  key: {
-    width: '33.333%',
-    aspectRatio: 1.6,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  keyText: { fontFamily: 'Inter_500Medium', fontSize: 26 },
 });

@@ -28,7 +28,19 @@ jobs:
           SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
         run: |
           if [ -z "$SMOKE_PASSWORD" ]; then
-            echo "::warning::SMOKE_PASSWORD secret is not set — production smoke test skipped. Add it under Settings → Secrets and variables → Actions."
+            # A green tick that tested nothing is worse than no test: it is a
+            # claim about production that nobody checked, and this job has been
+            # making it on every deploy. Say so where it will be seen.
+            #
+            # On a push it only warns, because blocking a deploy over a missing
+            # test credential would be the tail wagging the dog. The twice-daily
+            # scheduled run FAILS, so the gap shows up red in the Actions tab
+            # instead of hiding inside a passing check nobody opens.
+            echo "::warning::SMOKE_PASSWORD is not set — production was NOT tested. Add it under Settings → Secrets and variables → Actions."
+            if [ "${{ github.event_name }}" = "schedule" ]; then
+              echo "::error::Production has no working smoke test. Add SMOKE_PASSWORD, or delete this workflow rather than let it report green."
+              exit 1
+            fi
             echo "present=false" >> "$GITHUB_OUTPUT"
           else
             echo "present=true" >> "$GITHUB_OUTPUT"
