@@ -165,6 +165,7 @@ export default function Calendar() {
   const [childNames, setChildNames] = useState<Set<string>>(new Set());
   const [coparentViewOpen, setCoparentViewOpen] = useState(false);
   const [importPickerOpen, setImportPickerOpen] = useState(false);
+  const [sharedOutCount, setSharedOutCount] = useState<number | null>(null);
   const [shareDir, setShareDir] = useState<'out' | 'in'>('out');
   const [sharedOut, setSharedOut] = useState<Card[] | null>(null);
   const [sharedIn, setSharedIn] = useState<Card[] | null>(null);
@@ -211,7 +212,17 @@ export default function Calendar() {
   const load = useCallback(async () => {
     logEvent('calendar_open');
     try {
-      const [cardsRes, carpoolRes, membersRes] = await Promise.allSettled([api.listCards(), api.listCarpools(), api.familyMembers()]);
+      const [cardsRes, carpoolRes, membersRes, sharedRes] = await Promise.allSettled([
+        api.listCards(), api.listCarpools(), api.familyMembers(),
+        // The banner's number has to come from the same place the panel's
+        // does. Counting `cards` looked equivalent and was not: /api/cards
+        // returns the whole family's shared items, so a co-parent's items
+        // inflated a figure that claims to describe yours — and it dropped
+        // undated ones, which the panel shows. Two numbers for one idea,
+        // disagreeing one tap apart, on a privacy control.
+        api.sharedWithCoparent('out'),
+      ]);
+      if (sharedRes.status === 'fulfilled') setSharedOutCount(sharedRes.value.length);
       if (cardsRes.status === 'fulfilled') setCards(cardsRes.value.filter((card) => card.status === 'OPEN' && card.due_date));
       if (carpoolRes.status === 'fulfilled') setCarpools(carpoolRes.value);
       if (membersRes.status === 'fulfilled') {
@@ -260,6 +271,9 @@ export default function Calendar() {
       await load();
     } catch (e) {
       logger.warn('make private failed', e);
+      // Failing quietly leaves the item visible to the co-parent while the row
+      // suggests otherwise — the one outcome this panel must never produce.
+      Alert.alert(t('cal_error'), t('cal_could_not_update'));
     } finally {
       setMakingPrivate(null);
     }
@@ -703,13 +717,17 @@ export default function Calendar() {
           ) : null}
 
           {/* Connection banner (tap to sync — keeps the sync card visible & functional) */}
-          <PressScale testID="calendar-sync-card-button" onPress={() => { setMorningNotice(false); openImportPicker(); }} disabled={syncDisabled} style={styles.bannerGap}>
+          <PressScale testID="calendar-sync-card-button" onPress={() => { setMorningNotice(false); openImportPicker(); }} disabled={syncDisabled} style={[styles.bannerGap, syncDisabled && { opacity: 0.55 }]}>
             <KitCard style={styles.banner}>
               <View testID="calendar-sync-card" style={styles.bannerInner}>
                 <IconTile bg={ui.orangeSoft} size={40} radius={13}><CalendarDays color={ui.orange} size={20} /></IconTile>
                 <Text style={styles.bannerText} numberOfLines={2}>
                   {calendarSyncStatus || (syncResult ? syncSummary(syncResult) : t('cal_connected_read_only'))}
                 </Text>
+                {/* Same card, same tappability, same signal as the sharing row
+                    below it — without this the two are indistinguishable and
+                    only one of them advertises that it does something. */}
+                <ChevronRight color={ui.muted} size={18} />
               </View>
             </KitCard>
           </PressScale>
@@ -729,7 +747,7 @@ export default function Calendar() {
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.coparentLinkTitle}>{t('cal_share_view_link')}</Text>
                   <Text style={styles.coparentLinkSub} numberOfLines={2}>
-                    {t('cal_share_view_sub', { n: cards.filter((c) => c.shared).length })}
+                    {t('cal_share_view_sub', { n: sharedOutCount ?? 0 })}
                   </Text>
                 </View>
                 <ChevronRight color={ui.muted} size={18} />
@@ -1151,9 +1169,11 @@ export default function Calendar() {
                       third column: it still says plainly why the item is
                       visible, without stealing width from the title. */}
                   <View style={styles.shareMetaRow}>
-                    <View style={styles.shareTag}>
-                      <Text style={styles.shareTagText}>{t('cal_share_tag_shared')}</Text>
-                    </View>
+                    {shareDir === 'out' ? (
+                      <View style={styles.shareTag}>
+                        <Text style={styles.shareTagText}>{t('cal_share_tag_shared')}</Text>
+                      </View>
+                    ) : null}
                     <Text style={styles.coparentRowMeta} numberOfLines={1}>
                       {shareDir === 'in' && c.shared_by_name
                         ? t('cal_share_by', { name: c.shared_by_name }) + (c.due_date ? ' · ' + formatDateTimeShort(c.due_date) : '')
@@ -1168,6 +1188,7 @@ export default function Calendar() {
                     accessibilityLabel={t('cal_share_make_private')}
                     disabled={makingPrivate === c.card_id}
                     onPress={() => makePrivateFromView(c)}
+                    hitSlop={10}
                     style={styles.makePrivateBtn}
                   >
                     <Text style={styles.makePrivateText}>
@@ -1261,7 +1282,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   completeBtnText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 16 },
   shareBtn: { marginTop: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 50, borderRadius: 99, borderWidth: 1.5, borderColor: ui.orange + '66', backgroundColor: ui.orangeSoft },
   shareBtnText: { color: ui.orangeText, fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
-  sharedBadge: { marginTop: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 46, borderRadius: 99, backgroundColor: ui.mintText + '1E' },
+  sharedBadge: { marginTop: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 46, borderRadius: 99, backgroundColor: ui.mint },
   sharedBadgeText: { color: ui.mintText, fontFamily: 'Inter_700Bold', fontSize: 14 },
   shareNudge: { marginTop: 20, padding: 14, borderRadius: 18, borderWidth: 1.5, borderColor: ui.orange + '55', backgroundColor: ui.orangeSoft, gap: 12 },
   shareNudgeText: { color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 14, lineHeight: 20 },
@@ -1287,12 +1308,16 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
 
   shareSeg: { flexDirection: 'row', backgroundColor: ui.soft, borderRadius: 14, borderWidth: 1, borderColor: ui.line, padding: 4, gap: 4, marginTop: 14 },
   shareSegBtn: { flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 10 },
-  shareSegOn: { backgroundColor: ui.card },
+  // The design's central mechanic is knowing which way you are facing. This
+  // was `ui.card` on a `ui.soft` track: 1.15:1 in light, and INVERTED in
+  // dark, where card is darker than soft — so the unselected half read as
+  // the raised one. Brand fill plus a real border survives both themes.
+  shareSegOn: { backgroundColor: ui.orangeSoft, borderWidth: 1.5, borderColor: ui.orange },
   shareSegText: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 12.5 },
   shareSegTextOn: { color: ui.text },
   shareRule: { flexDirection: 'row', alignItems: 'center', gap: 9, backgroundColor: ui.orangeSoft, borderRadius: 14, paddingHorizontal: 13, paddingVertical: 11, marginTop: 14 },
   shareRuleText: { flex: 1, color: ui.orangeText, fontFamily: 'Inter_600SemiBold', fontSize: 12.5, lineHeight: 18 },
-  makePrivateBtn: { paddingVertical: 6, paddingHorizontal: 4 },
+  makePrivateBtn: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 999, borderWidth: 1, borderColor: ui.orange },
   makePrivateText: { color: ui.orangeText, fontFamily: 'Inter_800ExtraBold', fontSize: 12.5 },
   shareTag: { backgroundColor: ui.mint, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 },
   shareTagText: { color: ui.mintText, fontFamily: 'Inter_800ExtraBold', fontSize: 10, letterSpacing: 0.4, textTransform: 'uppercase' },
