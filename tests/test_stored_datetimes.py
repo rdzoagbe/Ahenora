@@ -23,11 +23,23 @@ import sys
 import unittest
 from datetime import datetime, timedelta, timezone
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-os.environ.setdefault("MONGO_URL", "mongodb://localhost:27017")
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "backend"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
-from backend import server  # noqa: E402
-from scripts.fake_mongo import _bsonify, _eq, _cmp_pair  # noqa: E402
+# The double is pure stdlib, so the tests that pin ITS behaviour run
+# everywhere — including a dependency-free CI, which is exactly where a
+# regression in it would otherwise pass unnoticed. Only the tests that call
+# into the server need the backend installed.
+from fake_mongo import _bsonify, _eq, _cmp_pair  # noqa: E402
+
+try:
+    import fastapi  # noqa: F401
+    HAVE_DEPS = True
+except ImportError:
+    HAVE_DEPS = False
+
+if HAVE_DEPS:
+    import server
 
 
 class WhatTheDatabaseHandsBack(unittest.TestCase):
@@ -45,12 +57,18 @@ class WhatTheDatabaseHandsBack(unittest.TestCase):
         self.assertIsNone(out["b"][0].tzinfo)
 
     def test_a_bare_comparison_is_what_actually_breaks(self):
-        """Pinned so the failure mode stays legible to whoever reads this next."""
+        """Pinned so the failure mode stays legible to whoever reads this next.
+
+        Deliberately uses a locally-built aware datetime rather than
+        server.utcnow(), so the clearest statement of the bug does not need
+        the backend installed to run.
+        """
         naive = _bsonify({"t": datetime.now(timezone.utc)})["t"]
         with self.assertRaises(TypeError):
-            naive < server.utcnow()  # noqa: B015 — the point is that it raises
+            naive < datetime.now(timezone.utc)  # noqa: B015 — it must raise
 
 
+@unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
 class ExpiryChecks(unittest.TestCase):
     def test_expired_survives_a_naive_stored_value(self):
         past = datetime.now(timezone.utc) - timedelta(days=1)
