@@ -4381,7 +4381,7 @@ async def list_shared_with_coparent(direction: str = "out", user=Depends(require
 # can be changed without shipping a release — the whole point is to speak to
 # clients that are already out of date.
 MIN_SUPPORTED_RUNTIME = "2.0.0"
-CURRENT_STORE_VERSION = "1.0.2"
+CURRENT_STORE_VERSION = "1.0.3"
 
 
 @app.get("/api/app/version-info")
