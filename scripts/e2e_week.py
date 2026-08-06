@@ -84,6 +84,12 @@ async def main():
         body = await page.inner_text("body")
         r["shows_the_week_target"] = "50" in body
         r["ideas_have_no_star_prices"] = "Pizza night" in body
+        # The arithmetic that answers "how does this reach 50?" — it was true
+        # from the start and stated nowhere, which is what made the target
+        # look arbitrary.
+        r["says_how_the_week_adds_up"] = "7 a day" in body
+        # The priced list is gone; the week is the only currency now.
+        r["no_competing_priced_list"] = "Saved up for" not in body
 
         if past:
             key = f"{past.year}-{past.month - 1}-{past.day}"

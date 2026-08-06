@@ -106,11 +106,14 @@ const REWARD_IDEAS = [
  */
 const WEEKLY_TARGET = 50;
 
+/** What all three quick jobs come to in one day. Derived, never typed twice. */
 const QUICK_ADDS = [
   { labelKey: 'qa_bed', chore: 'bed' as const, amount: 2, Icon: Bed, bg: UI.mint, tint: UI.mintText },
   { labelKey: 'qa_read', chore: 'read' as const, amount: 3, Icon: BookOpen, bg: UI.lavender, tint: UI.lavenderText },
   { labelKey: 'qa_table', chore: 'table' as const, amount: 2, Icon: Utensils, bg: UI.orangeSoft, tint: UI.orange },
 ];
+
+const QUICK_ADD_DAY = QUICK_ADDS.reduce((sum, q) => sum + q.amount, 0);
 
 // Each child's initial is set in WHITE on their tint, so every entry has to be
 // dark enough to carry it — orangeDeep rather than the brand orange, which
@@ -1515,7 +1518,10 @@ export default function Kids() {
                         </>
                       )}
 
-                      <Text style={styles.blockLabel}>{t('kids_quick_add')}</Text>
+                      <View style={styles.quickAddHead}>
+                        <Text style={styles.blockLabel}>{t('kids_quick_add')}</Text>
+                        <Text style={styles.quickAddDay}>{t('kids_quick_add_day', { n: QUICK_ADD_DAY })}</Text>
+                      </View>
                       <View style={styles.quickAddRow}>
                         {QUICK_ADDS.map((q) => (
                           <PressScale key={q.labelKey} testID={`quick-add-${q.labelKey}`} onPress={() => quickAdd(t(q.labelKey), q.amount, q.chore)} style={styles.quickAddChip}>
@@ -1525,6 +1531,19 @@ export default function Kids() {
                           </PressScale>
                         ))}
                       </View>
+                      {/* The sum, stated. All three jobs come to 7 a day and
+                          seven of those to 49 — the last star is the full-week
+                          bonus. That arithmetic was true from the start and
+                          written down nowhere, so the target looked arbitrary:
+                          you could do everything, every day, and have no way
+                          to know it added up. */}
+                      <Text style={styles.quickAddMaths}>
+                        {t('kids_quick_add_maths', {
+                          day: QUICK_ADD_DAY,
+                          week: QUICK_ADD_DAY * 7,
+                          target: weeklyTarget,
+                        })}
+                      </Text>
 
                       {/* Ideas first, because for most families this is now the
                           whole reward system: fill the week, pick one. No star
@@ -1559,113 +1578,14 @@ export default function Kids() {
                         </View>
                       </Card>
 
-                      {/* Saving up for something priced is now the optional
-                          half. A family that never built one gets a single
-                          line instead of an empty card and a heading — the
-                          page was asked to get shorter, and this is where the
-                          length was going. */}
-                      {rewards.length === 0 ? (
-                        <PressScale testID="kids-add-reward-empty" onPress={openCreateReward} style={styles.savedUpLink}>
-                          <Plus color={ui.orange} size={14} />
-                          <Text style={styles.savedUpLinkText}>{t('kids_saved_up_start')}</Text>
-                        </PressScale>
-                      ) : (
-                        <>
-                        <View style={styles.blockHead}>
-                          <Text style={styles.blockTitle}>{t('kids_saved_up_for')}</Text>
-                          <PressScale testID="kids-add-reward" onPress={openCreateReward} style={styles.newLink}>
-                            <Plus color={ui.orange} size={14} />
-                            <Text style={styles.newLinkText}>{t('kids_new')}</Text>
-                          </PressScale>
-                        </View>
-                        <Card style={styles.cardPad}>
-                          {(showAllRewards ? sortedRewards : sortedRewards.slice(0, 5)).map((reward, index, arr) => {
-                            // A weekend treat is measured against this week's
-                            // earnings; every other reward against the bank.
-                            const basis = rewardBasis(reward);
-                            const pct = Math.min(100, Math.round((basis / reward.cost_stars) * 100));
-                            const affordable = basis >= reward.cost_stars;
-                            const isGoal = weekendGoal?.reward_id === reward.reward_id;
-                            return (
-                              <View key={reward.reward_id} style={[styles.rewardRow, index < arr.length - 1 && styles.rewardRowBorder]}>
-                                {/* The row body opens edit, in both states. Before,
-                                    edit was only reachable while a reward was
-                                    UNaffordable — the pencil sat where Redeem
-                                    later appears — so the moment a child could
-                                    afford something, the parent lost the way to
-                                    change it. */}
-                                <PressScale
-                                  accessibilityRole="button"
-                                  accessibilityLabel={t('a11y_edit')}
-                                  testID={`edit-reward-${reward.reward_id}`}
-                                  onPress={() => openEditReward(reward)}
-                                  style={styles.rewardBody}
-                                >
-                                  <IconTile bg={affordable ? ui.orangeSoft : ui.soft} size={42} radius={13}>
-                                    <Text style={styles.rewardEmoji}>{reward.icon || DEFAULT_REWARD_ICON}</Text>
-                                  </IconTile>
-                                  <View style={{ flex: 1, minWidth: 0 }}>
-                                    <View style={styles.rewardTopRow}>
-                                      <Text style={styles.rewardTitle} numberOfLines={1}>{reward.title}</Text>
-                                      <Text style={[styles.rewardCount, affordable && { color: ui.mintText }]}>{basis} / {reward.cost_stars}</Text>
-                                    </View>
-                                    {reward.weekend ? (
-                                      <View style={styles.weekendTagRow}>
-                                        <View style={styles.weekendTag}>
-                                          <Text style={styles.weekendTagText}>{t('kids_weekend_tag')}</Text>
-                                        </View>
-                                        <PressScale
-                                          testID={`weekend-goal-${reward.reward_id}`}
-                                          accessibilityRole="button"
-                                          onPress={() => setWeekendGoal(isGoal ? null : reward.reward_id)}
-                                          hitSlop={8}
-                                          style={styles.goalPin}
-                                        >
-                                          <Target color={isGoal ? ui.orangeText : ui.muted} size={13} />
-                                          <Text style={[styles.goalPinText, isGoal && { color: ui.orangeText }]}>
-                                            {isGoal ? t('kids_this_weeks_goal') : t('kids_set_goal')}
-                                          </Text>
-                                        </PressScale>
-                                      </View>
-                                    ) : null}
-                                    <View style={{ marginTop: 8 }}>
-                                      <ProgressBar pct={pct} color={affordable ? ui.mintText : ui.orange} />
-                                    </View>
-                                  </View>
-                                </PressScale>
-                                {affordable ? (
-                                  <PressScale testID={`redeem-reach-${reward.reward_id}`} onPress={() => redeem(reward)} style={styles.rewardRedeem}>
-                                    <Text style={styles.rewardRedeemText}>{t('redeem')}</Text>
-                                  </PressScale>
-                                ) : (
-                                  /* Where Redeem will be, say how far away it is.
-                                     A pencil here read as "the button is missing",
-                                     not "not yet". */
-                                  <View style={styles.rewardToGo}>
-                                    <Text style={styles.rewardToGoText}>
-                                      {t('kids_stars_to_go', { n: reward.cost_stars - basis })}
-                                    </Text>
-                                  </View>
-                                )}
-                              </View>
-                            );
-                          })}
-                          {sortedRewards.length > 5 ? (
-                            <PressScale
-                              testID="kids-toggle-all-rewards"
-                              onPress={() => setShowAllRewards((v) => !v)}
-                              style={styles.showAllBtn}
-                            >
-                              <Text style={styles.showAllText}>
-                                {showAllRewards
-                                  ? t('kids_show_fewer')
-                                  : t('kids_show_all_rewards', { n: sortedRewards.length })}
-                              </Text>
-                            </PressScale>
-                          ) : null}
-                        </Card>
-                        </>
-                      )}
+                      {/* The priced "saved up for" list is gone. The week is
+                          the currency now, and running both meant two prices
+                          for the same treat — the meter above and a star cost
+                          a few rows below, rarely agreeing. Nothing is lost:
+                          rewards and balances stay in the database untouched,
+                          the bank still shows at the top of the page, and
+                          anything already redeemed still appears above as
+                          owed until it is handed over. */}
                     </>
                   )}
 
@@ -2366,6 +2286,9 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   newLinkText: { color: ui.orangeText, fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
   cardPad: { paddingHorizontal: 16 },
 
+  quickAddHead: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
+  quickAddDay: { color: ui.mintText, fontFamily: 'Inter_800ExtraBold', fontSize: 12.5 },
+  quickAddMaths: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12, lineHeight: 17, marginTop: 8 },
   quickAddRow: { flexDirection: 'row', gap: 10 },
   quickAddChip: { flex: 1, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, borderRadius: 16, paddingVertical: 12, paddingHorizontal: 10, alignItems: 'center', gap: 6 },
   quickAddText: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 12, textAlign: 'center' },
