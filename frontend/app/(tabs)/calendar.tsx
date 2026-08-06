@@ -709,9 +709,26 @@ export default function Calendar() {
           </PressScale>
 
           {/* Two-way sharing view: what you share with each other */}
-          <PressScale testID="calendar-coparent-view" onPress={openCoparentView} style={styles.coparentLink}>
-            <Lock color={ui.muted} size={14} />
-            <Text style={styles.coparentLinkText}>{t('cal_share_view_link')}</Text>
+          {/* The way into the sharing panel, built like something you can press.
+              It used to be centred grey text under a small lock — indisti-
+              nguishable from a caption, so the whole two-way view sat behind
+              something nobody had a reason to tap. Same card shape as the
+              import banner above it, with a count of what is visible and a
+              chevron, because the affordance IS the feature: privacy you
+              cannot find is privacy you do not trust. */}
+          <PressScale testID="calendar-coparent-view" onPress={openCoparentView} style={styles.bannerGap}>
+            <KitCard style={styles.banner}>
+              <View style={styles.bannerInner}>
+                <IconTile bg={ui.mint} size={40} radius={13}><Lock color={ui.mintText} size={18} /></IconTile>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.coparentLinkTitle}>{t('cal_share_view_link')}</Text>
+                  <Text style={styles.coparentLinkSub} numberOfLines={2}>
+                    {t('cal_share_view_sub', { n: cards.filter((c) => c.shared).length })}
+                  </Text>
+                </View>
+                <ChevronRight color={ui.muted} size={18} />
+              </View>
+            </KitCard>
           </PressScale>
 
           {/* Month grid */}
@@ -1197,7 +1214,8 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   shareNudgeBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 46, borderRadius: 99, backgroundColor: ui.orangeDeep },
   shareNudgeBtnText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
   coparentLink: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 12, paddingVertical: 6 },
-  coparentLinkText: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 13 },
+  coparentLinkTitle: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 14 },
+  coparentLinkSub: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, marginTop: 2 },
   coparentTitleWrap: { flexDirection: 'row', alignItems: 'center', gap: 9, flex: 1 },
   coparentSubtitle: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 19, marginTop: 4, marginBottom: 4 },
   coparentEmpty: { alignItems: 'center', gap: 12, paddingVertical: 34 },
