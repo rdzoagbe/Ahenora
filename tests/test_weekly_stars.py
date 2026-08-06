@@ -12,7 +12,7 @@ import asyncio
 import os
 import sys
 import unittest
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "backend"))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
@@ -140,3 +140,120 @@ class WeeklyStars(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
+class TheWeekIsTheCurrency(unittest.TestCase):
+    """Earn the week, claim a treat.
+
+    Rewards stop carrying prices: which treat a week buys is a conversation, so
+    the gate is the weekly target and nothing here spends the bank. The rules
+    that matter are that a full week can actually reach the target, that a week
+    pays out once, and that savings are never touched.
+    """
+
+    PARENT = {"user_id": "u_p", "family_id": "fam1", "name": "Amara", "email": "a@x.com"}
+
+    def setUp(self):
+        self.db = FakeDatabase()
+        self._get_db = server.get_db
+        server.get_db = lambda: self.db
+        # Frozen to a Sunday. A whole week can only be filled in once its days
+        # have happened — back-dating deliberately refuses the future — so
+        # standing at the end of the week is the only place these rules can be
+        # exercised. Left un-frozen, these tests would pass or fail depending
+        # on which weekday they were run.
+        self._utcnow = server.utcnow
+        frozen = datetime(2026, 8, 9, 18, 0, tzinfo=timezone.utc)   # a Sunday
+        server.utcnow = lambda: frozen
+        asyncio.run(self.db["family_members"].insert_one({
+            "member_id": "kid1", "family_id": "fam1", "name": "Kofi",
+            "role": "Child", "stars": 0, "week_earned": 0,
+            "week_start": server.current_week_start()}))
+
+    def tearDown(self):
+        server.get_db = self._get_db
+        server.utcnow = self._utcnow
+
+    def _member(self):
+        return asyncio.run(self.db["family_members"].find_one({"member_id": "kid1"}, {"_id": 0}))
+
+    def _earn(self, delta, day_offset=0):
+        """Credit stars to a day of this week, the way a catching-up parent does."""
+        when = server.current_week_start() + timedelta(days=day_offset, hours=9)
+        return asyncio.run(server.adjust_member_stars(
+            "kid1", server.StarAdjustmentIn(delta=delta, reason="Jobs",
+                                            awarded_for=when.isoformat()),
+            user=dict(self.PARENT)))
+
+    def _claim(self, title="Movie night"):
+        return asyncio.run(server.claim_weekly_treat(
+            "kid1", server.WeeklyClaimIn(title=title), user=dict(self.PARENT)))
+
+    def test_a_star_remembers_the_day_it_was_earned(self):
+        # Logging Tuesday's job on Sunday must still count as Tuesday, or the
+        # weekday row credits a whole week to one evening.
+        self._earn(2, day_offset=1)
+        txn = asyncio.run(self.db["star_transactions"].find_one({"member_id": "kid1"}, {"_id": 0}))
+        self.assertEqual(txn["awarded_for"].date(),
+                         (server.current_week_start() + timedelta(days=1)).date())
+
+    def test_a_settled_week_cannot_be_edited(self):
+        # Last week may already have paid out a treat; re-opening it would move
+        # a meter that has been spent.
+        last_week = server.current_week_start() - timedelta(days=3)
+        with self.assertRaises(server.HTTPException) as e:
+            asyncio.run(server.adjust_member_stars(
+                "kid1", server.StarAdjustmentIn(delta=5, reason="Late",
+                                                awarded_for=last_week.isoformat()),
+                user=dict(self.PARENT)))
+        self.assertEqual(e.exception.status_code, 400)
+
+    def test_a_full_week_of_jobs_actually_reaches_the_target(self):
+        # 7 a day over seven days is 49 — one short. The seventh active day
+        # pays the last star so a perfect week lands exactly on the target.
+        for day in range(7):
+            self._earn(7, day_offset=day)
+        member = self._member()
+        self.assertEqual(member["week_earned"], server.WEEKLY_TARGET)
+        self.assertEqual(member["stars"], server.WEEKLY_TARGET)
+
+    def test_the_full_week_bonus_is_paid_once(self):
+        for day in range(7):
+            self._earn(7, day_offset=day)
+        self._earn(3, day_offset=6)      # more work on an already-counted day
+        self.assertEqual(self._member()["week_earned"], server.WEEKLY_TARGET + 3)
+
+    def test_claiming_needs_the_week_to_be_earned(self):
+        self._earn(10, day_offset=0)
+        with self.assertRaises(server.HTTPException) as e:
+            self._claim()
+        self.assertEqual(e.exception.status_code, 400)
+        self.assertIn("this week", e.exception.detail)
+
+    def test_claiming_costs_no_saved_stars(self):
+        # The whole point of (b): the week pays, the bank is savings.
+        for day in range(7):
+            self._earn(7, day_offset=day)
+        before = self._member()["stars"]
+        out = self._claim("Pizza night")
+        self.assertEqual(out["redemption"]["cost_stars"], 0)
+        self.assertEqual(self._member()["stars"], before)
+        self.assertEqual(out["redemption"]["reward_title"], "Pizza night")
+
+    def test_a_week_pays_out_once(self):
+        for day in range(7):
+            self._earn(7, day_offset=day)
+        self._claim()
+        with self.assertRaises(server.HTTPException) as e:
+            self._claim()
+        self.assertEqual(e.exception.status_code, 400)
+        self.assertIn("already", e.exception.detail)
+
+    def test_the_meter_survives_being_cashed_in(self):
+        # Zeroing it would make a week look unworked the moment it paid off.
+        for day in range(7):
+            self._earn(7, day_offset=day)
+        self._claim()
+        self.assertEqual(self._member()["week_earned"], server.WEEKLY_TARGET)
+        self.assertTrue(server.public_member(self._member())["week_claimed"])
