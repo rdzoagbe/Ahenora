@@ -45,6 +45,17 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
+      # Both of these existed only as a line in NATIVE_CONFIG.md telling a human
+      # to remember. Neither was ever wired to anything, and both drifted: the
+      # runtime version silently broke OTA delivery for nine days, and the
+      # version name shipped 1.0.0 to Play while app.json said 1.0.2. A guard
+      # nothing runs is a comment.
+      - name: Check native config agrees with app.json
+        run: node scripts/check-runtime-version.js
+
+      - name: Check Android permissions
+        run: node scripts/check-android-permissions.js
+
       - name: Run lint
         run: npm run lint --if-present
 

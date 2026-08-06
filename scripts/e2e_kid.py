@@ -89,16 +89,22 @@ async def main():
 
         # --- the way out has to exist before the way in ----------------------
         r["asks_for_a_parent_pin_first"] = await p.locator(
-            '[data-testid="handover-parent-pin"]').count() == 1
-        await p.fill('[data-testid="handover-parent-pin"]', "12")
-        await p.click('[data-testid="handover-save-parent-pin"]')
+            '[data-testid="pin-1"]').count() == 1
+        # Two digits only: incomplete, so the pad must not submit anything.
+        for d in "12":
+            await p.click(f'[data-testid="pin-{d}"]')
         await p.wait_for_timeout(900)
+        # Still on the parent-PIN step: two digits is not a PIN, and nothing
+        # should have been saved or unlocked.
         r["rejects_a_short_pin"] = await p.locator(
-            '[data-testid="handover-parent-pin"]').count() == 1
-        # A complete 4-digit PIN submits itself, so no button press is needed
-        # here (the button still exists and still works; the short-PIN case
-        # above exercises it).
-        await p.fill('[data-testid="handover-parent-pin"]', "9999")
+            f'[data-testid="handover-{ama["member_id"]}"]').count() == 0
+        # Clear the two stray digits, then enter a whole PIN. The fourth
+        # keypress saves it; there is no button to press, which is the point —
+        # the confirm button was the thing Android's keyboard kept covering.
+        for _ in range(2):
+            await p.click('[data-testid="pin-back"]')
+        for d in "9999":
+            await p.click(f'[data-testid="pin-{d}"]')
         await p.wait_for_timeout(2500)
         r["setting_it_here_unlocks_the_picker"] = await p.locator(
             f'[data-testid="handover-{ama["member_id"]}"]').count() == 1
@@ -110,12 +116,15 @@ async def main():
         # A wrong PIN is refused before anything is handed over.
         await p.click(f'[data-testid="handover-{ama["member_id"]}"]')
         await p.wait_for_timeout(900)
-        await p.fill('[data-testid="handover-pin"]', "0000")
+        for d in "0000":
+            await p.click('[data-testid="pin-0"]')
         await p.wait_for_timeout(1800)
         r["wrong_pin_refused"] = "not right" in (await p.inner_text("body"))
 
         # Same here: the fourth digit hands the device over on its own.
-        await p.fill('[data-testid="handover-pin"]', "1234")
+        # (`go` clears the field after a refusal, so these four land clean.)
+        for d in "1234":
+            await p.click(f'[data-testid="pin-{d}"]')
         await p.wait_for_timeout(4000)
         body = await p.inner_text("body")
         r["lands_in_her_own_app"] = "Hi Ama" in body

@@ -1,6 +1,13 @@
 <resources>
   <string name="app_name">Household COO</string>
-  <string name="expo_runtime_version">1.0.0</string>
+  <!-- The OTA lane. expo-updates reads this via AndroidManifest.xml's
+       EXPO_RUNTIME_VERSION meta-data and will only apply an update published
+       at the SAME runtime. app.json's runtimeVersion does not reach the build
+       - this is a bare workflow and app.json is silently ignored for anything
+       native - so these two drifted apart on 2026-07-28 and every update
+       published for nine days after that was undeliverable to every phone.
+       scripts/check-runtime-version.js now fails the build if they disagree. -->
+  <string name="expo_runtime_version">2.0.0</string>
   <string name="expo_system_ui_user_interface_style" translatable="false">dark</string>
   <string name="expo_splash_screen_resize_mode" translatable="false">contain</string>
   <string name="expo_splash_screen_status_bar_translucent" translatable="false">false</string>
