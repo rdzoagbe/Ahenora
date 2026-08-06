@@ -17,7 +17,6 @@ import {
   Trash2,
   Lock,
   Pencil,
-  MinusCircle,
   MoreHorizontal,
   Bell,
   Bed,
@@ -29,14 +28,11 @@ import {
   DollarSign,
   RotateCcw,
   Play,
-  ChevronRight,
-  Target,
 } from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { syncAllowanceReminders } from '../../src/notifications';
 import { PressScale } from '../../src/components/PressScale';
-import { PinPadModal } from '../../src/components/PinPadModal';
 import { StarCelebration, CelebrationContent } from '../../src/components/StarCelebration';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
 import DateTimePickerSheet from '../../src/components/DateTimePickerSheet';
@@ -51,11 +47,11 @@ import { TabScreen } from '../../src/components/TabScreen';
 import { Card, IconTile, ProgressBar, ScreenHeader, UI, useUI, UIColors } from '../../src/components/Kit';
 
 import { useStore } from '../../src/store';
-import { api, logEvent, AllowanceConfig, AllowanceTxn, Chore, FamilyMember, Redemption, Reward, Routine, StarTransaction } from '../../src/api';
+import { api, logEvent, AllowanceConfig, AllowanceTxn, Chore, FamilyMember, Redemption, Routine, StarTransaction } from '../../src/api';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { logger } from '../../src/logger';
 import { recordWin } from '../../src/reviewPrompt';
-import { isAlreadySettled, mergeRedemptions, restoreRedemption, sortByNewest } from '../../src/redemptions';
+import { isAlreadySettled, mergeRedemptions, restoreRedemption } from '../../src/redemptions';
 import { webConfirm } from '../../src/confirm';
 
 /** "Sat 2 Aug" — short enough for a subtitle, unambiguous about which day. */
@@ -65,7 +61,6 @@ function formatDueDate(iso: string): string {
   return d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
-type RewardSheetMode = 'create' | 'edit';
 type StarMode = 'add' | 'remove';
 
 const DEFAULT_REWARD_ICON = String.fromCodePoint(0x1F381);
@@ -120,22 +115,6 @@ const QUICK_ADD_DAY = QUICK_ADDS.reduce((sum, q) => sum + q.amount, 0);
 // reads at 3.1:1 under white.
 const CHILD_TINTS = [UI.orangeDeep, UI.lavenderText, UI.mintText, UI.goldText];
 
-const ICON_LIBRARY: { match: string[]; icons: string[] }[] = [
-  { match: ['pizza', 'dinner', 'restaurant', 'food'], icons: [String.fromCodePoint(0x1F355), String.fromCodePoint(0x1F37D), String.fromCodePoint(0x1F389), String.fromCodePoint(0x1F354)] },
-  { match: ['movie', 'cinema', 'film'], icons: [String.fromCodePoint(0x1F3AC), String.fromCodePoint(0x1F37F), String.fromCodePoint(0x1F39F), String.fromCodePoint(0x2B50)] },
-  { match: ['ice', 'cream', 'sweet', 'cake', 'cupcake', 'dessert'], icons: [String.fromCodePoint(0x1F366), String.fromCodePoint(0x1F9C1), String.fromCodePoint(0x1F370), String.fromCodePoint(0x1F369)] },
-  { match: ['game', 'gaming', 'playstation', 'xbox', 'switch'], icons: [String.fromCodePoint(0x1F3AE), String.fromCodePoint(0x1F579), String.fromCodePoint(0x1F3C6), String.fromCodePoint(0x26A1)] },
-  { match: ['park', 'outside', 'walk', 'trip'], icons: [String.fromCodePoint(0x1F333), String.fromCodePoint(0x1F6DD), String.fromCodePoint(0x2600), String.fromCodePoint(0x1F6B2)] },
-  { match: ['book', 'reading', 'story'], icons: [String.fromCodePoint(0x1F4DA), String.fromCodePoint(0x1F4D6), String.fromCodePoint(0x2728), String.fromCodePoint(0x1F3C5)] },
-  { match: ['toy', 'lego', 'gift'], icons: [String.fromCodePoint(0x1F9F8), String.fromCodePoint(0x1F381), String.fromCodePoint(0x1FA80), String.fromCodePoint(0x2728)] },
-];
-
-function suggestedIcons(title: string) {
-  const normalized = title.trim().toLowerCase();
-  const matches = ICON_LIBRARY.find((group) => group.match.some((word) => normalized.includes(word)));
-  return matches?.icons || [DEFAULT_REWARD_ICON, String.fromCodePoint(0x2B50), String.fromCodePoint(0x1F389), String.fromCodePoint(0x1F3C6), String.fromCodePoint(0x2728), String.fromCodePoint(0x1F355), String.fromCodePoint(0x1F3AC), String.fromCodePoint(0x1F3AE)];
-}
-
 function cleanNumber(value: string) {
   return value.replace(/[^0-9]/g, '');
 }
@@ -154,7 +133,6 @@ export default function Kids() {
   const router = useRouter();
 
   const [members, setMembers] = useState<FamilyMember[]>([]);
-  const [rewards, setRewards] = useState<Reward[]>([]);
 
   // Which day the quick-adds are being credited to. Null means today, which
   // is the ordinary case; picking a day is how a parent fills in a missed one.
@@ -179,14 +157,6 @@ export default function Kids() {
   const [manageName, setManageName] = useState('');
   const [managePin, setManagePin] = useState('');
 
-  const [showRewardSheet, setShowRewardSheet] = useState(false);
-  const [rewardMode, setRewardMode] = useState<RewardSheetMode>('create');
-  const [editingReward, setEditingReward] = useState<Reward | null>(null);
-  const [rewardTitle, setRewardTitle] = useState('');
-  const [rewardCost, setRewardCost] = useState('50');
-  const [rewardIcon, setRewardIcon] = useState(DEFAULT_REWARD_ICON);
-  const [rewardWeekend, setRewardWeekend] = useState(false);
-
   const [showStarSheet, setShowStarSheet] = useState(false);
   const [starMode, setStarMode] = useState<StarMode>('add');
   const [starAmount, setStarAmount] = useState('5');
@@ -195,14 +165,12 @@ export default function Kids() {
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const { toast, showToast } = useToast();
-  const [pinPromptReward, setPinPromptReward] = useState<Reward | null>(null);
   const [celebration, setCelebration] = useState<CelebrationContent | null>(null);
   const [showFixSheet, setShowFixSheet] = useState(false);
   const [fixValue, setFixValue] = useState('');
   const [showAllowanceSheet, setShowAllowanceSheet] = useState(false);
   // The list was capped at five with nothing to say so. A reward a child is
   // saving towards being invisible defeats the point of the page.
-  const [showAllRewards, setShowAllRewards] = useState(false);
   const [alwAmount, setAlwAmount] = useState('');
   const [alwFrequency, setAlwFrequency] = useState('weekly');
 
@@ -248,19 +216,6 @@ export default function Kids() {
   // The bank is `stars`; the weekly meter is `week_earned`. A weekend treat is
   // measured against the week's earnings, everything else against the bank.
   const weekEarned = activeChild?.week_earned || 0;
-  const rewardBasis = useCallback(
-    (reward: Reward) => (reward.weekend ? weekEarned : stars),
-    [weekEarned, stars],
-  );
-  const weekendGoal = useMemo(
-    () => rewards.find((r) => r.reward_id === activeChild?.weekend_goal_reward_id && r.weekend) || null,
-    [rewards, activeChild?.weekend_goal_reward_id],
-  );
-  const hasWeekendTreats = useMemo(() => rewards.some((r) => r.weekend), [rewards]);
-  // The week has been won: the weekend treat is affordable from this week's
-  // earnings, so cashing it in is the thing to do next.
-  const weekendEarned = !!weekendGoal && weekEarned >= weekendGoal.cost_stars;
-
   /**
    * One cell per day of the current week, Monday first, carrying the stars
    * earned that day.
@@ -327,8 +282,6 @@ export default function Kids() {
   const weekClaimed = !!activeChild?.week_claimed;
   const weekFull = weekEarned >= weeklyTarget;
 
-  const iconSuggestions = useMemo(() => suggestedIcons(rewardTitle), [rewardTitle]);
-  const sortedRewards = useMemo(() => [...rewards].sort((a, b) => (stars / b.cost_stars) - (stars / a.cost_stars)), [rewards, stars]);
   const pendingRedemptions = useMemo(
     () => redemptions.filter((r) => r.status === 'pending' && r.member_id === activeChild?.member_id),
     [redemptions, activeChild?.member_id],
@@ -379,9 +332,10 @@ export default function Kids() {
     logEvent('kids_open');
     try {
       setErrorMessage(null);
-      const [m, r] = await Promise.all([api.familyMembers(), api.listRewards()]);
+      // One request fewer per visit: the priced-reward list is gone, so the
+      // page no longer needs the rewards catalogue at all.
+      const m = await api.familyMembers();
       setMembers(m);
-      setRewards(r);
 
       const currentChildStillExists = selectedChild && m.some((x) => x.member_id === selectedChild);
       const firstChild = m.find((x) => x.role?.toLowerCase() === 'child');
@@ -454,31 +408,6 @@ export default function Kids() {
     setChildStartingStars('0');
     setChildPin('');
     setShowChildSheet(true);
-  };
-
-  const openCreateReward = () => {
-    setRewardMode('create');
-    setEditingReward(null);
-    setRewardTitle('');
-    setRewardCost('50');
-    setRewardIcon(DEFAULT_REWARD_ICON);
-    setRewardWeekend(false);
-    setShowRewardSheet(true);
-  };
-
-  const openEditReward = (reward: Reward) => {
-    setRewardMode('edit');
-    setEditingReward(reward);
-    setRewardTitle(reward.title);
-    setRewardCost(String(reward.cost_stars));
-    setRewardIcon(reward.icon || DEFAULT_REWARD_ICON);
-    setRewardWeekend(!!reward.weekend);
-    setShowRewardSheet(true);
-  };
-
-  const closeRewardSheet = () => {
-    setShowRewardSheet(false);
-    setEditingReward(null);
   };
 
   const openStarSheet = (mode: StarMode, amount = '5') => {
@@ -643,56 +572,6 @@ export default function Kids() {
     Alert.alert(title, message, [
       { text: t('cancel'), style: 'cancel' },
       { text: t('kids_delete'), style: 'destructive', onPress: () => removeChild(child) },
-    ]);
-  };
-
-  const saveReward = async () => {
-    const title = rewardTitle.trim();
-    const cost = parseInt(rewardCost || '0', 10);
-    const icon = rewardIcon || DEFAULT_REWARD_ICON;
-
-    if (!title || !cost || cost < 1) { showToast(t('kids_reward_fields_required'), 'error'); return; }
-
-    setSaving(true);
-    try {
-      if (rewardMode === 'edit' && editingReward) {
-        const updated = await api.updateReward(editingReward.reward_id, { title, cost_stars: cost, icon, weekend: rewardWeekend });
-        setRewards((prev) => prev.map((r) => (r.reward_id === updated.reward_id ? updated : r)));
-        showToast(t('kids_reward_updated'), 'success');
-      } else {
-        const created = await api.createReward({ title, cost_stars: cost, icon, weekend: rewardWeekend });
-        setRewards((prev) => [created, ...prev]);
-        showToast(t('kids_reward_created'), 'success');
-      }
-      closeRewardSheet();
-    } catch (e: any) {
-      logger.warn('Save reward failed:', e?.message || e);
-      showToast(e?.message || t('kids_save_reward_error'), 'error');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const removeReward = async (reward: Reward) => {
-    const previous = rewards;
-    setRewards((prev) => prev.filter((x) => x.reward_id !== reward.reward_id));
-    try {
-      await api.deleteReward(reward.reward_id);
-      showToast(t('kids_reward_deleted'), 'success');
-      closeRewardSheet();
-    } catch (e: any) {
-      logger.warn('Delete reward failed:', e?.message || e);
-      setRewards(previous);
-      showToast(t('kids_delete_reward_error'), 'error');
-      load();
-    }
-  };
-
-  const confirmRemoveReward = (reward: Reward) => {
-    if (Platform.OS === 'web') { removeReward(reward); return; }
-    Alert.alert(t('kids_delete_reward'), reward.title, [
-      { text: t('cancel'), style: 'cancel' },
-      { text: t('kids_delete'), style: 'destructive', onPress: () => removeReward(reward) },
     ]);
   };
 
@@ -937,55 +816,6 @@ export default function Kids() {
       setAssigningTask(false);
     }
   };
-
-  const doRedeem = useCallback(async (reward: Reward) => {
-    if (!activeChild) return;
-    if (starActionRef.current) return;
-    starActionRef.current = true;
-    try {
-      const res = await api.redeemReward(reward.reward_id, activeChild.member_id);
-      setMembers((prev) => prev.map((m) => (m.member_id === res.member.member_id ? res.member : m)));
-      if (res.redemption) {
-        const created = res.redemption;
-        addedIdsRef.current.add(created.redemption_id);
-        setRedemptions((prev) => sortByNewest([created, ...prev]));
-      }
-      showToast(`${t('redeemed')} ${reward.title}`, 'success');
-      setCelebration({ kind: 'reward', title: reward.title });
-      await refreshHistory(activeChild.member_id);
-    } catch (e: any) {
-      logger.warn('Reward redemption failed:', e?.message || e);
-      showToast(e?.message || t('kids_redeem_error'), 'error');
-    } finally {
-      starActionRef.current = false;
-    }
-  }, [activeChild, refreshHistory, showToast, t]);
-
-  const redeem = async (reward: Reward) => {
-    if (!activeChild) return;
-    const basis = reward.weekend ? (activeChild.week_earned || 0) : (activeChild.stars || 0);
-    if (basis < reward.cost_stars) {
-      showToast(reward.weekend ? t('kids_weekend_not_earned') : t('not_enough_stars'), 'error');
-      return;
-    }
-    if (activeChild.has_pin) { setPinPromptReward(reward); return; }
-    await doRedeem(reward);
-  };
-
-  // Pin (or clear) the weekend treat a child is working toward this week. Only
-  // drives the ring — nothing is spent — so it updates optimistically.
-  const setWeekendGoal = useCallback(async (rewardId: string | null) => {
-    if (!activeChild) return;
-    const memberId = activeChild.member_id;
-    setMembers((prev) => prev.map((m) =>
-      m.member_id === memberId ? { ...m, weekend_goal_reward_id: rewardId } : m));
-    try {
-      await api.setWeekendGoal(memberId, rewardId);
-    } catch (e: any) {
-      logger.warn('set weekend goal failed', e);
-      load();
-    }
-  }, [activeChild, load]);
 
   // Marking a reward as handed over. The row leaves the list immediately —
   // the server has the final word, so a failure puts it back rather than
@@ -1287,9 +1117,9 @@ export default function Kids() {
                     <PressScale
                       testID="kids-redeem"
                       onPress={() => setKidsTab('rewards')}
-                      style={[styles.redeemBtn, weekendEarned && styles.redeemBtnQuiet]}
+                      style={styles.redeemBtn}
                     >
-                      <Text style={[styles.redeemText, weekendEarned && styles.redeemTextQuiet]}>{t('redeem')}</Text>
+                      <Text style={styles.redeemText}>{t('redeem')}</Text>
                     </PressScale>
                   </Card>
                   <PressScale
@@ -1312,13 +1142,7 @@ export default function Kids() {
                           {weekEarned} <Text style={styles.weekNumUnit}>{t('kids_stars_earned_unit')}</Text>
                         </Text>
                       </View>
-                      {weekendGoal ? (
-                        weekEarned >= weekendGoal.cost_stars ? (
-                          <PressScale testID="kids-cash-in" onPress={() => redeem(weekendGoal)} style={styles.cashInBtn}>
-                            <Text style={styles.cashInText}>{t('kids_cash_in')}</Text>
-                          </PressScale>
-                        ) : null
-                      ) : weekClaimed ? (
+                      {weekClaimed ? (
                         <View style={styles.weekClaimedTag}>
                           <Text style={styles.weekClaimedTagText}>{t('kids_week_claimed')}</Text>
                         </View>
@@ -1337,35 +1161,10 @@ export default function Kids() {
                       ) : null}
                     </View>
 
-                    {weekendGoal ? (
-                      <View style={styles.weekGoalWrap}>
-                        <View style={styles.weekGoalRow}>
-                          <Text style={styles.weekGoalTitle} numberOfLines={1}>
-                            {weekendGoal.icon || DEFAULT_REWARD_ICON} {weekendGoal.title}
-                          </Text>
-                          <Text style={styles.weekGoalCount}>{weekEarned} / {weekendGoal.cost_stars}</Text>
-                        </View>
-                        <View style={{ marginTop: 8 }}>
-                          <ProgressBar
-                            pct={Math.min(100, Math.round((weekEarned / weekendGoal.cost_stars) * 100))}
-                            color={weekEarned >= weekendGoal.cost_stars ? ui.mintText : ui.orange}
-                          />
-                        </View>
-                        <Text style={styles.weekGoalHint}>
-                          {weekEarned >= weekendGoal.cost_stars
-                            ? t('kids_weekend_ready')
-                            : t('kids_weekend_to_go', { n: weekendGoal.cost_stars - weekEarned })}
-                        </Text>
-                      </View>
-                    ) : hasWeekendTreats ? (
-                      <PressScale testID="kids-pick-weekend" onPress={() => setKidsTab('rewards')} style={styles.weekPick}>
-                        <Text style={styles.weekPickText}>{t('kids_pick_weekend')}</Text>
-                      </PressScale>
-                    ) : (
-                      /* No weekend treat picked yet: the week still has a point.
-                         A full week of the quick jobs comes to about this, so
-                         the target is reachable by doing them — the maths always
-                         worked, it was just never on screen. */
+                    {/* One meter, one target. A weekend goal used to be able to
+                        replace this with its own price — the same treat costed
+                        two ways inside the page's most prominent card, which is
+                        the confusion the whole redesign exists to remove. */}
                       <View style={styles.weekGoalWrap}>
                         <View style={styles.weekGoalRow}>
                           <Text style={styles.weekGoalTitle} numberOfLines={1}>{t('kids_week_target_title')}</Text>
@@ -1385,7 +1184,6 @@ export default function Kids() {
                               : t('kids_week_target_to_go', { n: weeklyTarget - weekEarned })}
                         </Text>
                       </View>
-                    )}
 
                     {/* Momentum, at a glance: one cell per day of the week,
                         filling in as stars are earned. A child reads their own
@@ -1866,59 +1664,6 @@ export default function Kids() {
       </KeyboardAwareBottomSheet>
 
       {/* Reward sheet */}
-      <KeyboardAwareBottomSheet visible={showRewardSheet} onClose={closeRewardSheet} contentStyle={styles.sheet}>
-        <View style={styles.sheetHeader}>
-          <Text style={styles.sheetTitle}>{rewardMode === 'edit' ? t('kids_edit_reward') : t('kids_add_reward_title')}</Text>
-          <PressScale
-                  accessibilityRole="button"
-                  accessibilityLabel={t('close')} testID="close-reward" onPress={closeRewardSheet} style={styles.iconBtn}><X color={ui.text} size={20} /></PressScale>
-        </View>
-        <Text style={styles.label}>{t('kids_reward_title')}</Text>
-        <TextInput testID="reward-title" value={rewardTitle} onChangeText={setRewardTitle} placeholder={t('kids_reward_title_placeholder')} placeholderTextColor={ui.muted} style={styles.input} returnKeyType="next" />
-        <Text style={styles.label}>{t('kids_suggested_icon')}</Text>
-        <View style={styles.iconRow}>
-          {iconSuggestions.map((icon) => (
-            <PressScale key={icon} testID={`reward-icon-${icon}`} onPress={() => setRewardIcon(icon)} style={[styles.iconChip, { backgroundColor: rewardIcon === icon ? ui.orangeSoft : ui.soft, borderColor: rewardIcon === icon ? ui.orange : ui.line }]}>
-              <Text style={styles.iconChipText}>{icon}</Text>
-            </PressScale>
-          ))}
-        </View>
-        <Text style={styles.label}>{t('kids_cost_in_stars')}</Text>
-        <TextInput testID="reward-cost" value={rewardCost} onChangeText={(v) => setRewardCost(cleanNumber(v))} keyboardType="number-pad" placeholder="50" placeholderTextColor={ui.muted} style={styles.input} />
-
-        {/* Weekend treat vs saved-up reward. A weekend treat is bought with
-            this week's earnings, so a child has to earn it fresh each week;
-            everything else is paid from the saved bank. */}
-        <PressScale
-          testID="reward-weekend-toggle"
-          accessibilityRole="button"
-          accessibilityLabel={t('kids_weekend_treat')}
-          onPress={() => setRewardWeekend((v) => !v)}
-          style={[styles.weekendToggle, { borderColor: rewardWeekend ? ui.orange : ui.line, backgroundColor: rewardWeekend ? ui.orangeSoft : ui.soft }]}
-        >
-          <View style={{ flex: 1 }}>
-            <Text style={styles.weekendToggleTitle}>{t('kids_weekend_treat')}</Text>
-            <Text style={styles.weekendToggleSub}>{t('kids_weekend_treat_help')}</Text>
-          </View>
-          <View style={[styles.switchTrack, { backgroundColor: rewardWeekend ? ui.orangeDeep : ui.line }]}>
-            <View style={[styles.switchThumb, rewardWeekend && styles.switchThumbOn]} />
-          </View>
-        </PressScale>
-
-        <View style={styles.sheetFooter}>
-          {rewardMode === 'edit' && editingReward ? (
-            <PressScale testID="delete-reward" onPress={() => confirmRemoveReward(editingReward)} style={styles.deleteBtn}>
-              <Trash2 color={ui.danger} size={17} />
-              <Text style={styles.deleteText}>{t('kids_delete')}</Text>
-            </PressScale>
-          ) : (
-            <PressScale testID="cancel-reward" onPress={closeRewardSheet} style={styles.cancelBtn}><Text style={styles.cancelText}>{t('cancel')}</Text></PressScale>
-          )}
-          <PressScale testID="save-reward" onPress={saveReward} disabled={saving || !rewardTitle.trim()} style={[styles.saveBtn, (!rewardTitle.trim() || saving) && { opacity: 0.5 }]}><Text style={styles.saveText}>{saving ? '...' : t('save')}</Text></PressScale>
-        </View>
-      </KeyboardAwareBottomSheet>
-
-      {/* Star sheet */}
       <KeyboardAwareBottomSheet visible={showStarSheet} onClose={() => setShowStarSheet(false)} contentStyle={styles.sheet}>
         <View style={styles.sheetHeader}>
           <Text style={styles.sheetTitle}>{starMode === 'add' ? t('kids_add_stars') : t('kids_remove_stars')}</Text>
@@ -2125,25 +1870,6 @@ export default function Kids() {
 
       <StarCelebration content={celebration} onDone={() => setCelebration(null)} />
 
-      <PinPadModal
-        visible={pinPromptReward !== null}
-        mode="verify"
-        title={activeChild ? t('kids_childs_pin', { name: activeChild.name }) : t('kids_pin')}
-        subtitle={t('kids_pin_subtitle')}
-        onClose={() => setPinPromptReward(null)}
-        onSubmit={async (pin) => {
-          if (!activeChild || !pinPromptReward) return false;
-          try {
-            await api.verifyMemberPin(activeChild.member_id, pin);
-            const reward = pinPromptReward;
-            setPinPromptReward(null);
-            await doRedeem(reward);
-            return true;
-          } catch {
-            return false;
-          }
-        }}
-      />
 
       <LoadingOverlay visible={loading} label={t('kids_loading')} />
       <AppToast visible={Boolean(toast)} message={toast?.message || null} tone={toast?.tone || 'info'} />
@@ -2222,9 +1948,6 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   assignDueTextActive: { color: ui.orangeText },
   assignTaskHint: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, marginTop: 8, marginBottom: 14, lineHeight: 18 },
   redeemText: { color: ui.bg, fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
-  redeemBtnQuiet: { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: ui.line },
-  redeemTextQuiet: { color: ui.text },
-  weeklyLine: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 13.5, marginTop: 12, paddingHorizontal: 2 },
 
   weekCard: { marginTop: 12, padding: 16 },
   weekTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
@@ -2238,9 +1961,6 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   weekGoalTitle: { flex: 1, color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 14 },
   weekGoalCount: { color: ui.muted, fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
   weekGoalHint: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 12, marginTop: 8 },
-  weekPick: { marginTop: 12, alignSelf: 'flex-start' },
-  weekPickText: { color: ui.orangeText, fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
-  weekEmptyHint: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, lineHeight: 18, marginTop: 10 },
   weekDays: { flexDirection: 'row', justifyContent: 'space-between', gap: 6, marginTop: 14 },
   weekDay: { flex: 1, alignItems: 'center', paddingVertical: 7, borderRadius: 12, backgroundColor: ui.soft },
   weekDayDone: { backgroundColor: ui.mint },
@@ -2262,18 +1982,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   weekClaimedTagText: { color: ui.mintText, fontFamily: 'Inter_800ExtraBold', fontSize: 12 },
   weekResetNote: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 11.5, lineHeight: 16, marginTop: 12 },
 
-  weekendTagRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 6 },
-  weekendTag: { backgroundColor: ui.gold, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
-  weekendTagText: { color: ui.goldText, fontFamily: 'Inter_800ExtraBold', fontSize: 9.5, letterSpacing: 0.4, textTransform: 'uppercase' },
-  goalPin: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  goalPinText: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 11 },
 
-  weekendToggle: { flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1, borderRadius: 16, padding: 14, marginTop: 14 },
-  weekendToggleTitle: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 14 },
-  weekendToggleSub: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12, lineHeight: 17, marginTop: 3 },
-  switchTrack: { width: 46, height: 28, borderRadius: 999, padding: 3, justifyContent: 'center' },
-  switchThumb: { width: 22, height: 22, borderRadius: 999, backgroundColor: '#FFFFFF' },
-  switchThumbOn: { alignSelf: 'flex-end' },
 
   tabRow: { flexDirection: 'row', gap: 26, borderBottomWidth: 1, borderBottomColor: ui.line, marginTop: 18 },
   tabBtn: { paddingTop: 6, paddingBottom: 12, borderBottomWidth: 2, borderBottomColor: 'transparent' },
@@ -2282,8 +1991,6 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   blockLabel: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 13, marginTop: 20, marginBottom: 10 },
   blockHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 22, marginBottom: 10 },
   blockTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 17, letterSpacing: -0.2 },
-  newLink: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  newLinkText: { color: ui.orangeText, fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
   cardPad: { paddingHorizontal: 16 },
 
   quickAddHead: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
@@ -2298,14 +2005,8 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   rewardRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13 },
   rewardRowBorder: { borderBottomWidth: 1, borderBottomColor: ui.line },
   rewardEmoji: { fontSize: 20 },
-  rewardTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  rewardTitle: { flex: 1, color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 14.5 },
-  rewardCount: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 12.5 },
   rewardRedeem: { backgroundColor: ui.text, borderRadius: 99, paddingHorizontal: 14, paddingVertical: 9 },
   rewardRedeemText: { color: ui.bg, fontFamily: 'Inter_800ExtraBold', fontSize: 12.5 },
-  rewardBody: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 12 },
-  rewardToGo: { borderRadius: 99, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft, paddingHorizontal: 12, paddingVertical: 9 },
-  rewardToGoText: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 12 },
   rewardEdit: { width: 34, height: 34, borderRadius: 99, borderWidth: 1, borderColor: ui.line, alignItems: 'center', justifyContent: 'center' },
 
   // Outstanding redemptions. Deliberately not reusing rewardTitle: that one
@@ -2325,8 +2026,6 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   ideaChipReady: { backgroundColor: ui.orangeSoft, borderColor: ui.orange },
   ideaEmoji: { fontSize: 15 },
   ideaTitle: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 12.5 },
-  savedUpLink: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12, marginTop: 4 },
-  savedUpLinkText: { color: ui.orangeText, fontFamily: 'Inter_700Bold', fontSize: 13 },
 
   starActions: { flexDirection: 'row', gap: 10, marginTop: 4 },
   addStarsBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, backgroundColor: ui.text, borderRadius: 14, paddingVertical: 14 },
@@ -2358,12 +2057,6 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   iconBtn: { padding: 9, borderRadius: 9999, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft },
   label: { color: ui.muted, fontFamily: 'Inter_800ExtraBold', fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginTop: 14, marginBottom: 8 },
   input: { borderWidth: 1, borderColor: ui.line, borderRadius: 16, paddingHorizontal: 15, paddingVertical: 13, fontFamily: 'Inter_500Medium', fontSize: 16, color: ui.text, backgroundColor: ui.soft },
-  iconRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 9 },
-  iconChip: { width: 46, height: 46, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  iconChipText: { fontSize: 22 },
-  modeRow: { flexDirection: 'row', gap: 10, marginBottom: 4 },
-  modeBtn: { flex: 1, alignItems: 'center', borderRadius: 14, paddingVertical: 12 },
-  modeText: { fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
   sheetFooter: { flexDirection: 'row', gap: 12, marginTop: 22 },
   cancelBtn: { flex: 1, borderWidth: 1, borderColor: ui.line, borderRadius: 18, paddingVertical: 15, alignItems: 'center' },
   cancelText: { color: ui.muted, fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
@@ -2390,6 +2083,4 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   allowanceDue: { color: ui.orangeText, fontFamily: 'Inter_700Bold', fontSize: 12, marginTop: 3 },
   payNowBtn: { backgroundColor: ui.orangeDeep, borderRadius: 99, paddingHorizontal: 14, paddingVertical: 9 },
   payNowText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 12.5 },
-  showAllBtn: { alignItems: 'center', paddingVertical: 13, borderTopWidth: 1, borderTopColor: ui.line },
-  showAllText: { color: ui.orangeText, fontFamily: 'Inter_700Bold', fontSize: 13 },
 });
