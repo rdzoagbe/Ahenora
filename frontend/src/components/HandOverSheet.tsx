@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -35,6 +35,12 @@ export function HandOverSheet({ visible, onClose }: { visible: boolean; onClose:
   const [newParentPin, setNewParentPin] = useState('');
   const [saving, setSaving] = useState(false);
   const [entering, setEntering] = useState(false);
+  // Guarded with refs, not state: a pasted or autofilled 4-digit PIN arrives
+  // as change events inside one React batch, and a state flag set in the
+  // first has not committed by the time the second reads it — so both got
+  // through and opened two sessions.
+  const enteringRef = useRef(false);
+  const savingRef = useRef(false);
   const [chosen, setChosen] = useState<FamilyProfile | null>(null);
   const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -51,6 +57,10 @@ export function HandOverSheet({ visible, onClose }: { visible: boolean; onClose:
   }, []);
 
   useEffect(() => { if (visible) load(); }, [visible, load]);
+  // Closing by any route must forget who was being handed the device and
+  // what was typed — only the X button used to reset, so a backdrop tap
+  // reopened on the last child's PIN screen with their digits still in it.
+  useEffect(() => { if (!visible) { setChosen(null); setPin(''); setError(null); } }, [visible]);
 
   const reset = () => { setChosen(null); setPin(''); setError(null); };
 
@@ -63,12 +73,13 @@ export function HandOverSheet({ visible, onClose }: { visible: boolean; onClose:
    * it here, in the four seconds it takes, at the exact moment it matters.
    */
   const saveParentPin = async (override?: string) => {
-    if (!me || saving) return;
+    if (!me || savingRef.current) return;
+    savingRef.current = true;
     // The auto-submit passes the digit it just saw: state has not re-rendered
     // yet at that point, so reading newParentPin here would be one keystroke
     // behind and always reject a correct PIN as too short.
     const value = (override ?? newParentPin).trim();
-    if (!/^\d{4}$/.test(value)) { setError(t('kids_pin_4_digits')); return; }
+    if (!/^\d{4}$/.test(value)) { savingRef.current = false; setError(t('kids_pin_4_digits')); return; }
     setSaving(true);
     setError(null);
     try {
@@ -77,13 +88,17 @@ export function HandOverSheet({ visible, onClose }: { visible: boolean; onClose:
       await load();
     } catch {
       setError(t('kid_pin_save_failed'));
+      // Leaving a rejected PIN in the box invites the next tap to resend it.
+      setNewParentPin('');
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
 
   const go = async (override?: string) => {
-    if (!chosen || entering) return;
+    if (!chosen || enteringRef.current) return;
+    enteringRef.current = true;
     setError(null);
     setEntering(true);
     try {
@@ -94,7 +109,12 @@ export function HandOverSheet({ visible, onClose }: { visible: boolean; onClose:
       router.replace('/kid');
     } catch (e: any) {
       setError(e?.status === 429 ? t('kid_locked_out') : t('kid_wrong_pin'));
+      // M13: clear it. A wrong PIN left in the field means the obvious next
+      // tap resends the same wrong digits, and eight of those lock a child
+      // out of their own device for fifteen minutes.
+      setPin('');
     } finally {
+      enteringRef.current = false;
       setEntering(false);
     }
   };

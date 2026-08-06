@@ -21,6 +21,7 @@ import {
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StoreProvider, useStore } from '../src/store';
 import { UpgradeModal } from '../src/components/UpgradeModal';
+import { WebUpdateBanner } from '../src/components/WebUpdateBanner';
 
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
@@ -33,6 +34,11 @@ function RootNavigator() {
           edge-to-edge now, so the status bar is inherently transparent. */}
       <StatusBar style={resolvedAppearance === 'light' ? 'dark' : 'light'} />
       <UpgradeModal />
+      {/* Web only. A browser tab runs the JavaScript it loaded until someone
+          reloads it, so iOS/web users can sit on a days-old build with no
+          way to know — the native apps restart into updates, the web app
+          cannot. This tells them, and reloads on request. */}
+      <WebUpdateBanner />
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.colors.bg } }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="oauthredirect" />

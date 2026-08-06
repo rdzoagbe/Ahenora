@@ -116,7 +116,25 @@ async function writeQueue(items: QueuedWrite[]): Promise<void> {
 const isPlainObject = (v: unknown): v is Record<string, unknown> =>
   !!v && typeof v === 'object' && !Array.isArray(v);
 
+// Every read-modify-write of the queue goes through one chain.
+//
+// enqueueWrite reads, mutates and writes with awaits in between, and flushQueue
+// writes back a list it computed before sending anything. Two ticks made a
+// second apart in a basement both timed out at once, both read an empty queue,
+// and the second write erased the first — a change the badge still claimed was
+// pending. `.then(fn, fn)` keeps the chain alive after a rejection.
+let queueLock: Promise<unknown> = Promise.resolve();
+function withQueue<T>(fn: () => Promise<T>): Promise<T> {
+  const run = queueLock.then(fn, fn);
+  queueLock = run.catch(() => undefined);
+  return run;
+}
+
 export async function enqueueWrite(path: string, method: string, body?: unknown): Promise<void> {
+  return withQueue(() => enqueueWriteUnlocked(path, method, body));
+}
+
+async function enqueueWriteUnlocked(path: string, method: string, body?: unknown): Promise<void> {
   const items = await readQueue();
   const base = path.split('?')[0];
   // One entry per target: replaying three toggles of the same checkbox is
@@ -168,6 +186,7 @@ export async function flushQueue(
   const items = await readQueue();
   if (items.length === 0) return { sent: 0, left: 0 };
 
+  const seen = new Set(items.map((i) => i.id));
   const remaining: QueuedWrite[] = [];
   let sent = 0;
   for (const item of items) {
@@ -186,6 +205,13 @@ export async function flushQueue(
       }
     }
   }
-  await writeQueue(remaining);
+  // Anything enqueued WHILE this was sending is not in `remaining`, and
+  // writing it back wholesale erased it — a tick made during the drain simply
+  // vanished. Re-read and keep whatever arrived since the snapshot.
+  await withQueue(async () => {
+    const now = await readQueue();
+    const arrivedDuringFlush = now.filter((i) => !seen.has(i.id));
+    await writeQueue([...remaining, ...arrivedDuringFlush]);
+  });
   return { sent, left: remaining.length };
 }

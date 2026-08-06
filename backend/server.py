@@ -1891,7 +1891,9 @@ class VaultVisibilityIn(BaseModel):
 
 class RewardIn(BaseModel):
     title: str
-    cost_stars: int
+    # PATCH already refuses anything under 1; create did not, and a negative
+    # cost inverts the redemption maths into handing out stars.
+    cost_stars: int = Field(ge=1, le=100000)
     icon: Optional[str] = None
     weekend: bool = False
 
@@ -2035,7 +2037,9 @@ class AllowanceTxnIn(BaseModel):
 
 
 class AnnouncementIn(BaseModel):
-    text: str
+    # A board post is read by everyone, 50 at a time — an unbounded one is
+    # paid for by every member on every load, not just its author.
+    text: str = Field(max_length=4000)
     priority: str = "normal"  # normal, urgent
 
 
@@ -2735,6 +2739,10 @@ async def set_weekend_goal(member_id: str, payload: dict = Body(...), user=Depen
         raise HTTPException(status_code=404, detail="Family member not found")
 
     reward_id = payload.get("reward_id")
+    # A raw body means this could be {"$ne": null} rather than an id, which
+    # would match an arbitrary reward and then be stored as the child's goal.
+    if reward_id is not None and not isinstance(reward_id, str):
+        raise HTTPException(status_code=400, detail="Invalid reward")
     if reward_id:
         reward = await database["rewards"].find_one(
             {"reward_id": reward_id, "family_id": user["family_id"]}, {"_id": 0})
@@ -3626,11 +3634,18 @@ async def kid_finish_chore(card_id: str, child=Depends(require_child)):
     if (card.get("assignee") or "").strip().lower() != (member.get("name") or "").strip().lower():
         raise HTTPException(status_code=403, detail="That is not yours to finish")
 
-    already = card.get("status") == "DONE" or bool(card.get("stars_awarded"))
-    await database["cards"].update_one({"card_id": card_id}, {"$set": {
-        "status": "DONE", "completed_at": utcnow(),
-        "completed_by_name": member.get("name") or "", "completed_by_user_id": None,
-        "stars_awarded": True}})
+    # The guard rides in the filter, not in a variable read moments earlier:
+    # a double tap had both requests see an unfinished chore and both pay for
+    # it, leaving two ledger rows for one job and a weekly meter inflated
+    # enough to unlock a treat that was not earned.
+    claim = await database["cards"].update_one(
+        {"card_id": card_id, "family_id": child["family_id"],
+         "stars_awarded": {"$ne": True}, "status": {"$ne": "DONE"}},
+        {"$set": {
+            "status": "DONE", "completed_at": utcnow(),
+            "completed_by_name": member.get("name") or "", "completed_by_user_id": None,
+            "stars_awarded": True}})
+    already = claim.matched_count == 0
     await log_activity(database, {"family_id": child["family_id"], "user_id": None,
                                   "name": member.get("name") or ""},
                        "task_done", card.get("title", ""))
@@ -3663,15 +3678,27 @@ async def kid_request_reward(reward_id: str, child=Depends(require_child)):
         {"reward_id": reward_id, "family_id": child["family_id"]}, {"_id": 0})
     if not reward:
         raise HTTPException(status_code=404, detail="Reward not found")
-    cost = int(reward["cost_stars"])
+    cost = max(1, int(reward.get("cost_stars") or 0))
 
-    result = await database["family_members"].update_one(
-        {"member_id": member["member_id"], "family_id": child["family_id"],
-         "stars": {"$gte": cost}},
-        {"$inc": {"stars": -cost}},
-    )
+    # A weekend treat has to be earned THIS week — the rule the whole weekly
+    # meter exists to express. It was enforced on the parent's redeem endpoint
+    # and not here, on the screen children actually spend from: old savings
+    # bought weekend treats, and because the meter was never debited, one
+    # week's earnings could buy them without limit.
+    member = await roll_week_if_stale(database, member)
+    star_filter = {"member_id": member["member_id"], "family_id": child["family_id"],
+                   "stars": {"$gte": cost}}
+    inc = {"stars": -cost}
+    if reward.get("weekend"):
+        star_filter["week_earned"] = {"$gte": cost}
+        inc["week_earned"] = -cost
+
+    result = await database["family_members"].update_one(star_filter, {"$inc": inc})
     if result.matched_count == 0:
-        raise HTTPException(status_code=400, detail="Not enough stars")
+        raise HTTPException(
+            status_code=400,
+            detail=("Not enough stars earned this week for a weekend treat."
+                    if reward.get("weekend") else "Not enough stars"))
 
     await database["star_transactions"].insert_one({
         "transaction_id": new_id("star"), "family_id": child["family_id"],
@@ -3684,6 +3711,8 @@ async def kid_request_reward(reward_id: str, child=Depends(require_child)):
         "member_id": member["member_id"], "reward_id": reward["reward_id"],
         "reward_title": reward.get("title") or "", "reward_icon": reward.get("icon"),
         "cost_stars": cost, "status": "pending", "created_at": utcnow(),
+        "weekend": bool(reward.get("weekend")),
+        "weekend": bool(reward.get("weekend")),
         "created_by_user_id": None, "fulfilled_at": None}
     await database["redemptions"].insert_one(redemption)
 
@@ -3980,7 +4009,7 @@ async def _accept_invite_request(token: str, user: dict, via: str = "unknown"):
         # A plain-text 500 reaches the join card as an unreadable mystery;
         # a JSON detail is shown to the user verbatim and names the problem.
         log.exception("invite accept failed")
-        raise HTTPException(status_code=500, detail=f"Join failed: {exc}")
+        raise HTTPException(status_code=500, detail="Join failed. Please try again.")
     return {"ok": True, "joined": joined, "user": public_user(fresh)}
 
 
@@ -4351,7 +4380,19 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
     if not changes:
         return public_card(card)
 
-    await database["cards"].update_one({"card_id": card_id}, {"$set": changes})
+    if award_child:
+        # Claim the award in the same write that marks it done, so only one
+        # request can ever be the one that pays. A snapshot taken moments
+        # earlier let two taps both believe the chore was unpaid.
+        claim = await database["cards"].update_one(
+            {"card_id": card_id, "family_id": user["family_id"],
+             "stars_awarded": {"$ne": True}, "status": {"$ne": "DONE"}},
+            {"$set": changes})
+        award_child = claim.matched_count > 0
+        if not award_child:
+            await database["cards"].update_one({"card_id": card_id}, {"$set": changes})
+    else:
+        await database["cards"].update_one({"card_id": card_id}, {"$set": changes})
     updated = await database["cards"].find_one({"card_id": card_id}, {"_id": 0})
 
     if changes.get("status") == "DONE" and card["status"] != "DONE":
@@ -4936,9 +4977,19 @@ async def cancel_redemption(redemption_id: str, user=Depends(require_user)):
 
     transaction = None
     if cost > 0:
+        # A weekend treat costs the bank AND the week's meter, so a refund has
+        # to restore both — otherwise a child whose cinema trip fell through
+        # got their stars back but stayed locked out of weekend treats for the
+        # rest of the week, having earned them. Only within the same week: a
+        # cancellation after Monday must not credit last week's effort into a
+        # fresh meter.
+        refund = {"stars": cost}
+        redeemed_at = _coerce_dt(redemption.get("created_at"))
+        if redemption.get("weekend") and redeemed_at and redeemed_at >= current_week_start():
+            refund["week_earned"] = cost
         credited = await database["family_members"].update_one(
             {"member_id": redemption["member_id"], "family_id": user["family_id"]},
-            {"$inc": {"stars": cost}},
+            {"$inc": refund},
         )
         # Only write the ledger row if the balance actually moved. If the child
         # was removed between claiming the redemption and crediting it, an

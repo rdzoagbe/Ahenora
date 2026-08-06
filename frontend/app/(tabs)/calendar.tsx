@@ -149,10 +149,15 @@ export default function Calendar() {
   // upsert, so a late completion is harmless), but once cancelled its result
   // is ignored and the screen is handed straight back — no more staring at a
   // spinner with no way out.
-  const syncCancelledRef = useRef(false);
+  // A generation counter, not a flag. With a single boolean, kicking off a
+  // second import reset it — so the import the user had just CANCELLED
+  // sailed through its own check, announced 'synced', and cleared the
+  // spinner while the new one was still running. Each run keeps its own
+  // number and only acts if it is still the current one.
+  const syncGenRef = useRef(0);
   const [calendarSyncStatus, setCalendarSyncStatus] = useState<string | null>(null);
   const cancelSync = useCallback(() => {
-    syncCancelledRef.current = true;
+    syncGenRef.current += 1;
     setSyncing(false);
     setCalendarSyncStatus(null);
     logEvent('calendar_import_cancelled');
@@ -295,11 +300,11 @@ export default function Calendar() {
         handledCalendarResponseRef.current = false;
         return;
       }
-      syncCancelledRef.current = false;
+      const myGen = ++syncGenRef.current;
       setSyncing(true);
       try {
         const result = await api.importGoogleCalendar(accessToken, 30);
-        if (syncCancelledRef.current) return;
+        if (myGen !== syncGenRef.current) return;
         setSyncResult(result);
         await load();
         Alert.alert(t('cal_calendar_synced'), syncSummary(result));
@@ -307,7 +312,10 @@ export default function Calendar() {
         logger.warn('calendar sync failed', e);
         Alert.alert(t('cal_calendar_sync_failed'), e?.message || t('cal_please_try_again'));
       } finally {
-        setSyncing(false);
+        // Only the run that is still current may take the spinner down;
+        // a superseded or cancelled one clearing it stranded the user
+        // with no Cancel button while an import was still going.
+        if (myGen === syncGenRef.current) setSyncing(false);
         handledCalendarResponseRef.current = false;
       }
     };
@@ -447,6 +455,9 @@ export default function Calendar() {
 
   const syncCalendar = async () => {
     setSyncResult(null);
+    // Claimed once for the whole call so every branch — and every finally —
+    // is talking about the same run.
+    const myGen = ++syncGenRef.current;
 
     if (Platform.OS !== 'web') {
       if (!webClientId) {
@@ -456,7 +467,6 @@ export default function Calendar() {
       }
 
       try {
-        syncCancelledRef.current = false;
         setSyncing(true);
         setCalendarSyncStatus(t('cal_opening_native_permission'));
 
@@ -507,7 +517,7 @@ export default function Calendar() {
 
         setCalendarSyncStatus(t('cal_importing_events'));
         const result = await api.importGoogleCalendar(tokens.accessToken, 30);
-        if (syncCancelledRef.current) return;
+        if (myGen !== syncGenRef.current) return;
         setSyncResult(result);
         await load();
         setCalendarSyncStatus(syncSummary(result));
@@ -524,7 +534,10 @@ export default function Calendar() {
         setCalendarSyncStatus(`${t('cal_calendar_sync_failed')}: ${message}`);
         Alert.alert(t('cal_calendar_sync_failed'), message);
       } finally {
-        setSyncing(false);
+        // Only the run that is still current may take the spinner down;
+        // a superseded or cancelled one clearing it stranded the user
+        // with no Cancel button while an import was still going.
+        if (myGen === syncGenRef.current) setSyncing(false);
       }
 
       return;
@@ -561,12 +574,11 @@ export default function Calendar() {
         return;
       }
 
-      syncCancelledRef.current = false;
       setSyncing(true);
       setCalendarSyncStatus(t('cal_importing_events'));
 
       const importResult = await api.importGoogleCalendar(accessToken, 30);
-      if (syncCancelledRef.current) return;
+      if (myGen !== syncGenRef.current) return;
       setSyncResult(importResult);
       await load();
 
@@ -578,7 +590,10 @@ export default function Calendar() {
       setCalendarSyncStatus(`${t('cal_calendar_sync_failed')}: ${message}`);
       Alert.alert(t('cal_calendar_sync_failed'), message);
     } finally {
-      setSyncing(false);
+      // Only the run that is still current may take the spinner down;
+      // a superseded or cancelled one clearing it stranded the user
+      // with no Cancel button while an import was still going.
+      if (myGen === syncGenRef.current) setSyncing(false);
     }
   };
 
@@ -593,7 +608,7 @@ export default function Calendar() {
       const code = msResponse.params?.code;
       if (!code || !msRequest) return;
       handledMsResponseRef.current = true;
-      syncCancelledRef.current = false;
+      const myGen = ++syncGenRef.current;
       setSyncing(true);
       try {
         const tokenResult = await AuthSession.exchangeCodeAsync(
@@ -611,7 +626,7 @@ export default function Calendar() {
           return;
         }
         const result = await api.importMicrosoftCalendar(accessToken, 30);
-        if (syncCancelledRef.current) return;
+        if (myGen !== syncGenRef.current) return;
         setSyncResult(result);
         await load();
         Alert.alert(t('cal_calendar_synced'), syncSummary(result));
@@ -619,7 +634,10 @@ export default function Calendar() {
         logger.warn('microsoft calendar sync failed', e);
         Alert.alert(t('cal_calendar_sync_failed'), e?.message || t('cal_please_try_again'));
       } finally {
-        setSyncing(false);
+        // Only the run that is still current may take the spinner down;
+        // a superseded or cancelled one clearing it stranded the user
+        // with no Cancel button while an import was still going.
+        if (myGen === syncGenRef.current) setSyncing(false);
         handledMsResponseRef.current = false;
       }
     };

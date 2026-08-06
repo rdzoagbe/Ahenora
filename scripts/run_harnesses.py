@@ -54,6 +54,7 @@ HARNESSES = [
     "e2e_kid.py",
     "e2e_contrast.py",
     "e2e_offline.py",
+    "e2e_webupdate.py",
     "e2e_journey.py",
 ]
 

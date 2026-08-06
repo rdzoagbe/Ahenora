@@ -245,13 +245,18 @@ export default function Kids() {
    * punishment on the child's own screen.
    */
   const weekDayCells = useMemo(() => {
+    // The week has to start where the SERVER starts it. `week_earned` rolls at
+    // UTC Monday (current_week_start); drawing these boxes from local midnight
+    // meant that for the whole timezone offset the row and the meter above it
+    // described different weeks — a full row of stars over a bar reading 0, or
+    // stars counted by the meter that no box showed.
     const now = new Date();
-    const monday = new Date(now);
-    monday.setHours(0, 0, 0, 0);
-    // getDay(): 0 = Sunday. Shift so the week starts on Monday.
-    monday.setDate(monday.getDate() - ((now.getDay() + 6) % 7));
+    const monday = new Date(Date.UTC(
+      now.getUTCFullYear(), now.getUTCMonth(),
+      now.getUTCDate() - ((now.getUTCDay() + 6) % 7),
+    ));
 
-    const dayKey = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    const dayKey = (d: Date) => `${d.getUTCFullYear()}-${d.getUTCMonth()}-${d.getUTCDate()}`;
     const earnedByDay: Record<string, number> = {};
     historyItems.forEach((txn) => {
       if (!txn.created_at || txn.delta <= 0) return;
@@ -264,11 +269,11 @@ export default function Kids() {
     const todayKey = dayKey(now);
     return Array.from({ length: 7 }, (_, i) => {
       const d = new Date(monday);
-      d.setDate(monday.getDate() + i);
+      d.setUTCDate(monday.getUTCDate() + i);
       const k = dayKey(d);
       return {
         key: k,
-        letter: d.toLocaleDateString(undefined, { weekday: 'narrow' }),
+        letter: d.toLocaleDateString(undefined, { weekday: 'narrow', timeZone: 'UTC' }),
         earned: earnedByDay[k] || 0,
         isToday: k === todayKey,
       };
