@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Linking, Platform, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import * as Updates from 'expo-updates';
@@ -55,6 +56,7 @@ function isBelow(version: string, minimum: string): boolean {
 export function UpdateNotice() {
   const ui = useUI();
   const { t } = useStore();
+  const insets = useSafeAreaInsets();
   const styles = createStyles(ui);
 
   const { isUpdatePending } = Updates.useUpdates();
@@ -133,7 +135,10 @@ export function UpdateNotice() {
   }[shown];
 
   return (
-    <View style={styles.wrap} pointerEvents="box-none">
+    // Below the status bar, not under it. Without the inset this sat over the
+    // clock and the notch, which is both unreadable and reads as a system
+    // notification rather than something the app is saying.
+    <View style={[styles.wrap, { paddingTop: insets.top + 8 }]} pointerEvents="box-none">
       <View style={styles.card}>
         <View style={styles.head}>
           <copy.Icon color={ui.orangeText} size={17} />
@@ -177,19 +182,27 @@ export function UpdateNotice() {
 }
 
 const createStyles = (ui: UIColors) => StyleSheet.create({
-  wrap: { position: 'absolute', top: 0, left: 0, right: 0, alignItems: 'center', paddingTop: 10, paddingHorizontal: 12, zIndex: 999 },
+  wrap: { position: 'absolute', top: 0, left: 0, right: 0, alignItems: 'center', paddingHorizontal: 12, zIndex: 999 },
+  // A card belonging to the app, not a toast laid over it: the app's own card
+  // background and border, its corner radius, and a shadow so it reads as
+  // sitting ON the page rather than floating above the operating system.
   card: {
     width: '100%', maxWidth: 620,
-    backgroundColor: ui.orangeSoft, borderWidth: 1, borderColor: ui.orange,
-    borderRadius: 18, padding: 14, gap: 8,
+    backgroundColor: ui.card, borderWidth: 1, borderColor: ui.orange,
+    borderRadius: 20, padding: 16, gap: 10,
+    shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 }, elevation: 8,
   },
   head: { flexDirection: 'row', alignItems: 'center', gap: 9 },
-  title: { flex: 1, minWidth: 0, color: ui.orangeText, fontFamily: 'Inter_800ExtraBold', fontSize: 14, lineHeight: 19 },
-  body: { color: ui.orangeText, fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 19 },
-  list: { gap: 4 },
-  item: { color: ui.orangeText, fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 19 },
-  btn: { alignSelf: 'flex-start', backgroundColor: ui.orangeDeep, borderRadius: 999, paddingVertical: 9, paddingHorizontal: 16, marginTop: 2 },
-  btnText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
-  x: { padding: 2 },
-  xText: { color: ui.orangeText, fontFamily: 'Inter_700Bold', fontSize: 13 },
+  // Reads at arm's length. The old 13-14px Medium in accent-on-accent was
+  // technically legible and practically not, which is what "unclear to read"
+  // meant: body copy goes to the normal ink, and only the heading stays accent.
+  title: { flex: 1, minWidth: 0, color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 16, lineHeight: 22 },
+  body: { color: ui.text, fontFamily: 'Inter_500Medium', fontSize: 14.5, lineHeight: 21 },
+  list: { gap: 7 },
+  item: { color: ui.text, fontFamily: 'Inter_500Medium', fontSize: 14.5, lineHeight: 21 },
+  btn: { alignSelf: 'flex-start', backgroundColor: ui.orangeDeep, borderRadius: 999, paddingVertical: 11, paddingHorizontal: 18, marginTop: 4 },
+  btnText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
+  x: { padding: 4 },
+  xText: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 15 },
 });
