@@ -164,6 +164,7 @@ export default function Calendar() {
   const [carpools, setCarpools] = useState<Carpool[]>([]);
   const [childNames, setChildNames] = useState<Set<string>>(new Set());
   const [coparentViewOpen, setCoparentViewOpen] = useState(false);
+  const [importPickerOpen, setImportPickerOpen] = useState(false);
   const [shareDir, setShareDir] = useState<'out' | 'in'>('out');
   const [sharedOut, setSharedOut] = useState<Card[] | null>(null);
   const [sharedIn, setSharedIn] = useState<Card[] | null>(null);
@@ -622,17 +623,22 @@ export default function Calendar() {
 
   // "Import calendar" → pick a provider. Google keeps its existing flow; Outlook
   // runs the Microsoft PKCE flow; Both runs Google then Outlook.
-  const openImportPicker = () => {
-    Alert.alert(
-      t('cal_import_title'),
-      t('cal_import_subtitle'),
-      [
-        { text: t('cal_import_google'), onPress: () => { syncCalendar(); } },
-        { text: t('cal_import_outlook'), onPress: () => { syncMicrosoft(); } },
-        { text: t('cal_import_both'), onPress: async () => { await syncCalendar(); await syncMicrosoft(); } },
-        { text: t('cal_cancel'), style: 'cancel' },
-      ],
-    );
+  /**
+   * Where to import from — as a sheet, not a system alert.
+   *
+   * Android's Alert renders at most three buttons and silently drops the rest,
+   * so the "Cancel" written below the three sources never appeared: tapping
+   * Import opened a dialog offering Google, Outlook and Both with no way out
+   * except to pick one. A sheet has room for every option plus a way to leave,
+   * and it looks like the rest of the app rather than a grey OS dialog.
+   */
+  const openImportPicker = () => setImportPickerOpen(true);
+
+  const chooseImport = (which: 'google' | 'outlook' | 'both') => {
+    setImportPickerOpen(false);
+    if (which === 'google') { syncCalendar(); return; }
+    if (which === 'outlook') { syncMicrosoft(); return; }
+    (async () => { await syncCalendar(); await syncMicrosoft(); })();
   };
 
   const shiftMonth = (amount: number) => {
@@ -1024,6 +1030,54 @@ export default function Calendar() {
           side is your own shared items (what they see of you) with an inline
           way to pull each back private; the `in` side is what they've shared
           with you, read-only. Private items never appear in either. */}
+      {/* Where to import from. Every option plus a way out — the alert this
+          replaces could only ever show three buttons on Android, which is
+          exactly how many sources there are, so "Cancel" was dropped. */}
+      <KeyboardAwareBottomSheet visible={importPickerOpen} onClose={() => setImportPickerOpen(false)} contentStyle={styles.detailSheet}>
+        <View style={styles.detailHeader}>
+          <Text style={styles.detailTitle}>{t('cal_import_title')}</Text>
+          <PressScale
+            testID="import-picker-close"
+            accessibilityRole="button"
+            accessibilityLabel={t('close')}
+            onPress={() => setImportPickerOpen(false)}
+            style={styles.closeBtn}
+          >
+            <X color={ui.text} size={20} />
+          </PressScale>
+        </View>
+        <Text style={styles.importPickerSub}>{t('cal_import_subtitle')}</Text>
+
+        {([
+          { key: 'google' as const, label: t('cal_import_google'), testID: 'import-google' },
+          { key: 'outlook' as const, label: t('cal_import_outlook'), testID: 'import-outlook' },
+          { key: 'both' as const, label: t('cal_import_both'), testID: 'import-both' },
+        ]).map((opt) => (
+          <PressScale
+            key={opt.key}
+            testID={opt.testID}
+            accessibilityRole="button"
+            onPress={() => chooseImport(opt.key)}
+            style={styles.importOption}
+          >
+            <IconTile bg={ui.orangeSoft} size={38} radius={12}>
+              <CalendarDays color={ui.orange} size={18} />
+            </IconTile>
+            <Text style={styles.importOptionText}>{opt.label}</Text>
+            <ChevronRight color={ui.muted} size={18} />
+          </PressScale>
+        ))}
+
+        <PressScale
+          testID="import-picker-cancel"
+          accessibilityRole="button"
+          onPress={() => setImportPickerOpen(false)}
+          style={styles.importCancel}
+        >
+          <Text style={styles.importCancelText}>{t('cal_cancel')}</Text>
+        </PressScale>
+      </KeyboardAwareBottomSheet>
+
       <KeyboardAwareBottomSheet visible={coparentViewOpen} onClose={() => setCoparentViewOpen(false)} contentStyle={styles.detailSheet}>
         {(() => {
           const items = shareDir === 'out' ? sharedOut : sharedIn;
@@ -1214,6 +1268,11 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   shareNudgeBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 46, borderRadius: 99, backgroundColor: ui.orangeDeep },
   shareNudgeBtnText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
   coparentLink: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 12, paddingVertical: 6 },
+  importPickerSub: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 13.5, lineHeight: 20, marginTop: 4 },
+  importOption: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: ui.line },
+  importOptionText: { flex: 1, color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 15 },
+  importCancel: { marginTop: 16, alignItems: 'center', paddingVertical: 13, borderRadius: 999, backgroundColor: ui.soft },
+  importCancelText: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
   coparentLinkTitle: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 14 },
   coparentLinkSub: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, marginTop: 2 },
   coparentTitleWrap: { flexDirection: 'row', alignItems: 'center', gap: 9, flex: 1 },

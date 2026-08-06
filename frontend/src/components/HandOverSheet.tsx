@@ -34,6 +34,7 @@ export function HandOverSheet({ visible, onClose }: { visible: boolean; onClose:
   const [ready, setReady] = useState(true);
   const [newParentPin, setNewParentPin] = useState('');
   const [saving, setSaving] = useState(false);
+  const [entering, setEntering] = useState(false);
   const [chosen, setChosen] = useState<FamilyProfile | null>(null);
   const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -61,9 +62,12 @@ export function HandOverSheet({ visible, onClose }: { visible: boolean; onClose:
    * failing to do its job. The requirement is real, so the sheet satisfies
    * it here, in the four seconds it takes, at the exact moment it matters.
    */
-  const saveParentPin = async () => {
+  const saveParentPin = async (override?: string) => {
     if (!me || saving) return;
-    const value = newParentPin.trim();
+    // The auto-submit passes the digit it just saw: state has not re-rendered
+    // yet at that point, so reading newParentPin here would be one keystroke
+    // behind and always reject a correct PIN as too short.
+    const value = (override ?? newParentPin).trim();
     if (!/^\d{4}$/.test(value)) { setError(t('kids_pin_4_digits')); return; }
     setSaving(true);
     setError(null);
@@ -78,17 +82,20 @@ export function HandOverSheet({ visible, onClose }: { visible: boolean; onClose:
     }
   };
 
-  const go = async () => {
-    if (!chosen) return;
+  const go = async (override?: string) => {
+    if (!chosen || entering) return;
     setError(null);
+    setEntering(true);
     try {
-      const out = await api.startKidSession(chosen.member_id, pin.trim());
+      const out = await api.startKidSession(chosen.member_id, (override ?? pin).trim());
       await kidMode.enter(out.session_token);
       onClose();
       reset();
       router.replace('/kid');
     } catch (e: any) {
       setError(e?.status === 429 ? t('kid_locked_out') : t('kid_wrong_pin'));
+    } finally {
+      setEntering(false);
     }
   };
 
@@ -150,7 +157,19 @@ export function HandOverSheet({ visible, onClose }: { visible: boolean; onClose:
             <TextInput
               testID="handover-parent-pin"
               value={newParentPin}
-              onChangeText={(v) => { setNewParentPin(v); setError(null); }}
+              /* Submits itself on the fourth digit.
+                 The confirm button sits at the bottom of a sheet the keypad
+                 opens over, and on some Android builds neither the measured
+                 lift nor the window resize gets it clear — it ends up clipped
+                 in half and the PIN cannot be finished. A four-digit field has
+                 exactly one moment it can be complete, so it does not need a
+                 button to be pressed; the button stays for anyone who wants
+                 it. Nothing here depends on measuring the keyboard. */
+              onChangeText={(v) => {
+                setNewParentPin(v);
+                setError(null);
+                if (/^\d{4}$/.test(v.trim())) saveParentPin(v.trim());
+              }}
               placeholder="••••"
               placeholderTextColor={ui.muted}
               keyboardType="number-pad"
@@ -162,7 +181,7 @@ export function HandOverSheet({ visible, onClose }: { visible: boolean; onClose:
             <PressScale
               testID="handover-save-parent-pin"
               accessibilityRole="button"
-              onPress={saveParentPin}
+              onPress={() => saveParentPin()}
               style={styles.primaryBtn}
             >
               <Text style={styles.primaryBtnText}>
@@ -176,7 +195,11 @@ export function HandOverSheet({ visible, onClose }: { visible: boolean; onClose:
             <TextInput
               testID="handover-pin"
               value={pin}
-              onChangeText={(v) => { setPin(v); setError(null); }}
+              onChangeText={(v) => {
+                setPin(v);
+                setError(null);
+                if (/^\d{4}$/.test(v.trim())) go(v.trim());
+              }}
               placeholder="••••"
               placeholderTextColor={ui.muted}
               keyboardType="number-pad"
@@ -190,7 +213,7 @@ export function HandOverSheet({ visible, onClose }: { visible: boolean; onClose:
               <PressScale onPress={reset} style={styles.ghostBtn}>
                 <Text style={styles.ghostBtnText}>{t('back')}</Text>
               </PressScale>
-              <PressScale testID="handover-go" onPress={go} style={styles.primaryBtn}>
+              <PressScale testID="handover-go" onPress={() => go()} style={styles.primaryBtn}>
                 <Text style={styles.primaryBtnText}>{t('kid_open')}</Text>
               </PressScale>
             </View>
