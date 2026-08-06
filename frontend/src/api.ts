@@ -1161,6 +1161,10 @@ export const api = {
    *  never resolve optimistically while the item is still visible. */
   unshareCard: (id: string) =>
     request<Card>(`/cards/${id}/unshare`, { method: 'POST' }),
+  /** What this build should compare itself against. Unauthenticated: a client
+   *  too old to be updated may also be too old to sign in cleanly. */
+  appVersionInfo: () =>
+    request<{ min_runtime: string; store_version: string; android_store_url?: string }>('/app/version-info'),
   /** The three counts the sharing panel states, from one source. */
   sharingSummary: () =>
     request<{ shared_out: number; shared_in: number; private: number }>('/cards/sharing-summary'),

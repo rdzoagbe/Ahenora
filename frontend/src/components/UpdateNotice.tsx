@@ -1,0 +1,195 @@
+import React, { useCallback, useEffect, useState } from 'react';
+import { Linking, Platform, StyleSheet, Text, View } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
+import * as Updates from 'expo-updates';
+import { RefreshCw, Sparkles, Store } from 'lucide-react-native';
+
+import { PressScale } from './PressScale';
+import { useUI, UIColors } from './Kit';
+import { useStore } from '../store';
+import { api } from '../api';
+import { WHATS_NEW } from '../whatsNew';
+import { logger } from '../logger';
+
+/**
+ * Telling people an update happened.
+ *
+ * Updates used to arrive in silence. Over-the-air ones download in the
+ * background and apply on the NEXT launch, so from the outside a fix that
+ * shipped looks exactly like a fix that did not — you close the app, reopen
+ * it, and the old screen is still there. And an install whose runtime is too
+ * old cannot receive them at all, so it waits forever for something that will
+ * never come. Neither state said anything.
+ *
+ * Three things can be true, and only one is ever shown:
+ *
+ *   1. STORE   — this build cannot be updated over the air. Only a store
+ *                install moves it, so that is what it asks for.
+ *   2. RELAUNCH— a new bundle is downloaded and waiting. One tap applies it.
+ *   3. WHATS_NEW — the version changed since last launch. Say what changed and
+ *                where to find it, once.
+ *
+ * Ranked in that order because each is more urgent than the one below it, and
+ * shown one at a time: three stacked notices is a nag bar, and people learn to
+ * dismiss those without reading. Every one is dismissible, and none of them
+ * interrupts — they sit at the top of the screen, not over the work.
+ */
+
+const SEEN_VERSION_KEY = 'coo_seen_app_version';
+
+type Notice = 'store' | 'relaunch' | 'whatsNew' | null;
+
+/** "2.0.0" < "10.0.0" — compared as numbers, not strings. */
+function isBelow(version: string, minimum: string): boolean {
+  const a = version.split('.').map((n) => parseInt(n, 10) || 0);
+  const b = minimum.split('.').map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(a.length, b.length); i += 1) {
+    const x = a[i] ?? 0;
+    const y = b[i] ?? 0;
+    if (x !== y) return x < y;
+  }
+  return false;
+}
+
+export function UpdateNotice() {
+  const ui = useUI();
+  const { t } = useStore();
+  const styles = createStyles(ui);
+
+  const { isUpdatePending } = Updates.useUpdates();
+  const [notice, setNotice] = useState<Notice>(null);
+  const [dismissed, setDismissed] = useState(false);
+  const [storeUrl, setStoreUrl] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const version = Constants.expoConfig?.version || '';
+
+  // Which of the three, decided once on mount. The store check needs the
+  // server's opinion; the "what's new" check needs what this device saw last.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        // Only native builds can be stranded — the web app reloads itself and
+        // has its own banner for that.
+        if (Platform.OS !== 'web' && Updates.isEnabled) {
+          const info = await api.appVersionInfo().catch(() => null);
+          const runtime = Updates.runtimeVersion || '';
+          if (!cancelled && info?.min_runtime && runtime && isBelow(runtime, info.min_runtime)) {
+            setStoreUrl(info.android_store_url || null);
+            setNotice('store');
+            return;
+          }
+        }
+
+        const seen = await AsyncStorage.getItem(SEEN_VERSION_KEY).catch(() => null);
+        if (cancelled) return;
+        // A first run records the version without announcing it: "what's new"
+        // to somebody who has never seen the old one is just noise.
+        if (!seen) {
+          await AsyncStorage.setItem(SEEN_VERSION_KEY, version).catch(() => undefined);
+          return;
+        }
+        if (seen !== version && WHATS_NEW[version]?.length) setNotice('whatsNew');
+      } catch (e) {
+        logger.warn('update notice check failed', e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [version]);
+
+  // A staged update outranks "what's new" — applying it is the useful action,
+  // and the notes it would show are for the version about to be replaced.
+  const shown: Notice = notice === 'store' ? 'store' : (isUpdatePending ? 'relaunch' : notice);
+
+  const dismiss = useCallback(async () => {
+    setDismissed(true);
+    if (shown === 'whatsNew') {
+      await AsyncStorage.setItem(SEEN_VERSION_KEY, version).catch(() => undefined);
+    }
+  }, [shown, version]);
+
+  const act = useCallback(async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      if (shown === 'store' && storeUrl) { await Linking.openURL(storeUrl); return; }
+      if (shown === 'relaunch') { await Updates.reloadAsync(); return; }
+      await dismiss();
+    } catch (e) {
+      logger.warn('update notice action failed', e);
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, shown, storeUrl, dismiss]);
+
+  if (!shown || dismissed) return null;
+
+  const copy = {
+    store: { title: t('update_store_title'), body: t('update_store_body'), cta: t('update_store_cta'), Icon: Store },
+    relaunch: { title: t('update_relaunch_title'), body: t('update_relaunch_body'), cta: t('update_relaunch_cta'), Icon: RefreshCw },
+    whatsNew: { title: t('update_whats_new_title', { version }), body: '', cta: t('update_whats_new_cta'), Icon: Sparkles },
+  }[shown];
+
+  return (
+    <View style={styles.wrap} pointerEvents="box-none">
+      <View style={styles.card}>
+        <View style={styles.head}>
+          <copy.Icon color={ui.orangeText} size={17} />
+          <Text style={styles.title} numberOfLines={2}>{copy.title}</Text>
+          <PressScale
+            testID="update-notice-dismiss"
+            accessibilityRole="button"
+            accessibilityLabel={t('close')}
+            onPress={dismiss}
+            hitSlop={10}
+            style={styles.x}
+          >
+            <Text style={styles.xText}>✕</Text>
+          </PressScale>
+        </View>
+
+        {shown === 'whatsNew' ? (
+          // Written for a parent, not a changelog: what changed and which tab
+          // to look on. A list of fixes nobody can act on is not news.
+          <View style={styles.list}>
+            {(WHATS_NEW[version] || []).map((key) => (
+              <Text key={key} style={styles.item}>• {t(key)}</Text>
+            ))}
+          </View>
+        ) : (
+          <Text style={styles.body}>{copy.body}</Text>
+        )}
+
+        <PressScale
+          testID="update-notice-action"
+          accessibilityRole="button"
+          onPress={act}
+          disabled={busy}
+          style={styles.btn}
+        >
+          <Text style={styles.btnText}>{copy.cta}</Text>
+        </PressScale>
+      </View>
+    </View>
+  );
+}
+
+const createStyles = (ui: UIColors) => StyleSheet.create({
+  wrap: { position: 'absolute', top: 0, left: 0, right: 0, alignItems: 'center', paddingTop: 10, paddingHorizontal: 12, zIndex: 999 },
+  card: {
+    width: '100%', maxWidth: 620,
+    backgroundColor: ui.orangeSoft, borderWidth: 1, borderColor: ui.orange,
+    borderRadius: 18, padding: 14, gap: 8,
+  },
+  head: { flexDirection: 'row', alignItems: 'center', gap: 9 },
+  title: { flex: 1, minWidth: 0, color: ui.orangeText, fontFamily: 'Inter_800ExtraBold', fontSize: 14, lineHeight: 19 },
+  body: { color: ui.orangeText, fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 19 },
+  list: { gap: 4 },
+  item: { color: ui.orangeText, fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 19 },
+  btn: { alignSelf: 'flex-start', backgroundColor: ui.orangeDeep, borderRadius: 999, paddingVertical: 9, paddingHorizontal: 16, marginTop: 2 },
+  btnText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
+  x: { padding: 2 },
+  xText: { color: ui.orangeText, fontFamily: 'Inter_700Bold', fontSize: 13 },
+});
