@@ -231,6 +231,9 @@ export default function Kids() {
     [rewards, activeChild?.weekend_goal_reward_id],
   );
   const hasWeekendTreats = useMemo(() => rewards.some((r) => r.weekend), [rewards]);
+  // The week has been won: the weekend treat is affordable from this week's
+  // earnings, so cashing it in is the thing to do next.
+  const weekendEarned = !!weekendGoal && weekEarned >= weekendGoal.cost_stars;
 
   /**
    * One cell per day of the current week, Monday first, carrying the stars
@@ -1190,8 +1193,18 @@ export default function Kids() {
                         </PressScale>
                       </View>
                     </View>
-                    <PressScale testID="kids-redeem" onPress={() => setKidsTab('rewards')} style={styles.redeemBtn}>
-                      <Text style={styles.redeemText}>{t('redeem')}</Text>
+                    {/* Redeem steps back once the week is won.
+                        It is the highest-contrast element on the screen and it
+                        only changes tab, while "Cash in" — the payoff the whole
+                        weekly rhythm exists to produce — is a smaller pill a
+                        card below. When the treat is actually earned, the eye
+                        should land on the treat. */}
+                    <PressScale
+                      testID="kids-redeem"
+                      onPress={() => setKidsTab('rewards')}
+                      style={[styles.redeemBtn, weekendEarned && styles.redeemBtnQuiet]}
+                    >
+                      <Text style={[styles.redeemText, weekendEarned && styles.redeemTextQuiet]}>{t('redeem')}</Text>
                     </PressScale>
                   </Card>
                   <PressScale
@@ -2135,6 +2148,8 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   assignDueTextActive: { color: ui.orangeText },
   assignTaskHint: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, marginTop: 8, marginBottom: 14, lineHeight: 18 },
   redeemText: { color: ui.bg, fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
+  redeemBtnQuiet: { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: ui.line },
+  redeemTextQuiet: { color: ui.text },
   weeklyLine: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 13.5, marginTop: 12, paddingHorizontal: 2 },
 
   weekCard: { marginTop: 12, padding: 16 },
