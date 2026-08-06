@@ -3092,10 +3092,15 @@ async def member_star_history(member_id: str, user=Depends(require_user)):
     if not member:
         raise HTTPException(status_code=404, detail="Family member not found")
 
+    # 200, not 50. The Kids screen buckets these by weekday to draw the week's
+    # momentum row, and a family using the quick-add chips daily crosses 50
+    # entries by midweek — so Monday and Tuesday silently rendered as empty
+    # boxes next to a meter that counted them. "You did nothing on Monday", on
+    # a child's own screen, because of a query limit.
     cursor = database["star_transactions"].find(
         {"member_id": member_id, "family_id": user["family_id"]},
         {"_id": 0},
-    ).sort("created_at", -1).limit(50)
+    ).sort("created_at", -1).limit(200)
 
     return [public_star_transaction(item) async for item in cursor]
 
@@ -4221,6 +4226,33 @@ async def list_shared_with_coparent(direction: str = "out", user=Depends(require
     return rows
 
 
+@app.get("/api/cards/sharing-summary")
+async def sharing_summary(user=Depends(require_user)):
+    """The three numbers the privacy panel states, counted in one place.
+
+    The client used to derive these from the agenda it already had, which is a
+    different population: /api/cards returns the whole family's SHARED items
+    (so a co-parent's items inflated "yours") and only dated, open ones (so
+    undated private items went uncounted). The banner and the panel therefore
+    disagreed one tap apart — on the one screen whose entire job is to be
+    believed. Counted here, against the same queries the lists use, they agree
+    by construction.
+
+    Legacy ownerless cards are excluded from all three for the same reason the
+    lists exclude them: each number is a claim about a person.
+    """
+    database = get_db()
+    fam = user["family_id"]
+    me = user["user_id"]
+    shared_out = await database["cards"].count_documents(
+        {"family_id": fam, "created_by_user_id": me, "shared": True})
+    shared_in = await database["cards"].count_documents(
+        {"family_id": fam, "shared": True, "created_by_user_id": {"$nin": [me, None]}})
+    private = await database["cards"].count_documents(
+        {"family_id": fam, "created_by_user_id": me, "shared": {"$ne": True}})
+    return {"shared_out": shared_out, "shared_in": shared_in, "private": private}
+
+
 @app.get("/api/cards/mine")
 async def list_assigned_to_me(user=Depends(require_user)):
     """What is actually on my plate, soonest first.
@@ -4472,6 +4504,39 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
             await send_star_milestone_alert(user["family_id"], member.get("name", "Your child"), old_stars, old_stars + 5)
 
     return public_card(updated)
+
+
+@app.post("/api/cards/{card_id}/unshare")
+async def unshare_card(card_id: str, user=Depends(require_user)):
+    """Pull a shared item back to private.
+
+    A twin of /share rather than a PATCH on purpose. The offline queue replays
+    PATCHes, so `updateCard(id, {shared: false})` resolved optimistically with
+    no signal — the row left the sharing panel, nothing failed, and the item
+    stayed visible to the co-parent for as long as the phone was offline. A
+    revoke is the one write that must never claim success it has not got, so it
+    takes a path the queue will not swallow.
+
+    No notification: telling someone the moment you stop sharing with them
+    turns a private decision into an announcement.
+    """
+    database = get_db()
+    card = await database["cards"].find_one(
+        {"card_id": card_id, "family_id": user["family_id"]},
+        {"_id": 0},
+    )
+    if not card:
+        raise HTTPException(status_code=404, detail="Card not found")
+
+    owner = card.get("created_by_user_id")
+    if owner and owner != user["user_id"]:
+        raise HTTPException(status_code=403, detail="Only the person who added this can change its sharing")
+
+    if card.get("shared"):
+        await database["cards"].update_one({"card_id": card_id}, {"$set": {"shared": False}})
+        card["shared"] = False
+
+    return public_card(card)
 
 
 @app.post("/api/cards/{card_id}/share")

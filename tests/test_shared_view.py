@@ -92,3 +92,72 @@ class SharedView(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
+class SharingNumbersAgree(unittest.TestCase):
+    """The panel's whole job is to be believed.
+
+    The counts used to be inferred client-side from the agenda, which is a
+    different population — it carries the co-parent's shared items and drops
+    undated ones — so the banner and the panel stated different numbers one tap
+    apart. Counted server-side against the same queries the lists use, they
+    cannot drift.
+    """
+
+    A = {"user_id": "u_a", "family_id": "fam1", "name": "Amara", "email": "a@x.com"}
+    B = {"user_id": "u_b", "family_id": "fam1", "name": "Tom", "email": "b@x.com"}
+
+    def setUp(self):
+        self.db = FakeDatabase()
+        self._get_db = server.get_db
+        server.get_db = lambda: self.db
+
+    def tearDown(self):
+        server.get_db = self._get_db
+
+    def _card(self, cid, owner, shared, dated=True):
+        asyncio.run(self.db["cards"].insert_one({
+            "card_id": cid, "family_id": "fam1", "type": "TASK", "title": cid,
+            "status": "OPEN", "source": "MANUAL", "created_at": server.utcnow(),
+            "due_date": server.utcnow() if dated else None,
+            "created_by_user_id": owner, "shared": shared}))
+
+    def test_counts_match_the_lists_they_describe(self):
+        self._card("mine_shared", "u_a", True)
+        self._card("mine_shared_undated", "u_a", True, dated=False)
+        self._card("mine_private", "u_a", False)
+        self._card("theirs_shared", "u_b", True)
+        self._card("legacy", None, True)          # ownerless: belongs to nobody
+
+        summary = asyncio.run(server.sharing_summary(user=dict(self.A)))
+        out = asyncio.run(server.list_shared_with_coparent(direction="out", user=dict(self.A)))
+        inn = asyncio.run(server.list_shared_with_coparent(direction="in", user=dict(self.A)))
+
+        # The number the banner shows IS the length of the list it opens.
+        self.assertEqual(summary["shared_out"], len(out))
+        self.assertEqual(summary["shared_in"], len(inn))
+        # Undated items count too — they are just as visible.
+        self.assertEqual(summary["shared_out"], 2)
+        self.assertEqual(summary["shared_in"], 1)
+        self.assertEqual(summary["private"], 1)
+
+    def test_a_co_parents_private_item_is_counted_by_nobody(self):
+        self._card("theirs_private", "u_b", False)
+        summary = asyncio.run(server.sharing_summary(user=dict(self.A)))
+        self.assertEqual(summary["shared_in"], 0)
+        self.assertEqual(summary["private"], 0)   # not mine to count
+
+    def test_unsharing_takes_it_out_of_their_view(self):
+        self._card("c1", "u_a", True)
+        asyncio.run(server.unshare_card("c1", user=dict(self.A)))
+        self.assertEqual(asyncio.run(server.sharing_summary(user=dict(self.A)))["shared_out"], 0)
+        self.assertEqual(asyncio.run(server.list_shared_with_coparent(direction="in", user=dict(self.B))), [])
+
+    def test_only_the_owner_may_revoke(self):
+        self._card("c1", "u_a", True)
+        with self.assertRaises(server.HTTPException) as e:
+            asyncio.run(server.unshare_card("c1", user=dict(self.B)))
+        self.assertEqual(e.exception.status_code, 403)
+        # and it is still shared
+        self.assertEqual(asyncio.run(server.sharing_summary(user=dict(self.A)))["shared_out"], 1)

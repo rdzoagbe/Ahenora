@@ -312,19 +312,26 @@ export default function Kids() {
   }, [members]);
 
 
+  // Tapping between children fires overlapping history fetches, and without a
+  // sequence the last RESPONSE wins rather than the last REQUEST — one
+  // child's ledger and weekday row rendered under another child's name and
+  // star total.
+  const historySeqRef = useRef(0);
   const refreshHistory = useCallback(async (memberId?: string | null) => {
+    const seq = ++historySeqRef.current;
     if (!memberId) {
-      setHistoryItems([]);
+      if (seq === historySeqRef.current) setHistoryItems([]);
       return;
     }
     setHistoryLoading(true);
     try {
       const result = await api.memberStarHistory(memberId);
+      if (seq !== historySeqRef.current) return;   // a newer child was picked
       setHistoryItems(result);
     } catch (e: any) {
       const message = String(e?.message || e || '');
       if (!message.includes('404')) logger.warn('Star history load failed:', message);
-      setHistoryItems([]);
+      if (seq === historySeqRef.current) setHistoryItems([]);
     } finally {
       setHistoryLoading(false);
     }

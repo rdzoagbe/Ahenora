@@ -170,7 +170,7 @@ export default function Calendar() {
   const [childNames, setChildNames] = useState<Set<string>>(new Set());
   const [coparentViewOpen, setCoparentViewOpen] = useState(false);
   const [importPickerOpen, setImportPickerOpen] = useState(false);
-  const [sharedOutCount, setSharedOutCount] = useState<number | null>(null);
+  const [shareCounts, setShareCounts] = useState<{ shared_out: number; shared_in: number; private: number } | null>(null);
   const [shareDir, setShareDir] = useState<'out' | 'in'>('out');
   const [sharedOut, setSharedOut] = useState<Card[] | null>(null);
   const [sharedIn, setSharedIn] = useState<Card[] | null>(null);
@@ -225,9 +225,9 @@ export default function Calendar() {
         // inflated a figure that claims to describe yours — and it dropped
         // undated ones, which the panel shows. Two numbers for one idea,
         // disagreeing one tap apart, on a privacy control.
-        api.sharedWithCoparent('out'),
+        api.sharingSummary(),
       ]);
-      if (sharedRes.status === 'fulfilled') setSharedOutCount(sharedRes.value.length);
+      if (sharedRes.status === 'fulfilled') setShareCounts(sharedRes.value);
       if (cardsRes.status === 'fulfilled') setCards(cardsRes.value.filter((card) => card.status === 'OPEN' && card.due_date));
       if (carpoolRes.status === 'fulfilled') setCarpools(carpoolRes.value);
       if (membersRes.status === 'fulfilled') {
@@ -271,7 +271,10 @@ export default function Calendar() {
   const makePrivateFromView = useCallback(async (card: Card) => {
     setMakingPrivate(card.card_id);
     try {
-      await api.updateCard(card.card_id, { shared: false });
+      // Non-queueable on purpose: offline this must fail loudly rather than
+      // hide the row while the co-parent can still see the item.
+      await api.unshareCard(card.card_id);
+      setShareCounts((c) => (c ? { ...c, shared_out: Math.max(0, c.shared_out - 1), private: c.private + 1 } : c));
       setSharedOut((prev) => (prev ? prev.filter((c) => c.card_id !== card.card_id) : prev));
       await load();
     } catch (e) {
@@ -765,7 +768,9 @@ export default function Calendar() {
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.coparentLinkTitle}>{t('cal_share_view_link')}</Text>
                   <Text style={styles.coparentLinkSub} numberOfLines={2}>
-                    {t('cal_share_view_sub', { n: sharedOutCount ?? 0 })}
+                    {shareCounts
+                      ? t('cal_share_view_sub', { n: shareCounts.shared_out })
+                      : t('cal_share_view_sub_unknown')}
                   </Text>
                 </View>
                 <ChevronRight color={ui.muted} size={18} />
@@ -1120,7 +1125,7 @@ export default function Calendar() {
           // Everything of yours the co-parent cannot see. Counted from the
           // agenda already in hand, so the panel states both halves of the
           // rule: what they see, and how much stays yours.
-          const privateCount = cards.filter((c) => !c.shared).length;
+          const privateCount = shareCounts?.private ?? 0;
           return (
         <>
         <View style={styles.detailHeader}>
@@ -1172,8 +1177,8 @@ export default function Calendar() {
           <>
           <Text style={styles.shareCountLabel}>
             {shareDir === 'out'
-              ? t('cal_share_count_out', { n: items.length })
-              : t('cal_share_count_in', { n: items.length })}
+              ? (items.length === 1 ? t('cal_share_count_out_one') : t('cal_share_count_out', { n: items.length }))
+              : (items.length === 1 ? t('cal_share_count_in_one') : t('cal_share_count_in', { n: items.length }))}
           </Text>
           <View style={styles.coparentList}>
             {items.map((c, i) => (
@@ -1224,7 +1229,7 @@ export default function Calendar() {
             your own side — what the co-parent keeps private is not yours to count. */}
         {shareDir === 'out' && items !== null && privateCount > 0 ? (
           <Text style={styles.sharePrivateNote}>
-            {t('cal_share_private_note', { n: privateCount })}
+            {privateCount === 1 ? t('cal_share_private_note_one') : t('cal_share_private_note', { n: privateCount })}
           </Text>
         ) : null}
         </>
