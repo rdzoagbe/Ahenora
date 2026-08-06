@@ -73,6 +73,21 @@ def main():
             marker = health.get("invite_flow", "")
             if not EXPECTED_MARKER or marker == EXPECTED_MARKER:
                 ok("health", f"db {health.get('db_latency_ms')}ms, invite_flow {marker or 'n/a'}")
+                # Which build is actually serving. The deploy marker above only
+                # moves when somebody bumps it by hand, so it cannot tell a
+                # current deploy from a nine-day-old one — and "is the backend
+                # I just merged actually live?" turned out to be the question
+                # standing between a 500 and its diagnosis. This answers it in
+                # one line, on every run, for free.
+                vstatus, vinfo = call("GET", "/app/version-info")
+                if vstatus == 200:
+                    ok("deployed build", f"store_version {vinfo.get('store_version')}, "
+                                         f"min_runtime {vinfo.get('min_runtime')}")
+                else:
+                    # A 404 here is itself the answer: the endpoint shipped on
+                    # 2026-08-06, so production predates it.
+                    ok("deployed build", f"/app/version-info -> {vstatus} "
+                                         f"(endpoint missing: production is running older code)")
                 break
             if time.time() > deadline:
                 fail("health", f"deploy marker still {marker!r}, expected {EXPECTED_MARKER!r} after 10min")

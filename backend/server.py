@@ -4158,14 +4158,26 @@ async def _accept_invite_request(token: str, user: dict, via: str = "unknown"):
                 {"route": via}, {"$inc": {"count": 1}}, upsert=True)
         except Exception as exc:  # noqa: BLE001 — a counter must never fail a join
             log.warning("invite route not counted (%s): %s", via, exc)
+        # Serialising the result is part of accepting it. This sat outside the
+        # try, so a failure here produced Starlette's bare "Internal Server
+        # Error" instead of the readable message this handler exists to give —
+        # and that difference is diagnostic: production returning the generic
+        # text proves the failure was NOT in the join itself.
+        result = {"ok": True, "joined": joined, "user": public_user(fresh)}
     except HTTPException:
         raise
     except Exception as exc:
         # A plain-text 500 reaches the join card as an unreadable mystery;
         # a JSON detail is shown to the user verbatim and names the problem.
+        # The exception TYPE goes in the detail — not the message, which can
+        # carry record contents — so a failure is diagnosable from the smoke
+        # test's output alone, without shell access to the running container.
         log.exception("invite accept failed")
-        raise HTTPException(status_code=500, detail="Join failed. Please try again.")
-    return {"ok": True, "joined": joined, "user": public_user(fresh)}
+        raise HTTPException(
+            status_code=500,
+            detail=f"Join failed. Please try again. ({type(exc).__name__})",
+        )
+    return result
 
 
 # -----------------------------------------------------------------------------
