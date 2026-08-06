@@ -1,7 +1,7 @@
 # ⚠️ Native Android config — read before changing icons, permissions, or splash
 
 This project commits a native `android/` folder (bare/prebuild workflow). That
-has one consequence that has already caused **three production incidents**:
+has one consequence that has already caused **five production incidents**:
 
 > **`app.json` is NOT the source of truth for anything native.** The committed
 > files under `android/app/src/main/` are what actually ship. Editing `app.json`
@@ -24,6 +24,20 @@ has one consequence that has already caused **three production incidents**:
    even with the new launcher icon. Fixed by regenerating all five density PNGs
    directly from the Spark Portal glyph.
 
+4. **Nine days of updates that reached nobody (the worst one):** `app.json`
+   went to `runtimeVersion: "2.0.0"` for the SDK 57 upgrade on 2026-07-28. The
+   committed `res/values/strings.xml` stayed at `1.0.0`, and that string — not
+   `app.json` — is what `AndroidManifest.xml` feeds to expo-updates. So every
+   `eas update` published at 2.0.0 while every installed phone reported 1.0.0,
+   and expo-updates applies an update **only** when the two match. It does not
+   warn, error, or retry: the update is published successfully and silently
+   arrives nowhere. Three separate bug fixes were shipped, hand-tested, and
+   reported broken over those nine days, because the phone was still running a
+   bundle from July. Now guarded by `scripts/check-runtime-version.js`.
+5. **The store showed the wrong version:** `app.json` said `1.0.2`; every
+   uploaded bundle reported `1.0.0`, because Play reads `versionName` from
+   `app/build.gradle`. Same guard covers it.
+
 ## The rule
 When you change any of the following, you MUST edit the **native files**, not
 `app.json` — and it needs a **new AAB** (native change, never OTA):
@@ -35,14 +49,25 @@ When you change any of the following, you MUST edit the **native files**, not
 | Splash color | `res/values/colors.xml` (`splashscreen_background`) + `res/values/styles.xml` |
 | Splash image | `res/drawable*/splashscreen*.*` |
 | Status bar color | `res/values/styles.xml` (`statusBarColor`) |
+| **OTA runtime** | `res/values/strings.xml` (`expo_runtime_version`) — must equal `app.json`'s `runtimeVersion` or updates reach nobody |
+| **Store version** | `app/build.gradle` (`versionName`) — must equal `app.json`'s `version` |
 
 Icon regeneration script: `scratchpad/iconregen/gen.js` (sharp) generates every
 density from `assets/images/{icon,adaptive-foreground,adaptive-background}.png`.
 
-## The permissions guard (CI)
-`scripts/check-android-permissions.js` fails the build if the manifest declares a
-forbidden broad permission (media/storage) without a `tools:node="remove"`. Run
-it before every AAB: `node scripts/check-android-permissions.js`.
+## The guards (CI)
+Both now run in `frontend-ci-eas-update.yml` on every push. They used to be a
+line in this file asking a human to remember, which is how incidents 1, 4 and 5
+happened.
+
+- `scripts/check-runtime-version.js` — fails if `expo_runtime_version` in
+  `strings.xml` disagrees with `runtimeVersion` in `app.json`, or if
+  `versionName` in `build.gradle` disagrees with `version`. Either mismatch is
+  invisible at build time and catastrophic afterwards.
+- `scripts/check-android-permissions.js` — fails if the manifest declares a
+  forbidden broad permission (media/storage) without `tools:node="remove"`.
+
+Run both before every AAB.
 
 ## The real long-term fix (do in the Expo 57 session)
 Make `app.json` authoritative again by regenerating `android/` from it. BUT the
