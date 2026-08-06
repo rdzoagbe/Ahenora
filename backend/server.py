@@ -865,9 +865,27 @@ def public_member(member: dict) -> dict:
         "stars": member.get("stars", 0),
         "week_earned": max(0, int(member.get("week_earned", 0) or 0)),
         "weekend_goal_reward_id": member.get("weekend_goal_reward_id"),
+        # The rule the week is measured against, and whether it has already
+        # been cashed in — held here so the client never keeps its own copy
+        # of a number the server enforces.
+        "weekly_target": WEEKLY_TARGET,
+        "week_claimed": _coerce_dt(member.get("week_claimed_for")) == current_week_start(),
         "has_pin": bool(member.get("pin_hash")),
         "has_account": bool(member.get("user_id")),
     }
+
+
+# What a full week of the everyday jobs is worth, and the target it buys.
+#
+# The three quick jobs come to 7 a day — 49 over seven days, one short of the
+# target. That gap was deliberate and wrong: a goal a perfect week cannot reach
+# reads as "you did everything and it still is not enough", which is the exact
+# discouragement the weekly rhythm exists to avoid. The seventh active day pays
+# the last star, so a complete week lands exactly on 50 and the final one is
+# plainly for keeping it up.
+WEEKLY_TARGET = 50
+FULL_WEEK_BONUS = 1
+FULL_WEEK_DAYS = 7
 
 
 def current_week_start():
@@ -1013,6 +1031,9 @@ def public_redemption(r: dict) -> dict:
         "reward_title": r.get("reward_title", ""),
         "reward_icon": r.get("reward_icon"),
         "cost_stars": int(r.get("cost_stars", 0) or 0),
+        # A weekly claim costs nothing, so cost_stars alone cannot tell it
+        # apart from a free reward — and the two are refunded differently.
+        "weekly": bool(r.get("weekly")),
         "status": r.get("status", "pending"),
         "created_at": iso(r["created_at"]),
         "fulfilled_at": iso(r.get("fulfilled_at")) if r.get("fulfilled_at") else None,
@@ -1030,6 +1051,12 @@ def public_star_transaction(transaction: dict) -> dict:
         "created_by_user_id": transaction.get("created_by_user_id"),
         "created_by_name": transaction.get("created_by_name"),
         "created_at": iso(transaction.get("created_at")),
+        # The day the star was FOR, which is not always the day it was given.
+        # The week row on the Kids screen buckets by this; without it a parent
+        # filling in a missed Tuesday on Sunday saw the star land on Sunday
+        # while the meter above — which already reads awarded_for — counted it
+        # on Tuesday. The row and the meter must describe the same week.
+        "awarded_for": iso(transaction.get("awarded_for")) if transaction.get("awarded_for") else None,
     }
 
 
@@ -1919,6 +1946,16 @@ class MemberPatchIn(BaseModel):
 class StarAdjustmentIn(BaseModel):
     delta: int
     reason: Optional[str] = None
+    # The day the job was done, when that is not today. Bounded to the current
+    # week by the handler: editing a settled week would move a meter that has
+    # already paid out a treat.
+    awarded_for: Optional[str] = None
+
+
+class WeeklyClaimIn(BaseModel):
+    """What the week is being cashed in for. Free text, because the ideas are
+    a family's own — "Bowling with Dad" is as valid as anything we ship."""
+    title: str = Field(max_length=80)
 
 
 class RewardPatchIn(BaseModel):
@@ -2972,6 +3009,7 @@ async def award_stars_to_member(
     delta: int,
     reason: str,
     user: dict,
+    awarded_for=None,
 ) -> Optional[dict]:
     """Award stars and write the matching ledger entry, atomically.
 
@@ -2999,6 +3037,10 @@ async def award_stars_to_member(
         {"$inc": {"stars": delta, "week_earned": delta}},
     )
     await log_activity(database, user, "stars_awarded", member.get("name", ""), delta)
+    # `created_at` is when this was recorded; `awarded_for` is the day the job
+    # was actually done. They differ whenever a parent catches up on Sunday,
+    # and only the second one can honestly place a star on a weekday.
+    when = _coerce_dt(awarded_for) or utcnow()
     transaction = {
         "transaction_id": new_id("star"),
         "family_id": family_id,
@@ -3008,9 +3050,47 @@ async def award_stars_to_member(
         "created_by_user_id": user.get("user_id"),
         "created_by_name": user.get("name"),
         "created_at": utcnow(),
+        "awarded_for": when,
     }
     await database["star_transactions"].insert_one(transaction)
+    await _pay_full_week_bonus(database, family_id, member_id, user)
     return transaction
+
+
+async def _pay_full_week_bonus(database, family_id: str, member_id: str, user: dict) -> None:
+    """The last star of a complete week, paid once.
+
+    Guarded on the member document rather than counted twice: the seventh
+    active day can be reached by two awards landing together, and a bonus paid
+    twice would put the meter above a target nobody earned.
+    """
+    week_start = current_week_start()
+    days = set()
+    async for txn in database["star_transactions"].find(
+        {"family_id": family_id, "member_id": member_id},
+        {"_id": 0, "awarded_for": 1, "created_at": 1, "delta": 1},
+    ):
+        if int(txn.get("delta") or 0) <= 0:
+            continue
+        when = _coerce_dt(txn.get("awarded_for")) or _coerce_dt(txn.get("created_at"))
+        if when and when >= week_start:
+            days.add(when.date())
+    if len(days) < FULL_WEEK_DAYS:
+        return
+
+    claimed = await database["family_members"].update_one(
+        {"member_id": member_id, "family_id": family_id,
+         "week_bonus_for": {"$ne": week_start}},
+        {"$set": {"week_bonus_for": week_start},
+         "$inc": {"stars": FULL_WEEK_BONUS, "week_earned": FULL_WEEK_BONUS}},
+    )
+    if claimed.matched_count:
+        await database["star_transactions"].insert_one({
+            "transaction_id": new_id("star"), "family_id": family_id,
+            "member_id": member_id, "delta": FULL_WEEK_BONUS,
+            "reason": "Full week", "created_by_user_id": user.get("user_id"),
+            "created_by_name": user.get("name"),
+            "created_at": utcnow(), "awarded_for": utcnow()})
 
 
 @app.post("/api/family/members/{member_id}/stars")
@@ -3037,6 +3117,19 @@ async def adjust_member_stars(member_id: str, payload: StarAdjustmentIn, user=De
 
     member = await roll_week_if_stale(database, member)
 
+    # A star can be credited to an earlier day this week — a parent who catches
+    # up on Sunday should not have Tuesday's job land on Sunday. Bounded to the
+    # current week in both directions: the future is not a day anyone has
+    # worked, and a settled week may already have paid out a treat.
+    awarded_for = utcnow()
+    if payload.awarded_for:
+        parsed = _coerce_dt(parse_dt(payload.awarded_for))
+        if not parsed:
+            raise HTTPException(status_code=400, detail="Invalid date")
+        if parsed < current_week_start() or parsed > utcnow():
+            raise HTTPException(status_code=400, detail="Pick a day from this week")
+        awarded_for = parsed
+
     transaction = {
         "transaction_id": new_id("star"),
         "family_id": user["family_id"],
@@ -3046,6 +3139,7 @@ async def adjust_member_stars(member_id: str, payload: StarAdjustmentIn, user=De
         "created_by_user_id": user["user_id"],
         "created_by_name": user.get("name"),
         "created_at": utcnow(),
+        "awarded_for": awarded_for,
     }
 
     # Increment rather than write a total computed from an earlier read: two
@@ -3069,6 +3163,9 @@ async def adjust_member_stars(member_id: str, payload: StarAdjustmentIn, user=De
         raise HTTPException(status_code=400, detail="Stars cannot go below zero")
 
     await database["star_transactions"].insert_one(transaction)
+    if delta > 0:
+        # Filling in a missed day can be the thing that completes the week.
+        await _pay_full_week_bonus(database, user["family_id"], member_id, user)
     updated = await database["family_members"].find_one({"member_id": member_id}, {"_id": 0})
     new_total = int(updated.get("stars", 0)) if updated else current_stars + delta
 
@@ -3080,6 +3177,59 @@ async def adjust_member_stars(member_id: str, payload: StarAdjustmentIn, user=De
         "member": public_member(updated),
         "transaction": public_star_transaction(transaction),
     }
+
+
+@app.post("/api/family/members/{member_id}/weekly-claim")
+async def claim_weekly_treat(member_id: str, payload: WeeklyClaimIn, user=Depends(require_user)):
+    """Cash the week in for a treat.
+
+    The week is the currency. A child who reaches the weekly target has earned
+    one treat, and which treat is a conversation rather than a price list — the
+    ideas are named by the family, not costed by us. That is why nothing here
+    spends `stars`: the bank is savings, untouched, and this claims the WEEK.
+
+    One claim per week, guarded on the member document, so two parents tapping
+    together cannot hand out two treats for one week's work. The meter is not
+    reset: it records what was earned, and zeroing it would make a week look
+    unworked the moment it paid off.
+    """
+    database = get_db()
+    member = await database["family_members"].find_one(
+        {"member_id": member_id, "family_id": user["family_id"]}, {"_id": 0})
+    if not member:
+        raise HTTPException(status_code=404, detail="Family member not found")
+
+    member = await roll_week_if_stale(database, member)
+    week_start = current_week_start()
+    title = sanitize_user_text(payload.title, 80)
+    if len(title) < 2:
+        raise HTTPException(status_code=400, detail="Give the treat a name")
+
+    claimed = await database["family_members"].update_one(
+        {"member_id": member_id, "family_id": user["family_id"],
+         "week_earned": {"$gte": WEEKLY_TARGET},
+         "week_claimed_for": {"$ne": week_start}},
+        {"$set": {"week_claimed_for": week_start}},
+    )
+    if claimed.matched_count == 0:
+        fresh = await database["family_members"].find_one(
+            {"member_id": member_id, "family_id": user["family_id"]}, {"_id": 0}) or {}
+        if _coerce_dt(fresh.get("week_claimed_for")) == week_start:
+            raise HTTPException(status_code=400, detail="This week's treat has already been claimed.")
+        raise HTTPException(status_code=400, detail="Not enough stars earned this week yet.")
+
+    # Recorded as a redemption so it appears wherever "what are we still owed?"
+    # is answered — at no star cost, because the week already paid for it.
+    redemption = {
+        "redemption_id": new_id("redemption"), "family_id": user["family_id"],
+        "member_id": member_id, "reward_id": None,
+        "reward_title": title, "reward_icon": None,
+        "cost_stars": 0, "status": "pending", "created_at": utcnow(),
+        "weekly": True, "week_start": week_start,
+        "created_by_user_id": user["user_id"], "fulfilled_at": None}
+    await database["redemptions"].insert_one(redemption)
+
+    return {"ok": True, "redemption": public_redemption(redemption)}
 
 
 @app.get("/api/family/members/{member_id}/star-history")

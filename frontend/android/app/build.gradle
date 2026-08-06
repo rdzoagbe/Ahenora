@@ -95,8 +95,17 @@ android {
         applicationId 'com.householdcoo.app'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
+        // versionCode is managed remotely by EAS (appVersionSource: "remote",
+        // autoIncrement), so this literal is only a placeholder for a local
+        // build and is overwritten on every EAS build.
         versionCode 1
-        versionName "1.0.0"
+        // versionName is NOT managed remotely, and this is a bare workflow —
+        // `frontend/android/` is committed and `expo prebuild` is never run, so
+        // nothing copies app.json's version down here. It has to be kept in
+        // step with app.json by hand. It drifted once already: app.json said
+        // 1.0.2 while every uploaded bundle reported 1.0.0 to Play.
+        // A test asserts these two agree, so it cannot drift silently again.
+        versionName "1.0.2"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
     }

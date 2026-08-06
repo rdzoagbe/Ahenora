@@ -1,6 +1,6 @@
 """Run every browser harness against a freshly exported build.
 
-Nine harnesses now exist, and until this script they only protected the app
+Twelve harnesses now exist, and until this script they only protected the app
 when somebody remembered to run them by hand. That is not protection, it is
 a habit — and habits are exactly what a verification suite is supposed to
 replace. This is what CI invokes.
@@ -52,6 +52,7 @@ HARNESSES = [
     "e2e_search.py",
     "e2e_handoff.py",
     "e2e_kid.py",
+    "e2e_week.py",
     "e2e_contrast.py",
     "e2e_offline.py",
     "e2e_webupdate.py",

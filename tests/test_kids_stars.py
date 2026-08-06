@@ -222,7 +222,7 @@ class StarEconomy(unittest.TestCase):
         # The bug: from 10, two concurrent -8s both read 10 and both wrote 2,
         # so one removal vanished. Now one wins and the other is rejected.
         db = self._install(stars=10, cost=60)
-        payload = type("P", (), {"delta": -8, "reason": "Tidy up"})()
+        payload = type("P", (), {"delta": -8, "reason": "Tidy up", "awarded_for": None})()
 
         async def race():
             return await asyncio.gather(
@@ -241,7 +241,7 @@ class StarEconomy(unittest.TestCase):
         # Awards have no floor to guard, but the lost-update bug applied to
         # them too: two +5s must leave +10, not +5.
         db = self._install(stars=0, cost=60)
-        payload = type("P", (), {"delta": 5, "reason": "Helped out"})()
+        payload = type("P", (), {"delta": 5, "reason": "Helped out", "awarded_for": None})()
 
         async def race():
             return await asyncio.gather(

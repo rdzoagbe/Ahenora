@@ -662,6 +662,11 @@ export interface FamilyMember {
   /** Stars earned since Monday — the meter that gates weekend treats and drives
    *  the weekly ring. The `stars` field above is the untouched saved bank. */
   week_earned?: number;
+  /** The target this week is measured against, and whether it has already been
+   *  cashed in. Both come from the server so the app never keeps its own copy
+   *  of a rule the server enforces. */
+  weekly_target?: number;
+  week_claimed?: boolean;
   weekend_goal_reward_id?: string | null;
   has_pin?: boolean;
   has_account?: boolean;
@@ -688,6 +693,8 @@ export interface Redemption {
   reward_title: string;
   reward_icon?: string | null;
   cost_stars: number;
+  /** Claimed with a full week rather than paid for out of the saved balance. */
+  weekly?: boolean;
   status: 'pending' | 'fulfilled' | 'cancelled';
   created_at: string;
   fulfilled_at?: string | null;
@@ -703,6 +710,8 @@ export interface StarTransaction {
   created_by_user_id?: string | null;
   created_by_name?: string | null;
   created_at?: string | null;
+  /** The day the star was for — set when a parent fills in a missed day. */
+  awarded_for?: string | null;
 }
 
 export interface MetricRow {
@@ -1091,7 +1100,17 @@ export const api = {
       method: 'PUT', body: { reward_id },
     });
   },
-  adjustMemberStars: (member_id: string, data: { delta: number; reason?: string }) => {
+  /** Claim the week's treat. Costs no stars — the week already paid for it. */
+  claimWeeklyTreat: (member_id: string, title: string) => {
+    cache.invalidate('familyMembers');
+    return request<{ ok: boolean; redemption: Redemption }>(
+      `/family/members/${member_id}/weekly-claim`,
+      { method: 'POST', body: { title } },
+    );
+  },
+  /** `awarded_for` credits an earlier day of THIS week, for a parent catching
+   *  up — without it, Tuesday's job lands on Sunday. */
+  adjustMemberStars: (member_id: string, data: { delta: number; reason?: string; awarded_for?: string }) => {
     cache.invalidate('familyMembers');
     return request<{ ok: boolean; member: FamilyMember; transaction: StarTransaction }>(
       `/family/members/${member_id}/stars`,
