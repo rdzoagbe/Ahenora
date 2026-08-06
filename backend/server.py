@@ -1031,6 +1031,9 @@ def public_redemption(r: dict) -> dict:
         "reward_title": r.get("reward_title", ""),
         "reward_icon": r.get("reward_icon"),
         "cost_stars": int(r.get("cost_stars", 0) or 0),
+        # A weekly claim costs nothing, so cost_stars alone cannot tell it
+        # apart from a free reward — and the two are refunded differently.
+        "weekly": bool(r.get("weekly")),
         "status": r.get("status", "pending"),
         "created_at": iso(r["created_at"]),
         "fulfilled_at": iso(r.get("fulfilled_at")) if r.get("fulfilled_at") else None,
@@ -1048,6 +1051,12 @@ def public_star_transaction(transaction: dict) -> dict:
         "created_by_user_id": transaction.get("created_by_user_id"),
         "created_by_name": transaction.get("created_by_name"),
         "created_at": iso(transaction.get("created_at")),
+        # The day the star was FOR, which is not always the day it was given.
+        # The week row on the Kids screen buckets by this; without it a parent
+        # filling in a missed Tuesday on Sunday saw the star land on Sunday
+        # while the meter above — which already reads awarded_for — counted it
+        # on Tuesday. The row and the meter must describe the same week.
+        "awarded_for": iso(transaction.get("awarded_for")) if transaction.get("awarded_for") else None,
     }
 
 

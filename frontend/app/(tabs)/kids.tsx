@@ -70,11 +70,30 @@ type StarMode = 'add' | 'remove';
 
 const DEFAULT_REWARD_ICON = String.fromCodePoint(0x1F381);
 
+/**
+ * What a finished week can buy.
+ *
+ * Deliberately unpriced. These used to carry star costs, which meant a child
+ * looking at the page was told twice what a treat costs — once by the weekly
+ * meter and again, differently, by the chip — and the two numbers rarely
+ * agreed. The week is the currency now: fill it, then pick one of these.
+ */
 const REWARD_IDEAS = [
-  { titleKey: 'ri_pizza', cost_stars: 50, icon: String.fromCodePoint(0x1F355) },
-  { titleKey: 'ri_movie', cost_stars: 75, icon: String.fromCodePoint(0x1F3AC) },
-  { titleKey: 'ri_icecream', cost_stars: 40, icon: String.fromCodePoint(0x1F366) },
-  { titleKey: 'ri_game', cost_stars: 60, icon: String.fromCodePoint(0x1F3AE) },
+  { titleKey: 'ri_pizza', icon: String.fromCodePoint(0x1F355) },
+  { titleKey: 'ri_movie', icon: String.fromCodePoint(0x1F3AC) },
+  { titleKey: 'ri_icecream', icon: String.fromCodePoint(0x1F366) },
+  { titleKey: 'ri_game', icon: String.fromCodePoint(0x1F3AE) },
+  { titleKey: 'ri_cinema', icon: String.fromCodePoint(0x1F37F) },
+  { titleKey: 'ri_shopping', icon: String.fromCodePoint(0x1F6CD) },
+  { titleKey: 'ri_swim', icon: String.fromCodePoint(0x1F3CA) },
+  { titleKey: 'ri_bowling', icon: String.fromCodePoint(0x1F3B3) },
+  { titleKey: 'ri_park', icon: String.fromCodePoint(0x1F333) },
+  { titleKey: 'ri_baking', icon: String.fromCodePoint(0x1F9C1) },
+  { titleKey: 'ri_friend', icon: String.fromCodePoint(0x1F46B) },
+  { titleKey: 'ri_latenight', icon: String.fromCodePoint(0x1F319) },
+  { titleKey: 'ri_dinner_choice', icon: String.fromCodePoint(0x1F37D) },
+  { titleKey: 'ri_museum', icon: String.fromCodePoint(0x1F3DB) },
+  { titleKey: 'ri_trampoline', icon: String.fromCodePoint(0x1F938) },
 ] as const;
 
 /**
@@ -134,6 +153,10 @@ export default function Kids() {
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [rewards, setRewards] = useState<Reward[]>([]);
 
+  // Which day the quick-adds are being credited to. Null means today, which
+  // is the ordinary case; picking a day is how a parent fills in a missed one.
+  const [backdateDay, setBackdateDay] = useState<string | null>(null);
+  const [claiming, setClaiming] = useState(false);
   const [historyItems, setHistoryItems] = useState<StarTransaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -259,8 +282,12 @@ export default function Kids() {
     const dayKey = (d: Date) => `${d.getUTCFullYear()}-${d.getUTCMonth()}-${d.getUTCDate()}`;
     const earnedByDay: Record<string, number> = {};
     historyItems.forEach((txn) => {
-      if (!txn.created_at || txn.delta <= 0) return;
-      const when = new Date(txn.created_at);
+      // The day it was FOR, falling back to the day it was given. A parent
+      // catching up on Sunday credits Tuesday, and the meter above already
+      // counts it on Tuesday — the row has to agree or one of them is lying.
+      const stamp = txn.awarded_for || txn.created_at;
+      if (!stamp || txn.delta <= 0) return;
+      const when = new Date(stamp);
       if (Number.isNaN(when.getTime()) || when < monday) return;
       const k = dayKey(when);
       earnedByDay[k] = (earnedByDay[k] || 0) + txn.delta;
@@ -273,24 +300,32 @@ export default function Kids() {
       const k = dayKey(d);
       return {
         key: k,
+        // What the server wants back when a parent fills in a missed day. Noon
+        // UTC, not midnight: the day is the point, and a midnight stamp lands
+        // in the previous day for anyone west of UTC.
+        iso: new Date(d.getTime() + 12 * 3600 * 1000).toISOString(),
         letter: d.toLocaleDateString(undefined, { weekday: 'narrow', timeZone: 'UTC' }),
+        name: d.toLocaleDateString(undefined, { weekday: 'long', timeZone: 'UTC' }),
         earned: earnedByDay[k] || 0,
         isToday: k === todayKey,
+        // Sunday's stars cannot be given on Wednesday. The server refuses it;
+        // the row should not offer it either.
+        isFuture: d.getTime() > now.getTime(),
       };
     });
   }, [historyItems]);
+  const backdateDayCell = useMemo(
+    () => weekDayCells.find((d) => d.iso === backdateDay) || null,
+    [weekDayCells, backdateDay],
+  );
+  // The server owns the target; the constant is only the fallback for a member
+  // record that predates it, so the two can never quietly disagree.
+  const weeklyTarget = activeChild?.weekly_target || WEEKLY_TARGET;
+  const weekClaimed = !!activeChild?.week_claimed;
+  const weekFull = weekEarned >= weeklyTarget;
+
   const iconSuggestions = useMemo(() => suggestedIcons(rewardTitle), [rewardTitle]);
   const sortedRewards = useMemo(() => [...rewards].sort((a, b) => (stars / b.cost_stars) - (stars / a.cost_stars)), [rewards, stars]);
-  // Suggestions for rewards the family already has are not suggestions.
-  // "Rewards in reach" and "Quick reward ideas" sit a few rows apart, and
-  // both were offering Movie night and Ice cream at the same time — the
-  // second list inviting you to create what the first was already tracking.
-  // Compared on the translated title, because that is the text a parent is
-  // looking at and the text the chip would prefill.
-  const unusedRewardIdeas = useMemo(() => {
-    const have = new Set(rewards.map((r) => (r.title || '').trim().toLowerCase()));
-    return REWARD_IDEAS.filter((idea) => !have.has(t(idea.titleKey).trim().toLowerCase()));
-  }, [rewards, t]);
   const pendingRedemptions = useMemo(
     () => redemptions.filter((r) => r.status === 'pending' && r.member_id === activeChild?.member_id),
     [redemptions, activeChild?.member_id],
@@ -690,7 +725,15 @@ export default function Kids() {
     if (starActionRef.current) return;
     starActionRef.current = true;
     try {
-      const result = await api.adjustMemberStars(activeChild.member_id, { delta: amount, reason });
+      // When a day is selected, the star is credited to THAT day — a parent
+      // catching up on Sunday should not have Tuesday's job land on Sunday.
+      const result = await api.adjustMemberStars(activeChild.member_id, {
+        delta: amount, reason,
+        // Via the cell, not the raw state: if the week rolled over while the
+        // page sat open, the selected day is no longer in it and the server
+        // would reject the award. Falling back to today is the right answer.
+        ...(backdateDayCell ? { awarded_for: backdateDayCell.iso } : {}),
+      });
       setMembers((prev) => prev.map((member) => (member.member_id === result.member.member_id ? result.member : member)));
       showToast(`${t('kids_added')} ${amount} ${t('stars')} · ${reason}`, 'success');
       setCelebration({ kind: 'stars', amount, chore });
@@ -701,6 +744,33 @@ export default function Kids() {
       showToast(e?.message || t('kids_add_stars_error'), 'error');
     } finally {
       starActionRef.current = false;
+    }
+  };
+
+  /**
+   * Cash in a finished week for one of the ideas.
+   *
+   * Spends nothing. The week is what was earned and the week is what is being
+   * spent — the saved balance above is untouched, which is the whole point of
+   * keeping a bank and a meter as two different things. The server refuses a
+   * second claim in the same week, so a double tap costs nothing either.
+   */
+  const claimWeek = async (title: string) => {
+    if (!activeChild) { showToast(t('kids_select_child_first'), 'error'); return; }
+    if (!weekFull) { showToast(t('kids_week_target_to_go', { n: weeklyTarget - weekEarned }), 'error'); return; }
+    if (weekClaimed || claiming) return;
+    setClaiming(true);
+    try {
+      await api.claimWeeklyTreat(activeChild.member_id, title);
+      showToast(t('kids_week_claimed_toast', { title }), 'success');
+      setCelebration({ kind: 'reward', title });
+      await load();
+      await refreshHistory(activeChild.member_id);
+    } catch (e: any) {
+      logger.warn('Weekly claim failed:', e?.message || e);
+      showToast(e?.message || t('kids_update_stars_error'), 'error');
+    } finally {
+      setClaiming(false);
     }
   };
 
@@ -1142,7 +1212,7 @@ export default function Kids() {
                   // they still owe the one they aren't looking at.
                   const owed = owedByChild[child.member_id] || 0;
                   return (
-                    <PressScale key={child.member_id} testID={`child-${child.member_id}`} onPress={() => setSelectedChild(child.member_id)} style={[styles.childChip, active ? styles.childChipActive : styles.childChipIdle]}>
+                    <PressScale key={child.member_id} testID={`child-${child.member_id}`} onPress={() => { setSelectedChild(child.member_id); setBackdateDay(null); }} style={[styles.childChip, active ? styles.childChipActive : styles.childChipIdle]}>
                       <View style={[styles.childAvatar, { backgroundColor: tint }]}>
                         <Text style={styles.childAvatarText}>{child.name[0]?.toUpperCase()}</Text>
                         {child.has_pin ? <View style={styles.lockBadge}><Lock color={ui.bg} size={8} /></View> : null}
@@ -1245,6 +1315,22 @@ export default function Kids() {
                             <Text style={styles.cashInText}>{t('kids_cash_in')}</Text>
                           </PressScale>
                         ) : null
+                      ) : weekClaimed ? (
+                        <View style={styles.weekClaimedTag}>
+                          <Text style={styles.weekClaimedTagText}>{t('kids_week_claimed')}</Text>
+                        </View>
+                      ) : weekFull ? (
+                        /* Nothing to spend here — the week itself is the price.
+                           Sends the parent to the ideas below rather than
+                           picking one for them; choosing it together is the
+                           part a child remembers. */
+                        <PressScale
+                          testID="kids-claim-week"
+                          onPress={() => { setKidsTab('rewards'); showToast(t('kids_claim_pick_idea'), 'success'); }}
+                          style={styles.cashInBtn}
+                        >
+                          <Text style={styles.cashInText}>{t('kids_claim_week')}</Text>
+                        </PressScale>
                       ) : null}
                     </View>
 
@@ -1280,18 +1366,20 @@ export default function Kids() {
                       <View style={styles.weekGoalWrap}>
                         <View style={styles.weekGoalRow}>
                           <Text style={styles.weekGoalTitle} numberOfLines={1}>{t('kids_week_target_title')}</Text>
-                          <Text style={styles.weekGoalCount}>{weekEarned} / {WEEKLY_TARGET}</Text>
+                          <Text style={styles.weekGoalCount}>{weekEarned} / {weeklyTarget}</Text>
                         </View>
                         <View style={{ marginTop: 8 }}>
                           <ProgressBar
-                            pct={Math.min(100, Math.round((weekEarned / WEEKLY_TARGET) * 100))}
-                            color={weekEarned >= WEEKLY_TARGET ? ui.mintText : ui.orange}
+                            pct={Math.min(100, Math.round((weekEarned / weeklyTarget) * 100))}
+                            color={weekFull ? ui.mintText : ui.orange}
                           />
                         </View>
                         <Text style={styles.weekGoalHint}>
-                          {weekEarned >= WEEKLY_TARGET
-                            ? t('kids_week_target_done')
-                            : t('kids_week_target_to_go', { n: WEEKLY_TARGET - weekEarned })}
+                          {weekClaimed
+                            ? t('kids_week_claimed_hint')
+                            : weekFull
+                              ? t('kids_week_target_done')
+                              : t('kids_week_target_to_go', { n: weeklyTarget - weekEarned })}
                         </Text>
                       </View>
                     )}
@@ -1301,13 +1389,22 @@ export default function Kids() {
                         run without reading a number. Built from the star ledger
                         already loaded for this child — no extra request. */}
                     <View style={styles.weekDays}>
-                      {weekDayCells.map((d) => (
-                        <View
+                      {weekDayCells.map((d) => {
+                        const picked = backdateDay === d.iso;
+                        return (
+                        <PressScale
                           key={d.key}
+                          testID={`week-day-${d.key}`}
+                          accessibilityRole="button"
+                          accessibilityLabel={`${d.name} — ${d.earned}`}
+                          disabled={d.isFuture}
+                          onPress={() => setBackdateDay(picked || d.isToday ? null : d.iso)}
                           style={[
                             styles.weekDay,
                             d.earned > 0 && styles.weekDayDone,
                             d.isToday && styles.weekDayToday,
+                            picked && styles.weekDayPicked,
+                            d.isFuture && styles.weekDayFuture,
                           ]}
                         >
                           <Text
@@ -1315,19 +1412,43 @@ export default function Kids() {
                               styles.weekDayMark,
                               d.earned > 0 && styles.weekDayMarkDone,
                               d.isToday && styles.weekDayMarkToday,
+                              picked && styles.weekDayMarkPicked,
                             ]}
                           >
                             {/* A finished day just needs to read as "done"; the
                                 running count only matters for today, and a tick
-                                keeps the row calm however big a day was. */}
-                            {d.earned <= 0 ? '·' : d.isToday ? (d.earned > 99 ? '99+' : d.earned) : '✓'}
+                                keeps the row calm however big a day was. A day
+                                a parent has selected shows its number, because
+                                that is the number they are about to change. */}
+                            {d.earned <= 0
+                              ? '·'
+                              : d.isToday || picked
+                                ? (d.earned > 99 ? '99+' : d.earned)
+                                : '✓'}
                           </Text>
-                          <Text style={[styles.weekDayLetter, d.isToday && styles.weekDayLetterToday]}>
+                          <Text
+                            style={[
+                              styles.weekDayLetter,
+                              d.isToday && styles.weekDayLetterToday,
+                              picked && styles.weekDayLetterPicked,
+                            ]}
+                          >
                             {d.letter}
                           </Text>
-                        </View>
-                      ))}
+                        </PressScale>
+                        );
+                      })}
                     </View>
+
+                    {/* Catching up. A parent who forgot Tuesday taps Tuesday and
+                        the quick jobs land there instead of today — otherwise
+                        a missed day stays missed and the week can never fill,
+                        which is the one thing that makes the meter feel rigged. */}
+                    <Text style={styles.weekDayHint}>
+                      {backdateDayCell
+                        ? t('kids_backdate_on', { day: backdateDayCell.name })
+                        : t('kids_backdate_hint')}
+                    </Text>
 
                     {/* Says the quiet part out loud. The card counts a week that
                         starts over, sitting under a balance that does not — and
@@ -1405,22 +1526,58 @@ export default function Kids() {
                         ))}
                       </View>
 
+                      {/* Ideas first, because for most families this is now the
+                          whole reward system: fill the week, pick one. No star
+                          prices — the week above is the price. The saved-up
+                          list below still exists for families who built one,
+                          and is simply not shown to families who never did. */}
                       <View style={styles.blockHead}>
-                        <Text style={styles.blockTitle}>{t('kids_rewards_in_reach')}</Text>
-                        <PressScale testID="kids-add-reward" onPress={openCreateReward} style={styles.newLink}>
-                          <Plus color={ui.orange} size={14} />
-                          <Text style={styles.newLinkText}>{t('kids_new')}</Text>
-                        </PressScale>
+                        <Text style={styles.blockTitle}>{t('kids_reward_ideas')}</Text>
                       </View>
+                      <Card style={styles.ideaCard}>
+                        <Text style={styles.ideaLead}>
+                          {weekClaimed
+                            ? t('kids_reward_ideas_claimed')
+                            : weekFull
+                              ? t('kids_reward_ideas_ready')
+                              : t('kids_reward_ideas_hint', { n: weeklyTarget - weekEarned })}
+                        </Text>
+                        <View style={styles.ideaWrap}>
+                          {REWARD_IDEAS.map((idea) => (
+                            <PressScale
+                              key={idea.titleKey}
+                              testID={idea.titleKey}
+                              accessibilityRole="button"
+                              disabled={claiming || weekClaimed}
+                              onPress={() => claimWeek(t(idea.titleKey))}
+                              style={[styles.ideaChip, weekFull && !weekClaimed && styles.ideaChipReady]}
+                            >
+                              <Text style={styles.ideaEmoji}>{idea.icon}</Text>
+                              <Text style={styles.ideaTitle} numberOfLines={1}>{t(idea.titleKey)}</Text>
+                            </PressScale>
+                          ))}
+                        </View>
+                      </Card>
+
+                      {/* Saving up for something priced is now the optional
+                          half. A family that never built one gets a single
+                          line instead of an empty card and a heading — the
+                          page was asked to get shorter, and this is where the
+                          length was going. */}
                       {rewards.length === 0 ? (
-                        <Card style={styles.emptyRewards}>
-                          <Text style={styles.emptyRewardsText}>{t('no_rewards')}</Text>
-                          <PressScale testID="kids-add-reward-empty" onPress={openCreateReward} style={styles.emptyRewardsBtn}>
-                            <Plus color={ui.bg} size={16} />
-                            <Text style={styles.emptyRewardsBtnText}>{t('kids_add_reward')}</Text>
-                          </PressScale>
-                        </Card>
+                        <PressScale testID="kids-add-reward-empty" onPress={openCreateReward} style={styles.savedUpLink}>
+                          <Plus color={ui.orange} size={14} />
+                          <Text style={styles.savedUpLinkText}>{t('kids_saved_up_start')}</Text>
+                        </PressScale>
                       ) : (
+                        <>
+                        <View style={styles.blockHead}>
+                          <Text style={styles.blockTitle}>{t('kids_saved_up_for')}</Text>
+                          <PressScale testID="kids-add-reward" onPress={openCreateReward} style={styles.newLink}>
+                            <Plus color={ui.orange} size={14} />
+                            <Text style={styles.newLinkText}>{t('kids_new')}</Text>
+                          </PressScale>
+                        </View>
                         <Card style={styles.cardPad}>
                           {(showAllRewards ? sortedRewards : sortedRewards.slice(0, 5)).map((reward, index, arr) => {
                             // A weekend treat is measured against this week's
@@ -1507,23 +1664,8 @@ export default function Kids() {
                             </PressScale>
                           ) : null}
                         </Card>
+                        </>
                       )}
-
-                      {/* The ready-made ideas ride under the same "Rewards in
-                          reach" heading rather than as their own titled block:
-                          they are more of that list, not a new subject, and one
-                          less heading is one less thing to scroll past. */}
-                      {unusedRewardIdeas.length > 0 ? (
-                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.ideaRow} style={styles.ideaScroll}>
-                        {unusedRewardIdeas.map((idea) => (
-                          <PressScale key={idea.titleKey} testID={idea.titleKey} onPress={() => { setRewardMode('create'); setEditingReward(null); setRewardTitle(t(idea.titleKey)); setRewardCost(String(idea.cost_stars)); setRewardIcon(idea.icon); setRewardWeekend(false); setShowRewardSheet(true); }} style={styles.ideaChip}>
-                            <Text style={styles.ideaEmoji}>{idea.icon}</Text>
-                            <Text style={styles.ideaTitle} numberOfLines={1}>{t(idea.titleKey)}</Text>
-                            <Text style={styles.ideaCost}>{idea.cost_stars} {t('stars')}</Text>
-                          </PressScale>
-                        ))}
-                      </ScrollView>
-                      ) : null}
                     </>
                   )}
 
@@ -2188,6 +2330,16 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   weekDayMarkToday: { color: ui.orangeText },
   weekDayLetter: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 10, marginTop: 2 },
   weekDayLetterToday: { color: ui.orangeText },
+  // A picked day has to beat both of the states above it, so it takes the
+  // solid fill rather than another border — two rings side by side read as
+  // noise, not as "this one".
+  weekDayPicked: { backgroundColor: ui.orangeDeep, borderColor: ui.orangeDeep },
+  weekDayMarkPicked: { color: '#FFFFFF' },
+  weekDayLetterPicked: { color: '#FFFFFF' },
+  weekDayFuture: { opacity: 0.4 },
+  weekDayHint: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 11.5, lineHeight: 16, marginTop: 8 },
+  weekClaimedTag: { backgroundColor: ui.mint, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8 },
+  weekClaimedTagText: { color: ui.mintText, fontFamily: 'Inter_800ExtraBold', fontSize: 12 },
   weekResetNote: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 11.5, lineHeight: 16, marginTop: 12 },
 
   weekendTagRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 6 },
@@ -2219,10 +2371,6 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   quickAddText: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 12, textAlign: 'center' },
   quickAddAmt: { color: ui.mintText, fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
 
-  emptyRewards: { alignItems: 'center', paddingVertical: 24, gap: 12 },
-  emptyRewardsText: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
-  emptyRewardsBtn: { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: ui.orangeDeep, paddingHorizontal: 16, paddingVertical: 11, borderRadius: 99 },
-  emptyRewardsBtnText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
 
   rewardRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13 },
   rewardRowBorder: { borderBottomWidth: 1, borderBottomColor: ui.line },
@@ -2245,12 +2393,17 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   owedBadge: { position: 'absolute', top: -3, right: -3, minWidth: 15, height: 15, paddingHorizontal: 3, borderRadius: 99, backgroundColor: ui.orangeDeep, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: ui.card },
   owedBadgeText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 8.5 },
 
-  ideaScroll: { marginHorizontal: -20 },
-  ideaRow: { gap: 10, paddingHorizontal: 20 },
-  ideaChip: { width: 120, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, borderRadius: 16, padding: 12, gap: 4 },
-  ideaEmoji: { fontSize: 22 },
-  ideaTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 13, marginTop: 4 },
-  ideaCost: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 11.5 },
+  ideaCard: { padding: 16 },
+  ideaLead: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, lineHeight: 18, marginBottom: 12 },
+  // Wrapped, not a horizontal scroller: a list you have to swipe hides most of
+  // itself, and the point of these is that a child can see the choice.
+  ideaWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  ideaChip: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: ui.soft, borderWidth: 1, borderColor: ui.line, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 9 },
+  ideaChipReady: { backgroundColor: ui.orangeSoft, borderColor: ui.orange },
+  ideaEmoji: { fontSize: 15 },
+  ideaTitle: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 12.5 },
+  savedUpLink: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12, marginTop: 4 },
+  savedUpLinkText: { color: ui.orangeText, fontFamily: 'Inter_700Bold', fontSize: 13 },
 
   starActions: { flexDirection: 'row', gap: 10, marginTop: 4 },
   addStarsBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, backgroundColor: ui.text, borderRadius: 14, paddingVertical: 14 },
