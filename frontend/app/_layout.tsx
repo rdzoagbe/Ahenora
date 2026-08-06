@@ -22,6 +22,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StoreProvider, useStore } from '../src/store';
 import { UpgradeModal } from '../src/components/UpgradeModal';
 import { WebUpdateBanner } from '../src/components/WebUpdateBanner';
+import { UpdateNotice } from '../src/components/UpdateNotice';
 
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
@@ -39,6 +40,10 @@ function RootNavigator() {
           way to know — the native apps restart into updates, the web app
           cannot. This tells them, and reloads on request. */}
       <WebUpdateBanner />
+      {/* Native. One notice at a time: relaunch into a staged update, go to
+          the store when this build can no longer be updated at all, or read
+          what changed after a version lands. */}
+      <UpdateNotice />
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.colors.bg } }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="oauthredirect" />

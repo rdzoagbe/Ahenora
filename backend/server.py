@@ -4226,6 +4226,34 @@ async def list_shared_with_coparent(direction: str = "out", user=Depends(require
     return rows
 
 
+# The oldest JavaScript bundle we are still willing to serve updates to, and
+# the store version that supersedes it. Kept here rather than in the app so it
+# can be changed without shipping a release — the whole point is to speak to
+# clients that are already out of date.
+MIN_SUPPORTED_RUNTIME = "2.0.0"
+CURRENT_STORE_VERSION = "1.0.2"
+
+
+@app.get("/api/app/version-info")
+async def app_version_info():
+    """What the app should compare itself against.
+
+    An install whose runtime is below the minimum cannot receive over-the-air
+    updates at all — a new native shell is the only way it moves — so it needs
+    to be told to go to the store rather than left waiting for an update that
+    can never arrive.
+
+    Deliberately unauthenticated: a client that is too old to be updated is
+    exactly the one that might also be too old to sign in cleanly, and this
+    answer is not private.
+    """
+    return {
+        "min_runtime": MIN_SUPPORTED_RUNTIME,
+        "store_version": CURRENT_STORE_VERSION,
+        "android_store_url": "https://play.google.com/store/apps/details?id=com.householdcoo.app",
+    }
+
+
 @app.get("/api/cards/sharing-summary")
 async def sharing_summary(user=Depends(require_user)):
     """The three numbers the privacy panel states, counted in one place.
