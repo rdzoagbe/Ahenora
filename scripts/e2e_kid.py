@@ -95,8 +95,10 @@ async def main():
         await p.wait_for_timeout(900)
         r["rejects_a_short_pin"] = await p.locator(
             '[data-testid="handover-parent-pin"]').count() == 1
+        # A complete 4-digit PIN submits itself, so no button press is needed
+        # here (the button still exists and still works; the short-PIN case
+        # above exercises it).
         await p.fill('[data-testid="handover-parent-pin"]', "9999")
-        await p.click('[data-testid="handover-save-parent-pin"]')
         await p.wait_for_timeout(2500)
         r["setting_it_here_unlocks_the_picker"] = await p.locator(
             f'[data-testid="handover-{ama["member_id"]}"]').count() == 1
@@ -109,12 +111,11 @@ async def main():
         await p.click(f'[data-testid="handover-{ama["member_id"]}"]')
         await p.wait_for_timeout(900)
         await p.fill('[data-testid="handover-pin"]', "0000")
-        await p.click('[data-testid="handover-go"]')
         await p.wait_for_timeout(1800)
         r["wrong_pin_refused"] = "not right" in (await p.inner_text("body"))
 
+        # Same here: the fourth digit hands the device over on its own.
         await p.fill('[data-testid="handover-pin"]', "1234")
-        await p.click('[data-testid="handover-go"]')
         await p.wait_for_timeout(4000)
         body = await p.inner_text("body")
         r["lands_in_her_own_app"] = "Hi Ama" in body

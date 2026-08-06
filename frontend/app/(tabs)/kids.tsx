@@ -231,6 +231,9 @@ export default function Kids() {
     [rewards, activeChild?.weekend_goal_reward_id],
   );
   const hasWeekendTreats = useMemo(() => rewards.some((r) => r.weekend), [rewards]);
+  // The week has been won: the weekend treat is affordable from this week's
+  // earnings, so cashing it in is the thing to do next.
+  const weekendEarned = !!weekendGoal && weekEarned >= weekendGoal.cost_stars;
 
   /**
    * One cell per day of the current week, Monday first, carrying the stars
@@ -242,13 +245,18 @@ export default function Kids() {
    * punishment on the child's own screen.
    */
   const weekDayCells = useMemo(() => {
+    // The week has to start where the SERVER starts it. `week_earned` rolls at
+    // UTC Monday (current_week_start); drawing these boxes from local midnight
+    // meant that for the whole timezone offset the row and the meter above it
+    // described different weeks — a full row of stars over a bar reading 0, or
+    // stars counted by the meter that no box showed.
     const now = new Date();
-    const monday = new Date(now);
-    monday.setHours(0, 0, 0, 0);
-    // getDay(): 0 = Sunday. Shift so the week starts on Monday.
-    monday.setDate(monday.getDate() - ((now.getDay() + 6) % 7));
+    const monday = new Date(Date.UTC(
+      now.getUTCFullYear(), now.getUTCMonth(),
+      now.getUTCDate() - ((now.getUTCDay() + 6) % 7),
+    ));
 
-    const dayKey = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    const dayKey = (d: Date) => `${d.getUTCFullYear()}-${d.getUTCMonth()}-${d.getUTCDate()}`;
     const earnedByDay: Record<string, number> = {};
     historyItems.forEach((txn) => {
       if (!txn.created_at || txn.delta <= 0) return;
@@ -261,11 +269,11 @@ export default function Kids() {
     const todayKey = dayKey(now);
     return Array.from({ length: 7 }, (_, i) => {
       const d = new Date(monday);
-      d.setDate(monday.getDate() + i);
+      d.setUTCDate(monday.getUTCDate() + i);
       const k = dayKey(d);
       return {
         key: k,
-        letter: d.toLocaleDateString(undefined, { weekday: 'narrow' }),
+        letter: d.toLocaleDateString(undefined, { weekday: 'narrow', timeZone: 'UTC' }),
         earned: earnedByDay[k] || 0,
         isToday: k === todayKey,
       };
@@ -304,19 +312,26 @@ export default function Kids() {
   }, [members]);
 
 
+  // Tapping between children fires overlapping history fetches, and without a
+  // sequence the last RESPONSE wins rather than the last REQUEST — one
+  // child's ledger and weekday row rendered under another child's name and
+  // star total.
+  const historySeqRef = useRef(0);
   const refreshHistory = useCallback(async (memberId?: string | null) => {
+    const seq = ++historySeqRef.current;
     if (!memberId) {
-      setHistoryItems([]);
+      if (seq === historySeqRef.current) setHistoryItems([]);
       return;
     }
     setHistoryLoading(true);
     try {
       const result = await api.memberStarHistory(memberId);
+      if (seq !== historySeqRef.current) return;   // a newer child was picked
       setHistoryItems(result);
     } catch (e: any) {
       const message = String(e?.message || e || '');
       if (!message.includes('404')) logger.warn('Star history load failed:', message);
-      setHistoryItems([]);
+      if (seq === historySeqRef.current) setHistoryItems([]);
     } finally {
       setHistoryLoading(false);
     }
@@ -1190,8 +1205,18 @@ export default function Kids() {
                         </PressScale>
                       </View>
                     </View>
-                    <PressScale testID="kids-redeem" onPress={() => setKidsTab('rewards')} style={styles.redeemBtn}>
-                      <Text style={styles.redeemText}>{t('redeem')}</Text>
+                    {/* Redeem steps back once the week is won.
+                        It is the highest-contrast element on the screen and it
+                        only changes tab, while "Cash in" — the payoff the whole
+                        weekly rhythm exists to produce — is a smaller pill a
+                        card below. When the treat is actually earned, the eye
+                        should land on the treat. */}
+                    <PressScale
+                      testID="kids-redeem"
+                      onPress={() => setKidsTab('rewards')}
+                      style={[styles.redeemBtn, weekendEarned && styles.redeemBtnQuiet]}
+                    >
+                      <Text style={[styles.redeemText, weekendEarned && styles.redeemTextQuiet]}>{t('redeem')}</Text>
                     </PressScale>
                   </Card>
                   <PressScale
@@ -2135,6 +2160,8 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   assignDueTextActive: { color: ui.orangeText },
   assignTaskHint: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, marginTop: 8, marginBottom: 14, lineHeight: 18 },
   redeemText: { color: ui.bg, fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
+  redeemBtnQuiet: { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: ui.line },
+  redeemTextQuiet: { color: ui.text },
   weeklyLine: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 13.5, marginTop: 12, paddingHorizontal: 2 },
 
   weekCard: { marginTop: 12, padding: 16 },
@@ -2154,10 +2181,10 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   weekEmptyHint: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, lineHeight: 18, marginTop: 10 },
   weekDays: { flexDirection: 'row', justifyContent: 'space-between', gap: 6, marginTop: 14 },
   weekDay: { flex: 1, alignItems: 'center', paddingVertical: 7, borderRadius: 12, backgroundColor: ui.soft },
-  weekDayDone: { backgroundColor: ui.orangeSoft },
+  weekDayDone: { backgroundColor: ui.mint },
   weekDayToday: { borderWidth: 1.5, borderColor: ui.orange },
   weekDayMark: { color: ui.muted, fontFamily: 'Inter_800ExtraBold', fontSize: 13, lineHeight: 17 },
-  weekDayMarkDone: { color: ui.orangeText },
+  weekDayMarkDone: { color: ui.mintText },
   weekDayMarkToday: { color: ui.orangeText },
   weekDayLetter: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 10, marginTop: 2 },
   weekDayLetterToday: { color: ui.orangeText },

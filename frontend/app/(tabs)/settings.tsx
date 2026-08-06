@@ -58,6 +58,10 @@ export default function Settings() {
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [invites, setInvites] = useState<FamilyInvite[]>([]);
   const [showLang, setShowLang] = useState(false);
+  // isUpdatePending is only exposed through the hook, and it is the piece that
+  // distinguishes "nothing new" from "new build already downloaded, waiting
+  // for a restart" — two states checkForUpdateAsync reports identically.
+  const { isUpdatePending } = Updates.useUpdates();
   const [updateState, setUpdateState] = useState<'idle' | 'checking' | 'downloading'>('idle');
   const [updateNote, setUpdateNote] = useState<string | null>(null);
   const [showInvite, setShowInvite] = useState(false);
@@ -169,6 +173,14 @@ export default function Settings() {
     try {
       const check = await Updates.checkForUpdateAsync();
       if (!check.isAvailable) {
+        // "Not available" also means "already downloaded, waiting for a
+        // restart" — which is exactly the state this button exists to resolve.
+        // Reporting it as up to date told people they had the newest version
+        // while they were still looking at the old one.
+        if (isUpdatePending) {
+          await Updates.reloadAsync();
+          return;
+        }
         setUpdateState('idle');
         setUpdateNote(t('set_update_current'));
         return;
@@ -183,7 +195,7 @@ export default function Settings() {
       setUpdateState('idle');
       setUpdateNote(t('set_update_failed'));
     }
-  }, [t]);
+  }, [t, isUpdatePending]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);

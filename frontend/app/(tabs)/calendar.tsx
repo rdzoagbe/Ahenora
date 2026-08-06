@@ -149,10 +149,15 @@ export default function Calendar() {
   // upsert, so a late completion is harmless), but once cancelled its result
   // is ignored and the screen is handed straight back — no more staring at a
   // spinner with no way out.
-  const syncCancelledRef = useRef(false);
+  // A generation counter, not a flag. With a single boolean, kicking off a
+  // second import reset it — so the import the user had just CANCELLED
+  // sailed through its own check, announced 'synced', and cleared the
+  // spinner while the new one was still running. Each run keeps its own
+  // number and only acts if it is still the current one.
+  const syncGenRef = useRef(0);
   const [calendarSyncStatus, setCalendarSyncStatus] = useState<string | null>(null);
   const cancelSync = useCallback(() => {
-    syncCancelledRef.current = true;
+    syncGenRef.current += 1;
     setSyncing(false);
     setCalendarSyncStatus(null);
     logEvent('calendar_import_cancelled');
@@ -164,6 +169,8 @@ export default function Calendar() {
   const [carpools, setCarpools] = useState<Carpool[]>([]);
   const [childNames, setChildNames] = useState<Set<string>>(new Set());
   const [coparentViewOpen, setCoparentViewOpen] = useState(false);
+  const [importPickerOpen, setImportPickerOpen] = useState(false);
+  const [shareCounts, setShareCounts] = useState<{ shared_out: number; shared_in: number; private: number } | null>(null);
   const [shareDir, setShareDir] = useState<'out' | 'in'>('out');
   const [sharedOut, setSharedOut] = useState<Card[] | null>(null);
   const [sharedIn, setSharedIn] = useState<Card[] | null>(null);
@@ -210,7 +217,17 @@ export default function Calendar() {
   const load = useCallback(async () => {
     logEvent('calendar_open');
     try {
-      const [cardsRes, carpoolRes, membersRes] = await Promise.allSettled([api.listCards(), api.listCarpools(), api.familyMembers()]);
+      const [cardsRes, carpoolRes, membersRes, sharedRes] = await Promise.allSettled([
+        api.listCards(), api.listCarpools(), api.familyMembers(),
+        // The banner's number has to come from the same place the panel's
+        // does. Counting `cards` looked equivalent and was not: /api/cards
+        // returns the whole family's shared items, so a co-parent's items
+        // inflated a figure that claims to describe yours — and it dropped
+        // undated ones, which the panel shows. Two numbers for one idea,
+        // disagreeing one tap apart, on a privacy control.
+        api.sharingSummary(),
+      ]);
+      if (sharedRes.status === 'fulfilled') setShareCounts(sharedRes.value);
       if (cardsRes.status === 'fulfilled') setCards(cardsRes.value.filter((card) => card.status === 'OPEN' && card.due_date));
       if (carpoolRes.status === 'fulfilled') setCarpools(carpoolRes.value);
       if (membersRes.status === 'fulfilled') {
@@ -254,11 +271,17 @@ export default function Calendar() {
   const makePrivateFromView = useCallback(async (card: Card) => {
     setMakingPrivate(card.card_id);
     try {
-      await api.updateCard(card.card_id, { shared: false });
+      // Non-queueable on purpose: offline this must fail loudly rather than
+      // hide the row while the co-parent can still see the item.
+      await api.unshareCard(card.card_id);
+      setShareCounts((c) => (c ? { ...c, shared_out: Math.max(0, c.shared_out - 1), private: c.private + 1 } : c));
       setSharedOut((prev) => (prev ? prev.filter((c) => c.card_id !== card.card_id) : prev));
       await load();
     } catch (e) {
       logger.warn('make private failed', e);
+      // Failing quietly leaves the item visible to the co-parent while the row
+      // suggests otherwise — the one outcome this panel must never produce.
+      Alert.alert(t('cal_error'), t('cal_could_not_update'));
     } finally {
       setMakingPrivate(null);
     }
@@ -280,11 +303,11 @@ export default function Calendar() {
         handledCalendarResponseRef.current = false;
         return;
       }
-      syncCancelledRef.current = false;
+      const myGen = ++syncGenRef.current;
       setSyncing(true);
       try {
         const result = await api.importGoogleCalendar(accessToken, 30);
-        if (syncCancelledRef.current) return;
+        if (myGen !== syncGenRef.current) return;
         setSyncResult(result);
         await load();
         Alert.alert(t('cal_calendar_synced'), syncSummary(result));
@@ -292,7 +315,10 @@ export default function Calendar() {
         logger.warn('calendar sync failed', e);
         Alert.alert(t('cal_calendar_sync_failed'), e?.message || t('cal_please_try_again'));
       } finally {
-        setSyncing(false);
+        // Only the run that is still current may take the spinner down;
+        // a superseded or cancelled one clearing it stranded the user
+        // with no Cancel button while an import was still going.
+        if (myGen === syncGenRef.current) setSyncing(false);
         handledCalendarResponseRef.current = false;
       }
     };
@@ -432,6 +458,9 @@ export default function Calendar() {
 
   const syncCalendar = async () => {
     setSyncResult(null);
+    // Claimed once for the whole call so every branch — and every finally —
+    // is talking about the same run.
+    const myGen = ++syncGenRef.current;
 
     if (Platform.OS !== 'web') {
       if (!webClientId) {
@@ -441,7 +470,6 @@ export default function Calendar() {
       }
 
       try {
-        syncCancelledRef.current = false;
         setSyncing(true);
         setCalendarSyncStatus(t('cal_opening_native_permission'));
 
@@ -492,7 +520,7 @@ export default function Calendar() {
 
         setCalendarSyncStatus(t('cal_importing_events'));
         const result = await api.importGoogleCalendar(tokens.accessToken, 30);
-        if (syncCancelledRef.current) return;
+        if (myGen !== syncGenRef.current) return;
         setSyncResult(result);
         await load();
         setCalendarSyncStatus(syncSummary(result));
@@ -509,7 +537,10 @@ export default function Calendar() {
         setCalendarSyncStatus(`${t('cal_calendar_sync_failed')}: ${message}`);
         Alert.alert(t('cal_calendar_sync_failed'), message);
       } finally {
-        setSyncing(false);
+        // Only the run that is still current may take the spinner down;
+        // a superseded or cancelled one clearing it stranded the user
+        // with no Cancel button while an import was still going.
+        if (myGen === syncGenRef.current) setSyncing(false);
       }
 
       return;
@@ -546,12 +577,11 @@ export default function Calendar() {
         return;
       }
 
-      syncCancelledRef.current = false;
       setSyncing(true);
       setCalendarSyncStatus(t('cal_importing_events'));
 
       const importResult = await api.importGoogleCalendar(accessToken, 30);
-      if (syncCancelledRef.current) return;
+      if (myGen !== syncGenRef.current) return;
       setSyncResult(importResult);
       await load();
 
@@ -563,7 +593,10 @@ export default function Calendar() {
       setCalendarSyncStatus(`${t('cal_calendar_sync_failed')}: ${message}`);
       Alert.alert(t('cal_calendar_sync_failed'), message);
     } finally {
-      setSyncing(false);
+      // Only the run that is still current may take the spinner down;
+      // a superseded or cancelled one clearing it stranded the user
+      // with no Cancel button while an import was still going.
+      if (myGen === syncGenRef.current) setSyncing(false);
     }
   };
 
@@ -578,7 +611,7 @@ export default function Calendar() {
       const code = msResponse.params?.code;
       if (!code || !msRequest) return;
       handledMsResponseRef.current = true;
-      syncCancelledRef.current = false;
+      const myGen = ++syncGenRef.current;
       setSyncing(true);
       try {
         const tokenResult = await AuthSession.exchangeCodeAsync(
@@ -596,7 +629,7 @@ export default function Calendar() {
           return;
         }
         const result = await api.importMicrosoftCalendar(accessToken, 30);
-        if (syncCancelledRef.current) return;
+        if (myGen !== syncGenRef.current) return;
         setSyncResult(result);
         await load();
         Alert.alert(t('cal_calendar_synced'), syncSummary(result));
@@ -604,7 +637,10 @@ export default function Calendar() {
         logger.warn('microsoft calendar sync failed', e);
         Alert.alert(t('cal_calendar_sync_failed'), e?.message || t('cal_please_try_again'));
       } finally {
-        setSyncing(false);
+        // Only the run that is still current may take the spinner down;
+        // a superseded or cancelled one clearing it stranded the user
+        // with no Cancel button while an import was still going.
+        if (myGen === syncGenRef.current) setSyncing(false);
         handledMsResponseRef.current = false;
       }
     };
@@ -622,17 +658,22 @@ export default function Calendar() {
 
   // "Import calendar" → pick a provider. Google keeps its existing flow; Outlook
   // runs the Microsoft PKCE flow; Both runs Google then Outlook.
-  const openImportPicker = () => {
-    Alert.alert(
-      t('cal_import_title'),
-      t('cal_import_subtitle'),
-      [
-        { text: t('cal_import_google'), onPress: () => { syncCalendar(); } },
-        { text: t('cal_import_outlook'), onPress: () => { syncMicrosoft(); } },
-        { text: t('cal_import_both'), onPress: async () => { await syncCalendar(); await syncMicrosoft(); } },
-        { text: t('cal_cancel'), style: 'cancel' },
-      ],
-    );
+  /**
+   * Where to import from — as a sheet, not a system alert.
+   *
+   * Android's Alert renders at most three buttons and silently drops the rest,
+   * so the "Cancel" written below the three sources never appeared: tapping
+   * Import opened a dialog offering Google, Outlook and Both with no way out
+   * except to pick one. A sheet has room for every option plus a way to leave,
+   * and it looks like the rest of the app rather than a grey OS dialog.
+   */
+  const openImportPicker = () => setImportPickerOpen(true);
+
+  const chooseImport = (which: 'google' | 'outlook' | 'both') => {
+    setImportPickerOpen(false);
+    if (which === 'google') { syncCalendar(); return; }
+    if (which === 'outlook') { syncMicrosoft(); return; }
+    (async () => { await syncCalendar(); await syncMicrosoft(); })();
   };
 
   const shiftMonth = (amount: number) => {
@@ -697,21 +738,44 @@ export default function Calendar() {
           ) : null}
 
           {/* Connection banner (tap to sync — keeps the sync card visible & functional) */}
-          <PressScale testID="calendar-sync-card-button" onPress={() => { setMorningNotice(false); openImportPicker(); }} disabled={syncDisabled} style={styles.bannerGap}>
+          <PressScale testID="calendar-sync-card-button" onPress={() => { setMorningNotice(false); openImportPicker(); }} disabled={syncDisabled} style={[styles.bannerGap, syncDisabled && { opacity: 0.55 }]}>
             <KitCard style={styles.banner}>
               <View testID="calendar-sync-card" style={styles.bannerInner}>
                 <IconTile bg={ui.orangeSoft} size={40} radius={13}><CalendarDays color={ui.orange} size={20} /></IconTile>
                 <Text style={styles.bannerText} numberOfLines={2}>
                   {calendarSyncStatus || (syncResult ? syncSummary(syncResult) : t('cal_connected_read_only'))}
                 </Text>
+                {/* Same card, same tappability, same signal as the sharing row
+                    below it — without this the two are indistinguishable and
+                    only one of them advertises that it does something. */}
+                <ChevronRight color={ui.muted} size={18} />
               </View>
             </KitCard>
           </PressScale>
 
           {/* Two-way sharing view: what you share with each other */}
-          <PressScale testID="calendar-coparent-view" onPress={openCoparentView} style={styles.coparentLink}>
-            <Lock color={ui.muted} size={14} />
-            <Text style={styles.coparentLinkText}>{t('cal_share_view_link')}</Text>
+          {/* The way into the sharing panel, built like something you can press.
+              It used to be centred grey text under a small lock — indisti-
+              nguishable from a caption, so the whole two-way view sat behind
+              something nobody had a reason to tap. Same card shape as the
+              import banner above it, with a count of what is visible and a
+              chevron, because the affordance IS the feature: privacy you
+              cannot find is privacy you do not trust. */}
+          <PressScale testID="calendar-coparent-view" onPress={openCoparentView} style={styles.bannerGap}>
+            <KitCard style={styles.banner}>
+              <View style={styles.bannerInner}>
+                <IconTile bg={ui.mint} size={40} radius={13}><Lock color={ui.mintText} size={18} /></IconTile>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.coparentLinkTitle}>{t('cal_share_view_link')}</Text>
+                  <Text style={styles.coparentLinkSub} numberOfLines={2}>
+                    {shareCounts
+                      ? t('cal_share_view_sub', { n: shareCounts.shared_out })
+                      : t('cal_share_view_sub_unknown')}
+                  </Text>
+                </View>
+                <ChevronRight color={ui.muted} size={18} />
+              </View>
+            </KitCard>
           </PressScale>
 
           {/* Month grid */}
@@ -1007,13 +1071,61 @@ export default function Calendar() {
           side is your own shared items (what they see of you) with an inline
           way to pull each back private; the `in` side is what they've shared
           with you, read-only. Private items never appear in either. */}
+      {/* Where to import from. Every option plus a way out — the alert this
+          replaces could only ever show three buttons on Android, which is
+          exactly how many sources there are, so "Cancel" was dropped. */}
+      <KeyboardAwareBottomSheet visible={importPickerOpen} onClose={() => setImportPickerOpen(false)} contentStyle={styles.detailSheet}>
+        <View style={styles.detailHeader}>
+          <Text style={styles.detailTitle}>{t('cal_import_title')}</Text>
+          <PressScale
+            testID="import-picker-close"
+            accessibilityRole="button"
+            accessibilityLabel={t('close')}
+            onPress={() => setImportPickerOpen(false)}
+            style={styles.closeBtn}
+          >
+            <X color={ui.text} size={20} />
+          </PressScale>
+        </View>
+        <Text style={styles.importPickerSub}>{t('cal_import_subtitle')}</Text>
+
+        {([
+          { key: 'google' as const, label: t('cal_import_google'), testID: 'import-google' },
+          { key: 'outlook' as const, label: t('cal_import_outlook'), testID: 'import-outlook' },
+          { key: 'both' as const, label: t('cal_import_both'), testID: 'import-both' },
+        ]).map((opt) => (
+          <PressScale
+            key={opt.key}
+            testID={opt.testID}
+            accessibilityRole="button"
+            onPress={() => chooseImport(opt.key)}
+            style={styles.importOption}
+          >
+            <IconTile bg={ui.orangeSoft} size={38} radius={12}>
+              <CalendarDays color={ui.orange} size={18} />
+            </IconTile>
+            <Text style={styles.importOptionText}>{opt.label}</Text>
+            <ChevronRight color={ui.muted} size={18} />
+          </PressScale>
+        ))}
+
+        <PressScale
+          testID="import-picker-cancel"
+          accessibilityRole="button"
+          onPress={() => setImportPickerOpen(false)}
+          style={styles.importCancel}
+        >
+          <Text style={styles.importCancelText}>{t('cal_cancel')}</Text>
+        </PressScale>
+      </KeyboardAwareBottomSheet>
+
       <KeyboardAwareBottomSheet visible={coparentViewOpen} onClose={() => setCoparentViewOpen(false)} contentStyle={styles.detailSheet}>
         {(() => {
           const items = shareDir === 'out' ? sharedOut : sharedIn;
           // Everything of yours the co-parent cannot see. Counted from the
           // agenda already in hand, so the panel states both halves of the
           // rule: what they see, and how much stays yours.
-          const privateCount = cards.filter((c) => !c.shared).length;
+          const privateCount = shareCounts?.private ?? 0;
           return (
         <>
         <View style={styles.detailHeader}>
@@ -1065,8 +1177,8 @@ export default function Calendar() {
           <>
           <Text style={styles.shareCountLabel}>
             {shareDir === 'out'
-              ? t('cal_share_count_out', { n: items.length })
-              : t('cal_share_count_in', { n: items.length })}
+              ? (items.length === 1 ? t('cal_share_count_out_one') : t('cal_share_count_out', { n: items.length }))
+              : (items.length === 1 ? t('cal_share_count_in_one') : t('cal_share_count_in', { n: items.length }))}
           </Text>
           <View style={styles.coparentList}>
             {items.map((c, i) => (
@@ -1080,9 +1192,11 @@ export default function Calendar() {
                       third column: it still says plainly why the item is
                       visible, without stealing width from the title. */}
                   <View style={styles.shareMetaRow}>
-                    <View style={styles.shareTag}>
-                      <Text style={styles.shareTagText}>{t('cal_share_tag_shared')}</Text>
-                    </View>
+                    {shareDir === 'out' ? (
+                      <View style={styles.shareTag}>
+                        <Text style={styles.shareTagText}>{t('cal_share_tag_shared')}</Text>
+                      </View>
+                    ) : null}
                     <Text style={styles.coparentRowMeta} numberOfLines={1}>
                       {shareDir === 'in' && c.shared_by_name
                         ? t('cal_share_by', { name: c.shared_by_name }) + (c.due_date ? ' · ' + formatDateTimeShort(c.due_date) : '')
@@ -1097,6 +1211,7 @@ export default function Calendar() {
                     accessibilityLabel={t('cal_share_make_private')}
                     disabled={makingPrivate === c.card_id}
                     onPress={() => makePrivateFromView(c)}
+                    hitSlop={10}
                     style={styles.makePrivateBtn}
                   >
                     <Text style={styles.makePrivateText}>
@@ -1114,7 +1229,7 @@ export default function Calendar() {
             your own side — what the co-parent keeps private is not yours to count. */}
         {shareDir === 'out' && items !== null && privateCount > 0 ? (
           <Text style={styles.sharePrivateNote}>
-            {t('cal_share_private_note', { n: privateCount })}
+            {privateCount === 1 ? t('cal_share_private_note_one') : t('cal_share_private_note', { n: privateCount })}
           </Text>
         ) : null}
         </>
@@ -1190,14 +1305,20 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   completeBtnText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 16 },
   shareBtn: { marginTop: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 50, borderRadius: 99, borderWidth: 1.5, borderColor: ui.orange + '66', backgroundColor: ui.orangeSoft },
   shareBtnText: { color: ui.orangeText, fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
-  sharedBadge: { marginTop: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 46, borderRadius: 99, backgroundColor: ui.mintText + '1E' },
+  sharedBadge: { marginTop: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 46, borderRadius: 99, backgroundColor: ui.mint },
   sharedBadgeText: { color: ui.mintText, fontFamily: 'Inter_700Bold', fontSize: 14 },
   shareNudge: { marginTop: 20, padding: 14, borderRadius: 18, borderWidth: 1.5, borderColor: ui.orange + '55', backgroundColor: ui.orangeSoft, gap: 12 },
   shareNudgeText: { color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 14, lineHeight: 20 },
   shareNudgeBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 46, borderRadius: 99, backgroundColor: ui.orangeDeep },
   shareNudgeBtnText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
   coparentLink: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 12, paddingVertical: 6 },
-  coparentLinkText: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 13 },
+  importPickerSub: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 13.5, lineHeight: 20, marginTop: 4 },
+  importOption: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: ui.line },
+  importOptionText: { flex: 1, color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 15 },
+  importCancel: { marginTop: 16, alignItems: 'center', paddingVertical: 13, borderRadius: 999, backgroundColor: ui.soft },
+  importCancelText: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
+  coparentLinkTitle: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 14 },
+  coparentLinkSub: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, marginTop: 2 },
   coparentTitleWrap: { flexDirection: 'row', alignItems: 'center', gap: 9, flex: 1 },
   coparentSubtitle: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 19, marginTop: 4, marginBottom: 4 },
   coparentEmpty: { alignItems: 'center', gap: 12, paddingVertical: 34 },
@@ -1210,12 +1331,16 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
 
   shareSeg: { flexDirection: 'row', backgroundColor: ui.soft, borderRadius: 14, borderWidth: 1, borderColor: ui.line, padding: 4, gap: 4, marginTop: 14 },
   shareSegBtn: { flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 10 },
-  shareSegOn: { backgroundColor: ui.card },
+  // The design's central mechanic is knowing which way you are facing. This
+  // was `ui.card` on a `ui.soft` track: 1.15:1 in light, and INVERTED in
+  // dark, where card is darker than soft — so the unselected half read as
+  // the raised one. Brand fill plus a real border survives both themes.
+  shareSegOn: { backgroundColor: ui.orangeSoft, borderWidth: 1.5, borderColor: ui.orange },
   shareSegText: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 12.5 },
   shareSegTextOn: { color: ui.text },
   shareRule: { flexDirection: 'row', alignItems: 'center', gap: 9, backgroundColor: ui.orangeSoft, borderRadius: 14, paddingHorizontal: 13, paddingVertical: 11, marginTop: 14 },
   shareRuleText: { flex: 1, color: ui.orangeText, fontFamily: 'Inter_600SemiBold', fontSize: 12.5, lineHeight: 18 },
-  makePrivateBtn: { paddingVertical: 6, paddingHorizontal: 4 },
+  makePrivateBtn: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 999, borderWidth: 1, borderColor: ui.orange },
   makePrivateText: { color: ui.orangeText, fontFamily: 'Inter_800ExtraBold', fontSize: 12.5 },
   shareTag: { backgroundColor: ui.mint, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 },
   shareTagText: { color: ui.mintText, fontFamily: 'Inter_800ExtraBold', fontSize: 10, letterSpacing: 0.4, textTransform: 'uppercase' },

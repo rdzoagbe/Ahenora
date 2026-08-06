@@ -1157,6 +1157,13 @@ export const api = {
     });
   },
   // Everything you've shared — exactly what your co-parent can see from you.
+  /** Revoke sharing. A POST, not a queueable PATCH: a privacy revoke must
+   *  never resolve optimistically while the item is still visible. */
+  unshareCard: (id: string) =>
+    request<Card>(`/cards/${id}/unshare`, { method: 'POST' }),
+  /** The three counts the sharing panel states, from one source. */
+  sharingSummary: () =>
+    request<{ shared_out: number; shared_in: number; private: number }>('/cards/sharing-summary'),
   sharedWithCoparent: (direction: 'out' | 'in' = 'out') =>
     request<Card[]>(`/cards/shared?direction=${direction}`),
   // Share a private item with the co-parent (notifies them). Returns the updated card.
