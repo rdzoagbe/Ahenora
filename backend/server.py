@@ -855,6 +855,10 @@ def public_user(user: dict) -> dict:
         # they never get sent through first-run setup. Only accounts explicitly
         # created with False (new sign-ups) see onboarding.
         "onboarding_completed": bool(user.get("onboarding_completed", True)),
+        # Whether this account signs in with a password (vs Google). The delete
+        # screen asks for the password when there is one, a typed confirmation
+        # when there is not.
+        "has_password": bool(user.get("password_hash")),
     }
 
 
@@ -2334,6 +2338,91 @@ class SmokeCleanupIn(BaseModel):
     family_ids: Optional[list] = None
 
 
+
+async def _resend_send(payload: dict) -> dict:
+    """POST an email to Resend. Shared by the invite and the deletion receipt.
+    The explicit User-Agent matters: Resend's Cloudflare edge 403s the default
+    urllib agent before the request ever reaches the API."""
+    def _send():
+        req = urllib.request.Request(
+            "https://api.resend.com/emails",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {RESEND_API_KEY}",
+                "Content-Type": "application/json",
+                "User-Agent": f"HouseholdCOO/1.0 (+{APP_NAME})",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=15) as response:
+            raw = response.read().decode("utf-8")
+            return {"sent": True, "provider": "resend",
+                    "response": (json.loads(raw) if raw else {})}
+    return await asyncio.to_thread(_send)
+
+
+async def send_account_deleted_email(to_email: str, name: str) -> dict:
+    """A receipt for a deletion — sent best-effort, never blocking the delete."""
+    if not RESEND_API_KEY or not INVITE_FROM_EMAIL or not to_email:
+        return {"sent": False}
+    safe_app = html.escape(APP_NAME)
+    safe_name = html.escape(name or "there")
+    subject = f"Your {APP_NAME} account has been deleted"
+    text = (
+        f"Hi {name or 'there'},\n\n"
+        f"Your {APP_NAME} account and its data have been permanently deleted, as you requested.\n\n"
+        "If this was not you, contact us immediately — but note the data cannot be recovered.\n"
+    )
+    html_body = f"""
+<div style="font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;background:#f4f5f2;padding:24px;">
+  <div style="max-width:520px;margin:0 auto;background:#fff;border:1px solid #e6e1da;border-radius:16px;padding:28px;">
+    <p style="color:#202323;font-size:16px;line-height:1.55;margin:0 0 14px;">Hi {safe_name},</p>
+    <p style="color:#202323;font-size:16px;line-height:1.55;margin:0 0 16px;">
+      Your <strong>{safe_app}</strong> account and all of its data have been permanently deleted,
+      as you requested. There is nothing left to recover.
+    </p>
+    <p style="color:#747b7c;font-size:13px;line-height:1.5;margin:18px 0 0;">
+      If you did not ask for this, reply to this email straight away.
+    </p>
+  </div>
+</div>""".strip()
+    try:
+        return await _resend_send({"from": INVITE_FROM_EMAIL, "to": [to_email],
+                                   "subject": subject, "text": text, "html": html_body})
+    except Exception as exc:  # noqa: BLE001 — a receipt must never fail a delete
+        log.warning("account-deleted email skipped: %s", exc)
+        return {"sent": False}
+
+
+# Every collection whose rows belong to a household. Purged by family_id when
+# the last account-holder leaves. Listed exhaustively on purpose: a forgotten
+# collection is orphaned personal data, which is the one thing account deletion
+# exists to prevent. Deleting by family_id from a collection that lacks the
+# field is a harmless no-op, so erring long is safe; erring short is not.
+_FAMILY_SCOPED_COLLECTIONS = (
+    "activity", "allowance_txns", "allowances", "announcements", "calendar_contacts",
+    "cards", "carpools", "chore_logs", "chores", "expenses", "family_invites",
+    "family_members", "handoff_notes", "meal_plans_saved", "meals", "redemptions",
+    "rewards", "routine_logs", "routines", "shopping_history", "shopping_list",
+    "star_transactions", "templates", "vault",
+)
+
+
+async def _purge_family(database: Any, family_id: str) -> None:
+    for collection in _FAMILY_SCOPED_COLLECTIONS:
+        await database[collection].delete_many({"family_id": family_id})
+    await database["families"].delete_many({"family_id": family_id})
+
+
+async def _purge_user_account(database: Any, user_id: str, email: str) -> None:
+    for collection in ("user_sessions", "notification_tokens", "notification_settings",
+                       "support_tickets"):
+        await database[collection].delete_many({"user_id": user_id})
+    if email:
+        await database["family_invites"].delete_many({"email": email, "status": "pending"})
+    await database["users"].delete_many({"user_id": user_id})
+
+
 @app.post("/api/auth/smoke-cleanup")
 async def smoke_cleanup(payload: Optional[SmokeCleanupIn] = Body(None), user=Depends(require_user)):
     """Self-deletion for smoke-test accounts, so repeated production runs
@@ -2353,6 +2442,63 @@ async def smoke_cleanup(payload: Optional[SmokeCleanupIn] = Body(None), user=Dep
         if remaining is None:
             await database["families"].delete_many({"family_id": fid})
     return {"ok": True}
+
+
+class DeleteAccountIn(BaseModel):
+    password: Optional[str] = None
+    confirm: Optional[bool] = None
+
+
+@app.post("/api/auth/delete-account")
+async def delete_account(payload: DeleteAccountIn, user=Depends(require_user)):
+    """Delete your own account and its data, for real and at once.
+
+    Self-service and immediate — the store requires it and it is simply how it
+    should work. Two shapes, decided by whether anyone else has a sign-in:
+
+      - You are the only account in the household → the whole household goes:
+        every card, chore, reward, vault document, the lot. Child profiles are
+        not accounts; they go with the household they lived in.
+      - Someone else has an account too (a co-parent) → only you leave. The
+        household and its shared data continue under them; the founder role
+        recomputes to the next-earliest parent on its own.
+    """
+    database = get_db()
+    fresh = await database["users"].find_one({"user_id": user["user_id"]}, {"_id": 0}) or user
+
+    # A password account must prove it is really them. An OAuth account has no
+    # password to check; the app gates it behind a typed confirmation instead.
+    if fresh.get("password_hash"):
+        if not payload.password or not verify_password(payload.password, fresh["password_hash"]):
+            raise HTTPException(status_code=403, detail="That password is not correct.")
+    elif not payload.confirm:
+        raise HTTPException(status_code=400, detail="Confirm the deletion to continue.")
+
+    family_id = fresh.get("family_id")
+    email = (fresh.get("email") or "").strip().lower()
+
+    other_account = None
+    if family_id:
+        other_account = await database["family_members"].find_one(
+            {"family_id": family_id, "user_id": {"$ne": fresh["user_id"], "$exists": True, "$nin": [None, ""]}},
+            {"_id": 0})
+
+    deleted_household = False
+    if family_id and other_account is None:
+        # Last account-holder: the household leaves with them.
+        await _purge_family(database, family_id)
+        deleted_household = True
+    elif family_id:
+        # A co-parent remains — take only this member out; the family stays.
+        await database["family_members"].delete_many(
+            {"family_id": family_id, "user_id": fresh["user_id"]})
+
+    await _purge_user_account(database, fresh["user_id"], email)
+
+    # A receipt, after the fact and never in the way.
+    await send_account_deleted_email(email, fresh.get("name") or "")
+
+    return {"ok": True, "deleted_household": deleted_household}
 
 
 @app.get("/api/health/config")

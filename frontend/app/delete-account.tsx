@@ -1,92 +1,122 @@
 import React, { useState } from 'react';
-import { Alert, Linking, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useRouter } from 'expo-router';
 import { LegalPage } from '../src/components/LegalPage';
 import { PressScale } from '../src/components/PressScale';
 import { useStore } from '../src/store';
+import { logger } from '../src/logger';
 
-const SUPPORT_EMAIL = 'rolanddzoagbe@gmail.com';
-
+/**
+ * Deleting your own account — self-service, immediate, and honest about what
+ * goes. The old screen opened a support email and waited for a human; the
+ * store requires the real thing, and so does anyone who ever wants out.
+ *
+ * The confirmation is deliberate friction, not a formality: a password account
+ * re-enters its password; a Google account types DELETE. Either way the server
+ * decides what leaves — the whole household if you are the last account, only
+ * you if a co-parent remains — and this screen only has to send them home
+ * afterwards.
+ */
 export default function DeleteAccountScreen() {
-  const { user, theme, t } = useStore();
-  const [email, setEmail] = useState(user?.email || '');
-  const [reason, setReason] = useState('');
+  const { user, theme, t, deleteAccount } = useStore();
+  const router = useRouter();
+  const c = theme.colors;
 
-  const sendDeletionRequest = async () => {
-    const accountEmail = email.trim();
-    if (!accountEmail || !accountEmail.includes('@')) {
-      Alert.alert('Email required', 'Enter the Google account email used for Household COO.');
-      return;
-    }
+  const hasPassword = user?.has_password;
+  const [password, setPassword] = useState('');
+  const [confirmWord, setConfirmWord] = useState('');
+  const [busy, setBusy] = useState(false);
 
-    const subject = encodeURIComponent('Household COO account deletion request');
-    const body = encodeURIComponent(
-      `Hello Household COO Support,\n\nI request deletion of my Household COO account and associated data.\n\nAccount email: ${accountEmail}\nReason: ${reason.trim() || 'Not provided'}\n\nPlease confirm once the deletion request has been processed.\n\nThank you.`
-    );
+  const ready = hasPassword ? password.length > 0 : confirmWord.trim().toUpperCase() === 'DELETE';
 
-    const url = `mailto:${SUPPORT_EMAIL}?subject=${subject}&body=${body}`;
-    const canOpen = await Linking.canOpenURL(url).catch(() => false);
-    if (!canOpen) {
-      Alert.alert('Could not open email app', `Please email ${SUPPORT_EMAIL} with your account email and deletion request.`);
-      return;
-    }
+  const runDelete = async () => {
+    setBusy(true);
     try {
-      await Linking.openURL(url);
-    } catch {
-      Alert.alert('Could not open email app', `Please email ${SUPPORT_EMAIL} with your account email and deletion request.`);
+      const out = await deleteAccount(
+        hasPassword ? { password } : { confirm: true },
+      );
+      // Signed out already by the store. Land on the home / sign-up screen —
+      // there is no account to come back to.
+      router.replace('/');
+      return out;
+    } catch (error: any) {
+      setBusy(false);
+      Alert.alert(t('del_failed_title'), error?.message || t('del_failed_body'));
     }
+  };
+
+  const confirmThenDelete = () => {
+    if (!ready || busy) return;
+    // The last gate: a plain-language warning naming exactly what is destroyed.
+    Alert.alert(
+      t('del_confirm_title'),
+      t('del_confirm_body'),
+      [
+        { text: t('cancel'), style: 'cancel' },
+        { text: t('del_confirm_cta'), style: 'destructive', onPress: () => { runDelete().catch((e) => logger.warn('delete failed', e)); } },
+      ],
+    );
   };
 
   return (
     <>
       <LegalPage
-        title="Delete account"
-        subtitle="Request deletion of your Household COO account and associated household data."
-        updatedAt="May 2026"
+        title={t('del_title')}
+        subtitle={t('del_subtitle')}
+        updatedAt="August 2026"
         sections={[
           {
-            title: 'What deletion means',
+            title: t('del_what_title'),
             body: [
-              'Your account profile and active session records will be removed or deactivated.',
-              'Household records associated only with your account may be removed, including cards, invites, notification tokens, vault records, kids rewards, and related settings where applicable.',
-              'Some records may be retained where required for legal, security, abuse-prevention, or operational reasons.',
+              t('del_what_1'),
+              t('del_what_2'),
+              t('del_what_3'),
             ],
           },
           {
-            title: 'How to request deletion',
-            body: 'Use the request form below to open a pre-filled email. Include the Google account email used for Household COO so the correct account can be located.',
-          },
-          {
-            title: 'Processing time',
-            body: 'Deletion requests are reviewed manually during the current testing phase. You will receive a confirmation or follow-up question by email.',
+            title: t('del_now_title'),
+            body: t('del_now_body'),
           },
         ]}
       />
-      <View style={[styles.floatingForm, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder, shadowColor: theme.colors.shadow }]}>
-        <Text style={[styles.formTitle, { color: theme.colors.text }]}>{t('del_title')}</Text>
-        <TextInput
-          testID="delete-account-email"
-          value={email}
-          onChangeText={setEmail}
-          autoCapitalize="none"
-          autoCorrect={false}
-          keyboardType="email-address"
-          placeholder={t('del_email_ph')}
-          placeholderTextColor={theme.colors.textSoft}
-          style={[styles.input, { color: theme.colors.text, backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}
-        />
-        <TextInput
-          testID="delete-account-reason"
-          value={reason}
-          onChangeText={setReason}
-          placeholder={t('del_reason_ph')}
-          placeholderTextColor={theme.colors.textSoft}
-          style={[styles.input, styles.reasonInput, { color: theme.colors.text, backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}
-          multiline
-        />
-        <PressScale testID="send-delete-account-request" onPress={sendDeletionRequest} style={[styles.button, { backgroundColor: theme.colors.primary }]}>
-          <Text style={[styles.buttonText, { color: theme.colors.primaryText }]}>{t('del_button')}</Text>
+      <View style={[styles.floatingForm, { backgroundColor: c.card, borderColor: c.cardBorder, shadowColor: c.shadow }]}>
+        <Text style={[styles.formTitle, { color: c.danger }]}>{t('del_form_title')}</Text>
+        <Text style={[styles.formSub, { color: c.textMuted }]}>
+          {hasPassword ? t('del_password_prompt') : t('del_type_prompt')}
+        </Text>
+        {hasPassword ? (
+          <TextInput
+            testID="delete-account-password"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+            autoCapitalize="none"
+            autoCorrect={false}
+            placeholder={t('del_password_ph')}
+            placeholderTextColor={c.textMuted}
+            style={[styles.input, { color: c.text, backgroundColor: c.bgSoft, borderColor: c.cardBorder }]}
+          />
+        ) : (
+          <TextInput
+            testID="delete-account-confirm"
+            value={confirmWord}
+            onChangeText={setConfirmWord}
+            autoCapitalize="characters"
+            autoCorrect={false}
+            placeholder="DELETE"
+            placeholderTextColor={c.textMuted}
+            style={[styles.input, { color: c.text, backgroundColor: c.bgSoft, borderColor: c.cardBorder }]}
+          />
+        )}
+        <PressScale
+          testID="delete-account-submit"
+          accessibilityRole="button"
+          disabled={!ready || busy}
+          onPress={confirmThenDelete}
+          style={[styles.button, { backgroundColor: c.danger, opacity: !ready || busy ? 0.5 : 1 }]}
+        >
+          <Text style={styles.buttonText}>{busy ? t('del_deleting') : t('del_button')}</Text>
         </PressScale>
-        <Text style={[styles.help, { color: theme.colors.textMuted }]}>Support: {SUPPORT_EMAIL}</Text>
       </View>
     </>
   );
@@ -106,7 +136,8 @@ const styles = StyleSheet.create({
     shadowRadius: 20,
     elevation: 6,
   },
-  formTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 18, marginBottom: 10 },
+  formTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 18 },
+  formSub: { fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 18, marginTop: 4, marginBottom: 4 },
   input: {
     minHeight: 48,
     borderWidth: 1,
@@ -116,8 +147,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     marginTop: 8,
   },
-  reasonInput: { minHeight: 72, paddingTop: 12, textAlignVertical: 'top' },
   button: { minHeight: 50, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', marginTop: 12 },
-  buttonText: { fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
-  help: { fontFamily: 'Inter_500Medium', fontSize: 12, textAlign: 'center', marginTop: 9 },
+  buttonText: { fontFamily: 'Inter_800ExtraBold', fontSize: 15, color: '#FFFFFF' },
 });

@@ -650,6 +650,9 @@ export interface User {
   language: string;
   is_admin?: boolean;
   onboarding_completed?: boolean;
+  /** Password account (asks for the password to delete) vs Google (asks for a
+   *  typed confirmation instead). */
+  has_password?: boolean;
 }
 
 export interface FamilyMember {
@@ -963,6 +966,11 @@ export const api = {
   logout: () => {
     cache.clear();
     return request('/auth/logout', { method: 'POST' });
+  },
+  deleteAccount: (data: { password?: string; confirm?: boolean }) => {
+    cache.clear();
+    return request<{ ok: boolean; deleted_household: boolean }>(
+      '/auth/delete-account', { method: 'POST', body: data });
   },
   setLanguage: (language: string) =>
     request('/auth/language', { method: 'PATCH', body: { language } }),
