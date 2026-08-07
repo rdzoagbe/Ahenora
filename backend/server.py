@@ -727,6 +727,13 @@ def _coerce_dt(value):
     return parsed
 
 
+# The founder is the earliest parent. A row with no usable created_at must sort
+# as oldest, never "now" — a legacy founder row can lack a timestamp, and
+# sorting it last would hand founder status (and its protection) to a later
+# co-parent.
+_OLDEST_DT = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+
 async def get_family_doc(family_id: str):
     database = get_db()
     family = await database["families"].find_one({"family_id": family_id}, {"_id": 0})
@@ -2516,10 +2523,15 @@ async def delete_account(payload: DeleteAccountIn, user=Depends(require_user)):
     family_id = fresh.get("family_id")
     email = (fresh.get("email") or "").strip().lower()
 
+    # "Is anyone else left in this household?" is asked of the users collection,
+    # not family_members: every account-holder has a users doc carrying a
+    # user_id and this family_id, whereas a founder's MEMBER row can predate
+    # user_id linkage. Asking family_members for another user_id would miss such
+    # a founder and wrongly purge the whole household when a co-parent leaves.
     other_account = None
     if family_id:
-        other_account = await database["family_members"].find_one(
-            {"family_id": family_id, "user_id": {"$ne": fresh["user_id"], "$exists": True, "$nin": [None, ""]}},
+        other_account = await database["users"].find_one(
+            {"family_id": family_id, "user_id": {"$ne": fresh["user_id"]}},
             {"_id": 0})
 
     deleted_household = False
@@ -3009,7 +3021,7 @@ async def family_members(user=Depends(require_user)):
     # cannot remove. Computed once here so the client does not have to guess.
     parents = sorted(
         (m for m in raw if _is_parent_role(m.get("role"))),
-        key=lambda m: (_coerce_dt(m.get("created_at")) or utcnow()))
+        key=lambda m: (_coerce_dt(m.get("created_at")) or _OLDEST_DT))
     founder_id = parents[0]["member_id"] if parents else None
     # Which row is "me", resolved the same resilient way removal is — by user_id,
     # else by email — so a founder whose row predates user_id linkage is still
@@ -3251,18 +3263,28 @@ async def delete_family_member(member_id: str, user=Depends(require_user)):
                 remover.get("member_id") and remover["member_id"] == member["member_id"]):
             raise HTTPException(status_code=400, detail="To leave the household yourself, use account deletion.")
         # The founder cannot be removed by a co-parent they added — otherwise a
-        # co-parent could evict the owner. The founder is the earliest parent.
+        # co-parent could evict the owner. The founder is the EARLIEST parent, so
+        # a row with no usable created_at must sort as oldest (a legacy founder
+        # row may lack one); sorting it as "now" would hand founder status to a
+        # later co-parent and strip the real owner's protection.
         parent_rows = [m async for m in database["family_members"].find(
             {"family_id": family_id,
              "role": {"$regex": "^(parent|co-parent)$", "$options": "i"}}, {"_id": 0})]
         founder = min(parent_rows,
-                      key=lambda m: (_coerce_dt(m.get("created_at")) or utcnow()),
+                      key=lambda m: (_coerce_dt(m.get("created_at")) or _OLDEST_DT),
                       default=None)
-        if founder and member["member_id"] == founder.get("member_id"):
-            raise HTTPException(status_code=403, detail="The household founder cannot be removed.")
-        # Never leave the household with no parent at all.
-        if await _count_parents(database, family_id) <= 1:
-            raise HTTPException(status_code=400, detail="A household must keep at least one parent.")
+        # A requester with no member row is the rowless owner (every invited
+        # member gets one), so they are the founder — the member they are
+        # removing, which does have a row, cannot be. Skip the founder and
+        # last-parent guards for them: removing a co-parent still leaves the
+        # owner in place.
+        requester_is_rowless_owner = not remover.get("member_id")
+        if not requester_is_rowless_owner:
+            if founder and member["member_id"] == founder.get("member_id"):
+                raise HTTPException(status_code=403, detail="The household founder cannot be removed.")
+            # Never leave the household with no parent at all.
+            if await _count_parents(database, family_id) <= 1:
+                raise HTTPException(status_code=400, detail="A household must keep at least one parent.")
 
         # They keep their account — they are ejected from THIS household, not
         # deleted. A fresh, empty household means they are never left pointing
@@ -4823,13 +4845,20 @@ async def version_adoption(user=Depends(require_user)):
         av = tok.get("app_version")
         if rt or av:
             reporting_devices += 1
-        # Distinct users per bucket, so multi-device people count once.
+        # Distinct users per bucket, so multi-device people count once. A token
+        # with no user_id contributes no user to count — adding None would
+        # inflate a bucket past the true user total and push the percentage
+        # over 100. The bucket key is still created so the runtime/build shows
+        # up (with a zero count) even if only anonymous devices report it.
         rt_key = rt or "unknown"
         av_key = av or "unknown"
-        by_runtime.setdefault(rt_key, set()).add(tok.get("user_id"))
-        by_version.setdefault(av_key, set()).add(tok.get("user_id"))
-        if tok.get("user_id"):
-            seen_users.add(tok.get("user_id"))
+        by_runtime.setdefault(rt_key, set())
+        by_version.setdefault(av_key, set())
+        uid = tok.get("user_id")
+        if uid:
+            by_runtime[rt_key].add(uid)
+            by_version[av_key].add(uid)
+            seen_users.add(uid)
 
     def _counts(buckets: dict) -> dict:
         return {k: len(v) for k, v in sorted(
