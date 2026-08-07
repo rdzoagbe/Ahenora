@@ -3208,15 +3208,15 @@ async def adjust_member_stars(member_id: str, payload: StarAdjustmentIn, user=De
 async def claim_weekly_treat(member_id: str, payload: WeeklyClaimIn, user=Depends(require_user)):
     """Cash the week in for a treat.
 
-    The week is the currency. A child who reaches the weekly target has earned
-    one treat, and which treat is a conversation rather than a price list — the
-    ideas are named by the family, not costed by us. That is why nothing here
-    spends `stars`: the bank is savings, untouched, and this claims the WEEK.
+    A loyalty card, not a locked door. The child can claim their treat at any
+    point in the week — reaching 50 is the celebration, not the price of entry.
+    Which treat is a conversation, not a price list, so nothing here spends
+    `stars`: the bank is savings, untouched, and this claims the WEEK.
 
-    One claim per week, guarded on the member document, so two parents tapping
-    together cannot hand out two treats for one week's work. The meter is not
-    reset: it records what was earned, and zeroing it would make a week look
-    unworked the moment it paid off.
+    The one rule is one treat per week, guarded on the member document so two
+    parents tapping together cannot hand out two for one week — and so an
+    always-available treat cannot become an unlimited one. The meter is not
+    reset: it records what was earned, and hitting 50 later still celebrates.
     """
     database = get_db()
     member = await database["family_members"].find_one(
@@ -3230,18 +3230,16 @@ async def claim_weekly_treat(member_id: str, payload: WeeklyClaimIn, user=Depend
     if len(title) < 2:
         raise HTTPException(status_code=400, detail="Give the treat a name")
 
+    # No star floor: a treat is claimable at any point in the week. The only
+    # guard is one-per-week — the atomic `$ne` filter makes a double tap
+    # (or two parents at once) a no-op rather than a second treat.
     claimed = await database["family_members"].update_one(
         {"member_id": member_id, "family_id": user["family_id"],
-         "week_earned": {"$gte": WEEKLY_TARGET},
          "week_claimed_for": {"$ne": week_start}},
         {"$set": {"week_claimed_for": week_start}},
     )
     if claimed.matched_count == 0:
-        fresh = await database["family_members"].find_one(
-            {"member_id": member_id, "family_id": user["family_id"]}, {"_id": 0}) or {}
-        if _coerce_dt(fresh.get("week_claimed_for")) == week_start:
-            raise HTTPException(status_code=400, detail="This week's treat has already been claimed.")
-        raise HTTPException(status_code=400, detail="Not enough stars earned this week yet.")
+        raise HTTPException(status_code=400, detail="This week's treat has already been claimed.")
 
     # Recorded as a redemption so it appears wherever "what are we still owed?"
     # is answered — at no star cost, because the week already paid for it.
