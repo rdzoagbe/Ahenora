@@ -229,7 +229,7 @@ export default function Settings() {
   const removeMember = useCallback((member: FamilyMember) => {
     Alert.alert(
       `${t('set_remove')} ${member.name}?`,
-      t('set_remove_member_msg'),
+      member.has_account ? t('set_remove_coparent_msg') : t('set_remove_member_msg'),
       [
         { text: t('cancel'), style: 'cancel' },
         {
@@ -428,6 +428,23 @@ export default function Settings() {
     setLastInviteUrl(null);
     setShowInvite(true);
   };
+
+  // Two parents is the ceiling — a parent and a co-parent. A third would-be
+  // parent is redirected to the family-member invite, where they get a role.
+  const tryInviteCoparent = useCallback(() => {
+    if (coParents.length >= 2) {
+      Alert.alert(
+        t('set_two_parents_title'),
+        t('set_two_parents_msg'),
+        [
+          { text: t('cancel'), style: 'cancel' },
+          { text: t('set_invite_family_member'), onPress: () => openInvite('', 'family') },
+        ],
+      );
+      return;
+    }
+    openInvite();
+  }, [coParents.length]);
 
   const inviteMessage = useCallback(
     (url: string) => `${user?.name || t('set_a_family_member')} ${t('set_invited_you')}\n\n${url}`,
@@ -674,7 +691,7 @@ export default function Settings() {
                           : m.has_account ? `${m.role} · ${t('set_account')}` : m.role
                       }
                     />
-                    {!m.has_account ? (
+                    {(!m.has_account || (m.has_account && !m.is_me && !m.is_founder)) ? (
                       <PressScale
                         testID={`remove-member-${m.member_id}`}
                         onPress={() => removeMember(m)}
@@ -728,7 +745,7 @@ export default function Settings() {
                     </PressScale>
                   </View>
                 ))}
-                <PressScale testID="invite-coparent" onPress={() => openInvite()} style={styles.expandAction}>
+                <PressScale testID="invite-coparent" onPress={tryInviteCoparent} style={styles.expandAction}>
                   <UserPlus color={ui.text} size={18} />
                   <Text style={styles.expandActionText}>{t('set_invite_coparent')}</Text>
                 </PressScale>

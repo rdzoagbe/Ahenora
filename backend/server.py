@@ -1400,6 +1400,39 @@ def invite_member_role(invite: Optional[dict]) -> str:
     return raw[:32] or "Parent"
 
 
+def _is_parent_role(role: Optional[str]) -> bool:
+    """A parent-level adult: the founder and any co-parent. Everyone else —
+    a child, or a grandparent/nanny invited as a family member — is not."""
+    return str(role or "").strip().lower() in ("parent", "co-parent")
+
+
+async def _count_parents(database: Any, family_id: str) -> int:
+    return await database["family_members"].count_documents(
+        {"family_id": family_id,
+         "role": {"$regex": "^(parent|co-parent)$", "$options": "i"}})
+
+
+MAX_PARENTS = 2  # one parent, one co-parent — the rest are family members with roles.
+
+
+async def _enforce_parent_limit(database: Any, family_id: str, relationship: Optional[str]) -> None:
+    """A household has room for two parents, no more.
+
+    Only co-parent invites are capped — an empty relationship becomes the
+    "Parent" role. A family-member invite (Grandparent, Nanny, Sibling...) is a
+    named role, not a parent, and is never blocked here. The message names the
+    way forward rather than just refusing.
+    """
+    if _clean_invite_text(relationship):
+        return  # a named family member, not a co-parent
+    if await _count_parents(database, family_id) >= MAX_PARENTS:
+        raise HTTPException(
+            status_code=409,
+            detail="This household already has two parents. To add someone else, "
+                   "invite them as a family member and give them a role.",
+        )
+
+
 async def add_user_to_family_if_needed(database: Any, user: dict, family_id: str,
                                        role: Optional[str] = None):
     existing = await database["family_members"].find_one(
@@ -1414,6 +1447,17 @@ async def add_user_to_family_if_needed(database: Any, user: dict, family_id: str
     )
     if existing:
         return existing
+
+    # The real guard: two co-parent invites can be outstanding at once (each was
+    # created while only the founder existed), and without this the second to be
+    # accepted would quietly become a third parent. The invite-time check is the
+    # friendly pop-up; this is the one that actually holds the line.
+    if _is_parent_role(role) and await _count_parents(database, family_id) >= MAX_PARENTS:
+        raise HTTPException(
+            status_code=409,
+            detail="This household already has two parents, so this invite can no "
+                   "longer be accepted as a co-parent.",
+        )
 
     member = {
         "member_id": new_id("member"),
@@ -2774,14 +2818,24 @@ async def set_language(payload: LanguageIn, user=Depends(require_user)):
 @app.get("/api/family/members")
 async def family_members(user=Depends(require_user)):
     database = get_db()
+    raw = [item async for item in
+           database["family_members"].find({"family_id": user["family_id"]}, {"_id": 0})]
+    # The founder is the earliest parent-level member — the only one a co-parent
+    # cannot remove. Computed once here so the client does not have to guess.
+    parents = sorted(
+        (m for m in raw if _is_parent_role(m.get("role"))),
+        key=lambda m: (_coerce_dt(m.get("created_at")) or utcnow()))
+    founder_id = parents[0]["member_id"] if parents else None
     rows = []
-    cursor = database["family_members"].find({"family_id": user["family_id"]}, {"_id": 0})
-    async for item in cursor:
+    for item in raw:
         # Roll a child's weekly meter over on read, so the Kids screen always
         # shows this week's earnings rather than a stale count from last week.
         if str(item.get("role", "")).lower() == "child":
             item = await roll_week_if_stale(database, item)
-        rows.append(public_member(item))
+        row = public_member(item)
+        row["is_me"] = item.get("user_id") == user["user_id"]
+        row["is_founder"] = item.get("member_id") == founder_id
+        rows.append(row)
     return rows
 
 
@@ -2978,11 +3032,49 @@ async def delete_family_member(member_id: str, user=Depends(require_user)):
     )
     if not member:
         raise HTTPException(status_code=404, detail="Member not found")
+
+    # Removing a co-parent — an account-holder — is a different act from
+    # removing a child, and gated accordingly. A child profile (no account)
+    # skips all of this.
     if member.get("user_id"):
-        raise HTTPException(
-            status_code=400,
-            detail="This member is a signed-in account and cannot be removed here. Use account deletion instead.",
-        )
+        remover = await database["family_members"].find_one(
+            {"family_id": family_id, "user_id": user["user_id"]}, {"_id": 0}) or {}
+        # Only a parent runs the household, and never on themselves — leaving is
+        # account deletion, a deliberately separate door.
+        if not _is_parent_role(remover.get("role")):
+            raise HTTPException(status_code=403, detail="Only a parent can remove a co-parent.")
+        if member["user_id"] == user["user_id"]:
+            raise HTTPException(status_code=400, detail="To leave the household yourself, use account deletion.")
+        # The founder cannot be removed by a co-parent they added — otherwise a
+        # co-parent could evict the owner. The founder is the earliest parent.
+        parent_rows = [m async for m in database["family_members"].find(
+            {"family_id": family_id,
+             "role": {"$regex": "^(parent|co-parent)$", "$options": "i"}}, {"_id": 0})]
+        founder = min(parent_rows,
+                      key=lambda m: (_coerce_dt(m.get("created_at")) or utcnow()),
+                      default=None)
+        if founder and member["member_id"] == founder.get("member_id"):
+            raise HTTPException(status_code=403, detail="The household founder cannot be removed.")
+        # Never leave the household with no parent at all.
+        if await _count_parents(database, family_id) <= 1:
+            raise HTTPException(status_code=400, detail="A household must keep at least one parent.")
+
+        # They keep their account — they are ejected from THIS household, not
+        # deleted. A fresh, empty household means they are never left pointing
+        # at one they can no longer see.
+        removed = await database["users"].find_one({"user_id": member["user_id"]}, {"_id": 0})
+        if removed:
+            new_family_id = new_id("family")
+            await _seed_new_family(database, removed, new_family_id,
+                                   removed.get("email", ""), removed.get("name") or "Parent",
+                                   removed.get("picture"))
+            await database["users"].update_one(
+                {"user_id": removed["user_id"]},
+                {"$set": {"family_id": new_family_id, "updated_at": utcnow()}})
+        # Any invite they accepted to get here is spent; drop stale pending ones.
+        await database["family_invites"].update_many(
+            {"family_id": family_id, "accepted_by_user_id": member["user_id"]},
+            {"$set": {"status": "removed", "updated_at": utcnow()}})
 
     await database["family_members"].delete_one({"member_id": member_id, "family_id": family_id})
 
@@ -3411,6 +3503,8 @@ async def family_invite_link(payload: Optional[InviteLinkIn] = Body(None), user=
     inviter can always see which account used which link."""
     database = get_db()
     await _enforce_member_slot_limit(database, user)
+    await _enforce_parent_limit(database, user["family_id"],
+                                payload.relationship if payload else None)
     invite = _new_invite_doc(
         user,
         email=None,
@@ -3426,6 +3520,7 @@ async def family_invite_link(payload: Optional[InviteLinkIn] = Body(None), user=
 async def family_invite(payload: InviteIn, user=Depends(require_user)):
     database = get_db()
     await _enforce_member_slot_limit(database, user)
+    await _enforce_parent_limit(database, user["family_id"], payload.relationship)
 
     email = payload.email.strip().lower()
     if not email or "@" not in email:

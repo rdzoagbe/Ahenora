@@ -670,6 +670,10 @@ export interface FamilyMember {
   weekend_goal_reward_id?: string | null;
   has_pin?: boolean;
   has_account?: boolean;
+  /** Set by GET /family/members: whether this row is the signed-in user, and
+   *  whether they are the household founder (the only parent nobody can remove). */
+  is_me?: boolean;
+  is_founder?: boolean;
 }
 
 export interface Reward {

@@ -15,7 +15,7 @@ import os
 import re
 import sys
 import unittest
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "backend"))
 
@@ -62,6 +62,9 @@ class FakeCollection:
             elif value != cond:
                 return False
         return True
+
+    async def count_documents(self, query=None):
+        return sum(1 for r in self.rows if self._matches(r, query or {}))
 
     async def find_one(self, query, projection=None):
         for row in self.rows:
@@ -595,14 +598,54 @@ class ManagingAChild(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 404)
         self.assertEqual(len(db["family_members"].rows), 1)
 
-    def test_a_signed_in_account_cannot_be_deleted_here(self):
-        # Removing a co-parent's account from a member list would orphan their
-        # login; account deletion is a different, deliberate flow.
-        db = self._install(user_id="u9")
+    def _coparented(self):
+        """Founder u1 (earliest) + co-parent u9, both account-holders."""
+        base = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        db = FakeDB(
+            family_members=[
+                {"member_id": "p1", "family_id": "fam1", "user_id": "u1",
+                 "name": "Roland", "role": "Parent", "created_at": base},
+                {"member_id": "p2", "family_id": "fam1", "user_id": "u9",
+                 "name": "Keigh", "role": "Parent", "created_at": base + timedelta(days=30)},
+            ],
+            users=[
+                {"user_id": "u1", "family_id": "fam1", "email": "r@x.com", "name": "Roland"},
+                {"user_id": "u9", "family_id": "fam1", "email": "k@x.com", "name": "Keigh"},
+            ],
+            families=[{"family_id": "fam1", "plan": "village"}],
+            star_transactions=[], redemptions=[], family_invites=[],
+        )
+        server.get_db = lambda: db
+        return db
+
+    def test_the_founder_can_remove_a_co_parent(self):
+        db = self._coparented()
+        asyncio.run(server.delete_family_member("p2", user=self.USER))   # u1 removes u9
+        ids = [m["member_id"] for m in db["family_members"].rows if m["family_id"] == "fam1"]
+        self.assertNotIn("p2", ids)
+        # The co-parent keeps their account — moved to a fresh, empty household.
+        u9 = next(u for u in db["users"].rows if u["user_id"] == "u9")
+        self.assertNotEqual(u9["family_id"], "fam1")
+
+    def test_a_co_parent_cannot_remove_the_founder(self):
+        self._coparented()
+        co = {"family_id": "fam1", "user_id": "u9", "name": "Keigh", "role": "parent"}
         with self.assertRaises(HTTPException) as ctx:
-            asyncio.run(server.delete_family_member("kid1", user=self.USER))
+            asyncio.run(server.delete_family_member("p1", user=co))
+        self.assertEqual(ctx.exception.status_code, 403)
+
+    def test_you_cannot_remove_yourself_that_way(self):
+        self._coparented()
+        co = {"family_id": "fam1", "user_id": "u9", "name": "Keigh", "role": "parent"}
+        with self.assertRaises(HTTPException) as ctx:
+            asyncio.run(server.delete_family_member("p2", user=co))
         self.assertEqual(ctx.exception.status_code, 400)
-        self.assertEqual(len(db["family_members"].rows), 1)
+
+    def test_a_child_profile_still_deletes_without_ceremony(self):
+        # No account, so none of the co-parent guards apply — a child goes.
+        db = self._install()
+        asyncio.run(server.delete_family_member("kid1", user=self.USER))
+        self.assertEqual(len(db["family_members"].rows), 0)
 
     def test_deleting_takes_only_what_was_theirs(self):
         db = self._with_shared_things()
