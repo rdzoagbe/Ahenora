@@ -40,7 +40,7 @@ import { Card, Chevron, Divider, IconTile, MiniRow, NavRow, ScreenHeader, Sectio
 import { useStore } from '../../src/store';
 import { api, Card as CardType, Entitlements, Expense, ExpenseSummary, FamilyInvite, FamilyMember, NotificationSettings } from '../../src/api';
 import { LANG_NAMES } from '../../src/i18n';
-import { ensureNotificationPermissions, registerForPushNotificationsAsync, sendLocalNotification, sendTestScheduledReminderNotification, syncCardReminderNotifications } from '../../src/notifications';
+import { appVersionInfo, ensureNotificationPermissions, registerForPushNotificationsAsync, sendLocalNotification, sendTestScheduledReminderNotification, syncCardReminderNotifications } from '../../src/notifications';
 import { logger } from '../../src/logger';
 
 function formatBytes(bytes?: number | null) {
@@ -342,7 +342,10 @@ export default function Settings() {
         const push = await registerForPushNotificationsAsync().catch((e) => ({ granted: false, error: e?.message || t('set_push_registration_failed') }));
         const expoPushToken = 'expoPushToken' in push ? push.expoPushToken : undefined;
         const pushError = 'error' in push ? push.error : undefined;
-        if (expoPushToken) await api.registerNotificationToken(expoPushToken, Platform.OS);
+        if (expoPushToken) {
+          const { appVersion, runtimeVersion } = await appVersionInfo();
+          await api.registerNotificationToken(expoPushToken, Platform.OS, appVersion, runtimeVersion);
+        }
         else if (pushError) warning = String(pushError);
       }
 

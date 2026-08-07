@@ -8,7 +8,7 @@ import { PressScale } from '../src/components/PressScale';
 import { AmbientBackground } from '../src/components/AmbientBackground';
 import { useUI, UIColors } from '../src/components/Kit';
 import { useStore } from '../src/store';
-import { api, MetricRow } from '../src/api';
+import { api, MetricRow, VersionAdoption } from '../src/api';
 import { logger } from '../src/logger';
 
 // Admin-only screen — plain English labels are fine (only the owner sees it).
@@ -31,6 +31,7 @@ export default function MetricsScreen() {
   const styles = useMemo(() => createStyles(ui), [ui]);
 
   const [rows, setRows] = useState<MetricRow[]>([]);
+  const [adoption, setAdoption] = useState<VersionAdoption | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -46,6 +47,9 @@ export default function MetricsScreen() {
     } finally {
       setLoading(false);
     }
+    // OTA adoption is best-effort and separate — a failure here must not blank
+    // the usage numbers above it.
+    api.getVersionAdoption().then(setAdoption).catch((e) => logger.warn('adoption load failed', e?.message || e));
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -144,6 +148,39 @@ export default function MetricsScreen() {
             ))}
           </View>
 
+          {/* OTA adoption — who is on the runtime that can receive updates */}
+          <Text style={styles.sectionTitle}>Update adoption</Text>
+          {adoption ? (
+            <>
+              <View style={styles.tileRow}>
+                <View style={styles.tile}>
+                  <Text style={styles.tileNum}>{adoption.pct_on_current_runtime}%</Text>
+                  <Text style={styles.tileLabel}>On runtime {adoption.current_runtime}</Text>
+                </View>
+                <View style={styles.tile}>
+                  <Text style={styles.tileNum}>{adoption.users_on_current_runtime}/{adoption.total_users_with_a_device}</Text>
+                  <Text style={styles.tileLabel}>Users can get OTA</Text>
+                </View>
+              </View>
+              <Text style={styles.hint}>
+                Only devices on runtime {adoption.current_runtime} (store build {adoption.store_version}) receive over-the-air updates. Others update via the Play Store.
+              </Text>
+              <View style={styles.card}>
+                {Object.entries(adoption.by_app_version).map(([ver, n], i) => (
+                  <View key={ver} style={[styles.eventRow, i === 0 && { borderTopWidth: 0 }]}>
+                    <Text style={styles.eventLabel}>Build {ver === 'unknown' ? '— (pre-telemetry)' : ver}</Text>
+                    <Text style={styles.eventCount}>{n}</Text>
+                  </View>
+                ))}
+              </View>
+              <Text style={styles.hint}>
+                {adoption.devices_reporting_version}/{adoption.devices_seen} devices report their build. Counts are distinct users, updated as people open the app.
+              </Text>
+            </>
+          ) : (
+            <Text style={styles.muted}>No device versions reported yet. Numbers appear as people on the new build open the app.</Text>
+          )}
+
           {!loading && rows.length === 0 && !error ? (
             <Text style={styles.muted}>No activity recorded yet. Numbers appear as testers use the app.</Text>
           ) : null}
@@ -164,6 +201,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   subtitle: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 14, marginTop: 4, marginBottom: 22 },
   error: { color: ui.danger, fontFamily: 'Inter_600SemiBold', fontSize: 14, marginBottom: 16 },
   muted: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 14, marginTop: 16, lineHeight: 20 },
+  hint: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, marginTop: 10, lineHeight: 18 },
   adminOnly: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 15, textAlign: 'center', marginTop: 40, paddingHorizontal: 24 },
   tileRow: { flexDirection: 'row', gap: 12 },
   tile: { flex: 1, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, borderRadius: 18, padding: 16, gap: 6 },

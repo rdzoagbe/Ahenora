@@ -727,6 +727,18 @@ export interface MetricRow {
   count: number;
 }
 
+export interface VersionAdoption {
+  current_runtime: string;
+  store_version: string;
+  users_on_current_runtime: number;
+  total_users_with_a_device: number;
+  pct_on_current_runtime: number;
+  by_runtime: Record<string, number>;
+  by_app_version: Record<string, number>;
+  devices_seen: number;
+  devices_reporting_version: number;
+}
+
 export interface FamilyInvite {
   invite_id: string;
   family_id: string;
@@ -1004,6 +1016,8 @@ export const api = {
   },
   getMetricsSummary: (days = 14) =>
     request<{ days: number; rows: MetricRow[] }>(`/metrics/summary?days=${days}`),
+  getVersionAdoption: () =>
+    request<VersionAdoption>('/admin/version-adoption'),
   listInvites: () => request<FamilyInvite[]>('/family/invites'),
   completeInvite: (inviteId: string) => {
     invalidateUsageCaches();
@@ -1348,10 +1362,14 @@ export const api = {
       method: 'PUT',
       body: data,
     }),
-  registerNotificationToken: (token: string, platform?: string) =>
+  // app_version / runtime_version ride along so the backend can report OTA
+  // adoption — which build and runtime each device is actually on — without a
+  // separate telemetry call. Both optional; a client that omits them still
+  // registers fine.
+  registerNotificationToken: (token: string, platform?: string, appVersion?: string, runtimeVersion?: string) =>
     request<{ ok: boolean }>('/notifications/register', {
       method: 'POST',
-      body: { token, platform },
+      body: { token, platform, app_version: appVersion, runtime_version: runtimeVersion },
     }),
   testNotification: () =>
     request<{ ok: boolean; tokens: number; result: unknown }>('/notifications/test', {

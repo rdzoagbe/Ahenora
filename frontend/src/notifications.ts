@@ -14,6 +14,26 @@ function isExpoGoAndroid() {
   return Platform.OS === 'android' && Constants.appOwnership === 'expo';
 }
 
+/**
+ * What build and runtime this install is actually on. Sent along with the push
+ * token so the backend can report OTA adoption — "who is on 1.0.3 / runtime
+ * 2.0.0 yet" — without a separate telemetry ping. The runtime is what gates
+ * whether a device can even receive an over-the-air update, so it is the number
+ * that answers "did everyone get it". expo-updates is imported lazily because
+ * it is a no-op on web, where there is no runtime to report.
+ */
+export async function appVersionInfo(): Promise<{ appVersion: string; runtimeVersion: string }> {
+  const appVersion = Constants.expoConfig?.version || '';
+  let runtimeVersion = '';
+  try {
+    const Updates = await import('expo-updates');
+    runtimeVersion = (Updates.runtimeVersion as string) || '';
+  } catch {
+    // Web or a build without expo-updates — no runtime to report.
+  }
+  return { appVersion, runtimeVersion };
+}
+
 async function getNotificationsModule(): Promise<any | null> {
   if (isExpoGoAndroid()) return null;
 
