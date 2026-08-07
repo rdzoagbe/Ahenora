@@ -627,6 +627,33 @@ class ManagingAChild(unittest.TestCase):
         u9 = next(u for u in db["users"].rows if u["user_id"] == "u9")
         self.assertNotEqual(u9["family_id"], "fam1")
 
+    def test_a_founder_whose_row_predates_user_id_linkage_can_still_remove(self):
+        # The production 403: the household owner's own member row was created
+        # before member rows carried user_id, so a bare user_id lookup found
+        # nothing and read the founder as "not a parent". Resolution now falls
+        # back to email, so they are recognised and the removal goes through.
+        base = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        db = FakeDB(
+            family_members=[
+                {"member_id": "p1", "family_id": "fam1",  # no user_id on the founder row
+                 "email": "R@X.com", "name": "Roland", "role": "Parent", "created_at": base},
+                {"member_id": "p2", "family_id": "fam1", "user_id": "u9",
+                 "email": "k@x.com", "name": "Keigh", "role": "Co-parent",
+                 "created_at": base + timedelta(days=30)},
+            ],
+            users=[
+                {"user_id": "u1", "family_id": "fam1", "email": "r@x.com", "name": "Roland"},
+                {"user_id": "u9", "family_id": "fam1", "email": "k@x.com", "name": "Keigh"},
+            ],
+            families=[{"family_id": "fam1", "plan": "village"}],
+            star_transactions=[], redemptions=[], family_invites=[],
+        )
+        server.get_db = lambda: db
+        founder = {"family_id": "fam1", "user_id": "u1", "email": "r@x.com", "name": "Roland"}
+        asyncio.run(server.delete_family_member("p2", user=founder))
+        ids = [m["member_id"] for m in db["family_members"].rows if m["family_id"] == "fam1"]
+        self.assertNotIn("p2", ids)
+
     def test_a_co_parent_cannot_remove_the_founder(self):
         self._coparented()
         co = {"family_id": "fam1", "user_id": "u9", "name": "Keigh", "role": "parent"}
