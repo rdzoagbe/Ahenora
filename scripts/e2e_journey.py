@@ -111,6 +111,10 @@ async def main():
         # ---- Android/inviter: send the invitation via the real form ----
         await android.goto(f"{WEB}/settings", wait_until="domcontentloaded")
         await android.wait_for_timeout(2000)
+        # Settings groups are collapsed by default; open Household to reach the
+        # invite rows inside it.
+        await android.click('[data-testid="settings-group-household"]')
+        await android.wait_for_timeout(400)
         await android.click("text=Invite a family member")
         await android.wait_for_timeout(800)
         await android.fill('[data-testid="invite-email"]', mail_b)
@@ -121,6 +125,8 @@ async def main():
         # exactly the production junk-folder scenario the app must survive.
         await android.click('[data-testid="close-invite"]')
         await android.wait_for_timeout(500)
+        # Household group is already open from the invite step above; just
+        # expand Manage members to see the pending co-parent invite.
         await android.click('[data-testid="settings-household-toggle"]')
         await android.wait_for_timeout(800)
         body = await android.inner_text("body")
@@ -242,6 +248,8 @@ async def main():
         # ---- Android/inviter: co-parents, moved child, accepted invite ----
         await android.goto(f"{WEB}/settings", wait_until="domcontentloaded")
         await android.wait_for_timeout(2500)
+        await android.click('[data-testid="settings-group-household"]')
+        await android.wait_for_timeout(400)
         await android.click('[data-testid="settings-household-toggle"]')
         await android.wait_for_timeout(1000)
         body = await android.inner_text("body")

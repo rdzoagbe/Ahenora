@@ -68,7 +68,9 @@ async def main():
         await p.wait_for_timeout(1000)
         await p.click('[data-testid="more-settings"]')
         await p.wait_for_timeout(3000)
-        r["more_reaches_settings"] = "Manage members" in await p.inner_text("body")
+        # Settings is a hub of group rows now; "Household" is a group header,
+        # visible without opening anything. (Manage members lives inside it.)
+        r["more_reaches_settings"] = "Household" in await p.inner_text("body")
 
         # The four daily tabs still work
         for label, marker in (("calendar", "Calendar"), ("kids", "Kids"), ("kitchen", "Kitchen")):
