@@ -2057,6 +2057,10 @@ class CalendarImportIn(BaseModel):
 class NotificationTokenIn(BaseModel):
     token: str
     platform: Optional[str] = None
+    # What build and runtime this device is on, for OTA-adoption reporting.
+    # Optional so an older client that does not send them still registers.
+    app_version: Optional[str] = None
+    runtime_version: Optional[str] = None
 
 
 class NotificationPrefsIn(BaseModel):
@@ -4548,6 +4552,10 @@ async def register_notification_token(payload: NotificationTokenIn, user=Depends
         "family_id": user["family_id"],
         "email": user.get("email"),
         "platform": payload.platform,
+        # Which build/runtime this device is running — refreshed every time the
+        # token is, so adoption reporting tracks the real fleet, not history.
+        "app_version": (payload.app_version or "").strip()[:20] or None,
+        "runtime_version": (payload.runtime_version or "").strip()[:20] or None,
         "active": True,
         "updated_at": utcnow(),
     }
@@ -4737,6 +4745,64 @@ async def app_version_info():
         "min_runtime": MIN_SUPPORTED_RUNTIME,
         "store_version": CURRENT_STORE_VERSION,
         "android_store_url": "https://play.google.com/store/apps/details?id=com.householdcoo.app",
+    }
+
+
+@app.get("/api/admin/version-adoption")
+async def version_adoption(user=Depends(require_user)):
+    """Who is on which build — the answer to "did the OTA reach everyone".
+
+    An over-the-air update only lands on a device whose runtime matches what was
+    published, so `by_runtime` is the real coverage number: the share on the
+    current runtime is the share that can receive this and every future OTA;
+    everyone else is frozen until they update from the store. Counted over
+    active push tokens, one device each, deduped to distinct users so a person
+    with two devices is not double-weighted.
+
+    Admin-only: it reads across the whole install base, not one household.
+    """
+    if not is_admin_user(user):
+        raise HTTPException(status_code=403, detail="Admins only")
+    database = get_db()
+
+    by_runtime: dict = {}
+    by_version: dict = {}
+    seen_users: set = set()
+    seen_devices = 0
+    reporting_devices = 0
+    async for tok in database["notification_tokens"].find(
+        {"active": True}, {"_id": 0, "user_id": 1, "app_version": 1, "runtime_version": 1}
+    ):
+        seen_devices += 1
+        rt = tok.get("runtime_version")
+        av = tok.get("app_version")
+        if rt or av:
+            reporting_devices += 1
+        # Distinct users per bucket, so multi-device people count once.
+        rt_key = rt or "unknown"
+        av_key = av or "unknown"
+        by_runtime.setdefault(rt_key, set()).add(tok.get("user_id"))
+        by_version.setdefault(av_key, set()).add(tok.get("user_id"))
+        if tok.get("user_id"):
+            seen_users.add(tok.get("user_id"))
+
+    def _counts(buckets: dict) -> dict:
+        return {k: len(v) for k, v in sorted(
+            buckets.items(), key=lambda kv: (-len(kv[1]), kv[0]))}
+
+    runtime_counts = _counts(by_runtime)
+    on_current = runtime_counts.get(MIN_SUPPORTED_RUNTIME, 0)
+    total_users = len(seen_users)
+    return {
+        "current_runtime": MIN_SUPPORTED_RUNTIME,
+        "store_version": CURRENT_STORE_VERSION,
+        "users_on_current_runtime": on_current,
+        "total_users_with_a_device": total_users,
+        "pct_on_current_runtime": round(100 * on_current / total_users, 1) if total_users else 0.0,
+        "by_runtime": runtime_counts,
+        "by_app_version": _counts(by_version),
+        "devices_seen": seen_devices,
+        "devices_reporting_version": reporting_devices,
     }
 
 
