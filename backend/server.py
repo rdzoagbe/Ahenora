@@ -1426,6 +1426,25 @@ def _is_parent_role(role: Optional[str]) -> bool:
     return str(role or "").strip().lower() in ("parent", "co-parent")
 
 
+async def _member_for_user(database: Any, family_id: str, user: dict) -> dict:
+    """The signed-in user's own member row, resolved resiliently.
+
+    Matching on user_id alone is not enough: the founder's row can predate the
+    day member rows started carrying user_id, so a bare user_id lookup finds
+    nothing and the founder reads as "not a parent" — which is exactly how the
+    household owner got a 403 trying to remove a co-parent. Falling back to a
+    case-insensitive email match recognises them as the parent they are.
+    """
+    row = await database["family_members"].find_one(
+        {"family_id": family_id, "user_id": user.get("user_id")}, {"_id": 0})
+    if not row and user.get("email"):
+        row = await database["family_members"].find_one(
+            {"family_id": family_id,
+             "email": {"$regex": f"^{re.escape(user['email'])}$", "$options": "i"}},
+            {"_id": 0})
+    return row or {}
+
+
 async def _count_parents(database: Any, family_id: str) -> int:
     return await database["family_members"].count_documents(
         {"family_id": family_id,
@@ -2992,6 +3011,12 @@ async def family_members(user=Depends(require_user)):
         (m for m in raw if _is_parent_role(m.get("role"))),
         key=lambda m: (_coerce_dt(m.get("created_at")) or utcnow()))
     founder_id = parents[0]["member_id"] if parents else None
+    # Which row is "me", resolved the same resilient way removal is — by user_id,
+    # else by email — so a founder whose row predates user_id linkage is still
+    # recognised as themselves (and so never offered a Remove button on it).
+    me = await _member_for_user(database, user["family_id"], user)
+    my_member_id = me.get("member_id")
+    my_email = str(user.get("email") or "").strip().lower()
     rows = []
     for item in raw:
         # Roll a child's weekly meter over on read, so the Kids screen always
@@ -2999,7 +3024,11 @@ async def family_members(user=Depends(require_user)):
         if str(item.get("role", "")).lower() == "child":
             item = await roll_week_if_stale(database, item)
         row = public_member(item)
-        row["is_me"] = item.get("user_id") == user["user_id"]
+        row["is_me"] = (
+            (item.get("user_id") is not None and item.get("user_id") == user["user_id"])
+            or (my_member_id is not None and item.get("member_id") == my_member_id)
+            or (bool(my_email) and str(item.get("email") or "").strip().lower() == my_email)
+        )
         row["is_founder"] = item.get("member_id") == founder_id
         rows.append(row)
     return rows
@@ -3203,13 +3232,13 @@ async def delete_family_member(member_id: str, user=Depends(require_user)):
     # removing a child, and gated accordingly. A child profile (no account)
     # skips all of this.
     if member.get("user_id"):
-        remover = await database["family_members"].find_one(
-            {"family_id": family_id, "user_id": user["user_id"]}, {"_id": 0}) or {}
+        remover = await _member_for_user(database, family_id, user)
         # Only a parent runs the household, and never on themselves — leaving is
         # account deletion, a deliberately separate door.
         if not _is_parent_role(remover.get("role")):
             raise HTTPException(status_code=403, detail="Only a parent can remove a co-parent.")
-        if member["user_id"] == user["user_id"]:
+        if member["user_id"] == user["user_id"] or (
+                remover.get("member_id") and remover["member_id"] == member["member_id"]):
             raise HTTPException(status_code=400, detail="To leave the household yourself, use account deletion.")
         # The founder cannot be removed by a co-parent they added — otherwise a
         # co-parent could evict the owner. The founder is the earliest parent.
