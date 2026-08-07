@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "Lyfta Personal",
+    "slug": "lyfta-personal",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "lyftapersonal",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.personal.lyfta"
+    },
+    "android": {
+      "package": "com.personal.lyfta",
+      "edgeToEdgeEnabled": true
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#101419",
+          "resizeMode": "contain"
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": false
+    }
+  }
+}
