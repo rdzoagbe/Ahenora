@@ -877,29 +877,60 @@ export default function Settings() {
                 {completedCards.length === 0 ? <Text style={styles.emptyText}>{t('set_no_completed_cards')}</Text> : completedCards.slice(0, 8).map((card) => (
                   <View key={card.card_id} style={styles.inviteRow}>
                     <MiniRow initial={card.type === 'TASK' ? 'T' : card.type === 'RSVP' ? 'R' : 'S'} name={card.title} sub={`${t('set_done')} · ${card.assignee || t('set_family')}`} />
-                    <PressScale
-                      testID={`restore-card-${card.card_id}`}
-                      onPress={() => {
-                        Alert.alert(t('set_restore_card_title'), `"${card.title}" ${t('set_restore_card_msg')}`, [
-                          { text: t('cancel'), style: 'cancel' },
-                          {
-                            text: t('set_restore'),
-                            onPress: async () => {
-                              try {
-                                await api.updateCard(card.card_id, { status: 'OPEN' });
-                                setCompletedCards((prev) => prev.filter((c) => c.card_id !== card.card_id));
-                              } catch {
-                                Alert.alert(t('set_error'), t('set_restore_error'));
-                              }
+                    <View style={styles.historyBtnRow}>
+                      <PressScale
+                        testID={`restore-card-${card.card_id}`}
+                        onPress={() => {
+                          Alert.alert(t('set_restore_card_title'), `"${card.title}" ${t('set_restore_card_msg')}`, [
+                            { text: t('cancel'), style: 'cancel' },
+                            {
+                              text: t('set_restore'),
+                              onPress: async () => {
+                                try {
+                                  await api.updateCard(card.card_id, { status: 'OPEN' });
+                                  setCompletedCards((prev) => prev.filter((c) => c.card_id !== card.card_id));
+                                } catch {
+                                  Alert.alert(t('set_error'), t('set_restore_error'));
+                                }
+                              },
                             },
-                          },
-                        ]);
-                      }}
-                      style={styles.ghostBtn}
-                    >
-                      <RotateCcw color={ui.text} size={14} />
-                      <Text style={styles.ghostBtnText}>{t('set_restore')}</Text>
-                    </PressScale>
+                          ]);
+                        }}
+                        style={styles.ghostBtn}
+                      >
+                        <RotateCcw color={ui.text} size={14} />
+                        <Text style={styles.ghostBtnText}>{t('set_restore')}</Text>
+                      </PressScale>
+                      {/* Permanent removal — the card AND its "done" line in the
+                          feed go. Restore un-completes; this erases. */}
+                      <PressScale
+                        testID={`delete-card-${card.card_id}`}
+                        accessibilityRole="button"
+                        accessibilityLabel={t('set_delete')}
+                        onPress={() => {
+                          Alert.alert(t('set_delete_card_title'), `"${card.title}" ${t('set_delete_card_msg')}`, [
+                            { text: t('cancel'), style: 'cancel' },
+                            {
+                              text: t('set_delete'),
+                              style: 'destructive',
+                              onPress: async () => {
+                                setCompletedCards((prev) => prev.filter((c) => c.card_id !== card.card_id));
+                                try {
+                                  await api.deleteCard(card.card_id);
+                                } catch {
+                                  Alert.alert(t('set_error'), t('set_delete_error'));
+                                  setCompletedCards(await api.listCards('DONE').catch(() => []));
+                                }
+                              },
+                            },
+                          ]);
+                        }}
+                        hitSlop={8}
+                        style={styles.historyDeleteBtn}
+                      >
+                        <Trash2 color={ui.danger} size={15} />
+                      </PressScale>
+                    </View>
                   </View>
                 ))}
               </View>
@@ -1263,6 +1294,8 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   expandActionText: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
   inviteRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   ghostBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft, borderRadius: 99, paddingHorizontal: 12, paddingVertical: 8 },
+  historyBtnRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  historyDeleteBtn: { padding: 8, borderRadius: 99, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft },
   iconGhostBtn: { alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft, borderRadius: 99, width: 34, height: 34, marginLeft: 8 },
   ghostBtnWide: { flex: 1, alignItems: 'center', borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft, borderRadius: 12, paddingVertical: 11 },
   ghostBtnText: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 12.5 },

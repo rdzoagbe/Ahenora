@@ -821,6 +821,8 @@ export interface ActivityEntry {
   /** Who the event landed on, for the ones that are about a person too. */
   target?: string;
   amount?: number | null;
+  /** False for a private line only you see; true for a shared household one. */
+  shared?: boolean;
   created_at: string;
 }
 
@@ -1219,6 +1221,11 @@ export const api = {
   // Vault
   listActivity: (limit = 12) =>
     request<ActivityEntry[]>(`/activity?limit=${limit}`),
+  // Clear one line from the feed. A private line is deleted; a shared one is
+  // hidden from your view only (the server decides which). Either way it
+  // leaves your feed.
+  deleteActivity: (id: string) =>
+    request(`/activity/${id}`, { method: 'DELETE' }),
   search: (q: string) =>
     request<SearchResponse>(`/search?q=${encodeURIComponent(q)}`),
   listAssignedToMe: () => request<Card[]>('/cards/mine'),

@@ -944,13 +944,21 @@ ACTIVITY_KEEP = 60
 
 
 async def log_activity(database, user: dict, kind: str, subject: str = "",
-                       amount: Optional[int] = None, target: str = "") -> None:
+                       amount: Optional[int] = None, target: str = "",
+                       shared: bool = True, ref: str = "") -> None:
     """Record who did what, for the household feed.
 
     The app could always say a task was done; it could never say by whom, so
     a co-parent opening the app found chores mysteriously finished. Best
     effort on purpose — an unrecorded line must never fail the action it
     describes.
+
+    `shared` decides who the line is for. Everything you do is yours: a private
+    task's completion is logged so YOU see your own history, but marked
+    `shared=False` so a co-parent's feed never carries it. Genuinely-common
+    household events (a member joining, the shopping list cleared) default to
+    shared. `ref` links the line to the thing it describes — a card id — so
+    deleting that thing can take its feed line with it.
     """
     if kind not in ACTIVITY_KINDS:
         return
@@ -969,6 +977,11 @@ async def log_activity(database, user: dict, kind: str, subject: str = "",
             # Who it landed on, for events that are about a person as well as
             # a thing — "Roland gave Keigh the school run".
             "target": (target or "")[:60],
+            "shared": bool(shared),
+            "ref": (ref or "")[:64],
+            # Per-person "hide from my view" for shared lines — the record
+            # stays for everyone else, it just leaves your feed.
+            "hidden_by": [],
             "created_at": utcnow(),
         })
     except Exception as exc:  # noqa: BLE001 — never break the caller
@@ -984,6 +997,9 @@ def public_activity(row: dict) -> dict:
         "subject": row.get("subject") or "",
         "amount": row.get("amount"),
         "target": row.get("target") or "",
+        # True for common household lines, False for a private one only the
+        # actor sees. Lets the client mark "just you" without a second call.
+        "shared": row.get("shared", True) is not False,
         "created_at": iso(row.get("created_at")),
     }
 
@@ -3817,15 +3833,59 @@ async def invites_for_me(
 
 @app.get("/api/activity")
 async def list_activity(limit: int = 12, user=Depends(require_user)):
-    """What happened in this household lately, newest first."""
+    """What happened in this household lately, newest first.
+
+    Everything you do is yours: the feed carries the household's shared lines
+    plus your own, and nothing a co-parent did privately. `shared: {$ne:
+    False}` keeps legacy rows (written before privacy existed, with no flag)
+    visible to all, exactly as they were — only rows explicitly marked private
+    are held back. `hidden_by` drops lines this person chose to clear from
+    their own view without erasing them for anyone else.
+    """
     database = get_db()
+    me = user["user_id"]
     rows = []
     cursor = database["activity"].find(
-        {"family_id": user["family_id"]}, {"_id": 0}
+        {
+            "family_id": user["family_id"],
+            "hidden_by": {"$ne": me},
+            "$or": [{"shared": {"$ne": False}}, {"actor_user_id": me}],
+        },
+        {"_id": 0},
     ).sort("created_at", -1).limit(max(1, min(limit, 50)))
     async for row in cursor:
         rows.append(public_activity(row))
     return rows
+
+
+@app.delete("/api/activity/{activity_id}")
+async def delete_activity(activity_id: str, user=Depends(require_user)):
+    """Clear a line from the feed.
+
+    A private line is yours alone — deleting it removes the record. A shared
+    line belongs to the household, so "delete" means "hide it from my view":
+    the row stays for the co-parent, it just leaves your feed. Either way you
+    can only touch lines your own feed actually shows.
+    """
+    database = get_db()
+    me = user["user_id"]
+    row = await database["activity"].find_one(
+        {"activity_id": activity_id, "family_id": user["family_id"]}, {"_id": 0}
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Not found")
+    if row.get("shared", True) is False:
+        # Private: only the actor ever saw it, and only the actor may remove it.
+        if row.get("actor_user_id") != me:
+            raise HTTPException(status_code=403, detail="Not yours")
+        await database["activity"].delete_one({"activity_id": activity_id})
+        return {"ok": True, "deleted": True}
+    # Shared: hide for me, keep for everyone else.
+    await database["activity"].update_one(
+        {"activity_id": activity_id},
+        {"$addToSet": {"hidden_by": me}},
+    )
+    return {"ok": True, "hidden": True}
 
 
 SEARCH_LIMIT = 40
@@ -4764,9 +4824,10 @@ async def create_card(payload: CardIn, user=Depends(require_user)):
         "shared": bool(payload.shared),
     }
     await database["cards"].insert_one(doc)
-    if doc.get("shared"):
-        # Private items are nobody else's business, so they are not announced.
-        await log_activity(database, user, "task_created", doc.get("title", ""))
+    # Log it either way — creating a private item is still YOUR history, kept
+    # for your own feed and marked private so a co-parent's feed never sees it.
+    await log_activity(database, user, "task_created", doc.get("title", ""),
+                       shared=bool(doc.get("shared")), ref=doc["card_id"])
 
     # Only ping the co-parent when the item is actually shared — private items
     # are silent by design.
@@ -4882,15 +4943,15 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
     updated = await database["cards"].find_one({"card_id": card_id}, {"_id": 0})
 
     if changes.get("status") == "DONE" and card["status"] != "DONE":
-        # A private card's title must not surface in the family activity feed.
-        # /api/activity returns the whole household's feed to any co-parent, so
-        # a private "Consult divorce lawyer" marked done would disclose its
-        # title. Every other activity/notify in this file is gated on `shared`
-        # (create_card, the task_assigned log just below) — this one was the
-        # single omission.
+        # A private card's title must never surface in a co-parent's feed — a
+        # private "Consult divorce lawyer" marked done would disclose its
+        # title. So the completion is logged either way, but with the card's
+        # own `shared` flag: a private one stays in YOUR feed (it is your
+        # history) and `list_activity` keeps it out of everyone else's. `ref`
+        # links the line to the card, so deleting the card clears the line.
         merged = {**card, **changes}
-        if merged.get("shared"):
-            await log_activity(database, user, "task_done", card.get("title", ""))
+        await log_activity(database, user, "task_done", card.get("title", ""),
+                           shared=bool(merged.get("shared")), ref=card_id)
 
     # A hand-off: the name changed, so somebody has just been given a job.
     # Only on a real change — re-saving a card without touching the assignee
@@ -5031,6 +5092,11 @@ async def share_card(card_id: str, user=Depends(require_user)):
 async def delete_card(card_id: str, user=Depends(require_user)):
     database = get_db()
     await database["cards"].delete_one({"card_id": card_id, "family_id": user["family_id"]})
+    # Deleting a card from the completed history takes its feed lines with it —
+    # "done" and "created" for a thing that no longer exists would otherwise
+    # linger. Scoped to the family and the card's own id, so nothing else moves.
+    await database["activity"].delete_many(
+        {"family_id": user["family_id"], "ref": card_id})
     return {"ok": True}
 
 
