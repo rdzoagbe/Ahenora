@@ -2972,6 +2972,39 @@ async def login_email(payload: EmailLoginIn):
     return {"user": public_user(user), "session_token": raw_session}
 
 
+class ChangePasswordIn(BaseModel):
+    current_password: Optional[str] = None
+    new_password: Optional[str] = None
+
+
+@app.post("/api/auth/change-password")
+async def change_password(payload: ChangePasswordIn, user=Depends(require_user)):
+    """Change the password on a password account.
+
+    Only for accounts that actually have a password — a Google account has
+    nothing to change and is told so rather than left guessing. The current
+    password must be proven before a new one is set, and the new one meets the
+    same floor as registration.
+    """
+    database = get_db()
+    stored = user.get("password_hash")
+    if not stored:
+        raise HTTPException(
+            status_code=400,
+            detail="This account signs in with Google, so it has no password to change.")
+    if not verify_password(payload.current_password or "", stored):
+        raise HTTPException(status_code=403, detail="Current password is incorrect")
+    new_password = payload.new_password or ""
+    if len(new_password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+    if verify_password(new_password, stored):
+        raise HTTPException(status_code=400, detail="New password must be different from the current one")
+    await database["users"].update_one(
+        {"user_id": user["user_id"]},
+        {"$set": {"password_hash": hash_password(new_password), "updated_at": utcnow()}})
+    return {"ok": True}
+
+
 @app.get("/api/auth/me")
 async def me(user=Depends(require_user)):
     return public_user(user)
