@@ -126,6 +126,38 @@ class DeletingYourAccount(unittest.TestCase):
         self.assertEqual(self._count(db, "family_members", user_id="u9"), 0)
         self.assertEqual(self._count(db, "family_members", user_id="u1"), 1)
 
+    def test_a_co_parent_leaving_does_not_wipe_a_legacy_founders_household(self):
+        """The data-loss guard: 'is anyone left?' is asked of the users
+        collection, not member rows. A founder whose MEMBER row predates
+        user_id linkage is still a live account — a co-parent deleting must not
+        purge the whole household out from under them."""
+        db = FakeDatabase()
+
+        async def seed():
+            # Founder u1: a real users doc, but a member row with NO user_id.
+            await db["users"].insert_one({"user_id": "u1", "family_id": "fam1",
+                "email": "founder@x.com", "name": "Founder", "password_hash": None})
+            await db["family_members"].insert_one({"member_id": "p1", "family_id": "fam1",
+                "email": "founder@x.com", "name": "Founder", "role": "Parent"})  # no user_id
+            # Co-parent u9: fully linked.
+            await db["users"].insert_one({"user_id": "u9", "family_id": "fam1",
+                "email": "co@x.com", "name": "Co", "password_hash": None})
+            await db["family_members"].insert_one({"member_id": "p2", "family_id": "fam1",
+                "user_id": "u9", "email": "co@x.com", "name": "Co", "role": "Co-parent"})
+            await db["families"].insert_one({"family_id": "fam1", "plan": "village"})
+            await db["cards"].insert_one({"card_id": "c1", "family_id": "fam1", "title": "Bins"})
+        asyncio.run(seed())
+        server.get_db = lambda: db
+
+        out = asyncio.run(server.delete_account(
+            server.DeleteAccountIn(confirm=True), user={"user_id": "u9", "family_id": "fam1"}))
+        self.assertFalse(out["deleted_household"])
+        # The founder, the family and the shared card all survive.
+        self.assertEqual(self._count(db, "users", user_id="u1"), 1)
+        self.assertEqual(self._count(db, "families", family_id="fam1"), 1)
+        self.assertEqual(self._count(db, "cards", family_id="fam1"), 1)
+        self.assertEqual(self._count(db, "users", user_id="u9"), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

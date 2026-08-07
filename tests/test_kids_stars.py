@@ -710,6 +710,55 @@ class ManagingAChild(unittest.TestCase):
             asyncio.run(server.delete_family_member("p1", user=gran))
         self.assertEqual(ctx.exception.status_code, 403)
 
+    def test_a_founder_with_no_created_at_is_still_protected(self):
+        # Founder detection sorts a row with no created_at as OLDEST, not "now",
+        # so a legacy founder row without a timestamp keeps its protection — a
+        # co-parent who joined later cannot be mistaken for the founder and use
+        # that to evict the owner.
+        base = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        db = FakeDB(
+            family_members=[
+                {"member_id": "p1", "family_id": "fam1", "user_id": "u1",  # no created_at
+                 "email": "r@x.com", "name": "Roland", "role": "Parent"},
+                {"member_id": "p2", "family_id": "fam1", "user_id": "u9",
+                 "email": "k@x.com", "name": "Keigh", "role": "Co-parent", "created_at": base},
+            ],
+            users=[
+                {"user_id": "u1", "family_id": "fam1", "email": "r@x.com", "name": "Roland"},
+                {"user_id": "u9", "family_id": "fam1", "email": "k@x.com", "name": "Keigh"},
+            ],
+            families=[{"family_id": "fam1", "plan": "village"}],
+            star_transactions=[], redemptions=[], family_invites=[],
+        )
+        server.get_db = lambda: db
+        co = {"family_id": "fam1", "user_id": "u9", "email": "k@x.com", "name": "Keigh"}
+        with self.assertRaises(HTTPException) as ctx:
+            asyncio.run(server.delete_family_member("p1", user=co))
+        self.assertEqual(ctx.exception.status_code, 403)
+
+    def test_a_rowless_owner_can_remove_a_co_parent(self):
+        # The owner whose member row was never written (no user_id, no email
+        # match) is still the founder — every invited member gets a row, so
+        # "no row" is the owner. They can remove a co-parent.
+        base = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        db = FakeDB(
+            family_members=[
+                {"member_id": "p2", "family_id": "fam1", "user_id": "u9",
+                 "email": "k@x.com", "name": "Keigh", "role": "Co-parent", "created_at": base},
+            ],
+            users=[
+                {"user_id": "u1", "family_id": "fam1", "email": "owner@x.com", "name": "Roland"},
+                {"user_id": "u9", "family_id": "fam1", "email": "k@x.com", "name": "Keigh"},
+            ],
+            families=[{"family_id": "fam1", "plan": "village"}],
+            star_transactions=[], redemptions=[], family_invites=[],
+        )
+        server.get_db = lambda: db
+        owner = {"family_id": "fam1", "user_id": "u1", "email": "owner@x.com", "name": "Roland"}
+        asyncio.run(server.delete_family_member("p2", user=owner))
+        ids = [m["member_id"] for m in db["family_members"].rows if m["family_id"] == "fam1"]
+        self.assertNotIn("p2", ids)
+
     def test_a_co_parent_cannot_remove_the_founder(self):
         self._coparented()
         co = {"family_id": "fam1", "user_id": "u9", "name": "Keigh", "role": "parent"}

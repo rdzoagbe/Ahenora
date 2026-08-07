@@ -94,6 +94,17 @@ class AdoptionReadout(unittest.TestCase):
         self.assertEqual(out["devices_seen"], 1)
         self.assertEqual(out["users_on_current_runtime"], 1)
 
+    def test_an_anonymous_device_does_not_inflate_the_count(self):
+        # A token with no user_id is a device, not a user — counting it would
+        # push a bucket past the true user total and the percentage over 100.
+        self._token("a", "2.0.0", "1.0.3")
+        self._token(None, "2.0.0", "1.0.3")  # anonymous, same runtime
+        out = self._run()
+        self.assertEqual(out["users_on_current_runtime"], 1)
+        self.assertEqual(out["by_runtime"], {"2.0.0": 1})
+        self.assertLessEqual(out["pct_on_current_runtime"], 100.0)
+        self.assertEqual(out["devices_seen"], 2)
+
     def test_no_devices_is_zero_not_a_crash(self):
         out = self._run()
         self.assertEqual(out["pct_on_current_runtime"], 0.0)
