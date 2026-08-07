@@ -49,9 +49,12 @@ async def main():
         r["K_sees_shared_task"] = "Bins out" in await keigh.inner_text("body")
         api("PATCH", f"/cards/{card['card_id']}", {"status": "DONE"}, tok_b)
 
-        # Roland opens his feed and learns who did it.
+        # Roland opens his feed and learns who did it. The retrospective half
+        # of the feed is collapsed by default now, so open the Household row.
         await roland.goto(f"{WEB}/feed", wait_until="domcontentloaded")
         await roland.wait_for_timeout(3500)
+        await roland.click('[data-testid="feed-household-open"]')
+        await roland.wait_for_timeout(700)
         body = await roland.inner_text("body")
         r["R_sees_activity_section"] = "In the household" in body
         r["R_sees_who_finished_it"] = "Keigh A" in body and "finished Bins out" in body
@@ -62,6 +65,8 @@ async def main():
         api("PATCH", "/auth/language", {"language": "fr"}, tok_a)
         await roland.reload(wait_until="domcontentloaded")
         await roland.wait_for_timeout(3500)
+        await roland.click('[data-testid="feed-household-open"]')
+        await roland.wait_for_timeout(700)
         body = await roland.inner_text("body")
         r["R_reads_it_in_french"] = "Dans le foyer" in body and "a terminé" in body
         await roland.screenshot(path="activity_feed_fr.png")

@@ -281,6 +281,13 @@ export default function Feed() {
   // Calendar events whose day has fully passed. Tasks stay (overdue = still to
   // do), but a past event is history — we prompt before clearing, never silently.
   const [pastPromptDismissed, setPastPromptDismissed] = useState(false);
+  // The Feed leads with today's work; everything retrospective — who did what,
+  // the board, notes, the weekly report — lives one tap down, collapsed by
+  // default so the screen you open all day stays short.
+  const [showHousehold, setShowHousehold] = useState(false);
+  // The task list shows a handful and offers the rest, so the Feed's height
+  // does not grow with how much there is to do.
+  const [showAllTasks, setShowAllTasks] = useState(false);
 
   const load = useCallback(async () => {
     logEvent('feed_open');
@@ -557,7 +564,9 @@ export default function Feed() {
     });
   }, [activeTab, activeCards, dashboard]);
 
-  const visibleCards = tabCards.slice(0, 8);
+  const TASK_CAP = 5;
+  const visibleCards = showAllTasks ? tabCards : tabCards.slice(0, TASK_CAP);
+  const hiddenTaskCount = tabCards.length - visibleCards.length;
   // Hand-offs lead the list; everything else follows. Split rather than
   // duplicated, so a task with your name on it appears exactly once.
   // "Keigh gave Roland the swimming kit" is not news to Roland when the task
@@ -570,6 +579,11 @@ export default function Feed() {
     .filter((e) => !(e.kind === 'task_assigned'
                      && (e.target || '').trim().toLowerCase() === myName))
     .slice(0, 4);
+  // One line for the collapsed Household row: the newest thing that happened,
+  // so the teaser hints at what is inside without opening it.
+  const householdSummary = householdActivity.length > 0
+    ? `${householdActivity[0].actor_name || t('feed_activity_someone')} ${activityPhrase(householdActivity[0], t)}`
+    : t('feed_household_empty');
   const handedIds = new Set(assigned.map((c) => c.card_id));
   const handedToMe = visibleCards.filter((c) => handedIds.has(c.card_id));
   const restOfList = visibleCards.filter((c) => !handedIds.has(c.card_id));
@@ -758,11 +772,14 @@ export default function Feed() {
             <View style={styles.heroRow}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.heroTitle} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.6}>{headline}</Text>
-                <Text style={styles.subtitle}>Household COO</Text>
-              </View>
-              <View style={styles.calmCard}>
-                <Text style={styles.calmLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>{t('feed_calm')}</Text>
-                <Text style={styles.calmValue}>{dashboard.calmScore}</Text>
+                {/* Calm was a hero-sized card; as an ambient signal it earns a
+                    pill, not the top third of the screen. */}
+                <View style={styles.heroMetaRow}>
+                  <View style={styles.calmPill}>
+                    <Text style={styles.calmPillText}>{t('feed_calm')} {dashboard.calmScore}</Text>
+                  </View>
+                  <Text style={styles.subtitle}>Household COO</Text>
+                </View>
               </View>
             </View>
 
@@ -894,18 +911,37 @@ export default function Feed() {
               )}
             </View>
 
-            {/* Retrospective sections live BELOW the task list, not
-                above it. A feed answers "what do I have to do today";
-                a log of what already happened and a notes box are
-                worth having but are not that answer, and while they
-                sat on top a two-week-old household opened the app to
-                five lines of history with its actual work off-screen.
-                The activity strip also double-reported: "Keigh gave
-                Roland the swimming kit" directly above a list already
-                showing that task under HANDED TO YOU. */}
-            {/* Who did what. The app could always show that the bins task was
-                gone; it could never say who dealt with it, which is the first
-                thing a co-parent wants to know. */}
+            {hiddenTaskCount > 0 && !showAllTasks ? (
+              <PressScale testID="feed-see-all" onPress={() => setShowAllTasks(true)} style={styles.seeAllBtn}>
+                <Text style={styles.seeAllText}>{t('feed_see_all_tasks', { n: hiddenTaskCount })}</Text>
+                <ChevronRight color={ui.orangeText} size={16} />
+              </PressScale>
+            ) : showAllTasks && tabCards.length > TASK_CAP ? (
+              <PressScale testID="feed-see-less" onPress={() => setShowAllTasks(false)} style={styles.seeAllBtn}>
+                <Text style={styles.seeAllText}>{t('feed_show_less')}</Text>
+              </PressScale>
+            ) : null}
+
+            {/* One row stands in for the whole retrospective half of the Feed —
+                who did what, the board, notes, the weekly report. Collapsed by
+                default; tap to open. This is what keeps the Feed to one screen. */}
+            <PressScale testID="feed-household-open" onPress={() => setShowHousehold((v) => !v)} style={styles.householdRow}>
+              <View style={styles.householdIcon}><History color={ui.mintText} size={17} /></View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.householdTitle}>{t('feed_household')}</Text>
+                <Text style={styles.householdSub} numberOfLines={1}>{householdSummary}</Text>
+              </View>
+              {householdActivity.length > 0 ? (
+                <View style={styles.householdCount}><Text style={styles.householdCountText}>{householdActivity.length}</Text></View>
+              ) : null}
+              <ChevronRight color={ui.muted} size={18} style={showHousehold ? { transform: [{ rotate: '90deg' }] } : undefined} />
+            </PressScale>
+
+            {showHousehold ? (
+            <>
+            {/* Retrospective sections, collapsed off the Feed by default:
+                who did what, notes, the family board, the weekly report and
+                the household snapshot. Opened from the row above. */}
             {householdActivity.length > 0 ? (
               <View style={styles.activityCard}>
                 <View style={styles.activityHead}>
@@ -1118,6 +1154,8 @@ export default function Feed() {
             <View style={styles.footerSnapshot}>
               <Text style={styles.footerSnapshotText}>{members.filter((m) => m.role?.toLowerCase() === 'child').length} {t('feed_kids')} · {rewardCount} {t('feed_rewards')} · {vaultCount} {t('feed_vault_docs')}</Text>
             </View>
+            </>
+            ) : null}
           </View>
           <View style={{ height: 160 }} />
       </TabScreen>
@@ -1411,33 +1449,83 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     fontSize: 17,
     letterSpacing: 0.2,
   },
-  calmCard: {
-    width: 78,
-    height: 92,
-    borderRadius: 24,
-    backgroundColor: ui.card,
+  heroMetaRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: ui.line,
-    shadowColor: '#000000',
-    shadowOpacity: 0.08,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 3,
+    gap: 10,
+    marginTop: 10,
   },
-  calmLabel: {
+  calmPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: ui.mint,
+    borderRadius: 9999,
+    paddingHorizontal: 11,
+    paddingVertical: 5,
+  },
+  calmPillText: {
     color: ui.mintText,
     fontFamily: 'Inter_800ExtraBold',
-    fontSize: 12,
-    letterSpacing: 0.5,
+    fontSize: 12.5,
+    letterSpacing: 0.2,
   },
-  calmValue: {
-    marginTop: 4,
+  seeAllBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingVertical: 11,
+    marginTop: 2,
+  },
+  seeAllText: {
+    color: ui.orangeText,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 13.5,
+  },
+  householdRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    borderRadius: 18,
+    backgroundColor: ui.card,
+    borderWidth: 1,
+    borderColor: ui.line,
+  },
+  householdIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 11,
+    backgroundColor: ui.mint,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  householdTitle: {
     color: ui.text,
     fontFamily: 'Inter_800ExtraBold',
-    fontSize: 26,
-    lineHeight: 30,
+    fontSize: 15.5,
+  },
+  householdSub: {
+    color: ui.muted,
+    fontFamily: 'Inter_500Medium',
+    fontSize: 12.5,
+    marginTop: 1,
+  },
+  householdCount: {
+    minWidth: 22,
+    height: 22,
+    borderRadius: 9999,
+    paddingHorizontal: 6,
+    backgroundColor: ui.orangeSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  householdCountText: {
+    color: ui.orangeText,
+    fontFamily: 'Inter_800ExtraBold',
+    fontSize: 12,
   },
   captureCard: {
     borderRadius: 26,

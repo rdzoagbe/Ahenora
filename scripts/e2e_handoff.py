@@ -138,6 +138,9 @@ async def main():
         roland = await persona(br, tok_a)
         await roland.goto(f"{WEB}/feed", wait_until="domcontentloaded")
         await roland.wait_for_timeout(4000)
+        # The household record lives in the collapsed Household section now.
+        await roland.click('[data-testid="feed-household-open"]')
+        await roland.wait_for_timeout(700)
         body = await roland.inner_text("body")
         r["record_names_who_it_went_to"] = "gave Keigh H" in body
 
