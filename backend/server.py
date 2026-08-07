@@ -3233,10 +3233,20 @@ async def delete_family_member(member_id: str, user=Depends(require_user)):
     # skips all of this.
     if member.get("user_id"):
         remover = await _member_for_user(database, family_id, user)
-        # Only a parent runs the household, and never on themselves — leaving is
-        # account deletion, a deliberately separate door.
-        if not _is_parent_role(remover.get("role")):
-            raise HTTPException(status_code=403, detail="Only a parent can remove a co-parent.")
+        # Only a parent runs the household. Authority is decided like this:
+        #  - a matched member row must carry a parent-level role;
+        #  - a requester that matches NO member row at all is the founder whose
+        #    row predates user_id linkage (or was never written). Every INVITED
+        #    member — co-parent or grandparent/nanny — gets a user_id-linked row
+        #    on join, so "no row" can only be the owner. Treat them as the
+        #    parent they are; the founder / last-parent / self guards below still
+        #    protect the household.
+        role = remover.get("role")
+        authorised = _is_parent_role(role) if remover else True
+        if not authorised:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Only a parent can remove a co-parent. (role read here: {role or 'none'})")
         if member["user_id"] == user["user_id"] or (
                 remover.get("member_id") and remover["member_id"] == member["member_id"]):
             raise HTTPException(status_code=400, detail="To leave the household yourself, use account deletion.")
@@ -4770,10 +4780,16 @@ async def app_version_info():
     exactly the one that might also be too old to sign in cleanly, and this
     answer is not private.
     """
+    # The running backend commit, so "is the fix deployed?" is answerable from
+    # outside. Railway sets RAILWAY_GIT_COMMIT_SHA on every deploy; other hosts
+    # may set GIT_COMMIT. Empty when neither is present (e.g. local dev).
+    commit = (os.environ.get("RAILWAY_GIT_COMMIT_SHA")
+              or os.environ.get("GIT_COMMIT") or "")[:12]
     return {
         "min_runtime": MIN_SUPPORTED_RUNTIME,
         "store_version": CURRENT_STORE_VERSION,
         "android_store_url": "https://play.google.com/store/apps/details?id=com.householdcoo.app",
+        "backend_commit": commit,
     }
 
 

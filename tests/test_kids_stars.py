@@ -654,6 +654,62 @@ class ManagingAChild(unittest.TestCase):
         ids = [m["member_id"] for m in db["family_members"].rows if m["family_id"] == "fam1"]
         self.assertNotIn("p2", ids)
 
+    def test_a_founder_with_no_member_row_at_all_can_still_remove(self):
+        # The stronger production shape: the owner has no parent-level member
+        # row — the household's parent rows are the two co-parents, and the
+        # owner is known only from `users`. An authenticated account that
+        # matches no member row is the founder, so removal must go through.
+        base = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        db = FakeDB(
+            family_members=[
+                {"member_id": "p2", "family_id": "fam1", "user_id": "u9",
+                 "email": "k@x.com", "name": "Keigh", "role": "Co-parent",
+                 "created_at": base + timedelta(days=10)},
+                {"member_id": "p3", "family_id": "fam1", "user_id": "u3",
+                 "email": "t@x.com", "name": "The Tester", "role": "Co-parent",
+                 "created_at": base + timedelta(days=40)},
+            ],
+            users=[
+                {"user_id": "u1", "family_id": "fam1", "email": "r@x.com", "name": "Roland"},
+                {"user_id": "u9", "family_id": "fam1", "email": "k@x.com", "name": "Keigh"},
+                {"user_id": "u3", "family_id": "fam1", "email": "t@x.com", "name": "The Tester"},
+            ],
+            families=[{"family_id": "fam1", "plan": "village"}],
+            star_transactions=[], redemptions=[], family_invites=[],
+        )
+        server.get_db = lambda: db
+        owner = {"family_id": "fam1", "user_id": "u1", "email": "r@x.com", "name": "Roland"}
+        asyncio.run(server.delete_family_member("p3", user=owner))  # remove The Tester
+        ids = [m["member_id"] for m in db["family_members"].rows if m["family_id"] == "fam1"]
+        self.assertNotIn("p3", ids)
+        self.assertIn("p2", ids)
+
+    def test_a_family_member_with_an_account_still_cannot_remove(self):
+        # The guard the permissive fallback must not weaken: a grandparent
+        # invited as a family member HAS an account and a user_id-linked row,
+        # so they are matched, found non-parent, and refused.
+        base = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        db = FakeDB(
+            family_members=[
+                {"member_id": "p1", "family_id": "fam1", "user_id": "u1",
+                 "email": "r@x.com", "name": "Roland", "role": "Parent", "created_at": base},
+                {"member_id": "g1", "family_id": "fam1", "user_id": "u7",
+                 "email": "gran@x.com", "name": "Gran", "role": "Grandparent",
+                 "created_at": base + timedelta(days=5)},
+            ],
+            users=[
+                {"user_id": "u1", "family_id": "fam1", "email": "r@x.com", "name": "Roland"},
+                {"user_id": "u7", "family_id": "fam1", "email": "gran@x.com", "name": "Gran"},
+            ],
+            families=[{"family_id": "fam1", "plan": "village"}],
+            star_transactions=[], redemptions=[], family_invites=[],
+        )
+        server.get_db = lambda: db
+        gran = {"family_id": "fam1", "user_id": "u7", "email": "gran@x.com", "name": "Gran"}
+        with self.assertRaises(HTTPException) as ctx:
+            asyncio.run(server.delete_family_member("p1", user=gran))
+        self.assertEqual(ctx.exception.status_code, 403)
+
     def test_a_co_parent_cannot_remove_the_founder(self):
         self._coparented()
         co = {"family_id": "fam1", "user_id": "u9", "name": "Keigh", "role": "parent"}
