@@ -191,6 +191,28 @@ function greetingFallback(name: string, t: TFunc, now: Date | null) {
   return `${prefix},${name ? `\n${name}` : ''}`;
 }
 
+// "Snooze" presets: move a task to tomorrow, the weekend, or next week — all
+// at 9am local, the times people mean by those words.
+function atMorning(d: Date) {
+  const x = new Date(d);
+  x.setHours(9, 0, 0, 0);
+  return x;
+}
+function snoozeOptions(t: TFunc): { label: string; date: Date }[] {
+  const now = new Date();
+  const tomorrow = new Date(now);
+  tomorrow.setDate(now.getDate() + 1);
+  const saturday = new Date(now);
+  saturday.setDate(now.getDate() + ((6 - now.getDay() + 7) % 7 || 7));
+  const nextWeek = new Date(now);
+  nextWeek.setDate(now.getDate() + 7);
+  return [
+    { label: t('feed_snooze_tomorrow'), date: atMorning(tomorrow) },
+    { label: t('feed_snooze_weekend'), date: atMorning(saturday) },
+    { label: t('feed_snooze_next_week'), date: atMorning(nextWeek) },
+  ];
+}
+
 function TaskRow({ card, onOpen, onComplete, styles }: { card: Card; onOpen: () => void; onComplete: () => void; styles: ReturnType<typeof createStyles> }) {
   const ui = useUI();
   const { t } = useStore();
@@ -613,6 +635,20 @@ export default function Feed() {
       if (next === 'DONE') recordWin();
     } catch {
       pendingDismissRef.current.delete(card.card_id);
+      Alert.alert(t('feed_could_not_update'), t('feed_change_not_saved'));
+      load();
+    }
+  };
+
+  // Move a task to a new day without opening the editor — the "not today"
+  // verb a home screen needs. Optimistic; rolls back on a failed save.
+  const reschedule = async (card: Card, when: Date) => {
+    const iso = when.toISOString();
+    setSelectedCard((c) => (c && c.card_id === card.card_id ? { ...c, due_date: iso } : c));
+    setCards((prev) => prev.map((c) => (c.card_id === card.card_id ? { ...c, due_date: iso } : c)));
+    try {
+      await api.updateCard(card.card_id, { due_date: iso });
+    } catch {
       Alert.alert(t('feed_could_not_update'), t('feed_change_not_saved'));
       load();
     }
@@ -1285,6 +1321,24 @@ export default function Feed() {
                 </View>
               ) : null}
 
+              {/* Reschedule — the "not today, move it" action. Three presets
+                  cover almost every real snooze; the chip closes the sheet so
+                  the change is felt immediately. */}
+              <Text style={styles.rescheduleLabel}>{t('feed_reschedule')}</Text>
+              <View style={styles.rescheduleRow}>
+                {snoozeOptions(t).map((opt) => (
+                  <PressScale
+                    key={opt.label}
+                    testID={`feed-snooze-${opt.label}`}
+                    onPress={() => { const c = selectedCard; setSelectedCard(null); reschedule(c, opt.date); }}
+                    style={styles.rescheduleChip}
+                  >
+                    <Clock color={ui.orangeText} size={14} />
+                    <Text style={styles.rescheduleChipText}>{opt.label}</Text>
+                  </PressScale>
+                ))}
+              </View>
+
               <PressScale testID="feed-complete-card" onPress={completeSelected} style={styles.completeBtn}>
                 <CheckCircle2 color="#FFFFFF" size={18} />
                 <Text style={styles.completeBtnText}>{t('feed_mark_done')}</Text>
@@ -1375,8 +1429,12 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   detailMetaText: { flex: 1, color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 15, lineHeight: 21 },
   detailBody: { marginTop: 16, gap: 10 },
   detailDescription: { color: ui.text, fontFamily: 'Inter_500Medium', fontSize: 16, lineHeight: 24 },
-  completeBtn: { marginTop: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, minHeight: 54, borderRadius: 99, backgroundColor: ui.orangeDeep },
+  completeBtn: { marginTop: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, minHeight: 54, borderRadius: 99, backgroundColor: ui.orangeDeep },
   completeBtnText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 16 },
+  rescheduleLabel: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 12, letterSpacing: 0.4, textTransform: 'uppercase', marginTop: 22, marginBottom: 9 },
+  rescheduleRow: { flexDirection: 'row', gap: 8 },
+  rescheduleChip: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 11, borderRadius: 14, backgroundColor: ui.orangeSoft, borderWidth: 1, borderColor: ui.orange + '30' },
+  rescheduleChipText: { color: ui.orangeText, fontFamily: 'Inter_700Bold', fontSize: 12.5 },
   container: {
     flex: 1,
     backgroundColor: ui.bg,
