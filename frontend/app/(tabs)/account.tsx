@@ -69,6 +69,10 @@ export default function AccountScreen() {
   const [supportSubject, setSupportSubject] = useState('');
   const [supportMessage, setSupportMessage] = useState('');
   const [supportSending, setSupportSending] = useState(false);
+  const [pwOpen, setPwOpen] = useState(false);
+  const [pwCurrent, setPwCurrent] = useState('');
+  const [pwNew, setPwNew] = useState('');
+  const [pwSaving, setPwSaving] = useState(false);
 
   const name = user?.name || t('acc_default_name');
   const email = user?.email || t('acc_not_signed_in');
@@ -93,6 +97,26 @@ export default function AccountScreen() {
   const goBack = () => {
     if (router.canGoBack()) router.back();
     else router.replace('/(tabs)/settings');
+  };
+
+  const submitChangePassword = async () => {
+    if (pwSaving) return;
+    if (pwNew.length < 8) {
+      Alert.alert(t('acc_pw_weak_title'), t('acc_pw_weak_msg'));
+      return;
+    }
+    setPwSaving(true);
+    try {
+      await api.changePassword({ current_password: pwCurrent, new_password: pwNew });
+      setPwOpen(false);
+      setPwCurrent('');
+      setPwNew('');
+      Alert.alert(t('acc_pw_done_title'), t('acc_pw_done_msg'));
+    } catch (e: any) {
+      Alert.alert(t('acc_pw_error_title'), e?.message || t('acc_pw_error_msg'));
+    } finally {
+      setPwSaving(false);
+    }
   };
 
   const submitSupport = async () => {
@@ -168,12 +192,17 @@ export default function AccountScreen() {
               }
               onPress={checkSession}
             />
-            <ListRow
-              tile={<IconTile bg={ui.soft}><KeyRound color={ui.text} size={18} /></IconTile>}
-              title={t('acc_change_password')}
-              subtitle={t('acc_change_password_sub')}
-              divider={false}
-            />
+            {user?.has_password ? (
+              <ListRow
+                testID="change-password"
+                tile={<IconTile bg={ui.soft}><KeyRound color={ui.text} size={18} /></IconTile>}
+                title={t('acc_change_password')}
+                subtitle={t('acc_change_password_sub')}
+                right={<Text style={styles.actionLink}>{t('acc_change')}</Text>}
+                onPress={() => setPwOpen(true)}
+                divider={false}
+              />
+            ) : null}
           </Card>
 
           {diagnostics ? (
@@ -282,6 +311,62 @@ export default function AccountScreen() {
               <Send color={theme.colors.primaryText} size={16} />
               <Text style={[styles.modalSendText, { color: theme.colors.primaryText }]}>
                 {supportSending ? t('acc_sending') : t('acc_send_message')}
+              </Text>
+            </PressScale>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Change Password Modal */}
+      <Modal visible={pwOpen} transparent animationType="fade" onRequestClose={() => setPwOpen(false)}>
+        <BlurView intensity={40} tint={theme.mode === 'light' ? 'light' : 'dark'} style={StyleSheet.absoluteFill} />
+        <View style={[styles.modalBackdrop, { backgroundColor: theme.mode === 'light' ? 'rgba(255,255,255,0.52)' : 'rgba(8,9,16,0.6)' }]} />
+        <View style={styles.modalCenter}>
+          <View style={[styles.modalSheet, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder, shadowColor: theme.colors.shadow }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: theme.colors.text }]}>{t('acc_change_password')}</Text>
+              <PressScale
+                accessibilityRole="button"
+                accessibilityLabel={t('close')} onPress={() => setPwOpen(false)} style={[styles.modalCloseBtn, { borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}>
+                <X color={theme.colors.text} size={18} />
+              </PressScale>
+            </View>
+
+            <Text style={[styles.modalLabel, { color: theme.colors.textMuted }]}>{t('acc_pw_current')}</Text>
+            <TextInput
+              testID="pw-current"
+              style={[styles.modalInput, { color: theme.colors.text, borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}
+              value={pwCurrent}
+              onChangeText={setPwCurrent}
+              placeholder={t('acc_pw_current_ph')}
+              placeholderTextColor={theme.colors.textMuted}
+              secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+
+            <Text style={[styles.modalLabel, { color: theme.colors.textMuted }]}>{t('acc_pw_new')}</Text>
+            <TextInput
+              testID="pw-new"
+              style={[styles.modalInput, { color: theme.colors.text, borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}
+              value={pwNew}
+              onChangeText={setPwNew}
+              placeholder={t('acc_pw_new_ph')}
+              placeholderTextColor={theme.colors.textMuted}
+              secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+
+            <PressScale
+              testID="pw-submit"
+              onPress={submitChangePassword}
+              disabled={pwSaving || !pwCurrent || pwNew.length < 8}
+              style={[styles.modalSendBtn, { backgroundColor: theme.colors.primary, opacity: pwSaving || !pwCurrent || pwNew.length < 8 ? 0.6 : 1 }]}
+            >
+              <KeyRound color={theme.colors.primaryText} size={16} />
+              <Text style={[styles.modalSendText, { color: theme.colors.primaryText }]}>
+                {pwSaving ? t('acc_pw_saving') : t('acc_pw_update')}
               </Text>
             </PressScale>
           </View>
