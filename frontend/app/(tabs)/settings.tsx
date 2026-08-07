@@ -19,6 +19,7 @@ import {
   PenLine,
   Receipt,
   RotateCcw,
+  Search as SearchIcon,
   Send,
   Share2,
   Sparkles,
@@ -36,7 +37,7 @@ import { LanguageModal } from '../../src/components/LanguageModal';
 import { PinPadModal } from '../../src/components/PinPadModal';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
 import { TabScreen } from '../../src/components/TabScreen';
-import { Card, Chevron, Divider, IconTile, MiniRow, NavRow, ScreenHeader, SectionTitle, StatBox, ToggleRow, useUI, UIColors } from '../../src/components/Kit';
+import { Card, Chevron, Divider, IconTile, MiniRow, NavRow, ScreenHeader, StatBox, ToggleRow, useUI, UIColors } from '../../src/components/Kit';
 import { useStore } from '../../src/store';
 import { api, Card as CardType, Entitlements, Expense, ExpenseSummary, FamilyInvite, FamilyMember, NotificationSettings } from '../../src/api';
 import { LANG_NAMES } from '../../src/i18n';
@@ -100,6 +101,11 @@ export default function Settings() {
   const [expandChildren, setExpandChildren] = useState(false);
   const [expandHistory, setExpandHistory] = useState(false);
   const [expandUsage, setExpandUsage] = useState(false);
+  // Settings is a hub now: each group is a row that opens on tap, so the
+  // screen is a short list of homes rather than a long scroll of everything.
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+  const [settingsQuery, setSettingsQuery] = useState('');
+  const toggleGroup = (id: string) => setOpenGroups((g) => ({ ...g, [id]: !g[id] }));
 
   const load = useCallback(async () => {
     try {
@@ -572,6 +578,31 @@ export default function Settings() {
     }
   };
 
+  const q = settingsQuery.trim().toLowerCase();
+  // Keywords per group, so a search reaches settings by the words people use
+  // for them, not the labels we happened to pick.
+  const GK = {
+    notifications: 'notifications push sign slip weekly digest email alert reminder',
+    appearance: 'appearance theme light dark system display',
+    household: 'household members co-parent co parent children child pin invite family expenses money cost split receipt',
+    preferences: 'preferences language translation locale',
+    more: 'more history completed cards replay setup onboarding plans plan upgrade premium billing subscription usage limits version update metrics',
+  };
+  // Open when the user tapped it, or when their search names it. A search also
+  // hides the groups it does not match, so "pin" leaves only Household on screen.
+  const groupOpen = (id: string, keywords: string) => !!openGroups[id] || (q.length > 0 && keywords.includes(q));
+  const groupVisible = (keywords: string) => q.length === 0 || keywords.includes(q);
+  const groupHead = (id: string, icon: React.ReactNode, title: string, subtitle: string, keywords: string) => (
+    <PressScale testID={`settings-group-${id}`} onPress={() => toggleGroup(id)} style={styles.groupHead}>
+      {icon}
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={styles.groupTitle}>{title}</Text>
+        {subtitle ? <Text style={styles.groupSubtitle} numberOfLines={1}>{subtitle}</Text> : null}
+      </View>
+      <Chevron open={groupOpen(id, keywords)} />
+    </PressScale>
+  );
+
   return (
     <SwipeableTabView style={styles.container}>
       <TabScreen
@@ -620,8 +651,36 @@ export default function Settings() {
             </Card>
           </PressScale>
 
+          {/* Search across every setting — the escape hatch that makes
+              grouping safe: nothing being one tap deeper matters when it is
+              also one search away. */}
+          <View style={[styles.searchWrap, styles.sectionGap]}>
+            <SearchIcon color={ui.muted} size={18} />
+            <TextInput
+              testID="settings-search"
+              value={settingsQuery}
+              onChangeText={setSettingsQuery}
+              placeholder={t('set_search')}
+              placeholderTextColor={ui.muted}
+              style={styles.searchInput}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            {settingsQuery.length > 0 ? (
+              <PressScale accessibilityRole="button" accessibilityLabel={t('cancel')} onPress={() => setSettingsQuery('')} hitSlop={10}>
+                <X color={ui.muted} size={16} />
+              </PressScale>
+            ) : null}
+          </View>
+
           {/* Notifications */}
-          <SectionTitle style={styles.sectionGap}>{t('set_notifications')}</SectionTitle>
+          {groupVisible(GK.notifications) ? (<>
+          {groupHead('notifications',
+            <IconTile bg={ui.orangeSoft}><Bell color={ui.orange} size={18} /></IconTile>,
+            t('set_notifications'),
+            `${t('set_push_notifications')}: ${notificationPrefs.card_reminders ? t('set_on') : t('set_off')}`,
+            GK.notifications)}
+          {groupOpen('notifications', GK.notifications) ? (<>
           <Card style={styles.cardPad}>
             <ToggleRow
               testID="notif-push"
@@ -652,9 +711,17 @@ export default function Settings() {
             />
           </Card>
           {notificationStatus ? <Text style={styles.note}>{notificationStatus}</Text> : null}
+          </>) : null}
+          </>) : null}
 
           {/* Appearance */}
-          <SectionTitle style={styles.sectionGap}>{t('set_appearance')}</SectionTitle>
+          {groupVisible(GK.appearance) ? (<>
+          {groupHead('appearance',
+            <IconTile bg={ui.lavender}><Sparkles color={ui.lavenderText} size={18} /></IconTile>,
+            t('set_appearance'),
+            t('set_appearance_' + appearanceMode),
+            GK.appearance)}
+          {groupOpen('appearance', GK.appearance) ? (
           <Card style={styles.segmentCard}>
             <View style={styles.segmentWrap}>
               {(['light', 'dark', 'system'] as const).map((mode) => {
@@ -669,9 +736,17 @@ export default function Settings() {
               })}
             </View>
           </Card>
+          ) : null}
+          </>) : null}
 
-          {/* Household */}
-          <SectionTitle style={styles.sectionGap}>{t('set_household')}</SectionTitle>
+          {/* Household — members, children, invites and shared expenses */}
+          {groupVisible(GK.household) ? (<>
+          {groupHead('household',
+            <IconTile bg={ui.orangeSoft}><Users color={ui.orange} size={18} /></IconTile>,
+            t('set_household'),
+            isCoParented ? `${t('set_co_parents')}: ${coParents.map((m) => m.name).join(' & ')}` : `${memberSlotsUsed} ${t('set_slots')}`,
+            GK.household)}
+          {groupOpen('household', GK.household) ? (<>
           <Card style={styles.cardPad}>
             <NavRow
               testID="settings-household-toggle"
@@ -787,9 +862,8 @@ export default function Settings() {
             />
           </Card>
 
-          {/* Expenses */}
-          <SectionTitle style={styles.sectionGap}>{t('set_expense_splitting')}</SectionTitle>
-          <Card style={styles.cardPad}>
+          {/* Shared expenses — folded into the Household group */}
+          <Card style={[styles.cardPad, styles.subCardGap]}>
             <NavRow
               testID="settings-expenses-toggle"
               tile={<IconTile bg={ui.gold}><DollarSign color={ui.goldText} size={18} /></IconTile>}
@@ -843,8 +917,17 @@ export default function Settings() {
             ) : null}
           </Card>
 
-          {/* Preferences */}
-          <SectionTitle style={styles.sectionGap}>{t('set_preferences')}</SectionTitle>
+          </>) : null}
+          </>) : null}
+
+          {/* Preferences — language */}
+          {groupVisible(GK.preferences) ? (<>
+          {groupHead('preferences',
+            <IconTile bg={ui.soft}><Globe color={ui.text} size={18} /></IconTile>,
+            t('set_preferences'),
+            LANG_NAMES[lang],
+            GK.preferences)}
+          {groupOpen('preferences', GK.preferences) ? (
           <Card style={styles.cardPad}>
             <NavRow
               testID="settings-lang"
@@ -856,8 +939,17 @@ export default function Settings() {
             />
           </Card>
 
-          {/* More / advanced */}
-          <SectionTitle style={styles.sectionGap}>{t('set_more')}</SectionTitle>
+          ) : null}
+          </>) : null}
+
+          {/* More — history, plans, usage, updates */}
+          {groupVisible(GK.more) ? (<>
+          {groupHead('more',
+            <IconTile bg={ui.soft}><BarChart3 color={ui.text} size={18} /></IconTile>,
+            t('set_more'),
+            versionLabel,
+            GK.more)}
+          {groupOpen('more', GK.more) ? (<>
           <Card style={styles.cardPad}>
             <NavRow
               testID="settings-replay-setup"
@@ -1043,6 +1135,9 @@ export default function Settings() {
             </View>
             {updateNote ? <Text style={styles.updateNote}>{updateNote}</Text> : null}
           </Card>
+
+          </>) : null}
+          </>) : null}
 
           {/* Logout */}
           <PressScale testID="logout" onPress={doLogout} style={styles.logoutBtn}>
@@ -1283,6 +1378,37 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
 
   sectionGap: { marginTop: 22, marginBottom: 10 },
   cardPad: { paddingHorizontal: 16 },
+  searchWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    backgroundColor: ui.soft,
+    borderRadius: 14,
+    paddingHorizontal: 13,
+    paddingVertical: 11,
+  },
+  searchInput: {
+    flex: 1,
+    color: ui.text,
+    fontFamily: 'Inter_500Medium',
+    fontSize: 15,
+    padding: 0,
+  },
+  groupHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    borderRadius: 18,
+    backgroundColor: ui.card,
+    borderWidth: 1,
+    borderColor: ui.line,
+  },
+  groupTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 16 },
+  groupSubtitle: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, marginTop: 1 },
+  subCardGap: { marginTop: 8 },
   segmentCard: { paddingHorizontal: 18, paddingTop: 6 },
 
   valueRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
