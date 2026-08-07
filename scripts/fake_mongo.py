@@ -5,8 +5,9 @@ simulator patches `server.db` with FakeDatabase() and every handler runs its
 actual code against this. Supports exactly the surface server.py uses:
 find_one / insert_one / update_one / update_many / delete_one / delete_many /
 count_documents / find().sort().limit() (async iteration + to_list), query
-operators $exists $gt $gte $lt $lte $in $nin $ne $or $regex(+$options i), update
-operators $set $inc, and db.command("ping").
+operators $exists $gt $gte $lt $lte $in $nin $ne $or $regex(+$options i)
+(equality operators match array membership, as Mongo does), update operators
+$set $inc $addToSet, and db.command("ping").
 """
 
 import re
@@ -65,6 +66,21 @@ def _eq(value, arg):
     return left == right
 
 
+def _eq_member(value, arg):
+    """Equality the way Mongo tests it against a stored field.
+
+    When the stored value is an array, a scalar query matches if ANY element
+    equals it — `{"hidden_by": me}` matches a doc whose `hidden_by` list
+    contains `me`, and `{"hidden_by": {"$ne": me}}` matches one where it does
+    not. Modelling this here is the whole point of the double: without it a
+    per-person hide list would "work" in tests and silently never filter in
+    production.
+    """
+    if isinstance(value, list):
+        return any(_eq(v, arg) for v in value)
+    return _eq(value, arg)
+
+
 def _match_condition(value, cond):
     if isinstance(cond, dict) and any(k.startswith("$") for k in cond):
         for op, arg in cond.items():
@@ -88,13 +104,13 @@ def _match_condition(value, cond):
                 if value is None or not left <= right:
                     return False
             elif op == "$in":
-                if not any(_eq(value, a) for a in arg):
+                if not any(_eq_member(value, a) for a in arg):
                     return False
             elif op == "$nin":
-                if any(_eq(value, a) for a in arg):
+                if any(_eq_member(value, a) for a in arg):
                     return False
             elif op == "$ne":
-                if _eq(value, arg):
+                if _eq_member(value, arg):
                     return False
             elif op == "$regex":
                 flags = re.I if "i" in (cond.get("$options") or "") else 0
@@ -105,7 +121,7 @@ def _match_condition(value, cond):
             else:
                 raise NotImplementedError(f"query operator {op}")
         return True
-    return _eq(value, cond)
+    return _eq_member(value, cond)
 
 
 def _matches(doc, query):
@@ -181,6 +197,13 @@ class FakeCollection:
             row[key] = _bsonify(value)
         for key, value in (update.get("$inc") or {}).items():
             row[key] = (row.get(key) or 0) + value
+        for key, value in (update.get("$addToSet") or {}).items():
+            arr = row.get(key)
+            if not isinstance(arr, list):
+                arr = []
+            if not any(_eq(v, value) for v in arr):
+                arr = arr + [_bsonify(value)]
+            row[key] = arr
 
     async def update_one(self, query, update, upsert=False):
         for row in self.rows:

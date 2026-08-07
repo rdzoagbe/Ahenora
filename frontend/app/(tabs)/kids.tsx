@@ -639,7 +639,8 @@ export default function Kids() {
    */
   const claimWeek = async (title: string) => {
     if (!activeChild) { showToast(t('kids_select_child_first'), 'error'); return; }
-    if (!weekFull) { showToast(t('kids_week_target_to_go', { n: weeklyTarget - weekEarned }), 'error'); return; }
+    // Claimable at any point in the week — 50 is the celebration, not the
+    // gate. The one rule the button enforces is one treat per week.
     if (weekClaimed || claiming) return;
     setClaiming(true);
     try {
@@ -1146,19 +1147,19 @@ export default function Kids() {
                         <View style={styles.weekClaimedTag}>
                           <Text style={styles.weekClaimedTagText}>{t('kids_week_claimed')}</Text>
                         </View>
-                      ) : weekFull ? (
-                        /* Nothing to spend here — the week itself is the price.
-                           Sends the parent to the ideas below rather than
-                           picking one for them; choosing it together is the
-                           part a child remembers. */
+                      ) : (
+                        /* A treat is always available to claim — reaching 50
+                           is a bonus, not the price. The pill just sends the
+                           parent to the ideas below; choosing one together is
+                           the part a child remembers. */
                         <PressScale
                           testID="kids-claim-week"
                           onPress={() => { setKidsTab('rewards'); showToast(t('kids_claim_pick_idea'), 'success'); }}
-                          style={styles.cashInBtn}
+                          style={[styles.cashInBtn, !weekFull && styles.cashInBtnSoft]}
                         >
-                          <Text style={styles.cashInText}>{t('kids_claim_week')}</Text>
+                          <Text style={[styles.cashInText, !weekFull && styles.cashInTextSoft]}>{t('kids_claim_week')}</Text>
                         </PressScale>
-                      ) : null}
+                      )}
                     </View>
 
                     {/* One meter, one target. A weekend goal used to be able to
@@ -1181,7 +1182,7 @@ export default function Kids() {
                             ? t('kids_week_claimed_hint')
                             : weekFull
                               ? t('kids_week_target_done')
-                              : t('kids_week_target_to_go', { n: weeklyTarget - weekEarned })}
+                              : t('kids_week_target_soft', { n: weeklyTarget - weekEarned })}
                         </Text>
                       </View>
 
@@ -1357,7 +1358,7 @@ export default function Kids() {
                             ? t('kids_reward_ideas_claimed')
                             : weekFull
                               ? t('kids_reward_ideas_ready')
-                              : t('kids_reward_ideas_hint', { n: weeklyTarget - weekEarned })}
+                              : t('kids_reward_ideas_anytime')}
                         </Text>
                         <View style={styles.ideaWrap}>
                           {REWARD_IDEAS.map((idea) => (
@@ -1367,7 +1368,7 @@ export default function Kids() {
                               accessibilityRole="button"
                               disabled={claiming || weekClaimed}
                               onPress={() => claimWeek(t(idea.titleKey))}
-                              style={[styles.ideaChip, weekFull && !weekClaimed && styles.ideaChipReady]}
+                              style={[styles.ideaChip, !weekClaimed && styles.ideaChipReady]}
                             >
                               <Text style={styles.ideaEmoji}>{idea.icon}</Text>
                               <Text style={styles.ideaTitle} numberOfLines={1}>{t(idea.titleKey)}</Text>
@@ -1978,6 +1979,8 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   weekDayLetterPicked: { color: '#FFFFFF' },
   weekDayFuture: { opacity: 0.4 },
   weekDayHint: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 11.5, lineHeight: 16, marginTop: 8 },
+  cashInBtnSoft: { backgroundColor: ui.orangeSoft },
+  cashInTextSoft: { color: ui.orangeText },
   weekClaimedTag: { backgroundColor: ui.mint, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8 },
   weekClaimedTagText: { color: ui.mintText, fontFamily: 'Inter_800ExtraBold', fontSize: 12 },
   weekResetNote: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 11.5, lineHeight: 16, marginTop: 12 },

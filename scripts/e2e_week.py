@@ -104,18 +104,20 @@ async def main():
         else:
             r["backdated_star_lands_on_the_chosen_day"] = True
 
-        # Fill the week the direct way, then claim it from the UI.
-        member = api("POST", f"/family/members/{mid}/stars",
-                     {"delta": 50, "reason": "A good week"}, tok)["member"]
-        bank_before = member["stars"]
+        # The loyalty-card rule: a treat is claimable BEFORE the week is full.
+        # Deliberately do not fill to 50 — claim straight from a partial week.
         await page.reload(wait_until="domcontentloaded")
         await page.wait_for_timeout(4000)
+        member = [m for m in api("GET", "/family/members", None, tok)
+                  if m["member_id"] == mid][0]
+        bank_before = member["stars"]
+        r["claiming_below_fifty_is_the_test"] = int(member.get("week_earned", 0)) < 50
         await page.click('[data-testid="ri_pizza"]')
         await page.wait_for_timeout(2500)
 
         weekly = [x for x in api("GET", "/redemptions", None, tok) if x.get("weekly")]
-        r["claiming_the_week_records_a_treat"] = len(weekly) == 1
-        r["the_week_costs_no_saved_stars"] = bool(weekly) and weekly[0]["cost_stars"] == 0
+        r["claiming_a_treat_records_it"] = len(weekly) == 1
+        r["the_treat_costs_no_saved_stars"] = bool(weekly) and weekly[0]["cost_stars"] == 0
 
         after = [m for m in api("GET", "/family/members", None, tok)
                  if m["member_id"] == mid][0]

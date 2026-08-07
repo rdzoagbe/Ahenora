@@ -650,6 +650,9 @@ export interface User {
   language: string;
   is_admin?: boolean;
   onboarding_completed?: boolean;
+  /** Password account (asks for the password to delete) vs Google (asks for a
+   *  typed confirmation instead). */
+  has_password?: boolean;
 }
 
 export interface FamilyMember {
@@ -670,6 +673,10 @@ export interface FamilyMember {
   weekend_goal_reward_id?: string | null;
   has_pin?: boolean;
   has_account?: boolean;
+  /** Set by GET /family/members: whether this row is the signed-in user, and
+   *  whether they are the household founder (the only parent nobody can remove). */
+  is_me?: boolean;
+  is_founder?: boolean;
 }
 
 export interface Reward {
@@ -814,6 +821,8 @@ export interface ActivityEntry {
   /** Who the event landed on, for the ones that are about a person too. */
   target?: string;
   amount?: number | null;
+  /** False for a private line only you see; true for a shared household one. */
+  shared?: boolean;
   created_at: string;
 }
 
@@ -959,6 +968,11 @@ export const api = {
   logout: () => {
     cache.clear();
     return request('/auth/logout', { method: 'POST' });
+  },
+  deleteAccount: (data: { password?: string; confirm?: boolean }) => {
+    cache.clear();
+    return request<{ ok: boolean; deleted_household: boolean }>(
+      '/auth/delete-account', { method: 'POST', body: data });
   },
   setLanguage: (language: string) =>
     request('/auth/language', { method: 'PATCH', body: { language } }),
@@ -1207,6 +1221,11 @@ export const api = {
   // Vault
   listActivity: (limit = 12) =>
     request<ActivityEntry[]>(`/activity?limit=${limit}`),
+  // Clear one line from the feed. A private line is deleted; a shared one is
+  // hidden from your view only (the server decides which). Either way it
+  // leaves your feed.
+  deleteActivity: (id: string) =>
+    request(`/activity/${id}`, { method: 'DELETE' }),
   search: (q: string) =>
     request<SearchResponse>(`/search?q=${encodeURIComponent(q)}`),
   listAssignedToMe: () => request<Card[]>('/cards/mine'),

@@ -31,6 +31,7 @@ interface StoreState {
   refreshUser: () => Promise<void>;
   refreshSubscription: () => Promise<void>;
   logout: () => Promise<void>;
+  deleteAccount: (data: { password?: string; confirm?: boolean }) => Promise<void>;
   setUserFromAuth: (user: User, token: string) => Promise<void>;
   upgradePrompt: { feature: string; message: string } | null;
   showUpgradePrompt: (feature: string, message: string) => void;
@@ -173,6 +174,18 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setLoading(false);
   }, []);
 
+  // Delete the account server-side, then tear the local session down exactly
+  // as logout does — a deleted account must leave nothing behind on the device.
+  const deleteAccount = useCallback(async (data: { password?: string; confirm?: boolean }) => {
+    await api.deleteAccount(data);
+    await tokenStore.clear();
+    await clearSnapshots().catch(() => undefined);
+    resetOfflineState();
+    setUser(null);
+    setSubscription(null);
+    setLoading(false);
+  }, []);
+
   const setUserFromAuth = useCallback(async (u: User, token: string) => {
     await tokenStore.set(token);
 
@@ -249,6 +262,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         refreshUser,
         refreshSubscription,
         logout,
+        deleteAccount,
         setUserFromAuth,
         upgradePrompt,
         showUpgradePrompt,

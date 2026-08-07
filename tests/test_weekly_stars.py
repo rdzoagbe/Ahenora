@@ -224,12 +224,25 @@ class TheWeekIsTheCurrency(unittest.TestCase):
         self._earn(3, day_offset=6)      # more work on an already-counted day
         self.assertEqual(self._member()["week_earned"], server.WEEKLY_TARGET + 3)
 
-    def test_claiming_needs_the_week_to_be_earned(self):
+    def test_a_treat_can_be_claimed_before_the_week_is_full(self):
+        # The loyalty-card rule: 50 is the celebration, not the gate. A child
+        # ten stars in can still claim a treat, at no cost to the bank.
         self._earn(10, day_offset=0)
+        before = self._member()["stars"]
+        out = self._claim("Ice cream")
+        self.assertEqual(out["redemption"]["cost_stars"], 0)
+        self.assertEqual(out["redemption"]["reward_title"], "Ice cream")
+        self.assertEqual(self._member()["stars"], before)   # bank untouched
+
+    def test_still_only_one_treat_a_week_even_below_fifty(self):
+        # Anytime, but not unlimited: the once-a-week guard holds regardless of
+        # how many stars have been earned.
+        self._earn(10, day_offset=0)
+        self._claim("First")
         with self.assertRaises(server.HTTPException) as e:
-            self._claim()
+            self._claim("Second")
         self.assertEqual(e.exception.status_code, 400)
-        self.assertIn("this week", e.exception.detail)
+        self.assertIn("already been claimed", e.exception.detail)
 
     def test_claiming_costs_no_saved_stars(self):
         # The whole point of (b): the week pays, the bank is savings.

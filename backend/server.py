@@ -855,6 +855,10 @@ def public_user(user: dict) -> dict:
         # they never get sent through first-run setup. Only accounts explicitly
         # created with False (new sign-ups) see onboarding.
         "onboarding_completed": bool(user.get("onboarding_completed", True)),
+        # Whether this account signs in with a password (vs Google). The delete
+        # screen asks for the password when there is one, a typed confirmation
+        # when there is not.
+        "has_password": bool(user.get("password_hash")),
     }
 
 
@@ -940,13 +944,21 @@ ACTIVITY_KEEP = 60
 
 
 async def log_activity(database, user: dict, kind: str, subject: str = "",
-                       amount: Optional[int] = None, target: str = "") -> None:
+                       amount: Optional[int] = None, target: str = "",
+                       shared: bool = True, ref: str = "") -> None:
     """Record who did what, for the household feed.
 
     The app could always say a task was done; it could never say by whom, so
     a co-parent opening the app found chores mysteriously finished. Best
     effort on purpose — an unrecorded line must never fail the action it
     describes.
+
+    `shared` decides who the line is for. Everything you do is yours: a private
+    task's completion is logged so YOU see your own history, but marked
+    `shared=False` so a co-parent's feed never carries it. Genuinely-common
+    household events (a member joining, the shopping list cleared) default to
+    shared. `ref` links the line to the thing it describes — a card id — so
+    deleting that thing can take its feed line with it.
     """
     if kind not in ACTIVITY_KINDS:
         return
@@ -965,6 +977,11 @@ async def log_activity(database, user: dict, kind: str, subject: str = "",
             # Who it landed on, for events that are about a person as well as
             # a thing — "Roland gave Keigh the school run".
             "target": (target or "")[:60],
+            "shared": bool(shared),
+            "ref": (ref or "")[:64],
+            # Per-person "hide from my view" for shared lines — the record
+            # stays for everyone else, it just leaves your feed.
+            "hidden_by": [],
             "created_at": utcnow(),
         })
     except Exception as exc:  # noqa: BLE001 — never break the caller
@@ -980,6 +997,9 @@ def public_activity(row: dict) -> dict:
         "subject": row.get("subject") or "",
         "amount": row.get("amount"),
         "target": row.get("target") or "",
+        # True for common household lines, False for a private one only the
+        # actor sees. Lets the client mark "just you" without a second call.
+        "shared": row.get("shared", True) is not False,
         "created_at": iso(row.get("created_at")),
     }
 
@@ -1400,6 +1420,39 @@ def invite_member_role(invite: Optional[dict]) -> str:
     return raw[:32] or "Parent"
 
 
+def _is_parent_role(role: Optional[str]) -> bool:
+    """A parent-level adult: the founder and any co-parent. Everyone else —
+    a child, or a grandparent/nanny invited as a family member — is not."""
+    return str(role or "").strip().lower() in ("parent", "co-parent")
+
+
+async def _count_parents(database: Any, family_id: str) -> int:
+    return await database["family_members"].count_documents(
+        {"family_id": family_id,
+         "role": {"$regex": "^(parent|co-parent)$", "$options": "i"}})
+
+
+MAX_PARENTS = 2  # one parent, one co-parent — the rest are family members with roles.
+
+
+async def _enforce_parent_limit(database: Any, family_id: str, relationship: Optional[str]) -> None:
+    """A household has room for two parents, no more.
+
+    Only co-parent invites are capped — an empty relationship becomes the
+    "Parent" role. A family-member invite (Grandparent, Nanny, Sibling...) is a
+    named role, not a parent, and is never blocked here. The message names the
+    way forward rather than just refusing.
+    """
+    if _clean_invite_text(relationship):
+        return  # a named family member, not a co-parent
+    if await _count_parents(database, family_id) >= MAX_PARENTS:
+        raise HTTPException(
+            status_code=409,
+            detail="This household already has two parents. To add someone else, "
+                   "invite them as a family member and give them a role.",
+        )
+
+
 async def add_user_to_family_if_needed(database: Any, user: dict, family_id: str,
                                        role: Optional[str] = None):
     existing = await database["family_members"].find_one(
@@ -1414,6 +1467,17 @@ async def add_user_to_family_if_needed(database: Any, user: dict, family_id: str
     )
     if existing:
         return existing
+
+    # The real guard: two co-parent invites can be outstanding at once (each was
+    # created while only the founder existed), and without this the second to be
+    # accepted would quietly become a third parent. The invite-time check is the
+    # friendly pop-up; this is the one that actually holds the line.
+    if _is_parent_role(role) and await _count_parents(database, family_id) >= MAX_PARENTS:
+        raise HTTPException(
+            status_code=409,
+            detail="This household already has two parents, so this invite can no "
+                   "longer be accepted as a co-parent.",
+        )
 
     member = {
         "member_id": new_id("member"),
@@ -2290,6 +2354,91 @@ class SmokeCleanupIn(BaseModel):
     family_ids: Optional[list] = None
 
 
+
+async def _resend_send(payload: dict) -> dict:
+    """POST an email to Resend. Shared by the invite and the deletion receipt.
+    The explicit User-Agent matters: Resend's Cloudflare edge 403s the default
+    urllib agent before the request ever reaches the API."""
+    def _send():
+        req = urllib.request.Request(
+            "https://api.resend.com/emails",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {RESEND_API_KEY}",
+                "Content-Type": "application/json",
+                "User-Agent": f"HouseholdCOO/1.0 (+{APP_NAME})",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=15) as response:
+            raw = response.read().decode("utf-8")
+            return {"sent": True, "provider": "resend",
+                    "response": (json.loads(raw) if raw else {})}
+    return await asyncio.to_thread(_send)
+
+
+async def send_account_deleted_email(to_email: str, name: str) -> dict:
+    """A receipt for a deletion — sent best-effort, never blocking the delete."""
+    if not RESEND_API_KEY or not INVITE_FROM_EMAIL or not to_email:
+        return {"sent": False}
+    safe_app = html.escape(APP_NAME)
+    safe_name = html.escape(name or "there")
+    subject = f"Your {APP_NAME} account has been deleted"
+    text = (
+        f"Hi {name or 'there'},\n\n"
+        f"Your {APP_NAME} account and its data have been permanently deleted, as you requested.\n\n"
+        "If this was not you, contact us immediately — but note the data cannot be recovered.\n"
+    )
+    html_body = f"""
+<div style="font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;background:#f4f5f2;padding:24px;">
+  <div style="max-width:520px;margin:0 auto;background:#fff;border:1px solid #e6e1da;border-radius:16px;padding:28px;">
+    <p style="color:#202323;font-size:16px;line-height:1.55;margin:0 0 14px;">Hi {safe_name},</p>
+    <p style="color:#202323;font-size:16px;line-height:1.55;margin:0 0 16px;">
+      Your <strong>{safe_app}</strong> account and all of its data have been permanently deleted,
+      as you requested. There is nothing left to recover.
+    </p>
+    <p style="color:#747b7c;font-size:13px;line-height:1.5;margin:18px 0 0;">
+      If you did not ask for this, reply to this email straight away.
+    </p>
+  </div>
+</div>""".strip()
+    try:
+        return await _resend_send({"from": INVITE_FROM_EMAIL, "to": [to_email],
+                                   "subject": subject, "text": text, "html": html_body})
+    except Exception as exc:  # noqa: BLE001 — a receipt must never fail a delete
+        log.warning("account-deleted email skipped: %s", exc)
+        return {"sent": False}
+
+
+# Every collection whose rows belong to a household. Purged by family_id when
+# the last account-holder leaves. Listed exhaustively on purpose: a forgotten
+# collection is orphaned personal data, which is the one thing account deletion
+# exists to prevent. Deleting by family_id from a collection that lacks the
+# field is a harmless no-op, so erring long is safe; erring short is not.
+_FAMILY_SCOPED_COLLECTIONS = (
+    "activity", "allowance_txns", "allowances", "announcements", "calendar_contacts",
+    "cards", "carpools", "chore_logs", "chores", "expenses", "family_invites",
+    "family_members", "handoff_notes", "meal_plans_saved", "meals", "redemptions",
+    "rewards", "routine_logs", "routines", "shopping_history", "shopping_list",
+    "star_transactions", "templates", "vault",
+)
+
+
+async def _purge_family(database: Any, family_id: str) -> None:
+    for collection in _FAMILY_SCOPED_COLLECTIONS:
+        await database[collection].delete_many({"family_id": family_id})
+    await database["families"].delete_many({"family_id": family_id})
+
+
+async def _purge_user_account(database: Any, user_id: str, email: str) -> None:
+    for collection in ("user_sessions", "notification_tokens", "notification_settings",
+                       "support_tickets"):
+        await database[collection].delete_many({"user_id": user_id})
+    if email:
+        await database["family_invites"].delete_many({"email": email, "status": "pending"})
+    await database["users"].delete_many({"user_id": user_id})
+
+
 @app.post("/api/auth/smoke-cleanup")
 async def smoke_cleanup(payload: Optional[SmokeCleanupIn] = Body(None), user=Depends(require_user)):
     """Self-deletion for smoke-test accounts, so repeated production runs
@@ -2309,6 +2458,63 @@ async def smoke_cleanup(payload: Optional[SmokeCleanupIn] = Body(None), user=Dep
         if remaining is None:
             await database["families"].delete_many({"family_id": fid})
     return {"ok": True}
+
+
+class DeleteAccountIn(BaseModel):
+    password: Optional[str] = None
+    confirm: Optional[bool] = None
+
+
+@app.post("/api/auth/delete-account")
+async def delete_account(payload: DeleteAccountIn, user=Depends(require_user)):
+    """Delete your own account and its data, for real and at once.
+
+    Self-service and immediate — the store requires it and it is simply how it
+    should work. Two shapes, decided by whether anyone else has a sign-in:
+
+      - You are the only account in the household → the whole household goes:
+        every card, chore, reward, vault document, the lot. Child profiles are
+        not accounts; they go with the household they lived in.
+      - Someone else has an account too (a co-parent) → only you leave. The
+        household and its shared data continue under them; the founder role
+        recomputes to the next-earliest parent on its own.
+    """
+    database = get_db()
+    fresh = await database["users"].find_one({"user_id": user["user_id"]}, {"_id": 0}) or user
+
+    # A password account must prove it is really them. An OAuth account has no
+    # password to check; the app gates it behind a typed confirmation instead.
+    if fresh.get("password_hash"):
+        if not payload.password or not verify_password(payload.password, fresh["password_hash"]):
+            raise HTTPException(status_code=403, detail="That password is not correct.")
+    elif not payload.confirm:
+        raise HTTPException(status_code=400, detail="Confirm the deletion to continue.")
+
+    family_id = fresh.get("family_id")
+    email = (fresh.get("email") or "").strip().lower()
+
+    other_account = None
+    if family_id:
+        other_account = await database["family_members"].find_one(
+            {"family_id": family_id, "user_id": {"$ne": fresh["user_id"], "$exists": True, "$nin": [None, ""]}},
+            {"_id": 0})
+
+    deleted_household = False
+    if family_id and other_account is None:
+        # Last account-holder: the household leaves with them.
+        await _purge_family(database, family_id)
+        deleted_household = True
+    elif family_id:
+        # A co-parent remains — take only this member out; the family stays.
+        await database["family_members"].delete_many(
+            {"family_id": family_id, "user_id": fresh["user_id"]})
+
+    await _purge_user_account(database, fresh["user_id"], email)
+
+    # A receipt, after the fact and never in the way.
+    await send_account_deleted_email(email, fresh.get("name") or "")
+
+    return {"ok": True, "deleted_household": deleted_household}
 
 
 @app.get("/api/health/config")
@@ -2774,14 +2980,24 @@ async def set_language(payload: LanguageIn, user=Depends(require_user)):
 @app.get("/api/family/members")
 async def family_members(user=Depends(require_user)):
     database = get_db()
+    raw = [item async for item in
+           database["family_members"].find({"family_id": user["family_id"]}, {"_id": 0})]
+    # The founder is the earliest parent-level member — the only one a co-parent
+    # cannot remove. Computed once here so the client does not have to guess.
+    parents = sorted(
+        (m for m in raw if _is_parent_role(m.get("role"))),
+        key=lambda m: (_coerce_dt(m.get("created_at")) or utcnow()))
+    founder_id = parents[0]["member_id"] if parents else None
     rows = []
-    cursor = database["family_members"].find({"family_id": user["family_id"]}, {"_id": 0})
-    async for item in cursor:
+    for item in raw:
         # Roll a child's weekly meter over on read, so the Kids screen always
         # shows this week's earnings rather than a stale count from last week.
         if str(item.get("role", "")).lower() == "child":
             item = await roll_week_if_stale(database, item)
-        rows.append(public_member(item))
+        row = public_member(item)
+        row["is_me"] = item.get("user_id") == user["user_id"]
+        row["is_founder"] = item.get("member_id") == founder_id
+        rows.append(row)
     return rows
 
 
@@ -2978,11 +3194,49 @@ async def delete_family_member(member_id: str, user=Depends(require_user)):
     )
     if not member:
         raise HTTPException(status_code=404, detail="Member not found")
+
+    # Removing a co-parent — an account-holder — is a different act from
+    # removing a child, and gated accordingly. A child profile (no account)
+    # skips all of this.
     if member.get("user_id"):
-        raise HTTPException(
-            status_code=400,
-            detail="This member is a signed-in account and cannot be removed here. Use account deletion instead.",
-        )
+        remover = await database["family_members"].find_one(
+            {"family_id": family_id, "user_id": user["user_id"]}, {"_id": 0}) or {}
+        # Only a parent runs the household, and never on themselves — leaving is
+        # account deletion, a deliberately separate door.
+        if not _is_parent_role(remover.get("role")):
+            raise HTTPException(status_code=403, detail="Only a parent can remove a co-parent.")
+        if member["user_id"] == user["user_id"]:
+            raise HTTPException(status_code=400, detail="To leave the household yourself, use account deletion.")
+        # The founder cannot be removed by a co-parent they added — otherwise a
+        # co-parent could evict the owner. The founder is the earliest parent.
+        parent_rows = [m async for m in database["family_members"].find(
+            {"family_id": family_id,
+             "role": {"$regex": "^(parent|co-parent)$", "$options": "i"}}, {"_id": 0})]
+        founder = min(parent_rows,
+                      key=lambda m: (_coerce_dt(m.get("created_at")) or utcnow()),
+                      default=None)
+        if founder and member["member_id"] == founder.get("member_id"):
+            raise HTTPException(status_code=403, detail="The household founder cannot be removed.")
+        # Never leave the household with no parent at all.
+        if await _count_parents(database, family_id) <= 1:
+            raise HTTPException(status_code=400, detail="A household must keep at least one parent.")
+
+        # They keep their account — they are ejected from THIS household, not
+        # deleted. A fresh, empty household means they are never left pointing
+        # at one they can no longer see.
+        removed = await database["users"].find_one({"user_id": member["user_id"]}, {"_id": 0})
+        if removed:
+            new_family_id = new_id("family")
+            await _seed_new_family(database, removed, new_family_id,
+                                   removed.get("email", ""), removed.get("name") or "Parent",
+                                   removed.get("picture"))
+            await database["users"].update_one(
+                {"user_id": removed["user_id"]},
+                {"$set": {"family_id": new_family_id, "updated_at": utcnow()}})
+        # Any invite they accepted to get here is spent; drop stale pending ones.
+        await database["family_invites"].update_many(
+            {"family_id": family_id, "accepted_by_user_id": member["user_id"]},
+            {"$set": {"status": "removed", "updated_at": utcnow()}})
 
     await database["family_members"].delete_one({"member_id": member_id, "family_id": family_id})
 
@@ -3208,15 +3462,15 @@ async def adjust_member_stars(member_id: str, payload: StarAdjustmentIn, user=De
 async def claim_weekly_treat(member_id: str, payload: WeeklyClaimIn, user=Depends(require_user)):
     """Cash the week in for a treat.
 
-    The week is the currency. A child who reaches the weekly target has earned
-    one treat, and which treat is a conversation rather than a price list — the
-    ideas are named by the family, not costed by us. That is why nothing here
-    spends `stars`: the bank is savings, untouched, and this claims the WEEK.
+    A loyalty card, not a locked door. The child can claim their treat at any
+    point in the week — reaching 50 is the celebration, not the price of entry.
+    Which treat is a conversation, not a price list, so nothing here spends
+    `stars`: the bank is savings, untouched, and this claims the WEEK.
 
-    One claim per week, guarded on the member document, so two parents tapping
-    together cannot hand out two treats for one week's work. The meter is not
-    reset: it records what was earned, and zeroing it would make a week look
-    unworked the moment it paid off.
+    The one rule is one treat per week, guarded on the member document so two
+    parents tapping together cannot hand out two for one week — and so an
+    always-available treat cannot become an unlimited one. The meter is not
+    reset: it records what was earned, and hitting 50 later still celebrates.
     """
     database = get_db()
     member = await database["family_members"].find_one(
@@ -3230,18 +3484,16 @@ async def claim_weekly_treat(member_id: str, payload: WeeklyClaimIn, user=Depend
     if len(title) < 2:
         raise HTTPException(status_code=400, detail="Give the treat a name")
 
+    # No star floor: a treat is claimable at any point in the week. The only
+    # guard is one-per-week — the atomic `$ne` filter makes a double tap
+    # (or two parents at once) a no-op rather than a second treat.
     claimed = await database["family_members"].update_one(
         {"member_id": member_id, "family_id": user["family_id"],
-         "week_earned": {"$gte": WEEKLY_TARGET},
          "week_claimed_for": {"$ne": week_start}},
         {"$set": {"week_claimed_for": week_start}},
     )
     if claimed.matched_count == 0:
-        fresh = await database["family_members"].find_one(
-            {"member_id": member_id, "family_id": user["family_id"]}, {"_id": 0}) or {}
-        if _coerce_dt(fresh.get("week_claimed_for")) == week_start:
-            raise HTTPException(status_code=400, detail="This week's treat has already been claimed.")
-        raise HTTPException(status_code=400, detail="Not enough stars earned this week yet.")
+        raise HTTPException(status_code=400, detail="This week's treat has already been claimed.")
 
     # Recorded as a redemption so it appears wherever "what are we still owed?"
     # is answered — at no star cost, because the week already paid for it.
@@ -3413,6 +3665,8 @@ async def family_invite_link(payload: Optional[InviteLinkIn] = Body(None), user=
     inviter can always see which account used which link."""
     database = get_db()
     await _enforce_member_slot_limit(database, user)
+    await _enforce_parent_limit(database, user["family_id"],
+                                payload.relationship if payload else None)
     invite = _new_invite_doc(
         user,
         email=None,
@@ -3428,6 +3682,7 @@ async def family_invite_link(payload: Optional[InviteLinkIn] = Body(None), user=
 async def family_invite(payload: InviteIn, user=Depends(require_user)):
     database = get_db()
     await _enforce_member_slot_limit(database, user)
+    await _enforce_parent_limit(database, user["family_id"], payload.relationship)
 
     email = payload.email.strip().lower()
     if not email or "@" not in email:
@@ -3578,15 +3833,59 @@ async def invites_for_me(
 
 @app.get("/api/activity")
 async def list_activity(limit: int = 12, user=Depends(require_user)):
-    """What happened in this household lately, newest first."""
+    """What happened in this household lately, newest first.
+
+    Everything you do is yours: the feed carries the household's shared lines
+    plus your own, and nothing a co-parent did privately. `shared: {$ne:
+    False}` keeps legacy rows (written before privacy existed, with no flag)
+    visible to all, exactly as they were — only rows explicitly marked private
+    are held back. `hidden_by` drops lines this person chose to clear from
+    their own view without erasing them for anyone else.
+    """
     database = get_db()
+    me = user["user_id"]
     rows = []
     cursor = database["activity"].find(
-        {"family_id": user["family_id"]}, {"_id": 0}
+        {
+            "family_id": user["family_id"],
+            "hidden_by": {"$ne": me},
+            "$or": [{"shared": {"$ne": False}}, {"actor_user_id": me}],
+        },
+        {"_id": 0},
     ).sort("created_at", -1).limit(max(1, min(limit, 50)))
     async for row in cursor:
         rows.append(public_activity(row))
     return rows
+
+
+@app.delete("/api/activity/{activity_id}")
+async def delete_activity(activity_id: str, user=Depends(require_user)):
+    """Clear a line from the feed.
+
+    A private line is yours alone — deleting it removes the record. A shared
+    line belongs to the household, so "delete" means "hide it from my view":
+    the row stays for the co-parent, it just leaves your feed. Either way you
+    can only touch lines your own feed actually shows.
+    """
+    database = get_db()
+    me = user["user_id"]
+    row = await database["activity"].find_one(
+        {"activity_id": activity_id, "family_id": user["family_id"]}, {"_id": 0}
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Not found")
+    if row.get("shared", True) is False:
+        # Private: only the actor ever saw it, and only the actor may remove it.
+        if row.get("actor_user_id") != me:
+            raise HTTPException(status_code=403, detail="Not yours")
+        await database["activity"].delete_one({"activity_id": activity_id})
+        return {"ok": True, "deleted": True}
+    # Shared: hide for me, keep for everyone else.
+    await database["activity"].update_one(
+        {"activity_id": activity_id},
+        {"$addToSet": {"hidden_by": me}},
+    )
+    return {"ok": True, "hidden": True}
 
 
 SEARCH_LIMIT = 40
@@ -4525,9 +4824,10 @@ async def create_card(payload: CardIn, user=Depends(require_user)):
         "shared": bool(payload.shared),
     }
     await database["cards"].insert_one(doc)
-    if doc.get("shared"):
-        # Private items are nobody else's business, so they are not announced.
-        await log_activity(database, user, "task_created", doc.get("title", ""))
+    # Log it either way — creating a private item is still YOUR history, kept
+    # for your own feed and marked private so a co-parent's feed never sees it.
+    await log_activity(database, user, "task_created", doc.get("title", ""),
+                       shared=bool(doc.get("shared")), ref=doc["card_id"])
 
     # Only ping the co-parent when the item is actually shared — private items
     # are silent by design.
@@ -4643,15 +4943,15 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
     updated = await database["cards"].find_one({"card_id": card_id}, {"_id": 0})
 
     if changes.get("status") == "DONE" and card["status"] != "DONE":
-        # A private card's title must not surface in the family activity feed.
-        # /api/activity returns the whole household's feed to any co-parent, so
-        # a private "Consult divorce lawyer" marked done would disclose its
-        # title. Every other activity/notify in this file is gated on `shared`
-        # (create_card, the task_assigned log just below) — this one was the
-        # single omission.
+        # A private card's title must never surface in a co-parent's feed — a
+        # private "Consult divorce lawyer" marked done would disclose its
+        # title. So the completion is logged either way, but with the card's
+        # own `shared` flag: a private one stays in YOUR feed (it is your
+        # history) and `list_activity` keeps it out of everyone else's. `ref`
+        # links the line to the card, so deleting the card clears the line.
         merged = {**card, **changes}
-        if merged.get("shared"):
-            await log_activity(database, user, "task_done", card.get("title", ""))
+        await log_activity(database, user, "task_done", card.get("title", ""),
+                           shared=bool(merged.get("shared")), ref=card_id)
 
     # A hand-off: the name changed, so somebody has just been given a job.
     # Only on a real change — re-saving a card without touching the assignee
@@ -4792,6 +5092,11 @@ async def share_card(card_id: str, user=Depends(require_user)):
 async def delete_card(card_id: str, user=Depends(require_user)):
     database = get_db()
     await database["cards"].delete_one({"card_id": card_id, "family_id": user["family_id"]})
+    # Deleting a card from the completed history takes its feed lines with it —
+    # "done" and "created" for a thing that no longer exists would otherwise
+    # linger. Scoped to the family and the card's own id, so nothing else moves.
+    await database["activity"].delete_many(
+        {"family_id": user["family_id"], "ref": card_id})
     return {"ok": True}
 
 

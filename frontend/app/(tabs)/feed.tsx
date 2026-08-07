@@ -685,6 +685,29 @@ export default function Feed() {
     }
   }, [annText]);
 
+  const removeActivity = useCallback(async (entry: ActivityEntry) => {
+    // A private line is yours to delete; a shared one only leaves your own
+    // feed (the server keeps it for the co-parent). Either way it goes from
+    // here immediately, and comes back only if the server refuses.
+    const prompt = entry.shared === false ? t('feed_activity_delete_msg') : t('feed_activity_hide_msg');
+    Alert.alert(t('feed_activity_remove_title'), prompt, [
+      { text: t('cancel'), style: 'cancel' },
+      {
+        text: entry.shared === false ? t('set_delete') : t('feed_activity_hide'),
+        style: 'destructive',
+        onPress: async () => {
+          setActivity((prev) => prev.filter((e) => e.activity_id !== entry.activity_id));
+          try {
+            await api.deleteActivity(entry.activity_id);
+          } catch {
+            Alert.alert(t('feed_could_not_delete'), t('feed_change_not_saved'));
+            load();
+          }
+        },
+      },
+    ]);
+  }, [t, load]);
+
   const removeAnnouncement = useCallback(async (id: string) => {
     setAnnouncements((prev) => prev.filter((a) => a.announcement_id !== id));
     try {
@@ -896,8 +919,19 @@ export default function Feed() {
                       <Text style={styles.activityActor}>{entry.actor_name || t('feed_activity_someone')}</Text>
                       {' '}
                       {activityPhrase(entry, t)}
+                      {entry.shared === false ? <Text style={styles.activityPrivate}>{'  '}{t('feed_activity_just_you')}</Text> : null}
                     </Text>
                     <Text style={styles.activityWhen}>{shortWhen(entry.created_at, t)}</Text>
+                    <PressScale
+                      testID={`activity-remove-${entry.activity_id}`}
+                      accessibilityRole="button"
+                      accessibilityLabel={t('feed_activity_remove_title')}
+                      onPress={() => removeActivity(entry)}
+                      hitSlop={10}
+                      style={styles.activityRemove}
+                    >
+                      <X color={ui.muted} size={14} />
+                    </PressScale>
                   </View>
                 ))}
               </View>
@@ -1698,6 +1732,8 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   activityText: { flex: 1, color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 18 },
   activityActor: { color: ui.text, fontFamily: 'Inter_700Bold' },
   activityWhen: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 11, marginTop: 2 },
+  activityPrivate: { color: ui.orangeText, fontFamily: 'Inter_600SemiBold', fontSize: 11 },
+  activityRemove: { padding: 4, marginLeft: 2 },
   notesHeader: {
     flexDirection: 'row',
     alignItems: 'center',

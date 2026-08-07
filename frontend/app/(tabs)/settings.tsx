@@ -229,7 +229,7 @@ export default function Settings() {
   const removeMember = useCallback((member: FamilyMember) => {
     Alert.alert(
       `${t('set_remove')} ${member.name}?`,
-      t('set_remove_member_msg'),
+      member.has_account ? t('set_remove_coparent_msg') : t('set_remove_member_msg'),
       [
         { text: t('cancel'), style: 'cancel' },
         {
@@ -428,6 +428,23 @@ export default function Settings() {
     setLastInviteUrl(null);
     setShowInvite(true);
   };
+
+  // Two parents is the ceiling — a parent and a co-parent. A third would-be
+  // parent is redirected to the family-member invite, where they get a role.
+  const tryInviteCoparent = useCallback(() => {
+    if (coParents.length >= 2) {
+      Alert.alert(
+        t('set_two_parents_title'),
+        t('set_two_parents_msg'),
+        [
+          { text: t('cancel'), style: 'cancel' },
+          { text: t('set_invite_family_member'), onPress: () => openInvite('', 'family') },
+        ],
+      );
+      return;
+    }
+    openInvite();
+  }, [coParents.length]);
 
   const inviteMessage = useCallback(
     (url: string) => `${user?.name || t('set_a_family_member')} ${t('set_invited_you')}\n\n${url}`,
@@ -674,7 +691,7 @@ export default function Settings() {
                           : m.has_account ? `${m.role} · ${t('set_account')}` : m.role
                       }
                     />
-                    {!m.has_account ? (
+                    {(!m.has_account || (m.has_account && !m.is_me && !m.is_founder)) ? (
                       <PressScale
                         testID={`remove-member-${m.member_id}`}
                         onPress={() => removeMember(m)}
@@ -728,7 +745,7 @@ export default function Settings() {
                     </PressScale>
                   </View>
                 ))}
-                <PressScale testID="invite-coparent" onPress={() => openInvite()} style={styles.expandAction}>
+                <PressScale testID="invite-coparent" onPress={tryInviteCoparent} style={styles.expandAction}>
                   <UserPlus color={ui.text} size={18} />
                   <Text style={styles.expandActionText}>{t('set_invite_coparent')}</Text>
                 </PressScale>
@@ -860,29 +877,60 @@ export default function Settings() {
                 {completedCards.length === 0 ? <Text style={styles.emptyText}>{t('set_no_completed_cards')}</Text> : completedCards.slice(0, 8).map((card) => (
                   <View key={card.card_id} style={styles.inviteRow}>
                     <MiniRow initial={card.type === 'TASK' ? 'T' : card.type === 'RSVP' ? 'R' : 'S'} name={card.title} sub={`${t('set_done')} · ${card.assignee || t('set_family')}`} />
-                    <PressScale
-                      testID={`restore-card-${card.card_id}`}
-                      onPress={() => {
-                        Alert.alert(t('set_restore_card_title'), `"${card.title}" ${t('set_restore_card_msg')}`, [
-                          { text: t('cancel'), style: 'cancel' },
-                          {
-                            text: t('set_restore'),
-                            onPress: async () => {
-                              try {
-                                await api.updateCard(card.card_id, { status: 'OPEN' });
-                                setCompletedCards((prev) => prev.filter((c) => c.card_id !== card.card_id));
-                              } catch {
-                                Alert.alert(t('set_error'), t('set_restore_error'));
-                              }
+                    <View style={styles.historyBtnRow}>
+                      <PressScale
+                        testID={`restore-card-${card.card_id}`}
+                        onPress={() => {
+                          Alert.alert(t('set_restore_card_title'), `"${card.title}" ${t('set_restore_card_msg')}`, [
+                            { text: t('cancel'), style: 'cancel' },
+                            {
+                              text: t('set_restore'),
+                              onPress: async () => {
+                                try {
+                                  await api.updateCard(card.card_id, { status: 'OPEN' });
+                                  setCompletedCards((prev) => prev.filter((c) => c.card_id !== card.card_id));
+                                } catch {
+                                  Alert.alert(t('set_error'), t('set_restore_error'));
+                                }
+                              },
                             },
-                          },
-                        ]);
-                      }}
-                      style={styles.ghostBtn}
-                    >
-                      <RotateCcw color={ui.text} size={14} />
-                      <Text style={styles.ghostBtnText}>{t('set_restore')}</Text>
-                    </PressScale>
+                          ]);
+                        }}
+                        style={styles.ghostBtn}
+                      >
+                        <RotateCcw color={ui.text} size={14} />
+                        <Text style={styles.ghostBtnText}>{t('set_restore')}</Text>
+                      </PressScale>
+                      {/* Permanent removal — the card AND its "done" line in the
+                          feed go. Restore un-completes; this erases. */}
+                      <PressScale
+                        testID={`delete-card-${card.card_id}`}
+                        accessibilityRole="button"
+                        accessibilityLabel={t('set_delete')}
+                        onPress={() => {
+                          Alert.alert(t('set_delete_card_title'), `"${card.title}" ${t('set_delete_card_msg')}`, [
+                            { text: t('cancel'), style: 'cancel' },
+                            {
+                              text: t('set_delete'),
+                              style: 'destructive',
+                              onPress: async () => {
+                                setCompletedCards((prev) => prev.filter((c) => c.card_id !== card.card_id));
+                                try {
+                                  await api.deleteCard(card.card_id);
+                                } catch {
+                                  Alert.alert(t('set_error'), t('set_delete_error'));
+                                  setCompletedCards(await api.listCards('DONE').catch(() => []));
+                                }
+                              },
+                            },
+                          ]);
+                        }}
+                        hitSlop={8}
+                        style={styles.historyDeleteBtn}
+                      >
+                        <Trash2 color={ui.danger} size={15} />
+                      </PressScale>
+                    </View>
                   </View>
                 ))}
               </View>
@@ -1246,6 +1294,8 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   expandActionText: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
   inviteRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   ghostBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft, borderRadius: 99, paddingHorizontal: 12, paddingVertical: 8 },
+  historyBtnRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  historyDeleteBtn: { padding: 8, borderRadius: 99, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft },
   iconGhostBtn: { alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft, borderRadius: 99, width: 34, height: 34, marginLeft: 8 },
   ghostBtnWide: { flex: 1, alignItems: 'center', borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft, borderRadius: 12, paddingVertical: 11 },
   ghostBtnText: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 12.5 },

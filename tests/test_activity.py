@@ -72,9 +72,16 @@ class ActivityLog(unittest.TestCase):
         self.assertEqual(feed[0]["subject"], "School forms")
         self.assertEqual(feed[1]["actor_name"], "Roland")
 
-    def test_private_tasks_are_not_announced(self):
+    def test_a_private_task_is_mine_to_see_but_no_one_elses(self):
+        # Everything you do is yours: creating a private card is your own
+        # history, so it shows in YOUR feed — and only yours. The co-parent's
+        # feed never carries it. (It used to be dropped outright, which meant
+        # you could not even see your own private history.)
         self._card(ROLAND, "Therapy appointment", shared=False)
-        self.assertEqual(self._feed_for(ROLAND), [])
+        mine = self._feed_for(ROLAND)
+        self.assertEqual(len(mine), 1)
+        self.assertFalse(mine[0]["shared"])
+        self.assertEqual(self._feed_for(KEIGH), [])
 
     def test_finishing_a_private_task_does_not_leak_its_title(self):
         # The feed is family-wide, so completing a private card must not put
