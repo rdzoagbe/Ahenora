@@ -17,6 +17,7 @@ import { Card as KitCard, IconTile, ScreenHeader, UI, useUI, UIColors } from '..
 import { useStore } from '../../src/store';
 import { api, logEvent, CalendarImportResult, Card, Carpool } from '../../src/api';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
+import { AddCardModal } from '../../src/components/AddCardModal';
 import { sendLocalNotification, syncCalendarNightly } from '../../src/notifications';
 import { cleanText, openExternal, parseDescription } from '../../src/eventDescription';
 
@@ -177,6 +178,13 @@ export default function Calendar() {
   const [sharedOut, setSharedOut] = useState<Card[] | null>(null);
   const [sharedIn, setSharedIn] = useState<Card[] | null>(null);
   const [makingPrivate, setMakingPrivate] = useState<string | null>(null);
+  // Month vs week. Month is the grid; week is a 7-day strip of the selected
+  // week — the span busy parents actually scan.
+  const [viewMode, setViewMode] = useState<'month' | 'week'>('month');
+  // Add an event to the day the calendar is already on, instead of leaving for
+  // the Feed to capture it — the gesture everyone expects here.
+  const [addOpen, setAddOpen] = useState(false);
+  const [addDraft, setAddDraft] = useState<{ transcript: string; type: Card['type']; title: string; description: string; assignee: string; due_date: string } | null>(null);
   const handledCalendarResponseRef = useRef(false);
 
   const webClientId =
@@ -418,6 +426,32 @@ export default function Calendar() {
   }, [cards]);
 
   const groups = useMemo(() => groupByDay(cards, selectedDay), [cards, selectedDay]);
+
+  // The seven days of the week the selection sits in, Sunday first.
+  const weekDays = useMemo(() => {
+    const anchor = selectedDay ? new Date(`${selectedDay}T00:00:00`) : new Date();
+    const start = new Date(anchor);
+    start.setDate(anchor.getDate() - anchor.getDay());
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      return d;
+    });
+  }, [selectedDay]);
+
+  const shiftWeek = (amount: number) => {
+    const anchor = selectedDay ? new Date(`${selectedDay}T00:00:00`) : new Date();
+    anchor.setDate(anchor.getDate() + amount * 7);
+    setSelectedDay(dateKey(anchor));
+    setActiveMonth(new Date(anchor.getFullYear(), anchor.getMonth(), 1));
+  };
+
+  const openAddEvent = () => {
+    const base = selectedDay ? new Date(`${selectedDay}T12:00:00`) : new Date();
+    if (!selectedDay) base.setHours(12, 0, 0, 0);
+    setAddDraft({ transcript: '', type: 'APPOINTMENT', title: '', description: '', assignee: '', due_date: base.toISOString() });
+    setAddOpen(true);
+  };
 
   const locale = lang === 'es' ? 'es-ES' : lang === 'fr' ? 'fr-FR' : 'en-US';
   const monthTitle = activeMonth.toLocaleDateString(locale, { month: 'long', year: 'numeric' });
@@ -886,60 +920,108 @@ export default function Calendar() {
             })()}
           </KitCard>
 
-          {/* Month grid */}
+          {/* Month / Week */}
           <KitCard style={styles.calCard}>
             <View style={styles.monthHeader}>
-              <PressScale testID="prev-month" accessibilityRole="button" accessibilityLabel={t('a11y_prev_month')} onPress={() => shiftMonth(-1)} style={styles.monthNav}>
+              <PressScale testID="prev-month" accessibilityRole="button" accessibilityLabel={t('a11y_prev_month')} onPress={() => (viewMode === 'week' ? shiftWeek(-1) : shiftMonth(-1))} style={styles.monthNav}>
                 <ChevronLeft color={ui.text} size={20} />
               </PressScale>
               <Text style={styles.monthTitle}>{monthTitle}</Text>
-              <PressScale testID="next-month" accessibilityRole="button" accessibilityLabel={t('a11y_next_month')} onPress={() => shiftMonth(1)} style={styles.monthNav}>
+              <PressScale testID="next-month" accessibilityRole="button" accessibilityLabel={t('a11y_next_month')} onPress={() => (viewMode === 'week' ? shiftWeek(1) : shiftMonth(1))} style={styles.monthNav}>
                 <ChevronRight color={ui.text} size={20} />
               </PressScale>
             </View>
 
-            <View style={[styles.weekHeader, { width: gridWidth }]}>
-              {['day_sunday', 'day_monday', 'day_tuesday', 'day_wednesday', 'day_thursday', 'day_friday', 'day_saturday'].map((k) => t(k).charAt(0).toUpperCase()).map((day, index) => (
-                <Text key={`${day}-${index}`} style={[styles.weekLabel, { width: daySize }]}>{day}</Text>
-              ))}
+            <View style={styles.viewToggle}>
+              <PressScale testID="cal-view-month" onPress={() => setViewMode('month')} style={[styles.viewToggleBtn, viewMode === 'month' && styles.viewToggleOn]}>
+                <Text style={[styles.viewToggleText, viewMode === 'month' && styles.viewToggleTextOn]}>{t('cal_view_month')}</Text>
+              </PressScale>
+              <PressScale testID="cal-view-week" onPress={() => setViewMode('week')} style={[styles.viewToggleBtn, viewMode === 'week' && styles.viewToggleOn]}>
+                <Text style={[styles.viewToggleText, viewMode === 'week' && styles.viewToggleTextOn]}>{t('cal_view_week')}</Text>
+              </PressScale>
             </View>
 
-            <View style={[styles.monthGrid, { width: gridWidth }]}>
-              {monthDays.map(({ date, inMonth }) => {
-                const key = dateKey(date);
-                const count = countsByDay[key] || 0;
-                const isToday = key === dateKey(new Date());
-                const selected = selectedDay === key;
-                return (
-                  <PressScale
-                    key={key}
-                    testID={`calendar-day-${key}`}
-                    onPress={() => onSelectDay(key, date)}
-                    style={[styles.dayCell, { width: daySize, height: daySize + 8 }, selected && styles.dayCellSelected]}
-                  >
-                    <Text
-                      style={[
-                        styles.dayNumber,
-                        { color: selected ? '#FFFFFF' : !inMonth ? ui.muted : isToday ? ui.orangeText : ui.text },
-                      ]}
+            {viewMode === 'month' ? (
+              <>
+                <View style={[styles.weekHeader, { width: gridWidth }]}>
+                  {['day_sunday', 'day_monday', 'day_tuesday', 'day_wednesday', 'day_thursday', 'day_friday', 'day_saturday'].map((k) => t(k).charAt(0).toUpperCase()).map((day, index) => (
+                    <Text key={`${day}-${index}`} style={[styles.weekLabel, { width: daySize }]}>{day}</Text>
+                  ))}
+                </View>
+
+                <View style={[styles.monthGrid, { width: gridWidth }]}>
+                  {monthDays.map(({ date, inMonth }) => {
+                    const key = dateKey(date);
+                    const count = countsByDay[key] || 0;
+                    const isToday = key === dateKey(new Date());
+                    const selected = selectedDay === key;
+                    return (
+                      <PressScale
+                        key={key}
+                        testID={`calendar-day-${key}`}
+                        onPress={() => onSelectDay(key, date)}
+                        style={[styles.dayCell, { width: daySize, height: daySize + 8 }, selected && styles.dayCellSelected]}
+                      >
+                        <Text
+                          style={[
+                            styles.dayNumber,
+                            { color: selected ? '#FFFFFF' : !inMonth ? ui.muted : isToday ? ui.orangeText : ui.text },
+                          ]}
+                        >
+                          {date.getDate()}
+                        </Text>
+                        {count > 0 ? (
+                          <View style={[styles.dayDot, { backgroundColor: selected ? '#FFFFFF' : ui.orange }]} />
+                        ) : (
+                          <View style={styles.dayDotSpacer} />
+                        )}
+                      </PressScale>
+                    );
+                  })}
+                </View>
+              </>
+            ) : (
+              <View style={[styles.weekStrip, { width: gridWidth }]}>
+                {weekDays.map((date) => {
+                  const key = dateKey(date);
+                  const count = countsByDay[key] || 0;
+                  const isToday = key === dateKey(new Date());
+                  const selected = selectedDay === key;
+                  return (
+                    <PressScale
+                      key={key}
+                      testID={`calendar-day-${key}`}
+                      onPress={() => onSelectDay(key, date)}
+                      style={[styles.weekDayCell, { width: daySize + 2 }, selected && styles.dayCellSelected]}
                     >
-                      {date.getDate()}
-                    </Text>
-                    {count > 0 ? (
-                      <View style={[styles.dayDot, { backgroundColor: selected ? '#FFFFFF' : ui.orange }]} />
-                    ) : (
-                      <View style={styles.dayDotSpacer} />
-                    )}
-                  </PressScale>
-                );
-              })}
-            </View>
+                      <Text style={[styles.weekDayLabel, { color: selected ? '#FFFFFF' : ui.muted }]}>
+                        {date.toLocaleDateString(locale, { weekday: 'short' }).charAt(0).toUpperCase()}
+                      </Text>
+                      <Text style={[styles.dayNumber, { color: selected ? '#FFFFFF' : isToday ? ui.orangeText : ui.text }]}>
+                        {date.getDate()}
+                      </Text>
+                      {count > 0 ? (
+                        <View style={[styles.dayDot, { backgroundColor: selected ? '#FFFFFF' : ui.orange }]} />
+                      ) : (
+                        <View style={styles.dayDotSpacer} />
+                      )}
+                    </PressScale>
+                  );
+                })}
+              </View>
+            )}
           </KitCard>
 
           {/* Day events */}
           <View style={styles.dayHead}>
-            <Text style={styles.dayHeadTitle}>{selectedDay ? formatDayFull(selectedDay) : t('upcoming')}</Text>
-            {selectedDay ? <Text style={styles.dayHeadCount}>{totalSelectedEvents} {totalSelectedEvents === 1 ? t('cal_event') : t('cal_events')}</Text> : null}
+            <Text style={[styles.dayHeadTitle, { flex: 1 }]} numberOfLines={1}>{selectedDay ? formatDayFull(selectedDay) : t('upcoming')}</Text>
+            <View style={styles.dayHeadRight}>
+              {selectedDay ? <Text style={styles.dayHeadCount}>{totalSelectedEvents} {totalSelectedEvents === 1 ? t('cal_event') : t('cal_events')}</Text> : null}
+              <PressScale testID="calendar-add-event" onPress={openAddEvent} style={styles.addEventBtn}>
+                <Plus color={ui.orangeText} size={15} />
+                <Text style={styles.addEventText}>{t('cal_add_event')}</Text>
+              </PressScale>
+            </View>
           </View>
 
           {loading ? (
@@ -1223,6 +1305,14 @@ export default function Calendar() {
         </PressScale>
       </KeyboardAwareBottomSheet>
 
+      <AddCardModal
+        visible={addOpen}
+        onClose={() => { setAddOpen(false); setAddDraft(null); }}
+        onCreated={() => { logEvent('card_created'); load(); }}
+        initialSource="MANUAL"
+        initialDraft={addDraft}
+      />
+
     </SwipeableTabView>
   );
 }
@@ -1253,6 +1343,17 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   monthGrid: { flexDirection: 'row', flexWrap: 'wrap', alignSelf: 'center' },
   dayCell: { alignItems: 'center', justifyContent: 'center', borderRadius: 14 },
   dayCellSelected: { backgroundColor: ui.orangeDeep },
+  viewToggle: { flexDirection: 'row', gap: 6, alignSelf: 'center', marginBottom: 12, backgroundColor: ui.soft, borderRadius: 10, padding: 3 },
+  viewToggleBtn: { paddingHorizontal: 18, paddingVertical: 6, borderRadius: 8 },
+  viewToggleOn: { backgroundColor: ui.card },
+  viewToggleText: { fontFamily: 'Inter_700Bold', fontSize: 13, color: ui.muted },
+  viewToggleTextOn: { color: ui.text },
+  weekStrip: { flexDirection: 'row', justifyContent: 'space-between', alignSelf: 'center', paddingVertical: 2 },
+  weekDayCell: { alignItems: 'center', justifyContent: 'center', gap: 3, paddingVertical: 8, borderRadius: 14 },
+  weekDayLabel: { fontFamily: 'Inter_700Bold', fontSize: 11 },
+  dayHeadRight: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  addEventBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: ui.orangeSoft, borderRadius: 9999, paddingHorizontal: 11, paddingVertical: 6 },
+  addEventText: { color: ui.orangeText, fontFamily: 'Inter_700Bold', fontSize: 12.5 },
   dayNumber: { fontFamily: 'Inter_700Bold', fontSize: 15.5, includeFontPadding: false, textAlign: 'center' },
   dayDot: { marginTop: 5, width: 5, height: 5, borderRadius: 99 },
   dayDotSpacer: { marginTop: 5, width: 5, height: 5 },
