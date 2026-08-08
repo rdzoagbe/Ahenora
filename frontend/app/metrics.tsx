@@ -8,7 +8,7 @@ import { PressScale } from '../src/components/PressScale';
 import { AmbientBackground } from '../src/components/AmbientBackground';
 import { useUI, UIColors } from '../src/components/Kit';
 import { useStore } from '../src/store';
-import { api, MetricRow, VersionAdoption } from '../src/api';
+import { api, MetricRow, VersionAdoption, PlanAdoption } from '../src/api';
 import { logger } from '../src/logger';
 
 // Admin-only screen — plain English labels are fine (only the owner sees it).
@@ -32,6 +32,7 @@ export default function MetricsScreen() {
 
   const [rows, setRows] = useState<MetricRow[]>([]);
   const [adoption, setAdoption] = useState<VersionAdoption | null>(null);
+  const [plans, setPlans] = useState<PlanAdoption | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -50,6 +51,8 @@ export default function MetricsScreen() {
     // OTA adoption is best-effort and separate — a failure here must not blank
     // the usage numbers above it.
     api.getVersionAdoption().then(setAdoption).catch((e) => logger.warn('adoption load failed', e?.message || e));
+    // Same for subscription adoption — the "who is actually paying" readout.
+    api.getPlanAdoption().then(setPlans).catch((e) => logger.warn('plan adoption load failed', e?.message || e));
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -148,6 +151,59 @@ export default function MetricsScreen() {
             ))}
           </View>
 
+          {/* Subscriptions — who is actually paying vs. getting Premium free */}
+          <Text style={styles.sectionTitle}>Subscriptions</Text>
+          {plans ? (
+            <>
+              {!plans.billing_live ? (
+                <View style={[styles.card, styles.warnCard]}>
+                  <Text style={styles.warnText}>
+                    Billing is OFF (RC_WEBHOOK_SECRET not set). Every household is on Premium for free and no paywall fires — set it in Railway before reading conversion.
+                  </Text>
+                </View>
+              ) : null}
+              <View style={styles.tileRow}>
+                <View style={styles.tile}>
+                  <Text style={styles.tileNum}>{plans.active_paying_families}</Text>
+                  <Text style={styles.tileLabel}>Paying households</Text>
+                </View>
+                <View style={styles.tile}>
+                  <Text style={styles.tileNum}>{plans.pct_active_paying}%</Text>
+                  <Text style={styles.tileLabel}>of active households</Text>
+                </View>
+                <View style={styles.tile}>
+                  <Text style={styles.tileNum}>{plans.active_free_premium_families}</Text>
+                  <Text style={styles.tileLabel}>Free Premium</Text>
+                </View>
+              </View>
+              <View style={styles.card}>
+                <View style={[styles.eventRow, { borderTopWidth: 0 }]}>
+                  <Text style={styles.eventLabel}>Active households (opened app)</Text>
+                  <Text style={styles.eventCount}>{plans.active_families_with_device}</Text>
+                </View>
+                <View style={styles.eventRow}>
+                  <Text style={styles.eventLabel}>Total households (incl. never-opened)</Text>
+                  <Text style={styles.eventCount}>{plans.total_families}</Text>
+                </View>
+                <View style={styles.eventRow}>
+                  <Text style={styles.eventLabel}>Tester households (share Premium)</Text>
+                  <Text style={styles.eventCount}>{plans.tester_households}</Text>
+                </View>
+                {Object.entries(plans.by_stored_plan).map(([plan, n]) => (
+                  <View key={plan} style={styles.eventRow}>
+                    <Text style={styles.eventLabel}>Stored plan · {plan}</Text>
+                    <Text style={styles.eventCount}>{n}</Text>
+                  </View>
+                ))}
+              </View>
+              <Text style={styles.hint}>
+                &quot;Paying&quot; counts households whose stored plan is a paid tier (a real purchase). &quot;Free Premium&quot; get paid features without paying — via the testing window or a tester household — so they never see a paywall.
+              </Text>
+            </>
+          ) : (
+            <Text style={styles.muted}>No subscription data yet.</Text>
+          )}
+
           {/* OTA adoption — who is on the runtime that can receive updates */}
           <Text style={styles.sectionTitle}>Update adoption</Text>
           {adoption ? (
@@ -209,6 +265,8 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   tileLabel: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 12 },
   sectionTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 18, marginTop: 28, marginBottom: 12 },
   card: { backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, borderRadius: 18, paddingHorizontal: 16 },
+  warnCard: { paddingVertical: 14, marginBottom: 12, borderColor: ui.danger },
+  warnText: { color: ui.danger, fontFamily: 'Inter_600SemiBold', fontSize: 13, lineHeight: 19 },
   eventRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14, borderTopWidth: 1, borderTopColor: ui.line },
   eventLabel: { color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 15 },
   eventCount: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 17 },

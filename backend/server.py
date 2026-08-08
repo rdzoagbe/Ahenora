@@ -5070,6 +5070,90 @@ async def version_adoption(user=Depends(require_user)):
     }
 
 
+@app.get("/api/admin/plan-adoption")
+async def plan_adoption(user=Depends(require_user)):
+    """Who is actually paying — the answer to "lots of visits, no subscribers".
+
+    Reads the whole install base and separates three populations that the app's
+    own screens blur together:
+
+      * paying — a household whose STORED plan is a paid tier. The only way to
+        reach it is the RevenueCat webhook (a real purchase); new families seed
+        as free, and self-serve upgrade is locked while billing is off. So this
+        count is the true subscriber number.
+      * free-premium — households getting Premium *limits* without paying, via
+        the testing window (global, when RC_WEBHOOK_SECRET is unset → EVERY
+        family) or a tester/admin household. These never see a paywall, so they
+        can never convert; if this is most of the base, that is the finding.
+      * free — genuinely on the free tier and gated normally.
+
+    `billing_live` is the master switch: when False no gate fires anywhere, so a
+    zero-subscriber number is expected, not a funnel problem. Counted per family,
+    and separately per family that has at least one active device (a real, live
+    household) so abandoned sign-ups don't dilute the conversion rate.
+
+    Admin-only: it reads across every household, not one.
+    """
+    if not is_admin_user(user):
+        raise HTTPException(status_code=403, detail="Admins only")
+    database = get_db()
+
+    billing_live = bool(os.environ.get("RC_WEBHOOK_SECRET"))
+
+    # Which families own an active device — the population that actually opened
+    # the app, so the conversion rate is measured against real households.
+    families_with_device: set = set()
+    async for tok in database["notification_tokens"].find(
+        {"active": True}, {"_id": 0, "family_id": 1}
+    ):
+        fid = tok.get("family_id")
+        if fid:
+            families_with_device.add(fid)
+
+    by_stored_plan: dict = {}
+    paying = 0
+    tester_households = 0
+    total_families = 0
+    active_total = 0
+    active_paying = 0
+    async for fam in database["families"].find(
+        {}, {"_id": 0, "family_id": 1, "plan": 1}
+    ):
+        total_families += 1
+        plan = fam.get("plan") or "village"
+        by_stored_plan[plan] = by_stored_plan.get(plan, 0) + 1
+        is_paying = plan != "village"
+        if is_paying:
+            paying += 1
+        is_tester = await family_has_admin(database, fam.get("family_id", ""))
+        if is_tester:
+            tester_households += 1
+        if fam.get("family_id") in families_with_device:
+            active_total += 1
+            if is_paying:
+                active_paying += 1
+
+    # Free-premium: households handed Premium limits for free. The testing window
+    # is global, so when it is on every non-paying family qualifies; otherwise
+    # only tester households do.
+    free_premium = (total_families - paying) if not billing_live else tester_households
+    active_free_premium = (active_total - active_paying) if not billing_live else min(
+        tester_households, active_total)
+
+    return {
+        "billing_live": billing_live,
+        "total_families": total_families,
+        "by_stored_plan": dict(sorted(by_stored_plan.items(), key=lambda kv: -kv[1])),
+        "paying_families": paying,
+        "tester_households": tester_households,
+        "free_premium_families": free_premium,
+        "active_families_with_device": active_total,
+        "active_paying_families": active_paying,
+        "pct_active_paying": round(100 * active_paying / active_total, 1) if active_total else 0.0,
+        "active_free_premium_families": active_free_premium,
+    }
+
+
 @app.get("/api/cards/sharing-summary")
 async def sharing_summary(user=Depends(require_user)):
     """The three numbers the privacy panel states, counted in one place.
