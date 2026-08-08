@@ -739,6 +739,19 @@ export interface VersionAdoption {
   devices_reporting_version: number;
 }
 
+export interface PlanAdoption {
+  billing_live: boolean;
+  total_families: number;
+  by_stored_plan: Record<string, number>;
+  paying_families: number;
+  tester_households: number;
+  free_premium_families: number;
+  active_families_with_device: number;
+  active_paying_families: number;
+  pct_active_paying: number;
+  active_free_premium_families: number;
+}
+
 export interface FamilyInvite {
   invite_id: string;
   family_id: string;
@@ -1024,6 +1037,8 @@ export const api = {
     request<{ days: number; rows: MetricRow[] }>(`/metrics/summary?days=${days}`),
   getVersionAdoption: () =>
     request<VersionAdoption>('/admin/version-adoption'),
+  getPlanAdoption: () =>
+    request<PlanAdoption>('/admin/plan-adoption'),
   listInvites: () => request<FamilyInvite[]>('/family/invites'),
   completeInvite: (inviteId: string) => {
     invalidateUsageCaches();
