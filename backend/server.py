@@ -214,6 +214,12 @@ _auth_fail: dict[str, list[float]] = defaultdict(list)
 AUTH_FAIL_MAX = int(os.environ.get("AUTH_FAIL_MAX", "8"))
 AUTH_FAIL_WINDOW = int(os.environ.get("AUTH_FAIL_WINDOW", "900"))  # 15 minutes
 
+# Forgotten-password reset: a short-lived numeric code emailed to the account's
+# inbox. Kept short so it is easy to type, safe only because it expires fast, is
+# tried a handful of times at most, and is rate-limited per email.
+PASSWORD_RESET_TTL_MINUTES = int(os.environ.get("PASSWORD_RESET_TTL_MINUTES", "15"))
+PASSWORD_RESET_MAX_ATTEMPTS = int(os.environ.get("PASSWORD_RESET_MAX_ATTEMPTS", "5"))
+
 
 def _auth_locked(identity: str) -> bool:
     import time
@@ -2440,6 +2446,49 @@ async def send_account_deleted_email(to_email: str, name: str) -> dict:
         return {"sent": False}
 
 
+async def send_password_reset_email(to_email: str, name: str, code: str) -> dict:
+    """The one-time code that lets someone who has forgotten their password
+    prove they own the inbox. Sent best-effort; a delivery failure must not tell
+    the caller whether the account exists, so the endpoint ignores the result."""
+    if not RESEND_API_KEY or not INVITE_FROM_EMAIL or not to_email:
+        return {"sent": False}
+    safe_app = html.escape(APP_NAME)
+    safe_name = html.escape(name or "there")
+    safe_code = html.escape(code)
+    minutes = PASSWORD_RESET_TTL_MINUTES
+    subject = f"Your {APP_NAME} password reset code"
+    text = (
+        f"Hi {name or 'there'},\n\n"
+        f"Your {APP_NAME} password reset code is: {code}\n\n"
+        f"Enter it in the app to set a new password. It expires in {minutes} minutes.\n\n"
+        "If you did not ask to reset your password, you can ignore this email — "
+        "your password has not changed.\n"
+    )
+    html_body = f"""
+<div style="font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;background:#f4f5f2;padding:24px;">
+  <div style="max-width:520px;margin:0 auto;background:#fff;border:1px solid #e6e1da;border-radius:16px;padding:28px;">
+    <p style="color:#202323;font-size:16px;line-height:1.55;margin:0 0 14px;">Hi {safe_name},</p>
+    <p style="color:#202323;font-size:16px;line-height:1.55;margin:0 0 12px;">
+      Here is your <strong>{safe_app}</strong> password reset code:
+    </p>
+    <p style="font-size:34px;font-weight:700;letter-spacing:8px;color:#202323;text-align:center;
+              background:#f4f5f2;border-radius:12px;padding:16px 0;margin:0 0 16px;">{safe_code}</p>
+    <p style="color:#202323;font-size:15px;line-height:1.55;margin:0 0 16px;">
+      Enter it in the app to set a new password. It expires in {minutes} minutes.
+    </p>
+    <p style="color:#747b7c;font-size:13px;line-height:1.5;margin:18px 0 0;">
+      If you did not ask to reset your password, you can ignore this email — your password has not changed.
+    </p>
+  </div>
+</div>""".strip()
+    try:
+        return await _resend_send({"from": INVITE_FROM_EMAIL, "to": [to_email],
+                                   "subject": subject, "text": text, "html": html_body})
+    except Exception as exc:  # noqa: BLE001 — never reveal delivery outcome to caller
+        log.warning("password-reset email skipped: %s", exc)
+        return {"sent": False}
+
+
 # Every collection whose rows belong to a household. Purged by family_id when
 # the last account-holder leaves. Listed exhaustively on purpose: a forgotten
 # collection is orphaned personal data, which is the one thing account deletion
@@ -3005,6 +3054,105 @@ async def change_password(payload: ChangePasswordIn, user=Depends(require_user))
     return {"ok": True}
 
 
+class RequestPasswordResetIn(BaseModel):
+    email: Optional[str] = None
+
+
+@app.post("/api/auth/request-password-reset")
+async def request_password_reset(payload: RequestPasswordResetIn):
+    """Start a forgotten-password reset by emailing a one-time code.
+
+    Always answers the same {"ok": True}, whether or not an account exists, so
+    the endpoint never becomes an oracle for which emails are registered. The
+    work — minting a code, storing its hash, sending the mail — happens only for
+    a real password account, silently.
+    """
+    database = get_db()
+    email = (payload.email or "").strip().lower()
+    identity = f"reset-request:{email}"
+    # Rate-limit per email so nobody can spray reset mail at an inbox. Locked
+    # requests still return ok — the caller learns nothing either way.
+    if not email or "@" not in email or _auth_locked(identity):
+        return {"ok": True}
+    _auth_record_fail(identity)
+
+    user = await database["users"].find_one({"email": email}, {"_id": 0})
+    # A Google account has no password to reset; treat it exactly like a missing
+    # account so the response gives nothing away.
+    if user and user.get("password_hash"):
+        code = f"{secrets.randbelow(1_000_000):06d}"
+        await database["password_resets"].update_one(
+            {"user_id": user["user_id"]},
+            {"$set": {
+                "user_id": user["user_id"],
+                "email": email,
+                "code_hash": sha256(code),
+                "expires_at": utcnow() + timedelta(minutes=PASSWORD_RESET_TTL_MINUTES),
+                "attempts": 0,
+                "created_at": utcnow(),
+            }},
+            upsert=True,
+        )
+        await send_password_reset_email(email, user.get("name") or "there", code)
+    return {"ok": True}
+
+
+class ResetPasswordIn(BaseModel):
+    email: Optional[str] = None
+    code: Optional[str] = None
+    new_password: Optional[str] = None
+
+
+@app.post("/api/auth/reset-password")
+async def reset_password(payload: ResetPasswordIn):
+    """Finish a reset: prove the emailed code, set a new password, sign in.
+
+    A correct code is a full account takeover, so on success every existing
+    session is dropped — anyone who was signed in on the old password is signed
+    out — and a fresh session is issued to whoever completed the reset.
+    """
+    database = get_db()
+    email = (payload.email or "").strip().lower()
+    code = (payload.code or "").strip()
+    new_password = payload.new_password or ""
+    identity = f"reset-verify:{email}"
+    if _auth_locked(identity):
+        raise HTTPException(status_code=429, detail="Too many attempts. Please try again later.")
+    if len(new_password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+
+    record = await database["password_resets"].find_one({"email": email}, {"_id": 0})
+    expires = _coerce_dt(record.get("expires_at")) if record else None
+    bad_code = "That code is incorrect or has expired. Request a new one."
+    if not record or not code or expires is None or expires < utcnow():
+        _auth_record_fail(identity)
+        raise HTTPException(status_code=400, detail=bad_code)
+    if int(record.get("attempts", 0)) >= PASSWORD_RESET_MAX_ATTEMPTS:
+        raise HTTPException(status_code=400, detail=bad_code)
+    if not secrets.compare_digest(record.get("code_hash", ""), sha256(code)):
+        await database["password_resets"].update_one(
+            {"user_id": record["user_id"]}, {"$inc": {"attempts": 1}})
+        _auth_record_fail(identity)
+        raise HTTPException(status_code=400, detail=bad_code)
+
+    user = await database["users"].find_one({"user_id": record["user_id"]}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=400, detail=bad_code)
+
+    await database["users"].update_one(
+        {"user_id": user["user_id"]},
+        {"$set": {"password_hash": hash_password(new_password), "updated_at": utcnow()}})
+    # The code is spent, and every session opened before the reset is now stale.
+    await database["password_resets"].delete_many({"user_id": user["user_id"]})
+    await database["user_sessions"].delete_many({"user_id": user["user_id"]})
+    _auth_clear(identity)
+    _auth_clear(f"login:{email}")
+
+    fresh = await database["users"].find_one({"user_id": user["user_id"]}, {"_id": 0})
+    raw_session = await _issue_session(database, user["user_id"])
+    return {"user": public_user(fresh or user), "session_token": raw_session}
+
+
 @app.get("/api/auth/me")
 async def me(user=Depends(require_user)):
     return public_user(user)
@@ -3335,6 +3483,15 @@ async def delete_family_member(member_id: str, user=Depends(require_user)):
         await database["family_invites"].update_many(
             {"family_id": family_id, "accepted_by_user_id": member["user_id"]},
             {"$set": {"status": "removed", "updated_at": utcnow()}})
+        # Sever every live thread back into this household. Moving their user
+        # doc to a new family_id is not enough on its own: an open session still
+        # carries a cached view of the old household until it refreshes, and
+        # their notification tokens still carry the OLD family_id, so they would
+        # keep receiving this household's pushes. Drop both — the next sign-in
+        # re-issues a session and re-registers a token against their new,
+        # empty family, so removal is a clean break in both directions.
+        await database["user_sessions"].delete_many({"user_id": member["user_id"]})
+        await database["notification_tokens"].delete_many({"user_id": member["user_id"]})
 
     await database["family_members"].delete_one({"member_id": member_id, "family_id": family_id})
 
