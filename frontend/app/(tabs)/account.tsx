@@ -19,6 +19,7 @@ import {
 } from 'lucide-react-native';
 
 import { PressScale } from '../../src/components/PressScale';
+import { PasswordInput } from '../../src/components/PasswordInput';
 import { Badge, Card, IconTile, SectionTitle, useUI, UIColors } from '../../src/components/Kit';
 import { useStore } from '../../src/store';
 import { AuthDiagnosticResult, runAuthDiagnostics } from '../../src/authDiagnostics';
@@ -333,29 +334,29 @@ export default function AccountScreen() {
             </View>
 
             <Text style={[styles.modalLabel, { color: theme.colors.textMuted }]}>{t('acc_pw_current')}</Text>
-            <TextInput
+            <PasswordInput
               testID="pw-current"
               style={[styles.modalInput, { color: theme.colors.text, borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}
               value={pwCurrent}
               onChangeText={setPwCurrent}
               placeholder={t('acc_pw_current_ph')}
               placeholderTextColor={theme.colors.textMuted}
-              secureTextEntry
-              autoCapitalize="none"
-              autoCorrect={false}
+              eyeColor={theme.colors.textMuted}
+              showLabel={t('a11y_show_password')}
+              hideLabel={t('a11y_hide_password')}
             />
 
             <Text style={[styles.modalLabel, { color: theme.colors.textMuted }]}>{t('acc_pw_new')}</Text>
-            <TextInput
+            <PasswordInput
               testID="pw-new"
               style={[styles.modalInput, { color: theme.colors.text, borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}
               value={pwNew}
               onChangeText={setPwNew}
               placeholder={t('acc_pw_new_ph')}
               placeholderTextColor={theme.colors.textMuted}
-              secureTextEntry
-              autoCapitalize="none"
-              autoCorrect={false}
+              eyeColor={theme.colors.textMuted}
+              showLabel={t('a11y_show_password')}
+              hideLabel={t('a11y_hide_password')}
             />
 
             <PressScale
