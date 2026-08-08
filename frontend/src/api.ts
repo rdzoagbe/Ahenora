@@ -979,6 +979,10 @@ export const api = {
   me: () => request<User>('/auth/me'),
   changePassword: (data: { current_password: string; new_password: string }) =>
     request<{ ok: boolean }>('/auth/change-password', { method: 'POST', body: data }),
+  requestPasswordReset: (email: string) =>
+    request<{ ok: boolean }>('/auth/request-password-reset', { method: 'POST', body: { email } }),
+  resetPassword: (data: { email: string; code: string; new_password: string }) =>
+    request<{ user: User; session_token: string }>('/auth/reset-password', { method: 'POST', body: data }),
   logout: () => {
     cache.clear();
     return request('/auth/logout', { method: 'POST' });
