@@ -3,6 +3,7 @@ import { Alert, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LegalPage } from '../src/components/LegalPage';
 import { PressScale } from '../src/components/PressScale';
+import { PasswordInput } from '../src/components/PasswordInput';
 import { useStore } from '../src/store';
 import { logger } from '../src/logger';
 
@@ -85,15 +86,15 @@ export default function DeleteAccountScreen() {
           {hasPassword ? t('del_password_prompt') : t('del_type_prompt')}
         </Text>
         {hasPassword ? (
-          <TextInput
+          <PasswordInput
             testID="delete-account-password"
             value={password}
             onChangeText={setPassword}
-            secureTextEntry
-            autoCapitalize="none"
-            autoCorrect={false}
             placeholder={t('del_password_ph')}
             placeholderTextColor={c.textMuted}
+            eyeColor={c.textMuted}
+            showLabel={t('a11y_show_password')}
+            hideLabel={t('a11y_hide_password')}
             style={[styles.input, { color: c.text, backgroundColor: c.bgSoft, borderColor: c.cardBorder }]}
           />
         ) : (

@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router';
 import { Check, Gift, LogOut, Star } from 'lucide-react-native';
 
 import { PressScale } from '../src/components/PressScale';
+import { PasswordInput } from '../src/components/PasswordInput';
 import { useUI, UIColors } from '../src/components/Kit';
 import { useStore } from '../src/store';
 import { useKeyboardHeight } from '../src/hooks/useKeyboardHeight';
@@ -243,14 +244,17 @@ export default function KidScreen() {
                   autoCorrect={false}
                   style={[styles.textInput, fError && { borderColor: ui.danger }]}
                 />
-                <TextInput
+                <PasswordInput
                   testID="kid-forgot-password"
                   value={fPassword}
                   onChangeText={(v) => { setFPassword(v); setFError(null); }}
                   placeholder={t('email_password_placeholder_login')}
                   placeholderTextColor={ui.muted}
-                  secureTextEntry
-                  style={[styles.textInput, { marginTop: 10 }, fError && { borderColor: ui.danger }]}
+                  eyeColor={ui.muted}
+                  showLabel={t('a11y_show_password')}
+                  hideLabel={t('a11y_hide_password')}
+                  containerStyle={{ marginTop: 10 }}
+                  style={[styles.textInput, fError && { borderColor: ui.danger }]}
                 />
                 {fError ? <Text style={styles.pinError}>{fError}</Text> : null}
                 <View style={styles.modalRow}>

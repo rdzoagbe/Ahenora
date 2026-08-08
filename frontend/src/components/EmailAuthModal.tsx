@@ -15,6 +15,7 @@ import * as Crypto from 'expo-crypto';
 import { X, Mail, Check, ShieldCheck } from 'lucide-react-native';
 
 import { PressScale } from './PressScale';
+import { PasswordInput } from './PasswordInput';
 import { useStore, RETURNING_USER_KEY } from '../store';
 import { logger } from '../logger';
 
@@ -221,14 +222,16 @@ export function EmailAuthModal({ visible, onClose, onSuccess, inviteToken }: Pro
               </PressScale>
             ) : null}
           </View>
-          <TextInput
+          <PasswordInput
             style={[styles.input, { color: c.text, borderColor: c.cardBorder, backgroundColor: c.bgSoft }]}
             value={password}
             onChangeText={setPassword}
             placeholder={mode === 'signup' ? t('email_password_placeholder_signup') : t('email_password_placeholder_login')}
             placeholderTextColor={c.textSoft}
-            secureTextEntry={mode === 'login'}
-            autoCapitalize="none"
+            initiallyVisible={mode === 'signup'}
+            eyeColor={c.textSoft}
+            showLabel={t('a11y_show_password')}
+            hideLabel={t('a11y_hide_password')}
             returnKeyType="done"
             onSubmitEditing={submit}
           />
