@@ -12,6 +12,7 @@ import {
   KeyRound,
   LifeBuoy,
   LogOut,
+  Mail,
   ShieldCheck,
   Trash2,
   X,
@@ -172,8 +173,12 @@ export default function AccountScreen() {
           <SectionTitle style={styles.sectionGap}>{t('acc_section_signin')}</SectionTitle>
           <Card style={styles.cardPad}>
             <ListRow
-              tile={<IconTile bg={ui.blue}><Text style={styles.googleG}>G</Text></IconTile>}
-              title={t('acc_google_account')}
+              tile={
+                user?.has_password
+                  ? <IconTile bg={ui.blue}><Mail color={ui.blueText} size={18} /></IconTile>
+                  : <IconTile bg={ui.blue}><Text style={styles.googleG}>G</Text></IconTile>
+              }
+              title={user?.has_password ? t('acc_email_account') : t('acc_google_account')}
               subtitle={user?.email ? `${t('acc_connected')} · ${user.email}` : t('acc_not_connected')}
               right={<CheckCircle2 color={ui.mintText} size={20} />}
             />

@@ -153,20 +153,23 @@ async def main():
         await dark.screenshot(path="handoff_account_dark.png")
 
         readable = {}
-        for label in ("Roland H", "Account", "Google account"):
+        # The sign-in row is labelled by the real provider: a password account
+        # (which this persona is) reads "Email account", a Google account reads
+        # "Google account". Assert on the one this persona actually shows.
+        for label in ("Roland H", "Account", "Email account"):
             s = await sample(dark, label)
             readable[label] = round(contrast(s["fg"], s["bg"]), 2) if s else 0
         # WCAG AA for body text is 4.5:1. The bug measured about 1.2:1.
         r["dark_account_name_readable"] = readable["Roland H"] >= 4.5
         r["dark_account_title_readable"] = readable["Account"] >= 4.5
-        r["dark_account_rows_readable"] = readable["Google account"] >= 4.5
+        r["dark_account_rows_readable"] = readable["Email account"] >= 4.5
         print("contrast ratios:", readable)
 
         # And light mode did not regress.
         light = await persona(br, tok_a, appearance="light")
         await light.goto(f"{WEB}/account", wait_until="domcontentloaded")
         await light.wait_for_timeout(4000)
-        s = await sample(light, "Google account")
+        s = await sample(light, "Email account")
         r["light_account_still_readable"] = bool(s) and contrast(s["fg"], s["bg"]) >= 4.5
         await light.screenshot(path="handoff_account_light.png")
 
