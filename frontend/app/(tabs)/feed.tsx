@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
-  Pressable,
   StyleSheet,
   Text,
   TextInput,
@@ -1196,16 +1195,9 @@ export default function Feed() {
           <View style={{ height: 160 }} />
       </TabScreen>
 
-      <Pressable
-        style={({ pressed }) => [styles.fab, pressed && styles.fabPressed]}
-        onPress={openManual}
-        testID="feed-fab-add"
-        accessibilityRole="button"
-        accessibilityLabel={t('a11y_add')}
-      >
-        <Plus color="#FFFFFF" size={31} />
-      </Pressable>
-
+      {/* The floating + was removed with the nav redesign: the centre ➕ in the
+          tab bar now owns "add from anywhere", and the composer is still one tap
+          from the "Add a task…" card at the top of the feed. */}
       <CameraCaptureModal
         visible={showCamera}
         onClose={() => setShowCamera(false)}
@@ -1803,27 +1795,6 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     color: ui.muted,
     fontFamily: 'Inter_700Bold',
     fontSize: 12,
-  },
-  fab: {
-    position: 'absolute',
-    right: 22,
-    bottom: 120,
-    width: 61,
-    height: 61,
-    borderRadius: 999,
-    backgroundColor: ui.orangeDeep,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000000',
-    shadowOpacity: 0.18,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 7,
-    zIndex: 30,
-  },
-  fabPressed: {
-    backgroundColor: '#D9530F',
-    transform: [{ scale: 0.96 }],
   },
   templateRow: {
     flexDirection: 'row',

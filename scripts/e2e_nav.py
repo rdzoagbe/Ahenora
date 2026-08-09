@@ -45,12 +45,12 @@ async def main():
         # active tab is named" rule; the label discipline is now that all five
         # are always visible, and the contrast harness guards their legibility.)
         r["active_tab_named"] = "Feed" in bar
-        r["all_tabs_named"] = all(w in bar for w in ("Feed", "Calendar", "Kids", "Kitchen"))
-        r["more_button_present"] = await p.locator('[data-testid="tab-more"]').count() == 1
+        r["all_tabs_named"] = all(w in bar for w in ("Feed", "Calendar", "Kids", "Household"))
+        r["more_button_present"] = await p.locator('[data-testid="tab-household"]').count() == 1
         await p.screenshot(path="nav_feed.png")
 
         # More opens a sheet with the hidden destinations
-        await p.click('[data-testid="tab-more"]')
+        await p.click('[data-testid="tab-household"]')
         await p.wait_for_timeout(1200)
         sheet = await p.inner_text("body")
         r["sheet_lists_vault"] = "Vault" in sheet
@@ -64,7 +64,7 @@ async def main():
         r["more_reaches_vault"] = "Vault" in await p.inner_text("body")
         await p.screenshot(path="nav_vault.png")
 
-        await p.click('[data-testid="tab-more"]')
+        await p.click('[data-testid="tab-household"]')
         await p.wait_for_timeout(1000)
         await p.click('[data-testid="more-settings"]')
         await p.wait_for_timeout(3000)

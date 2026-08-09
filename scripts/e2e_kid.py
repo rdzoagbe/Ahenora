@@ -81,7 +81,7 @@ async def main():
         # --- handing the device over ---------------------------------------
         await p.goto(f"{WEB}/feed", wait_until="domcontentloaded")
         await p.wait_for_timeout(3500)
-        await p.click('[data-testid="tab-more"]')
+        await p.click('[data-testid="tab-household"]')
         await p.wait_for_timeout(1200)
         r["more_offers_hand_over"] = await p.locator('[data-testid="more-kid"]').count() == 1
         await p.click('[data-testid="more-kid"]')
