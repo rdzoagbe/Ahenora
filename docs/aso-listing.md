@@ -1,64 +1,92 @@
 # Household COO — Play Store listing (ASO)
 
 Ready-to-paste copy for the Google Play listing, written for discoverability
-(App Store Optimization) around how parents and co-parents actually search.
-Swap in freely; nothing here is wired to the app.
+around how parents and co-parents actually search. Refreshed for the 1.1.0
+relaunch (new icon + navigation); tagline aligned to **"Your whole family, all
+in one place."**
 
-**Keep in mind:** Google ranks mainly on the **title**, **short description**,
-and **long description** — and on install/retention/rating signals. Put the
-strongest keywords early, write for a real parent (not a robot), and never
-keyword-stuff (Google penalises it and it reads badly).
+> **Name note:** launching as **Household COO**. When the **Casira** rename
+> ships (post-launch, once cleared — task #8), swap the brand token everywhere
+> below and re-run the screenshot/feature-graphic scripts. Everything else here
+> carries over unchanged.
+
+**How Google ranks:** mainly on **title**, **short description**, and **long
+description**, plus install/retention/rating signals. Front-load the strongest
+keywords, write for a real parent, never keyword-stuff.
 
 ---
 
-## App title (max 30 chars)
-Pick one — both lead with the category term people search:
+## ⭐ PASTE THESE (final picks)
 
-- `Household COO: Family Organizer` (31 → trim to) `Household COO – Family Organize` 
+**App name** (max 30):
+```
+Household COO: Co-Parenting
+```
+
+**Short description** (max 80):
+```
+Shared family calendar, chores, kids' rewards & meal plans — for co-parents.
+```
+
+**Full description** (max 4000): see the block below.
+
+---
+
+## App title — options (max 30 chars)
+Lead with the brand, pair with searchable demand:
+
 - **Recommended:** `Household COO: Co-Parenting` (27)
 - Alt: `Household COO: Family Planner` (29)
+- Alt: `Household COO: Family Home` (26)
 
 > The brand name alone is not searchable demand. Pairing it with
-> "Co-Parenting" or "Family Organizer" is what wins category searches.
+> "Co-Parenting" / "Family Planner" is what wins category searches.
 
-## Short description (max 80 chars)
-Shown right under the title; heavily weighted for ranking.
+## Short description — options (max 80 chars)
+Shown under the title; heavily weighted for ranking.
 
-- **Recommended:** `Shared family calendar, chores, kids' rewards & lists — for co-parents & homes.` (79)
+- **Recommended:** `Shared family calendar, chores, kids' rewards & meal plans — for co-parents.` (76)
+- Alt: `Your whole family, all in one place — calendar, chores, meals & kids' stars.` (76)
 - Alt: `One calm home base: family calendar, tasks, chores, meals & a secure vault.` (74)
 
-## Long description (max 4000 chars)
-Front-load the keywords in the first 1–2 lines (that's what's indexed hardest),
-then let it breathe.
+## Full description (max 4000 chars)
+Front-load keywords in the first two lines, then let it breathe.
 
 ```
-Household COO is the calm, organized home base for busy families and
-co-parents. Share a family calendar, split chores and tasks, run kids' reward
-systems, keep shopping lists in sync, plan meals, and store important family
-documents in a secure vault — all in one app, private by default.
+Household COO is your whole family, all in one place — the calm, organized home
+base for busy families and co-parents. Share a family calendar, split chores and
+tasks, run kids' reward systems, keep shopping lists in sync, plan the week's
+meals, and store important family documents in a secure vault — all in one app,
+private by default.
 
 Built for two homes as easily as one. Co-parents stay aligned on schedules,
-pickups, and responsibilities without the constant back-and-forth texting.
+pickups, and responsibilities without the constant back-and-forth texting — and
+each of you only shares what you choose.
 
 WHAT YOU CAN DO
-• Shared family calendar — everyone sees the same week; sync your existing
-  calendar in a tap.
+• Shared family calendar — everyone sees the same week; import your existing
+  Google or Outlook calendar in a tap.
 • Co-parenting coordination — keep both households on the same page,
-  private-by-default so you only share what you choose.
+  private-by-default so you only share what you want the other side to see.
 • Chores & tasks — assign, rotate, and track who's doing what.
-• Kids' rewards & chore tracker — stars and pocket money that motivate.
-• Shared shopping lists — add from any phone, never buy milk twice.
-• Meal planning — plan the week and turn it into a shopping list.
-• Secure family vault — passports, insurance, school forms, all in one place.
-• Handoff notes — pass the baton between parents and caregivers cleanly.
+• Kids' rewards & chore tracker — stars kids earn and swap for rewards you set,
+  whether that's screen time, a treat, or pocket money. You decide what a star
+  is worth.
+• The Kitchen — plan the week's meals, snap a printed recipe into your planner,
+  and sync it all to a shared shopping list so you never buy milk twice.
+• Quick add — capture a task, scan a document, or just say it, in one tap.
+• Secure family vault — passports, insurance, school forms, all in one place,
+  with expiry reminders.
+• Hand to a child — pass the phone to your kid and they see only their own stars
+  and jobs, nothing else in the household.
 
 WHY FAMILIES CHOOSE HOUSEHOLD COO
 Most family apps are a shared to-do list. Household COO brings co-parenting
-coordination, privacy controls, scheduling, chores, meals, and documents
-together — so parents reduce stress and keep the whole household aligned.
+coordination, privacy controls, scheduling, chores, meal planning, and documents
+together — so parents cut the mental load and keep the whole household aligned.
 
-Free to start. Premium unlocks meal planning, allowances, carpool
-coordination, and the weekly report.
+Free to start. Premium unlocks meal planning, allowances, carpool coordination,
+and the weekly report.
 
 Perfect for: co-parents, blended families, single parents, busy two-parent
 homes, nannies and caregivers, and anyone coordinating a household schedule.
@@ -78,19 +106,22 @@ Secondary:
 - family shopping list, pocket money / allowance app, family document vault,
   caregiver / nanny schedule, blended family app, household management.
 
-## Screenshots (order matters — first 2–3 are seen before scrolling)
-Lead with the value, caption each with a keyword:
-1. **Feed / home** — caption: "One calm home base for the whole family"
-2. **Shared calendar** — caption: "A family calendar both homes can see"
-3. **Kids' rewards** — caption: "Chores & stars that actually motivate kids"
-4. **Shopping list / meals** — caption: "Shared lists & meal plans in sync"
-5. **Vault** — caption: "Every family document, secure in one place"
-6. **Co-parent privacy** — caption: "Private by default — share only what you choose"
+## Screenshots — captions match the six we ship (order matters)
+The graphics already carry these headlines; keep any Play caption consistent:
+1. **Feed** — "Your whole family, all in one place"
+2. **Shared calendar** — "One shared family calendar" (you choose what to share)
+3. **Kids & stars** — "Chores kids want to finish"
+4. **Meal planner** — "The week's meals, planned in minutes"
+5. **Quick add** — "Capture anything in a single tap"
+6. **Household menu** — "Everything a household needs"
+
+Assets live in `docs/store-assets/` (512 icon, 1024×500 feature graphic,
+`screenshots/screenshot-01…06.png`).
 
 ## Also do (free, high-leverage)
-- Fill the **promo/feature graphic** with the tagline, not just a logo.
 - Set the **category** to Parenting (or House & Home) and add relevant tags.
 - Localize the listing for **es / fr / de** — the app already supports them, and
   localized listings rank in those stores.
-- Ask happy users to rate (the app now has an automatic prompt after wins and a
-  "Rate the app" option in Settings) — rating volume and recency feed ranking.
+- Ask happy users to rate (automatic prompt after wins + "Rate the app" in
+  Settings) — rating volume and recency feed ranking.
+```
