@@ -105,7 +105,7 @@ android {
         // step with app.json by hand. It drifted once already: app.json said
         // 1.0.2 while every uploaded bundle reported 1.0.0 to Play.
         // A test asserts these two agree, so it cannot drift silently again.
-        versionName "1.0.3"
+        versionName "1.1.0"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
     }
