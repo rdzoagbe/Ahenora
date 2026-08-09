@@ -72,25 +72,28 @@ export async function recordWin(): Promise<void> {
 
 /**
  * A deliberate, user-initiated "Rate the app" — for the happy parent who goes
- * looking to leave a review rather than waiting for the automatic prompt.
+ * looking to leave a review.
  *
- * On a native build it shows the OS review sheet; everywhere else (web, or a
- * device the OS won't prompt on) it opens the store listing so there is always
- * a way through. Marks the one-time flag so the automatic prompt won't also
- * fire later.
+ * This deliberately does NOT use the native in-app review sheet. That API is
+ * silent by design: Google quotas it hard and simply shows nothing on test
+ * builds, repeat asks, or when it feels like it — which, on a button the user
+ * tapped on purpose, reads as "nothing happened / it's broken". So a manual tap
+ * always opens the store listing, where they can actually leave a review. The
+ * automatic prompt (recordWin, above) still uses the quiet in-app sheet, which
+ * is the right tool for an unprompted moment. Opens the Play Store app directly
+ * (market://) when possible, falling back to the web listing (web, or no Play
+ * app installed).
  */
 export async function openReview(): Promise<void> {
+  const marketUrl = 'market://details?id=com.householdcoo.app';
   try {
-    const StoreReview = await getStoreReview();
-    if (StoreReview && (await StoreReview.hasAction?.()) !== false) {
-      await StoreReview.requestReview();
-      await AsyncStorage.setItem(ASKED_KEY, new Date().toISOString());
+    if (await Linking.canOpenURL(marketUrl)) {
+      await Linking.openURL(marketUrl);
       return;
     }
   } catch (e) {
-    logger.warn('in-app review unavailable, opening store', e);
+    logger.warn('could not open Play Store app, using web listing', e);
   }
-  // Fallback: the public listing (works on web and anywhere the sheet won't).
   await Linking.openURL(ANDROID_STORE_URL).catch((e) =>
     logger.warn('could not open store listing', e));
 }
