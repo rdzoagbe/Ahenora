@@ -23,6 +23,7 @@ import {
   Send,
   Share2,
   Sparkles,
+  Star,
   Trash2,
   Users,
   UserPlus,
@@ -39,6 +40,7 @@ import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSh
 import { TabScreen } from '../../src/components/TabScreen';
 import { Card, Chevron, Divider, IconTile, MiniRow, NavRow, ScreenHeader, StatBox, ToggleRow, useUI, UIColors } from '../../src/components/Kit';
 import { useStore } from '../../src/store';
+import { openReview } from '../../src/reviewPrompt';
 import { api, Card as CardType, Entitlements, Expense, ExpenseSummary, FamilyInvite, FamilyMember, NotificationSettings } from '../../src/api';
 import { LANG_NAMES } from '../../src/i18n';
 import { appVersionInfo, ensureNotificationPermissions, registerForPushNotificationsAsync, sendLocalNotification, sendTestScheduledReminderNotification, syncCardReminderNotifications } from '../../src/notifications';
@@ -1038,6 +1040,14 @@ export default function Settings() {
               title={t('set_view_all_plans')}
               subtitle={`${t('set_youre_on')} ${user?.is_admin ? t('set_admin_tester') : `${planLabel}`} · ${t('set_compare_tiers')}`}
               onPress={() => router.push('/pricing')}
+            />
+
+            <NavRow
+              testID="settings-rate-app"
+              tile={<IconTile bg={ui.mint}><Star color={ui.mintText} size={18} /></IconTile>}
+              title={t('set_rate_app')}
+              subtitle={t('set_rate_app_sub')}
+              onPress={() => { openReview().catch(() => undefined); }}
             />
 
             {user?.is_admin ? (

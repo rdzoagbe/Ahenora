@@ -5,6 +5,7 @@ import {
   StyleSheet,
   ScrollView,
   Alert,
+  Linking,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
@@ -21,6 +22,11 @@ import { useUI, UIColors } from './Kit';
 import { useStore } from '../store';
 import { api, Plan, BillingCycle } from '../api';
 import { purchasePremium, restorePurchases } from '../billing';
+
+// Where a web (or billing-less) user is sent to actually subscribe. Store
+// billing only exists in the native app, so on web the purchase and restore
+// paths point here instead of dead-ending on "coming soon".
+const ANDROID_STORE_URL = 'https://play.google.com/store/apps/details?id=com.householdcoo.app';
 
 // Two tiers at launch: Free + Premium (Family Office deferred — see ROADMAP).
 const PLAN_ORDER: Plan[] = ['village', 'executive'];
@@ -66,8 +72,16 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
     try {
       const res = await purchasePremium(user.user_id, cycle);
       if (!res.available) {
-        // Build without billing natives / store not configured yet.
-        Alert.alert(t('price_coming_soon_title'), t('price_coming_soon_msg'));
+        // No store billing here — almost always because this is the web app.
+        // Don't dead-end: offer to open Google Play, where subscribing works.
+        Alert.alert(
+          t('price_get_app_title'),
+          t('price_get_app_msg'),
+          [
+            { text: t('cancel'), style: 'cancel' },
+            { text: t('price_get_app_cta'), onPress: () => { Linking.openURL(ANDROID_STORE_URL).catch(() => undefined); } },
+          ],
+        );
         return;
       }
       if (res.cancelled) return;
@@ -114,7 +128,15 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
     try {
       const res = await restorePurchases(user.user_id);
       if (!res.available) {
-        Alert.alert(t('price_coming_soon_title'), t('price_coming_soon_msg'));
+        // Same as purchase: restoring only works in the app. Point there.
+        Alert.alert(
+          t('price_get_app_title'),
+          t('price_get_app_msg'),
+          [
+            { text: t('cancel'), style: 'cancel' },
+            { text: t('price_get_app_cta'), onPress: () => { Linking.openURL(ANDROID_STORE_URL).catch(() => undefined); } },
+          ],
+        );
         return;
       }
       if (res.ok && res.premium) {

@@ -11,11 +11,16 @@
 // don't contain it yet, which makes it safe to ship OTA ahead of the build.
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Platform } from 'react-native';
+import { Linking, Platform } from 'react-native';
 import { logger } from './logger';
 
 const WINS_KEY = 'coo_review_wins';
 const ASKED_KEY = 'coo_review_asked_at';
+
+/** The public listing — where the native review sheet can't be shown (web, or
+ *  a device the OS won't prompt on), we open this instead. */
+export const ANDROID_STORE_URL =
+  'https://play.google.com/store/apps/details?id=com.householdcoo.app';
 
 /** Wins required before we ask. Enough that the app has clearly delivered. */
 const WINS_BEFORE_ASK = 5;
@@ -63,4 +68,29 @@ export async function recordWin(): Promise<void> {
   } catch (e) {
     logger.warn('review prompt skipped', e);
   }
+}
+
+/**
+ * A deliberate, user-initiated "Rate the app" — for the happy parent who goes
+ * looking to leave a review rather than waiting for the automatic prompt.
+ *
+ * On a native build it shows the OS review sheet; everywhere else (web, or a
+ * device the OS won't prompt on) it opens the store listing so there is always
+ * a way through. Marks the one-time flag so the automatic prompt won't also
+ * fire later.
+ */
+export async function openReview(): Promise<void> {
+  try {
+    const StoreReview = await getStoreReview();
+    if (StoreReview && (await StoreReview.hasAction?.()) !== false) {
+      await StoreReview.requestReview();
+      await AsyncStorage.setItem(ASKED_KEY, new Date().toISOString());
+      return;
+    }
+  } catch (e) {
+    logger.warn('in-app review unavailable, opening store', e);
+  }
+  // Fallback: the public listing (works on web and anywhere the sheet won't).
+  await Linking.openURL(ANDROID_STORE_URL).catch((e) =>
+    logger.warn('could not open store listing', e));
 }
