@@ -88,8 +88,8 @@ jobs:
           reason=""
           if [ "$WANT_SUBMIT" != "true" ]; then
             reason="'Auto-submit' was left off when this run was started."
-          elif [ "$PROFILE" != "production" ] && [ "$PROFILE" != "preview" ]; then
-            reason="Profile was '$PROFILE'; only 'production' and 'preview' build an app bundle Play will accept."
+          elif [ "$PROFILE" != "production" ]; then
+            reason="Profile was '$PROFILE'; only 'production' builds an app bundle Play will accept."
           elif [ -z "$GOOGLE_SERVICE_ACCOUNT_KEY" ]; then
             reason="The GOOGLE_SERVICE_ACCOUNT_KEY secret is not set (Settings > Secrets and variables > Actions)."
           fi
