@@ -81,7 +81,17 @@ export default function MetricsScreen() {
     const activeToday = dauByDay.get(today) || 0;
     const peakDau = dauValues.length ? Math.max(...dauValues) : 0;
     const activeDays = dauValues.length;
-    return { activeToday, peakDau, activeDays, eventTotals };
+    // Distinct daily-actives split by platform (summed over the window). Web
+    // users can't buy through the store, so this ratio is the first thing to
+    // read when subscriptions are flat.
+    const platform = {
+      web: eventTotals.get('active_web') || 0,
+      android: eventTotals.get('active_android') || 0,
+      ios: eventTotals.get('active_ios') || 0,
+      other: eventTotals.get('active_other') || 0,
+    };
+    const platformTotal = platform.web + platform.android + platform.ios + platform.other;
+    return { activeToday, peakDau, activeDays, eventTotals, platform, platformTotal };
   }, [rows, today]);
 
   if (user && !user.is_admin) {
@@ -139,6 +149,35 @@ export default function MetricsScreen() {
               <Text style={styles.tileLabel}>Active days</Text>
             </View>
           </View>
+
+          {/* Where users are — web can't buy through the store */}
+          <Text style={styles.sectionTitle}>Where users are</Text>
+          {stats.platformTotal > 0 ? (
+            <>
+              <View style={styles.card}>
+                {([
+                  ['Android app', stats.platform.android],
+                  ['iPhone app', stats.platform.ios],
+                  ['Web browser', stats.platform.web],
+                  ['Other', stats.platform.other],
+                ] as [string, number][])
+                  .filter(([, n], i) => n > 0 || i < 3)
+                  .map(([label, n], i) => (
+                    <View key={label} style={[styles.eventRow, i === 0 && { borderTopWidth: 0 }]}>
+                      <Text style={styles.eventLabel}>{label}</Text>
+                      <Text style={styles.eventCount}>
+                        {n} · {Math.round((100 * n) / stats.platformTotal)}%
+                      </Text>
+                    </View>
+                  ))}
+              </View>
+              <Text style={styles.hint}>
+                Distinct active users by platform, last 14 days. Purchases only work in the Android/iPhone app — anyone on web sees &quot;coming soon&quot; and can&apos;t subscribe.
+              </Text>
+            </>
+          ) : (
+            <Text style={styles.muted}>No platform data yet — appears as people open the app on the new build.</Text>
+          )}
 
           {/* Event totals */}
           <Text style={styles.sectionTitle}>Feature usage (totals)</Text>

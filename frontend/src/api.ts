@@ -275,6 +275,10 @@ async function request<T = unknown>(
   const token = await tokenStore.get();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    // Which platform this request comes from — the backend counts distinct
+    // daily-active users per platform from it, so "web vs app" is answerable
+    // (web users can't buy through the store, so the split explains conversion).
+    'X-Client-Platform': Platform.OS,
     ...(opts.headers || {}),
   };
   if (token) headers['Authorization'] = `Bearer ${token}`;
