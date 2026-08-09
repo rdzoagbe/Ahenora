@@ -14,6 +14,7 @@ import {
   AlertTriangle,
   BarChart3,
   Bell,
+  LayoutGrid,
   Search as SearchIcon,
   UserCheck,
   CalendarDays,
@@ -43,6 +44,7 @@ import { PressScale } from '../../src/components/PressScale';
 import { AddCardModal } from '../../src/components/AddCardModal';
 import { VoiceCaptureModal } from '../../src/components/VoiceCaptureModal';
 import { CameraCaptureModal } from '../../src/components/CameraCaptureModal';
+import { MoreSheet } from '../../src/components/MoreSheet';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
 import { TabScreen } from '../../src/components/TabScreen';
 import { GettingStarted } from '../../src/components/GettingStarted';
@@ -268,6 +270,7 @@ export default function Feed() {
   const pendingDismissRef = useRef<Set<string>>(new Set());
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
   const [showAlerts, setShowAlerts] = useState(false);
+  const [householdOpen, setHouseholdOpen] = useState(false);
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [rewardCount, setRewardCount] = useState(0);
   const [vaultCount, setVaultCount] = useState(0);
@@ -799,6 +802,15 @@ export default function Feed() {
                     <View style={styles.bellBadge}><Text style={styles.bellBadgeText}>{Math.min(alertCount, 9)}</Text></View>
                   ) : null}
                 </PressScale>
+                <PressScale
+                  testID="feed-household-menu"
+                  onPress={() => setHouseholdOpen(true)}
+                  style={styles.bellWrap}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('nav_household')}
+                >
+                  <LayoutGrid color={ui.text} size={23} />
+                </PressScale>
               </View>
             </View>
 
@@ -1198,6 +1210,10 @@ export default function Feed() {
       {/* The floating + was removed with the nav redesign: the centre ➕ in the
           tab bar now owns "add from anywhere", and the composer is still one tap
           from the "Add a task…" card at the top of the feed. */}
+      {/* The Household menu (Vault, Settings, Account, Hand-off) — opened from
+          the grid button in the header, now that Kitchen has its own tab. */}
+      <MoreSheet visible={householdOpen} onClose={() => setHouseholdOpen(false)} />
+
       <CameraCaptureModal
         visible={showCamera}
         onClose={() => setShowCamera(false)}

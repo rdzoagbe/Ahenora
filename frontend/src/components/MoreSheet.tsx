@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { ChevronRight, Lock, Settings as SettingsIcon, Smile, User, UtensilsCrossed, X } from 'lucide-react-native';
+import { ChevronRight, Lock, Settings as SettingsIcon, Smile, User, X } from 'lucide-react-native';
 
 import { PressScale } from './PressScale';
 import { useUI, UIColors } from './Kit';
@@ -38,8 +38,6 @@ export function MoreSheet({ visible, onClose }: { visible: boolean; onClose: () 
   };
 
   const items = [
-    { key: 'kitchen', icon: UtensilsCrossed, tone: ui.orange, soft: ui.orangeSoft,
-      title: t('kitchen'), sub: t('nav_more_meals_sub'), path: '/(tabs)/kitchen' },
     { key: 'kid', icon: Smile, tone: ui.mintText, soft: ui.mint,
       title: t('kid_hand_over'), sub: t('kid_hand_over_sub'), path: '' },
     { key: 'vault', icon: Lock, tone: ui.lavenderText, soft: ui.lavender,

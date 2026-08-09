@@ -2,11 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { Tabs, usePathname, useRouter } from 'expo-router';
 import { View, StyleSheet, Text, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Home, Calendar as CalendarIcon, Lock, Settings as SettingsIcon, Star, UtensilsCrossed, LayoutGrid, Plus } from 'lucide-react-native';
+import { Home, Calendar as CalendarIcon, Lock, Settings as SettingsIcon, Star, UtensilsCrossed, Plus } from 'lucide-react-native';
 import { useStore } from '../../src/store';
 import { useBreakpoint } from '../../src/responsive';
 import { InviteJoinPrompt } from '../../src/components/InviteJoinPrompt';
-import { MoreSheet } from '../../src/components/MoreSheet';
 import { QuickAddSheet } from '../../src/components/QuickAddSheet';
 
 // ─── Phone: floating pill tab bar ────────────────────────────────────────────
@@ -126,26 +125,21 @@ function SidebarNav({ width }: { width: number }) {
 // ─── Phone: the bar itself ───────────────────────────────────────────────────
 
 /**
- * The phone bar: three daily destinations, a centre ➕ for quick capture, and
- * the Household hub. Rendering it ourselves (rather than styling the default
- * bar) is what lets the ➕ and the hub open sheets instead of navigating — on
- * web the built-in tab buttons are anchors, which always navigate.
+ * The phone bar: four daily destinations and a centre ➕ for quick capture.
+ * Rendering it ourselves (rather than styling the default bar) is what lets the
+ * ➕ open a sheet instead of navigating — on web the built-in tab buttons are
+ * anchors, which always navigate. The less-daily places (Vault, Settings,
+ * Account, Hand-off) live in the Household menu, opened from the Feed header.
  */
-function PhoneTabBar({ state, navigation, style, onAdd, onHousehold, householdActive }: {
+function PhoneTabBar({ state, navigation, style, onAdd }: {
   state: { index: number; routes: { key: string; name: string }[] };
   navigation: any;
   style: object;
   onAdd: () => void;
-  onHousehold: () => void;
-  householdActive: boolean;
 }) {
   const { t, theme } = useStore();
   const c = theme.colors;
   const current = state.routes[state.index]?.name;
-  // Kitchen, Vault, Settings and Account have no seat of their own; the
-  // Household hub owns the active state while you are on one of them.
-  const DAILY = ['feed', 'calendar', 'kids'];
-  const hubActive = householdActive || !DAILY.includes(current ?? '');
 
   const tab = (name: string, Icon: any, labelKey: string) => {
     const focused = current === name;
@@ -182,16 +176,7 @@ function PhoneTabBar({ state, navigation, style, onAdd, onHousehold, householdAc
         </TouchableOpacity>
       </View>
       {tab('kids', Star, 'kids')}
-      <TouchableOpacity
-        testID="tab-household"
-        accessibilityRole="button"
-        accessibilityLabel={t('nav_household')}
-        activeOpacity={0.75}
-        style={styles.barSlot}
-        onPress={onHousehold}
-      >
-        <TabIcon focused={hubActive} Icon={LayoutGrid} label={t('nav_household')} />
-      </TouchableOpacity>
+      {tab('kitchen', UtensilsCrossed, 'kitchen')}
     </View>
   );
 }
@@ -207,7 +192,6 @@ export default function TabLayout() {
   const { isWide, sidebarW } = useBreakpoint();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const [moreOpen, setMoreOpen] = useState(false);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
 
   // If the session is cleared (logout or expiry), return to the landing screen.
@@ -260,8 +244,6 @@ export default function TabLayout() {
               navigation={props.navigation}
               style={floatingTabStyle}
               onAdd={() => setQuickAddOpen(true)}
-              onHousehold={() => setMoreOpen(true)}
-              householdActive={moreOpen}
             />
           )
         }
@@ -269,17 +251,17 @@ export default function TabLayout() {
         <Tabs.Screen name="feed" />
         <Tabs.Screen name="calendar" />
         <Tabs.Screen name="kids" />
-        {/* Routable, but not seats in the bar — they live in the Household hub. */}
-        <Tabs.Screen name="kitchen"  options={{ href: null }} />
+        <Tabs.Screen name="kitchen" />
+        {/* Routable, but not seats in the bar — reached from the Household menu
+            in the Feed header. */}
         <Tabs.Screen name="vault"    options={{ href: null }} />
         <Tabs.Screen name="settings" options={{ href: null }} />
         <Tabs.Screen name="account"  options={{ href: null }} />
-        {/* Reached from the feed header and the Household hub, never a tab. */}
+        {/* Reached from the feed header, never a tab. */}
         <Tabs.Screen name="search"   options={{ href: null }} />
       </Tabs>
 
       {isWide && <SidebarNav width={sidebarW} />}
-      <MoreSheet visible={moreOpen} onClose={() => setMoreOpen(false)} />
       <QuickAddSheet visible={quickAddOpen} onClose={() => setQuickAddOpen(false)} />
       <InviteJoinPrompt />
     </>

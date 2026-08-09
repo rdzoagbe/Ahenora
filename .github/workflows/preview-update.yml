@@ -1,0 +1,64 @@
+name: Preview update (private OTA)
+
+# Manually-triggered over-the-air update to the *preview* channel only.
+# Publishes whatever is on the chosen branch to the "preview" EAS branch, so a
+# device running a preview build picks it up in ~1 minute — without a rebuild,
+# without a Play submit, and WITHOUT touching production users (they are on the
+# separate "production" channel). Trigger from the draft branch to preview
+# work-in-progress privately.
+on:
+  workflow_dispatch:
+    inputs:
+      message:
+        description: 'Short note shown in the update history'
+        required: false
+        default: 'preview update'
+
+concurrency:
+  group: preview-update-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  preview-update:
+    name: Publish preview OTA update
+    runs-on: ubuntu-latest
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      EXPO_PUBLIC_BACKEND_URL: ${{ secrets.EXPO_PUBLIC_BACKEND_URL || vars.EXPO_PUBLIC_BACKEND_URL }}
+      EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: ${{ secrets.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || vars.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID }}
+      EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: ${{ secrets.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || vars.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID }}
+      EXPO_NO_TELEMETRY: 1
+    steps:
+      - name: Verify EXPO_TOKEN is set
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "EXPO_TOKEN secret is missing. Add it under Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm install --no-audit --no-fund
+
+      - name: Publish Android update to the preview channel
+        working-directory: frontend
+        run: |
+          npx eas-cli@latest update \
+            --platform android \
+            --branch preview \
+            --environment preview \
+            --message "${{ github.event.inputs.message }} ($GITHUB_SHA)" \
+            --non-interactive
