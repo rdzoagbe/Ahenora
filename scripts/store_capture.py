@@ -45,9 +45,15 @@ def seed():
     # Tasks (shared so they populate the shared feed)
     for title, who in [("Tidy your room", "Ama"), ("Finish homework", "Leo"),
                        ("Grocery run", "Jordan"), ("Pack school lunches", "Jordan"),
-                       ("Walk the dog", "Ama")]:
+                       ("Walk the dog", "Ama"), ("Book dentist for Ama", "Jordan"),
+                       ("Sign school permission slip", "Jordan")]:
         api("POST", "/cards", {"type": "TASK", "title": title,
                                "assignee": who, "shared": True}, tok)
+    # A vault document — this completes the 3rd "getting started" step so the
+    # onboarding checklist auto-hides and the Feed shows a real, lived-in list.
+    for title, cat in [("Passports", "Legal"), ("Home insurance", "Insurance")]:
+        api("POST", "/vault", {"title": title, "category": cat,
+                               "image_base64": "x", "mime_type": "image/jpeg"}, tok)
     # Calendar events across the week
     now = datetime.now(timezone.utc).replace(hour=15, minute=0, second=0, microsecond=0)
     for title, days, who in [("Soccer practice", 0, "Leo"), ("Dentist appointment", 1, "Ama"),

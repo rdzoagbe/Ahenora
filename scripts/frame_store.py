@@ -70,13 +70,15 @@ def build(raw_name, headline, subhead, out_name):
     wrap_center(draw, subhead, sf, W / 2, y, (255, 255, 255, 235), line_gap=6)
 
     phone = Image.open(os.path.join(RAW, raw_name)).convert("RGB")
-    target_w = 800
+    target_w = 760
     target_h = int(phone.height * target_w / phone.width)
     phone = phone.resize((target_w, target_h), Image.LANCZOS)
     phone = rounded(phone, 46)
 
     px = (W - target_w) // 2
-    py = 396
+    # Sit the phone below the header with a comfortable bottom margin so the
+    # tab bar never touches the canvas edge.
+    py = max(392, H - target_h - 70)
     # soft shadow
     shadow = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
     sd = ImageDraw.Draw(shadow)
