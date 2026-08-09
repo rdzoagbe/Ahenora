@@ -1882,7 +1882,8 @@ async def send_coparent_alert(family_id: str, title: str, body: str, data_type: 
         await send_expo_push_messages(messages, database)
 
 
-async def require_user(authorization: str = Header(default="")):
+async def require_user(authorization: str = Header(default=""),
+                       x_client_platform: str = Header(default="")):
     database = get_db()
 
     if not authorization.startswith("Bearer "):
@@ -1920,6 +1921,16 @@ async def require_user(authorization: str = Header(default="")):
             )
             await database["metrics_daily"].update_one(
                 {"date": today, "name": "active_users"},
+                {"$inc": {"count": 1}},
+                upsert=True,
+            )
+            # ...and the same count split by platform, so "web vs app" is
+            # answerable. Web users can't buy through the store, so if the daily
+            # actives are mostly web that alone explains a flat subscriber line.
+            plat = (x_client_platform or "").strip().lower()
+            plat = plat if plat in ("web", "android", "ios") else "other"
+            await database["metrics_daily"].update_one(
+                {"date": today, "name": f"active_{plat}"},
                 {"$inc": {"count": 1}},
                 upsert=True,
             )
