@@ -64,7 +64,7 @@
     ],
     "experiments": {
       "typedRoutes": true,
-      "baseUrl": "/Household-COO/app"
+      "baseUrl": "/Ahenora/app"
     },
     "extra": {
       "router": {},

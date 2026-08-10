@@ -155,7 +155,7 @@ via GitHub Pages:
 
 1. Push this repo (already done).
 2. On GitHub: **Settings → Pages → Source: Deploy from a branch → `main` / `/docs`**.
-3. Save. Your URL becomes: `https://rdzoagbe.github.io/Household-COO/privacy.html`
+3. Save. Your URL becomes: `https://rdzoagbe.github.io/Ahenora/privacy.html`
 4. Paste that URL into the Play Console "Privacy Policy" field.
 
 ---

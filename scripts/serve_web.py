@@ -1,6 +1,6 @@
 """Serve the exported web build the way GitHub Pages does.
 
-The harnesses fetch http://127.0.0.1:<port>/Household-COO/app/<screen>, which
+The harnesses fetch http://127.0.0.1:<port>/Ahenora/app/<screen>, which
 is the real production shape: a project page served under a repo-name prefix,
 with clean URLs (no .html). Python's stock http.server does neither, and the
 difference is not cosmetic — expo-router resolves routes from the path, so a
@@ -15,7 +15,7 @@ import sys
 ROOT = os.path.abspath(sys.argv[2] if len(sys.argv) > 2
                        else os.path.join(os.path.dirname(__file__), ".."))
 DOCS = os.path.join(ROOT, "docs")
-PREFIX = "/Household-COO/"
+PREFIX = "/Ahenora/"
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):

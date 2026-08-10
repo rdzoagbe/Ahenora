@@ -18,9 +18,9 @@ export default function Root({ children }: PropsWithChildren) {
           set `overflow: auto` on the body style below.
         */}
         {/* PWA: lets iPhone/desktop users install from the browser. Paths are
-            absolute because the web build lives under /Household-COO/app/. */}
-        <link rel="manifest" href="/Household-COO/app/manifest.json" />
-        <link rel="apple-touch-icon" href="/Household-COO/app/apple-touch-icon.png" />
+            absolute because the web build lives under /Ahenora/app/. */}
+        <link rel="manifest" href="/Ahenora/app/manifest.json" />
+        <link rel="apple-touch-icon" href="/Ahenora/app/apple-touch-icon.png" />
         <meta name="theme-color" content="#101419" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -39,7 +39,7 @@ export default function Root({ children }: PropsWithChildren) {
   try { if (localStorage.getItem('coo_install_hint_dismissed')) return; } catch (e) { return; }
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function () {
-      navigator.serviceWorker.register('/Household-COO/app/sw.js', { scope: '/Household-COO/app/' }).catch(function () {});
+      navigator.serviceWorker.register('/Ahenora/app/sw.js', { scope: '/Ahenora/app/' }).catch(function () {});
     });
   }
   var fr = (navigator.language || '').toLowerCase().indexOf('fr') === 0;

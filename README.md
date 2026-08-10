@@ -35,5 +35,5 @@ Honest feedback — what's confusing, broken, or missing — is exactly what we 
 
 ## 📄 Legal
 
-- [Privacy Policy](https://rdzoagbe.github.io/Household-COO/privacy.html)
+- [Privacy Policy](https://rdzoagbe.github.io/Ahenora/privacy.html)
 - Contact: rolanddzoagbe@gmail.com
