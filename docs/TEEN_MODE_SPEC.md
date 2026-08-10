@@ -156,7 +156,7 @@ Sharing settings (defaults):
 
 ## 11. Monetization (see task #18)
 
-Household COO Premium already exists and already includes pocket-money (`frontend/app/pricing.tsx`). Teen mode is "pocket money, grown up" — it slots into the paid tier naturally.
+Household COO Premium already exists and already includes pocket-money (`frontend/app/pricing.tsx`). **Current price anchor: €6.99/mo or €49.99/yr.** Teen mode is "pocket money, grown up" — it slots into the paid tier naturally.
 
 | Model | Upside | Downside |
 |---|---|---|
@@ -165,7 +165,9 @@ Household COO Premium already exists and already includes pocket-money (`fronten
 | **C. Per-teen add-on** | Scales with family size | Friction; feels nickel-and-dime |
 | **D. Freemium teen** | Free teen join = viral; money = paywall | Needs careful free/paid line |
 
-**Recommendation:** **A + a dash of D** — a teen can *join* free (drives adoption + network effect), but the **allowance/money engine is Premium**. The teen gets hooked; the parent hits the paywall exactly where value is highest. Use teen mode as the headline upgrade driver. Revisit a separate **Family+** tier (B) only once usage shows willingness to pay.
+**Recommendation:** **A + a dash of D, at €0 extra for v1.** A teen can *join* free (drives adoption + network effect), but the **allowance/money engine is Premium** (the existing €6.99/mo · €49.99/yr). The teen gets hooked; the parent hits the paywall exactly where value is highest. Use teen mode as the **headline upgrade driver** — it lifts conversion + retention (teen families churn less), which is worth more than a small add-on fee at this stage.
+
+**If/when a paid uplift is justified by data** → a **Family+** tier at **~€8.99/mo or ~€69–79/yr** (roughly +€2–3/mo over base). Rationale for the ceiling: real-money kids' cards (GoHenry/Greenlight) run ~£4–8/mo *per child*, but they're licensed fintechs moving real money — we're a **virtual tracker**, so price **below** them and **never per-child** (per-teen add-ons create friction). Family organisers (Cozi et al.) sit ~$30–40/yr, so a Family+ at €69–79/yr sits sensibly between our base and fintech.
 
 Review must cover: Play Console subscription products, **grandfathering** existing subscribers, free-vs-Premium line, parent-as-payer compliance.
 
