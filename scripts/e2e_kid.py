@@ -184,7 +184,7 @@ async def main():
         await p.click('[data-testid="kid-exit-confirm"]')
         await p.wait_for_timeout(4500)
         body = await p.inner_text("body")
-        r["a_grown_up_gets_it_back"] = "Ahenora" in body
+        r["a_grown_up_gets_it_back"] = "AHENORA" in body
         back = await p.evaluate("localStorage.getItem('coo_session_token')")
         r["parents_session_restored"] = back == tok
         r["set_aside_copy_cleared"] = await p.evaluate(
