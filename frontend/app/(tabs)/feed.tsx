@@ -779,6 +779,7 @@ export default function Feed() {
         scrollViewProps={{ contentContainerStyle: [styles.scroll, { paddingHorizontal: px }] }}
       >
           <View style={[styles.page, { maxWidth: maxW }]}>
+            <Text style={styles.brand}>Ahenora</Text>
             <View style={styles.topMetaRow}>
               <Text style={styles.dateText}>{feedDateLine(now)} <Text style={styles.sun}>{timeEmoji(now)}</Text></Text>
               <View style={styles.topActions}>
@@ -825,7 +826,6 @@ export default function Feed() {
                   <View style={styles.calmPill}>
                     <Text style={styles.calmPillText}>{t('feed_calm')} {dashboard.calmScore}</Text>
                   </View>
-                  <Text style={styles.subtitle}>Ahenora</Text>
                 </View>
               </View>
             </View>
@@ -1454,6 +1454,15 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     width: '100%',
     alignSelf: 'center',
   },
+  brand: {
+    color: ui.orangeText,
+    fontFamily: 'Inter_800ExtraBold',
+    fontSize: 13,
+    letterSpacing: 1.6,
+    textTransform: 'uppercase',
+    marginTop: 2,
+    marginBottom: 4,
+  },
   topMetaRow: {
     minHeight: 42,
     flexDirection: 'row',
@@ -1504,9 +1513,9 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   heroTitle: {
     color: ui.text,
     fontFamily: 'Inter_800ExtraBold',
-    fontSize: 36,
-    lineHeight: 41,
-    letterSpacing: -1.15,
+    fontSize: 27,
+    lineHeight: 32,
+    letterSpacing: -0.8,
   },
   subtitle: {
     marginTop: 8,
