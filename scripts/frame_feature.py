@@ -50,8 +50,20 @@ while tsize > 30:
         break
     tsize -= 2
 d.text((tx, 172), title, font=tf, fill=(255, 255, 255))
-d.text((tx, 258), "A better home base", font=ImageFont.truetype(FR, 37), fill=(255, 255, 255))
-d.text((tx, 304), "for family life", font=ImageFont.truetype(FR, 37), fill=(255, 255, 255))
+# Tagline lines (optional args → localisable); auto-fit width so a longer
+# language like French shrinks to stay inside the panel instead of clipping.
+line1 = sys.argv[3] if len(sys.argv) > 3 else "A better home base"
+line2 = sys.argv[4] if len(sys.argv) > 4 else "for family life"
+tagsize = 37
+while tagsize > 22:
+    tfm = ImageFont.truetype(FR, tagsize)
+    if max(d.textbbox((0, 0), line1, font=tfm)[2],
+           d.textbbox((0, 0), line2, font=tfm)[2]) <= (W - tx - right_margin):
+        break
+    tagsize -= 1
+tfm = ImageFont.truetype(FR, tagsize)
+d.text((tx, 258), line1, font=tfm, fill=(255, 255, 255))
+d.text((tx, 258 + tagsize + 9), line2, font=tfm, fill=(255, 255, 255))
 
 c.convert("RGB").save(OUT, "PNG", optimize=True)
 print("saved", OUT, c.size)
