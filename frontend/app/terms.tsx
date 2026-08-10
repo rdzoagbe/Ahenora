@@ -5,12 +5,12 @@ export default function TermsScreen() {
   return (
     <LegalPage
       title="Terms & Support"
-      subtitle="Terms of use, acceptable use, support contact, and important limitations for the Household COO app."
+      subtitle="Terms of use, acceptable use, support contact, and important limitations for the Ahenora app."
       updatedAt="July 2026"
       sections={[
         {
           title: 'About this app',
-          body: 'Household COO is available on Google Play. We continuously add and improve functionality; features may change between updates.',
+          body: 'Ahenora is available on Google Play. We continuously add and improve functionality; features may change between updates.',
         },
         {
           title: 'Your responsibilities',
@@ -31,10 +31,10 @@ export default function TermsScreen() {
         },
         {
           title: 'Support',
-          body: 'For support, deletion requests, or privacy questions, contact: rolanddzoagbe@gmail.com. Include your Household COO account email and a short description of the issue.',
+          body: 'For support, deletion requests, or privacy questions, contact: rolanddzoagbe@gmail.com. Include your Ahenora account email and a short description of the issue.',
         },
       ]}
-      footer="These terms may be updated as Household COO evolves. Material changes will be announced in the app before they take effect."
+      footer="These terms may be updated as Ahenora evolves. Material changes will be announced in the app before they take effect."
     />
   );
 }

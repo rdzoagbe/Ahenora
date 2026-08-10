@@ -24,7 +24,7 @@ export default function Root({ children }: PropsWithChildren) {
         <meta name="theme-color" content="#101419" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-        <meta name="apple-mobile-web-app-title" content="Household COO" />
+        <meta name="apple-mobile-web-app-title" content="Ahenora" />
         <ScrollViewStyleReset />
         {/* Install affordance, web only. Chrome fires beforeinstallprompt when
             the manifest + service worker qualify; we catch it and offer our
@@ -76,7 +76,7 @@ export default function Root({ children }: PropsWithChildren) {
     deferred = e;
     if (document.getElementById('coo-install-bar')) return;
     bar(
-      fr ? "Installez Household COO sur votre \u00e9cran d'accueil." : 'Install Household COO on your home screen.',
+      fr ? "Installez Ahenora sur votre \u00e9cran d'accueil." : 'Install Ahenora on your home screen.',
       fr ? 'Installer' : 'Install',
       function () {
         if (!deferred) return;

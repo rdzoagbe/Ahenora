@@ -825,7 +825,7 @@ export default function Feed() {
                   <View style={styles.calmPill}>
                     <Text style={styles.calmPillText}>{t('feed_calm')} {dashboard.calmScore}</Text>
                   </View>
-                  <Text style={styles.subtitle}>Household COO</Text>
+                  <Text style={styles.subtitle}>Ahenora</Text>
                 </View>
               </View>
             </View>

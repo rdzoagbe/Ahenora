@@ -102,12 +102,12 @@ export function SundayBriefModal({ visible, onClose }: Props) {
                 <PressScale
                   testID="share-brief"
                   onPress={async () => {
-                    const shareText = `Sunday Brief from Household COO\n\n${brief}`;
+                    const shareText = `Sunday Brief from Ahenora\n\n${brief}`;
                     if (Platform.OS === 'web' && typeof navigator !== 'undefined') {
                       try {
                         if ((navigator as any).share) {
                           await (navigator as any).share({
-                            title: 'Sunday Brief — Household COO',
+                            title: 'Sunday Brief — Ahenora',
                             text: shareText,
                           });
                           setShared(true);
