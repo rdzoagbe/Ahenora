@@ -45,7 +45,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
 
@@ -97,7 +97,7 @@ jobs:
       # the difference between "contrast check failed" and seeing the screen.
       - name: Upload what the browser saw
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: harness-screenshots
           path: '*.png'
