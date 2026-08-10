@@ -7,6 +7,7 @@ import { useStore } from '../../src/store';
 import { useBreakpoint } from '../../src/responsive';
 import { InviteJoinPrompt } from '../../src/components/InviteJoinPrompt';
 import { QuickAddSheet } from '../../src/components/QuickAddSheet';
+import { MoreSheet } from '../../src/components/MoreSheet';
 
 // ─── Phone: floating pill tab bar ────────────────────────────────────────────
 
@@ -188,7 +189,7 @@ function PhoneTabBar({ state, navigation, style, onAdd }: {
 let onboardingRedirected = false;
 
 export default function TabLayout() {
-  const { t, theme, user, loading } = useStore();
+  const { t, theme, user, loading, householdMenuOpen, closeHouseholdMenu } = useStore();
   const { isWide, sidebarW } = useBreakpoint();
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -263,6 +264,7 @@ export default function TabLayout() {
 
       {isWide && <SidebarNav width={sidebarW} />}
       <QuickAddSheet visible={quickAddOpen} onClose={() => setQuickAddOpen(false)} />
+      <MoreSheet visible={householdMenuOpen} onClose={closeHouseholdMenu} />
       <InviteJoinPrompt />
     </>
   );

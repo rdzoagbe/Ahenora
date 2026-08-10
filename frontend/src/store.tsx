@@ -36,6 +36,9 @@ interface StoreState {
   upgradePrompt: { feature: string; message: string } | null;
   showUpgradePrompt: (feature: string, message: string) => void;
   dismissUpgradePrompt: () => void;
+  householdMenuOpen: boolean;
+  openHouseholdMenu: () => void;
+  closeHouseholdMenu: () => void;
 }
 
 const StoreContext = createContext<StoreState | null>(null);
@@ -66,6 +69,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     feature: string;
     message: string;
   } | null>(null);
+  // The household menu (Settings, Vault, Account, Hand-off) is opened from every
+  // screen's header, so its open state lives here rather than on the Feed alone.
+  const [householdMenuOpen, setHouseholdMenuOpen] = useState(false);
+  const openHouseholdMenu = useCallback(() => setHouseholdMenuOpen(true), []);
+  const closeHouseholdMenu = useCallback(() => setHouseholdMenuOpen(false), []);
 
   const resolvedAppearance = resolveAppearance(appearanceMode, systemScheme);
   const theme = useMemo(() => getTheme(appearanceMode, systemScheme), [appearanceMode, systemScheme]);
@@ -267,6 +275,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         upgradePrompt,
         showUpgradePrompt,
         dismissUpgradePrompt,
+        householdMenuOpen,
+        openHouseholdMenu,
+        closeHouseholdMenu,
       }}
     >
       {children}
