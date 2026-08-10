@@ -42,7 +42,7 @@ d = ImageDraw.Draw(c)
 tx = 452
 right_margin = 40
 # Fit the title within the panel so nothing clips off the right edge.
-title = "Household COO"
+title = "Ahenora"
 tsize = 64
 while tsize > 30:
     tf = ImageFont.truetype(FB, tsize)
@@ -50,8 +50,8 @@ while tsize > 30:
         break
     tsize -= 2
 d.text((tx, 172), title, font=tf, fill=(255, 255, 255))
-d.text((tx, 258), "Your whole family,", font=ImageFont.truetype(FR, 37), fill=(255, 255, 255))
-d.text((tx, 304), "all in one place", font=ImageFont.truetype(FR, 37), fill=(255, 255, 255))
+d.text((tx, 258), "A better home base", font=ImageFont.truetype(FR, 37), fill=(255, 255, 255))
+d.text((tx, 304), "for family life", font=ImageFont.truetype(FR, 37), fill=(255, 255, 255))
 
 c.convert("RGB").save(OUT, "PNG", optimize=True)
 print("saved", OUT, c.size)

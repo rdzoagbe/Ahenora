@@ -99,7 +99,7 @@ INVITE_BASE_URL = os.environ.get(
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
 INVITE_FROM_EMAIL = os.environ.get("INVITE_FROM_EMAIL", "")
 INVITE_REPLY_TO = os.environ.get("INVITE_REPLY_TO", "")
-APP_NAME = os.environ.get("APP_NAME", "Household COO")
+APP_NAME = os.environ.get("APP_NAME", "Ahenora")
 MAX_VOICE_AUDIO_BYTES = int(os.environ.get("MAX_VOICE_AUDIO_BYTES", str(12 * 1024 * 1024)))
 ADMIN_EMAILS_RAW = os.environ.get("ADMIN_EMAILS", "")
 ADMIN_EMAILS = {
@@ -164,7 +164,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 log = logging.getLogger("household_coo")
 
-app = FastAPI(title="Household COO Backend")
+app = FastAPI(title="Ahenora Backend")
 
 app.add_middleware(
     CORSMiddleware,
@@ -1674,7 +1674,7 @@ async def send_star_milestone_alert(family_id: str, member_name: str, old_total:
 PUSH_I18N = {
     "en": {
         "invited_title": "{name} invited you to their household",
-        "invited_body": "Open Household COO and sign in through the invite link to join.",
+        "invited_body": "Open Ahenora and sign in through the invite link to join.",
         "accepted_title": "{name} accepted your invitation",
         "accepted_body": "They have joined your household.",
         "assigned_title": "{name} handed you something",
@@ -1683,7 +1683,7 @@ PUSH_I18N = {
     },
     "fr": {
         "invited_title": "{name} vous invite dans son foyer",
-        "invited_body": "Ouvrez Household COO et connectez-vous via le lien d'invitation pour le rejoindre.",
+        "invited_body": "Ouvrez Ahenora et connectez-vous via le lien d'invitation pour le rejoindre.",
         "accepted_title": "{name} a accepté votre invitation",
         "accepted_body": "Cette personne a rejoint votre foyer.",
         "assigned_title": "{name} vous a confié quelque chose",
@@ -1692,7 +1692,7 @@ PUSH_I18N = {
     },
     "es": {
         "invited_title": "{name} te invitó a su hogar",
-        "invited_body": "Abre Household COO e inicia sesión con el enlace de invitación para unirte.",
+        "invited_body": "Abre Ahenora e inicia sesión con el enlace de invitación para unirte.",
         "accepted_title": "{name} aceptó tu invitación",
         "accepted_body": "Ya forma parte de tu hogar.",
         "assigned_title": "{name} te ha encargado algo",
@@ -1701,7 +1701,7 @@ PUSH_I18N = {
     },
     "de": {
         "invited_title": "{name} hat dich in den Haushalt eingeladen",
-        "invited_body": "Öffne Household COO und melde dich über den Einladungslink an, um beizutreten.",
+        "invited_body": "Öffne Ahenora und melde dich über den Einladungslink an, um beizutreten.",
         "accepted_title": "{name} hat deine Einladung angenommen",
         "accepted_body": "Die Person ist deinem Haushalt beigetreten.",
         "assigned_title": "{name} hat dir etwas übergeben",
@@ -1830,7 +1830,7 @@ async def send_new_card_alert(family_id: str, card: dict, created_by_user_id: Op
             {
                 "to": token,
                 "sound": "default",
-                "title": "New Household COO card",
+                "title": "New Ahenora card",
                 "body": card.get("title") or "A new card was added.",
                 "data": {
                     "type": "new_card",
@@ -1873,7 +1873,7 @@ async def send_coparent_alert(family_id: str, title: str, body: str, data_type: 
                 "to": token,
                 "sound": "default",
                 "title": title,
-                "body": preview or "Open Household COO to see it.",
+                "body": preview or "Open Ahenora to see it.",
                 "data": {"type": data_type, "family_id": family_id},
             }
         )
@@ -2218,7 +2218,7 @@ async def root():
     # Deliberately minimal: this endpoint is public, so it must not disclose
     # which integrations/keys are configured (that inventory is a free recon
     # gift to an attacker). Config detail moved to the admin-only /api/health.
-    return {"status": "online", "message": "Household COO Backend is live"}
+    return {"status": "online", "message": "Ahenora Backend is live"}
 
 
 _AI_PROBE = {"last": None}
@@ -4848,7 +4848,7 @@ async def test_notification(user=Depends(require_user)):
                 {
                     "to": token,
                     "sound": "default",
-                    "title": "Household COO notifications are active",
+                    "title": "Ahenora notifications are active",
                     "body": "You will receive card alerts and reminder notifications.",
                     "data": {"type": "notification_test"},
                 }
@@ -6993,7 +6993,7 @@ async def _voice_to_draft(audio_bytes: bytes, mime_type: str, members: list[str]
     allowed_members = ", ".join(members) if members else ""
 
     prompt = f"""
-You are Household COO, a premium family chief-of-staff assistant.
+You are Ahenora, a premium family chief-of-staff assistant.
 
 Listen to the audio and return JSON only with these keys:
 transcript, type, title, description, assignee, due_date

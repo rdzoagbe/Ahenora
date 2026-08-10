@@ -20,7 +20,7 @@ FONT_R = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 
 # (raw file, headline, subhead)
 SLIDES = [
-    ("01-feed.png",     "Your whole family,\nall in one place",   "Tasks, reminders and the daily plan — sorted"),
+    ("01-feed.png",     "A better home base\nfor family life",     "Tasks, reminders and the daily plan — sorted"),
     ("02-calendar.png", "One shared\nfamily calendar",            "You each choose exactly what to share"),
     ("03-kids.png",     "Chores kids\nwant to finish",            "Stars they swap for rewards you set"),
     ("04-kitchen.png",  "The week's meals,\nplanned in minutes",  "Snap a recipe, sync it to your shopping list"),
