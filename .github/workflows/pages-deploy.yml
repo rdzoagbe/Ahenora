@@ -1,0 +1,76 @@
+# Publishes the static site in docs/ to GitHub Pages, then verifies that the
+# legal pages Google Play checks (privacy policy + account/data deletion) return
+# 200. A silent 404 on these URLs is what got the app update rejected once — this
+# workflow turns that failure mode into a red build instead of a store rejection.
+name: Deploy docs to Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - '.github/workflows/pages-deploy.yml'
+  workflow_dispatch:
+
+# Least-privilege token: read the repo, write the Pages deployment.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never run two Pages deploys at once; let an in-flight deploy finish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Fail fast, before deploying, if the required legal pages are missing.
+      - name: Verify required legal pages exist
+        run: |
+          missing=0
+          for f in docs/privacy.html docs/delete-account.html; do
+            if [ ! -s "$f" ]; then
+              echo "::error file=$f::Required legal page is missing or empty"
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ] || exit 1
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload docs/ as the Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      # Prove the URLs Google Play validates actually resolve on the live site.
+      - name: Smoke-check published legal URLs
+        run: |
+          base="${{ steps.deployment.outputs.page_url }}"
+          base="${base%/}"
+          fail=0
+          for path in privacy.html delete-account.html; do
+            url="$base/$path"
+            code=$(curl -sS -o /dev/null -w '%{http_code}' \
+              --retry 5 --retry-delay 6 --retry-all-errors "$url" || echo 000)
+            echo "$url -> $code"
+            if [ "$code" != "200" ]; then
+              echo "::error::$url returned $code (expected 200) — Play would reject this"
+              fail=1
+            fi
+          done
+          [ "$fail" -eq 0 ] || exit 1
