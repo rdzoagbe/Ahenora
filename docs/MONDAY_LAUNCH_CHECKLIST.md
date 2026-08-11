@@ -41,8 +41,18 @@ _Tracks task #13. Launch brand = **Household COO** (the Ahenora rename is post-l
 - [ ] Version reads **1.1.0**
 - [ ] Open your Play Store page on a phone and eyeball it
 
-### Code hygiene
-- [ ] **Merge PR #389** → main (syncs the shipped code + docs; triggers the docs/Pages rebuild)
+### Code hygiene — ⚠️ TIMING-CRITICAL
+- [ ] **Merge PR #389 → main *only as part of this publish moment* — NOT before.**
+  Merging pushes `frontend/**` to main, which triggers `frontend-ci-eas-update` →
+  `eas update --branch production`. Live users share runtime **2.0.0**, so the merge
+  **OTAs the Ahenora rebrand into the app for real users immediately**, before/independent
+  of the Play native update. Merge it in the SAME window you press Publish, so the in-app
+  rebrand (OTA) and the icon/name/splash (native v55) land together. Merging early = live
+  users get "Ahenora" inside a "Household COO" shell + an early leak.
+- Note: the "+" quick-capture (task #19) is on this same branch, so **it OTAs at this merge
+  too** — i.e. it goes live *with* the launch, not as a separate later step. That's fine as
+  long as you've validated it on the preview build first. If you'd rather ship it days later,
+  it must be split onto its own post-launch branch/PR before you merge #389.
 
 ---
 
