@@ -736,16 +736,16 @@ export default function Calendar() {
             title={monthTitle}
             titleSize={30}
             right={
+              // Compact icon button — the labelled "Import from Google or Outlook"
+              // card below is the primary entry, so the header stays uncluttered
+              // and the month title keeps its room (incl. longer languages).
               syncing ? (
-                // While a sync is in flight the button becomes the way out.
-                <PressScale testID="cancel-calendar-sync" onPress={cancelSync} style={[styles.syncBtn, { backgroundColor: ui.soft, borderWidth: 1, borderColor: ui.line }]}>
+                <PressScale testID="cancel-calendar-sync" onPress={cancelSync} accessibilityRole="button" accessibilityLabel={t('cal_cancel')} style={[styles.syncIconBtn, { backgroundColor: ui.soft, borderWidth: 1, borderColor: ui.line }]}>
                   <ActivityIndicator color={ui.orangeText} size="small" />
-                  <Text style={[styles.syncText, { color: ui.orangeText }]}>{t('cal_cancel')}</Text>
                 </PressScale>
               ) : (
-                <PressScale testID="sync-google-calendar" onPress={openImportPicker} disabled={syncDisabled} style={[styles.syncBtn, syncDisabled && { opacity: 0.55 }]}>
-                  <RefreshCw color="#FFFFFF" size={16} />
-                  <Text style={styles.syncText}>{t('cal_import')}</Text>
+                <PressScale testID="sync-google-calendar" onPress={openImportPicker} disabled={syncDisabled} accessibilityRole="button" accessibilityLabel={t('cal_import')} style={[styles.syncIconBtn, syncDisabled && { opacity: 0.55 }]}>
+                  <RefreshCw color="#FFFFFF" size={18} />
                 </PressScale>
               )
             }
@@ -1320,8 +1320,7 @@ export default function Calendar() {
 const createStyles = (ui: UIColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: ui.bg },
   scroll: { paddingHorizontal: 20, paddingTop: 8 },
-  syncBtn: { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: ui.orangeDeep, borderRadius: 99, paddingHorizontal: 18, paddingVertical: 11 },
-  syncText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
+  syncIconBtn: { width: 40, height: 40, borderRadius: 99, alignItems: 'center', justifyContent: 'center', backgroundColor: ui.orangeDeep },
 
   morningNotice: {
     flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 16,
