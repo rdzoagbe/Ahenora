@@ -126,7 +126,7 @@ function formatActivityDate(value?: string | null) {
 }
 
 export default function Kids() {
-  const { t } = useStore();
+  const { t, dataVersion } = useStore();
   const { isLocked, promptUpgrade } = usePremiumGate();
   const allowanceLocked = isLocked('allowance');
   const router = useRouter();
@@ -395,6 +395,12 @@ export default function Kids() {
   }, [load]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  // Reload in place after a capture from the global "+".
+  useEffect(() => {
+    if (dataVersion) load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataVersion]);
 
   useEffect(() => {
     refreshHistory(activeChild?.member_id);

@@ -134,7 +134,7 @@ function groupByDay(cards: Card[], selectedDay: string | null) {
 }
 
 export default function Calendar() {
-  const { t, lang } = useStore();
+  const { t, lang, dataVersion } = useStore();
   const { isLocked, promptUpgrade } = usePremiumGate();
   const carpoolLocked = isLocked('carpool');
   const { width: windowWidth } = useWindowDimensions();
@@ -294,6 +294,12 @@ export default function Calendar() {
   }, [load]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  // Reload in place after a capture from the global "+".
+  useEffect(() => {
+    if (dataVersion) load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataVersion]);
 
   useEffect(() => {
     const importCalendar = async () => {

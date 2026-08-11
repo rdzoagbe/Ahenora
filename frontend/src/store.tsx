@@ -39,6 +39,10 @@ interface StoreState {
   householdMenuOpen: boolean;
   openHouseholdMenu: () => void;
   closeHouseholdMenu: () => void;
+  // Bumped whenever something is captured from the global "+" so any visible
+  // tab can refresh its data without a navigation.
+  dataVersion: number;
+  bumpData: () => void;
 }
 
 const StoreContext = createContext<StoreState | null>(null);
@@ -74,6 +78,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [householdMenuOpen, setHouseholdMenuOpen] = useState(false);
   const openHouseholdMenu = useCallback(() => setHouseholdMenuOpen(true), []);
   const closeHouseholdMenu = useCallback(() => setHouseholdMenuOpen(false), []);
+  // A monotonic counter the global "+" bumps after a successful capture; tabs
+  // depend on it to reload the surface the user is looking at.
+  const [dataVersion, setDataVersion] = useState(0);
+  const bumpData = useCallback(() => setDataVersion((v) => v + 1), []);
 
   const resolvedAppearance = resolveAppearance(appearanceMode, systemScheme);
   const theme = useMemo(() => getTheme(appearanceMode, systemScheme), [appearanceMode, systemScheme]);
@@ -278,6 +286,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         householdMenuOpen,
         openHouseholdMenu,
         closeHouseholdMenu,
+        dataVersion,
+        bumpData,
       }}
     >
       {children}

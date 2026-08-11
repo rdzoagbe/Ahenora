@@ -248,7 +248,7 @@ function TaskRow({ card, onOpen, onComplete, styles }: { card: Card; onOpen: () 
 const ANN_SEEN_KEY = 'coo_family_board_seen_at';
 
 export default function Feed() {
-  const { user, t, subscription } = useStore();
+  const { user, t, subscription, dataVersion } = useStore();
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
   const [assigned, setAssigned] = useState<Card[]>([]);
   // The web build is prerendered at BUILD time. Anything derived from "now" —
@@ -463,6 +463,14 @@ export default function Feed() {
       load();
     }, [load])
   );
+
+  // A capture from the global "+" bumps dataVersion; reload the feed in place
+  // so the new card appears without a navigation. Guarded on the first render
+  // (dataVersion === 0) to avoid a redundant load on mount.
+  useEffect(() => {
+    if (dataVersion) load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataVersion]);
 
   // Family-board unread tracking. On focus, snapshot the baseline from disk (so
   // the marker reflects what arrived since last time). On blur, advance the

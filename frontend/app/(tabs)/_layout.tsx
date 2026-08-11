@@ -6,7 +6,7 @@ import { Home, Calendar as CalendarIcon, Lock, Settings as SettingsIcon, Star, U
 import { useStore } from '../../src/store';
 import { useBreakpoint } from '../../src/responsive';
 import { InviteJoinPrompt } from '../../src/components/InviteJoinPrompt';
-import { QuickAddSheet } from '../../src/components/QuickAddSheet';
+import { GlobalCapture } from '../../src/components/GlobalCapture';
 import { MoreSheet } from '../../src/components/MoreSheet';
 
 // ─── Phone: floating pill tab bar ────────────────────────────────────────────
@@ -263,7 +263,7 @@ export default function TabLayout() {
       </Tabs>
 
       {isWide && <SidebarNav width={sidebarW} />}
-      <QuickAddSheet visible={quickAddOpen} onClose={() => setQuickAddOpen(false)} />
+      <GlobalCapture visible={quickAddOpen} onClose={() => setQuickAddOpen(false)} />
       <MoreSheet visible={householdMenuOpen} onClose={closeHouseholdMenu} />
       <InviteJoinPrompt />
     </>

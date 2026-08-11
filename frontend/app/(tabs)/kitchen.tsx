@@ -42,7 +42,7 @@ const KEEP_AWAKE_TAG = 'kitchen-screen';
 const KEEP_AWAKE_KEY = 'coo_keep_screen_on';
 
 export default function Kitchen() {
-  const { t, lang, subscription } = useStore();
+  const { t, lang, subscription, dataVersion } = useStore();
   // The food library covers en/es/fr/de; anything else falls back to English.
   // How many people the amounts are scaled for. Defaults to the household and
   // is adjustable, because who is actually eating changes night to night.
@@ -139,6 +139,12 @@ export default function Kitchen() {
   }, [load]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  // Reload in place after a capture from the global "+".
+  useEffect(() => {
+    if (dataVersion) load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataVersion]);
 
   // Keep the screen awake while shopping / following a recipe — the phone
   // shouldn't dim mid-aisle or on step 3. On by default; a toggle lets users
