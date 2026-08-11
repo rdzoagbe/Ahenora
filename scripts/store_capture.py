@@ -2,7 +2,11 @@
 Play Store listing. Drives the existing docs/app export, intercepting /api/**
 to a local backend seeded with a lively household so the screens look real.
 
-Usage: python3 scripts/store_capture.py <web_port> <api_port> <out_dir>
+Usage: python3 scripts/store_capture.py <web_port> <api_port> <out_dir> [lang]
+
+`lang` (default "en") seeds language-appropriate content and flips the user's
+language server-side via PATCH /auth/language, so the whole UI chrome renders
+in that language for a localised store listing (e.g. fr-FR).
 """
 import asyncio, json, sys, urllib.request, uuid
 from datetime import datetime, timedelta, timezone
@@ -12,8 +16,46 @@ from e2e_browser import launch_chromium
 WEB = f"http://127.0.0.1:{sys.argv[1]}/Ahenora/app"
 API = f"http://127.0.0.1:{sys.argv[2]}/api"
 OUT = sys.argv[3]
+LANG = sys.argv[4] if len(sys.argv) > 4 else "en"
 
 SCALE = 3  # deviceScaleFactor -> 390x844 logical => 1170x2532 image
+
+# Per-language seed content. The kid names (Ama, Leo) and admin name (Jordan)
+# read naturally in every locale, so only the free-text content is translated.
+CONTENT = {
+    "en": {
+        "rewards": [("Ice cream", 10, "🍦"), ("Movie night", 25, "🎬"),
+                    ("Extra screen time", 15, "🎮"), ("Trip to the zoo", 60, "🦁")],
+        "tasks": [("Tidy your room", "Ama"), ("Finish homework", "Leo"),
+                  ("Grocery run", "Jordan"), ("Pack school lunches", "Jordan"),
+                  ("Walk the dog", "Ama"), ("Book dentist for Ama", "Jordan"),
+                  ("Sign school permission slip", "Jordan")],
+        "vault": [("Passports", "Legal"), ("Home insurance", "Insurance")],
+        "events": [("Soccer practice", 0, "Leo"), ("Dentist appointment", 1, "Ama"),
+                   ("Parent-teacher meeting", 2, "Jordan"), ("Swim class", 3, "Ama"),
+                   ("Family movie night", 4, "Jordan")],
+        "dinners": [("monday", "Spaghetti Bolognese"), ("tuesday", "Taco night"),
+                    ("wednesday", "Veggie stir-fry"), ("thursday", "Chicken curry"),
+                    ("friday", "Homemade pizza"), ("saturday", "Grilled salmon"),
+                    ("sunday", "Roast dinner")],
+    },
+    "fr": {
+        "rewards": [("Glace", 10, "🍦"), ("Soirée cinéma", 25, "🎬"),
+                    ("Temps d'écran en plus", 15, "🎮"), ("Sortie au zoo", 60, "🦁")],
+        "tasks": [("Range ta chambre", "Ama"), ("Finis tes devoirs", "Leo"),
+                  ("Faire les courses", "Jordan"), ("Préparer les déjeuners", "Jordan"),
+                  ("Promener le chien", "Ama"), ("RDV dentiste pour Ama", "Jordan"),
+                  ("Signer l'autorisation scolaire", "Jordan")],
+        "vault": [("Passeports", "Legal"), ("Assurance habitation", "Insurance")],
+        "events": [("Entraînement de foot", 0, "Leo"), ("Rendez-vous dentiste", 1, "Ama"),
+                   ("Réunion parents-profs", 2, "Jordan"), ("Cours de natation", 3, "Ama"),
+                   ("Soirée film en famille", 4, "Jordan")],
+        "dinners": [("monday", "Spaghetti bolognaise"), ("tuesday", "Soirée tacos"),
+                    ("wednesday", "Sauté de légumes"), ("thursday", "Curry de poulet"),
+                    ("friday", "Pizza maison"), ("saturday", "Saumon grillé"),
+                    ("sunday", "Rôti du dimanche")],
+    },
+}
 
 
 def api(m, p, b=None, t=None):
@@ -26,12 +68,15 @@ def api(m, p, b=None, t=None):
 
 
 def seed():
-    run = uuid.uuid4().hex[:6]
+    c = CONTENT[LANG]
     u = api("POST", "/auth/register",
             {"name": "Jordan", "email": f"e2e-admin@sim.test",
              "password": "password123"})
     tok = u["session_token"]
     api("POST", "/auth/complete-onboarding", {}, tok)
+    # Flip the account's language so the whole UI renders localised.
+    if LANG != "en":
+        api("PATCH", "/auth/language", {"language": LANG}, tok)
 
     # Kids with stars
     api("POST", "/family/members", {"name": "Ama", "role": "Child",
@@ -39,35 +84,25 @@ def seed():
     api("POST", "/family/members", {"name": "Leo", "role": "Child",
                                     "starting_stars": 28, "pin": "5678"}, tok)
     # Rewards
-    for title, cost, icon in [("Ice cream", 10, "🍦"), ("Movie night", 25, "🎬"),
-                              ("Extra screen time", 15, "🎮"), ("Trip to the zoo", 60, "🦁")]:
+    for title, cost, icon in c["rewards"]:
         api("POST", "/rewards", {"title": title, "cost_stars": cost, "icon": icon}, tok)
     # Tasks (shared so they populate the shared feed)
-    for title, who in [("Tidy your room", "Ama"), ("Finish homework", "Leo"),
-                       ("Grocery run", "Jordan"), ("Pack school lunches", "Jordan"),
-                       ("Walk the dog", "Ama"), ("Book dentist for Ama", "Jordan"),
-                       ("Sign school permission slip", "Jordan")]:
+    for title, who in c["tasks"]:
         api("POST", "/cards", {"type": "TASK", "title": title,
                                "assignee": who, "shared": True}, tok)
     # A vault document — this completes the 3rd "getting started" step so the
     # onboarding checklist auto-hides and the Feed shows a real, lived-in list.
-    for title, cat in [("Passports", "Legal"), ("Home insurance", "Insurance")]:
+    for title, cat in c["vault"]:
         api("POST", "/vault", {"title": title, "category": cat,
                                "image_base64": "x", "mime_type": "image/jpeg"}, tok)
     # Calendar events across the week
     now = datetime.now(timezone.utc).replace(hour=15, minute=0, second=0, microsecond=0)
-    for title, days, who in [("Soccer practice", 0, "Leo"), ("Dentist appointment", 1, "Ama"),
-                            ("Parent-teacher meeting", 2, "Jordan"), ("Swim class", 3, "Ama"),
-                            ("Family movie night", 4, "Jordan")]:
+    for title, days, who in c["events"]:
         due = (now + timedelta(days=days)).isoformat()
         api("POST", "/cards", {"type": "EVENT", "title": title, "assignee": who,
                                "due_date": due, "shared": True}, tok)
     # Meals for the week (admin unlocks meal_planner)
-    dinners = [("monday", "Spaghetti Bolognese"), ("tuesday", "Taco night"),
-               ("wednesday", "Veggie stir-fry"), ("thursday", "Chicken curry"),
-               ("friday", "Homemade pizza"), ("saturday", "Grilled salmon"),
-               ("sunday", "Roast dinner")]
-    for day, title in dinners:
+    for day, title in c["dinners"]:
         try:
             api("POST", "/meals", {"day": day, "meal_type": "dinner", "title": title,
                                    "ingredients": [], "notes": ""}, tok)
