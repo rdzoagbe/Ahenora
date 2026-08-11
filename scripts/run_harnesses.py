@@ -48,6 +48,7 @@ HARNESSES = [
     "e2e_firstrun.py",
     "e2e_pages.py",
     "e2e_nav.py",
+    "e2e_quickadd.py",
     "e2e_activity.py",
     "e2e_search.py",
     "e2e_handoff.py",

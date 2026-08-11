@@ -17,8 +17,10 @@ import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PressScale } from './PressScale';
 import DateTimePickerSheet from './DateTimePickerSheet';
+import { useUI } from './Kit';
 import { toLocalDateInput, toLocalTimeInput } from '../utils/date';
 import { useStore } from '../store';
+import { detectDateTime } from '../dateParse';
 import { api, CardType, FamilyMember, Recurrence } from '../api';
 import { logger } from '../logger';
 
@@ -67,7 +69,8 @@ export function AddCardModal({
   initialSource = 'MANUAL',
   initialDraft = null,
 }: Props) {
-  const { t, theme } = useStore();
+  const { t, theme, lang } = useStore();
+  const ui = useUI();
   const insets = useSafeAreaInsets();
   const [type, setType] = useState<CardType>('TASK');
   const [title, setTitle] = useState('');
@@ -84,6 +87,16 @@ export function AddCardModal({
   const [suggestedAssignee, setSuggestedAssignee] = useState<string>('');
   const [suggestLoading, setSuggestLoading] = useState(false);
   const [members, setMembers] = useState<FamilyMember[]>([]);
+  // Smart layer (Phase 2), all additive: a typed-date → Calendar suggestion
+  // and a vault/appointment "save as a note" escape.
+  const [dateSuggest, setDateSuggest] = useState<{ date: Date; label: string } | null>(null);
+  // The exact title text a suggestion was dismissed for — so the same chip
+  // does not pop straight back up for text the user already declined.
+  const [dismissedFor, setDismissedFor] = useState<string>('');
+  // Mirrors whether this draft is headed for the Vault. Seeded from the scan
+  // draft so existing behaviour is unchanged; the "save as note" button can
+  // flip it off to redirect a mis-routed scan.
+  const [saveToVault, setSaveToVault] = useState(false);
 
   useEffect(() => {
     if (!visible) return;
@@ -118,12 +131,24 @@ export function AddCardModal({
         setDesc(initialDraft.description || '');
         setAssignee(initialDraft.assignee || '');
         setDueDate(initialDraft.due_date || null);
+        // A scan draft that came with a vault category and image is the only
+        // thing that lands in the Vault — mirror the same condition handleSave
+        // used to compute inline, so nothing about the vault path changes.
+        setSaveToVault(
+          initialSource === 'CAMERA' &&
+          !!initialDraft.image_base64 &&
+          !!initialDraft.vault_category &&
+          initialDraft.save_to_vault !== false,
+        );
       } else {
         setType('TASK');
         setTitle('');
         setDesc('');
         setAssignee('');
+        setSaveToVault(false);
       }
+      setDateSuggest(null);
+      setDismissedFor('');
       setRecurrence('none');
       // Default to a 15-minute reminder rather than none: a dated event with
       // no reminder is the "I never got a heads-up" complaint. It only fires
@@ -132,6 +157,27 @@ export function AddCardModal({
       setReminderMins(15);
     }
   }, [visible, initialDraft]);
+
+  // Watch the title for a clear date/time cue. Conservative by design — it
+  // returns null on ordinary text, so the chip stays hidden for most cards.
+  useEffect(() => {
+    const trimmed = title.trim();
+    if (!trimmed) { setDateSuggest(null); return; }
+    setDateSuggest(detectDateTime(trimmed, lang));
+  }, [title, lang]);
+
+  const showDateChip =
+    !!dateSuggest && type !== 'APPOINTMENT' && title.trim() !== dismissedFor;
+
+  const acceptDateSuggestion = () => {
+    if (!dateSuggest) return;
+    setType('APPOINTMENT');
+    setDueDate(dateSuggest.date.toISOString());
+  };
+
+  // Where this card will land, for the one-line destination hint.
+  const destKey =
+    type === 'APPOINTMENT' ? 'add_dest_calendar' : saveToVault ? 'add_dest_vault' : 'add_dest_feed';
 
   const handleSave = async () => {
     if (!title.trim()) return;
@@ -161,10 +207,10 @@ export function AddCardModal({
     // The card is created. Close the modal FIRST so a failed vault save can
     // never lead the user to tap Save again and create a duplicate card.
     const wantsVault =
+      saveToVault &&
       initialSource === 'CAMERA' &&
       !!initialDraft?.image_base64 &&
-      !!initialDraft?.vault_category &&
-      initialDraft?.save_to_vault !== false;
+      !!initialDraft?.vault_category;
 
     onCreated();
     onClose();
@@ -265,6 +311,33 @@ export function AddCardModal({
                 placeholderTextColor={theme.colors.textSoft}
                 style={[styles.input, { color: theme.colors.text, backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}
               />
+
+              {showDateChip && dateSuggest ? (
+                <View style={[styles.dateChip, { backgroundColor: ui.mint, borderColor: ui.mintText + '55' }]}>
+                  <CalendarClock color={ui.mintText} size={15} />
+                  <Text style={[styles.dateChipText, { color: ui.mintText }]} numberOfLines={2}>
+                    {t('add_date_suggest', { when: dateSuggest.label })}
+                  </Text>
+                  <PressScale
+                    testID="date-suggest-add"
+                    accessibilityRole="button"
+                    accessibilityLabel={t('add_date_suggest_cta')}
+                    onPress={acceptDateSuggestion}
+                    style={[styles.dateChipCta, { backgroundColor: ui.mintText }]}
+                  >
+                    <Text style={styles.dateChipCtaText}>{t('add_date_suggest_cta')}</Text>
+                  </PressScale>
+                  <PressScale
+                    testID="date-suggest-dismiss"
+                    accessibilityRole="button"
+                    accessibilityLabel={t('close')}
+                    onPress={() => setDismissedFor(title.trim())}
+                    style={styles.dateChipX}
+                  >
+                    <X color={ui.mintText} size={15} />
+                  </PressScale>
+                </View>
+              ) : null}
 
               <Text style={[styles.label, { color: theme.colors.textMuted }]}>{t('description')}</Text>
               <TextInput
@@ -399,6 +472,21 @@ export function AddCardModal({
                 pattern (no flex-pair rows, whose labels failed to paint on some
                 Android renderers via PressScale's style duplication). */}
             <View style={styles.footer}>
+              {(type === 'APPOINTMENT' || saveToVault) ? (
+                <PressScale
+                  testID="save-as-note"
+                  accessibilityRole="button"
+                  onPress={() => { setType('TASK'); setSaveToVault(false); }}
+                  style={styles.noteBtn}
+                >
+                  <Text style={[styles.noteText, { color: theme.colors.textMuted }]}>{t('add_save_as_note')}</Text>
+                </PressScale>
+              ) : null}
+              <View style={styles.destRow}>
+                <Text testID="dest-hint" style={[styles.destText, { color: theme.colors.textSoft }]} numberOfLines={1}>
+                  {t(destKey)}
+                </Text>
+              </View>
               <PressScale
                 testID="save-add-card"
                 onPress={handleSave}
@@ -527,6 +615,28 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_800ExtraBold',
     fontSize: 12,
   },
+  dateChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 10,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  dateChipText: { flex: 1, minWidth: 0, fontFamily: 'Inter_700Bold', fontSize: 13 },
+  dateChipCta: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 9999,
+  },
+  dateChipCtaText: { fontFamily: 'Inter_800ExtraBold', fontSize: 12, color: '#FFFFFF' },
+  dateChipX: { padding: 4 },
+  destRow: { alignItems: 'center', marginBottom: 2 },
+  destText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
+  noteBtn: { alignItems: 'center', paddingVertical: 6 },
+  noteText: { fontFamily: 'Inter_700Bold', fontSize: 13, textDecorationLine: 'underline' },
   pillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   pill: {
     paddingHorizontal: 14,
