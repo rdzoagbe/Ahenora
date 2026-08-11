@@ -18,7 +18,6 @@ import {
   Lock,
   Pencil,
   MoreHorizontal,
-  Bell,
   Bed,
   BookOpen,
   Utensils,
@@ -1009,13 +1008,6 @@ export default function Kids() {
           <ScreenHeader
             eyebrow={t('kids_eyebrow_family')}
             title={t('kids_title')}
-            right={
-              <PressScale
-                  accessibilityRole="button"
-                  accessibilityLabel={t('a11y_notifications')} onPress={() => router.navigate('/(tabs)/feed')} style={styles.bellWrap}>
-                <Bell color={ui.text} size={24} />
-              </PressScale>
-            }
           />
 
           {/* Only once the screen has something to explain — a tip above an
