@@ -152,3 +152,10 @@ Downloads/
 # The journey harness runs from frontend/, so its shots land a level down.
 journey_*.png
 serve*.log
+
+# Credentials — never commit; these come from env vars / CI secrets at build time.
+# The *.example templates stay tracked (different filenames), so these are safe.
+google-services.json
+play-service-account.json
+*service-account*.json
+*.p12
