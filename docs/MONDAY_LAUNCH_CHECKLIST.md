@@ -36,8 +36,24 @@ A production release must pass Google review (hours to ~a day). **Submit it this
 - [ ] ⚠️ **Change display text ONLY. NEVER touch the product ID / base plan ID / SKU** — that breaks existing subscribers and the RevenueCat mapping.
 - [ ] The purchase pop-up app-name updates automatically with the listing rename.
 
-### E. Backend redeploy (so notifications/invites say Ahenora)
-- [ ] Redeploy **backend/server.py** on Railway (APP_NAME + notification bodies + INVITE_BASE_URL → `.../Ahenora/app/`). Already committed; just needs a deploy.
+### E. Backend redeploy (so notifications/invites/AI say Ahenora)
+A redeploy is **required** — the push-notification titles/bodies (all 4 languages), the AI
+identity prompt ("You are Ahenora…"), and the API title are **hardcoded**; env vars can't fix
+those. But there's an **env-var trap**: `APP_NAME` and `INVITE_BASE_URL` are *also* set in
+Railway, and a set env var **overrides** the new code default — so redeploying alone leaves them
+on the old value. Do both:
+- [ ] **Merge PR #389 first** (Part 2) so `main`'s backend = Ahenora — Railway deploys `main`'s HEAD.
+- [ ] Railway → Backend service → **Variables**: set **`APP_NAME` = `Ahenora`** and
+  **`INVITE_BASE_URL` = `https://rdzoagbe.github.io/Ahenora/app/`** (or delete both to fall back to
+  the new code defaults, which are already Ahenora).
+- [ ] Railway → Backend service → **Deployments → Deploy Latest Commit**.
+- [ ] **Smoke check:** `curl https://household-coo-production.up.railway.app/` → expect
+  `"message": "Ahenora Backend is live"` (was "Household COO Backend is live"). That one string
+  flips only on a successful redeploy, so it's the proof.
+- [ ] ⛔ **Do NOT change** `DB_NAME` (stays `household_coo` — renaming orphans all data) or the
+  Railway service URL `household-coo-production.up.railway.app` (baked into the shipped app via
+  `EXPO_PUBLIC_BACKEND_URL` — changing it breaks every install). The "household-coo" in these is
+  internal infra, never shown to users.
 
 ---
 
