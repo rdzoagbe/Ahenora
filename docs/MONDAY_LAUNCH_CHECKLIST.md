@@ -57,6 +57,13 @@ A production release must pass Google review (hours to ~a day). **Submit it this
   Live users share runtime **2.0.0**, so this **OTAs the Ahenora in-app rebrand + the "+" capture to real users immediately.**
   Merge it *with* Publish so the in-app rebrand (OTA) and the shell (native v55) land together.
   **Merging early = live users get "Ahenora" inside a "Household COO" shell + an early brand leak.**
+- [ ] **Confirm the OTA actually published (don't trust the green check).** Open the
+  **"Frontend CI and Expo update"** run → step **"Publish Android update to Expo production
+  branch"**. It must have *run and printed an update URL* — NOT "publish=false / skipped."
+  A skip means an Actions secret is missing (`EXPO_TOKEN`, `EXPO_PUBLIC_BACKEND_URL`,
+  `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`, `EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID`). Fix: add the
+  secret, then re-fire via **workflow_dispatch from main** (safe now that main = Ahenora).
+  Pre-check this week: Settings → Secrets and variables → Actions → all four present.
 - [ ] 🎉 Everything Ahenora, together.
 
 ### Verify (allow 1–2h propagation)
