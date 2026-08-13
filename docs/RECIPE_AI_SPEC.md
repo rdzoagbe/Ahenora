@@ -33,6 +33,11 @@ Almost everything exists. The new work is one thin endpoint + one search box + w
 - "Add to a day" (reuse meal-plan write) — optional secondary action.
 - Metered + safety-gated exactly like the meal-recipe path.
 
+**Purely additive — nothing is removed (confirmed by owner):**
+- The per-day **"Write me a recipe"** (sparkle on a planned meal) stays exactly as-is — decision: **keep both** entry points, this new box does not funnel or replace it.
+- The **weekly meal suggestions** (`suggestWeek`), **"Cook it"**, **Capture recipe**, **All recipes** browse, and **Sync to list** all stay unchanged.
+- This feature only adds a new entry point above them; it changes no existing control.
+
 **Out (explicitly not now):**
 - No new AI budget or pricing — rides the existing monthly AI allowance.
 - No persistent "recipe box"/favourites (a later idea; note in §10).
