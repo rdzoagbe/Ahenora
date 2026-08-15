@@ -36,20 +36,14 @@ A production release must pass Google review (hours to ~a day). **Submit it this
 - [ ] ⚠️ **Change display text ONLY. NEVER touch the product ID / base plan ID / SKU** — that breaks existing subscribers and the RevenueCat mapping.
 - [ ] The purchase pop-up app-name updates automatically with the listing rename.
 
-### E. Backend redeploy (so notifications/invites/AI say Ahenora)
-A redeploy is **required** — the push-notification titles/bodies (all 4 languages), the AI
-identity prompt ("You are Ahenora…"), and the API title are **hardcoded**; env vars can't fix
-those. But there's an **env-var trap**: `APP_NAME` and `INVITE_BASE_URL` are *also* set in
-Railway, and a set env var **overrides** the new code default — so redeploying alone leaves them
-on the old value. Do both:
-- [ ] **Merge PR #389 first** (Part 2) so `main`'s backend = Ahenora — Railway deploys `main`'s HEAD.
-- [ ] Railway → Backend service → **Variables**: set **`APP_NAME` = `Ahenora`** and
+### E. Backend env vars — SET THESE NOW (safe this week)
+- [x] Railway → Backend service → **Variables**: set **`APP_NAME` = `Ahenora`** and
   **`INVITE_BASE_URL` = `https://rdzoagbe.github.io/Ahenora/app/`** (or delete both to fall back to
-  the new code defaults, which are already Ahenora).
-- [ ] Railway → Backend service → **Deployments → Deploy Latest Commit**.
-- [ ] **Smoke check:** `curl https://household-coo-production.up.railway.app/` → expect
-  `"message": "Ahenora Backend is live"` (was "Household COO Backend is live"). That one string
-  flips only on a successful redeploy, so it's the proof.
+  the new code defaults, which are already Ahenora). ✅ done 15 Aug — variables persist; they take
+  effect once the Ahenora code deploys (step in Part 2).
+- Note: a redeploy done **before** #389 merges just re-ships the OLD (Household COO) code — main
+  doesn't have the Ahenora backend until the merge. Verified 15 Aug: health still says "Household
+  COO Backend is live." The **code** redeploy therefore belongs in Part 2, AFTER the merge (below).
 - [ ] ⛔ **Do NOT change** `DB_NAME` (stays `household_coo` — renaming orphans all data) or the
   Railway service URL `household-coo-production.up.railway.app` (baked into the shipped app via
   `EXPO_PUBLIC_BACKEND_URL` — changing it breaks every install). The "household-coo" in these is
@@ -80,6 +74,13 @@ on the old value. Do both:
   `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`, `EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID`). Fix: add the
   secret, then re-fire via **workflow_dispatch from main** (safe now that main = Ahenora).
   Pre-check this week: Settings → Secrets and variables → Actions → all four present.
+- [ ] **Backend code redeploy (AFTER the merge).** Now that `main` = Ahenora, Railway → Backend
+  service → **Deployments → Deploy Latest Commit**. Env vars are already set (Part 1 E).
+  **Smoke check:** open `https://household-coo-production.up.railway.app/` → must now read
+  **`"message": "Ahenora Backend is live"`** (was "Household COO Backend is live"). That string is
+  hardcoded in the new code, so it flips ONLY when the Ahenora backend is actually live. ⛔ Do NOT
+  change `DB_NAME` (`household_coo` — renaming orphans all data) or the Railway service URL
+  (baked into the shipped app).
 - [ ] 🎉 Everything Ahenora, together.
 
 ### Verify (allow 1–2h propagation)
