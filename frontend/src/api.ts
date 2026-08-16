@@ -1575,6 +1575,11 @@ export const api = {
         + `&diet=${encodeURIComponent(diet)}&variant=${variant}`,
       { method: 'POST' },
     ),
+  generateRecipe: (title: string, lang: string, diet: Diet = '', variant = 0) =>
+    request<{ recipe: AiRecipe; diet: Diet }>(
+      `/recipes/generate?lang=${encodeURIComponent(lang)}`,
+      { method: 'POST', body: { title, diet, variant } },
+    ),
   getMealDiet: () => request<{ diet: Diet }>('/meals/diet'),
   setMealDiet: (diet: Diet) =>
     request<{ diet: Diet }>('/meals/diet', { method: 'PUT', body: { diet } }),

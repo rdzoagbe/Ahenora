@@ -8080,6 +8080,79 @@ async def ask_the_chef(
     return {"answer": answer}
 
 
+@app.post("/api/recipes/generate")
+async def generate_recipe_from_name(
+    payload: dict = Body(...),
+    lang: str = "en",
+    user: dict = Depends(require_user),
+    database=Depends(get_db),
+):
+    """Write a full recipe for any dish the family types, without a plan entry.
+
+    The meal-planner recipe route needs a saved meal to hang its cache on; this
+    is the same generator with the meal document removed, so "ask for fluffy
+    pancakes" returns a recipe straight from the Kitchen. Not cached (there is
+    nothing to cache it on), so each ask is metered against the family's AI
+    allowance exactly like a scan or a chef question. A vegetarian household
+    gets a vegetarian recipe without asking, same rule as the planner.
+    """
+    await require_feature(user, "meal_planner")
+
+    language = lang if lang in RECIPE_LANGUAGE_NAMES else "en"
+    title = sanitize_user_text(str(payload.get("title") or ""))
+    if len(title) < 2:
+        raise HTTPException(400, "Name a dish to get a recipe.")
+
+    if not GOOGLE_API_KEY:
+        raise HTTPException(503, "Recipe suggestions are unavailable right now.")
+
+    family = await get_family_doc(user["family_id"])
+    diet = normalize_diet(payload.get("diet")) or normalize_diet(family.get("diet"))
+    variant = max(0, min(int(payload.get("variant") or 0), 20))
+
+    sub = await build_subscription(user["family_id"])
+    # Metered against the same monthly AI allowance as scans and the meal
+    # recipes, so a family has one number to understand rather than three.
+    if not is_admin_user(user) and family.get("ai_scans_used", 0) >= sub["limits"]["ai_scans_per_month"]:
+        plan_limit_error(
+            feature="ai_scans",
+            current_plan=sub["plan"],
+            limit=sub["limits"]["ai_scans_per_month"],
+            used=family.get("ai_scans_used", 0),
+            message="AI limit reached for this billing period.",
+        )
+
+    try:
+        text = await _gemini_text(
+            build_recipe_prompt(title, [], RECIPE_LANGUAGE_NAMES[language],
+                                diet=diet, variant=variant),
+            system=RECIPE_SYSTEM_PROMPT,
+            fast=True,
+            temperature=0.9 if variant else None,
+        )
+        parsed = extract_json(text)
+        if parsed is None:
+            raise UnsafeRecipe("unparseable")
+        recipe = validate_recipe(parsed)
+    except UnsafeRecipe as exc:
+        log.info("recipe rejected by safety gate: %s", exc.reason)
+        raise HTTPException(422, "We could not write a recipe for this one.")
+    except Exception as exc:
+        log.warning("recipe generation failed: %s", exc)
+        raise HTTPException(502, "We could not write a recipe for this one.")
+
+    if not is_admin_user(user):
+        # Guarded so two concurrent asks cannot both push the counter past the
+        # limit: the increment only lands while the family is still under it.
+        await database["families"].update_one(
+            {"family_id": user["family_id"],
+             "ai_scans_used": {"$lt": sub["limits"]["ai_scans_per_month"]}},
+            {"$inc": {"ai_scans_used": 1}, "$set": {"updated_at": utcnow()}},
+        )
+
+    return {"recipe": recipe, "diet": diet}
+
+
 @app.post("/api/recipes/capture")
 async def capture_recipe(
     payload: dict = Body(...),
