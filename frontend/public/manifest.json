@@ -1,16 +1,16 @@
 {
-  "id": "/Household-COO/app/",
-  "name": "Household COO",
-  "short_name": "Household COO",
-  "start_url": "/Household-COO/app/",
-  "scope": "/Household-COO/app/",
+  "id": "/Ahenora/app/",
+  "name": "Ahenora",
+  "short_name": "Ahenora",
+  "start_url": "/Ahenora/app/",
+  "scope": "/Ahenora/app/",
   "display": "standalone",
   "background_color": "#101419",
   "theme_color": "#F97C3C",
   "description": "The family chaos, finally organised.",
   "icons": [
-    { "src": "/Household-COO/app/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "/Household-COO/app/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "/Household-COO/app/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    { "src": "/Ahenora/app/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/Ahenora/app/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/Ahenora/app/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ]
 }

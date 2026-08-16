@@ -234,7 +234,7 @@ async function syncCardReminderNotificationsUnlocked(cards: Card[], enabled: boo
 
     const identifier = await Notifications.scheduleNotificationAsync({
       content: {
-        title: 'Household COO reminder',
+        title: 'Ahenora reminder',
         body: card.title,
         sound: true,
         data: {
@@ -567,7 +567,7 @@ export async function sendTestScheduledReminderNotification() {
 
   await Notifications.scheduleNotificationAsync({
     content: {
-      title: 'Household COO reminder test',
+      title: 'Ahenora reminder test',
       body: 'This reminder was scheduled 5 seconds ago.',
       sound: true,
       data: { type: 'scheduled_reminder_test' },

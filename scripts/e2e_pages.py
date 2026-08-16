@@ -4,10 +4,10 @@ from playwright.async_api import async_playwright
 
 from e2e_browser import launch_chromium
 
-WEB = f"http://127.0.0.1:{sys.argv[1]}/Household-COO/app"
+WEB = f"http://127.0.0.1:{sys.argv[1]}/Ahenora/app"
 API = f"http://127.0.0.1:{sys.argv[2]}/api"
 PAGES = ["feed", "calendar", "kids", "kitchen", "vault", "settings", "account"]
-MARKERS = {"feed": "Household COO", "calendar": "Calendar", "kids": "Kids",
+MARKERS = {"feed": "AHENORA", "calendar": "Calendar", "kids": "Kids",
            "kitchen": "Kitchen", "vault": "Vault", "settings": "Settings",
            "account": "Account"}
 

@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
-  Pressable,
   StyleSheet,
   Text,
   TextInput,
@@ -15,6 +14,7 @@ import {
   AlertTriangle,
   BarChart3,
   Bell,
+  LayoutGrid,
   Search as SearchIcon,
   UserCheck,
   CalendarDays,
@@ -44,6 +44,7 @@ import { PressScale } from '../../src/components/PressScale';
 import { AddCardModal } from '../../src/components/AddCardModal';
 import { VoiceCaptureModal } from '../../src/components/VoiceCaptureModal';
 import { CameraCaptureModal } from '../../src/components/CameraCaptureModal';
+import { MoreSheet } from '../../src/components/MoreSheet';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
 import { TabScreen } from '../../src/components/TabScreen';
 import { GettingStarted } from '../../src/components/GettingStarted';
@@ -247,7 +248,7 @@ function TaskRow({ card, onOpen, onComplete, styles }: { card: Card; onOpen: () 
 const ANN_SEEN_KEY = 'coo_family_board_seen_at';
 
 export default function Feed() {
-  const { user, t, subscription } = useStore();
+  const { user, t, subscription, dataVersion } = useStore();
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
   const [assigned, setAssigned] = useState<Card[]>([]);
   // The web build is prerendered at BUILD time. Anything derived from "now" —
@@ -269,6 +270,7 @@ export default function Feed() {
   const pendingDismissRef = useRef<Set<string>>(new Set());
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
   const [showAlerts, setShowAlerts] = useState(false);
+  const [householdOpen, setHouseholdOpen] = useState(false);
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [rewardCount, setRewardCount] = useState(0);
   const [vaultCount, setVaultCount] = useState(0);
@@ -461,6 +463,14 @@ export default function Feed() {
       load();
     }, [load])
   );
+
+  // A capture from the global "+" bumps dataVersion; reload the feed in place
+  // so the new card appears without a navigation. Guarded on the first render
+  // (dataVersion === 0) to avoid a redundant load on mount.
+  useEffect(() => {
+    if (dataVersion) load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataVersion]);
 
   // Family-board unread tracking. On focus, snapshot the baseline from disk (so
   // the marker reflects what arrived since last time). On blur, advance the
@@ -777,6 +787,7 @@ export default function Feed() {
         scrollViewProps={{ contentContainerStyle: [styles.scroll, { paddingHorizontal: px }] }}
       >
           <View style={[styles.page, { maxWidth: maxW }]}>
+            <Text style={styles.brand}>Ahenora</Text>
             <View style={styles.topMetaRow}>
               <Text style={styles.dateText}>{feedDateLine(now)} <Text style={styles.sun}>{timeEmoji(now)}</Text></Text>
               <View style={styles.topActions}>
@@ -800,6 +811,15 @@ export default function Feed() {
                     <View style={styles.bellBadge}><Text style={styles.bellBadgeText}>{Math.min(alertCount, 9)}</Text></View>
                   ) : null}
                 </PressScale>
+                <PressScale
+                  testID="feed-household-menu"
+                  onPress={() => setHouseholdOpen(true)}
+                  style={styles.bellWrap}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('nav_household')}
+                >
+                  <LayoutGrid color={ui.text} size={23} />
+                </PressScale>
               </View>
             </View>
 
@@ -814,7 +834,6 @@ export default function Feed() {
                   <View style={styles.calmPill}>
                     <Text style={styles.calmPillText}>{t('feed_calm')} {dashboard.calmScore}</Text>
                   </View>
-                  <Text style={styles.subtitle}>Household COO</Text>
                 </View>
               </View>
             </View>
@@ -1196,15 +1215,12 @@ export default function Feed() {
           <View style={{ height: 160 }} />
       </TabScreen>
 
-      <Pressable
-        style={({ pressed }) => [styles.fab, pressed && styles.fabPressed]}
-        onPress={openManual}
-        testID="feed-fab-add"
-        accessibilityRole="button"
-        accessibilityLabel={t('a11y_add')}
-      >
-        <Plus color="#FFFFFF" size={31} />
-      </Pressable>
+      {/* The floating + was removed with the nav redesign: the centre ➕ in the
+          tab bar now owns "add from anywhere", and the composer is still one tap
+          from the "Add a task…" card at the top of the feed. */}
+      {/* The Household menu (Vault, Settings, Account, Hand-off) — opened from
+          the grid button in the header, now that Kitchen has its own tab. */}
+      <MoreSheet visible={householdOpen} onClose={() => setHouseholdOpen(false)} />
 
       <CameraCaptureModal
         visible={showCamera}
@@ -1446,6 +1462,15 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     width: '100%',
     alignSelf: 'center',
   },
+  brand: {
+    color: ui.orangeText,
+    fontFamily: 'Inter_800ExtraBold',
+    fontSize: 13,
+    letterSpacing: 1.6,
+    textTransform: 'uppercase',
+    marginTop: 2,
+    marginBottom: 4,
+  },
   topMetaRow: {
     minHeight: 42,
     flexDirection: 'row',
@@ -1496,9 +1521,9 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   heroTitle: {
     color: ui.text,
     fontFamily: 'Inter_800ExtraBold',
-    fontSize: 36,
-    lineHeight: 41,
-    letterSpacing: -1.15,
+    fontSize: 27,
+    lineHeight: 32,
+    letterSpacing: -0.8,
   },
   subtitle: {
     marginTop: 8,
@@ -1803,27 +1828,6 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     color: ui.muted,
     fontFamily: 'Inter_700Bold',
     fontSize: 12,
-  },
-  fab: {
-    position: 'absolute',
-    right: 22,
-    bottom: 120,
-    width: 61,
-    height: 61,
-    borderRadius: 999,
-    backgroundColor: ui.orangeDeep,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000000',
-    shadowOpacity: 0.18,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 7,
-    zIndex: 30,
-  },
-  fabPressed: {
-    backgroundColor: '#D9530F',
-    transform: [{ scale: 0.96 }],
   },
   templateRow: {
     flexDirection: 'row',

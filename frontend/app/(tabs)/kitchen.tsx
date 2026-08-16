@@ -3,9 +3,9 @@ import { Alert, View, Text, StyleSheet, TextInput, ScrollView, ActivityIndicator
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect } from 'expo-router';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
-import { Plus, X, Trash2, ShoppingCart, Check, UtensilsCrossed, Bell, ChevronDown, ChevronLeft, History, RotateCcw, Sparkles, Sun, ChefHat, Clock, AlertTriangle, Search, Minus, BookOpen, Camera, Image as ImageIcon , ListChecks, Leaf, Shuffle} from 'lucide-react-native';
+import { Plus, X, Trash2, ShoppingCart, Check, UtensilsCrossed, ChevronDown, ChevronLeft, History, RotateCcw, Sparkles, Sun, ChefHat, Clock, AlertTriangle, Search, Minus, BookOpen, Camera, Image as ImageIcon , ListChecks, Leaf, Shuffle} from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { PressScale } from '../../src/components/PressScale';
@@ -42,7 +42,7 @@ const KEEP_AWAKE_TAG = 'kitchen-screen';
 const KEEP_AWAKE_KEY = 'coo_keep_screen_on';
 
 export default function Kitchen() {
-  const { t, lang, subscription } = useStore();
+  const { t, lang, subscription, dataVersion } = useStore();
   // The food library covers en/es/fr/de; anything else falls back to English.
   // How many people the amounts are scaled for. Defaults to the household and
   // is adjustable, because who is actually eating changes night to night.
@@ -79,7 +79,6 @@ export default function Kitchen() {
   );
   const { isLocked, promptUpgrade } = usePremiumGate();
   const mealLocked = isLocked('meal_planner');
-  const router = useRouter();
   const ui = useUI();
   const styles = useMemo(() => createStyles(ui), [ui]);
 
@@ -140,6 +139,12 @@ export default function Kitchen() {
   }, [load]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  // Reload in place after a capture from the global "+".
+  useEffect(() => {
+    if (dataVersion) load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataVersion]);
 
   // Keep the screen awake while shopping / following a recipe — the phone
   // shouldn't dim mid-aisle or on step 3. On by default; a toggle lets users
@@ -957,13 +962,6 @@ export default function Kitchen() {
         <ScreenHeader
           eyebrow={t('kitchen_eyebrow')}
           title={t('kitchen')}
-          right={
-            <PressScale
-                  accessibilityRole="button"
-                  accessibilityLabel={t('a11y_notifications')} onPress={() => router.navigate('/(tabs)/feed')} style={styles.bellWrap}>
-              <Bell color={ui.text} size={24} />
-            </PressScale>
-          }
         />
 
         {/* Dropdown switcher */}

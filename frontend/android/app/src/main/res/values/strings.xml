@@ -1,5 +1,5 @@
 <resources>
-  <string name="app_name">Household COO</string>
+  <string name="app_name">Ahenora</string>
   <!-- The OTA lane. expo-updates reads this via AndroidManifest.xml's
        EXPO_RUNTIME_VERSION meta-data and will only apply an update published
        at the SAME runtime. app.json's runtimeVersion does not reach the build

@@ -36,6 +36,13 @@ interface StoreState {
   upgradePrompt: { feature: string; message: string } | null;
   showUpgradePrompt: (feature: string, message: string) => void;
   dismissUpgradePrompt: () => void;
+  householdMenuOpen: boolean;
+  openHouseholdMenu: () => void;
+  closeHouseholdMenu: () => void;
+  // Bumped whenever something is captured from the global "+" so any visible
+  // tab can refresh its data without a navigation.
+  dataVersion: number;
+  bumpData: () => void;
 }
 
 const StoreContext = createContext<StoreState | null>(null);
@@ -66,6 +73,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     feature: string;
     message: string;
   } | null>(null);
+  // The household menu (Settings, Vault, Account, Hand-off) is opened from every
+  // screen's header, so its open state lives here rather than on the Feed alone.
+  const [householdMenuOpen, setHouseholdMenuOpen] = useState(false);
+  const openHouseholdMenu = useCallback(() => setHouseholdMenuOpen(true), []);
+  const closeHouseholdMenu = useCallback(() => setHouseholdMenuOpen(false), []);
+  // A monotonic counter the global "+" bumps after a successful capture; tabs
+  // depend on it to reload the surface the user is looking at.
+  const [dataVersion, setDataVersion] = useState(0);
+  const bumpData = useCallback(() => setDataVersion((v) => v + 1), []);
 
   const resolvedAppearance = resolveAppearance(appearanceMode, systemScheme);
   const theme = useMemo(() => getTheme(appearanceMode, systemScheme), [appearanceMode, systemScheme]);
@@ -267,6 +283,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         upgradePrompt,
         showUpgradePrompt,
         dismissUpgradePrompt,
+        householdMenuOpen,
+        openHouseholdMenu,
+        closeHouseholdMenu,
+        dataVersion,
+        bumpData,
       }}
     >
       {children}

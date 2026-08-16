@@ -5,7 +5,7 @@ export default function PrivacyScreen() {
   return (
     <LegalPage
       title="Privacy Policy"
-      subtitle="How Household COO handles family operations data, account data, calendar imports, photos, notifications, and support requests."
+      subtitle="How Ahenora handles family operations data, account data, calendar imports, photos, notifications, and support requests."
       updatedAt="May 2026"
       sections={[
         {
@@ -28,7 +28,7 @@ export default function PrivacyScreen() {
         },
         {
           title: 'Calendar and document data',
-          body: 'Calendar sync is user-initiated. Imported calendar data is used to create Household COO cards and discover inviteable contacts. Vault images and document records are stored so you can view and manage them inside your household workspace.',
+          body: 'Calendar sync is user-initiated. Imported calendar data is used to create Ahenora cards and discover inviteable contacts. Vault images and document records are stored so you can view and manage them inside your household workspace.',
         },
         {
           title: 'Children and family data',
@@ -57,10 +57,10 @@ export default function PrivacyScreen() {
         },
         {
           title: 'Contact',
-          body: 'For privacy or deletion requests, contact: rolanddzoagbe@gmail.com. Include the Google account email used for Household COO so the request can be matched to the correct account.',
+          body: 'For privacy or deletion requests, contact: rolanddzoagbe@gmail.com. Include the Google account email used for Ahenora so the request can be matched to the correct account.',
         },
       ]}
-      footer="This policy applies to the current version of Household COO. Contact rolanddzoagbe@gmail.com with any questions."
+      footer="This policy applies to the current version of Ahenora. Contact rolanddzoagbe@gmail.com with any questions."
     />
   );
 }

@@ -13,9 +13,9 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { Plus, X, Trash2, Shield, Bell, Folder, ChevronRight, FileText, AlertTriangle, Share2, Image as ImageIcon, Lock, Users } from 'lucide-react-native';
+import { Plus, X, Trash2, Shield, Folder, ChevronRight, FileText, AlertTriangle, Share2, Image as ImageIcon, Lock, Users } from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { PressScale } from '../../src/components/PressScale';
@@ -64,7 +64,6 @@ function updatedLine(iso: string, t: (k: string) => string) {
 
 export default function Vault() {
   const { t } = useStore();
-  const router = useRouter();
   const ui = useUI();
   const styles = useMemo(() => createStyles(ui), [ui]);
 
@@ -419,13 +418,6 @@ export default function Vault() {
           <ScreenHeader
             eyebrow={t('vault_secure_storage')}
             title={t('vault')}
-            right={
-              <PressScale
-                  accessibilityRole="button"
-                  accessibilityLabel={t('a11y_notifications')} onPress={() => router.navigate('/(tabs)/feed')} style={styles.bellWrap}>
-                <Bell color={ui.text} size={24} />
-              </PressScale>
-            }
           />
 
           <FirstRunTip

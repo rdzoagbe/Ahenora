@@ -18,7 +18,6 @@ import {
   Lock,
   Pencil,
   MoreHorizontal,
-  Bell,
   Bed,
   BookOpen,
   Utensils,
@@ -127,7 +126,7 @@ function formatActivityDate(value?: string | null) {
 }
 
 export default function Kids() {
-  const { t } = useStore();
+  const { t, dataVersion } = useStore();
   const { isLocked, promptUpgrade } = usePremiumGate();
   const allowanceLocked = isLocked('allowance');
   const router = useRouter();
@@ -396,6 +395,12 @@ export default function Kids() {
   }, [load]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  // Reload in place after a capture from the global "+".
+  useEffect(() => {
+    if (dataVersion) load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataVersion]);
 
   useEffect(() => {
     refreshHistory(activeChild?.member_id);
@@ -1009,13 +1014,6 @@ export default function Kids() {
           <ScreenHeader
             eyebrow={t('kids_eyebrow_family')}
             title={t('kids_title')}
-            right={
-              <PressScale
-                  accessibilityRole="button"
-                  accessibilityLabel={t('a11y_notifications')} onPress={() => router.navigate('/(tabs)/feed')} style={styles.bellWrap}>
-                <Bell color={ui.text} size={24} />
-              </PressScale>
-            }
           />
 
           {/* Only once the screen has something to explain — a tip above an

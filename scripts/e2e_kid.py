@@ -16,7 +16,7 @@ from playwright.async_api import async_playwright
 
 from e2e_browser import launch_chromium
 
-WEB = f"http://127.0.0.1:{sys.argv[1]}/Household-COO/app"
+WEB = f"http://127.0.0.1:{sys.argv[1]}/Ahenora/app"
 API = f"http://127.0.0.1:{sys.argv[2]}/api"
 
 
@@ -81,7 +81,7 @@ async def main():
         # --- handing the device over ---------------------------------------
         await p.goto(f"{WEB}/feed", wait_until="domcontentloaded")
         await p.wait_for_timeout(3500)
-        await p.click('[data-testid="tab-more"]')
+        await p.click('[data-testid="feed-household-menu"]')
         await p.wait_for_timeout(1200)
         r["more_offers_hand_over"] = await p.locator('[data-testid="more-kid"]').count() == 1
         await p.click('[data-testid="more-kid"]')
@@ -184,7 +184,7 @@ async def main():
         await p.click('[data-testid="kid-exit-confirm"]')
         await p.wait_for_timeout(4500)
         body = await p.inner_text("body")
-        r["a_grown_up_gets_it_back"] = "Household COO" in body
+        r["a_grown_up_gets_it_back"] = "AHENORA" in body
         back = await p.evaluate("localStorage.getItem('coo_session_token')")
         r["parents_session_restored"] = back == tok
         r["set_aside_copy_cleared"] = await p.evaluate(

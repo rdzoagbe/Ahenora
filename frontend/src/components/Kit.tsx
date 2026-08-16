@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { StyleProp, StyleSheet, Text, TextStyle, View, ViewStyle } from 'react-native';
-import { ChevronDown, ChevronRight } from 'lucide-react-native';
+import { ChevronDown, ChevronRight, LayoutGrid } from 'lucide-react-native';
 import { PressScale } from './PressScale';
 import { useStore } from '../store';
 
@@ -91,7 +91,7 @@ export function ScreenHeader({
   eyebrow,
   title,
   right,
-  titleSize = 38,
+  titleSize = 30,
 }: {
   eyebrow: string;
   title: string;
@@ -99,13 +99,28 @@ export function ScreenHeader({
   titleSize?: number;
 }) {
   const ui = useUI();
+  const { openHouseholdMenu, t } = useStore();
   return (
-    <View style={kit.headerRow}>
-      <View style={{ flex: 1 }}>
-        <Text style={[kit.eyebrow, { color: ui.muted }]}>{eyebrow}</Text>
-        <Text style={[kit.title, { color: ui.text, fontSize: titleSize, lineHeight: titleSize + 6 }]}>{title}</Text>
+    <View>
+      <Text style={[kit.brand, { color: ui.orangeText }]}>Ahenora</Text>
+      <View style={kit.headerRow}>
+        <View style={{ flex: 1 }}>
+          <Text style={[kit.eyebrow, { color: ui.muted }]}>{eyebrow}</Text>
+          <Text style={[kit.title, { color: ui.text, fontSize: titleSize, lineHeight: titleSize + 6 }]}>{title}</Text>
+        </View>
+        <View style={kit.headerRight}>
+          {right}
+          <PressScale
+            testID="header-household-menu"
+            onPress={openHouseholdMenu}
+            style={kit.hubBtn}
+            accessibilityRole="button"
+            accessibilityLabel={t('nav_household')}
+          >
+            <LayoutGrid color={ui.text} size={22} />
+          </PressScale>
+        </View>
       </View>
-      {right ? <View style={kit.headerRight}>{right}</View> : null}
     </View>
   );
 }
@@ -230,7 +245,9 @@ export function StatBox({ label, value }: { label: string; value: string }) {
 
 const kit = StyleSheet.create({
   headerRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12 },
-  headerRight: { alignItems: 'flex-end', justifyContent: 'center' },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  hubBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  brand: { fontFamily: 'Inter_800ExtraBold', fontSize: 13, letterSpacing: 1.6, textTransform: 'uppercase', marginBottom: 8 },
   eyebrow: { fontFamily: 'Inter_600SemiBold', fontSize: 14, letterSpacing: 0.2, marginBottom: 2 },
   title: { fontFamily: SERIF, letterSpacing: -0.5 },
   card: {

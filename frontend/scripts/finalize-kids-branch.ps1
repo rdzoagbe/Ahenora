@@ -4,7 +4,7 @@
 
 $ErrorActionPreference = "Stop"
 
-$RepoPath = "C:\Users\TheKwekuRO\Documents\Household-COO"
+$RepoPath = "C:\Users\TheKwekuRO\Documents\Ahenora"
 $FrontendPath = Join-Path $RepoPath "frontend"
 $BranchName = "fix/kids-premium-dark-default"
 

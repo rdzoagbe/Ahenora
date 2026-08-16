@@ -58,7 +58,7 @@ export function MoreSheet({ visible, onClose }: { visible: boolean; onClose: () 
       <View style={[styles.panel, { paddingBottom: Math.max(insets.bottom, 16) + 18 }]}>
         <View style={styles.grabber} />
         <View style={styles.header}>
-          <Text style={styles.title}>{t('nav_more')}</Text>
+          <Text style={styles.title}>{t('nav_household')}</Text>
           <PressScale
             testID="more-close"
             accessibilityRole="button"

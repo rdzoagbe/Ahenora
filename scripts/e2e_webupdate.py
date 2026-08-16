@@ -11,7 +11,7 @@ from playwright.async_api import async_playwright
 
 from e2e_browser import launch_chromium
 
-WEB = f"http://127.0.0.1:{sys.argv[1]}/Household-COO/app"
+WEB = f"http://127.0.0.1:{sys.argv[1]}/Ahenora/app"
 API = f"http://127.0.0.1:{sys.argv[2]}/api"
 
 
@@ -59,7 +59,7 @@ async def main():
         async def stale(ro):
             await ro.fulfill(
                 status=200, content_type="text/html",
-                body='<html><head><script src="/Household-COO/app/_expo/static/js/web/'
+                body='<html><head><script src="/Ahenora/app/_expo/static/js/web/'
                      'entry-ffffffffffffffffffffffffffffffff.js"></script></head><body></body></html>')
         await p.route("**/index.html*", stale)
 

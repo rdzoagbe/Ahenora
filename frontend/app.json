@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "Household COO",
+    "name": "Ahenora",
     "slug": "household-coo",
-    "version": "1.0.3",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "householdcoo",
@@ -15,8 +15,8 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.householdcoo.app",
       "infoPlist": {
-        "NSCameraUsageDescription": "Household COO uses the camera only when you choose Scan to capture household documents, school letters, appointment cards, or bills.",
-        "NSPhotoLibraryUsageDescription": "Household COO uses your photo library only when you choose a photo to scan or attach to a household document."
+        "NSCameraUsageDescription": "Ahenora uses the camera only when you choose Scan to capture household documents, school letters, appointment cards, or bills.",
+        "NSPhotoLibraryUsageDescription": "Ahenora uses your photo library only when you choose a photo to scan or attach to a household document."
       }
     },
     "android": {
@@ -46,17 +46,17 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Household COO uses your photo library only when you choose a photo to scan or attach to a household document.",
-          "cameraPermission": "Household COO uses the camera only when you choose Scan to capture household documents, school letters, appointment cards, or bills."
+          "photosPermission": "Ahenora uses your photo library only when you choose a photo to scan or attach to a household document.",
+          "cameraPermission": "Ahenora uses the camera only when you choose Scan to capture household documents, school letters, appointment cards, or bills."
         }
       ],
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/monochrome.png",
+          "image": "./assets/images/icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#FF6A2F"
+          "backgroundColor": "#FFF3EC"
         }
       ],
       "expo-web-browser",
@@ -64,7 +64,7 @@
     ],
     "experiments": {
       "typedRoutes": true,
-      "baseUrl": "/Household-COO/app"
+      "baseUrl": "/Ahenora/app"
     },
     "extra": {
       "router": {},
