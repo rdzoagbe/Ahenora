@@ -41,7 +41,7 @@ export function ValueTour({ onDone }: Props) {
       <View style={[styles.topRow, { paddingTop: insets.top + 10 }]}>
         <View style={styles.logoRow}>
           <View style={[styles.logoDot, { backgroundColor: c.accent }]} />
-          <Text style={[styles.logoText, { color: c.text }]}>COO</Text>
+          <Text style={[styles.logoText, { color: c.text }]}>Ahenora</Text>
         </View>
         <PressScale
           testID="tour-skip"

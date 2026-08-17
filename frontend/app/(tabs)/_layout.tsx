@@ -82,7 +82,7 @@ function SidebarNav({ width }: { width: number }) {
     >
       {isDesktop && (
         <View style={styles.sidebarBrand}>
-          <Text style={[styles.sidebarBrandText, { color: theme.colors.text }]}>COO</Text>
+          <Text style={[styles.sidebarBrandText, { color: theme.colors.text }]}>Ahenora</Text>
         </View>
       )}
 

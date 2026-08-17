@@ -293,7 +293,7 @@ export default function Landing() {
         <View style={styles.top}>
           <View style={styles.logoRow}>
             <View style={[styles.logoDot, { backgroundColor: theme.colors.accent }]} />
-            <Text style={[styles.logoText, { color: theme.colors.text }]}>COO</Text>
+            <Text style={[styles.logoText, { color: theme.colors.text }]}>Ahenora</Text>
           </View>
 
           <PressScale
