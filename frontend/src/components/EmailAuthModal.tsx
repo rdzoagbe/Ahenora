@@ -28,9 +28,11 @@ interface Props {
   /** Which form to open on — the landing has separate "Log in" and "Create
    *  account" doors. An invite always overrides this to Sign Up. */
   initialMode?: Mode;
+  /** Pre-fill the email field — used by the "Welcome back, continue as X" tap. */
+  initialEmail?: string;
 }
 
-export function EmailAuthModal({ visible, onClose, onSuccess, inviteToken, initialMode = 'login' }: Props) {
+export function EmailAuthModal({ visible, onClose, onSuccess, inviteToken, initialMode = 'login', initialEmail }: Props) {
   const { theme, setUserFromAuth, t } = useStore();
   const c = theme.colors;
 
@@ -67,7 +69,8 @@ export function EmailAuthModal({ visible, onClose, onSuccess, inviteToken, initi
   useEffect(() => {
     if (!visible) return;
     setMode(inviteToken ? 'signup' : initialMode);
-  }, [visible, inviteToken, initialMode]);
+    if (initialEmail) setEmail(initialEmail);
+  }, [visible, inviteToken, initialMode, initialEmail]);
 
   const hasLength = password.length >= 8;
   const hasUpper = /[A-Z]/.test(password);
@@ -179,7 +182,7 @@ export function EmailAuthModal({ visible, onClose, onSuccess, inviteToken, initi
         code: code.trim(),
         new_password: newPassword,
       });
-      await setUserFromAuth(result.user, result.session_token);
+      await setUserFromAuth(result.user, result.session_token, 'email');
       reset();
       onSuccess();
     } catch (e: any) {
@@ -227,7 +230,7 @@ export function EmailAuthModal({ visible, onClose, onSuccess, inviteToken, initi
               invite_token: inviteToken || undefined,
             });
 
-      await setUserFromAuth(result.user, result.session_token);
+      await setUserFromAuth(result.user, result.session_token, 'email');
       reset();
       onSuccess();
     } catch (e: any) {
