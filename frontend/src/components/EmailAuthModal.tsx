@@ -18,16 +18,19 @@ import { PasswordInput } from './PasswordInput';
 import { useStore } from '../store';
 import { logger } from '../logger';
 
+type Mode = 'signup' | 'login';
+
 interface Props {
   visible: boolean;
   onClose: () => void;
   onSuccess: () => void;
   inviteToken?: string | null;
+  /** Which form to open on — the landing has separate "Log in" and "Create
+   *  account" doors. An invite always overrides this to Sign Up. */
+  initialMode?: Mode;
 }
 
-type Mode = 'signup' | 'login';
-
-export function EmailAuthModal({ visible, onClose, onSuccess, inviteToken }: Props) {
+export function EmailAuthModal({ visible, onClose, onSuccess, inviteToken, initialMode = 'login' }: Props) {
   const { theme, setUserFromAuth, t } = useStore();
   const c = theme.colors;
 
@@ -36,7 +39,7 @@ export function EmailAuthModal({ visible, onClose, onSuccess, inviteToken }: Pro
   // signing back in after a sign-out is the common case, and landing them on
   // Sign Up asked them to create a second account. A genuinely new device with
   // no history still opens on Sign Up.
-  const [mode, setMode] = useState<Mode>(inviteToken ? 'signup' : 'login');
+  const [mode, setMode] = useState<Mode>(inviteToken ? 'signup' : initialMode);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -63,8 +66,8 @@ export function EmailAuthModal({ visible, onClose, onSuccess, inviteToken }: Pro
   // effect: it's null on first render and this re-runs when it arrives).
   useEffect(() => {
     if (!visible) return;
-    setMode(inviteToken ? 'signup' : 'login');
-  }, [visible, inviteToken]);
+    setMode(inviteToken ? 'signup' : initialMode);
+  }, [visible, inviteToken, initialMode]);
 
   const hasLength = password.length >= 8;
   const hasUpper = /[A-Z]/.test(password);
