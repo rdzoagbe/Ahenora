@@ -45,6 +45,10 @@ export default function Landing() {
 
   const [showLang, setShowLang] = useState(false);
   const [showEmailAuth, setShowEmailAuth] = useState(false);
+  // The landing has two doors: Log in (returning) and Create account (new).
+  // Whichever is tapped opens the email form on that form.
+  const [emailMode, setEmailMode] = useState<'login' | 'signup'>('login');
+  const openEmailAuth = (m: 'login' | 'signup') => { setEmailMode(m); setShowEmailAuth(true); };
   const [signingIn, setSigningIn] = useState(false);
   const [inviteToken, setInviteToken] = useState<string | null>(null);
   const [invitedBy, setInvitedBy] = useState<string | null>(null);
@@ -360,17 +364,32 @@ export default function Landing() {
             </PressScale>
 
             <PressScale
-              testID="email-signin"
-              onPress={() => setShowEmailAuth(true)}
+              testID="email-login"
+              onPress={() => openEmailAuth('login')}
               disabled={signingIn}
               style={[styles.cta, styles.emailCta, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }, signingIn && styles.ctaDisabled]}
-              accessibilityLabel={t('land_email_cta')}
+              accessibilityLabel={t('land_email_login')}
               accessibilityRole="button"
             >
               <View style={[styles.emailDot, { backgroundColor: theme.colors.accentSoft }]}>
                 <Mail color={theme.colors.accent} size={15} />
               </View>
-              <Text style={[styles.ctaText, { color: theme.colors.text }]}>{t('land_email_cta')}</Text>
+              <Text style={[styles.ctaText, { color: theme.colors.text }]}>{t('land_email_login')}</Text>
+            </PressScale>
+
+            {/* Separate door for new users — no returning user is ever asked to
+                create a second account, and a new user has an obvious way in. */}
+            <PressScale
+              testID="email-signup"
+              onPress={() => openEmailAuth('signup')}
+              disabled={signingIn}
+              style={[styles.secondaryCta, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }, signingIn && styles.ctaDisabled]}
+              accessibilityLabel={t('land_email_signup')}
+              accessibilityRole="button"
+            >
+              <Text style={[styles.secondaryCtaText, { color: theme.colors.textMuted }]}>
+                {t('land_new_here')} <Text style={{ color: theme.colors.accent, fontFamily: 'Inter_700Bold' }}>{t('land_email_signup')}</Text>
+              </Text>
             </PressScale>
 
             <PressScale
@@ -410,6 +429,7 @@ export default function Landing() {
         onClose={() => setShowEmailAuth(false)}
         onSuccess={handleEmailSuccess}
         inviteToken={inviteToken}
+        initialMode={emailMode}
       />
     </View>
   );
