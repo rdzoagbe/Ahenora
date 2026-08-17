@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   Modal,
   View,
@@ -16,7 +15,7 @@ import { X, Mail, Check, ShieldCheck } from 'lucide-react-native';
 
 import { PressScale } from './PressScale';
 import { PasswordInput } from './PasswordInput';
-import { useStore, RETURNING_USER_KEY } from '../store';
+import { useStore } from '../store';
 import { logger } from '../logger';
 
 interface Props {
@@ -55,22 +54,16 @@ export function EmailAuthModal({ visible, onClose, onSuccess, inviteToken }: Pro
   const [forgotError, setForgotError] = useState<string | null>(null);
   const [forgotNote, setForgotNote] = useState<string | null>(null);
 
-  // Refine the default once we can read the device's history. Initial state
-  // above is Log In (the common returning case, never flashing Sign Up at
-  // them); this switches a genuinely new, uninvited device to Sign Up.
+  // Default to Log In for everyone except an invite (which is a join → Sign
+  // Up). We deliberately do NOT flip an "unseen" device to Sign Up: a reinstall
+  // wipes local history, so the old flag made returning users — who far
+  // outnumber genuinely new ones at an email form — land on Sign Up and get
+  // asked to recreate an account they already have. New users just tap the
+  // Sign Up toggle. An invite still opens on Sign Up (loads async, hence the
+  // effect: it's null on first render and this re-runs when it arrives).
   useEffect(() => {
     if (!visible) return;
-    // The invite loads asynchronously after mount, so `inviteToken` is null on
-    // the first render and the initial state captured Log In. When it arrives
-    // this effect re-runs (it's a dep) and flips to Sign Up — an invite is a
-    // join. Early-returning on a truthy token used to leave an invited new
-    // user stranded on the Log In tab, where their non-existent account failed.
-    if (inviteToken) { setMode('signup'); return; }
-    let cancelled = false;
-    AsyncStorage.getItem(RETURNING_USER_KEY)
-      .then((seen) => { if (!cancelled && !seen) setMode('signup'); })
-      .catch(() => undefined);
-    return () => { cancelled = true; };
+    setMode(inviteToken ? 'signup' : 'login');
   }, [visible, inviteToken]);
 
   const hasLength = password.length >= 8;
