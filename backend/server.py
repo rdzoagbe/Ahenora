@@ -3165,7 +3165,17 @@ async def reset_password(payload: ResetPasswordIn):
 
 
 @app.get("/api/auth/me")
-async def me(user=Depends(require_user)):
+async def me(user=Depends(require_user), database=Depends(get_db)):
+    # Cheap retention heartbeat: the app calls /auth/me on open, so stamping
+    # last_active here is enough to compute daily-active and D1/D7 return
+    # without a per-request events pipeline. Best-effort — never block sign-in.
+    try:
+        await database["users"].update_one(
+            {"user_id": user["user_id"]},
+            {"$set": {"last_active_at": utcnow()}},
+        )
+    except Exception:
+        pass
     return public_user(user)
 
 
@@ -8920,7 +8930,7 @@ class SupportContactIn(BaseModel):
 # -----------------------------------------------------------------------------
 ALLOWED_EVENTS = {
     "feed_open", "scan_used", "card_created", "vault_added", "vault_shared",
-    "kids_open", "calendar_open", "onboarding_done",
+    "kids_open", "calendar_open", "onboarding_done", "calendar_import_cancelled",
 }
 
 
@@ -8960,6 +8970,61 @@ async def metrics_summary(days: int = 14, user=Depends(require_user)):
     async for row in cursor:
         rows.append(row)
     return {"days": days, "rows": rows}
+
+
+@app.get("/api/metrics/funnel")
+async def metrics_funnel(days: int = 30, user=Depends(require_user), database=Depends(get_db)):
+    """The activation + growth funnel, computed from existing collections (no
+    per-user event pipeline needed): who signs up, finishes onboarding, invites
+    a co-parent, has one join, shares an item — plus daily/weekly active users.
+    Admin only. This is what turns "make the launch stick" from vibes to data.
+    """
+    if not is_admin_user(user):
+        raise HTTPException(status_code=403, detail="Admin only")
+    days = max(1, min(days, 365))
+    now = utcnow()
+    cutoff = now - timedelta(days=days)
+    d1 = now - timedelta(days=1)
+    d7 = now - timedelta(days=7)
+
+    users_col = database["users"]
+    invites_col = database["family_invites"]
+    members_col = database["family_members"]
+    cards_col = database["cards"]
+
+    async def count_group(col, match):
+        """Distinct family_id count matching `match`, via aggregation."""
+        n = 0
+        pipeline = [{"$match": match}, {"$group": {"_id": "$family_id"}}, {"$count": "c"}]
+        async for row in col.aggregate(pipeline):
+            n = row.get("c", 0)
+        return n
+
+    multi_member = 0
+    async for row in members_col.aggregate([
+        {"$group": {"_id": "$family_id", "n": {"$sum": 1}}},
+        {"$match": {"n": {"$gt": 1}}},
+        {"$count": "c"},
+    ]):
+        multi_member = row.get("c", 0)
+
+    return {
+        "window_days": days,
+        "total_users": await users_col.count_documents({}),
+        # New in the window
+        "signups": await users_col.count_documents({"created_at": {"$gte": cutoff}}),
+        "onboarded": await users_col.count_documents(
+            {"created_at": {"$gte": cutoff}, "onboarding_completed": True}),
+        "invites_sent": await invites_col.count_documents({"created_at": {"$gte": cutoff}}),
+        "invites_accepted": await invites_col.count_documents(
+            {"status": "accepted", "accepted_at": {"$gte": cutoff}}),
+        # Activation state (all-time): the household actually became shared
+        "multi_member_households": multi_member,
+        "sharing_households": await count_group(cards_col, {"shared": True}),
+        # Retention
+        "active_1d": await users_col.count_documents({"last_active_at": {"$gte": d1}}),
+        "active_7d": await users_col.count_documents({"last_active_at": {"$gte": d7}}),
+    }
 
 
 @app.post("/api/support/contact")
