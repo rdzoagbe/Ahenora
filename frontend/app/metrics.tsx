@@ -8,7 +8,7 @@ import { PressScale } from '../src/components/PressScale';
 import { AmbientBackground } from '../src/components/AmbientBackground';
 import { useUI, UIColors } from '../src/components/Kit';
 import { useStore } from '../src/store';
-import { api, MetricRow, VersionAdoption, PlanAdoption } from '../src/api';
+import { api, MetricRow, VersionAdoption, PlanAdoption, FunnelSummary } from '../src/api';
 import { logger } from '../src/logger';
 
 // Admin-only screen — plain English labels are fine (only the owner sees it).
@@ -33,6 +33,7 @@ export default function MetricsScreen() {
   const [rows, setRows] = useState<MetricRow[]>([]);
   const [adoption, setAdoption] = useState<VersionAdoption | null>(null);
   const [plans, setPlans] = useState<PlanAdoption | null>(null);
+  const [funnel, setFunnel] = useState<FunnelSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,6 +54,8 @@ export default function MetricsScreen() {
     api.getVersionAdoption().then(setAdoption).catch((e) => logger.warn('adoption load failed', e?.message || e));
     // Same for subscription adoption — the "who is actually paying" readout.
     api.getPlanAdoption().then(setPlans).catch((e) => logger.warn('plan adoption load failed', e?.message || e));
+    // The activation + growth funnel — the "make the launch stick" scoreboard.
+    api.getMetricsFunnel(30).then(setFunnel).catch((e) => logger.warn('funnel load failed', e?.message || e));
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -149,6 +152,38 @@ export default function MetricsScreen() {
               <Text style={styles.tileLabel}>Active days</Text>
             </View>
           </View>
+
+          {/* Activation + growth funnel — the "make the launch stick" scoreboard */}
+          <Text style={styles.sectionTitle}>Activation &amp; growth (30 days)</Text>
+          {funnel ? (
+            <>
+              <View style={styles.card}>
+                {([
+                  ['Signups', funnel.signups, null],
+                  ['Finished onboarding', funnel.onboarded, funnel.signups],
+                  ['Invites sent', funnel.invites_sent, null],
+                  ['Invites accepted', funnel.invites_accepted, funnel.invites_sent],
+                  ['Households with 2+ members', funnel.multi_member_households, null],
+                  ['Households that shared', funnel.sharing_households, null],
+                  ['Active today', funnel.active_1d, funnel.total_users],
+                  ['Active this week', funnel.active_7d, funnel.total_users],
+                ] as [string, number, number | null][])
+                  .map(([label, n, denom], i) => (
+                    <View key={label} style={[styles.eventRow, i === 0 && { borderTopWidth: 0 }]}>
+                      <Text style={styles.eventLabel}>{label}</Text>
+                      <Text style={styles.eventCount}>
+                        {n}{denom && denom > 0 ? ` · ${Math.round((100 * n) / denom)}%` : ''}
+                      </Text>
+                    </View>
+                  ))}
+              </View>
+              <Text style={styles.hint}>
+                Signups → onboarding → invite → a co-parent joins → shares. Invites-accepted and 2+-member households are your growth loop; active-this-week is retention.
+              </Text>
+            </>
+          ) : (
+            <Text style={styles.muted}>No funnel data yet — fills in as people sign up and invite.</Text>
+          )}
 
           {/* Where users are — web can't buy through the store */}
           <Text style={styles.sectionTitle}>Where users are</Text>

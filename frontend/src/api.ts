@@ -731,6 +731,19 @@ export interface MetricRow {
   count: number;
 }
 
+export interface FunnelSummary {
+  window_days: number;
+  total_users: number;
+  signups: number;
+  onboarded: number;
+  invites_sent: number;
+  invites_accepted: number;
+  multi_member_households: number;
+  sharing_households: number;
+  active_1d: number;
+  active_7d: number;
+}
+
 export interface VersionAdoption {
   current_runtime: string;
   store_version: string;
@@ -1039,6 +1052,8 @@ export const api = {
   },
   getMetricsSummary: (days = 14) =>
     request<{ days: number; rows: MetricRow[] }>(`/metrics/summary?days=${days}`),
+  getMetricsFunnel: (days = 30) =>
+    request<FunnelSummary>(`/metrics/funnel?days=${days}`),
   getVersionAdoption: () =>
     request<VersionAdoption>('/admin/version-adoption'),
   getPlanAdoption: () =>
