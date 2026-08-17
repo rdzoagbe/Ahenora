@@ -17,7 +17,7 @@ import { TabScreen } from '../../src/components/TabScreen';
 import { ScreenHeader, useUI, UIColors } from '../../src/components/Kit';
 
 import { useStore } from '../../src/store';
-import { api, MealPlan, ShoppingItem, ShoppingHistoryEntry, SavedMealPlan, Diet } from '../../src/api';
+import { api, MealPlan, ShoppingItem, ShoppingHistoryEntry, SavedMealPlan, Diet, AiRecipe } from '../../src/api';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { logger } from '../../src/logger';
 import { suggestWeek, MealSuggestion, SuggestLang, localizedMealTitle, localizedMealIngredients, resolveRecipeId, recipeIngredients, searchRecipes } from '../../src/mealSuggestions';
@@ -72,7 +72,11 @@ export default function Kitchen() {
   // Recipe currently open full-screen. addToDay marks a preview opened from
   // the browser: the page then carries an "add to that day" action, so a
   // parent reads the recipe before committing it to the week.
-  const [cookingRecipe, setCookingRecipe] = useState<{ recipeId: string | null; mealId?: string; title: string; addToDay?: string } | null>(null);
+  const [cookingRecipe, setCookingRecipe] = useState<{ recipeId: string | null; mealId?: string; title: string; addToDay?: string; adHoc?: AiRecipe } | null>(null);
+  // "Ask the AI for a recipe": a free-text dish, generated on the spot without
+  // a plan entry. The result opens in the same full-screen recipe view.
+  const [recipeAiQuery, setRecipeAiQuery] = useState('');
+  const [recipeAiBusy, setRecipeAiBusy] = useState(false);
   const suggestLang = useMemo<SuggestLang>(
     () => (['en', 'es', 'fr', 'de'].includes(lang) ? (lang as SuggestLang) : 'en'),
     [lang],
@@ -804,6 +808,42 @@ export default function Kitchen() {
     }
   }, [cookingRecipe, regenBusy, recipeDiet, suggestLang, showToast, t]);
 
+  // "Ask the AI for a recipe": generate a full recipe from a typed dish name,
+  // no plan entry required, and open it in the same recipe view. Metered and
+  // safety-gated server-side, exactly like a scan or a chef question.
+  const askRecipeAI = useCallback(async () => {
+    const dish = recipeAiQuery.trim();
+    if (dish.length < 2 || recipeAiBusy) return;
+    if (mealLocked) { promptUpgrade('meal_planner'); return; }
+    setRecipeAiBusy(true);
+    try {
+      const { recipe, diet } = await api.generateRecipe(dish, suggestLang, householdDiet);
+      setRecipeDiet(diet);
+      setServingsOverride(null);
+      setCookingRecipe({ recipeId: null, title: dish, adHoc: recipe });
+      setRecipeAiQuery('');
+    } catch (e: any) {
+      showToast(e?.message || t('recipe_ai_failed'), 'error');
+    } finally {
+      setRecipeAiBusy(false);
+    }
+  }, [recipeAiQuery, recipeAiBusy, mealLocked, promptUpgrade, suggestLang, householdDiet, showToast, t]);
+
+  // Push an AI recipe's ingredients onto the shopping list. The name is what
+  // you shop by, so the plain ingredient name (not the scaled amount) is what
+  // lands in the list — categorised the same way scanned items are.
+  const addGeneratedToList = useCallback(async (ings: AiIngredient[]) => {
+    const names = ings.map((i) => i.name).filter(Boolean);
+    if (!names.length) return;
+    try {
+      await api.bulkAddShopping(names, names.map((n) => categoriseShoppingItem(n) || undefined));
+      setShopItems(await api.listShopping().catch(() => []));
+      showToast(t('cook_added_to_list'), 'success');
+    } catch (e: any) {
+      showToast(e?.message || t('cook_failed'), 'error');
+    }
+  }, [showToast, t]);
+
   // The household diet toggle. Persists server-side and is what makes the
   // weekly suggestions and new recipes come out vegetarian by default.
   const toggleHouseholdDiet = useCallback(async () => {
@@ -1250,6 +1290,49 @@ export default function Kitchen() {
                 one line saying exactly what it does. */}
             {!mealLocked ? <Text style={styles.scanHint}>{t('capture_hint')}</Text> : null}
 
+            {/* Ask the AI for a recipe: a free-text dish, generated on the spot
+                without adding it to the plan first. Opens in the recipe view. */}
+            {!mealLocked ? (
+              <View style={styles.recipeAiCard}>
+                <View style={styles.recipeAiLabel}>
+                  <Sparkles color={ui.orangeText} size={15} />
+                  <Text style={styles.recipeAiLabelText}>{t('recipe_ai_title')}</Text>
+                </View>
+                <View style={styles.recipeAiRow}>
+                  <TextInput
+                    testID="recipe-ai-input"
+                    value={recipeAiQuery}
+                    onChangeText={setRecipeAiQuery}
+                    placeholder={t('recipe_ai_placeholder')}
+                    placeholderTextColor={ui.muted}
+                    style={styles.recipeAiInput}
+                    maxLength={80}
+                    autoCorrect={false}
+                    returnKeyType="go"
+                    onSubmitEditing={askRecipeAI}
+                  />
+                  <PressScale
+                    testID="recipe-ai-go"
+                    accessibilityRole="button"
+                    accessibilityLabel={t('recipe_ai_cta')}
+                    onPress={askRecipeAI}
+                    disabled={recipeAiBusy || recipeAiQuery.trim().length < 2}
+                    style={styles.recipeAiBtn}
+                  >
+                    {recipeAiBusy ? (
+                      <ActivityIndicator color="#fff" size="small" />
+                    ) : (
+                      <>
+                        <ChefHat color="#fff" size={15} />
+                        <Text style={styles.recipeAiBtnText}>{t('recipe_ai_cta')}</Text>
+                      </>
+                    )}
+                  </PressScale>
+                </View>
+                <Text style={styles.recipeAiHint}>{t('recipe_ai_hint')}</Text>
+              </View>
+            ) : null}
+
             <View style={styles.card}>
               {DAYS.filter((d) => (mealsByDay[d] || []).length > 0).map((day) => (
                 <View key={day}>
@@ -1572,7 +1655,7 @@ export default function Kitchen() {
         <SafeAreaView style={styles.recipeSafe} edges={['top', 'bottom']}>
           {(() => {
             if (!cookingRecipe) return null;
-            const generated = cookingRecipe.mealId ? aiRecipes[cookingRecipe.mealId] : undefined;
+            const generated = cookingRecipe.mealId ? aiRecipes[cookingRecipe.mealId] : cookingRecipe.adHoc;
             const method = recipeMethod(cookingRecipe.recipeId, suggestLang) ?? generated ?? null;
             const isGenerated = !cookingRecipe.recipeId;
             const ingredients = localizedMealIngredients(cookingRecipe.recipeId, [], suggestLang, cookingRecipe.title);
@@ -1703,6 +1786,16 @@ export default function Kitchen() {
                           );
                         })}
                         <Text style={styles.qtyNote}>{t('cook_amounts_note')}</Text>
+
+                        <PressScale
+                          testID="cook-add-generated"
+                          accessibilityRole="button"
+                          onPress={() => addGeneratedToList(generated.ingredients!)}
+                          style={styles.addMissingBtn}
+                        >
+                          <ShoppingCart color={ui.orange} size={15} />
+                          <Text style={styles.addMissingText}>{t('cook_add_missing')}</Text>
+                        </PressScale>
                       </>
                     ) : ingredients.length > 0 ? (
                       <>
@@ -2340,6 +2433,14 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   qtyNote: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 8, fontStyle: 'italic' },
   addMissingBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 14, paddingVertical: 12, borderRadius: 999, borderWidth: 1, borderColor: ui.orange },
   addMissingText: { color: ui.orangeText, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
+  recipeAiCard: { backgroundColor: ui.card, borderRadius: 16, borderWidth: 1, borderColor: ui.orangeSoft, padding: 13, marginBottom: 12 },
+  recipeAiLabel: { flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 9 },
+  recipeAiLabelText: { color: ui.orangeText, fontFamily: 'Inter_800ExtraBold', fontSize: 11.5, letterSpacing: 0.8, textTransform: 'uppercase' },
+  recipeAiRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  recipeAiInput: { flex: 1, borderWidth: 1, borderColor: ui.line, borderRadius: 12, paddingHorizontal: 13, paddingVertical: 10, fontFamily: 'Inter_600SemiBold', fontSize: 14.5, color: ui.text, backgroundColor: ui.soft },
+  recipeAiBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, minWidth: 78, justifyContent: 'center', backgroundColor: ui.orange, paddingHorizontal: 13, paddingVertical: 11, borderRadius: 12 },
+  recipeAiBtnText: { color: '#fff', fontFamily: 'Inter_800ExtraBold', fontSize: 13.5 },
+  recipeAiHint: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 11.5, marginTop: 8 },
   browseRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: ui.line },
   browseTitle: { color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 15 },
   browseIng: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 2 },
