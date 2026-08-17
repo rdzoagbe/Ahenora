@@ -40,6 +40,9 @@ interface StoreState {
   householdMenuOpen: boolean;
   openHouseholdMenu: () => void;
   closeHouseholdMenu: () => void;
+  inviteRequested: boolean;
+  requestInvite: () => void;
+  clearInviteRequest: () => void;
   // Bumped whenever something is captured from the global "+" so any visible
   // tab can refresh its data without a navigation.
   dataVersion: number;
@@ -79,6 +82,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [householdMenuOpen, setHouseholdMenuOpen] = useState(false);
   const openHouseholdMenu = useCallback(() => setHouseholdMenuOpen(true), []);
   const closeHouseholdMenu = useCallback(() => setHouseholdMenuOpen(false), []);
+  // The Feed's "invite your co-parent" nudge lives on a different screen from the
+  // invite sheet (Settings), so it raises this flag and navigates; Settings sees
+  // it, opens the invite sheet, and clears it.
+  const [inviteRequested, setInviteRequested] = useState(false);
+  const requestInvite = useCallback(() => setInviteRequested(true), []);
+  const clearInviteRequest = useCallback(() => setInviteRequested(false), []);
   // A monotonic counter the global "+" bumps after a successful capture; tabs
   // depend on it to reload the surface the user is looking at.
   const [dataVersion, setDataVersion] = useState(0);
@@ -295,6 +304,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         householdMenuOpen,
         openHouseholdMenu,
         closeHouseholdMenu,
+        inviteRequested,
+        requestInvite,
+        clearInviteRequest,
         dataVersion,
         bumpData,
       }}

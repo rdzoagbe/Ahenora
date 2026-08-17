@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Linking, Platform, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import Constants from 'expo-constants';
 import * as Updates from 'expo-updates';
@@ -54,7 +54,7 @@ function formatBytes(bytes?: number | null) {
 }
 
 export default function Settings() {
-  const { user, t, lang, logout, subscription, appearanceMode, setAppearance } = useStore();
+  const { user, t, lang, logout, subscription, appearanceMode, setAppearance, inviteRequested, clearInviteRequest } = useStore();
   const router = useRouter();
   const ui = useUI();
   const styles = useMemo(() => createStyles(ui), [ui]);
@@ -439,6 +439,15 @@ export default function Settings() {
     setLastInviteUrl(null);
     setShowInvite(true);
   };
+
+  // The Feed's co-parent nudge navigates here with this flag raised; open the
+  // invite sheet on arrival and clear it so it fires once.
+  useEffect(() => {
+    if (!inviteRequested) return;
+    openInvite('', 'coparent');
+    clearInviteRequest();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inviteRequested]);
 
   // Two parents is the ceiling — a parent and a co-parent. A third would-be
   // parent is redirected to the family-member invite, where they get a role.

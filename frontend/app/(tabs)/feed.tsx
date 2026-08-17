@@ -48,6 +48,7 @@ import { MoreSheet } from '../../src/components/MoreSheet';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
 import { TabScreen } from '../../src/components/TabScreen';
 import { GettingStarted } from '../../src/components/GettingStarted';
+import { CoParentNudge } from '../../src/components/CoParentNudge';
 import { StreakChip } from '../../src/components/StreakChip';
 import { useStore } from '../../src/store';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
@@ -248,7 +249,7 @@ function TaskRow({ card, onOpen, onComplete, styles }: { card: Card; onOpen: () 
 const ANN_SEEN_KEY = 'coo_family_board_seen_at';
 
 export default function Feed() {
-  const { user, t, subscription, dataVersion } = useStore();
+  const { user, t, subscription, dataVersion, requestInvite } = useStore();
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
   const [assigned, setAssigned] = useState<Card[]>([]);
   // The web build is prerendered at BUILD time. Anything derived from "now" —
@@ -873,6 +874,13 @@ export default function Feed() {
               onAddMember={() => router.navigate('/(tabs)/kids')}
               onAddCard={openManual}
               onAddDoc={() => router.navigate('/(tabs)/vault')}
+            />
+
+            {/* Solo household → the highest-value next step is bringing in the
+                co-parent (growth + retention). Vanishes once someone joins. */}
+            <CoParentNudge
+              visible={members.length <= 1}
+              onInvite={() => { requestInvite(); router.navigate('/(tabs)/settings' as never); }}
             />
 
             {/* Quick templates */}
