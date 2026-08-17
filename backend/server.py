@@ -1140,11 +1140,13 @@ async def send_invite_email(to_email: str, invite_url: str, inviter_name: str, i
     safe_invite_url = html.escape(invite_url)
     safe_to = html.escape(to_email)
 
-    subject = f"{inviter_name or 'A family member'} invited you to {APP_NAME}"
+    subject = f"{inviter_name or 'A family member'} wants to share the load with you on {APP_NAME}"
 
     text = (
-        f"{inviter_name or 'A family member'} invited you to join their household in {APP_NAME}.\n\n"
-        f"Open this invite link:\n{invite_url}\n\n"
+        f"{inviter_name or 'A family member'} wants to run the household with you on {APP_NAME} — "
+        "one shared place for schedules, tasks, the kids' stuff and important documents, so it "
+        "doesn't all sit in one person's head.\n\n"
+        f"Join their household:\n{invite_url}\n\n"
         "If you were not expecting this invitation, you can ignore this email."
     )
 
@@ -1153,11 +1155,12 @@ async def send_invite_email(to_email: str, invite_url: str, inviter_name: str, i
   <div style="max-width:520px; margin:0 auto; background:#ffffff; border:1px solid #e6e1da; border-radius:16px; padding:28px;">
     <p style="color:#202323; font-size:16px; line-height:1.55; margin:0 0 14px;">Hi,</p>
     <p style="color:#202323; font-size:16px; line-height:1.55; margin:0 0 20px;">
-      <strong>{safe_inviter}</strong> invited you to join their family household on {safe_app_name} —
-      a shared space to keep schedules, tasks, and important documents organised together.
+      <strong>{safe_inviter}</strong> wants to run the household with you on {safe_app_name} —
+      one shared place for schedules, tasks, the kids' stuff and important documents, so it
+      doesn't all sit in one person's head. Join in and share the load.
     </p>
     <a href="{safe_invite_url}" style="display:inline-block; background:#f26a1b; color:#ffffff; text-decoration:none; font-weight:700; padding:12px 22px; border-radius:10px; font-size:15px;">
-      Accept invite
+      Join their household
     </a>
     <p style="color:#747b7c; font-size:13px; line-height:1.5; margin:22px 0 0;">
       Or open this link on your phone:<br />
