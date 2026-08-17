@@ -19,6 +19,7 @@ import { ValueTour } from '../src/components/ValueTour';
 import { useStore } from '../src/store';
 import { logger } from '../src/logger';
 import { extractInviteToken } from '../src/invite';
+import { getLoginHint, clearLoginHint, maskEmail, LoginHint } from '../src/loginHint';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -48,7 +49,21 @@ export default function Landing() {
   // The landing has two doors: Log in (returning) and Create account (new).
   // Whichever is tapped opens the email form on that form.
   const [emailMode, setEmailMode] = useState<'login' | 'signup'>('login');
-  const openEmailAuth = (m: 'login' | 'signup') => { setEmailMode(m); setShowEmailAuth(true); };
+  const [emailPrefill, setEmailPrefill] = useState<string | undefined>(undefined);
+  const openEmailAuth = (m: 'login' | 'signup', prefill?: string) => {
+    setEmailMode(m); setEmailPrefill(prefill); setShowEmailAuth(true);
+  };
+  // "Welcome back" recognition: a locally-remembered last sign-in (email +
+  // method, never a token). Present → greet the returning user; absent (new or
+  // reinstalled device) → the cold create/log-in landing.
+  const [loginHint, setLoginHint] = useState<LoginHint | null>(null);
+  useEffect(() => { getLoginHint().then(setLoginHint).catch(() => undefined); }, []);
+  const forgetHint = () => { clearLoginHint().catch(() => undefined); setLoginHint(null); };
+  const continueAsHint = () => {
+    if (!loginHint) return;
+    if (loginHint.method === 'google') signIn();
+    else openEmailAuth('login', loginHint.email);
+  };
   const [signingIn, setSigningIn] = useState(false);
   const [inviteToken, setInviteToken] = useState<string | null>(null);
   const [invitedBy, setInvitedBy] = useState<string | null>(null);
@@ -179,7 +194,7 @@ export default function Landing() {
 
         const { api } = await import('../src/api');
         const authResult = await api.exchangeSession(idToken, token);
-        await setUserFromAuth(authResult.user, authResult.session_token);
+        await setUserFromAuth(authResult.user, authResult.session_token, 'google');
 
         if (Platform.OS === 'web' && typeof window !== 'undefined') {
           try {
@@ -230,7 +245,7 @@ export default function Landing() {
 
         const { api: apiModule } = await import('../src/api');
         const authResult = await apiModule.exchangeSession(idToken, token);
-        await setUserFromAuth(authResult.user, authResult.session_token);
+        await setUserFromAuth(authResult.user, authResult.session_token, 'google');
         router.replace('/feed');
         return;
       }
@@ -330,8 +345,12 @@ export default function Landing() {
             </View>
           ) : null}
 
-          <Text style={[styles.heading, { color: theme.colors.text }]}>{t('land_heading')}</Text>
-          <Text style={[styles.sub, { color: theme.colors.textMuted }]}>{t('land_sub')}</Text>
+          <Text style={[styles.heading, { color: theme.colors.text }]}>
+            {loginHint && !inviteToken ? t('land_welcome_back') : t('land_heading')}
+          </Text>
+          <Text style={[styles.sub, { color: theme.colors.textMuted }]}>
+            {loginHint && !inviteToken ? t('land_welcome_back_sub') : t('land_sub')}
+          </Text>
 
           <View style={[styles.testingCard, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}> 
             <ShieldCheck color={theme.colors.accent} size={16} />
@@ -339,58 +358,108 @@ export default function Landing() {
           </View>
 
           <View style={styles.buttonStack}>
-            <PressScale
-              testID="google-signin"
-              onPress={signIn}
-              disabled={signingIn || (Platform.OS === 'web' && !request)}
-              style={[
-                styles.cta,
-                { backgroundColor: theme.colors.primary },
-                (signingIn || (Platform.OS === 'web' && !request)) && styles.ctaDisabled,
-              ]}
-              accessibilityLabel={t('land_a11y_google')}
-              accessibilityRole="button"
-            >
-              {signingIn ? (
-                <ActivityIndicator color={theme.colors.primaryText} />
-              ) : (
-                <>
-                  <View style={styles.googleDot}>
-                    <Text style={styles.googleText}>G</Text>
+            {loginHint && !inviteToken ? (
+              /* Returning user: greet them and offer one tap back in as the
+                 account they last used. "Not you?" drops to the full doors. */
+              <>
+                <PressScale
+                  testID="continue-as-hint"
+                  onPress={continueAsHint}
+                  disabled={signingIn || (Platform.OS === 'web' && loginHint.method === 'google' && !request)}
+                  style={[
+                    styles.cta,
+                    { backgroundColor: theme.colors.primary },
+                    (signingIn || (Platform.OS === 'web' && loginHint.method === 'google' && !request)) && styles.ctaDisabled,
+                  ]}
+                  accessibilityLabel={`${t('land_continue_as')} ${maskEmail(loginHint.email)}`}
+                  accessibilityRole="button"
+                >
+                  {signingIn ? (
+                    <ActivityIndicator color={theme.colors.primaryText} />
+                  ) : (
+                    <>
+                      {loginHint.method === 'google' ? (
+                        <View style={styles.googleDot}><Text style={styles.googleText}>G</Text></View>
+                      ) : (
+                        <View style={[styles.emailDot, { backgroundColor: theme.colors.accentSoft }]}>
+                          <Mail color={theme.colors.accent} size={15} />
+                        </View>
+                      )}
+                      <Text style={[styles.ctaText, { color: theme.colors.primaryText }]} numberOfLines={1}>
+                        {t('land_continue_as')} {maskEmail(loginHint.email)}
+                      </Text>
+                    </>
+                  )}
+                </PressScale>
+
+                <PressScale
+                  testID="not-you"
+                  onPress={forgetHint}
+                  disabled={signingIn}
+                  style={[styles.secondaryCta, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }, signingIn && styles.ctaDisabled]}
+                  accessibilityLabel={t('land_not_you')}
+                  accessibilityRole="button"
+                >
+                  <Text style={[styles.secondaryCtaText, { color: theme.colors.textMuted }]}>{t('land_not_you')}</Text>
+                </PressScale>
+              </>
+            ) : (
+              /* New or unrecognised device: the full set of doors. */
+              <>
+                <PressScale
+                  testID="google-signin"
+                  onPress={signIn}
+                  disabled={signingIn || (Platform.OS === 'web' && !request)}
+                  style={[
+                    styles.cta,
+                    { backgroundColor: theme.colors.primary },
+                    (signingIn || (Platform.OS === 'web' && !request)) && styles.ctaDisabled,
+                  ]}
+                  accessibilityLabel={t('land_a11y_google')}
+                  accessibilityRole="button"
+                >
+                  {signingIn ? (
+                    <ActivityIndicator color={theme.colors.primaryText} />
+                  ) : (
+                    <>
+                      <View style={styles.googleDot}>
+                        <Text style={styles.googleText}>G</Text>
+                      </View>
+                      <Text style={[styles.ctaText, { color: theme.colors.primaryText }]}>{t('sign_in')}</Text>
+                    </>
+                  )}
+                </PressScale>
+
+                <PressScale
+                  testID="email-login"
+                  onPress={() => openEmailAuth('login')}
+                  disabled={signingIn}
+                  style={[styles.cta, styles.emailCta, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }, signingIn && styles.ctaDisabled]}
+                  accessibilityLabel={t('land_email_login')}
+                  accessibilityRole="button"
+                >
+                  <View style={[styles.emailDot, { backgroundColor: theme.colors.accentSoft }]}>
+                    <Mail color={theme.colors.accent} size={15} />
                   </View>
-                  <Text style={[styles.ctaText, { color: theme.colors.primaryText }]}>{t('sign_in')}</Text>
-                </>
-              )}
-            </PressScale>
+                  <Text style={[styles.ctaText, { color: theme.colors.text }]}>{t('land_email_login')}</Text>
+                </PressScale>
 
-            <PressScale
-              testID="email-login"
-              onPress={() => openEmailAuth('login')}
-              disabled={signingIn}
-              style={[styles.cta, styles.emailCta, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }, signingIn && styles.ctaDisabled]}
-              accessibilityLabel={t('land_email_login')}
-              accessibilityRole="button"
-            >
-              <View style={[styles.emailDot, { backgroundColor: theme.colors.accentSoft }]}>
-                <Mail color={theme.colors.accent} size={15} />
-              </View>
-              <Text style={[styles.ctaText, { color: theme.colors.text }]}>{t('land_email_login')}</Text>
-            </PressScale>
-
-            {/* Separate door for new users — no returning user is ever asked to
-                create a second account, and a new user has an obvious way in. */}
-            <PressScale
-              testID="email-signup"
-              onPress={() => openEmailAuth('signup')}
-              disabled={signingIn}
-              style={[styles.secondaryCta, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }, signingIn && styles.ctaDisabled]}
-              accessibilityLabel={t('land_email_signup')}
-              accessibilityRole="button"
-            >
-              <Text style={[styles.secondaryCtaText, { color: theme.colors.textMuted }]}>
-                {t('land_new_here')} <Text style={{ color: theme.colors.accent, fontFamily: 'Inter_700Bold' }}>{t('land_email_signup')}</Text>
-              </Text>
-            </PressScale>
+                {/* Separate door for new users — no returning user is ever asked
+                    to create a second account, and a new user has an obvious way in. */}
+                <PressScale
+                  testID="email-signup"
+                  onPress={() => openEmailAuth('signup')}
+                  disabled={signingIn}
+                  style={[styles.secondaryCta, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }, signingIn && styles.ctaDisabled]}
+                  accessibilityLabel={t('land_email_signup')}
+                  accessibilityRole="button"
+                >
+                  <Text style={[styles.secondaryCtaText, { color: theme.colors.textMuted }]}>
+                    {t('land_new_here')} <Text style={{ color: theme.colors.accent, fontFamily: 'Inter_700Bold' }}>{t('land_email_signup')}</Text>
+                  </Text>
+                </PressScale>
+              </>
+            )}
 
             <PressScale
               testID="landing-pricing-link"
@@ -430,6 +499,7 @@ export default function Landing() {
         onSuccess={handleEmailSuccess}
         inviteToken={inviteToken}
         initialMode={emailMode}
+        initialEmail={emailPrefill}
       />
     </View>
   );

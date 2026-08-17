@@ -13,6 +13,7 @@ import { clearSnapshots } from './offline';
 import { Lang, SUPPORTED_LANGS, translate } from './i18n';
 import { AppearanceMode, AppTheme, getTheme, resolveAppearance, ResolvedAppearance } from './theme';
 import { logger } from './logger';
+import { saveLoginHint, clearLoginHint } from './loginHint';
 
 export type { Lang } from './i18n';
 export type { AppearanceMode, ResolvedAppearance, AppTheme } from './theme';
@@ -32,7 +33,7 @@ interface StoreState {
   refreshSubscription: () => Promise<void>;
   logout: () => Promise<void>;
   deleteAccount: (data: { password?: string; confirm?: boolean }) => Promise<void>;
-  setUserFromAuth: (user: User, token: string) => Promise<void>;
+  setUserFromAuth: (user: User, token: string, method?: 'google' | 'email') => Promise<void>;
   upgradePrompt: { feature: string; message: string } | null;
   showUpgradePrompt: (feature: string, message: string) => void;
   dismissUpgradePrompt: () => void;
@@ -195,6 +196,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const deleteAccount = useCallback(async (data: { password?: string; confirm?: boolean }) => {
     await api.deleteAccount(data);
     await tokenStore.clear();
+    // A deleted account leaves nothing behind — including the welcome-back hint.
+    await clearLoginHint().catch(() => undefined);
     await clearSnapshots().catch(() => undefined);
     resetOfflineState();
     setUser(null);
@@ -202,11 +205,17 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setLoading(false);
   }, []);
 
-  const setUserFromAuth = useCallback(async (u: User, token: string) => {
+  const setUserFromAuth = useCallback(async (u: User, token: string, method?: 'google' | 'email') => {
     await tokenStore.set(token);
 
     const savedToken = await tokenStore.get();
     logger.info('Session token saved:', savedToken ? 'yes' : 'no');
+
+    // Remember who signed in (email + method, never the token) so the next
+    // visit greets them with "Welcome back" instead of a cold account screen.
+    if (method && u.email) {
+      saveLoginHint({ email: u.email, method }).catch(() => undefined);
+    }
 
     // Remember that this device has an account, so the next visit after a
     // sign-out opens on Log In rather than Sign Up. Deliberately durable —
