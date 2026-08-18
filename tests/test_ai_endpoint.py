@@ -122,7 +122,12 @@ class HealthAiProbe(unittest.TestCase):
         return fake
 
     def probe(self):
-        return asyncio.run(server.health_ai(probe=1))
+        # The endpoint is admin-gated now (it names models, key state and
+        # errors); the tests call the handler directly, so they present an
+        # admin identity the same way the harness does.
+        admin = {"email": "probe-admin@sim.test"}
+        server.ADMIN_EMAILS = set(server.ADMIN_EMAILS) | {admin["email"]}
+        return asyncio.run(server.health_ai(probe=1, user=admin))
 
     def test_walks_past_retired_models_to_one_that_answers(self):
         # The production incident: the first candidates are retired. The loop
@@ -175,7 +180,9 @@ class HealthAiProbe(unittest.TestCase):
 
     def test_status_without_probe_is_free(self):
         fake = self.install(FakeClient())
-        status = asyncio.run(server.health_ai(probe=0))
+        admin = {"email": "probe-admin@sim.test"}
+        server.ADMIN_EMAILS = set(server.ADMIN_EMAILS) | {admin["email"]}
+        status = asyncio.run(server.health_ai(probe=0, user=admin))
         self.assertNotIn("probe", status)
         self.assertEqual(fake.calls, [])
         self.assertTrue(status["key_configured"])

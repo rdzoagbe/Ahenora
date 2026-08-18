@@ -52,7 +52,8 @@ class KidForgotPin(unittest.TestCase):
 
     def _try(self, email, password):
         return asyncio.run(server.exit_kid_forgot_pin(
-            server.KidForgotPinIn(email=email, password=password), child=dict(self.child)))
+            server.KidForgotPinIn(email=email, password=password), child=dict(self.child),
+            authorization="Bearer test-kid-token"))
 
     def _mum_pin(self):
         m = asyncio.run(self.db["family_members"].find_one({"member_id": "m_mum"}, {"_id": 0}))
