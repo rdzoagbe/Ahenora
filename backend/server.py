@@ -248,9 +248,14 @@ def _auth_clear(identity: str) -> None:
 
 
 def _client_ip(request: Request) -> str:
+    # Rightmost X-Forwarded-For hop, not the first: the first entry is
+    # client-supplied and freely spoofable, which let one machine rotate fake
+    # addresses and sidestep the per-IP limiter entirely. The LAST entry is the
+    # one appended by our own fronting proxy (Railway), so it is the only hop
+    # we can actually trust.
     forwarded = request.headers.get("x-forwarded-for")
     if forwarded:
-        return forwarded.split(",")[0].strip()
+        return forwarded.split(",")[-1].strip()
     return request.client.host if request.client else "unknown"
 
 
@@ -2228,7 +2233,7 @@ _AI_PROBE = {"last": None}
 
 
 @app.get("/api/health/ai")
-async def health_ai(probe: int = 0):
+async def health_ai(probe: int = 0, user=Depends(require_user)):
     """Whether the AI features can work, verified from production itself.
 
     Every AI feature degrades gracefully, which is right for users and terrible
@@ -2236,7 +2241,12 @@ async def health_ai(probe: int = 0):
     feature quietly showed its fallback. This endpoint makes the plumbing
     observable. With ?probe=1 it performs one tiny real generation, so
     "working" means answered, not configured.
+
+    Admin-gated: it names configured models, key state, and per-model errors —
+    an integration map nobody but us needs, so nobody but us gets it.
     """
+    if not is_admin_user(user):
+        raise HTTPException(status_code=403, detail="Admin only")
     status = {
         "key_configured": bool(GOOGLE_API_KEY),
         "library_loaded": bool(genai),
@@ -4289,7 +4299,8 @@ async def start_kid_session(payload: ChildSessionIn, user=Depends(require_user))
 
 
 @app.post("/api/kid/exit")
-async def exit_kid_session(payload: ParentPinIn, child=Depends(require_child)):
+async def exit_kid_session(payload: ParentPinIn, child=Depends(require_child),
+                           authorization: str = Header(default="")):
     """Leave kid mode. A grown-up's PIN, so a child cannot let themselves out."""
     database = get_db()
     hashes = await _family_parent_pin_hashes(database, child["family_id"])
@@ -4301,11 +4312,17 @@ async def exit_kid_session(payload: ParentPinIn, child=Depends(require_child)):
         _auth_record_fail(identity)
         raise HTTPException(status_code=401, detail="Invalid PIN")
     _auth_clear(identity)
+    # Exit means exit: kill the kid session server-side rather than trusting
+    # the client to discard it — otherwise the token stayed valid for kid
+    # routes for its full 24 h after the parent believed kid mode was over.
+    token = authorization.replace("Bearer ", "", 1).strip()
+    await database["user_sessions"].delete_many({"token_hash": sha256(token)})
     return {"ok": True}
 
 
 @app.post("/api/kid/exit-forgot-pin")
-async def exit_kid_forgot_pin(payload: KidForgotPinIn, child=Depends(require_child)):
+async def exit_kid_forgot_pin(payload: KidForgotPinIn, child=Depends(require_child),
+                              authorization: str = Header(default="")):
     """Leave kid mode when the parent PIN has been forgotten.
 
     Without this, a parent who forgot the PIN was locked in the child's app
@@ -4340,6 +4357,10 @@ async def exit_kid_forgot_pin(payload: KidForgotPinIn, child=Depends(require_chi
     # Clear the forgotten PIN so the hand-over sheet prompts for a new one.
     await database["family_members"].update_one(
         {"member_id": member["member_id"]}, {"$set": {"pin_hash": None}})
+    # Same rule as the PIN exit: leaving kid mode kills the kid session
+    # server-side rather than trusting the client to discard the token.
+    kid_token = authorization.replace("Bearer ", "", 1).strip()
+    await database["user_sessions"].delete_many({"token_hash": sha256(kid_token)})
     return {"ok": True}
 
 

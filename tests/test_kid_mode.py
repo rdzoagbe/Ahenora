@@ -124,10 +124,12 @@ class KidMode(unittest.TestCase):
         token = self._enter()["session_token"]
         with self.assertRaises(server.HTTPException) as e:
             asyncio.run(server.exit_kid_session(
-                server.ParentPinIn(pin="1234"), child=self._child(token)))
+                server.ParentPinIn(pin="1234"), child=self._child(token),
+                authorization="Bearer test-kid-token"))
         self.assertEqual(e.exception.status_code, 401)
         out = asyncio.run(server.exit_kid_session(
-            server.ParentPinIn(pin="9999"), child=self._child(token)))
+            server.ParentPinIn(pin="9999"), child=self._child(token),
+            authorization="Bearer test-kid-token"))
         self.assertTrue(out["ok"])
 
     # --- what a child sees ----------------------------------------------
