@@ -115,6 +115,14 @@ jobs:
           git commit -m "Web: rebuild ahenora.com export for $GITHUB_SHA"
           # A docs/-only commit does not retrigger this workflow (frontend/**
           # path filter), and it is exactly what triggers the Pages deploy.
+          # Rebase-and-retry so a concurrent push to main (a human merge, or
+          # another workflow) can't reject this export with a non-fast-forward
+          # and silently drop it until the next frontend merge.
+          for attempt in 1 2 3; do
+            if git push origin main; then exit 0; fi
+            echo "push rejected (attempt $attempt) — rebasing on latest main"
+            git pull --rebase origin main
+          done
           git push origin main
 
   expo-update:

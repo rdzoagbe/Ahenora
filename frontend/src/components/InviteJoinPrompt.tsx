@@ -190,12 +190,12 @@ export function InviteJoinPrompt() {
             <UserPlus color={c.accent} size={22} />
           </View>
           {joined ? (
-            <Text style={[styles.title, { color: c.text }]}>{relationship ? t('invite_joined_role').replace('{role}', relationship) : t('invite_joined_ok')}</Text>
+            <Text style={[styles.title, { color: c.text }]}>{relationship ? t('invite_joined_role').split('{role}').join(relationship) : t('invite_joined_ok')}</Text>
           ) : (
             <>
               <Text style={[styles.title, { color: c.text }]}>{t('invite_join_title')}</Text>
               <Text style={[styles.question, { color: c.text }]}>
-                {(relationship ? t('invite_join_q_role').replace('{role}', relationship) : t('invite_join_q')).replace('{name}', inviterName)}
+                {(relationship ? t('invite_join_q_role').split('{role}').join(relationship) : t('invite_join_q')).split('{name}').join(inviterName)}
               </Text>
               <Text style={[styles.note, { color: c.textSoft }]}>{t('invite_join_note')}</Text>
               {error ? (

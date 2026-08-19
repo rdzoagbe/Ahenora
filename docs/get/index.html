@@ -37,11 +37,11 @@
       // Android phones/tablets, but NOT ChromeOS (which should use the web app).
       var isAndroid = /Android/i.test(ua) && !/CrOS/i.test(ua);
       var target = isAndroid ? PLAY : WEB;
-      // Update the manual fallback to match the detected platform, then go.
-      var manual = document.getElementById('manual');
-      if (manual) manual.setAttribute('href', target);
       // Preserve any query string (e.g. campaign tags) onto the web path only.
       if (!isAndroid && window.location.search) target = WEB + window.location.search;
+      // Update the manual fallback to match the final target, then go.
+      var manual = document.getElementById('manual');
+      if (manual) manual.setAttribute('href', target);
       window.location.replace(target);
     })();
   </script>
