@@ -59,6 +59,64 @@ jobs:
       - name: Run lint
         run: npm run lint --if-present
 
+
+  web-export:
+    name: Rebuild the ahenora.com web app
+    runs-on: ubuntu-latest
+    needs: frontend-ci
+    if: github.ref == 'refs/heads/main'
+    # This job commits the rebuilt export back to main, so it alone gets write.
+    permissions:
+      contents: write
+    env:
+      ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
+      EXPO_NO_TELEMETRY: 1
+      EXPO_PUBLIC_BACKEND_URL: ${{ secrets.EXPO_PUBLIC_BACKEND_URL || vars.EXPO_PUBLIC_BACKEND_URL }}
+      EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: ${{ secrets.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || vars.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID }}
+      EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: ${{ secrets.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || vars.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          # Committing back needs the real branch, not a detached merge ref.
+          ref: main
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm install --no-audit --no-fund
+
+      # The web app is the same code as the phone app, served at ahenora.com.
+      # Before this job it was rebuilt by hand and drifted behind OTAs (the
+      # "+" redesign shipped to phones while the web bundle stayed stale for a
+      # week). Every merge that touches frontend/** now rebuilds and commits
+      # the export, so "the web version is the same app" stays true by
+      # machinery, not memory. api.ts falls back to the production backend URL
+      # when the env var is absent, so a missing secret degrades safely.
+      - name: Export the web app
+        working-directory: frontend
+        run: npx expo export --platform web --output-dir ../docs/app --clear
+
+      - name: Commit the rebuilt export
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/app
+          if git diff --cached --quiet; then
+            echo "Web export unchanged - nothing to commit."
+            exit 0
+          fi
+          git commit -m "Web: rebuild ahenora.com export for $GITHUB_SHA"
+          # A docs/-only commit does not retrigger this workflow (frontend/**
+          # path filter), and it is exactly what triggers the Pages deploy.
+          git push origin main
+
   expo-update:
     name: Publish Android EAS update
     runs-on: ubuntu-latest
