@@ -120,12 +120,25 @@
   .cta-note { font-size: 14px; color: var(--muted); margin-top: 16px; }
   .cta-note strong { color: var(--ink); font-weight: 600; }
 
-  .phone-stack { display: flex; gap: 18px; justify-content: center; align-items: flex-start; }
-  .phone {
-    width: 100%; max-width: 236px; border-radius: 26px; border: 1px solid var(--line);
-    box-shadow: var(--shadow); display: block; background: var(--card);
+  .phone-stack { display: flex; gap: 22px; justify-content: center; align-items: flex-start; }
+
+  /* Phone-mockup frame: a dark bezel that turns a flat screenshot into a
+     device, and bridges the light app screenshot into the (light or dark)
+     page. Reused by the hero and the shots row. */
+  .device {
+    --bezel: #1B1712;
+    position: relative; background: var(--bezel); border-radius: 34px;
+    padding: 9px; box-shadow: var(--shadow);
+    border: 1px solid color-mix(in srgb, var(--bezel) 70%, #000);
   }
-  .phone.offset { margin-top: 38px; }
+  .device::before {
+    content: ""; position: absolute; top: 15px; left: 50%; transform: translateX(-50%);
+    width: 34%; height: 6px; border-radius: 99px; background: rgba(255,255,255,0.14); z-index: 2;
+  }
+  .device img { display: block; width: 100%; border-radius: 26px; }
+
+  .phone-stack .device { width: 100%; max-width: 250px; }
+  .phone-stack .device.offset { margin-top: 40px; }
 
   /* ---------- sections ---------- */
   section { padding: 72px 0; }
@@ -152,10 +165,10 @@
   }
 
   /* ---------- shots ---------- */
-  .shots { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
-  .shots img { width: 100%; border-radius: 18px; border: 1px solid var(--line); display: block; box-shadow: var(--shadow-sm); background: var(--card); }
+  .shots { display: grid; grid-template-columns: repeat(4, 1fr); gap: 22px; }
   .shots figure { margin: 0; }
-  .shots figcaption { font-size: 14px; color: var(--muted); margin-top: 12px; text-align: center; font-weight: 500; }
+  .shots .device { box-shadow: var(--shadow-sm); }
+  .shots figcaption { font-size: 14px; color: var(--muted); margin-top: 14px; text-align: center; font-weight: 500; }
 
   /* ---------- pricing ---------- */
   .plans { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; max-width: 760px; margin: 0 auto; }
@@ -196,8 +209,9 @@
        length crowds the header — drop it here so Features/Pricing/Get-the-app
        sit cleanly on one row. */
     .nav a.quiet.webapp { display: none; }
-    .phone.offset { display: none; }
-    .phone { max-width: 268px; }
+    /* One centred phone in the hero on narrow screens. */
+    .phone-stack .device.offset { display: none; }
+    .phone-stack .device { max-width: 280px; }
   }
 </style>
 <script>
@@ -262,8 +276,8 @@
         <p class="cta-note"><strong>Free to start</strong> &middot; No ads &middot; Your family's data is never sold</p>
       </div>
       <div class="phone-stack">
-        <img class="phone" src="assets/shot-feed.jpg" alt="The Ahenora feed showing today's tasks and family activity" width="500" height="1082" loading="eager">
-        <img class="phone offset" src="assets/shot-kids.jpg" alt="The Kids screen showing chores, stars and rewards" width="500" height="1082" loading="lazy">
+        <div class="device"><img src="assets/shot-feed.jpg" alt="The Ahenora feed showing today's tasks and family activity" width="500" height="1082" loading="eager"></div>
+        <div class="device offset"><img src="assets/shot-kids.jpg" alt="The Kids screen showing chores, stars and rewards" width="500" height="1082" loading="lazy"></div>
       </div>
     </div>
   </div>
@@ -323,19 +337,19 @@
       </div>
       <div class="shots">
         <figure>
-          <img src="assets/shot-feed.jpg" alt="Feed screen with today's tasks" width="500" height="1082" loading="lazy">
+          <div class="device"><img src="assets/shot-feed.jpg" alt="Feed screen with today's tasks" width="500" height="1082" loading="lazy"></div>
           <figcaption>Today, at a glance</figcaption>
         </figure>
         <figure>
-          <img src="assets/shot-calendar.jpg" alt="Shared family calendar" width="500" height="1082" loading="lazy">
+          <div class="device"><img src="assets/shot-calendar.jpg" alt="Shared family calendar" width="500" height="1082" loading="lazy"></div>
           <figcaption>The shared calendar</figcaption>
         </figure>
         <figure>
-          <img src="assets/shot-kids.jpg" alt="Kids chores, stars and rewards" width="500" height="1082" loading="lazy">
+          <div class="device"><img src="assets/shot-kids.jpg" alt="Kids chores, stars and rewards" width="500" height="1082" loading="lazy"></div>
           <figcaption>Chores and rewards</figcaption>
         </figure>
         <figure>
-          <img src="assets/shot-kitchen.jpg" alt="Meal planner and shopping list" width="500" height="1082" loading="lazy">
+          <div class="device"><img src="assets/shot-kitchen.jpg" alt="Meal planner and shopping list" width="500" height="1082" loading="lazy"></div>
           <figcaption>Meals and shopping</figcaption>
         </figure>
       </div>
