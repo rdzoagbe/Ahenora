@@ -1075,6 +1075,7 @@ export const api = {
       invite_id: string;
       status: string;
       inviter_name: string;
+      relationship?: string | null;
       email?: string;
       expires_at?: string | null;
     }>(`/family/invite/${encodeURIComponent(token)}`),
