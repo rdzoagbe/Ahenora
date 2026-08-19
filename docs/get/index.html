@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Getting Ahenora…</title>
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="/assets/icon.png">
+  <style>
+    html,body{margin:0;height:100%;background:#F6F3EE;color:#101318;
+      font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;}
+    .wrap{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:24px;text-align:center;}
+    img{width:72px;height:72px;border-radius:18px;}
+    h1{font-size:20px;margin:0;font-weight:700;}
+    p{margin:0;color:#5F656E;font-size:15px;max-width:34ch;line-height:1.5;}
+    a{color:#B8410A;font-weight:600;}
+    .sr{opacity:0;animation:in .25s ease .1s forwards;}
+    @keyframes in{to{opacity:1;}}
+  </style>
+</head>
+<body>
+  <div class="wrap sr">
+    <img src="/assets/icon.png" alt="Ahenora">
+    <h1>Taking you to Ahenora…</h1>
+    <p id="fallback">One moment. If nothing happens,
+      <a id="manual" href="/app/">tap here to continue</a>.</p>
+  </div>
+  <script>
+    // Send Android phones to the Play Store (where the native app lives) and
+    // everyone else — iPhone, iPad, desktop — to the web app. A no-JS or slow
+    // client still gets the manual link above, defaulted to the web app so it
+    // works on every device.
+    (function () {
+      var PLAY = 'https://play.google.com/store/apps/details?id=com.householdcoo.app';
+      var WEB = '/app/';
+      var ua = navigator.userAgent || '';
+      // Android phones/tablets, but NOT ChromeOS (which should use the web app).
+      var isAndroid = /Android/i.test(ua) && !/CrOS/i.test(ua);
+      var target = isAndroid ? PLAY : WEB;
+      // Update the manual fallback to match the detected platform, then go.
+      var manual = document.getElementById('manual');
+      if (manual) manual.setAttribute('href', target);
+      // Preserve any query string (e.g. campaign tags) onto the web path only.
+      if (!isAndroid && window.location.search) target = WEB + window.location.search;
+      window.location.replace(target);
+    })();
+  </script>
+</body>
+</html>

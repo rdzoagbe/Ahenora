@@ -170,6 +170,24 @@
       window.location.replace('/app/' + window.location.search + window.location.hash);
     }
   })();
+
+  // Make the hero's primary button fit the visitor's device: Android phones
+  // get the Play Store (the native app), iPhone/desktop get the web app. The
+  // page still ships BOTH links, so nothing is hidden — we only reorder which
+  // one is the bold primary. Default (Android) already matches the markup.
+  document.addEventListener('DOMContentLoaded', function () {
+    var ua = navigator.userAgent || '';
+    var isAndroid = /Android/i.test(ua) && !/CrOS/i.test(ua);
+    if (isAndroid) return; // markup default already leads with Play — leave it.
+    var primary = document.getElementById('cta-primary');
+    var secondary = document.getElementById('cta-secondary');
+    if (!primary || !secondary) return;
+    // iPhone/iPad/desktop: lead with the web app, since there is no iOS app yet.
+    primary.setAttribute('href', '/app/');
+    primary.textContent = 'Open Ahenora in your browser';
+    secondary.setAttribute('href', 'https://play.google.com/store/apps/details?id=com.householdcoo.app');
+    secondary.textContent = 'On Android? Get it on Google Play';
+  });
 </script>
 </head>
 <body>
@@ -199,8 +217,8 @@
           coordinated without staying in touch.
         </p>
         <div class="cta-row">
-          <a class="btn" href="https://play.google.com/store/apps/details?id=com.householdcoo.app">Get it on Google Play</a>
-          <a class="btn ghost" href="/app/">Use it on the web</a>
+          <a class="btn" id="cta-primary" href="https://play.google.com/store/apps/details?id=com.householdcoo.app">Get it on Google Play</a>
+          <a class="btn ghost" id="cta-secondary" href="/app/">Use it on the web</a>
           <a class="btn ghost" href="https://youtu.be/oMPo0knHBsg">Watch the 30-second tour</a>
         </div>
         <p class="cta-note">Free to start · No ads · Your household data is never sold</p>
