@@ -15,7 +15,7 @@ import sys
 ROOT = os.path.abspath(sys.argv[2] if len(sys.argv) > 2
                        else os.path.join(os.path.dirname(__file__), ".."))
 DOCS = os.path.join(ROOT, "docs")
-PREFIX = "/Ahenora/"
+PREFIX = "/Ahenora/"  # legacy project-page prefix, still stripped for old links
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -28,6 +28,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         clean = path.split("?", 1)[0].split("#", 1)[0]
         if clean.startswith(PREFIX):
             path = "/" + clean[len(PREFIX):]
+        # Custom-domain shape: ahenora.com serves docs/ at the root, so the
+        # app lives at /app directly — no repo-name prefix to strip.
         resolved = super().translate_path(path)
         # Clean URLs: /feed is a file called feed.html.
         if (not os.path.exists(resolved) and not resolved.endswith("/")

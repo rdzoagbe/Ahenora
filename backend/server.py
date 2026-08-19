@@ -91,7 +91,7 @@ INVITE_DAYS = int(os.environ.get("INVITE_DAYS", "14"))
 # end to end, so it is the universal default; the env var can still point
 # elsewhere (e.g. a future custom domain).
 INVITE_BASE_URL = os.environ.get(
-    "INVITE_BASE_URL", "https://rdzoagbe.github.io/Ahenora/app/"
+    "INVITE_BASE_URL", "https://ahenora.com/app/"
 )
 
 # Email delivery. Resend is used through the standard-library urllib client,

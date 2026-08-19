@@ -109,7 +109,7 @@ def main() -> int:
     web = subprocess.Popen(
         [sys.executable, os.path.join(HERE, "serve_web.py"), str(args.web_port), ROOT],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    if not wait_for(f"http://127.0.0.1:{args.web_port}/Ahenora/app/feed",
+    if not wait_for(f"http://127.0.0.1:{args.web_port}/app/feed",
                     timeout=20, need_ok=True):
         print("No web build at docs/app. Run, from frontend/:\n"
               "  npx expo export --platform web --output-dir ../docs/app --clear")

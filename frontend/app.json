@@ -64,7 +64,7 @@
     ],
     "experiments": {
       "typedRoutes": true,
-      "baseUrl": "/Ahenora/app"
+      "baseUrl": "/app"
     },
     "extra": {
       "router": {},

@@ -30,7 +30,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, ".."))
 OUT = os.path.join(ROOT, "docs", "store-assets", "tiktok", "shots")
 
-WEB = f"http://127.0.0.1:{sys.argv[1]}/Ahenora/app"
+WEB = f"http://127.0.0.1:{sys.argv[1]}/app"
 API = f"http://127.0.0.1:{sys.argv[2]}/api"
 
 # Which screen tells which story. Five different screens rather than five of

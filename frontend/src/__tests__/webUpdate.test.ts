@@ -19,7 +19,7 @@ function serveBase(src: string): string {
   return src.split('/_expo/')[0] || '';
 }
 
-const RUNNING = '/Ahenora/app/_expo/static/js/web/entry-42212083256652d8dca75700e3110824.js';
+const RUNNING = '/app/_expo/static/js/web/entry-42212083256652d8dca75700e3110824.js';
 
 describe('spotting a new web deploy', () => {
   it('reads the hash out of the running bundle', () => {
@@ -32,17 +32,17 @@ describe('spotting a new web deploy', () => {
   });
 
   it('spots a genuinely different build', () => {
-    const deployed = '<script src="/Ahenora/app/_expo/static/js/web/entry-ffffffffffffffffffffffffffffffff.js"></script>';
+    const deployed = '<script src="/app/_expo/static/js/web/entry-ffffffffffffffffffffffffffffffff.js"></script>';
     expect(deployed.match(ENTRY_RE)?.[1]).not.toBe(entryHash(RUNNING));
   });
 
   it('finds the serving path so a sub-path deploy still checks the right page', () => {
     // The app is not served from the domain root, so a hardcoded "/index.html"
     // would fetch the wrong document — or somebody else's.
-    expect(serveBase(RUNNING)).toBe('/Ahenora/app');
+    expect(serveBase(RUNNING)).toBe('/app');
   });
 
   it('ignores scripts that are not the entry bundle', () => {
-    expect(entryHash('/Ahenora/app/_expo/static/js/web/StoreReview-d17bdf7d.js')).toBeNull();
+    expect(entryHash('/app/_expo/static/js/web/StoreReview-d17bdf7d.js')).toBeNull();
   });
 });
