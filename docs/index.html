@@ -3,38 +3,56 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Ahenora — the family operations app</title>
-<meta name="description" content="One shared, private place for tasks, calendars, kids' chores, meals and documents. Built for busy families and co-parents across two homes.">
+<title>Ahenora — the calm home base for family life</title>
+<meta name="description" content="One shared, private place for tasks, the family calendar, kids' chores, meals and documents. For every family — solo parents, co-parents and busy households.">
 <link rel="icon" href="assets/icon.png">
+<link rel="apple-touch-icon" href="assets/icon.png">
 
-<meta property="og:title" content="Ahenora — the family operations app">
-<meta property="og:description" content="One shared, private place for tasks, calendars, kids' chores, meals and documents. Built for busy families and co-parents across two homes.">
+<meta property="og:title" content="Ahenora — the calm home base for family life">
+<meta property="og:description" content="One shared, private place for tasks, the family calendar, kids' chores, meals and documents. For every family — solo parents, co-parents and busy households.">
 <meta property="og:image" content="https://ahenora.com/assets/icon.png">
 <meta property="og:url" content="https://ahenora.com/">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary_large_image">
 
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@600;700;800&display=swap" rel="stylesheet">
+
 <style>
   :root {
-    --bg: #ffffff;
-    --surface: #f7f7f9;
-    --text: #17181f;
-    --muted: #5c6070;
-    --line: #e6e7ec;
-    --brand: #F56519;
-    --brand-deep: #d94f0c;
-    --ink: #0b0e1a;
-    --radius: 16px;
+    --bg: #F6F3EE;
+    --bg-warm: #F1EBE1;
+    --card: #FFFFFF;
+    --ink: #101318;
+    --muted: #5F656E;
+    --line: #E6E1DA;
+    --orange: #F56519;
+    --orange-deep: #E2560E;
+    --orange-ink: #B8410A;
+    --tint: #FFF0E7;
+    --mint: #DFF7EC;
+    --mint-ink: #0A7D52;
+    --shadow: 0 20px 50px -24px rgba(59, 38, 20, 0.28);
+    --shadow-sm: 0 6px 20px -10px rgba(59, 38, 20, 0.22);
+    --radius: 22px;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #0b0e1a;
-      --surface: #14172a;
-      --text: #f2f3f7;
-      --muted: #a2a7bb;
-      --line: #262a41;
-      --brand: #ff8442;
-      --brand-deep: #ff6a2f;
+      --bg: #17130F;
+      --bg-warm: #1E1813;
+      --card: #221C16;
+      --ink: #F4EEE6;
+      --muted: #B2A594;
+      --line: #33291F;
+      --orange: #FB7A34;
+      --orange-deep: #F56519;
+      --orange-ink: #F9A46A;
+      --tint: #2A1F16;
+      --mint: #16281F;
+      --mint-ink: #5FD3A0;
+      --shadow: 0 24px 56px -20px rgba(0,0,0,.6);
+      --shadow-sm: 0 8px 22px -12px rgba(0,0,0,.5);
     }
   }
 
@@ -42,124 +60,140 @@
   html { scroll-behavior: smooth; }
   body {
     margin: 0;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
     background: var(--bg);
-    color: var(--text);
+    color: var(--ink);
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
-  .wrap { max-width: 1060px; margin: 0 auto; padding: 0 22px; }
-  a { color: var(--brand); }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+  a { color: var(--orange-ink); }
+  .serif { font-family: 'Playfair Display', Georgia, serif; }
 
   /* ---------- header ---------- */
   header {
-    position: sticky; top: 0; z-index: 20;
-    background: color-mix(in srgb, var(--bg) 88%, transparent);
-    backdrop-filter: saturate(180%) blur(12px);
+    position: sticky; top: 0; z-index: 30;
+    background: color-mix(in srgb, var(--bg) 82%, transparent);
+    backdrop-filter: saturate(160%) blur(14px);
+    -webkit-backdrop-filter: saturate(160%) blur(14px);
     border-bottom: 1px solid var(--line);
   }
-  .nav { display: flex; align-items: center; gap: 12px; padding: 12px 0; }
-  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; text-decoration: none; color: var(--text); }
-  .brand img { width: 32px; height: 32px; border-radius: 8px; }
+  .nav { display: flex; align-items: center; gap: 14px; padding: 13px 0; }
+  .brand { display: flex; align-items: center; gap: 11px; font-weight: 800; text-decoration: none; color: var(--ink); font-size: 18px; letter-spacing: -0.01em; }
+  .brand img { width: 34px; height: 34px; border-radius: 10px; box-shadow: var(--shadow-sm); }
   .nav-spacer { flex: 1; }
-  .nav a.quiet { color: var(--muted); text-decoration: none; font-size: 15px; }
-  .nav a.quiet:hover { color: var(--text); }
+  .nav a.quiet { color: var(--muted); text-decoration: none; font-size: 15px; font-weight: 500; }
+  .nav a.quiet:hover { color: var(--ink); }
 
   /* ---------- buttons ---------- */
   .btn {
-    display: inline-block; padding: 13px 22px; border-radius: 999px;
-    font-weight: 600; text-decoration: none; font-size: 16px;
-    background: var(--brand); color: #fff; border: 1px solid transparent;
-    transition: transform .12s ease, background .12s ease;
+    display: inline-flex; align-items: center; gap: 8px; padding: 14px 24px; border-radius: 999px;
+    font-weight: 700; text-decoration: none; font-size: 16px; line-height: 1;
+    background: var(--orange); color: #fff; border: 1px solid transparent;
+    box-shadow: 0 10px 26px -12px rgba(245, 101, 25, 0.7);
+    transition: transform .14s ease, background .14s ease, box-shadow .14s ease;
   }
-  .btn:hover { background: var(--brand-deep); transform: translateY(-1px); }
-  .btn.ghost { background: transparent; color: var(--text); border-color: var(--line); }
-  .btn.ghost:hover { background: var(--surface); }
-  .btn.sm { padding: 9px 16px; font-size: 15px; }
+  .btn:hover { background: var(--orange-deep); transform: translateY(-2px); box-shadow: 0 16px 32px -14px rgba(245, 101, 25, 0.75); }
+  .btn.ghost { background: var(--card); color: var(--ink); border-color: var(--line); box-shadow: var(--shadow-sm); }
+  .btn.ghost:hover { background: var(--tint); border-color: color-mix(in srgb, var(--orange) 30%, var(--line)); }
+  .btn.sm { padding: 10px 18px; font-size: 15px; }
 
   /* ---------- hero ---------- */
-  .hero { padding: 72px 0 56px; }
-  .hero-grid { display: grid; grid-template-columns: 1.05fr .95fr; gap: 48px; align-items: center; }
+  .hero { padding: 76px 0 60px; position: relative; overflow: hidden; }
+  .hero::before {
+    content: ""; position: absolute; top: -180px; right: -140px; width: 520px; height: 520px;
+    background: radial-gradient(circle, color-mix(in srgb, var(--orange) 20%, transparent), transparent 68%);
+    pointer-events: none; z-index: 0;
+  }
+  .hero-grid { position: relative; z-index: 1; display: grid; grid-template-columns: 1.05fr .95fr; gap: 52px; align-items: center; }
   .eyebrow {
-    display: inline-block; font-size: 13px; font-weight: 600; letter-spacing: .06em;
-    text-transform: uppercase; color: var(--brand);
-    background: color-mix(in srgb, var(--brand) 12%, transparent);
-    padding: 6px 12px; border-radius: 999px; margin-bottom: 18px;
+    display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 700; letter-spacing: .02em;
+    color: var(--orange-ink); background: var(--tint);
+    padding: 7px 14px; border-radius: 999px; margin-bottom: 22px;
+    border: 1px solid color-mix(in srgb, var(--orange) 22%, transparent);
   }
-  h1 { font-size: clamp(34px, 5vw, 52px); line-height: 1.1; letter-spacing: -0.02em; margin: 0 0 18px; }
-  .lede { font-size: 19px; color: var(--muted); margin: 0 0 28px; max-width: 34em; }
+  .eyebrow .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--mint-ink); }
+  h1 { font-family: 'Playfair Display', Georgia, serif; font-weight: 800; font-size: clamp(38px, 5.2vw, 60px); line-height: 1.06; letter-spacing: -0.015em; margin: 0 0 20px; }
+  .lede { font-size: 19px; color: var(--muted); margin: 0 0 30px; max-width: 33em; }
   .cta-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
-  .cta-note { font-size: 14px; color: var(--muted); margin-top: 14px; }
+  .cta-note { font-size: 14px; color: var(--muted); margin-top: 16px; }
+  .cta-note strong { color: var(--ink); font-weight: 600; }
 
-  .phone-stack { display: flex; gap: 16px; justify-content: center; }
+  .phone-stack { display: flex; gap: 18px; justify-content: center; align-items: flex-start; }
   .phone {
-    width: 100%; max-width: 232px; border-radius: 22px; border: 1px solid var(--line);
-    box-shadow: 0 18px 50px rgba(11,14,26,.16); display: block;
+    width: 100%; max-width: 236px; border-radius: 26px; border: 1px solid var(--line);
+    box-shadow: var(--shadow); display: block; background: var(--card);
   }
-  .phone.offset { margin-top: 34px; }
-  @media (prefers-color-scheme: dark) {
-    .phone { box-shadow: 0 18px 50px rgba(0,0,0,.5); }
-  }
+  .phone.offset { margin-top: 38px; }
 
   /* ---------- sections ---------- */
-  section { padding: 64px 0; }
-  /* Anchor targets stop BELOW the sticky header, not underneath it. */
-  section[id], main[id] { scroll-margin-top: 72px; }
-  .section-head { max-width: 42em; margin-bottom: 36px; }
-  h2 { font-size: clamp(26px, 3.4vw, 34px); letter-spacing: -0.02em; margin: 0 0 12px; }
-  .section-head p { color: var(--muted); font-size: 17px; margin: 0; }
-
-  .alt { background: var(--surface); border-block: 1px solid var(--line); }
+  section { padding: 72px 0; }
+  section[id], main[id] { scroll-margin-top: 76px; }
+  .section-head { max-width: 44em; margin: 0 auto 44px; text-align: center; }
+  .kicker { display: inline-block; font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--orange-ink); margin-bottom: 12px; }
+  h2 { font-family: 'Playfair Display', Georgia, serif; font-weight: 700; font-size: clamp(28px, 3.6vw, 40px); letter-spacing: -0.01em; margin: 0 0 14px; }
+  .section-head p { color: var(--muted); font-size: 18px; margin: 0; }
+  .alt { background: var(--bg-warm); border-block: 1px solid var(--line); }
 
   /* ---------- feature grid ---------- */
   .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
   .card {
-    background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius);
-    padding: 24px;
+    background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 26px; box-shadow: var(--shadow-sm);
+    transition: transform .15s ease, box-shadow .15s ease;
   }
-  .card h3 { margin: 0 0 8px; font-size: 18px; }
+  .card:hover { transform: translateY(-3px); box-shadow: var(--shadow); }
+  .card h3 { margin: 0 0 8px; font-size: 18.5px; font-weight: 700; letter-spacing: -0.01em; }
   .card p { margin: 0; color: var(--muted); font-size: 15px; }
   .card .ico {
-    width: 40px; height: 40px; border-radius: 11px; display: grid; place-items: center;
-    background: color-mix(in srgb, var(--brand) 13%, transparent);
-    margin-bottom: 14px; font-size: 20px;
+    width: 46px; height: 46px; border-radius: 13px; display: grid; place-items: center;
+    background: var(--tint); margin-bottom: 16px; font-size: 22px;
   }
 
   /* ---------- shots ---------- */
-  .shots { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
-  .shots img { width: 100%; border-radius: 16px; border: 1px solid var(--line); display: block; }
+  .shots { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
+  .shots img { width: 100%; border-radius: 18px; border: 1px solid var(--line); display: block; box-shadow: var(--shadow-sm); background: var(--card); }
   .shots figure { margin: 0; }
-  .shots figcaption { font-size: 14px; color: var(--muted); margin-top: 10px; text-align: center; }
+  .shots figcaption { font-size: 14px; color: var(--muted); margin-top: 12px; text-align: center; font-weight: 500; }
 
   /* ---------- pricing ---------- */
-  .plans { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; max-width: 720px; }
-  .plan { border: 1px solid var(--line); border-radius: var(--radius); padding: 26px; background: var(--bg); }
-  .plan.featured { border-color: var(--brand); }
-  .plan h3 { margin: 0 0 4px; font-size: 20px; }
-  .price { font-size: 32px; font-weight: 700; letter-spacing: -0.02em; margin: 8px 0 4px; }
-  .price span { font-size: 15px; font-weight: 500; color: var(--muted); }
-  .plan ul { padding-left: 18px; margin: 16px 0 0; color: var(--muted); font-size: 15px; }
-  .plan li { margin: 6px 0; }
+  .plans { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; max-width: 760px; margin: 0 auto; }
+  .plan { border: 1px solid var(--line); border-radius: var(--radius); padding: 28px; background: var(--card); box-shadow: var(--shadow-sm); }
+  .plan.featured { border-color: color-mix(in srgb, var(--orange) 55%, var(--line)); background: linear-gradient(180deg, var(--tint), var(--card) 42%); position: relative; }
+  .plan .tag { position: absolute; top: 20px; right: 20px; font-size: 11px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; color: #fff; background: var(--orange); padding: 4px 10px; border-radius: 999px; }
+  .plan h3 { margin: 0 0 4px; font-size: 21px; font-weight: 700; }
+  .price { font-family: 'Playfair Display', Georgia, serif; font-size: 38px; font-weight: 700; letter-spacing: -0.01em; margin: 10px 0 4px; }
+  .price span { font-family: 'Inter', sans-serif; font-size: 15px; font-weight: 500; color: var(--muted); }
+  .plan ul { list-style: none; padding: 0; margin: 18px 0 0; color: var(--ink); font-size: 15px; }
+  .plan li { margin: 0; padding: 9px 0 9px 28px; position: relative; border-top: 1px solid var(--line); }
+  .plan li:first-child { border-top: 0; }
+  .plan li::before { content: "✓"; position: absolute; left: 0; top: 9px; color: var(--mint-ink); font-weight: 800; }
+  .plan li.lead::before { content: ""; }
+  .plan li.lead { color: var(--muted); font-weight: 600; padding-left: 0; }
+
+  /* ---------- final cta ---------- */
+  .final { text-align: center; }
+  .final .lede { margin: 0 auto 28px; }
 
   /* ---------- footer ---------- */
-  footer { border-top: 1px solid var(--line); padding: 36px 0 56px; color: var(--muted); font-size: 14px; }
-  .foot-links { display: flex; flex-wrap: wrap; gap: 18px; margin-bottom: 14px; }
-  .foot-links a { color: var(--muted); text-decoration: none; }
-  .foot-links a:hover { color: var(--text); text-decoration: underline; }
+  footer { border-top: 1px solid var(--line); padding: 40px 0 60px; color: var(--muted); font-size: 14px; background: var(--bg-warm); }
+  .foot-links { display: flex; flex-wrap: wrap; gap: 20px; margin-bottom: 16px; }
+  .foot-links a { color: var(--muted); text-decoration: none; font-weight: 500; }
+  .foot-links a:hover { color: var(--ink); text-decoration: underline; }
 
   @media (max-width: 900px) {
-    .hero-grid { grid-template-columns: 1fr; gap: 36px; }
+    .hero-grid { grid-template-columns: 1fr; gap: 40px; }
     .grid { grid-template-columns: repeat(2, 1fr); }
     .shots { grid-template-columns: repeat(2, 1fr); }
   }
   @media (max-width: 620px) {
-    .hero { padding: 48px 0 40px; }
+    .hero { padding: 52px 0 44px; }
     .grid, .plans { grid-template-columns: 1fr; }
     .nav { gap: 14px; }
     .nav a.quiet { font-size: 14px; }
-    /* Two side-by-side phones overflow a narrow viewport — show one, centred. */
     .phone.offset { display: none; }
-    .phone { max-width: 260px; }
+    .phone { max-width: 268px; }
   }
 </style>
 <script>
@@ -208,20 +242,20 @@
   <div class="wrap hero">
     <div class="hero-grid">
       <div>
-        <span class="eyebrow">Now on Google Play</span>
-        <h1>The household runs on someone's memory. Make it run on something better.</h1>
+        <span class="eyebrow"><span class="dot"></span> Now on Google Play &middot; free to start</span>
+        <h1>The household runs on someone's memory. Let it run on something calmer.</h1>
         <p class="lede">
-          Ahenora puts tasks, the family calendar, kids' chores, meals and school
-          paperwork in one shared, private place — so nothing depends on one parent
-          remembering it. Works across two homes, for co-parents who need to stay
-          coordinated without staying in touch.
+          Ahenora holds tasks, the family calendar, kids' chores, meals and school
+          paperwork in one shared, private place — so family life never depends on
+          one person remembering all of it. For solo parents, co-parents across two
+          homes, and every busy household in between.
         </p>
         <div class="cta-row">
           <a class="btn" id="cta-primary" href="https://play.google.com/store/apps/details?id=com.householdcoo.app">Get it on Google Play</a>
           <a class="btn ghost" id="cta-secondary" href="/app/">Use it on the web</a>
           <a class="btn ghost" href="https://youtu.be/oMPo0knHBsg">Watch the 30-second tour</a>
         </div>
-        <p class="cta-note">Free to start · No ads · Your household data is never sold</p>
+        <p class="cta-note"><strong>Free to start</strong> &middot; No ads &middot; Your family's data is never sold</p>
       </div>
       <div class="phone-stack">
         <img class="phone" src="assets/shot-feed.jpg" alt="The Ahenora feed showing today's tasks and family activity" width="500" height="1082" loading="eager">
@@ -233,8 +267,9 @@
   <section class="alt" id="features">
     <div class="wrap">
       <div class="section-head">
+        <span class="kicker">What's inside</span>
         <h2>Everything a household actually needs</h2>
-        <p>Not another to-do list. The specific things that fall through the cracks in a busy family.</p>
+        <p>Not another to-do list — the specific things that quietly fall through the cracks in a busy family.</p>
       </div>
       <div class="grid">
         <div class="card">
@@ -255,7 +290,7 @@
         <div class="card">
           <div class="ico">🍽️</div>
           <h3>Meals and shopping</h3>
-          <p>Plan the week's dinners and turn them into a shared shopping list nobody has to retype.</p>
+          <p>Plan the week's dinners — or ask the AI for a recipe — and turn it all into one shared shopping list.</p>
         </div>
         <div class="card">
           <div class="ico">📄</div>
@@ -274,11 +309,12 @@
   <section>
     <div class="wrap">
       <div class="section-head">
-        <h2>Built for two homes as easily as one</h2>
+        <span class="kicker">Built around real families</span>
+        <h2>One home or two, it all stays in step</h2>
         <p>
-          Separated and co-parenting families carry the same load twice — two houses, two
-          calendars, two versions of what was agreed. Ahenora gives both parents the
-          same shared source of truth, without either one having to chase the other for it.
+          Whether you're carrying it solo, sharing it with a partner, or co-parenting across
+          two homes, Ahenora gives everyone the same private source of truth — so nobody has
+          to chase anybody to stay coordinated.
         </p>
       </div>
       <div class="shots">
@@ -305,15 +341,16 @@
   <section class="alt" id="plans">
     <div class="wrap">
       <div class="section-head">
+        <span class="kicker">Pricing</span>
         <h2>Simple plans</h2>
-        <p>Both parents are always free. We only ever meter on household size — never on the features that keep your family coordinated.</p>
+        <p>Every parent is always free. We only ever meter on household size — never on the features that keep your family coordinated.</p>
       </div>
       <div class="plans">
         <div class="plan">
           <h3>Free</h3>
           <div class="price">$0</div>
           <ul>
-            <li>Both parents, up to 2 children</li>
+            <li>Up to two adults and two children</li>
             <li>Tasks, calendar and shared lists</li>
             <li>Kids' chores, stars and rewards</li>
             <li>View any document you've saved</li>
@@ -321,25 +358,26 @@
           </ul>
         </div>
         <div class="plan featured">
+          <span class="tag">Premium</span>
           <h3>Premium</h3>
           <div class="price">$6.99 <span>/ month · $49.99 / year</span></div>
           <ul>
-            <li>Everything in Free, plus:</li>
+            <li class="lead">Everything in Free, plus:</li>
             <li>Up to 5 children and caregivers</li>
-            <li>Meal planner and saved plans</li>
-            <li>Pocket money and weekly report</li>
+            <li>Meal planner, saved plans and recipe AI</li>
+            <li>Pocket money and the weekly report</li>
             <li>Carpool and a larger document vault</li>
           </ul>
         </div>
       </div>
-      <p class="cta-note">Subscriptions are billed through Google Play and can be cancelled there at any time.</p>
+      <p class="cta-note" style="text-align:center; margin-top: 22px;">Subscriptions are billed through Google Play and can be cancelled there at any time.</p>
     </div>
   </section>
 
-  <section>
-    <div class="wrap" style="text-align:center">
+  <section class="final">
+    <div class="wrap">
       <h2>Start with tonight</h2>
-      <p class="lede" style="margin: 0 auto 26px">
+      <p class="lede">
         Add one thing you'd otherwise have to remember. That's the whole first step.
       </p>
       <a class="btn" href="https://play.google.com/store/apps/details?id=com.householdcoo.app">Get it on Google Play</a>
