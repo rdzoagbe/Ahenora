@@ -89,7 +89,7 @@
   /* ---------- buttons ---------- */
   .btn {
     display: inline-flex; align-items: center; gap: 8px; padding: 14px 24px; border-radius: 999px;
-    font-weight: 700; text-decoration: none; font-size: 16px; line-height: 1;
+    font-weight: 700; text-decoration: none; font-size: 16px; line-height: 1; white-space: nowrap;
     background: var(--orange); color: #fff; border: 1px solid transparent;
     box-shadow: 0 10px 26px -12px rgba(245, 101, 25, 0.7);
     transition: transform .14s ease, background .14s ease, box-shadow .14s ease;
@@ -192,6 +192,10 @@
     .grid, .plans { grid-template-columns: 1fr; }
     .nav { gap: 14px; }
     .nav a.quiet { font-size: 14px; }
+    /* The web-app link is redundant on mobile (the hero CTA covers it) and its
+       length crowds the header — drop it here so Features/Pricing/Get-the-app
+       sit cleanly on one row. */
+    .nav a.quiet.webapp { display: none; }
     .phone.offset { display: none; }
     .phone { max-width: 268px; }
   }
@@ -232,7 +236,7 @@
     <div class="nav-spacer"></div>
     <a class="quiet" href="#features">Features</a>
     <a class="quiet" href="#plans">Pricing</a>
-    <a class="quiet" href="/app/">Open the web app</a>
+    <a class="quiet webapp" href="/app/">Open the web app</a>
     <a class="btn sm" href="https://play.google.com/store/apps/details?id=com.householdcoo.app">Get the app</a>
   </div>
 </header>
