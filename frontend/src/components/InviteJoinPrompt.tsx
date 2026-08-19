@@ -20,6 +20,7 @@ export function InviteJoinPrompt() {
   const c = theme.colors;
   const [token, setToken] = useState<string | null>(null);
   const [inviterName, setInviterName] = useState('');
+  const [relationship, setRelationship] = useState('');
   const [busy, setBusy] = useState(false);
   const [joined, setJoined] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -39,6 +40,7 @@ export function InviteJoinPrompt() {
         const first = waiting?.[0];
         if (first?.token && !cancelled) {
           setInviterName(first.inviter_name);
+          setRelationship(first.relationship || '');
           setToken(first.token);
         }
       } catch (e: any) {
@@ -60,6 +62,7 @@ export function InviteJoinPrompt() {
         }
         if (!cancelled) {
           setInviterName(info.inviter_name);
+          setRelationship(info.relationship || '');
           setToken(candidate);
         }
       } catch (e: any) {
@@ -187,12 +190,12 @@ export function InviteJoinPrompt() {
             <UserPlus color={c.accent} size={22} />
           </View>
           {joined ? (
-            <Text style={[styles.title, { color: c.text }]}>{t('invite_joined_ok')}</Text>
+            <Text style={[styles.title, { color: c.text }]}>{relationship ? t('invite_joined_role').replace('{role}', relationship) : t('invite_joined_ok')}</Text>
           ) : (
             <>
               <Text style={[styles.title, { color: c.text }]}>{t('invite_join_title')}</Text>
               <Text style={[styles.question, { color: c.text }]}>
-                {t('invite_join_q').replace('{name}', inviterName)}
+                {(relationship ? t('invite_join_q_role').replace('{role}', relationship) : t('invite_join_q')).replace('{name}', inviterName)}
               </Text>
               <Text style={[styles.note, { color: c.textSoft }]}>{t('invite_join_note')}</Text>
               {error ? (

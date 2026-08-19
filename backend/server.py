@@ -1133,7 +1133,7 @@ def build_invite_url(token: str) -> str:
     return f"{base}{joiner}invite={token}"
 
 
-async def send_invite_email(to_email: str, invite_url: str, inviter_name: str, inviter_email: str = "") -> dict:
+async def send_invite_email(to_email: str, invite_url: str, inviter_name: str, inviter_email: str = "", relationship: str = "") -> dict:
     if not RESEND_API_KEY or not INVITE_FROM_EMAIL:
         return {
             "sent": False,
@@ -1144,11 +1144,30 @@ async def send_invite_email(to_email: str, invite_url: str, inviter_name: str, i
     safe_inviter = html.escape(inviter_name or "A family member")
     safe_invite_url = html.escape(invite_url)
     safe_to = html.escape(to_email)
+    # The role the inviter typed ("Nanny", "Driver", "Grandma") — when present,
+    # the invitee is told up front what they are joining AS, so the invite
+    # reads personal rather than generic and expectations are set before the
+    # first sign-in.
+    rel = re.sub(r"\s+", " ", str(relationship or "").strip())
+    safe_rel = html.escape(rel)
+    html_lead = (
+        f"invited you to join their household as their <strong>{safe_rel}</strong> on"
+        if rel else "wants to run the household with you on"
+    )
 
-    subject = f"{inviter_name or 'A family member'} wants to share the load with you on {APP_NAME}"
+    subject = (
+        f"{inviter_name or 'A family member'} invited you to join their household as their {rel} on {APP_NAME}"
+        if rel else
+        f"{inviter_name or 'A family member'} wants to share the load with you on {APP_NAME}"
+    )
 
+    text_lead = (
+        f"{inviter_name or 'A family member'} invited you to join their household as their {rel} on {APP_NAME}"
+        if rel else
+        f"{inviter_name or 'A family member'} wants to run the household with you on {APP_NAME}"
+    )
     text = (
-        f"{inviter_name or 'A family member'} wants to run the household with you on {APP_NAME} — "
+        f"{text_lead} — "
         "one shared place for schedules, tasks, the kids' stuff and important documents, so it "
         "doesn't all sit in one person's head.\n\n"
         f"Join their household:\n{invite_url}\n\n"
@@ -1160,7 +1179,7 @@ async def send_invite_email(to_email: str, invite_url: str, inviter_name: str, i
   <div style="max-width:520px; margin:0 auto; background:#ffffff; border:1px solid #e6e1da; border-radius:16px; padding:28px;">
     <p style="color:#202323; font-size:16px; line-height:1.55; margin:0 0 14px;">Hi,</p>
     <p style="color:#202323; font-size:16px; line-height:1.55; margin:0 0 20px;">
-      <strong>{safe_inviter}</strong> wants to run the household with you on {safe_app_name} —
+      <strong>{safe_inviter}</strong> {html_lead} {safe_app_name} —
       one shared place for schedules, tasks, the kids' stuff and important documents, so it
       doesn't all sit in one person's head. Join in and share the load.
     </p>
@@ -4023,6 +4042,7 @@ async def family_invite(payload: InviteIn, user=Depends(require_user)):
         public["invite_url"],
         user.get("name") or user.get("email") or "A family member",
         user.get("email") or "",
+        relationship=invite.get("relationship") or "",
     )
 
     if email_result.get("sent"):
@@ -4689,6 +4709,7 @@ async def family_invite_lookup(token: str):
         "status": invite.get("status", "pending"),
         "email": invite.get("email"),
         "inviter_name": (inviter or {}).get("name") or invite.get("created_by_name") or "A family member",
+        "relationship": invite.get("relationship"),
         "expires_at": iso(invite.get("expires_at")),
     }
 
