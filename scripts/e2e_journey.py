@@ -29,7 +29,7 @@ from playwright.async_api import async_playwright
 
 from e2e_browser import launch_chromium
 
-WEB = f"http://127.0.0.1:{sys.argv[1] if len(sys.argv) > 1 else '8945'}/Ahenora/app"
+WEB = f"http://127.0.0.1:{sys.argv[1] if len(sys.argv) > 1 else '8945'}/app"
 API = f"http://127.0.0.1:{sys.argv[2] if len(sys.argv) > 2 else '8991'}/api"
 
 

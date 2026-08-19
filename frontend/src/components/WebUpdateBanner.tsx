@@ -35,7 +35,7 @@ function runningEntry(): { hash: string; base: string } | null {
   const hash = src.match(ENTRY_RE)?.[1];
   if (!hash) return null;
   // Everything before /_expo/ is where the app is served from, so the check
-  // works under a sub-path (this app lives at /Ahenora/app) without
+  // works under a sub-path (this app lives at /app on ahenora.com) without
   // hardcoding it.
   const base = src.split('/_expo/')[0] || '';
   return { hash, base };
