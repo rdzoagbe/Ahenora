@@ -103,6 +103,8 @@
 
   /* ---------- sections ---------- */
   section { padding: 64px 0; }
+  /* Anchor targets stop BELOW the sticky header, not underneath it. */
+  section[id], main[id] { scroll-margin-top: 72px; }
   .section-head { max-width: 42em; margin-bottom: 36px; }
   h2 { font-size: clamp(26px, 3.4vw, 34px); letter-spacing: -0.02em; margin: 0 0 12px; }
   .section-head p { color: var(--muted); font-size: 17px; margin: 0; }
@@ -153,7 +155,8 @@
   @media (max-width: 620px) {
     .hero { padding: 48px 0 40px; }
     .grid, .plans { grid-template-columns: 1fr; }
-    .nav a.quiet { display: none; }
+    .nav { gap: 14px; }
+    .nav a.quiet { font-size: 14px; }
     /* Two side-by-side phones overflow a narrow viewport — show one, centred. */
     .phone.offset { display: none; }
     .phone { max-width: 260px; }
