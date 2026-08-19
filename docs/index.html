@@ -139,6 +139,9 @@
 
   .phone-stack .device { width: 100%; max-width: 250px; }
   .phone-stack .device.offset { margin-top: 40px; }
+  /* Crop the hero phones to a top peek too (a touch taller than the 4-up row),
+     so they read as complete framed devices instead of tall clipped strips. */
+  .phone-stack .device img { aspect-ratio: 3 / 4; height: auto; object-fit: cover; object-position: top center; }
 
   /* ---------- sections ---------- */
   section { padding: 72px 0; }
