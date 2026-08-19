@@ -165,9 +165,13 @@
   }
 
   /* ---------- shots ---------- */
-  .shots { display: grid; grid-template-columns: repeat(4, 1fr); gap: 22px; }
+  .shots { display: grid; grid-template-columns: repeat(4, 1fr); gap: 22px; align-items: start; }
   .shots figure { margin: 0; }
   .shots .device { box-shadow: var(--shadow-sm); }
+  /* A 4-up row of full 2.16:1 phones reads as tall thin strips. Crop each to a
+     top "peek" — the branded header + first cards that identify the feature —
+     so the row stays balanced instead of stretching down the page. */
+  .shots .device img { aspect-ratio: 4 / 5; height: auto; object-fit: cover; object-position: top center; }
   .shots figcaption { font-size: 14px; color: var(--muted); margin-top: 14px; text-align: center; font-weight: 500; }
 
   /* ---------- pricing ---------- */
