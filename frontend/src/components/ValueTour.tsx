@@ -28,12 +28,22 @@ export function ValueTour({ onDone }: Props) {
 
   const last = page === SLIDES.length - 1;
 
+  const goTo = (target: number) => {
+    const clamped = Math.max(0, Math.min(SLIDES.length - 1, target));
+    // The button is authoritative: set the page AND scroll. On desktop web
+    // onMomentumScrollEnd never fires (a mouse has no momentum), so if we
+    // waited for the scroll event to advance `page`, every click after the
+    // first would recompute the same target and the tour would freeze.
+    setPage(clamped);
+    scrollRef.current?.scrollTo({ x: clamped * width, animated: true });
+  };
+
   const next = () => {
     if (last) {
       onDone();
       return;
     }
-    scrollRef.current?.scrollTo({ x: (page + 1) * width, animated: true });
+    goTo(page + 1);
   };
 
   return (
@@ -60,6 +70,10 @@ export function ValueTour({ onDone }: Props) {
         pagingEnabled
         showsHorizontalScrollIndicator={false}
         onMomentumScrollEnd={(e) => setPage(Math.round(e.nativeEvent.contentOffset.x / width))}
+        // Momentum end doesn't fire on web; onScroll does — keeps the dots in
+        // sync when the user swipes/drags instead of tapping Next.
+        scrollEventThrottle={16}
+        onScroll={(e) => setPage(Math.round(e.nativeEvent.contentOffset.x / width))}
         style={styles.pager}
       >
         {SLIDES.map(({ Icon, titleKey, subKey }) => (
