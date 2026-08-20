@@ -112,7 +112,8 @@ export default function Landing() {
 
   useEffect(() => {
     if (!loading && user) {
-      router.replace('/feed');
+      // A teen account gets the restricted teen view, never the full app.
+      router.replace(user.is_teen ? '/teen' : '/feed');
     }
   }, [loading, user, router]);
 

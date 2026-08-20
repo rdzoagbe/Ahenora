@@ -657,6 +657,28 @@ export interface User {
   /** Password account (asks for the password to delete) vs Google (asks for a
    *  typed confirmation instead). */
   has_password?: boolean;
+  /** A restricted 13-17 account — routed to the teen view, not the full app. */
+  is_teen?: boolean;
+}
+
+export interface TeenCard {
+  card_id: string;
+  title: string;
+  due_date: string | null;
+  status?: string | null;
+  assignee?: string | null;
+}
+
+export interface TeenHome {
+  name: string;
+  tasks: TeenCard[];
+  agenda: TeenCard[];
+}
+
+/** True when a normal endpoint refused a teen token (require_user's 403). The
+ *  signal to switch the app into the restricted teen view. */
+export function isTeenModeError(e: any): boolean {
+  return e?.status === 403 && String(e?.message || '').includes('teen_mode');
 }
 
 export interface FamilyMember {
@@ -1316,6 +1338,12 @@ export const api = {
   // which a child does not have. Clears the forgotten PIN on success.
   exitKidForgotPin: (email: string, password: string) =>
     request<{ ok: boolean }>('/kid/exit-forgot-pin', { method: 'POST', body: { email, password } }),
+  // Teen mode — the only endpoints a teen account can reach.
+  teenMe: () => request<{ user_id: string; name: string; email?: string; family_id: string; language: string; is_teen: true }>('/teen/me'),
+  teenHome: () => request<TeenHome>('/teen/home'),
+  teenFinishTask: (cardId: string) =>
+    request<{ ok: boolean }>(`/teen/tasks/${cardId}/done`, { method: 'POST' }),
+
   kidHome: () => request<KidHome>('/kid/home'),
   kidFinishChore: (cardId: string) =>
     request<{ ok: boolean }>(`/kid/chores/${cardId}/done`, { method: 'POST' }),
