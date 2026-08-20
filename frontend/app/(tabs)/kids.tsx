@@ -219,7 +219,10 @@ export default function Kids() {
   const [balances, setBalances] = useState<Record<string, number>>({});
   const [chores, setChores] = useState<Chore[]>([]);
 
-  const children = useMemo(() => members.filter((m) => m.role?.toLowerCase() === 'child'), [members]);
+  // Teens live in this section too — same wallet (stars, redeem, adjust), so a
+  // parent manages a young person's rewards whether they're a managed child or
+  // a teen with their own login.
+  const children = useMemo(() => members.filter((m) => ['child', 'teen'].includes(m.role?.toLowerCase() ?? '')), [members]);
   const activeChild = children.find((c) => c.member_id === selectedChild) || children[0];
   const stars = activeChild?.stars || 0;
   // The bank is `stars`; the weekly meter is `week_earned`. A weekend treat is
@@ -1109,6 +1112,11 @@ export default function Kids() {
                         ) : null}
                       </View>
                       <Text style={[styles.childChipText, { color: active ? ui.bg : ui.text }]}>{child.name}</Text>
+                      {child.role?.toLowerCase() === 'teen' ? (
+                        <View style={[styles.teenChipBadge, active && { backgroundColor: 'rgba(255,255,255,0.22)' }]}>
+                          <Text style={[styles.teenChipBadgeText, { color: active ? ui.bg : ui.orangeText }]}>{t('teen_badge')}</Text>
+                        </View>
+                      ) : null}
                     </PressScale>
                   );
                 })}
@@ -1155,6 +1163,7 @@ export default function Kids() {
                 <>
                   {/* Wallet */}
                   <Card style={styles.walletCard}>
+                    <View style={styles.walletRow}>
                     <View style={[styles.walletAvatar, { backgroundColor: ui.orangeSoft }]}>
                       <Text style={[styles.walletAvatarText, { color: ui.orangeText }]}>{activeChild.name[0]?.toUpperCase()}</Text>
                     </View>
@@ -1178,7 +1187,8 @@ export default function Kids() {
                           <MoreHorizontal color={ui.muted} size={16} />
                         </PressScale>
                       </View>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Star color={'#E8A93B'} size={20} fill={'#E8A93B'} />
                         <Text style={styles.walletCount}>{stars}</Text>
                         <PressScale
                           testID="kids-fix-balance"
@@ -1203,6 +1213,21 @@ export default function Kids() {
                     >
                       <Text style={styles.redeemText}>{t('redeem')}</Text>
                     </PressScale>
+                    </View>
+                    {/* Give them their own account — inside the wallet, one clear
+                        divider below Redeem, and only for a managed child (a teen
+                        already has an account). */}
+                    {activeChild.role?.toLowerCase() !== 'teen' ? (
+                      <PressScale
+                        testID="kids-give-account"
+                        accessibilityRole="button"
+                        onPress={openTeenInvite}
+                        style={styles.giveAccountRow}
+                      >
+                        <Text style={styles.giveAccountText}>{t('teen_invite_title')}</Text>
+                        <ChevronRight color={ui.muted} size={16} />
+                      </PressScale>
+                    ) : null}
                   </Card>
                   <PressScale
                     testID="kids-assign-task"
@@ -1212,17 +1237,6 @@ export default function Kids() {
                   >
                     <Plus color={ui.orange} size={15} />
                     <Text style={styles.assignTaskText}>{t('kids_assign_task', { name: activeChild.name })}</Text>
-                  </PressScale>
-                  {/* Old enough for their own account (13+)? One clearly-labelled
-                      button, not buried in a menu. */}
-                  <PressScale
-                    testID="kids-give-account"
-                    accessibilityRole="button"
-                    onPress={openTeenInvite}
-                    style={styles.giveAccountBtn}
-                  >
-                    <Text style={styles.giveAccountText}>{t('teen_invite_title')}</Text>
-                    <ChevronRight color={ui.muted} size={16} />
                   </PressScale>
                   {/* This week: the meter that gates the weekend treat. The
                       saved bank sits in the card above; this is the fresh run
@@ -1700,6 +1714,9 @@ export default function Kids() {
             <X color={ui.text} size={20} />
           </PressScale>
         </View>
+        <View style={styles.teenPageTextBox}>
+          <Text style={styles.teenPageText}>{t('teen_invite_page_text')}</Text>
+        </View>
         <Text style={styles.teenHelp}>{t('teen_invite_help')}</Text>
 
         <Text style={styles.label}>{t('teen_invite_age')}</Text>
@@ -2060,7 +2077,9 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   lockBadge: { position: 'absolute', bottom: -2, right: -2, width: 14, height: 14, borderRadius: 99, backgroundColor: ui.text, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: ui.card },
   childChipText: { fontFamily: 'Inter_700Bold', fontSize: 14 },
 
-  walletCard: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16, marginTop: 18 },
+  walletCard: { padding: 16, marginTop: 18 },
+  walletRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  giveAccountRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, borderTopWidth: 1, borderTopColor: '#F1EFEA', marginTop: 14, paddingTop: 14 },
   walletAvatar: { width: 52, height: 52, borderRadius: 99, alignItems: 'center', justifyContent: 'center' },
   walletAvatarText: { fontFamily: 'Inter_800ExtraBold', fontSize: 20 },
   walletLabel: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 13, flexShrink: 1 },
@@ -2190,6 +2209,10 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   iconBtn: { padding: 9, borderRadius: 9999, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft },
   label: { color: ui.muted, fontFamily: 'Inter_800ExtraBold', fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginTop: 14, marginBottom: 8 },
   input: { borderWidth: 1, borderColor: ui.line, borderRadius: 16, paddingHorizontal: 15, paddingVertical: 13, fontFamily: 'Inter_500Medium', fontSize: 16, color: ui.text, backgroundColor: ui.soft },
+  teenPageTextBox: { backgroundColor: ui.orangeSoft, borderRadius: 14, padding: 14, marginBottom: 12 },
+  teenPageText: { fontFamily: 'Inter_600SemiBold', fontSize: 14, lineHeight: 20, color: ui.orangeText },
+  teenChipBadge: { backgroundColor: ui.orangeSoft, borderRadius: 99, paddingHorizontal: 7, paddingVertical: 2, marginLeft: 6 },
+  teenChipBadgeText: { fontFamily: 'Inter_800ExtraBold', fontSize: 9, letterSpacing: 0.3, textTransform: 'uppercase' },
   approvalsCard: { backgroundColor: ui.card, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(245,101,25,0.28)', padding: 16, marginBottom: 14 },
   approvalsTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 16, color: ui.text, letterSpacing: -0.2 },
   approvalsSub: { fontFamily: 'Inter_500Medium', fontSize: 12.5, color: ui.muted, marginTop: 2, marginBottom: 10 },
