@@ -518,7 +518,7 @@ export default function Kids() {
   // 13; this re-checks the 13-25 range before sending.
   const inviteTeen = async () => {
     const age = teenAge;
-    if (age < 13 || age > 25) { showToast(t('teen_invite_range'), 'error'); return; }
+    if (age < 13 || age > 17) { showToast(t('teen_invite_range'), 'error'); return; }
     const email = teenEmail.trim().toLowerCase();
     if (!email.includes('@') || email.length < 4) { showToast(t('set_invite_valid_email'), 'error'); return; }
     setTeenSending(true);
@@ -1742,7 +1742,7 @@ export default function Kids() {
             <Minus color={ui.text} size={18} />
           </PressScale>
           <Text style={styles.ageValue}>{teenAge}</Text>
-          <PressScale testID="teen-age-plus" onPress={() => setTeenAge((a) => Math.min(25, a + 1))} disabled={teenAge >= 25} style={[styles.ageStepBtn, teenAge >= 25 && { opacity: 0.35 }]}>
+          <PressScale testID="teen-age-plus" onPress={() => setTeenAge((a) => Math.min(17, a + 1))} disabled={teenAge >= 17} style={[styles.ageStepBtn, teenAge >= 17 && { opacity: 0.35 }]}>
             <Plus color={ui.text} size={18} />
           </PressScale>
         </View>
