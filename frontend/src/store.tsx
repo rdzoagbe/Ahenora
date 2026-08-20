@@ -10,7 +10,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useColorScheme } from 'react-native';
 import { api, User, tokenStore, Subscription, resetOfflineState, setUnauthorizedHandler, warmupBackend, isTeenModeError } from './api';
 import { clearSnapshots } from './offline';
-import { Lang, SUPPORTED_LANGS, translate } from './i18n';
+import { Lang, SUPPORTED_LANGS, translate, detectDeviceLang } from './i18n';
 import { AppearanceMode, AppTheme, getTheme, resolveAppearance, ResolvedAppearance } from './theme';
 import { logger } from './logger';
 import { saveLoginHint, clearLoginHint } from './loginHint';
@@ -65,7 +65,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const systemScheme = rawScheme === 'light' || rawScheme === 'dark' ? rawScheme : null;
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [lang, setLangState] = useState<Lang>('en');
+  // First-open default follows the device / browser language; a signed-in
+  // account's own saved language overrides it in refreshUser.
+  const [lang, setLangState] = useState<Lang>(detectDeviceLang);
   const [subscription, setSubscription] = useState<Subscription | null>(null);
   // Follow the phone unless the parent has said otherwise. Defaulting to light
   // meant someone on a dark phone opening this at bedtime — which is when a

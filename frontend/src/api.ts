@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 import { cache } from './cache';
+import { detectDeviceLang } from './i18n';
 import {
   clearSnapshots, enqueueWrite, flushQueue, isQueueablePath, isSnapshotPath, loadSnapshot,
   queuedCount, saveSnapshot,
@@ -1037,9 +1038,9 @@ export const api = {
   exchangeSession: (session_id: string, invite_token?: string) =>
     request<{ user: User; session_token: string }>('/auth/session', {
       method: 'POST',
-      body: invite_token ? { session_id, invite_token } : { session_id },
+      body: { session_id, ...(invite_token ? { invite_token } : {}), language: detectDeviceLang() },
     }),
-  registerWithEmail: (data: { name: string; email: string; password: string; invite_token?: string }) =>
+  registerWithEmail: (data: { name: string; email: string; password: string; invite_token?: string; language?: string }) =>
     request<{ user: User; session_token: string }>('/auth/register', { method: 'POST', body: data }),
   loginWithEmail: (data: { email: string; password: string; invite_token?: string }) =>
     request<{ user: User; session_token: string }>('/auth/login', { method: 'POST', body: data }),
