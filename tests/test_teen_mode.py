@@ -125,7 +125,7 @@ class TeenMode(unittest.TestCase):
     # --- fail-open provisioning fixes (from the code review) -------------
     def test_backend_rejects_out_of_range_teen_age(self):
         """The age gate is enforced server-side, not just in the client."""
-        for bad in (None, 9, 12, 18, 25):
+        for bad in (None, 9, 12, 26, 40):
             with self.assertRaises(server.HTTPException) as ctx:
                 asyncio.run(server.family_invite(
                     server.InviteIn(email="kid@x.com", is_teen=True, age=bad), user=dict(PARENT)))

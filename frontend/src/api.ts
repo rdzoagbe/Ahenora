@@ -673,6 +673,8 @@ export interface TeenHome {
   name: string;
   tasks: TeenCard[];
   agenda: TeenCard[];
+  stars: number;
+  week_earned: number;
 }
 
 /** True when a normal endpoint refused a teen token (require_user's 403). The

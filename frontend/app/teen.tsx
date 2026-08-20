@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Check, CalendarDays, LogOut, ListChecks, Lock } from 'lucide-react-native';
+import { Check, CalendarDays, LogOut, ListChecks, Lock, Star } from 'lucide-react-native';
 
 import { PressScale } from '../src/components/PressScale';
 import { useUI, UIColors } from '../src/components/Kit';
@@ -79,6 +79,17 @@ export default function TeenScreen() {
       ) : (
         <ScrollView contentContainerStyle={styles.scroll}>
           <Text style={styles.hello}>Hi{firstName ? `, ${firstName}` : ''}</Text>
+
+          {/* Stars — earned when a parent approves a finished task */}
+          <View style={styles.starsCard}>
+            <View style={styles.starsIcon}><Star color={'#E8A93B'} size={22} fill={'#E8A93B'} /></View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.starsCount}>{home?.stars ?? 0} stars</Text>
+              <Text style={styles.starsSub}>
+                {home && home.week_earned > 0 ? `${home.week_earned} earned this week` : 'Finish a task to earn stars'}
+              </Text>
+            </View>
+          </View>
 
           {/* Your tasks */}
           <View style={styles.sectionHead}>
@@ -159,7 +170,11 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   badgeText: { fontFamily: 'Inter_800ExtraBold', fontSize: 10, letterSpacing: 0.4, textTransform: 'uppercase', color: ui.orangeText },
   signOut: { width: 40, height: 40, borderRadius: 99, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, alignItems: 'center', justifyContent: 'center' },
   scroll: { padding: 20, paddingBottom: 60 },
-  hello: { fontFamily: 'PlayfairDisplay_700Bold', fontSize: 32, letterSpacing: -0.5, color: ui.text, marginTop: 6, marginBottom: 22 },
+  hello: { fontFamily: 'PlayfairDisplay_700Bold', fontSize: 32, letterSpacing: -0.5, color: ui.text, marginTop: 6, marginBottom: 18 },
+  starsCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: ui.card, borderRadius: 18, borderWidth: 1, borderColor: ui.line, padding: 16, marginBottom: 24 },
+  starsIcon: { width: 42, height: 42, borderRadius: 12, backgroundColor: '#FEF6E6', alignItems: 'center', justifyContent: 'center' },
+  starsCount: { fontFamily: 'Inter_800ExtraBold', fontSize: 18, color: ui.text },
+  starsSub: { fontFamily: 'Inter_500Medium', fontSize: 12.5, color: ui.muted, marginTop: 2 },
   sectionHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
   sectionTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 18, letterSpacing: -0.2, color: ui.text },
   card: { backgroundColor: ui.card, borderRadius: 20, borderWidth: 1, borderColor: ui.line, paddingHorizontal: 16 },
