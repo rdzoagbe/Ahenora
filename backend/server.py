@@ -4052,7 +4052,7 @@ async def family_invite(payload: InviteIn, user=Depends(require_user)):
     # in the client: a restricted young-person account is for 13+ only. The 13
     # floor is the hard rule (no under-13 independent account); 25 is a sane
     # ceiling for a dependent still in the household.
-    if payload.is_teen and (payload.age is None or not (13 <= int(payload.age) <= 25)):
+    if payload.is_teen and (payload.age is None or not (13 <= int(payload.age) <= 17)):
         raise HTTPException(status_code=400, detail="A restricted account is for ages 13 to 25.")
 
     existing = await database["family_invites"].find_one(
@@ -4594,8 +4594,10 @@ async def teen_finish_task(card_id: str, teen=Depends(require_teen)):
     # A teen marks it done — but the star waits for a parent to approve (unlike
     # a young kid, who auto-earns). Record who finished it so the parent's
     # approval list can show it and credit the right teen.
+    # Never reset a task a parent already approved — the $ne guard makes
+    # re-ticking idempotent, so it can't be re-approved for extra stars.
     await database["cards"].update_one(
-        {"card_id": card_id}, {"$set": {
+        {"card_id": card_id, "teen_star_status": {"$ne": "approved"}}, {"$set": {
             "status": "DONE", "completed_at": utcnow(),
             "completed_by_user_id": user["user_id"],
             "completed_by_name": user.get("name") or "",
@@ -4629,30 +4631,29 @@ async def teen_approvals(user=Depends(require_user)):
 async def resolve_teen_approval(card_id: str, payload: TeenApprovalIn, user=Depends(require_user)):
     """Approve (award the star to the teen) or dismiss a finished teen task."""
     database = get_db()
-    card = await database["cards"].find_one(
+    new_status = "approved" if payload.approve else "declined"
+    # Claim the pending card atomically: the status flip IS the guard, so two
+    # near-simultaneous taps can't both award the star (only the first matches).
+    claim = await database["cards"].update_one(
         {"card_id": card_id, "family_id": user["family_id"], "teen_star_status": "pending"},
-        {"_id": 0})
-    if not card:
+        {"$set": {"teen_star_status": new_status, "updated_at": utcnow()}})
+    if claim.matched_count == 0:
         raise HTTPException(status_code=404, detail="Nothing to approve")
 
     if payload.approve:
         # Credit the teen who finished it — resolve their member row from the
         # user_id recorded at completion.
+        card = await database["cards"].find_one(
+            {"card_id": card_id, "family_id": user["family_id"]}, {"_id": 0})
         teen_member = await database["family_members"].find_one(
-            {"family_id": user["family_id"], "user_id": card.get("completed_by_user_id")},
+            {"family_id": user["family_id"], "user_id": (card or {}).get("completed_by_user_id")},
             {"_id": 0})
         stars = max(1, min(int(payload.stars or 1), 20))
         if teen_member:
             await award_stars_to_member(
                 database, user["family_id"], teen_member["member_id"], stars,
-                card.get("title") or "Task approved",
+                (card or {}).get("title") or "Task approved",
                 {"family_id": user["family_id"], "user_id": user["user_id"], "name": user.get("name")})
-        new_status = "approved"
-    else:
-        new_status = "declined"
-
-    await database["cards"].update_one(
-        {"card_id": card_id}, {"$set": {"teen_star_status": new_status, "updated_at": utcnow()}})
     return {"ok": True, "status": new_status}
 
 
