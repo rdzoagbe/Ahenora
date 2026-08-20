@@ -1272,11 +1272,10 @@ export default function Kitchen() {
                 seeing 7 concrete dinners sells Premium far better than a lock
                 icon. Adding to the planner is what prompts the upgrade. */}
             {mealLocked ? (
-              <View style={styles.mealActions}>
-                <PressScale testID="meal-suggest" onPress={openSuggest} style={styles.histBtn}>
-                  <Sparkles color={ui.lavenderText} size={18} />
-                </PressScale>
-              </View>
+              <PressScale testID="meal-suggest" onPress={openSuggest} style={styles.ideasCta}>
+                <Sparkles color={ui.lavenderText} size={18} />
+                <Text style={styles.ideasCtaText}>{t('meal_ideas_cta')}</Text>
+              </PressScale>
             ) : null}
 
             <PremiumPreviewBanner />
@@ -1284,8 +1283,9 @@ export default function Kitchen() {
             {/* Actions get their own wrapping row so "Sync to list" is never cut off. */}
             {!mealLocked ? (
               <View style={styles.mealActions}>
-                <PressScale testID="meal-suggest" onPress={openSuggest} style={styles.histBtn}>
+                <PressScale testID="meal-suggest" onPress={openSuggest} style={styles.ideasCta}>
                   <Sparkles color={ui.lavenderText} size={18} />
+                  <Text style={styles.ideasCtaText}>{t('meal_ideas_cta')}</Text>
                 </PressScale>
                 <PressScale testID="meal-history" onPress={openMealHistory} style={styles.histBtn}>
                   <History color={ui.muted} size={18} />
@@ -2336,6 +2336,10 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   secHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 22, marginBottom: 12 },
   secRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   histBtn: { width: 34, height: 34, borderRadius: 99, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.card, alignItems: 'center', justifyContent: 'center' },
+  // Prominent, labelled call-to-action for the shopping-list meal ideas — now
+  // one of the two main ways users get recipes, so it leads the row.
+  ideasCta: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 11, borderRadius: 99, backgroundColor: ui.lavender, flexGrow: 1, justifyContent: 'center' },
+  ideasCtaText: { color: ui.lavenderText, fontFamily: 'Inter_700Bold', fontSize: 14 },
   histRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, borderTopWidth: 1, borderTopColor: ui.line },
   histTitle: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 15 },
   histSub: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, marginTop: 2 },
