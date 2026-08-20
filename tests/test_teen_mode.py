@@ -152,6 +152,25 @@ class TeenMode(unittest.TestCase):
         u = asyncio.run(self.db["users"].find_one({"user_id": "u_x"}))
         self.assertTrue(u.get("is_teen"))
 
+    def test_parent_approves_teen_star(self):
+        """Teen ticks done -> pending -> parent approves -> teen gets the star."""
+        card = self._card(type="TASK", title="Wash the car", assignee="Ama", shared=False)
+        teen = asyncio.run(server.require_teen(authorization=f"Bearer {self.teen_token}"))
+        asyncio.run(server.teen_finish_task(card_id=card["card_id"], teen=teen))
+        # Shows up in the parent's approval list.
+        appr = asyncio.run(server.teen_approvals(user=dict(PARENT)))
+        titles = {a["title"] for a in appr["approvals"]}
+        self.assertIn("Wash the car", titles)
+        # Parent approves -> a star lands on the teen's member row.
+        asyncio.run(server.resolve_teen_approval(
+            card_id=card["card_id"], payload=server.TeenApprovalIn(approve=True, stars=1),
+            user=dict(PARENT)))
+        m = asyncio.run(self.db["family_members"].find_one({"member_id": "m_t"}))
+        self.assertEqual(int(m.get("stars") or 0), 1)
+        # No longer pending.
+        appr2 = asyncio.run(server.teen_approvals(user=dict(PARENT)))
+        self.assertNotIn("Wash the car", {a["title"] for a in appr2["approvals"]})
+
     def test_teen_accept_retires_managed_child_profile(self):
         """Becoming a teen removes the matching managed child profile so the
         person isn't listed (or billed) twice."""

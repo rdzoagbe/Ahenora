@@ -3648,7 +3648,7 @@ async def award_stars_to_member(
     member = await database["family_members"].find_one(
         {"member_id": member_id, "family_id": family_id}, {"_id": 0}
     )
-    if not member or str(member.get("role", "")).lower() != "child":
+    if not member or str(member.get("role", "")).lower() not in ("child", "teen"):
         return None
 
     # Roll the weekly meter first so a star earned in a fresh week counts toward
@@ -4577,9 +4577,69 @@ async def teen_finish_task(card_id: str, teen=Depends(require_teen)):
         {"card_id": card_id, "family_id": user["family_id"]}, {"_id": 0})
     if not card or not _teen_can_see(card, name, user.get("user_id")):
         raise HTTPException(status_code=404, detail="Task not found")
+    # A teen marks it done — but the star waits for a parent to approve (unlike
+    # a young kid, who auto-earns). Record who finished it so the parent's
+    # approval list can show it and credit the right teen.
     await database["cards"].update_one(
-        {"card_id": card_id}, {"$set": {"status": "DONE", "updated_at": utcnow()}})
+        {"card_id": card_id}, {"$set": {
+            "status": "DONE", "completed_at": utcnow(),
+            "completed_by_user_id": user["user_id"],
+            "completed_by_name": user.get("name") or "",
+            "teen_star_status": "pending", "updated_at": utcnow()}})
     return {"ok": True}
+
+
+class TeenApprovalIn(BaseModel):
+    approve: bool = True
+    stars: int = 1
+
+
+@app.get("/api/family/teen-approvals")
+async def teen_approvals(user=Depends(require_user)):
+    """Tasks a teen finished that are waiting for a parent to award the star."""
+    database = get_db()
+    rows = []
+    async for card in database["cards"].find(
+        {"family_id": user["family_id"], "teen_star_status": "pending"}, {"_id": 0}):
+        rows.append({
+            "card_id": card["card_id"],
+            "title": card.get("title") or "",
+            "teen_name": card.get("completed_by_name") or card.get("assignee") or "",
+            "completed_at": iso(card.get("completed_at")),
+        })
+    rows.sort(key=lambda r: (r["completed_at"] is None, r["completed_at"] or ""), reverse=True)
+    return {"approvals": rows}
+
+
+@app.post("/api/family/teen-approvals/{card_id}")
+async def resolve_teen_approval(card_id: str, payload: TeenApprovalIn, user=Depends(require_user)):
+    """Approve (award the star to the teen) or dismiss a finished teen task."""
+    database = get_db()
+    card = await database["cards"].find_one(
+        {"card_id": card_id, "family_id": user["family_id"], "teen_star_status": "pending"},
+        {"_id": 0})
+    if not card:
+        raise HTTPException(status_code=404, detail="Nothing to approve")
+
+    if payload.approve:
+        # Credit the teen who finished it — resolve their member row from the
+        # user_id recorded at completion.
+        teen_member = await database["family_members"].find_one(
+            {"family_id": user["family_id"], "user_id": card.get("completed_by_user_id")},
+            {"_id": 0})
+        stars = max(1, min(int(payload.stars or 1), 20))
+        if teen_member:
+            await award_stars_to_member(
+                database, user["family_id"], teen_member["member_id"], stars,
+                card.get("title") or "Task approved",
+                {"family_id": user["family_id"], "user_id": user["user_id"], "name": user.get("name")})
+        new_status = "approved"
+    else:
+        new_status = "declined"
+
+    await database["cards"].update_one(
+        {"card_id": card_id}, {"$set": {"teen_star_status": new_status, "updated_at": utcnow()}})
+    return {"ok": True, "status": new_status}
 
 
 @app.post("/api/kid/chores/{card_id}/done")
