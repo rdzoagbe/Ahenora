@@ -596,6 +596,7 @@ async def _gemini_generate(contents, system: str = "", temperature: float = None
                 _gemini_state["model"] = name
             _gemini_state["last_error"] = None
             _gemini_state["errors"].pop(name, None)
+            await _bump_metric("ai_call_ok")
             return (response.text or "").strip()
         except Exception as exc:  # noqa: BLE001 — classified below
             _gemini_state["last_error"] = f"{name}: {exc}"[:300]
@@ -604,9 +605,11 @@ async def _gemini_generate(contents, system: str = "", temperature: float = None
             _gemini_state["errors"][name] = summarize_ai_error(str(exc))
             last_error = exc
             if not should_try_next_model(str(exc)):
+                await _bump_metric("ai_call_error")
                 raise
             log.warning("gemini model %s unavailable (%s), trying next candidate",
                         name, _gemini_state["errors"][name])
+    await _bump_metric("ai_call_error")
     raise last_error if last_error else RuntimeError("no gemini model candidates")
 
 
@@ -8976,7 +8979,25 @@ class SupportContactIn(BaseModel):
 ALLOWED_EVENTS = {
     "feed_open", "scan_used", "card_created", "vault_added", "vault_shared",
     "kids_open", "calendar_open", "onboarding_done", "calendar_import_cancelled",
+    # AI reliability: bumped server-side from the central Gemini path so the
+    # Metrics screen can show a real success rate, not just a live probe.
+    "ai_call_ok", "ai_call_error",
 }
+
+
+async def _bump_metric(name: str) -> None:
+    """Fire-and-forget daily counter for `name` in metrics_daily. Never raises —
+    telemetry must not break the feature it measures."""
+    try:
+        database = get_db()
+        today = utcnow().strftime("%Y-%m-%d")
+        await database["metrics_daily"].update_one(
+            {"date": today, "name": name},
+            {"$inc": {"count": 1}},
+            upsert=True,
+        )
+    except Exception:
+        pass
 
 
 class MetricEventIn(BaseModel):

@@ -8,7 +8,7 @@ import { PressScale } from '../src/components/PressScale';
 import { AmbientBackground } from '../src/components/AmbientBackground';
 import { useUI, UIColors } from '../src/components/Kit';
 import { useStore } from '../src/store';
-import { api, MetricRow, VersionAdoption, PlanAdoption, FunnelSummary } from '../src/api';
+import { api, MetricRow, VersionAdoption, PlanAdoption, FunnelSummary, AiHealth } from '../src/api';
 import { logger } from '../src/logger';
 
 // Admin-only screen — plain English labels are fine (only the owner sees it).
@@ -34,6 +34,7 @@ export default function MetricsScreen() {
   const [adoption, setAdoption] = useState<VersionAdoption | null>(null);
   const [plans, setPlans] = useState<PlanAdoption | null>(null);
   const [funnel, setFunnel] = useState<FunnelSummary | null>(null);
+  const [aiHealth, setAiHealth] = useState<AiHealth | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -56,6 +57,8 @@ export default function MetricsScreen() {
     api.getPlanAdoption().then(setPlans).catch((e) => logger.warn('plan adoption load failed', e?.message || e));
     // The activation + growth funnel — the "make the launch stick" scoreboard.
     api.getMetricsFunnel(30).then(setFunnel).catch((e) => logger.warn('funnel load failed', e?.message || e));
+    // probe=0 (default) — free, reports configured/plumbing state, no token cost.
+    api.getAiHealth().then(setAiHealth).catch((e) => logger.warn('ai health load failed', e?.message || e));
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -184,6 +187,59 @@ export default function MetricsScreen() {
           ) : (
             <Text style={styles.muted}>No funnel data yet — fills in as people sign up and invite.</Text>
           )}
+
+          {/* AI health — every AI feature degrades gracefully, so a broken
+              model can fail silently for weeks. This makes it visible: live
+              plumbing state + a real success rate from the central call path. */}
+          <Text style={styles.sectionTitle}>AI health</Text>
+          {(() => {
+            const ok = stats.eventTotals.get('ai_call_ok') || 0;
+            const err = stats.eventTotals.get('ai_call_error') || 0;
+            const total = ok + err;
+            const rate = total > 0 ? Math.round((100 * ok) / total) : null;
+            const ready = aiHealth ? aiHealth.client_ready : null;
+            return (
+              <>
+                <View style={styles.card}>
+                  <View style={[styles.eventRow, { borderTopWidth: 0 }]}>
+                    <Text style={styles.eventLabel}>Status</Text>
+                    <Text style={[styles.eventCount, ready === false && { color: '#C2410C' }, ready === true && { color: '#0A7D52' }]}>
+                      {ready === null ? '—' : ready ? 'Ready' : 'Not ready'}
+                    </Text>
+                  </View>
+                  <View style={styles.eventRow}>
+                    <Text style={styles.eventLabel}>Success rate (14 days)</Text>
+                    <Text style={styles.eventCount}>
+                      {rate === null ? 'no calls yet' : `${rate}% · ${ok}/${total}`}
+                    </Text>
+                  </View>
+                  <View style={styles.eventRow}>
+                    <Text style={styles.eventLabel}>Failed calls (14 days)</Text>
+                    <Text style={[styles.eventCount, err > 0 && { color: '#C2410C' }]}>{err}</Text>
+                  </View>
+                  {aiHealth?.model_resolved ? (
+                    <View style={styles.eventRow}>
+                      <Text style={styles.eventLabel}>Active model</Text>
+                      <Text style={styles.eventCount}>{aiHealth.model_resolved}</Text>
+                    </View>
+                  ) : null}
+                  {aiHealth?.last_error ? (
+                    <View style={styles.eventRow}>
+                      <Text style={styles.eventLabel}>Last error</Text>
+                      <Text style={[styles.eventCount, { color: '#C2410C', flexShrink: 1, textAlign: 'right' }]} numberOfLines={2}>
+                        {aiHealth.last_error}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+                <Text style={styles.hint}>
+                  Covers every AI feature (recipes, scans, suggestions) — they all
+                  route through one call path. A dropping success rate or a
+                  standing last-error means users are hitting failures.
+                </Text>
+              </>
+            );
+          })()}
 
           {/* Where users are — web can't buy through the store */}
           <Text style={styles.sectionTitle}>Where users are</Text>

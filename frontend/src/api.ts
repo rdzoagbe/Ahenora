@@ -744,6 +744,19 @@ export interface FunnelSummary {
   active_7d: number;
 }
 
+export interface AiHealth {
+  key_configured: boolean;
+  library_loaded: boolean;
+  client_ready: boolean;
+  sdk: string;
+  model_env: string | null;
+  model_resolved: string | null;
+  model_candidates: string[];
+  last_error: string | null;
+  model_errors: Record<string, string>;
+  features: string[];
+}
+
 export interface VersionAdoption {
   current_runtime: string;
   store_version: string;
@@ -1054,6 +1067,10 @@ export const api = {
     request<{ days: number; rows: MetricRow[] }>(`/metrics/summary?days=${days}`),
   getMetricsFunnel: (days = 30) =>
     request<FunnelSummary>(`/metrics/funnel?days=${days}`),
+  // AI reliability probe (admin). probe=0 is free (reports configured state);
+  // probe=1 does one tiny real generation. The Metrics screen uses probe=0.
+  getAiHealth: () =>
+    request<AiHealth>('/health/ai'),
   getVersionAdoption: () =>
     request<VersionAdoption>('/admin/version-adoption'),
   getPlanAdoption: () =>
