@@ -1176,7 +1176,10 @@ async def send_invite_email(to_email: str, invite_url: str, inviter_name: str, i
         f"{text_lead} — "
         "one shared place for schedules, tasks, the kids' stuff and important documents, so it "
         "doesn't all sit in one person's head.\n\n"
-        f"Join their household:\n{invite_url}\n\n"
+        "Get the app on Google Play, then sign in with this email — your invitation will be "
+        "waiting for you inside:\n"
+        "https://play.google.com/store/apps/details?id=com.householdcoo.app\n\n"
+        f"On an iPhone or a computer, open it in your browser instead:\n{invite_url}\n\n"
         "If you were not expecting this invitation, you can ignore this email."
     )
 
@@ -1189,12 +1192,15 @@ async def send_invite_email(to_email: str, invite_url: str, inviter_name: str, i
       one shared place for schedules, tasks, the kids' stuff and important documents, so it
       doesn't all sit in one person's head. Join in and share the load.
     </p>
-    <a href="{safe_invite_url}" style="display:inline-block; background:#f26a1b; color:#ffffff; text-decoration:none; font-weight:700; padding:12px 22px; border-radius:10px; font-size:15px;">
-      Join their household
+    <a href="https://play.google.com/store/apps/details?id=com.householdcoo.app" style="display:inline-block; background:#f26a1b; color:#ffffff; text-decoration:none; font-weight:700; padding:12px 22px; border-radius:10px; font-size:15px;">
+      Get the app on Google Play
     </a>
-    <p style="color:#747b7c; font-size:13px; line-height:1.5; margin:22px 0 0;">
-      Or open this link on your phone:<br />
-      <span style="word-break:break-all;">{safe_invite_url}</span>
+    <p style="color:#4a4f50; font-size:14px; line-height:1.55; margin:18px 0 0;">
+      Download the app and sign in with <strong>{safe_to}</strong> — your invitation
+      will be waiting for you inside. Just accept it to join.
+    </p>
+    <p style="color:#747b7c; font-size:13px; line-height:1.5; margin:14px 0 0;">
+      On an iPhone or a computer? <a href="{safe_invite_url}" style="color:#b8410a;">Open {safe_app_name} in your browser</a> instead.
     </p>
     <p style="color:#a0a6a7; font-size:12px; line-height:1.5; margin:20px 0 0;">
       If you weren't expecting this, you can safely ignore this email.
