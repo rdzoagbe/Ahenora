@@ -1343,6 +1343,14 @@ export const api = {
   // which a child does not have. Clears the forgotten PIN on success.
   exitKidForgotPin: (email: string, password: string) =>
     request<{ ok: boolean }>('/kid/exit-forgot-pin', { method: 'POST', body: { email, password } }),
+  // Parent side: teen tasks awaiting a star, and approving/dismissing them.
+  getTeenApprovals: () =>
+    request<{ approvals: { card_id: string; title: string; teen_name: string; completed_at: string | null }[] }>('/family/teen-approvals'),
+  resolveTeenApproval: (cardId: string, approve: boolean, stars = 1) =>
+    request<{ ok: boolean; status: string }>(`/family/teen-approvals/${cardId}`, {
+      method: 'POST', body: { approve, stars },
+    }),
+
   // Teen mode — the only endpoints a teen account can reach.
   teenMe: () => request<{ user_id: string; name: string; email?: string; family_id: string; language: string; is_teen: true }>('/teen/me'),
   teenHome: () => request<TeenHome>('/teen/home'),

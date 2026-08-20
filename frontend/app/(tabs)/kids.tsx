@@ -133,6 +133,9 @@ export default function Kids() {
   const router = useRouter();
 
   const [members, setMembers] = useState<FamilyMember[]>([]);
+  // Teen-finished tasks waiting for a parent to award the star.
+  const [teenApprovals, setTeenApprovals] = useState<{ card_id: string; title: string; teen_name: string }[]>([]);
+  const [approvingId, setApprovingId] = useState<string | null>(null);
 
   // Which day the quick-adds are being credited to. Null means today, which
   // is the ordinary case; picking a day is how a parent fills in a missed one.
@@ -342,6 +345,7 @@ export default function Kids() {
       // page no longer needs the rewards catalogue at all.
       const m = await api.familyMembers();
       setMembers(m);
+      api.getTeenApprovals().then((r) => setTeenApprovals(r.approvals)).catch(() => setTeenApprovals([]));
 
       const currentChildStillExists = selectedChild && m.some((x) => x.member_id === selectedChild);
       const firstChild = m.find((x) => x.role?.toLowerCase() === 'child');
@@ -484,6 +488,19 @@ export default function Kids() {
     setTeenAge(15);
     setTeenEmail('');
     setShowTeenInvite(true);
+  };
+
+  const resolveApproval = async (cardId: string, approve: boolean) => {
+    setApprovingId(cardId);
+    try {
+      await api.resolveTeenApproval(cardId, approve, 1);
+      setTeenApprovals((prev) => prev.filter((a) => a.card_id !== cardId));
+      if (approve) { showToast(t('teen_star_awarded'), 'success'); load(); }
+    } catch (e: any) {
+      showToast(e?.message || t('set_error'), 'error');
+    } finally {
+      setApprovingId(null);
+    }
   };
 
   // Upgrade a 13+ child to their own account. The age picker already floors at
@@ -1100,6 +1117,39 @@ export default function Kids() {
                   <Text style={[styles.childChipText, { color: ui.text }]}>{t('kids_add_child')}</Text>
                 </PressScale>
               </ScrollView>
+
+              {/* Teen tasks waiting for a star — the parent-approval loop */}
+              {teenApprovals.length > 0 ? (
+                <Card style={styles.approvalsCard}>
+                  <Text style={styles.approvalsTitle}>{t('teen_approvals_title')}</Text>
+                  <Text style={styles.approvalsSub}>{t('teen_approvals_sub')}</Text>
+                  {teenApprovals.map((a) => (
+                    <View key={a.card_id} style={styles.approvalRow}>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={styles.approvalTask} numberOfLines={1}>{a.title}</Text>
+                        <Text style={styles.approvalWho}>{a.teen_name}</Text>
+                      </View>
+                      <PressScale
+                        testID={`teen-dismiss-${a.card_id}`}
+                        onPress={() => resolveApproval(a.card_id, false)}
+                        disabled={approvingId === a.card_id}
+                        style={styles.approvalDismiss}
+                      >
+                        <Text style={styles.approvalDismissText}>{t('teen_dismiss')}</Text>
+                      </PressScale>
+                      <PressScale
+                        testID={`teen-approve-${a.card_id}`}
+                        onPress={() => resolveApproval(a.card_id, true)}
+                        disabled={approvingId === a.card_id}
+                        style={styles.approvalApprove}
+                      >
+                        <Star color="#fff" size={14} fill="#fff" />
+                        <Text style={styles.approvalApproveText}>{t('teen_approve')}</Text>
+                      </PressScale>
+                    </View>
+                  ))}
+                </Card>
+              ) : null}
 
               {activeChild ? (
                 <>
@@ -2140,6 +2190,16 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   iconBtn: { padding: 9, borderRadius: 9999, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft },
   label: { color: ui.muted, fontFamily: 'Inter_800ExtraBold', fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginTop: 14, marginBottom: 8 },
   input: { borderWidth: 1, borderColor: ui.line, borderRadius: 16, paddingHorizontal: 15, paddingVertical: 13, fontFamily: 'Inter_500Medium', fontSize: 16, color: ui.text, backgroundColor: ui.soft },
+  approvalsCard: { backgroundColor: ui.card, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(245,101,25,0.28)', padding: 16, marginBottom: 14 },
+  approvalsTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 16, color: ui.text, letterSpacing: -0.2 },
+  approvalsSub: { fontFamily: 'Inter_500Medium', fontSize: 12.5, color: ui.muted, marginTop: 2, marginBottom: 10 },
+  approvalRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 9, borderTopWidth: 1, borderTopColor: '#F1EFEA' },
+  approvalTask: { fontFamily: 'Inter_700Bold', fontSize: 14.5, color: ui.text },
+  approvalWho: { fontFamily: 'Inter_500Medium', fontSize: 12, color: ui.muted, marginTop: 1 },
+  approvalDismiss: { paddingHorizontal: 12, paddingVertical: 9, borderRadius: 99, backgroundColor: ui.bg },
+  approvalDismissText: { fontFamily: 'Inter_600SemiBold', fontSize: 12.5, color: ui.muted },
+  approvalApprove: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 99, backgroundColor: ui.orange },
+  approvalApproveText: { fontFamily: 'Inter_800ExtraBold', fontSize: 12.5, color: '#fff' },
   giveAccountBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, borderRadius: 16, paddingVertical: 13, paddingHorizontal: 16, marginTop: 10 },
   giveAccountText: { fontFamily: 'Inter_700Bold', fontSize: 14, color: ui.text },
   teenHelp: { fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 19, color: ui.muted, marginTop: 4, marginBottom: 14 },
