@@ -52,6 +52,7 @@ function RootNavigator() {
         <Stack.Screen name="pricing" />
         <Stack.Screen name="metrics" />
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="teen" />
         <Stack.Screen name="+not-found" />
       </Stack>
     </>

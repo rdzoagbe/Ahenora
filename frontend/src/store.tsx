@@ -8,7 +8,7 @@ import React, {
 } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useColorScheme } from 'react-native';
-import { api, User, tokenStore, Subscription, resetOfflineState, setUnauthorizedHandler, warmupBackend } from './api';
+import { api, User, tokenStore, Subscription, resetOfflineState, setUnauthorizedHandler, warmupBackend, isTeenModeError } from './api';
 import { clearSnapshots } from './offline';
 import { Lang, SUPPORTED_LANGS, translate } from './i18n';
 import { AppearanceMode, AppTheme, getTheme, resolveAppearance, ResolvedAppearance } from './theme';
@@ -129,7 +129,22 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      const u = await api.me();
+      let u: User;
+      try {
+        u = await api.me();
+      } catch (e: any) {
+        // A teen token is refused by /auth/me (require_user). Recognise that
+        // and hydrate from the teen endpoint instead, flagged is_teen so the
+        // app routes to the restricted teen view.
+        if (isTeenModeError(e)) {
+          const t = await api.teenMe();
+          u = { ...t, is_teen: true, onboarding_completed: true } as User;
+          setUser(u);
+          if (SUPPORTED_LANGS.includes(u.language as Lang)) setLangState(u.language as Lang);
+          return; // teens have no subscription surface to load
+        }
+        throw e;
+      }
       setUser(u);
 
       if (SUPPORTED_LANGS.includes(u.language as Lang)) {

@@ -200,6 +200,10 @@ export default function TabLayout() {
     if (!loading && !user) {
       router.replace('/');
     }
+    // A teen must never sit inside the full app — bounce to the teen view.
+    if (!loading && user?.is_teen) {
+      router.replace('/teen');
+    }
   }, [loading, user, router]);
 
   // First-run onboarding: only for a brand-new account (flag explicitly false),
