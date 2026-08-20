@@ -832,17 +832,39 @@ export default function Kitchen() {
   // Push an AI recipe's ingredients onto the shopping list. The name is what
   // you shop by, so the plain ingredient name (not the scaled amount) is what
   // lands in the list — categorised the same way scanned items are.
-  const addGeneratedToList = useCallback(async (ings: AiIngredient[]) => {
+  // "Add what you're missing" on a generated recipe. For an ad-hoc recipe
+  // (asked via "Ask the AI", saveToPlanner=true) this does the whole job the
+  // user expects: add the ingredients to the shopping list, save the dish into
+  // the meal planner so the recipe isn't lost, then jump to the shopping list
+  // so the result is visible (previously it added silently behind the modal and
+  // looked like nothing happened). A recipe opened from a planned meal is
+  // already saved, so it only adds + navigates.
+  const addGeneratedToList = useCallback(async (ings: AiIngredient[], mealTitle: string, saveToPlanner: boolean) => {
     const names = ings.map((i) => i.name).filter(Boolean);
     if (!names.length) return;
     try {
       await api.bulkAddShopping(names, names.map((n) => categoriseShoppingItem(n) || undefined));
       setShopItems(await api.listShopping().catch(() => []));
-      showToast(t('cook_added_to_list'), 'success');
+
+      // Save the dish to the planner (today), unless the planner is Premium-
+      // locked or it already lives there. Non-fatal — the list add stands.
+      if (saveToPlanner && !mealLocked && mealTitle) {
+        const today = new Date().toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+        try {
+          const created = await api.createMeal({ day: today, title: mealTitle, ingredients: names });
+          setMeals((prev) => [...prev, created]);
+        } catch { /* keep going — the ingredients are already on the list */ }
+      }
+
+      // Make the outcome visible: close the recipe and show the shopping list.
+      setCookingRecipe(null);
+      setMenuOpen(false);
+      setView('shop');
+      showToast(t('cook_added_to_list', { n: names.length }), 'success');
     } catch (e: any) {
       showToast(e?.message || t('cook_failed'), 'error');
     }
-  }, [showToast, t]);
+  }, [mealLocked, showToast, t]);
 
   // The household diet toggle. Persists server-side and is what makes the
   // weekly suggestions and new recipes come out vegetarian by default.
@@ -1790,7 +1812,7 @@ export default function Kitchen() {
                         <PressScale
                           testID="cook-add-generated"
                           accessibilityRole="button"
-                          onPress={() => addGeneratedToList(generated.ingredients!)}
+                          onPress={() => addGeneratedToList(generated.ingredients!, cookingRecipe.title, !cookingRecipe.mealId)}
                           style={styles.addMissingBtn}
                         >
                           <ShoppingCart color={ui.orange} size={15} />
