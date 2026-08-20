@@ -880,6 +880,9 @@ def public_user(user: dict) -> dict:
         # screen asks for the password when there is one, a typed confirmation
         # when there is not.
         "has_password": bool(user.get("password_hash")),
+        # A restricted 13-17 account — the frontend routes these straight to the
+        # teen view instead of the full app.
+        "is_teen": bool(user.get("is_teen")),
     }
 
 
@@ -1457,8 +1460,11 @@ def public_chore(c: dict) -> dict:
 
 
 def invite_member_role(invite: Optional[dict]) -> str:
-    """The role a joining member gets: the free-text relationship the inviter
-    wrote ("Grandma", "Nanny", "Brother"...) or the historical default."""
+    """The role a joining member gets: 'teen' for a teen invite (a restricted
+    account), otherwise the free-text relationship the inviter wrote ("Grandma",
+    "Nanny", "Brother"...) or the historical default."""
+    if (invite or {}).get("is_teen"):
+        return "teen"
     raw = re.sub(r"\s+", " ", str((invite or {}).get("relationship") or "").strip())
     return raw[:32] or "Parent"
 
@@ -1540,6 +1546,13 @@ async def add_user_to_family_if_needed(database: Any, user: dict, family_id: str
             detail="This household already has two parents, so this invite can no "
                    "longer be accepted as a co-parent.",
         )
+
+    # A teen is a restricted account: flag it on the user doc so require_user
+    # can fail their token closed everywhere (the same deny-by-default the kid
+    # session gets), and they only ever reach the /api/teen/* allowlist.
+    if (role or "").strip().lower() == "teen":
+        await database["users"].update_one(
+            {"user_id": user["user_id"]}, {"$set": {"is_teen": True, "updated_at": utcnow()}})
 
     member = {
         "member_id": new_id("member"),
@@ -1941,6 +1954,14 @@ async def require_user(authorization: str = Header(default=""),
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
 
+    # A teen has a real login but a restricted world. Like a kid session, their
+    # token is worthless on every parent route — refusing it here, in the one
+    # gate all ~150 endpoints share, means a teen can never read the family
+    # calendar, vault, other members or settings, even on an endpoint written
+    # next month. Teens live entirely on the /api/teen/* allowlist below.
+    if user.get("is_teen"):
+        raise HTTPException(status_code=403, detail="teen_mode")
+
     # Daily-active tracking, throttled to one write per user per day.
     today = utcnow().strftime("%Y-%m-%d")
     if user.get("last_active_day") != today:
@@ -1997,6 +2018,11 @@ class InviteIn(BaseModel):
     # Free text from the inviter: "Grandma", "Nanny", "Brother"... Becomes
     # the member's displayed role when the invite is accepted.
     relationship: Optional[str] = None
+    # A 13-17 teen gets their own login but a restricted, teen-only view.
+    # Under-13 never reaches here — they stay a managed child profile (no
+    # account, no email), which is what keeps us COPPA / Families-policy clean.
+    is_teen: Optional[bool] = False
+    age: Optional[int] = None
 
 
 class LanguageIn(BaseModel):
@@ -3933,13 +3959,15 @@ async def _enforce_member_slot_limit(database, user) -> None:
         )
 
 
-def _new_invite_doc(user, email=None, relationship=None, label=None) -> dict:
+def _new_invite_doc(user, email=None, relationship=None, label=None, is_teen=False, age=None) -> dict:
     now = utcnow()
     return {
         "invite_id": new_id("invite"),
         "family_id": user["family_id"],
         "email": email,
         "relationship": relationship,
+        "is_teen": bool(is_teen),
+        "age": age,
         "label": label,
         "token": secrets.token_urlsafe(24),
         "status": "pending",
@@ -4022,7 +4050,8 @@ async def family_invite(payload: InviteIn, user=Depends(require_user)):
             )
             invite["relationship"] = relationship
     else:
-        invite = _new_invite_doc(user, email=email, relationship=relationship)
+        invite = _new_invite_doc(user, email=email, relationship=relationship,
+                                 is_teen=bool(payload.is_teen), age=payload.age)
         await database["family_invites"].insert_one(invite)
 
     public = public_invite(invite)
@@ -4236,6 +4265,29 @@ class KidForgotPinIn(BaseModel):
     password: str
 
 
+async def require_teen(authorization: str = Header(default="")):
+    """Resolve a teen's own login, and prove it IS a teen account.
+
+    The mirror image of require_user's teen refusal: this is the only gate the
+    /api/teen/* allowlist trusts, and it accepts a token ONLY if the account is
+    flagged is_teen. So a normal parent token can't reach teen routes and a
+    teen token can't reach anything else — the two never overlap.
+    """
+    database = get_db()
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing bearer token")
+    token = authorization.replace("Bearer ", "", 1).strip()
+    session = await database["user_sessions"].find_one(
+        {"token_hash": sha256(token), "expires_at": {"$gt": utcnow()}}, {"_id": 0})
+    if not session or session.get("kind") == "child":
+        raise HTTPException(status_code=401, detail="Invalid or expired session")
+    user = await database["users"].find_one({"user_id": session["user_id"]}, {"_id": 0})
+    if not user or not user.get("is_teen"):
+        raise HTTPException(status_code=403, detail="Not a teen account")
+    member = await _member_for_user(database, user["family_id"], user)
+    return {"user": user, "member": member, "family_id": user["family_id"]}
+
+
 async def require_child(authorization: str = Header(default="")):
     """Resolve a kid-mode session to the child it belongs to."""
     database = get_db()
@@ -4421,6 +4473,80 @@ async def kid_home(child=Depends(require_child)):
             "week_earned": max(0, int(member.get("week_earned") or 0)),
             "weekend_goal_reward_id": member.get("weekend_goal_reward_id"),
             "chores": chores, "rewards": rewards, "owed": owed}
+
+
+# ── Teen mode: a restricted 13-17 account. The ONLY endpoints a teen token can
+#    reach (require_user refuses it everywhere else). Everything here is scoped
+#    server-side to the teen themselves — never the family's calendar, vault,
+#    other members or settings. ──
+
+def _teen_can_see(card: dict, teen_name: str, teen_user_id: str) -> bool:
+    """A teen sees a card only if it is family-wide (shared) OR theirs — assigned
+    to them, or created by them. Another member's private card never matches."""
+    if card.get("shared") is True:
+        return True
+    if (card.get("assignee") or "").strip().lower() == teen_name:
+        return True
+    if teen_user_id and card.get("created_by_user_id") == teen_user_id:
+        return True
+    return False
+
+
+@app.get("/api/teen/me")
+async def teen_me(teen=Depends(require_teen)):
+    """The teen's own basic identity — no family roster, no other members."""
+    user = teen["user"]
+    return {"user_id": user["user_id"], "name": user.get("name") or "",
+            "email": user.get("email"), "family_id": user["family_id"],
+            "language": user.get("language", "en"), "is_teen": True}
+
+
+@app.get("/api/teen/home")
+async def teen_home(teen=Depends(require_teen)):
+    """A teen's whole world in one call: their tasks and their agenda.
+
+    Tasks = jobs with their name on them (or that they created). Agenda =
+    family-wide events plus their own. Scoped on the server, so a teen device
+    is never even sent a parent-private item to filter out.
+    """
+    database = get_db()
+    user = teen["user"]
+    name = (user.get("name") or "").strip().lower()
+    uid = user.get("user_id")
+
+    tasks, agenda = [], []
+    async for card in database["cards"].find({"family_id": user["family_id"]}, {"_id": 0}):
+        if not _teen_can_see(card, name, uid):
+            continue
+        ctype = (card.get("type") or "").upper()
+        row = {"card_id": card["card_id"], "title": card.get("title") or "",
+               "due_date": iso(card.get("due_date")),
+               "status": card.get("status"), "assignee": card.get("assignee")}
+        if ctype == "EVENT":
+            agenda.append(row)
+        else:  # TASK / note-style → the teen's to-dos
+            if card.get("status") != "DONE":
+                tasks.append(row)
+    tasks.sort(key=lambda c: (c["due_date"] is None, c["due_date"] or ""))
+    agenda.sort(key=lambda c: (c["due_date"] is None, c["due_date"] or ""))
+
+    return {"name": user.get("name") or "", "tasks": tasks, "agenda": agenda}
+
+
+@app.post("/api/teen/tasks/{card_id}/done")
+async def teen_finish_task(card_id: str, teen=Depends(require_teen)):
+    """Tick off one of the teen's own tasks — only a card they can see and only
+    ever to DONE. Ownership is re-checked here, never trusted from the client."""
+    database = get_db()
+    user = teen["user"]
+    name = (user.get("name") or "").strip().lower()
+    card = await database["cards"].find_one(
+        {"card_id": card_id, "family_id": user["family_id"]}, {"_id": 0})
+    if not card or not _teen_can_see(card, name, user.get("user_id")):
+        raise HTTPException(status_code=404, detail="Task not found")
+    await database["cards"].update_one(
+        {"card_id": card_id}, {"$set": {"status": "DONE", "updated_at": utcnow()}})
+    return {"ok": True}
 
 
 @app.post("/api/kid/chores/{card_id}/done")
