@@ -136,6 +136,8 @@ export default function Kids() {
   // Teen-finished tasks waiting for a parent to award the star.
   const [teenApprovals, setTeenApprovals] = useState<{ card_id: string; title: string; teen_name: string }[]>([]);
   const [approvingId, setApprovingId] = useState<string | null>(null);
+  // The teen-accounts hint flashes briefly on open, then gets out of the way.
+  const [showTeenHint, setShowTeenHint] = useState(true);
 
   // Which day the quick-adds are being credited to. Null means today, which
   // is the ordinary case; picking a day is how a parent fills in a missed one.
@@ -408,7 +410,13 @@ export default function Kids() {
     setRefreshing(false);
   }, [load]);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusEffect(useCallback(() => {
+    load();
+    // Flash the teen-accounts hint on open, then hide it after 2s.
+    setShowTeenHint(true);
+    const timer = setTimeout(() => setShowTeenHint(false), 2000);
+    return () => clearTimeout(timer);
+  }, [load]));
 
   // Reload in place after a capture from the global "+".
   useEffect(() => {
@@ -1126,11 +1134,14 @@ export default function Kids() {
                 </PressScale>
               </ScrollView>
 
-              {/* New-feature nudge: teens get their own account. */}
+              {/* New-feature nudge: teens get their own account. Flashes for a
+                  couple of seconds on open, then hides so it never nags. */}
+              {showTeenHint ? (
               <View style={styles.teenHint}>
                 <Text style={styles.teenHintNew}>NEW</Text>
                 <Text style={styles.teenHintText}>{t('kids_teen_hint')}</Text>
               </View>
+              ) : null}
 
               {/* Teen tasks waiting for a star — the parent-approval loop */}
               {teenApprovals.length > 0 ? (
