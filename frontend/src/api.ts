@@ -1061,8 +1061,11 @@ export const api = {
     request('/auth/language', { method: 'PATCH', body: { language } }),
   completeOnboarding: () =>
     request<User>('/auth/complete-onboarding', { method: 'POST' }),
-  invite: (email: string, relationship?: string) => {
+  invite: (email: string, relationship?: string, opts?: { is_teen?: boolean; age?: number }) => {
     invalidateUsageCaches();
+    const body: Record<string, unknown> = { email };
+    if (relationship) body.relationship = relationship;
+    if (opts?.is_teen) { body.is_teen = true; if (opts.age != null) body.age = opts.age; }
     return request<{
       ok: boolean;
       sent: boolean;
@@ -1075,7 +1078,7 @@ export const api = {
       email_error?: string;
     }>('/family/invite', {
       method: 'POST',
-      body: relationship ? { email, relationship } : { email },
+      body,
     });
   },
   createInviteLink: (opts?: { relationship?: string; label?: string }) => {

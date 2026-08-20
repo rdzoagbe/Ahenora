@@ -121,3 +121,45 @@ class TeenMode(unittest.TestCase):
         """A teen invite yields role 'teen', and accepting flags the user."""
         invite = {"is_teen": True, "relationship": None}
         self.assertEqual(server.invite_member_role(invite), "teen")
+
+    # --- fail-open provisioning fixes (from the code review) -------------
+    def test_backend_rejects_out_of_range_teen_age(self):
+        """The age gate is enforced server-side, not just in the client."""
+        for bad in (None, 9, 12, 18, 25):
+            with self.assertRaises(server.HTTPException) as ctx:
+                asyncio.run(server.family_invite(
+                    server.InviteIn(email="kid@x.com", is_teen=True, age=bad), user=dict(PARENT)))
+            self.assertEqual(ctx.exception.status_code, 400)
+        # A valid teen age goes through (email delivery may fail in tests; the
+        # invite doc is what matters — no exception from validation).
+        try:
+            asyncio.run(server.family_invite(
+                server.InviteIn(email="teen@x.com", is_teen=True, age=15), user=dict(PARENT)))
+        except server.HTTPException as e:
+            self.assertNotEqual(e.status_code, 400)  # not an age rejection
+
+    def test_add_user_flags_existing_member_as_teen(self):
+        """An already-existing member accepting a teen role is still locked
+        down — is_teen is set before the early return (fail closed)."""
+        asyncio.run(self.db["users"].insert_one({
+            "user_id": "u_x", "family_id": "fam1", "name": "Sam", "email": "sam@x.com"}))
+        asyncio.run(self.db["family_members"].insert_one({
+            "member_id": "m_x", "family_id": "fam1", "user_id": "u_x",
+            "name": "Sam", "role": "Parent"}))
+        asyncio.run(server.add_user_to_family_if_needed(
+            self.db, {"user_id": "u_x", "family_id": "fam1", "name": "Sam", "email": "sam@x.com"},
+            "fam1", role="teen"))
+        u = asyncio.run(self.db["users"].find_one({"user_id": "u_x"}))
+        self.assertTrue(u.get("is_teen"))
+
+    def test_teen_accept_retires_managed_child_profile(self):
+        """Becoming a teen removes the matching managed child profile so the
+        person isn't listed (or billed) twice."""
+        asyncio.run(self.db["family_members"].insert_one({
+            "member_id": "m_child", "family_id": "fam1", "user_id": None,
+            "name": "Ama", "role": "Child", "pin_hash": "x"}))
+        asyncio.run(server.add_user_to_family_if_needed(
+            self.db, {"user_id": "u_t", "family_id": "fam1", "name": "Ama", "email": "ama@x.com"},
+            "fam1", role="teen"))
+        child = asyncio.run(self.db["family_members"].find_one({"member_id": "m_child"}))
+        self.assertIsNone(child)  # retired
