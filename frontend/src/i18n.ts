@@ -2,6 +2,31 @@ export type Lang = 'en' | 'es' | 'fr' | 'de';
 
 export const SUPPORTED_LANGS: Lang[] = ['en', 'es', 'fr', 'de'];
 
+/**
+ * The device / browser language, mapped to one we support (else 'en').
+ *
+ * JS-only on purpose — navigator.languages on web, the Intl-resolved locale on
+ * native Hermes — so it needs no native module and ships over-the-air. Used as
+ * the FIRST-open default: a French browser opens the app in French, until the
+ * signed-in account's own saved language takes over.
+ */
+export function detectDeviceLang(): Lang {
+  const candidates: string[] = [];
+  try {
+    const nav: any = typeof navigator !== 'undefined' ? navigator : null;
+    if (nav) {
+      if (Array.isArray(nav.languages)) candidates.push(...nav.languages);
+      if (nav.language) candidates.push(nav.language);
+    }
+  } catch { /* ignore */ }
+  try { candidates.push(Intl.DateTimeFormat().resolvedOptions().locale); } catch { /* ignore */ }
+  for (const c of candidates) {
+    const primary = String(c || '').toLowerCase().split(/[-_]/)[0];
+    if ((SUPPORTED_LANGS as string[]).includes(primary)) return primary as Lang;
+  }
+  return 'en';
+}
+
 export const LANG_NAMES: Record<Lang, string> = {
   en: 'English',
   es: 'Español',

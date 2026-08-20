@@ -2004,6 +2004,7 @@ async def require_user(authorization: str = Header(default=""),
 class SessionIn(BaseModel):
     session_id: str
     invite_token: Optional[str] = None
+    language: Optional[str] = None  # device/browser language for a new account
 
 
 
@@ -2012,6 +2013,9 @@ class EmailRegisterIn(BaseModel):
     email: str
     password: str
     invite_token: Optional[str] = None
+    # The device/browser language the app opened in, so a new account is created
+    # in it (a French sign-up stays French on their next device too).
+    language: Optional[str] = None
 
 
 class EmailLoginIn(BaseModel):
@@ -2772,7 +2776,7 @@ async def exchange_session(payload: SessionIn):
             "name": name,
             "picture": picture,
             "family_id": family_id,
-            "language": "en",
+            "language": payload.language if payload.language in ("en", "es", "fr", "de") else "en",
             "onboarding_completed": False,
             "created_at": utcnow(),
             "updated_at": utcnow(),
@@ -3037,7 +3041,7 @@ async def register_email(payload: EmailRegisterIn):
         "picture": None,
         "password_hash": hash_password(password),
         "family_id": family_id,
-        "language": "en",
+        "language": payload.language if payload.language in ("en", "es", "fr", "de") else "en",
         "onboarding_completed": False,
         "created_at": utcnow(),
         "updated_at": utcnow(),

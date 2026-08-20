@@ -16,6 +16,7 @@ import { X, Mail, Check, ShieldCheck } from 'lucide-react-native';
 import { PressScale } from './PressScale';
 import { PasswordInput } from './PasswordInput';
 import { useStore } from '../store';
+import { detectDeviceLang } from '../i18n';
 import { logger } from '../logger';
 
 type Mode = 'signup' | 'login';
@@ -223,6 +224,7 @@ export function EmailAuthModal({ visible, onClose, onSuccess, inviteToken, initi
               email: trimmedEmail,
               password,
               invite_token: inviteToken || undefined,
+              language: detectDeviceLang(),
             })
           : await api.loginWithEmail({
               email: trimmedEmail,
