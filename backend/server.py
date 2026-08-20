@@ -1523,6 +1523,20 @@ async def _enforce_parent_limit(database: Any, family_id: str, relationship: Opt
 
 async def add_user_to_family_if_needed(database: Any, user: dict, family_id: str,
                                        role: Optional[str] = None):
+    is_teen_role = (role or "").strip().lower() == "teen"
+    # Set the restriction flag FIRST, before any early return: a teen who is
+    # already a family member must still be locked down (fail closed, not open).
+    if is_teen_role:
+        await database["users"].update_one(
+            {"user_id": user["user_id"]}, {"$set": {"is_teen": True, "updated_at": utcnow()}})
+        # Retire the managed child profile this teen is replacing — same name,
+        # no login — so they don't appear (or count) twice.
+        teen_name = (user.get("name") or "").strip().lower()
+        async for m in database["family_members"].find({"family_id": family_id}, {"_id": 0}):
+            if (m.get("role") or "").strip().lower() == "child" and not m.get("user_id") \
+               and (m.get("name") or "").strip().lower() == teen_name and teen_name:
+                await database["family_members"].delete_one({"member_id": m["member_id"]})
+
     existing = await database["family_members"].find_one(
         {
             "family_id": family_id,
@@ -1546,13 +1560,6 @@ async def add_user_to_family_if_needed(database: Any, user: dict, family_id: str
             detail="This household already has two parents, so this invite can no "
                    "longer be accepted as a co-parent.",
         )
-
-    # A teen is a restricted account: flag it on the user doc so require_user
-    # can fail their token closed everywhere (the same deny-by-default the kid
-    # session gets), and they only ever reach the /api/teen/* allowlist.
-    if (role or "").strip().lower() == "teen":
-        await database["users"].update_one(
-            {"user_id": user["user_id"]}, {"$set": {"is_teen": True, "updated_at": utcnow()}})
 
     member = {
         "member_id": new_id("member"),
@@ -4027,6 +4034,13 @@ async def family_invite(payload: InviteIn, user=Depends(require_user)):
     if not email or "@" not in email:
         raise HTTPException(status_code=400, detail="Valid email is required")
 
+    # The age gate is the COPPA/Families-policy line, so it is enforced HERE,
+    # not only in the client: a teen account exists for 13-17 only. Refusing a
+    # missing or out-of-range age server-side means no direct API call can mint
+    # a teen account for an under-13 (or with no age at all).
+    if payload.is_teen and (payload.age is None or not (13 <= int(payload.age) <= 17)):
+        raise HTTPException(status_code=400, detail="A teen account is for ages 13 to 17.")
+
     existing = await database["family_invites"].find_one(
         {
             "family_id": user["family_id"],
@@ -4041,14 +4055,22 @@ async def family_invite(payload: InviteIn, user=Depends(require_user)):
 
     if existing:
         invite = existing
+        updates = {}
         if relationship and invite.get("relationship") != relationship:
             # Re-sending with a (new) relationship refreshes it — the last
             # thing the inviter typed is what they meant.
+            updates["relationship"] = relationship
+        # Keep the teen flag/age in sync with THIS send. Without it, sending a
+        # teen invite to an address that already had a plain invite would reuse
+        # the old doc and silently drop is_teen — the restriction failing open.
+        if bool(invite.get("is_teen")) != bool(payload.is_teen) or invite.get("age") != payload.age:
+            updates["is_teen"] = bool(payload.is_teen)
+            updates["age"] = payload.age
+        if updates:
+            updates["updated_at"] = utcnow()
             await database["family_invites"].update_one(
-                {"invite_id": invite["invite_id"]},
-                {"$set": {"relationship": relationship, "updated_at": utcnow()}},
-            )
-            invite["relationship"] = relationship
+                {"invite_id": invite["invite_id"]}, {"$set": updates})
+            invite.update(updates)
     else:
         invite = _new_invite_doc(user, email=email, relationship=relationship,
                                  is_teen=bool(payload.is_teen), age=payload.age)
@@ -4484,6 +4506,10 @@ def _teen_can_see(card: dict, teen_name: str, teen_user_id: str) -> bool:
     """A teen sees a card only if it is family-wide (shared) OR theirs — assigned
     to them, or created by them. Another member's private card never matches."""
     if card.get("shared") is True:
+        return True
+    # A legacy card that predates the privacy model (no owner, no shared flag)
+    # is family-wide — same rule public_card uses — so teens see it too.
+    if card.get("shared") is None and card.get("created_by_user_id") is None:
         return True
     if (card.get("assignee") or "").strip().lower() == teen_name:
         return True
