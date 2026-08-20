@@ -1280,29 +1280,32 @@ export default function Kitchen() {
 
             <PremiumPreviewBanner />
 
-            {/* Actions get their own wrapping row so "Sync to list" is never cut off. */}
+            {/* Primary action: shopping-list meal ideas, full-width so it reads
+                as the headline way in. Secondary actions sit in their own row. */}
             {!mealLocked ? (
-              <View style={styles.mealActions}>
+              <>
                 <PressScale testID="meal-suggest" onPress={openSuggest} style={styles.ideasCta}>
                   <Sparkles color={ui.lavenderText} size={18} />
                   <Text style={styles.ideasCtaText}>{t('meal_ideas_cta')}</Text>
                 </PressScale>
-                <PressScale testID="meal-history" onPress={openMealHistory} style={styles.histBtn}>
-                  <History color={ui.muted} size={18} />
-                </PressScale>
-                {meals.length > 0 ? (
-                  <PressScale onPress={syncMealsToShopping} style={styles.clearBtn}>
-                    <Text style={styles.clearBtnText}>{t('vault_sync_to_list')}</Text>
+                <View style={styles.mealActions}>
+                  {meals.length > 0 ? (
+                    <PressScale onPress={syncMealsToShopping} style={styles.clearBtn}>
+                      <Text style={styles.clearBtnText}>{t('vault_sync_to_list')}</Text>
+                    </PressScale>
+                  ) : null}
+                  <PressScale testID="capture-recipe" onPress={openCapture} style={[styles.clearBtn, { backgroundColor: ui.orangeSoft, borderWidth: 1, borderColor: ui.orange }]}>
+                    <Camera color={ui.orange} size={14} />
+                    <Text style={[styles.clearBtnText, { color: ui.orangeText }]}>{t('capture_chip')}</Text>
                   </PressScale>
-                ) : null}
-                <PressScale testID="capture-recipe" onPress={openCapture} style={[styles.clearBtn, { backgroundColor: ui.orangeSoft, borderWidth: 1, borderColor: ui.orange }]}>
-                  <Camera color={ui.orange} size={14} />
-                  <Text style={[styles.clearBtnText, { color: ui.orangeText }]}>{t('capture_chip')}</Text>
-                </PressScale>
-                <PressScale onPress={() => setShowMealAdd(true)} style={[styles.clearBtn, { backgroundColor: ui.lavender }]}>
-                  <Text style={[styles.clearBtnText, { color: ui.lavenderText }]}>{t('vault_add_short')}</Text>
-                </PressScale>
-              </View>
+                  <PressScale onPress={() => setShowMealAdd(true)} style={[styles.clearBtn, { backgroundColor: ui.lavender }]}>
+                    <Text style={[styles.clearBtnText, { color: ui.lavenderText }]}>{t('vault_add_short')}</Text>
+                  </PressScale>
+                  <PressScale testID="meal-history" onPress={openMealHistory} style={styles.histBtn}>
+                    <History color={ui.muted} size={18} />
+                  </PressScale>
+                </View>
+              </>
             ) : null}
             {/* The legend for the camera — same rule as the shopping page:
                 one line saying exactly what it does. */}
@@ -2338,7 +2341,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   histBtn: { width: 34, height: 34, borderRadius: 99, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.card, alignItems: 'center', justifyContent: 'center' },
   // Prominent, labelled call-to-action for the shopping-list meal ideas — now
   // one of the two main ways users get recipes, so it leads the row.
-  ideasCta: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 11, borderRadius: 99, backgroundColor: ui.lavender, flexGrow: 1, justifyContent: 'center' },
+  ideasCta: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 14, borderRadius: 16, backgroundColor: ui.lavender, alignSelf: 'stretch', justifyContent: 'center', marginBottom: 10 },
   ideasCtaText: { color: ui.lavenderText, fontFamily: 'Inter_700Bold', fontSize: 14 },
   histRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, borderTopWidth: 1, borderTopColor: ui.line },
   histTitle: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 15 },
