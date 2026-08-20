@@ -5,7 +5,7 @@ import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from 'expo-router';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
-import { Plus, X, Trash2, ShoppingCart, Check, UtensilsCrossed, ChevronDown, ChevronLeft, History, RotateCcw, Sparkles, Sun, ChefHat, Clock, AlertTriangle, Search, Minus, BookOpen, Camera, Image as ImageIcon , ListChecks, Leaf, Shuffle} from 'lucide-react-native';
+import { Plus, X, Trash2, ShoppingCart, Check, UtensilsCrossed, ChevronDown, ChevronLeft, History, RotateCcw, Sparkles, Sun, ChefHat, Clock, AlertTriangle, Search, Minus, Camera, Image as ImageIcon , ListChecks, Leaf, Shuffle} from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { PressScale } from '../../src/components/PressScale';
@@ -1295,10 +1295,6 @@ export default function Kitchen() {
                     <Text style={styles.clearBtnText}>{t('vault_sync_to_list')}</Text>
                   </PressScale>
                 ) : null}
-                <PressScale testID="browse-recipes" onPress={() => setShowBrowse(true)} style={[styles.clearBtn, { backgroundColor: ui.soft }]}>
-                  <BookOpen color={ui.text} size={14} />
-                  <Text style={[styles.clearBtnText, { color: ui.text }]}>{t('browse_recipes')}</Text>
-                </PressScale>
                 <PressScale testID="capture-recipe" onPress={openCapture} style={[styles.clearBtn, { backgroundColor: ui.orangeSoft, borderWidth: 1, borderColor: ui.orange }]}>
                   <Camera color={ui.orange} size={14} />
                   <Text style={[styles.clearBtnText, { color: ui.orangeText }]}>{t('capture_chip')}</Text>
