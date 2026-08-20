@@ -4038,7 +4038,11 @@ async def family_invite_link(payload: Optional[InviteLinkIn] = Body(None), user=
 async def family_invite(payload: InviteIn, user=Depends(require_user)):
     database = get_db()
     await _enforce_member_slot_limit(database, user)
-    await _enforce_parent_limit(database, user["family_id"], payload.relationship)
+    # A teen is never a parent, so it must skip the co-parent cap. Without this,
+    # a teen invite (no relationship set) is read as a co-parent and rejected
+    # once the household already has two parents.
+    if not payload.is_teen:
+        await _enforce_parent_limit(database, user["family_id"], payload.relationship)
 
     email = payload.email.strip().lower()
     if not email or "@" not in email:

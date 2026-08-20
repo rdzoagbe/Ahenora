@@ -117,6 +117,22 @@ class TeenMode(unittest.TestCase):
             asyncio.run(server.teen_finish_task(card_id=theirs["card_id"], teen=teen))
         self.assertEqual(ctx.exception.status_code, 404)
 
+    def test_teen_invite_skips_parent_cap(self):
+        """A teen invite must not be blocked by the two-parent limit — a teen
+        is never a parent. (Regression: it was read as a co-parent and 400'd.)"""
+        # A second parent, so the household is already at the 2-parent cap.
+        asyncio.run(self.db["family_members"].insert_one({
+            "member_id": "m_p2", "family_id": "fam1", "user_id": "u_p2",
+            "name": "Awo", "role": "co-parent", "stars": 0}))
+        try:
+            asyncio.run(server.family_invite(
+                server.InviteIn(email="newteen@x.com", is_teen=True, age=15),
+                user=dict(PARENT)))
+        except server.HTTPException as e:
+            # Any non-parent-cap error (e.g. email delivery) is fine; a 409/400
+            # about "two parents" is the bug this guards against.
+            self.assertNotIn("two parents", str(e.detail).lower())
+
     def test_invite_marks_teen_role_and_flag(self):
         """A teen invite yields role 'teen', and accepting flags the user."""
         invite = {"is_teen": True, "relationship": None}
