@@ -4034,12 +4034,12 @@ async def family_invite(payload: InviteIn, user=Depends(require_user)):
     if not email or "@" not in email:
         raise HTTPException(status_code=400, detail="Valid email is required")
 
-    # The age gate is the COPPA/Families-policy line, so it is enforced HERE,
-    # not only in the client: a teen account exists for 13-17 only. Refusing a
-    # missing or out-of-range age server-side means no direct API call can mint
-    # a teen account for an under-13 (or with no age at all).
-    if payload.is_teen and (payload.age is None or not (13 <= int(payload.age) <= 17)):
-        raise HTTPException(status_code=400, detail="A teen account is for ages 13 to 17.")
+    # The age gate is the COPPA/Families-policy line, enforced HERE and not only
+    # in the client: a restricted young-person account is for 13+ only. The 13
+    # floor is the hard rule (no under-13 independent account); 25 is a sane
+    # ceiling for a dependent still in the household.
+    if payload.is_teen and (payload.age is None or not (13 <= int(payload.age) <= 25)):
+        raise HTTPException(status_code=400, detail="A restricted account is for ages 13 to 25.")
 
     existing = await database["family_invites"].find_one(
         {
@@ -4539,6 +4539,11 @@ async def teen_home(teen=Depends(require_teen)):
     user = teen["user"]
     name = (user.get("name") or "").strip().lower()
     uid = user.get("user_id")
+    # Their star balance — teens earn stars like the younger kids, but a parent
+    # approves the star after the teen ticks the task (no auto-award here).
+    member = teen.get("member") or {}
+    if member:
+        member = await roll_week_if_stale(database, member)
 
     tasks, agenda = [], []
     async for card in database["cards"].find({"family_id": user["family_id"]}, {"_id": 0}):
@@ -4556,7 +4561,9 @@ async def teen_home(teen=Depends(require_teen)):
     tasks.sort(key=lambda c: (c["due_date"] is None, c["due_date"] or ""))
     agenda.sort(key=lambda c: (c["due_date"] is None, c["due_date"] or ""))
 
-    return {"name": user.get("name") or "", "tasks": tasks, "agenda": agenda}
+    return {"name": user.get("name") or "", "tasks": tasks, "agenda": agenda,
+            "stars": int(member.get("stars") or 0),
+            "week_earned": max(0, int(member.get("week_earned") or 0))}
 
 
 @app.post("/api/teen/tasks/{card_id}/done")

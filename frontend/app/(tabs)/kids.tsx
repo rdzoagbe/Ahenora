@@ -23,6 +23,7 @@ import {
   Utensils,
   Check,
   Minus,
+  ChevronRight,
   Timer,
   DollarSign,
   RotateCcw,
@@ -155,10 +156,10 @@ export default function Kids() {
   const [showManageSheet, setShowManageSheet] = useState(false);
   const [manageName, setManageName] = useState('');
   const [managePin, setManagePin] = useState('');
-  // Give a 13-17 child their own account (teen mode): the age gate is the
-  // compliance line — under-13 can't get an independent account (COPPA), so
-  // they stay a managed profile here.
-  const [teenAge, setTeenAge] = useState('');
+  // Give a 13+ child their own account (teen mode): the age picker floors at
+  // 13 — the compliance line — so under-13 can never get an independent account.
+  const [showTeenInvite, setShowTeenInvite] = useState(false);
+  const [teenAge, setTeenAge] = useState(15);
   const [teenEmail, setTeenEmail] = useState('');
   const [teenSending, setTeenSending] = useState(false);
 
@@ -475,22 +476,27 @@ export default function Kids() {
     if (!activeChild) { showToast(t('kids_select_child_first'), 'error'); return; }
     setManageName(activeChild.name);
     setManagePin('');
-    setTeenAge('');
-    setTeenEmail('');
     setShowManageSheet(true);
   };
 
-  // Upgrade a 13-17 child to their own teen account: the age is the gate.
+  const openTeenInvite = () => {
+    if (!activeChild) { showToast(t('kids_select_child_first'), 'error'); return; }
+    setTeenAge(15);
+    setTeenEmail('');
+    setShowTeenInvite(true);
+  };
+
+  // Upgrade a 13+ child to their own account. The age picker already floors at
+  // 13; this re-checks the 13-25 range before sending.
   const inviteTeen = async () => {
-    const age = parseInt(teenAge, 10);
-    if (!age || age < 13) { showToast(t('teen_invite_under13'), 'error'); return; }
-    if (age > 17) { showToast(t('teen_invite_range'), 'error'); return; }
+    const age = teenAge;
+    if (age < 13 || age > 25) { showToast(t('teen_invite_range'), 'error'); return; }
     const email = teenEmail.trim().toLowerCase();
     if (!email.includes('@') || email.length < 4) { showToast(t('set_invite_valid_email'), 'error'); return; }
     setTeenSending(true);
     try {
       await api.invite(email, undefined, { is_teen: true, age });
-      setShowManageSheet(false);
+      setShowTeenInvite(false);
       showToast(t('teen_invite_sent'), 'success');
     } catch (e: any) {
       showToast(e?.message || t('set_error'), 'error');
@@ -1157,6 +1163,17 @@ export default function Kids() {
                     <Plus color={ui.orange} size={15} />
                     <Text style={styles.assignTaskText}>{t('kids_assign_task', { name: activeChild.name })}</Text>
                   </PressScale>
+                  {/* Old enough for their own account (13+)? One clearly-labelled
+                      button, not buried in a menu. */}
+                  <PressScale
+                    testID="kids-give-account"
+                    accessibilityRole="button"
+                    onPress={openTeenInvite}
+                    style={styles.giveAccountBtn}
+                  >
+                    <Text style={styles.giveAccountText}>{t('teen_invite_title')}</Text>
+                    <ChevronRight color={ui.muted} size={16} />
+                  </PressScale>
                   {/* This week: the meter that gates the weekend treat. The
                       saved bank sits in the card above; this is the fresh run
                       at a weekend payoff that resets each Monday. */}
@@ -1625,6 +1642,44 @@ export default function Kids() {
         </View>
       </KeyboardAwareBottomSheet>
 
+      {/* Give them their own account (13+) */}
+      <KeyboardAwareBottomSheet visible={showTeenInvite} onClose={() => setShowTeenInvite(false)} contentStyle={styles.sheet}>
+        <View style={styles.sheetHeader}>
+          <Text style={styles.sheetTitle}>{t('teen_invite_title')}</Text>
+          <PressScale accessibilityLabel={t('close')} testID="close-teen-invite" onPress={() => setShowTeenInvite(false)} style={styles.iconBtn}>
+            <X color={ui.text} size={20} />
+          </PressScale>
+        </View>
+        <Text style={styles.teenHelp}>{t('teen_invite_help')}</Text>
+
+        <Text style={styles.label}>{t('teen_invite_age')}</Text>
+        <View style={styles.ageStepper}>
+          <PressScale testID="teen-age-minus" onPress={() => setTeenAge((a) => Math.max(13, a - 1))} disabled={teenAge <= 13} style={[styles.ageStepBtn, teenAge <= 13 && { opacity: 0.35 }]}>
+            <Minus color={ui.text} size={18} />
+          </PressScale>
+          <Text style={styles.ageValue}>{teenAge}</Text>
+          <PressScale testID="teen-age-plus" onPress={() => setTeenAge((a) => Math.min(25, a + 1))} disabled={teenAge >= 25} style={[styles.ageStepBtn, teenAge >= 25 && { opacity: 0.35 }]}>
+            <Plus color={ui.text} size={18} />
+          </PressScale>
+        </View>
+
+        <Text style={styles.label}>{t('teen_invite_email')}</Text>
+        <TextInput
+          testID="teen-email" value={teenEmail} onChangeText={setTeenEmail}
+          keyboardType="email-address" autoCapitalize="none" autoCorrect={false}
+          placeholder="teen@email.com" placeholderTextColor={ui.muted}
+          style={styles.input} returnKeyType="done"
+        />
+
+        <PressScale
+          testID="teen-invite-send" onPress={inviteTeen}
+          disabled={teenSending || !teenEmail.trim()}
+          style={[styles.teenSendBtn, (teenSending || !teenEmail.trim()) && { opacity: 0.5 }]}
+        >
+          <Text style={styles.teenSendText}>{teenSending ? '…' : t('teen_invite_send')}</Text>
+        </PressScale>
+      </KeyboardAwareBottomSheet>
+
       {/* Manage child sheet */}
       <KeyboardAwareBottomSheet visible={showManageSheet} onClose={() => setShowManageSheet(false)} contentStyle={styles.sheet}>
         <View style={styles.sheetHeader}>
@@ -1672,40 +1727,6 @@ export default function Kids() {
             <Text style={styles.inlineLinkText}>{t('kids_remove_pin')}</Text>
           </PressScale>
         ) : null}
-
-        {/* Give a 13-17 child their own teen account. Age is the compliance
-            gate: under-13 can't get an independent account, so this refuses it. */}
-        <View style={styles.teenBox}>
-          <Text style={styles.teenTitle}>{t('teen_invite_title')}</Text>
-          <Text style={styles.teenHelp}>{t('teen_invite_help')}</Text>
-          <View style={styles.teenRow}>
-            <View style={{ width: 72 }}>
-              <Text style={styles.label}>{t('teen_invite_age')}</Text>
-              <TextInput
-                testID="teen-age" value={teenAge}
-                onChangeText={(v) => setTeenAge(cleanNumber(v).slice(0, 2))}
-                keyboardType="number-pad" placeholder="15"
-                placeholderTextColor={ui.muted} style={styles.input} maxLength={2}
-              />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.label}>{t('teen_invite_email')}</Text>
-              <TextInput
-                testID="teen-email" value={teenEmail} onChangeText={setTeenEmail}
-                keyboardType="email-address" autoCapitalize="none" autoCorrect={false}
-                placeholder="teen@email.com" placeholderTextColor={ui.muted}
-                style={styles.input} returnKeyType="done"
-              />
-            </View>
-          </View>
-          <PressScale
-            testID="teen-invite-send" onPress={inviteTeen}
-            disabled={teenSending || !teenAge.trim() || !teenEmail.trim()}
-            style={[styles.teenSendBtn, (teenSending || !teenAge.trim() || !teenEmail.trim()) && { opacity: 0.5 }]}
-          >
-            <Text style={styles.teenSendText}>{teenSending ? '…' : t('teen_invite_send')}</Text>
-          </PressScale>
-        </View>
 
         <View style={styles.sheetFooter}>
           <PressScale testID="manage-child-delete" onPress={confirmRemoveChild} disabled={saving} style={[styles.deleteBtn, saving && { opacity: 0.5 }]}>
@@ -2119,12 +2140,14 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   iconBtn: { padding: 9, borderRadius: 9999, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft },
   label: { color: ui.muted, fontFamily: 'Inter_800ExtraBold', fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginTop: 14, marginBottom: 8 },
   input: { borderWidth: 1, borderColor: ui.line, borderRadius: 16, paddingHorizontal: 15, paddingVertical: 13, fontFamily: 'Inter_500Medium', fontSize: 16, color: ui.text, backgroundColor: ui.soft },
-  teenBox: { marginTop: 22, backgroundColor: ui.orangeSoft, borderRadius: 18, borderWidth: 1, borderColor: 'rgba(245,101,25,0.2)', padding: 16 },
-  teenTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 15, color: ui.text, letterSpacing: -0.2 },
-  teenHelp: { fontFamily: 'Inter_500Medium', fontSize: 12.5, lineHeight: 18, color: ui.muted, marginTop: 5, marginBottom: 12 },
-  teenRow: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
-  teenSendBtn: { backgroundColor: ui.orange, borderRadius: 14, paddingVertical: 13, alignItems: 'center', marginTop: 12 },
-  teenSendText: { color: '#fff', fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
+  giveAccountBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, borderRadius: 16, paddingVertical: 13, paddingHorizontal: 16, marginTop: 10 },
+  giveAccountText: { fontFamily: 'Inter_700Bold', fontSize: 14, color: ui.text },
+  teenHelp: { fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 19, color: ui.muted, marginTop: 4, marginBottom: 14 },
+  ageStepper: { flexDirection: 'row', alignItems: 'center', gap: 18, alignSelf: 'flex-start', backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, borderRadius: 14, paddingHorizontal: 10, paddingVertical: 6 },
+  ageStepBtn: { width: 40, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: ui.bg },
+  ageValue: { fontFamily: 'Inter_800ExtraBold', fontSize: 22, color: ui.text, minWidth: 34, textAlign: 'center' },
+  teenSendBtn: { backgroundColor: ui.orange, borderRadius: 14, paddingVertical: 15, alignItems: 'center', marginTop: 18 },
+  teenSendText: { color: '#fff', fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
   sheetFooter: { flexDirection: 'row', gap: 12, marginTop: 22 },
   cancelBtn: { flex: 1, borderWidth: 1, borderColor: ui.line, borderRadius: 18, paddingVertical: 15, alignItems: 'center' },
   cancelText: { color: ui.muted, fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
