@@ -1126,6 +1126,12 @@ export default function Kids() {
                 </PressScale>
               </ScrollView>
 
+              {/* New-feature nudge: teens get their own account. */}
+              <View style={styles.teenHint}>
+                <Text style={styles.teenHintNew}>NEW</Text>
+                <Text style={styles.teenHintText}>{t('kids_teen_hint')}</Text>
+              </View>
+
               {/* Teen tasks waiting for a star — the parent-approval loop */}
               {teenApprovals.length > 0 ? (
                 <Card style={styles.approvalsCard}>
@@ -2213,6 +2219,9 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   teenPageText: { fontFamily: 'Inter_600SemiBold', fontSize: 14, lineHeight: 20, color: ui.orangeText },
   teenChipBadge: { backgroundColor: ui.orangeSoft, borderRadius: 99, paddingHorizontal: 7, paddingVertical: 2, marginLeft: 6 },
   teenChipBadgeText: { fontFamily: 'Inter_800ExtraBold', fontSize: 9, letterSpacing: 0.3, textTransform: 'uppercase' },
+  teenHint: { flexDirection: 'row', alignItems: 'center', gap: 9, backgroundColor: ui.orangeSoft, borderRadius: 14, borderWidth: 1, borderColor: 'rgba(245,101,25,0.22)', paddingVertical: 10, paddingHorizontal: 12, marginBottom: 14 },
+  teenHintNew: { fontFamily: 'Inter_800ExtraBold', fontSize: 10, letterSpacing: 0.4, color: '#fff', backgroundColor: ui.orange, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 99, overflow: 'hidden' },
+  teenHintText: { flex: 1, fontFamily: 'Inter_600SemiBold', fontSize: 12.5, color: ui.orangeText, lineHeight: 17 },
   approvalsCard: { backgroundColor: ui.card, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(245,101,25,0.28)', padding: 16, marginBottom: 14 },
   approvalsTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 16, color: ui.text, letterSpacing: -0.2 },
   approvalsSub: { fontFamily: 'Inter_500Medium', fontSize: 12.5, color: ui.muted, marginTop: 2, marginBottom: 10 },

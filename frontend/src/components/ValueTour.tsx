@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { CalendarDays, Home, ShieldCheck, Star, UtensilsCrossed } from 'lucide-react-native';
+import { CalendarDays, Home, ShieldCheck, Star, UtensilsCrossed, UserPlus } from 'lucide-react-native';
 
 import { PressScale } from './PressScale';
 import { useStore } from '../store';
@@ -15,6 +15,7 @@ const SLIDES = [
   { Icon: CalendarDays, titleKey: 'tour2_t', subKey: 'tour2_s' },
   { Icon: UtensilsCrossed, titleKey: 'tour3_t', subKey: 'tour3_s' },
   { Icon: Star, titleKey: 'tour4_t', subKey: 'tour4_s' },
+  { Icon: UserPlus, titleKey: 'tour6_t', subKey: 'tour6_s' },
   { Icon: ShieldCheck, titleKey: 'tour5_t', subKey: 'tour5_s' },
 ] as const;
 
