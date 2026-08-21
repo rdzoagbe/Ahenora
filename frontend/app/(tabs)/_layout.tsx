@@ -184,9 +184,11 @@ function PhoneTabBar({ state, navigation, style, onAdd }: {
 
 // ─── Root layout ─────────────────────────────────────────────────────────────
 
-// Session-scoped guard so a new user is sent through onboarding at most once —
-// prevents any redirect loop if completing onboarding ever fails to persist.
-let onboardingRedirected = false;
+// Per-user guard so each new account is sent through onboarding at most once —
+// prevents a redirect loop if completing onboarding ever fails to persist, and
+// (keyed on the id rather than a single boolean) still onboards a *second* new
+// account that signs up in the same app session after the first signs out.
+let onboardingRedirectedFor: string | null = null;
 
 export default function TabLayout() {
   const { t, theme, user, loading, householdMenuOpen, closeHouseholdMenu } = useStore();
@@ -210,8 +212,8 @@ export default function TabLayout() {
   // and only once per app session. Missing/true flag never redirects, so
   // existing testers and old builds are unaffected.
   useEffect(() => {
-    if (!loading && user && user.onboarding_completed === false && !onboardingRedirected) {
-      onboardingRedirected = true;
+    if (!loading && user && user.onboarding_completed === false && onboardingRedirectedFor !== user.user_id) {
+      onboardingRedirectedFor = user.user_id;
       router.replace('/onboarding');
     }
   }, [loading, user, router]);

@@ -16,6 +16,7 @@ import {
 } from 'lucide-react-native';
 import { PressScale } from './PressScale';
 import { useStore } from '../store';
+import { localeFor } from '../utils/date';
 import { api, CardType, CapturedRecipe, ScanResult } from '../api';
 import { DOCUMENT_CATEGORIES, CATEGORY_STYLE } from '../documentCategories';
 import { categoriseShoppingItem, shoppingLabel } from '../shoppingCategories';
@@ -41,7 +42,7 @@ interface Props {
 type Phase = 'idle' | 'scanning' | 'confirm' | 'recipe' | 'error';
 
 export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
-  const { t, theme } = useStore();
+  const { t, theme, lang } = useStore();
   const [phase, setPhase] = useState<Phase>('idle');
   const [preview, setPreview] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -304,7 +305,7 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
                   ) : null}
                   {scan?.due_date ? (
                     <Text style={[styles.factText, { color: theme.colors.textMuted }]}>
-                      {t('cam_by_date', { date: new Date(scan.due_date).toLocaleDateString() })}
+                      {t('cam_by_date', { date: new Date(scan.due_date).toLocaleDateString(localeFor(lang)) })}
                     </Text>
                   ) : null}
                 </View>

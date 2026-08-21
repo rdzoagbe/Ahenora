@@ -9,6 +9,7 @@ import { Plus, X, Trash2, ShoppingCart, Check, UtensilsCrossed, ChevronDown, Che
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { PressScale } from '../../src/components/PressScale';
+import { localeFor } from '../../src/utils/date';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
 import AppToast from '../../src/components/AppToast';
 import { useToast } from '../../src/hooks/useToast';
@@ -129,12 +130,18 @@ export default function Kitchen() {
       if (mealRes.status === 'fulfilled') setMeals(mealRes.value);
       if (histRes.status === 'fulfilled') setShopHistory(histRes.value);
       if (dietRes.status === 'fulfilled') setHouseholdDiet(dietRes.value.diet);
+      // If every request failed (offline / server down), the empty states would
+      // otherwise read as "your kitchen is empty" — say it failed instead.
+      if ([shopRes, mealRes, histRes, dietRes].every((r) => r.status === 'rejected')) {
+        showToast(t('load_failed_pull'), 'error');
+      }
     } catch (e: any) {
       logger.warn('Kitchen load failed:', e?.message || e);
+      showToast(t('load_failed_pull'), 'error');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [showToast, t]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -427,7 +434,7 @@ export default function Kitchen() {
                 // saveMealPlan reads the live meals server-side, so save before
                 // clearing.
                 const dated = t('kitchen_auto_plan_name', {
-                  date: new Date().toLocaleDateString(),
+                  date: new Date().toLocaleDateString(localeFor(lang)),
                 });
                 planSaved = await api
                   .saveMealPlan(dated)

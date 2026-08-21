@@ -376,7 +376,13 @@ async function request<T = unknown>(
       // these it means "wrong credentials" — a mistyped password, or a child
       // fumbling their PIN — and signing the household out over a typo would
       // be absurd. A wrong kid PIN used to log the parent out entirely.
-      const CREDENTIAL_PATHS = ['/auth/', '/kid/session', '/kid/exit'];
+      // All /kid/ routes ride the short-lived kid session, and the kid screen
+      // owns its lifecycle: on a 401 it calls kidMode.leave() to restore the
+      // parent token and returns to the picker. If the GLOBAL handler fired
+      // here it would first clear the token, wipe the parent's snapshots, and
+      // null the store user — dumping a still-signed-in parent on the landing
+      // screen just because an overnight kid session lapsed. So exclude /kid/.
+      const CREDENTIAL_PATHS = ['/auth/', '/kid/'];
       const isCredentialCheck = CREDENTIAL_PATHS.some((p) => path.startsWith(p));
       if (res.status === 401 && !isCredentialCheck) {
         await tokenStore.clear().catch(() => undefined);
@@ -959,7 +965,11 @@ export interface Subscription {
   billing_cycle: BillingCycle;
   grandfathered: boolean;
   testing_window?: boolean;
+  // Announced billing cutover date (ISO). When set and in the future, the app
+  // shows a countdown instead of the plain free-preview notice.
+  billing_starts_at?: string | null;
   children_count?: number;
+  young_people_count?: number;
   updated_at: string;
   ai_scans_used: number;
   ai_scans_period_start: string;

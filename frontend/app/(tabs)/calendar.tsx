@@ -18,6 +18,9 @@ import { useStore } from '../../src/store';
 import { api, logEvent, CalendarImportResult, Card, Carpool } from '../../src/api';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { AddCardModal } from '../../src/components/AddCardModal';
+import AppToast from '../../src/components/AppToast';
+import { useToast } from '../../src/hooks/useToast';
+import { localeFor } from '../../src/utils/date';
 import { sendLocalNotification, syncCalendarNightly } from '../../src/notifications';
 import { cleanText, openExternal, parseDescription } from '../../src/eventDescription';
 
@@ -135,6 +138,7 @@ function groupByDay(cards: Card[], selectedDay: string | null) {
 
 export default function Calendar() {
   const { t, lang, dataVersion } = useStore();
+  const { toast, showToast } = useToast();
   const { isLocked, promptUpgrade } = usePremiumGate();
   const carpoolLocked = isLocked('carpool');
   const { width: windowWidth } = useWindowDimensions();
@@ -248,12 +252,19 @@ export default function Calendar() {
             .map((m) => m.name.trim().toLowerCase()),
         ));
       }
+      // The events (cards) are the calendar's core — if that call fails, "No
+      // events" is a lie even when the other three succeed. Flag it on the cards
+      // failure specifically, not only when all four fail.
+      if (cardsRes.status === 'rejected') {
+        showToast(t('load_failed_pull'), 'error');
+      }
     } catch (e) {
       logger.warn('calendar load failed', e);
+      showToast(t('load_failed_pull'), 'error');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [showToast, t]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -453,7 +464,7 @@ export default function Calendar() {
     setAddOpen(true);
   };
 
-  const locale = lang === 'es' ? 'es-ES' : lang === 'fr' ? 'fr-FR' : 'en-US';
+  const locale = localeFor(lang);
   const monthTitle = activeMonth.toLocaleDateString(locale, { month: 'long', year: 'numeric' });
 
   const formatDayFull = (day: string) => {
@@ -1093,9 +1104,14 @@ export default function Calendar() {
                     </View>
                     <PressScale
                   accessibilityRole="button"
-                  accessibilityLabel={t('a11y_delete')} onPress={async () => {
-                      setCarpools((prev) => prev.filter((c) => c.carpool_id !== cp.carpool_id));
-                      try { await api.deleteCarpool(cp.carpool_id); } catch { load(); }
+                  accessibilityLabel={t('a11y_delete')} onPress={() => {
+                      Alert.alert(t('cal_carpool_delete_title'), t('cal_carpool_delete_msg'), [
+                        { text: t('cancel'), style: 'cancel' },
+                        { text: t('set_delete'), style: 'destructive', onPress: async () => {
+                          setCarpools((prev) => prev.filter((c) => c.carpool_id !== cp.carpool_id));
+                          try { await api.deleteCarpool(cp.carpool_id); } catch { load(); showToast(t('set_error'), 'error'); }
+                        } },
+                      ]);
                     }} hitSlop={12} style={{ padding: 4 }}>
                       <Trash2 color={ui.muted} size={15} />
                     </PressScale>
@@ -1303,6 +1319,7 @@ export default function Calendar() {
         initialDraft={addDraft}
       />
 
+      <AppToast visible={Boolean(toast)} message={toast?.message || null} tone={toast?.tone || 'info'} />
     </SwipeableTabView>
   );
 }

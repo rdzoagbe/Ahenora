@@ -625,8 +625,9 @@ async def _gemini_vision(prompt: str, image_base64: str, system: str = "", fast:
     return await _gemini_generate([prompt, img], system, fast=fast)
 
 
-# The two launch tiers. Children are metered (role-aware: parents/caregivers
-# never count against a "child" limit); max_members stays as a generous total
+# The two launch tiers. Young people are metered (role-aware: parents/caregivers
+# never count) — max_children caps kids and teens TOGETHER, so a teen account is
+# never a free way around the limit; max_members stays as a generous total
 # safety cap. "family_office" is retired — any family doc still carrying it
 # resolves to "executive" via plan_catalog_for().
 PLAN_CATALOG = {
@@ -823,13 +824,26 @@ async def ai_scans_remaining(user) -> int:
     return max(0, sub["limits"]["ai_scans_per_month"] - sub["ai_scans_used"])
 
 
+async def count_young_people(database, family_id: str) -> int:
+    """Kids and teens share one plan limit — both are 'young people'. A teen is
+    a separate login, but a family with two teens should get the same allowance
+    as a family with two kids, so a teen must never be a free way around the
+    cap. Parents, co-parents and carers are never the meter."""
+    return await database["family_members"].count_documents(
+        {"family_id": family_id, "role": {"$regex": "^(child|teen)$", "$options": "i"}}
+    )
+
+
 async def build_subscription(family_id: str):
     database = get_db()
     family = await get_family_doc(family_id)
     members_count = await database["family_members"].count_documents({"family_id": family_id})
+    # children_count stays children-only for display; young_people_count is what
+    # the plan cap actually meters (kids + teens together).
     children_count = await database["family_members"].count_documents(
         {"family_id": family_id, "role": {"$regex": "^child$", "$options": "i"}}
     )
+    young_people_count = await count_young_people(database, family_id)
     catalog = plan_catalog_for(family["plan"])
     limits = catalog["limits"]
     # TESTING WINDOW: until billing is live (RC_WEBHOOK_SECRET set), every
@@ -842,21 +856,30 @@ async def build_subscription(family_id: str):
     # everyone in it shares the top plan, exactly like a real purchase would
     # be shared. Fixes the co-parent seeing Free next to the founder.
     admin_household = await family_has_admin(database, family_id)
-    if testing_window or admin_household:
+    # Grandfathered families keep Premium after billing goes live — the grace
+    # period's exemption for early adopters ("founding families"). Set the flag
+    # when the cutover date passes for anyone we're thanking / not charging yet.
+    grandfathered = bool(family.get("grandfathered"))
+    if testing_window or admin_household or grandfathered:
         limits = PLAN_CATALOG["executive"]["limits"]
     return {
         "plan": "family_office" if admin_household else family["plan"],
         # Lets the app show "you're previewing Premium free" notices so launch
         # gating never feels like a surprise takeaway.
         "testing_window": testing_window,
+        # The announced cutover date (ISO, e.g. "2026-10-01") drives the in-app
+        # countdown. Empty until we commit a date — the app shows the plain
+        # free-preview notice until then, the countdown only once it's set.
+        "billing_starts_at": os.environ.get("BILLING_START_DATE") or None,
         "billing_cycle": family["billing_cycle"],
-        "grandfathered": family.get("grandfathered", False),
+        "grandfathered": grandfathered,
         "updated_at": iso(family.get("updated_at")),
         "ai_scans_used": family.get("ai_scans_used", 0),
         "ai_scans_period_start": iso(family.get("ai_scans_period_start")),
         "vault_bytes_used": family.get("vault_bytes_used", 0),
         "members_count": members_count,
         "children_count": children_count,
+        "young_people_count": young_people_count,
         "limits": limits,
         "price_monthly": catalog["price_monthly"],
         "price_yearly": catalog["price_yearly"],
@@ -1535,6 +1558,11 @@ async def add_user_to_family_if_needed(database: Any, user: dict, family_id: str
     if is_teen_role:
         await database["users"].update_one(
             {"user_id": user["user_id"]}, {"$set": {"is_teen": True, "updated_at": utcnow()}})
+        # Mutate the in-memory dict too: the auth handlers serialize this same
+        # object with public_user() right after calling us, and without this the
+        # join response would carry is_teen:false — routing the teen into the
+        # full parent app where every request then 403s until a relaunch.
+        user["is_teen"] = True
         # Retire the managed child profile this teen is replacing — same name,
         # no login — so they don't appear (or count) twice.
         teen_name = (user.get("name") or "").strip().lower()
@@ -1555,6 +1583,21 @@ async def add_user_to_family_if_needed(database: Any, user: dict, family_id: str
     )
     if existing:
         return existing
+
+    # Backstop the young-people cap at accept time, the way the parent cap is
+    # backstopped below: an invite sent while there was room can't be accepted
+    # once the household has filled up. The friendly gate is at invite time
+    # (family_invite); this holds the line if that was bypassed or raced.
+    if is_teen_role:
+        sub = await build_subscription(family_id)
+        max_young = sub["limits"].get("max_children", 2)
+        if await count_young_people(database, family_id) >= max_young:
+            raise HTTPException(
+                status_code=402,
+                detail={"error": "plan_limit", "feature": "max_children",
+                        "message": "This household is full for its current plan.",
+                        "limit": max_young},
+            )
 
     # The real guard: two co-parent invites can be outstanding at once (each was
     # created while only the founder existed), and without this the second to be
@@ -3387,19 +3430,18 @@ async def create_family_member(payload: ChildIn, user=Depends(require_user)):
 
     subscription = await build_subscription(user["family_id"])
     if not is_admin_user(user):
-        # Role-aware metering: only children count against the child limit
-        # (parents/caregivers are never the meter). Free = 2, Premium = 5.
-        children_count = await database["family_members"].count_documents(
-            {"family_id": user["family_id"], "role": {"$regex": "^child$", "$options": "i"}}
-        )
-        max_children = subscription["limits"].get("max_children", 2)
-        if children_count >= max_children:
+        # Role-aware metering: kids and teens share one cap (parents/caregivers
+        # are never the meter), so a household with two teens can't add a third
+        # young person for free. Free = 2, Premium = 5.
+        young_people = await count_young_people(database, user["family_id"])
+        max_young = subscription["limits"].get("max_children", 2)
+        if young_people >= max_young:
             plan_limit_error(
                 feature="max_children",
                 current_plan=subscription["plan"],
-                message="Upgrade to Premium to add more children (up to 5).",
-                limit=max_children,
-                used=children_count,
+                message="Upgrade to Premium to add more (kids and teens share your plan's limit).",
+                limit=max_young,
+                used=young_people,
             )
 
     member = {
@@ -4049,11 +4091,27 @@ async def family_invite(payload: InviteIn, user=Depends(require_user)):
         raise HTTPException(status_code=400, detail="Valid email is required")
 
     # The age gate is the COPPA/Families-policy line, enforced HERE and not only
-    # in the client: a restricted young-person account is for 13+ only. The 13
-    # floor is the hard rule (no under-13 independent account); 25 is a sane
-    # ceiling for a dependent still in the household.
+    # in the client: a restricted young-person account is for 13-17. The 13
+    # floor is the hard rule (no under-13 independent account); 17 is the ceiling
+    # (at 18 they're an adult, not a dependent teen).
     if payload.is_teen and (payload.age is None or not (13 <= int(payload.age) <= 17)):
-        raise HTTPException(status_code=400, detail="A restricted account is for ages 13 to 25.")
+        raise HTTPException(status_code=400, detail="A restricted account is for ages 13 to 17.")
+
+    # Teens share the kids' plan cap — enforce it here so the invite can't be the
+    # free way around the limit the managed-child add already guards. The client
+    # turns this 402 into the "household is full -> see plans" prompt.
+    if payload.is_teen and not is_admin_user(user):
+        sub = await build_subscription(user["family_id"])
+        max_young = sub["limits"].get("max_children", 2)
+        young = await count_young_people(database, user["family_id"])
+        if young >= max_young:
+            plan_limit_error(
+                feature="max_children",
+                current_plan=sub["plan"],
+                message="Upgrade to add more (kids and teens share your plan's limit).",
+                limit=max_young,
+                used=young,
+            )
 
     existing = await database["family_invites"].find_one(
         {
@@ -9125,6 +9183,25 @@ async def complete_chore(chore_id: str, user: dict = Depends(require_user), data
         raise HTTPException(404, "Chore not found")
 
     doer = chore.get("current_assignee")
+
+    # Anti-double-pay claim: every other star path guards the award atomically,
+    # but this one read-then-awarded unconditionally, so a rapid double-tap or a
+    # retried request paid twice (and the second star went to the just-rotated
+    # next child). Claim a coarse 2-second completion bucket with the same
+    # $ne-on-a-marker pattern the weekly-claim guards use: a duplicate within the
+    # same bucket sees the marker already set and loses the claim (returns
+    # idempotently, no payment), while a genuine later re-completion — minutes or
+    # days apart — falls in a new bucket and pays normally.
+    now = utcnow()
+    bucket = int(now.timestamp()) // 2
+    claim = await database["chores"].update_one(
+        {"chore_id": chore_id, "family_id": user["family_id"],
+         "last_completed_bucket": {"$ne": bucket}},
+        {"$set": {"last_completed_bucket": bucket, "last_completed_at": now}},
+    )
+    if claim.matched_count == 0:
+        return {"ok": True, "chore": public_chore(chore), "stars_awarded": 0, "member_id": doer}
+
     txn = await award_stars_to_member(
         database,
         user["family_id"],

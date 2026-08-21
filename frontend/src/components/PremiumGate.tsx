@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Lock, Sparkles } from 'lucide-react-native';
@@ -6,6 +6,7 @@ import { Lock, Sparkles } from 'lucide-react-native';
 import { PressScale } from './PressScale';
 import { useUI, UIColors } from './Kit';
 import { useStore } from '../store';
+import { localeFor } from '../utils/date';
 
 // Premium features gated behind paid plans (Executive+). Keep keys in sync with
 // the backend PLAN_CATALOG limit flags and PREMIUM_FEATURE_MESSAGES.
@@ -55,16 +56,38 @@ export function LockBadge({ onPress }: { onPress: () => void }) {
  */
 export function PremiumPreviewBanner() {
   const ui = useUI();
-  const { t, subscription } = useStore();
+  const { t, subscription, lang } = useStore();
   const router = useRouter();
   const styles = createStyles(ui);
+  // Captured once at mount so the render stays pure; a days-left banner doesn't
+  // need to tick down live within a single screen view.
+  const [now] = useState(() => Date.now());
   if (!subscription?.testing_window || subscription?.admin_unlocked) return null;
+
+  // Grace period: once a cutover date is announced, the notice becomes a
+  // countdown ("Premium becomes paid on <date> — <n> days left"). Before a date
+  // is set it stays the plain free-preview notice, so nothing counts down to a
+  // date that doesn't exist yet.
+  let title = t('preview_banner_title');
+  let body = t('preview_banner_body');
+  const startsAt = subscription?.billing_starts_at;
+  if (startsAt) {
+    const target = new Date(startsAt);
+    const ms = target.getTime() - now;
+    if (!Number.isNaN(target.getTime()) && ms > 0) {
+      const days = Math.max(1, Math.ceil(ms / 86400000));
+      const dateLabel = target.toLocaleDateString(localeFor(lang), { day: 'numeric', month: 'short' });
+      title = t('preview_countdown_title', { date: dateLabel });
+      body = t('preview_countdown_body', { days });
+    }
+  }
+
   return (
     <PressScale onPress={() => router.push('/pricing')} style={styles.preview}>
       <Sparkles color={ui.orange} size={15} />
       <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={styles.previewTitle}>{t('preview_banner_title')}</Text>
-        <Text style={styles.previewBody}>{t('preview_banner_body')}</Text>
+        <Text style={styles.previewTitle}>{title}</Text>
+        <Text style={styles.previewBody}>{body}</Text>
       </View>
       <Text style={styles.previewCta}>{t('preview_banner_cta')}</Text>
     </PressScale>

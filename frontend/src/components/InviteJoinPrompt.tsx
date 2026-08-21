@@ -5,7 +5,6 @@ import { UserPlus } from 'lucide-react-native';
 import { useStore } from '../store';
 import { api } from '../api';
 import { extractInviteToken, clearStoredInvite } from '../invite';
-import { BUILD_TAG } from '../buildInfo';
 import { logger } from '../logger';
 import { PressScale } from './PressScale';
 
@@ -210,7 +209,10 @@ export function InviteJoinPrompt() {
                 style={[styles.primaryBtn, { backgroundColor: c.accent, opacity: busy ? 0.7 : 1 }]}
               >
                 {busy ? (
-                  <ActivityIndicator color={c.primaryText} size="small" />
+                  <View style={styles.busyRow}>
+                    <ActivityIndicator color={c.primaryText} size="small" />
+                    <Text style={[styles.primaryBtnText, { color: c.primaryText }]}>{t('invite_joining')}</Text>
+                  </View>
                 ) : (
                   <Text style={[styles.primaryBtnText, { color: c.primaryText }]}>
                     {error ? t('invite_join_retry') : t('invite_join_cta')}
@@ -227,7 +229,6 @@ export function InviteJoinPrompt() {
               >
                 <Text style={[styles.ghostBtnText, { color: c.textSoft }]}>{t('invite_join_later')}</Text>
               </PressScale>
-              <Text style={[styles.buildTag, { color: c.textSoft }]}>{BUILD_TAG}</Text>
             </>
           )}
         </View>
@@ -290,6 +291,7 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
     alignItems: 'center',
   },
+  busyRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   primaryBtnText: {
     fontFamily: 'Inter_800ExtraBold',
     fontSize: 15,
@@ -302,11 +304,5 @@ const styles = StyleSheet.create({
   ghostBtnText: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 13,
-  },
-  buildTag: {
-    fontFamily: 'Inter_500Medium',
-    fontSize: 10,
-    opacity: 0.55,
-    marginTop: 10,
   },
 });

@@ -25,7 +25,7 @@ import {
   Minus,
   ChevronRight,
   Timer,
-  DollarSign,
+  PiggyBank,
   RotateCcw,
   Play,
 } from 'lucide-react-native';
@@ -53,12 +53,13 @@ import { logger } from '../../src/logger';
 import { recordWin } from '../../src/reviewPrompt';
 import { isAlreadySettled, mergeRedemptions, restoreRedemption } from '../../src/redemptions';
 import { webConfirm } from '../../src/confirm';
+import { localeFor } from '../../src/utils/date';
 
 /** "Sat 2 Aug" — short enough for a subtitle, unambiguous about which day. */
-function formatDueDate(iso: string): string {
+function formatDueDate(iso: string, locale: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+  return d.toLocaleDateString(locale, { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
 type StarMode = 'add' | 'remove';
@@ -119,15 +120,15 @@ function cleanNumber(value: string) {
   return value.replace(/[^0-9]/g, '');
 }
 
-function formatActivityDate(value?: string | null) {
+function formatActivityDate(value: string | null | undefined, locale: string) {
   if (!value) return '';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return date.toLocaleDateString(locale, { month: 'short', day: 'numeric' });
 }
 
 export default function Kids() {
-  const { t, dataVersion } = useStore();
+  const { t, lang, dataVersion } = useStore();
   const { isLocked, promptUpgrade } = usePremiumGate();
   const allowanceLocked = isLocked('allowance');
   const router = useRouter();
@@ -276,8 +277,8 @@ export default function Kids() {
         // UTC, not midnight: the day is the point, and a midnight stamp lands
         // in the previous day for anyone west of UTC.
         iso: new Date(d.getTime() + 12 * 3600 * 1000).toISOString(),
-        letter: d.toLocaleDateString(undefined, { weekday: 'narrow', timeZone: 'UTC' }),
-        name: d.toLocaleDateString(undefined, { weekday: 'long', timeZone: 'UTC' }),
+        letter: d.toLocaleDateString(localeFor(lang), { weekday: 'narrow', timeZone: 'UTC' }),
+        name: d.toLocaleDateString(localeFor(lang), { weekday: 'long', timeZone: 'UTC' }),
         earned: earnedByDay[k] || 0,
         isToday: k === todayKey,
         // Sunday's stars cannot be given on Wednesday. The server refuses it;
@@ -285,7 +286,7 @@ export default function Kids() {
         isFuture: d.getTime() > now.getTime(),
       };
     });
-  }, [historyItems]);
+  }, [historyItems, lang]);
   const backdateDayCell = useMemo(
     () => weekDayCells.find((d) => d.iso === backdateDay) || null,
     [weekDayCells, backdateDay],
@@ -501,12 +502,12 @@ export default function Kids() {
     setShowTeenInvite(true);
   };
 
-  const resolveApproval = async (cardId: string, approve: boolean) => {
+  const resolveApproval = async (cardId: string, approve: boolean, stars = 1) => {
     setApprovingId(cardId);
     try {
-      await api.resolveTeenApproval(cardId, approve, 1);
+      await api.resolveTeenApproval(cardId, approve, stars);
       setTeenApprovals((prev) => prev.filter((a) => a.card_id !== cardId));
-      if (approve) { showToast(t('teen_star_awarded'), 'success'); load(); }
+      if (approve) { showToast(t('teen_star_awarded', { count: stars }), 'success'); load(); }
     } catch (e: any) {
       showToast(e?.message || t('set_error'), 'error');
     } finally {
@@ -514,8 +515,20 @@ export default function Kids() {
     }
   };
 
-  // Upgrade a 13+ child to their own account. The age picker already floors at
-  // 13; this re-checks the 13-25 range before sending.
+  // A flat 1 star for every approved teen task felt stingy next to managed kids
+  // (who earn 5 for an assigned task). Let the parent pick the reward so a
+  // bigger job can be recognized.
+  const approveWithStars = (cardId: string) => {
+    Alert.alert(t('teen_approve_title'), t('teen_approve_msg'), [
+      { text: t('cancel'), style: 'cancel' },
+      { text: '1 ⭐', onPress: () => resolveApproval(cardId, true, 1) },
+      { text: '3 ⭐', onPress: () => resolveApproval(cardId, true, 3) },
+      { text: '5 ⭐', onPress: () => resolveApproval(cardId, true, 5) },
+    ]);
+  };
+
+  // Upgrade a 13-17 child to their own account. The age picker already floors at
+  // 13 and caps at 17; this re-checks that range before sending.
   const inviteTeen = async () => {
     const age = teenAge;
     if (age < 13 || age > 17) { showToast(t('teen_invite_range'), 'error'); return; }
@@ -527,7 +540,22 @@ export default function Kids() {
       setShowTeenInvite(false);
       showToast(t('teen_invite_sent'), 'success');
     } catch (e: any) {
-      showToast(e?.message || t('set_error'), 'error');
+      logger.warn('Teen invite failed:', e?.message || e);
+      // A plan cap (402) gets the same clear "household is full → see plans"
+      // path as adding a managed child, not a vanishing generic error.
+      if (e?.status === 402 || e?.planLimit) {
+        setShowTeenInvite(false);
+        Alert.alert(
+          t('kids_household_full'),
+          t('kids_household_full_msg'),
+          [
+            { text: t('kids_not_now'), style: 'cancel' },
+            { text: t('kids_see_plans'), onPress: () => router.push('/pricing') },
+          ],
+        );
+      } else {
+        showToast(e?.message || t('set_error'), 'error');
+      }
     } finally {
       setTeenSending(false);
     }
@@ -652,6 +680,11 @@ export default function Kids() {
     const reason = starReason.trim();
     if (delta < 0 && !reason) { showToast(t('kids_reason_required'), 'error'); return; }
 
+    // Guard against a double-tap in the frame before `saving` re-renders, the
+    // same ref guard quickAdd uses — otherwise both taps hit the $inc and the
+    // child is awarded/docked twice.
+    if (starActionRef.current) return;
+    starActionRef.current = true;
     setSaving(true);
     try {
       const result = await api.adjustMemberStars(activeChild.member_id, { delta, reason: reason || (delta > 0 ? t('kids_parent_added_stars') : t('kids_parent_removed_stars')) });
@@ -665,6 +698,7 @@ export default function Kids() {
       showToast(e?.message || t('kids_update_stars_error'), 'error');
     } finally {
       setSaving(false);
+      starActionRef.current = false;
     }
   };
 
@@ -1164,7 +1198,7 @@ export default function Kids() {
                       </PressScale>
                       <PressScale
                         testID={`teen-approve-${a.card_id}`}
-                        onPress={() => resolveApproval(a.card_id, true)}
+                        onPress={() => approveWithStars(a.card_id)}
                         disabled={approvingId === a.card_id}
                         style={styles.approvalApprove}
                       >
@@ -1588,7 +1622,7 @@ export default function Kids() {
           {activeChild ? (
             <>
               <View style={styles.featureHeader}>
-                <DollarSign color={ui.goldText} size={18} />
+                <PiggyBank color={ui.goldText} size={18} />
                 <Text style={styles.featureHeaderText}>{t('kids_allowance')}</Text>
                 {allowanceLocked ? <LockBadge onPress={() => promptUpgrade('allowance')} /> : null}
               </View>
@@ -1623,7 +1657,7 @@ export default function Kids() {
                         <Text style={styles.allowanceDue}>
                           {childAllowance.is_due
                             ? t('kids_allowance_due_now')
-                            : t('kids_allowance_due_on', { date: formatDueDate(childAllowance.next_due_at) })}
+                            : t('kids_allowance_due_on', { date: formatDueDate(childAllowance.next_due_at, localeFor(lang)) })}
                         </Text>
                       ) : null}
                     </PressScale>
@@ -2044,7 +2078,7 @@ export default function Kids() {
 
 function RecentActivity({ items, loading, expanded }: { items: StarTransaction[]; loading: boolean; expanded?: boolean }) {
   const ui = useUI();
-  const { t } = useStore();
+  const { t, lang } = useStore();
   const styles = useMemo(() => createStyles(ui), [ui]);
   return (
     <>
@@ -2064,7 +2098,7 @@ function RecentActivity({ items, loading, expanded }: { items: StarTransaction[]
                 </IconTile>
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.activityReason} numberOfLines={1}>{item.reason || t('kids_star_adjustment')}</Text>
-                  <Text style={styles.activityDate}>{formatActivityDate(item.created_at)}</Text>
+                  <Text style={styles.activityDate}>{formatActivityDate(item.created_at, localeFor(lang))}</Text>
                 </View>
                 <View style={styles.activityDeltaRow}>
                   <Text style={[styles.activityDelta, { color: positive ? ui.mintText : ui.danger }]}>{positive ? '+' : ''}{item.delta}</Text>

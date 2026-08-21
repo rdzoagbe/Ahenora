@@ -187,6 +187,18 @@ class TeenMode(unittest.TestCase):
         appr2 = asyncio.run(server.teen_approvals(user=dict(PARENT)))
         self.assertNotIn("Wash the car", {a["title"] for a in appr2["approvals"]})
 
+    def test_parent_can_award_more_than_one_star(self):
+        """The parent picks the reward on approval — a bigger job can be worth
+        more than a flat single star."""
+        card = self._card(type="TASK", title="Repaint the fence", assignee="Ama", shared=False)
+        teen = asyncio.run(server.require_teen(authorization=f"Bearer {self.teen_token}"))
+        asyncio.run(server.teen_finish_task(card_id=card["card_id"], teen=teen))
+        asyncio.run(server.resolve_teen_approval(
+            card_id=card["card_id"], payload=server.TeenApprovalIn(approve=True, stars=5),
+            user=dict(PARENT)))
+        m = asyncio.run(self.db["family_members"].find_one({"member_id": "m_t"}))
+        self.assertEqual(int(m.get("stars") or 0), 5)
+
     def test_teen_accept_retires_managed_child_profile(self):
         """Becoming a teen removes the matching managed child profile so the
         person isn't listed (or billed) twice."""
@@ -198,3 +210,76 @@ class TeenMode(unittest.TestCase):
             "fam1", role="teen"))
         child = asyncio.run(self.db["family_members"].find_one({"member_id": "m_child"}))
         self.assertIsNone(child)  # retired
+
+    # --- teens share the kids' cap (no free way around the limit) --------
+    def test_teen_counts_toward_young_people_cap(self):
+        """Kids and teens are metered together. A household with a teen already
+        has one young person; on Village (cap 2) it can add one more, then the
+        next is blocked — the teen was never a free bypass."""
+        # setUp already added the teen Ama, so one young person exists.
+        self.assertEqual(asyncio.run(server.count_young_people(self.db, "fam1")), 1)
+        asyncio.run(self.db["family_members"].insert_one({
+            "member_id": "m_c1", "family_id": "fam1", "user_id": None,
+            "name": "Kofi", "role": "Child", "pin_hash": None}))
+        self.assertEqual(asyncio.run(server.count_young_people(self.db, "fam1")), 2)
+
+        # With billing live (outside the testing window) and a Village plan, a
+        # third young person is refused — the teen counted toward the two.
+        prev = os.environ.get("RC_WEBHOOK_SECRET")
+        os.environ["RC_WEBHOOK_SECRET"] = "test-secret"
+        try:
+            with self.assertRaises(server.HTTPException) as ctx:
+                asyncio.run(server.create_family_member(
+                    server.ChildIn(name="Esi"), user=dict(PARENT)))
+            self.assertEqual(ctx.exception.status_code, 402)
+            self.assertEqual(ctx.exception.detail["feature"], "max_children")
+            self.assertEqual(ctx.exception.detail["used"], 2)
+        finally:
+            if prev is None:
+                os.environ.pop("RC_WEBHOOK_SECRET", None)
+            else:
+                os.environ["RC_WEBHOOK_SECRET"] = prev
+
+    def test_join_response_carries_is_teen(self):
+        """The join must flag the user dict the auth handlers serialize — else
+        the response says is_teen:false and the teen lands in the parent app."""
+        u = {"user_id": "u_new", "family_id": "fam1", "name": "Kojo", "email": "kojo@x.com"}
+        asyncio.run(server.add_user_to_family_if_needed(self.db, u, "fam1", role="teen"))
+        self.assertTrue(u.get("is_teen"))
+
+    def test_teen_invite_blocked_at_young_people_cap(self):
+        """The invite path enforces the shared cap too — a teen can't be the
+        free way around the limit the managed-child add already guards."""
+        # setUp's teen = 1 young person; add a kid to hit the Village cap of 2.
+        asyncio.run(self.db["family_members"].insert_one({
+            "member_id": "m_c2", "family_id": "fam1", "user_id": None,
+            "name": "Yaw", "role": "Child", "pin_hash": None}))
+        prev = os.environ.get("RC_WEBHOOK_SECRET")
+        os.environ["RC_WEBHOOK_SECRET"] = "test-secret"
+        try:
+            with self.assertRaises(server.HTTPException) as ctx:
+                asyncio.run(server.family_invite(
+                    server.InviteIn(email="newteen@x.com", is_teen=True, age=15), user=dict(PARENT)))
+            self.assertEqual(ctx.exception.status_code, 402)
+            self.assertEqual(ctx.exception.detail["feature"], "max_children")
+        finally:
+            if prev is None:
+                os.environ.pop("RC_WEBHOOK_SECRET", None)
+            else:
+                os.environ["RC_WEBHOOK_SECRET"] = prev
+
+    def test_complete_chore_double_tap_pays_once(self):
+        """A rapid double-tap / retry must not pay the chore star twice."""
+        asyncio.run(self.db["family_members"].insert_one({
+            "member_id": "m_kid", "family_id": "fam1", "user_id": None,
+            "name": "Nana", "role": "Child", "stars": 0, "pin_hash": None}))
+        asyncio.run(self.db["chores"].insert_one({
+            "chore_id": "ch1", "family_id": "fam1", "title": "Bins",
+            "current_assignee": "m_kid", "assigned_members": ["m_kid"],
+            "star_reward": 3, "rotate": False, "created_at": server.utcnow()}))
+        r1 = asyncio.run(server.complete_chore(chore_id="ch1", user=dict(PARENT), database=self.db))
+        r2 = asyncio.run(server.complete_chore(chore_id="ch1", user=dict(PARENT), database=self.db))
+        self.assertEqual(r1["stars_awarded"], 3)
+        self.assertEqual(r2["stars_awarded"], 0)  # duplicate lost the claim
+        m = asyncio.run(self.db["family_members"].find_one({"member_id": "m_kid"}))
+        self.assertEqual(int(m.get("stars") or 0), 3)  # paid once, not twice

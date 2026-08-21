@@ -188,6 +188,7 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
                 showCurrentBadge={plan === currentPlan}
                 t={t}
                 styles={styles}
+                ui={ui}
               />
             </View>
           ))}
@@ -264,6 +265,7 @@ function PlanCard({
   showCurrentBadge,
   t,
   styles,
+  ui,
 }: {
   plan: Plan;
   cycle: BillingCycle;
@@ -272,6 +274,7 @@ function PlanCard({
   showCurrentBadge: boolean;
   t: (k: string, p?: any) => string;
   styles: ReturnType<typeof createStyles>;
+  ui: UIColors;
 }) {
   const price = PLAN_PRICES[plan][cycle];
   const perMonth = cycle === 'yearly' ? price / 12 : price;
@@ -344,6 +347,20 @@ function PlanCard({
           </View>
         ))}
       </View>
+
+      {/* The free plan shows the kitchen as a see-through locked door, not a
+          hidden wall: visible enough to create the want, with no free usage. */}
+      {isFree ? (
+        <View style={styles.lockedRow}>
+          <View style={styles.lockedCheck}>
+            <Lock color={ui.muted} size={11} />
+          </View>
+          <Text style={styles.lockedText}>{t('pf_locked_kitchen')}</Text>
+          <View style={styles.lockedChip}>
+            <Text style={styles.lockedChipText}>{t('plan_executive')}</Text>
+          </View>
+        </View>
+      ) : null}
 
       {showCurrentBadge && isCurrent ? (
         <View style={[styles.cta, styles.ctaCurrent]}>
@@ -630,6 +647,34 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     marginBottom: 6,
   },
   featuresList: { marginTop: 16, marginBottom: 20, gap: 10 },
+  lockedRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: -8, marginBottom: 18 },
+  lockedCheck: {
+    width: 18,
+    height: 18,
+    borderRadius: 9999,
+    backgroundColor: ui.soft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lockedText: {
+    color: ui.muted,
+    fontFamily: 'Inter_400Regular',
+    fontSize: 13,
+    flex: 1,
+    lineHeight: 19,
+  },
+  lockedChip: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 9999,
+    backgroundColor: 'rgba(245,101,25,0.14)',
+  },
+  lockedChipText: {
+    color: ui.orangeText,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 10,
+    letterSpacing: 0.3,
+  },
   featureRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   featureCheck: {
     width: 18,

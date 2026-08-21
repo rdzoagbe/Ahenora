@@ -75,9 +75,10 @@ export default function Onboarding() {
       catch (e) { logger.warn('onboarding seed shopping failed', e); }
     }
     const email = inviteEmail.trim();
+    let inviteFailed = false;
     if (email && /\S+@\S+\.\S+/.test(email)) {
       try { await api.invite(email); }
-      catch (e) { logger.warn('onboarding invite failed', e); }
+      catch (e) { logger.warn('onboarding invite failed', e); inviteFailed = true; }
     }
 
     try {
@@ -87,6 +88,11 @@ export default function Onboarding() {
       logEvent('onboarding_done');
       await refreshUser().catch(() => undefined);
       goFeed();
+      // Don't claim the invite went out when it didn't — the co-parent would
+      // never get it and the user would never know. Tell them where to retry.
+      if (inviteFailed) {
+        Alert.alert(t('ob_invite_fail_title'), t('ob_invite_fail_msg', { email }));
+      }
     } catch (e) {
       logger.warn('completeOnboarding failed', e);
       Alert.alert(
@@ -99,6 +105,24 @@ export default function Onboarding() {
       );
     } finally {
       setFinishing(false);
+    }
+  };
+
+  // "Skip for now" must actually leave setup — it used to just advance a step,
+  // so the label promised an exit that wasn't there. Mark onboarding done (so
+  // the user isn't re-onboarded next launch) and go straight to the app.
+  const skip = async () => {
+    if (finishing) return;
+    setFinishing(true);
+    try {
+      await api.completeOnboarding();
+      logEvent('onboarding_skipped');
+      await refreshUser().catch(() => undefined);
+    } catch (e) {
+      logger.warn('onboarding skip failed', e);
+    } finally {
+      setFinishing(false);
+      goFeed();
     }
   };
 
@@ -286,7 +310,7 @@ export default function Onboarding() {
         {/* Footer actions */}
         <View style={styles.footer}>
           {!isLast ? (
-            <PressScale testID="onboarding-skip" onPress={next} style={styles.skipBtn}>
+            <PressScale testID="onboarding-skip" onPress={skip} disabled={finishing} style={styles.skipBtn}>
               <Text style={[styles.skipText, { color: theme.colors.textMuted }]}>{t('ob_skip_for_now')}</Text>
             </PressScale>
           ) : (

@@ -381,7 +381,7 @@ export default function Feed() {
         api
           .getNotificationSettings()
           .then((prefs) => {
-            syncCardReminderNotifications(prefs.card_reminders ? loadedCards : [], prefs.card_reminders).catch(() => undefined);
+            syncCardReminderNotifications(prefs.card_reminders ? loadedCards : [], prefs.card_reminders, t('notif_due_soon')).catch(() => undefined);
             // Morning digest: 07:30 local tomorrow, listing what is due that
             // day (plus anything overdue). Recomputed on every sync; skipped
             // when there is nothing to say. Rides the card_reminders toggle.
@@ -770,14 +770,25 @@ export default function Feed() {
   }, [t, load]);
 
   const removeAnnouncement = useCallback(async (id: string) => {
-    setAnnouncements((prev) => prev.filter((a) => a.announcement_id !== id));
-    try {
-      await api.deleteAnnouncement(id);
-    } catch {
-      Alert.alert(t('feed_could_not_delete'), t('feed_announcement_restored'));
-      load();
-    }
-  }, [load]);
+    // Announcements are shared and can be urgent — a single stray tap shouldn't
+    // wipe another parent's message. Confirm, like other shared deletes.
+    Alert.alert(t('feed_announcement_delete_title'), t('feed_announcement_delete_msg'), [
+      { text: t('cancel'), style: 'cancel' },
+      {
+        text: t('set_delete'),
+        style: 'destructive',
+        onPress: async () => {
+          setAnnouncements((prev) => prev.filter((a) => a.announcement_id !== id));
+          try {
+            await api.deleteAnnouncement(id);
+          } catch {
+            Alert.alert(t('feed_could_not_delete'), t('feed_announcement_restored'));
+            load();
+          }
+        },
+      },
+    ]);
+  }, [t, load]);
 
   return (
     <SwipeableTabView style={styles.container}>
@@ -832,16 +843,21 @@ export default function Feed() {
                 {/* Calm was a hero-sized card; as an ambient signal it earns a
                     pill, not the top third of the screen. */}
                 <View style={styles.heroMetaRow}>
-                  <View style={styles.calmPill}>
-                    <Text style={styles.calmPillText}>{t('feed_calm')} {dashboard.calmScore}</Text>
-                  </View>
+                  <PressScale
+                    onPress={() => Alert.alert(t('feed_calm_title'), t('feed_calm_explain'))}
+                    style={styles.calmPill}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('feed_calm_title')}
+                  >
+                    <Text style={styles.calmPillText}>{t('feed_calm')} {dashboard.calmScore}/100</Text>
+                  </PressScale>
                 </View>
               </View>
             </View>
 
             <View style={styles.captureCard}>
               <PressScale onPress={openManual} style={styles.captureInput} testID="feed-open-add">
-                <View style={styles.plusSoft}><Plus color={ui.orange} size={26} /></View>
+                <View style={styles.plusSoft}><Plus color={ui.orange} size={22} /></View>
                 <Text style={styles.capturePlaceholder} numberOfLines={1}>{t('feed_add_placeholder')}</Text>
               </PressScale>
               <View style={styles.captureActions}>
@@ -1528,10 +1544,12 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   heroTitle: {
     color: ui.text,
-    fontFamily: 'Inter_800ExtraBold',
-    fontSize: 27,
-    lineHeight: 32,
-    letterSpacing: -0.8,
+    // Playfair carries the brand voice from the landing into the app — the
+    // greeting is the one place it earns the premium display face.
+    fontFamily: 'PlayfairDisplay_700Bold',
+    fontSize: 28,
+    lineHeight: 34,
+    letterSpacing: -0.3,
   },
   subtitle: {
     marginTop: 8,
@@ -1619,12 +1637,12 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     fontSize: 12,
   },
   captureCard: {
-    borderRadius: 26,
+    borderRadius: 22,
     backgroundColor: ui.card,
     borderWidth: 1,
     borderColor: ui.line,
-    padding: 16,
-    marginBottom: 14,
+    padding: 12,
+    marginBottom: 12,
     shadowColor: '#000000',
     shadowOpacity: 0.06,
     shadowRadius: 18,
@@ -1632,16 +1650,16 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     elevation: 2,
   },
   captureInput: {
-    minHeight: 54,
+    minHeight: 42,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    marginBottom: 13,
+    gap: 12,
+    marginBottom: 9,
   },
   plusSoft: {
-    width: 52,
-    height: 52,
-    borderRadius: 18,
+    width: 40,
+    height: 40,
+    borderRadius: 13,
     backgroundColor: ui.orangeSoft,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1650,34 +1668,34 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     flex: 1,
     color: ui.muted,
     fontFamily: 'Inter_600SemiBold',
-    fontSize: 16,
+    fontSize: 15,
   },
   captureActions: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 8,
   },
   actionPill: {
     flexShrink: 1,
     minWidth: 0,
     flex: 1,
-    height: 46,
-    borderRadius: 13,
+    height: 40,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: ui.line,
     backgroundColor: ui.soft,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: 7,
   },
   actionPillAccent: {
     borderWidth: 0,
     backgroundColor: ui.orangeDeep,
   },
   actionDot: {
-    width: 30,
-    height: 30,
-    borderRadius: 10,
+    width: 26,
+    height: 26,
+    borderRadius: 9,
     alignItems: 'center',
     justifyContent: 'center',
   },

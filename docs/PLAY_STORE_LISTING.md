@@ -1,4 +1,4 @@
-# Household COO — Google Play Store Listing Pack
+# Ahenora — Google Play Store Listing Pack
 
 Everything you need to paste into the Google Play Console. Sections map 1:1 to
 the Console screens.
@@ -7,53 +7,55 @@ the Console screens.
 
 ## 1. Main store listing
 
-**App name** (max 30 chars)
+**App name** (max 30 chars) — brand + the strongest head term, so it ranks for
+something people actually search (the brand alone ranks for nothing).
 ```
-Household COO
+Ahenora: Family Organizer
 ```
+*(25 chars. Alternatives: `Ahenora: Family Calendar` / `Ahenora — Family Planner`.)*
 
-**Short description** (max 80 chars)
+**Short description** (max 80 chars) — second-heaviest ranking field; packs four
+high-volume search terms plus the "calm" brand promise.
 ```
-Organise family tasks, calendars, kids' chores, and documents in one place.
-```
-
-**Full description** (max 4000 chars)
-```
-Household COO is your family's operations hub — a calm, organised home for the tasks, plans, and paperwork that keep a household running.
-
-Stop juggling sticky notes, group chats, and half-remembered reminders. Household COO brings everything into one shared, private space for your whole family.
-
-WHAT YOU CAN DO
-
-• Tasks & cards — Capture to-dos, sign slips, and RSVPs. Assign them to family members, set due dates and reminders, and watch your "today" list stay clear.
-• Recurring routines — Set tasks to repeat daily, weekly, or monthly and they come back automatically when completed.
-• Shared calendar — See what's coming up across the household. Import your Google Calendar so events become actionable cards.
-• Scan documents — Snap a photo of a school letter, appointment card, or bill and turn it into a task or a saved document.
-• Secure vault — Keep important household documents in one place, organised by category.
-• Kids & chores — Give children chores, track stars and rewards, set allowances, and keep routines running.
-• Meal planning & shopping — Plan meals for the week and build a shared shopping list.
-• Expense splitting — Track shared household costs and see who owes what.
-• Handoff notes & announcements — Leave notes for your partner or the family and keep everyone in the loop.
-• Reminders & notifications — Get nudged about what needs doing, when it matters.
-
-BUILT FOR FAMILIES
-
-Household COO is designed for parents and guardians organising a busy home. Invite your partner or family members so everyone stays coordinated. Your household data stays inside your account.
-
-PRIVACY FIRST
-
-We don't sell your personal data. Authentication is secured with encrypted device storage, and you're always in control — sign out, manage notifications, delete content, or request full account deletion any time from Settings.
-
-PLANS
-
-Household COO is free to use with the Village plan. Additional plans with more members and features are coming soon.
-
-Bring calm to your household. Try Household COO today.
+Family calendar, chore chart, tasks & meal planner — one calm, shared home.
 ```
 
-**App category:** Parenting (alternate: Productivity)
+**Full description** (max 4000 chars) — keyword-rich but readable; the head terms
+(family organizer, family calendar, chore chart, meal planner, co-parenting,
+single parent) recur naturally, front-loaded in the first two lines.
+```
+Ahenora is the calm family organizer that keeps your whole household running from one shared, private place — the family calendar, the kids' chores, the meal plan, and the paperwork, all in one app.
 
-**Tags:** family organizer, household, chores, calendar, tasks
+Stop juggling sticky notes, group chats, and half-remembered reminders. Whether you're two parents, a single parent, or co-parents across two homes, Ahenora brings everyone onto the same page.
+
+WHAT AHENORA DOES
+
+• Shared family calendar — See everyone's week at a glance. Import your Google Calendar so events become tasks you can actually act on.
+• Tasks & reminders — Capture to-dos, permission slips, and appointments, assign them, and get nudged before they're due.
+• Kids' chores & rewards — A simple chore chart with stars kids actually want to earn, plus pocket-money tracking.
+• Teen accounts — Give a 13–17-year-old their own private login: just their tasks and schedule, nothing else. They tick it off, you approve, everyone stays in sync.
+• Meal planner & shopping list — Plan the week's meals and build a shared shopping list that updates for everyone.
+• Scan documents — Snap a school letter or bill and turn it into a task or a saved document.
+• Secure vault — Keep important household paperwork organised by category.
+• Handoff notes & announcements — Leave a note for your partner and keep the whole family in the loop.
+
+BUILT FOR REAL FAMILIES
+
+Ahenora is made for busy parents and guardians — two-parent homes, single parents, and co-parenting families managing life across two houses. Invite your partner, a grandparent, or a carer so everyone stays coordinated.
+
+PRIVATE BY DESIGN
+
+We don't sell your data. Everything is encrypted in transit, and you're always in control — manage notifications, delete content, or delete your account any time from Settings.
+
+Start free with the Village plan. Bring calm to your household — try Ahenora today.
+```
+
+**App category:** Parenting (keep — broad discovery + your audience; don't switch to Productivity)
+
+**Tags:** family organizer, household, chores, calendar, tasks, family calendar, chore chart, meal planner, co-parenting
+
+*(Play has no separate keyword field — ranking comes from the title + short + full
+description above, so that copy is where the keyword work actually lands.)*
 
 **Contact email:** rolanddzoagbe@gmail.com
 
@@ -72,22 +74,23 @@ Bring calm to your household. Try Household COO today.
 | Phone screenshots | 2–8, min 320px, ratio between 16:9 and 9:16 | ⏳ Capture from the running app (see Section 7) |
 | Tablet screenshots | Optional | Skip unless you support tablets |
 
-Suggested screenshots to capture (portrait, from a preview build with sample data):
-1. Feed / "today" list with a few cards
-2. A card detail sheet open
-3. Calendar view
-4. Kids / chores with stars
-5. Vault documents
-6. Add-card / scan screen
+Order screenshots by what SELLS, not by app navigation, and put a short benefit
+caption band on each. The first two do ~80% of the browse→install conversion —
+make them your strongest. (Portrait, from a preview build with sample data.)
 
-Tip: add a short caption band at the top of each screenshot (e.g. "Your whole
-day at a glance") for a more polished listing — optional.
+1. Feed / "today" view — caption: "Your whole family, one calm home"
+2. Shared calendar — caption: "Everyone's week at a glance"
+3. Kids' chores + stars — caption: "Chores kids actually want to do"
+4. Teen account screen — caption: "Teens get their own private space"
+   (newest, most differentiating feature — competitors don't have it; give it a slot)
+5. Meal planner — caption: "Plan the week, shop in one tap"
+6. Scan a document — caption: "Snap a letter, make it a task"
 
 ---
 
 ## 3. Content rating questionnaire
 
-Answer honestly; for Household COO the expected answers are:
+Answer honestly; for Ahenora the expected answers are:
 
 - Category: **Utility, Productivity, Communication, or Other**
 - Violence: **No**
@@ -104,7 +107,7 @@ Expected result: **Everyone / PEGI 3**.
 
 ## 4. Target audience & content
 
-- **Target age group:** Select adult brackets (e.g. 18+). Household COO is used
+- **Target age group:** Select adult brackets (e.g. 18+). Ahenora is used
   by **parents/guardians**, not directed at children.
 - **Is your app designed for children / appealing to children?** **No.** It
   contains "kids" management features, but the app is operated by adults for
@@ -162,7 +165,7 @@ via GitHub Pages:
 
 ## 7. App access (required — login-gated app)
 
-Because Household COO requires sign-in, Google's reviewers need working test
+Because Ahenora requires sign-in, Google's reviewers need working test
 credentials. In **App content → App access**, choose "All or some functionality
 is restricted" and add:
 
@@ -171,7 +174,7 @@ Instructions: Open the app, tap "Create an account with email", or use the
 demo login below.
 
 Login method: Email + password
-Email: reviewer@householdcoo.app        (create this test account first)
+Email: reviewer@ahenora.com        (create this test account first)
 Password: <set a password and put it here>
 ```
 
