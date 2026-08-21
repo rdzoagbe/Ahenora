@@ -108,6 +108,24 @@ export default function Onboarding() {
     }
   };
 
+  // "Skip for now" must actually leave setup — it used to just advance a step,
+  // so the label promised an exit that wasn't there. Mark onboarding done (so
+  // the user isn't re-onboarded next launch) and go straight to the app.
+  const skip = async () => {
+    if (finishing) return;
+    setFinishing(true);
+    try {
+      await api.completeOnboarding();
+      logEvent('onboarding_skipped');
+      await refreshUser().catch(() => undefined);
+    } catch (e) {
+      logger.warn('onboarding skip failed', e);
+    } finally {
+      setFinishing(false);
+      goFeed();
+    }
+  };
+
   const totalSteps = 4;
   const isLast = step === totalSteps - 1;
   const next = () => setStep((s) => Math.min(s + 1, totalSteps - 1));
@@ -292,7 +310,7 @@ export default function Onboarding() {
         {/* Footer actions */}
         <View style={styles.footer}>
           {!isLast ? (
-            <PressScale testID="onboarding-skip" onPress={next} style={styles.skipBtn}>
+            <PressScale testID="onboarding-skip" onPress={skip} disabled={finishing} style={styles.skipBtn}>
               <Text style={[styles.skipText, { color: theme.colors.textMuted }]}>{t('ob_skip_for_now')}</Text>
             </PressScale>
           ) : (

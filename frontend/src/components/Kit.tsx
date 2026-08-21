@@ -117,7 +117,8 @@ export function ScreenHeader({
             accessibilityRole="button"
             accessibilityLabel={t('nav_household')}
           >
-            <LayoutGrid color={ui.text} size={22} />
+            <LayoutGrid color={ui.text} size={19} />
+            <Text style={[kit.hubLabel, { color: ui.muted }]}>{t('nav_more')}</Text>
           </PressScale>
         </View>
       </View>
@@ -246,7 +247,8 @@ export function StatBox({ label, value }: { label: string; value: string }) {
 const kit = StyleSheet.create({
   headerRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12 },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  hubBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  hubBtn: { minWidth: 40, height: 40, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  hubLabel: { fontFamily: 'Inter_700Bold', fontSize: 9, letterSpacing: 0.2, marginTop: 1 },
   brand: { fontFamily: 'Inter_800ExtraBold', fontSize: 13, letterSpacing: 1.6, textTransform: 'uppercase', marginBottom: 8 },
   eyebrow: { fontFamily: 'Inter_600SemiBold', fontSize: 14, letterSpacing: 0.2, marginBottom: 2 },
   title: { fontFamily: SERIF, letterSpacing: -0.5 },

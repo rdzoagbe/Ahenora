@@ -770,14 +770,25 @@ export default function Feed() {
   }, [t, load]);
 
   const removeAnnouncement = useCallback(async (id: string) => {
-    setAnnouncements((prev) => prev.filter((a) => a.announcement_id !== id));
-    try {
-      await api.deleteAnnouncement(id);
-    } catch {
-      Alert.alert(t('feed_could_not_delete'), t('feed_announcement_restored'));
-      load();
-    }
-  }, [load]);
+    // Announcements are shared and can be urgent — a single stray tap shouldn't
+    // wipe another parent's message. Confirm, like other shared deletes.
+    Alert.alert(t('feed_announcement_delete_title'), t('feed_announcement_delete_msg'), [
+      { text: t('cancel'), style: 'cancel' },
+      {
+        text: t('set_delete'),
+        style: 'destructive',
+        onPress: async () => {
+          setAnnouncements((prev) => prev.filter((a) => a.announcement_id !== id));
+          try {
+            await api.deleteAnnouncement(id);
+          } catch {
+            Alert.alert(t('feed_could_not_delete'), t('feed_announcement_restored'));
+            load();
+          }
+        },
+      },
+    ]);
+  }, [t, load]);
 
   return (
     <SwipeableTabView style={styles.container}>

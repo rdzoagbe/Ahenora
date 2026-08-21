@@ -1102,9 +1102,14 @@ export default function Calendar() {
                     </View>
                     <PressScale
                   accessibilityRole="button"
-                  accessibilityLabel={t('a11y_delete')} onPress={async () => {
-                      setCarpools((prev) => prev.filter((c) => c.carpool_id !== cp.carpool_id));
-                      try { await api.deleteCarpool(cp.carpool_id); } catch { load(); }
+                  accessibilityLabel={t('a11y_delete')} onPress={() => {
+                      Alert.alert(t('cal_carpool_delete_title'), t('cal_carpool_delete_msg'), [
+                        { text: t('cancel'), style: 'cancel' },
+                        { text: t('set_delete'), style: 'destructive', onPress: async () => {
+                          setCarpools((prev) => prev.filter((c) => c.carpool_id !== cp.carpool_id));
+                          try { await api.deleteCarpool(cp.carpool_id); } catch { load(); showToast(t('set_error'), 'error'); }
+                        } },
+                      ]);
                     }} hitSlop={12} style={{ padding: 4 }}>
                       <Trash2 color={ui.muted} size={15} />
                     </PressScale>

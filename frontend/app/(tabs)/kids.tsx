@@ -514,8 +514,8 @@ export default function Kids() {
     }
   };
 
-  // Upgrade a 13+ child to their own account. The age picker already floors at
-  // 13; this re-checks the 13-25 range before sending.
+  // Upgrade a 13-17 child to their own account. The age picker already floors at
+  // 13 and caps at 17; this re-checks that range before sending.
   const inviteTeen = async () => {
     const age = teenAge;
     if (age < 13 || age > 17) { showToast(t('teen_invite_range'), 'error'); return; }
@@ -527,7 +527,22 @@ export default function Kids() {
       setShowTeenInvite(false);
       showToast(t('teen_invite_sent'), 'success');
     } catch (e: any) {
-      showToast(e?.message || t('set_error'), 'error');
+      logger.warn('Teen invite failed:', e?.message || e);
+      // A plan cap (402) gets the same clear "household is full → see plans"
+      // path as adding a managed child, not a vanishing generic error.
+      if (e?.status === 402 || e?.planLimit) {
+        setShowTeenInvite(false);
+        Alert.alert(
+          t('kids_household_full'),
+          t('kids_household_full_msg'),
+          [
+            { text: t('kids_not_now'), style: 'cancel' },
+            { text: t('kids_see_plans'), onPress: () => router.push('/pricing') },
+          ],
+        );
+      } else {
+        showToast(e?.message || t('set_error'), 'error');
+      }
     } finally {
       setTeenSending(false);
     }
