@@ -129,12 +129,18 @@ export default function Kitchen() {
       if (mealRes.status === 'fulfilled') setMeals(mealRes.value);
       if (histRes.status === 'fulfilled') setShopHistory(histRes.value);
       if (dietRes.status === 'fulfilled') setHouseholdDiet(dietRes.value.diet);
+      // If every request failed (offline / server down), the empty states would
+      // otherwise read as "your kitchen is empty" — say it failed instead.
+      if ([shopRes, mealRes, histRes, dietRes].every((r) => r.status === 'rejected')) {
+        showToast(t('load_failed_pull'), 'error');
+      }
     } catch (e: any) {
       logger.warn('Kitchen load failed:', e?.message || e);
+      showToast(t('load_failed_pull'), 'error');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [showToast, t]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);

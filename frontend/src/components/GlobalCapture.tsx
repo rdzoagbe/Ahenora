@@ -168,7 +168,10 @@ export function GlobalCapture({ visible, onClose }: { visible: boolean; onClose:
       setShoppingText('');
       showToast(t('qa_added_toast'));
     } catch (e) {
+      // Don't fail silently — the sheet stays open with the text intact, but the
+      // user needs to know the tap didn't land so they don't just retry blindly.
       logger.warn('shopping quick add failed', e);
+      showToast(t('set_error'));
     } finally {
       setShoppingSaving(false);
     }

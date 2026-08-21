@@ -18,6 +18,8 @@ import { useStore } from '../../src/store';
 import { api, logEvent, CalendarImportResult, Card, Carpool } from '../../src/api';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { AddCardModal } from '../../src/components/AddCardModal';
+import AppToast from '../../src/components/AppToast';
+import { useToast } from '../../src/hooks/useToast';
 import { sendLocalNotification, syncCalendarNightly } from '../../src/notifications';
 import { cleanText, openExternal, parseDescription } from '../../src/eventDescription';
 
@@ -135,6 +137,7 @@ function groupByDay(cards: Card[], selectedDay: string | null) {
 
 export default function Calendar() {
   const { t, lang, dataVersion } = useStore();
+  const { toast, showToast } = useToast();
   const { isLocked, promptUpgrade } = usePremiumGate();
   const carpoolLocked = isLocked('carpool');
   const { width: windowWidth } = useWindowDimensions();
@@ -248,12 +251,18 @@ export default function Calendar() {
             .map((m) => m.name.trim().toLowerCase()),
         ));
       }
+      // Every request failing (offline / server down) would otherwise look like
+      // an empty calendar — tell the user it failed so "No events" isn't a lie.
+      if ([cardsRes, carpoolRes, membersRes, sharedRes].every((r) => r.status === 'rejected')) {
+        showToast(t('load_failed_pull'), 'error');
+      }
     } catch (e) {
       logger.warn('calendar load failed', e);
+      showToast(t('load_failed_pull'), 'error');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [showToast, t]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -1303,6 +1312,7 @@ export default function Calendar() {
         initialDraft={addDraft}
       />
 
+      <AppToast visible={Boolean(toast)} message={toast?.message || null} tone={toast?.tone || 'info'} />
     </SwipeableTabView>
   );
 }

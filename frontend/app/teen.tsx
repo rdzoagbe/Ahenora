@@ -23,13 +23,17 @@ import { logger } from '../src/logger';
  */
 export default function TeenScreen() {
   const ui = useUI();
-  const { user, logout } = useStore();
+  const { user, logout, t } = useStore();
   const router = useRouter();
   const styles = createStyles(ui);
 
   const [home, setHome] = useState<TeenHome | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
+  // Tasks the teen just ticked: kept visible in a "waiting for a star" state so
+  // the finish isn't a silent disappearance — the star only lands once a parent
+  // approves, and the teen should see that it's on its way.
+  const [pending, setPending] = useState<string[]>([]);
 
   const load = useCallback(async () => {
     try {
@@ -47,7 +51,7 @@ export default function TeenScreen() {
     setBusy(cardId);
     try {
       await api.teenFinishTask(cardId);
-      setHome((h) => (h ? { ...h, tasks: h.tasks.filter((t) => t.card_id !== cardId) } : h));
+      setPending((p) => (p.includes(cardId) ? p : [...p, cardId]));
     } catch (e) {
       logger.warn('teen finish task failed', e);
     } finally {
@@ -69,7 +73,7 @@ export default function TeenScreen() {
           <Text style={styles.brand}>AHENORA</Text>
           <View style={styles.badge}><Text style={styles.badgeText}>Teen</Text></View>
         </View>
-        <PressScale testID="teen-signout" onPress={signOut} style={styles.signOut} accessibilityLabel="Sign out">
+        <PressScale testID="teen-signout" onPress={signOut} style={styles.signOut} accessibilityLabel={t('teen_sign_out')}>
           <LogOut color={ui.muted} size={18} />
         </PressScale>
       </View>
@@ -78,15 +82,15 @@ export default function TeenScreen() {
         <View style={styles.center}><ActivityIndicator color={ui.orange} size="large" /></View>
       ) : (
         <ScrollView contentContainerStyle={styles.scroll}>
-          <Text style={styles.hello}>Hi{firstName ? `, ${firstName}` : ''}</Text>
+          <Text style={styles.hello}>{firstName ? t('teen_greeting_name', { name: firstName }) : t('teen_greeting')}</Text>
 
           {/* Stars — earned when a parent approves a finished task */}
           <View style={styles.starsCard}>
             <View style={styles.starsIcon}><Star color={'#E8A93B'} size={22} fill={'#E8A93B'} /></View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.starsCount}>{home?.stars ?? 0} stars</Text>
+              <Text style={styles.starsCount}>{t('teen_stars_count', { count: home?.stars ?? 0 })}</Text>
               <Text style={styles.starsSub}>
-                {home && home.week_earned > 0 ? `${home.week_earned} earned this week` : 'Finish a task to earn stars'}
+                {home && home.week_earned > 0 ? t('teen_week_earned', { count: home.week_earned }) : t('teen_earn_hint')}
               </Text>
             </View>
           </View>
@@ -94,36 +98,43 @@ export default function TeenScreen() {
           {/* Your tasks */}
           <View style={styles.sectionHead}>
             <ListChecks color={ui.orangeText} size={18} />
-            <Text style={styles.sectionTitle}>Your tasks</Text>
+            <Text style={styles.sectionTitle}>{t('teen_your_tasks')}</Text>
           </View>
           {home && home.tasks.length > 0 ? (
             <View style={styles.card}>
-              {home.tasks.map((task, i) => (
-                <View key={task.card_id} style={[styles.taskRow, i === 0 && { borderTopWidth: 0 }]}>
-                  <PressScale
-                    testID={`teen-task-${task.card_id}`}
-                    onPress={() => finish(task.card_id)}
-                    disabled={busy === task.card_id}
-                    style={styles.checkbox}
-                    accessibilityLabel={`Mark ${task.title} done`}
-                  >
-                    {busy === task.card_id ? <ActivityIndicator color={ui.orange} size="small" /> : <Check color={ui.line} size={16} />}
-                  </PressScale>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.taskTitle}>{task.title}</Text>
-                    {task.due_date ? <Text style={styles.taskMeta}>{formatDay(task.due_date)}</Text> : null}
+              {home.tasks.map((task, i) => {
+                const waiting = pending.includes(task.card_id);
+                return (
+                  <View key={task.card_id} style={[styles.taskRow, i === 0 && { borderTopWidth: 0 }]}>
+                    <PressScale
+                      testID={`teen-task-${task.card_id}`}
+                      onPress={() => finish(task.card_id)}
+                      disabled={waiting || busy === task.card_id}
+                      style={[styles.checkbox, waiting && styles.checkboxDone]}
+                      accessibilityLabel={`${task.title} — ${waiting ? t('teen_waiting_star') : t('teen_your_tasks')}`}
+                    >
+                      {busy === task.card_id
+                        ? <ActivityIndicator color={ui.orange} size="small" />
+                        : <Check color={waiting ? '#fff' : ui.line} size={16} />}
+                    </PressScale>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.taskTitle, waiting && styles.taskTitleDone]}>{task.title}</Text>
+                      {waiting
+                        ? <Text style={styles.waitingMeta}>{t('teen_waiting_star')}</Text>
+                        : (task.due_date ? <Text style={styles.taskMeta}>{formatDay(task.due_date)}</Text> : null)}
+                    </View>
                   </View>
-                </View>
-              ))}
+                );
+              })}
             </View>
           ) : (
-            <Text style={styles.empty}>Nothing to do right now 🎉</Text>
+            <Text style={styles.empty}>{t('teen_no_tasks')}</Text>
           )}
 
           {/* Your agenda */}
           <View style={[styles.sectionHead, { marginTop: 26 }]}>
             <CalendarDays color={ui.orangeText} size={18} />
-            <Text style={styles.sectionTitle}>Your agenda</Text>
+            <Text style={styles.sectionTitle}>{t('teen_your_agenda')}</Text>
           </View>
           {home && home.agenda.length > 0 ? (
             <View style={styles.card}>
@@ -138,15 +149,13 @@ export default function TeenScreen() {
               ))}
             </View>
           ) : (
-            <Text style={styles.empty}>No events shared with you yet</Text>
+            <Text style={styles.empty}>{t('teen_no_events')}</Text>
           )}
 
           {/* What stays private — the same honesty the kid screen shows */}
           <View style={styles.privacy}>
             <Lock color={ui.muted} size={14} />
-            <Text style={styles.privacyText}>
-              You see only your own tasks and the events shared with you. The rest of the family&apos;s calendar and documents stay private.
-            </Text>
+            <Text style={styles.privacyText}>{t('teen_privacy')}</Text>
           </View>
         </ScrollView>
       )}
@@ -180,8 +189,11 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   card: { backgroundColor: ui.card, borderRadius: 20, borderWidth: 1, borderColor: ui.line, paddingHorizontal: 16 },
   taskRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, borderTopWidth: 1, borderTopColor: '#F1EFEA', minHeight: 48 },
   checkbox: { width: 28, height: 28, borderRadius: 99, borderWidth: 1.5, borderColor: ui.line, alignItems: 'center', justifyContent: 'center' },
+  checkboxDone: { backgroundColor: ui.orange, borderColor: ui.orange },
   taskTitle: { fontFamily: 'Inter_700Bold', fontSize: 15, color: ui.text },
+  taskTitleDone: { color: ui.muted, textDecorationLine: 'line-through' },
   taskMeta: { fontFamily: 'Inter_500Medium', fontSize: 12.5, color: ui.muted, marginTop: 2 },
+  waitingMeta: { fontFamily: 'Inter_700Bold', fontSize: 12, color: ui.orangeText, marginTop: 2 },
   evRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, borderTopWidth: 1, borderTopColor: '#F1EFEA', minHeight: 48 },
   dot: { width: 9, height: 9, borderRadius: 99, backgroundColor: ui.orange, marginLeft: 9 },
   empty: { fontFamily: 'Inter_500Medium', fontSize: 14, color: ui.muted, paddingVertical: 4 },

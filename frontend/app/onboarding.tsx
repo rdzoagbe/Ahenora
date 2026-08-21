@@ -75,9 +75,10 @@ export default function Onboarding() {
       catch (e) { logger.warn('onboarding seed shopping failed', e); }
     }
     const email = inviteEmail.trim();
+    let inviteFailed = false;
     if (email && /\S+@\S+\.\S+/.test(email)) {
       try { await api.invite(email); }
-      catch (e) { logger.warn('onboarding invite failed', e); }
+      catch (e) { logger.warn('onboarding invite failed', e); inviteFailed = true; }
     }
 
     try {
@@ -87,6 +88,11 @@ export default function Onboarding() {
       logEvent('onboarding_done');
       await refreshUser().catch(() => undefined);
       goFeed();
+      // Don't claim the invite went out when it didn't — the co-parent would
+      // never get it and the user would never know. Tell them where to retry.
+      if (inviteFailed) {
+        Alert.alert(t('ob_invite_fail_title'), t('ob_invite_fail_msg', { email }));
+      }
     } catch (e) {
       logger.warn('completeOnboarding failed', e);
       Alert.alert(
