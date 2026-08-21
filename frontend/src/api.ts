@@ -666,6 +666,7 @@ export interface User {
   has_password?: boolean;
   /** A restricted 13-17 account — routed to the teen view, not the full app. */
   is_teen?: boolean;
+  is_helper?: boolean;
 }
 
 export interface TeenCard {
@@ -1074,11 +1075,12 @@ export const api = {
     request('/auth/language', { method: 'PATCH', body: { language } }),
   completeOnboarding: () =>
     request<User>('/auth/complete-onboarding', { method: 'POST' }),
-  invite: (email: string, relationship?: string, opts?: { is_teen?: boolean; age?: number }) => {
+  invite: (email: string, relationship?: string, opts?: { is_teen?: boolean; age?: number; is_helper?: boolean }) => {
     invalidateUsageCaches();
     const body: Record<string, unknown> = { email };
     if (relationship) body.relationship = relationship;
     if (opts?.is_teen) { body.is_teen = true; if (opts.age != null) body.age = opts.age; }
+    if (opts?.is_helper) body.is_helper = true;
     return request<{
       ok: boolean;
       sent: boolean;
@@ -1094,11 +1096,11 @@ export const api = {
       body,
     });
   },
-  createInviteLink: (opts?: { relationship?: string; label?: string }) => {
+  createInviteLink: (opts?: { relationship?: string; label?: string; is_helper?: boolean }) => {
     invalidateUsageCaches();
     return request<{ ok: boolean; invite: FamilyInvite; invite_url: string }>('/family/invite/link', {
       method: 'POST',
-      body: opts && (opts.relationship || opts.label) ? opts : {},
+      body: opts && (opts.relationship || opts.label || opts.is_helper) ? opts : {},
     });
   },
   getMetricsSummary: (days = 14) =>

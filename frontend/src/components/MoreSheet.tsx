@@ -25,7 +25,7 @@ import { HandOverSheet } from './HandOverSheet';
 export function MoreSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const [handOver, setHandOver] = useState(false);
   const ui = useUI();
-  const { t } = useStore();
+  const { t, user } = useStore();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const styles = createStyles(ui);
@@ -46,7 +46,11 @@ export function MoreSheet({ visible, onClose }: { visible: boolean; onClose: () 
       title: t('settings'), sub: t('nav_more_settings_sub'), path: '/(tabs)/settings' },
     { key: 'account', icon: User, tone: ui.mintText, soft: ui.mint,
       title: t('nav_more_account'), sub: t('nav_more_account_sub'), path: '/(tabs)/account' },
-  ];
+  ].filter((it) => !(user?.is_helper && (it.key === 'vault' || it.key === 'kid')));
+  // A helper never sees the private document vault, and can't hand the device
+  // to a child (exiting kid mode needs a parent's PIN they don't hold). The
+  // deeper surfaces (billing, member management, expenses) are refused
+  // server-side by require_full_member.
 
   return (
     <>
