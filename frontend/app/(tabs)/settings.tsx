@@ -38,6 +38,7 @@ import { LanguageModal } from '../../src/components/LanguageModal';
 import { PinPadModal } from '../../src/components/PinPadModal';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
 import { TabScreen } from '../../src/components/TabScreen';
+import { PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { Card, Chevron, Divider, IconTile, MiniRow, NavRow, ScreenHeader, StatBox, ToggleRow, useUI, UIColors } from '../../src/components/Kit';
 import { useStore } from '../../src/store';
 import { openReview } from '../../src/reviewPrompt';
@@ -661,6 +662,14 @@ export default function Settings() {
               <ChevronRight color={ui.muted} size={20} />
             </Card>
           </PressScale>
+
+          {/* Everyone visits Settings, so this is where the free-preview state
+              must be unmissable: while billing is off, say plainly that Premium
+              is free for now and what it will cost — so it's never a surprise
+              takeaway. Renders nothing once billing is live. */}
+          <View style={{ marginTop: 12 }}>
+            <PremiumPreviewBanner />
+          </View>
 
           {/* Search across every setting — the escape hatch that makes
               grouping safe: nothing being one tap deeper matters when it is
