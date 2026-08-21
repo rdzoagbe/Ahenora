@@ -252,9 +252,10 @@ export default function Calendar() {
             .map((m) => m.name.trim().toLowerCase()),
         ));
       }
-      // Every request failing (offline / server down) would otherwise look like
-      // an empty calendar — tell the user it failed so "No events" isn't a lie.
-      if ([cardsRes, carpoolRes, membersRes, sharedRes].every((r) => r.status === 'rejected')) {
+      // The events (cards) are the calendar's core — if that call fails, "No
+      // events" is a lie even when the other three succeed. Flag it on the cards
+      // failure specifically, not only when all four fail.
+      if (cardsRes.status === 'rejected') {
         showToast(t('load_failed_pull'), 'error');
       }
     } catch (e) {

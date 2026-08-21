@@ -1558,6 +1558,11 @@ async def add_user_to_family_if_needed(database: Any, user: dict, family_id: str
     if is_teen_role:
         await database["users"].update_one(
             {"user_id": user["user_id"]}, {"$set": {"is_teen": True, "updated_at": utcnow()}})
+        # Mutate the in-memory dict too: the auth handlers serialize this same
+        # object with public_user() right after calling us, and without this the
+        # join response would carry is_teen:false — routing the teen into the
+        # full parent app where every request then 403s until a relaunch.
+        user["is_teen"] = True
         # Retire the managed child profile this teen is replacing — same name,
         # no login — so they don't appear (or count) twice.
         teen_name = (user.get("name") or "").strip().lower()
@@ -1578,6 +1583,21 @@ async def add_user_to_family_if_needed(database: Any, user: dict, family_id: str
     )
     if existing:
         return existing
+
+    # Backstop the young-people cap at accept time, the way the parent cap is
+    # backstopped below: an invite sent while there was room can't be accepted
+    # once the household has filled up. The friendly gate is at invite time
+    # (family_invite); this holds the line if that was bypassed or raced.
+    if is_teen_role:
+        sub = await build_subscription(family_id)
+        max_young = sub["limits"].get("max_children", 2)
+        if await count_young_people(database, family_id) >= max_young:
+            raise HTTPException(
+                status_code=402,
+                detail={"error": "plan_limit", "feature": "max_children",
+                        "message": "This household is full for its current plan.",
+                        "limit": max_young},
+            )
 
     # The real guard: two co-parent invites can be outstanding at once (each was
     # created while only the founder existed), and without this the second to be
@@ -4071,11 +4091,27 @@ async def family_invite(payload: InviteIn, user=Depends(require_user)):
         raise HTTPException(status_code=400, detail="Valid email is required")
 
     # The age gate is the COPPA/Families-policy line, enforced HERE and not only
-    # in the client: a restricted young-person account is for 13+ only. The 13
-    # floor is the hard rule (no under-13 independent account); 25 is a sane
-    # ceiling for a dependent still in the household.
+    # in the client: a restricted young-person account is for 13-17. The 13
+    # floor is the hard rule (no under-13 independent account); 17 is the ceiling
+    # (at 18 they're an adult, not a dependent teen).
     if payload.is_teen and (payload.age is None or not (13 <= int(payload.age) <= 17)):
-        raise HTTPException(status_code=400, detail="A restricted account is for ages 13 to 25.")
+        raise HTTPException(status_code=400, detail="A restricted account is for ages 13 to 17.")
+
+    # Teens share the kids' plan cap — enforce it here so the invite can't be the
+    # free way around the limit the managed-child add already guards. The client
+    # turns this 402 into the "household is full -> see plans" prompt.
+    if payload.is_teen and not is_admin_user(user):
+        sub = await build_subscription(user["family_id"])
+        max_young = sub["limits"].get("max_children", 2)
+        young = await count_young_people(database, user["family_id"])
+        if young >= max_young:
+            plan_limit_error(
+                feature="max_children",
+                current_plan=sub["plan"],
+                message="Upgrade to add more (kids and teens share your plan's limit).",
+                limit=max_young,
+                used=young,
+            )
 
     existing = await database["family_invites"].find_one(
         {
@@ -9147,6 +9183,25 @@ async def complete_chore(chore_id: str, user: dict = Depends(require_user), data
         raise HTTPException(404, "Chore not found")
 
     doer = chore.get("current_assignee")
+
+    # Anti-double-pay claim: every other star path guards the award atomically,
+    # but this one read-then-awarded unconditionally, so a rapid double-tap or a
+    # retried request paid twice (and the second star went to the just-rotated
+    # next child). Claim a coarse 2-second completion bucket with the same
+    # $ne-on-a-marker pattern the weekly-claim guards use: a duplicate within the
+    # same bucket sees the marker already set and loses the claim (returns
+    # idempotently, no payment), while a genuine later re-completion — minutes or
+    # days apart — falls in a new bucket and pays normally.
+    now = utcnow()
+    bucket = int(now.timestamp()) // 2
+    claim = await database["chores"].update_one(
+        {"chore_id": chore_id, "family_id": user["family_id"],
+         "last_completed_bucket": {"$ne": bucket}},
+        {"$set": {"last_completed_bucket": bucket, "last_completed_at": now}},
+    )
+    if claim.matched_count == 0:
+        return {"ok": True, "chore": public_chore(chore), "stars_awarded": 0, "member_id": doer}
+
     txn = await award_stars_to_member(
         database,
         user["family_id"],

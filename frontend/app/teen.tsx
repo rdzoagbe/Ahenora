@@ -1,8 +1,8 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useState } from 'react';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
-import { Check, CalendarDays, LogOut, ListChecks, Lock, Star } from 'lucide-react-native';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { Check, CalendarDays, LogOut, ListChecks, Lock, RefreshCw, Star } from 'lucide-react-native';
 
 import { PressScale } from '../src/components/PressScale';
 import { useUI, UIColors } from '../src/components/Kit';
@@ -30,6 +30,7 @@ export default function TeenScreen() {
 
   const [home, setHome] = useState<TeenHome | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   // Tasks the teen just ticked: kept visible in a "waiting for a star" state so
   // the finish isn't a silent disappearance — the star only lands once a parent
@@ -39,14 +40,23 @@ export default function TeenScreen() {
   const load = useCallback(async () => {
     try {
       setHome(await api.teenHome());
+      setLoadError(false);
+      // The server is the truth on refresh: a task the parent has now approved
+      // or declined is gone from the list, so drop any stale waiting rows.
+      setPending([]);
     } catch (e) {
       logger.warn('teen home failed', e);
+      // Don't render a fake "0 stars / no tasks" home on a failed load — show a
+      // clear error + retry instead, the way the parent tabs do.
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  // Reload on every focus (not just mount) so the star count and the "waiting"
+  // rows actually resolve once a parent approves from their device.
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const finish = useCallback(async (cardId: string) => {
     setBusy(cardId);
@@ -54,11 +64,13 @@ export default function TeenScreen() {
       await api.teenFinishTask(cardId);
       setPending((p) => (p.includes(cardId) ? p : [...p, cardId]));
     } catch (e) {
+      // A silent failure leaves the teen unsure the tap landed — tell them.
       logger.warn('teen finish task failed', e);
+      Alert.alert(t('teen_couldnt_save'));
     } finally {
       setBusy(null);
     }
-  }, []);
+  }, [t]);
 
   const signOut = useCallback(async () => {
     await logout();
@@ -81,6 +93,14 @@ export default function TeenScreen() {
 
       {loading ? (
         <View style={styles.center}><ActivityIndicator color={ui.orange} size="large" /></View>
+      ) : loadError && !home ? (
+        <View style={styles.center}>
+          <Text style={styles.errorText}>{t('teen_couldnt_load')}</Text>
+          <PressScale testID="teen-retry" onPress={() => { setLoading(true); load(); }} style={styles.retryBtn}>
+            <RefreshCw color={ui.orangeText} size={16} />
+            <Text style={styles.retryText}>{t('teen_retry')}</Text>
+          </PressScale>
+        </View>
       ) : (
         <ScrollView contentContainerStyle={styles.scroll}>
           <Text style={styles.hello}>{firstName ? t('teen_greeting_name', { name: firstName }) : t('teen_greeting')}</Text>
@@ -173,7 +193,10 @@ function formatDay(iso: string, locale: string): string {
 
 const createStyles = (ui: UIColors) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: ui.bg },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, gap: 14 },
+  errorText: { fontFamily: 'Inter_500Medium', fontSize: 14, color: ui.muted, textAlign: 'center', lineHeight: 21 },
+  retryBtn: { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: ui.orangeSoft, borderRadius: 999, paddingHorizontal: 16, paddingVertical: 9 },
+  retryText: { fontFamily: 'Inter_700Bold', fontSize: 13.5, color: ui.orangeText },
   topRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 8 },
   brand: { fontFamily: 'Inter_800ExtraBold', fontSize: 13, letterSpacing: 1.6, color: ui.orangeText },
   badge: { alignSelf: 'flex-start', backgroundColor: ui.orangeSoft, borderRadius: 99, paddingHorizontal: 10, paddingVertical: 4, marginTop: 8 },

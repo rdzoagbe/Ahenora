@@ -680,6 +680,11 @@ export default function Kids() {
     const reason = starReason.trim();
     if (delta < 0 && !reason) { showToast(t('kids_reason_required'), 'error'); return; }
 
+    // Guard against a double-tap in the frame before `saving` re-renders, the
+    // same ref guard quickAdd uses — otherwise both taps hit the $inc and the
+    // child is awarded/docked twice.
+    if (starActionRef.current) return;
+    starActionRef.current = true;
     setSaving(true);
     try {
       const result = await api.adjustMemberStars(activeChild.member_id, { delta, reason: reason || (delta > 0 ? t('kids_parent_added_stars') : t('kids_parent_removed_stars')) });
@@ -693,6 +698,7 @@ export default function Kids() {
       showToast(e?.message || t('kids_update_stars_error'), 'error');
     } finally {
       setSaving(false);
+      starActionRef.current = false;
     }
   };
 

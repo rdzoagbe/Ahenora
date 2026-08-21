@@ -239,3 +239,47 @@ class TeenMode(unittest.TestCase):
                 os.environ.pop("RC_WEBHOOK_SECRET", None)
             else:
                 os.environ["RC_WEBHOOK_SECRET"] = prev
+
+    def test_join_response_carries_is_teen(self):
+        """The join must flag the user dict the auth handlers serialize — else
+        the response says is_teen:false and the teen lands in the parent app."""
+        u = {"user_id": "u_new", "family_id": "fam1", "name": "Kojo", "email": "kojo@x.com"}
+        asyncio.run(server.add_user_to_family_if_needed(self.db, u, "fam1", role="teen"))
+        self.assertTrue(u.get("is_teen"))
+
+    def test_teen_invite_blocked_at_young_people_cap(self):
+        """The invite path enforces the shared cap too — a teen can't be the
+        free way around the limit the managed-child add already guards."""
+        # setUp's teen = 1 young person; add a kid to hit the Village cap of 2.
+        asyncio.run(self.db["family_members"].insert_one({
+            "member_id": "m_c2", "family_id": "fam1", "user_id": None,
+            "name": "Yaw", "role": "Child", "pin_hash": None}))
+        prev = os.environ.get("RC_WEBHOOK_SECRET")
+        os.environ["RC_WEBHOOK_SECRET"] = "test-secret"
+        try:
+            with self.assertRaises(server.HTTPException) as ctx:
+                asyncio.run(server.family_invite(
+                    server.InviteIn(email="newteen@x.com", is_teen=True, age=15), user=dict(PARENT)))
+            self.assertEqual(ctx.exception.status_code, 402)
+            self.assertEqual(ctx.exception.detail["feature"], "max_children")
+        finally:
+            if prev is None:
+                os.environ.pop("RC_WEBHOOK_SECRET", None)
+            else:
+                os.environ["RC_WEBHOOK_SECRET"] = prev
+
+    def test_complete_chore_double_tap_pays_once(self):
+        """A rapid double-tap / retry must not pay the chore star twice."""
+        asyncio.run(self.db["family_members"].insert_one({
+            "member_id": "m_kid", "family_id": "fam1", "user_id": None,
+            "name": "Nana", "role": "Child", "stars": 0, "pin_hash": None}))
+        asyncio.run(self.db["chores"].insert_one({
+            "chore_id": "ch1", "family_id": "fam1", "title": "Bins",
+            "current_assignee": "m_kid", "assigned_members": ["m_kid"],
+            "star_reward": 3, "rotate": False, "created_at": server.utcnow()}))
+        r1 = asyncio.run(server.complete_chore(chore_id="ch1", user=dict(PARENT), database=self.db))
+        r2 = asyncio.run(server.complete_chore(chore_id="ch1", user=dict(PARENT), database=self.db))
+        self.assertEqual(r1["stars_awarded"], 3)
+        self.assertEqual(r2["stars_awarded"], 0)  # duplicate lost the claim
+        m = asyncio.run(self.db["family_members"].find_one({"member_id": "m_kid"}))
+        self.assertEqual(int(m.get("stars") or 0), 3)  # paid once, not twice
