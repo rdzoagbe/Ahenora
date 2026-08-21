@@ -381,7 +381,7 @@ export default function Feed() {
         api
           .getNotificationSettings()
           .then((prefs) => {
-            syncCardReminderNotifications(prefs.card_reminders ? loadedCards : [], prefs.card_reminders).catch(() => undefined);
+            syncCardReminderNotifications(prefs.card_reminders ? loadedCards : [], prefs.card_reminders, t('notif_due_soon')).catch(() => undefined);
             // Morning digest: 07:30 local tomorrow, listing what is due that
             // day (plus anything overdue). Recomputed on every sync; skipped
             // when there is nothing to say. Rides the card_reminders toggle.

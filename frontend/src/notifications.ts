@@ -193,11 +193,11 @@ export async function cancelAllCardReminderNotifications() {
   return withScheduleLock('cards', cancelAllCardRemindersUnlocked);
 }
 
-export async function syncCardReminderNotifications(cards: Card[], enabled: boolean) {
-  return withScheduleLock('cards', () => syncCardReminderNotificationsUnlocked(cards, enabled));
+export async function syncCardReminderNotifications(cards: Card[], enabled: boolean, reminderLabel?: string) {
+  return withScheduleLock('cards', () => syncCardReminderNotificationsUnlocked(cards, enabled, reminderLabel));
 }
 
-async function syncCardReminderNotificationsUnlocked(cards: Card[], enabled: boolean) {
+async function syncCardReminderNotificationsUnlocked(cards: Card[], enabled: boolean, reminderLabel?: string) {
   if (!enabled) {
     await cancelAllCardRemindersUnlocked();
     return { scheduled: 0 };
@@ -234,8 +234,10 @@ async function syncCardReminderNotificationsUnlocked(cards: Card[], enabled: boo
 
     const identifier = await Notifications.scheduleNotificationAsync({
       content: {
-        title: 'Ahenora reminder',
-        body: card.title,
+        // Lead with the task, not the app name (the OS already shows "Ahenora"
+        // as the header) so a reminder says what it's about at a glance.
+        title: card.title,
+        body: reminderLabel || 'Coming up',
         sound: true,
         data: {
           type: 'card_reminder',

@@ -363,7 +363,7 @@ export default function Settings() {
 
       if (nextPrefs.card_reminders) {
         const cards = await api.listCards();
-        const result = await syncCardReminderNotifications(cards, true);
+        const result = await syncCardReminderNotifications(cards, true, t('notif_due_soon'));
         setNotificationStatus(result.scheduled ? `${result.scheduled} reminder notification${result.scheduled === 1 ? '' : 's'} scheduled.` : warning || t('set_reminder_alerts_on'));
       } else {
         await syncCardReminderNotifications([], false).catch(() => undefined);
