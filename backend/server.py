@@ -856,15 +856,23 @@ async def build_subscription(family_id: str):
     # everyone in it shares the top plan, exactly like a real purchase would
     # be shared. Fixes the co-parent seeing Free next to the founder.
     admin_household = await family_has_admin(database, family_id)
-    if testing_window or admin_household:
+    # Grandfathered families keep Premium after billing goes live — the grace
+    # period's exemption for early adopters ("founding families"). Set the flag
+    # when the cutover date passes for anyone we're thanking / not charging yet.
+    grandfathered = bool(family.get("grandfathered"))
+    if testing_window or admin_household or grandfathered:
         limits = PLAN_CATALOG["executive"]["limits"]
     return {
         "plan": "family_office" if admin_household else family["plan"],
         # Lets the app show "you're previewing Premium free" notices so launch
         # gating never feels like a surprise takeaway.
         "testing_window": testing_window,
+        # The announced cutover date (ISO, e.g. "2026-10-01") drives the in-app
+        # countdown. Empty until we commit a date — the app shows the plain
+        # free-preview notice until then, the countdown only once it's set.
+        "billing_starts_at": os.environ.get("BILLING_START_DATE") or None,
         "billing_cycle": family["billing_cycle"],
-        "grandfathered": family.get("grandfathered", False),
+        "grandfathered": grandfathered,
         "updated_at": iso(family.get("updated_at")),
         "ai_scans_used": family.get("ai_scans_used", 0),
         "ai_scans_period_start": iso(family.get("ai_scans_period_start")),

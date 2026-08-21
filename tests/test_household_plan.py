@@ -64,6 +64,17 @@ class HouseholdPlan(unittest.TestCase):
         self.assertEqual(sub["plan"], "village")
         self.assertNotEqual(sub["limits"], server.PLAN_CATALOG["executive"]["limits"])
 
+    def test_a_grandfathered_family_keeps_premium_after_billing(self):
+        """The grace-period exemption: a family flagged grandfathered keeps the
+        top limits once billing is live, even with no admin and a Village plan."""
+        self._seed("fam3", ["founding@x.com"])
+        asyncio.run(self.db["families"].insert_one({
+            "family_id": "fam3", "plan": "village", "billing_cycle": "monthly",
+            "grandfathered": True}))
+        sub = asyncio.run(server.build_subscription("fam3"))
+        self.assertTrue(sub["grandfathered"])
+        self.assertEqual(sub["limits"], server.PLAN_CATALOG["executive"]["limits"])
+
 
 if __name__ == "__main__":
     unittest.main()

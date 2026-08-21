@@ -959,7 +959,11 @@ export interface Subscription {
   billing_cycle: BillingCycle;
   grandfathered: boolean;
   testing_window?: boolean;
+  // Announced billing cutover date (ISO). When set and in the future, the app
+  // shows a countdown instead of the plain free-preview notice.
+  billing_starts_at?: string | null;
   children_count?: number;
+  young_people_count?: number;
   updated_at: string;
   ai_scans_used: number;
   ai_scans_period_start: string;
