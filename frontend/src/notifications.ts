@@ -354,12 +354,49 @@ export async function ensureAskedNotificationPermissionOnce() {
 const DIGEST_ID_KEY = 'coo_morning_digest_id';
 
 /**
+ * Cancels every still-scheduled notification whose data.type is in `types`.
+ * The single-id bookkeeping below only tracks the LAST schedule, so two callers
+ * racing (a Feed mount + focus effect, or two quick opens) can each schedule
+ * one and orphan the other — the orphans then all fire together the next
+ * morning. Sweeping by type clears any such strays so at most one survives.
+ */
+async function cancelScheduledByType(Notifications: any, types: string[]) {
+  try {
+    const all = await Notifications.getAllScheduledNotificationsAsync();
+    await Promise.all(
+      (all || [])
+        .filter((n: any) => types.includes(n?.content?.data?.type))
+        .map((n: any) =>
+          Notifications.cancelScheduledNotificationAsync(n.identifier).catch(() => undefined))
+    );
+  } catch {
+    // Best effort — a device that can't list scheduled notifications still gets
+    // the single-id cancel below.
+  }
+}
+
+// Serializes digest scheduling so two concurrent callers can't both cancel the
+// same tracked id and then both schedule — the exact race that produced
+// duplicate morning notifications.
+let digestScheduleLock: Promise<unknown> = Promise.resolve();
+
+/**
  * Schedules (or clears) tomorrow's 07:30 local "morning digest" notification.
  * The caller recomputes the digest on every sync, so content staleness is
  * bounded by the user's last app open. No backend scheduler or timezone
  * bookkeeping needed — the OS fires it in the device's local time.
  */
-export async function syncMorningDigest(
+export function syncMorningDigest(
+  enabled: boolean,
+  digest: { title: string; body: string } | null,
+  quietTip?: { title: string; body: string } | null
+) {
+  const run = digestScheduleLock.then(() => syncMorningDigestImpl(enabled, digest, quietTip));
+  digestScheduleLock = run.then(() => undefined, () => undefined);
+  return run;
+}
+
+async function syncMorningDigestImpl(
   enabled: boolean,
   digest: { title: string; body: string } | null,
   quietTip?: { title: string; body: string } | null
@@ -372,6 +409,8 @@ export async function syncMorningDigest(
     await Notifications.cancelScheduledNotificationAsync(previous).catch(() => undefined);
     await AsyncStorage.removeItem(DIGEST_ID_KEY).catch(() => undefined);
   }
+  // Clear any orphans a prior race left behind, so exactly one digest fires.
+  await cancelScheduledByType(Notifications, ['morning_digest', 'daily_tip']);
 
   // With items due: normal digest. With nothing due: a SILENT rotating tip on
   // the low-priority channel — no sound, no vibration, just a gentle presence
@@ -425,6 +464,7 @@ export async function syncDinnerReminder(
     await Notifications.cancelScheduledNotificationAsync(previous).catch(() => undefined);
     await AsyncStorage.removeItem(DINNER_ID_KEY).catch(() => undefined);
   }
+  await cancelScheduledByType(Notifications, ['dinner_reminder']);
 
   if (!enabled || !content) return { scheduled: false };
 
@@ -474,6 +514,7 @@ export async function syncSundayRecap(
     await Notifications.cancelScheduledNotificationAsync(previous).catch(() => undefined);
     await AsyncStorage.removeItem(RECAP_ID_KEY).catch(() => undefined);
   }
+  await cancelScheduledByType(Notifications, ['sunday_recap']);
 
   if (!enabled || !content) return { scheduled: false };
 
@@ -527,6 +568,7 @@ export async function syncCalendarNightly(
     await Notifications.cancelScheduledNotificationAsync(previous).catch(() => undefined);
     await AsyncStorage.removeItem(CAL_NIGHTLY_ID_KEY).catch(() => undefined);
   }
+  await cancelScheduledByType(Notifications, ['calendar_nightly']);
 
   if (!enabled || !content) return { scheduled: false };
 
