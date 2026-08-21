@@ -198,3 +198,32 @@ class TeenMode(unittest.TestCase):
             "fam1", role="teen"))
         child = asyncio.run(self.db["family_members"].find_one({"member_id": "m_child"}))
         self.assertIsNone(child)  # retired
+
+    # --- teens share the kids' cap (no free way around the limit) --------
+    def test_teen_counts_toward_young_people_cap(self):
+        """Kids and teens are metered together. A household with a teen already
+        has one young person; on Village (cap 2) it can add one more, then the
+        next is blocked — the teen was never a free bypass."""
+        # setUp already added the teen Ama, so one young person exists.
+        self.assertEqual(asyncio.run(server.count_young_people(self.db, "fam1")), 1)
+        asyncio.run(self.db["family_members"].insert_one({
+            "member_id": "m_c1", "family_id": "fam1", "user_id": None,
+            "name": "Kofi", "role": "Child", "pin_hash": None}))
+        self.assertEqual(asyncio.run(server.count_young_people(self.db, "fam1")), 2)
+
+        # With billing live (outside the testing window) and a Village plan, a
+        # third young person is refused — the teen counted toward the two.
+        prev = os.environ.get("RC_WEBHOOK_SECRET")
+        os.environ["RC_WEBHOOK_SECRET"] = "test-secret"
+        try:
+            with self.assertRaises(server.HTTPException) as ctx:
+                asyncio.run(server.create_family_member(
+                    server.ChildIn(name="Esi"), user=dict(PARENT)))
+            self.assertEqual(ctx.exception.status_code, 402)
+            self.assertEqual(ctx.exception.detail["feature"], "max_children")
+            self.assertEqual(ctx.exception.detail["used"], 2)
+        finally:
+            if prev is None:
+                os.environ.pop("RC_WEBHOOK_SECRET", None)
+            else:
+                os.environ["RC_WEBHOOK_SECRET"] = prev

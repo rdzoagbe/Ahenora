@@ -625,8 +625,9 @@ async def _gemini_vision(prompt: str, image_base64: str, system: str = "", fast:
     return await _gemini_generate([prompt, img], system, fast=fast)
 
 
-# The two launch tiers. Children are metered (role-aware: parents/caregivers
-# never count against a "child" limit); max_members stays as a generous total
+# The two launch tiers. Young people are metered (role-aware: parents/caregivers
+# never count) — max_children caps kids and teens TOGETHER, so a teen account is
+# never a free way around the limit; max_members stays as a generous total
 # safety cap. "family_office" is retired — any family doc still carrying it
 # resolves to "executive" via plan_catalog_for().
 PLAN_CATALOG = {
@@ -823,13 +824,26 @@ async def ai_scans_remaining(user) -> int:
     return max(0, sub["limits"]["ai_scans_per_month"] - sub["ai_scans_used"])
 
 
+async def count_young_people(database, family_id: str) -> int:
+    """Kids and teens share one plan limit — both are 'young people'. A teen is
+    a separate login, but a family with two teens should get the same allowance
+    as a family with two kids, so a teen must never be a free way around the
+    cap. Parents, co-parents and carers are never the meter."""
+    return await database["family_members"].count_documents(
+        {"family_id": family_id, "role": {"$regex": "^(child|teen)$", "$options": "i"}}
+    )
+
+
 async def build_subscription(family_id: str):
     database = get_db()
     family = await get_family_doc(family_id)
     members_count = await database["family_members"].count_documents({"family_id": family_id})
+    # children_count stays children-only for display; young_people_count is what
+    # the plan cap actually meters (kids + teens together).
     children_count = await database["family_members"].count_documents(
         {"family_id": family_id, "role": {"$regex": "^child$", "$options": "i"}}
     )
+    young_people_count = await count_young_people(database, family_id)
     catalog = plan_catalog_for(family["plan"])
     limits = catalog["limits"]
     # TESTING WINDOW: until billing is live (RC_WEBHOOK_SECRET set), every
@@ -857,6 +871,7 @@ async def build_subscription(family_id: str):
         "vault_bytes_used": family.get("vault_bytes_used", 0),
         "members_count": members_count,
         "children_count": children_count,
+        "young_people_count": young_people_count,
         "limits": limits,
         "price_monthly": catalog["price_monthly"],
         "price_yearly": catalog["price_yearly"],
@@ -3387,19 +3402,18 @@ async def create_family_member(payload: ChildIn, user=Depends(require_user)):
 
     subscription = await build_subscription(user["family_id"])
     if not is_admin_user(user):
-        # Role-aware metering: only children count against the child limit
-        # (parents/caregivers are never the meter). Free = 2, Premium = 5.
-        children_count = await database["family_members"].count_documents(
-            {"family_id": user["family_id"], "role": {"$regex": "^child$", "$options": "i"}}
-        )
-        max_children = subscription["limits"].get("max_children", 2)
-        if children_count >= max_children:
+        # Role-aware metering: kids and teens share one cap (parents/caregivers
+        # are never the meter), so a household with two teens can't add a third
+        # young person for free. Free = 2, Premium = 5.
+        young_people = await count_young_people(database, user["family_id"])
+        max_young = subscription["limits"].get("max_children", 2)
+        if young_people >= max_young:
             plan_limit_error(
                 feature="max_children",
                 current_plan=subscription["plan"],
-                message="Upgrade to Premium to add more children (up to 5).",
-                limit=max_children,
-                used=children_count,
+                message="Upgrade to Premium to add more (kids and teens share your plan's limit).",
+                limit=max_young,
+                used=young_people,
             )
 
     member = {
