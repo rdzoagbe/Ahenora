@@ -25,7 +25,7 @@ import {
   Minus,
   ChevronRight,
   Timer,
-  DollarSign,
+  PiggyBank,
   RotateCcw,
   Play,
 } from 'lucide-react-native';
@@ -53,12 +53,13 @@ import { logger } from '../../src/logger';
 import { recordWin } from '../../src/reviewPrompt';
 import { isAlreadySettled, mergeRedemptions, restoreRedemption } from '../../src/redemptions';
 import { webConfirm } from '../../src/confirm';
+import { localeFor } from '../../src/utils/date';
 
 /** "Sat 2 Aug" — short enough for a subtitle, unambiguous about which day. */
-function formatDueDate(iso: string): string {
+function formatDueDate(iso: string, locale: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+  return d.toLocaleDateString(locale, { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
 type StarMode = 'add' | 'remove';
@@ -119,15 +120,15 @@ function cleanNumber(value: string) {
   return value.replace(/[^0-9]/g, '');
 }
 
-function formatActivityDate(value?: string | null) {
+function formatActivityDate(value: string | null | undefined, locale: string) {
   if (!value) return '';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return date.toLocaleDateString(locale, { month: 'short', day: 'numeric' });
 }
 
 export default function Kids() {
-  const { t, dataVersion } = useStore();
+  const { t, lang, dataVersion } = useStore();
   const { isLocked, promptUpgrade } = usePremiumGate();
   const allowanceLocked = isLocked('allowance');
   const router = useRouter();
@@ -276,8 +277,8 @@ export default function Kids() {
         // UTC, not midnight: the day is the point, and a midnight stamp lands
         // in the previous day for anyone west of UTC.
         iso: new Date(d.getTime() + 12 * 3600 * 1000).toISOString(),
-        letter: d.toLocaleDateString(undefined, { weekday: 'narrow', timeZone: 'UTC' }),
-        name: d.toLocaleDateString(undefined, { weekday: 'long', timeZone: 'UTC' }),
+        letter: d.toLocaleDateString(localeFor(lang), { weekday: 'narrow', timeZone: 'UTC' }),
+        name: d.toLocaleDateString(localeFor(lang), { weekday: 'long', timeZone: 'UTC' }),
         earned: earnedByDay[k] || 0,
         isToday: k === todayKey,
         // Sunday's stars cannot be given on Wednesday. The server refuses it;
@@ -285,7 +286,7 @@ export default function Kids() {
         isFuture: d.getTime() > now.getTime(),
       };
     });
-  }, [historyItems]);
+  }, [historyItems, lang]);
   const backdateDayCell = useMemo(
     () => weekDayCells.find((d) => d.iso === backdateDay) || null,
     [weekDayCells, backdateDay],
@@ -1615,7 +1616,7 @@ export default function Kids() {
           {activeChild ? (
             <>
               <View style={styles.featureHeader}>
-                <DollarSign color={ui.goldText} size={18} />
+                <PiggyBank color={ui.goldText} size={18} />
                 <Text style={styles.featureHeaderText}>{t('kids_allowance')}</Text>
                 {allowanceLocked ? <LockBadge onPress={() => promptUpgrade('allowance')} /> : null}
               </View>
@@ -1650,7 +1651,7 @@ export default function Kids() {
                         <Text style={styles.allowanceDue}>
                           {childAllowance.is_due
                             ? t('kids_allowance_due_now')
-                            : t('kids_allowance_due_on', { date: formatDueDate(childAllowance.next_due_at) })}
+                            : t('kids_allowance_due_on', { date: formatDueDate(childAllowance.next_due_at, localeFor(lang)) })}
                         </Text>
                       ) : null}
                     </PressScale>
@@ -2071,7 +2072,7 @@ export default function Kids() {
 
 function RecentActivity({ items, loading, expanded }: { items: StarTransaction[]; loading: boolean; expanded?: boolean }) {
   const ui = useUI();
-  const { t } = useStore();
+  const { t, lang } = useStore();
   const styles = useMemo(() => createStyles(ui), [ui]);
   return (
     <>
@@ -2091,7 +2092,7 @@ function RecentActivity({ items, loading, expanded }: { items: StarTransaction[]
                 </IconTile>
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.activityReason} numberOfLines={1}>{item.reason || t('kids_star_adjustment')}</Text>
-                  <Text style={styles.activityDate}>{formatActivityDate(item.created_at)}</Text>
+                  <Text style={styles.activityDate}>{formatActivityDate(item.created_at, localeFor(lang))}</Text>
                 </View>
                 <View style={styles.activityDeltaRow}>
                   <Text style={[styles.activityDelta, { color: positive ? ui.mintText : ui.danger }]}>{positive ? '+' : ''}{item.delta}</Text>

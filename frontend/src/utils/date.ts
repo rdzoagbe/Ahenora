@@ -2,6 +2,19 @@ export function pad2(value: number) {
   return String(value).padStart(2, '0');
 }
 
+// Map the app's language to a BCP-47 locale for date formatting. Passing
+// `undefined` to toLocaleDateString uses the DEVICE locale, so a French user on
+// an English phone saw English day letters ("M T W T F S S") and "Tue" — this
+// keeps dates in the app's chosen language instead.
+export function localeFor(lang?: string): string {
+  switch (lang) {
+    case 'es': return 'es-ES';
+    case 'fr': return 'fr-FR';
+    case 'de': return 'de-DE';
+    default: return 'en-US';
+  }
+}
+
 export function toLocalDateInput(value?: string | null) {
   const date = value ? new Date(value) : new Date();
 

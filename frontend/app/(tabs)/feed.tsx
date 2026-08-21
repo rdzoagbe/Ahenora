@@ -852,7 +852,7 @@ export default function Feed() {
 
             <View style={styles.captureCard}>
               <PressScale onPress={openManual} style={styles.captureInput} testID="feed-open-add">
-                <View style={styles.plusSoft}><Plus color={ui.orange} size={26} /></View>
+                <View style={styles.plusSoft}><Plus color={ui.orange} size={22} /></View>
                 <Text style={styles.capturePlaceholder} numberOfLines={1}>{t('feed_add_placeholder')}</Text>
               </PressScale>
               <View style={styles.captureActions}>
@@ -1630,12 +1630,12 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     fontSize: 12,
   },
   captureCard: {
-    borderRadius: 26,
+    borderRadius: 22,
     backgroundColor: ui.card,
     borderWidth: 1,
     borderColor: ui.line,
-    padding: 16,
-    marginBottom: 14,
+    padding: 12,
+    marginBottom: 12,
     shadowColor: '#000000',
     shadowOpacity: 0.06,
     shadowRadius: 18,
@@ -1643,16 +1643,16 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     elevation: 2,
   },
   captureInput: {
-    minHeight: 54,
+    minHeight: 42,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    marginBottom: 13,
+    gap: 12,
+    marginBottom: 9,
   },
   plusSoft: {
-    width: 52,
-    height: 52,
-    borderRadius: 18,
+    width: 40,
+    height: 40,
+    borderRadius: 13,
     backgroundColor: ui.orangeSoft,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1661,34 +1661,34 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     flex: 1,
     color: ui.muted,
     fontFamily: 'Inter_600SemiBold',
-    fontSize: 16,
+    fontSize: 15,
   },
   captureActions: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 8,
   },
   actionPill: {
     flexShrink: 1,
     minWidth: 0,
     flex: 1,
-    height: 46,
-    borderRadius: 13,
+    height: 40,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: ui.line,
     backgroundColor: ui.soft,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: 7,
   },
   actionPillAccent: {
     borderWidth: 0,
     backgroundColor: ui.orangeDeep,
   },
   actionDot: {
-    width: 30,
-    height: 30,
-    borderRadius: 10,
+    width: 26,
+    height: 26,
+    borderRadius: 9,
     alignItems: 'center',
     justifyContent: 'center',
   },

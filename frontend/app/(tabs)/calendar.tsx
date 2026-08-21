@@ -20,6 +20,7 @@ import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/compo
 import { AddCardModal } from '../../src/components/AddCardModal';
 import AppToast from '../../src/components/AppToast';
 import { useToast } from '../../src/hooks/useToast';
+import { localeFor } from '../../src/utils/date';
 import { sendLocalNotification, syncCalendarNightly } from '../../src/notifications';
 import { cleanText, openExternal, parseDescription } from '../../src/eventDescription';
 
@@ -462,7 +463,7 @@ export default function Calendar() {
     setAddOpen(true);
   };
 
-  const locale = lang === 'es' ? 'es-ES' : lang === 'fr' ? 'fr-FR' : 'en-US';
+  const locale = localeFor(lang);
   const monthTitle = activeMonth.toLocaleDateString(locale, { month: 'long', year: 'numeric' });
 
   const formatDayFull = (day: string) => {

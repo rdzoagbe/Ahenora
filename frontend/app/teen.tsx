@@ -9,6 +9,7 @@ import { useUI, UIColors } from '../src/components/Kit';
 import { useStore } from '../src/store';
 import { api, TeenHome } from '../src/api';
 import { logger } from '../src/logger';
+import { localeFor } from '../src/utils/date';
 
 /**
  * A teen's whole app.
@@ -23,7 +24,7 @@ import { logger } from '../src/logger';
  */
 export default function TeenScreen() {
   const ui = useUI();
-  const { user, logout, t } = useStore();
+  const { user, logout, t, lang } = useStore();
   const router = useRouter();
   const styles = createStyles(ui);
 
@@ -121,7 +122,7 @@ export default function TeenScreen() {
                       <Text style={[styles.taskTitle, waiting && styles.taskTitleDone]}>{task.title}</Text>
                       {waiting
                         ? <Text style={styles.waitingMeta}>{t('teen_waiting_star')}</Text>
-                        : (task.due_date ? <Text style={styles.taskMeta}>{formatDay(task.due_date)}</Text> : null)}
+                        : (task.due_date ? <Text style={styles.taskMeta}>{formatDay(task.due_date, localeFor(lang))}</Text> : null)}
                     </View>
                   </View>
                 );
@@ -143,7 +144,7 @@ export default function TeenScreen() {
                   <View style={styles.dot} />
                   <View style={{ flex: 1 }}>
                     <Text style={styles.taskTitle}>{ev.title}</Text>
-                    {ev.due_date ? <Text style={styles.taskMeta}>{formatDay(ev.due_date)}</Text> : null}
+                    {ev.due_date ? <Text style={styles.taskMeta}>{formatDay(ev.due_date, localeFor(lang))}</Text> : null}
                   </View>
                 </View>
               ))}
@@ -163,10 +164,10 @@ export default function TeenScreen() {
   );
 }
 
-function formatDay(iso: string): string {
+function formatDay(iso: string, locale: string): string {
   try {
     const d = new Date(iso);
-    return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+    return d.toLocaleDateString(locale, { weekday: 'short', month: 'short', day: 'numeric' });
   } catch { return ''; }
 }
 

@@ -6,6 +6,7 @@ import { Lock, Sparkles } from 'lucide-react-native';
 import { PressScale } from './PressScale';
 import { useUI, UIColors } from './Kit';
 import { useStore } from '../store';
+import { localeFor } from '../utils/date';
 
 // Premium features gated behind paid plans (Executive+). Keep keys in sync with
 // the backend PLAN_CATALOG limit flags and PREMIUM_FEATURE_MESSAGES.
@@ -55,7 +56,7 @@ export function LockBadge({ onPress }: { onPress: () => void }) {
  */
 export function PremiumPreviewBanner() {
   const ui = useUI();
-  const { t, subscription } = useStore();
+  const { t, subscription, lang } = useStore();
   const router = useRouter();
   const styles = createStyles(ui);
   // Captured once at mount so the render stays pure; a days-left banner doesn't
@@ -75,7 +76,7 @@ export function PremiumPreviewBanner() {
     const ms = target.getTime() - now;
     if (!Number.isNaN(target.getTime()) && ms > 0) {
       const days = Math.max(1, Math.ceil(ms / 86400000));
-      const dateLabel = target.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+      const dateLabel = target.toLocaleDateString(localeFor(lang), { day: 'numeric', month: 'short' });
       title = t('preview_countdown_title', { date: dateLabel });
       body = t('preview_countdown_body', { days });
     }

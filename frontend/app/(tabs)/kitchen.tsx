@@ -9,6 +9,7 @@ import { Plus, X, Trash2, ShoppingCart, Check, UtensilsCrossed, ChevronDown, Che
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { PressScale } from '../../src/components/PressScale';
+import { localeFor } from '../../src/utils/date';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
 import AppToast from '../../src/components/AppToast';
 import { useToast } from '../../src/hooks/useToast';
@@ -433,7 +434,7 @@ export default function Kitchen() {
                 // saveMealPlan reads the live meals server-side, so save before
                 // clearing.
                 const dated = t('kitchen_auto_plan_name', {
-                  date: new Date().toLocaleDateString(),
+                  date: new Date().toLocaleDateString(localeFor(lang)),
                 });
                 planSaved = await api
                   .saveMealPlan(dated)
