@@ -843,9 +843,14 @@ export default function Feed() {
                 {/* Calm was a hero-sized card; as an ambient signal it earns a
                     pill, not the top third of the screen. */}
                 <View style={styles.heroMetaRow}>
-                  <View style={styles.calmPill}>
-                    <Text style={styles.calmPillText}>{t('feed_calm')} {dashboard.calmScore}</Text>
-                  </View>
+                  <PressScale
+                    onPress={() => Alert.alert(t('feed_calm_title'), t('feed_calm_explain'))}
+                    style={styles.calmPill}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('feed_calm_title')}
+                  >
+                    <Text style={styles.calmPillText}>{t('feed_calm')} {dashboard.calmScore}/100</Text>
+                  </PressScale>
                 </View>
               </View>
             </View>
@@ -1539,10 +1544,12 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   heroTitle: {
     color: ui.text,
-    fontFamily: 'Inter_800ExtraBold',
-    fontSize: 27,
-    lineHeight: 32,
-    letterSpacing: -0.8,
+    // Playfair carries the brand voice from the landing into the app — the
+    // greeting is the one place it earns the premium display face.
+    fontFamily: 'PlayfairDisplay_700Bold',
+    fontSize: 28,
+    lineHeight: 34,
+    letterSpacing: -0.3,
   },
   subtitle: {
     marginTop: 8,
