@@ -187,6 +187,18 @@ class TeenMode(unittest.TestCase):
         appr2 = asyncio.run(server.teen_approvals(user=dict(PARENT)))
         self.assertNotIn("Wash the car", {a["title"] for a in appr2["approvals"]})
 
+    def test_parent_can_award_more_than_one_star(self):
+        """The parent picks the reward on approval — a bigger job can be worth
+        more than a flat single star."""
+        card = self._card(type="TASK", title="Repaint the fence", assignee="Ama", shared=False)
+        teen = asyncio.run(server.require_teen(authorization=f"Bearer {self.teen_token}"))
+        asyncio.run(server.teen_finish_task(card_id=card["card_id"], teen=teen))
+        asyncio.run(server.resolve_teen_approval(
+            card_id=card["card_id"], payload=server.TeenApprovalIn(approve=True, stars=5),
+            user=dict(PARENT)))
+        m = asyncio.run(self.db["family_members"].find_one({"member_id": "m_t"}))
+        self.assertEqual(int(m.get("stars") or 0), 5)
+
     def test_teen_accept_retires_managed_child_profile(self):
         """Becoming a teen removes the matching managed child profile so the
         person isn't listed (or billed) twice."""

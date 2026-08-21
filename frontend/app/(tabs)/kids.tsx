@@ -501,17 +501,29 @@ export default function Kids() {
     setShowTeenInvite(true);
   };
 
-  const resolveApproval = async (cardId: string, approve: boolean) => {
+  const resolveApproval = async (cardId: string, approve: boolean, stars = 1) => {
     setApprovingId(cardId);
     try {
-      await api.resolveTeenApproval(cardId, approve, 1);
+      await api.resolveTeenApproval(cardId, approve, stars);
       setTeenApprovals((prev) => prev.filter((a) => a.card_id !== cardId));
-      if (approve) { showToast(t('teen_star_awarded'), 'success'); load(); }
+      if (approve) { showToast(t('teen_star_awarded', { count: stars }), 'success'); load(); }
     } catch (e: any) {
       showToast(e?.message || t('set_error'), 'error');
     } finally {
       setApprovingId(null);
     }
+  };
+
+  // A flat 1 star for every approved teen task felt stingy next to managed kids
+  // (who earn 5 for an assigned task). Let the parent pick the reward so a
+  // bigger job can be recognized.
+  const approveWithStars = (cardId: string) => {
+    Alert.alert(t('teen_approve_title'), t('teen_approve_msg'), [
+      { text: t('cancel'), style: 'cancel' },
+      { text: '1 ⭐', onPress: () => resolveApproval(cardId, true, 1) },
+      { text: '3 ⭐', onPress: () => resolveApproval(cardId, true, 3) },
+      { text: '5 ⭐', onPress: () => resolveApproval(cardId, true, 5) },
+    ]);
   };
 
   // Upgrade a 13-17 child to their own account. The age picker already floors at
@@ -1179,7 +1191,7 @@ export default function Kids() {
                       </PressScale>
                       <PressScale
                         testID={`teen-approve-${a.card_id}`}
-                        onPress={() => resolveApproval(a.card_id, true)}
+                        onPress={() => approveWithStars(a.card_id)}
                         disabled={approvingId === a.card_id}
                         style={styles.approvalApprove}
                       >
