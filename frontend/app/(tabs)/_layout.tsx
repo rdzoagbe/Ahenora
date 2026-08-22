@@ -69,7 +69,7 @@ const NAV_ITEMS = [
 ] as const;
 
 function SidebarNav({ width }: { width: number }) {
-  const { theme, t } = useStore();
+  const { theme, t, unreadChats } = useStore();
   const { isDesktop } = useBreakpoint();
   const router = useRouter();
   const pathname = usePathname();
@@ -119,7 +119,16 @@ function SidebarNav({ width }: { width: number }) {
             accessibilityLabel={t(labelKey)}
             accessibilityState={{ selected: active }}
           >
-            <Icon color={iconColor} size={20} strokeWidth={active ? 2.5 : 2.0} />
+            <View>
+              <Icon color={iconColor} size={20} strokeWidth={active ? 2.5 : 2.0} />
+              {/* Same arrival signal the phone bar carries — a wide screen is
+                  no less likely to miss a message. */}
+              {name === 'kids' && unreadChats > 0 ? (
+                <View style={[styles.tabBadge, { backgroundColor: theme.colors.accent, borderColor: theme.colors.tabBar }]}>
+                  <Text style={styles.tabBadgeText}>{unreadChats > 9 ? '9+' : unreadChats}</Text>
+                </View>
+              ) : null}
+            </View>
             {isDesktop && (
               <Text style={[styles.sidebarLabel, { color: labelColor }]}>
                 {t(labelKey)}

@@ -2053,9 +2053,6 @@ async def require_user(authorization: str = Header(default=""),
     if not session:
         raise HTTPException(status_code=401, detail="Invalid or expired session")
 
-    # Using the app keeps you signed in.
-    await _touch_session(database, sha256(token), session)
-
     # A child's session is deliberately worthless here. Kid access rides on the
     # parent's account, so a child token that satisfied require_user would
     # inherit the whole household — the vault, the calendar, the co-parent's
@@ -2065,6 +2062,11 @@ async def require_user(authorization: str = Header(default=""),
     # to think about it. Fail closed, once, centrally.
     if session.get("kind") == "child":
         raise HTTPException(status_code=403, detail="Not available in kid mode")
+
+    # Using the app keeps you signed in — but only past the kid-mode refusal
+    # above. Renewing first meant a hand-over session on someone else's phone
+    # kept itself alive forever on the strength of its own rejected requests.
+    await _touch_session(database, sha256(token), session)
 
     user = await database["users"].find_one({"user_id": session["user_id"]}, {"_id": 0})
     if not user:
@@ -3274,7 +3276,8 @@ class ChangePasswordIn(BaseModel):
 
 
 @app.post("/api/auth/change-password")
-async def change_password(payload: ChangePasswordIn, user=Depends(require_user)):
+async def change_password(payload: ChangePasswordIn, user=Depends(require_user),
+                          authorization: str = Header(default="")):
     """Change the password on a password account.
 
     Only for accounts that actually have a password — a Google account has
@@ -3298,6 +3301,20 @@ async def change_password(payload: ChangePasswordIn, user=Depends(require_user))
     await database["users"].update_one(
         {"user_id": user["user_id"]},
         {"$set": {"password_hash": hash_password(new_password), "updated_at": utcnow()}})
+
+    # Changing your password is how a person locks out a device they no longer
+    # control — a sold laptop, an ex-partner's tablet. Only the forgotten-password
+    # reset used to revoke, so every other session survived; and now that a live
+    # session renews itself on use, one left signed in would never lapse at all.
+    # Every session but the one making this request is ended here.
+    # Called directly (tests) the header default is a Header sentinel, not a
+    # string. An unknown caller token hashes to something no row carries, so the
+    # revoke sweeps every session — erring toward locking out rather than
+    # leaving a device signed in, which is the safe direction here.
+    raw_auth = authorization if isinstance(authorization, str) else ""
+    this_token = raw_auth.replace("Bearer ", "", 1).strip()
+    await database["user_sessions"].delete_many(
+        {"user_id": user["user_id"], "token_hash": {"$ne": sha256(this_token)}})
     return {"ok": True}
 
 

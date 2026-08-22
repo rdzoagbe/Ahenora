@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -28,6 +28,17 @@ export default function Conversation() {
   const title = String(params.title || t('chat_title'));
   const isAdults = params.adults === '1';
 
+  // Stable identities. ChatThread's refresh effect depends on these callbacks,
+  // so inline arrows re-created every render made it re-fetch on every render —
+  // a loop bounded only by network latency. Keyed on the thread, which is the
+  // only thing that should ever restart the conversation.
+  const load = useCallback(() => api.chatGet(thread), [thread]);
+  const send = useCallback((text: string) => api.chatSend(thread, text), [thread]);
+  const markRead = useCallback(async () => {
+    await api.chatRead(thread);
+    refreshUnreadChats(); // reading is what clears the Family tab's badge
+  }, [thread, refreshUnreadChats]);
+
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom', 'left', 'right']}>
       <View style={styles.header}>
@@ -38,10 +49,9 @@ export default function Conversation() {
         <View style={{ width: 36 }} />
       </View>
       <ChatThread
-        load={() => api.chatGet(thread)}
-        send={(text) => api.chatSend(thread, text)}
-        // Reading is what clears the Family tab's badge.
-        markRead={async () => { await api.chatRead(thread); refreshUnreadChats(); }}
+        load={load}
+        send={send}
+        markRead={markRead}
         emptyHint={isAdults ? t('chat_empty_adults') : t('chat_empty_teen')}
       />
     </SafeAreaView>

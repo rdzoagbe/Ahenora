@@ -29,7 +29,7 @@ import {
   PiggyBank,
   RotateCcw,
   Play,
-  UserCog,
+  UserPlus,
   MessageCircle,
 } from 'lucide-react-native';
 
@@ -1212,11 +1212,11 @@ export default function Kids() {
                 <PressScale
                   testID="family-manage-members"
                   onPress={() => { requestMembers(); router.push('/(tabs)/settings'); }}
-                  accessibilityLabel={t('family_manage_members')}
+                  accessibilityLabel={t('set_invites')}
                   style={styles.manageBtn}
                 >
-                  <UserCog color={ui.orangeText} size={18} />
-                  <Text style={styles.manageBtnText}>{t('family_members')}</Text>
+                  <UserPlus color={ui.orangeText} size={18} />
+                  <Text style={styles.manageBtnText}>{t('set_invite')}</Text>
                 </PressScale>
               }
             />
@@ -1411,7 +1411,7 @@ export default function Kids() {
                 </Card>
               ) : null}
 
-              {isFocused && showMore && activeChild ? (
+              {isFocused && activeChild ? (
                 <>
                   {/* Wallet */}
                   <Card style={styles.walletCard}>

@@ -60,32 +60,38 @@ export default function MemberProfile() {
   const [displayName, setDisplayName] = useState(name);
   const [pinOpen, setPinOpen] = useState(false);
 
-  const loadStars = useCallback(async () => {
-    if (!showsStars || !id) return;
+  // Loads for EVERY kind, not just the ones with stars: is_me and is_founder
+  // live on this row, and they decide whether Remove may be offered at all. When
+  // it only ran for kids and teens, both flags were undefined on a grown-up's
+  // page — the one place this screen is actually opened from — so Remove was
+  // shown on your own row and on the founder's, where the server then refused it.
+  const loadMember = useCallback(async () => {
+    if (!id) return;
     try {
       const members = await api.familyMembers();
       setMember(members.find((m) => m.member_id === id) || null);
+      if (!showsStars) return;
       const h = await api.memberStarHistory(id).catch(() => [] as StarTransaction[]);
       setHistory(h.slice(0, 6));
     } catch (e) {
-      logger.warn('member stars load failed', e);
+      logger.warn('member load failed', e);
     }
   }, [id, showsStars]);
 
-  useEffect(() => { loadStars(); }, [loadStars]);
+  useEffect(() => { loadMember(); }, [loadMember]);
 
   const giveStars = useCallback(async (delta: number) => {
     if (!id || busy) return;
     setBusy(true);
     try {
       await api.adjustMemberStars(id, { delta, reason: t('kids_parent_added_stars') });
-      await loadStars();
+      await loadMember();
     } catch (e) {
       logger.warn('give stars failed', e);
     } finally {
       setBusy(false);
     }
-  }, [id, busy, loadStars, t]);
+  }, [id, busy, loadMember, t]);
 
   const saveName = async () => {
     const next = nameDraft.trim();
@@ -231,7 +237,7 @@ export default function MemberProfile() {
           <ChevronLeft color={ui.text} size={22} />
         </PressScale>
         <View style={styles.headMid}>
-          <Text style={styles.headName} numberOfLines={1}>{name}</Text>
+          <Text style={styles.headName} numberOfLines={1}>{displayName}</Text>
           <View style={[styles.headBadge, { backgroundColor: badgeTone.bg }]}>
             <Text style={[styles.headBadgeText, { color: badgeTone.fg }]}>{roleLabel}</Text>
           </View>
@@ -306,7 +312,7 @@ export default function MemberProfile() {
 
         {/* You cannot remove yourself, and the founder is the one parent nobody
             can remove — the server enforces both; the UI should not tempt. */}
-        {!member?.is_me && !member?.is_founder ? (
+        {member && !member.is_me && !member.is_founder ? (
           <PressScale testID="member-remove" onPress={removeMember} style={styles.act}>
             <Trash2 color={ui.danger} size={17} />
             <Text style={[styles.actText, { color: ui.danger }]}>{t('hub_remove')}</Text>
@@ -324,7 +330,7 @@ export default function MemberProfile() {
         onSubmit={async (pin) => {
           try {
             await api.setMemberPin(id, pin);
-            await loadStars();
+            await loadMember();
             setPinOpen(false);
             return true;
           } catch (e) {

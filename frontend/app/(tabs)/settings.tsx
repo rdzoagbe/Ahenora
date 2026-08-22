@@ -34,7 +34,6 @@ import { useToast } from '../../src/hooks/useToast';
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { PressScale } from '../../src/components/PressScale';
 import { LanguageModal } from '../../src/components/LanguageModal';
-import { PinPadModal } from '../../src/components/PinPadModal';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
 import { TabScreen } from '../../src/components/TabScreen';
 import { PremiumPreviewBanner } from '../../src/components/PremiumGate';
@@ -81,7 +80,6 @@ export default function Settings() {
   const [inviteResult, setInviteResult] = useState<string | null>(null);
   const [inviteError, setInviteError] = useState(false);
   const [lastInviteUrl, setLastInviteUrl] = useState<string | null>(null);
-  const [pinMember, setPinMember] = useState<FamilyMember | null>(null);
   const [expandClientErrors, setExpandClientErrors] = useState(false);
   const [clientErrors, setClientErrors] = useState<Awaited<ReturnType<typeof api.listClientErrors>>>([]);
   const [notificationPrefs, setNotificationPrefs] = useState<NotificationSettings>({ card_reminders: false, new_card_alerts: false });
@@ -1130,25 +1128,6 @@ export default function Settings() {
       </TabScreen>
 
       <LanguageModal visible={showLang} onClose={() => setShowLang(false)} />
-      <PinPadModal
-        visible={pinMember !== null}
-        mode="set"
-        title={pinMember ? `${t('set_pin_for')} ${pinMember.name}` : t('set_set_pin')}
-        subtitle={t('set_pin_subtitle')}
-        onClose={() => setPinMember(null)}
-        onSubmit={async (pin) => {
-          if (!pinMember) return false;
-          try {
-            await api.setMemberPin(pinMember.member_id, pin);
-            setPinMember(null);
-            load();
-            return true;
-          } catch {
-            return false;
-          }
-        }}
-      />
-
       <KeyboardAwareBottomSheet visible={showInvite} onClose={() => setShowInvite(false)} contentStyle={styles.sheet}>
         <View style={styles.sheetHeader}>
           <Text style={styles.sheetTitle}>{inviteMode === 'family' ? t('set_send_invite_title') : t('set_invite_coparent')}</Text>

@@ -249,7 +249,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       .then((r) => setUnreadChats(r.threads.reduce((n, th) => n + (th.unread || 0), 0)))
       // Teens, helpers and signed-out users are refused this route by design;
       // a badge is a convenience and must never surface an error.
-      .catch(() => setUnreadChats(0));
+      // A teen, a helper or a signed-out user is refused this route by design —
+      // zero is the right answer there. A dropped request is NOT: blanking the
+      // badge on a flaky connection would quietly hide real messages, so the
+      // last known count stands until a request actually succeeds.
+      .catch((e: any) => { if (e?.status === 401 || e?.status === 403) setUnreadChats(0); });
   }, []);
 
   // On sign-in, and every time the app comes back to the foreground — the two
