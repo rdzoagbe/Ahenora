@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Tabs, usePathname, useRouter } from 'expo-router';
 import { View, StyleSheet, Text, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Home, Calendar as CalendarIcon, Lock, MessageCircle, Settings as SettingsIcon, UtensilsCrossed, Users, Plus } from 'lucide-react-native';
+import { Home, Calendar as CalendarIcon, Lock, Settings as SettingsIcon, UtensilsCrossed, Users, Plus } from 'lucide-react-native';
 import { useStore } from '../../src/store';
 import { useBreakpoint } from '../../src/responsive';
 import { InviteJoinPrompt } from '../../src/components/InviteJoinPrompt';
@@ -54,7 +54,6 @@ const NAV_ITEMS = [
   { name: 'feed',     Icon: Home,          labelKey: 'feed' },
   { name: 'calendar', Icon: CalendarIcon,  labelKey: 'calendar' },
   { name: 'kids',     Icon: Users,         labelKey: 'family_tab' },
-  { name: 'chat',     Icon: MessageCircle, labelKey: 'chat_title' },
   { name: 'kitchen',  Icon: UtensilsCrossed, labelKey: 'kitchen' },
   { name: 'vault',    Icon: Lock,          labelKey: 'vault' },
   { name: 'settings', Icon: SettingsIcon,  labelKey: 'settings' },
@@ -178,7 +177,7 @@ function PhoneTabBar({ state, navigation, style, onAdd }: {
         </TouchableOpacity>
       </View>
       {tab('kids', Users, 'family_tab')}
-      {tab('chat', MessageCircle, 'chat_title')}
+      {tab('kitchen', UtensilsCrossed, 'kitchen')}
     </View>
   );
 }
@@ -259,9 +258,11 @@ export default function TabLayout() {
         <Tabs.Screen name="feed" />
         <Tabs.Screen name="calendar" />
         <Tabs.Screen name="kids" />
-        <Tabs.Screen name="chat" />
-        {/* Kitchen is now reached from the More menu — off the daily bar. */}
-        <Tabs.Screen name="kitchen" options={{ href: null }} />
+        <Tabs.Screen name="kitchen" />
+        {/* Messaging now lives inside the Family Hub — open a member to chat with
+            them — so the standalone Messages inbox is no longer a bar seat.
+            Kept routable (href:null) so any deep link still resolves. */}
+        <Tabs.Screen name="chat" options={{ href: null }} />
         {/* Routable, but not seats in the bar — reached from the Household menu
             in the Feed header. */}
         <Tabs.Screen name="vault"    options={{ href: null }} />

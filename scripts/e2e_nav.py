@@ -42,10 +42,10 @@ async def main():
         bar = await p.inner_text("body")
         # Every tab spells its name under the icon — a bar you have to tap to
         # learn is doing half its job. The daily bar is Feed · Calendar · ⊕ ·
-        # Family · Chat, where the Chat tab's label reads "Messages" in English
-        # (chat_title). Kitchen moved to the More menu; Chat was promoted in.
+        # Family · Kitchen. Messaging moved into the Family Hub (open a member to
+        # chat), so the Messages inbox is no longer a bar seat; Kitchen took it.
         r["active_tab_named"] = "Feed" in bar
-        r["all_tabs_named"] = all(w in bar for w in ("Feed", "Calendar", "Family", "Messages"))
+        r["all_tabs_named"] = all(w in bar for w in ("Feed", "Calendar", "Family", "Kitchen"))
         # The Household menu now lives in the feed header (Kitchen took the seat).
         r["household_button_present"] = await p.locator('[data-testid="feed-household-menu"]').count() == 1
         await p.screenshot(path="nav_feed.png")
@@ -57,9 +57,6 @@ async def main():
         r["sheet_lists_vault"] = "Vault" in sheet
         r["sheet_lists_settings"] = "Settings" in sheet
         r["sheet_lists_account"] = "Your account" in sheet
-        # Kitchen was demoted from the bar into this sheet — verify it actually
-        # landed here, so the relocation the commit claims is tested somewhere.
-        r["sheet_lists_kitchen"] = await p.locator('[data-testid="more-kitchen"]').count() == 1
         await p.screenshot(path="nav_more.png")
 
         # ...and actually navigates
@@ -80,11 +77,9 @@ async def main():
         r["more_reaches_settings"] = "Household" in await p.inner_text("body")
 
         # The daily tabs still load. Assert a page-UNIQUE element on each — not a
-        # word that also lives in the always-visible bottom bar. "Calendar" and
-        # "Messages" are both tab labels, so a body-text check for them passes
-        # even if the screen itself renders nothing; a per-screen testID (or the
-        # chat header eyebrow) is real page content that only appears when the
-        # screen actually mounted.
+        # word that also lives in the always-visible bottom bar (a body-text
+        # check for a tab label passes even if the screen rendered nothing); a
+        # per-screen testID is real content that only appears once it mounted.
         await p.goto(f"{WEB}/calendar", wait_until="domcontentloaded")
         await p.wait_for_timeout(2200)
         r["tab_calendar_ok"] = await p.locator('[data-testid="prev-month"]').count() >= 1
@@ -93,9 +88,9 @@ async def main():
         await p.wait_for_timeout(2200)
         r["tab_kids_ok"] = await p.locator('[data-testid="family-manage-members"]').count() >= 1
 
-        await p.goto(f"{WEB}/chat", wait_until="domcontentloaded")
+        await p.goto(f"{WEB}/kitchen", wait_until="domcontentloaded")
         await p.wait_for_timeout(2200)
-        r["tab_chat_ok"] = "Message your family" in await p.inner_text("body")
+        r["tab_kitchen_ok"] = await p.locator('[data-testid="kitchen-switch"]').count() >= 1
 
         r["no_js_errors"] = not errs
         await b.close()
