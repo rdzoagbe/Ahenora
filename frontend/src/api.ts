@@ -736,6 +736,9 @@ export interface FamilyMember {
   /** A teen's own user_id — the key of their private chat thread. Null for a
    *  managed child (no account). Lets the app open the right thread by id. */
   user_id?: string | null;
+  /** A child's age, 1-17. Null when nobody has set one — children added before
+   *  this existed have no age, and a guess would be worse than none. */
+  age?: number | null;
 }
 
 export interface Reward {
@@ -1271,7 +1274,7 @@ export const api = {
   },
   memberStarHistory: (member_id: string) =>
     request<StarTransaction[]>(`/family/members/${member_id}/star-history`),
-  updateFamilyMember: (member_id: string, data: { name?: string; avatar?: string }) => {
+  updateFamilyMember: (member_id: string, data: { name?: string; avatar?: string; age?: number }) => {
     cache.invalidate('familyMembers');
     return request<FamilyMember>(`/family/members/${member_id}`, { method: 'PATCH', body: data });
   },
