@@ -230,6 +230,16 @@ export default function MemberProfile() {
     </>
   );
 
+  // The web build prerenders this route with no query string, so every value
+  // taken from params — the name, the role, the thread — differs between that
+  // HTML and the first client render. React then discards the whole tree and
+  // logs a hydration error. Render the same empty shell both sides start from,
+  // and read the params on the next tick. Native mounts immediately, so this
+  // costs nothing there.
+  const [ready, setReady] = useState(false);
+  useEffect(() => setReady(true), []);
+  if (!ready) return <SafeAreaView style={styles.safe} edges={['top', 'bottom', 'left', 'right']} />;
+
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom', 'left', 'right']}>
       <View style={styles.header}>

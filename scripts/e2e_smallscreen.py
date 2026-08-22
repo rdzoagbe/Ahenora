@@ -53,7 +53,8 @@ async def main():
         ctx = await br.new_context(viewport={"width": NARROW, "height": 720})
         page = await ctx.new_page()
         errs = []
-        page.on("pageerror", lambda e: errs.append(str(e)))
+        # Record where it happened: an error with no page attached is a hunt.
+        page.on("pageerror", lambda e: errs.append(f"{page.url} :: {e}"))
 
         async def route(ro):
             path = ro.request.url.split("/api/", 1)[1]
@@ -104,6 +105,12 @@ async def main():
         r["member_page_has_manage"] = await page.locator('[data-testid="member-rename"]').count() >= 1
 
         await page.screenshot(path="smallscreen_member.png", full_page=True)
+        # Say WHICH error. "no_js_errors: False" on its own sends the next
+        # person hunting blind, which is exactly what it did to me.
+        if errs:
+            print("    javascript errors:")
+            for e in errs:
+                print(f"      {e}")
         r["no_js_errors"] = not errs
         await br.close()
 
