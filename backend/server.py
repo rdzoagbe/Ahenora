@@ -2816,7 +2816,9 @@ async def exchange_session(payload: SessionIn):
         raise HTTPException(status_code=401, detail="Could not verify Google sign-in. Please try again.")
 
     google_sub = token_info["sub"]
-    email = token_info.get("email", "")
+    # Normalize like register/login so the same inbox is one account, never two
+    # rows that differ only by casing.
+    email = (token_info.get("email") or "").strip().lower()
     name = token_info.get("name", email.split("@")[0] if email else "Parent")
     picture = token_info.get("picture")
 
@@ -2844,6 +2846,22 @@ async def exchange_session(payload: SessionIn):
         target_family_id = invite["family_id"]
 
     user = await database["users"].find_one({"google_sub": google_sub}, {"_id": 0})
+
+    if not user and email:
+        # Never mint a second row for an inbox that already has an account (an
+        # email/password sign-up, most importantly). Link Google to it instead —
+        # otherwise the new passwordless row shadows theirs and email login then
+        # answers "no password account for this email", locking them out.
+        existing = await database["users"].find_one(
+            {"email": {"$regex": f"^{re.escape(email)}$", "$options": "i"}}, {"_id": 0})
+        if existing:
+            await database["users"].update_one(
+                {"user_id": existing["user_id"]},
+                {"$set": {"google_sub": google_sub, "email": email,
+                          "picture": existing.get("picture") or picture,
+                          "updated_at": utcnow()}})
+            user = {**existing, "google_sub": google_sub, "email": email,
+                    "picture": existing.get("picture") or picture}
 
     if not user:
         family_id = target_family_id or new_id("family")
@@ -3157,8 +3175,17 @@ async def login_email(payload: EmailLoginIn):
     if _auth_locked(identity):
         raise HTTPException(status_code=429, detail="Too many attempts. Please try again later.")
 
-    user = await database["users"].find_one({"email": email}, {"_id": 0})
-    if not user or not user.get("password_hash"):
+    # A stray duplicate can shadow the real password account under one email: a
+    # Google row created before account-linking (no password), or a legacy row
+    # stored with different casing. Gather every match case-insensitively and
+    # pick the one that actually carries a password, so those users can get in.
+    matches = []
+    async for candidate in database["users"].find(
+        {"email": {"$regex": f"^{re.escape(email)}$", "$options": "i"}}, {"_id": 0}
+    ):
+        matches.append(candidate)
+    user = next((u for u in matches if u.get("password_hash")), None)
+    if not user:
         # Distinct hint is intentional UX (many users sign up with Google);
         # email existence is low-sensitivity here. Still counts toward lockout.
         _auth_record_fail(identity)

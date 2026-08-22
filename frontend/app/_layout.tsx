@@ -54,6 +54,7 @@ function RootNavigator() {
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="teen" />
         <Stack.Screen name="member" />
+        <Stack.Screen name="conversation" />
         <Stack.Screen name="+not-found" />
       </Stack>
     </>
