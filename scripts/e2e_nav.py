@@ -41,11 +41,10 @@ async def main():
         await p.wait_for_timeout(3000)
         bar = await p.inner_text("body")
         # Every tab spells its name under the icon — a bar you have to tap to
-        # learn is doing half its job. (This replaced an earlier "only the
-        # active tab is named" rule; the label discipline is now that all five
-        # are always visible, and the contrast harness guards their legibility.)
+        # learn is doing half its job. The daily bar is Feed · Calendar · ⊕ ·
+        # Family · Chat (Kitchen moved to the More menu; Chat was promoted in).
         r["active_tab_named"] = "Feed" in bar
-        r["all_tabs_named"] = all(w in bar for w in ("Feed", "Calendar", "Kids", "Kitchen"))
+        r["all_tabs_named"] = all(w in bar for w in ("Feed", "Calendar", "Family", "Messages"))
         # The Household menu now lives in the feed header (Kitchen took the seat).
         r["household_button_present"] = await p.locator('[data-testid="feed-household-menu"]').count() == 1
         await p.screenshot(path="nav_feed.png")
@@ -76,8 +75,9 @@ async def main():
         # visible without opening anything. (Manage members lives inside it.)
         r["more_reaches_settings"] = "Household" in await p.inner_text("body")
 
-        # The four daily tabs still work
-        for label, marker in (("calendar", "Calendar"), ("kids", "Kids"), ("kitchen", "Kitchen")):
+        # The daily tabs still load (Kitchen now lives in the More menu, so the
+        # daily set is Calendar, Family, and Chat).
+        for label, marker in (("calendar", "Calendar"), ("kids", "Kids"), ("chat", "Messages")):
             await p.goto(f"{WEB}/{label}", wait_until="domcontentloaded")
             await p.wait_for_timeout(2200)
             r[f"tab_{label}_ok"] = marker in await p.inner_text("body")
