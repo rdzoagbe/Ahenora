@@ -1177,7 +1177,11 @@ export default function Kids() {
                     onPress={() => openMember(m)}
                     style={styles.hubRow}
                   >
-                    <View style={[styles.hubAvatar, { backgroundColor: isParent ? ui.orange : ui.muted }]}>
+                    {/* Fixed deep tints so the white initial always clears
+                        4.5:1. Deep orange (#CA470A) beats ui.orange's 3.11:1;
+                        a fixed slate beats ui.muted, which is a *light* slate in
+                        dark mode (#CBD5E1) where white would be unreadable. */}
+                    <View style={[styles.hubAvatar, { backgroundColor: isParent ? UI.orangeDeep : '#5F656E' }]}>
                       <Text style={styles.hubAvatarText}>{m.name[0]?.toUpperCase()}</Text>
                     </View>
                     <View style={{ flex: 1, minWidth: 0 }}>
