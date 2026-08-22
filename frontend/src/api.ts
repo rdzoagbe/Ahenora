@@ -685,6 +685,26 @@ export interface TeenHome {
   week_earned: number;
 }
 
+export interface ChatMessage {
+  message_id: string;
+  thread: string;
+  sender_kind: 'parent' | 'teen';
+  sender_name: string;
+  text: string;
+  created_at: string;
+  mine: boolean;
+  read: boolean;
+}
+
+export interface ChatThreadSummary {
+  thread: string;
+  title: string | null;
+  is_adults: boolean;
+  unread: number;
+  last_text: string;
+  last_at: string | null;
+}
+
 /** True when a normal endpoint refused a teen token (require_user's 403). The
  *  signal to switch the app into the restricted teen view. */
 export function isTeenModeError(e: any): boolean {
@@ -1369,6 +1389,21 @@ export const api = {
   teenHome: () => request<TeenHome>('/teen/home'),
   teenFinishTask: (cardId: string) =>
     request<{ ok: boolean }>(`/teen/tasks/${cardId}/done`, { method: 'POST' }),
+
+  // Family chat. Parents reach the adults thread + one per teen; a teen reaches
+  // only their own thread (the server forces it).
+  chatThreads: () => request<{ threads: ChatThreadSummary[] }>('/family/chat/threads'),
+  chatGet: (thread: string) => request<{ messages: ChatMessage[] }>(`/family/chat/${encodeURIComponent(thread)}`),
+  chatSend: (thread: string, text: string) =>
+    request<{ ok: boolean; message: ChatMessage }>(`/family/chat/${encodeURIComponent(thread)}`, {
+      method: 'POST', body: { text },
+    }),
+  chatRead: (thread: string) =>
+    request<{ ok: boolean }>(`/family/chat/${encodeURIComponent(thread)}/read`, { method: 'POST' }),
+  teenChatGet: () => request<{ messages: ChatMessage[] }>('/teen/chat'),
+  teenChatSend: (text: string) =>
+    request<{ ok: boolean; message: ChatMessage }>('/teen/chat', { method: 'POST', body: { text } }),
+  teenChatRead: () => request<{ ok: boolean }>('/teen/chat/read', { method: 'POST' }),
 
   kidHome: () => request<KidHome>('/kid/home'),
   kidFinishChore: (cardId: string) =>

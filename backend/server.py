@@ -4756,6 +4756,202 @@ async def resolve_teen_approval(card_id: str, payload: TeenApprovalIn, user=Depe
     return {"ok": True, "status": new_status}
 
 
+# -----------------------------------------------------------------------------
+# Family chat — parents talk to each other and to each teen, privacy preserved.
+#
+# Threads: 'adults' (parents/co-parents only) and one per teen (parents + that
+# one teen). A teen only ever reaches their OWN thread — the server forces the
+# thread key to their user id and never trusts a client-supplied one — so the
+# "teens see nothing of the family" promise holds even with chat on. The
+# messages collection stands alone; reading a thread joins no family data.
+# -----------------------------------------------------------------------------
+MAX_CHAT_LEN = 2000
+ADULTS_THREAD = "adults"
+
+
+class ChatMessageIn(BaseModel):
+    text: str
+
+
+def public_chat_message(m: dict, viewer_id: str) -> dict:
+    return {
+        "message_id": m["message_id"],
+        "thread": m["thread"],
+        "sender_kind": m.get("sender_kind"),
+        "sender_name": m.get("sender_name") or "",
+        "text": m.get("text") or "",
+        "created_at": iso(m.get("created_at")),
+        "mine": m.get("sender_user_id") == viewer_id,
+        "read": (m.get("sender_user_id") == viewer_id) or (viewer_id in (m.get("read_by") or [])),
+    }
+
+
+async def _family_teens(database, family_id: str) -> list:
+    """Teens (own login) in a family — the parent-facing thread list is one per
+    teen plus the adults thread."""
+    teens = []
+    async for m in database["family_members"].find(
+            {"family_id": family_id, "role": {"$regex": "^teen$", "$options": "i"}}, {"_id": 0}):
+        if m.get("user_id"):
+            teens.append({"user_id": m["user_id"], "name": m.get("name") or "Teen"})
+    return teens
+
+
+async def _parent_user_ids(database, family_id: str, exclude: Optional[str] = None) -> list:
+    """The adults who should get a chat notification: members with a login whose
+    role is a parent/co-parent (never a teen or helper)."""
+    ids = []
+    async for m in database["family_members"].find({"family_id": family_id}, {"_id": 0}):
+        uid = m.get("user_id")
+        if not uid or uid == exclude:
+            continue
+        if _is_parent_role(m.get("role")):
+            ids.append(uid)
+    return ids
+
+
+async def _valid_parent_thread(database, family_id: str, thread: str) -> bool:
+    if thread == ADULTS_THREAD:
+        return True
+    return any(t["user_id"] == thread for t in await _family_teens(database, family_id))
+
+
+async def _chat_insert(database, family_id: str, thread: str, sender_user_id: str,
+                       sender_kind: str, sender_name: str, text: str) -> dict:
+    clean = sanitize_user_text(text or "", MAX_CHAT_LEN)
+    if not clean:
+        raise HTTPException(status_code=400, detail="Message can't be empty.")
+    msg = {
+        "message_id": new_id("msg"),
+        "family_id": family_id,
+        "thread": thread,
+        "sender_user_id": sender_user_id,
+        "sender_kind": sender_kind,
+        "sender_name": sender_name,
+        "text": clean,
+        "read_by": [sender_user_id],  # the sender has, of course, "read" it
+        "created_at": utcnow(),
+    }
+    await database["messages"].insert_one(msg)
+    return msg
+
+
+async def _chat_thread_messages(database, family_id: str, thread: str, viewer_id: str) -> list:
+    rows = []
+    async for m in database["messages"].find(
+            {"family_id": family_id, "thread": thread}, {"_id": 0}):
+        rows.append(m)
+    rows.sort(key=lambda r: r.get("created_at") or utcnow())
+    return [public_chat_message(m, viewer_id) for m in rows]
+
+
+async def _mark_read(database, family_id: str, thread: str, viewer_id: str) -> None:
+    # Everything in the thread the viewer didn't send is now read by them.
+    await database["messages"].update_many(
+        {"family_id": family_id, "thread": thread,
+         "sender_user_id": {"$ne": viewer_id}, "read_by": {"$ne": viewer_id}},
+        {"$addToSet": {"read_by": viewer_id}})
+
+
+async def _chat_notify(database, family_id: str, thread: str, sender_kind: str,
+                       sender_user_id: str, sender_name: str, text: str) -> None:
+    """Best-effort push to the thread's other members."""
+    try:
+        if thread == ADULTS_THREAD:
+            recipients = await _parent_user_ids(database, family_id, exclude=sender_user_id)
+        elif sender_kind == "teen":
+            recipients = await _parent_user_ids(database, family_id, exclude=sender_user_id)
+        else:
+            recipients = [thread]  # a per-teen thread's id IS the teen's user id
+        preview = (text or "")[:120]
+        for uid in recipients:
+            await send_push_to_user(
+                database, uid, sender_name or "New message", preview,
+                {"type": "chat", "thread": thread})
+    except Exception:
+        pass  # a failed notification must never fail the send
+
+
+@app.get("/api/family/chat/threads")
+async def family_chat_threads(user=Depends(require_full_member)):
+    """The adults thread plus one per teen, each with its last line + unread."""
+    database = get_db()
+    family_id = user["family_id"]
+    viewer = user["user_id"]
+    threads = [{"thread": ADULTS_THREAD, "title": None, "is_adults": True}]
+    for t in await _family_teens(database, family_id):
+        threads.append({"thread": t["user_id"], "title": t["name"], "is_adults": False})
+    out = []
+    for th in threads:
+        msgs = await _chat_thread_messages(database, family_id, th["thread"], viewer)
+        unread = sum(1 for m in msgs if not m["read"] and not m["mine"])
+        last = msgs[-1] if msgs else None
+        out.append({**th, "unread": unread,
+                    "last_text": last["text"] if last else "",
+                    "last_at": last["created_at"] if last else None})
+    return {"threads": out}
+
+
+@app.get("/api/family/chat/{thread}")
+async def family_chat_get(thread: str, user=Depends(require_full_member)):
+    database = get_db()
+    if not await _valid_parent_thread(database, user["family_id"], thread):
+        raise HTTPException(status_code=404, detail="No such conversation")
+    msgs = await _chat_thread_messages(database, user["family_id"], thread, user["user_id"])
+    await _mark_read(database, user["family_id"], thread, user["user_id"])
+    return {"messages": msgs}
+
+
+@app.post("/api/family/chat/{thread}")
+async def family_chat_send(thread: str, payload: ChatMessageIn, user=Depends(require_full_member)):
+    database = get_db()
+    if not await _valid_parent_thread(database, user["family_id"], thread):
+        raise HTTPException(status_code=404, detail="No such conversation")
+    msg = await _chat_insert(database, user["family_id"], thread, user["user_id"],
+                             "parent", user.get("name") or "Parent", payload.text)
+    await _chat_notify(database, user["family_id"], thread, "parent",
+                       user["user_id"], user.get("name") or "Parent", msg["text"])
+    return {"ok": True, "message": public_chat_message(msg, user["user_id"])}
+
+
+@app.post("/api/family/chat/{thread}/read")
+async def family_chat_read(thread: str, user=Depends(require_full_member)):
+    database = get_db()
+    if not await _valid_parent_thread(database, user["family_id"], thread):
+        raise HTTPException(status_code=404, detail="No such conversation")
+    await _mark_read(database, user["family_id"], thread, user["user_id"])
+    return {"ok": True}
+
+
+@app.get("/api/teen/chat")
+async def teen_chat_get(teen=Depends(require_teen)):
+    """A teen's own thread — the thread key is forced to their user id, so a teen
+    can never read the adults thread or another teen's."""
+    database = get_db()
+    tuid = teen["user"]["user_id"]
+    msgs = await _chat_thread_messages(database, teen["family_id"], tuid, tuid)
+    await _mark_read(database, teen["family_id"], tuid, tuid)
+    return {"messages": msgs}
+
+
+@app.post("/api/teen/chat")
+async def teen_chat_send(payload: ChatMessageIn, teen=Depends(require_teen)):
+    database = get_db()
+    tuid = teen["user"]["user_id"]
+    name = teen["user"].get("name") or "Teen"
+    msg = await _chat_insert(database, teen["family_id"], tuid, tuid, "teen", name, payload.text)
+    await _chat_notify(database, teen["family_id"], tuid, "teen", tuid, name, msg["text"])
+    return {"ok": True, "message": public_chat_message(msg, tuid)}
+
+
+@app.post("/api/teen/chat/read")
+async def teen_chat_read(teen=Depends(require_teen)):
+    database = get_db()
+    tuid = teen["user"]["user_id"]
+    await _mark_read(database, teen["family_id"], tuid, tuid)
+    return {"ok": True}
+
+
 @app.post("/api/kid/chores/{card_id}/done")
 async def kid_finish_chore(card_id: str, child=Depends(require_child)):
     """Tick off a chore. Only one with this child's name on it, and only ever
