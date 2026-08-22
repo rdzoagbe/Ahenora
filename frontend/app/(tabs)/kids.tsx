@@ -28,6 +28,7 @@ import {
   PiggyBank,
   RotateCcw,
   Play,
+  UserCog,
 } from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
@@ -1109,6 +1110,17 @@ export default function Kids() {
           <ScreenHeader
             eyebrow={t('kids_eyebrow_family')}
             title={t('kids_title')}
+            right={
+              <PressScale
+                testID="family-manage-members"
+                onPress={() => router.push('/(tabs)/settings')}
+                accessibilityLabel={t('family_manage_members')}
+                style={styles.manageBtn}
+              >
+                <UserCog color={ui.orangeText} size={18} />
+                <Text style={styles.manageBtnText}>{t('family_members')}</Text>
+              </PressScale>
+            }
           />
 
           {/* Only once the screen has something to explain — a tip above an
@@ -2115,6 +2127,11 @@ function RecentActivity({ items, loading, expanded }: { items: StarTransaction[]
 
 const createStyles = (ui: UIColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: ui.bg },
+  manageBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: ui.orangeSoft,
+    borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8,
+  },
+  manageBtnText: { fontFamily: 'Inter_700Bold', fontSize: 12.5, color: ui.orangeText },
   scroll: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 40 },
   bellWrap: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
 

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { ChevronRight, Lock, MessageCircle, Settings as SettingsIcon, Smile, User, X } from 'lucide-react-native';
+import { ChevronRight, Lock, Settings as SettingsIcon, Smile, User, UtensilsCrossed, X } from 'lucide-react-native';
 
 import { PressScale } from './PressScale';
 import { useUI, UIColors } from './Kit';
@@ -40,15 +40,15 @@ export function MoreSheet({ visible, onClose }: { visible: boolean; onClose: () 
   const items = [
     { key: 'kid', icon: Smile, tone: ui.mintText, soft: ui.mint,
       title: t('kid_hand_over'), sub: t('kid_hand_over_sub'), path: '' },
-    { key: 'chat', icon: MessageCircle, tone: ui.orangeText, soft: ui.orangeSoft,
-      title: t('chat_title'), sub: t('nav_more_chat_sub'), path: '/chat' },
+    { key: 'kitchen', icon: UtensilsCrossed, tone: ui.orangeText, soft: ui.orangeSoft,
+      title: t('kitchen'), sub: t('nav_more_kitchen_sub'), path: '/(tabs)/kitchen' },
     { key: 'vault', icon: Lock, tone: ui.lavenderText, soft: ui.lavender,
       title: t('vault'), sub: t('nav_more_vault_sub'), path: '/(tabs)/vault' },
     { key: 'settings', icon: SettingsIcon, tone: ui.orange, soft: ui.orangeSoft,
       title: t('settings'), sub: t('nav_more_settings_sub'), path: '/(tabs)/settings' },
     { key: 'account', icon: User, tone: ui.mintText, soft: ui.mint,
       title: t('nav_more_account'), sub: t('nav_more_account_sub'), path: '/(tabs)/account' },
-  ].filter((it) => !(user?.is_helper && (it.key === 'vault' || it.key === 'kid' || it.key === 'chat')));
+  ].filter((it) => !(user?.is_helper && (it.key === 'vault' || it.key === 'kid')));
   // A helper never sees the private document vault, and can't hand the device
   // to a child (exiting kid mode needs a parent's PIN they don't hold). The
   // deeper surfaces (billing, member management, expenses) are refused
