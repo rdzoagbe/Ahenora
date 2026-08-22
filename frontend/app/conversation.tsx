@@ -29,7 +29,7 @@ export default function Conversation() {
   const isAdults = params.adults === '1';
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom', 'left', 'right']}>
       <View style={styles.header}>
         <PressScale testID="conversation-back" onPress={() => router.back()} style={styles.back} accessibilityLabel={t('back')}>
           <ChevronLeft color={ui.text} size={22} />

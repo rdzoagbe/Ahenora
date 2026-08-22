@@ -1171,14 +1171,18 @@ export default function Kids() {
                 <ChevronLeft color={ui.text} size={22} />
               </PressScale>
               <Text style={styles.focusTitle} numberOfLines={1}>{activeChild.name}</Text>
+              {/* Only a teen has a thread to open. A managed child has no device
+                  and no inbox, so a Message button here could only ever lead
+                  somewhere else — it opened the teen invite sheet, which asks
+                  for an age of 13 to 17 and reads as nonsense on a six-year-old.
+                  Giving a child their own account still lives in their wallet
+                  card below, where it is labelled as what it is. */}
               {activeChild.role?.toLowerCase() === 'teen' ? (
                 <PressScale testID="child-message" onPress={() => openMember(activeChild)} style={styles.focusMsg} accessibilityLabel={t('hub_tab_chat')}>
                   <MessageCircle color={ui.orangeText} size={18} />
                 </PressScale>
               ) : (
-                <PressScale testID="child-message" onPress={openTeenInvite} style={styles.focusMsg} accessibilityLabel={t('hub_give_account_chat')}>
-                  <MessageCircle color={ui.muted} size={18} />
-                </PressScale>
+                <View style={{ width: 36 }} />
               )}
             </View>
           ) : (

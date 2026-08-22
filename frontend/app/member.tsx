@@ -173,7 +173,7 @@ export default function MemberProfile() {
   );
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom', 'left', 'right']}>
       <View style={styles.header}>
         <PressScale testID="member-back" onPress={() => router.back()} style={styles.backBtn} accessibilityLabel={t('back')}>
           <ChevronLeft color={ui.text} size={22} />
