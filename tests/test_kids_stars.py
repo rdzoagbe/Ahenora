@@ -478,11 +478,45 @@ class ManagingAChild(unittest.TestCase):
         self.assertEqual(self._patch(db)["name"], "Ama")
         self.assertEqual(db["family_members"].rows[0]["stars"], 40)
 
-    def test_the_patch_model_accepts_nothing_but_name_and_avatar(self):
+    def test_the_patch_model_accepts_only_correctable_details(self):
         # Stars move through the audited endpoint that writes a ledger entry,
         # so the model itself must refuse them — testing only the handler body
         # would stay green the day somebody adds a stars field to the model.
-        self.assertEqual(set(server.MemberPatchIn.model_fields), {"name", "avatar"})
+        # Age joined name and avatar deliberately: it is a detail a parent can
+        # correct in place, with no balance or history hanging off it.
+        self.assertEqual(set(server.MemberPatchIn.model_fields), {"name", "avatar", "age"})
+        self.assertNotIn("stars", server.MemberPatchIn.model_fields)
+
+    def test_an_age_can_be_set_on_a_child_added_long_ago(self):
+        # Children are added in a hurry at setup and were never asked their age,
+        # so it has to be correctable afterwards rather than only at creation.
+        db = self._install()
+        self.assertEqual(self._patch(db, age=7)["age"], 7)
+        self.assertEqual(db["family_members"].rows[0]["age"], 7)
+
+    def test_setting_an_age_leaves_the_stars_alone(self):
+        db = self._install()
+        self._patch(db, age=9)
+        self.assertEqual(db["family_members"].rows[0]["stars"], 40)
+        self.assertEqual(db["star_transactions"].rows, [])
+
+    def test_zero_clears_an_age_set_by_mistake(self):
+        db = self._install()
+        self._patch(db, age=7)
+        self.assertIsNone(self._patch(db, age=0)["age"])
+
+    def test_a_grown_up_age_is_refused_on_a_child(self):
+        # A child profile has no login and cannot consent to anything, so an age
+        # of 18+ would be claiming something the row cannot support.
+        db = self._install()
+        for bad in (18, 40, -1):
+            with self.assertRaises(server.HTTPException) as ctx:
+                self._patch(db, age=bad)
+            self.assertEqual(ctx.exception.status_code, 400)
+
+    def test_a_child_with_no_age_reports_none_rather_than_a_guess(self):
+        db = self._install()
+        self.assertIsNone(self._patch(db, name="Ama")["age"])
 
     def test_stars_survive_an_attempt_to_set_them(self):
         db = self._install()

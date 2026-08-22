@@ -90,6 +90,7 @@
   .btn {
     display: inline-flex; align-items: center; gap: 8px; padding: 14px 24px; border-radius: 999px;
     font-weight: 700; text-decoration: none; font-size: 16px; line-height: 1.2; text-align: center;
+    white-space: nowrap;
     background: var(--orange); color: #fff; border: 1px solid transparent;
     box-shadow: 0 10px 26px -12px rgba(245, 101, 25, 0.7);
     transition: transform .14s ease, background .14s ease, box-shadow .14s ease;
@@ -114,7 +115,7 @@
     border: 1px solid color-mix(in srgb, var(--orange) 22%, transparent);
   }
   .eyebrow .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--mint-ink); }
-  h1 { font-family: 'Playfair Display', Georgia, serif; font-weight: 800; font-size: clamp(38px, 5.2vw, 60px); line-height: 1.06; letter-spacing: -0.015em; margin: 0 0 20px; }
+  h1 { font-family: 'Playfair Display', Georgia, serif; font-weight: 800; font-size: clamp(30px, 7.6vw, 60px); line-height: 1.08; letter-spacing: -0.015em; margin: 0 0 20px; }
   .lede { font-size: 19px; color: var(--muted); margin: 0 0 30px; max-width: 33em; }
   .cta-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
   .cta-note { font-size: 14px; color: var(--muted); margin-top: 16px; }
@@ -220,8 +221,14 @@
   @media (max-width: 620px) {
     .hero { padding: 52px 0 44px; }
     .grid, .plans { grid-template-columns: 1fr; }
-    .nav { gap: 14px; }
+    .nav { gap: 10px; }
     .nav a.quiet { font-size: 14px; }
+    /* The header has four things on one row at 390px; trimming the pill and the
+       wordmark is what keeps "Get the app" on a single line. */
+    .brand { font-size: 16.5px; gap: 8px; }
+    .brand img { width: 30px; height: 30px; }
+    .btn.sm { padding: 9px 15px; font-size: 14px; }
+    .lede { font-size: 17px; }
     /* The web-app link is redundant on mobile (the hero CTA covers it) and its
        length crowds the header — drop it here so Features/Pricing/Get-the-app
        sit cleanly on one row. */
@@ -229,6 +236,14 @@
     /* One centred phone in the hero on narrow screens. */
     .phone-stack .device.offset { display: none; }
     .phone-stack .device { max-width: 280px; }
+  }
+  @media (max-width: 380px) {
+    /* On the narrowest phones the header cannot hold a wordmark, two links and
+       a pill: the pill will not wrap (it reads as broken when it does) so it
+       pushed the page sideways instead. The two links are in-page anchors to
+       sections you reach by scrolling anyway — the pill is the one that has to
+       survive. */
+    .nav a.quiet { display: none; }
   }
 </style>
 <script>

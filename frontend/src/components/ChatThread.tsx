@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, FlatList, KeyboardAvoidingView, Platform,
+  ActivityIndicator, FlatList, Keyboard, Platform,
   StyleSheet, Text, TextInput, View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Send } from 'lucide-react-native';
 
 import { PressScale } from './PressScale';
@@ -33,6 +34,32 @@ export function ChatThread({ load, send, markRead, emptyHint }: Props) {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const listRef = useRef<FlatList<ChatMessage>>(null);
+  const insets = useSafeAreaInsets();
+
+  // Measure the keyboard instead of asking KeyboardAvoidingView to guess. Under
+  // Android's edge-to-edge the window no longer resizes the way that component
+  // assumes: 'padding' counted the keyboard twice and pushed the composer off
+  // the top of the screen, and no behavior at all left it sitting underneath the
+  // keyboard. The height the OS reports is the one number that is true on both
+  // platforms. The bottom inset is already paid by the SafeAreaView around this,
+  // so it is taken off again here rather than counted twice.
+  const [keyboard, setKeyboard] = useState(0);
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const shown = Keyboard.addListener(showEvent, (e) => {
+      setKeyboard(Math.max((e.endCoordinates?.height ?? 0) - insets.bottom, 0));
+    });
+    const hidden = Keyboard.addListener(hideEvent, () => setKeyboard(0));
+    return () => { shown.remove(); hidden.remove(); };
+  }, [insets.bottom]);
+
+  // Opening the keyboard should not bury the newest message behind it.
+  useEffect(() => {
+    if (keyboard > 0) {
+      requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
+    }
+  }, [keyboard]);
 
   const refresh = useCallback(async () => {
     try {
@@ -69,17 +96,7 @@ export function ChatThread({ load, send, markRead, emptyHint }: Props) {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.root}
-      // iOS only. Android's softwareKeyboardLayoutMode is the default 'resize',
-      // so the window already shrinks for the keyboard; adding 'padding' on top
-      // counts the keyboard twice and pushes the composer clean off the screen —
-      // which is exactly how the text box went missing. The composer sitting
-      // behind the floating tab bar was a different problem, already solved by
-      // opening conversations as their own pushed screen (no tab bar over them).
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
-    >
+    <View style={[styles.root, { paddingBottom: keyboard }]}>
       <FlatList
         ref={listRef}
         data={messages}
@@ -117,7 +134,7 @@ export function ChatThread({ load, send, markRead, emptyHint }: Props) {
           {sending ? <ActivityIndicator color="#fff" size="small" /> : <Send color="#fff" size={18} />}
         </PressScale>
       </View>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 

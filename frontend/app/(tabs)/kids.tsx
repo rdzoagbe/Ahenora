@@ -169,6 +169,7 @@ export default function Kids() {
   const [showManageSheet, setShowManageSheet] = useState(false);
   const [manageName, setManageName] = useState('');
   const [managePin, setManagePin] = useState('');
+  const [manageAge, setManageAge] = useState('');
   // Give a 13+ child their own account (teen mode): the age picker floors at
   // 13 — the compliance line — so under-13 can never get an independent account.
   const [showTeenInvite, setShowTeenInvite] = useState(false);
@@ -566,6 +567,9 @@ export default function Kids() {
     if (!activeChild) { showToast(t('kids_select_child_first'), 'error'); return; }
     setManageName(activeChild.name);
     setManagePin('');
+    // Prefilled with what is stored, blank when nothing was ever set — a child
+    // added before ages existed should not be shown a number nobody chose.
+    setManageAge(activeChild.age != null ? String(activeChild.age) : '');
     setShowManageSheet(true);
   };
 
@@ -642,14 +646,30 @@ export default function Kids() {
 
     if (!name) { showToast(t('kids_name_required'), 'error'); return; }
     if (pin && !/^\d{4}$/.test(pin)) { showToast(t('kids_pin_4_digits'), 'error'); return; }
+    // Blank means "leave it alone"; a typed number has to be a real child's age.
+    const ageText = manageAge.trim();
+    const ageNum = ageText ? Number(ageText) : null;
+    if (ageText && (!Number.isInteger(ageNum) || (ageNum as number) < 1 || (ageNum as number) > 17)) {
+      showToast(t('kids_age_range'), 'error');
+      return;
+    }
 
     setSaving(true);
     try {
       // Two calls with no transaction between them, so each is applied as it
       // lands rather than at the end: if the second fails, the screen still
       // shows what the first actually changed.
-      if (name !== activeChild.name) {
-        const updated = await api.updateFamilyMember(activeChild.member_id, { name });
+      // Name and age travel together — one request, so a parent who corrects
+      // both does not get half of it applied.
+      const storedAge = activeChild.age ?? null;
+      const nameChanged = name !== activeChild.name;
+      const ageChanged = ageNum !== storedAge && !(ageNum === null && storedAge === null);
+      if (nameChanged || ageChanged) {
+        const patch: { name?: string; age?: number } = {};
+        if (nameChanged) patch.name = name;
+        // 0 is how the server is told to clear an age that was set by mistake.
+        if (ageChanged) patch.age = ageNum ?? 0;
+        const updated = await api.updateFamilyMember(activeChild.member_id, patch);
         setMembers((prev) => prev.map((m) => (m.member_id === updated.member_id ? updated : m)));
       }
       // The PIN box opens blank and is only sent when typed, so saving a
@@ -2069,6 +2089,19 @@ export default function Kids() {
           placeholder={t('kids_child_name_placeholder')}
           placeholderTextColor={ui.muted}
           style={styles.input}
+          returnKeyType="done"
+        />
+
+        <Text style={styles.label}>{t('kids_child_age')}</Text>
+        <TextInput
+          testID="manage-child-age"
+          value={manageAge}
+          onChangeText={(v) => setManageAge(v.replace(/[^0-9]/g, '').slice(0, 2))}
+          placeholder={t('kids_child_age_placeholder')}
+          placeholderTextColor={ui.muted}
+          style={styles.input}
+          keyboardType="number-pad"
+          maxLength={2}
           returnKeyType="done"
         />
 

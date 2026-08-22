@@ -972,6 +972,9 @@ def public_member(member: dict) -> dict:
         "week_claimed": _coerce_dt(member.get("week_claimed_for")) == current_week_start(),
         "has_pin": bool(member.get("pin_hash")),
         "has_account": bool(member.get("user_id")),
+        # Null until a parent sets it — children added before this existed have
+        # no age, and an invented one would be worse than none.
+        "age": member.get("age"),
         # A teen's own user_id is their private chat thread's key. Exposing it to
         # the parent-facing member list (this serializer is only ever returned to
         # full members) lets the app open the right teen's thread by id instead
@@ -2249,6 +2252,10 @@ class MemberPatchIn(BaseModel):
 
     name: Optional[str] = None
     avatar: Optional[str] = None
+    # A child's age, set after the fact: children are added in a hurry at setup
+    # and the age was never asked for, so it had to be correctable later. Send
+    # 0 to clear one that was set by mistake.
+    age: Optional[int] = None
 
 
 class StarAdjustmentIn(BaseModel):
@@ -3649,6 +3656,21 @@ async def update_family_member(member_id: str, payload: MemberPatchIn, user=Depe
         if len(avatar) > 200:
             raise HTTPException(status_code=400, detail="Avatar is too long")
         changes["avatar"] = avatar or None
+
+    # getattr, not attribute access: callers construct their own payload stubs
+    # and a hard reference makes adding a field break every one of them.
+    payload_age = getattr(payload, "age", None)
+    if payload_age is not None:
+        age = int(payload_age)
+        # 0 clears it. Otherwise 1-17: this is a child's row, and an age at or
+        # above 18 would claim a grown-up lives behind a profile that has no
+        # login and cannot consent to anything.
+        if age == 0:
+            changes["age"] = None
+        elif not (1 <= age <= 17):
+            raise HTTPException(status_code=400, detail="Age must be between 1 and 17.")
+        else:
+            changes["age"] = age
 
     if not changes:
         return public_member(member)

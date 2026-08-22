@@ -1297,16 +1297,16 @@ export default function Kitchen() {
                 </PressScale>
                 <View style={styles.mealActions}>
                   {meals.length > 0 ? (
-                    <PressScale onPress={syncMealsToShopping} style={styles.clearBtn}>
-                      <Text style={styles.clearBtnText}>{t('vault_sync_to_list')}</Text>
+                    <PressScale onPress={syncMealsToShopping} style={[styles.mealActionBtn, { backgroundColor: ui.mint }]}>
+                      <Text style={styles.clearBtnText} numberOfLines={1}>{t('vault_sync_to_list')}</Text>
                     </PressScale>
                   ) : null}
-                  <PressScale testID="capture-recipe" onPress={openCapture} style={[styles.clearBtn, { backgroundColor: ui.orangeSoft, borderWidth: 1, borderColor: ui.orange }]}>
+                  <PressScale testID="capture-recipe" onPress={openCapture} style={[styles.mealActionBtn, { backgroundColor: ui.orangeSoft, borderWidth: 1, borderColor: ui.orange }]}>
                     <Camera color={ui.orange} size={14} />
-                    <Text style={[styles.clearBtnText, { color: ui.orangeText }]}>{t('capture_chip')}</Text>
+                    <Text style={[styles.clearBtnText, { color: ui.orangeText }]} numberOfLines={1}>{t('capture_chip')}</Text>
                   </PressScale>
-                  <PressScale onPress={() => setShowMealAdd(true)} style={[styles.clearBtn, { backgroundColor: ui.lavender }]}>
-                    <Text style={[styles.clearBtnText, { color: ui.lavenderText }]}>{t('vault_add_short')}</Text>
+                  <PressScale onPress={() => setShowMealAdd(true)} style={[styles.mealActionBtn, { backgroundColor: ui.lavender }]}>
+                    <Text style={[styles.clearBtnText, { color: ui.lavenderText }]} numberOfLines={1}>{t('vault_add_short')}</Text>
                   </PressScale>
                   <PressScale testID="meal-history" onPress={openMealHistory} style={styles.histBtn}>
                     <History color={ui.muted} size={18} />
@@ -2345,7 +2345,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
 
   secHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 22, marginBottom: 12 },
   secRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  histBtn: { width: 34, height: 34, borderRadius: 99, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.card, alignItems: 'center', justifyContent: 'center' },
+  histBtn: { width: 38, alignSelf: 'stretch', borderRadius: 99, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.card, alignItems: 'center', justifyContent: 'center' },
   // Prominent, labelled call-to-action for the shopping-list meal ideas — now
   // one of the two main ways users get recipes, so it leads the row.
   ideasCta: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 14, borderRadius: 16, backgroundColor: ui.lavender, alignSelf: 'stretch', justifyContent: 'center', marginBottom: 10 },
@@ -2410,7 +2410,17 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   keepAwakeOn: { borderColor: ui.orange + '55', backgroundColor: ui.orangeSoft },
   keepAwakeText: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 12.5 },
   mealEmptyWrap: { alignItems: 'center', paddingVertical: 6 },
-  mealActions: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
+  // The labelled actions share the row equally and run its full width; the
+  // dead space on the right made them look like leftovers rather than a set.
+  // The history icon keeps its square: stretching an icon-only, rarely-used
+  // control to a quarter of the row would give it the same weight as Capture.
+  mealActions: { flexDirection: 'row', alignItems: 'stretch', gap: 8, marginBottom: 12 },
+  // flexGrow rather than flex: 1. Exactly equal thirds is narrower than "Sync
+  // to list" needs (~98px with its padding, against ~90px available on a 390px
+  // phone) and German is longer still, so equal widths would truncate the label
+  // it is named after. Growing from natural width fills the row just as
+  // completely without clipping anything.
+  mealActionBtn: { flexGrow: 1, flexShrink: 1, flexBasis: 'auto', minWidth: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 9, borderRadius: 99 },
   restoreDismiss: { padding: 4, marginLeft: 2 },
   shopFooterRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
   selectModeBtn: {
