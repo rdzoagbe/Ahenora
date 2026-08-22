@@ -55,6 +55,9 @@ HARNESSES = [
     "e2e_kid.py",
     "e2e_week.py",
     "e2e_contrast.py",
+    # Narrow phones: every other harness runs at 390 or wider, so the end of the
+    # range where layouts actually break went unchecked.
+    "e2e_smallscreen.py",
     "e2e_offline.py",
     "e2e_webupdate.py",
     "e2e_journey.py",

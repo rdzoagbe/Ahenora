@@ -247,6 +247,8 @@ function TaskRow({ card, onOpen, onComplete, styles }: { card: Card; onOpen: () 
 }
 
 const ANN_SEEN_KEY = 'coo_family_board_seen_at';
+// Alerts the bell badge has already shown you, so it clears once looked at.
+const SEEN_ALERTS_KEY = 'coo_seen_alert_ids';
 
 export default function Feed() {
   const { user, t, subscription, dataVersion, requestInvite } = useStore();
@@ -623,6 +625,31 @@ export default function Feed() {
   const firstName = (user?.name || '').split(' ')[0] || '';
   const headline = greetingFallback(firstName, t, now);
   const alertCount = dashboard.priority.length;
+  // The bell badge counts what you have NOT looked at yet, not how much work is
+  // outstanding. Counting the latter meant the badge never cleared however many
+  // times you opened it — it reads as unread mail, so it has to behave that way.
+  // Ids of alerts already seen are remembered on the device; the badge returns
+  // only when something genuinely new shows up.
+  const [seenAlertIds, setSeenAlertIds] = useState<string[]>([]);
+  const unseenAlertCount = dashboard.priority.filter((c) => !seenAlertIds.includes(c.card_id)).length;
+
+  useEffect(() => {
+    AsyncStorage.getItem(SEEN_ALERTS_KEY)
+      .then((raw) => {
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) setSeenAlertIds(parsed.filter((x) => typeof x === 'string'));
+      })
+      .catch(() => undefined);
+  }, []);
+
+  const markAlertsSeen = useCallback(() => {
+    // Keep only ids still present, so this never grows without bound.
+    const ids = dashboard.priority.map((c) => c.card_id);
+    setSeenAlertIds(ids);
+    AsyncStorage.setItem(SEEN_ALERTS_KEY, JSON.stringify(ids)).catch(() => undefined);
+  }, [dashboard.priority]);
+
   const alertText = alertCount > 0
     ? `${alertCount} ${alertCount === 1 ? t('feed_thing_needs') : t('feed_things_need')} — ${dashboard.priority[0]?.title || t('feed_review_list')}.`
     : t('feed_nothing_critical');
@@ -814,13 +841,13 @@ export default function Feed() {
                 </PressScale>
                 <PressScale
                   testID="feed-bell"
-                  onPress={() => setShowAlerts(true)}
+                  onPress={() => { setShowAlerts(true); markAlertsSeen(); }}
                   style={styles.bellWrap}
                   accessibilityLabel={t('feed_view_alerts')}
                 >
                   <Bell color={ui.text} size={25} />
-                  {alertCount > 0 ? (
-                    <View style={styles.bellBadge}><Text style={styles.bellBadgeText}>{Math.min(alertCount, 9)}</Text></View>
+                  {unseenAlertCount > 0 ? (
+                    <View style={styles.bellBadge}><Text style={styles.bellBadgeText}>{Math.min(unseenAlertCount, 9)}</Text></View>
                   ) : null}
                 </PressScale>
                 <PressScale

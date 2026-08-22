@@ -29,7 +29,7 @@ import {
   PiggyBank,
   RotateCcw,
   Play,
-  UserCog,
+  UserPlus,
   MessageCircle,
 } from 'lucide-react-native';
 
@@ -131,7 +131,7 @@ function formatActivityDate(value: string | null | undefined, locale: string) {
 }
 
 export default function Kids() {
-  const { t, lang, dataVersion } = useStore();
+  const { t, lang, dataVersion, requestMembers } = useStore();
   const { isLocked, promptUpgrade } = usePremiumGate();
   const allowanceLocked = isLocked('allowance');
   const router = useRouter();
@@ -257,15 +257,34 @@ export default function Kids() {
     router.push({ pathname: '/member', params: { id: m.member_id, name: m.name, role: m.role, thread } });
   }, [router]);
 
+  // Messaging moved into the Hub, which put a co-parent's message three taps
+  // away and gave it no way of announcing itself. The chat icon on a row is now
+  // a real shortcut — tap the row for the person, tap the icon to talk to them.
+  const openThread = useCallback((m: FamilyMember) => {
+    const roleLc = (m.role || '').toLowerCase();
+    const isParent = roleLc === 'parent' || roleLc === 'co-parent';
+    const th = isParent ? 'adults' : (m.user_id || '');
+    if (!th) { openMember(m); return; }
+    router.push({
+      pathname: '/conversation',
+      params: { thread: th, title: m.name, adults: isParent ? '1' : '0' },
+    });
+  }, [router, openMember]);
+
   // A kid/teen opens as their own page: the roster steps aside and this one
   // child's full detail (stars, chores, rewards, pocket money) fills the screen,
   // with a back arrow to the roster — the same "each person is a page" shape the
   // grown-ups get, but reusing all the tooling that already lives on this tab.
   const [focusedChild, setFocusedChild] = useState<string | null>(null);
+  // A child's page leads with the two daily jobs — give stars, and today's
+  // chores. The other six blocks are still here, behind one door, because
+  // nine sections of equal weight buried the thing you actually came to do.
+  const [showMore, setShowMore] = useState(false);
   const openChild = useCallback((m: FamilyMember) => {
     setSelectedChild(m.member_id);
     setBackdateDay(null);
     setFocusedChild(m.member_id);
+    setShowMore(false);
   }, []);
   const activeChild = children.find((c) => c.member_id === selectedChild) || children[0];
   const isFocused = Boolean(focusedChild) && Boolean(activeChild);
@@ -1171,14 +1190,18 @@ export default function Kids() {
                 <ChevronLeft color={ui.text} size={22} />
               </PressScale>
               <Text style={styles.focusTitle} numberOfLines={1}>{activeChild.name}</Text>
+              {/* Only a teen has a thread to open. A managed child has no device
+                  and no inbox, so a Message button here could only ever lead
+                  somewhere else — it opened the teen invite sheet, which asks
+                  for an age of 13 to 17 and reads as nonsense on a six-year-old.
+                  Giving a child their own account still lives in their wallet
+                  card below, where it is labelled as what it is. */}
               {activeChild.role?.toLowerCase() === 'teen' ? (
                 <PressScale testID="child-message" onPress={() => openMember(activeChild)} style={styles.focusMsg} accessibilityLabel={t('hub_tab_chat')}>
                   <MessageCircle color={ui.orangeText} size={18} />
                 </PressScale>
               ) : (
-                <PressScale testID="child-message" onPress={openTeenInvite} style={styles.focusMsg} accessibilityLabel={t('hub_give_account_chat')}>
-                  <MessageCircle color={ui.muted} size={18} />
-                </PressScale>
+                <View style={{ width: 36 }} />
               )}
             </View>
           ) : (
@@ -1188,12 +1211,12 @@ export default function Kids() {
               right={
                 <PressScale
                   testID="family-manage-members"
-                  onPress={() => router.push('/(tabs)/settings')}
-                  accessibilityLabel={t('family_manage_members')}
+                  onPress={() => { requestMembers(); router.push('/(tabs)/settings'); }}
+                  accessibilityLabel={t('set_invites')}
                   style={styles.manageBtn}
                 >
-                  <UserCog color={ui.orangeText} size={18} />
-                  <Text style={styles.manageBtnText}>{t('family_members')}</Text>
+                  <UserPlus color={ui.orangeText} size={18} />
+                  <Text style={styles.manageBtnText}>{t('set_invite')}</Text>
                 </PressScale>
               }
             />
@@ -1243,10 +1266,19 @@ export default function Kids() {
                       </View>
                       <Text style={styles.hubSub} numberOfLines={1}>{sub}</Text>
                     </View>
-                    {unread > 0 ? (
-                      <View style={styles.hubUnread}><Text style={styles.hubUnreadText}>{unread}</Text></View>
-                    ) : isParent ? (
-                      <MessageCircle color={ui.muted} size={18} />
+                    {isParent ? (
+                      <PressScale
+                        testID={`hub-message-${m.member_id}`}
+                        onPress={() => openThread(m)}
+                        hitSlop={10}
+                        accessibilityLabel={t('hub_message_name', { name: m.name })}
+                        style={styles.hubMsgBtn}
+                      >
+                        <MessageCircle color={unread > 0 ? '#fff' : ui.muted} size={18} />
+                        {unread > 0 ? (
+                          <View style={styles.hubUnread}><Text style={styles.hubUnreadText}>{unread}</Text></View>
+                        ) : null}
+                      </PressScale>
                     ) : (
                       <ChevronRight color={ui.muted} size={18} />
                     )}
@@ -1449,6 +1481,52 @@ export default function Kids() {
                       </PressScale>
                     ) : null}
                   </Card>
+                  {/* The daily two, in the order a parent reaches for them. */}
+                  <Text style={styles.leadLabel}>{t('hub_give_stars')}</Text>
+                  <View style={styles.leadRow}>
+                    {[1, 3, 5].map((n) => (
+                      <PressScale
+                        key={n}
+                        testID={`kids-give-${n}`}
+                        onPress={() => quickAdd(t('kids_parent_added_stars'), n)}
+                        style={styles.leadStar}
+                      >
+                        <Star color="#fff" size={15} fill="#fff" />
+                        <Text style={styles.leadStarText}>+{n}</Text>
+                      </PressScale>
+                    ))}
+                  </View>
+
+                  <Text style={styles.leadLabel}>{t('kids_today')}</Text>
+                  {QUICK_ADDS.map((q) => (
+                    <PressScale
+                      key={q.labelKey}
+                      testID={`kids-today-${q.labelKey}`}
+                      onPress={() => quickAdd(t(q.labelKey), q.amount, q.chore)}
+                      style={styles.todayRow}
+                    >
+                      <View style={[styles.todayIcon, { backgroundColor: q.bg }]}>
+                        <q.Icon color={q.tint} size={16} />
+                      </View>
+                      <Text style={styles.todayText}>{t(q.labelKey)}</Text>
+                      <Text style={styles.todayVal}>+{q.amount}★</Text>
+                    </PressScale>
+                  ))}
+
+                  {/* Everything else, one row away — not deleted. */}
+                  <PressScale
+                    testID="kids-show-more"
+                    onPress={() => setShowMore((v) => !v)}
+                    style={styles.moreRow}
+                  >
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={styles.moreTitle}>{t('kids_more_for', { name: activeChild.name })}</Text>
+                      <Text style={styles.moreSub} numberOfLines={1}>{t('kids_more_sub')}</Text>
+                    </View>
+                    <ChevronRight color={ui.muted} size={18} style={{ transform: [{ rotate: showMore ? '90deg' : '0deg' }] }} />
+                  </PressScale>
+
+                  {showMore ? (<>
                   <PressScale
                     testID="kids-assign-task"
                     accessibilityRole="button"
@@ -1750,13 +1828,14 @@ export default function Kids() {
                   {kidsTab === 'history' && (
                     <RecentActivity items={historyItems} loading={historyLoading} expanded />
                   )}
+                  </>) : null}
                 </>
               ) : null}
             </>
           )}
 
           {/* Morning Routines — part of the focused child's page, not the roster */}
-          {isFocused && activeChild && childRoutines.length > 0 ? (
+          {isFocused && showMore && activeChild && childRoutines.length > 0 ? (
             <>
               <View style={styles.featureHeader}>
                 <Timer color={ui.lavenderText} size={18} />
@@ -1788,7 +1867,7 @@ export default function Kids() {
           ) : null}
 
           {/* Allowance Tracker */}
-          {isFocused && activeChild ? (
+          {isFocused && showMore && activeChild ? (
             <>
               <View style={styles.featureHeader}>
                 <PiggyBank color={ui.goldText} size={18} />
@@ -1858,7 +1937,7 @@ export default function Kids() {
           ) : null}
 
           {/* Chore Wheel — part of the focused child's page, not the roster */}
-          {isFocused && activeChild && chores.length > 0 ? (
+          {isFocused && showMore && activeChild && chores.length > 0 ? (
             <>
               <View style={styles.featureHeader}>
                 <RotateCcw color={ui.mintText} size={18} />
@@ -2301,10 +2380,22 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   hubBadge: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 },
   hubBadgeText: { fontFamily: 'Inter_700Bold', fontSize: 10, letterSpacing: 0.3, textTransform: 'uppercase' },
   hubSub: { fontFamily: 'Inter_400Regular', fontSize: 12.5, color: ui.muted, marginTop: 2 },
-  hubUnread: { minWidth: 20, height: 20, borderRadius: 10, backgroundColor: ui.orange, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
+  hubMsgBtn: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: ui.soft },
+  hubUnread: { position: 'absolute', top: -3, right: -3, minWidth: 18, height: 18, borderRadius: 9, backgroundColor: ui.orange, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5 },
   hubUnreadText: { color: '#fff', fontFamily: 'Inter_800ExtraBold', fontSize: 11 },
   teenMsgBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: ui.orangeSoft, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 3 },
   teenMsgText: { fontFamily: 'Inter_700Bold', fontSize: 11.5, color: ui.orangeText },
+  leadLabel: { fontFamily: 'Inter_800ExtraBold', fontSize: 11, letterSpacing: 0.8, textTransform: 'uppercase', color: ui.muted, marginTop: 18, marginBottom: 9, marginLeft: 2 },
+  leadRow: { flexDirection: 'row', gap: 10 },
+  leadStar: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: ui.orange, borderRadius: 14, paddingVertical: 13 },
+  leadStarText: { fontFamily: 'Inter_800ExtraBold', fontSize: 15, color: '#fff' },
+  todayRow: { flexDirection: 'row', alignItems: 'center', gap: 11, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, borderRadius: 12, paddingVertical: 11, paddingHorizontal: 12, marginBottom: 7 },
+  todayIcon: { width: 30, height: 30, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  todayText: { flex: 1, fontFamily: 'Inter_600SemiBold', fontSize: 14, color: ui.text },
+  todayVal: { fontFamily: 'Inter_800ExtraBold', fontSize: 13, color: ui.mintText },
+  moreRow: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: ui.soft, borderWidth: 1, borderColor: ui.line, borderRadius: 14, paddingVertical: 13, paddingHorizontal: 14, marginTop: 16, marginBottom: 4 },
+  moreTitle: { fontFamily: 'Inter_700Bold', fontSize: 14.5, color: ui.text },
+  moreSub: { fontFamily: 'Inter_400Regular', fontSize: 12, color: ui.muted, marginTop: 2 },
   hubKids: { marginTop: 2, marginBottom: 6 },
   hubRowActive: { borderColor: ui.orange, borderWidth: 1.5 },
   hubStarChip: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: ui.mint, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 },

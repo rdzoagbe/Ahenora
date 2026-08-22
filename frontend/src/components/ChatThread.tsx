@@ -71,11 +71,13 @@ export function ChatThread({ load, send, markRead, emptyHint }: Props) {
   return (
     <KeyboardAvoidingView
       style={styles.root}
-      // 'padding' on Android too: the app is edge-to-edge (SDK 57), where the
-      // window no longer resizes under the keyboard, so a bottom-anchored
-      // composer needs the avoiding view to lift it explicitly. Without this it
-      // sat behind the keyboard.
-      behavior="padding"
+      // iOS only. Android's softwareKeyboardLayoutMode is the default 'resize',
+      // so the window already shrinks for the keyboard; adding 'padding' on top
+      // counts the keyboard twice and pushes the composer clean off the screen —
+      // which is exactly how the text box went missing. The composer sitting
+      // behind the floating tab bar was a different problem, already solved by
+      // opening conversations as their own pushed screen (no tab bar over them).
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
       <FlatList

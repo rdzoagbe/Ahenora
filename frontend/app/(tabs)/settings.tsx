@@ -12,7 +12,6 @@ import {
   DollarSign,
   Globe,
   Link2,
-  Lock,
   LogOut,
   Mail,
   MessageSquare,
@@ -35,7 +34,6 @@ import { useToast } from '../../src/hooks/useToast';
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { PressScale } from '../../src/components/PressScale';
 import { LanguageModal } from '../../src/components/LanguageModal';
-import { PinPadModal } from '../../src/components/PinPadModal';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
 import { TabScreen } from '../../src/components/TabScreen';
 import { PremiumPreviewBanner } from '../../src/components/PremiumGate';
@@ -55,7 +53,7 @@ function formatBytes(bytes?: number | null) {
 }
 
 export default function Settings() {
-  const { user, t, lang, logout, subscription, appearanceMode, setAppearance, inviteRequested, clearInviteRequest } = useStore();
+  const { user, t, lang, logout, subscription, appearanceMode, setAppearance, inviteRequested, clearInviteRequest, membersRequested, clearMembersRequest } = useStore();
   const router = useRouter();
   const ui = useUI();
   const styles = useMemo(() => createStyles(ui), [ui]);
@@ -82,7 +80,6 @@ export default function Settings() {
   const [inviteResult, setInviteResult] = useState<string | null>(null);
   const [inviteError, setInviteError] = useState(false);
   const [lastInviteUrl, setLastInviteUrl] = useState<string | null>(null);
-  const [pinMember, setPinMember] = useState<FamilyMember | null>(null);
   const [expandClientErrors, setExpandClientErrors] = useState(false);
   const [clientErrors, setClientErrors] = useState<Awaited<ReturnType<typeof api.listClientErrors>>>([]);
   const [notificationPrefs, setNotificationPrefs] = useState<NotificationSettings>({ card_reminders: false, new_card_alerts: false });
@@ -101,7 +98,6 @@ export default function Settings() {
 
   const [refreshing, setRefreshing] = useState(false);
   const [expandMembers, setExpandMembers] = useState(false);
-  const [expandChildren, setExpandChildren] = useState(false);
   const [expandHistory, setExpandHistory] = useState(false);
   const [expandUsage, setExpandUsage] = useState(false);
   // Settings is a hub now: each group is a row that opens on tap, so the
@@ -235,27 +231,7 @@ export default function Settings() {
   const weeklyBrief = Boolean(entitlements?.weekly_brief || subscription?.limits?.weekly_brief);
   const initial = (user?.name?.[0] || 'C').toUpperCase();
 
-  const removeMember = useCallback((member: FamilyMember) => {
-    Alert.alert(
-      `${t('set_remove')} ${member.name}?`,
-      member.has_account ? t('set_remove_coparent_msg') : t('set_remove_member_msg'),
-      [
-        { text: t('cancel'), style: 'cancel' },
-        {
-          text: t('set_remove'),
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await api.deleteFamilyMember(member.member_id);
-              setMembers((prev) => prev.filter((m) => m.member_id !== member.member_id));
-            } catch (error: any) {
-              Alert.alert(t('set_remove_member_error'), error?.message || t('set_please_try_again'));
-            }
-          },
-        },
-      ],
-    );
-  }, []);
+
 
   // The inviter completes the join from their own device — built for the
   // household whose invitee's phone could read the invite but never deliver
@@ -449,6 +425,18 @@ export default function Settings() {
     clearInviteRequest();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inviteRequested]);
+
+  // The Family screen's Members button lands here. Managing members sits two
+  // collapsed layers down — inside the Household group, then behind the Manage
+  // members row — so arriving at the top of Settings meant hunting for it.
+  // Open both on arrival, and clear the flag so it fires once.
+  useEffect(() => {
+    if (!membersRequested) return;
+    setOpenGroups((g) => ({ ...g, household: true }));
+    setExpandMembers(true);
+    clearMembersRequest();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [membersRequested]);
 
   // Two parents is the ceiling — a parent and a co-parent. A third would-be
   // parent is redirected to the family-member invite, where they get a role.
@@ -774,36 +762,13 @@ export default function Settings() {
             <NavRow
               testID="settings-household-toggle"
               tile={<IconTile bg={ui.orangeSoft}><Users color={ui.orange} size={18} /></IconTile>}
-              title={t('set_manage_members')}
-              subtitle={isCoParented ? `${t('set_co_parents')}: ${coParents.map((m) => m.name).join(' & ')}` : undefined}
+              title={t('set_invites')}
+              subtitle={t('set_invites_sub')}
               right={<Chevron open={expandMembers} />}
               onPress={() => setExpandMembers((v) => !v)}
             />
             {expandMembers ? (
               <View style={styles.expandBox}>
-                {members.length === 0 ? <Text style={styles.emptyText}>{t('set_no_members_yet')}</Text> : members.map((m) => (
-                  <View key={m.member_id} style={styles.inviteRow}>
-                    <MiniRow
-                      initial={m.name[0]?.toUpperCase()}
-                      name={m.name}
-                      sub={
-                        isCoParented && coParents.some((p) => p.member_id === m.member_id)
-                          ? `${t('set_co_parent')} · ${t('set_account')}`
-                          : m.has_account ? `${m.role} · ${t('set_account')}` : m.role
-                      }
-                    />
-                    {(!m.has_account || (m.has_account && !m.is_me && !m.is_founder)) ? (
-                      <PressScale
-                        testID={`remove-member-${m.member_id}`}
-                        onPress={() => removeMember(m)}
-                        hitSlop={12} style={{ padding: 4 }}
-                        accessibilityLabel={`${t('set_remove')} ${m.name}`}
-                      >
-                        <Trash2 color={ui.muted} size={15} />
-                      </PressScale>
-                    ) : null}
-                  </View>
-                ))}
                 {invites.filter((i) => i.status === 'pending').map((invite) => (
                   <View key={invite.invite_id} style={styles.inviteRow}>
                     <MiniRow
@@ -854,27 +819,6 @@ export default function Settings() {
                   <UserPlus color={ui.text} size={18} />
                   <Text style={styles.expandActionText}>{t('set_invite_helper')}</Text>
                 </PressScale>
-              </View>
-            ) : null}
-            <Divider />
-
-            <NavRow
-              tile={<IconTile bg={ui.lavender}><Lock color={ui.lavenderText} size={18} /></IconTile>}
-              title={t('set_manage_children')}
-              subtitle={`${childMembers.length} child${childMembers.length === 1 ? '' : 'ren'} · ${t('set_kid_pins')}`}
-              right={<Chevron open={expandChildren} />}
-              onPress={() => setExpandChildren((v) => !v)}
-            />
-            {expandChildren ? (
-              <View style={styles.expandBox}>
-                {childMembers.length === 0 ? <Text style={styles.emptyText}>{t('set_no_children')}</Text> : childMembers.map((m) => (
-                  <PressScale
-                  accessibilityRole="button"
-                  accessibilityLabel={t('a11y_lock')} key={m.member_id} testID={`set-pin-${m.member_id}`} onPress={() => setPinMember(m)} style={styles.inviteRow}>
-                    <MiniRow initial={m.name[0]?.toUpperCase()} name={m.name} sub={m.has_pin ? t('set_pin_set') : t('set_no_pin')} />
-                    {m.has_pin ? <Lock color={ui.orange} size={16} /> : <ChevronRight color={ui.muted} size={18} />}
-                  </PressScale>
-                ))}
               </View>
             ) : null}
             <Divider />
@@ -1184,25 +1128,6 @@ export default function Settings() {
       </TabScreen>
 
       <LanguageModal visible={showLang} onClose={() => setShowLang(false)} />
-      <PinPadModal
-        visible={pinMember !== null}
-        mode="set"
-        title={pinMember ? `${t('set_pin_for')} ${pinMember.name}` : t('set_set_pin')}
-        subtitle={t('set_pin_subtitle')}
-        onClose={() => setPinMember(null)}
-        onSubmit={async (pin) => {
-          if (!pinMember) return false;
-          try {
-            await api.setMemberPin(pinMember.member_id, pin);
-            setPinMember(null);
-            load();
-            return true;
-          } catch {
-            return false;
-          }
-        }}
-      />
-
       <KeyboardAwareBottomSheet visible={showInvite} onClose={() => setShowInvite(false)} contentStyle={styles.sheet}>
         <View style={styles.sheetHeader}>
           <Text style={styles.sheetTitle}>{inviteMode === 'family' ? t('set_send_invite_title') : t('set_invite_coparent')}</Text>

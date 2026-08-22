@@ -246,6 +246,19 @@ async def main():
         r["dismiss_removes_archive"] = len(api("GET", "/shopping/history", token=tok_a)) == 0
 
         # ---- Android/inviter: co-parents, moved child, accepted invite ----
+        # Who is in the household is answered by the Family tab now — the roster
+        # moved out of Settings onto the tab that lists people, and each person
+        # is managed on their own page. Settings keeps only the invites.
+        await android.goto(f"{WEB}/kids", wait_until="domcontentloaded")
+        await android.wait_for_timeout(2800)
+        roster = await android.inner_text("body")
+        r["A_coparent_in_roster"] = "Keigh Sim" in roster
+        r["A_child_moved_over"] = "Jonael Sim" in roster
+        await android.screenshot(path="journey_android_family.png")
+
+        # The accepted invite is gone from the invites list. Counted by the
+        # revoke control each pending row carries, rather than by searching the
+        # page for the word "pending" — which also appears in explanatory copy.
         await android.goto(f"{WEB}/settings", wait_until="domcontentloaded")
         await android.wait_for_timeout(2500)
         await android.click('[data-testid="settings-group-household"]')
@@ -254,9 +267,8 @@ async def main():
         await android.wait_for_timeout(1000)
         body = await android.inner_text("body")
         r["A_coparents_line"] = "Co-parents: Roland Sim & Keigh Sim" in body
-        r["A_child_moved_over"] = "Jonael Sim" in body
-        r["A_no_more_pending"] = "pending" not in body
-        await android.screenshot(path="journey_android_family.png")
+        r["A_no_more_pending"] = await android.locator(
+            '[data-testid^="revoke-invite-"]').count() == 0
 
         # ---- Household turns tester/premium: an admin account joins ----
         inv = api("POST", "/family/invite",

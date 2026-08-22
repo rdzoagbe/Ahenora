@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -20,7 +20,7 @@ import { api } from '../src/api';
 export default function Conversation() {
   const ui = useUI();
   const router = useRouter();
-  const { t } = useStore();
+  const { t, refreshUnreadChats } = useStore();
   const styles = createStyles(ui);
   const params = useLocalSearchParams<{ thread?: string; title?: string; adults?: string }>();
 
@@ -28,8 +28,29 @@ export default function Conversation() {
   const title = String(params.title || t('chat_title'));
   const isAdults = params.adults === '1';
 
+  // Stable identities. ChatThread's refresh effect depends on these callbacks,
+  // so inline arrows re-created every render made it re-fetch on every render —
+  // a loop bounded only by network latency. Keyed on the thread, which is the
+  // only thing that should ever restart the conversation.
+  const load = useCallback(() => api.chatGet(thread), [thread]);
+  const send = useCallback((text: string) => api.chatSend(thread, text), [thread]);
+  const markRead = useCallback(async () => {
+    await api.chatRead(thread);
+    refreshUnreadChats(); // reading is what clears the Family tab's badge
+  }, [thread, refreshUnreadChats]);
+
+  // The web build prerenders this route with no query string, so every value
+  // taken from params — the name, the role, the thread — differs between that
+  // HTML and the first client render. React then discards the whole tree and
+  // logs a hydration error. Render the same empty shell both sides start from,
+  // and read the params on the next tick. Native mounts immediately, so this
+  // costs nothing there.
+  const [ready, setReady] = useState(false);
+  useEffect(() => setReady(true), []);
+  if (!ready) return <SafeAreaView style={styles.safe} edges={['top', 'bottom', 'left', 'right']} />;
+
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom', 'left', 'right']}>
       <View style={styles.header}>
         <PressScale testID="conversation-back" onPress={() => router.back()} style={styles.back} accessibilityLabel={t('back')}>
           <ChevronLeft color={ui.text} size={22} />
@@ -38,9 +59,9 @@ export default function Conversation() {
         <View style={{ width: 36 }} />
       </View>
       <ChatThread
-        load={() => api.chatGet(thread)}
-        send={(text) => api.chatSend(thread, text)}
-        markRead={() => api.chatRead(thread)}
+        load={load}
+        send={send}
+        markRead={markRead}
         emptyHint={isAdults ? t('chat_empty_adults') : t('chat_empty_teen')}
       />
     </SafeAreaView>

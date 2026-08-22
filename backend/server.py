@@ -84,7 +84,12 @@ GOOGLE_CLIENT_IDS = [
 # De-duplicate while preserving order.
 GOOGLE_CLIENT_IDS = list(dict.fromkeys(GOOGLE_CLIENT_IDS))
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
-SESSION_DAYS = int(os.environ.get("SESSION_DAYS", "7"))
+# A household app is opened daily and lived in for years. A seven-day session
+# signed everyone out weekly — a tap for a Google user, but a retyped password
+# for an email one, which is why coming back felt broken. Ninety days, and the
+# clock resets on use (see _touch_session), so an active family is never signed
+# out while an abandoned session still lapses.
+SESSION_DAYS = int(os.environ.get("SESSION_DAYS", "90"))
 INVITE_DAYS = int(os.environ.get("INVITE_DAYS", "14"))
 # Invite links must open SOMEWHERE on every device. The old default was the
 # native custom scheme, which does nothing on a phone without the app —
@@ -390,6 +395,31 @@ def verify_password(password: str, stored: str) -> bool:
         return secrets.compare_digest(dk.hex(), hexhash)
     except Exception:
         return False
+
+
+async def _touch_session(database, token_hash: str, session: dict) -> None:
+    """Push a live session's expiry back out, at most once a day.
+
+    Without this, expiry counts from sign-in rather than from last use, so a
+    family that opens the app every morning is still logged out on schedule.
+    Renewing only when the session has less than (SESSION_DAYS - 1) left costs
+    one write per active day instead of one per request.
+    """
+    expires = _coerce_dt(session.get("expires_at"))
+    if not expires:
+        return
+    # A one-day floor keeps a deliberately short SESSION_DAYS from renewing on
+    # every single request.
+    threshold = timedelta(days=max(SESSION_DAYS - 1, 0.5))
+    if expires - utcnow() >= threshold:
+        return
+    try:
+        await database["user_sessions"].update_one(
+            {"token_hash": token_hash},
+            {"$set": {"expires_at": utcnow() + timedelta(days=SESSION_DAYS)}},
+        )
+    except Exception as exc:  # a renewal failure must never break a request
+        log.warning("Session renewal skipped: %s", exc)
 
 
 def is_admin_email(email: str) -> bool:
@@ -2033,6 +2063,11 @@ async def require_user(authorization: str = Header(default=""),
     if session.get("kind") == "child":
         raise HTTPException(status_code=403, detail="Not available in kid mode")
 
+    # Using the app keeps you signed in — but only past the kid-mode refusal
+    # above. Renewing first meant a hand-over session on someone else's phone
+    # kept itself alive forever on the strength of its own rejected requests.
+    await _touch_session(database, sha256(token), session)
+
     user = await database["users"].find_one({"user_id": session["user_id"]}, {"_id": 0})
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
@@ -3241,7 +3276,8 @@ class ChangePasswordIn(BaseModel):
 
 
 @app.post("/api/auth/change-password")
-async def change_password(payload: ChangePasswordIn, user=Depends(require_user)):
+async def change_password(payload: ChangePasswordIn, user=Depends(require_user),
+                          authorization: str = Header(default="")):
     """Change the password on a password account.
 
     Only for accounts that actually have a password — a Google account has
@@ -3265,6 +3301,20 @@ async def change_password(payload: ChangePasswordIn, user=Depends(require_user))
     await database["users"].update_one(
         {"user_id": user["user_id"]},
         {"$set": {"password_hash": hash_password(new_password), "updated_at": utcnow()}})
+
+    # Changing your password is how a person locks out a device they no longer
+    # control — a sold laptop, an ex-partner's tablet. Only the forgotten-password
+    # reset used to revoke, so every other session survived; and now that a live
+    # session renews itself on use, one left signed in would never lapse at all.
+    # Every session but the one making this request is ended here.
+    # Called directly (tests) the header default is a Header sentinel, not a
+    # string. An unknown caller token hashes to something no row carries, so the
+    # revoke sweeps every session — erring toward locking out rather than
+    # leaving a device signed in, which is the safe direction here.
+    raw_auth = authorization if isinstance(authorization, str) else ""
+    this_token = raw_auth.replace("Bearer ", "", 1).strip()
+    await database["user_sessions"].delete_many(
+        {"user_id": user["user_id"], "token_hash": {"$ne": sha256(this_token)}})
     return {"ok": True}
 
 
@@ -4469,6 +4519,10 @@ async def require_teen(authorization: str = Header(default="")):
         {"token_hash": sha256(token), "expires_at": {"$gt": utcnow()}}, {"_id": 0})
     if not session or session.get("kind") == "child":
         raise HTTPException(status_code=401, detail="Invalid or expired session")
+    # A teen signs in on their own device; being logged out weekly is the same
+    # papercut it is for a parent. Kid mode is deliberately left out — that is a
+    # hand-over on someone else's phone and should lapse.
+    await _touch_session(database, sha256(token), session)
     user = await database["users"].find_one({"user_id": session["user_id"]}, {"_id": 0})
     if not user or not user.get("is_teen"):
         raise HTTPException(status_code=403, detail="Not a teen account")

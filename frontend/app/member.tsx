@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { ChevronLeft, Star } from 'lucide-react-native';
+import { ChevronLeft, ChevronRight, KeyRound, MessageCircle, Pencil, Shield, Star, Trash2 } from 'lucide-react-native';
 
 import { PressScale } from '../src/components/PressScale';
-import { ChatThread } from '../src/components/ChatThread';
+import { PinPadModal } from '../src/components/PinPadModal';
 import { useUI, UIColors } from '../src/components/Kit';
 import { useStore } from '../src/store';
 import { api, FamilyMember, StarTransaction } from '../src/api';
@@ -49,37 +49,95 @@ export default function MemberProfile() {
   const canChat = Boolean(thread) && (kind === 'parent' || kind === 'teen');
   const showsStars = kind === 'teen' || kind === 'kid';
 
-  const [tab, setTab] = useState<'chat' | 'stars'>(canChat ? 'chat' : 'stars');
   const [member, setMember] = useState<FamilyMember | null>(null);
   const [history, setHistory] = useState<StarTransaction[]>([]);
   const [busy, setBusy] = useState(false);
+  // Rename happens in place: a whole screen for one text field is the kind of
+  // detour this redesign exists to remove.
+  const [renaming, setRenaming] = useState(false);
+  const [nameDraft, setNameDraft] = useState(name);
+  const [savingName, setSavingName] = useState(false);
+  const [displayName, setDisplayName] = useState(name);
+  const [pinOpen, setPinOpen] = useState(false);
 
-  const loadStars = useCallback(async () => {
-    if (!showsStars || !id) return;
+  // Loads for EVERY kind, not just the ones with stars: is_me and is_founder
+  // live on this row, and they decide whether Remove may be offered at all. When
+  // it only ran for kids and teens, both flags were undefined on a grown-up's
+  // page — the one place this screen is actually opened from — so Remove was
+  // shown on your own row and on the founder's, where the server then refused it.
+  const loadMember = useCallback(async () => {
+    if (!id) return;
     try {
       const members = await api.familyMembers();
       setMember(members.find((m) => m.member_id === id) || null);
+      if (!showsStars) return;
       const h = await api.memberStarHistory(id).catch(() => [] as StarTransaction[]);
       setHistory(h.slice(0, 6));
     } catch (e) {
-      logger.warn('member stars load failed', e);
+      logger.warn('member load failed', e);
     }
   }, [id, showsStars]);
 
-  useEffect(() => { loadStars(); }, [loadStars]);
+  useEffect(() => { loadMember(); }, [loadMember]);
 
   const giveStars = useCallback(async (delta: number) => {
     if (!id || busy) return;
     setBusy(true);
     try {
       await api.adjustMemberStars(id, { delta, reason: t('kids_parent_added_stars') });
-      await loadStars();
+      await loadMember();
     } catch (e) {
       logger.warn('give stars failed', e);
     } finally {
       setBusy(false);
     }
-  }, [id, busy, loadStars, t]);
+  }, [id, busy, loadMember, t]);
+
+  const saveName = async () => {
+    const next = nameDraft.trim();
+    if (!next || next === displayName) { setRenaming(false); return; }
+    setSavingName(true);
+    try {
+      await api.updateFamilyMember(id, { name: next });
+      setDisplayName(next);
+      setRenaming(false);
+    } catch (e: any) {
+      Alert.alert(t('set_remove_member_error'), e?.message || t('set_please_try_again'));
+    } finally {
+      setSavingName(false);
+    }
+  };
+
+  const removeMember = useCallback(() => {
+    Alert.alert(
+      `${t('set_remove')} ${displayName}?`,
+      kind === 'kid' ? t('set_remove_member_msg') : t('set_remove_coparent_msg'),
+      [
+        { text: t('cancel'), style: 'cancel' },
+        {
+          text: t('set_remove'),
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await api.deleteFamilyMember(id);
+              router.back();
+            } catch (e: any) {
+              Alert.alert(t('set_remove_member_error'), e?.message || t('set_please_try_again'));
+            }
+          },
+        },
+      ],
+    );
+  }, [id, displayName, kind, router, t]);
+
+  // A conversation always opens as its own screen — one door, whether you got
+  // here from the Hub or from the person's page.
+  const openConversation = useCallback(() => {
+    router.push({
+      pathname: '/conversation',
+      params: { thread, title: displayName, adults: kind === 'parent' ? '1' : '0' },
+    });
+  }, [router, thread, displayName, kind]);
 
   const roleLabel = useMemo(() => {
     if (kind === 'parent') return t('hub_role_coparent');
@@ -102,7 +160,7 @@ export default function MemberProfile() {
   const weeklyTarget = member?.weekly_target ?? 0;
 
   const renderStars = () => (
-    <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
+    <>
       <View style={styles.starCard}>
         <View style={styles.starBig}>
           <Star color={ui.mintText} size={30} fill={ui.mintText} />
@@ -155,11 +213,11 @@ export default function MemberProfile() {
       {kind === 'kid' ? (
         <Text style={styles.footNote}>{t('hub_kid_tools_hint')}</Text>
       ) : null}
-    </ScrollView>
+    </>
   );
 
   const renderInfo = () => (
-    <ScrollView contentContainerStyle={styles.body}>
+    <>
       <View style={styles.infoCard}>
         <Text style={styles.infoTitle}>{t('hub_role_on_team', { role: roleLabel })}</Text>
         <Text style={styles.infoBody}>
@@ -169,17 +227,27 @@ export default function MemberProfile() {
       {kind === 'helper' ? (
         <Text style={styles.footNote}>{t('hub_helper_no_chat')}</Text>
       ) : null}
-    </ScrollView>
+    </>
   );
 
+  // The web build prerenders this route with no query string, so every value
+  // taken from params — the name, the role, the thread — differs between that
+  // HTML and the first client render. React then discards the whole tree and
+  // logs a hydration error. Render the same empty shell both sides start from,
+  // and read the params on the next tick. Native mounts immediately, so this
+  // costs nothing there.
+  const [ready, setReady] = useState(false);
+  useEffect(() => setReady(true), []);
+  if (!ready) return <SafeAreaView style={styles.safe} edges={['top', 'bottom', 'left', 'right']} />;
+
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom', 'left', 'right']}>
       <View style={styles.header}>
         <PressScale testID="member-back" onPress={() => router.back()} style={styles.backBtn} accessibilityLabel={t('back')}>
           <ChevronLeft color={ui.text} size={22} />
         </PressScale>
         <View style={styles.headMid}>
-          <Text style={styles.headName} numberOfLines={1}>{name}</Text>
+          <Text style={styles.headName} numberOfLines={1}>{displayName}</Text>
           <View style={[styles.headBadge, { backgroundColor: badgeTone.bg }]}>
             <Text style={[styles.headBadgeText, { color: badgeTone.fg }]}>{roleLabel}</Text>
           </View>
@@ -187,32 +255,100 @@ export default function MemberProfile() {
         <View style={{ width: 36 }} />
       </View>
 
-      {/* A teen gets both worlds behind a toggle; everyone else has one view. */}
-      {kind === 'teen' && canChat ? (
-        <View style={styles.segt}>
-          <PressScale testID="member-tab-chat" onPress={() => setTab('chat')} style={[styles.segBtn, tab === 'chat' && styles.segOn]}>
-            <Text style={[styles.segText, tab === 'chat' && styles.segTextOn]}>{t('hub_tab_chat')}</Text>
-          </PressScale>
-          <PressScale testID="member-tab-stars" onPress={() => setTab('stars')} style={[styles.segBtn, tab === 'stars' && styles.segOn]}>
-            <Text style={[styles.segText, tab === 'stars' && styles.segTextOn]}>{t('hub_tab_stars')}</Text>
-          </PressScale>
-        </View>
-      ) : null}
+      <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
+        {/* The conversation is a door, not the page: it opens as its own screen,
+            the same one the Hub opens, so there is a single chat surface. */}
+        {canChat ? (
+          <>
+            <Text style={styles.sec}>{t('hub_conversation')}</Text>
+            <PressScale testID="member-open-chat" onPress={openConversation} style={styles.row}>
+              <View style={[styles.rowIcon, { backgroundColor: ui.orangeSoft }]}>
+                <MessageCircle color={ui.orangeText} size={18} />
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.rowTitle}>{t('hub_message_name', { name: displayName })}</Text>
+                <Text style={styles.rowSub} numberOfLines={1}>
+                  {kind === 'parent' ? t('chat_empty_adults') : t('chat_empty_teen')}
+                </Text>
+              </View>
+              <ChevronRight color={ui.muted} size={18} />
+            </PressScale>
+          </>
+        ) : null}
 
-      {canChat && (kind === 'parent' || (kind === 'teen' && tab === 'chat')) ? (
-        <View style={{ flex: 1 }}>
-          <ChatThread
-            load={() => api.chatGet(thread)}
-            send={(text) => api.chatSend(thread, text)}
-            markRead={() => api.chatRead(thread)}
-            emptyHint={kind === 'parent' ? t('chat_empty_adults') : t('chat_empty_teen')}
-          />
+        {showsStars ? renderStars() : null}
+        {kind === 'helper' || kind === 'member' ? renderInfo() : null}
+
+        {/* Manage — the reason Settings no longer needs a members section. */}
+        <Text style={styles.sec}>{t('hub_manage')}</Text>
+
+        {renaming ? (
+          <View style={styles.renameBox}>
+            <TextInput
+              testID="member-rename-input"
+              value={nameDraft}
+              onChangeText={setNameDraft}
+              placeholder={displayName}
+              placeholderTextColor={ui.muted}
+              style={styles.renameInput}
+              autoFocus
+              maxLength={40}
+            />
+            <PressScale testID="member-rename-save" onPress={saveName} disabled={savingName} style={[styles.saveBtn, savingName && { opacity: 0.6 }]}>
+              {savingName ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.saveBtnText}>{t('save')}</Text>}
+            </PressScale>
+          </View>
+        ) : (
+          <PressScale testID="member-rename" onPress={() => { setNameDraft(displayName); setRenaming(true); }} style={styles.act}>
+            <Pencil color={ui.muted} size={17} />
+            <Text style={styles.actText}>{t('hub_rename')}</Text>
+          </PressScale>
+        )}
+
+        <View style={styles.act}>
+          <Shield color={ui.muted} size={17} />
+          <Text style={styles.actText}>{t('hub_role_row', { role: roleLabel })}</Text>
         </View>
-      ) : showsStars && (kind === 'kid' || tab === 'stars') ? (
-        renderStars()
-      ) : (
-        renderInfo()
-      )}
+
+        {/* A PIN guards kid mode on a shared device, so it only means something
+            for a managed child. Offering it on a co-parent would be a control
+            that does nothing. */}
+        {kind === 'kid' ? (
+          <PressScale testID="member-pin" onPress={() => setPinOpen(true)} style={styles.act}>
+            <KeyRound color={ui.muted} size={17} />
+            <Text style={styles.actText}>{member?.has_pin ? t('kids_change_pin') : t('kids_set_pin')}</Text>
+          </PressScale>
+        ) : null}
+
+        {/* You cannot remove yourself, and the founder is the one parent nobody
+            can remove — the server enforces both; the UI should not tempt. */}
+        {member && !member.is_me && !member.is_founder ? (
+          <PressScale testID="member-remove" onPress={removeMember} style={styles.act}>
+            <Trash2 color={ui.danger} size={17} />
+            <Text style={[styles.actText, { color: ui.danger }]}>{t('hub_remove')}</Text>
+          </PressScale>
+        ) : null}
+      </ScrollView>
+
+
+      <PinPadModal
+        visible={pinOpen}
+        mode="set"
+        title={member?.has_pin ? t('kids_change_pin') : t('kids_set_pin')}
+        subtitle={displayName}
+        onClose={() => setPinOpen(false)}
+        onSubmit={async (pin) => {
+          try {
+            await api.setMemberPin(id, pin);
+            await loadMember();
+            setPinOpen(false);
+            return true;
+          } catch (e) {
+            logger.warn('set pin failed', e);
+            return false;
+          }
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -267,6 +403,31 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   infoCard: { backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, borderRadius: 18, padding: 18 },
   infoTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 16, color: ui.text, marginBottom: 6 },
   infoBody: { fontFamily: 'Inter_400Regular', fontSize: 14, color: ui.muted, lineHeight: 20 },
+  row: {
+    flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: ui.card,
+    borderWidth: 1, borderColor: ui.line, borderRadius: 16, padding: 13, marginBottom: 8,
+  },
+  rowIcon: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  rowTitle: { fontFamily: 'Inter_700Bold', fontSize: 15, color: ui.text },
+  rowSub: { fontFamily: 'Inter_400Regular', fontSize: 12.5, color: ui.muted, marginTop: 2 },
+  act: {
+    flexDirection: 'row', alignItems: 'center', gap: 11, backgroundColor: ui.soft,
+    borderWidth: 1, borderColor: ui.line, borderRadius: 12, paddingVertical: 13, paddingHorizontal: 13,
+    marginBottom: 8,
+  },
+  // flex so a long label (German's 'Aus dem Haushalt entfernen') wraps inside
+  // the row instead of pushing the row wider than the screen.
+  actText: { flex: 1, fontFamily: 'Inter_600SemiBold', fontSize: 14.5, color: ui.text },
+  renameBox: { flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 8 },
+  renameInput: {
+    flex: 1, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, borderRadius: 12,
+    paddingHorizontal: 14, paddingVertical: 12, fontFamily: 'Inter_500Medium', fontSize: 15, color: ui.text,
+  },
+  saveBtn: {
+    backgroundColor: ui.orange, borderRadius: 12, paddingHorizontal: 18, paddingVertical: 13,
+    alignItems: 'center', justifyContent: 'center', minWidth: 84,
+  },
+  saveBtnText: { fontFamily: 'Inter_800ExtraBold', fontSize: 14, color: '#fff' },
   footNote: {
     fontFamily: 'Inter_500Medium', fontSize: 12.5, color: ui.muted, lineHeight: 18,
     backgroundColor: ui.soft, borderRadius: 12, padding: 12, marginTop: 16,
