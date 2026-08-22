@@ -59,6 +59,23 @@ class PasswordAccountNotShadowed(unittest.TestCase):
             asyncio.run(server.login_email(payload))
         self.assertEqual(ctx.exception.status_code, 401)
 
+    def test_verifies_against_every_password_row_not_just_the_first(self):
+        # Two password rows for one email (a legacy duplicate). The password
+        # belongs to the SECOND row; login must still succeed and return it.
+        db = FakeDB(
+            users=FakeColl([
+                {"user_id": "u_old", "email": "wife@x.com", "name": "Ama",
+                 "password_hash": server.hash_password("oldpass99"), "family_id": "fam_old"},
+                {"user_id": "u_new", "email": "wife@x.com", "name": "Ama",
+                 "password_hash": server.hash_password("password123"), "family_id": "fam_new"},
+            ]),
+            family_invites=FakeColl([]),
+        )
+        server.get_db = lambda: db
+        payload = server.EmailLoginIn(email="wife@x.com", password="password123", invite_token=None)
+        res = asyncio.run(server.login_email(payload))
+        self.assertEqual(res["user"]["user_id"], "u_new")
+
 
 if __name__ == "__main__":
     unittest.main()

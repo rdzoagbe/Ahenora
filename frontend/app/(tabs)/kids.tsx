@@ -249,12 +249,13 @@ export default function Kids() {
   const openMember = useCallback((m: FamilyMember) => {
     const roleLc = (m.role || '').toLowerCase();
     let thread = '';
+    // Parents share the adults thread; a teen's thread is keyed by their own
+    // user_id (matched by id, never by display name — two teens named the same
+    // used to collide). A teen with no account yet has no thread.
     if (roleLc === 'parent' || roleLc === 'co-parent') thread = 'adults';
-    else if (roleLc === 'teen') {
-      thread = threads.find((th) => !th.is_adults && (th.title || '') === m.name)?.thread || '';
-    }
+    else if (roleLc === 'teen') thread = m.user_id || '';
     router.push({ pathname: '/member', params: { id: m.member_id, name: m.name, role: m.role, thread } });
-  }, [router, threads]);
+  }, [router]);
 
   // A kid/teen opens as their own page: the roster steps aside and this one
   // child's full detail (stars, chores, rewards, pocket money) fills the screen,
@@ -453,13 +454,19 @@ export default function Kids() {
     setRefreshing(false);
   }, [load]);
 
+  // Call the latest load without making it a dependency: load's identity changes
+  // when it sets selectedChild, and depending on it here re-fired the whole focus
+  // effect (a second fetch + a re-flashed hint) on every first open. The ref
+  // keeps the effect to once per focus.
+  const loadRef = useRef(load);
+  loadRef.current = load;
   useFocusEffect(useCallback(() => {
-    load();
+    loadRef.current();
     // Flash the teen-accounts hint on open, then hide it after 2s.
     setShowTeenHint(true);
     const timer = setTimeout(() => setShowTeenHint(false), 2000);
     return () => clearTimeout(timer);
-  }, [load]));
+  }, []));
 
   // Reload in place after a capture from the global "+".
   useEffect(() => {

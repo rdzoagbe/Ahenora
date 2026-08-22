@@ -935,6 +935,12 @@ def public_member(member: dict) -> dict:
         "week_claimed": _coerce_dt(member.get("week_claimed_for")) == current_week_start(),
         "has_pin": bool(member.get("pin_hash")),
         "has_account": bool(member.get("user_id")),
+        # A teen's own user_id is their private chat thread's key. Exposing it to
+        # the parent-facing member list (this serializer is only ever returned to
+        # full members) lets the app open the right teen's thread by id instead
+        # of guessing by display name — two teens named the same no longer
+        # collide. Null for a managed child with no account.
+        "user_id": member.get("user_id"),
     }
 
 
@@ -3193,8 +3199,8 @@ async def login_email(payload: EmailLoginIn):
         {"email": {"$regex": f"^{re.escape(email)}$", "$options": "i"}}, {"_id": 0}
     ):
         matches.append(candidate)
-    user = next((u for u in matches if u.get("password_hash")), None)
-    if not user:
+    pw_matches = [u for u in matches if u.get("password_hash")]
+    if not pw_matches:
         # Distinct hint is intentional UX (many users sign up with Google);
         # email existence is low-sensitivity here. Still counts toward lockout.
         _auth_record_fail(identity)
@@ -3202,7 +3208,11 @@ async def login_email(payload: EmailLoginIn):
             status_code=401,
             detail="No password account found for this email. Try Google sign-in.",
         )
-    if not verify_password(payload.password or "", user["password_hash"]):
+    # Verify against every password row for this email, not just the first: if a
+    # legacy duplicate exists, the one whose password actually matches wins, so
+    # the account is never a spurious 401 just for being second in the list.
+    user = next((u for u in pw_matches if verify_password(payload.password or "", u["password_hash"])), None)
+    if not user:
         _auth_record_fail(identity)
         raise HTTPException(status_code=401, detail="Incorrect email or password")
 
