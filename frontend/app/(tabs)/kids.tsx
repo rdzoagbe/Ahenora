@@ -1748,8 +1748,8 @@ export default function Kids() {
             </>
           )}
 
-          {/* Morning Routines */}
-          {childRoutines.length > 0 ? (
+          {/* Morning Routines — part of the focused child's page, not the roster */}
+          {isFocused && activeChild && childRoutines.length > 0 ? (
             <>
               <View style={styles.featureHeader}>
                 <Timer color={ui.lavenderText} size={18} />
@@ -1850,8 +1850,8 @@ export default function Kids() {
             </>
           ) : null}
 
-          {/* Chore Wheel */}
-          {chores.length > 0 ? (
+          {/* Chore Wheel — part of the focused child's page, not the roster */}
+          {isFocused && activeChild && chores.length > 0 ? (
             <>
               <View style={styles.featureHeader}>
                 <RotateCcw color={ui.mintText} size={18} />

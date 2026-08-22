@@ -2819,6 +2819,13 @@ async def exchange_session(payload: SessionIn):
     # Normalize like register/login so the same inbox is one account, never two
     # rows that differ only by casing.
     email = (token_info.get("email") or "").strip().lower()
+    # Only a Google-*verified* email may be used to link into an existing
+    # account: verify_oauth2_token proves the token is genuine, not that Google
+    # confirmed the address. Without this, a token bearing an unverified email
+    # equal to a victim's account (possible on Workspace/custom domains) could
+    # graft its google_sub onto that account and hijack it. Consumer @gmail is
+    # always verified, so this only refuses the risky federated case.
+    email_verified = token_info.get("email_verified") is True
     name = token_info.get("name", email.split("@")[0] if email else "Parent")
     picture = token_info.get("picture")
 
@@ -2847,11 +2854,13 @@ async def exchange_session(payload: SessionIn):
 
     user = await database["users"].find_one({"google_sub": google_sub}, {"_id": 0})
 
-    if not user and email:
+    if not user and email and email_verified:
         # Never mint a second row for an inbox that already has an account (an
         # email/password sign-up, most importantly). Link Google to it instead —
         # otherwise the new passwordless row shadows theirs and email login then
         # answers "no password account for this email", locking them out.
+        # Gated on email_verified so an unverified address can never link into
+        # (and hijack) someone else's existing account.
         existing = await database["users"].find_one(
             {"email": {"$regex": f"^{re.escape(email)}$", "$options": "i"}}, {"_id": 0})
         if existing:
