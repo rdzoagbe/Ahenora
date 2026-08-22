@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, ImageBackground, Platform, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -158,6 +158,33 @@ export default function Landing() {
     return () => subscription.remove();
   }, []);
 
+  /** Turn a Google id_token into a session and land in the app. Shared by the
+   *  native popup result and the web redirect return, so both finish identically. */
+  const completeWithIdToken = useCallback(async (idToken: string) => {
+    let token = inviteToken || undefined;
+    if (!token && Platform.OS === 'web' && typeof window !== 'undefined') {
+      try {
+        token = window.sessionStorage.getItem('pending_invite') || undefined;
+      } catch {
+        // Ignore storage failure.
+      }
+    }
+
+    const { api } = await import('../src/api');
+    const authResult = await api.exchangeSession(idToken, token);
+    await setUserFromAuth(authResult.user, authResult.session_token, 'google');
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      try {
+        window.sessionStorage.removeItem('pending_invite');
+      } catch {
+        // Ignore storage failure.
+      }
+    }
+
+    router.replace('/feed');
+  }, [inviteToken, router, setUserFromAuth]);
+
   useEffect(() => {
     const handleGoogleResponse = async () => {
       if (!response || handledResponseRef.current) return;
@@ -184,28 +211,7 @@ export default function Landing() {
           return;
         }
 
-        let token = inviteToken || undefined;
-        if (!token && Platform.OS === 'web' && typeof window !== 'undefined') {
-          try {
-            token = window.sessionStorage.getItem('pending_invite') || undefined;
-          } catch {
-            // Ignore storage failure.
-          }
-        }
-
-        const { api } = await import('../src/api');
-        const authResult = await api.exchangeSession(idToken, token);
-        await setUserFromAuth(authResult.user, authResult.session_token, 'google');
-
-        if (Platform.OS === 'web' && typeof window !== 'undefined') {
-          try {
-            window.sessionStorage.removeItem('pending_invite');
-          } catch {
-            // Ignore storage failure.
-          }
-        }
-
-        router.replace('/feed');
+        await completeWithIdToken(idToken);
       } catch (error: any) {
         logger.error('google sign-in failed', error?.message || error);
         Alert.alert(t('land_signin_failed'), error?.message || t('land_try_again'));
@@ -216,6 +222,36 @@ export default function Landing() {
 
     handleGoogleResponse();
   }, [response, inviteToken, router, setUserFromAuth]);
+
+  /** Web: finish a redirect-based sign-in. Google hands the token back in the
+   *  URL fragment of whichever page it returned to, so read it here and complete.
+   *  The fragment is cleared first: a spent token replayed on refresh just errors. */
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+    const raw = (window.location.hash || '').replace(/^#/, '');
+    if (!raw.includes('id_token=')) return;
+
+    const idToken = new URLSearchParams(raw).get('id_token');
+    if (!idToken || handledResponseRef.current) return;
+    handledResponseRef.current = true;
+
+    try {
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    } catch {
+      // Ignore history failure — the sign-in below still runs.
+    }
+
+    setSigningIn(true);
+    completeWithIdToken(idToken).catch((error: any) => {
+      logger.error('google redirect sign-in failed', error?.message || error);
+      Alert.alert(t('land_signin_failed'), error?.message || t('land_try_again'));
+      handledResponseRef.current = false;
+      setSigningIn(false);
+    });
+    // t is intentionally omitted: it changes identity on every language render
+    // and this must run once for the token in the URL, not again on each change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [completeWithIdToken]);
 
   const signIn = async () => {
     if (signingIn) return;
@@ -264,6 +300,20 @@ export default function Landing() {
       }
 
       handledResponseRef.current = false;
+
+      // Web takes a full-page redirect rather than promptAsync's popup. A popup
+      // returns the token through window.opener, and Cross-Origin-Opener-Policy
+      // severs that link — the page never learned sign-in had finished, so every
+      // click just opened another window and nothing completed. Navigating the
+      // tab itself has no opener to lose; the token comes back in the URL
+      // fragment and the effect above finishes the job. Uses the request's own
+      // URL, so client id, scopes, nonce and redirect_uri stay exactly what
+      // Google already accepts.
+      if (Platform.OS === 'web' && typeof window !== 'undefined' && request.url) {
+        window.location.assign(request.url);
+        return;
+      }
+
       const result = await promptAsync();
       // The success case is finished by the response effect (which navigates);
       // for any other outcome (dismiss/cancel) clear the busy state here.
