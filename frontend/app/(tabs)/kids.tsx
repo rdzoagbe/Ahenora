@@ -1223,19 +1223,29 @@ export default function Kids() {
             <EmptyState title={t('kids_no_children')} message={t('kids_no_children_msg')} actionLabel={t('kids_add_child')} onAction={openChildSheet} />
           ) : (
             <>
-              {/* Child selector */}
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.childRow} style={styles.childScroll} keyboardShouldPersistTaps="handled">
+              {/* Kids & teens — roster cards, one per young person. Tapping a
+                  card selects them and reveals their stars / chores / rewards
+                  in the detail below (a teen also carries a Message entry
+                  inside that detail). The old horizontal chip strip hid the
+                  role and the balance behind a tap; a card shows both at rest. */}
+              <View style={styles.hubKids}>
                 {children.map((child, index) => {
                   const active = child.member_id === activeChild?.member_id;
                   const tint = CHILD_TINTS[index % CHILD_TINTS.length];
-                  // Outstanding rewards live under one child's tab, so without
+                  // Outstanding rewards live under one child's card, so without
                   // a mark here a parent with three children would never learn
                   // they still owe the one they aren't looking at.
                   const owed = owedByChild[child.member_id] || 0;
+                  const isTeen = child.role?.toLowerCase() === 'teen';
                   return (
-                    <PressScale key={child.member_id} testID={`child-${child.member_id}`} onPress={() => { setSelectedChild(child.member_id); setBackdateDay(null); }} style={[styles.childChip, active ? styles.childChipActive : styles.childChipIdle]}>
-                      <View style={[styles.childAvatar, { backgroundColor: tint }]}>
-                        <Text style={styles.childAvatarText}>{child.name[0]?.toUpperCase()}</Text>
+                    <PressScale
+                      key={child.member_id}
+                      testID={`child-${child.member_id}`}
+                      onPress={() => { setSelectedChild(child.member_id); setBackdateDay(null); }}
+                      style={[styles.hubRow, active && styles.hubRowActive]}
+                    >
+                      <View style={[styles.hubAvatar, { backgroundColor: tint }]}>
+                        <Text style={styles.hubAvatarText}>{child.name[0]?.toUpperCase()}</Text>
                         {child.has_pin ? <View style={styles.lockBadge}><Lock color={ui.bg} size={8} /></View> : null}
                         {owed > 0 ? (
                           <View
@@ -1247,20 +1257,31 @@ export default function Kids() {
                           </View>
                         ) : null}
                       </View>
-                      <Text style={[styles.childChipText, { color: active ? ui.bg : ui.text }]}>{child.name}</Text>
-                      {child.role?.toLowerCase() === 'teen' ? (
-                        <View style={[styles.teenChipBadge, active && { backgroundColor: 'rgba(255,255,255,0.22)' }]}>
-                          <Text style={[styles.teenChipBadgeText, { color: active ? ui.bg : ui.orangeText }]}>{t('teen_badge')}</Text>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <View style={styles.hubNameRow}>
+                          <Text style={styles.hubName} numberOfLines={1}>{child.name}</Text>
+                          <View style={[styles.hubBadge, { backgroundColor: isTeen ? ui.lavender : ui.mint }]}>
+                            <Text style={[styles.hubBadgeText, { color: isTeen ? ui.lavenderText : ui.mintText }]}>
+                              {isTeen ? t('hub_role_teen') : t('hub_role_kid')}
+                            </Text>
+                          </View>
                         </View>
-                      ) : null}
+                        <Text style={styles.hubSub} numberOfLines={1}>{t('hub_week_earned', { n: child.week_earned || 0 })}</Text>
+                      </View>
+                      <View style={styles.hubStarChip}>
+                        <Star color={ui.mintText} size={13} fill={ui.mintText} />
+                        <Text style={styles.hubStarChipText}>{child.stars || 0}</Text>
+                      </View>
                     </PressScale>
                   );
                 })}
-                <PressScale testID="kids-add-child" onPress={openChildSheet} style={[styles.childChip, styles.childChipIdle]}>
-                  <Plus color={ui.orange} size={18} />
-                  <Text style={[styles.childChipText, { color: ui.text }]}>{t('kids_add_child')}</Text>
+                <PressScale testID="kids-add-child" onPress={openChildSheet} style={[styles.hubRow, styles.hubAddRow]}>
+                  <View style={[styles.hubAvatar, { backgroundColor: ui.orangeSoft }]}>
+                    <Plus color={ui.orange} size={20} />
+                  </View>
+                  <Text style={styles.hubAddText}>{t('kids_add_child')}</Text>
                 </PressScale>
-              </ScrollView>
+              </View>
 
               {/* New-feature nudge: teens get their own account. Flashes for a
                   couple of seconds on open, then hides so it never nags. */}
@@ -2246,6 +2267,12 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   hubUnreadText: { color: '#fff', fontFamily: 'Inter_800ExtraBold', fontSize: 11 },
   teenMsgBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: ui.orangeSoft, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 3 },
   teenMsgText: { fontFamily: 'Inter_700Bold', fontSize: 11.5, color: ui.orangeText },
+  hubKids: { marginTop: 2, marginBottom: 6 },
+  hubRowActive: { borderColor: ui.orange, borderWidth: 1.5 },
+  hubStarChip: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: ui.mint, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 },
+  hubStarChipText: { fontFamily: 'Inter_800ExtraBold', fontSize: 13, color: ui.mintText },
+  hubAddRow: { borderStyle: 'dashed' },
+  hubAddText: { fontFamily: 'Inter_700Bold', fontSize: 15, color: ui.text },
   scroll: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 40 },
   bellWrap: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
 
