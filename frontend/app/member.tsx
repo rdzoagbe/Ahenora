@@ -399,7 +399,9 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     borderWidth: 1, borderColor: ui.line, borderRadius: 12, paddingVertical: 13, paddingHorizontal: 13,
     marginBottom: 8,
   },
-  actText: { fontFamily: 'Inter_600SemiBold', fontSize: 14.5, color: ui.text },
+  // flex so a long label (German's 'Aus dem Haushalt entfernen') wraps inside
+  // the row instead of pushing the row wider than the screen.
+  actText: { flex: 1, fontFamily: 'Inter_600SemiBold', fontSize: 14.5, color: ui.text },
   renameBox: { flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 8 },
   renameInput: {
     flex: 1, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, borderRadius: 12,
