@@ -14,6 +14,7 @@ import urllib.parse
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from fastapi import FastAPI, HTTPException, Depends, Header, UploadFile, File, Query, Body
+from dedupe_core import run as dedupe_run
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 try:
@@ -113,9 +114,15 @@ ALLOWED_ORIGINS = [
     for origin in os.environ.get("ALLOWED_ORIGINS", "").split(",")
     if origin.strip()
 ] or [
+    # The live web app. It moved here from the github.io project page when the
+    # domain was set up; the origin changed but this list did not follow, so a
+    # browser on ahenora.com had every API call refused by CORS. Both the bare
+    # and www hosts, because either can be what the browser actually sends.
+    "https://ahenora.com",
+    "https://www.ahenora.com",
     "https://household-coo.app",
     "https://www.household-coo.app",
-    # The web companion app lives on GitHub Pages until it earns a domain.
+    # The previous home of the web companion app, kept for old links.
     "https://rdzoagbe.github.io",
     "householdcoo://",
     "exp://",
@@ -935,6 +942,12 @@ def public_member(member: dict) -> dict:
         "week_claimed": _coerce_dt(member.get("week_claimed_for")) == current_week_start(),
         "has_pin": bool(member.get("pin_hash")),
         "has_account": bool(member.get("user_id")),
+        # A teen's own user_id is their private chat thread's key. Exposing it to
+        # the parent-facing member list (this serializer is only ever returned to
+        # full members) lets the app open the right teen's thread by id instead
+        # of guessing by display name — two teens named the same no longer
+        # collide. Null for a managed child with no account.
+        "user_id": member.get("user_id"),
     }
 
 
@@ -2816,7 +2829,16 @@ async def exchange_session(payload: SessionIn):
         raise HTTPException(status_code=401, detail="Could not verify Google sign-in. Please try again.")
 
     google_sub = token_info["sub"]
-    email = token_info.get("email", "")
+    # Normalize like register/login so the same inbox is one account, never two
+    # rows that differ only by casing.
+    email = (token_info.get("email") or "").strip().lower()
+    # Only a Google-*verified* email may be used to link into an existing
+    # account: verify_oauth2_token proves the token is genuine, not that Google
+    # confirmed the address. Without this, a token bearing an unverified email
+    # equal to a victim's account (possible on Workspace/custom domains) could
+    # graft its google_sub onto that account and hijack it. Consumer @gmail is
+    # always verified, so this only refuses the risky federated case.
+    email_verified = token_info.get("email_verified") is True
     name = token_info.get("name", email.split("@")[0] if email else "Parent")
     picture = token_info.get("picture")
 
@@ -2844,6 +2866,24 @@ async def exchange_session(payload: SessionIn):
         target_family_id = invite["family_id"]
 
     user = await database["users"].find_one({"google_sub": google_sub}, {"_id": 0})
+
+    if not user and email and email_verified:
+        # Never mint a second row for an inbox that already has an account (an
+        # email/password sign-up, most importantly). Link Google to it instead —
+        # otherwise the new passwordless row shadows theirs and email login then
+        # answers "no password account for this email", locking them out.
+        # Gated on email_verified so an unverified address can never link into
+        # (and hijack) someone else's existing account.
+        existing = await database["users"].find_one(
+            {"email": {"$regex": f"^{re.escape(email)}$", "$options": "i"}}, {"_id": 0})
+        if existing:
+            await database["users"].update_one(
+                {"user_id": existing["user_id"]},
+                {"$set": {"google_sub": google_sub, "email": email,
+                          "picture": existing.get("picture") or picture,
+                          "updated_at": utcnow()}})
+            user = {**existing, "google_sub": google_sub, "email": email,
+                    "picture": existing.get("picture") or picture}
 
     if not user:
         family_id = target_family_id or new_id("family")
@@ -3157,8 +3197,17 @@ async def login_email(payload: EmailLoginIn):
     if _auth_locked(identity):
         raise HTTPException(status_code=429, detail="Too many attempts. Please try again later.")
 
-    user = await database["users"].find_one({"email": email}, {"_id": 0})
-    if not user or not user.get("password_hash"):
+    # A stray duplicate can shadow the real password account under one email: a
+    # Google row created before account-linking (no password), or a legacy row
+    # stored with different casing. Gather every match case-insensitively and
+    # pick the one that actually carries a password, so those users can get in.
+    matches = []
+    async for candidate in database["users"].find(
+        {"email": {"$regex": f"^{re.escape(email)}$", "$options": "i"}}, {"_id": 0}
+    ):
+        matches.append(candidate)
+    pw_matches = [u for u in matches if u.get("password_hash")]
+    if not pw_matches:
         # Distinct hint is intentional UX (many users sign up with Google);
         # email existence is low-sensitivity here. Still counts toward lockout.
         _auth_record_fail(identity)
@@ -3166,7 +3215,11 @@ async def login_email(payload: EmailLoginIn):
             status_code=401,
             detail="No password account found for this email. Try Google sign-in.",
         )
-    if not verify_password(payload.password or "", user["password_hash"]):
+    # Verify against every password row for this email, not just the first: if a
+    # legacy duplicate exists, the one whose password actually matches wins, so
+    # the account is never a spurious 401 just for being second in the list.
+    user = next((u for u in pw_matches if verify_password(payload.password or "", u["password_hash"])), None)
+    if not user:
         _auth_record_fail(identity)
         raise HTTPException(status_code=401, detail="Incorrect email or password")
 
@@ -5601,6 +5654,33 @@ async def app_version_info():
         "android_store_url": "https://play.google.com/store/apps/details?id=com.householdcoo.app",
         "backend_commit": commit,
     }
+
+
+@app.get("/api/admin/dedupe-accounts")
+async def admin_dedupe_preview(user=Depends(require_user)):
+    """Dry-run report of the duplicate-account cleanup (admin only). Open this in
+    a browser while signed in as an admin to see exactly what a merge would do —
+    nothing is changed."""
+    if not is_admin_user(user):
+        raise HTTPException(status_code=403, detail="Admins only")
+    lines: list = []
+    summary = await dedupe_run(get_db(), apply=False,
+                               log=lambda *a: lines.append(" ".join(str(x) for x in a)))
+    return {"applied": False, "summary": summary, "report": lines}
+
+
+@app.post("/api/admin/dedupe-accounts")
+async def admin_dedupe_apply(payload: dict = Body(...), user=Depends(require_user)):
+    """Apply the duplicate-account cleanup (admin only). Requires an explicit
+    {"confirm": "APPLY"} body so it can never run by accident."""
+    if not is_admin_user(user):
+        raise HTTPException(status_code=403, detail="Admins only")
+    if (payload or {}).get("confirm") != "APPLY":
+        raise HTTPException(status_code=400, detail='Send {"confirm": "APPLY"} to apply the merge.')
+    lines: list = []
+    summary = await dedupe_run(get_db(), apply=True,
+                               log=lambda *a: lines.append(" ".join(str(x) for x in a)))
+    return {"applied": True, "summary": summary, "report": lines}
 
 
 @app.get("/api/admin/version-adoption")

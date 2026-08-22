@@ -733,6 +733,9 @@ export interface FamilyMember {
    *  whether they are the household founder (the only parent nobody can remove). */
   is_me?: boolean;
   is_founder?: boolean;
+  /** A teen's own user_id — the key of their private chat thread. Null for a
+   *  managed child (no account). Lets the app open the right thread by id. */
+  user_id?: string | null;
 }
 
 export interface Reward {

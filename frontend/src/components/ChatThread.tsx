@@ -71,7 +71,11 @@ export function ChatThread({ load, send, markRead, emptyHint }: Props) {
   return (
     <KeyboardAvoidingView
       style={styles.root}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      // 'padding' on Android too: the app is edge-to-edge (SDK 57), where the
+      // window no longer resizes under the keyboard, so a bottom-anchored
+      // composer needs the avoiding view to lift it explicitly. Without this it
+      // sat behind the keyboard.
+      behavior="padding"
       keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
       <FlatList

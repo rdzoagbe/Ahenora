@@ -1,10 +1,9 @@
 import React, { useCallback, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useFocusEffect } from 'expo-router';
-import { ChevronLeft, MessageCircle, Users } from 'lucide-react-native';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { MessageCircle, Users } from 'lucide-react-native';
 
 import { PressScale } from '../../src/components/PressScale';
-import { ChatThread } from '../../src/components/ChatThread';
 import { TabScreen } from '../../src/components/TabScreen';
 import { ScreenHeader, useUI, UIColors } from '../../src/components/Kit';
 import { useStore } from '../../src/store';
@@ -13,15 +12,16 @@ import { logger } from '../../src/logger';
 
 /**
  * Family messaging tab: the adults thread + one per teen. Tapping a thread opens
- * the conversation. A teen never lands here — they get their own thread on the
- * teen screen; the server refuses this route to a teen token.
+ * the conversation as its own full-screen route (so the floating tab bar never
+ * sits over the composer). A teen never lands here — they get their own thread
+ * on the teen screen; the server refuses this route to a teen token.
  */
 export default function ChatTab() {
   const ui = useUI();
+  const router = useRouter();
   const { t } = useStore();
   const styles = createStyles(ui);
   const [threads, setThreads] = useState<ChatThreadSummary[] | null>(null);
-  const [active, setActive] = useState<ChatThreadSummary | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   const loadThreads = useCallback(async () => {
@@ -39,30 +39,16 @@ export default function ChatTab() {
     setRefreshing(false);
   }, [loadThreads]);
 
-  useFocusEffect(useCallback(() => { if (!active) loadThreads(); }, [active, loadThreads]));
+  useFocusEffect(useCallback(() => { loadThreads(); }, [loadThreads]));
 
   const title = (th: ChatThreadSummary) => (th.is_adults ? t('chat_adults_thread') : th.title || t('chat_teen'));
 
-  // A thread is open — full-height conversation with a back-to-list header.
-  if (active) {
-    return (
-      <View style={styles.convo}>
-        <View style={styles.convoHeader}>
-          <PressScale testID="chat-back" onPress={() => setActive(null)} style={styles.backBtn} accessibilityLabel={t('back')}>
-            <ChevronLeft color={ui.text} size={22} />
-          </PressScale>
-          <Text style={styles.convoTitle} numberOfLines={1}>{title(active)}</Text>
-          <View style={{ width: 36 }} />
-        </View>
-        <ChatThread
-          load={() => api.chatGet(active.thread)}
-          send={(text) => api.chatSend(active.thread, text)}
-          markRead={() => api.chatRead(active.thread)}
-          emptyHint={active.is_adults ? t('chat_empty_adults') : t('chat_empty_teen')}
-        />
-      </View>
-    );
-  }
+  const open = (th: ChatThreadSummary) => {
+    router.push({
+      pathname: '/conversation',
+      params: { thread: th.thread, title: title(th), adults: th.is_adults ? '1' : '0' },
+    });
+  };
 
   return (
     <TabScreen tab="Chat" refreshing={refreshing} onRefresh={onRefresh} scrollViewProps={{ contentContainerStyle: styles.list }}>
@@ -75,7 +61,7 @@ export default function ChatTab() {
             <PressScale
               key={th.thread}
               testID={`chat-thread-${th.thread}`}
-              onPress={() => setActive(th)}
+              onPress={() => open(th)}
               style={styles.row}
             >
               <View style={[styles.avatar, { backgroundColor: th.is_adults ? ui.mint : ui.orangeSoft }]}>
@@ -101,13 +87,6 @@ export default function ChatTab() {
 const createStyles = (ui: UIColors) => StyleSheet.create({
   center: { paddingVertical: 40, alignItems: 'center', justifyContent: 'center' },
   list: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 120 },
-  convo: { flex: 1, backgroundColor: ui.bg },
-  convoHeader: {
-    flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingTop: 52, paddingBottom: 8,
-    borderBottomWidth: 1, borderBottomColor: ui.line,
-  },
-  backBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-  convoTitle: { flex: 1, textAlign: 'center', fontFamily: 'Inter_800ExtraBold', fontSize: 17, color: ui.text },
   row: {
     flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: ui.card,
     borderWidth: 1, borderColor: ui.line, borderRadius: 16, padding: 14,

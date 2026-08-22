@@ -24,6 +24,7 @@ import {
   Check,
   Minus,
   ChevronRight,
+  ChevronLeft,
   Timer,
   PiggyBank,
   RotateCcw,
@@ -248,13 +249,26 @@ export default function Kids() {
   const openMember = useCallback((m: FamilyMember) => {
     const roleLc = (m.role || '').toLowerCase();
     let thread = '';
+    // Parents share the adults thread; a teen's thread is keyed by their own
+    // user_id (matched by id, never by display name — two teens named the same
+    // used to collide). A teen with no account yet has no thread.
     if (roleLc === 'parent' || roleLc === 'co-parent') thread = 'adults';
-    else if (roleLc === 'teen') {
-      thread = threads.find((th) => !th.is_adults && (th.title || '') === m.name)?.thread || '';
-    }
+    else if (roleLc === 'teen') thread = m.user_id || '';
     router.push({ pathname: '/member', params: { id: m.member_id, name: m.name, role: m.role, thread } });
-  }, [router, threads]);
+  }, [router]);
+
+  // A kid/teen opens as their own page: the roster steps aside and this one
+  // child's full detail (stars, chores, rewards, pocket money) fills the screen,
+  // with a back arrow to the roster — the same "each person is a page" shape the
+  // grown-ups get, but reusing all the tooling that already lives on this tab.
+  const [focusedChild, setFocusedChild] = useState<string | null>(null);
+  const openChild = useCallback((m: FamilyMember) => {
+    setSelectedChild(m.member_id);
+    setBackdateDay(null);
+    setFocusedChild(m.member_id);
+  }, []);
   const activeChild = children.find((c) => c.member_id === selectedChild) || children[0];
+  const isFocused = Boolean(focusedChild) && Boolean(activeChild);
   const stars = activeChild?.stars || 0;
   // The bank is `stars`; the weekly meter is `week_earned`. A weekend treat is
   // measured against the week's earnings, everything else against the bank.
@@ -440,13 +454,19 @@ export default function Kids() {
     setRefreshing(false);
   }, [load]);
 
+  // Call the latest load without making it a dependency: load's identity changes
+  // when it sets selectedChild, and depending on it here re-fired the whole focus
+  // effect (a second fetch + a re-flashed hint) on every first open. The ref
+  // keeps the effect to once per focus.
+  const loadRef = useRef(load);
+  loadRef.current = load;
   useFocusEffect(useCallback(() => {
-    load();
+    loadRef.current();
     // Flash the teen-accounts hint on open, then hide it after 2s.
     setShowTeenHint(true);
     const timer = setTimeout(() => setShowTeenHint(false), 2000);
     return () => clearTimeout(timer);
-  }, [load]));
+  }, []));
 
   // Reload in place after a capture from the global "+".
   useEffect(() => {
@@ -457,6 +477,12 @@ export default function Kids() {
   useEffect(() => {
     refreshHistory(activeChild?.member_id);
   }, [activeChild?.member_id, refreshHistory]);
+
+  // If the focused child is removed (or the list reloads without them), drop
+  // back to the roster rather than silently showing someone else's page.
+  useEffect(() => {
+    if (focusedChild && !children.some((c) => c.member_id === focusedChild)) setFocusedChild(null);
+  }, [children, focusedChild]);
 
   const showBlockingError = !loading && Boolean(errorMessage) && members.length === 0;
 
@@ -1135,28 +1161,50 @@ export default function Kids() {
         onRefresh={handleRefresh}
         scrollViewProps={{ contentContainerStyle: styles.scroll, keyboardShouldPersistTaps: 'handled' }}
       >
-          <ScreenHeader
-            eyebrow={t('kids_eyebrow_family')}
-            title={t('kids_title')}
-            right={
-              <PressScale
-                testID="family-manage-members"
-                onPress={() => router.push('/(tabs)/settings')}
-                accessibilityLabel={t('family_manage_members')}
-                style={styles.manageBtn}
-              >
-                <UserCog color={ui.orangeText} size={18} />
-                <Text style={styles.manageBtnText}>{t('family_members')}</Text>
+          {isFocused && activeChild ? (
+            /* Focused on one child — a page header with a back arrow, the
+               child's name, and (for a teen) a Message shortcut. A managed kid
+               has no inbox, so their Message action launches "give them their
+               own account", which is how a child becomes chat-able. */
+            <View style={styles.focusHeader}>
+              <PressScale testID="child-back" onPress={() => setFocusedChild(null)} style={styles.focusBack} accessibilityLabel={t('back')}>
+                <ChevronLeft color={ui.text} size={22} />
               </PressScale>
-            }
-          />
+              <Text style={styles.focusTitle} numberOfLines={1}>{activeChild.name}</Text>
+              {activeChild.role?.toLowerCase() === 'teen' ? (
+                <PressScale testID="child-message" onPress={() => openMember(activeChild)} style={styles.focusMsg} accessibilityLabel={t('hub_tab_chat')}>
+                  <MessageCircle color={ui.orangeText} size={18} />
+                </PressScale>
+              ) : (
+                <PressScale testID="child-message" onPress={openTeenInvite} style={styles.focusMsg} accessibilityLabel={t('hub_give_account_chat')}>
+                  <MessageCircle color={ui.muted} size={18} />
+                </PressScale>
+              )}
+            </View>
+          ) : (
+            <ScreenHeader
+              eyebrow={t('kids_eyebrow_family')}
+              title={t('kids_title')}
+              right={
+                <PressScale
+                  testID="family-manage-members"
+                  onPress={() => router.push('/(tabs)/settings')}
+                  accessibilityLabel={t('family_manage_members')}
+                  style={styles.manageBtn}
+                >
+                  <UserCog color={ui.orangeText} size={18} />
+                  <Text style={styles.manageBtnText}>{t('family_members')}</Text>
+                </PressScale>
+              }
+            />
+          )}
 
           {/* The grown-ups half of the Family Hub. Everyone who runs the house —
               you, a co-parent (who had no face in the app before this), a helper,
               a named family member — each badged, each a tap from their profile.
               Parents open the shared conversation; a helper opens who-they-are
               (the server refuses them family chat, so no chat door is offered). */}
-          {grownups.length > 0 ? (
+          {!isFocused && grownups.length > 0 ? (
             <View style={styles.hubGrownups}>
               <Text style={styles.hubLabel}>{t('hub_grownups')}</Text>
               {grownups.map((m) => {
@@ -1211,7 +1259,7 @@ export default function Kids() {
 
           {/* Only once the screen has something to explain — a tip above an
               error or a blank slate is noise. */}
-          {!showBlockingError && !loading && children.length > 0 ? (
+          {!isFocused && !showBlockingError && !loading && children.length > 0 ? (
             <FirstRunTip
               id="kids_stars"
               testID="kids-first-run-tip"
@@ -1232,6 +1280,7 @@ export default function Kids() {
                   in the detail below (a teen also carries a Message entry
                   inside that detail). The old horizontal chip strip hid the
                   role and the balance behind a tap; a card shows both at rest. */}
+              {!isFocused ? (
               <View style={styles.hubKids}>
                 {children.map((child, index) => {
                   const active = child.member_id === activeChild?.member_id;
@@ -1245,7 +1294,7 @@ export default function Kids() {
                     <PressScale
                       key={child.member_id}
                       testID={`child-${child.member_id}`}
-                      onPress={() => { setSelectedChild(child.member_id); setBackdateDay(null); }}
+                      onPress={() => openChild(child)}
                       style={[styles.hubRow, active && styles.hubRowActive]}
                     >
                       <View style={[styles.hubAvatar, { backgroundColor: tint }]}>
@@ -1286,10 +1335,11 @@ export default function Kids() {
                   <Text style={styles.hubAddText}>{t('kids_add_child')}</Text>
                 </PressScale>
               </View>
+              ) : null}
 
               {/* New-feature nudge: teens get their own account. Flashes for a
                   couple of seconds on open, then hides so it never nags. */}
-              {showTeenHint ? (
+              {!isFocused && showTeenHint ? (
               <View style={styles.teenHint}>
                 <Text style={styles.teenHintNew}>NEW</Text>
                 <Text style={styles.teenHintText}>{t('kids_teen_hint')}</Text>
@@ -1297,7 +1347,7 @@ export default function Kids() {
               ) : null}
 
               {/* Teen tasks waiting for a star — the parent-approval loop */}
-              {teenApprovals.length > 0 ? (
+              {!isFocused && teenApprovals.length > 0 ? (
                 <Card style={styles.approvalsCard}>
                   <Text style={styles.approvalsTitle}>{t('teen_approvals_title')}</Text>
                   <Text style={styles.approvalsSub}>{t('teen_approvals_sub')}</Text>
@@ -1329,7 +1379,7 @@ export default function Kids() {
                 </Card>
               ) : null}
 
-              {activeChild ? (
+              {isFocused && activeChild ? (
                 <>
                   {/* Wallet */}
                   <Card style={styles.walletCard}>
@@ -1356,22 +1406,6 @@ export default function Kids() {
                         >
                           <MoreHorizontal color={ui.muted} size={16} />
                         </PressScale>
-                        {/* A teen has a private thread with their parents; open
-                            it straight from their card. A managed child (no
-                            account) has no chat, so this shows only for teens. */}
-                        {activeChild.role?.toLowerCase() === 'teen' ? (
-                          <PressScale
-                            testID="kids-teen-message"
-                            accessibilityRole="button"
-                            accessibilityLabel={t('hub_tab_chat')}
-                            onPress={() => openMember(activeChild)}
-                            hitSlop={12}
-                            style={styles.teenMsgBtn}
-                          >
-                            <MessageCircle color={ui.orangeText} size={14} />
-                            <Text style={styles.teenMsgText}>{t('hub_tab_chat')}</Text>
-                          </PressScale>
-                        ) : null}
                       </View>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                         <Star color={'#E8A93B'} size={20} fill={'#E8A93B'} />
@@ -1721,8 +1755,8 @@ export default function Kids() {
             </>
           )}
 
-          {/* Morning Routines */}
-          {childRoutines.length > 0 ? (
+          {/* Morning Routines — part of the focused child's page, not the roster */}
+          {isFocused && activeChild && childRoutines.length > 0 ? (
             <>
               <View style={styles.featureHeader}>
                 <Timer color={ui.lavenderText} size={18} />
@@ -1754,7 +1788,7 @@ export default function Kids() {
           ) : null}
 
           {/* Allowance Tracker */}
-          {activeChild ? (
+          {isFocused && activeChild ? (
             <>
               <View style={styles.featureHeader}>
                 <PiggyBank color={ui.goldText} size={18} />
@@ -1823,8 +1857,8 @@ export default function Kids() {
             </>
           ) : null}
 
-          {/* Chore Wheel */}
-          {chores.length > 0 ? (
+          {/* Chore Wheel — part of the focused child's page, not the roster */}
+          {isFocused && activeChild && chores.length > 0 ? (
             <>
               <View style={styles.featureHeader}>
                 <RotateCcw color={ui.mintText} size={18} />
@@ -2277,6 +2311,10 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   hubStarChipText: { fontFamily: 'Inter_800ExtraBold', fontSize: 13, color: ui.mintText },
   hubAddRow: { borderStyle: 'dashed' },
   hubAddText: { fontFamily: 'Inter_700Bold', fontSize: 15, color: ui.text },
+  focusHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingBottom: 6, marginBottom: 2 },
+  focusBack: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line },
+  focusTitle: { flex: 1, fontFamily: 'Inter_800ExtraBold', fontSize: 22, letterSpacing: -0.3, color: ui.text },
+  focusMsg: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: ui.orangeSoft, borderWidth: 1, borderColor: ui.line },
   scroll: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 40 },
   bellWrap: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
 
