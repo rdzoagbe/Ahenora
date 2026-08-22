@@ -73,7 +73,7 @@ export default function Settings() {
   const [inviteMethod, setInviteMethod] = useState<'email' | 'phone' | 'link'>('email');
   // 'coparent' is the one-tap path inside Manage members; 'family' is the
   // generic invite with a free-text relationship (grandparent, nanny...).
-  const [inviteMode, setInviteMode] = useState<'coparent' | 'family'>('coparent');
+  const [inviteMode, setInviteMode] = useState<'coparent' | 'family' | 'helper'>('coparent');
   const [inviteRole, setInviteRole] = useState('');
   const [inviteLabel, setInviteLabel] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
@@ -428,7 +428,7 @@ export default function Settings() {
     router.replace('/');
   };
 
-  const openInvite = (email = '', mode: 'coparent' | 'family' = 'coparent') => {
+  const openInvite = (email = '', mode: 'coparent' | 'family' | 'helper' = 'coparent') => {
     setInviteMethod('email');
     setInviteMode(mode);
     setInviteRole('');
@@ -488,7 +488,8 @@ export default function Settings() {
     try {
       const res = await api.invite(
         submitted,
-        inviteMode === 'family' ? inviteRole.trim() || undefined : undefined,
+        inviteMode === 'family' || inviteMode === 'helper' ? inviteRole.trim() || undefined : undefined,
+        inviteMode === 'helper' ? { is_helper: true } : undefined,
       );
       if (res.sent) {
         // Success gets out of the way: close the sheet and confirm with a
@@ -531,8 +532,9 @@ export default function Settings() {
     setInviteError(false);
     try {
       const res = await api.createInviteLink({
-        relationship: inviteMode === 'family' ? inviteRole.trim() || undefined : undefined,
+        relationship: inviteMode === 'family' || inviteMode === 'helper' ? inviteRole.trim() || undefined : undefined,
         label: phone,
+        is_helper: inviteMode === 'helper' || undefined,
       });
       const url = res.invite_url;
       setLastInviteUrl(url);
@@ -567,8 +569,9 @@ export default function Settings() {
     setInviteError(false);
     try {
       const res = await api.createInviteLink({
-        relationship: inviteMode === 'family' ? inviteRole.trim() || undefined : undefined,
+        relationship: inviteMode === 'family' || inviteMode === 'helper' ? inviteRole.trim() || undefined : undefined,
         label: inviteLabel.trim() || undefined,
+        is_helper: inviteMode === 'helper' || undefined,
       });
       setLastInviteUrl(res.invite_url);
       if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) {
@@ -846,6 +849,10 @@ export default function Settings() {
                 <PressScale testID="invite-coparent" onPress={tryInviteCoparent} style={styles.expandAction}>
                   <UserPlus color={ui.text} size={18} />
                   <Text style={styles.expandActionText}>{t('set_invite_coparent')}</Text>
+                </PressScale>
+                <PressScale testID="invite-helper" onPress={() => openInvite('', 'helper')} style={styles.expandAction}>
+                  <UserPlus color={ui.text} size={18} />
+                  <Text style={styles.expandActionText}>{t('set_invite_helper')}</Text>
                 </PressScale>
               </View>
             ) : null}

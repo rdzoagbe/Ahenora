@@ -906,6 +906,10 @@ def public_user(user: dict) -> dict:
         # A restricted 13-17 account — the frontend routes these straight to the
         # teen view instead of the full app.
         "is_teen": bool(user.get("is_teen")),
+        # A helper (grandparent/carer): uses the normal app but the frontend
+        # hides the sensitive surfaces (vault, billing, member management),
+        # which the backend also denies via require_full_member.
+        "is_helper": bool(user.get("is_helper")),
     }
 
 
@@ -1494,6 +1498,8 @@ def invite_member_role(invite: Optional[dict]) -> str:
     "Nanny", "Brother"...) or the historical default."""
     if (invite or {}).get("is_teen"):
         return "teen"
+    if (invite or {}).get("is_helper"):
+        return "helper"
     raw = re.sub(r"\s+", " ", str((invite or {}).get("relationship") or "").strip())
     return raw[:32] or "Parent"
 
@@ -1553,6 +1559,14 @@ async def _enforce_parent_limit(database: Any, family_id: str, relationship: Opt
 async def add_user_to_family_if_needed(database: Any, user: dict, family_id: str,
                                        role: Optional[str] = None):
     is_teen_role = (role or "").strip().lower() == "teen"
+    is_helper_role = (role or "").strip().lower() == "helper"
+    # Set the restriction flag FIRST, before any early return, and on the passed
+    # dict too (the auth handlers serialize it right after) — so a helper is
+    # locked down from their first request, never routed into the full app.
+    if is_helper_role:
+        await database["users"].update_one(
+            {"user_id": user["user_id"]}, {"$set": {"is_helper": True, "updated_at": utcnow()}})
+        user["is_helper"] = True
     # Set the restriction flag FIRST, before any early return: a teen who is
     # already a family member must still be locked down (fail closed, not open).
     if is_teen_role:
@@ -2047,6 +2061,17 @@ async def require_user(authorization: str = Header(default=""),
     return user
 
 
+async def require_full_member(user=Depends(require_user)):
+    """Parent/co-parent only — the gate for the sensitive surfaces a helper must
+    not reach: the document vault, billing, member management, invites and
+    expenses. A helper (grandparent/carer) uses the normal app for the shared
+    day but is refused here, deny-by-default. (Teens never reach this: require_
+    user already 403s a teen token, so this only has to stop helpers.)"""
+    if user.get("is_helper"):
+        raise HTTPException(status_code=403, detail="helper_mode")
+    return user
+
+
 # -----------------------------------------------------------------------------
 # Schemas
 # -----------------------------------------------------------------------------
@@ -2083,6 +2108,10 @@ class InviteIn(BaseModel):
     # account, no email), which is what keeps us COPPA / Families-policy clean.
     is_teen: Optional[bool] = False
     age: Optional[int] = None
+    # A helper is a trusted adult with a limited view — a grandparent, nanny or
+    # babysitter. A real family member (uses the normal app), but denied the
+    # sensitive surfaces (vault, billing, member management) server-side.
+    is_helper: Optional[bool] = False
 
 
 class LanguageIn(BaseModel):
@@ -3404,7 +3433,7 @@ async def set_weekend_goal(member_id: str, payload: dict = Body(...), user=Depen
 
 
 @app.post("/api/family/members")
-async def create_family_member(payload: ChildIn, user=Depends(require_user)):
+async def create_family_member(payload: ChildIn, user=Depends(require_full_member)):
     database = get_db()
     name = payload.name.strip()
     if not name:
@@ -3473,7 +3502,7 @@ async def create_family_member(payload: ChildIn, user=Depends(require_user)):
 
 
 @app.patch("/api/family/members/{member_id}")
-async def update_family_member(member_id: str, payload: MemberPatchIn, user=Depends(require_user)):
+async def update_family_member(member_id: str, payload: MemberPatchIn, user=Depends(require_full_member)):
     """Correct a child's details — a mistyped name, mostly.
 
     Without this a typo at setup was permanent short of deleting the child,
@@ -3552,7 +3581,7 @@ async def update_family_member(member_id: str, payload: MemberPatchIn, user=Depe
 
 
 @app.delete("/api/family/members/{member_id}")
-async def delete_family_member(member_id: str, user=Depends(require_user)):
+async def delete_family_member(member_id: str, user=Depends(require_full_member)):
     database = get_db()
     family_id = user["family_id"]
     member = await database["family_members"].find_one(
@@ -3769,7 +3798,7 @@ async def _pay_full_week_bonus(database, family_id: str, member_id: str, user: d
 
 
 @app.post("/api/family/members/{member_id}/stars")
-async def adjust_member_stars(member_id: str, payload: StarAdjustmentIn, user=Depends(require_user)):
+async def adjust_member_stars(member_id: str, payload: StarAdjustmentIn, user=Depends(require_full_member)):
     database = get_db()
     member = await database["family_members"].find_one(
         {"member_id": member_id, "family_id": user["family_id"]},
@@ -3930,7 +3959,7 @@ async def member_star_history(member_id: str, user=Depends(require_user)):
 
 
 @app.put("/api/family/members/{member_id}/pin")
-async def set_member_pin(member_id: str, payload: PinIn, user=Depends(require_user)):
+async def set_member_pin(member_id: str, payload: PinIn, user=Depends(require_full_member)):
     database = get_db()
     member = await database["family_members"].find_one(
         {"member_id": member_id, "family_id": user["family_id"]},
@@ -3954,7 +3983,7 @@ async def set_member_pin(member_id: str, payload: PinIn, user=Depends(require_us
 
 
 @app.delete("/api/family/members/{member_id}/pin")
-async def remove_member_pin(member_id: str, user=Depends(require_user)):
+async def remove_member_pin(member_id: str, user=Depends(require_full_member)):
     database = get_db()
     member = await database["family_members"].find_one(
         {"member_id": member_id, "family_id": user["family_id"]},
@@ -4018,7 +4047,7 @@ async def _enforce_member_slot_limit(database, user) -> None:
         )
 
 
-def _new_invite_doc(user, email=None, relationship=None, label=None, is_teen=False, age=None) -> dict:
+def _new_invite_doc(user, email=None, relationship=None, label=None, is_teen=False, age=None, is_helper=False) -> dict:
     now = utcnow()
     return {
         "invite_id": new_id("invite"),
@@ -4026,6 +4055,7 @@ def _new_invite_doc(user, email=None, relationship=None, label=None, is_teen=Fal
         "email": email,
         "relationship": relationship,
         "is_teen": bool(is_teen),
+        "is_helper": bool(is_helper),
         "age": age,
         "label": label,
         "token": secrets.token_urlsafe(24),
@@ -4048,6 +4078,7 @@ class InviteLinkIn(BaseModel):
     # or control what the holder becomes.
     relationship: Optional[str] = None
     label: Optional[str] = None
+    is_helper: Optional[bool] = False
 
 
 def _clean_invite_text(value: Optional[str], cap: int = 32) -> Optional[str]:
@@ -4055,21 +4086,26 @@ def _clean_invite_text(value: Optional[str], cap: int = 32) -> Optional[str]:
 
 
 @app.post("/api/family/invite/link")
-async def family_invite_link(payload: Optional[InviteLinkIn] = Body(None), user=Depends(require_user)):
+async def family_invite_link(payload: Optional[InviteLinkIn] = Body(None), user=Depends(require_full_member)):
     """Create a shareable invite link with no email attached — used by the
     Phone (SMS) and Share-link options, which deliver the link from the
     inviter's own device. Carries an optional intended-recipient label and
     relationship; whoever accepts is recorded (accepted_by_email), so the
     inviter can always see which account used which link."""
     database = get_db()
+    is_helper = bool(payload.is_helper if payload else False)
     await _enforce_member_slot_limit(database, user)
-    await _enforce_parent_limit(database, user["family_id"],
-                                payload.relationship if payload else None)
+    # A helper is never a co-parent, so it skips the two-parent cap (an empty
+    # relationship would otherwise be read as a co-parent link).
+    if not is_helper:
+        await _enforce_parent_limit(database, user["family_id"],
+                                    payload.relationship if payload else None)
     invite = _new_invite_doc(
         user,
         email=None,
         relationship=_clean_invite_text(payload.relationship if payload else None),
         label=_clean_invite_text(payload.label if payload else None, cap=48),
+        is_helper=is_helper,
     )
     await database["family_invites"].insert_one(invite)
     public = public_invite(invite)
@@ -4077,13 +4113,13 @@ async def family_invite_link(payload: Optional[InviteLinkIn] = Body(None), user=
 
 
 @app.post("/api/family/invite")
-async def family_invite(payload: InviteIn, user=Depends(require_user)):
+async def family_invite(payload: InviteIn, user=Depends(require_full_member)):
     database = get_db()
     await _enforce_member_slot_limit(database, user)
-    # A teen is never a parent, so it must skip the co-parent cap. Without this,
-    # a teen invite (no relationship set) is read as a co-parent and rejected
-    # once the household already has two parents.
-    if not payload.is_teen:
+    # A teen or a helper is never a parent, so both skip the co-parent cap.
+    # Without this, an invite with no relationship set is read as a co-parent and
+    # rejected once the household already has two parents.
+    if not payload.is_teen and not payload.is_helper:
         await _enforce_parent_limit(database, user["family_id"], payload.relationship)
 
     email = payload.email.strip().lower()
@@ -4138,6 +4174,10 @@ async def family_invite(payload: InviteIn, user=Depends(require_user)):
         if bool(invite.get("is_teen")) != bool(payload.is_teen) or invite.get("age") != payload.age:
             updates["is_teen"] = bool(payload.is_teen)
             updates["age"] = payload.age
+        # Same fail-closed sync for the helper flag: reusing a plain invite for a
+        # helper send must carry the restriction, not silently drop it.
+        if bool(invite.get("is_helper")) != bool(payload.is_helper):
+            updates["is_helper"] = bool(payload.is_helper)
         if updates:
             updates["updated_at"] = utcnow()
             await database["family_invites"].update_one(
@@ -4145,7 +4185,8 @@ async def family_invite(payload: InviteIn, user=Depends(require_user)):
             invite.update(updates)
     else:
         invite = _new_invite_doc(user, email=email, relationship=relationship,
-                                 is_teen=bool(payload.is_teen), age=payload.age)
+                                 is_teen=bool(payload.is_teen), age=payload.age,
+                                 is_helper=bool(payload.is_helper))
         await database["family_invites"].insert_one(invite)
 
     public = public_invite(invite)
@@ -4921,7 +4962,7 @@ async def family_updates(
 
 
 @app.delete("/api/family/invites/{invite_id}")
-async def delete_family_invite(invite_id: str, user=Depends(require_user)):
+async def delete_family_invite(invite_id: str, user=Depends(require_full_member)):
     """Revoke a pending (or any) invite belonging to the caller's family.
     Deleting the record invalidates its token, so a shared link stops working."""
     database = get_db()
@@ -5919,7 +5960,7 @@ def _may_see_vault_doc(doc: dict, user: dict) -> bool:
 
 
 @app.get("/api/vault")
-async def list_vault(user=Depends(require_user)):
+async def list_vault(user=Depends(require_full_member)):
     database = get_db()
     rows = []
     async for item in database["vault"].find({"family_id": user["family_id"]}, {"_id": 0}).sort("created_at", -1):
@@ -5929,7 +5970,7 @@ async def list_vault(user=Depends(require_user)):
 
 
 @app.patch("/api/vault/{doc_id}/visibility")
-async def set_vault_visibility(doc_id: str, payload: VaultVisibilityIn, user=Depends(require_user)):
+async def set_vault_visibility(doc_id: str, payload: VaultVisibilityIn, user=Depends(require_full_member)):
     """Flip a document between private and shared.
 
     Allowed for the owner, and for any member on an unclaimed legacy doc —
@@ -5962,7 +6003,7 @@ async def set_vault_visibility(doc_id: str, payload: VaultVisibilityIn, user=Dep
 
 
 @app.post("/api/vault")
-async def create_vault_doc(payload: VaultIn, user=Depends(require_user)):
+async def create_vault_doc(payload: VaultIn, user=Depends(require_full_member)):
     database = get_db()
     sub = await build_subscription(user["family_id"])
     family = await get_family_doc(user["family_id"])
@@ -6047,7 +6088,7 @@ XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
 @app.get("/api/vault/{doc_id}/render")
-async def render_vault_doc(doc_id: str, user=Depends(require_user)):
+async def render_vault_doc(doc_id: str, user=Depends(require_full_member)):
     """Return an in-app-viewable form of a document. Images/PDFs are rendered
     client-side (the app already has the bytes); Word/Excel are converted to
     readable HTML here so they can be viewed without an external app."""
@@ -6075,7 +6116,7 @@ async def render_vault_doc(doc_id: str, user=Depends(require_user)):
 
 
 @app.delete("/api/vault/{doc_id}")
-async def delete_vault_doc(doc_id: str, user=Depends(require_user)):
+async def delete_vault_doc(doc_id: str, user=Depends(require_full_member)):
     database = get_db()
     doc = await database["vault"].find_one(
         {"doc_id": doc_id, "family_id": user["family_id"]},
@@ -6901,7 +6942,7 @@ async def get_subscription(user=Depends(require_user)):
 
 
 @app.post("/api/subscription/change")
-async def change_subscription(payload: SubscriptionChangeIn, user=Depends(require_user)):
+async def change_subscription(payload: SubscriptionChangeIn, user=Depends(require_full_member)):
     database = get_db()
     # Once real billing is configured (RevenueCat webhook secret present),
     # plans are set ONLY by verified purchase events — the self-serve switcher
@@ -7803,7 +7844,7 @@ async def bulk_add_shopping(body: BulkShoppingIn, user=Depends(require_user)):
 
 @app.get("/api/expenses")
 async def list_expenses(
-    user=Depends(require_user),
+    user=Depends(require_full_member),
     days: int = Query(default=30, ge=1, le=365),
 ):
     database = get_db()
@@ -7819,7 +7860,7 @@ async def list_expenses(
 
 @app.get("/api/expenses/summary")
 async def expense_summary(
-    user=Depends(require_user),
+    user=Depends(require_full_member),
     days: int = Query(default=30, ge=1, le=365),
 ):
     database = get_db()
@@ -7846,7 +7887,7 @@ async def expense_summary(
 
 
 @app.post("/api/expenses")
-async def add_expense(payload: ExpenseIn, user=Depends(require_user)):
+async def add_expense(payload: ExpenseIn, user=Depends(require_full_member)):
     database = get_db()
     child_name = None
     if payload.child_member_id:
@@ -7873,7 +7914,7 @@ async def add_expense(payload: ExpenseIn, user=Depends(require_user)):
 
 
 @app.delete("/api/expenses/{expense_id}")
-async def delete_expense(expense_id: str, user=Depends(require_user)):
+async def delete_expense(expense_id: str, user=Depends(require_full_member)):
     database = get_db()
     result = await database["expenses"].delete_one(
         {"expense_id": expense_id, "family_id": user["family_id"]}
@@ -9000,7 +9041,7 @@ async def delete_announcement(announcement_id: str, user: dict = Depends(require
 # Document Expiry Alerts
 # -----------------------------------------------------------------------------
 @app.get("/api/vault/expiry-alerts")
-async def vault_expiry_alerts(user: dict = Depends(require_user), database=Depends(get_db)):
+async def vault_expiry_alerts(user: dict = Depends(require_full_member), database=Depends(get_db)):
     docs = await database["vault"].find(
         {"family_id": user["family_id"]}, {"_id": 0}
     ).to_list(500)
@@ -9027,7 +9068,7 @@ async def vault_expiry_alerts(user: dict = Depends(require_user), database=Depen
 
 
 @app.patch("/api/vault/{doc_id}/expiry")
-async def set_vault_expiry(doc_id: str, expiry_date: str = Query(...), user: dict = Depends(require_user), database=Depends(get_db)):
+async def set_vault_expiry(doc_id: str, expiry_date: str = Query(...), user: dict = Depends(require_full_member), database=Depends(get_db)):
     exp_dt = parse_dt(expiry_date)
     if not exp_dt:
         raise HTTPException(400, "Invalid date format")
