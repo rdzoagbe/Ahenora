@@ -159,3 +159,9 @@ google-services.json
 play-service-account.json
 *service-account*.json
 *.p12
+
+# The published web export keeps its font files inside a node_modules-shaped
+# path (docs/app/assets/node_modules/@expo-google-fonts/...). The node_modules
+# rule above swallowed them, so they were never committed and ahenora.com
+# 404'd every font, falling back to system faces. Un-exclude that one directory.
+!docs/app/assets/node_modules/

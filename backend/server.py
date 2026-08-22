@@ -114,9 +114,15 @@ ALLOWED_ORIGINS = [
     for origin in os.environ.get("ALLOWED_ORIGINS", "").split(",")
     if origin.strip()
 ] or [
+    # The live web app. It moved here from the github.io project page when the
+    # domain was set up; the origin changed but this list did not follow, so a
+    # browser on ahenora.com had every API call refused by CORS. Both the bare
+    # and www hosts, because either can be what the browser actually sends.
+    "https://ahenora.com",
+    "https://www.ahenora.com",
     "https://household-coo.app",
     "https://www.household-coo.app",
-    # The web companion app lives on GitHub Pages until it earns a domain.
+    # The previous home of the web companion app, kept for old links.
     "https://rdzoagbe.github.io",
     "householdcoo://",
     "exp://",
