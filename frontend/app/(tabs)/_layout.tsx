@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Tabs, usePathname, useRouter } from 'expo-router';
 import { View, StyleSheet, Text, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Home, Calendar as CalendarIcon, Lock, Settings as SettingsIcon, Star, UtensilsCrossed, Plus } from 'lucide-react-native';
+import { Home, Calendar as CalendarIcon, Lock, MessageCircle, Settings as SettingsIcon, UtensilsCrossed, Users, Plus } from 'lucide-react-native';
 import { useStore } from '../../src/store';
 import { useBreakpoint } from '../../src/responsive';
 import { InviteJoinPrompt } from '../../src/components/InviteJoinPrompt';
@@ -53,7 +53,8 @@ function TabIcon({ focused, Icon, label }: { focused: boolean; Icon: any; label:
 const NAV_ITEMS = [
   { name: 'feed',     Icon: Home,          labelKey: 'feed' },
   { name: 'calendar', Icon: CalendarIcon,  labelKey: 'calendar' },
-  { name: 'kids',     Icon: Star,          labelKey: 'kids' },
+  { name: 'kids',     Icon: Users,         labelKey: 'family_tab' },
+  { name: 'chat',     Icon: MessageCircle, labelKey: 'chat_title' },
   { name: 'kitchen',  Icon: UtensilsCrossed, labelKey: 'kitchen' },
   { name: 'vault',    Icon: Lock,          labelKey: 'vault' },
   { name: 'settings', Icon: SettingsIcon,  labelKey: 'settings' },
@@ -176,8 +177,8 @@ function PhoneTabBar({ state, navigation, style, onAdd }: {
           <Plus color="#FFFFFF" size={28} strokeWidth={2.6} />
         </TouchableOpacity>
       </View>
-      {tab('kids', Star, 'kids')}
-      {tab('kitchen', UtensilsCrossed, 'kitchen')}
+      {tab('kids', Users, 'family_tab')}
+      {tab('chat', MessageCircle, 'chat_title')}
     </View>
   );
 }
@@ -258,7 +259,9 @@ export default function TabLayout() {
         <Tabs.Screen name="feed" />
         <Tabs.Screen name="calendar" />
         <Tabs.Screen name="kids" />
-        <Tabs.Screen name="kitchen" />
+        <Tabs.Screen name="chat" />
+        {/* Kitchen is now reached from the More menu — off the daily bar. */}
+        <Tabs.Screen name="kitchen" options={{ href: null }} />
         {/* Routable, but not seats in the bar — reached from the Household menu
             in the Feed header. */}
         <Tabs.Screen name="vault"    options={{ href: null }} />

@@ -28,6 +28,8 @@ import {
   PiggyBank,
   RotateCcw,
   Play,
+  UserCog,
+  MessageCircle,
 } from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
@@ -47,7 +49,7 @@ import { TabScreen } from '../../src/components/TabScreen';
 import { Card, IconTile, ProgressBar, ScreenHeader, UI, useUI, UIColors } from '../../src/components/Kit';
 
 import { useStore } from '../../src/store';
-import { api, logEvent, AllowanceConfig, AllowanceTxn, Chore, FamilyMember, Redemption, Routine, StarTransaction } from '../../src/api';
+import { api, logEvent, AllowanceConfig, AllowanceTxn, ChatThreadSummary, Chore, FamilyMember, Redemption, Routine, StarTransaction } from '../../src/api';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { logger } from '../../src/logger';
 import { recordWin } from '../../src/reviewPrompt';
@@ -134,6 +136,10 @@ export default function Kids() {
   const router = useRouter();
 
   const [members, setMembers] = useState<FamilyMember[]>([]);
+  // The grown-ups' conversations, so a Family-Hub card can carry an unread
+  // count and open the right thread. Best-effort: a household with no chat yet
+  // just shows no badges.
+  const [threads, setThreads] = useState<ChatThreadSummary[]>([]);
   // Teen-finished tasks waiting for a parent to award the star.
   const [teenApprovals, setTeenApprovals] = useState<{ card_id: string; title: string; teen_name: string }[]>([]);
   const [approvingId, setApprovingId] = useState<string | null>(null);
@@ -226,6 +232,28 @@ export default function Kids() {
   // parent manages a young person's rewards whether they're a managed child or
   // a teen with their own login.
   const children = useMemo(() => members.filter((m) => ['child', 'teen'].includes(m.role?.toLowerCase() ?? '')), [members]);
+  // The grown-ups half of the Family Hub: everyone who isn't a kid or teen —
+  // parents, a co-parent (previously invisible in the app), a helper, or a
+  // named family member (Grandma, Nanny…). The signed-in user leads the list.
+  const grownups = useMemo(() => {
+    const rest = members.filter((m) => !['child', 'teen'].includes(m.role?.toLowerCase() ?? ''));
+    return rest.sort((a, b) => (a.is_me ? -1 : b.is_me ? 1 : 0));
+  }, [members]);
+  const adultsThread = useMemo(() => threads.find((th) => th.is_adults), [threads]);
+
+  // Open a member's profile. Parents share the adults thread; a teen has their
+  // own (keyed by user_id, which we recover from the thread list by name). A
+  // helper or named member has no chat — the server refuses them family chat —
+  // so we pass an empty thread and the profile shows who they are instead.
+  const openMember = useCallback((m: FamilyMember) => {
+    const roleLc = (m.role || '').toLowerCase();
+    let thread = '';
+    if (roleLc === 'parent' || roleLc === 'co-parent') thread = 'adults';
+    else if (roleLc === 'teen') {
+      thread = threads.find((th) => !th.is_adults && (th.title || '') === m.name)?.thread || '';
+    }
+    router.push({ pathname: '/member', params: { id: m.member_id, name: m.name, role: m.role, thread } });
+  }, [router, threads]);
   const activeChild = children.find((c) => c.member_id === selectedChild) || children[0];
   const stars = activeChild?.stars || 0;
   // The bank is `stars`; the weekly meter is `week_earned`. A weekend treat is
@@ -352,6 +380,7 @@ export default function Kids() {
       const m = await api.familyMembers();
       setMembers(m);
       api.getTeenApprovals().then((r) => setTeenApprovals(r.approvals)).catch(() => setTeenApprovals([]));
+      api.chatThreads().then((r) => setThreads(r.threads)).catch(() => setThreads([]));
 
       const currentChildStillExists = selectedChild && m.some((x) => x.member_id === selectedChild);
       const firstChild = m.find((x) => x.role?.toLowerCase() === 'child');
@@ -1109,7 +1138,76 @@ export default function Kids() {
           <ScreenHeader
             eyebrow={t('kids_eyebrow_family')}
             title={t('kids_title')}
+            right={
+              <PressScale
+                testID="family-manage-members"
+                onPress={() => router.push('/(tabs)/settings')}
+                accessibilityLabel={t('family_manage_members')}
+                style={styles.manageBtn}
+              >
+                <UserCog color={ui.orangeText} size={18} />
+                <Text style={styles.manageBtnText}>{t('family_members')}</Text>
+              </PressScale>
+            }
           />
+
+          {/* The grown-ups half of the Family Hub. Everyone who runs the house —
+              you, a co-parent (who had no face in the app before this), a helper,
+              a named family member — each badged, each a tap from their profile.
+              Parents open the shared conversation; a helper opens who-they-are
+              (the server refuses them family chat, so no chat door is offered). */}
+          {grownups.length > 0 ? (
+            <View style={styles.hubGrownups}>
+              <Text style={styles.hubLabel}>{t('hub_grownups')}</Text>
+              {grownups.map((m) => {
+                const roleLc = (m.role || '').toLowerCase();
+                const isParent = roleLc === 'parent' || roleLc === 'co-parent';
+                const isHelper = roleLc === 'helper';
+                const badgeLabel = isParent
+                  ? (m.is_founder ? t('hub_role_owner') : t('hub_role_coparent'))
+                  : isHelper ? t('hub_role_helper') : m.role;
+                const unread = isParent ? (adultsThread?.unread || 0) : 0;
+                const sub = isParent
+                  ? (adultsThread?.last_text || t('hub_coparent_sub'))
+                  : isHelper ? t('hub_helper_sub') : t('hub_member_sub');
+                return (
+                  <PressScale
+                    key={m.member_id}
+                    testID={`hub-member-${m.member_id}`}
+                    onPress={() => openMember(m)}
+                    style={styles.hubRow}
+                  >
+                    {/* Fixed deep tints so the white initial always clears
+                        4.5:1. Deep orange (#CA470A) beats ui.orange's 3.11:1;
+                        a fixed slate beats ui.muted, which is a *light* slate in
+                        dark mode (#CBD5E1) where white would be unreadable. */}
+                    <View style={[styles.hubAvatar, { backgroundColor: isParent ? UI.orangeDeep : '#5F656E' }]}>
+                      <Text style={styles.hubAvatarText}>{m.name[0]?.toUpperCase()}</Text>
+                    </View>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <View style={styles.hubNameRow}>
+                        <Text style={styles.hubName} numberOfLines={1}>
+                          {m.name}{m.is_me ? ` · ${t('hub_you')}` : ''}
+                        </Text>
+                        <View style={[styles.hubBadge, { backgroundColor: isParent ? ui.orangeSoft : ui.soft }]}>
+                          <Text style={[styles.hubBadgeText, { color: isParent ? ui.orangeText : ui.muted }]}>{badgeLabel}</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.hubSub} numberOfLines={1}>{sub}</Text>
+                    </View>
+                    {unread > 0 ? (
+                      <View style={styles.hubUnread}><Text style={styles.hubUnreadText}>{unread}</Text></View>
+                    ) : isParent ? (
+                      <MessageCircle color={ui.muted} size={18} />
+                    ) : (
+                      <ChevronRight color={ui.muted} size={18} />
+                    )}
+                  </PressScale>
+                );
+              })}
+              {children.length > 0 ? <Text style={styles.hubLabel}>{t('hub_kids_teens')}</Text> : null}
+            </View>
+          ) : null}
 
           {/* Only once the screen has something to explain — a tip above an
               error or a blank slate is noise. */}
@@ -1129,19 +1227,29 @@ export default function Kids() {
             <EmptyState title={t('kids_no_children')} message={t('kids_no_children_msg')} actionLabel={t('kids_add_child')} onAction={openChildSheet} />
           ) : (
             <>
-              {/* Child selector */}
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.childRow} style={styles.childScroll} keyboardShouldPersistTaps="handled">
+              {/* Kids & teens — roster cards, one per young person. Tapping a
+                  card selects them and reveals their stars / chores / rewards
+                  in the detail below (a teen also carries a Message entry
+                  inside that detail). The old horizontal chip strip hid the
+                  role and the balance behind a tap; a card shows both at rest. */}
+              <View style={styles.hubKids}>
                 {children.map((child, index) => {
                   const active = child.member_id === activeChild?.member_id;
                   const tint = CHILD_TINTS[index % CHILD_TINTS.length];
-                  // Outstanding rewards live under one child's tab, so without
+                  // Outstanding rewards live under one child's card, so without
                   // a mark here a parent with three children would never learn
                   // they still owe the one they aren't looking at.
                   const owed = owedByChild[child.member_id] || 0;
+                  const isTeen = child.role?.toLowerCase() === 'teen';
                   return (
-                    <PressScale key={child.member_id} testID={`child-${child.member_id}`} onPress={() => { setSelectedChild(child.member_id); setBackdateDay(null); }} style={[styles.childChip, active ? styles.childChipActive : styles.childChipIdle]}>
-                      <View style={[styles.childAvatar, { backgroundColor: tint }]}>
-                        <Text style={styles.childAvatarText}>{child.name[0]?.toUpperCase()}</Text>
+                    <PressScale
+                      key={child.member_id}
+                      testID={`child-${child.member_id}`}
+                      onPress={() => { setSelectedChild(child.member_id); setBackdateDay(null); }}
+                      style={[styles.hubRow, active && styles.hubRowActive]}
+                    >
+                      <View style={[styles.hubAvatar, { backgroundColor: tint }]}>
+                        <Text style={styles.hubAvatarText}>{child.name[0]?.toUpperCase()}</Text>
                         {child.has_pin ? <View style={styles.lockBadge}><Lock color={ui.bg} size={8} /></View> : null}
                         {owed > 0 ? (
                           <View
@@ -1153,20 +1261,31 @@ export default function Kids() {
                           </View>
                         ) : null}
                       </View>
-                      <Text style={[styles.childChipText, { color: active ? ui.bg : ui.text }]}>{child.name}</Text>
-                      {child.role?.toLowerCase() === 'teen' ? (
-                        <View style={[styles.teenChipBadge, active && { backgroundColor: 'rgba(255,255,255,0.22)' }]}>
-                          <Text style={[styles.teenChipBadgeText, { color: active ? ui.bg : ui.orangeText }]}>{t('teen_badge')}</Text>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <View style={styles.hubNameRow}>
+                          <Text style={styles.hubName} numberOfLines={1}>{child.name}</Text>
+                          <View style={[styles.hubBadge, { backgroundColor: isTeen ? ui.lavender : ui.mint }]}>
+                            <Text style={[styles.hubBadgeText, { color: isTeen ? ui.lavenderText : ui.mintText }]}>
+                              {isTeen ? t('hub_role_teen') : t('hub_role_kid')}
+                            </Text>
+                          </View>
                         </View>
-                      ) : null}
+                        <Text style={styles.hubSub} numberOfLines={1}>{t('hub_week_earned', { n: child.week_earned || 0 })}</Text>
+                      </View>
+                      <View style={styles.hubStarChip}>
+                        <Star color={ui.mintText} size={13} fill={ui.mintText} />
+                        <Text style={styles.hubStarChipText}>{child.stars || 0}</Text>
+                      </View>
                     </PressScale>
                   );
                 })}
-                <PressScale testID="kids-add-child" onPress={openChildSheet} style={[styles.childChip, styles.childChipIdle]}>
-                  <Plus color={ui.orange} size={18} />
-                  <Text style={[styles.childChipText, { color: ui.text }]}>{t('kids_add_child')}</Text>
+                <PressScale testID="kids-add-child" onPress={openChildSheet} style={[styles.hubRow, styles.hubAddRow]}>
+                  <View style={[styles.hubAvatar, { backgroundColor: ui.orangeSoft }]}>
+                    <Plus color={ui.orange} size={20} />
+                  </View>
+                  <Text style={styles.hubAddText}>{t('kids_add_child')}</Text>
                 </PressScale>
-              </ScrollView>
+              </View>
 
               {/* New-feature nudge: teens get their own account. Flashes for a
                   couple of seconds on open, then hides so it never nags. */}
@@ -1237,6 +1356,22 @@ export default function Kids() {
                         >
                           <MoreHorizontal color={ui.muted} size={16} />
                         </PressScale>
+                        {/* A teen has a private thread with their parents; open
+                            it straight from their card. A managed child (no
+                            account) has no chat, so this shows only for teens. */}
+                        {activeChild.role?.toLowerCase() === 'teen' ? (
+                          <PressScale
+                            testID="kids-teen-message"
+                            accessibilityRole="button"
+                            accessibilityLabel={t('hub_tab_chat')}
+                            onPress={() => openMember(activeChild)}
+                            hitSlop={12}
+                            style={styles.teenMsgBtn}
+                          >
+                            <MessageCircle color={ui.orangeText} size={14} />
+                            <Text style={styles.teenMsgText}>{t('hub_tab_chat')}</Text>
+                          </PressScale>
+                        ) : null}
                       </View>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                         <Star color={'#E8A93B'} size={20} fill={'#E8A93B'} />
@@ -2115,6 +2250,33 @@ function RecentActivity({ items, loading, expanded }: { items: StarTransaction[]
 
 const createStyles = (ui: UIColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: ui.bg },
+  manageBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: ui.orangeSoft,
+    borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8,
+  },
+  manageBtnText: { fontFamily: 'Inter_700Bold', fontSize: 12.5, color: ui.orangeText },
+
+  // Family Hub — the grown-ups roster
+  hubGrownups: { marginTop: 4, marginBottom: 4 },
+  hubLabel: { fontFamily: 'Inter_800ExtraBold', fontSize: 11, letterSpacing: 0.8, textTransform: 'uppercase', color: ui.muted, marginLeft: 4, marginBottom: 8, marginTop: 8 },
+  hubRow: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, borderRadius: 16, padding: 12, marginBottom: 9 },
+  hubAvatar: { width: 44, height: 44, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  hubAvatarText: { fontFamily: 'Inter_800ExtraBold', fontSize: 16, color: '#fff' },
+  hubNameRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  hubName: { fontFamily: 'Inter_700Bold', fontSize: 15, color: ui.text, flexShrink: 1 },
+  hubBadge: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 },
+  hubBadgeText: { fontFamily: 'Inter_700Bold', fontSize: 10, letterSpacing: 0.3, textTransform: 'uppercase' },
+  hubSub: { fontFamily: 'Inter_400Regular', fontSize: 12.5, color: ui.muted, marginTop: 2 },
+  hubUnread: { minWidth: 20, height: 20, borderRadius: 10, backgroundColor: ui.orange, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
+  hubUnreadText: { color: '#fff', fontFamily: 'Inter_800ExtraBold', fontSize: 11 },
+  teenMsgBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: ui.orangeSoft, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 3 },
+  teenMsgText: { fontFamily: 'Inter_700Bold', fontSize: 11.5, color: ui.orangeText },
+  hubKids: { marginTop: 2, marginBottom: 6 },
+  hubRowActive: { borderColor: ui.orange, borderWidth: 1.5 },
+  hubStarChip: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: ui.mint, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 },
+  hubStarChipText: { fontFamily: 'Inter_800ExtraBold', fontSize: 13, color: ui.mintText },
+  hubAddRow: { borderStyle: 'dashed' },
+  hubAddText: { fontFamily: 'Inter_700Bold', fontSize: 15, color: ui.text },
   scroll: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 40 },
   bellWrap: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
 
