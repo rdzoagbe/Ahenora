@@ -55,7 +55,7 @@ function formatBytes(bytes?: number | null) {
 }
 
 export default function Settings() {
-  const { user, t, lang, logout, subscription, appearanceMode, setAppearance, inviteRequested, clearInviteRequest } = useStore();
+  const { user, t, lang, logout, subscription, appearanceMode, setAppearance, inviteRequested, clearInviteRequest, membersRequested, clearMembersRequest } = useStore();
   const router = useRouter();
   const ui = useUI();
   const styles = useMemo(() => createStyles(ui), [ui]);
@@ -449,6 +449,18 @@ export default function Settings() {
     clearInviteRequest();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inviteRequested]);
+
+  // The Family screen's Members button lands here. Managing members sits two
+  // collapsed layers down — inside the Household group, then behind the Manage
+  // members row — so arriving at the top of Settings meant hunting for it.
+  // Open both on arrival, and clear the flag so it fires once.
+  useEffect(() => {
+    if (!membersRequested) return;
+    setOpenGroups((g) => ({ ...g, household: true }));
+    setExpandMembers(true);
+    clearMembersRequest();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [membersRequested]);
 
   // Two parents is the ceiling — a parent and a co-parent. A third would-be
   // parent is redirected to the family-member invite, where they get a role.

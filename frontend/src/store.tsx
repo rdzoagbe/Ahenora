@@ -43,6 +43,11 @@ interface StoreState {
   inviteRequested: boolean;
   requestInvite: () => void;
   clearInviteRequest: () => void;
+  /** Raised by the Family screen's Members button so Settings opens straight
+   *  onto the member list instead of its collapsed top level. */
+  membersRequested: boolean;
+  requestMembers: () => void;
+  clearMembersRequest: () => void;
   // Bumped whenever something is captured from the global "+" so any visible
   // tab can refresh its data without a navigation.
   dataVersion: number;
@@ -90,6 +95,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [inviteRequested, setInviteRequested] = useState(false);
   const requestInvite = useCallback(() => setInviteRequested(true), []);
   const clearInviteRequest = useCallback(() => setInviteRequested(false), []);
+  const [membersRequested, setMembersRequested] = useState(false);
+  const requestMembers = useCallback(() => setMembersRequested(true), []);
+  const clearMembersRequest = useCallback(() => setMembersRequested(false), []);
   // A monotonic counter the global "+" bumps after a successful capture; tabs
   // depend on it to reload the surface the user is looking at.
   const [dataVersion, setDataVersion] = useState(0);
@@ -324,6 +332,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         inviteRequested,
         requestInvite,
         clearInviteRequest,
+        membersRequested,
+        requestMembers,
+        clearMembersRequest,
         dataVersion,
         bumpData,
       }}

@@ -131,7 +131,7 @@ function formatActivityDate(value: string | null | undefined, locale: string) {
 }
 
 export default function Kids() {
-  const { t, lang, dataVersion } = useStore();
+  const { t, lang, dataVersion, requestMembers } = useStore();
   const { isLocked, promptUpgrade } = usePremiumGate();
   const allowanceLocked = isLocked('allowance');
   const router = useRouter();
@@ -1192,7 +1192,7 @@ export default function Kids() {
               right={
                 <PressScale
                   testID="family-manage-members"
-                  onPress={() => router.push('/(tabs)/settings')}
+                  onPress={() => { requestMembers(); router.push('/(tabs)/settings'); }}
                   accessibilityLabel={t('family_manage_members')}
                   style={styles.manageBtn}
                 >
