@@ -14,6 +14,7 @@ import urllib.parse
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from fastapi import FastAPI, HTTPException, Depends, Header, UploadFile, File, Query, Body
+from dedupe_core import run as dedupe_run
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 try:
@@ -5647,6 +5648,33 @@ async def app_version_info():
         "android_store_url": "https://play.google.com/store/apps/details?id=com.householdcoo.app",
         "backend_commit": commit,
     }
+
+
+@app.get("/api/admin/dedupe-accounts")
+async def admin_dedupe_preview(user=Depends(require_user)):
+    """Dry-run report of the duplicate-account cleanup (admin only). Open this in
+    a browser while signed in as an admin to see exactly what a merge would do —
+    nothing is changed."""
+    if not is_admin_user(user):
+        raise HTTPException(status_code=403, detail="Admins only")
+    lines: list = []
+    summary = await dedupe_run(get_db(), apply=False,
+                               log=lambda *a: lines.append(" ".join(str(x) for x in a)))
+    return {"applied": False, "summary": summary, "report": lines}
+
+
+@app.post("/api/admin/dedupe-accounts")
+async def admin_dedupe_apply(payload: dict = Body(...), user=Depends(require_user)):
+    """Apply the duplicate-account cleanup (admin only). Requires an explicit
+    {"confirm": "APPLY"} body so it can never run by accident."""
+    if not is_admin_user(user):
+        raise HTTPException(status_code=403, detail="Admins only")
+    if (payload or {}).get("confirm") != "APPLY":
+        raise HTTPException(status_code=400, detail='Send {"confirm": "APPLY"} to apply the merge.')
+    lines: list = []
+    summary = await dedupe_run(get_db(), apply=True,
+                               log=lambda *a: lines.append(" ".join(str(x) for x in a)))
+    return {"applied": True, "summary": summary, "report": lines}
 
 
 @app.get("/api/admin/version-adoption")
