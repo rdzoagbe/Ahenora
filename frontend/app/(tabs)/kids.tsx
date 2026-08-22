@@ -262,10 +262,15 @@ export default function Kids() {
   // with a back arrow to the roster — the same "each person is a page" shape the
   // grown-ups get, but reusing all the tooling that already lives on this tab.
   const [focusedChild, setFocusedChild] = useState<string | null>(null);
+  // A child's page leads with the two daily jobs — give stars, and today's
+  // chores. The other six blocks are still here, behind one door, because
+  // nine sections of equal weight buried the thing you actually came to do.
+  const [showMore, setShowMore] = useState(false);
   const openChild = useCallback((m: FamilyMember) => {
     setSelectedChild(m.member_id);
     setBackdateDay(null);
     setFocusedChild(m.member_id);
+    setShowMore(false);
   }, []);
   const activeChild = children.find((c) => c.member_id === selectedChild) || children[0];
   const isFocused = Boolean(focusedChild) && Boolean(activeChild);
@@ -1383,7 +1388,7 @@ export default function Kids() {
                 </Card>
               ) : null}
 
-              {isFocused && activeChild ? (
+              {isFocused && showMore && activeChild ? (
                 <>
                   {/* Wallet */}
                   <Card style={styles.walletCard}>
@@ -1453,6 +1458,52 @@ export default function Kids() {
                       </PressScale>
                     ) : null}
                   </Card>
+                  {/* The daily two, in the order a parent reaches for them. */}
+                  <Text style={styles.leadLabel}>{t('hub_give_stars')}</Text>
+                  <View style={styles.leadRow}>
+                    {[1, 3, 5].map((n) => (
+                      <PressScale
+                        key={n}
+                        testID={`kids-give-${n}`}
+                        onPress={() => quickAdd(t('kids_parent_added_stars'), n)}
+                        style={styles.leadStar}
+                      >
+                        <Star color="#fff" size={15} fill="#fff" />
+                        <Text style={styles.leadStarText}>+{n}</Text>
+                      </PressScale>
+                    ))}
+                  </View>
+
+                  <Text style={styles.leadLabel}>{t('kids_today')}</Text>
+                  {QUICK_ADDS.map((q) => (
+                    <PressScale
+                      key={q.labelKey}
+                      testID={`kids-today-${q.labelKey}`}
+                      onPress={() => quickAdd(t(q.labelKey), q.amount, q.chore)}
+                      style={styles.todayRow}
+                    >
+                      <View style={[styles.todayIcon, { backgroundColor: q.bg }]}>
+                        <q.Icon color={q.tint} size={16} />
+                      </View>
+                      <Text style={styles.todayText}>{t(q.labelKey)}</Text>
+                      <Text style={styles.todayVal}>+{q.amount}★</Text>
+                    </PressScale>
+                  ))}
+
+                  {/* Everything else, one row away — not deleted. */}
+                  <PressScale
+                    testID="kids-show-more"
+                    onPress={() => setShowMore((v) => !v)}
+                    style={styles.moreRow}
+                  >
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={styles.moreTitle}>{t('kids_more_for', { name: activeChild.name })}</Text>
+                      <Text style={styles.moreSub} numberOfLines={1}>{t('kids_more_sub')}</Text>
+                    </View>
+                    <ChevronRight color={ui.muted} size={18} style={{ transform: [{ rotate: showMore ? '90deg' : '0deg' }] }} />
+                  </PressScale>
+
+                  {showMore ? (<>
                   <PressScale
                     testID="kids-assign-task"
                     accessibilityRole="button"
@@ -1754,13 +1805,14 @@ export default function Kids() {
                   {kidsTab === 'history' && (
                     <RecentActivity items={historyItems} loading={historyLoading} expanded />
                   )}
+                  </>) : null}
                 </>
               ) : null}
             </>
           )}
 
           {/* Morning Routines — part of the focused child's page, not the roster */}
-          {isFocused && activeChild && childRoutines.length > 0 ? (
+          {isFocused && showMore && activeChild && childRoutines.length > 0 ? (
             <>
               <View style={styles.featureHeader}>
                 <Timer color={ui.lavenderText} size={18} />
@@ -1792,7 +1844,7 @@ export default function Kids() {
           ) : null}
 
           {/* Allowance Tracker */}
-          {isFocused && activeChild ? (
+          {isFocused && showMore && activeChild ? (
             <>
               <View style={styles.featureHeader}>
                 <PiggyBank color={ui.goldText} size={18} />
@@ -1862,7 +1914,7 @@ export default function Kids() {
           ) : null}
 
           {/* Chore Wheel — part of the focused child's page, not the roster */}
-          {isFocused && activeChild && chores.length > 0 ? (
+          {isFocused && showMore && activeChild && chores.length > 0 ? (
             <>
               <View style={styles.featureHeader}>
                 <RotateCcw color={ui.mintText} size={18} />
@@ -2309,6 +2361,17 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   hubUnreadText: { color: '#fff', fontFamily: 'Inter_800ExtraBold', fontSize: 11 },
   teenMsgBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: ui.orangeSoft, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 3 },
   teenMsgText: { fontFamily: 'Inter_700Bold', fontSize: 11.5, color: ui.orangeText },
+  leadLabel: { fontFamily: 'Inter_800ExtraBold', fontSize: 11, letterSpacing: 0.8, textTransform: 'uppercase', color: ui.muted, marginTop: 18, marginBottom: 9, marginLeft: 2 },
+  leadRow: { flexDirection: 'row', gap: 10 },
+  leadStar: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: ui.orange, borderRadius: 14, paddingVertical: 13 },
+  leadStarText: { fontFamily: 'Inter_800ExtraBold', fontSize: 15, color: '#fff' },
+  todayRow: { flexDirection: 'row', alignItems: 'center', gap: 11, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, borderRadius: 12, paddingVertical: 11, paddingHorizontal: 12, marginBottom: 7 },
+  todayIcon: { width: 30, height: 30, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  todayText: { flex: 1, fontFamily: 'Inter_600SemiBold', fontSize: 14, color: ui.text },
+  todayVal: { fontFamily: 'Inter_800ExtraBold', fontSize: 13, color: ui.mintText },
+  moreRow: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: ui.soft, borderWidth: 1, borderColor: ui.line, borderRadius: 14, paddingVertical: 13, paddingHorizontal: 14, marginTop: 16, marginBottom: 4 },
+  moreTitle: { fontFamily: 'Inter_700Bold', fontSize: 14.5, color: ui.text },
+  moreSub: { fontFamily: 'Inter_400Regular', fontSize: 12, color: ui.muted, marginTop: 2 },
   hubKids: { marginTop: 2, marginBottom: 6 },
   hubRowActive: { borderColor: ui.orange, borderWidth: 1.5 },
   hubStarChip: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: ui.mint, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 },

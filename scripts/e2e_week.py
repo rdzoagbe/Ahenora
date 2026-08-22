@@ -84,6 +84,10 @@ async def main():
         # and rewards live on their own page. Tap into Ama to reach the detail.
         await page.click(f'[data-testid="child-{mid}"]')
         await page.wait_for_timeout(1500)
+        # A child's page now leads with the daily two (give stars, today's
+        # chores); the week, rewards and history live behind one More door.
+        await page.click('[data-testid="kids-show-more"]')
+        await page.wait_for_timeout(900)
 
         body = await page.inner_text("body")
         r["shows_the_week_target"] = "50" in body
@@ -115,6 +119,10 @@ async def main():
         # Reload drops back to the roster — tap into Ama's page again.
         await page.click(f'[data-testid="child-{mid}"]')
         await page.wait_for_timeout(1500)
+        # A child's page now leads with the daily two (give stars, today's
+        # chores); the week, rewards and history live behind one More door.
+        await page.click('[data-testid="kids-show-more"]')
+        await page.wait_for_timeout(900)
         member = [m for m in api("GET", "/family/members", None, tok)
                   if m["member_id"] == mid][0]
         bank_before = member["stars"]
