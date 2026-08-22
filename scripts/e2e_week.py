@@ -80,6 +80,10 @@ async def main():
         page = await persona(br, tok)
         await page.goto(f"{WEB}/kids", wait_until="domcontentloaded")
         await page.wait_for_timeout(4000)
+        # The Family tab now opens on a roster of everyone; a child's week, stars
+        # and rewards live on their own page. Tap into Ama to reach the detail.
+        await page.click(f'[data-testid="child-{mid}"]')
+        await page.wait_for_timeout(1500)
 
         body = await page.inner_text("body")
         r["shows_the_week_target"] = "50" in body
@@ -108,6 +112,9 @@ async def main():
         # Deliberately do not fill to 50 — claim straight from a partial week.
         await page.reload(wait_until="domcontentloaded")
         await page.wait_for_timeout(4000)
+        # Reload drops back to the roster — tap into Ama's page again.
+        await page.click(f'[data-testid="child-{mid}"]')
+        await page.wait_for_timeout(1500)
         member = [m for m in api("GET", "/family/members", None, tok)
                   if m["member_id"] == mid][0]
         bank_before = member["stars"]
