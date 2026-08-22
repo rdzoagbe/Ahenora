@@ -18,7 +18,7 @@ import { MoreSheet } from '../../src/components/MoreSheet';
  * legend rather than noise. (Only five seats — four destinations and More —
  * so there is room for all of them.)
  */
-function TabIcon({ focused, Icon, label }: { focused: boolean; Icon: any; label: string }) {
+function TabIcon({ focused, Icon, label, badge = 0 }: { focused: boolean; Icon: any; label: string; badge?: number }) {
   const { theme } = useStore();
   // accentInk, not accent: the focused tab sits on an accentSoft pill, and the
   // brand orange on its own tint measures 2.7:1 — the label would be
@@ -37,7 +37,16 @@ function TabIcon({ focused, Icon, label }: { focused: boolean; Icon: any; label:
         focused && { backgroundColor: theme.mode === 'light' ? theme.colors.accentSoft : theme.colors.bgSoft },
       ]}
     >
-      <Icon color={iconColor} size={22} strokeWidth={focused ? 2.5 : 2} />
+      <View>
+        <Icon color={iconColor} size={22} strokeWidth={focused ? 2.5 : 2} />
+        {/* Messaging lives inside Family now, so this is the only thing that
+            tells a parent a message arrived. */}
+        {badge > 0 ? (
+          <View style={[styles.tabBadge, { backgroundColor: theme.colors.accent, borderColor: theme.colors.tabBar }]}>
+            <Text style={styles.tabBadgeText}>{badge > 9 ? '9+' : badge}</Text>
+          </View>
+        ) : null}
+      </View>
       <Text
         style={[styles.tabLabel, { color: labelColor, fontFamily: focused ? 'Inter_800ExtraBold' : 'Inter_600SemiBold' }]}
         numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}
@@ -138,11 +147,11 @@ function PhoneTabBar({ state, navigation, style, onAdd }: {
   style: object;
   onAdd: () => void;
 }) {
-  const { t, theme } = useStore();
+  const { t, theme, unreadChats } = useStore();
   const c = theme.colors;
   const current = state.routes[state.index]?.name;
 
-  const tab = (name: string, Icon: any, labelKey: string) => {
+  const tab = (name: string, Icon: any, labelKey: string, badge = 0) => {
     const focused = current === name;
     return (
       <TouchableOpacity
@@ -155,7 +164,7 @@ function PhoneTabBar({ state, navigation, style, onAdd }: {
         style={styles.barSlot}
         onPress={() => { if (!focused) navigation.navigate(name); }}
       >
-        <TabIcon focused={focused} Icon={Icon} label={t(labelKey)} />
+        <TabIcon focused={focused} Icon={Icon} label={t(labelKey)} badge={badge} />
       </TouchableOpacity>
     );
   };
@@ -176,7 +185,7 @@ function PhoneTabBar({ state, navigation, style, onAdd }: {
           <Plus color="#FFFFFF" size={28} strokeWidth={2.6} />
         </TouchableOpacity>
       </View>
-      {tab('kids', Users, 'family_tab')}
+      {tab('kids', Users, 'family_tab', unreadChats)}
       {tab('kitchen', UtensilsCrossed, 'kitchen')}
     </View>
   );
@@ -311,6 +320,11 @@ const styles = StyleSheet.create({
     height: 54,
     borderRadius: 9999,
   },
+  tabBadge: {
+    position: 'absolute', top: -5, right: -9, minWidth: 17, height: 17, borderRadius: 9,
+    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4, borderWidth: 1.5,
+  },
+  tabBadgeText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 10 },
   tabLabel: {
     fontSize: 11,
     fontFamily: 'Inter_800ExtraBold',

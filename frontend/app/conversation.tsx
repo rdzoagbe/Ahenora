@@ -20,7 +20,7 @@ import { api } from '../src/api';
 export default function Conversation() {
   const ui = useUI();
   const router = useRouter();
-  const { t } = useStore();
+  const { t, refreshUnreadChats } = useStore();
   const styles = createStyles(ui);
   const params = useLocalSearchParams<{ thread?: string; title?: string; adults?: string }>();
 
@@ -40,7 +40,8 @@ export default function Conversation() {
       <ChatThread
         load={() => api.chatGet(thread)}
         send={(text) => api.chatSend(thread, text)}
-        markRead={() => api.chatRead(thread)}
+        // Reading is what clears the Family tab's badge.
+        markRead={async () => { await api.chatRead(thread); refreshUnreadChats(); }}
         emptyHint={isAdults ? t('chat_empty_adults') : t('chat_empty_teen')}
       />
     </SafeAreaView>

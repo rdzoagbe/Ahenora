@@ -257,6 +257,20 @@ export default function Kids() {
     router.push({ pathname: '/member', params: { id: m.member_id, name: m.name, role: m.role, thread } });
   }, [router]);
 
+  // Messaging moved into the Hub, which put a co-parent's message three taps
+  // away and gave it no way of announcing itself. The chat icon on a row is now
+  // a real shortcut — tap the row for the person, tap the icon to talk to them.
+  const openThread = useCallback((m: FamilyMember) => {
+    const roleLc = (m.role || '').toLowerCase();
+    const isParent = roleLc === 'parent' || roleLc === 'co-parent';
+    const th = isParent ? 'adults' : (m.user_id || '');
+    if (!th) { openMember(m); return; }
+    router.push({
+      pathname: '/conversation',
+      params: { thread: th, title: m.name, adults: isParent ? '1' : '0' },
+    });
+  }, [router, openMember]);
+
   // A kid/teen opens as their own page: the roster steps aside and this one
   // child's full detail (stars, chores, rewards, pocket money) fills the screen,
   // with a back arrow to the roster — the same "each person is a page" shape the
@@ -1252,10 +1266,19 @@ export default function Kids() {
                       </View>
                       <Text style={styles.hubSub} numberOfLines={1}>{sub}</Text>
                     </View>
-                    {unread > 0 ? (
-                      <View style={styles.hubUnread}><Text style={styles.hubUnreadText}>{unread}</Text></View>
-                    ) : isParent ? (
-                      <MessageCircle color={ui.muted} size={18} />
+                    {isParent ? (
+                      <PressScale
+                        testID={`hub-message-${m.member_id}`}
+                        onPress={() => openThread(m)}
+                        hitSlop={10}
+                        accessibilityLabel={t('hub_message_name', { name: m.name })}
+                        style={styles.hubMsgBtn}
+                      >
+                        <MessageCircle color={unread > 0 ? '#fff' : ui.muted} size={18} />
+                        {unread > 0 ? (
+                          <View style={styles.hubUnread}><Text style={styles.hubUnreadText}>{unread}</Text></View>
+                        ) : null}
+                      </PressScale>
                     ) : (
                       <ChevronRight color={ui.muted} size={18} />
                     )}
@@ -2357,7 +2380,8 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   hubBadge: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 },
   hubBadgeText: { fontFamily: 'Inter_700Bold', fontSize: 10, letterSpacing: 0.3, textTransform: 'uppercase' },
   hubSub: { fontFamily: 'Inter_400Regular', fontSize: 12.5, color: ui.muted, marginTop: 2 },
-  hubUnread: { minWidth: 20, height: 20, borderRadius: 10, backgroundColor: ui.orange, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
+  hubMsgBtn: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: ui.soft },
+  hubUnread: { position: 'absolute', top: -3, right: -3, minWidth: 18, height: 18, borderRadius: 9, backgroundColor: ui.orange, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5 },
   hubUnreadText: { color: '#fff', fontFamily: 'Inter_800ExtraBold', fontSize: 11 },
   teenMsgBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: ui.orangeSoft, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 3 },
   teenMsgText: { fontFamily: 'Inter_700Bold', fontSize: 11.5, color: ui.orangeText },

@@ -7,7 +7,7 @@ import React, {
   useState,
 } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useColorScheme } from 'react-native';
+import { AppState, useColorScheme } from 'react-native';
 import { api, User, tokenStore, Subscription, resetOfflineState, setUnauthorizedHandler, warmupBackend, isTeenModeError } from './api';
 import { clearSnapshots } from './offline';
 import { Lang, SUPPORTED_LANGS, translate, detectDeviceLang } from './i18n';
@@ -51,6 +51,10 @@ interface StoreState {
   // Bumped whenever something is captured from the global "+" so any visible
   // tab can refresh its data without a navigation.
   dataVersion: number;
+  /** Unread family messages, so the Family tab can say so. Messaging lives
+   *  inside the Hub now; without this a message arrives silently. */
+  unreadChats: number;
+  refreshUnreadChats: () => void;
   bumpData: () => void;
 }
 
@@ -101,6 +105,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   // A monotonic counter the global "+" bumps after a successful capture; tabs
   // depend on it to reload the surface the user is looking at.
   const [dataVersion, setDataVersion] = useState(0);
+  const [unreadChats, setUnreadChats] = useState(0);
   const bumpData = useCallback(() => setDataVersion((v) => v + 1), []);
 
   const resolvedAppearance = resolveAppearance(appearanceMode, systemScheme);
@@ -239,6 +244,25 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setLoading(false);
   }, []);
 
+  const refreshUnreadChats = useCallback(() => {
+    api.chatThreads()
+      .then((r) => setUnreadChats(r.threads.reduce((n, th) => n + (th.unread || 0), 0)))
+      // Teens, helpers and signed-out users are refused this route by design;
+      // a badge is a convenience and must never surface an error.
+      .catch(() => setUnreadChats(0));
+  }, []);
+
+  // On sign-in, and every time the app comes back to the foreground — the two
+  // moments a parent would expect the count to be right.
+  useEffect(() => {
+    if (!user || user.is_teen) { setUnreadChats(0); return; }
+    refreshUnreadChats();
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') refreshUnreadChats();
+    });
+    return () => sub.remove();
+  }, [user, refreshUnreadChats]);
+
   const setUserFromAuth = useCallback(async (u: User, token: string, method?: 'google' | 'email') => {
     await tokenStore.set(token);
 
@@ -336,6 +360,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         requestMembers,
         clearMembersRequest,
         dataVersion,
+        unreadChats,
+        refreshUnreadChats,
         bumpData,
       }}
     >
