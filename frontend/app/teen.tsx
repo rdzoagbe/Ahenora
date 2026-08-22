@@ -2,9 +2,10 @@ import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { Check, CalendarDays, LogOut, ListChecks, Lock, RefreshCw, Star } from 'lucide-react-native';
+import { Check, CalendarDays, ChevronLeft, LogOut, ListChecks, Lock, MessageCircle, RefreshCw, Star } from 'lucide-react-native';
 
 import { PressScale } from '../src/components/PressScale';
+import { ChatThread } from '../src/components/ChatThread';
 import { useUI, UIColors } from '../src/components/Kit';
 import { useStore } from '../src/store';
 import { api, TeenHome } from '../src/api';
@@ -36,6 +37,7 @@ export default function TeenScreen() {
   // the finish isn't a silent disappearance — the star only lands once a parent
   // approves, and the teen should see that it's on its way.
   const [pending, setPending] = useState<string[]>([]);
+  const [showChat, setShowChat] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -79,6 +81,29 @@ export default function TeenScreen() {
 
   const firstName = (home?.name || user?.name || '').split(' ')[0];
 
+  // A teen's private line to their parents — their own thread only. The server
+  // forces the thread to their id, so this never touches the adults chat or
+  // another teen's.
+  if (showChat) {
+    return (
+      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+        <View style={styles.chatHeader}>
+          <PressScale testID="teen-chat-back" onPress={() => setShowChat(false)} style={styles.signOut} accessibilityLabel={t('back')}>
+            <ChevronLeft color={ui.text} size={22} />
+          </PressScale>
+          <Text style={styles.chatTitle}>{t('teen_messages')}</Text>
+          <View style={{ width: 40 }} />
+        </View>
+        <ChatThread
+          load={api.teenChatGet}
+          send={api.teenChatSend}
+          markRead={api.teenChatRead}
+          emptyHint={t('teen_chat_empty')}
+        />
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <View style={styles.topRow}>
@@ -86,9 +111,14 @@ export default function TeenScreen() {
           <Text style={styles.brand}>AHENORA</Text>
           <View style={styles.badge}><Text style={styles.badgeText}>Teen</Text></View>
         </View>
-        <PressScale testID="teen-signout" onPress={signOut} style={styles.signOut} accessibilityLabel={t('teen_sign_out')}>
-          <LogOut color={ui.muted} size={18} />
-        </PressScale>
+        <View style={styles.headerActions}>
+          <PressScale testID="teen-chat-open" onPress={() => setShowChat(true)} style={styles.signOut} accessibilityLabel={t('teen_messages')}>
+            <MessageCircle color={ui.orangeText} size={18} />
+          </PressScale>
+          <PressScale testID="teen-signout" onPress={signOut} style={styles.signOut} accessibilityLabel={t('teen_sign_out')}>
+            <LogOut color={ui.muted} size={18} />
+          </PressScale>
+        </View>
       </View>
 
       {loading ? (
@@ -198,6 +228,9 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   retryBtn: { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: ui.orangeSoft, borderRadius: 999, paddingHorizontal: 16, paddingVertical: 9 },
   retryText: { fontFamily: 'Inter_700Bold', fontSize: 13.5, color: ui.orangeText },
   topRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 8 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  chatHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: ui.line },
+  chatTitle: { flex: 1, textAlign: 'center', fontFamily: 'Inter_800ExtraBold', fontSize: 17, color: ui.text },
   brand: { fontFamily: 'Inter_800ExtraBold', fontSize: 13, letterSpacing: 1.6, color: ui.orangeText },
   badge: { alignSelf: 'flex-start', backgroundColor: ui.orangeSoft, borderRadius: 99, paddingHorizontal: 10, paddingVertical: 4, marginTop: 8 },
   badgeText: { fontFamily: 'Inter_800ExtraBold', fontSize: 10, letterSpacing: 0.4, textTransform: 'uppercase', color: ui.orangeText },
