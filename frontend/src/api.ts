@@ -1110,11 +1110,17 @@ export const api = {
     request('/auth/language', { method: 'PATCH', body: { language } }),
   completeOnboarding: () =>
     request<User>('/auth/complete-onboarding', { method: 'POST' }),
-  invite: (email: string, relationship?: string, opts?: { is_teen?: boolean; age?: number; is_helper?: boolean }) => {
+  invite: (email: string, relationship?: string, opts?: { is_teen?: boolean; age?: number; is_helper?: boolean; member_id?: string }) => {
     invalidateUsageCaches();
     const body: Record<string, unknown> = { email };
     if (relationship) body.relationship = relationship;
-    if (opts?.is_teen) { body.is_teen = true; if (opts.age != null) body.age = opts.age; }
+    if (opts?.is_teen) {
+      body.is_teen = true;
+      if (opts.age != null) body.age = opts.age;
+      // Names the child, so the server can check the age claimed here against
+      // the age already on record instead of trusting the form.
+      if (opts.member_id) body.member_id = opts.member_id;
+    }
     if (opts?.is_helper) body.is_helper = true;
     return request<{
       ok: boolean;

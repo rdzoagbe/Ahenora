@@ -1629,6 +1629,16 @@ async def add_user_to_family_if_needed(database: Any, user: dict, family_id: str
         async for m in database["family_members"].find({"family_id": family_id}, {"_id": 0}):
             if (m.get("role") or "").strip().lower() == "child" and not m.get("user_id") \
                and (m.get("name") or "").strip().lower() == teen_name and teen_name:
+                # Last line of defence, at the moment the account actually
+                # appears. An invite made before this check existed, or one made
+                # without naming the child, still cannot turn a profile recorded
+                # as under 13 into an account holder.
+                recorded = m.get("age")
+                if recorded is not None and int(recorded) < 13:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="That person is recorded as under 13. An account of their own "
+                               "is for 13 and over.")
                 await database["family_members"].delete_one({"member_id": m["member_id"]})
 
     existing = await database["family_members"].find_one(
@@ -2159,6 +2169,10 @@ class InviteIn(BaseModel):
     # account, no email), which is what keeps us COPPA / Families-policy clean.
     is_teen: Optional[bool] = False
     age: Optional[int] = None
+    # Which child this invite is for, when it was started from their page. It is
+    # what lets the age claimed here be checked against the age already on
+    # record, instead of taking the typed number on trust.
+    member_id: Optional[str] = None
     # A helper is a trusted adult with a limited view — a grandparent, nanny or
     # babysitter. A real family member (uses the normal app), but denied the
     # sensitive surfaces (vault, billing, member management) server-side.
@@ -3686,6 +3700,15 @@ async def update_family_member(member_id: str, payload: MemberPatchIn, user=Depe
             changes["age"] = None
         elif not (1 <= age <= 17):
             raise HTTPException(status_code=400, detail="Age must be between 1 and 17.")
+        elif age < 13 and member.get("user_id"):
+            # The contradiction runs both ways: recording an under-13 age on
+            # someone who already holds an account would leave the household
+            # asserting two incompatible things about the same child. Say so
+            # rather than quietly keeping both.
+            raise HTTPException(
+                status_code=400,
+                detail=f"{member.get('name') or 'They'} has their own account, which is for 13 "
+                       "and over. Remove the account first if that age is right.")
         else:
             changes["age"] = age
 
@@ -4274,6 +4297,29 @@ async def family_invite(payload: InviteIn, user=Depends(require_full_member)):
     # (at 18 they're an adult, not a dependent teen).
     if payload.is_teen and (payload.age is None or not (13 <= int(payload.age) <= 17)):
         raise HTTPException(status_code=400, detail="A restricted account is for ages 13 to 17.")
+
+    # And it has to agree with what the household already recorded about this
+    # child. Without this the 13 floor is only as good as the number typed into
+    # the invite: a child on record as eight could be handed an account by
+    # claiming fifteen a screen later. The recorded age wins.
+    if payload.is_teen and payload.member_id:
+        child = await database["family_members"].find_one(
+            {"member_id": payload.member_id, "family_id": user["family_id"]}, {"_id": 0})
+        if not child:
+            raise HTTPException(status_code=404, detail="Family member not found")
+        recorded = child.get("age")
+        if recorded is not None:
+            if int(recorded) < 13:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"{child.get('name') or 'This child'} is recorded as {int(recorded)}. "
+                           "An account of their own is for 13 and over — they can keep using "
+                           "kid mode on your phone.")
+            if int(recorded) != int(payload.age):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"{child.get('name') or 'This child'} is recorded as {int(recorded)}, "
+                           "not {}. Correct their age first.".format(int(payload.age)))
 
     # Teens share the kids' plan cap — enforce it here so the invite can't be the
     # free way around the limit the managed-child add already guards. The client

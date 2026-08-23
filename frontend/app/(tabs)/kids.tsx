@@ -575,7 +575,9 @@ export default function Kids() {
 
   const openTeenInvite = () => {
     if (!activeChild) { showToast(t('kids_select_child_first'), 'error'); return; }
-    setTeenAge(15);
+    // Start from the age on record, so the form agrees with the household by
+    // default instead of inviting a number that the server will refuse.
+    setTeenAge(activeChild?.age != null ? activeChild.age : 15);
     setTeenEmail('');
     setShowTeenInvite(true);
   };
@@ -614,7 +616,9 @@ export default function Kids() {
     if (!email.includes('@') || email.length < 4) { showToast(t('set_invite_valid_email'), 'error'); return; }
     setTeenSending(true);
     try {
-      await api.invite(email, undefined, { is_teen: true, age });
+      // Name the child. Without this the server has nothing to check the typed
+      // age against, and the 13 floor is only as good as what was typed.
+      await api.invite(email, undefined, { is_teen: true, age, member_id: activeChild?.member_id });
       setShowTeenInvite(false);
       showToast(t('teen_invite_sent'), 'success');
     } catch (e: any) {
