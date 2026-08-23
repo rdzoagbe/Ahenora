@@ -113,6 +113,25 @@ async def run(db, apply=False, log=print):
                 summary["manual"] += 1
                 continue
 
+            # Decided BEFORE anything is linked, because whether the duplicate
+            # goes away changes whether linking is safe at all.
+            removable = same_family or await family_is_empty_shell(db, d.get("family_id"))
+
+            if gs and not removable:
+                # Google sign-in resolves an account by google_sub alone. Copying
+                # the sub onto the keeper while the duplicate keeps its own would
+                # leave TWO rows answering to one identity, and which household
+                # the person lands in becomes whichever row the database returns
+                # first. Today they at least land somewhere consistently; this
+                # would turn that into a coin toss. A household with real content
+                # in it is a decision for a person, not a script.
+                log(f"  - MANUAL REVIEW: duplicate {d['user_id']} family "
+                    f"{d.get('family_id')} holds real data AND carries the Google "
+                    f"identity — linking it to the keeper would leave two accounts "
+                    f"answering to one sign-in. Not touched.")
+                summary["manual"] += 1
+                continue
+
             if gs and not keeper.get("google_sub"):
                 log(f"  - link google_sub {gs} -> keeper {keeper['user_id']}")
                 summary["linked"] += 1
@@ -121,7 +140,6 @@ async def run(db, apply=False, log=print):
                         {"user_id": keeper["user_id"]}, {"$set": {"google_sub": gs}})
                 keeper["google_sub"] = gs
 
-            removable = same_family or await family_is_empty_shell(db, d.get("family_id"))
             if removable:
                 log(f"  - remove duplicate {d['user_id']}"
                     + ("" if same_family else f" + empty family {d.get('family_id')}"))
