@@ -1119,6 +1119,29 @@ export default function Settings() {
           </>) : null}
 
           {/* Logout */}
+          {/* Changing your password already ends other sessions, but that is the
+              wrong tool when nothing is wrong with the password — a phone left
+              somewhere, a tablet handed on. Sessions renew themselves while they
+              are used, so there has to be a way to say "not that device". */}
+          <PressScale
+            testID="sign-out-everywhere"
+            onPress={async () => {
+              try {
+                const r = await api.signOutEverywhere();
+                showToast(t('set_signed_out_everywhere', { n: r.ended }), 'success');
+              } catch (e: any) {
+                showToast(e?.message || t('set_please_try_again'), 'error');
+              }
+            }}
+            style={styles.signOutAllBtn}
+          >
+            <LogOut color={ui.muted} size={18} />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={styles.signOutAllText}>{t('set_sign_out_everywhere')}</Text>
+              <Text style={styles.signOutAllSub}>{t('set_sign_out_everywhere_sub')}</Text>
+            </View>
+          </PressScale>
+
           <PressScale testID="logout" onPress={doLogout} style={styles.logoutBtn}>
             <LogOut color={ui.danger} size={20} />
             <Text style={styles.logoutText}>{t('log_out')}</Text>
@@ -1401,6 +1424,13 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   updateBtn: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 999, borderWidth: 1, borderColor: ui.orange, minWidth: 104, alignItems: 'center' },
   updateBtnText: { color: ui.orangeText, fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
   updateNote: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, lineHeight: 18, marginTop: 10 },
+  signOutAllBtn: {
+    marginTop: 22, flexDirection: 'row', alignItems: 'center', gap: 11,
+    paddingVertical: 13, paddingHorizontal: 15, borderRadius: 16,
+    backgroundColor: ui.soft, borderWidth: 1, borderColor: ui.line,
+  },
+  signOutAllText: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 15 },
+  signOutAllSub: { color: ui.muted, fontFamily: 'Inter_400Regular', fontSize: 12.5, marginTop: 2 },
   logoutBtn: { marginTop: 26, minHeight: 54, borderRadius: 99, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, backgroundColor: ui.dangerSoft },
   logoutText: { color: ui.danger, fontFamily: 'Inter_800ExtraBold', fontSize: 16 },
 

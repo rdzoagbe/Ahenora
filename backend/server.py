@@ -3282,6 +3282,23 @@ class ChangePasswordIn(BaseModel):
     new_password: Optional[str] = None
 
 
+@app.post("/api/auth/sign-out-everywhere")
+async def sign_out_everywhere(user=Depends(require_user), authorization: str = Header(default="")):
+    """End every other session on every other device, keeping this one.
+
+    Changing your password already does this, but that is the wrong tool when
+    nothing is wrong with the password — a phone left at a friend's house, a
+    tablet handed on. With sessions renewing themselves for as long as they are
+    used, there has to be a way to say "not that device, not any more".
+    """
+    database = get_db()
+    raw_auth = authorization if isinstance(authorization, str) else ""
+    this_token = raw_auth.replace("Bearer ", "", 1).strip()
+    result = await database["user_sessions"].delete_many(
+        {"user_id": user["user_id"], "token_hash": {"$ne": sha256(this_token)}})
+    return {"ok": True, "ended": getattr(result, "deleted_count", 0)}
+
+
 @app.post("/api/auth/change-password")
 async def change_password(payload: ChangePasswordIn, user=Depends(require_user),
                           authorization: str = Header(default="")):
@@ -4915,41 +4932,103 @@ def public_chat_message(m: dict, viewer_id: str) -> dict:
     }
 
 
+HOUSEHOLD_THREAD = "household"
+DM_PREFIX = "dm:"
+KID_PREFIX = "kid:"
+
+
+# "~" and not "_": ids are minted as user_<hex>, so an underscore separator
+# made "dm:user_a_user_b" impossible to split back into two ids.
+DM_SEP = "~"
+
+
+def dm_thread(a: str, b: str) -> str:
+    """The id of a one-to-one. Sorted, so the same pair can never end up with
+    two threads depending on who opened it first."""
+    return DM_PREFIX + DM_SEP.join(sorted([a, b]))
+
+
+async def _family_accounts(database, family_id: str) -> list:
+    """Everyone in the household who can hold a conversation — a member row with
+    a login. A young child has none; they are reached through a kid: thread."""
+    out = []
+    async for m in database["family_members"].find({"family_id": family_id}, {"_id": 0}):
+        uid = m.get("user_id")
+        if not uid:
+            continue
+        out.append({"user_id": uid, "member_id": m.get("member_id"),
+                    "name": m.get("name") or "", "role": (m.get("role") or "").strip().lower()})
+    return out
+
+
 async def _family_teens(database, family_id: str) -> list:
-    """Teens (own login) in a family — the parent-facing thread list is one per
-    teen plus the adults thread."""
-    teens = []
-    async for m in database["family_members"].find(
-            {"family_id": family_id, "role": {"$regex": "^teen$", "$options": "i"}}, {"_id": 0}):
-        if m.get("user_id"):
-            teens.append({"user_id": m["user_id"], "name": m.get("name") or "Teen"})
-    return teens
+    """Teens with their own login. Still used by the teen endpoints below."""
+    return [a for a in await _family_accounts(database, family_id) if a["role"] == "teen"]
 
 
 async def _parent_user_ids(database, family_id: str, exclude: Optional[str] = None) -> list:
-    """The adults who should get a chat notification: members with a login whose
-    role is a parent/co-parent (never a teen or helper)."""
-    ids = []
-    async for m in database["family_members"].find({"family_id": family_id}, {"_id": 0}):
-        uid = m.get("user_id")
-        if not uid or uid == exclude:
-            continue
-        if _is_parent_role(m.get("role")):
-            ids.append(uid)
-    return ids
+    return [a["user_id"] for a in await _family_accounts(database, family_id)
+            if _is_parent_role(a["role"]) and a["user_id"] != exclude]
 
 
-async def _valid_parent_thread(database, family_id: str, thread: str) -> bool:
+async def _thread_participants(database, family_id: str, thread: str):
+    """Who is allowed in a thread, or None if it is not a thread for this family.
+
+    This is the whole access model. Every kind of conversation is described by
+    the set of people in it, and reading or writing is allowed exactly when the
+    caller is one of them — so a new kind of thread is safe the day it is added
+    rather than the day someone remembers to guard it.
+    """
+    accounts = await _family_accounts(database, family_id)
+    by_id = {a["user_id"]: a for a in accounts}
+    parents = {a["user_id"] for a in accounts if _is_parent_role(a["role"])}
+
+    if thread == HOUSEHOLD_THREAD:
+        return set(by_id)                      # everyone with a login
     if thread == ADULTS_THREAD:
-        return True
-    return any(t["user_id"] == thread for t in await _family_teens(database, family_id))
+        return parents                          # the grown-ups' own room
+
+    if thread.startswith(DM_PREFIX):
+        pair = set(thread[len(DM_PREFIX):].split(DM_SEP))
+        if len(pair) != 2 or not pair <= set(by_id):
+            return None
+        # Every private thread has a parent in it. Two teens, or a teen and a
+        # helper, would otherwise get a channel inside the family app that no
+        # parent can see — a safeguarding surface this app should not open by
+        # accident. Siblings still have the household room.
+        if not (pair & parents):
+            return None
+        return pair
+
+    if thread.startswith(KID_PREFIX):
+        member_id = thread[len(KID_PREFIX):]
+        child = await database["family_members"].find_one(
+            {"member_id": member_id, "family_id": family_id}, {"_id": 0})
+        # Only a managed child — one with no login of their own. A teen has an
+        # account and gets a real one-to-one instead.
+        if not child or child.get("user_id"):
+            return None
+        return parents
+
+    # Threads opened before this model existed are keyed by a teen's user id.
+    if thread in by_id:
+        return parents | {thread}
+    return None
+
+
+async def _require_thread_member(database, family_id: str, thread: str, user_id: str):
+    """404, not 403: whether a conversation exists is itself private."""
+    participants = await _thread_participants(database, family_id, thread)
+    if participants is None or user_id not in participants:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return participants
 
 
 async def _chat_insert(database, family_id: str, thread: str, sender_user_id: str,
                        sender_kind: str, sender_name: str, text: str) -> dict:
     clean = sanitize_user_text(text or "", MAX_CHAT_LEN)
     if not clean:
-        raise HTTPException(status_code=400, detail="Message can't be empty.")
+        raise HTTPException(status_code=400, detail="Message can\'t be empty.")
     msg = {
         "message_id": new_id("msg"),
         "family_id": family_id,
@@ -4982,18 +5061,14 @@ async def _mark_read(database, family_id: str, thread: str, viewer_id: str) -> N
         {"$addToSet": {"read_by": viewer_id}})
 
 
-async def _chat_notify(database, family_id: str, thread: str, sender_kind: str,
-                       sender_user_id: str, sender_name: str, text: str) -> None:
-    """Best-effort push to the thread's other members."""
+async def _chat_notify(database, family_id: str, thread: str, sender_user_id: str,
+                       sender_name: str, text: str) -> None:
+    """Best-effort push to everyone else in the thread — which the participant
+    set already tells us, whatever kind of thread it is."""
     try:
-        if thread == ADULTS_THREAD:
-            recipients = await _parent_user_ids(database, family_id, exclude=sender_user_id)
-        elif sender_kind == "teen":
-            recipients = await _parent_user_ids(database, family_id, exclude=sender_user_id)
-        else:
-            recipients = [thread]  # a per-teen thread's id IS the teen's user id
+        participants = await _thread_participants(database, family_id, thread) or set()
         preview = (text or "")[:120]
-        for uid in recipients:
+        for uid in participants - {sender_user_id}:
             await send_push_to_user(
                 database, uid, sender_name or "New message", preview,
                 {"type": "chat", "thread": thread})
@@ -5001,15 +5076,91 @@ async def _chat_notify(database, family_id: str, thread: str, sender_kind: str,
         pass  # a failed notification must never fail the send
 
 
+async def require_chat_account(authorization: str = Header(default="")):
+    """Any signed-in member of a household — parent, co-parent, teen or helper.
+
+    Chat is the one surface where all of them belong, so role is the wrong gate
+    here: WHICH conversation you may open is decided by whether you are in it
+    (_thread_participants), not by what you are. Kid-mode sessions are refused —
+    a child reads their notes through /api/kid/notes instead.
+    """
+    database = get_db()
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing bearer token")
+    token = authorization.replace("Bearer ", "", 1).strip()
+    session = await database["user_sessions"].find_one(
+        {"token_hash": sha256(token), "expires_at": {"$gt": utcnow()}}, {"_id": 0})
+    if not session or session.get("kind") == "child":
+        raise HTTPException(status_code=401, detail="Invalid or expired session")
+    await _touch_session(database, sha256(token), session)
+    user = await database["users"].find_one({"user_id": session["user_id"]}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    return user
+
+
+def _sender_kind(user: dict) -> str:
+    if user.get("is_teen"):
+        return "teen"
+    if user.get("is_helper"):
+        return "helper"
+    return "parent"
+
+
 @app.get("/api/family/chat/threads")
-async def family_chat_threads(user=Depends(require_full_member)):
-    """The adults thread plus one per teen, each with its last line + unread."""
+async def family_chat_threads(user=Depends(require_chat_account)):
+    """Every conversation this person is actually in.
+
+    A parent sees the household, the grown-ups' room, a one-to-one with each
+    other member, and a note thread for each young child. A teen or helper sees
+    the household and their own one-to-one with each parent — the list is built
+    from the same participation rule that guards reading, so it can never offer
+    a door that then refuses to open.
+    """
     database = get_db()
     family_id = user["family_id"]
     viewer = user["user_id"]
-    threads = [{"thread": ADULTS_THREAD, "title": None, "is_adults": True}]
-    for t in await _family_teens(database, family_id):
-        threads.append({"thread": t["user_id"], "title": t["name"], "is_adults": False})
+    accounts = await _family_accounts(database, family_id)
+    is_parent = any(a["user_id"] == viewer and _is_parent_role(a["role"]) for a in accounts)
+
+    threads = [{"thread": HOUSEHOLD_THREAD, "title": None, "is_adults": False, "is_household": True}]
+    if is_parent:
+        threads.append({"thread": ADULTS_THREAD, "title": None, "is_adults": True, "is_household": False})
+
+    if is_parent:
+        for a in accounts:
+            if a["user_id"] == viewer:
+                continue
+            # A teen keeps the thread key they already had — their own user id.
+            # Moving them to a dm: key would have left every message sent before
+            # today sitting in a thread nothing lists any more, which is losing
+            # a family's conversation to a refactor.
+            thread_id = a["user_id"] if a["role"] == "teen" else dm_thread(viewer, a["user_id"])
+            threads.append({"thread": thread_id, "title": a["name"], "is_adults": False,
+                            "is_household": False, "role": a["role"],
+                            "member_id": a["member_id"]})
+    else:
+        # A teen has one conversation with their parents — the same thread the
+        # teen screen has always used. A helper gets a one-to-one with each.
+        if any(a["user_id"] == viewer and a["role"] == "teen" for a in accounts):
+            threads.append({"thread": viewer, "title": None, "is_adults": False,
+                            "is_household": False, "is_parents": True})
+        else:
+            for a in accounts:
+                if _is_parent_role(a["role"]):
+                    threads.append({"thread": dm_thread(viewer, a["user_id"]), "title": a["name"],
+                                    "is_adults": False, "is_household": False, "role": a["role"],
+                                    "member_id": a["member_id"]})
+
+    if is_parent:
+        async for m in database["family_members"].find(
+                {"family_id": family_id, "role": {"$regex": "^child$", "$options": "i"}}, {"_id": 0}):
+            if m.get("user_id"):
+                continue  # has an account: they get a real one-to-one above
+            threads.append({"thread": KID_PREFIX + m["member_id"], "title": m.get("name") or "",
+                            "is_adults": False, "is_household": False, "role": "child",
+                            "member_id": m["member_id"]})
+
     out = []
     for th in threads:
         msgs = await _chat_thread_messages(database, family_id, th["thread"], viewer)
@@ -5022,40 +5173,37 @@ async def family_chat_threads(user=Depends(require_full_member)):
 
 
 @app.get("/api/family/chat/{thread}")
-async def family_chat_get(thread: str, user=Depends(require_full_member)):
+async def family_chat_get(thread: str, user=Depends(require_chat_account)):
     database = get_db()
-    if not await _valid_parent_thread(database, user["family_id"], thread):
-        raise HTTPException(status_code=404, detail="No such conversation")
+    await _require_thread_member(database, user["family_id"], thread, user["user_id"])
     msgs = await _chat_thread_messages(database, user["family_id"], thread, user["user_id"])
     await _mark_read(database, user["family_id"], thread, user["user_id"])
     return {"messages": msgs}
 
 
 @app.post("/api/family/chat/{thread}")
-async def family_chat_send(thread: str, payload: ChatMessageIn, user=Depends(require_full_member)):
+async def family_chat_send(thread: str, payload: ChatMessageIn, user=Depends(require_chat_account)):
     database = get_db()
-    if not await _valid_parent_thread(database, user["family_id"], thread):
-        raise HTTPException(status_code=404, detail="No such conversation")
+    await _require_thread_member(database, user["family_id"], thread, user["user_id"])
+    name = user.get("name") or "Someone"
     msg = await _chat_insert(database, user["family_id"], thread, user["user_id"],
-                             "parent", user.get("name") or "Parent", payload.text)
-    await _chat_notify(database, user["family_id"], thread, "parent",
-                       user["user_id"], user.get("name") or "Parent", msg["text"])
+                             _sender_kind(user), name, payload.text)
+    await _chat_notify(database, user["family_id"], thread, user["user_id"], name, msg["text"])
     return {"ok": True, "message": public_chat_message(msg, user["user_id"])}
 
 
 @app.post("/api/family/chat/{thread}/read")
-async def family_chat_read(thread: str, user=Depends(require_full_member)):
+async def family_chat_read(thread: str, user=Depends(require_chat_account)):
     database = get_db()
-    if not await _valid_parent_thread(database, user["family_id"], thread):
-        raise HTTPException(status_code=404, detail="No such conversation")
+    await _require_thread_member(database, user["family_id"], thread, user["user_id"])
     await _mark_read(database, user["family_id"], thread, user["user_id"])
     return {"ok": True}
 
 
 @app.get("/api/teen/chat")
 async def teen_chat_get(teen=Depends(require_teen)):
-    """A teen's own thread — the thread key is forced to their user id, so a teen
-    can never read the adults thread or another teen's."""
+    """A teen's own thread, kept for the teen screen. The key is forced to their
+    user id, so it can only ever be theirs."""
     database = get_db()
     tuid = teen["user"]["user_id"]
     msgs = await _chat_thread_messages(database, teen["family_id"], tuid, tuid)
@@ -5069,7 +5217,7 @@ async def teen_chat_send(payload: ChatMessageIn, teen=Depends(require_teen)):
     tuid = teen["user"]["user_id"]
     name = teen["user"].get("name") or "Teen"
     msg = await _chat_insert(database, teen["family_id"], tuid, tuid, "teen", name, payload.text)
-    await _chat_notify(database, teen["family_id"], tuid, "teen", tuid, name, msg["text"])
+    await _chat_notify(database, teen["family_id"], tuid, tuid, name, msg["text"])
     return {"ok": True, "message": public_chat_message(msg, tuid)}
 
 
@@ -5079,6 +5227,28 @@ async def teen_chat_read(teen=Depends(require_teen)):
     tuid = teen["user"]["user_id"]
     await _mark_read(database, teen["family_id"], tuid, tuid)
     return {"ok": True}
+
+
+@app.get("/api/kid/notes")
+async def kid_notes(child=Depends(require_child)):
+    """What a parent has written to this child, read in kid mode.
+
+    A young child has no login and no inbox, so this is the only honest way to
+    say something to them in the app.
+
+    Read-only, deliberately. A teen has their own account and a real two-way
+    conversation; an under-13 does not, and giving one a way to send messages
+    from a shared family phone is a line this app should not cross for the sake
+    of a "seen" confirmation.
+    """
+    database = get_db()
+    member = child["member"]
+    thread = KID_PREFIX + member["member_id"]
+    # The child is not a user, so "read" is tracked against their member id.
+    viewer = f"member:{member['member_id']}"
+    msgs = await _chat_thread_messages(database, child["family_id"], thread, viewer)
+    await _mark_read(database, child["family_id"], thread, viewer)
+    return {"messages": msgs}
 
 
 @app.post("/api/kid/chores/{card_id}/done")

@@ -241,7 +241,6 @@ export default function Kids() {
     const rest = members.filter((m) => !['child', 'teen'].includes(m.role?.toLowerCase() ?? ''));
     return rest.sort((a, b) => (a.is_me ? -1 : b.is_me ? 1 : 0));
   }, [members]);
-  const adultsThread = useMemo(() => threads.find((th) => th.is_adults), [threads]);
 
   // Open a member's profile. Parents share the adults thread; a teen has their
   // own (keyed by user_id, which we recover from the thread list by name). A
@@ -262,15 +261,16 @@ export default function Kids() {
   // away and gave it no way of announcing itself. The chat icon on a row is now
   // a real shortcut — tap the row for the person, tap the icon to talk to them.
   const openThread = useCallback((m: FamilyMember) => {
-    const roleLc = (m.role || '').toLowerCase();
-    const isParent = roleLc === 'parent' || roleLc === 'co-parent';
-    const th = isParent ? 'adults' : (m.user_id || '');
+    // The server says which conversation belongs to this person. Rebuilding the
+    // thread id here as well meant two places had to agree on the format, and
+    // when the id scheme changed one of them was wrong.
+    const th = threads.find((x) => x.member_id === m.member_id);
     if (!th) { openMember(m); return; }
     router.push({
       pathname: '/conversation',
-      params: { thread: th, title: m.name, adults: isParent ? '1' : '0' },
+      params: { thread: th.thread, title: m.name, adults: th.is_adults ? '1' : '0' },
     });
-  }, [router, openMember]);
+  }, [router, openMember, threads]);
 
   // A kid/teen opens as their own page: the roster steps aside and this one
   // child's full detail (stars, chores, rewards, pocket money) fills the screen,
@@ -1210,14 +1210,14 @@ export default function Kids() {
                 <ChevronLeft color={ui.text} size={22} />
               </PressScale>
               <Text style={styles.focusTitle} numberOfLines={1}>{activeChild.name}</Text>
-              {/* Only a teen has a thread to open. A managed child has no device
-                  and no inbox, so a Message button here could only ever lead
-                  somewhere else — it opened the teen invite sheet, which asks
-                  for an age of 13 to 17 and reads as nonsense on a six-year-old.
-                  Giving a child their own account still lives in their wallet
-                  card below, where it is labelled as what it is. */}
-              {activeChild.role?.toLowerCase() === 'teen' ? (
-                <PressScale testID="child-message" onPress={() => openMember(activeChild)} style={styles.focusMsg} accessibilityLabel={t('hub_tab_chat')}>
+              {/* A teen opens their own conversation; a young child opens the
+                  note thread a parent writes to them, which they read in kid
+                  mode. Either way the button only appears when the server has
+                  actually given us a conversation for this person — it used to
+                  open the teen invite sheet on a six-year-old, which is how a
+                  button that led nowhere got shipped. */}
+              {threads.some((x) => x.member_id === activeChild.member_id) ? (
+                <PressScale testID="child-message" onPress={() => openThread(activeChild)} style={styles.focusMsg} accessibilityLabel={t('hub_tab_chat')}>
                   <MessageCircle color={ui.orangeText} size={18} />
                 </PressScale>
               ) : (
@@ -1257,9 +1257,13 @@ export default function Kids() {
                 const badgeLabel = isParent
                   ? (m.is_founder ? t('hub_role_owner') : t('hub_role_coparent'))
                   : isHelper ? t('hub_role_helper') : m.role;
-                const unread = isParent ? (adultsThread?.unread || 0) : 0;
+                // Anyone the server gave us a conversation with can be messaged
+                // from the roster — a co-parent, and now a helper too.
+                const memberThread = threads.find((x) => x.member_id === m.member_id);
+                const hasThread = Boolean(memberThread);
+                const unread = memberThread?.unread || 0;
                 const sub = isParent
-                  ? (adultsThread?.last_text || t('hub_coparent_sub'))
+                  ? (memberThread?.last_text || t('hub_coparent_sub'))
                   : isHelper ? t('hub_helper_sub') : t('hub_member_sub');
                 return (
                   <PressScale
@@ -1286,7 +1290,7 @@ export default function Kids() {
                       </View>
                       <Text style={styles.hubSub} numberOfLines={1}>{sub}</Text>
                     </View>
-                    {isParent ? (
+                    {hasThread ? (
                       <PressScale
                         testID={`hub-message-${m.member_id}`}
                         onPress={() => openThread(m)}
