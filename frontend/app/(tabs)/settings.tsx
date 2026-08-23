@@ -16,7 +16,6 @@ import {
   Mail,
   MessageSquare,
   PenLine,
-  Receipt,
   RotateCcw,
   Search as SearchIcon,
   Send,
@@ -40,7 +39,7 @@ import { PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { Card, Chevron, Divider, IconTile, MiniRow, NavRow, ScreenHeader, StatBox, ToggleRow, useUI, UIColors } from '../../src/components/Kit';
 import { useStore } from '../../src/store';
 import { openReview } from '../../src/reviewPrompt';
-import { api, Card as CardType, Entitlements, Expense, ExpenseSummary, FamilyInvite, FamilyMember, NotificationSettings } from '../../src/api';
+import { api, Card as CardType, Entitlements, ExpenseSummary, FamilyInvite, FamilyMember, NotificationSettings } from '../../src/api';
 import { LANG_NAMES } from '../../src/i18n';
 import { appVersionInfo, ensureNotificationPermissions, registerForPushNotificationsAsync, sendLocalNotification, sendTestScheduledReminderNotification, syncCardReminderNotifications } from '../../src/notifications';
 import { logger } from '../../src/logger';
@@ -87,14 +86,7 @@ export default function Settings() {
   const [savingNotifications, setSavingNotifications] = useState(false);
   const [entitlements, setEntitlements] = useState<Entitlements | null>(null);
   const [completedCards, setCompletedCards] = useState<CardType[]>([]);
-  const [expenses, setExpenses] = useState<Expense[]>([]);
   const [expenseSummary, setExpenseSummary] = useState<ExpenseSummary | null>(null);
-  const [expandExpenses, setExpandExpenses] = useState(false);
-  const [showExpenseAdd, setShowExpenseAdd] = useState(false);
-  const [expDesc, setExpDesc] = useState('');
-  const [expAmount, setExpAmount] = useState('');
-  const [expCategory, setExpCategory] = useState('Groceries');
-  const [savingExpense, setSavingExpense] = useState(false);
 
   const [refreshing, setRefreshing] = useState(false);
   const [expandMembers, setExpandMembers] = useState(false);
@@ -134,12 +126,7 @@ export default function Settings() {
       setEntitlements(entitlementRows);
       setCompletedCards(completedRows);
 
-      Promise.allSettled([api.listExpenses(), api.getExpenseSummary()])
-        .then(([expRes, sumRes]) => {
-          if (expRes.status === 'fulfilled') setExpenses(expRes.value);
-          if (sumRes.status === 'fulfilled') setExpenseSummary(sumRes.value);
-        })
-        .catch(() => undefined);
+      api.getExpenseSummary().then(setExpenseSummary).catch(() => undefined);
     } catch (error) {
       logger.warn('settings load failed', error);
     }
@@ -367,37 +354,6 @@ export default function Settings() {
     setNotificationStatus(t('set_test_alert_sent'));
   }, []);
 
-  const addExpense = useCallback(async () => {
-    const amt = parseFloat(expAmount);
-    if (!expDesc.trim() || isNaN(amt) || amt <= 0) return;
-    setSavingExpense(true);
-    try {
-      const created = await api.addExpense({ description: expDesc.trim(), amount: amt, category: expCategory });
-      setExpenses((prev) => [created, ...prev]);
-      setExpDesc('');
-      setExpAmount('');
-      setShowExpenseAdd(false);
-      const sum = await api.getExpenseSummary().catch(() => null);
-      if (sum) setExpenseSummary(sum);
-    } catch {
-      Alert.alert(t('set_error'), t('set_add_expense_error'));
-    } finally {
-      setSavingExpense(false);
-    }
-  }, [expDesc, expAmount, expCategory]);
-
-  const removeExpense = useCallback(async (id: string) => {
-    setExpenses((prev) => prev.filter((e) => e.expense_id !== id));
-    try {
-      await api.deleteExpense(id);
-      const sum = await api.getExpenseSummary().catch(() => null);
-      if (sum) setExpenseSummary(sum);
-    } catch {
-      load();
-    }
-  }, [load]);
-
-  const EXPENSE_CATS = ['Groceries', 'School', 'Medical', 'Activities', 'Childcare', 'Other'];
 
   const doLogout = async () => {
     await logout();
@@ -833,59 +789,21 @@ export default function Settings() {
             />
           </Card>
 
-          {/* Shared expenses — folded into the Household group */}
+          {/* House expenses. A door, not a drawer: the whole picture — by month,
+              by shop, and who paid — lives on one screen rather than half here
+              and half somewhere else. */}
           <Card style={[styles.cardPad, styles.subCardGap]}>
             <NavRow
-              testID="settings-expenses-toggle"
+              testID="settings-expenses-open"
               tile={<IconTile bg={ui.gold}><DollarSign color={ui.goldText} size={18} /></IconTile>}
               title={t('set_household_expenses')}
-              subtitle={expenseSummary ? `${t('currency_symbol')}${expenseSummary.total.toFixed(0)} ${t('set_last_n_days', { n: expenseSummary.days })}` : t('set_track_shared_costs')}
-              right={<Chevron open={expandExpenses} />}
-              onPress={() => setExpandExpenses((v) => !v)}
+              subtitle={expenseSummary
+                ? `${t('currency_symbol')}${expenseSummary.total.toFixed(0)} ${t('set_last_n_days', { n: expenseSummary.days })}`
+                : t('set_track_shared_costs')}
+              right={<ChevronRight color={ui.muted} size={18} />}
+              onPress={() => router.push('/expenses')}
               divider={false}
             />
-            {expandExpenses ? (
-              <View style={styles.expandBox}>
-                {expenseSummary && Object.keys(expenseSummary.by_person).length > 0 ? (
-                  <View style={styles.expSummary}>
-                    {Object.entries(expenseSummary.by_person).map(([name, amount]) => (
-                      <View key={name} style={styles.expSumRow}>
-                        <Text style={styles.expSumName}>{name}</Text>
-                        <Text style={styles.expSumAmt}>${amount.toFixed(2)}</Text>
-                      </View>
-                    ))}
-                  </View>
-                ) : null}
-                {expenses.slice(0, 8).map((exp) => (
-                  <View key={exp.expense_id} style={styles.inviteRow}>
-                    <MiniRow
-                      initial="$"
-                      name={exp.description}
-                      sub={`${t('currency_symbol')}${exp.amount.toFixed(2)} · ${exp.category} · ${exp.paid_by_name}`}
-                    />
-                    <PressScale
-                  accessibilityRole="button"
-                  accessibilityLabel={t('a11y_delete')} onPress={() => removeExpense(exp.expense_id)} hitSlop={12} style={{ padding: 4 }}>
-                      <Trash2 color={ui.muted} size={15} />
-                    </PressScale>
-                  </View>
-                ))}
-                {expenses.length === 0 ? <Text style={styles.emptyText}>{t('set_no_expenses')}</Text> : null}
-                <PressScale
-                  testID="add-expense"
-                  onPress={() => {
-                    setExpDesc('');
-                    setExpAmount('');
-                    setExpCategory('Groceries');
-                    setShowExpenseAdd(true);
-                  }}
-                  style={styles.expandAction}
-                >
-                  <Receipt color={ui.text} size={18} />
-                  <Text style={styles.expandActionText}>{t('set_add_expense')}</Text>
-                </PressScale>
-              </View>
-            ) : null}
           </Card>
 
           </>) : null}
@@ -1283,57 +1201,6 @@ export default function Settings() {
         </View>
       </KeyboardAwareBottomSheet>
 
-      <KeyboardAwareBottomSheet visible={showExpenseAdd} onClose={() => setShowExpenseAdd(false)} contentStyle={styles.sheet}>
-        <View style={styles.sheetHeader}>
-          <Text style={styles.sheetTitle}>{t('set_add_expense_title')}</Text>
-          <PressScale
-                  accessibilityRole="button"
-                  accessibilityLabel={t('close')} testID="close-expense" onPress={() => setShowExpenseAdd(false)} style={styles.iconBtn}>
-            <X color={ui.text} size={22} />
-          </PressScale>
-        </View>
-        <Text style={styles.sheetHelp}>{t('set_expense_help')}</Text>
-        <TextInput
-          testID="expense-desc"
-          value={expDesc}
-          onChangeText={setExpDesc}
-          placeholder={t('set_expense_desc_placeholder')}
-          placeholderTextColor={ui.muted}
-          style={styles.input}
-          returnKeyType="next"
-        />
-        <TextInput
-          testID="expense-amount"
-          value={expAmount}
-          onChangeText={setExpAmount}
-          placeholder={t('set_expense_amount_placeholder')}
-          placeholderTextColor={ui.muted}
-          keyboardType="decimal-pad"
-          style={[styles.input, { marginTop: 10 }]}
-          returnKeyType="done"
-        />
-        <View style={styles.expCatRow}>
-          {EXPENSE_CATS.map((cat) => (
-            <PressScale key={cat} onPress={() => setExpCategory(cat)} style={[styles.expCatChip, expCategory === cat && styles.expCatChipActive]}>
-              <Text style={[styles.expCatChipText, expCategory === cat && styles.expCatChipTextActive]}>{cat}</Text>
-            </PressScale>
-          ))}
-        </View>
-        <View style={styles.sheetFooter}>
-          <PressScale onPress={() => setShowExpenseAdd(false)} style={styles.cancelBtn}>
-            <Text style={styles.cancelText}>{t('cancel')}</Text>
-          </PressScale>
-          <PressScale
-            testID="save-expense"
-            onPress={addExpense}
-            disabled={savingExpense || !expDesc.trim() || !expAmount.trim()}
-            style={[styles.primaryButton, (savingExpense || !expDesc.trim() || !expAmount.trim()) && { opacity: 0.5 }]}
-          >
-            <DollarSign color="#FFFFFF" size={18} />
-            <Text style={styles.primaryButtonText}>{savingExpense ? t('set_saving') : t('set_add_expense')}</Text>
-          </PressScale>
-        </View>
-      </KeyboardAwareBottomSheet>
       <AppToast visible={Boolean(toast)} message={toast?.message || null} tone={toast?.tone || 'info'} />
     </SwipeableTabView>
   );

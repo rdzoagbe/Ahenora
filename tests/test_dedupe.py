@@ -151,6 +151,34 @@ class DedupeTests(unittest.TestCase):
         self.assertEqual([t["token"] for t in db["notification_tokens"].rows], ["live"])
         self.assertEqual(db["notification_settings"].rows, [])
 
+    def test_a_google_identity_is_not_linked_while_the_duplicate_survives(self):
+        # Google sign-in resolves an account by google_sub alone. If the keeper
+        # is given the sub while the duplicate keeps its own, two rows answer to
+        # one sign-in and which household the person lands in is whichever the
+        # database returns first. Leaving it alone keeps them landing somewhere
+        # consistent, which is the better of two imperfect states.
+        db = self._base()
+        db["cards"].rows.append({"family_id": "fam_B", "title": "Real event in the dup family"})
+        summary = asyncio.run(dd.run(db, apply=True, log=lambda *a: None))
+        self.assertEqual(summary["linked"], 0)
+        self.assertEqual(summary["removed"], 0)
+        self.assertEqual(summary["manual"], 1)
+        keeper = [u for u in db["users"].rows if u["user_id"] == "u_pw"][0]
+        self.assertNotIn("google_sub", keeper)
+        # And the duplicate still holds it, so sign-in behaves exactly as before.
+        dup = [u for u in db["users"].rows if u["user_id"] == "u_g"][0]
+        self.assertEqual(dup["google_sub"], "g1")
+
+    def test_a_google_identity_IS_linked_when_the_duplicate_goes_away(self):
+        # The whole point of the cleanup, and safe precisely because the row
+        # carrying the other copy of the identity is deleted in the same pass.
+        db = self._base()
+        summary = asyncio.run(dd.run(db, apply=True, log=lambda *a: None))
+        self.assertEqual(summary["linked"], 1)
+        self.assertEqual(summary["removed"], 1)
+        self.assertEqual([u["user_id"] for u in db["users"].rows], ["u_pw"])
+        self.assertEqual(db["users"].rows[0]["google_sub"], "g1")
+
     def test_idempotent_second_run_is_a_noop(self):
         db = self._base()
         asyncio.run(dd.run(db, apply=True, log=lambda *a: None))
