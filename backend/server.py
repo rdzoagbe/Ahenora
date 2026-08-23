@@ -44,6 +44,7 @@ from ai_safety import (
     extract_json,
     sanitize_ingredients,
     sanitize_user_text,
+    sanitize_message_text,
     validate_recipe,
     CHEF_SYSTEM_PROMPT,
     MAX_QUESTION_LEN,
@@ -395,6 +396,39 @@ def verify_password(password: str, stored: str) -> bool:
         return secrets.compare_digest(dk.hex(), hexhash)
     except Exception:
         return False
+
+
+# A PIN used to be stored as a bare sha256 of the four digits. That is only
+# 10,000 possible hashes with no salt, so a copy of the database gave up every
+# child's PIN at once, and two families who picked 1234 were visibly the same
+# row. Salted PBKDF2 makes a leaked PIN cost work rather than a lookup table.
+# Old hashes still verify, and are rewritten the next time they are used
+# correctly, so nobody is locked out by the change.
+def hash_pin(pin: str) -> str:
+    return hash_password(pin)
+
+
+def verify_pin(pin: str, stored: str) -> bool:
+    if not stored:
+        return False
+    if stored.startswith("pbkdf2_sha256$"):
+        return verify_password(pin, stored)
+    return secrets.compare_digest(sha256(pin), stored)
+
+
+def pin_is_legacy(stored: str) -> bool:
+    return bool(stored) and not stored.startswith("pbkdf2_sha256$")
+
+
+async def _verify_pin_and_upgrade(database, member: dict, pin: str) -> bool:
+    """Check a PIN, and quietly re-store it salted if it was an old bare hash."""
+    stored = member.get("pin_hash") or ""
+    if not verify_pin(pin, stored):
+        return False
+    if pin_is_legacy(stored):
+        await database["family_members"].update_one(
+            {"member_id": member["member_id"]}, {"$set": {"pin_hash": hash_pin(pin)}})
+    return True
 
 
 async def _touch_session(database, token_hash: str, session: dict) -> None:
@@ -3621,7 +3655,7 @@ async def create_family_member(payload: ChildIn, user=Depends(require_full_membe
         "role": "Child",
         "avatar": None,
         "stars": starting_stars,
-        "pin_hash": sha256(pin) if pin else None,
+        "pin_hash": hash_pin(pin) if pin else None,
         "created_at": utcnow(),
     }
     await database["family_members"].insert_one(member)
@@ -4137,7 +4171,7 @@ async def set_member_pin(member_id: str, payload: PinIn, user=Depends(require_fu
     if pin and (len(pin) != 4 or not pin.isdigit()):
         raise HTTPException(status_code=400, detail="PIN must be exactly 4 digits")
 
-    pin_hash = sha256(pin) if pin else None
+    pin_hash = hash_pin(pin) if pin else None
     await database["family_members"].update_one(
         {"member_id": member_id, "family_id": user["family_id"]},
         {"$set": {"pin_hash": pin_hash}},
@@ -4180,7 +4214,7 @@ async def verify_member_pin(member_id: str, payload: PinIn, user=Depends(require
     if _auth_locked(identity):
         raise HTTPException(status_code=429, detail="Too many attempts. Please try again later.")
 
-    if not secrets.compare_digest(sha256(payload.pin.strip()), member["pin_hash"]):
+    if not await _verify_pin_and_upgrade(database, member, payload.pin.strip()):
         _auth_record_fail(identity)
         raise HTTPException(status_code=401, detail="Invalid PIN")
 
@@ -4633,12 +4667,15 @@ async def require_child(authorization: str = Header(default="")):
             "parent_user_id": session.get("user_id")}
 
 
-async def _family_parent_pin_hashes(database, family_id: str) -> list:
-    hashes = []
+async def _family_parent_pin_members(database, family_id: str) -> list:
+    """The grown-ups in this family who have set a PIN. Whole rows, not just the
+    hashes: a PIN stored in the old bare-hash form is upgraded when it is used,
+    and that needs to know which member it belonged to."""
+    members = []
     async for m in database["family_members"].find({"family_id": family_id}, {"_id": 0}):
         if (m.get("role") or "").lower() != "child" and m.get("pin_hash"):
-            hashes.append(m["pin_hash"])
-    return hashes
+            members.append(m)
+    return members
 
 
 @app.get("/api/family/profiles")
@@ -4674,13 +4711,13 @@ async def start_kid_session(payload: ChildSessionIn, user=Depends(require_user))
         raise HTTPException(status_code=404, detail="Child not found")
     if not member.get("pin_hash"):
         raise HTTPException(status_code=400, detail="This child has no PIN yet")
-    if not await _family_parent_pin_hashes(database, user["family_id"]):
+    if not await _family_parent_pin_members(database, user["family_id"]):
         raise HTTPException(status_code=400, detail="Set a parent PIN first")
 
     identity = f"kid:{member['member_id']}"
     if _auth_locked(identity):
         raise HTTPException(status_code=429, detail="Too many attempts. Please try again later.")
-    if not secrets.compare_digest(sha256(payload.pin.strip()), member["pin_hash"]):
+    if not await _verify_pin_and_upgrade(database, member, payload.pin.strip()):
         _auth_record_fail(identity)
         raise HTTPException(status_code=401, detail="Invalid PIN")
     _auth_clear(identity)
@@ -4705,12 +4742,18 @@ async def exit_kid_session(payload: ParentPinIn, child=Depends(require_child),
                            authorization: str = Header(default="")):
     """Leave kid mode. A grown-up's PIN, so a child cannot let themselves out."""
     database = get_db()
-    hashes = await _family_parent_pin_hashes(database, child["family_id"])
+    grownups = await _family_parent_pin_members(database, child["family_id"])
     identity = f"kidexit:{child['family_id']}"
     if _auth_locked(identity):
         raise HTTPException(status_code=429, detail="Too many attempts. Please try again later.")
-    given = sha256(payload.pin.strip())
-    if not any(secrets.compare_digest(given, h) for h in hashes):
+    given = payload.pin.strip()
+    # Every grown-up's PIN is checked, not just the first that matches, so the
+    # work done does not depend on whose PIN was typed.
+    matched = False
+    for m in grownups:
+        if await _verify_pin_and_upgrade(database, m, given):
+            matched = True
+    if not matched:
         _auth_record_fail(identity)
         raise HTTPException(status_code=401, detail="Invalid PIN")
     _auth_clear(identity)
@@ -5072,7 +5115,7 @@ async def _require_thread_member(database, family_id: str, thread: str, user_id:
 
 async def _chat_insert(database, family_id: str, thread: str, sender_user_id: str,
                        sender_kind: str, sender_name: str, text: str) -> dict:
-    clean = sanitize_user_text(text or "", MAX_CHAT_LEN)
+    clean = sanitize_message_text(text or "", MAX_CHAT_LEN)
     if not clean:
         raise HTTPException(status_code=400, detail="Message can\'t be empty.")
     msg = {

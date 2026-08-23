@@ -4,6 +4,29 @@ sign-in. Kept dependency-free (no server import, no motor) so both the CLI
 
 See scripts/dedupe_accounts.py for the full background."""
 
+# Kept in step with _FAMILY_SCOPED_COLLECTIONS / _purge_user_account in
+# server.py. They are duplicated rather than imported because server.py imports
+# this module, and a cycle here would take the whole API down on boot.
+
+# Rows keyed by the user themselves. A duplicate's row in each of these must go
+# with the user: a stale notification_token keeps pushing to a real phone for an
+# account that no longer exists, which is how a "cleanup" becomes a bug report.
+USER_SCOPED_COLLECTIONS = [
+    "user_sessions", "notification_tokens", "notification_settings",
+    "password_resets", "family_members",
+]
+
+# Everything scoped to a family, for emptying the hollow one before deleting it.
+# Deleting by family_id from a collection without the field is a harmless no-op,
+# so erring long is safe here; erring short leaves orphans.
+FAMILY_SCOPED_COLLECTIONS = [
+    "activity", "allowance_txns", "allowances", "announcements", "calendar_contacts",
+    "cards", "carpools", "chore_logs", "chores", "expenses", "family_invites",
+    "family_members", "handoff_notes", "meal_plans_saved", "meals", "messages",
+    "redemptions", "rewards", "routine_logs", "routines", "shopping_history",
+    "shopping_list", "star_transactions", "templates", "vault",
+]
+
 # family_id-scoped collections whose presence means a family was really used.
 # A duplicate's family is only deletable when every one of these is empty for it.
 CONTENT_COLLECTIONS = [
@@ -14,6 +37,15 @@ CONTENT_COLLECTIONS = [
 ]
 
 
+def _family_carries_money(fam):
+    """True if this family is or was a paying one. RevenueCat stamps rc_* on every
+    subscriber event, so their presence outlives a lapsed plan — which is exactly
+    when we least want to throw the row away."""
+    if (fam.get("plan") or "village") != "village":
+        return True
+    return any(k.startswith("rc_") for k in fam)
+
+
 def _keeper_sort_key(u):
     # Password accounts first (the real sign-up), then oldest created_at.
     return (0 if u.get("password_hash") else 1, str(u.get("created_at") or ""))
@@ -21,8 +53,15 @@ def _keeper_sort_key(u):
 
 async def family_is_empty_shell(db, family_id):
     """True when a family has no real content and at most one member — i.e. the
-    hollow family auto-created for a duplicate account, safe to delete."""
+    hollow family auto-created for a duplicate account, safe to delete.
+
+    A family that has ever carried a paid plan is never a shell, however empty it
+    looks. The subscription lives on the family document, so deleting one because
+    it holds no chores would delete the record of somebody's money."""
     if not family_id:
+        return False
+    fam = await db["families"].find_one({"family_id": family_id})
+    if fam and _family_carries_money(fam):
         return False
     members = 0
     async for _ in db["family_members"].find({"family_id": family_id}):
@@ -68,6 +107,12 @@ async def run(db, apply=False, log=print):
             same_family = d.get("family_id") == keeper.get("family_id")
             gs = d.get("google_sub")
 
+            if gs and keeper.get("google_sub") and keeper["google_sub"] != gs:
+                log(f"  - MANUAL REVIEW: duplicate {d['user_id']} carries a different "
+                    f"google_sub than the keeper — not touched")
+                summary["manual"] += 1
+                continue
+
             if gs and not keeper.get("google_sub"):
                 log(f"  - link google_sub {gs} -> keeper {keeper['user_id']}")
                 summary["linked"] += 1
@@ -82,12 +127,13 @@ async def run(db, apply=False, log=print):
                     + ("" if same_family else f" + empty family {d.get('family_id')}"))
                 summary["removed"] += 1
                 if apply:
+                    for coll in USER_SCOPED_COLLECTIONS:
+                        await db[coll].delete_many({"user_id": d["user_id"]})
                     await db["users"].delete_one({"user_id": d["user_id"]})
-                    await db["user_sessions"].delete_many({"user_id": d["user_id"]})
-                    await db["family_members"].delete_many({"user_id": d["user_id"]})
                     if not same_family:
+                        for coll in FAMILY_SCOPED_COLLECTIONS:
+                            await db[coll].delete_many({"family_id": d.get("family_id")})
                         await db["families"].delete_one({"family_id": d.get("family_id")})
-                        await db["family_members"].delete_many({"family_id": d.get("family_id")})
             else:
                 log(f"  - MANUAL REVIEW: duplicate {d['user_id']} family "
                     f"{d.get('family_id')} holds real data — not touched")

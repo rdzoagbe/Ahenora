@@ -48,6 +48,10 @@ _INJECTION_RE = re.compile("|".join(_INJECTION_PATTERNS), re.IGNORECASE)
 # from a human reviewer while the model still reads it.
 _INVISIBLE_RE = re.compile(r"[​-‏‪-‮⁠-⁯﻿]")
 
+# A message between two people in a family is not a prompt, and must not be
+# cleaned as if it were. See sanitize_message_text.
+MAX_MESSAGE_LEN = 2000
+
 MAX_TITLE_LEN = 80
 MAX_INGREDIENT_LEN = 40
 MAX_INGREDIENTS = 20
@@ -74,6 +78,38 @@ def sanitize_user_text(value: str, max_len: int = MAX_TITLE_LEN) -> str:
     text = _INJECTION_RE.sub(" ", text)
     text = re.sub(r"\s+", " ", text).strip()
     return text[:max_len]
+
+
+def sanitize_message_text(value: str, max_len: int = MAX_MESSAGE_LEN) -> str:
+    """Clean a message one person is sending another. Deliberately NOT the same
+    as sanitize_user_text.
+
+    That function prepares text to sit inside a prompt, so it deletes phrases
+    that could address a model and flattens every newline. Applied to family
+    chat it quietly edited what people said — a parent writing "you are now
+    officially a teenager" lost half the sentence — and turned every message
+    into one paragraph. Chat text never reaches a model, so none of that buys
+    anything; it only makes the app untrustworthy in the one place a family is
+    talking to each other.
+
+    What is still removed: zero-width and bidirectional-override characters,
+    which can make displayed text differ from stored text, and control
+    characters other than the newline. Everything a person actually typed is
+    kept, including their paragraphs.
+    """
+    if not value:
+        return ""
+
+    text = unicodedata.normalize("NFKC", str(value))
+    text = _INVISIBLE_RE.sub("", text)
+    text = "".join(
+        ch if ch in (" ", "\n") or not unicodedata.category(ch).startswith("C") else " "
+        for ch in text
+    )
+    text = re.sub(r"[^\S\n]+", " ", text)          # runs of spaces, not newlines
+    text = re.sub(r"[ ]*\n[ ]*", "\n", text)         # no trailing space on a line
+    text = re.sub(r"\n{3,}", "\n\n", text)           # at most one blank line
+    return text.strip()[:max_len]
 
 
 def sanitize_ingredients(values: list) -> list:

@@ -205,3 +205,32 @@ class FamilyChat(unittest.TestCase):
             asyncio.run(server.teen_chat_send(
                 payload=server.ChatMessageIn(text="   "), teen=self._teen("u_t", "Ama")))
         self.assertEqual(ctx.exception.status_code, 400)
+
+
+@unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
+class MessageTextIsNotAPrompt(unittest.TestCase):
+    """Chat was being cleaned with the sanitiser written for AI prompts, which
+    deletes phrases that could address a model and flattens every newline. In a
+    family conversation that silently edits what people said."""
+
+    def test_it_keeps_what_a_person_actually_wrote(self):
+        from ai_safety import sanitize_message_text
+        said = "You are now officially a teenager! Act as a grown-up, please 🎉"
+        self.assertEqual(sanitize_message_text(said), said)
+
+    def test_it_keeps_paragraphs(self):
+        from ai_safety import sanitize_message_text
+        self.assertEqual(sanitize_message_text("Dinner at 6.\n\nBring the dog."),
+                         "Dinner at 6.\n\nBring the dog.")
+
+    def test_it_still_strips_what_can_lie_about_itself(self):
+        from ai_safety import sanitize_message_text
+        # Zero-width and bidi-override characters make displayed text differ
+        # from stored text; control characters have no place in a message.
+        self.assertEqual(sanitize_message_text("he​llo‮"), "hello")
+        self.assertEqual(sanitize_message_text("a\x00b"), "a b")
+
+    def test_it_tidies_runaway_whitespace_and_caps_length(self):
+        from ai_safety import sanitize_message_text
+        self.assertEqual(sanitize_message_text("  a   b  \n\n\n\n c  "), "a b\n\nc")
+        self.assertEqual(len(sanitize_message_text("x" * 5000)), 2000)

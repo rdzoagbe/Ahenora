@@ -114,6 +114,43 @@ class DedupeTests(unittest.TestCase):
         # Both accounts still exist — nothing destructive happened.
         self.assertEqual(len(db["users"].rows), 2)
 
+    def test_a_paying_family_is_never_treated_as_an_empty_shell(self):
+        # The subscription lives on the family document, so "no chores in it"
+        # is not the same as "safe to delete" — that would be deleting the
+        # record of somebody's money.
+        db = self._base()
+        for fam in db["families"].rows:
+            if fam["family_id"] == "fam_B":
+                fam["plan"] = "executive"
+                fam["rc_last_event"] = "INITIAL_PURCHASE"
+        summary = asyncio.run(dd.run(db, apply=True, log=lambda *a: None))
+        self.assertEqual(summary["removed"], 0)
+        self.assertEqual(summary["manual"], 1)
+        self.assertEqual(len(db["users"].rows), 2)
+        self.assertEqual(len(db["families"].rows), 2)
+
+    def test_a_conflicting_google_sub_is_left_for_manual_review(self):
+        # Two different Google identities under one inbox is a fact we cannot
+        # merge away: dropping the duplicate would silently lose one of them.
+        db = self._base()
+        db["users"].rows[0]["google_sub"] = "g_other"
+        summary = asyncio.run(dd.run(db, apply=True, log=lambda *a: None))
+        self.assertEqual(summary["removed"], 0)
+        self.assertEqual(summary["linked"], 0)
+        self.assertEqual(summary["manual"], 1)
+        self.assertEqual(len(db["users"].rows), 2)
+
+    def test_the_duplicates_push_tokens_go_with_it(self):
+        # A notification_token left behind keeps pushing to a real phone for an
+        # account that no longer exists.
+        db = self._base()
+        db["notification_tokens"].rows.extend([
+            {"user_id": "u_g", "token": "dead"}, {"user_id": "u_pw", "token": "live"}])
+        db["notification_settings"].rows.append({"user_id": "u_g"})
+        asyncio.run(dd.run(db, apply=True, log=lambda *a: None))
+        self.assertEqual([t["token"] for t in db["notification_tokens"].rows], ["live"])
+        self.assertEqual(db["notification_settings"].rows, [])
+
     def test_idempotent_second_run_is_a_noop(self):
         db = self._base()
         asyncio.run(dd.run(db, apply=True, log=lambda *a: None))
