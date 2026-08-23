@@ -491,7 +491,46 @@ export interface Expense {
   child_name?: string;
   paid_by_name: string;
   paid_by_user_id?: string;
+  /** The tidied shop name — "Carrefour", not "CARREFOUR CITY 14EME". */
+  merchant?: string | null;
+  /** The date on the receipt (YYYY-MM-DD), which is not always the day it was added. */
+  spent_on: string;
   created_at: string;
+}
+
+export interface MerchantRow {
+  merchant: string;
+  total: number;
+  visits: number;
+  average: number;
+}
+
+export interface ExpenseMonth {
+  month: string;            // YYYY-MM
+  total: number;
+  /** How many receipts this total is built from. A total without its coverage misleads. */
+  count: number;
+  /** False for the month still running — which is never compared to a finished one. */
+  complete: boolean;
+  by_merchant: MerchantRow[];
+  /** Who paid, for co-parents settling up — the job this screen has always done. */
+  by_person: Record<string, number>;
+}
+
+export interface ExpenseOverview {
+  category: string | null;
+  months: ExpenseMonth[];
+  current: ExpenseMonth;
+  days_into_month: number;
+  /** Null until three finished months exist to average. */
+  comparison: {
+    month: string;
+    total: number;
+    usual: number;
+    difference: number;
+    basis_months: string[];
+  } | null;
+  range: { months: number; total: number; count: number; by_merchant: MerchantRow[] };
 }
 
 export interface ExpenseSummary {
@@ -1678,7 +1717,13 @@ export const api = {
   // Expenses
   listExpenses: (days = 30) => request<Expense[]>(`/expenses?days=${days}`),
   getExpenseSummary: (days = 30) => request<ExpenseSummary>(`/expenses/summary?days=${days}`),
-  addExpense: (data: { description: string; amount: number; category?: string; child_member_id?: string }) =>
+  getExpenseOverview: (months = 6, category?: string) =>
+    request<ExpenseOverview>(
+      `/expenses/overview?months=${months}` + (category ? `&category=${encodeURIComponent(category)}` : '')),
+  addExpense: (data: {
+    description?: string; amount: number; category?: string; child_member_id?: string;
+    merchant?: string; spent_on?: string;
+  }) =>
     request<Expense>('/expenses', { method: 'POST', body: data }),
   deleteExpense: (expenseId: string) =>
     request<{ ok: boolean }>(`/expenses/${expenseId}`, { method: 'DELETE' }),

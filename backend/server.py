@@ -1424,6 +1424,84 @@ def public_shopping_item(item: dict) -> dict:
     }
 
 
+# Till slips do not print clean shop names. A ticket says "CARREFOUR CITY 14EME",
+# "AUCHAN RETAIL FRANCE SAS 0472" or "LIDL SARL 4402", and if we store what is
+# printed then six months of shopping shows eleven different Carrefours and the
+# per-shop view is worthless. Known chains collapse to one canonical spelling;
+# anything else is kept close to what the person typed, because guessing at an
+# unknown name is worse than leaving it alone.
+_MERCHANT_CHAINS = {
+    # France / Belgium
+    "carrefour": "Carrefour", "auchan": "Auchan", "leclerc": "E.Leclerc",
+    "intermarche": "Intermarché", "monoprix": "Monoprix", "franprix": "Franprix",
+    "casino": "Casino", "cora": "Cora", "colruyt": "Colruyt", "delhaize": "Delhaize",
+    "picard": "Picard", "grand frais": "Grand Frais", "super u": "Super U",
+    "hyper u": "Hyper U", "u express": "U Express",
+    # Discounters, everywhere
+    "lidl": "Lidl", "aldi": "Aldi", "netto": "Netto", "penny": "Penny",
+    "dia": "Dia", "action": "Action",
+    # Germany / NL / CH
+    "rewe": "Rewe", "edeka": "Edeka", "kaufland": "Kaufland", "dm": "dm",
+    "rossmann": "Rossmann", "albert heijn": "Albert Heijn", "jumbo": "Jumbo",
+    "migros": "Migros", "coop": "Coop",
+    # UK
+    "tesco": "Tesco", "sainsbury": "Sainsbury's", "asda": "Asda",
+    "morrisons": "Morrisons", "waitrose": "Waitrose", "co-op": "Co-op",
+    "marks spencer": "Marks & Spencer", "iceland": "Iceland",
+    # Spain / Portugal
+    "mercadona": "Mercadona", "carrefour express": "Carrefour",
+    "continente": "Continente", "pingo doce": "Pingo Doce",
+    # US
+    "walmart": "Walmart", "target": "Target", "costco": "Costco",
+    "kroger": "Kroger", "trader joe": "Trader Joe\'s", "whole foods": "Whole Foods",
+    "safeway": "Safeway", "publix": "Publix", "aldi usa": "Aldi",
+    # Not a shop, but it turns up on household receipts constantly
+    "amazon": "Amazon", "ikea": "IKEA",
+}
+
+MAX_MERCHANT_LEN = 60
+
+
+def tidy_merchant(raw: Optional[str]) -> Optional[str]:
+    """Collapse a printed shop name to the brand behind it."""
+    text = sanitize_message_text(str(raw or ""), MAX_MERCHANT_LEN).replace("\n", " ").strip()
+    if not text:
+        return None
+
+    # Normalise for matching only: lowercase, punctuation and digits to spaces.
+    norm = " " + re.sub(r"[^a-z]+", " ", text.lower()).strip() + " "
+    # Longest chain key first, so "carrefour express" wins over "carrefour" and
+    # "super u" is never mistaken for a stray letter.
+    for key in sorted(_MERCHANT_CHAINS, key=len, reverse=True):
+        needle = " " + re.sub(r"[^a-z]+", " ", key).strip() + " "
+        if needle in norm:
+            return _MERCHANT_CHAINS[key]
+
+    # Unknown shop: drop the trailing branch/store number, tidy the shouting.
+    cleaned = re.sub(r"[\s\-#]*\d{2,}\s*$", "", text).strip() or text
+    return cleaned.title() if cleaned.isupper() else cleaned
+
+
+def parse_spent_on(value: Optional[str], fallback: datetime) -> datetime:
+    """A YYYY-MM-DD from the receipt, kept as date-only at midnight UTC.
+
+    Date-only on purpose: a month total must not move because the family flew to
+    another timezone, and the day printed on a ticket has no clock attached to it.
+    A date in the future, or one absurdly far back, is refused in favour of the
+    fallback rather than quietly landing in a month nobody will look at again.
+    """
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = datetime.strptime(value.strip()[:10], "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        except ValueError:
+            parsed = None
+        if parsed is not None:
+            today = fallback.replace(hour=0, minute=0, second=0, microsecond=0)
+            if today - timedelta(days=3650) <= parsed <= today + timedelta(days=1):
+                return parsed
+    return fallback.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
 def public_expense(exp: dict) -> dict:
     return {
         "expense_id": exp["expense_id"],
@@ -1435,6 +1513,10 @@ def public_expense(exp: dict) -> dict:
         "child_name": exp.get("child_name"),
         "paid_by_name": exp.get("paid_by_name", ""),
         "paid_by_user_id": exp.get("paid_by_user_id"),
+        "merchant": exp.get("merchant"),
+        # Expenses recorded before shops existed have no spent_on; the day they
+        # were added is the best answer available for those, and it is a true one.
+        "spent_on": iso(exp.get("spent_on") or exp["created_at"])[:10],
         "created_at": iso(exp["created_at"]),
     }
 
@@ -2376,13 +2458,19 @@ class ShoppingItemPatchIn(BaseModel):
 
 
 class ExpenseIn(BaseModel):
-    description: str
+    description: str = ""
     # A negative expense silently skews the split totals; nobody spends a
     # negative amount, and an upper bound keeps a fat-fingered figure out of
     # the aggregation.
     amount: float = Field(ge=0, le=1_000_000)
     category: str = "General"
     child_member_id: Optional[str] = None
+    # Where it was spent. Optional, because a school trip has no shop.
+    merchant: Optional[str] = None
+    # The date on the receipt, YYYY-MM-DD. People photograph a pile of tickets on
+    # a Sunday evening, so "when it was added" and "when it was spent" are not the
+    # same day, and only one of them belongs in a monthly total.
+    spent_on: Optional[str] = None
 
 
 class TemplateIn(BaseModel):
@@ -8497,6 +8585,136 @@ async def expense_summary(
     }
 
 
+@app.get("/api/expenses/overview")
+async def expense_overview(
+    user=Depends(require_full_member),
+    months: int = Query(default=6, ge=1, le=24),
+    category: Optional[str] = Query(default=None),
+):
+    """Spending by calendar month and by shop — the House expenses view.
+
+    Three judgements are baked in here rather than left to the screen, so every
+    client tells the family the same true story:
+
+    1. Months are counted from the date on the receipt, not the day the expense
+       was typed in. People photograph a week of tickets on a Sunday evening.
+       The date is date-only, so a month total cannot shift because the family
+       travelled to another timezone.
+
+    2. Every total carries the number of receipts behind it. A month where four
+       shops were forgotten looks like a month of admirable restraint, and a
+       number without its coverage is how an app lies without meaning to.
+
+    3. A month still running is never compared to a finished one, and "usual"
+       means the average of the three previous COMPLETE months — not last month
+       alone. One month against one month is noise: a birthday, a visitor, a
+       bulk buy of nappies.
+    """
+    database = get_db()
+    today = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+
+    def month_key(when: datetime) -> str:
+        return f"{when.year:04d}-{when.month:02d}"
+
+    # The window of month keys we care about, oldest first, ending this month.
+    keys: list = []
+    year, month = today.year, today.month
+    for _ in range(months):
+        keys.append(f"{year:04d}-{month:02d}")
+        month -= 1
+        if month == 0:
+            year, month = year - 1, 12
+    keys.reverse()
+    this_month = keys[-1]
+    wanted = set(keys)
+
+    # Filtered in Python rather than in the query: a household has hundreds of
+    # expenses, not millions, and doing the date arithmetic here keeps the
+    # spent_on fallback (older rows have no such field) in one place.
+    buckets: dict = {k: {"total": 0.0, "count": 0, "shops": {}, "people": {}} for k in keys}
+    range_shops: dict = {}
+    range_total, range_count = 0.0, 0
+
+    async for exp in database["expenses"].find({"family_id": user["family_id"]}, {"_id": 0}):
+        if category and (exp.get("category") or "General") != category:
+            continue
+        when = exp.get("spent_on") or exp.get("created_at")
+        if not isinstance(when, datetime):
+            continue
+        key = month_key(when)
+        if key not in wanted:
+            continue
+        amount = float(exp.get("amount") or 0)
+        shop = exp.get("merchant") or exp.get("description") or "Unknown"
+
+        bucket = buckets[key]
+        bucket["total"] += amount
+        bucket["count"] += 1
+        # Who paid — the older job this screen has always done, kept alongside
+        # the new one so co-parents can still settle up without a second screen.
+        payer = exp.get("paid_by_name") or "—"
+        bucket["people"][payer] = bucket["people"].get(payer, 0.0) + amount
+        seen = bucket["shops"].setdefault(shop, {"total": 0.0, "visits": 0})
+        seen["total"] += amount
+        seen["visits"] += 1
+
+        entry = range_shops.setdefault(shop, {"total": 0.0, "visits": 0})
+        entry["total"] += amount
+        entry["visits"] += 1
+        range_total += amount
+        range_count += 1
+
+    def shop_rows(shops: dict) -> list:
+        rows = [{"merchant": name,
+                 "total": round(v["total"], 2),
+                 "visits": v["visits"],
+                 "average": round(v["total"] / v["visits"], 2) if v["visits"] else 0.0}
+                for name, v in shops.items()]
+        rows.sort(key=lambda r: r["total"], reverse=True)
+        return rows
+
+    month_rows = [{"month": k,
+                   "total": round(buckets[k]["total"], 2),
+                   "count": buckets[k]["count"],
+                   "complete": k != this_month,
+                   "by_merchant": shop_rows(buckets[k]["shops"]),
+                   "by_person": {n: round(v, 2) for n, v in
+                                 sorted(buckets[k]["people"].items(),
+                                        key=lambda kv: kv[1], reverse=True)}}
+                  for k in keys]
+
+    # The comparison, offered only when it can be honest: the newest finished
+    # month, against the three finished months before it.
+    comparison = None
+    finished = [m for m in month_rows if m["complete"] and m["count"] > 0]
+    if finished:
+        latest = finished[-1]
+        prior = [m for m in month_rows if m["complete"] and m["count"] > 0
+                 and m["month"] < latest["month"]][-3:]
+        if len(prior) == 3:
+            usual = sum(m["total"] for m in prior) / 3
+            comparison = {
+                "month": latest["month"],
+                "total": latest["total"],
+                "usual": round(usual, 2),
+                "difference": round(latest["total"] - usual, 2),
+                "basis_months": [m["month"] for m in prior],
+            }
+
+    current = next(m for m in month_rows if m["month"] == this_month)
+    return {
+        "category": category,
+        "months": month_rows,
+        "current": current,
+        "days_into_month": today.day,
+        "comparison": comparison,
+        "range": {"months": months,
+                  "total": round(range_total, 2),
+                  "count": range_count,
+                  "by_merchant": shop_rows(range_shops)},
+    }
+
+
 @app.post("/api/expenses")
 async def add_expense(payload: ExpenseIn, user=Depends(require_full_member)):
     database = get_db()
@@ -8508,17 +8726,27 @@ async def add_expense(payload: ExpenseIn, user=Depends(require_full_member)):
         )
         if member:
             child_name = member["name"]
+    merchant = tidy_merchant(payload.merchant)
+    # A shop IS a description for a grocery run; making someone type "Aldi" twice
+    # is the kind of small friction that stops a habit forming.
+    description = sanitize_message_text(payload.description or "", 200).replace("\n", " ").strip()
+    if not description:
+        description = merchant or "Expense"
+
+    now = utcnow()
     doc = {
         "expense_id": new_id("exp"),
         "family_id": user["family_id"],
-        "description": payload.description.strip(),
+        "description": description,
         "amount": round(payload.amount, 2),
         "category": payload.category,
+        "merchant": merchant,
+        "spent_on": parse_spent_on(payload.spent_on, now),
         "child_member_id": payload.child_member_id,
         "child_name": child_name,
         "paid_by_name": user.get("name", ""),
         "paid_by_user_id": user["user_id"],
-        "created_at": utcnow(),
+        "created_at": now,
     }
     await database["expenses"].insert_one(doc)
     return public_expense(doc)
