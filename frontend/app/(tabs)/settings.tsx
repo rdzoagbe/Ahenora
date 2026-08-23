@@ -9,7 +9,6 @@ import {
   CalendarDays,
   ChevronRight,
   Crown,
-  DollarSign,
   Globe,
   Link2,
   LogOut,
@@ -39,7 +38,7 @@ import { PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { Card, Chevron, Divider, IconTile, MiniRow, NavRow, ScreenHeader, StatBox, ToggleRow, useUI, UIColors } from '../../src/components/Kit';
 import { useStore } from '../../src/store';
 import { openReview } from '../../src/reviewPrompt';
-import { api, Card as CardType, Entitlements, ExpenseSummary, FamilyInvite, FamilyMember, NotificationSettings } from '../../src/api';
+import { api, Card as CardType, Entitlements, FamilyInvite, FamilyMember, NotificationSettings } from '../../src/api';
 import { LANG_NAMES } from '../../src/i18n';
 import { appVersionInfo, ensureNotificationPermissions, registerForPushNotificationsAsync, sendLocalNotification, sendTestScheduledReminderNotification, syncCardReminderNotifications } from '../../src/notifications';
 import { logger } from '../../src/logger';
@@ -86,7 +85,6 @@ export default function Settings() {
   const [savingNotifications, setSavingNotifications] = useState(false);
   const [entitlements, setEntitlements] = useState<Entitlements | null>(null);
   const [completedCards, setCompletedCards] = useState<CardType[]>([]);
-  const [expenseSummary, setExpenseSummary] = useState<ExpenseSummary | null>(null);
 
   const [refreshing, setRefreshing] = useState(false);
   const [expandMembers, setExpandMembers] = useState(false);
@@ -126,7 +124,6 @@ export default function Settings() {
       setEntitlements(entitlementRows);
       setCompletedCards(completedRows);
 
-      api.getExpenseSummary().then(setExpenseSummary).catch(() => undefined);
     } catch (error) {
       logger.warn('settings load failed', error);
     }
@@ -543,7 +540,7 @@ export default function Settings() {
   const GK = {
     notifications: 'notifications push sign slip weekly digest email alert reminder',
     appearance: 'appearance theme light dark system display',
-    household: 'household members co-parent co parent children child pin invite family expenses money cost split receipt',
+    household: 'household members co-parent co parent children child pin invite family',
     preferences: 'preferences language translation locale',
     more: 'more history completed cards replay setup onboarding plans plan upgrade premium billing subscription usage limits version update metrics',
   };
@@ -706,7 +703,7 @@ export default function Settings() {
           ) : null}
           </>) : null}
 
-          {/* Household — members, children, invites and shared expenses */}
+          {/* Household — members, children and invites */}
           {groupVisible(GK.household) ? (<>
           {groupHead('household',
             <IconTile bg={ui.orangeSoft}><Users color={ui.orange} size={18} /></IconTile>,
@@ -789,22 +786,6 @@ export default function Settings() {
             />
           </Card>
 
-          {/* House expenses. A door, not a drawer: the whole picture — by month,
-              by shop, and who paid — lives on one screen rather than half here
-              and half somewhere else. */}
-          <Card style={[styles.cardPad, styles.subCardGap]}>
-            <NavRow
-              testID="settings-expenses-open"
-              tile={<IconTile bg={ui.gold}><DollarSign color={ui.goldText} size={18} /></IconTile>}
-              title={t('set_household_expenses')}
-              subtitle={expenseSummary
-                ? `${t('currency_symbol')}${expenseSummary.total.toFixed(0)} ${t('set_last_n_days', { n: expenseSummary.days })}`
-                : t('set_track_shared_costs')}
-              right={<ChevronRight color={ui.muted} size={18} />}
-              onPress={() => router.push('/expenses')}
-              divider={false}
-            />
-          </Card>
 
           </>) : null}
           </>) : null}

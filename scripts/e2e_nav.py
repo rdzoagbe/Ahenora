@@ -90,7 +90,12 @@ async def main():
 
         await p.goto(f"{WEB}/kitchen", wait_until="domcontentloaded")
         await p.wait_for_timeout(2200)
-        r["tab_kitchen_ok"] = await p.locator('[data-testid="kitchen-switch"]').count() >= 1
+        # All three Kitchen views must be reachable without opening anything.
+        r["tab_kitchen_ok"] = all([
+            await p.locator('[data-testid="kitchen-tab-shop"]').count() >= 1,
+            await p.locator('[data-testid="kitchen-tab-meal"]').count() >= 1,
+            await p.locator('[data-testid="kitchen-tab-spend"]').count() >= 1,
+        ])
 
         r["no_js_errors"] = not errs
         await b.close()
