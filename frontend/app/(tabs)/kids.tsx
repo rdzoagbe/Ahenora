@@ -237,10 +237,21 @@ export default function Kids() {
   // The grown-ups half of the Family Hub: everyone who isn't a kid or teen —
   // parents, a co-parent (previously invisible in the app), a helper, or a
   // named family member (Grandma, Nanny…). The signed-in user leads the list.
-  const grownups = useMemo(() => {
-    const rest = members.filter((m) => !['child', 'teen'].includes(m.role?.toLowerCase() ?? ''));
-    return rest.sort((a, b) => (a.is_me ? -1 : b.is_me ? 1 : 0));
+  // Grown-ups used to be one list, so a childminder sat beside a co-parent. The
+  // app has always known they are different - the server refuses a helper the
+  // vault, the money and family chat - and the Hub was the one place that did
+  // not show it. Two groups now, and the person holding the phone comes first.
+  const parents = useMemo(() => {
+    const rows = members.filter((m) => ['parent', 'co-parent'].includes(m.role?.toLowerCase() ?? ''));
+    return rows.sort((a, b) => (a.is_me ? -1 : b.is_me ? 1 : 0));
   }, [members]);
+
+  // Everyone who helps run the house without being a parent or a child:
+  // grandparents, childminders, carers, a named family member.
+  const helpers = useMemo(
+    () => members.filter(
+      (m) => !['child', 'teen', 'parent', 'co-parent'].includes(m.role?.toLowerCase() ?? '')),
+    [members]);
 
   // Open a member's profile. Parents share the adults thread; a teen has their
   // own (keyed by user_id, which we recover from the thread list by name). A
@@ -373,6 +384,70 @@ export default function Kids() {
 
   const ui = useUI();
   const styles = useMemo(() => createStyles(ui), [ui]);
+
+  // One row, two groups. A parent and a helper look the same here on purpose -
+  // what differs is the badge, the subtitle, and whether the server gave us a
+  // conversation with them. Rendering both from one function means the groups
+  // cannot quietly drift apart.
+  const renderPerson = useCallback((m: FamilyMember) => {
+              const roleLc = (m.role || '').toLowerCase();
+              const isParent = roleLc === 'parent' || roleLc === 'co-parent';
+              const isHelper = roleLc === 'helper';
+              const badgeLabel = isParent
+                ? (m.is_founder ? t('hub_role_owner') : t('hub_role_coparent'))
+                : isHelper ? t('hub_role_helper') : m.role;
+              // Anyone the server gave us a conversation with can be messaged
+              // from the roster — a co-parent, and now a helper too.
+              const memberThread = threads.find((x) => x.member_id === m.member_id);
+              const hasThread = Boolean(memberThread);
+              const unread = memberThread?.unread || 0;
+              const sub = isParent
+                ? (memberThread?.last_text || t('hub_coparent_sub'))
+                : isHelper ? t('hub_helper_sub') : t('hub_member_sub');
+              return (
+                <PressScale
+                  key={m.member_id}
+                  testID={`hub-member-${m.member_id}`}
+                  onPress={() => openMember(m)}
+                  style={styles.hubRow}
+                >
+                  {/* Fixed deep tints so the white initial always clears
+                      4.5:1. Deep orange (#CA470A) beats ui.orange's 3.11:1;
+                      a fixed slate beats ui.muted, which is a *light* slate in
+                      dark mode (#CBD5E1) where white would be unreadable. */}
+                  <View style={[styles.hubAvatar, { backgroundColor: isParent ? UI.orangeDeep : '#5F656E' }]}>
+                    <Text style={styles.hubAvatarText}>{m.name[0]?.toUpperCase()}</Text>
+                  </View>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <View style={styles.hubNameRow}>
+                      <Text style={styles.hubName} numberOfLines={1}>
+                        {m.name}{m.is_me ? ` · ${t('hub_you')}` : ''}
+                      </Text>
+                      <View style={[styles.hubBadge, { backgroundColor: isParent ? ui.orangeSoft : ui.soft }]}>
+                        <Text style={[styles.hubBadgeText, { color: isParent ? ui.orangeText : ui.muted }]}>{badgeLabel}</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.hubSub} numberOfLines={1}>{sub}</Text>
+                  </View>
+                  {hasThread ? (
+                    <PressScale
+                      testID={`hub-message-${m.member_id}`}
+                      onPress={() => openThread(m)}
+                      hitSlop={10}
+                      accessibilityLabel={t('hub_message_name', { name: m.name })}
+                      style={styles.hubMsgBtn}
+                    >
+                      <MessageCircle color={unread > 0 ? '#fff' : ui.muted} size={18} />
+                      {unread > 0 ? (
+                        <View style={styles.hubUnread}><Text style={styles.hubUnreadText}>{unread}</Text></View>
+                      ) : null}
+                    </PressScale>
+                  ) : (
+                    <ChevronRight color={ui.muted} size={18} />
+                  )}
+                </PressScale>
+              );
+  }, [threads, openMember, openThread, t, ui, styles]);
 
   const memberName = useCallback((memberId: string) => {
     const m = members.find((x) => x.member_id === memberId);
@@ -1251,68 +1326,10 @@ export default function Kids() {
               a named family member — each badged, each a tap from their profile.
               Parents open the shared conversation; a helper opens who-they-are
               (the server refuses them family chat, so no chat door is offered). */}
-          {!isFocused && grownups.length > 0 ? (
+          {!isFocused && parents.length > 0 ? (
             <View style={styles.hubGrownups}>
-              <Text style={styles.hubLabel}>{t('hub_grownups')}</Text>
-              {grownups.map((m) => {
-                const roleLc = (m.role || '').toLowerCase();
-                const isParent = roleLc === 'parent' || roleLc === 'co-parent';
-                const isHelper = roleLc === 'helper';
-                const badgeLabel = isParent
-                  ? (m.is_founder ? t('hub_role_owner') : t('hub_role_coparent'))
-                  : isHelper ? t('hub_role_helper') : m.role;
-                // Anyone the server gave us a conversation with can be messaged
-                // from the roster — a co-parent, and now a helper too.
-                const memberThread = threads.find((x) => x.member_id === m.member_id);
-                const hasThread = Boolean(memberThread);
-                const unread = memberThread?.unread || 0;
-                const sub = isParent
-                  ? (memberThread?.last_text || t('hub_coparent_sub'))
-                  : isHelper ? t('hub_helper_sub') : t('hub_member_sub');
-                return (
-                  <PressScale
-                    key={m.member_id}
-                    testID={`hub-member-${m.member_id}`}
-                    onPress={() => openMember(m)}
-                    style={styles.hubRow}
-                  >
-                    {/* Fixed deep tints so the white initial always clears
-                        4.5:1. Deep orange (#CA470A) beats ui.orange's 3.11:1;
-                        a fixed slate beats ui.muted, which is a *light* slate in
-                        dark mode (#CBD5E1) where white would be unreadable. */}
-                    <View style={[styles.hubAvatar, { backgroundColor: isParent ? UI.orangeDeep : '#5F656E' }]}>
-                      <Text style={styles.hubAvatarText}>{m.name[0]?.toUpperCase()}</Text>
-                    </View>
-                    <View style={{ flex: 1, minWidth: 0 }}>
-                      <View style={styles.hubNameRow}>
-                        <Text style={styles.hubName} numberOfLines={1}>
-                          {m.name}{m.is_me ? ` · ${t('hub_you')}` : ''}
-                        </Text>
-                        <View style={[styles.hubBadge, { backgroundColor: isParent ? ui.orangeSoft : ui.soft }]}>
-                          <Text style={[styles.hubBadgeText, { color: isParent ? ui.orangeText : ui.muted }]}>{badgeLabel}</Text>
-                        </View>
-                      </View>
-                      <Text style={styles.hubSub} numberOfLines={1}>{sub}</Text>
-                    </View>
-                    {hasThread ? (
-                      <PressScale
-                        testID={`hub-message-${m.member_id}`}
-                        onPress={() => openThread(m)}
-                        hitSlop={10}
-                        accessibilityLabel={t('hub_message_name', { name: m.name })}
-                        style={styles.hubMsgBtn}
-                      >
-                        <MessageCircle color={unread > 0 ? '#fff' : ui.muted} size={18} />
-                        {unread > 0 ? (
-                          <View style={styles.hubUnread}><Text style={styles.hubUnreadText}>{unread}</Text></View>
-                        ) : null}
-                      </PressScale>
-                    ) : (
-                      <ChevronRight color={ui.muted} size={18} />
-                    )}
-                  </PressScale>
-                );
-              })}
+              <Text style={styles.hubLabel}>{t('hub_parents')}</Text>
+              {parents.map(renderPerson)}
               {children.length > 0 ? <Text style={styles.hubLabel}>{t('hub_kids_teens')}</Text> : null}
             </View>
           ) : null}
@@ -1861,6 +1878,18 @@ export default function Kids() {
               ) : null}
             </>
           )}
+
+          {/* Helpers — grandparents, childminders, carers. Last on the page and
+              in their own group, because a person who helps with the school run
+              is not a co-parent and should not read as one. A sibling of the
+              children block rather than inside it, so a household with no
+              children still shows the people who help with it. */}
+          {!isFocused && helpers.length > 0 ? (
+            <View style={styles.hubGrownups}>
+              <Text style={styles.hubLabel}>{t('hub_helpers')}</Text>
+              {helpers.map(renderPerson)}
+            </View>
+          ) : null}
 
           {/* Morning Routines — part of the focused child's page, not the roster */}
           {isFocused && showMore && activeChild && childRoutines.length > 0 ? (
