@@ -700,6 +700,15 @@ export interface ChatThreadSummary {
   thread: string;
   title: string | null;
   is_adults: boolean;
+  /** The whole-household room. */
+  is_household?: boolean;
+  /** A teen's single conversation with their parents. */
+  is_parents?: boolean;
+  /** parent | co-parent | teen | helper | child — what the other side is. */
+  role?: string;
+  /** Which roster row this conversation belongs to, so the app matches a person
+   *  to their thread instead of rebuilding thread ids and hoping they agree. */
+  member_id?: string;
   unread: number;
   last_text: string;
   last_at: string | null;
@@ -1101,11 +1110,17 @@ export const api = {
     request('/auth/language', { method: 'PATCH', body: { language } }),
   completeOnboarding: () =>
     request<User>('/auth/complete-onboarding', { method: 'POST' }),
-  invite: (email: string, relationship?: string, opts?: { is_teen?: boolean; age?: number; is_helper?: boolean }) => {
+  invite: (email: string, relationship?: string, opts?: { is_teen?: boolean; age?: number; is_helper?: boolean; member_id?: string }) => {
     invalidateUsageCaches();
     const body: Record<string, unknown> = { email };
     if (relationship) body.relationship = relationship;
-    if (opts?.is_teen) { body.is_teen = true; if (opts.age != null) body.age = opts.age; }
+    if (opts?.is_teen) {
+      body.is_teen = true;
+      if (opts.age != null) body.age = opts.age;
+      // Names the child, so the server can check the age claimed here against
+      // the age already on record instead of trusting the form.
+      if (opts.member_id) body.member_id = opts.member_id;
+    }
     if (opts?.is_helper) body.is_helper = true;
     return request<{
       ok: boolean;
@@ -1404,6 +1419,7 @@ export const api = {
     request<{ ok: boolean; message: ChatMessage }>(`/family/chat/${encodeURIComponent(thread)}`, {
       method: 'POST', body: { text },
     }),
+  signOutEverywhere: () => request<{ ok: boolean; ended: number }>('/auth/sign-out-everywhere', { method: 'POST' }),
   chatRead: (thread: string) =>
     request<{ ok: boolean }>(`/family/chat/${encodeURIComponent(thread)}/read`, { method: 'POST' }),
   teenChatGet: () => request<{ messages: ChatMessage[] }>('/teen/chat'),
@@ -1412,6 +1428,8 @@ export const api = {
   teenChatRead: () => request<{ ok: boolean }>('/teen/chat/read', { method: 'POST' }),
 
   kidHome: () => request<KidHome>('/kid/home'),
+  /** Notes a parent has written to this child, read in kid mode. */
+  kidNotes: () => request<{ messages: ChatMessage[] }>('/kid/notes'),
   kidFinishChore: (cardId: string) =>
     request<{ ok: boolean }>(`/kid/chores/${cardId}/done`, { method: 'POST' }),
   kidRequestReward: (rewardId: string) =>

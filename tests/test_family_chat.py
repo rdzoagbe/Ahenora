@@ -86,12 +86,80 @@ class FamilyChat(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 403)
         self.assertEqual(ctx.exception.detail, "teen_mode")
 
-    def test_helper_is_refused_by_the_parent_chat_gate(self):
-        """A helper is not in parent chat: require_full_member (which the parent
-        chat routes use) refuses them."""
+    def test_a_helper_can_use_the_household_room_but_not_the_grown_ups_one(self):
+        """Helpers were shut out of chat entirely, which made coordinating a
+        school run impossible. They are in the household now — and still not in
+        the room where the parents talk about money."""
+        asyncio.run(self.db["family_members"].insert_one({
+            "member_id": "m_h", "family_id": "fam1", "user_id": "u_h",
+            "name": "Grandma", "role": "helper"}))
+        helper = {"user_id": "u_h", "family_id": "fam1", "name": "Grandma", "is_helper": True}
+        asyncio.run(server.family_chat_send(
+            thread=server.HOUSEHOLD_THREAD, payload=server.ChatMessageIn(text="I can do the 5pm run"),
+            user=dict(helper)))
+        seen = asyncio.run(server.family_chat_get(
+            thread=server.HOUSEHOLD_THREAD, user=dict(PARENT)))["messages"]
+        self.assertIn("I can do the 5pm run", {m["text"] for m in seen})
+
         with self.assertRaises(server.HTTPException) as ctx:
-            asyncio.run(server.require_full_member(user={"user_id": "u_h", "family_id": "fam1", "is_helper": True}))
-        self.assertEqual(ctx.exception.status_code, 403)
+            asyncio.run(server.family_chat_get(thread=server.ADULTS_THREAD, user=dict(helper)))
+        self.assertEqual(ctx.exception.status_code, 404)
+
+    # --- the new model: threads are defined by who is in them -------------
+    def test_two_parents_get_a_private_one_to_one(self):
+        dm = server.dm_thread("u_p", "u_p2")
+        self._send_parent(dm, "did you pay the nursery invoice?")
+        seen = asyncio.run(server.family_chat_get(thread=dm, user=dict(COPARENT)))["messages"]
+        self.assertIn("did you pay the nursery invoice?", {m["text"] for m in seen})
+        # And it is not the adults room, nor visible to a teen.
+        with self.assertRaises(server.HTTPException):
+            asyncio.run(server.family_chat_get(
+                thread=dm, user={"user_id": "u_t", "family_id": "fam1", "is_teen": True}))
+
+    def test_a_teen_cannot_open_another_teens_conversation(self):
+        self._send_parent("u_t2", "Kofi, bins tonight")
+        with self.assertRaises(server.HTTPException) as ctx:
+            asyncio.run(server.family_chat_get(
+                thread="u_t2", user={"user_id": "u_t", "family_id": "fam1", "is_teen": True}))
+        self.assertEqual(ctx.exception.status_code, 404)
+
+    def test_two_teens_are_not_given_a_private_channel(self):
+        """Every private thread has a parent in it. A sibling-to-sibling channel
+        no parent can see is not something a family app should open by accident."""
+        dm = server.dm_thread("u_t", "u_t2")
+        self.assertIsNone(asyncio.run(
+            server._thread_participants(self.db, "fam1", dm)))
+        with self.assertRaises(server.HTTPException) as ctx:
+            asyncio.run(server.family_chat_get(
+                thread=dm, user={"user_id": "u_t", "family_id": "fam1", "is_teen": True}))
+        self.assertEqual(ctx.exception.status_code, 404)
+
+    def test_a_note_to_a_young_child_is_read_in_kid_mode(self):
+        """A child with no login has no inbox, so this is the only honest way to
+        say something to them."""
+        asyncio.run(self.db["family_members"].insert_one({
+            "member_id": "m_kid", "family_id": "fam1", "name": "Abena", "role": "child"}))
+        thread = server.KID_PREFIX + "m_kid"
+        self._send_parent(thread, "Great job on your room today")
+        child = {"member": {"member_id": "m_kid", "name": "Abena"}, "family_id": "fam1"}
+        msgs = asyncio.run(server.kid_notes(child=child))["messages"]
+        self.assertIn("Great job on your room today", {m["text"] for m in msgs})
+        # A teen cannot read another child's notes.
+        with self.assertRaises(server.HTTPException):
+            asyncio.run(server.family_chat_get(
+                thread=thread, user={"user_id": "u_t", "family_id": "fam1", "is_teen": True}))
+
+    def test_a_young_child_has_no_way_to_send_anything(self):
+        """Under-13s read notes and nothing more. A teen has their own account
+        and a real conversation; a child on a shared family phone does not get a
+        way to post, not even a fixed one."""
+        self.assertFalse(hasattr(server, "kid_notes_ack"))
+
+    def test_a_note_thread_is_refused_for_a_child_who_has_an_account(self):
+        """A teen has a real conversation; the note thread is only for a child
+        who cannot be messaged any other way."""
+        self.assertIsNone(asyncio.run(
+            server._thread_participants(self.db, "fam1", server.KID_PREFIX + "m_t")))
 
     def test_teen_can_reply_and_parent_sees_it_in_that_thread_only(self):
         asyncio.run(server.teen_chat_send(

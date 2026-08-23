@@ -33,6 +33,9 @@ export default function KidScreen() {
   const [home, setHome] = useState<KidHome | null>(null);
   const [busy, setBusy] = useState(false);
   const [exitOpen, setExitOpen] = useState(false);
+  // A note from a parent. A child has no login and no inbox, so this is the
+  // only place in the app someone can actually say something to them.
+  const [notes, setNotes] = useState<{ text: string; sender_name: string }[]>([]);
   const [pin, setPin] = useState('');
   const [pinError, setPinError] = useState(false);
   // The way out when the PIN is forgotten: a parent's account login.
@@ -50,6 +53,11 @@ export default function KidScreen() {
   const load = useCallback(async () => {
     try {
       setHome(await api.kidHome());
+      // Best-effort: a note is a nice-to-have and must never stop the jobs and
+      // stars from loading.
+      api.kidNotes()
+        .then((r) => setNotes(r.messages.map((m) => ({ text: m.text, sender_name: m.sender_name }))))
+        .catch(() => setNotes([]));
     } catch (e) {
       logger.warn('kid home failed', e);
       // The session expired or was revoked — a device left in kid mode
@@ -149,6 +157,18 @@ export default function KidScreen() {
             <Text testID="kid-stars" style={styles.starNumber}>{home.stars}</Text>
             <Text style={styles.starLabel}>{t('kid_stars_label')}</Text>
           </View>
+
+          {notes.length > 0 ? (
+            <>
+              <Text style={styles.section}>{t('kid_notes')}</Text>
+              {notes.slice(-3).map((n, i) => (
+                <View key={i} style={styles.noteCard}>
+                  <Text style={styles.noteFrom}>{n.sender_name}</Text>
+                  <Text style={styles.noteText}>{n.text}</Text>
+                </View>
+              ))}
+            </>
+          ) : null}
 
           <Text style={styles.section}>{t('kid_my_jobs')}</Text>
           {home.chores.length === 0 ? (
@@ -310,7 +330,13 @@ const createStyles = (ui: UIColors) =>
     header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
     hello: { flex: 1, color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 30, letterSpacing: -0.7 },
     exitBtn: { padding: 10, borderRadius: 999, backgroundColor: ui.soft },
-    starCard: {
+    noteCard: {
+    backgroundColor: ui.orangeSoft, borderWidth: 1, borderColor: ui.orange,
+    borderRadius: 16, padding: 14, marginBottom: 8,
+  },
+  noteFrom: { fontFamily: 'Inter_800ExtraBold', fontSize: 12, color: ui.orangeText, marginBottom: 4 },
+  noteText: { fontFamily: 'Inter_500Medium', fontSize: 16, lineHeight: 22, color: ui.text },
+  starCard: {
       backgroundColor: ui.orangeDeep, borderRadius: 26, alignItems: 'center',
       paddingVertical: 26, marginTop: 8, gap: 2,
     },
