@@ -138,9 +138,9 @@ async def main():
         async def open_meal_suggest(page):
             await page.goto(f"{WEB}/kitchen", wait_until="domcontentloaded")
             await page.wait_for_timeout(2000)
-            await page.click('[data-testid="kitchen-switch"]')
-            await page.wait_for_timeout(500)
-            await page.click('[data-testid="kitchen-pick-meal"]')
+            # Kitchen's three views are visible now, so this is one tap where
+            # it used to be open-the-menu-then-pick.
+            await page.click('[data-testid="kitchen-tab-meal"]')
             await page.wait_for_timeout(1200)
             await page.click('[data-testid="meal-suggest"]')
             await page.wait_for_timeout(6000)
@@ -215,9 +215,7 @@ async def main():
         await iphone.goto(f"{WEB}/kitchen", wait_until="domcontentloaded")
         await iphone.wait_for_timeout(2500)
         if await iphone.get_by_placeholder("Add items — commas for several").count() == 0:
-            await iphone.click('[data-testid="kitchen-switch"]')
-            await iphone.wait_for_timeout(600)
-            await iphone.click('[data-testid="kitchen-pick-shop"]')
+            await iphone.click('[data-testid="kitchen-tab-shop"]')
             await iphone.wait_for_timeout(1500)
         shop_b = iphone.get_by_placeholder("Add items — commas for several")
         await shop_b.fill("Okra, Palm oil")

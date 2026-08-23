@@ -5,9 +5,10 @@ import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from 'expo-router';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
-import { Plus, X, Trash2, ShoppingCart, Check, UtensilsCrossed, ChevronDown, ChevronLeft, History, RotateCcw, Sparkles, Sun, ChefHat, Clock, AlertTriangle, Search, Minus, Camera, Image as ImageIcon , ListChecks, Leaf, Shuffle} from 'lucide-react-native';
+import { Plus, X, Trash2, ShoppingCart, Check, UtensilsCrossed, ChevronLeft, History, RotateCcw, Sparkles, Sun, ChefHat, Clock, AlertTriangle, Search, Minus, Camera, Image as ImageIcon , ListChecks, Leaf, Shuffle} from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
+import { SpendingView } from '../../src/components/SpendingView';
 import { PressScale } from '../../src/components/PressScale';
 import { localeFor } from '../../src/utils/date';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
@@ -26,7 +27,7 @@ import { quantityFor, shoppingNameFor, formatAiQuantity, AiIngredient } from '..
 import { categoriseShoppingItem } from '../../src/shoppingCategories';
 import { recipeMethod } from '../../src/recipeSteps';
 
-type KitchenView = 'shop' | 'meal';
+type KitchenView = 'shop' | 'meal' | 'spend';
 
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 
@@ -88,7 +89,6 @@ export default function Kitchen() {
   const styles = useMemo(() => createStyles(ui), [ui]);
 
   const [view, setView] = useState<KitchenView>('shop');
-  const [menuOpen, setMenuOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const { toast, showToast } = useToast();
@@ -865,7 +865,6 @@ export default function Kitchen() {
 
       // Make the outcome visible: close the recipe and show the shopping list.
       setCookingRecipe(null);
-      setMenuOpen(false);
       setView('shop');
       showToast(t('cook_added_to_list', { n: names.length }), 'success');
     } catch (e: any) {
@@ -1015,10 +1014,8 @@ export default function Kitchen() {
   const uncheckedItems = useMemo(() => shopItems.filter((i) => !i.checked), [shopItems]);
   const checkedItems = useMemo(() => shopItems.filter((i) => i.checked), [shopItems]);
 
-  const selectView = (v: KitchenView) => { setView(v); setMenuOpen(false); };
+  const selectView = (v: KitchenView) => setView(v);
 
-  const shopSub = `${shopItems.length} ${shopItems.length === 1 ? t('vault_item') : t('vault_items')}`;
-  const mealSub = `${meals.length} ${meals.length === 1 ? t('kitchen_meal_word') : t('kitchen_meals_word')}`;
 
   return (
     <SwipeableTabView style={styles.container}>
@@ -1033,41 +1030,36 @@ export default function Kitchen() {
           title={t('kitchen')}
         />
 
-        {/* Dropdown switcher */}
-        <View style={styles.switchWrap}>
-          <PressScale testID="kitchen-switch" onPress={() => setMenuOpen((o) => !o)} style={styles.switchBtn}>
-            <View style={styles.switchLeft}>
-              <View style={[styles.switchPill, { backgroundColor: view === 'shop' ? ui.orangeSoft : ui.lavender }]}>
-                {view === 'shop'
-                  ? <ShoppingCart color={ui.orange} size={20} />
-                  : <UtensilsCrossed color={ui.lavenderText} size={20} />}
-              </View>
-              <View>
-                <Text style={styles.switchName}>{view === 'shop' ? t('vault_shopping_list') : t('vault_meal_planner')}</Text>
-                <Text style={styles.switchSub}>{view === 'shop' ? shopSub : mealSub}</Text>
-              </View>
-            </View>
-            <ChevronDown color={ui.muted} size={20} style={{ transform: [{ rotate: menuOpen ? '180deg' : '0deg' }] }} />
-          </PressScale>
+        {/* Three ways in, all visible.
 
-          {menuOpen ? (
-            <View style={styles.menu}>
-              <PressScale testID="kitchen-pick-shop" onPress={() => selectView('shop')} style={styles.menuItem}>
-                <View style={[styles.switchPill, styles.menuPill, { backgroundColor: ui.orangeSoft }]}>
-                  <ShoppingCart color={ui.orange} size={17} />
-                </View>
-                <Text style={styles.menuText}>{t('vault_shopping_list')}</Text>
-                {view === 'shop' ? <Check color={ui.orange} size={18} style={{ marginLeft: 'auto' }} /> : null}
-              </PressScale>
-              <PressScale testID="kitchen-pick-meal" onPress={() => selectView('meal')} style={[styles.menuItem, styles.menuItemBorder]}>
-                <View style={[styles.switchPill, styles.menuPill, { backgroundColor: ui.lavender }]}>
-                  <UtensilsCrossed color={ui.lavenderText} size={17} />
-                </View>
-                <Text style={styles.menuText}>{t('vault_meal_planner')}</Text>
-                {view === 'meal' ? <Check color={ui.lavenderText} size={18} style={{ marginLeft: 'auto' }} /> : null}
-              </PressScale>
-            </View>
-          ) : null}
+            This was a dropdown holding two items - a menu doing a segmented
+            control's job, hiding behind a tap what fits on screen. Spending
+            joining them would have made it three items behind that tap; putting
+            all three out in the open makes the menu unnecessary and reaches the
+            meal planner in FEWER taps than before, not more.
+
+            The labels are short because German decides them: three across a
+            320px phone leaves about 94px each, and "Einkaufsliste" does not fit
+            in that. Liste / Essen / Ausgaben does, and each word is true. */}
+        <View style={styles.tabs}>
+          {([
+            ['shop', t('kit_tab_list')],
+            ['meal', t('kit_tab_meals')],
+            ['spend', t('kit_tab_spending')],
+          ] as [KitchenView, string][]).map(([key, label]) => (
+            <PressScale
+              key={key}
+              testID={`kitchen-tab-${key}`}
+              onPress={() => selectView(key)}
+              accessibilityRole="button"
+              accessibilityLabel={label}
+              style={[styles.tab, view === key && styles.tabOn]}
+            >
+              <Text numberOfLines={1} style={[styles.tabText, view === key && styles.tabTextOn]}>
+                {label}
+              </Text>
+            </PressScale>
+          ))}
         </View>
 
         {/* Keep the screen awake while shopping / cooking */}
@@ -1079,7 +1071,9 @@ export default function Kitchen() {
         </PressScale>
 
         {/* SHOPPING LIST */}
-        {view === 'shop' ? (
+        {view === 'spend' ? (
+          <SpendingView embedded />
+        ) : view === 'shop' ? (
           <>
             <View style={styles.secHead}>
               <View style={styles.secLeft}>
@@ -2327,21 +2321,19 @@ export default function Kitchen() {
 }
 
 const createStyles = (ui: UIColors) => StyleSheet.create({
+  tabs: {
+    // No horizontal margin: styles.scroll already pads this content by 20.
+    flexDirection: 'row', gap: 4, padding: 3, marginTop: 4, marginBottom: 10,
+    backgroundColor: ui.soft, borderWidth: 1, borderColor: ui.line, borderRadius: 12,
+  },
+  tab: { flex: 1, alignItems: 'center', paddingVertical: 8, paddingHorizontal: 2, borderRadius: 9 },
+  tabOn: { backgroundColor: ui.card },
+  tabText: { fontFamily: 'Inter_700Bold', fontSize: 13, color: ui.muted },
+  tabTextOn: { color: ui.text },
   container: { flex: 1, backgroundColor: ui.bg },
   scroll: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 60 },
   bellWrap: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
 
-  switchWrap: { marginTop: 16, position: 'relative', zIndex: 20 },
-  switchBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, borderRadius: 16, paddingHorizontal: 16, paddingVertical: 13 },
-  switchLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  switchPill: { width: 38, height: 38, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
-  switchName: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 17, letterSpacing: -0.3 },
-  switchSub: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 12, marginTop: 1 },
-  menu: { position: 'absolute', top: 70, left: 0, right: 0, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, borderRadius: 16, overflow: 'hidden', zIndex: 30, elevation: 12, shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 20, shadowOffset: { width: 0, height: 10 } },
-  menuItem: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 13 },
-  menuItemBorder: { borderTopWidth: 1, borderTopColor: ui.line },
-  menuPill: { width: 32, height: 32, borderRadius: 9 },
-  menuText: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 15 },
 
   secHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 22, marginBottom: 12 },
   secRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
