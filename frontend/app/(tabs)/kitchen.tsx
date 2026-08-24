@@ -19,7 +19,7 @@ import { TabScreen } from '../../src/components/TabScreen';
 import { ScreenHeader, useUI, UIColors } from '../../src/components/Kit';
 
 import { useStore } from '../../src/store';
-import { api, MealPlan, ShoppingItem, ShoppingHistoryEntry, SavedMealPlan, Diet, AiRecipe } from '../../src/api';
+import { api, MealPlan, ShoppingItem, ShoppingHistoryEntry, SavedMealPlan, Diet, AiRecipe, FrequentItem } from '../../src/api';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { logger } from '../../src/logger';
 import { suggestWeek, MealSuggestion, SuggestLang, localizedMealTitle, localizedMealIngredients, resolveRecipeId, recipeIngredients, searchRecipes } from '../../src/mealSuggestions';
@@ -106,6 +106,9 @@ export default function Kitchen() {
 
   const [showShopHistory, setShowShopHistory] = useState(false);
   const [shopHistory, setShopHistory] = useState<ShoppingHistoryEntry[]>([]);
+  // The household's regulars — items bought often on past trips, not on the
+  // list right now. Tap one to add it back without typing.
+  const [regulars, setRegulars] = useState<FrequentItem[]>([]);
   const [showMealHistory, setShowMealHistory] = useState(false);
   const [savedPlans, setSavedPlans] = useState<SavedMealPlan[]>([]);
   const [histLoading, setHistLoading] = useState(false);
@@ -123,13 +126,15 @@ export default function Kitchen() {
 
   const load = useCallback(async () => {
     try {
-      const [shopRes, mealRes, histRes, dietRes] = await Promise.allSettled([
+      const [shopRes, mealRes, histRes, dietRes, freqRes] = await Promise.allSettled([
         api.listShopping(), api.listMeals(), api.listShoppingHistory(), api.getMealDiet(),
+        api.listFrequentShopping(),
       ]);
       if (shopRes.status === 'fulfilled') setShopItems(shopRes.value);
       if (mealRes.status === 'fulfilled') setMeals(mealRes.value);
       if (histRes.status === 'fulfilled') setShopHistory(histRes.value);
       if (dietRes.status === 'fulfilled') setHouseholdDiet(dietRes.value.diet);
+      if (freqRes.status === 'fulfilled') setRegulars(freqRes.value.items);
       // If every request failed (offline / server down), the empty states would
       // otherwise read as "your kitchen is empty" — say it failed instead.
       if ([shopRes, mealRes, histRes, dietRes].every((r) => r.status === 'rejected')) {
@@ -341,6 +346,19 @@ export default function Kitchen() {
       setAddingShop(false);
     }
   }, [shopInput, showToast]);
+
+  // Add a regular back to the list in one tap. Drop it from the row straight
+  // away so it feels instant, and it stays gone because it is now on the list.
+  const addRegular = useCallback(async (name: string) => {
+    setRegulars((prev) => prev.filter((r) => r.name !== name));
+    try {
+      const item = await api.addShoppingItem({ name, category: categoriseShoppingItem(name) || undefined });
+      setShopItems((prev) => [item, ...prev]);
+    } catch {
+      showToast(t('vault_could_not_add_item'), 'error');
+      setRegulars(await api.listFrequentShopping().then((r) => r.items).catch(() => []));
+    }
+  }, [showToast, t]);
 
   const toggleShopItem = useCallback(async (item: ShoppingItem) => {
     setShopItems((prev) => prev.map((i) => i.item_id === item.item_id ? { ...i, checked: !i.checked } : i));
@@ -1150,6 +1168,30 @@ export default function Kitchen() {
               {/* The legend: without it a camera next to a shopping list could
                   mean anything. One line says exactly what it does. */}
               <Text style={styles.scanHint}>{t('scan_hint')}</Text>
+
+              {/* Your regulars — what this household buys often, from past trips,
+                  and not on the list right now. One tap adds it back, so the
+                  weekly shop is not retyped from memory every week. */}
+              {!selectMode && regulars.length > 0 ? (
+                <View style={styles.regularsWrap}>
+                  <Text style={styles.regularsLabel}>{t('shop_regulars_title')}</Text>
+                  <View style={styles.regularsRow}>
+                    {regulars.map((r) => (
+                      <PressScale
+                        key={r.name}
+                        testID={`regular-${r.name}`}
+                        accessibilityRole="button"
+                        accessibilityLabel={t('shop_regulars_add', { name: r.name })}
+                        onPress={() => addRegular(r.name)}
+                        style={styles.regularChip}
+                      >
+                        <Plus color={ui.lavenderText} size={13} />
+                        <Text style={styles.regularChipText} numberOfLines={1}>{r.name}</Text>
+                      </PressScale>
+                    ))}
+                  </View>
+                </View>
+              ) : null}
 
               {uncheckedItems.map((item, index) => (
                 <PressScale
@@ -2384,6 +2426,11 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   shopInputRow: { flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 6 },
   shopScanBtn: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: ui.orange, backgroundColor: ui.orangeSoft },
   scanHint: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 11.5, marginBottom: 10, marginTop: 2 },
+  regularsWrap: { marginTop: 4, marginBottom: 8 },
+  regularsLabel: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 12, marginBottom: 8 },
+  regularsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  regularChip: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, backgroundColor: ui.lavender },
+  regularChipText: { color: ui.lavenderText, fontFamily: 'Inter_600SemiBold', fontSize: 13 },
   scanRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: ui.line },
   scanCheck: { width: 22, height: 22, borderRadius: 7, borderWidth: 1.5, borderColor: ui.line, alignItems: 'center', justifyContent: 'center' },
   scanCheckOn: { backgroundColor: ui.orangeDeep, borderColor: ui.orange },
