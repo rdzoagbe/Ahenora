@@ -2035,6 +2035,7 @@ async def send_star_milestone_alert(family_id: str, member_name: str, old_total:
                 "title": f"{member_name} reached {milestone} stars!",
                 "body": "Amazing work — time to celebrate with a reward?",
                 "data": {"type": "star_milestone", "family_id": family_id},
+                "channelId": "household-alerts", "priority": "high",
             })
         if messages:
             await send_expo_push_messages(messages, database)
@@ -2113,6 +2114,10 @@ async def send_push_to_user(database, user_id: str, title: str, body: str, data:
                 messages.append({
                     "to": token, "sound": "default",
                     "title": title, "body": body, "data": data,
+                    # Android: land on a HIGH-importance channel and ask for high
+                    # priority, so the notification shows as a heads-up banner and
+                    # on the lock screen — not just quietly in the tray.
+                    "channelId": "household-alerts", "priority": "high",
                 })
         if messages:
             await send_expo_push_messages(messages, database)
@@ -2225,6 +2230,7 @@ async def send_new_card_alert(family_id: str, card: dict, created_by_user_id: Op
                     "card_id": card.get("card_id"),
                     "family_id": family_id,
                 },
+                "channelId": "household-alerts", "priority": "high",
             }
         )
 
@@ -2263,6 +2269,7 @@ async def send_coparent_alert(family_id: str, title: str, body: str, data_type: 
                 "title": title,
                 "body": preview or "Open Ahenora to see it.",
                 "data": {"type": data_type, "family_id": family_id},
+                "channelId": "household-alerts", "priority": "high",
             }
         )
 
@@ -6238,6 +6245,7 @@ async def test_notification(user=Depends(require_user)):
                     "title": "Ahenora notifications are active",
                     "body": "You will receive card alerts and reminder notifications.",
                     "data": {"type": "notification_test"},
+                    "channelId": "household-alerts", "priority": "high",
                 }
             )
 
@@ -6654,11 +6662,15 @@ async def list_assigned_to_me(user=Depends(require_user)):
 async def create_card(payload: CardIn, user=Depends(require_user)):
     database = get_db()
     assignee = (payload.assignee or "").strip() or None
-    # Assigning defaults to shared (CardIn.shared defaults True), so handing a
-    # task to the co-parent is visible to both without a thought — the common
-    # case. An explicit private stays private, which is how a surprise stays a
-    # surprise; that deliberate choice is respected, not overridden.
-    shared = bool(payload.shared)
+    # Handing a task to SOMEONE ELSE makes it a shared task — you cannot give the
+    # co-parent, a kid, a teen or a helper a job and keep it hidden from them or
+    # from the other parent, so this forces the card visible to the household and
+    # fires the hand-off push. Assigning to YOURSELF is just a personal to-do and
+    # still obeys the toggle, so a private errand (or a surprise you are planning)
+    # stays private.
+    mine = (user.get("name") or "").strip().lower()
+    assigned_to_other = bool(assignee) and assignee.strip().lower() != mine
+    shared = True if assigned_to_other else bool(payload.shared)
     doc = {
         "card_id": new_id("card"),
         "family_id": user["family_id"],
@@ -6780,6 +6792,17 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
         if owner and owner != user["user_id"]:
             raise HTTPException(status_code=403, detail="Only the person who added this can change its sharing")
         changes["shared"] = bool(payload.shared)
+
+    # A card assigned to someone other than the person editing it is shared, on
+    # edit as on create. If this edit leaves the card assigned to anyone but the
+    # editor, force it shared — overriding any attempt to keep it private. This
+    # is what fixes "my wife edited an old task, assigned it to me, and I never
+    # saw it": an old private card, assigned to the other parent on edit, becomes
+    # visible and fires the hand-off push (the notify below reads the shared flag).
+    final_assignee = changes["assignee"] if "assignee" in changes else card.get("assignee")
+    editor = (user.get("name") or "").strip().lower()
+    if final_assignee and final_assignee.strip().lower() != editor:
+        changes["shared"] = True
 
     if not changes:
         return public_card(card)

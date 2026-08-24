@@ -57,16 +57,27 @@ class AssignedIsShared(unittest.TestCase):
         payload = server.CardIn(type="TASK", title=kw.pop("title", "School run"), **kw)
         return asyncio.run(server.create_card(payload, user=dict(user)))
 
-    def test_assigning_defaults_to_shared(self):
-        # CardIn.shared defaults True, so a plain assign is visible to both.
-        card = self._create(A, assignee="Kim")
+    def test_assigning_to_other_forces_shared(self):
+        # Handing a task to someone else makes it shared, even if private is
+        # asked for — you cannot assign a job and hide it from the assignee.
+        card = self._create(A, assignee="Kim", shared=False)
         self.assertTrue(card["shared"])
         self.assertEqual(card["created_by_name"], "Roland")
 
-    def test_explicit_private_is_respected_even_when_assigned(self):
-        # The surprise-party case: deliberately private stays private.
-        card = self._create(A, title="Surprise party", assignee="Kim", shared=False)
+    def test_self_assigned_private_stays_private(self):
+        # A private personal to-do (assigned to yourself, or a surprise you are
+        # planning) still obeys the toggle.
+        card = self._create(A, title="Surprise party", assignee="Roland", shared=False)
         self.assertFalse(card["shared"])
+
+    def test_editing_to_assign_an_old_private_task_shares_it(self):
+        # The reported bug: an old private task, edited to assign to the other
+        # parent, becomes visible.
+        card = self._create(A, title="Old thing", assignee="Roland", shared=False)
+        self.assertFalse(card["shared"])
+        out = asyncio.run(server.update_card(
+            card["card_id"], server.CardPatchIn(assignee="Kim"), user=dict(A)))
+        self.assertTrue(out["shared"])
 
     def test_created_by_name_is_returned(self):
         card = self._create(B, assignee="Roland")

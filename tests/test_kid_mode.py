@@ -149,7 +149,11 @@ class KidMode(unittest.TestCase):
         self.assertEqual([c["title"] for c in home["chores"]], ["Tidy room"])
 
     def test_a_private_parent_item_never_reaches_a_child(self):
-        self._chore("Therapy booking", assignee="Ama", shared=False)
+        # A private parent to-do the parent keeps to themselves (assigned to
+        # Roland, not to the child) never shows in the child's home. A chore
+        # actually assigned to the child is meant for them and does show — that
+        # is the point of assigning it — so privacy here means "not the child's".
+        self._chore("Therapy booking", assignee="Roland", shared=False)
         home = self._home(self._enter()["session_token"])
         self.assertEqual(home["chores"], [])
 
