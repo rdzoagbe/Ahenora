@@ -165,3 +165,20 @@ export function isoWeek(d: Date): { week: number; even: boolean } {
   const week = Math.ceil(((date.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
   return { week, even: week % 2 === 0 };
 }
+
+/** Which parity of ISO week the children are in *this* home, for alternating
+ *  custody (garde alternée). A French judgment is written as semaines paires /
+ *  impaires, so the parity of the week is the whole schedule. */
+export type CustodyWeeks = 'even' | 'odd';
+
+/**
+ * True when the children are with this household in the week containing `date`.
+ * `ourWeeks` is the parity a parent set as theirs, so an even week is ours when
+ * we hold the even weeks, and an odd week is ours when we hold the odd ones.
+ * The year-boundary quirk (a 53-week year puts two odd weeks back to back) is
+ * inherent to how paire/impaire is legally defined and is left as-is on purpose.
+ */
+export function custodyIsOurs(date: Date, ourWeeks: CustodyWeeks): boolean {
+  const { even } = isoWeek(date);
+  return ourWeeks === 'even' ? even : !even;
+}

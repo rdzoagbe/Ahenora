@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Platform, Pressable, StyleSheet, Switch, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from 'expo-router';
 import * as Google from 'expo-auth-session/providers/google';
@@ -20,7 +20,7 @@ import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/compo
 import { AddCardModal } from '../../src/components/AddCardModal';
 import AppToast from '../../src/components/AppToast';
 import { useToast } from '../../src/hooks/useToast';
-import { localeFor } from '../../src/utils/date';
+import { localeFor, isoWeek, custodyIsOurs } from '../../src/utils/date';
 import { sendLocalNotification, syncCalendarNightly } from '../../src/notifications';
 import { cleanText, openExternal, parseDescription } from '../../src/eventDescription';
 
@@ -137,11 +137,46 @@ function groupByDay(cards: Card[], selectedDay: string | null) {
 }
 
 export default function Calendar() {
-  const { t, lang, dataVersion } = useStore();
+  const { t, lang, dataVersion, user, subscription, refreshSubscription } = useStore();
   const { toast, showToast } = useToast();
   const { isLocked, promptUpgrade } = usePremiumGate();
   const carpoolLocked = isLocked('carpool');
   const { width: windowWidth } = useWindowDimensions();
+
+  // Alternating custody (garde alternée). The config lives on the subscription
+  // payload; parents (never helpers/teens, matching the server's write gate)
+  // set it, and it tints whose ISO week it is across the month.
+  const custody = subscription?.custody;
+  const custodyOn = !!custody?.enabled;
+  const isParent = !!user && !user.is_helper && !user.is_teen;
+  const [custodyOpen, setCustodyOpen] = useState(false);
+  const [custEnabled, setCustEnabled] = useState(false);
+  const [custWeeks, setCustWeeks] = useState<'even' | 'odd'>('even');
+  const [custLabel, setCustLabel] = useState('');
+  const [custSaving, setCustSaving] = useState(false);
+
+  const openCustody = useCallback(() => {
+    const c = subscription?.custody;
+    setCustEnabled(!!c?.enabled);
+    setCustWeeks(c?.our_weeks === 'odd' ? 'odd' : 'even');
+    setCustLabel(c?.away_label || '');
+    setCustodyOpen(true);
+  }, [subscription]);
+
+  const saveCustody = useCallback(async () => {
+    setCustSaving(true);
+    try {
+      await api.setCustody({ enabled: custEnabled, our_weeks: custWeeks, away_label: custLabel.trim() });
+      await refreshSubscription();
+      setCustodyOpen(false);
+      showToast(t('custody_saved'));
+    } catch (e) {
+      logger.warn('save custody failed:', e);
+      showToast(t('cal_try_again_moment'));
+    } finally {
+      setCustSaving(false);
+    }
+  }, [custEnabled, custWeeks, custLabel, refreshSubscription, showToast, t]);
   const [cards, setCards] = useState<Card[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -944,6 +979,32 @@ export default function Calendar() {
               </PressScale>
             </View>
 
+            {/* Alternating-custody legend. When on, the two swatches name what the
+                mint/lavender week tints mean; when off, a parent gets a quiet way
+                in to set it up. Hidden entirely for helpers and non-custody kids. */}
+            {custodyOn ? (
+              <View style={styles.custodyLegend}>
+                <View style={styles.custodyLegendItem}>
+                  <View style={[styles.custodySwatch, { backgroundColor: ui.mint }]} />
+                  <Text style={styles.custodyLegendText} numberOfLines={1}>{t('custody_legend_ours')}</Text>
+                </View>
+                <View style={styles.custodyLegendItem}>
+                  <View style={[styles.custodySwatch, { backgroundColor: ui.lavender }]} />
+                  <Text style={styles.custodyLegendText} numberOfLines={1}>{custody?.away_label?.trim() || t('custody_legend_theirs')}</Text>
+                </View>
+                {isParent ? (
+                  <PressScale testID="custody-edit" accessibilityRole="button" accessibilityLabel={t('custody_title')} onPress={openCustody} style={styles.custodyEditBtn}>
+                    <Pencil color={ui.muted} size={16} />
+                  </PressScale>
+                ) : null}
+              </View>
+            ) : isParent ? (
+              <PressScale testID="custody-setup" accessibilityRole="button" onPress={openCustody} style={styles.custodySetupBtn}>
+                <Users color={ui.lavenderText} size={16} />
+                <Text style={styles.custodySetupText}>{t('custody_setup')}</Text>
+              </PressScale>
+            ) : null}
+
             {viewMode === 'month' ? (
               <>
                 <View style={[styles.weekHeader, { width: gridWidth }]}>
@@ -958,12 +1019,13 @@ export default function Calendar() {
                     const count = countsByDay[key] || 0;
                     const isToday = key === dateKey(new Date());
                     const selected = selectedDay === key;
+                    const custTint = custodyOn ? (custodyIsOurs(date, custody!.our_weeks) ? ui.mint : ui.lavender) : null;
                     return (
                       <PressScale
                         key={key}
                         testID={`calendar-day-${key}`}
                         onPress={() => onSelectDay(key, date)}
-                        style={[styles.dayCell, { width: daySize, height: daySize + 8 }, selected && styles.dayCellSelected]}
+                        style={[styles.dayCell, { width: daySize, height: daySize + 8 }, custTint && !selected ? { backgroundColor: custTint } : null, selected && styles.dayCellSelected]}
                       >
                         <Text
                           style={[
@@ -990,12 +1052,13 @@ export default function Calendar() {
                   const count = countsByDay[key] || 0;
                   const isToday = key === dateKey(new Date());
                   const selected = selectedDay === key;
+                  const custTint = custodyOn ? (custodyIsOurs(date, custody!.our_weeks) ? ui.mint : ui.lavender) : null;
                   return (
                     <PressScale
                       key={key}
                       testID={`calendar-day-${key}`}
                       onPress={() => onSelectDay(key, date)}
-                      style={[styles.weekDayCell, { width: daySize + 2 }, selected && styles.dayCellSelected]}
+                      style={[styles.weekDayCell, { width: daySize + 2 }, custTint && !selected ? { backgroundColor: custTint } : null, selected && styles.dayCellSelected]}
                     >
                       <Text style={[styles.weekDayLabel, { color: selected ? '#FFFFFF' : ui.muted }]}>
                         {date.toLocaleDateString(locale, { weekday: 'short' }).charAt(0).toUpperCase()}
@@ -1322,6 +1385,58 @@ export default function Calendar() {
         </PressScale>
       </KeyboardAwareBottomSheet>
 
+      {/* Alternating-custody setup. Parents only reach it (the legend hides the
+          entry for helpers), and the server refuses a write from anyone else. */}
+      <KeyboardAwareBottomSheet visible={custodyOpen} onClose={() => setCustodyOpen(false)} contentStyle={styles.detailSheet}>
+        <View style={styles.detailHeader}>
+          <Text style={styles.detailTitle}>{t('custody_title')}</Text>
+          <PressScale testID="custody-close" accessibilityRole="button" accessibilityLabel={t('close')} onPress={() => setCustodyOpen(false)} style={styles.closeBtn}>
+            <X color={ui.text} size={20} />
+          </PressScale>
+        </View>
+        <Text style={styles.custodyModalSub}>{t('custody_subtitle')}</Text>
+
+        <View style={styles.custodyToggleRow}>
+          <Text style={styles.custodyToggleLabel}>{t('custody_enable')}</Text>
+          <Switch
+            testID="custody-enable"
+            value={custEnabled}
+            onValueChange={setCustEnabled}
+            trackColor={{ true: ui.lavenderText, false: ui.line }}
+            thumbColor="#FFFFFF"
+          />
+        </View>
+
+        {custEnabled ? (
+          <>
+            <Text style={styles.custodyFieldLabel}>{t('custody_our_weeks_q')}</Text>
+            <View style={styles.viewToggle}>
+              <PressScale testID="custody-even" onPress={() => setCustWeeks('even')} style={[styles.viewToggleBtn, custWeeks === 'even' && styles.viewToggleOn]}>
+                <Text style={[styles.viewToggleText, custWeeks === 'even' && styles.viewToggleTextOn]}>{t('custody_even_weeks')}</Text>
+              </PressScale>
+              <PressScale testID="custody-odd" onPress={() => setCustWeeks('odd')} style={[styles.viewToggleBtn, custWeeks === 'odd' && styles.viewToggleOn]}>
+                <Text style={[styles.viewToggleText, custWeeks === 'odd' && styles.viewToggleTextOn]}>{t('custody_odd_weeks')}</Text>
+              </PressScale>
+            </View>
+
+            <Text style={styles.custodyFieldLabel}>{t('custody_away_label_q')}</Text>
+            <TextInput
+              testID="custody-away-label"
+              value={custLabel}
+              onChangeText={setCustLabel}
+              placeholder={t('custody_away_placeholder')}
+              placeholderTextColor={ui.muted}
+              maxLength={40}
+              style={styles.custodyInput}
+            />
+          </>
+        ) : null}
+
+        <PressScale testID="custody-save" accessibilityRole="button" onPress={saveCustody} disabled={custSaving} style={[styles.custodySaveBtn, custSaving && { opacity: 0.6 }]}>
+          {custSaving ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.custodySaveText}>{t('custody_save')}</Text>}
+        </PressScale>
+      </KeyboardAwareBottomSheet>
+
       {/* One screen, two modes: the add sheet edits an existing card too, so
           there is no second copy of every field to drift out of step. */}
       <AddCardModal
@@ -1374,6 +1489,20 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   viewToggleOn: { backgroundColor: ui.card },
   viewToggleText: { fontFamily: 'Inter_700Bold', fontSize: 13, color: ui.muted },
   viewToggleTextOn: { color: ui.text },
+  custodyLegend: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 16, marginBottom: 12 },
+  custodyLegendItem: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1, minWidth: 0 },
+  custodySwatch: { width: 12, height: 12, borderRadius: 4 },
+  custodyLegendText: { fontFamily: 'Inter_600SemiBold', fontSize: 12, color: ui.muted, flexShrink: 1 },
+  custodyEditBtn: { width: 30, height: 30, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', backgroundColor: ui.soft },
+  custodySetupBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, alignSelf: 'center', marginBottom: 12, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 9999, backgroundColor: ui.lavender },
+  custodySetupText: { fontFamily: 'Inter_700Bold', fontSize: 13, color: ui.lavenderText },
+  custodyModalSub: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 14, lineHeight: 20, marginTop: 8, marginBottom: 18 },
+  custodyToggleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  custodyToggleLabel: { flex: 1, color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 15 },
+  custodyFieldLabel: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 14, marginTop: 20, marginBottom: 10 },
+  custodyInput: { borderWidth: 1, borderColor: ui.line, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, fontFamily: 'Inter_500Medium', fontSize: 15, color: ui.text, backgroundColor: ui.soft },
+  custodySaveBtn: { marginTop: 24, height: 52, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', backgroundColor: ui.lavenderText },
+  custodySaveText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
   weekStrip: { flexDirection: 'row', justifyContent: 'space-between', alignSelf: 'center', paddingVertical: 2 },
   weekDayCell: { alignItems: 'center', justifyContent: 'center', gap: 3, paddingVertical: 8, borderRadius: 14 },
   weekDayLabel: { fontFamily: 'Inter_700Bold', fontSize: 11 },

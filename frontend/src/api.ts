@@ -1064,6 +1064,15 @@ export interface Subscription {
   price_monthly: number;
   price_yearly: number;
   admin_unlocked?: boolean;
+  // Alternating custody (garde alternée). Absent on older servers; off by
+  // default. our_weeks is the ISO-week parity the children are in this home.
+  custody?: CustodyConfig;
+}
+
+export interface CustodyConfig {
+  enabled: boolean;
+  our_weeks: 'even' | 'odd';
+  away_label: string;
 }
 
 export interface Entitlements {
@@ -1615,6 +1624,15 @@ export const api = {
     return request<Subscription>('/subscription/change', {
       method: 'POST',
       body: { plan, billing_cycle },
+    });
+  },
+  setCustody: (config: CustodyConfig) => {
+    // The subscription payload carries custody, so drop its cache to force the
+    // fresh copy the server returns to take effect on the next read.
+    cache.invalidate('getSubscription');
+    return request<Subscription>('/family/custody', {
+      method: 'PUT',
+      body: config,
     });
   },
   // Voice transcribe

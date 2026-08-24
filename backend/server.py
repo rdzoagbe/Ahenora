@@ -905,6 +905,26 @@ async def count_young_people(database, family_id: str) -> int:
     )
 
 
+CUSTODY_WEEKS = ("even", "odd")
+CUSTODY_LABEL_MAX = 40
+
+
+def public_custody(family: dict) -> dict:
+    """Alternating-custody (garde alternée) config for the client.
+
+    French judgments write custody as semaines paires / impaires, so the whole
+    schedule is one parity: which ISO weeks the children are in this home. Off by
+    default, absent on every family that predates this — a family that never sets
+    it up sees nothing, on the Feed or the Calendar.
+    """
+    weeks = family.get("custody_our_weeks")
+    return {
+        "enabled": bool(family.get("custody_enabled")),
+        "our_weeks": weeks if weeks in CUSTODY_WEEKS else "even",
+        "away_label": family.get("custody_away_label") or "",
+    }
+
+
 async def build_subscription(family_id: str):
     database = get_db()
     family = await get_family_doc(family_id)
@@ -954,6 +974,7 @@ async def build_subscription(family_id: str):
         "limits": limits,
         "price_monthly": catalog["price_monthly"],
         "price_yearly": catalog["price_yearly"],
+        "custody": public_custody(family),
     }
 
 
@@ -2460,6 +2481,16 @@ class RedeemIn(BaseModel):
 class SubscriptionChangeIn(BaseModel):
     plan: str
     billing_cycle: str
+
+
+class CustodyConfigIn(BaseModel):
+    # Alternating custody (garde alternée). enabled turns the Feed/Calendar
+    # markers on; our_weeks is the parity of ISO week the children are in this
+    # home ("even"/"odd", the paire/impaire of a French judgment); away_label is
+    # an optional name for the other home ("Chez leur papa"), blank for generic.
+    enabled: bool
+    our_weeks: str
+    away_label: str = Field(default="", max_length=CUSTODY_LABEL_MAX)
 
 
 class VisionIn(BaseModel):
@@ -7750,6 +7781,29 @@ async def change_subscription(payload: SubscriptionChangeIn, user=Depends(requir
                 "plan": payload.plan,
                 "billing_cycle": payload.billing_cycle,
                 "grandfathered": False,
+                "updated_at": utcnow(),
+            }
+        },
+        upsert=True,
+    )
+    return await build_subscription(user["family_id"])
+
+
+@app.put("/api/family/custody")
+async def set_custody(payload: CustodyConfigIn, user=Depends(require_full_member)):
+    """Set the family's alternating-custody config. Parents only (require_full_
+    member already refuses helpers and teens) — the schedule is a parent's to
+    set, and it shows on every family member's Feed and Calendar."""
+    if payload.our_weeks not in CUSTODY_WEEKS:
+        raise HTTPException(status_code=400, detail="our_weeks must be 'even' or 'odd'")
+    database = get_db()
+    await database["families"].update_one(
+        {"family_id": user["family_id"]},
+        {
+            "$set": {
+                "custody_enabled": bool(payload.enabled),
+                "custody_our_weeks": payload.our_weeks,
+                "custody_away_label": payload.away_label.strip()[:CUSTODY_LABEL_MAX],
                 "updated_at": utcnow(),
             }
         },
