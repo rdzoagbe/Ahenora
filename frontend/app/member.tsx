@@ -140,12 +140,15 @@ export default function MemberProfile() {
   }, [router, thread, displayName, kind]);
 
   const roleLabel = useMemo(() => {
-    if (kind === 'parent') return t('hub_role_coparent');
+    // The founder is the Owner, not a co-parent — matching the roster badge.
+    // Opening your own profile used to badge you "Co-parent", which is wrong for
+    // the person who created the household.
+    if (kind === 'parent') return member?.is_founder ? t('hub_role_owner') : t('hub_role_coparent');
     if (kind === 'teen') return t('hub_role_teen');
     if (kind === 'kid') return t('hub_role_kid');
     if (kind === 'helper') return t('hub_role_helper');
     return role; // a named family member keeps their own label (Grandma, Nanny…)
-  }, [kind, role, t]);
+  }, [kind, role, t, member?.is_founder]);
 
   const badgeTone = kind === 'teen'
     ? { bg: ui.lavender, fg: ui.lavenderText }
@@ -257,8 +260,10 @@ export default function MemberProfile() {
 
       <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
         {/* The conversation is a door, not the page: it opens as its own screen,
-            the same one the Hub opens, so there is a single chat surface. */}
-        {canChat ? (
+            the same one the Hub opens, so there is a single chat surface. Not on
+            your OWN profile — you cannot message yourself, and offering
+            "Message Roland" to Roland reads as a bug. */}
+        {canChat && !member?.is_me ? (
           <>
             <Text style={styles.sec}>{t('hub_conversation')}</Text>
             <PressScale testID="member-open-chat" onPress={openConversation} style={styles.row}>
