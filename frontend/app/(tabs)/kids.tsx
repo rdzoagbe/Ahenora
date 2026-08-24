@@ -1481,10 +1481,11 @@ export default function Kids() {
                           accessibilityRole="button"
                           accessibilityLabel={t('kids_manage_child')}
                           onPress={openManageSheet}
-                          hitSlop={12}
-                          style={{ padding: 2 }}
+                          hitSlop={8}
+                          style={styles.managePill}
                         >
-                          <MoreHorizontal color={ui.muted} size={16} />
+                          <MoreHorizontal color={ui.text} size={14} />
+                          <Text style={styles.managePillText} numberOfLines={1}>{t('hub_manage')}</Text>
                         </PressScale>
                       </View>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -2499,6 +2500,11 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   walletAvatarText: { fontFamily: 'Inter_800ExtraBold', fontSize: 20 },
   walletLabel: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 13, flexShrink: 1 },
   walletLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  // A findable control, not a lone grey ⋯. Setting a child's age (and PIN, and
+  // teen invite) lives behind this, so it says "Manage" in a tinted pill rather
+  // than hiding behind three dots nobody reads as a button.
+  managePill: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: ui.soft },
+  managePillText: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 12 },
   helperText: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 6, lineHeight: 17 },
   inlineLink: { alignSelf: 'flex-start', paddingVertical: 8, paddingHorizontal: 2 },
   inlineLinkText: { color: ui.danger, fontFamily: 'Inter_700Bold', fontSize: 13 },

@@ -1086,7 +1086,7 @@ export default function Kitchen() {
               </View>
               <View style={styles.secRight}>
                 <PressScale testID="shop-history" accessibilityRole="button" accessibilityLabel={t('a11y_history')} onPress={openShopHistory} style={styles.histBtn}>
-                  <History color={ui.muted} size={18} />
+                  <History color={ui.text} size={18} />
                 </PressScale>
                 {checkedItems.length > 0 ? (
                   <PressScale onPress={clearChecked} style={styles.clearBtn}>
@@ -1306,8 +1306,8 @@ export default function Kitchen() {
                   <PressScale onPress={() => setShowMealAdd(true)} style={[styles.mealActionBtn, { backgroundColor: ui.lavender }]}>
                     <Text style={[styles.clearBtnText, { color: ui.lavenderText }]} numberOfLines={1}>{t('vault_add_short')}</Text>
                   </PressScale>
-                  <PressScale testID="meal-history" onPress={openMealHistory} style={styles.histBtn}>
-                    <History color={ui.muted} size={18} />
+                  <PressScale testID="meal-history" accessibilityRole="button" accessibilityLabel={t('a11y_history')} onPress={openMealHistory} style={styles.histBtn}>
+                    <History color={ui.text} size={18} />
                   </PressScale>
                 </View>
               </>
@@ -2345,7 +2345,12 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   // outline it read as a stray dark blob among the labelled colour buttons in
   // the row (a lone circle in dark mode). Soft fill, same pill radius and row
   // height, so it belongs with the set as the secondary "past lists" action.
-  histBtn: { width: 42, alignSelf: 'stretch', borderRadius: 99, backgroundColor: ui.soft, alignItems: 'center', justifyContent: 'center' },
+  // A defined, readable icon button — not a dark blob. In dark mode a plain
+  // soft fill sat too close to the page and the muted icon vanished, so the
+  // history control read as a stray dark box beside the three bright labelled
+  // buttons. A hairline border gives it an edge and the icon takes the ink
+  // colour, so it reads as the deliberate "past lists / past plans" button.
+  histBtn: { width: 44, alignSelf: 'stretch', borderRadius: 99, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft, alignItems: 'center', justifyContent: 'center' },
   // Prominent, labelled call-to-action for the shopping-list meal ideas — now
   // one of the two main ways users get recipes, so it leads the row.
   ideasCta: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 14, borderRadius: 16, backgroundColor: ui.lavender, alignSelf: 'stretch', justifyContent: 'center', marginBottom: 10 },
