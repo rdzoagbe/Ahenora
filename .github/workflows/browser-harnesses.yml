@@ -11,24 +11,40 @@ name: Browser harnesses
 # to replace.
 
 on:
+  # Feature branches run CI too. Until now `push` was main-only, so a branch
+  # push relied entirely on the pull_request event - and when that event did not
+  # fire (it happened twice in one day), the PR sat with ZERO checks, looking
+  # clean because nothing had run. A pull request with no checks is more
+  # dangerous than one with a red X.
   push:
-    branches: [main]
+    branches:
+      - main
+      - 'claude/**'
     paths:
       - 'frontend/**'
       - 'backend/**'
       - 'scripts/**'
+      - 'docs/**'
+      - 'legal/**'
+      - 'tests/**'
       - '.github/workflows/browser-harnesses.yml'
   pull_request:
-    branches: [main]
+    branches:
+      - main
     paths:
       - 'frontend/**'
       - 'backend/**'
       - 'scripts/**'
+      - 'docs/**'
+      - 'legal/**'
+      - 'tests/**'
       - '.github/workflows/browser-harnesses.yml'
   workflow_dispatch:
 
 concurrency:
-  group: harnesses-${{ github.ref }}
+  # Keyed on the head BRANCH, not the ref: a push and its pull request
+  # produce different refs, so keying on ref would run everything twice.
+  group: harnesses-${{ github.event.pull_request.head.ref || github.ref_name }}
   cancel-in-progress: true
 
 permissions:

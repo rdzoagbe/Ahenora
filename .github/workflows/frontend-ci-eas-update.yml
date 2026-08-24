@@ -1,22 +1,32 @@
 name: Frontend CI and Expo update
 
 on:
+  # Feature branches run CI too. Until now `push` was main-only, so a branch
+  # push relied entirely on the pull_request event - and when that event did not
+  # fire (it happened twice in one day), the PR sat with ZERO checks, looking
+  # clean because nothing had run. A pull request with no checks is more
+  # dangerous than one with a red X.
   push:
     branches:
       - main
+      - 'claude/**'
     paths:
       - 'frontend/**'
+      - 'legal/**'
       - '.github/workflows/frontend-ci-eas-update.yml'
   pull_request:
     branches:
       - main
     paths:
       - 'frontend/**'
+      - 'legal/**'
       - '.github/workflows/frontend-ci-eas-update.yml'
   workflow_dispatch:
 
 concurrency:
-  group: frontend-ci-eas-update-${{ github.ref }}
+  # Keyed on the head BRANCH, not the ref: a push and its pull request
+  # produce different refs, so keying on ref would run everything twice.
+  group: frontend-ci-eas-update-${{ github.event.pull_request.head.ref || github.ref_name }}
   cancel-in-progress: true
 
 permissions:

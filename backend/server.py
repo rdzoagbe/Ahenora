@@ -1812,12 +1812,40 @@ async def add_user_to_family_if_needed(database: Any, user: dict, family_id: str
     return member
 
 
+def alerts_enabled(prefs: Optional[dict], key: str) -> bool:
+    """Whether this person wants a given alert. Absent settings mean YES.
+
+    So does a row the user has never edited. Those rows were written by the
+    server with everything switched off, which meant a family could install the
+    app, grant notification permission, and then hear nothing at all - a
+    co-parent assigns the school run and the other parent finds out days later
+    by noticing their own name. That is the exact failure this app exists to
+    prevent, and it was the default.
+
+    Defaulting to on is not the app being pushy: the operating system still asks
+    permission before a single notification is delivered, and a denied prompt
+    silences everything regardless of what is stored here. This setting only
+    decides what happens once someone has already said yes.
+
+    A row the user HAS edited is obeyed exactly, in both directions - turning an
+    alert off stays off. update_notification_settings always stamps updated_at,
+    so created_at == updated_at is a reliable "never chosen".
+    """
+    if not prefs:
+        return True
+    created, updated = prefs.get("created_at"), prefs.get("updated_at")
+    if created and updated and created == updated:
+        return True
+    return bool(prefs.get(key, True))
+
+
 def public_notification_settings(settings: Optional[dict]) -> dict:
-    settings = settings or {}
+    # The screen must show what the server will actually do, or a family sees
+    # "off" while alerts arrive - or worse, "on" while nothing does.
     return {
-        "card_reminders": bool(settings.get("card_reminders", False)),
-        "new_card_alerts": bool(settings.get("new_card_alerts", False)),
-        "updated_at": iso(settings.get("updated_at")),
+        "card_reminders": alerts_enabled(settings, "card_reminders"),
+        "new_card_alerts": alerts_enabled(settings, "new_card_alerts"),
+        "updated_at": iso((settings or {}).get("updated_at")),
     }
 
 
@@ -1832,8 +1860,8 @@ async def get_notification_settings_doc(user_id: str) -> dict:
 
     settings = {
         "user_id": user_id,
-        "card_reminders": False,
-        "new_card_alerts": False,
+        "card_reminders": True,
+        "new_card_alerts": True,
         "created_at": utcnow(),
         "updated_at": utcnow(),
     }
@@ -2104,7 +2132,7 @@ async def send_new_card_alert(family_id: str, card: dict, created_by_user_id: Op
 
         prefs = await database["notification_settings"].find_one(
             {"user_id": uid}, {"_id": 0})
-        if not prefs or not prefs.get("new_card_alerts"):
+        if not alerts_enabled(prefs, "new_card_alerts"):
             continue
 
         token = token_doc.get("token")
@@ -2148,7 +2176,7 @@ async def send_coparent_alert(family_id: str, title: str, body: str, data_type: 
             continue
         prefs = await database["notification_settings"].find_one(
             {"user_id": uid}, {"_id": 0})
-        if not prefs or not prefs.get("new_card_alerts"):
+        if not alerts_enabled(prefs, "new_card_alerts"):
             continue
         token = token_doc.get("token")
         if not token or not token.startswith("ExponentPushToken"):
@@ -2327,7 +2355,14 @@ class CardIn(BaseModel):
     image_base64: Optional[str] = Field(default=None, max_length=MAX_IMAGE_B64_CHARS)
     recurrence: str = "none"
     reminder_minutes: int = 60
-    shared: bool = False
+    # Shared unless someone says otherwise. It was private by default, which
+    # inverted the whole product: a task added with the + button was invisible
+    # to the rest of the household and notified nobody, so a co-parent could
+    # add the school run and the other parent would never see it or hear about
+    # it. The two failures are not equal - sharing something you meant to keep
+    # back is visible and reversible in one tap, while a task that silently
+    # reaches nobody is never discovered at all.
+    shared: bool = True
 
 
 class CardPatchIn(BaseModel):
