@@ -8674,6 +8674,54 @@ async def list_shopping_history(user=Depends(require_user)):
     return [public_shopping_history(h) for h in rows]
 
 
+# A "regular" is bought on at least this many past trips — enough to be a habit,
+# not a one-off. Below this the suggestions are noise.
+FREQUENT_MIN_TRIPS = 2
+
+
+@app.get("/api/shopping/frequent")
+async def frequent_shopping_items(user=Depends(require_user)):
+    """The things this household buys often — from past shopping trips, not
+    receipts (a receipt keeps only its total, never the items). Powers the
+    'Your regulars' row: tap to add what you usually buy but have not put on
+    this list yet. Counted once per trip, so a name written twice in one list
+    is one visit, and anything already on the current list is left out.
+    """
+    database = get_db()
+    fid = user["family_id"]
+    # Already on the list — don't suggest what's already there.
+    on_list = set()
+    async for item in database["shopping_list"].find(
+            {"family_id": fid}, {"_id": 0, "name": 1}):
+        n = (item.get("name") or "").strip().lower()
+        if n:
+            on_list.add(n)
+    # Count trips per item across the archived history. Newest first so the
+    # display casing follows the most recent spelling.
+    counts: dict = {}
+    display: dict = {}
+    trips = await database["shopping_history"].find(
+        {"family_id": fid}, {"_id": 0, "items": 1}).sort("created_at", -1).to_list(200)
+    for h in trips:
+        seen_this_trip = set()
+        for raw in h.get("items", []):
+            name = (raw or "").strip()
+            key = name.lower()
+            if not key or key in seen_this_trip:
+                continue
+            seen_this_trip.add(key)
+            counts[key] = counts.get(key, 0) + 1
+            display.setdefault(key, name)
+    regulars = [
+        {"name": display[k], "count": c}
+        for k, c in counts.items()
+        if c >= FREQUENT_MIN_TRIPS and k not in on_list
+    ]
+    # Most-bought first; ties fall back to name so the order is stable.
+    regulars.sort(key=lambda r: (-r["count"], r["name"].lower()))
+    return {"items": regulars[:8]}
+
+
 @app.post("/api/shopping/history/{history_id}/reuse")
 async def reuse_shopping_history(history_id: str, user=Depends(require_user)):
     database = get_db()

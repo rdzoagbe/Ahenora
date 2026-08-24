@@ -574,6 +574,11 @@ export interface ShoppingHistoryEntry {
   created_at: string;
 }
 
+export interface FrequentItem {
+  name: string;
+  count: number;
+}
+
 export interface SavedMealPlan {
   plan_id: string;
   name: string;
@@ -1725,6 +1730,9 @@ export const api = {
   // Wipes the whole list (it's archived to history first, so it's recoverable).
   clearAllShopping: () => request<{ deleted: number }>('/shopping/all', { method: 'DELETE' }),
   listShoppingHistory: () => request<ShoppingHistoryEntry[]>('/shopping/history'),
+  // The household's regulars — items bought on several past trips and not on the
+  // list right now. Powers the "Your regulars" quick-add row.
+  listFrequentShopping: () => request<{ items: FrequentItem[] }>('/shopping/frequent'),
   reuseShoppingHistory: (id: string) =>
     request<{ ok: boolean; added: number }>(`/shopping/history/${id}/reuse`, { method: 'POST' }),
   deleteShoppingHistory: (id: string) =>
