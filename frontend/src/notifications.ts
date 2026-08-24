@@ -2,7 +2,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
-import { Card } from './api';
+import { api, Card } from './api';
+import { logger } from './logger';
+import { targetForNotification } from './notificationRouting';
+export { targetForNotification } from './notificationRouting';
 
 const REMINDER_IDS_KEY = 'coo_scheduled_card_reminder_ids';
 const EXPO_GO_ANDROID_MESSAGE =
@@ -340,7 +343,7 @@ const NOTIF_ASKED_KEY = 'coo_notif_permission_asked';
 export async function ensureAskedNotificationPermissionOnce() {
   try {
     const asked = await AsyncStorage.getItem(NOTIF_ASKED_KEY);
-    if (asked) return;
+    if (asked) { await ensurePushRegistered(); return; }
     await AsyncStorage.setItem(NOTIF_ASKED_KEY, '1');
     const Notifications = await getNotificationsModule();
     if (!Notifications) return;
@@ -348,8 +351,72 @@ export async function ensureAskedNotificationPermissionOnce() {
     if (current.status !== 'granted') {
       await Notifications.requestPermissionsAsync();
     }
+    // Whether it was already granted or just granted, register the device now —
+    // asking permission and then never sending the token is how a family grants
+    // notifications and still hears nothing.
+    await ensurePushRegistered();
   } catch {
     // Permission prompts must never break the feed.
+  }
+}
+
+/**
+ * Register this device's Expo push token with the server so the household can
+ * actually reach it. This used to happen in exactly ONE place — turning on the
+ * "new card alerts" toggle in Settings — so a family that never opened that
+ * screen had no registered device at all, and every server push (a task
+ * assigned, a message, a co-parent's note) reached nobody. It runs on login and
+ * on every app launch now.
+ *
+ * It does not prompt: the once-per-install ask above handles that, and if
+ * permission is not granted there is simply nothing to register. Re-registering
+ * each launch also refreshes a rotated Expo token, which otherwise goes stale
+ * and silently stops routing to the phone.
+ */
+export async function ensurePushRegistered(): Promise<void> {
+  try {
+    const Notifications = await getNotificationsModule();
+    if (!Notifications) return;
+    const perm = await Notifications.getPermissionsAsync();
+    if (perm.status !== 'granted') return;
+    const reg = await registerForPushNotificationsAsync();
+    if (!reg.expoPushToken) {
+      if (reg.error) logger.warn('push token unavailable', reg.error);
+      return;
+    }
+    const { appVersion, runtimeVersion } = await appVersionInfo();
+    await api.registerNotificationToken(reg.expoPushToken, Platform.OS, appVersion, runtimeVersion);
+  } catch (e) {
+    logger.warn('ensurePushRegistered failed', e);
+  }
+}
+
+/**
+ * Wire up notification taps. Calls `onTarget` with a route both for a tap while
+ * the app is running AND for a cold start where tapping the notification is what
+ * launched the app (getLastNotificationResponseAsync). Returns a cleanup fn.
+ */
+export async function attachNotificationRouting(
+  onTarget: (t: { pathname: string; params?: Record<string, string> }) => void,
+): Promise<() => void> {
+  try {
+    const Notifications = await getNotificationsModule();
+    if (!Notifications) return () => undefined;
+    try {
+      const last = await Notifications.getLastNotificationResponseAsync();
+      if (last) {
+        const t = targetForNotification(last.notification.request.content.data);
+        if (t) onTarget(t);
+      }
+    } catch { /* cold-start lookup is best-effort */ }
+    const sub = Notifications.addNotificationResponseReceivedListener((response: any) => {
+      const t = targetForNotification(response.notification.request.content.data);
+      if (t) onTarget(t);
+    });
+    return () => { try { sub.remove(); } catch { /* already gone */ } };
+  } catch (e) {
+    logger.warn('attachNotificationRouting failed', e);
+    return () => undefined;
   }
 }
 

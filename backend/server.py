@@ -1993,6 +1993,8 @@ PUSH_I18N = {
         "assigned_title": "{name} handed you something",
         "assigned_body": "{title}",
         "assigned_body_due": "{title} — due {due}",
+        "teen_star_title": "Your star is approved ⭐",
+        "teen_star_body": "{title}",
     },
     "fr": {
         "invited_title": "{name} vous invite dans son foyer",
@@ -2002,6 +2004,8 @@ PUSH_I18N = {
         "assigned_title": "{name} vous a confié quelque chose",
         "assigned_body": "{title}",
         "assigned_body_due": "{title} — pour le {due}",
+        "teen_star_title": "Ton étoile est validée ⭐",
+        "teen_star_body": "{title}",
     },
     "es": {
         "invited_title": "{name} te invitó a su hogar",
@@ -2011,6 +2015,8 @@ PUSH_I18N = {
         "assigned_title": "{name} te ha encargado algo",
         "assigned_body": "{title}",
         "assigned_body_due": "{title} — para el {due}",
+        "teen_star_title": "Tu estrella está aprobada ⭐",
+        "teen_star_body": "{title}",
     },
     "de": {
         "invited_title": "{name} hat dich in den Haushalt eingeladen",
@@ -2020,6 +2026,8 @@ PUSH_I18N = {
         "assigned_title": "{name} hat dir etwas übergeben",
         "assigned_body": "{title}",
         "assigned_body_due": "{title} — fällig am {due}",
+        "teen_star_title": "Dein Stern ist bestätigt ⭐",
+        "teen_star_body": "{title}",
     },
 }
 
@@ -5059,6 +5067,20 @@ async def teen_finish_task(card_id: str, teen=Depends(require_teen)):
             "completed_by_user_id": user["user_id"],
             "completed_by_name": user.get("name") or "",
             "teen_star_status": "pending", "updated_at": utcnow()}})
+    # Tell the parents a star is waiting on them. Without this a teen finishes a
+    # chore and it just sits in an approval list nobody knows to open.
+    try:
+        who = user.get("name") or "Your teen"
+        title = (card.get("title") or "").strip()
+        await send_coparent_alert(
+            user["family_id"],
+            f"{who} finished a task",
+            (f"“{title}” — approve their star?" if title else "Approve their star?"),
+            "teen_approval",
+            created_by_user_id=user["user_id"],
+        )
+    except Exception as e:
+        log.warning("teen approval alert failed: %s", e)
     return {"ok": True}
 
 
@@ -5111,6 +5133,20 @@ async def resolve_teen_approval(card_id: str, payload: TeenApprovalIn, user=Depe
                 database, user["family_id"], teen_member["member_id"], stars,
                 (card or {}).get("title") or "Task approved",
                 {"family_id": user["family_id"], "user_id": user["user_id"], "name": user.get("name")})
+            # Close the loop back to the teen — their side is a real account, so
+            # they should hear that the star they were waiting on came through.
+            try:
+                teen_uid = (card or {}).get("completed_by_user_id")
+                if teen_uid:
+                    teen_user = await database["users"].find_one({"user_id": teen_uid}, {"_id": 0})
+                    L = PUSH_I18N.get((teen_user or {}).get("language") or "en", PUSH_I18N["en"])
+                    await send_push_to_user(
+                        database, teen_uid,
+                        L["teen_star_title"],
+                        L["teen_star_body"].format(title=(card or {}).get("title") or ""),
+                        {"type": "teen_star", "card_id": card_id})
+            except Exception as e:
+                log.warning("teen star notify failed: %s", e)
     return {"ok": True, "status": new_status}
 
 
@@ -5557,6 +5593,16 @@ async def kid_request_reward(reward_id: str, child=Depends(require_child)):
         "weekend": bool(reward.get("weekend")),
         "created_by_user_id": None, "fulfilled_at": None}
     await database["redemptions"].insert_one(redemption)
+    # A child spent their stars — both parents should know, so the treat gets
+    # handed over and nobody double-pays. created_by is None (the child has no
+    # login), so this reaches every adult in the household.
+    try:
+        await send_coparent_alert(
+            child["family_id"],
+            f"{member.get('name') or 'Your child'} redeemed a reward",
+            reward.get("title") or "", "reward_redeemed", created_by_user_id=None)
+    except Exception as e:
+        log.warning("kid reward alert failed: %s", e)
 
     fresh = await database["family_members"].find_one(
         {"member_id": member["member_id"]}, {"_id": 0})
@@ -7021,6 +7067,15 @@ async def redeem_reward(reward_id: str, payload: RedeemIn, user=Depends(require_
         "fulfilled_at": None,
     }
     await database["redemptions"].insert_one(redemption)
+    # The other parent hears that a reward was spent — the one who did it is
+    # excluded (they just did it and are watching it happen).
+    try:
+        await send_coparent_alert(
+            user["family_id"],
+            f"{member.get('name') or 'Your child'} redeemed a reward",
+            reward.get("title") or "", "reward_redeemed", created_by_user_id=user["user_id"])
+    except Exception as e:
+        log.warning("reward alert failed: %s", e)
 
     member = await database["family_members"].find_one({"member_id": member["member_id"]}, {"_id": 0})
     return {

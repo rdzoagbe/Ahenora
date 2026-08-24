@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 // Side effect: maps Alert.alert onto browser dialogs on web, where the RN
 // implementation is a no-op and every confirm button silently did nothing.
 import '../src/webAlert';
@@ -23,11 +23,33 @@ import { StoreProvider, useStore } from '../src/store';
 import { UpgradeModal } from '../src/components/UpgradeModal';
 import { WebUpdateBanner } from '../src/components/WebUpdateBanner';
 import { UpdateNotice } from '../src/components/UpdateNotice';
+import { ensurePushRegistered, attachNotificationRouting } from '../src/notifications';
 
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
 function RootNavigator() {
-  const { resolvedAppearance, theme } = useStore();
+  const { resolvedAppearance, theme, user } = useStore();
+  const router = useRouter();
+
+  // Register this device for push as soon as someone is signed in — and again on
+  // every launch, so a rotated Expo token is refreshed. Without this the token
+  // was only ever sent when a user manually flipped a Settings toggle, so most
+  // families had no registered device and no server push could reach them.
+  useEffect(() => {
+    if (user) ensurePushRegistered();
+  }, [user]);
+
+  // Route a tapped notification to where it belongs — the conversation for a
+  // message, the Feed for a task, the Family hub for a star or a join — instead
+  // of dropping the person on whatever screen they last saw.
+  useEffect(() => {
+    let cleanup = () => undefined as void;
+    let active = true;
+    attachNotificationRouting((t) => {
+      if (user) router.push(t as never);
+    }).then((fn) => { if (active) cleanup = fn; else fn(); });
+    return () => { active = false; cleanup(); };
+  }, [user, router]);
 
   return (
     <>
