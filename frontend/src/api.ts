@@ -1133,6 +1133,13 @@ function invalidateUsageCaches() {
   cache.invalidate('getSubscription');
 }
 
+// Force the next getSubscription() to hit the network. Used when polling for a
+// plan change that just happened elsewhere (a Stripe webhook after checkout),
+// where the cached copy would otherwise mask the update.
+export function bustSubscriptionCache() {
+  invalidateUsageCaches();
+}
+
 // Fire-and-forget first-party usage counter (count-only, no payloads). Never
 // throws and never retries — losing an event is fine, bothering the user isn't.
 export function logEvent(name: string): void {
@@ -1638,6 +1645,16 @@ export const api = {
     invalidateUsageCaches();
     return request<Subscription>('/billing/reconcile', { method: 'POST' });
   },
+  // Card checkout — the way in for web/iPhone, where store billing does not
+  // exist. `enabled` is false until the server has its Stripe keys.
+  getStripeConfig: () =>
+    request<{ enabled: boolean; currency: string; price_monthly: number; price_yearly: number }>(
+      '/billing/stripe/config'),
+  createStripeCheckout: (cycle: BillingCycle) =>
+    request<{ url: string; session_id?: string }>('/billing/stripe/checkout', {
+      method: 'POST',
+      body: { cycle },
+    }),
   changeSubscription: (plan: Plan, billing_cycle: BillingCycle) => {
     invalidateUsageCaches();
     return request<Subscription>('/subscription/change', {
