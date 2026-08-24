@@ -60,6 +60,31 @@ class FamilyChat(unittest.TestCase):
     def _teen_msgs(self, uid, name):
         return asyncio.run(server.teen_chat_get(teen=self._teen(uid, name)))["messages"]
 
+    # --- the co-parent conversation is one room, not two ----------------
+    def test_coparent_is_the_adults_room_not_a_separate_dm(self):
+        threads = asyncio.run(server.family_chat_threads(user=dict(PARENT)))["threads"]
+        adults = [t for t in threads if t.get("is_adults")]
+        self.assertEqual(len(adults), 1)
+        # The adults room carries the co-parent, so every door opens this one key.
+        self.assertEqual(adults[0]["title"], "Awo")
+        self.assertEqual(adults[0]["member_id"], "m_p2")
+        # No separate dm: thread for the co-parent — that split the messages.
+        dm_rows = [t for t in threads if str(t["thread"]).startswith(server.DM_PREFIX)]
+        self.assertEqual([t for t in dm_rows if t.get("member_id") == "m_p2"], [])
+
+    def test_migration_folds_coparent_dm_into_adults(self):
+        # A message sent under the old dm: co-parent key, before the unify.
+        key = server.dm_thread("u_p", "u_p2")
+        asyncio.run(server._chat_insert(self.db, "fam1", key, "u_p", "parent", "Roland", "sent from her profile"))
+        asyncio.run(self.db["families"].insert_one({"family_id": "fam1", "plan": "village"}))
+        asyncio.run(server._merge_coparent_dms(self.db))
+        # It now lives in the adults room, where both parents read it.
+        adults_msgs = asyncio.run(server._chat_thread_messages(self.db, "fam1", server.ADULTS_THREAD, "u_p2"))
+        self.assertIn("sent from her profile", [m["text"] for m in adults_msgs])
+        # And nothing is left under the old key.
+        old = asyncio.run(server._chat_thread_messages(self.db, "fam1", key, "u_p"))
+        self.assertEqual(old, [])
+
     # --- the security claim ---------------------------------------------
     def test_teen_sees_only_their_own_thread(self):
         """Adults chatter and another teen's thread are both invisible to Ama."""

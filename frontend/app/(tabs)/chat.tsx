@@ -41,7 +41,10 @@ export default function ChatTab() {
 
   useFocusEffect(useCallback(() => { loadThreads(); }, [loadThreads]));
 
-  const title = (th: ChatThreadSummary) => (th.is_adults ? t('chat_adults_thread') : th.title || t('chat_teen'));
+  // The adults room carries the co-parent's name when there is one, so it reads
+  // as "message your co-parent" rather than a generic "Parents" room. It falls
+  // back to the group label only when a parent has no co-parent yet.
+  const title = (th: ChatThreadSummary) => (th.is_adults ? (th.title || t('chat_adults_thread')) : th.title || t('chat_teen'));
 
   const open = (th: ChatThreadSummary) => {
     router.push({

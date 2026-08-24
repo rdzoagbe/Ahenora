@@ -207,6 +207,42 @@ async def reset_testing_window_plans():
         log.warning("Testing-window plan reset skipped: %s", exc)
 
 
+async def _merge_coparent_dms(database) -> int:
+    """Fold co-parent one-to-one messages into the adults room, family by family.
+    A co-parent chat used to split across two keys — the profile page wrote to
+    'adults' while the chat tab opened a dm: thread — so half a family's messages
+    'vanished' from whichever door was not used. The adults room is the single
+    key every door opens now; move any dm: co-parent messages there so none are
+    stranded. Once moved there are none left, so re-running is a no-op."""
+    moved = 0
+    async for fam in database["families"].find({}, {"_id": 0, "family_id": 1}):
+        fid = fam.get("family_id")
+        if not fid:
+            continue
+        parents = [a for a in await _family_accounts(database, fid) if _is_parent_role(a["role"])]
+        if len(parents) < 2:
+            continue
+        key = dm_thread(parents[0]["user_id"], parents[1]["user_id"])
+        result = await database["messages"].update_many(
+            {"family_id": fid, "thread": key},
+            {"$set": {"thread": ADULTS_THREAD}})
+        moved += result.modified_count
+    return moved
+
+
+@app.on_event("startup")
+async def _merge_coparent_dms_into_adults():
+    """One-off, idempotent migration — see _merge_coparent_dms."""
+    if db is None:
+        return
+    try:
+        moved = await _merge_coparent_dms(db)
+        if moved:
+            log.info("Merged %d co-parent dm message(s) into the adults room", moved)
+    except Exception as exc:  # pragma: no cover - startup must never crash the app
+        log.warning("Co-parent dm merge skipped: %s", exc)
+
+
 # -----------------------------------------------------------------------------
 # Rate limiting (in-memory, per-IP)
 # -----------------------------------------------------------------------------
@@ -5540,11 +5576,28 @@ async def family_chat_threads(user=Depends(require_chat_account)):
 
     threads = [{"thread": HOUSEHOLD_THREAD, "title": None, "is_adults": False, "is_household": True}]
     if is_parent:
-        threads.append({"thread": ADULTS_THREAD, "title": None, "is_adults": True, "is_household": False})
+        # The grown-ups' room. A household has at most two parents, so with one
+        # co-parent this room IS the co-parent conversation — it carries their
+        # name and member_id so every door (their profile, the chat tab, the
+        # row's chat icon) opens this one room. Without that the profile page
+        # wrote here while the chat tab opened a separate dm: thread, and a
+        # family's messages split across two keys — "the chat isn't there".
+        co_parents = [a for a in accounts
+                      if a["user_id"] != viewer and _is_parent_role(a["role"])]
+        co = co_parents[0] if len(co_parents) == 1 else None
+        threads.append({"thread": ADULTS_THREAD,
+                        "title": co["name"] if co else None,
+                        "member_id": co["member_id"] if co else None,
+                        "role": co["role"] if co else None,
+                        "is_adults": True, "is_household": False})
 
     if is_parent:
         for a in accounts:
             if a["user_id"] == viewer:
+                continue
+            # The co-parent lives in the adults room above, not a separate dm:
+            # thread — one conversation between the two of them, not two.
+            if _is_parent_role(a["role"]):
                 continue
             # A teen keeps the thread key they already had — their own user id.
             # Moving them to a dm: key would have left every message sent before
