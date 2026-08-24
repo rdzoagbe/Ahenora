@@ -28,6 +28,7 @@ import {
   Megaphone,
   MessageSquare,
   Mic,
+  Pencil,
   Plus,
   Star,
   Trash2,
@@ -299,6 +300,11 @@ export default function Feed() {
   // dismissed card never reappears.
   const pendingDismissRef = useRef<Set<string>>(new Set());
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
+  // The task being edited. Tasks live on the Feed now, but editing was only
+  // ever wired on the Calendar — so opening one here gave no way to fix its
+  // title or hand it to someone. The pencil in the detail sheet opens the same
+  // add/edit sheet the Calendar uses, in edit mode.
+  const [editing, setEditing] = useState<Card | null>(null);
   const [showAlerts, setShowAlerts] = useState(false);
   const [householdOpen, setHouseholdOpen] = useState(false);
   const [members, setMembers] = useState<FamilyMember[]>([]);
@@ -1393,6 +1399,15 @@ export default function Feed() {
         initialDraft={voiceDraft}
       />
 
+      {/* Same sheet, edit mode — reached by the pencil on a task. Lets a task
+          on the Feed be corrected or reassigned without deleting and retyping. */}
+      <AddCardModal
+        visible={!!editing}
+        editCard={editing}
+        onClose={() => setEditing(null)}
+        onCreated={() => { setEditing(null); load(); }}
+      />
+
       <KeyboardAwareBottomSheet visible={!!selectedCard} onClose={() => setSelectedCard(null)} contentStyle={styles.detailSheet}>
         {selectedCard ? (() => {
           const parts = parseDescription(selectedCard.description, t);
@@ -1401,6 +1416,14 @@ export default function Feed() {
             <>
               <View style={styles.detailHeader}>
                 <Text style={styles.detailTitle}>{cleanText(selectedCard.title)}</Text>
+                <PressScale
+                  testID="feed-card-edit"
+                  accessibilityRole="button"
+                  accessibilityLabel={t('card_edit')}
+                  onPress={() => { setEditing(selectedCard); setSelectedCard(null); }}
+                  style={styles.closeBtn}>
+                  <Pencil color={ui.text} size={18} />
+                </PressScale>
                 <PressScale
                   accessibilityRole="button"
                   accessibilityLabel={t('close')} onPress={() => setSelectedCard(null)} style={styles.closeBtn} testID="feed-detail-close">
