@@ -61,6 +61,10 @@ async def main():
                    {"merchant": "Carrefour", "amount": 31.90, "category": "Groceries", "spent_on": "2026-08-04"}]:
             try: api("POST", "/expenses", ex, tok)
             except Exception as e: print("exp seed:", e)
+        # alternating custody on — so the Calendar week tints + legend and the
+        # Feed's "· with you / at their dad's" line render for a visual check
+        try: api("PUT", "/family/custody", {"enabled": True, "our_weeks": "even", "away_label": "leur papa"}, tok)
+        except Exception as e: print("custody seed:", e)
 
         async with async_playwright() as pw:
             b = await launch_chromium(pw)
@@ -96,6 +100,7 @@ async def main():
             await shot("08_addcard.png", "/feed", taps=['[data-testid="tab-add"]'], wait_ms=2600)
             await shot("09_feed_320.png", "/feed", width=320)
             await shot("10_kitchen_spend_320.png", "/kitchen", width=320, taps=['[data-testid="kitchen-tab-spend"]'])
+            await shot("11_calendar_320.png", "/calendar", width=320)
             await b.close()
     finally:
         web.terminate(); bk.terminate()

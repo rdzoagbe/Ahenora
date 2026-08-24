@@ -53,7 +53,7 @@ import { StreakChip } from '../../src/components/StreakChip';
 import { useStore } from '../../src/store';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { useUI, UIColors } from '../../src/components/Kit';
-import { api, logEvent, ActivityEntry, Announcement, Card, CardType, FamilyMember, HandoffNote, Template, WeeklyReport } from '../../src/api';
+import { api, logEvent, ActivityEntry, Announcement, Card, CardType, CustodyConfig, FamilyMember, HandoffNote, Template, WeeklyReport } from '../../src/api';
 import { syncCardReminderNotifications, syncMorningDigest, syncDinnerReminder, syncSundayRecap, ensureAskedNotificationPermissionOnce } from '../../src/notifications';
 import { logger } from '../../src/logger';
 import { isoWeek } from '../../src/utils/date';
@@ -116,10 +116,21 @@ function feedDateLine(now: Date | null) {
 // number IS the schedule — French judgments read "semaines paires / impaires" —
 // and for everyone else it is a normal, harmless piece of the week's identity
 // (European calendars print it as a matter of course).
-function feedWeekLine(now: Date | null, t: TFunc) {
+function feedWeekLine(now: Date | null, t: TFunc, custody?: CustodyConfig | null) {
   if (!now) return '';
   const { week, even } = isoWeek(now);
-  return t('feed_week_line', { n: week, parity: even ? t('week_even') : t('week_odd') });
+  let line = t('feed_week_line', { n: week, parity: even ? t('week_even') : t('week_odd') });
+  // When a family runs alternating custody, the parity IS the schedule, so spell
+  // out whose week it is right where the number already sits: "· with you" on
+  // our weeks, "· at their dad's" (or a generic other-parent) on the rest.
+  if (custody?.enabled) {
+    const ours = custody.our_weeks === 'even' ? even : !even;
+    const away = custody.away_label.trim()
+      ? t('custody_away_named', { who: custody.away_label.trim() })
+      : t('custody_away');
+    line += ` · ${ours ? t('custody_with_you') : away}`;
+  }
+  return line;
 }
 
 // "in 25 min" / "in 3 h" countdown for the detail sheet — only when the item is
@@ -882,7 +893,7 @@ export default function Feed() {
             <View style={styles.topMetaRow}>
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={styles.dateText}>{feedDateLine(now)} <Text style={styles.sun}>{timeEmoji(now)}</Text></Text>
-                <Text style={styles.weekLine} testID="feed-week">{feedWeekLine(now, t)}</Text>
+                <Text style={styles.weekLine} testID="feed-week">{feedWeekLine(now, t, subscription?.custody)}</Text>
               </View>
               <View style={styles.topActions}>
                 <PressScale
