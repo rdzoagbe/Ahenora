@@ -21,7 +21,7 @@ import { useUI } from './Kit';
 import { toLocalDateInput, toLocalTimeInput } from '../utils/date';
 import { useStore } from '../store';
 import { detectDateTime } from '../dateParse';
-import { api, CardType, FamilyMember, Recurrence } from '../api';
+import { Card, api, CardType, FamilyMember, Recurrence } from '../api';
 import { logger } from '../logger';
 
 interface VoiceDraft {
@@ -42,6 +42,15 @@ interface Props {
   onCreated: () => void;
   initialSource?: 'MANUAL' | 'VOICE' | 'CAMERA';
   initialDraft?: VoiceDraft | null;
+  /**
+   * The card being edited, or null to create a new one. Editing reuses this
+   * screen rather than getting one of its own: every field a card has already
+   * lives here, and a second copy would drift from this one the first time
+   * either changed. Until now a card could not be corrected at all - a typo in
+   * a title, a date that moved, the wrong person - short of deleting it and
+   * starting again, which took its history with it.
+   */
+  editCard?: Card | null;
 }
 
 const TYPES: { key: CardType; labelKey: string; color: string; icon: any }[] = [
@@ -68,6 +77,7 @@ export function AddCardModal({
   onCreated,
   initialSource = 'MANUAL',
   initialDraft = null,
+  editCard = null,
 }: Props) {
   const { t, theme, lang } = useStore();
   const ui = useUI();
@@ -76,6 +86,12 @@ export function AddCardModal({
   const [title, setTitle] = useState('');
   const [desc, setDesc] = useState('');
   const [assignee, setAssignee] = useState('');
+  // Shared unless you say otherwise. The old default was private, which meant
+  // the + button produced something nobody else could see or be told about.
+  const [shared, setShared] = useState(true);
+  // Set when picking a person flips a "Just me" card to shared, so the change
+  // is announced rather than silently applied behind the toggle.
+  const [sharedByAssignee, setSharedByAssignee] = useState(false);
   const [recurrence, setRecurrence] = useState<Recurrence>('none');
   const [reminderMins, setReminderMins] = useState<number>(15);
   // A task without a date is a note. The picker existed but nothing wired
@@ -125,7 +141,19 @@ export function AddCardModal({
 
   useEffect(() => {
     if (visible) {
-      if (initialDraft) {
+      setSharedByAssignee(false);
+      if (editCard) {
+        // Editing: every field starts from the card as it stands, including
+        // whether it is shared, so saving without touching anything changes
+        // nothing.
+        setType((editCard.type as CardType) || 'TASK');
+        setTitle(editCard.title || '');
+        setDesc(editCard.description || '');
+        setAssignee(editCard.assignee || '');
+        setDueDate(editCard.due_date || null);
+        setShared(editCard.shared !== false);
+        setSaveToVault(false);
+      } else if (initialDraft) {
         setType(initialDraft.type);
         setTitle(initialDraft.title);
         setDesc(initialDraft.description || '');
@@ -147,6 +175,7 @@ export function AddCardModal({
         setAssignee('');
         setSaveToVault(false);
       }
+      if (!editCard) setShared(true);
       setDateSuggest(null);
       setDismissedFor('');
       setRecurrence('none');
@@ -156,7 +185,7 @@ export function AddCardModal({
       // None for anyone who wants silence.
       setReminderMins(15);
     }
-  }, [visible, initialDraft]);
+  }, [visible, initialDraft, initialSource, editCard]);
 
   // Watch the title for a clear date/time cue. Conservative by design — it
   // returns null on ordinary text, so the chip stays hidden for most cards.
@@ -185,17 +214,33 @@ export function AddCardModal({
     setSaving(true);
 
     try {
-      await api.createCard({
-        type,
-        title: title.trim(),
-        description: desc.trim(),
-        assignee: assignee.trim(),
-        due_date: dueDate,
-        source: initialSource,
-        image_base64: initialDraft?.image_base64 || null,
-        recurrence,
-        reminder_minutes: reminderMins,
-      } as any);
+      if (editCard) {
+        // Only the fields this screen owns. Status, stars and the card's
+        // history are none of its business.
+        await api.updateCard(editCard.card_id, {
+          type,
+          title: title.trim(),
+          description: desc.trim(),
+          assignee: assignee.trim(),
+          due_date: dueDate,
+          recurrence,
+          reminder_minutes: reminderMins,
+          shared,
+        } as any);
+      } else {
+        await api.createCard({
+          type,
+          title: title.trim(),
+          description: desc.trim(),
+          assignee: assignee.trim(),
+          due_date: dueDate,
+          source: initialSource,
+          image_base64: initialDraft?.image_base64 || null,
+          recurrence,
+          reminder_minutes: reminderMins,
+          shared,
+        } as any);
+      }
     } catch (e: any) {
       // The card wasn't created — safe to let the user retry.
       logger.warn('create card error', e);
@@ -251,7 +296,7 @@ export function AddCardModal({
         <Pressable style={StyleSheet.absoluteFill} onPress={Keyboard.dismiss} accessible={false} />
         <View style={[styles.sheet, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder, shadowColor: theme.colors.shadow, paddingBottom: 16 + Math.max(insets.bottom, 14) }]}> 
             <View style={styles.header}>
-              <Text style={[styles.heading, { color: theme.colors.text }]}>{t('add_card')}</Text>
+              <Text style={[styles.heading, { color: theme.colors.text }]}>{editCard ? t('addcard_edit_title') : t('add_card')}</Text>
               <PressScale
                   accessibilityRole="button"
                   accessibilityLabel={t('close')} testID="close-add-card" onPress={onClose} style={[styles.closeBtn, { borderColor: theme.colors.cardBorder }]}> 
@@ -359,7 +404,16 @@ export function AddCardModal({
                       <PressScale
                         key={m.member_id}
                         testID={`assign-${m.member_id}`}
-                        onPress={() => setAssignee(active ? '' : m.name)}
+                        onPress={() => {
+                          const next = active ? '' : m.name;
+                          setAssignee(next);
+                          // Handing someone a job and keeping it invisible to
+                          // them is a contradiction. Rather than the server
+                          // quietly overriding the choice, the toggle moves
+                          // here, in front of the person making it.
+                          if (next && !shared) { setShared(true); setSharedByAssignee(true); }
+                          if (!next) setSharedByAssignee(false);
+                        }}
                         style={[styles.pill, { borderColor: theme.colors.cardBorder, backgroundColor: active ? theme.colors.primary : theme.colors.bgSoft }]}
                       >
                         <Text style={[styles.pillText, { color: active ? theme.colors.primaryText : theme.colors.textMuted }]}>{m.name}</Text>
@@ -396,6 +450,33 @@ export function AddCardModal({
                   )}
                 </View>
               ) : null}
+
+              <Text style={[styles.label, { color: theme.colors.textMuted }]}>{t('addcard_who_sees')}</Text>
+              <View style={styles.pillRow}>
+                <PressScale
+                  testID="share-everyone"
+                  onPress={() => { setShared(true); setSharedByAssignee(false); }}
+                  style={[styles.pill, { borderColor: theme.colors.cardBorder, backgroundColor: shared ? theme.colors.primary : theme.colors.bgSoft }]}
+                >
+                  <Text style={[styles.pillText, { color: shared ? theme.colors.primaryText : theme.colors.textMuted }]}>
+                    {t('addcard_share_everyone')}
+                  </Text>
+                </PressScale>
+                <PressScale
+                  testID="share-just-me"
+                  onPress={() => { setShared(false); setSharedByAssignee(false); }}
+                  style={[styles.pill, { borderColor: theme.colors.cardBorder, backgroundColor: !shared ? theme.colors.primary : theme.colors.bgSoft }]}
+                >
+                  <Text style={[styles.pillText, { color: !shared ? theme.colors.primaryText : theme.colors.textMuted }]}>
+                    {t('addcard_share_just_me')}
+                  </Text>
+                </PressScale>
+              </View>
+              <Text style={[styles.suggestText, { color: theme.colors.textMuted, marginTop: -4, marginBottom: 4 }]}>
+                {sharedByAssignee
+                  ? t('addcard_share_switched')
+                  : shared ? t('addcard_share_everyone_hint') : t('addcard_share_just_me_hint')}
+              </Text>
 
               <View style={styles.rowHeader}>
                 <CalendarClock color={theme.colors.textMuted} size={12} />

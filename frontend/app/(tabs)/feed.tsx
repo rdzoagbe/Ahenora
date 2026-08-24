@@ -151,7 +151,12 @@ function cardMeta(card: Card, t: TFunc) {
   // Use the parsed description text (URLs/Location/People stripped) so list
   // rows never show raw links — the detail sheet renders those as chips.
   const desc = parseDescription(card.description, t).text.split('\n')[0];
-  const parts = [card.assignee, desc, formatDayLine(card.due_date, t)].filter(Boolean);
+  // A private card says so. Without it there is no way to tell at a glance
+  // that an item is invisible to the rest of the household - which is how a
+  // task can sit on one person's phone for a week while everyone assumes it
+  // was passed on.
+  const privacy = card.shared === false ? t('card_private') : null;
+  const parts = [privacy, card.assignee, desc, formatDayLine(card.due_date, t)].filter(Boolean);
   return parts.join(' · ');
 }
 
@@ -563,10 +568,21 @@ export default function Feed() {
     });
 
     const calmScore = Math.max(12, Math.min(100, 100 - overdue.length * 18 - todayCards.length * 7 - signSlips.length * 6));
-    const priority = uniqueCards([...overdue, ...signSlips, ...todayCards]).sort((a, b) => (dueTime(a) || Number.MAX_SAFE_INTEGER) - (dueTime(b) || Number.MAX_SAFE_INTEGER));
+    // A task someone HANDED you is something that needs your attention, so it
+    // rings the bell. It did not before: the bell counted only overdue,
+    // due-today and sign-slips, so a co-parent assigning you the school run for
+    // next week notified nobody in-app — the push went out and then nothing.
+    // Only work handed to you by someone ELSE counts (created_by != me), so
+    // assigning something to yourself never rings your own bell. The unseen
+    // mechanism below clears it the moment you open the bell.
+    const assignedToMe = assigned.filter(
+      (card) => card.status === 'OPEN' && card.created_by_user_id !== user?.user_id,
+    );
+    const priority = uniqueCards([...overdue, ...signSlips, ...todayCards, ...assignedToMe])
+      .sort((a, b) => (dueTime(a) || Number.MAX_SAFE_INTEGER) - (dueTime(b) || Number.MAX_SAFE_INTEGER));
 
     return { overdue, todayCards, signSlips, weekCards, next24h, calmScore, priority };
-  }, [activeCards]);
+  }, [activeCards, assigned, user?.user_id]);
 
   const tabCards = useMemo(() => {
     const now = Date.now();
@@ -576,7 +592,18 @@ export default function Feed() {
       // Undated tasks are "anytime today" — a freshly added task with no due
       // date must be visible immediately, not hidden until the All tab.
       const undated = activeCards.filter((card) => dueTime(card) === null);
-      return uniqueCards([...dashboard.overdue, ...dashboard.todayCards, ...undated])
+      // A task you handed to someone else is a live commitment you are
+      // tracking, so it belongs on your own default Feed too — not buried under
+      // Upcoming or only findable on the Calendar, which is what made an
+      // assigned task "show only in the calendar" for the person who set it.
+      // (Work handed TO you is pinned separately, above the list.)
+      const me = (user?.name || '').trim().toLowerCase();
+      const iAssigned = activeCards.filter(
+        (card) => card.created_by_user_id === user?.user_id
+          && (card.assignee || '').trim()
+          && (card.assignee || '').trim().toLowerCase() !== me,
+      );
+      return uniqueCards([...dashboard.overdue, ...dashboard.todayCards, ...undated, ...iAssigned])
         .sort((a, b) => (dueTime(a) ?? Number.MAX_SAFE_INTEGER) - (dueTime(b) ?? Number.MAX_SAFE_INTEGER));
     }
 
@@ -597,7 +624,7 @@ export default function Feed() {
       if (!bt) return -1;
       return at - bt;
     });
-  }, [activeTab, activeCards, dashboard]);
+  }, [activeTab, activeCards, dashboard, user]);
 
   const TASK_CAP = 5;
   const visibleCards = showAllTasks ? tabCards : tabCards.slice(0, TASK_CAP);
@@ -619,8 +646,13 @@ export default function Feed() {
   const householdSummary = householdActivity.length > 0
     ? `${householdActivity[0].actor_name || t('feed_activity_someone')} ${activityPhrase(householdActivity[0], t)}`
     : t('feed_household_empty');
-  const handedIds = new Set(assigned.map((c) => c.card_id));
-  const handedToMe = visibleCards.filter((c) => handedIds.has(c.card_id));
+  // Work handed TO you is pinned to the Feed on every tab, independent of the
+  // Today / Upcoming / All slice. It used to be intersected with the current
+  // tab's 5-card slice, so an assigned task due next week showed nowhere on the
+  // Feed and only on the Calendar — the exact failure reported. Source is the
+  // server-resolved /cards/mine list (already not-DONE), filtered to OPEN.
+  const handedToMe = assigned.filter((c) => c.status === 'OPEN');
+  const handedIds = new Set(handedToMe.map((c) => c.card_id));
   const restOfList = visibleCards.filter((c) => !handedIds.has(c.card_id));
   const firstName = (user?.name || '').split(' ')[0] || '';
   const headline = greetingFallback(firstName, t, now);
@@ -1440,7 +1472,9 @@ export default function Feed() {
               <View style={styles.alertDot} />
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={styles.alertRowTitle} numberOfLines={1}>{card.title}</Text>
-                <Text style={styles.alertRowMeta} numberOfLines={1}>{cardMeta(card, t)}</Text>
+                <Text style={styles.alertRowMeta} numberOfLines={1}>
+                  {handedIds.has(card.card_id) ? t('feed_assigned_to_you') : cardMeta(card, t)}
+                </Text>
               </View>
               <ChevronRight color={ui.muted} size={18} />
             </PressScale>

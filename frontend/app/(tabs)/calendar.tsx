@@ -6,7 +6,7 @@ import * as Google from 'expo-auth-session/providers/google';
 import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import { CalendarDays, Car, CheckCircle2, ChevronLeft, ChevronRight, Clock, ExternalLink, Eye, Lock, MapPin, Plus, RefreshCw, Trash2, User, Users, Video, X } from 'lucide-react-native';
+import { CalendarDays, Car, CheckCircle2, ChevronLeft, ChevronRight, Clock, ExternalLink, Eye, Lock, MapPin, Plus, RefreshCw, Trash2, User, Users, Video, X, Pencil } from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
@@ -170,6 +170,10 @@ export default function Calendar() {
   const [activeMonth, setActiveMonth] = useState(() => new Date());
   const [selectedDay, setSelectedDay] = useState<string | null>(dateKey(new Date()));
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
+  // The card being edited. Until now a card could not be corrected at all -
+  // a typo, a date that moved, the wrong person - short of deleting it and
+  // starting again, which took its history with it.
+  const [editing, setEditing] = useState<Card | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [carpools, setCarpools] = useState<Carpool[]>([]);
   const [childNames, setChildNames] = useState<Set<string>>(new Set());
@@ -1130,6 +1134,15 @@ export default function Calendar() {
             <View style={styles.detailHeader}>
               <Text style={styles.detailTitle}>{cleanText(selectedCard.title)}</Text>
               <PressScale
+                testID="card-edit"
+                accessibilityRole="button"
+                accessibilityLabel={t('card_edit')}
+                onPress={() => { setEditing(selectedCard); setSelectedCard(null); }}
+                style={styles.closeBtn}
+              >
+                <Pencil color={ui.text} size={18} />
+              </PressScale>
+              <PressScale
                   accessibilityRole="button"
                   accessibilityLabel={t('close')} onPress={() => setSelectedCard(null)} style={styles.closeBtn}>
                 <X color={ui.text} size={20} />
@@ -1310,6 +1323,15 @@ export default function Calendar() {
           <Text style={styles.importCancelText}>{t('cal_cancel')}</Text>
         </PressScale>
       </KeyboardAwareBottomSheet>
+
+      {/* One screen, two modes: the add sheet edits an existing card too, so
+          there is no second copy of every field to drift out of step. */}
+      <AddCardModal
+        visible={!!editing}
+        editCard={editing}
+        onClose={() => setEditing(null)}
+        onCreated={() => { setEditing(null); load(); }}
+      />
 
       <AddCardModal
         visible={addOpen}
