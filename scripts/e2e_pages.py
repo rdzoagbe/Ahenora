@@ -7,7 +7,7 @@ from e2e_browser import launch_chromium
 WEB = f"http://127.0.0.1:{sys.argv[1]}/app"
 API = f"http://127.0.0.1:{sys.argv[2]}/api"
 PAGES = ["feed", "calendar", "kids", "kitchen", "vault", "settings", "account"]
-MARKERS = {"feed": "AHENORA", "calendar": "Calendar", "kids": "Kids",
+MARKERS = {"feed": "AHENORA", "calendar": "Calendar", "kids": "Family",
            "kitchen": "Kitchen", "vault": "Vault", "settings": "Settings",
            "account": "Account"}
 

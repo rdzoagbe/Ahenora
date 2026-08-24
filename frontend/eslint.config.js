@@ -8,6 +8,16 @@ module.exports = defineConfig([
     ignores: ['dist/*'],
   },
   {
+    // Node build/CI helpers (not app code): they run under Node with CommonJS
+    // globals, so __dirname / require / process are defined. Without this the
+    // app's browser-oriented config flags them as undefined. Outside expo lint's
+    // scope, so CI never saw them; caught by a full `eslint .` self-test.
+    files: ['scripts/**/*.js'],
+    languageOptions: {
+      globals: { __dirname: 'readonly', require: 'readonly', module: 'writable', process: 'readonly' },
+    },
+  },
+  {
     rules: {
       // SDK 57 ships React Compiler-aware react-hooks rules that flag
       // long-standing patterns across the app (refs read during render,

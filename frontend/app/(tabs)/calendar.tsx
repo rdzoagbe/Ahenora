@@ -869,18 +869,16 @@ export default function Calendar() {
                       {/* The "Shared" tag rides on the meta line rather than as a
                           third column: it still says plainly why the item is
                           visible, without stealing width from the title. */}
-                      <View style={styles.shareMetaRow}>
-                        {c.shared && !c.shared_by_name ? (
-                          <View style={styles.shareTag}>
-                            <Text style={styles.shareTagText}>{t('cal_share_tag_shared')}</Text>
-                          </View>
-                        ) : null}
-                        <Text style={styles.coparentRowMeta} numberOfLines={1}>
-                          {c.shared_by_name
-                            ? t('cal_share_by', { name: c.shared_by_name }) + (c.due_date ? ' · ' + formatDateTimeShort(c.due_date) : '')
-                            : (c.due_date ? formatDateTimeShort(c.due_date) : t('cal_share_no_date'))}
-                        </Text>
-                      </View>
+                      {/* No "Shared" tag here: it rendered on the exact same
+                          condition as the Make-private button to the right, so
+                          it repeated what the button already says — and it stole
+                          the width that left the time truncated mid-value
+                          ("6:3…"). The date gets the whole line now. */}
+                      <Text style={styles.coparentRowMeta} numberOfLines={1}>
+                        {c.shared_by_name
+                          ? t('cal_share_by', { name: c.shared_by_name }) + (c.due_date ? ' · ' + formatDateTimeShort(c.due_date) : '')
+                          : (c.due_date ? formatDateTimeShort(c.due_date) : t('cal_share_no_date'))}
+                      </Text>
                     </View>
                     {c.shared && !c.shared_by_name ? (
                       <PressScale

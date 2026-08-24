@@ -152,6 +152,14 @@ export function AddCardModal({
         setAssignee(editCard.assignee || '');
         setDueDate(editCard.due_date || null);
         setShared(editCard.shared !== false);
+        // Recurrence and the reminder are part of the card too. They were being
+        // reset to the create-defaults ('none' / 15 min) below, so editing only
+        // a title silently stopped a weekly chore recurring and changed its
+        // reminder — the opposite of "saving without touching anything changes
+        // nothing." Load them from the card, and let the defaults apply to new
+        // cards only.
+        setRecurrence(editCard.recurrence || 'none');
+        setReminderMins(editCard.reminder_minutes ?? 15);
         setSaveToVault(false);
       } else if (initialDraft) {
         setType(initialDraft.type);
@@ -178,12 +186,16 @@ export function AddCardModal({
       if (!editCard) setShared(true);
       setDateSuggest(null);
       setDismissedFor('');
-      setRecurrence('none');
-      // Default to a 15-minute reminder rather than none: a dated event with
-      // no reminder is the "I never got a heads-up" complaint. It only fires
-      // when the card actually has a due date, and the picker still offers
+      // Defaults for a NEW card only — an edit already loaded these from the
+      // card above, and resetting them here is what wiped a recurring card's
+      // schedule. Default to a 15-minute reminder rather than none: a dated
+      // event with no reminder is the "I never got a heads-up" complaint. It
+      // only fires when the card has a due date, and the picker still offers
       // None for anyone who wants silence.
-      setReminderMins(15);
+      if (!editCard) {
+        setRecurrence('none');
+        setReminderMins(15);
+      }
     }
   }, [visible, initialDraft, initialSource, editCard]);
 

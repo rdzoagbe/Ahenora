@@ -249,8 +249,11 @@ export default function Kids() {
   // Everyone who helps run the house without being a parent or a child:
   // grandparents, childminders, carers, a named family member.
   const helpers = useMemo(
-    () => members.filter(
-      (m) => !['child', 'teen', 'parent', 'co-parent'].includes(m.role?.toLowerCase() ?? '')),
+    () => members
+      .filter((m) => !['child', 'teen', 'parent', 'co-parent'].includes(m.role?.toLowerCase() ?? ''))
+      // Phone-holder first here too: a grandparent or carer using their own
+      // account should see themselves at the top of their group, not buried.
+      .sort((a, b) => (a.is_me ? -1 : b.is_me ? 1 : 0)),
     [members]);
 
   // Open a member's profile. Parents share the adults thread; a teen has their
