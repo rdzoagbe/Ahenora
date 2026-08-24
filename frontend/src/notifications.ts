@@ -201,65 +201,15 @@ export async function syncCardReminderNotifications(cards: Card[], enabled: bool
 }
 
 async function syncCardReminderNotificationsUnlocked(cards: Card[], enabled: boolean, reminderLabel?: string) {
-  if (!enabled) {
-    await cancelAllCardRemindersUnlocked();
-    return { scheduled: 0 };
-  }
-
-  const Notifications = await getNotificationsModule();
-  if (!Notifications) {
-    return { scheduled: 0, skipped: true, reason: 'expo_go_android_not_supported' };
-  }
-
-  const permissions = await Notifications.getPermissionsAsync();
-  if (permissions.status !== 'granted') {
-    return { scheduled: 0, skipped: true, reason: 'permission_not_granted' };
-  }
-
-  await configureNotificationChannels();
+  // Card reminders are now sent by the SERVER (backend send_due_card_reminders),
+  // so this no longer schedules anything on-device — that would double every
+  // reminder (a local notification and a push for the same card) and could only
+  // ever reach the one person who opened the app, never the co-parent. All this
+  // does now is clear any local reminders a previous build had already queued,
+  // so an updated device stops firing the old on-device copies. The signature
+  // and callers stay put; the arguments are intentionally unused.
   await cancelAllCardRemindersUnlocked();
-
-  const nextMap: Record<string, string> = {};
-  const now = Date.now();
-
-  for (const card of cards) {
-    if (card.status !== 'OPEN') continue;
-    if (!card.due_date) continue;
-
-    const reminderMinutes = card.reminder_minutes ?? 0;
-    if (reminderMinutes <= 0) continue;
-
-    const due = new Date(card.due_date).getTime();
-    if (!Number.isFinite(due)) continue;
-
-    const triggerAt = due - reminderMinutes * 60 * 1000;
-    if (triggerAt <= now + 30 * 1000) continue;
-
-    const identifier = await Notifications.scheduleNotificationAsync({
-      content: {
-        // Lead with the task, not the app name (the OS already shows "Ahenora"
-        // as the header) so a reminder says what it's about at a glance.
-        title: card.title,
-        body: reminderLabel || 'Coming up',
-        sound: true,
-        data: {
-          type: 'card_reminder',
-          card_id: card.card_id,
-        },
-      },
-      trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.DATE,
-        date: new Date(triggerAt),
-        channelId: 'card-reminders',
-      } as any,
-    });
-
-    nextMap[card.card_id] = identifier;
-  }
-
-  await setReminderMap(nextMap);
-
-  return { scheduled: Object.keys(nextMap).length };
+  return { scheduled: 0, retired: true as const };
 }
 
 const ALLOWANCE_IDS_KEY = 'coo_scheduled_allowance_reminder_ids';

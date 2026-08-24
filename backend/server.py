@@ -2016,6 +2016,8 @@ PUSH_I18N = {
         "assigned_body_due": "{title} — due {due}",
         "teen_star_title": "Your star is approved ⭐",
         "teen_star_body": "{title}",
+        "reminder_title": "Reminder ⏰",
+        "reminder_body": "{title} — due {due}",
     },
     "fr": {
         "invited_title": "{name} vous invite dans son foyer",
@@ -2027,6 +2029,8 @@ PUSH_I18N = {
         "assigned_body_due": "{title} — pour le {due}",
         "teen_star_title": "Ton étoile est validée ⭐",
         "teen_star_body": "{title}",
+        "reminder_title": "Rappel ⏰",
+        "reminder_body": "{title} — pour le {due}",
     },
     "es": {
         "invited_title": "{name} te invitó a su hogar",
@@ -2038,6 +2042,8 @@ PUSH_I18N = {
         "assigned_body_due": "{title} — para el {due}",
         "teen_star_title": "Tu estrella está aprobada ⭐",
         "teen_star_body": "{title}",
+        "reminder_title": "Recordatorio ⏰",
+        "reminder_body": "{title} — para el {due}",
     },
     "de": {
         "invited_title": "{name} hat dich in den Haushalt eingeladen",
@@ -2049,6 +2055,8 @@ PUSH_I18N = {
         "assigned_body_due": "{title} — fällig am {due}",
         "teen_star_title": "Dein Stern ist bestätigt ⭐",
         "teen_star_body": "{title}",
+        "reminder_title": "Erinnerung ⏰",
+        "reminder_body": "{title} — fällig am {due}",
     },
 }
 
@@ -2222,6 +2230,129 @@ async def send_coparent_alert(family_id: str, title: str, body: str, data_type: 
 
     if messages:
         await send_expo_push_messages(messages, database)
+
+
+# -----------------------------------------------------------------------------
+# Server-side reminder scheduler
+# -----------------------------------------------------------------------------
+# Until now a card's reminder was scheduled ON THE DEVICE (expo-notifications, a
+# local DATE trigger), so it only ever fired if that person had opened the app
+# to schedule it — never for an unopened app, after a reboot, or for a co-parent
+# who never loaded the card. This is the server half: one process (uvicorn runs a
+# single worker) wakes each minute, finds the reminders that have come due, and
+# sends the push itself. Idempotent per occurrence, so a restart or a rolling
+# deploy's brief container overlap cannot double-send.
+REMINDER_SCAN_INTERVAL = int(os.environ.get("REMINDER_SCAN_INTERVAL", "60"))
+# Don't blast a backlog: on first deploy (or after a long outage) there are many
+# OPEN cards whose reminder time is well in the past. Those are marked handled
+# but not actually sent — only reminders that came due within this window fire.
+REMINDER_CATCHUP = timedelta(minutes=int(os.environ.get("REMINDER_CATCHUP_MINUTES", "180")))
+REMINDER_SCHEDULER_ENABLED = os.environ.get("REMINDER_SCHEDULER", "on").strip().lower() not in (
+    "off", "0", "false", "no")
+
+
+async def _reminder_recipients(database, card: dict) -> list[str]:
+    """Who hears a card's due reminder.
+
+    A private card is the creator's alone. A shared card assigned to a grown-up
+    goes to that grown-up — the person on the hook. A shared card nobody has been
+    given (or one assigned to a child, who has no device) goes to the whole
+    household, so an unclaimed 'sign the slip' is not everyone's-and-no-one's.
+    """
+    if not card.get("shared"):
+        uid = card.get("created_by_user_id")
+        return [uid] if uid else []
+    assignee = (card.get("assignee") or "").strip()
+    if assignee:
+        uid = await resolve_member_user_id(database, card["family_id"], assignee)
+        if uid:
+            return [uid]
+    docs = [d async for d in database["notification_tokens"].find(
+        {"family_id": card["family_id"], "active": True}, {"_id": 0})]
+    seen, out = set(), []
+    for token_doc in _latest_token_per_user(docs):
+        uid = token_doc.get("user_id")
+        if uid and uid not in seen:
+            seen.add(uid)
+            out.append(uid)
+    return out
+
+
+async def send_due_card_reminders(database, now: Optional[datetime] = None) -> int:
+    """Fire push reminders for cards that have reached due_date − reminder_minutes.
+
+    Idempotent per occurrence: the ISO due_date the reminder fired for is stored
+    on the card as reminder_sent_for, and a card is skipped once it matches. A
+    recurring card spawns a fresh doc for its next occurrence, so it earns its
+    own reminder; moving a card's due date changes the occurrence key, so it is
+    reminded again for the new time. Best effort — one bad card never stops the
+    rest. Returns how many pushes were sent.
+    """
+    now = now or utcnow()
+    sent = 0
+    cursor = database["cards"].find({"status": "OPEN"}, {"_id": 0})
+    async for card in cursor:
+        try:
+            due = ensure_aware_utc(card.get("due_date"))
+            mins = card.get("reminder_minutes") or 0
+            if not due or mins <= 0:
+                continue
+            trigger = due - timedelta(minutes=mins)
+            if now < trigger:
+                continue  # not due yet
+            occurrence = iso(due)
+            if card.get("reminder_sent_for") == occurrence:
+                continue  # already handled this occurrence
+            # Mark handled BEFORE sending: a crash mid-fan-out must not loop and
+            # re-ping the people already reached on the next tick.
+            await database["cards"].update_one(
+                {"card_id": card["card_id"]},
+                {"$set": {"reminder_sent_for": occurrence}},
+            )
+            # Too old to be useful — a first-deploy backlog or a long outage.
+            # Marked handled above so it never fires late; just don't send it.
+            if now - trigger > REMINDER_CATCHUP:
+                continue
+            title_txt = (card.get("title") or "").strip()
+            due_txt = due.strftime("%d/%m %H:%M")
+            for uid in await _reminder_recipients(database, card):
+                prefs = await database["notification_settings"].find_one(
+                    {"user_id": uid}, {"_id": 0})
+                if not alerts_enabled(prefs, "card_reminders"):
+                    continue
+                target = await database["users"].find_one({"user_id": uid}, {"_id": 0})
+                lang = (target or {}).get("language") or "en"
+                L = PUSH_I18N.get(lang, PUSH_I18N["en"])
+                await send_push_to_user(
+                    database, uid,
+                    L["reminder_title"],
+                    L["reminder_body"].format(title=title_txt, due=due_txt),
+                    {"type": "card_reminder", "card_id": card.get("card_id")},
+                )
+                sent += 1
+        except Exception as e:
+            log.warning("due reminder failed for %s: %s", card.get("card_id"), e)
+    return sent
+
+
+async def _reminder_scheduler_loop():
+    while True:
+        try:
+            await send_due_card_reminders(get_db())
+        except Exception as e:  # a tick must never kill the loop
+            log.warning("reminder scheduler tick failed: %s", e)
+        await asyncio.sleep(REMINDER_SCAN_INTERVAL)
+
+
+@app.on_event("startup")
+async def start_reminder_scheduler():
+    # Only under a real server with a database — a plain import (the test suite)
+    # never fires startup, so this never runs there. Off switch: REMINDER_
+    # SCHEDULER=off, in case it ever needs killing without a code change.
+    if db is None or not REMINDER_SCHEDULER_ENABLED:
+        return
+    asyncio.create_task(_reminder_scheduler_loop())
+    log.info("Reminder scheduler started (every %ss)", REMINDER_SCAN_INTERVAL)
 
 
 async def require_user(authorization: str = Header(default=""),
@@ -6216,6 +6347,17 @@ async def admin_dedupe_apply(payload: dict = Body(...), user=Depends(require_use
     summary = await dedupe_run(get_db(), apply=True,
                                log=lambda *a: lines.append(" ".join(str(x) for x in a)))
     return {"applied": True, "summary": summary, "report": lines}
+
+
+@app.post("/api/admin/run-due-reminders")
+async def admin_run_due_reminders(user=Depends(require_user)):
+    """Run one reminder scan now (admin only). The scheduler already does this
+    every minute; this is a manual trigger for verifying it end to end and a
+    fallback if the in-process loop is ever turned off."""
+    if not is_admin_user(user):
+        raise HTTPException(status_code=403, detail="Admins only")
+    sent = await send_due_card_reminders(get_db())
+    return {"sent": sent}
 
 
 @app.get("/api/admin/version-adoption")
