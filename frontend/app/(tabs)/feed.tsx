@@ -50,6 +50,7 @@ import { MoreSheet } from '../../src/components/MoreSheet';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
 import { TabScreen } from '../../src/components/TabScreen';
 import { GettingStarted } from '../../src/components/GettingStarted';
+import { UpgradeBanner } from '../../src/components/UpgradeBanner';
 import { CoParentNudge } from '../../src/components/CoParentNudge';
 import { StreakChip } from '../../src/components/StreakChip';
 import { useStore } from '../../src/store';
@@ -1000,6 +1001,9 @@ export default function Feed() {
                 </PressScale>
               </View>
             </View>
+
+            {/* A gentle nudge to Premium — free households only, self-snoozes */}
+            <UpgradeBanner />
 
             {/* First-run checklist for new households (self-hides once done) */}
             <GettingStarted

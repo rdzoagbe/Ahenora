@@ -907,6 +907,26 @@ export interface PlanAdoption {
   active_free_premium_families: number;
 }
 
+export interface Subscriber {
+  family_id: string;
+  plan: string;
+  paying: boolean;
+  billing_source: 'stripe' | 'google_play' | null;
+  billing_cycle: string | null;
+  owner_name: string;
+  owner_email: string;
+  member_accounts: number;
+  has_active_device: boolean;
+  created_at: string | null;
+  subscribed_at: string | null;
+}
+
+export interface SubscriberList {
+  total: number;
+  paying: number;
+  subscribers: Subscriber[];
+}
+
 export interface FamilyInvite {
   invite_id: string;
   family_id: string;
@@ -1230,6 +1250,8 @@ export const api = {
     request<VersionAdoption>('/admin/version-adoption'),
   getPlanAdoption: () =>
     request<PlanAdoption>('/admin/plan-adoption'),
+  getSubscribers: () =>
+    request<SubscriberList>('/admin/subscribers'),
   listInvites: () => request<FamilyInvite[]>('/family/invites'),
   completeInvite: (inviteId: string) => {
     invalidateUsageCaches();

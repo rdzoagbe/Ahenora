@@ -6623,6 +6623,92 @@ async def plan_adoption(user=Depends(require_user)):
     }
 
 
+@app.get("/api/admin/subscribers")
+async def admin_subscribers(user=Depends(require_user)):
+    """Every household and what it is on — the per-family companion to
+    plan-adoption's totals. Where that endpoint answers "how many pay", this
+    answers "who", with the owner's contact so a founder can actually follow up,
+    and which rail the money came through (Stripe for web/iPhone, Google Play for
+    Android). Admin-only: it reads across every household, not one. Paying first,
+    then newest, so the people who matter are at the top.
+    """
+    if not is_admin_user(user):
+        raise HTTPException(status_code=403, detail="Admins only")
+    database = get_db()
+
+    # Owner contacts per family, gathered in one pass. The creator (earliest
+    # user) stands in as the household's contact.
+    by_family: dict = {}
+    async for u in database["users"].find(
+        {}, {"_id": 0, "family_id": 1, "name": 1, "email": 1, "created_at": 1}
+    ):
+        fid = u.get("family_id")
+        if fid:
+            by_family.setdefault(fid, []).append(u)
+
+    active: set = set()
+    async for tok in database["notification_tokens"].find(
+        {"active": True}, {"_id": 0, "family_id": 1}
+    ):
+        if tok.get("family_id"):
+            active.add(tok["family_id"])
+
+    def _iso(v):
+        return v.isoformat() if hasattr(v, "isoformat") else (v or None)
+
+    def _epoch(v):
+        try:
+            return v.timestamp() if hasattr(v, "timestamp") else 0.0
+        except (ValueError, OSError, TypeError):
+            return 0.0
+
+    rows = []
+    paying = 0
+    async for fam in database["families"].find({}, {"_id": 0}):
+        fid = fam.get("family_id")
+        plan = fam.get("plan") or "village"
+        is_paying = plan != "village"
+        if is_paying:
+            paying += 1
+        source = ("stripe" if fam.get("stripe_last_event")
+                  else "google_play" if fam.get("rc_last_event") else None)
+        members = by_family.get(fid, [])
+        # The creator: earliest-created user in the family.
+        contact = min(members, key=lambda m: _epoch(m.get("created_at"))) if members else {}
+        rows.append({
+            "family_id": fid,
+            "plan": plan,
+            "paying": is_paying,
+            "billing_source": source,
+            "billing_cycle": fam.get("billing_cycle"),
+            "owner_name": contact.get("name", ""),
+            "owner_email": contact.get("email", ""),
+            "member_accounts": len(members),
+            "has_active_device": fid in active,
+            "created_at": _iso(fam.get("created_at")),
+            "subscribed_at": _iso(fam.get("stripe_event_at") or fam.get("rc_event_at")),
+        })
+
+    rows.sort(key=lambda r: (r["paying"], _epoch_iso(r.get("subscribed_at") or r.get("created_at"))),
+              reverse=True)
+    return {
+        "total": len(rows),
+        "paying": paying,
+        "subscribers": rows,
+    }
+
+
+def _epoch_iso(v):
+    """Seconds for an ISO string (or 0 when absent), for sorting rows already
+    serialised to strings."""
+    if not v:
+        return 0.0
+    try:
+        return ensure_aware_utc(parse_dt(str(v))).timestamp()
+    except Exception:
+        return 0.0
+
+
 @app.get("/api/cards/sharing-summary")
 async def sharing_summary(user=Depends(require_user)):
     """The three numbers the privacy panel states, counted in one place.
