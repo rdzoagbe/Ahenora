@@ -8,7 +8,7 @@ import { PressScale } from '../src/components/PressScale';
 import { AmbientBackground } from '../src/components/AmbientBackground';
 import { useUI, UIColors } from '../src/components/Kit';
 import { useStore } from '../src/store';
-import { api, MetricRow, VersionAdoption, PlanAdoption, FunnelSummary, AiHealth } from '../src/api';
+import { api, MetricRow, VersionAdoption, PlanAdoption, FunnelSummary, AiHealth, SubscriberList } from '../src/api';
 import { logger } from '../src/logger';
 
 // Admin-only screen — plain English labels are fine (only the owner sees it).
@@ -33,6 +33,8 @@ export default function MetricsScreen() {
   const [rows, setRows] = useState<MetricRow[]>([]);
   const [adoption, setAdoption] = useState<VersionAdoption | null>(null);
   const [plans, setPlans] = useState<PlanAdoption | null>(null);
+  const [subs, setSubs] = useState<SubscriberList | null>(null);
+  const [showAllSubs, setShowAllSubs] = useState(false);
   const [funnel, setFunnel] = useState<FunnelSummary | null>(null);
   const [aiHealth, setAiHealth] = useState<AiHealth | null>(null);
   const [loading, setLoading] = useState(true);
@@ -55,6 +57,8 @@ export default function MetricsScreen() {
     api.getVersionAdoption().then(setAdoption).catch((e) => logger.warn('adoption load failed', e?.message || e));
     // Same for subscription adoption — the "who is actually paying" readout.
     api.getPlanAdoption().then(setPlans).catch((e) => logger.warn('plan adoption load failed', e?.message || e));
+    // The per-household list behind those totals — who is on what, with a contact.
+    api.getSubscribers().then(setSubs).catch((e) => logger.warn('subscribers load failed', e?.message || e));
     // The activation + growth funnel — the "make the launch stick" scoreboard.
     api.getMetricsFunnel(30).then(setFunnel).catch((e) => logger.warn('funnel load failed', e?.message || e));
     // probe=0 (default) — free, reports configured/plumbing state, no token cost.
@@ -334,6 +338,52 @@ export default function MetricsScreen() {
             <Text style={styles.muted}>No subscription data yet.</Text>
           )}
 
+          {/* Subscribers — the per-household list behind those totals */}
+          {subs && subs.subscribers.length ? (
+            <>
+              <Text style={styles.sectionTitle}>Subscribers</Text>
+              <Text style={styles.hint}>
+                {subs.paying} paying of {subs.total} households. Paying first. Contact is the household&apos;s creator.
+              </Text>
+              <View style={styles.card}>
+                {(showAllSubs ? subs.subscribers : subs.subscribers.slice(0, 12)).map((s, i) => (
+                  <View key={s.family_id} style={[styles.subRow, i === 0 && { borderTopWidth: 0 }]}>
+                    <View style={styles.subLeft}>
+                      <Text style={styles.subName} numberOfLines={1}>
+                        {s.owner_name || '(no name)'}
+                      </Text>
+                      <Text style={styles.subEmail} numberOfLines={1}>
+                        {s.owner_email || '—'}
+                      </Text>
+                    </View>
+                    <View style={styles.subRight}>
+                      <View style={[styles.subTag, s.paying ? styles.subTagPaid : styles.subTagFree]}>
+                        <Text style={[styles.subTagText, { color: s.paying ? ui.orangeText : ui.muted }]}>
+                          {s.paying
+                            ? `Premium${s.billing_cycle ? ' · ' + s.billing_cycle : ''}`
+                            : 'Free'}
+                        </Text>
+                      </View>
+                      <Text style={styles.subMeta} numberOfLines={1}>
+                        {s.paying
+                          ? (s.billing_source === 'stripe' ? 'Card (Stripe)'
+                             : s.billing_source === 'google_play' ? 'Google Play' : '—')
+                          : (s.has_active_device ? 'Active' : 'Never opened')}
+                      </Text>
+                    </View>
+                  </View>
+                ))}
+                {subs.subscribers.length > 12 ? (
+                  <PressScale onPress={() => setShowAllSubs((v) => !v)} style={styles.subMoreBtn}>
+                    <Text style={styles.subMoreText}>
+                      {showAllSubs ? 'Show fewer' : `Show all ${subs.subscribers.length}`}
+                    </Text>
+                  </PressScale>
+                ) : null}
+              </View>
+            </>
+          ) : null}
+
           {/* OTA adoption — who is on the runtime that can receive updates */}
           <Text style={styles.sectionTitle}>Update adoption</Text>
           {adoption ? (
@@ -400,4 +450,16 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   eventRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14, borderTopWidth: 1, borderTopColor: ui.line },
   eventLabel: { color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 15 },
   eventCount: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 17 },
+  subRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, paddingVertical: 12, borderTopWidth: 1, borderTopColor: ui.line },
+  subLeft: { flex: 1, minWidth: 0, gap: 2 },
+  subName: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 14 },
+  subEmail: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12 },
+  subRight: { alignItems: 'flex-end', gap: 4 },
+  subTag: { borderRadius: 99, paddingHorizontal: 9, paddingVertical: 4 },
+  subTagPaid: { backgroundColor: ui.orangeSoft },
+  subTagFree: { backgroundColor: ui.soft },
+  subTagText: { fontFamily: 'Inter_800ExtraBold', fontSize: 11, letterSpacing: 0.3 },
+  subMeta: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 11 },
+  subMoreBtn: { paddingVertical: 14, borderTopWidth: 1, borderTopColor: ui.line, alignItems: 'center' },
+  subMoreText: { color: ui.orangeText, fontFamily: 'Inter_700Bold', fontSize: 13 },
 });
