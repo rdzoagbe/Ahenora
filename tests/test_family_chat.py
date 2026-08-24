@@ -85,6 +85,17 @@ class FamilyChat(unittest.TestCase):
         old = asyncio.run(server._chat_thread_messages(self.db, "fam1", key, "u_p"))
         self.assertEqual(old, [])
 
+    def test_old_dm_key_is_folded_into_adults_on_send(self):
+        # A co-parent on an old build sends under the legacy dm: key. It must
+        # land in the adults room so the rest of the family sees it now, not
+        # after the next restart's migration.
+        key = server.dm_thread("u_p", "u_p2")
+        canon = asyncio.run(server._canonical_thread(self.db, "fam1", key))
+        self.assertEqual(canon, server.ADULTS_THREAD)
+        # A helper/other dm key is left untouched (only the two-parent key folds).
+        other = server.dm_thread("u_p", "u_help")
+        self.assertEqual(asyncio.run(server._canonical_thread(self.db, "fam1", other)), other)
+
     # --- the security claim ---------------------------------------------
     def test_teen_sees_only_their_own_thread(self):
         """Adults chatter and another teen's thread are both invisible to Ama."""

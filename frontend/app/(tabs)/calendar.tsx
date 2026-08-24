@@ -1025,7 +1025,7 @@ export default function Calendar() {
                         key={key}
                         testID={`calendar-day-${key}`}
                         onPress={() => onSelectDay(key, date)}
-                        style={[styles.dayCell, { width: daySize, height: daySize + 8 }, custTint && !selected ? { backgroundColor: custTint } : null, selected && styles.dayCellSelected]}
+                        style={[styles.dayCell, { width: daySize, height: daySize + 8 }, custTint && inMonth && !selected ? { backgroundColor: custTint } : null, selected && styles.dayCellSelected]}
                       >
                         <Text
                           style={[

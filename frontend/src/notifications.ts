@@ -341,6 +341,10 @@ export async function ensurePushRegistered(): Promise<void> {
   }
 }
 
+// True once the cold-start notification tap has been routed, so re-running this
+// (which happens on every user refresh) never re-navigates to the same tap.
+let coldStartRouted = false;
+
 /**
  * Wire up notification taps. Calls `onTarget` with a route both for a tap while
  * the app is running AND for a cold start where tapping the notification is what
@@ -352,13 +356,22 @@ export async function attachNotificationRouting(
   try {
     const Notifications = await getNotificationsModule();
     if (!Notifications) return () => undefined;
-    try {
-      const last = await Notifications.getLastNotificationResponseAsync();
-      if (last) {
-        const t = targetForNotification(last.notification.request.content.data);
-        if (t) onTarget(t);
-      }
-    } catch { /* cold-start lookup is best-effort */ }
+    // Consume the cold-start tap exactly once per app run. getLastNotification-
+    // ResponseAsync keeps returning that same tap for the whole session, and
+    // this routine re-runs whenever the user object changes (every refreshUser);
+    // without this guard, opening a notification and then doing anything that
+    // refreshes the user would yank you back to that conversation again and
+    // again. The live listener below still routes taps that happen while open.
+    if (!coldStartRouted) {
+      coldStartRouted = true;
+      try {
+        const last = await Notifications.getLastNotificationResponseAsync();
+        if (last) {
+          const t = targetForNotification(last.notification.request.content.data);
+          if (t) onTarget(t);
+        }
+      } catch { /* cold-start lookup is best-effort */ }
+    }
     const sub = Notifications.addNotificationResponseReceivedListener((response: any) => {
       const t = targetForNotification(response.notification.request.content.data);
       if (t) onTarget(t);

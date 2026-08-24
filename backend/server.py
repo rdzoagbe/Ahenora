@@ -2341,12 +2341,18 @@ async def send_due_card_reminders(database, now: Optional[datetime] = None) -> i
             occurrence = iso(due)
             if card.get("reminder_sent_for") == occurrence:
                 continue  # already handled this occurrence
-            # Mark handled BEFORE sending: a crash mid-fan-out must not loop and
-            # re-ping the people already reached on the next tick.
-            await database["cards"].update_one(
-                {"card_id": card["card_id"]},
+            # Claim this occurrence atomically: only the write that flips
+            # reminder_sent_for from "not this occurrence" to it proceeds to
+            # send. This is what actually makes the double-send impossible — a
+            # crash mid-fan-out won't re-ping on the next tick, and two workers
+            # briefly overlapping during a rolling deploy can't both win the
+            # claim, so only one of them sends.
+            claim = await database["cards"].update_one(
+                {"card_id": card["card_id"], "reminder_sent_for": {"$ne": occurrence}},
                 {"$set": {"reminder_sent_for": occurrence}},
             )
+            if claim.modified_count == 0:
+                continue  # another tick or worker already claimed it
             # Too old to be useful — a first-deploy backlog or a long outage.
             # Marked handled above so it never fires late; just don't send it.
             if now - trigger > REMINDER_CATCHUP:
@@ -5640,9 +5646,24 @@ async def family_chat_threads(user=Depends(require_chat_account)):
     return {"threads": out}
 
 
+async def _canonical_thread(database, family_id: str, thread: str) -> str:
+    """Fold the legacy two-parent dm: key into the adults room. A co-parent chat
+    is one room now, but an app that predates the unify (a co-parent still on the
+    old build) writes and reads under dm:~a~b. Mapping that key to 'adults' here
+    means their messages land in — and are read from — the same room the rest of
+    the family sees, without waiting for the next restart's migration."""
+    if isinstance(thread, str) and thread.startswith(DM_PREFIX):
+        parents = [a for a in await _family_accounts(database, family_id)
+                   if _is_parent_role(a["role"])]
+        if len(parents) == 2 and thread == dm_thread(parents[0]["user_id"], parents[1]["user_id"]):
+            return ADULTS_THREAD
+    return thread
+
+
 @app.get("/api/family/chat/{thread}")
 async def family_chat_get(thread: str, user=Depends(require_chat_account)):
     database = get_db()
+    thread = await _canonical_thread(database, user["family_id"], thread)
     await _require_thread_member(database, user["family_id"], thread, user["user_id"])
     msgs = await _chat_thread_messages(database, user["family_id"], thread, user["user_id"])
     await _mark_read(database, user["family_id"], thread, user["user_id"])
@@ -5652,6 +5673,7 @@ async def family_chat_get(thread: str, user=Depends(require_chat_account)):
 @app.post("/api/family/chat/{thread}")
 async def family_chat_send(thread: str, payload: ChatMessageIn, user=Depends(require_chat_account)):
     database = get_db()
+    thread = await _canonical_thread(database, user["family_id"], thread)
     await _require_thread_member(database, user["family_id"], thread, user["user_id"])
     name = user.get("name") or "Someone"
     msg = await _chat_insert(database, user["family_id"], thread, user["user_id"],
@@ -5663,6 +5685,7 @@ async def family_chat_send(thread: str, payload: ChatMessageIn, user=Depends(req
 @app.post("/api/family/chat/{thread}/read")
 async def family_chat_read(thread: str, user=Depends(require_chat_account)):
     database = get_db()
+    thread = await _canonical_thread(database, user["family_id"], thread)
     await _require_thread_member(database, user["family_id"], thread, user["user_id"])
     await _mark_read(database, user["family_id"], thread, user["user_id"])
     return {"ok": True}
@@ -9177,10 +9200,16 @@ async def compute_settlement(database, family_id: str, me_user_id: str) -> dict:
     """
     parents = [a for a in await _family_accounts(database, family_id)
                if _is_parent_role(a["role"])]
-    ids = [p["user_id"] for p in parents]
-    if len(parents) != 2 or me_user_id not in ids:
+    # De-dupe by user_id so a transient duplicate member row (before the member
+    # dedupe migration has run) can't slip two rows with the same id past the
+    # count check and then find no "other" — which would 500 the endpoint.
+    by_id = {}
+    for p in parents:
+        by_id.setdefault(p["user_id"], p)
+    ids = list(by_id)
+    if len(ids) != 2 or me_user_id not in ids:
         return {"enabled": False, "balance": 0.0}
-    other = next(p for p in parents if p["user_id"] != me_user_id)
+    other = by_id[next(uid for uid in ids if uid != me_user_id)]
 
     net = {ids[0]: 0.0, ids[1]: 0.0}
     total = 0.0
