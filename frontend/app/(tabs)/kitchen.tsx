@@ -1062,13 +1062,17 @@ export default function Kitchen() {
           ))}
         </View>
 
-        {/* Keep the screen awake while shopping / cooking */}
-        <PressScale testID="kitchen-keep-awake" onPress={toggleKeepAwake} style={[styles.keepAwake, keepAwake && styles.keepAwakeOn]}>
-          <Sun color={keepAwake ? ui.orange : ui.muted} size={16} />
-          <Text style={[styles.keepAwakeText, keepAwake && { color: ui.orangeText }]}>
-            {keepAwake ? t('kitchen_screen_on') : t('kitchen_screen_on_off')}
-          </Text>
-        </PressScale>
+        {/* Keep the screen awake while shopping or cooking — not while reviewing
+            Spending, where a screen-on toggle is meaningless and just clutters
+            the top of the tab. */}
+        {view !== 'spend' ? (
+          <PressScale testID="kitchen-keep-awake" onPress={toggleKeepAwake} style={[styles.keepAwake, keepAwake && styles.keepAwakeOn]}>
+            <Sun color={keepAwake ? ui.orange : ui.muted} size={16} />
+            <Text style={[styles.keepAwakeText, keepAwake && { color: ui.orangeText }]}>
+              {keepAwake ? t('kitchen_screen_on') : t('kitchen_screen_on_off')}
+            </Text>
+          </PressScale>
+        ) : null}
 
         {/* SHOPPING LIST */}
         {view === 'spend' ? (
@@ -2385,7 +2389,11 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   scanSourceText: { color: ui.orangeText, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
   captureTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 22, letterSpacing: -0.4, lineHeight: 27 },
   shopInput: { flex: 1, borderWidth: 1, borderColor: ui.line, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10, fontFamily: 'Inter_500Medium', fontSize: 14, color: ui.text, backgroundColor: ui.soft },
-  shopAddBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: ui.orangeDeep, alignItems: 'center', justifyContent: 'center' },
+  // Same 42/14 as shopScanBtn beside it: they were 38/12 vs 42/14, so the two
+  // icon buttons in one row sat at different heights and radii. Add stays a
+  // solid fill (primary) and scan an outline (secondary) — that contrast is
+  // intended; only the geometry needed to match so the row lines up.
+  shopAddBtn: { width: 42, height: 42, borderRadius: 14, backgroundColor: ui.orangeDeep, alignItems: 'center', justifyContent: 'center' },
   row: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: ui.line },
   numBadge: { width: 24, height: 24, borderRadius: 99, backgroundColor: ui.orangeSoft, alignItems: 'center', justifyContent: 'center' },
   numText: { color: ui.orangeText, fontFamily: 'Inter_800ExtraBold', fontSize: 12 },

@@ -575,9 +575,14 @@ export default function Feed() {
     // Only work handed to you by someone ELSE counts (created_by != me), so
     // assigning something to yourself never rings your own bell. The unseen
     // mechanism below clears it the moment you open the bell.
-    const assignedToMe = assigned.filter(
-      (card) => card.status === 'OPEN' && card.created_by_user_id !== user?.user_id,
-    );
+    // Guarded on a known user id: until `user` resolves, user?.user_id is
+    // undefined and "created_by != undefined" is true for every card, which
+    // would briefly count tasks you assigned to YOURSELF and inflate the bell.
+    // Empty until we can actually tell self-assigned from handed-to-you.
+    const uid = user?.user_id;
+    const assignedToMe = uid
+      ? assigned.filter((card) => card.status === 'OPEN' && card.created_by_user_id !== uid)
+      : [];
     const priority = uniqueCards([...overdue, ...signSlips, ...todayCards, ...assignedToMe])
       .sort((a, b) => (dueTime(a) || Number.MAX_SAFE_INTEGER) - (dueTime(b) || Number.MAX_SAFE_INTEGER));
 
@@ -700,6 +705,10 @@ export default function Feed() {
       pendingDismissRef.current.delete(card.card_id);
     }
     setCards((prev) => (next === 'DONE' ? prev.filter((c) => c.card_id !== card.card_id) : prev.map((c) => (c.card_id === card.card_id ? { ...c, status: next, completed_at: null } : c))));
+    // The pinned "Handed to you" section reads from `assigned` (a separate
+    // fetch), not `cards`, so completing a handed task from there would leave
+    // it sitting in the section with a stale count until the next reload.
+    if (next === 'DONE') setAssigned((prev) => prev.filter((c) => c.card_id !== card.card_id));
     try {
       await api.updateCard(card.card_id, { status: next });
       if (next === 'DONE') recordWin();
@@ -995,13 +1004,18 @@ export default function Feed() {
             <View style={styles.listCard}>
               {loading ? (
                 <ActivityIndicator color={ui.orange} style={{ paddingVertical: 32 }} />
-              ) : loadError && visibleCards.length === 0 ? (
+              ) : loadError && visibleCards.length === 0 && handedToMe.length === 0 ? (
                 <PressScale onPress={handleRefresh} style={styles.emptyBox}>
                   <AlertTriangle color={ui.orange} size={22} />
                   <Text style={styles.emptyTitle}>{t('feed_load_failed_title')}</Text>
                   <Text style={styles.emptySub}>{t('feed_load_failed_sub')}</Text>
                 </PressScale>
-              ) : visibleCards.length === 0 ? (
+              /* Handed-to-you is pinned independent of the tab, so the empty
+                 state must yield to it: a task a co-parent gave you for next
+                 week is the whole point, and it must not be hidden behind
+                 "Nothing urgent" just because you have no cards of your own
+                 due today. */
+              ) : visibleCards.length === 0 && handedToMe.length === 0 ? (
                 <View style={styles.emptyBox}>
                   <CheckCircle2 color={ui.mintText} size={22} />
                   <Text style={styles.emptyTitle}>{activeTab === 'today' ? t('feed_nothing_urgent') : t('feed_nothing_to_show')}</Text>
