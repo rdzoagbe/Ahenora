@@ -485,9 +485,13 @@ export function AddCardModal({
                 </PressScale>
               </View>
               <Text style={[styles.suggestText, { color: theme.colors.textMuted, marginTop: -4, marginBottom: 4 }]}>
-                {sharedByAssignee
-                  ? t('addcard_share_switched')
-                  : shared ? t('addcard_share_everyone_hint') : t('addcard_share_just_me_hint')}
+                {!shared
+                  ? t('addcard_share_just_me_hint')
+                  : assignee.trim()
+                    ? (sharedByAssignee
+                        ? t('addcard_share_switched')
+                        : t('addcard_share_assigned_hint').replace('{name}', assignee.trim()))
+                    : t('addcard_share_everyone_hint')}
               </Text>
 
               <View style={styles.rowHeader}>

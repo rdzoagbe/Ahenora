@@ -103,8 +103,11 @@ async def main():
     # one job for himself.
     api("POST", "/cards", {"type": "TASK", "title": "School run Tuesday",
                            "assignee": "Keigh H", "shared": True}, tok_a)
+    # Kept to himself: a private task is one you do NOT hand to the other person.
+    # Assigning to himself and marking private keeps the surprise his — assigning
+    # it to Keigh would (rightly) make it shared and visible to her.
     api("POST", "/cards", {"type": "TASK", "title": "Surprise party venue",
-                           "assignee": "Keigh H", "shared": False}, tok_a)
+                           "assignee": "Roland H", "shared": False}, tok_a)
     api("POST", "/cards", {"type": "TASK", "title": "Bins out",
                            "assignee": "Roland H", "shared": True}, tok_a)
 

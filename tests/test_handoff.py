@@ -97,8 +97,11 @@ class HandOff(unittest.TestCase):
         self._card(ROLAND, "My own errand", assignee="Roland")
         self.assertEqual(self.pushes, [])
 
-    def test_a_private_task_is_nobodys_business(self):
-        self._card(ROLAND, "Therapy booking", assignee="Keigh", shared=False)
+    def test_a_private_task_kept_to_yourself_is_nobodys_business(self):
+        # Private + assigned to YOURSELF stays silent and private — the surprise
+        # you are planning. (Assigning to someone else now forces it shared, so
+        # a private task is one you keep to yourself or leave unassigned.)
+        self._card(ROLAND, "Therapy booking", assignee="Roland", shared=False)
         self.assertEqual(self.pushes, [])
 
     def test_a_child_has_no_login_so_nothing_is_sent(self):
@@ -137,9 +140,20 @@ class HandOff(unittest.TestCase):
         self.assertEqual([c["title"] for c in self._mine(KEIGH)],
                          ["Sooner", "Later", "Someday"])
 
-    def test_a_co_parents_private_task_never_appears_even_with_my_name_on_it(self):
-        self._card(ROLAND, "Surprise party planning", assignee="Keigh", shared=False)
+    def test_a_co_parents_private_task_never_appears(self):
+        # A private task the other parent keeps to themselves (here, planning a
+        # surprise — assigned to self, not to Keigh) never shows on Keigh's list.
+        self._card(ROLAND, "Surprise party planning", assignee="Roland", shared=False)
         self.assertEqual(self._mine(KEIGH), [])
+
+    def test_assigning_an_old_private_task_shares_it_and_pings(self):
+        # The reported bug: an old private task, edited to assign to the other
+        # parent, must become visible and notify them — not stay hidden.
+        card = self._card(ROLAND, "Old private thing", assignee="Roland", shared=False)
+        self.pushes.clear()
+        out = self._patch(card["card_id"], ROLAND, assignee="Keigh")
+        self.assertTrue(out["shared"])
+        self.assertEqual([p["user_id"] for p in self.pushes], ["u_k"])
 
     # --- the record -----------------------------------------------------
     def test_the_household_feed_records_who_it_was_given_to(self):
