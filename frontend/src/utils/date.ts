@@ -149,3 +149,19 @@ export function isOverdue(value?: string | null) {
 
   return date.getTime() < Date.now();
 }
+
+/**
+ * ISO-8601 week number, and whether it is even. French custody judgments are
+ * written as "semaines paires / impaires", so separated co-parents plan their
+ * whole fortnight by this number — it belongs beside the date. Weeks start on
+ * Monday and week 1 is the one holding the year's first Thursday (the ISO rule),
+ * so late-December / early-January dates land in the right week and parity.
+ */
+export function isoWeek(d: Date): { week: number; even: boolean } {
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const day = date.getUTCDay() || 7;             // Mon=1 … Sun=7
+  date.setUTCDate(date.getUTCDate() + 4 - day);  // shift onto the week's Thursday
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  const week = Math.ceil(((date.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+  return { week, even: week % 2 === 0 };
+}

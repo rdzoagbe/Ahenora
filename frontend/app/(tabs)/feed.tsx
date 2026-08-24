@@ -56,6 +56,7 @@ import { useUI, UIColors } from '../../src/components/Kit';
 import { api, logEvent, ActivityEntry, Announcement, Card, CardType, FamilyMember, HandoffNote, Template, WeeklyReport } from '../../src/api';
 import { syncCardReminderNotifications, syncMorningDigest, syncDinnerReminder, syncSundayRecap, ensureAskedNotificationPermissionOnce } from '../../src/notifications';
 import { logger } from '../../src/logger';
+import { isoWeek } from '../../src/utils/date';
 import { recordWin } from '../../src/reviewPrompt';
 
 interface VoiceDraft {
@@ -109,6 +110,16 @@ function formatDayLine(date: string | null | undefined, t: TFunc) {
 function feedDateLine(now: Date | null) {
   if (!now) return '';
   return now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+}
+
+// The ISO week and its parity, beside the date. For a separated co-parent the
+// number IS the schedule — French judgments read "semaines paires / impaires" —
+// and for everyone else it is a normal, harmless piece of the week's identity
+// (European calendars print it as a matter of course).
+function feedWeekLine(now: Date | null, t: TFunc) {
+  if (!now) return '';
+  const { week, even } = isoWeek(now);
+  return t('feed_week_line', { n: week, parity: even ? t('week_even') : t('week_odd') });
 }
 
 // "in 25 min" / "in 3 h" countdown for the detail sheet — only when the item is
@@ -869,7 +880,10 @@ export default function Feed() {
           <View style={[styles.page, { maxWidth: maxW }]}>
             <Text style={styles.brand}>Ahenora</Text>
             <View style={styles.topMetaRow}>
-              <Text style={styles.dateText}>{feedDateLine(now)} <Text style={styles.sun}>{timeEmoji(now)}</Text></Text>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.dateText}>{feedDateLine(now)} <Text style={styles.sun}>{timeEmoji(now)}</Text></Text>
+                <Text style={styles.weekLine} testID="feed-week">{feedWeekLine(now, t)}</Text>
+              </View>
               <View style={styles.topActions}>
                 <PressScale
                   testID="feed-search"
@@ -1585,6 +1599,13 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   sun: {
     color: ui.orangeText,
+  },
+  weekLine: {
+    color: ui.muted,
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 12.5,
+    letterSpacing: 0.2,
+    marginTop: 1,
   },
   topActions: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   bellWrap: {
