@@ -496,6 +496,18 @@ export interface Expense {
   /** The date on the receipt (YYYY-MM-DD), which is not always the day it was added. */
   spent_on: string;
   created_at: string;
+  /** Split 50/50 with the co-parent — counts toward the settle-up balance. */
+  split?: boolean;
+}
+
+/** Shared-expense balance between the two parents, from the caller's view.
+ *  `balance` > 0 means the other parent owes you; < 0 means you owe them. */
+export interface SettlementInfo {
+  enabled: boolean;
+  balance: number;
+  other_name?: string;
+  other_user_id?: string;
+  shared_count?: number;
 }
 
 export interface MerchantRow {
@@ -1748,11 +1760,14 @@ export const api = {
       `/expenses/overview?months=${months}` + (category ? `&category=${encodeURIComponent(category)}` : '')),
   addExpense: (data: {
     description?: string; amount: number; category?: string; child_member_id?: string;
-    merchant?: string; spent_on?: string;
+    merchant?: string; spent_on?: string; split?: boolean;
   }) =>
     request<Expense>('/expenses', { method: 'POST', body: data }),
   deleteExpense: (expenseId: string) =>
     request<{ ok: boolean }>(`/expenses/${expenseId}`, { method: 'DELETE' }),
+  // Shared-expense settle-up between the two parents.
+  getSettlement: () => request<SettlementInfo>('/expenses/settlement'),
+  settleUp: () => request<SettlementInfo>('/expenses/settlement/settle', { method: 'POST' }),
 
   // Templates
   listTemplates: () => request<Template[]>('/templates'),

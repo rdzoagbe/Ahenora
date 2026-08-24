@@ -1539,6 +1539,7 @@ def public_expense(exp: dict) -> dict:
         # were added is the best answer available for those, and it is a true one.
         "spent_on": iso(exp.get("spent_on") or exp["created_at"])[:10],
         "created_at": iso(exp["created_at"]),
+        "split": bool(exp.get("split")),
     }
 
 
@@ -2676,6 +2677,9 @@ class ExpenseIn(BaseModel):
     # a Sunday evening, so "when it was added" and "when it was spent" are not the
     # same day, and only one of them belongs in a monthly total.
     spent_on: Optional[str] = None
+    # Split 50/50 with the co-parent — a shared cost the two of them square up on.
+    # Off by default: an ordinary household expense is nobody's debt.
+    split: bool = False
 
 
 class TemplateIn(BaseModel):
@@ -3056,7 +3060,7 @@ _FAMILY_SCOPED_COLLECTIONS = (
     "cards", "carpools", "chore_logs", "chores", "expenses", "family_invites",
     "family_members", "handoff_notes", "meal_plans_saved", "meals", "redemptions",
     "rewards", "routine_logs", "routines", "shopping_history", "shopping_list",
-    "star_transactions", "templates", "vault",
+    "star_transactions", "templates", "vault", "expense_settlements",
 )
 
 
@@ -9081,6 +9085,7 @@ async def add_expense(payload: ExpenseIn, user=Depends(require_full_member)):
         "paid_by_name": user.get("name", ""),
         "paid_by_user_id": user["user_id"],
         "created_at": now,
+        "split": bool(payload.split),
     }
     await database["expenses"].insert_one(doc)
     return public_expense(doc)
@@ -9095,6 +9100,92 @@ async def delete_expense(expense_id: str, user=Depends(require_full_member)):
     if result.deleted_count == 0:
         raise HTTPException(404, "Expense not found")
     return {"ok": True}
+
+
+async def compute_settlement(database, family_id: str, me_user_id: str) -> dict:
+    """Who owes whom on the shared (split) expenses, from `me`'s point of view.
+
+    A split expense is borne half each, so whoever paid it is owed the other
+    half by the co-parent. The running balance is what each parent has actually
+    put in, minus their fair half, adjusted by the settlements already recorded.
+    Tracking only — the app never moves money, it keeps the tally honest.
+
+    Returns enabled=False unless the household has exactly the two parents a
+    balance is defined between.
+    """
+    parents = [a for a in await _family_accounts(database, family_id)
+               if _is_parent_role(a["role"])]
+    ids = [p["user_id"] for p in parents]
+    if len(parents) != 2 or me_user_id not in ids:
+        return {"enabled": False, "balance": 0.0}
+    other = next(p for p in parents if p["user_id"] != me_user_id)
+
+    net = {ids[0]: 0.0, ids[1]: 0.0}
+    total = 0.0
+    count = 0
+    async for exp in database["expenses"].find(
+            {"family_id": family_id, "split": True}, {"_id": 0, "amount": 1, "paid_by_user_id": 1}):
+        payer = exp.get("paid_by_user_id")
+        if payer not in net:
+            continue  # paid by someone who is not one of the two parents — skip
+        amount = float(exp.get("amount") or 0)
+        total += amount
+        net[payer] += amount
+        count += 1
+    share = total / 2
+    for uid in net:
+        net[uid] -= share
+    # A settlement records that `from` paid `to`, so it lifts the payer's balance
+    # toward zero and lowers the receiver's by the same amount.
+    async for s in database["expense_settlements"].find(
+            {"family_id": family_id}, {"_id": 0, "from_user_id": 1, "to_user_id": 1, "amount": 1}):
+        amt = float(s.get("amount") or 0)
+        if s.get("from_user_id") in net:
+            net[s["from_user_id"]] += amt
+        if s.get("to_user_id") in net:
+            net[s["to_user_id"]] -= amt
+
+    balance = round(net[me_user_id], 2)  # >0: the other owes you; <0: you owe them
+    return {
+        "enabled": True,
+        "balance": balance,
+        "other_name": other["name"],
+        "other_user_id": other["user_id"],
+        "shared_count": count,
+    }
+
+
+@app.get("/api/expenses/settlement")
+async def get_settlement(user=Depends(require_full_member)):
+    return await compute_settlement(get_db(), user["family_id"], user["user_id"])
+
+
+@app.post("/api/expenses/settlement/settle")
+async def settle_up(user=Depends(require_full_member)):
+    """Record that the outstanding shared balance has been squared up — a dated
+    settlement in whichever direction clears it. Honest bookkeeping, not a
+    transfer: it says the two of them settled, it does not move any money."""
+    database = get_db()
+    info = await compute_settlement(database, user["family_id"], user["user_id"])
+    if not info.get("enabled"):
+        raise HTTPException(400, "Settling up needs two parents in the household.")
+    balance = info["balance"]
+    if abs(balance) < 0.01:
+        return info  # already square — nothing to record
+    me = user["user_id"]
+    other = info["other_user_id"]
+    # balance > 0 → the other owed you, so they pay you; < 0 → you pay them.
+    frm, to = (other, me) if balance > 0 else (me, other)
+    await database["expense_settlements"].insert_one({
+        "settlement_id": new_id("settle"),
+        "family_id": user["family_id"],
+        "from_user_id": frm,
+        "to_user_id": to,
+        "amount": round(abs(balance), 2),
+        "created_by": me,
+        "created_at": utcnow(),
+    })
+    return await compute_settlement(database, user["family_id"], me)
 
 
 # -----------------------------------------------------------------------------
