@@ -53,6 +53,10 @@ async def main():
         for c in cards:
             try: api("POST", "/cards", c, tok)
             except Exception as e: print("card seed:", e)
+        # shopping seed — so the List footer (Select items / Clear all) renders
+        for it in ["Milk", "Bread", "Eggs", "Onion", "Carrots"]:
+            try: api("POST", "/shopping", {"name": it}, tok)
+            except Exception as e: print("shop seed:", e)
         for ex in [{"merchant": "Aldi", "amount": 47.30, "category": "Groceries", "spent_on": "2026-08-12"},
                    {"merchant": "Carrefour", "amount": 31.90, "category": "Groceries", "spent_on": "2026-08-04"}]:
             try: api("POST", "/expenses", ex, tok)

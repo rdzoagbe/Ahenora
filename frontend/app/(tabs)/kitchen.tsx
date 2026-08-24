@@ -2341,7 +2341,11 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
 
   secHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 22, marginBottom: 12 },
   secRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  histBtn: { width: 38, alignSelf: 'stretch', borderRadius: 99, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.card, alignItems: 'center', justifyContent: 'center' },
+  // A soft-filled quiet button, not an outlined box. As a card-coloured
+  // outline it read as a stray dark blob among the labelled colour buttons in
+  // the row (a lone circle in dark mode). Soft fill, same pill radius and row
+  // height, so it belongs with the set as the secondary "past lists" action.
+  histBtn: { width: 42, alignSelf: 'stretch', borderRadius: 99, backgroundColor: ui.soft, alignItems: 'center', justifyContent: 'center' },
   // Prominent, labelled call-to-action for the shopping-list meal ideas — now
   // one of the two main ways users get recipes, so it leads the row.
   ideasCta: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 14, borderRadius: 16, backgroundColor: ui.lavender, alignSelf: 'stretch', justifyContent: 'center', marginBottom: 10 },
@@ -2448,7 +2452,12 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     backgroundColor: ui.danger,
   },
   selDeleteText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 12 },
-  clearAllBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 12, paddingVertical: 9, borderRadius: 99, backgroundColor: ui.dangerSoft },
+  // Matched to selectModeBtn beside it — same height, padding and radius — so
+  // the two footer buttons read as a pair and sit on the same line. It carried
+  // a leftover marginTop:12 from when it was stacked, which pushed it below
+  // "Select items" in the row; and no horizontal padding, so it was a different
+  // size. Kept red-tinted, because clearing the list is the destructive one.
+  clearAllBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 9, paddingHorizontal: 14, borderRadius: 999, backgroundColor: ui.dangerSoft },
   clearAllText: { color: ui.danger, fontFamily: 'Inter_700Bold', fontSize: 13 },
   suggestCta: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 18, paddingVertical: 12, borderRadius: 99, backgroundColor: ui.lavenderText, marginTop: 4 },
   suggestCtaText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
