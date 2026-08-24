@@ -33,6 +33,7 @@ import {
   Star,
   Trash2,
   User,
+  UserPlus,
   Users,
   X,
   Zap,
@@ -1442,6 +1443,14 @@ export default function Feed() {
                 <User color={ui.muted} size={17} />
                 <Text style={styles.detailMetaText}>{selectedCard.assignee || t('feed_unassigned')}</Text>
               </View>
+              {/* Who set it — the question the other parent asks about a task
+                  that landed on a kid, a teen or the co-parent. */}
+              {selectedCard.assignee && selectedCard.created_by_name ? (
+                <View style={styles.detailMetaRow}>
+                  <UserPlus color={ui.muted} size={17} />
+                  <Text style={styles.detailMetaText}>{t('card_assigned_by', { name: selectedCard.created_by_name })}</Text>
+                </View>
+              ) : null}
 
               {/* Structured chips: location → Maps, links → browser */}
               {parts.location ? (

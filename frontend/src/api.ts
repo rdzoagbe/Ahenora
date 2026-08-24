@@ -456,6 +456,8 @@ export interface Card {
   external_source?: string | null;
   shared?: boolean;
   created_by_user_id?: string | null;
+  /** Who created/assigned the card — so an assigned task can say "by Roland". */
+  created_by_name?: string | null;
   // Set only by the shared-visibility view: who shared this item. Used to
   // name the person in the "what you see of them" direction.
   shared_by_name?: string;

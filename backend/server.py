@@ -1180,6 +1180,7 @@ def public_card(card: dict) -> dict:
         # they were visible to the whole family, so report them as shared.
         "shared": bool(card["shared"]) if card.get("shared") is not None else card.get("created_by_user_id") is None,
         "created_by_user_id": card.get("created_by_user_id"),
+        "created_by_name": card.get("created_by_name"),
     }
 
 
@@ -6576,13 +6577,19 @@ async def list_assigned_to_me(user=Depends(require_user)):
 @app.post("/api/cards")
 async def create_card(payload: CardIn, user=Depends(require_user)):
     database = get_db()
+    assignee = (payload.assignee or "").strip() or None
+    # Assigning defaults to shared (CardIn.shared defaults True), so handing a
+    # task to the co-parent is visible to both without a thought — the common
+    # case. An explicit private stays private, which is how a surprise stays a
+    # surprise; that deliberate choice is respected, not overridden.
+    shared = bool(payload.shared)
     doc = {
         "card_id": new_id("card"),
         "family_id": user["family_id"],
         "type": payload.type,
         "title": payload.title,
         "description": payload.description,
-        "assignee": payload.assignee,
+        "assignee": assignee,
         "due_date": parse_dt(payload.due_date),
         "status": "OPEN",
         "source": payload.source,
@@ -6591,10 +6598,11 @@ async def create_card(payload: CardIn, user=Depends(require_user)):
         "reminder_minutes": payload.reminder_minutes,
         "created_at": utcnow(),
         "completed_at": None,
-        # Private to the creator by default — the co-parent only sees it if the
-        # creator explicitly shares it (via /api/cards/{id}/share).
         "created_by_user_id": user["user_id"],
-        "shared": bool(payload.shared),
+        # Who set it — so an assigned card can say "assigned by Roland", the
+        # question the other parent (and the person it landed on) actually asks.
+        "created_by_name": user.get("name", ""),
+        "shared": shared,
     }
     await database["cards"].insert_one(doc)
     # Log it either way — creating a private item is still YOUR history, kept
@@ -6765,6 +6773,7 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
             "completed_at": None,
             # The next occurrence keeps the same privacy as its parent.
             "created_by_user_id": card.get("created_by_user_id"),
+            "created_by_name": card.get("created_by_name"),
             "shared": card.get("shared", False),
         }
         await database["cards"].insert_one(next_doc)
