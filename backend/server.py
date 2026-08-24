@@ -5200,6 +5200,11 @@ async def kid_home(child=Depends(require_child)):
 def _teen_can_see(card: dict, teen_name: str, teen_user_id: str) -> bool:
     """A teen sees a card only if it is family-wide (shared) OR theirs — assigned
     to them, or created by them. Another member's private card never matches."""
+    vis = card.get("visible_to")
+    if vis is not None:
+        # A scoped (assigned) task: only the parents and the assignee are in the
+        # set, so a teen sees it exactly when they are the one it was handed to.
+        return bool(teen_user_id) and teen_user_id in vis
     if card.get("shared") is True:
         return True
     # A legacy card that predates the privacy model (no owner, no shared flag)
@@ -6305,27 +6310,41 @@ Return only one exact name from the list, or return an empty string.
 # -----------------------------------------------------------------------------
 # Cards
 # -----------------------------------------------------------------------------
+def _card_visible_to(card: dict, uid: Optional[str]) -> bool:
+    """Whether `uid` may see this card. An assigned task carries a visible_to set
+    (the parents and the assignee) and is visible only to them — an assigned job
+    is not the whole household's business. A card that is not scoped that way
+    follows the ordinary rule: a family-wide shared card is seen by all, a private
+    one only by its creator, a legacy card (no owner) by all.
+
+    Filtered in Python rather than in the query so the rule lives in one place and
+    does not depend on operators the mongo layer must special-case.
+    """
+    vis = card.get("visible_to")
+    if vis is not None:
+        return (uid is not None and uid in vis) or card.get("created_by_user_id") == uid
+    if card.get("shared") is True:
+        return True
+    if card.get("created_by_user_id") == uid:
+        return True
+    if card.get("created_by_user_id") is None:   # legacy, pre-privacy
+        return True
+    return False
+
+
 @app.get("/api/cards")
 async def list_cards(status: Optional[str] = Query(default=None), user=Depends(require_user)):
     database = get_db()
-    # Per-item privacy: each parent sees family-shared items, their own private
-    # items, and legacy items (created before privacy existed, no owner stored).
-    # A co-parent's private items stay hidden until they choose to share.
-    query = {
-        "family_id": user["family_id"],
-        "$or": [
-            {"shared": True},
-            {"created_by_user_id": user["user_id"]},
-            {"created_by_user_id": {"$exists": False}},
-        ],
-    }
+    uid = user["user_id"]
+    query = {"family_id": user["family_id"]}
     if status:
         query["status"] = status
 
     rows = []
     cursor = database["cards"].find(query, {"_id": 0}).sort("created_at", -1)
     async for item in cursor:
-        rows.append(public_card(item))
+        if _card_visible_to(item, uid):
+            rows.append(public_card(item))
     return rows
 
 
@@ -6371,6 +6390,10 @@ async def list_shared_with_coparent(direction: str = "out", user=Depends(require
     rows = []
     cursor = database["cards"].find(query, {"_id": 0}).sort("due_date", 1)
     async for item in cursor:
+        # An assigned task is shared but scoped (parents + assignee): it still
+        # must not surface to someone outside that set through this view.
+        if not _card_visible_to(item, user["user_id"]):
+            continue
         card = public_card(item)
         card["shared_by_name"] = names.get(item.get("created_by_user_id"), "")
         rows.append(card)
@@ -6658,6 +6681,35 @@ async def list_assigned_to_me(user=Depends(require_user)):
     return rows
 
 
+async def _assigned_visibility(database, family_id: str, creator_uid: Optional[str],
+                               assignee_name: Optional[str]):
+    """Who may see a task assigned to `assignee_name`: the two parents (they run
+    the household and answer for it) and the assignee — nobody else. Not a helper
+    who was not assigned it, not another child. Returns a de-duped list of
+    user_ids, or None for an unassigned card, which is not scoped this way and
+    follows the ordinary shared/private rule instead.
+
+    A managed child has no login, so a chore assigned to them puts only the
+    parents in the list; the child still sees it through their own kid-mode home,
+    which is scoped by their name, not by this list.
+    """
+    if not assignee_name:
+        return None
+    accounts = await _family_accounts(database, family_id)
+    uids = set()
+    if creator_uid:
+        uids.add(creator_uid)
+    for a in accounts:
+        if _is_parent_role(a["role"]):
+            uids.add(a["user_id"])
+    wanted = assignee_name.strip().lower()
+    for a in accounts:
+        if (a["name"] or "").strip().lower() == wanted and a.get("user_id"):
+            uids.add(a["user_id"])
+            break
+    return sorted(uids)
+
+
 @app.post("/api/cards")
 async def create_card(payload: CardIn, user=Depends(require_user)):
     database = get_db()
@@ -6691,6 +6743,13 @@ async def create_card(payload: CardIn, user=Depends(require_user)):
         # question the other parent (and the person it landed on) actually asks.
         "created_by_name": user.get("name", ""),
         "shared": shared,
+        # Scope an assigned *shared* task to the parents + the assignee, so it
+        # does not show to the whole household. A private task never gets a set —
+        # scoping only ever narrows a shared card, it must never widen a private
+        # one (a self-assigned surprise stays the creator's alone). Unassigned or
+        # private cards get None and follow the ordinary shared/private rule.
+        "visible_to": (await _assigned_visibility(database, user["family_id"], user["user_id"], assignee)
+                       if shared else None),
     }
     await database["cards"].insert_one(doc)
     # Log it either way — creating a private item is still YOUR history, kept
@@ -6803,6 +6862,19 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
     editor = (user.get("name") or "").strip().lower()
     if final_assignee and final_assignee.strip().lower() != editor:
         changes["shared"] = True
+
+    # Re-scope when the assignee or the shared flag changes: hand it to a new
+    # person and the set of who can see it (parents + that person) moves with it;
+    # clear the assignee, or turn it private, and it stops being scoped. A private
+    # card never carries a set — scoping only narrows a shared card, never widens a
+    # private one. Keyed to the original creator, not the editor.
+    if "assignee" in changes or "shared" in changes:
+        eff_shared = changes.get("shared", card.get("shared"))
+        eff_assignee = changes["assignee"] if "assignee" in changes else card.get("assignee")
+        changes["visible_to"] = (
+            await _assigned_visibility(database, card["family_id"],
+                                       card.get("created_by_user_id"), eff_assignee)
+            if eff_shared else None)
 
     if not changes:
         return public_card(card)
