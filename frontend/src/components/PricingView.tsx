@@ -6,6 +6,7 @@ import {
   ScrollView,
   Alert,
   Linking,
+  Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
@@ -20,7 +21,7 @@ import {
 import { PressScale } from './PressScale';
 import { useUI, UIColors } from './Kit';
 import { useStore } from '../store';
-import { api, Plan, BillingCycle } from '../api';
+import { api, Plan, BillingCycle, bustSubscriptionCache } from '../api';
 import { purchasePremium, restorePurchases } from '../billing';
 
 // Where a web (or billing-less) user is sent to actually subscribe. Store
@@ -48,7 +49,18 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
   const styles = useMemo(() => createStyles(ui), [ui]);
   const [cycle, setCycle] = useState<BillingCycle>('yearly');
   const [busy, setBusy] = useState(false);
+  // Whether card checkout is available (web only, and only once the server has
+  // its Stripe keys). Null until asked.
+  const [stripeEnabled, setStripeEnabled] = useState<boolean | null>(null);
   const currentPlan: Plan = subscription?.plan ?? 'village';
+  const onWeb = Platform.OS === 'web';
+  // The polling loop after a Stripe return needs the freshest subscription, not
+  // the one closed over when the effect started. A ref, kept current by an
+  // effect, is.
+  const subRef = useRef(subscription);
+  useEffect(() => {
+    subRef.current = subscription;
+  }, [subscription]);
 
   const handleChoose = async (plan: Plan) => {
     if (!user) {
@@ -70,6 +82,35 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
     if (busy) return;
     setBusy(true);
     try {
+      // Web (an iPhone in Safari, a laptop) has no store billing. Pay by card
+      // through Stripe: fetch a hosted Checkout URL and hand the browser over.
+      if (onWeb) {
+        if (stripeEnabled === false) {
+          // Stripe not switched on yet — point to Google Play rather than
+          // dead-ending.
+          Alert.alert(
+            t('price_get_app_title'),
+            t('price_get_app_msg'),
+            [
+              { text: t('cancel'), style: 'cancel' },
+              { text: t('price_get_app_cta'), onPress: () => { Linking.openURL(ANDROID_STORE_URL).catch(() => undefined); } },
+            ],
+          );
+          return;
+        }
+        try {
+          const res = await api.createStripeCheckout(cycle);
+          if (res.url && typeof window !== 'undefined') {
+            window.location.href = res.url;
+            return;
+          }
+          Alert.alert(t('price_purchase_failed_title'), t('price_purchase_failed_msg'));
+        } catch {
+          Alert.alert(t('price_purchase_failed_title'), t('price_purchase_failed_msg'));
+        }
+        return;
+      }
+
       const res = await purchasePremium(user.user_id, cycle);
       if (!res.available) {
         // No store billing here — almost always because this is the web app.
@@ -107,6 +148,11 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
     syncedRef.current = true;
     (async () => {
       try {
+        // Is card checkout available here? Only the web app asks — native pays
+        // through the store.
+        if (onWeb) {
+          api.getStripeConfig().then((c) => setStripeEnabled(!!c.enabled)).catch(() => setStripeEnabled(false));
+        }
         // Two corrections, both quiet: the device replays its receipts, and
         // the server asks RevenueCat directly. Either alone heals a missed
         // webhook; together they cover a fresh device with no receipts too.
@@ -120,7 +166,35 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
         // the person did not ask for.
       }
     })();
-  }, [user, refreshSubscription]);
+  }, [user, refreshSubscription, onWeb]);
+
+  // Coming back from a Stripe Checkout page (?checkout=success). The webhook
+  // that lifts the plan can land a beat after the redirect, so poll the
+  // subscription a few times before celebrating, then tidy the URL.
+  const checkoutHandledRef = useRef(false);
+  useEffect(() => {
+    if (!onWeb || checkoutHandledRef.current || typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const status = params.get('checkout');
+    if (!status) return;
+    checkoutHandledRef.current = true;
+    // Drop the query param so a refresh does not replay this.
+    try {
+      window.history.replaceState({}, '', window.location.pathname);
+    } catch {
+      // Non-fatal; the param just lingers.
+    }
+    if (status !== 'success') return;
+    (async () => {
+      for (let i = 0; i < 6; i++) {
+        bustSubscriptionCache();
+        await refreshSubscription().catch(() => undefined);
+        if (subRef.current?.plan === 'executive') break;
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+      Alert.alert(t('price_purchase_done_title'), t('price_purchase_done_msg'));
+    })();
+  }, [onWeb, refreshSubscription, t]);
 
   const handleRestore = async () => {
     if (!user || busy) return;
@@ -323,7 +397,7 @@ function PlanCard({
           <Text style={styles.freeText}>{t('price_free')}</Text>
         ) : (
           <>
-            <Text style={styles.priceSymbol}>$</Text>
+            <Text style={styles.priceSymbol}>€</Text>
             <Text style={styles.priceValue}>
               {priceDisplay.toFixed(priceDisplay % 1 === 0 ? 0 : 2)}
             </Text>
@@ -333,7 +407,7 @@ function PlanCard({
       </View>
       {!isFree && cycle === 'yearly' ? (
         <Text style={styles.yearlyNote}>
-          ${price.toFixed(2)} {t('pricing_billed_yearly')}
+          €{price.toFixed(2)} {t('pricing_billed_yearly')}
         </Text>
       ) : null}
 

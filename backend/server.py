@@ -5,6 +5,7 @@ import json
 import base64
 import asyncio
 import hashlib
+import hmac
 import secrets
 import tempfile
 import html
@@ -14,6 +15,7 @@ import urllib.parse
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from fastapi import FastAPI, HTTPException, Depends, Header, UploadFile, File, Query, Body
+import requests
 from dedupe_core import run as dedupe_run
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -8289,6 +8291,245 @@ async def reconcile_billing(user: dict = Depends(require_user)):
     if is_admin_user(user):
         return apply_admin_subscription(sub)
     return sub
+
+
+# -----------------------------------------------------------------------------
+# Stripe web checkout — the second way into Premium.
+#
+# Google Play (via RevenueCat) reaches Android. Everyone else — an iPhone in
+# Safari, a laptop on ahenora.com — had no way to pay at all. Stripe closes
+# that: a hosted Checkout page, and a webhook that grants the SAME per-family
+# "executive" plan the RevenueCat webhook grants. The two never fight, because
+# each stamps its own marker (rc_* vs stripe_*) and both only ever write the
+# one shared `plan` field.
+#
+# No SDK: Checkout sessions are created with `requests` (already a dependency)
+# and webhook signatures are verified with stdlib hmac, so the whole thing is
+# offline-testable and carries no new install.
+# -----------------------------------------------------------------------------
+STRIPE_API_BASE = "https://api.stripe.com/v1"
+# A Stripe subscription is live (Premium) in these statuses; anything else
+# (canceled, unpaid, incomplete_expired, past_due after retries) is not.
+STRIPE_ACTIVE_STATUSES = {"active", "trialing"}
+
+
+def stripe_configured() -> bool:
+    """Web checkout is live only when both the API key (to create sessions) and
+    the webhook secret (to trust what comes back) are set."""
+    return bool(os.environ.get("STRIPE_SECRET_KEY") and os.environ.get("STRIPE_WEBHOOK_SECRET"))
+
+
+def _stripe_price_id(cycle: str) -> Optional[str]:
+    key = "STRIPE_PRICE_YEARLY" if cycle == "yearly" else "STRIPE_PRICE_MONTHLY"
+    return os.environ.get(key) or None
+
+
+def _public_app_url() -> str:
+    """Where Checkout returns the customer. The app lives under /app on the
+    marketing domain; the invite base already encodes that, so reuse it."""
+    base = os.environ.get("PUBLIC_APP_URL") or os.environ.get("INVITE_BASE_URL") or "https://ahenora.com/app/"
+    return base.rstrip("/")
+
+
+def stripe_verify_signature(payload: bytes, sig_header: str, secret: str,
+                            now_ts: int, tolerance: int = 300) -> bool:
+    """Verify a Stripe webhook signature (the scheme Stripe documents, done by
+    hand so no SDK is needed). The header is `t=<ts>,v1=<hex>,...`; the signed
+    material is `<ts>.<raw body>` under HMAC-SHA256 with the endpoint secret. A
+    timestamp outside the tolerance window is rejected to blunt replay."""
+    if not sig_header or not secret:
+        return False
+    parts = {}
+    for item in sig_header.split(","):
+        k, _, v = item.strip().partition("=")
+        if k == "t":
+            parts["t"] = v
+        elif k == "v1":
+            parts.setdefault("v1", []).append(v)  # Stripe may send several
+    ts = parts.get("t")
+    sigs = parts.get("v1") or []
+    if not ts or not sigs:
+        return False
+    try:
+        if abs(now_ts - int(ts)) > tolerance:
+            return False
+    except (ValueError, TypeError):
+        return False
+    signed = f"{ts}.".encode() + payload
+    expected = hmac.new(secret.encode(), signed, hashlib.sha256).hexdigest()
+    return any(hmac.compare_digest(expected, s) for s in sigs)
+
+
+def _stripe_cycle_from_metadata(obj: dict) -> str:
+    meta = (obj or {}).get("metadata") or {}
+    cycle = (meta.get("cycle") or "").lower()
+    return "yearly" if cycle == "yearly" else "monthly"
+
+
+def stripe_event_changes(event: dict) -> tuple[Optional[str], Optional[str], dict]:
+    """Interpret a Stripe event into (family_id, stripe_customer_id, changes).
+
+    Kept pure so the grant/downgrade logic is tested without a webhook or a
+    network. `changes` always records that Stripe touched the family; `plan` is
+    set only when the event actually moves entitlement. The family is addressed
+    by metadata.family_id on the checkout that started it, and thereafter by the
+    stripe_customer_id we stored — later lifecycle events carry only the
+    customer.
+    """
+    etype = (event or {}).get("type", "")
+    obj = ((event or {}).get("data") or {}).get("object") or {}
+    changes: dict = {
+        "stripe_last_event": etype,
+        "stripe_event_at": utcnow(),
+        "updated_at": utcnow(),
+    }
+    family_id = None
+    customer = obj.get("customer")
+    if isinstance(customer, dict):
+        customer = customer.get("id")
+
+    if etype == "checkout.session.completed":
+        meta = obj.get("metadata") or {}
+        family_id = meta.get("family_id")
+        changes["plan"] = "executive"
+        changes["billing_cycle"] = _stripe_cycle_from_metadata(obj)
+        if obj.get("subscription"):
+            changes["stripe_subscription_id"] = obj["subscription"]
+        if customer:
+            changes["stripe_customer_id"] = customer
+    elif etype == "customer.subscription.updated":
+        status = (obj.get("status") or "").lower()
+        changes["plan"] = "executive" if status in STRIPE_ACTIVE_STATUSES else "village"
+        changes["stripe_subscription_status"] = status
+    elif etype == "customer.subscription.deleted":
+        changes["plan"] = "village"
+        changes["stripe_subscription_status"] = "canceled"
+    else:
+        # Unhandled event kind — acknowledged, state recorded, entitlement
+        # untouched.
+        changes.pop("plan", None)
+
+    return family_id, customer, changes
+
+
+async def _stripe_family_for_event(database, family_id: Optional[str],
+                                   customer: Optional[str]) -> Optional[dict]:
+    """Which family this event is about: the id the checkout carried, or the
+    Stripe customer we stored on a family at checkout time."""
+    if family_id:
+        fam = await database["families"].find_one({"family_id": family_id}, {"_id": 0})
+        if fam:
+            return fam
+    if customer:
+        return await database["families"].find_one({"stripe_customer_id": customer}, {"_id": 0})
+    return None
+
+
+@app.post("/api/billing/stripe/checkout")
+async def stripe_checkout(payload: dict = Body(default=None), user=Depends(require_full_member)):
+    """Start a hosted Stripe Checkout for this family and hand back its URL.
+
+    The family_id rides in the session metadata (and client_reference_id), so
+    the webhook that later confirms payment knows exactly whose plan to lift.
+    """
+    if not os.environ.get("STRIPE_SECRET_KEY"):
+        raise HTTPException(status_code=503, detail="Card checkout is not configured")
+    cycle = ((payload or {}).get("cycle") or "monthly").lower()
+    if cycle not in ("monthly", "yearly"):
+        raise HTTPException(status_code=400, detail="cycle must be monthly or yearly")
+    price_id = _stripe_price_id(cycle)
+    if not price_id:
+        raise HTTPException(status_code=503, detail="That plan is not available for card checkout")
+
+    app_url = _public_app_url()
+    family = await get_family_doc(user["family_id"])
+    form = [
+        ("mode", "subscription"),
+        ("line_items[0][price]", price_id),
+        ("line_items[0][quantity]", "1"),
+        ("client_reference_id", user["family_id"]),
+        ("metadata[family_id]", user["family_id"]),
+        ("metadata[user_id]", user["user_id"]),
+        ("metadata[cycle]", cycle),
+        ("subscription_data[metadata][family_id]", user["family_id"]),
+        ("success_url", f"{app_url}/pricing?checkout=success"),
+        ("cancel_url", f"{app_url}/pricing?checkout=cancel"),
+        ("allow_promotion_codes", "true"),
+    ]
+    if user.get("email"):
+        form.append(("customer_email", user["email"]))
+    if family and family.get("stripe_customer_id"):
+        # Reuse the customer so a returning payer is not duplicated.
+        form = [(k, v) for (k, v) in form if k != "customer_email"]
+        form.append(("customer", family["stripe_customer_id"]))
+
+    def _create():
+        try:
+            resp = requests.post(
+                f"{STRIPE_API_BASE}/checkout/sessions",
+                data=form,
+                auth=(os.environ["STRIPE_SECRET_KEY"], ""),
+                timeout=20,
+            )
+        except requests.RequestException as exc:
+            raise HTTPException(status_code=502, detail=f"Stripe request failed: {exc}")
+        if resp.status_code >= 400:
+            log.warning("Stripe checkout create failed %s: %s", resp.status_code, resp.text[:300])
+            raise HTTPException(status_code=502, detail="Stripe could not start checkout")
+        return resp.json()
+
+    session = await asyncio.to_thread(_create)
+    url = session.get("url")
+    if not url:
+        raise HTTPException(status_code=502, detail="Stripe returned no checkout URL")
+    return {"url": url, "session_id": session.get("id")}
+
+
+@app.post("/api/billing/stripe/webhook")
+async def stripe_webhook(request: Request):
+    """Stripe server-to-server events — the source of truth for card payers,
+    exactly as the RevenueCat webhook is for Google Play. Signature-verified
+    against the endpoint secret; a bad or replayed signature is refused."""
+    secret = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+    if not secret:
+        raise HTTPException(status_code=503, detail="Billing not configured")
+    body = await request.body()
+    sig = request.headers.get("stripe-signature", "")
+    if not stripe_verify_signature(body, sig, secret, int(utcnow().timestamp())):
+        raise HTTPException(status_code=400, detail="Bad webhook signature")
+    try:
+        event = json.loads(body.decode("utf-8") or "{}")
+    except (ValueError, UnicodeDecodeError):
+        raise HTTPException(status_code=400, detail="Malformed event")
+
+    database = get_db()
+    family_id, customer, changes = stripe_event_changes(event)
+    family = await _stripe_family_for_event(database, family_id, customer)
+    if not family:
+        # Unknown family (e.g. a test event, or a customer we never stored) —
+        # acknowledge so Stripe stops retrying.
+        log.warning("Stripe webhook for unknown family: type=%s customer=%s",
+                    event.get("type"), customer)
+        return {"ok": True, "matched": False}
+
+    await database["families"].update_one(
+        {"family_id": family["family_id"]}, {"$set": changes}
+    )
+    log.info("Stripe webhook applied: family=%s type=%s plan=%s",
+             family["family_id"], event.get("type"), changes.get("plan", "unchanged"))
+    return {"ok": True, "matched": True}
+
+
+@app.get("/api/billing/stripe/config")
+async def stripe_config():
+    """What the web app needs to decide whether to offer card checkout: whether
+    it is on at all, and the headline prices to show (EUR, the base currency)."""
+    return {
+        "enabled": stripe_configured(),
+        "currency": "EUR",
+        "price_monthly": PLAN_CATALOG["executive"]["price_monthly"],
+        "price_yearly": PLAN_CATALOG["executive"]["price_yearly"],
+    }
 
 
 # -----------------------------------------------------------------------------
