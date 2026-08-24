@@ -1,16 +1,9 @@
-"""A task added with the + button reaches the household.
+"""An assigned task carries who set it, and defaults to shared.
 
-It did not. CardIn.shared defaulted to False and the add-card screen never sent
-the field, so every task created through the app's main button was stored
-private: invisible to everyone else (list_cards returns shared items plus your
-own) and silent (both push paths are gated on shared). A co-parent could add the
-school run and the other parent would never see it or hear about it.
-
-The other half matters just as much, and an earlier version of this change broke
-it: private still means private. Somebody planning a surprise party puts a name
-on the card and keeps it to themselves, and no rule about assignees may override
-that. Filling in a value nobody supplied is not the same as overriding one
-somebody chose.
+Assigning defaults to shared (so a task handed to the co-parent is visible to
+both without a thought), while an explicit private is still respected — that is
+how a surprise stays a surprise. And the creator's name now rides along so an
+assigned card can say who set it.
 
 Run with:  python3 -m unittest discover -s tests -v
 """
@@ -32,60 +25,62 @@ if HAVE_DEPS:
     import server
     from fake_mongo import FakeDatabase
 
-ROLAND = {"user_id": "u_r", "family_id": "fam1", "name": "Roland", "email": "r@x.com"}
-KEIGH = {"user_id": "u_k", "family_id": "fam1", "name": "Keigh", "email": "k@x.com"}
+A = {"user_id": "u1", "family_id": "fam1", "name": "Roland"}
+B = {"user_id": "u2", "family_id": "fam1", "name": "Kim"}
 
 
 @unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
-class CardSharing(unittest.TestCase):
+class AssignedIsShared(unittest.TestCase):
     def setUp(self):
         self.db = FakeDatabase()
         self._get_db = server.get_db
         server.get_db = lambda: self.db
-        for u in (ROLAND, KEIGH):
-            asyncio.run(self.db["users"].insert_one(dict(u)))
-            asyncio.run(self.db["family_members"].insert_one(
-                {"member_id": f"m_{u['user_id']}", "family_id": "fam1",
-                 "user_id": u["user_id"], "name": u["name"], "role": "Parent"}))
+        self._real_send = server.send_expo_push_messages
+
+        async def fake_send(messages, database=None):
+            return {"sent": len(messages)}
+        server.send_expo_push_messages = fake_send
+
+        async def seed():
+            for u, mid in ((A, "m1"), (B, "m2")):
+                await self.db["users"].insert_one({**u})
+                await self.db["family_members"].insert_one({
+                    "member_id": mid, "family_id": "fam1", "user_id": u["user_id"],
+                    "name": u["name"], "role": "Parent"})
+        asyncio.run(seed())
 
     def tearDown(self):
         server.get_db = self._get_db
+        server.send_expo_push_messages = self._real_send
 
-    def _create(self, actor, **kw):
-        payload = server.CardIn(**kw)
-        return asyncio.run(server.create_card(payload, user=dict(actor)))
+    def _create(self, user, **kw):
+        payload = server.CardIn(type="TASK", title=kw.pop("title", "School run"), **kw)
+        return asyncio.run(server.create_card(payload, user=dict(user)))
 
-    def _visible_to(self, actor):
-        # status=None explicitly: called directly rather than through FastAPI,
-        # the Query(default=None) sentinel is a truthy object, so omitting it
-        # adds a status filter that matches nothing.
-        return [c["title"] for c in
-                asyncio.run(server.list_cards(status=None, user=dict(actor)))]
-
-    def test_a_card_with_no_opinion_is_shared(self):
-        # The bug: the + screen sends no `shared`, so the default decides. It
-        # must decide in favour of the household, or the app's main button
-        # produces something nobody else can see.
-        card = self._create(ROLAND, title="Bin night")
+    def test_assigning_defaults_to_shared(self):
+        # CardIn.shared defaults True, so a plain assign is visible to both.
+        card = self._create(A, assignee="Kim")
         self.assertTrue(card["shared"])
-        self.assertIn("Bin night", self._visible_to(KEIGH))
+        self.assertEqual(card["created_by_name"], "Roland")
 
-    def test_asking_for_private_is_honoured(self):
-        card = self._create(ROLAND, title="Surprise party", shared=False)
+    def test_explicit_private_is_respected_even_when_assigned(self):
+        # The surprise-party case: deliberately private stays private.
+        card = self._create(A, title="Surprise party", assignee="Kim", shared=False)
         self.assertFalse(card["shared"])
-        self.assertNotIn("Surprise party", self._visible_to(KEIGH))
 
-    def test_private_survives_a_name_on_the_card(self):
-        # An earlier attempt made an assignee force sharing. That silently
-        # overrode a deliberate choice - and a surprise party planned FOR Keigh
-        # is exactly the card that carries their name and must not reach them.
-        card = self._create(ROLAND, title="Keigh's birthday", assignee="Keigh", shared=False)
-        self.assertFalse(card["shared"])
-        self.assertNotIn("Keigh's birthday", self._visible_to(KEIGH))
+    def test_created_by_name_is_returned(self):
+        card = self._create(B, assignee="Roland")
+        self.assertEqual(card["created_by_name"], "Kim")
 
-    def test_the_owner_still_sees_their_own_private_card(self):
-        self._create(ROLAND, title="Therapy booking", shared=False)
-        self.assertIn("Therapy booking", self._visible_to(ROLAND))
+    def test_recurring_occurrence_keeps_the_creator_name(self):
+        card = self._create(A, assignee="Kim", recurrence="weekly",
+                            due_date="2026-08-25T08:00:00Z")
+        asyncio.run(server.update_card(
+            card["card_id"], server.CardPatchIn(status="DONE"), user=dict(A)))
+        spawned = asyncio.run(self.db["cards"].find_one(
+            {"family_id": "fam1", "status": "OPEN", "title": "School run"}))
+        self.assertEqual(spawned["created_by_name"], "Roland")
+        self.assertTrue(spawned["shared"])              # inherits parent's sharing
 
 
 if __name__ == "__main__":

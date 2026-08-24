@@ -1,13 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput, View,
+  ActivityIndicator, Alert, ScrollView, StyleSheet, Switch, Text, TextInput, View,
 } from 'react-native';
-import { Plus, Trash2, TrendingDown, TrendingUp } from 'lucide-react-native';
+import { Plus, Trash2, TrendingDown, TrendingUp, Scale } from 'lucide-react-native';
 
 import { PressScale } from './PressScale';
 import { useUI, UIColors } from './Kit';
 import { useStore } from '../store';
-import { api, Expense, ExpenseOverview, MerchantRow } from '../api';
+import { api, Expense, ExpenseOverview, MerchantRow, SettlementInfo } from '../api';
 import { localeFor } from '../utils/date';
 import { logger } from '../logger';
 
@@ -75,16 +75,21 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
   const [amount, setAmount] = useState('');
   const [when, setWhen] = useState(todayISO());
   const [saving, setSaving] = useState(false);
+  const [splitOn, setSplitOn] = useState(false);
+  const [settlement, setSettlement] = useState<SettlementInfo | null>(null);
+  const [settling, setSettling] = useState(false);
 
 
   const load = useCallback(async () => {
     try {
-      const [data, list] = await Promise.all([
+      const [data, list, settle] = await Promise.all([
         api.getExpenseOverview(MONTHS, CATEGORY),
         api.listExpenses(120),
+        api.getSettlement().catch(() => null),
       ]);
       setOverview(data);
       setRecent(list.filter((e) => (e.category || 'General') === CATEGORY));
+      setSettlement(settle);
     } catch (e) {
       logger.warn('expenses load failed', e);
     } finally {
@@ -108,10 +113,12 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
         amount: value,
         category: CATEGORY,
         spent_on: when,
+        split: splitOn,
       });
       setShop('');
       setAmount('');
       setWhen(todayISO());
+      setSplitOn(false);
       setAdding(false);
       await load();
     } catch (e: any) {
@@ -120,7 +127,19 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
     } finally {
       setSaving(false);
     }
-  }, [shop, amount, when, load, t]);
+  }, [shop, amount, when, splitOn, load, t]);
+
+  const settleUp = useCallback(async () => {
+    setSettling(true);
+    try {
+      setSettlement(await api.settleUp());
+    } catch (e: any) {
+      logger.warn('settle up failed', e);
+      Alert.alert(t('exp_save_failed'), e?.message || '');
+    } finally {
+      setSettling(false);
+    }
+  }, [t]);
 
   const remove = useCallback(async (id: string) => {
     try {
@@ -258,6 +277,29 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
             )}
           </View>
 
+          {/* ---- Settle up. Only when there are two parents and something has
+                   been split — a co-parent's running tally, honestly tracked. ---- */}
+          {settlement?.enabled && (settlement.shared_count ?? 0) > 0 ? (
+            <View style={[styles.card, styles.settleCard]}>
+              <View style={styles.settleHead}>
+                <Scale color={ui.lavenderText} size={18} />
+                <Text style={styles.settleTitle} numberOfLines={2}>
+                  {settlement.balance > 0.005
+                    ? t('exp_settle_owes_you', { name: settlement.other_name || '', amount: money(Math.abs(settlement.balance)) })
+                    : settlement.balance < -0.005
+                      ? t('exp_settle_you_owe', { name: settlement.other_name || '', amount: money(Math.abs(settlement.balance)) })
+                      : t('exp_settle_square', { name: settlement.other_name || '' })}
+                </Text>
+              </View>
+              <Text style={styles.settleNote}>{t('exp_settle_note')}</Text>
+              {Math.abs(settlement.balance) >= 0.01 ? (
+                <PressScale testID="exp-settle" onPress={settleUp} disabled={settling} style={[styles.settleBtn, settling && styles.dim]}>
+                  <Text style={styles.settleBtnText}>{settling ? t('exp_saving') : t('exp_settle_mark')}</Text>
+                </PressScale>
+              ) : null}
+            </View>
+          ) : null}
+
           {/* ---- Who paid. The older job of this screen, kept on the same page
                    rather than in a second place to look. ---- */}
           {!showSix && lead && Object.keys(lead.by_person).length > 1 ? (
@@ -309,7 +351,7 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
                 <View key={e.expense_id} style={[styles.row, i > 0 && styles.rowDivider]}>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.shopName} numberOfLines={1}>{e.merchant || e.description}</Text>
-                    <Text style={styles.shopSub}>{dayLabel(e.spent_on)} · {e.paid_by_name}</Text>
+                    <Text style={styles.shopSub}>{dayLabel(e.spent_on)} · {e.paid_by_name}{e.split ? ` · ${t('exp_split_tag')}` : ''}</Text>
                   </View>
                   <Text style={styles.rowAmount}>{money(e.amount)}</Text>
                   <PressScale
@@ -360,6 +402,23 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
                 maxLength={10}
               />
               <Text style={styles.hint}>{t('exp_date_hint')}</Text>
+              {/* Split with the co-parent — only offered when there are two of
+                  them, and off unless deliberately turned on. */}
+              {settlement?.enabled ? (
+                <View style={styles.splitRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.splitLabel}>{t('exp_split_with', { name: settlement.other_name || '' })}</Text>
+                    <Text style={styles.splitSub}>{t('exp_split_help')}</Text>
+                  </View>
+                  <Switch
+                    testID="exp-split"
+                    value={splitOn}
+                    onValueChange={setSplitOn}
+                    trackColor={{ true: ui.lavenderText, false: ui.line }}
+                    thumbColor="#FFFFFF"
+                  />
+                </View>
+              ) : null}
               <PressScale testID="exp-save" onPress={save} disabled={saving} style={[styles.primary, saving && styles.dim]}>
                 <Text style={styles.primaryText}>{saving ? t('exp_saving') : t('exp_save')}</Text>
               </PressScale>
@@ -450,6 +509,15 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   primaryText: { fontFamily: 'Inter_700Bold', fontSize: 15, color: '#fff' },
   dim: { opacity: 0.6 },
+  settleCard: { borderColor: ui.lavenderText, borderWidth: 1 },
+  settleHead: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  settleTitle: { flex: 1, color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 17, lineHeight: 23, letterSpacing: -0.2 },
+  settleNote: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, lineHeight: 18, marginTop: 8 },
+  settleBtn: { marginTop: 14, alignSelf: 'flex-start', paddingHorizontal: 18, paddingVertical: 10, borderRadius: 999, backgroundColor: ui.lavenderText },
+  settleBtnText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
+  splitRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 6, marginBottom: 6 },
+  splitLabel: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 14.5 },
+  splitSub: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 2 },
   quiet: { alignItems: 'center', paddingVertical: 10 },
   quietText: { fontFamily: 'Inter_600SemiBold', fontSize: 14, color: ui.muted },
 });

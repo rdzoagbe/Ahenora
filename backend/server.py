@@ -207,6 +207,42 @@ async def reset_testing_window_plans():
         log.warning("Testing-window plan reset skipped: %s", exc)
 
 
+async def _merge_coparent_dms(database) -> int:
+    """Fold co-parent one-to-one messages into the adults room, family by family.
+    A co-parent chat used to split across two keys — the profile page wrote to
+    'adults' while the chat tab opened a dm: thread — so half a family's messages
+    'vanished' from whichever door was not used. The adults room is the single
+    key every door opens now; move any dm: co-parent messages there so none are
+    stranded. Once moved there are none left, so re-running is a no-op."""
+    moved = 0
+    async for fam in database["families"].find({}, {"_id": 0, "family_id": 1}):
+        fid = fam.get("family_id")
+        if not fid:
+            continue
+        parents = [a for a in await _family_accounts(database, fid) if _is_parent_role(a["role"])]
+        if len(parents) < 2:
+            continue
+        key = dm_thread(parents[0]["user_id"], parents[1]["user_id"])
+        result = await database["messages"].update_many(
+            {"family_id": fid, "thread": key},
+            {"$set": {"thread": ADULTS_THREAD}})
+        moved += result.modified_count
+    return moved
+
+
+@app.on_event("startup")
+async def _merge_coparent_dms_into_adults():
+    """One-off, idempotent migration — see _merge_coparent_dms."""
+    if db is None:
+        return
+    try:
+        moved = await _merge_coparent_dms(db)
+        if moved:
+            log.info("Merged %d co-parent dm message(s) into the adults room", moved)
+    except Exception as exc:  # pragma: no cover - startup must never crash the app
+        log.warning("Co-parent dm merge skipped: %s", exc)
+
+
 # -----------------------------------------------------------------------------
 # Rate limiting (in-memory, per-IP)
 # -----------------------------------------------------------------------------
@@ -1180,6 +1216,7 @@ def public_card(card: dict) -> dict:
         # they were visible to the whole family, so report them as shared.
         "shared": bool(card["shared"]) if card.get("shared") is not None else card.get("created_by_user_id") is None,
         "created_by_user_id": card.get("created_by_user_id"),
+        "created_by_name": card.get("created_by_name"),
     }
 
 
@@ -1539,6 +1576,7 @@ def public_expense(exp: dict) -> dict:
         # were added is the best answer available for those, and it is a true one.
         "spent_on": iso(exp.get("spent_on") or exp["created_at"])[:10],
         "created_at": iso(exp["created_at"]),
+        "split": bool(exp.get("split")),
     }
 
 
@@ -2303,12 +2341,18 @@ async def send_due_card_reminders(database, now: Optional[datetime] = None) -> i
             occurrence = iso(due)
             if card.get("reminder_sent_for") == occurrence:
                 continue  # already handled this occurrence
-            # Mark handled BEFORE sending: a crash mid-fan-out must not loop and
-            # re-ping the people already reached on the next tick.
-            await database["cards"].update_one(
-                {"card_id": card["card_id"]},
+            # Claim this occurrence atomically: only the write that flips
+            # reminder_sent_for from "not this occurrence" to it proceeds to
+            # send. This is what actually makes the double-send impossible — a
+            # crash mid-fan-out won't re-ping on the next tick, and two workers
+            # briefly overlapping during a rolling deploy can't both win the
+            # claim, so only one of them sends.
+            claim = await database["cards"].update_one(
+                {"card_id": card["card_id"], "reminder_sent_for": {"$ne": occurrence}},
                 {"$set": {"reminder_sent_for": occurrence}},
             )
+            if claim.modified_count == 0:
+                continue  # another tick or worker already claimed it
             # Too old to be useful — a first-deploy backlog or a long outage.
             # Marked handled above so it never fires late; just don't send it.
             if now - trigger > REMINDER_CATCHUP:
@@ -2676,6 +2720,9 @@ class ExpenseIn(BaseModel):
     # a Sunday evening, so "when it was added" and "when it was spent" are not the
     # same day, and only one of them belongs in a monthly total.
     spent_on: Optional[str] = None
+    # Split 50/50 with the co-parent — a shared cost the two of them square up on.
+    # Off by default: an ordinary household expense is nobody's debt.
+    split: bool = False
 
 
 class TemplateIn(BaseModel):
@@ -3056,7 +3103,7 @@ _FAMILY_SCOPED_COLLECTIONS = (
     "cards", "carpools", "chore_logs", "chores", "expenses", "family_invites",
     "family_members", "handoff_notes", "meal_plans_saved", "meals", "redemptions",
     "rewards", "routine_logs", "routines", "shopping_history", "shopping_list",
-    "star_transactions", "templates", "vault",
+    "star_transactions", "templates", "vault", "expense_settlements",
 )
 
 
@@ -5535,11 +5582,28 @@ async def family_chat_threads(user=Depends(require_chat_account)):
 
     threads = [{"thread": HOUSEHOLD_THREAD, "title": None, "is_adults": False, "is_household": True}]
     if is_parent:
-        threads.append({"thread": ADULTS_THREAD, "title": None, "is_adults": True, "is_household": False})
+        # The grown-ups' room. A household has at most two parents, so with one
+        # co-parent this room IS the co-parent conversation — it carries their
+        # name and member_id so every door (their profile, the chat tab, the
+        # row's chat icon) opens this one room. Without that the profile page
+        # wrote here while the chat tab opened a separate dm: thread, and a
+        # family's messages split across two keys — "the chat isn't there".
+        co_parents = [a for a in accounts
+                      if a["user_id"] != viewer and _is_parent_role(a["role"])]
+        co = co_parents[0] if len(co_parents) == 1 else None
+        threads.append({"thread": ADULTS_THREAD,
+                        "title": co["name"] if co else None,
+                        "member_id": co["member_id"] if co else None,
+                        "role": co["role"] if co else None,
+                        "is_adults": True, "is_household": False})
 
     if is_parent:
         for a in accounts:
             if a["user_id"] == viewer:
+                continue
+            # The co-parent lives in the adults room above, not a separate dm:
+            # thread — one conversation between the two of them, not two.
+            if _is_parent_role(a["role"]):
                 continue
             # A teen keeps the thread key they already had — their own user id.
             # Moving them to a dm: key would have left every message sent before
@@ -5582,9 +5646,24 @@ async def family_chat_threads(user=Depends(require_chat_account)):
     return {"threads": out}
 
 
+async def _canonical_thread(database, family_id: str, thread: str) -> str:
+    """Fold the legacy two-parent dm: key into the adults room. A co-parent chat
+    is one room now, but an app that predates the unify (a co-parent still on the
+    old build) writes and reads under dm:~a~b. Mapping that key to 'adults' here
+    means their messages land in — and are read from — the same room the rest of
+    the family sees, without waiting for the next restart's migration."""
+    if isinstance(thread, str) and thread.startswith(DM_PREFIX):
+        parents = [a for a in await _family_accounts(database, family_id)
+                   if _is_parent_role(a["role"])]
+        if len(parents) == 2 and thread == dm_thread(parents[0]["user_id"], parents[1]["user_id"]):
+            return ADULTS_THREAD
+    return thread
+
+
 @app.get("/api/family/chat/{thread}")
 async def family_chat_get(thread: str, user=Depends(require_chat_account)):
     database = get_db()
+    thread = await _canonical_thread(database, user["family_id"], thread)
     await _require_thread_member(database, user["family_id"], thread, user["user_id"])
     msgs = await _chat_thread_messages(database, user["family_id"], thread, user["user_id"])
     await _mark_read(database, user["family_id"], thread, user["user_id"])
@@ -5594,6 +5673,7 @@ async def family_chat_get(thread: str, user=Depends(require_chat_account)):
 @app.post("/api/family/chat/{thread}")
 async def family_chat_send(thread: str, payload: ChatMessageIn, user=Depends(require_chat_account)):
     database = get_db()
+    thread = await _canonical_thread(database, user["family_id"], thread)
     await _require_thread_member(database, user["family_id"], thread, user["user_id"])
     name = user.get("name") or "Someone"
     msg = await _chat_insert(database, user["family_id"], thread, user["user_id"],
@@ -5605,6 +5685,7 @@ async def family_chat_send(thread: str, payload: ChatMessageIn, user=Depends(req
 @app.post("/api/family/chat/{thread}/read")
 async def family_chat_read(thread: str, user=Depends(require_chat_account)):
     database = get_db()
+    thread = await _canonical_thread(database, user["family_id"], thread)
     await _require_thread_member(database, user["family_id"], thread, user["user_id"])
     await _mark_read(database, user["family_id"], thread, user["user_id"])
     return {"ok": True}
@@ -6572,13 +6653,19 @@ async def list_assigned_to_me(user=Depends(require_user)):
 @app.post("/api/cards")
 async def create_card(payload: CardIn, user=Depends(require_user)):
     database = get_db()
+    assignee = (payload.assignee or "").strip() or None
+    # Assigning defaults to shared (CardIn.shared defaults True), so handing a
+    # task to the co-parent is visible to both without a thought — the common
+    # case. An explicit private stays private, which is how a surprise stays a
+    # surprise; that deliberate choice is respected, not overridden.
+    shared = bool(payload.shared)
     doc = {
         "card_id": new_id("card"),
         "family_id": user["family_id"],
         "type": payload.type,
         "title": payload.title,
         "description": payload.description,
-        "assignee": payload.assignee,
+        "assignee": assignee,
         "due_date": parse_dt(payload.due_date),
         "status": "OPEN",
         "source": payload.source,
@@ -6587,10 +6674,11 @@ async def create_card(payload: CardIn, user=Depends(require_user)):
         "reminder_minutes": payload.reminder_minutes,
         "created_at": utcnow(),
         "completed_at": None,
-        # Private to the creator by default — the co-parent only sees it if the
-        # creator explicitly shares it (via /api/cards/{id}/share).
         "created_by_user_id": user["user_id"],
-        "shared": bool(payload.shared),
+        # Who set it — so an assigned card can say "assigned by Roland", the
+        # question the other parent (and the person it landed on) actually asks.
+        "created_by_name": user.get("name", ""),
+        "shared": shared,
     }
     await database["cards"].insert_one(doc)
     # Log it either way — creating a private item is still YOUR history, kept
@@ -6761,6 +6849,7 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
             "completed_at": None,
             # The next occurrence keeps the same privacy as its parent.
             "created_by_user_id": card.get("created_by_user_id"),
+            "created_by_name": card.get("created_by_name"),
             "shared": card.get("shared", False),
         }
         await database["cards"].insert_one(next_doc)
@@ -9081,6 +9170,7 @@ async def add_expense(payload: ExpenseIn, user=Depends(require_full_member)):
         "paid_by_name": user.get("name", ""),
         "paid_by_user_id": user["user_id"],
         "created_at": now,
+        "split": bool(payload.split),
     }
     await database["expenses"].insert_one(doc)
     return public_expense(doc)
@@ -9095,6 +9185,98 @@ async def delete_expense(expense_id: str, user=Depends(require_full_member)):
     if result.deleted_count == 0:
         raise HTTPException(404, "Expense not found")
     return {"ok": True}
+
+
+async def compute_settlement(database, family_id: str, me_user_id: str) -> dict:
+    """Who owes whom on the shared (split) expenses, from `me`'s point of view.
+
+    A split expense is borne half each, so whoever paid it is owed the other
+    half by the co-parent. The running balance is what each parent has actually
+    put in, minus their fair half, adjusted by the settlements already recorded.
+    Tracking only — the app never moves money, it keeps the tally honest.
+
+    Returns enabled=False unless the household has exactly the two parents a
+    balance is defined between.
+    """
+    parents = [a for a in await _family_accounts(database, family_id)
+               if _is_parent_role(a["role"])]
+    # De-dupe by user_id so a transient duplicate member row (before the member
+    # dedupe migration has run) can't slip two rows with the same id past the
+    # count check and then find no "other" — which would 500 the endpoint.
+    by_id = {}
+    for p in parents:
+        by_id.setdefault(p["user_id"], p)
+    ids = list(by_id)
+    if len(ids) != 2 or me_user_id not in ids:
+        return {"enabled": False, "balance": 0.0}
+    other = by_id[next(uid for uid in ids if uid != me_user_id)]
+
+    net = {ids[0]: 0.0, ids[1]: 0.0}
+    total = 0.0
+    count = 0
+    async for exp in database["expenses"].find(
+            {"family_id": family_id, "split": True}, {"_id": 0, "amount": 1, "paid_by_user_id": 1}):
+        payer = exp.get("paid_by_user_id")
+        if payer not in net:
+            continue  # paid by someone who is not one of the two parents — skip
+        amount = float(exp.get("amount") or 0)
+        total += amount
+        net[payer] += amount
+        count += 1
+    share = total / 2
+    for uid in net:
+        net[uid] -= share
+    # A settlement records that `from` paid `to`, so it lifts the payer's balance
+    # toward zero and lowers the receiver's by the same amount.
+    async for s in database["expense_settlements"].find(
+            {"family_id": family_id}, {"_id": 0, "from_user_id": 1, "to_user_id": 1, "amount": 1}):
+        amt = float(s.get("amount") or 0)
+        if s.get("from_user_id") in net:
+            net[s["from_user_id"]] += amt
+        if s.get("to_user_id") in net:
+            net[s["to_user_id"]] -= amt
+
+    balance = round(net[me_user_id], 2)  # >0: the other owes you; <0: you owe them
+    return {
+        "enabled": True,
+        "balance": balance,
+        "other_name": other["name"],
+        "other_user_id": other["user_id"],
+        "shared_count": count,
+    }
+
+
+@app.get("/api/expenses/settlement")
+async def get_settlement(user=Depends(require_full_member)):
+    return await compute_settlement(get_db(), user["family_id"], user["user_id"])
+
+
+@app.post("/api/expenses/settlement/settle")
+async def settle_up(user=Depends(require_full_member)):
+    """Record that the outstanding shared balance has been squared up — a dated
+    settlement in whichever direction clears it. Honest bookkeeping, not a
+    transfer: it says the two of them settled, it does not move any money."""
+    database = get_db()
+    info = await compute_settlement(database, user["family_id"], user["user_id"])
+    if not info.get("enabled"):
+        raise HTTPException(400, "Settling up needs two parents in the household.")
+    balance = info["balance"]
+    if abs(balance) < 0.01:
+        return info  # already square — nothing to record
+    me = user["user_id"]
+    other = info["other_user_id"]
+    # balance > 0 → the other owed you, so they pay you; < 0 → you pay them.
+    frm, to = (other, me) if balance > 0 else (me, other)
+    await database["expense_settlements"].insert_one({
+        "settlement_id": new_id("settle"),
+        "family_id": user["family_id"],
+        "from_user_id": frm,
+        "to_user_id": to,
+        "amount": round(abs(balance), 2),
+        "created_by": me,
+        "created_at": utcnow(),
+    })
+    return await compute_settlement(database, user["family_id"], me)
 
 
 # -----------------------------------------------------------------------------
