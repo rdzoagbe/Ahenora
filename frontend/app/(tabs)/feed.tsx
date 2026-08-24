@@ -171,6 +171,15 @@ function statusCopy(type: CardType, ui: UIColors, t: TFunc, imported?: boolean) 
   return { label: t('feed_status_task'), bg: ui.mint, fg: ui.mintText };
 }
 
+// A name to a one- or two-letter badge: "Roland Dzoagbe" -> "RD", "Keigh" -> "K".
+// So a task shows at a glance whose plate it is on, without opening it.
+function initials(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return '?';
+  if (words.length === 1) return words[0].slice(0, 1).toUpperCase();
+  return (words[0][0] + words[words.length - 1][0]).toUpperCase();
+}
+
 function cardMeta(card: Card, t: TFunc) {
   // Use the parsed description text (URLs/Location/People stripped) so list
   // rows never show raw links — the detail sheet renders those as chips.
@@ -267,6 +276,16 @@ function TaskRow({ card, onOpen, onComplete, styles }: { card: Card; onOpen: () 
         </View>
         <Text style={styles.taskMeta} numberOfLines={1}>{cardMeta(card, t)}</Text>
       </View>
+      {card.assignee && card.assignee.trim() ? (
+        <View
+          style={[styles.assigneeBadge, { backgroundColor: ui.orangeSoft, borderColor: ui.orangeText }]}
+          accessibilityLabel={t('card_assigned_to', { name: card.assignee.trim() })}
+        >
+          <Text style={[styles.assigneeBadgeText, { color: ui.orangeText }]}>
+            {initials(card.assignee)}
+          </Text>
+        </View>
+      ) : null}
       <View style={[styles.statusPill, { backgroundColor: status.bg }]}>
         <Text style={[styles.statusPillText, { color: status.fg }]}>{status.label}</Text>
       </View>
@@ -1949,6 +1968,20 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     fontSize: 12.2,
     lineHeight: 17,
     marginTop: 2,
+  },
+  assigneeBadge: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 2,
+  },
+  assigneeBadgeText: {
+    fontFamily: 'Inter_800ExtraBold',
+    fontSize: 10.5,
+    letterSpacing: 0.2,
   },
   statusPill: {
     borderRadius: 99,

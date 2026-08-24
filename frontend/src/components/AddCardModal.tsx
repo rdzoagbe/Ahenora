@@ -485,13 +485,20 @@ export function AddCardModal({
                 </PressScale>
               </View>
               <Text style={[styles.suggestText, { color: theme.colors.textMuted, marginTop: -4, marginBottom: 4 }]}>
-                {!shared
-                  ? t('addcard_share_just_me_hint')
-                  : assignee.trim()
-                    ? (sharedByAssignee
-                        ? t('addcard_share_switched')
-                        : t('addcard_share_assigned_hint').replace('{name}', assignee.trim()))
-                    : t('addcard_share_everyone_hint')}
+                {(() => {
+                  if (!shared) return t('addcard_share_just_me_hint');
+                  const who = assignee.trim();
+                  if (!who) return t('addcard_share_everyone_hint');
+                  if (sharedByAssignee) return t('addcard_share_switched');
+                  // Naming yourself back to yourself reads as nonsense
+                  // ("between you, Roland and the other parent"). When the task
+                  // is yours, the set is simply you and the other parent.
+                  const me = (members.find((m) => m.is_me)?.name || '').trim();
+                  if (me && who.toLowerCase() === me.toLowerCase()) {
+                    return t('addcard_share_assigned_self_hint');
+                  }
+                  return t('addcard_share_assigned_hint').replace('{name}', who);
+                })()}
               </Text>
 
               <View style={styles.rowHeader}>
