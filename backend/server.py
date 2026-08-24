@@ -755,8 +755,13 @@ PLAN_CATALOG = {
             "allowance": False,
             "carpool": False,
             "weekly_report": False,
+            "helper_accounts": False,
+            "priority_support": False,
         },
     },
+    # The middle tier — shown as "Family". The stored id stays "executive" so
+    # existing subscribers, RevenueCat product ids and webhooks keep working
+    # unchanged; only the label the app shows moved to "Family".
     "executive": {
         "price_monthly": 6.99,
         "price_yearly": 49.99,
@@ -771,6 +776,30 @@ PLAN_CATALOG = {
             "allowance": True,
             "carpool": True,
             "weekly_report": True,
+            "helper_accounts": False,
+            "priority_support": False,
+        },
+    },
+    # The top tier — "Household". For two homes and bigger, blended or
+    # multi-generational families: more people, helper/carer accounts, a much
+    # larger vault, and no scan ceiling. Co-parenting essentials stay in Family;
+    # Household sells on scale, not on the wedge.
+    "household": {
+        "price_monthly": 14.99,
+        "price_yearly": 149.99,
+        "limits": {
+            "max_members": 20,
+            "max_children": 10,
+            "ai_scans_per_month": 100000,   # effectively unlimited
+            "vault_bytes": 10 * 1024 * 1024 * 1024,   # 10 GB
+            "weekly_brief": True,
+            "multi_property": True,
+            "meal_planner": True,
+            "allowance": True,
+            "carpool": True,
+            "weekly_report": True,
+            "helper_accounts": True,
+            "priority_support": True,
         },
     },
 }
@@ -778,12 +807,12 @@ PLAN_CATALOG = {
 
 def plan_catalog_for(plan: str) -> dict:
     """Resolve a stored plan name to a catalog entry. Unknown/retired paid
-    plans (e.g. legacy "family_office") map to executive so no family ever
+    plans (e.g. legacy "family_office") map to the top tier so no family ever
     loses paid features; anything else falls back to the free tier."""
     if plan in PLAN_CATALOG:
         return PLAN_CATALOG[plan]
     if plan == "family_office":
-        return PLAN_CATALOG["executive"]
+        return PLAN_CATALOG["household"]
     return PLAN_CATALOG["village"]
 
 
@@ -794,6 +823,7 @@ PREMIUM_FEATURE_MESSAGES = {
     "allowance": "Pocket money tracking is available on Premium.",
     "carpool": "Carpool Coordinator is available on Premium.",
     "weekly_report": "Weekly Report is available on Premium.",
+    "helper_accounts": "Helper and carer accounts are available on the Household plan.",
 }
 
 
@@ -990,7 +1020,11 @@ async def build_subscription(family_id: str):
     # when the cutover date passes for anyone we're thanking / not charging yet.
     grandfathered = bool(family.get("grandfathered"))
     if testing_window or admin_household or grandfathered:
-        limits = PLAN_CATALOG["executive"]["limits"]
+        # Give the TOP tier's limits, so testers, tester-households and
+        # grandfathered families can exercise every gated feature — including the
+        # Household-only ones (helper accounts, the larger caps) — not just the
+        # middle tier's.
+        limits = PLAN_CATALOG["household"]["limits"]
     return {
         "plan": "family_office" if admin_household else family["plan"],
         # Lets the app show "you're previewing Premium free" notices so launch
@@ -4642,6 +4676,9 @@ async def family_invite_link(payload: Optional[InviteLinkIn] = Body(None), user=
     inviter can always see which account used which link."""
     database = get_db()
     is_helper = bool(payload.is_helper if payload else False)
+    # Helper/carer accounts (grandparents, nannies) are a Household-tier feature.
+    if is_helper:
+        await require_feature(user, "helper_accounts")
     await _enforce_member_slot_limit(database, user)
     # A helper is never a co-parent, so it skips the two-parent cap (an empty
     # relationship would otherwise be read as a co-parent link).
@@ -4663,6 +4700,9 @@ async def family_invite_link(payload: Optional[InviteLinkIn] = Body(None), user=
 @app.post("/api/family/invite")
 async def family_invite(payload: InviteIn, user=Depends(require_full_member)):
     database = get_db()
+    # Helper/carer accounts (grandparents, nannies) are a Household-tier feature.
+    if payload.is_helper:
+        await require_feature(user, "helper_accounts")
     await _enforce_member_slot_limit(database, user)
     # A teen or a helper is never a parent, so both skip the co-parent cap.
     # Without this, an invite with no relationship set is read as a co-parent and
@@ -8264,6 +8304,9 @@ async def revenuecat_webhook(payload: dict, authorization: Optional[str] = Heade
 
     product_id = (event.get("product_id") or "").lower()
     cycle = "yearly" if ("year" in product_id or "annual" in product_id) else "monthly"
+    # Which tier the Play product grants: a "household" product lifts to the top
+    # tier, anything else to Family. Keeps the two stores on one plan vocabulary.
+    granted_plan = "household" if "household" in product_id else "executive"
     changes = {
         "rc_last_event": event_type,
         "rc_product_id": event.get("product_id"),
@@ -8278,7 +8321,7 @@ async def revenuecat_webhook(payload: dict, authorization: Optional[str] = Heade
             pass
 
     if event_type in RC_PREMIUM_EVENTS:
-        changes["plan"] = "executive"
+        changes["plan"] = granted_plan
         changes["billing_cycle"] = cycle
     elif event_type in RC_DOWNGRADE_EVENTS:
         changes["plan"] = "village"
@@ -8358,10 +8401,10 @@ async def reconcile_billing(user: dict = Depends(require_user)):
     changes = {"rc_reconciled_at": utcnow(), "updated_at": utcnow()}
     if active:
         product_id = (product or "").lower()
-        changes["plan"] = "executive"
+        changes["plan"] = "household" if "household" in product_id else "executive"
         changes["billing_cycle"] = "yearly" if ("year" in product_id or "annual" in product_id) else "monthly"
         changes["rc_product_id"] = product
-    elif family.get("plan") == "executive" and family.get("rc_last_event"):
+    elif family.get("plan") in ("executive", "household") and family.get("rc_last_event"):
         changes["plan"] = "village"
 
     await database["families"].update_one(
@@ -8405,9 +8448,35 @@ def stripe_configured() -> bool:
     return bool(os.environ.get("STRIPE_SECRET_KEY") and os.environ.get("STRIPE_WEBHOOK_SECRET"))
 
 
-def _stripe_price_id(cycle: str) -> Optional[str]:
-    key = "STRIPE_PRICE_YEARLY" if cycle == "yearly" else "STRIPE_PRICE_MONTHLY"
-    return os.environ.get(key) or None
+# The two paid tiers the app sells, and the internal plan id each grants. The
+# app screen speaks "family"/"household"; the catalog and webhooks speak
+# "executive"/"household". This is the one place the two vocabularies meet.
+STRIPE_TIER_TO_PLAN = {"family": "executive", "household": "household"}
+# Where each (tier, cycle) reads its Stripe price id from the environment.
+# Family reuses the original two vars so nothing that already worked has to move.
+STRIPE_PRICE_ENV = {
+    ("family", "monthly"): "STRIPE_PRICE_MONTHLY",
+    ("family", "yearly"): "STRIPE_PRICE_YEARLY",
+    ("household", "monthly"): "STRIPE_PRICE_HOUSEHOLD_MONTHLY",
+    ("household", "yearly"): "STRIPE_PRICE_HOUSEHOLD_YEARLY",
+}
+
+
+def _stripe_price_id(tier: str, cycle: str) -> Optional[str]:
+    key = STRIPE_PRICE_ENV.get((tier, cycle))
+    return (os.environ.get(key) or None) if key else None
+
+
+def _stripe_plan_for_price(price_id: Optional[str]) -> Optional[str]:
+    """Which internal plan a Stripe price grants — the reverse of the table
+    above, so a renewal or a plan-change event (which carries only the price)
+    can be tiered correctly."""
+    if not price_id:
+        return None
+    for (tier, _cycle), env_key in STRIPE_PRICE_ENV.items():
+        if os.environ.get(env_key) == price_id:
+            return STRIPE_TIER_TO_PLAN[tier]
+    return None
 
 
 def _public_app_url() -> str:
@@ -8452,6 +8521,17 @@ def _stripe_cycle_from_metadata(obj: dict) -> str:
     return "yearly" if cycle == "yearly" else "monthly"
 
 
+def _stripe_sub_price_id(sub_obj: dict) -> Optional[str]:
+    """The price id on a subscription object — items.data[0].price.id — with
+    every layer defended, since a lifecycle event may omit or reshape it."""
+    items = ((sub_obj or {}).get("items") or {}).get("data") or []
+    if not items:
+        return None
+    price = (items[0] or {}).get("price") or {}
+    pid = price.get("id") if isinstance(price, dict) else price
+    return pid if isinstance(pid, str) else None
+
+
 def stripe_event_changes(event: dict) -> tuple[Optional[str], Optional[str], dict]:
     """Interpret a Stripe event into (family_id, stripe_customer_id, changes).
 
@@ -8477,7 +8557,9 @@ def stripe_event_changes(event: dict) -> tuple[Optional[str], Optional[str], dic
     if etype == "checkout.session.completed":
         meta = obj.get("metadata") or {}
         family_id = meta.get("family_id")
-        changes["plan"] = "executive"
+        # The checkout stamped which tier it was for; honour it (default to the
+        # Family tier for an old session that predates the field).
+        changes["plan"] = meta.get("plan") if meta.get("plan") in PLAN_CATALOG else "executive"
         changes["billing_cycle"] = _stripe_cycle_from_metadata(obj)
         if obj.get("subscription"):
             changes["stripe_subscription_id"] = obj["subscription"]
@@ -8485,7 +8567,12 @@ def stripe_event_changes(event: dict) -> tuple[Optional[str], Optional[str], dic
             changes["stripe_customer_id"] = customer
     elif etype == "customer.subscription.updated":
         status = (obj.get("status") or "").lower()
-        changes["plan"] = "executive" if status in STRIPE_ACTIVE_STATUSES else "village"
+        if status in STRIPE_ACTIVE_STATUSES:
+            # A renewal or a tier change carries only the subscription, so read
+            # the plan back from its price. Fall back to Family if unmapped.
+            changes["plan"] = _stripe_plan_for_price(_stripe_sub_price_id(obj)) or "executive"
+        else:
+            changes["plan"] = "village"
         changes["stripe_subscription_status"] = status
     elif etype == "customer.subscription.deleted":
         changes["plan"] = "village"
@@ -8520,12 +8607,16 @@ async def stripe_checkout(payload: dict = Body(default=None), user=Depends(requi
     """
     if not os.environ.get("STRIPE_SECRET_KEY"):
         raise HTTPException(status_code=503, detail="Card checkout is not configured")
+    tier = ((payload or {}).get("tier") or (payload or {}).get("plan") or "family").lower()
+    if tier not in STRIPE_TIER_TO_PLAN:
+        raise HTTPException(status_code=400, detail="tier must be family or household")
     cycle = ((payload or {}).get("cycle") or "monthly").lower()
     if cycle not in ("monthly", "yearly"):
         raise HTTPException(status_code=400, detail="cycle must be monthly or yearly")
-    price_id = _stripe_price_id(cycle)
+    price_id = _stripe_price_id(tier, cycle)
     if not price_id:
         raise HTTPException(status_code=503, detail="That plan is not available for card checkout")
+    internal_plan = STRIPE_TIER_TO_PLAN[tier]
 
     app_url = _public_app_url()
     family = await get_family_doc(user["family_id"])
@@ -8537,6 +8628,8 @@ async def stripe_checkout(payload: dict = Body(default=None), user=Depends(requi
         ("metadata[family_id]", user["family_id"]),
         ("metadata[user_id]", user["user_id"]),
         ("metadata[cycle]", cycle),
+        # The tier the webhook should grant when this checkout completes.
+        ("metadata[plan]", internal_plan),
         ("subscription_data[metadata][family_id]", user["family_id"]),
         ("success_url", f"{app_url}/pricing?checkout=success"),
         ("cancel_url", f"{app_url}/pricing?checkout=cancel"),
@@ -8608,13 +8701,33 @@ async def stripe_webhook(request: Request):
 
 @app.get("/api/billing/stripe/config")
 async def stripe_config():
-    """What the web app needs to decide whether to offer card checkout: whether
-    it is on at all, and the headline prices to show (EUR, the base currency)."""
+    """What the web app needs to decide whether to offer card checkout, and for
+    which tiers. `enabled` is on when the secret + webhook are set; each tier is
+    separately buyable only once its own prices exist, so the Household tier can
+    ship dark and light up the day its prices are added — without a code change.
+    Prices are EUR, the base currency."""
+    def tier_ready(tier):
+        return bool(_stripe_price_id(tier, "monthly") and _stripe_price_id(tier, "yearly"))
     return {
         "enabled": stripe_configured(),
         "currency": "EUR",
+        # Kept for backward-compat with any client reading the flat fields.
         "price_monthly": PLAN_CATALOG["executive"]["price_monthly"],
         "price_yearly": PLAN_CATALOG["executive"]["price_yearly"],
+        "tiers": {
+            "family": {
+                "plan": "executive",
+                "price_monthly": PLAN_CATALOG["executive"]["price_monthly"],
+                "price_yearly": PLAN_CATALOG["executive"]["price_yearly"],
+                "buyable": stripe_configured() and tier_ready("family"),
+            },
+            "household": {
+                "plan": "household",
+                "price_monthly": PLAN_CATALOG["household"]["price_monthly"],
+                "price_yearly": PLAN_CATALOG["household"]["price_yearly"],
+                "buyable": stripe_configured() and tier_ready("household"),
+            },
+        },
     }
 
 
