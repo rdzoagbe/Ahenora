@@ -80,7 +80,7 @@ export default function Settings() {
   const [lastInviteUrl, setLastInviteUrl] = useState<string | null>(null);
   const [expandClientErrors, setExpandClientErrors] = useState(false);
   const [clientErrors, setClientErrors] = useState<Awaited<ReturnType<typeof api.listClientErrors>>>([]);
-  const [notificationPrefs, setNotificationPrefs] = useState<NotificationSettings>({ card_reminders: false, new_card_alerts: false });
+  const [notificationPrefs, setNotificationPrefs] = useState<NotificationSettings>({ card_reminders: false, new_card_alerts: false, chat_messages: false });
   const [notificationStatus, setNotificationStatus] = useState<string | null>(null);
   const [savingNotifications, setSavingNotifications] = useState(false);
   const [entitlements, setEntitlements] = useState<Entitlements | null>(null);
@@ -103,7 +103,7 @@ export default function Settings() {
       const [memberRows, inviteRows, notificationRows, entitlementRows, completedRows] = await Promise.all([
         api.familyMembers().catch(() => null),
         api.listInvites().catch(() => null),
-        api.getNotificationSettings().catch(() => ({ card_reminders: false, new_card_alerts: false })),
+        api.getNotificationSettings().catch(() => ({ card_reminders: false, new_card_alerts: false, chat_messages: false })),
         api.getEntitlements().catch(() => null),
         api.listCards('DONE')
           .then(async (rows) => {
@@ -538,11 +538,12 @@ export default function Settings() {
   // Keywords per group, so a search reaches settings by the words people use
   // for them, not the labels we happened to pick.
   const GK = {
+    subscription: 'subscription plan plans upgrade premium billing pay payment manage cancel tier household family price pricing',
     notifications: 'notifications push sign slip weekly digest email alert reminder',
     appearance: 'appearance theme light dark system display',
     household: 'household members co-parent co parent children child pin invite family',
     preferences: 'preferences language translation locale',
-    more: 'more history completed cards replay setup onboarding plans plan upgrade premium billing subscription usage limits version update metrics',
+    more: 'more history completed cards replay setup onboarding usage limits version update metrics',
   };
   // Open when the user tapped it, or when their search names it. A search also
   // hides the groups it does not match, so "pin" leaves only Household on screen.
@@ -637,6 +638,28 @@ export default function Settings() {
             ) : null}
           </View>
 
+          {/* Subscription — a first-class, labelled section so plans & billing
+              are easy to find rather than buried under "More". */}
+          {groupVisible(GK.subscription) ? (<>
+          {groupHead('subscription',
+            <IconTile bg={ui.orangeSoft}><Crown color={ui.orange} size={18} /></IconTile>,
+            t('subscription'),
+            user?.is_admin ? t('set_admin_tester') : `${planLabel} ${t('set_plan')}`,
+            GK.subscription)}
+          {groupOpen('subscription', GK.subscription) ? (
+          <Card style={styles.cardPad}>
+            <NavRow
+              testID="settings-view-plans"
+              tile={<IconTile bg={ui.orangeSoft}><Crown color={ui.orange} size={18} /></IconTile>}
+              title={t('set_view_all_plans')}
+              subtitle={`${t('set_youre_on')} ${user?.is_admin ? t('set_admin_tester') : `${planLabel}`} · ${t('set_compare_tiers')}`}
+              onPress={() => router.push('/pricing')}
+              divider={false}
+            />
+          </Card>
+          ) : null}
+          </>) : null}
+
           {/* Notifications */}
           {groupVisible(GK.notifications) ? (<>
           {groupHead('notifications',
@@ -663,6 +686,15 @@ export default function Settings() {
               on={notificationPrefs.new_card_alerts}
               disabled={savingNotifications}
               onPress={() => updateNotificationPrefs({ new_card_alerts: !notificationPrefs.new_card_alerts })}
+            />
+            <ToggleRow
+              testID="notif-chat"
+              tile={<IconTile bg={ui.mint}><MessageSquare color={ui.mintText} size={18} /></IconTile>}
+              title={t('set_chat_alerts')}
+              subtitle={t('set_chat_alerts_sub')}
+              on={notificationPrefs.chat_messages}
+              disabled={savingNotifications}
+              onPress={() => updateNotificationPrefs({ chat_messages: !notificationPrefs.chat_messages })}
             />
             <ToggleRow
               testID="notif-digest"
@@ -901,14 +933,6 @@ export default function Settings() {
               </View>
             ) : null}
             <Divider />
-
-            <NavRow
-              testID="settings-view-plans"
-              tile={<IconTile bg={ui.orangeSoft}><Crown color={ui.orange} size={18} /></IconTile>}
-              title={t('set_view_all_plans')}
-              subtitle={`${t('set_youre_on')} ${user?.is_admin ? t('set_admin_tester') : `${planLabel}`} · ${t('set_compare_tiers')}`}
-              onPress={() => router.push('/pricing')}
-            />
 
             <NavRow
               testID="settings-rate-app"

@@ -14,6 +14,7 @@ import { Lang, SUPPORTED_LANGS, translate, detectDeviceLang } from './i18n';
 import { AppearanceMode, AppTheme, getTheme, resolveAppearance, ResolvedAppearance } from './theme';
 import { logger } from './logger';
 import { saveLoginHint, clearLoginHint } from './loginHint';
+import { deactivatePushOnLogout } from './notifications';
 
 export type { Lang } from './i18n';
 export type { AppearanceMode, ResolvedAppearance, AppTheme } from './theme';
@@ -215,6 +216,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       const token = await tokenStore.get();
 
       if (token) {
+        // While still authenticated: retire this device's push token and cancel
+        // scheduled local notifications, so a shared/resold phone stops getting
+        // the last household's pushes and digests.
+        await deactivatePushOnLogout().catch(() => undefined);
         await api.logout();
       }
     } catch (error) {
