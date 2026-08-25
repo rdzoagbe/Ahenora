@@ -208,13 +208,23 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
     }
     if (status !== 'success') return;
     (async () => {
+      // Poll until the plan lifts off free — any paid tier counts (Family OR
+      // Household), so a Household buyer isn't left waiting the full window.
+      let paid = false;
       for (let i = 0; i < 6; i++) {
         bustSubscriptionCache();
         await refreshSubscription().catch(() => undefined);
-        if (subRef.current?.plan === 'executive') break;
+        if (subRef.current?.plan && subRef.current.plan !== 'village') { paid = true; break; }
         await new Promise((r) => setTimeout(r, 2000));
       }
-      Alert.alert(t('price_purchase_done_title'), t('price_purchase_done_msg'));
+      // Only celebrate if the plan actually changed. If the webhook hasn't
+      // landed yet, say so honestly rather than claiming a purchase that the
+      // screen still shows as free.
+      if (paid) {
+        Alert.alert(t('price_purchase_done_title'), t('price_purchase_done_msg'));
+      } else {
+        Alert.alert(t('price_checkout_pending_title'), t('price_checkout_pending_msg'));
+      }
     })();
   }, [onWeb, refreshSubscription, t]);
 

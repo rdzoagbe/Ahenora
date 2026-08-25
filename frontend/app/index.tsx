@@ -372,6 +372,7 @@ export default function Landing() {
             style={[styles.langBtn, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}
             accessibilityLabel={t('land_change_language')}
             accessibilityRole="button"
+            hitSlop={8}
           >
             <Globe color={theme.colors.textMuted} size={14} />
             <Text style={[styles.langText, { color: theme.colors.textMuted }]}>{lang.toUpperCase()}</Text>

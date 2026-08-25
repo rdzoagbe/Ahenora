@@ -1288,7 +1288,7 @@ export default function Kids() {
                has no inbox, so their Message action launches "give them their
                own account", which is how a child becomes chat-able. */
             <View style={styles.focusHeader}>
-              <PressScale testID="child-back" onPress={() => setFocusedChild(null)} style={styles.focusBack} accessibilityLabel={t('back')}>
+              <PressScale testID="child-back" onPress={() => setFocusedChild(null)} style={styles.focusBack} accessibilityLabel={t('back')} hitSlop={6}>
                 <ChevronLeft color={ui.text} size={22} />
               </PressScale>
               <Text style={styles.focusTitle} numberOfLines={1}>{activeChild.name}</Text>
@@ -1299,7 +1299,7 @@ export default function Kids() {
                   open the teen invite sheet on a six-year-old, which is how a
                   button that led nowhere got shipped. */}
               {threads.some((x) => x.member_id === activeChild.member_id) ? (
-                <PressScale testID="child-message" onPress={() => openThread(activeChild)} style={styles.focusMsg} accessibilityLabel={t('hub_tab_chat')}>
+                <PressScale testID="child-message" onPress={() => openThread(activeChild)} style={styles.focusMsg} accessibilityLabel={t('hub_tab_chat')} hitSlop={6}>
                   <MessageCircle color={ui.orangeText} size={18} />
                 </PressScale>
               ) : (

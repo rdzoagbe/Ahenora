@@ -33,7 +33,7 @@ export default function HouseExpensesRoute() {
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom', 'left', 'right']}>
       <View style={styles.header}>
-        <PressScale testID="expenses-back" onPress={() => router.back()} style={styles.backBtn} accessibilityLabel={t('back')}>
+        <PressScale testID="expenses-back" onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)/kitchen'))} style={styles.backBtn} accessibilityLabel={t('back')}>
           <ChevronLeft color={ui.text} size={22} />
         </PressScale>
         <Text style={styles.headTitle} numberOfLines={1}>{t('exp_title')}</Text>

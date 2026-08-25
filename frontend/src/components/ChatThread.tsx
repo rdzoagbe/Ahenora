@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, FlatList, Keyboard, Platform,
+  ActivityIndicator, Alert, FlatList, Keyboard, Platform,
   StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -85,11 +85,15 @@ export function ChatThread({ load, send, markRead, emptyHint }: Props) {
       setMessages((prev) => [...prev, res.message]);
       requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
     } catch (e: any) {
+      // A dropped message in a coordination app is worse than a visible error.
+      // The draft is preserved (text is only cleared on success above), so tell
+      // the user it didn't send and let them retry.
       logger.warn('chat send failed', e);
+      Alert.alert(t('chat_send_failed_title'), t('chat_send_failed_msg'));
     } finally {
       setSending(false);
     }
-  }, [text, sending, send]);
+  }, [text, sending, send, t]);
 
   if (loading) {
     return <View style={styles.center}><ActivityIndicator color={ui.orange} /></View>;

@@ -56,6 +56,9 @@ export default function SearchScreen() {
   const [truncated, setTruncated] = useState(false);
   const [busy, setBusy] = useState(false);
   const [searched, setSearched] = useState(false);
+  // Distinct from "found nothing": the request itself failed, so we must not
+  // tell the user their document doesn't exist when the search never ran.
+  const [failed, setFailed] = useState(false);
   // Only the most recent request may write results: typing "milk" fires four
   // searches and the answer to "mil" must not overwrite the answer to "milk".
   const latest = useRef(0);
@@ -71,6 +74,7 @@ export default function SearchScreen() {
       return;
     }
     setBusy(true);
+    setFailed(false);
     try {
       const res = await api.search(term);
       if (mine !== latest.current) return;
@@ -82,6 +86,7 @@ export default function SearchScreen() {
       logger.warn('search failed', e);
       setHits([]);
       setSearched(true);
+      setFailed(true);
     } finally {
       if (mine === latest.current) setBusy(false);
     }
@@ -139,6 +144,7 @@ export default function SearchScreen() {
             accessibilityLabel={t('clear')}
             onPress={() => setQuery('')}
             style={styles.clearBtn}
+            hitSlop={10}
           >
             <X color={ui.muted} size={16} />
           </PressScale>
@@ -147,7 +153,12 @@ export default function SearchScreen() {
 
       {busy ? <ActivityIndicator color={ui.orange} style={{ marginTop: 22 }} /> : null}
 
-      {!busy && searched && hits.length === 0 ? (
+      {!busy && failed ? (
+        <View testID="search-failed" style={styles.empty}>
+          <Text style={styles.emptyTitle}>{t('search_failed_title')}</Text>
+          <Text style={styles.emptyBody}>{t('search_failed_hint')}</Text>
+        </View>
+      ) : !busy && searched && hits.length === 0 ? (
         <View testID="search-empty" style={styles.empty}>
           <Text style={styles.emptyTitle}>{t('search_no_results', { query: query.trim() })}</Text>
           <Text style={styles.emptyBody}>{t('search_no_results_hint')}</Text>
