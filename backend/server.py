@@ -1940,6 +1940,7 @@ def public_notification_settings(settings: Optional[dict]) -> dict:
     return {
         "card_reminders": alerts_enabled(settings, "card_reminders"),
         "new_card_alerts": alerts_enabled(settings, "new_card_alerts"),
+        "chat_messages": alerts_enabled(settings, "chat_messages"),
         "updated_at": iso((settings or {}).get("updated_at")),
     }
 
@@ -1957,6 +1958,7 @@ async def get_notification_settings_doc(user_id: str) -> dict:
         "user_id": user_id,
         "card_reminders": True,
         "new_card_alerts": True,
+        "chat_messages": True,
         "created_at": utcnow(),
         "updated_at": utcnow(),
     }
@@ -1964,27 +1966,42 @@ async def get_notification_settings_doc(user_id: str) -> dict:
     return settings
 
 
+async def _wants_alert(database, user_id: str, pref_key: str) -> bool:
+    """Whether a specific person still wants a given push. Absent/never-edited
+    settings mean yes (see alerts_enabled). Best-effort: on any error, send."""
+    try:
+        prefs = await database["notification_settings"].find_one(
+            {"user_id": user_id}, {"_id": 0})
+        return alerts_enabled(prefs, pref_key)
+    except Exception:
+        return True
+
+
 def _latest_token_per_user(docs: list[dict]) -> list[dict]:
-    """One push token per person — the most recently registered.
+    """One push token per person PER DEVICE — the most recently registered on
+    each platform.
 
     A device's Expo token changes across reinstalls and some updates, and the
-    old value is left in the table as `active`. Nothing here ever deactivated
-    it, so a co-parent who had reinstalled a few times accumulated several
-    live-looking tokens, and every family push fanned out to all of them:
-    one event, a handful of notifications. Collapsing to the newest token per
-    user makes it one person, one push. Dead tokens are separately retired
-    when Expo reports them (see send_expo_push_messages).
+    old value is left in the table as `active`, so reinstalls accumulate
+    live-looking tokens that all fan out: one event, a handful of notifications.
+    We still collapse those — but keyed by (user, platform), not by user alone.
+    Collapsing to ONE token per user silenced a real second device: a parent
+    with a phone AND a tablet only heard whichever they opened last (every
+    launch bumps updated_at). Keeping the newest token per platform reaches both
+    real devices while still de-duping a device's own reinstall churn. Dead
+    tokens are separately retired when Expo reports them (send_expo_push_messages).
     """
     EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
-    best: dict[str, dict] = {}
+    best: dict[tuple, dict] = {}
     for d in docs:
         uid = d.get("user_id")
         if not uid:
             continue
-        cur = best.get(uid)
+        key = (uid, (d.get("platform") or "unknown"))
+        cur = best.get(key)
         if cur is None or (_coerce_dt(d.get("updated_at")) or EPOCH) >= (
                 _coerce_dt(cur.get("updated_at")) or EPOCH):
-            best[uid] = d
+            best[key] = d
     return list(best.values())
 
 
@@ -2027,6 +2044,22 @@ async def send_expo_push_messages(messages: list[dict], database=None) -> dict:
             return {"sent": 0, "error": str(e)}
 
     result = await asyncio.to_thread(_send)
+
+    # Surface failures instead of swallowing them: an Expo outage, an auth
+    # problem, or a malformed push can make a whole family's notifications
+    # vanish with no server-side signal — the only symptom would be 1-star
+    # reviews. Log the transport error, and any per-ticket errors Expo returns.
+    if result.get("error"):
+        log.warning("Expo push send failed: %s", result["error"])
+    else:
+        try:
+            for ticket in ((result.get("response") or {}).get("data") or []):
+                if isinstance(ticket, dict) and ticket.get("status") == "error":
+                    log.warning("Expo push ticket error: %s (%s)",
+                                ticket.get("message"),
+                                (ticket.get("details") or {}).get("error"))
+        except Exception:
+            pass
 
     # Expo returns one ticket per message, in order. A DeviceNotRegistered
     # ticket means that token is dead — retire it so it stops fanning out
@@ -2136,14 +2169,23 @@ PUSH_I18N = {
 }
 
 
-async def send_push_to_user(database, user_id: str, title: str, body: str, data: dict):
-    """Push to one specific person's devices. Best effort, never raises."""
+async def send_push_to_user(database, user_id: str, title: str, body: str, data: dict,
+                            channel: str = "household-alerts", pref_key: Optional[str] = None):
+    """Push to one specific person's devices. Best effort, never raises.
+
+    `channel` picks the Android notification channel (so a reminder can land on
+    'card-reminders' and a person who muted just that category is respected).
+    `pref_key`, when given, gates the send on that person's opt-out preference —
+    so turning an alert off in Settings actually silences it.
+    """
     try:
+        if pref_key and not await _wants_alert(database, user_id, pref_key):
+            return
         docs = [d async for d in database["notification_tokens"].find(
             {"user_id": user_id, "active": True}, {"_id": 0})]
         messages = []
-        # One device per person: newest token only, so accumulated stale
-        # tokens from past installs don't each fire their own notification.
+        # Newest token PER DEVICE: reaches a phone and a tablet both, while still
+        # de-duping a single device's reinstall churn.
         for token_doc in _latest_token_per_user(docs):
             token = token_doc.get("token")
             if token and token.startswith("ExponentPushToken"):
@@ -2153,7 +2195,7 @@ async def send_push_to_user(database, user_id: str, title: str, body: str, data:
                     # Android: land on a HIGH-importance channel and ask for high
                     # priority, so the notification shows as a heads-up banner and
                     # on the lock screen — not just quietly in the tray.
-                    "channelId": "household-alerts", "priority": "high",
+                    "channelId": channel, "priority": "high",
                 })
         if messages:
             await send_expo_push_messages(messages, database)
@@ -2222,6 +2264,7 @@ async def notify_assignment(database, actor: dict, card: dict, assignee_name: st
             L["assigned_title"].format(name=actor.get("name") or "Someone"),
             body,
             {"type": "task_assigned", "card_id": card.get("card_id")},
+            pref_key="new_card_alerts",
         )
     except Exception as e:
         log.warning("assignment notification failed: %s", e)
@@ -2415,6 +2458,7 @@ async def send_due_card_reminders(database, now: Optional[datetime] = None) -> i
                     L["reminder_title"],
                     L["reminder_body"].format(title=title_txt, due=due_txt),
                     {"type": "card_reminder", "card_id": card.get("card_id")},
+                    channel="card-reminders",
                 )
                 sent += 1
         except Exception as e:
@@ -2731,6 +2775,7 @@ class NotificationTokenIn(BaseModel):
 class NotificationPrefsIn(BaseModel):
     card_reminders: Optional[bool] = None
     new_card_alerts: Optional[bool] = None
+    chat_messages: Optional[bool] = None
 
 
 class HandoffNoteIn(BaseModel):
@@ -5269,6 +5314,40 @@ async def teen_me(teen=Depends(require_teen)):
             "language": user.get("language", "en"), "is_teen": True}
 
 
+@app.post("/api/teen/notifications/register")
+async def teen_register_notification_token(payload: NotificationTokenIn, teen=Depends(require_teen)):
+    """A teen registers their device for push, on the teen allowlist.
+
+    Without this, the teen app POSTs to the parent /register (require_user) and
+    is refused with teen_mode — so a teen never had a token, and every push
+    meant for them (a parent's chat message, "your star was approved ⭐") was a
+    silent no-op. This closes that: the token carries the teen's own user_id so
+    the same send_push_to_user path reaches them.
+    """
+    database = get_db()
+    user = teen["user"]
+    token = payload.token.strip()
+    if not token:
+        raise HTTPException(status_code=400, detail="Notification token is required")
+    doc = {
+        "token": token,
+        "user_id": user["user_id"],
+        "family_id": user["family_id"],
+        "email": user.get("email"),
+        "platform": payload.platform,
+        "app_version": (payload.app_version or "").strip()[:20] or None,
+        "runtime_version": (payload.runtime_version or "").strip()[:20] or None,
+        "active": True,
+        "updated_at": utcnow(),
+    }
+    await database["notification_tokens"].update_one(
+        {"token": token},
+        {"$set": doc, "$setOnInsert": {"created_at": utcnow()}},
+        upsert=True,
+    )
+    return {"ok": True}
+
+
 @app.get("/api/teen/home")
 async def teen_home(teen=Depends(require_teen)):
     """A teen's whole world in one call: their tasks and their agenda.
@@ -5582,7 +5661,8 @@ async def _chat_notify(database, family_id: str, thread: str, sender_user_id: st
         for uid in participants - {sender_user_id}:
             await send_push_to_user(
                 database, uid, sender_name or "New message", preview,
-                {"type": "chat", "thread": thread})
+                {"type": "chat", "thread": thread},
+                pref_key="chat_messages")
     except Exception:
         pass  # a failed notification must never fail the send
 
@@ -6230,6 +6310,8 @@ async def update_notification_settings(payload: NotificationPrefsIn, user=Depend
         changes["card_reminders"] = bool(payload.card_reminders)
     if payload.new_card_alerts is not None:
         changes["new_card_alerts"] = bool(payload.new_card_alerts)
+    if payload.chat_messages is not None:
+        changes["chat_messages"] = bool(payload.chat_messages)
 
     await database["notification_settings"].update_one(
         {"user_id": user["user_id"]},
@@ -6272,6 +6354,23 @@ async def register_notification_token(payload: NotificationTokenIn, user=Depends
         upsert=True,
     )
 
+    return {"ok": True}
+
+
+@app.post("/api/notifications/unregister")
+async def unregister_notification_token(payload: NotificationTokenIn, user=Depends(require_user)):
+    """Deactivate this device's push token — called on logout so a shared or
+    resold phone stops receiving the last household's notifications. Only the
+    caller's own token is touched (both the token and the user must match), so
+    one person signing out never silences another's device."""
+    database = get_db()
+    token = (payload.token or "").strip()
+    if not token:
+        return {"ok": True}
+    await database["notification_tokens"].update_one(
+        {"token": token, "user_id": user["user_id"]},
+        {"$set": {"active": False, "updated_at": utcnow()}},
+    )
     return {"ok": True}
 
 

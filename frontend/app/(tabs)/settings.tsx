@@ -80,7 +80,7 @@ export default function Settings() {
   const [lastInviteUrl, setLastInviteUrl] = useState<string | null>(null);
   const [expandClientErrors, setExpandClientErrors] = useState(false);
   const [clientErrors, setClientErrors] = useState<Awaited<ReturnType<typeof api.listClientErrors>>>([]);
-  const [notificationPrefs, setNotificationPrefs] = useState<NotificationSettings>({ card_reminders: false, new_card_alerts: false });
+  const [notificationPrefs, setNotificationPrefs] = useState<NotificationSettings>({ card_reminders: false, new_card_alerts: false, chat_messages: false });
   const [notificationStatus, setNotificationStatus] = useState<string | null>(null);
   const [savingNotifications, setSavingNotifications] = useState(false);
   const [entitlements, setEntitlements] = useState<Entitlements | null>(null);
@@ -103,7 +103,7 @@ export default function Settings() {
       const [memberRows, inviteRows, notificationRows, entitlementRows, completedRows] = await Promise.all([
         api.familyMembers().catch(() => null),
         api.listInvites().catch(() => null),
-        api.getNotificationSettings().catch(() => ({ card_reminders: false, new_card_alerts: false })),
+        api.getNotificationSettings().catch(() => ({ card_reminders: false, new_card_alerts: false, chat_messages: false })),
         api.getEntitlements().catch(() => null),
         api.listCards('DONE')
           .then(async (rows) => {
@@ -686,6 +686,15 @@ export default function Settings() {
               on={notificationPrefs.new_card_alerts}
               disabled={savingNotifications}
               onPress={() => updateNotificationPrefs({ new_card_alerts: !notificationPrefs.new_card_alerts })}
+            />
+            <ToggleRow
+              testID="notif-chat"
+              tile={<IconTile bg={ui.mint}><MessageSquare color={ui.mintText} size={18} /></IconTile>}
+              title={t('set_chat_alerts')}
+              subtitle={t('set_chat_alerts_sub')}
+              on={notificationPrefs.chat_messages}
+              disabled={savingNotifications}
+              onPress={() => updateNotificationPrefs({ chat_messages: !notificationPrefs.chat_messages })}
             />
             <ToggleRow
               testID="notif-digest"

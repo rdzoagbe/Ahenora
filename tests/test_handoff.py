@@ -47,8 +47,9 @@ class HandOff(unittest.TestCase):
         self.pushes = []
         self._send = server.send_push_to_user
 
-        async def capture(database, user_id, title, body, data):
-            self.pushes.append({"user_id": user_id, "title": title, "body": body, "data": data})
+        async def capture(database, user_id, title, body, data, **kwargs):
+            self.pushes.append({"user_id": user_id, "title": title, "body": body,
+                                "data": data, **kwargs})
 
         server.send_push_to_user = capture
 

@@ -38,7 +38,14 @@ export function PinPadModal({ visible, mode, title, subtitle, onClose, onSubmit 
     setPin(next);
     if (next.length === 4) {
       setBusy(true);
-      const ok = await onSubmit(next);
+      // Treat a thrown onSubmit as a failure, not a frozen pad: without this a
+      // rejecting handler would leave busy stuck true and the pad unusable.
+      let ok = false;
+      try {
+        ok = await onSubmit(next);
+      } catch {
+        ok = false;
+      }
       if (!ok) {
         setErr(mode === 'verify' ? t('pin_wrong') : t('pin_could_not_save'));
         setPin('');

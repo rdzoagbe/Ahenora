@@ -38,6 +38,7 @@ export default function KidScreen() {
   const [notes, setNotes] = useState<{ text: string; sender_name: string }[]>([]);
   const [pin, setPin] = useState('');
   const [pinError, setPinError] = useState(false);
+  const [leaving, setLeaving] = useState(false);
   // The way out when the PIN is forgotten: a parent's account login.
   const [forgot, setForgot] = useState(false);
   const [fEmail, setFEmail] = useState('');
@@ -93,11 +94,16 @@ export default function KidScreen() {
   };
 
   const leave = async () => {
+    // Guard against a double-tap on a slow connection: without it the second
+    // call hits a torn-down session and flashes a spurious "wrong PIN".
+    if (leaving) return;
+    setLeaving(true);
     setPinError(false);
     try {
       await api.exitKidSession(pin.trim());
     } catch {
       setPinError(true);
+      setLeaving(false);
       return;
     }
     await kidMode.leave();
@@ -281,7 +287,7 @@ export default function KidScreen() {
                   <PressScale onPress={() => { setForgot(false); setFError(null); }} style={styles.ghostBtn}>
                     <Text style={styles.ghostBtnText}>{t('back')}</Text>
                   </PressScale>
-                  <PressScale testID="kid-forgot-confirm" onPress={leaveWithPassword} style={styles.primaryBtn}>
+                  <PressScale testID="kid-forgot-confirm" onPress={leaveWithPassword} disabled={fBusy} style={[styles.primaryBtn, fBusy && { opacity: 0.6 }]}>
                     <Text style={styles.primaryBtnText}>{fBusy ? t('kid_saving') : t('kid_forgot_go')}</Text>
                   </PressScale>
                 </View>
@@ -309,7 +315,7 @@ export default function KidScreen() {
                   <PressScale onPress={closeExit} style={styles.ghostBtn}>
                     <Text style={styles.ghostBtnText}>{t('cancel')}</Text>
                   </PressScale>
-                  <PressScale testID="kid-exit-confirm" onPress={leave} style={styles.primaryBtn}>
+                  <PressScale testID="kid-exit-confirm" onPress={leave} disabled={leaving} style={[styles.primaryBtn, leaving && { opacity: 0.6 }]}>
                     <Text style={styles.primaryBtnText}>{t('kid_hand_back_go')}</Text>
                   </PressScale>
                 </View>

@@ -955,6 +955,7 @@ export interface CalendarContact {
 export interface NotificationSettings {
   card_reminders: boolean;
   new_card_alerts: boolean;
+  chat_messages: boolean;
   updated_at?: string | null;
 }
 export interface CalendarImportResult {
@@ -1637,6 +1638,20 @@ export const api = {
     request<{ ok: boolean }>('/notifications/register', {
       method: 'POST',
       body: { token, platform, app_version: appVersion, runtime_version: runtimeVersion },
+    }),
+  // Teens live on the /teen/* allowlist; the parent register route 403s them,
+  // so they register here or they never receive a single push.
+  registerTeenNotificationToken: (token: string, platform?: string, appVersion?: string, runtimeVersion?: string) =>
+    request<{ ok: boolean }>('/teen/notifications/register', {
+      method: 'POST',
+      body: { token, platform, app_version: appVersion, runtime_version: runtimeVersion },
+    }),
+  // Deactivate this device's token on logout so a shared/resold phone stops
+  // receiving the last household's pushes.
+  unregisterNotificationToken: (token: string) =>
+    request<{ ok: boolean }>('/notifications/unregister', {
+      method: 'POST',
+      body: { token },
     }),
   testNotification: () =>
     request<{ ok: boolean; tokens: number; result: unknown }>('/notifications/test', {

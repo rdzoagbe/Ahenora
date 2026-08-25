@@ -36,17 +36,24 @@ function RootNavigator() {
   // was only ever sent when a user manually flipped a Settings toggle, so most
   // families had no registered device and no server push could reach them.
   useEffect(() => {
-    if (user) ensurePushRegistered();
+    if (user) ensurePushRegistered(!!user.is_teen);
   }, [user]);
 
   // Route a tapped notification to where it belongs — the conversation for a
   // message, the Feed for a task, the Family hub for a star or a join — instead
   // of dropping the person on whatever screen they last saw.
   useEffect(() => {
+    // Wait for the user to hydrate before reading the cold-start tap. On a cold
+    // launch `user` is null while the store awaits api.me(); if we attached now,
+    // attachNotificationRouting would consume (and latch) the cold-start
+    // response, then skip the push because user is null — and the tap would be
+    // gone forever, dropping the person on the default tab. Gating here means
+    // the cold-start target is read only once we can actually route it.
+    if (!user) return;
     let cleanup = () => undefined as void;
     let active = true;
     attachNotificationRouting((t) => {
-      if (user) router.push(t as never);
+      router.push(t as never);
     }).then((fn) => { if (active) cleanup = fn; else fn(); });
     return () => { active = false; cleanup(); };
   }, [user, router]);

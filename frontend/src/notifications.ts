@@ -44,12 +44,17 @@ async function getNotificationsModule(): Promise<any | null> {
 
   if (!notificationHandlerConfigured) {
     Notifications.setNotificationHandler({
-      handleNotification: async () => ({
-        shouldPlaySound: true,
-        shouldSetBadge: false,
-        shouldShowBanner: true,
-        shouldShowList: true,
-      }),
+      handleNotification: async (notification) => {
+        // The daily tip is deliberately silent on its LOW channel; keep it
+        // silent in the foreground too, so it never chimes while the app is open.
+        const silent = notification?.request?.content?.data?.type === 'daily_tip';
+        return {
+          shouldPlaySound: !silent,
+          shouldSetBadge: false,
+          shouldShowBanner: true,
+          shouldShowList: true,
+        };
+      },
     });
     notificationHandlerConfigured = true;
   }
@@ -323,7 +328,7 @@ export async function ensureAskedNotificationPermissionOnce() {
  * each launch also refreshes a rotated Expo token, which otherwise goes stale
  * and silently stops routing to the phone.
  */
-export async function ensurePushRegistered(): Promise<void> {
+export async function ensurePushRegistered(isTeen = false): Promise<void> {
   try {
     const Notifications = await getNotificationsModule();
     if (!Notifications) return;
@@ -335,9 +340,37 @@ export async function ensurePushRegistered(): Promise<void> {
       return;
     }
     const { appVersion, runtimeVersion } = await appVersionInfo();
-    await api.registerNotificationToken(reg.expoPushToken, Platform.OS, appVersion, runtimeVersion);
+    // A teen's session is refused by the parent register route, so route them
+    // to the teen endpoint — otherwise they'd never get a token or a push.
+    const register = isTeen ? api.registerTeenNotificationToken : api.registerNotificationToken;
+    await register(reg.expoPushToken, Platform.OS, appVersion, runtimeVersion);
   } catch (e) {
     logger.warn('ensurePushRegistered failed', e);
+  }
+}
+
+/**
+ * On logout: deactivate this device's server-side token (so the next household
+ * — or nobody — on a shared/resold phone stops getting the last user's pushes)
+ * and cancel every locally-scheduled notification (digests, dinner, recap,
+ * calendar) so they don't keep firing with the old household's data. Best
+ * effort; must be called while still authenticated (before api.logout()).
+ */
+export async function deactivatePushOnLogout(): Promise<void> {
+  try {
+    const Notifications = await getNotificationsModule();
+    if (Notifications) {
+      const perm = await Notifications.getPermissionsAsync();
+      if (perm.status === 'granted') {
+        const reg = await registerForPushNotificationsAsync();
+        if (reg.expoPushToken) {
+          await api.unregisterNotificationToken(reg.expoPushToken).catch(() => undefined);
+        }
+      }
+      await Notifications.cancelAllScheduledNotificationsAsync().catch(() => undefined);
+    }
+  } catch (e) {
+    logger.warn('deactivatePushOnLogout failed', e);
   }
 }
 

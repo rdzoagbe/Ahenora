@@ -1905,9 +1905,9 @@ export default function Kids() {
               <Card style={styles.cardPad}>
                 {childRoutines.map((rtn) => (
                   <View key={rtn.routine_id} style={styles.featureRow}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.featureRowTitle}>{rtn.name}</Text>
-                      <Text style={styles.featureRowSub}>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={styles.featureRowTitle} numberOfLines={1}>{rtn.name}</Text>
+                      <Text style={styles.featureRowSub} numberOfLines={1}>
                         {rtn.steps.length} {t('kids_steps')} · {Math.round(rtn.steps.reduce((s, st) => s + (st.duration_seconds || 0), 0) / 60)} {t('kids_min')}
                         {rtn.star_reward ? ` · ${t('kids_worth', { n: rtn.star_reward })}` : ''}
                       </Text>
@@ -2007,9 +2007,9 @@ export default function Kids() {
               <Card style={styles.cardPad}>
                 {chores.map((chore) => (
                   <View key={chore.chore_id} style={styles.featureRow}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.featureRowTitle}>{chore.title}</Text>
-                      <Text style={styles.featureRowSub}>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={styles.featureRowTitle} numberOfLines={1}>{chore.title}</Text>
+                      <Text style={styles.featureRowSub} numberOfLines={1}>
                         {chore.current_assignee ? memberName(chore.current_assignee) : t('kids_unassigned')} · {chore.frequency}
                         {chore.star_reward ? ` · ${t('kids_worth', { n: chore.star_reward })}` : ''}
                       </Text>
@@ -2027,14 +2027,18 @@ export default function Kids() {
                       <Text style={styles.featureActionText}>{t('kids_chore_done')}</Text>
                     </PressScale>
                     {chore.rotate && chore.assigned_members.length > 1 ? (
-                      <PressScale onPress={() => rotateChore(chore.chore_id)} style={[styles.featureActionBtn, { marginLeft: 6 }]}>
-                        <RotateCcw color="#FFFFFF" size={14} />
-                        <Text style={styles.featureActionText}>{t('kids_rotate')}</Text>
+                      <PressScale
+                        accessibilityRole="button"
+                        accessibilityLabel={t('kids_rotate')}
+                        onPress={() => rotateChore(chore.chore_id)}
+                        style={styles.featureIconBtn}
+                      >
+                        <RotateCcw color={ui.muted} size={16} />
                       </PressScale>
                     ) : null}
                     <PressScale
-                  accessibilityRole="button"
-                  accessibilityLabel={t('a11y_delete')} onPress={() => deleteChore(chore.chore_id)} style={{ padding: 4, marginLeft: 6 }}>
+                      accessibilityRole="button"
+                      accessibilityLabel={t('a11y_delete')} onPress={() => deleteChore(chore.chore_id)} style={styles.featureIconBtn}>
                       <Trash2 color={ui.muted} size={15} />
                     </PressScale>
                   </View>
@@ -2674,7 +2678,8 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   freqChipText: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 13 },
   freqChipTextActive: { color: ui.bg },
   pocketTip: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 19, marginTop: 14 },
-  featureActionBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: ui.orangeDeep, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 99 },
+  featureActionBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: ui.orangeDeep, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 99, flexShrink: 0 },
+  featureIconBtn: { width: 34, height: 34, borderRadius: 99, alignItems: 'center', justifyContent: 'center', backgroundColor: ui.soft, flexShrink: 0 },
   featureActionText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 12 },
   allowanceRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12 },
   allowanceBalance: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 28 },
