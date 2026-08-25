@@ -15,6 +15,7 @@ import { AppearanceMode, AppTheme, getTheme, resolveAppearance, ResolvedAppearan
 import { logger } from './logger';
 import { saveLoginHint, clearLoginHint } from './loginHint';
 import { deactivatePushOnLogout } from './notifications';
+import { setupWebPush, teardownWebPush } from './webpush';
 
 export type { Lang } from './i18n';
 export type { AppearanceMode, ResolvedAppearance, AppTheme } from './theme';
@@ -75,6 +76,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const systemScheme = rawScheme === 'light' || rawScheme === 'dark' ? rawScheme : null;
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  // On the web, quietly re-subscribe this browser to push once a user is signed
+  // in — only if they'd already granted permission (no prompt on load; the
+  // prompt lives on the Settings toggle, which is a real tap).
+  useEffect(() => {
+    if (user?.user_id) setupWebPush().catch(() => undefined);
+  }, [user?.user_id]);
   // First-open default follows the device / browser language; a signed-in
   // account's own saved language overrides it in refreshUser.
   const [lang, setLangState] = useState<Lang>(detectDeviceLang);
@@ -220,6 +227,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         // scheduled local notifications, so a shared/resold phone stops getting
         // the last household's pushes and digests.
         await deactivatePushOnLogout().catch(() => undefined);
+        // Web: drop this browser's push subscription too, so a shared computer
+        // stops getting the last household's notifications.
+        await teardownWebPush().catch(() => undefined);
         await api.logout();
       }
     } catch (error) {
