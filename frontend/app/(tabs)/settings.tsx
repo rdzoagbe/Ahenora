@@ -538,11 +538,12 @@ export default function Settings() {
   // Keywords per group, so a search reaches settings by the words people use
   // for them, not the labels we happened to pick.
   const GK = {
+    subscription: 'subscription plan plans upgrade premium billing pay payment manage cancel tier household family price pricing',
     notifications: 'notifications push sign slip weekly digest email alert reminder',
     appearance: 'appearance theme light dark system display',
     household: 'household members co-parent co parent children child pin invite family',
     preferences: 'preferences language translation locale',
-    more: 'more history completed cards replay setup onboarding plans plan upgrade premium billing subscription usage limits version update metrics',
+    more: 'more history completed cards replay setup onboarding usage limits version update metrics',
   };
   // Open when the user tapped it, or when their search names it. A search also
   // hides the groups it does not match, so "pin" leaves only Household on screen.
@@ -636,6 +637,28 @@ export default function Settings() {
               </PressScale>
             ) : null}
           </View>
+
+          {/* Subscription — a first-class, labelled section so plans & billing
+              are easy to find rather than buried under "More". */}
+          {groupVisible(GK.subscription) ? (<>
+          {groupHead('subscription',
+            <IconTile bg={ui.orangeSoft}><Crown color={ui.orange} size={18} /></IconTile>,
+            t('subscription'),
+            user?.is_admin ? t('set_admin_tester') : `${planLabel} ${t('set_plan')}`,
+            GK.subscription)}
+          {groupOpen('subscription', GK.subscription) ? (
+          <Card style={styles.cardPad}>
+            <NavRow
+              testID="settings-view-plans"
+              tile={<IconTile bg={ui.orangeSoft}><Crown color={ui.orange} size={18} /></IconTile>}
+              title={t('set_view_all_plans')}
+              subtitle={`${t('set_youre_on')} ${user?.is_admin ? t('set_admin_tester') : `${planLabel}`} · ${t('set_compare_tiers')}`}
+              onPress={() => router.push('/pricing')}
+              divider={false}
+            />
+          </Card>
+          ) : null}
+          </>) : null}
 
           {/* Notifications */}
           {groupVisible(GK.notifications) ? (<>
@@ -901,14 +924,6 @@ export default function Settings() {
               </View>
             ) : null}
             <Divider />
-
-            <NavRow
-              testID="settings-view-plans"
-              tile={<IconTile bg={ui.orangeSoft}><Crown color={ui.orange} size={18} /></IconTile>}
-              title={t('set_view_all_plans')}
-              subtitle={`${t('set_youre_on')} ${user?.is_admin ? t('set_admin_tester') : `${planLabel}`} · ${t('set_compare_tiers')}`}
-              onPress={() => router.push('/pricing')}
-            />
 
             <NavRow
               testID="settings-rate-app"
