@@ -124,15 +124,16 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
         return;
       }
 
-      // Native (Android). The store today carries the Family subscription only;
-      // Household isn't a Play product yet, so buy it on the web (Stripe) for
-      // now rather than dead-ending on a missing product.
-      if (plan === 'household') {
+      // Native (Android). Family sells from the default offering, Household from
+      // its own; purchasePremium picks the right one by tier.
+      const nativeTier = plan === 'household' ? 'household' : 'family';
+      const res = await purchasePremium(user.user_id, cycle, nativeTier);
+      // Household's RevenueCat offering may not be set up on this build yet —
+      // don't dead-end, point the buyer to the web where it always works.
+      if (res.available && res.error === 'no_offering' && plan === 'household') {
         Alert.alert(t('price_household_web_title'), t('price_household_web_msg'));
         return;
       }
-
-      const res = await purchasePremium(user.user_id, cycle);
       if (!res.available) {
         // No store billing here — almost always because this is the web app.
         // Don't dead-end: offer to open Google Play, where subscribing works.
