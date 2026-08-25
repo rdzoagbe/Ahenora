@@ -1071,7 +1071,7 @@ export interface ScanResult {
   recipe?: CapturedRecipe;
 }
 
-export type Plan = 'village' | 'executive' | 'family_office';
+export type Plan = 'village' | 'executive' | 'household' | 'family_office';
 export type BillingCycle = 'monthly' | 'yearly';
 
 export interface Subscription {
@@ -1670,12 +1670,14 @@ export const api = {
   // Card checkout — the way in for web/iPhone, where store billing does not
   // exist. `enabled` is false until the server has its Stripe keys.
   getStripeConfig: () =>
-    request<{ enabled: boolean; currency: string; price_monthly: number; price_yearly: number }>(
-      '/billing/stripe/config'),
-  createStripeCheckout: (cycle: BillingCycle) =>
+    request<{
+      enabled: boolean; currency: string; price_monthly: number; price_yearly: number;
+      tiers?: Record<string, { plan: string; price_monthly: number; price_yearly: number; buyable: boolean }>;
+    }>('/billing/stripe/config'),
+  createStripeCheckout: (tier: 'family' | 'household', cycle: BillingCycle) =>
     request<{ url: string; session_id?: string }>('/billing/stripe/checkout', {
       method: 'POST',
-      body: { cycle },
+      body: { tier, cycle },
     }),
   changeSubscription: (plan: Plan, billing_cycle: BillingCycle) => {
     invalidateUsageCaches();

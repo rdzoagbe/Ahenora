@@ -56,7 +56,7 @@ class HouseholdPlan(unittest.TestCase):
         self._seed("fam1", ["admin@x.com", "wife@x.com"])
         sub = asyncio.run(server.build_subscription("fam1"))
         self.assertEqual(sub["plan"], "family_office")
-        self.assertEqual(sub["limits"], server.PLAN_CATALOG["executive"]["limits"])
+        self.assertEqual(sub["limits"], server.PLAN_CATALOG["household"]["limits"])
 
     def test_a_household_without_an_admin_keeps_its_real_plan(self):
         self._seed("fam2", ["someone@x.com"])
@@ -73,7 +73,7 @@ class HouseholdPlan(unittest.TestCase):
             "grandfathered": True}))
         sub = asyncio.run(server.build_subscription("fam3"))
         self.assertTrue(sub["grandfathered"])
-        self.assertEqual(sub["limits"], server.PLAN_CATALOG["executive"]["limits"])
+        self.assertEqual(sub["limits"], server.PLAN_CATALOG["household"]["limits"])
 
 
 if __name__ == "__main__":

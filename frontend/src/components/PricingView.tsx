@@ -29,13 +29,20 @@ import { purchasePremium, restorePurchases } from '../billing';
 // paths point here instead of dead-ending on "coming soon".
 const ANDROID_STORE_URL = 'https://play.google.com/store/apps/details?id=com.householdcoo.app';
 
-// Two tiers at launch: Free + Premium (Family Office deferred — see ROADMAP).
-const PLAN_ORDER: Plan[] = ['village', 'executive'];
+// Three tiers: Free (Village) + Family (executive) + Household.
+const PLAN_ORDER: Plan[] = ['village', 'executive', 'household'];
 
 const PLAN_PRICES: Record<Plan, { monthly: number; yearly: number }> = {
   village: { monthly: 0, yearly: 0 },
   executive: { monthly: 6.99, yearly: 49.99 },
+  household: { monthly: 14.99, yearly: 149.99 },
   family_office: { monthly: 19.99, yearly: 179.99 },
+};
+
+// Which Stripe tier a plan buys through. Family = the executive plan.
+const PLAN_TO_TIER: Partial<Record<Plan, 'family' | 'household'>> = {
+  executive: 'family',
+  household: 'household',
 };
 
 interface Props {
@@ -49,11 +56,16 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
   const styles = useMemo(() => createStyles(ui), [ui]);
   const [cycle, setCycle] = useState<BillingCycle>('yearly');
   const [busy, setBusy] = useState(false);
-  // Whether card checkout is available (web only, and only once the server has
-  // its Stripe keys). Null until asked.
-  const [stripeEnabled, setStripeEnabled] = useState<boolean | null>(null);
+  // The Stripe config (web only): whether card checkout is on, and which tiers
+  // are buyable yet. Null until asked.
+  const [stripeCfg, setStripeCfg] = useState<Awaited<ReturnType<typeof api.getStripeConfig>> | null>(null);
   const currentPlan: Plan = subscription?.plan ?? 'village';
   const onWeb = Platform.OS === 'web';
+  const tierBuyable = (plan: Plan): boolean => {
+    const tier = PLAN_TO_TIER[plan];
+    if (!tier || !stripeCfg?.enabled) return false;
+    return stripeCfg.tiers?.[tier]?.buyable ?? (tier === 'family');
+  };
   // The polling loop after a Stripe return needs the freshest subscription, not
   // the one closed over when the effect started. A ref, kept current by an
   // effect, is.
@@ -85,9 +97,10 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
       // Web (an iPhone in Safari, a laptop) has no store billing. Pay by card
       // through Stripe: fetch a hosted Checkout URL and hand the browser over.
       if (onWeb) {
-        if (stripeEnabled === false) {
-          // Stripe not switched on yet — point to Google Play rather than
-          // dead-ending.
+        const tier = PLAN_TO_TIER[plan];
+        if (!tier || !tierBuyable(plan)) {
+          // This tier isn't buyable here yet (Stripe off, or this tier's prices
+          // not set up) — point to Google Play rather than dead-ending.
           Alert.alert(
             t('price_get_app_title'),
             t('price_get_app_msg'),
@@ -99,7 +112,7 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
           return;
         }
         try {
-          const res = await api.createStripeCheckout(cycle);
+          const res = await api.createStripeCheckout(tier, cycle);
           if (res.url && typeof window !== 'undefined') {
             window.location.href = res.url;
             return;
@@ -108,6 +121,14 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
         } catch {
           Alert.alert(t('price_purchase_failed_title'), t('price_purchase_failed_msg'));
         }
+        return;
+      }
+
+      // Native (Android). The store today carries the Family subscription only;
+      // Household isn't a Play product yet, so buy it on the web (Stripe) for
+      // now rather than dead-ending on a missing product.
+      if (plan === 'household') {
+        Alert.alert(t('price_household_web_title'), t('price_household_web_msg'));
         return;
       }
 
@@ -151,7 +172,7 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
         // Is card checkout available here? Only the web app asks — native pays
         // through the store.
         if (onWeb) {
-          api.getStripeConfig().then((c) => setStripeEnabled(!!c.enabled)).catch(() => setStripeEnabled(false));
+          api.getStripeConfig().then(setStripeCfg).catch(() => setStripeCfg(null));
         }
         // Two corrections, both quiet: the device replays its receipts, and
         // the server asks RevenueCat directly. Either alone heals a missed
@@ -501,18 +522,34 @@ const PLAN_THEMES: Record<
       'pf_prem_6',
     ],
   },
+  household: {
+    icon: Gem,
+    iconBg: 'rgba(236,72,153,0.18)',
+    iconColor: '#F472B6',
+    gradient: ['rgba(236,72,153,0.12)', 'rgba(139,92,246,0.12)'] as const,
+    features: [
+      'pf_house_1',
+      'pf_house_2',
+      'pf_house_3',
+      'pf_house_4',
+      'pf_house_5',
+      'pf_house_6',
+    ],
+  },
+  // Legacy tier kept only so an admin household (stored "family_office") still
+  // resolves to a theme; never shown in PLAN_ORDER.
   family_office: {
     icon: Gem,
     iconBg: 'rgba(236,72,153,0.18)',
     iconColor: '#F472B6',
     gradient: ['rgba(236,72,153,0.12)', 'rgba(139,92,246,0.12)'] as const,
     features: [
-      'feat_members_25',
-      'feat_vault_100gb',
-      'feat_multi_property',
-      'feat_advanced_legal',
-      'feat_priority_ai',
-      'feat_concierge',
+      'pf_house_1',
+      'pf_house_2',
+      'pf_house_3',
+      'pf_house_4',
+      'pf_house_5',
+      'pf_house_6',
     ],
   },
 };
