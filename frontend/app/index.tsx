@@ -404,7 +404,21 @@ export default function Landing() {
             {loginHint && !inviteToken ? t('land_welcome_back_sub') : t('land_sub')}
           </Text>
 
-          <View style={[styles.testingCard, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}> 
+          {/* An always-available door into the value tour — the first-launch
+              auto-show happens once, but anyone can (re)watch how it works
+              before deciding to sign in. */}
+          <PressScale
+            testID="landing-see-how"
+            onPress={() => setShowTour(true)}
+            style={[styles.tourBtn, { backgroundColor: theme.colors.accentSoft, borderColor: theme.colors.cardBorder }]}
+            accessibilityRole="button"
+            accessibilityLabel={t('land_see_how')}
+          >
+            <Sparkles color={theme.colors.accentInk} size={16} />
+            <Text style={[styles.tourBtnText, { color: theme.colors.accentInk }]}>{t('land_see_how')}</Text>
+          </PressScale>
+
+          <View style={[styles.testingCard, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
             <ShieldCheck color={theme.colors.accent} size={16} />
             <Text style={[styles.testingText, { color: theme.colors.textMuted }]}>{t('land_privacy_note')}</Text>
           </View>
@@ -610,6 +624,20 @@ const styles = StyleSheet.create({
     marginTop: 12,
     marginBottom: 14,
     maxWidth: 340,
+  },
+  tourBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingVertical: 12,
+    marginBottom: 14,
+  },
+  tourBtnText: {
+    fontFamily: 'Inter_800ExtraBold',
+    fontSize: 14,
   },
   testingCard: {
     flexDirection: 'row',
