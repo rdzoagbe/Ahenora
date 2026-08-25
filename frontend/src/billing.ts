@@ -12,6 +12,13 @@ import { Platform } from 'react-native';
 import { logger } from './logger';
 
 export type PurchaseCycle = 'monthly' | 'yearly';
+// Which product the sheet should sell. Family is the default RevenueCat
+// offering (offerings.current); Household is a separate offering that must be
+// named "household" in the RevenueCat dashboard and hold the household:p1m /
+// household:p1y packages. A missing Household offering fails soft (no_offering),
+// so shipping this before the dashboard is set up never crashes a buyer.
+export type PurchaseTier = 'family' | 'household';
+const HOUSEHOLD_OFFERING_ID = 'household';
 
 export interface BillingResult {
   ok: boolean;
@@ -75,15 +82,23 @@ function hasPremium(customerInfo: any): boolean {
  * entitlement state; the caller then refreshes backend entitlements (the
  * RevenueCat webhook updates the family plan server-side in parallel).
  */
-export async function purchasePremium(userId: string, cycle: PurchaseCycle): Promise<BillingResult> {
+export async function purchasePremium(
+  userId: string,
+  cycle: PurchaseCycle,
+  tier: PurchaseTier = 'family',
+): Promise<BillingResult> {
   const loaded = await getPurchases();
   if (!loaded || !(await initBilling(userId))) return { ok: false, available: false };
   try {
     const offerings = await loaded.Purchases.getOfferings();
-    const current = offerings?.current;
+    // Family sells from the default offering; Household from its own named one.
+    const offering = tier === 'household'
+      ? (offerings?.all?.[HOUSEHOLD_OFFERING_ID] ?? null)
+      : offerings?.current;
+    if (!offering) return { ok: false, available: true, error: 'no_offering' };
     const pkg = cycle === 'yearly'
-      ? current?.annual ?? current?.availablePackages?.find((p: any) => /year|annual/i.test(p?.product?.identifier || ''))
-      : current?.monthly ?? current?.availablePackages?.find((p: any) => /month/i.test(p?.product?.identifier || ''));
+      ? offering.annual ?? offering.availablePackages?.find((p: any) => /year|annual/i.test(p?.product?.identifier || ''))
+      : offering.monthly ?? offering.availablePackages?.find((p: any) => /month/i.test(p?.product?.identifier || ''));
     if (!pkg) return { ok: false, available: true, error: 'no_offering' };
     const { customerInfo } = await loaded.Purchases.purchasePackage(pkg);
     return { ok: true, available: true, premium: hasPremium(customerInfo) };

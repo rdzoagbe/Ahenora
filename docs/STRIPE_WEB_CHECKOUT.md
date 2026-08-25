@@ -63,6 +63,21 @@ payment. The [Stripe CLI](https://stripe.com/docs/stripe-cli) can forward
 webhooks to a local backend: `stripe listen --forward-to
 localhost:8000/api/billing/stripe/webhook`.
 
+## Android Household (RevenueCat offering)
+
+The native Android "Upgrade to Household" button buys from a RevenueCat
+**offering named `household`** — separate from the default (Family) offering.
+For the button to work on Android:
+
+1. In RevenueCat → Offerings → create an offering with identifier **`household`**.
+2. Add two packages to it: **Monthly** → `household:p1m`, **Annual** → `household:p1y`.
+3. Make sure both `household:*` products are attached to the **`premium`**
+   entitlement (Products → Attach).
+
+Until that offering exists, the Android button fails soft: it detects the
+missing offering and points the buyer to the web (Stripe), which always works.
+The web path needs none of this — it uses Stripe directly.
+
 ## Notes
 
 - No Stripe SDK is installed: checkout sessions are created with `requests`

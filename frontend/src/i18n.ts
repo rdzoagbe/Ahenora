@@ -1633,7 +1633,7 @@ const en: Dict = {
   pf_house_3: 'Helper & carer accounts (grandparents, nannies)',
   pf_house_4: '10 GB Vault + document organizer',
   pf_house_5: 'Unlimited AI scans',
-  pf_house_6: 'Priority support',
+  pf_house_6: 'Document expiry alerts',
   price_household_web_title: 'Subscribe on the web',
   price_household_web_msg: 'The Household plan is on ahenora.com for now — open it in your browser to subscribe, then sign in here.',
 
@@ -3270,7 +3270,7 @@ const es: Dict = {
   pf_house_3: 'Cuentas de cuidadores (abuelos, niñeras)',
   pf_house_4: 'Baúl de 10 GB + organizador de documentos',
   pf_house_5: 'Escaneos con IA ilimitados',
-  pf_house_6: 'Soporte prioritario',
+  pf_house_6: 'Avisos de vencimiento de documentos',
   price_household_web_title: 'Suscríbete en la web',
   price_household_web_msg: 'El plan Hogar está en ahenora.com por ahora: ábrelo en tu navegador para suscribirte y luego inicia sesión aquí.',
 
@@ -4903,7 +4903,7 @@ const fr: Dict = {
   pf_house_3: 'Comptes aidants (grands-parents, nounous)',
   pf_house_4: 'Coffre 10 Go + organisateur de documents',
   pf_house_5: 'Scans IA illimités',
-  pf_house_6: 'Assistance prioritaire',
+  pf_house_6: 'Alertes d’expiration de documents',
   price_household_web_title: 'Abonnez-vous sur le web',
   price_household_web_msg: 'Le forfait Foyer est sur ahenora.com pour l’instant : ouvrez-le dans votre navigateur pour vous abonner, puis connectez-vous ici.',
 
@@ -6536,7 +6536,7 @@ const de: Dict = {
   pf_house_3: 'Betreuer-Konten (Großeltern, Kindermädchen)',
   pf_house_4: '10 GB Tresor + Dokumenten-Organizer',
   pf_house_5: 'Unbegrenzte KI-Scans',
-  pf_house_6: 'Priorisierter Support',
+  pf_house_6: 'Ablauf-Erinnerungen für Dokumente',
   price_household_web_title: 'Im Web abonnieren',
   price_household_web_msg: 'Der Haushalt-Tarif ist vorerst auf ahenora.com — öffne ihn im Browser zum Abonnieren und melde dich dann hier an.',
 
