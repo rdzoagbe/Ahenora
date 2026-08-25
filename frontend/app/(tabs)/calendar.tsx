@@ -993,7 +993,7 @@ export default function Calendar() {
                   <Text style={styles.custodyLegendText} numberOfLines={1}>{custody?.away_label?.trim() || t('custody_legend_theirs')}</Text>
                 </View>
                 {isParent ? (
-                  <PressScale testID="custody-edit" accessibilityRole="button" accessibilityLabel={t('custody_title')} onPress={openCustody} style={styles.custodyEditBtn}>
+                  <PressScale testID="custody-edit" accessibilityRole="button" accessibilityLabel={t('custody_title')} onPress={openCustody} style={styles.custodyEditBtn} hitSlop={8}>
                     <Pencil color={ui.muted} size={16} />
                   </PressScale>
                 ) : null}

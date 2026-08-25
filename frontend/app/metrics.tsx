@@ -207,7 +207,7 @@ export default function MetricsScreen() {
                 <View style={styles.card}>
                   <View style={[styles.eventRow, { borderTopWidth: 0 }]}>
                     <Text style={styles.eventLabel}>Status</Text>
-                    <Text style={[styles.eventCount, ready === false && { color: '#C2410C' }, ready === true && { color: '#0A7D52' }]}>
+                    <Text style={[styles.eventCount, ready === false && { color: ui.danger }, ready === true && { color: ui.mintText }]}>
                       {ready === null ? '—' : ready ? 'Ready' : 'Not ready'}
                     </Text>
                   </View>
@@ -219,7 +219,7 @@ export default function MetricsScreen() {
                   </View>
                   <View style={styles.eventRow}>
                     <Text style={styles.eventLabel}>Failed calls (14 days)</Text>
-                    <Text style={[styles.eventCount, err > 0 && { color: '#C2410C' }]}>{err}</Text>
+                    <Text style={[styles.eventCount, err > 0 && { color: ui.danger }]}>{err}</Text>
                   </View>
                   {aiHealth?.model_resolved ? (
                     <View style={styles.eventRow}>
@@ -230,7 +230,7 @@ export default function MetricsScreen() {
                   {aiHealth?.last_error ? (
                     <View style={styles.eventRow}>
                       <Text style={styles.eventLabel}>Last error</Text>
-                      <Text style={[styles.eventCount, { color: '#C2410C', flexShrink: 1, textAlign: 'right' }]} numberOfLines={2}>
+                      <Text style={[styles.eventCount, { color: ui.danger, flexShrink: 1, textAlign: 'right' }]} numberOfLines={2}>
                         {aiHealth.last_error}
                       </Text>
                     </View>
