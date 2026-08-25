@@ -92,6 +92,11 @@ class AssignedIsShared(unittest.TestCase):
             {"family_id": "fam1", "status": "OPEN", "title": "School run"}))
         self.assertEqual(spawned["created_by_name"], "Roland")
         self.assertTrue(spawned["shared"])              # inherits parent's sharing
+        # ...and inherits the scoped visibility, so a recurring assigned chore
+        # never silently widens to the whole household on its next occurrence.
+        parent = asyncio.run(self.db["cards"].find_one({"card_id": card["card_id"]}))
+        self.assertIsNotNone(parent.get("visible_to"))
+        self.assertEqual(spawned.get("visible_to"), parent.get("visible_to"))
 
 
 @unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
