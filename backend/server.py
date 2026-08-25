@@ -192,15 +192,19 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def reset_testing_window_plans():
-    # Cleanup for when real billing goes live: a paid plan stored without any
-    # RevenueCat event came from the testing window's self-serve switcher, not
-    # from a purchase — reset it so launch gating is honest. Idempotent: real
-    # subscribers always carry rc_last_event (set by the webhook).
-    if db is None or not os.environ.get("RC_WEBHOOK_SECRET"):
+    # Cleanup for when real billing goes live: a paid plan stored without ANY
+    # billing event came from the testing window's self-serve switcher, not from
+    # a purchase — reset it so launch gating is honest. A real subscriber always
+    # carries a marker: rc_last_event (Google Play) OR stripe_last_event (card).
+    # Both must be excluded — keying the reset to RevenueCat alone would wipe a
+    # legitimate Stripe subscriber's plan back to free on every restart.
+    if db is None or not billing_is_live():
         return
     try:
         result = await db["families"].update_many(
-            {"plan": {"$ne": "village"}, "rc_last_event": {"$exists": False}},
+            {"plan": {"$ne": "village"},
+             "rc_last_event": {"$exists": False},
+             "stripe_last_event": {"$exists": False}},
             {"$set": {"plan": "village", "updated_at": datetime.now(timezone.utc)}},
         )
         if result.modified_count:
@@ -1005,12 +1009,13 @@ async def build_subscription(family_id: str):
     young_people_count = await count_young_people(database, family_id)
     catalog = plan_catalog_for(family["plan"])
     limits = catalog["limits"]
-    # TESTING WINDOW: until billing is live (RC_WEBHOOK_SECRET set), every
-    # family gets Premium limits so closed-test families can exercise the
-    # gated features (meal planner, allowance, carpool, weekly report) and
-    # aren't blocked by the child cap. Gates enforce automatically the moment
-    # billing is configured — same trigger that locks /subscription/change.
-    testing_window = not os.environ.get("RC_WEBHOOK_SECRET")
+    # TESTING WINDOW: until billing is live, every family gets Premium limits so
+    # closed-test families can exercise the gated features and aren't blocked by
+    # the child cap. "Live" means EITHER rail is configured — Google Play via
+    # RevenueCat OR card checkout via Stripe. Keying it to RevenueCat alone meant
+    # that shipping Stripe first (real payments) would still hand every family
+    # the top tier for free. Gates enforce the moment either is set.
+    testing_window = not billing_is_live()
     # A household containing an admin/tester account is a tester household:
     # everyone in it shares the top plan, exactly like a real purchase would
     # be shared. Fixes the co-parent seeing Free next to the founder.
@@ -5967,7 +5972,6 @@ async def kid_request_reward(reward_id: str, child=Depends(require_child)):
         "reward_title": reward.get("title") or "", "reward_icon": reward.get("icon"),
         "cost_stars": cost, "status": "pending", "created_at": utcnow(),
         "weekend": bool(reward.get("weekend")),
-        "weekend": bool(reward.get("weekend")),
         "created_by_user_id": None, "fulfilled_at": None}
     await database["redemptions"].insert_one(redemption)
     # A child spent their stars — both parents should know, so the treat gets
@@ -7169,10 +7173,15 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
             "reminder_minutes": card.get("reminder_minutes", 0),
             "created_at": utcnow(),
             "completed_at": None,
-            # The next occurrence keeps the same privacy as its parent.
+            # The next occurrence keeps the same privacy as its parent — both the
+            # shared flag AND the scoped visible_to set. Without carrying
+            # visible_to forward, a scoped assigned chore (hidden from a helper or
+            # another teen) reappeared as a whole-household card every time it
+            # recurred, silently widening what was deliberately narrowed.
             "created_by_user_id": card.get("created_by_user_id"),
             "created_by_name": card.get("created_by_name"),
             "shared": card.get("shared", False),
+            "visible_to": card.get("visible_to"),
         }
         await database["cards"].insert_one(next_doc)
 
@@ -7649,6 +7658,12 @@ async def redeem_reward(reward_id: str, payload: RedeemIn, user=Depends(require_
         "created_at": utcnow(),
         "created_by_user_id": user["user_id"],
         "fulfilled_at": None,
+        # Record whether this was a weekend treat, so cancelling it can refund
+        # the child's weekly meter (week_earned), not just their star bank — the
+        # kid-initiated path stores this, and cancel_redemption keys off it. Its
+        # absence here silently locked a child out of further weekend treats
+        # after a parent redeemed then cancelled one.
+        "weekend": bool(reward.get("weekend")),
     }
     await database["redemptions"].insert_one(redemption)
     # The other parent hears that a reward was spent — the one who did it is
@@ -8317,10 +8332,11 @@ async def get_subscription(user=Depends(require_user)):
 @app.post("/api/subscription/change")
 async def change_subscription(payload: SubscriptionChangeIn, user=Depends(require_full_member)):
     database = get_db()
-    # Once real billing is configured (RevenueCat webhook secret present),
-    # plans are set ONLY by verified purchase events — the self-serve switcher
-    # from the testing window locks itself for non-admins automatically.
-    if os.environ.get("RC_WEBHOOK_SECRET") and not is_admin_user(user):
+    # Once real billing is configured (RevenueCat OR Stripe), plans are set ONLY
+    # by verified purchase events — the self-serve switcher from the testing
+    # window locks itself for non-admins automatically. Considering both rails
+    # closes the hole where Stripe-only billing would leave this wide open.
+    if billing_is_live() and not is_admin_user(user):
         raise HTTPException(status_code=403, detail="Plans change via the store purchase flow")
     if payload.plan not in PLAN_CATALOG:
         raise HTTPException(status_code=400, detail="Invalid plan")
@@ -8545,6 +8561,14 @@ def stripe_configured() -> bool:
     """Web checkout is live only when both the API key (to create sessions) and
     the webhook secret (to trust what comes back) are set."""
     return bool(os.environ.get("STRIPE_SECRET_KEY") and os.environ.get("STRIPE_WEBHOOK_SECRET"))
+
+
+def billing_is_live() -> bool:
+    """Whether ANY paid rail is configured — Google Play via RevenueCat, or card
+    checkout via Stripe. The single source of truth for "are we charging real
+    money": it closes the testing window, locks the self-serve plan switcher, and
+    protects real subscribers of either kind from the launch-cleanup reset."""
+    return bool(os.environ.get("RC_WEBHOOK_SECRET")) or stripe_configured()
 
 
 # The two paid tiers the app sells, and the internal plan id each grants. The

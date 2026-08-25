@@ -70,6 +70,7 @@ export default function SearchScreen() {
       setHits([]);
       setTruncated(false);
       setSearched(false);
+      setFailed(false);
       setBusy(false);
       return;
     }

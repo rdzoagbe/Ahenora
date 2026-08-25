@@ -62,6 +62,22 @@ class WeeklyStars(unittest.TestCase):
         return asyncio.run(server.redeem_reward(
             reward_id, server.RedeemIn(member_id="kid1"), user=dict(PARENT)))
 
+    def test_cancelling_a_parent_redeemed_weekend_treat_refunds_the_week_meter(self):
+        # A parent redeems a weekend treat, then cancels it. Both the star bank
+        # AND the weekly meter (week_earned) must be restored — otherwise the
+        # child stays locked out of weekend treats for the rest of the week
+        # despite having earned the eligibility. The parent path used to drop the
+        # weekend flag, so cancel only refunded the bank.
+        self._award(25)                                   # week_earned = 25
+        rid = self._reward(cost=20, weekend=True)
+        red = self._redeem(rid)                           # bank -20, week_earned 25-20=5
+        self.assertEqual(self._member()["week_earned"], 5)
+        asyncio.run(server.cancel_redemption(
+            red["redemption"]["redemption_id"], user=dict(PARENT)))
+        m = self._member()
+        self.assertEqual(m["stars"], 65)                  # bank fully refunded (40 + 25)
+        self.assertEqual(m["week_earned"], 25)            # weekend eligibility restored
+
     def test_earning_banks_and_ticks_the_week_meter(self):
         self._award(6)
         m = self._member()

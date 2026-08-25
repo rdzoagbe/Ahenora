@@ -124,6 +124,46 @@ class RevenueCatTier(unittest.TestCase):
 
 
 @unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
+class BillingLiveClosesTestingWindow(unittest.TestCase):
+    """The free-Premium testing window must close when EITHER rail is live —
+    Google Play OR Stripe. Keying it to RevenueCat alone meant that shipping
+    Stripe first would hand every family the top tier for free."""
+
+    def setUp(self):
+        self.db = FakeDatabase()
+        self._get_db = server.get_db
+        server.get_db = lambda: self.db
+        for k in ("RC_WEBHOOK_SECRET", "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET"):
+            os.environ.pop(k, None)
+        asyncio.run(self.db["families"].insert_one(
+            {"family_id": "fam1", "plan": "village", "billing_cycle": "monthly"}))
+
+    def tearDown(self):
+        server.get_db = self._get_db
+        for k in ("RC_WEBHOOK_SECRET", "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET"):
+            os.environ.pop(k, None)
+
+    def _limits(self):
+        return asyncio.run(server.build_subscription("fam1"))["limits"]
+
+    def test_no_billing_gives_top_tier_free(self):
+        self.assertFalse(server.billing_is_live())
+        self.assertTrue(self._limits()["helper_accounts"])   # testing window open
+
+    def test_stripe_alone_closes_the_window(self):
+        os.environ["STRIPE_SECRET_KEY"] = "sk_test"
+        os.environ["STRIPE_WEBHOOK_SECRET"] = "whsec_test"
+        self.assertTrue(server.billing_is_live())
+        # A free family is now genuinely gated — no helper accounts.
+        self.assertFalse(self._limits()["helper_accounts"])
+
+    def test_revenuecat_alone_closes_the_window(self):
+        os.environ["RC_WEBHOOK_SECRET"] = "rc_secret"
+        self.assertTrue(server.billing_is_live())
+        self.assertFalse(self._limits()["helper_accounts"])
+
+
+@unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
 class HelperGate(unittest.TestCase):
     def setUp(self):
         self.db = FakeDatabase()
