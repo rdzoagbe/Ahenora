@@ -16,6 +16,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from fastapi import FastAPI, HTTPException, Depends, Header, UploadFile, File, Query, Body
 import requests
+import webpush as webpush_lib
 from dedupe_core import run as dedupe_run
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -2204,8 +2205,56 @@ async def send_push_to_user(database, user_id: str, title: str, body: str, data:
                 })
         if messages:
             await send_expo_push_messages(messages, database)
+        # The same notification, delivered to any browsers this person subscribed
+        # (web/iPhone-Safari), so a lock-screen-less web user still gets it.
+        await send_web_push_to_user(database, user_id, title, body, data)
     except Exception as e:
         log.warning("user push failed: %s", e)
+
+
+def webpush_configured() -> bool:
+    """Browser push is live only when the VAPID keypair is set. Off by default,
+    so the whole path is dormant until the keys are added — the app then simply
+    doesn't offer to subscribe a browser."""
+    return bool(os.environ.get("VAPID_PUBLIC_KEY") and os.environ.get("VAPID_PRIVATE_KEY"))
+
+
+async def send_web_push_to_user(database, user_id: str, title: str, body: str, data: dict):
+    """Deliver one notification to every browser this person has subscribed.
+    Best effort, never raises. A push service that reports the subscription is
+    gone (404/410) gets that subscription pruned so we stop trying it."""
+    if not webpush_configured():
+        return
+    priv = os.environ["VAPID_PRIVATE_KEY"]
+    pub = os.environ["VAPID_PUBLIC_KEY"]
+    subject = os.environ.get("VAPID_SUBJECT") or "mailto:support@ahenora.com"
+    payload = json.dumps({"title": title, "body": body, "data": data or {}}).encode()
+
+    subs = [d async for d in database["web_push_subscriptions"].find(
+        {"user_id": user_id, "active": True}, {"_id": 0})]
+    for sub in subs:
+        try:
+            url, headers, enc = webpush_lib.webpush_request(
+                sub, payload, vapid_private=priv, vapid_public=pub, subject=subject)
+
+            def _post():
+                return requests.post(url, data=enc, headers=headers, timeout=15)
+
+            resp = await asyncio.to_thread(_post)
+            if resp.status_code in (404, 410):
+                await database["web_push_subscriptions"].update_one(
+                    {"endpoint": sub["endpoint"]}, {"$set": {"active": False}})
+            elif resp.status_code >= 400:
+                log.warning("web push %s for %s: %s", resp.status_code, user_id, resp.text[:160])
+        except Exception as e:  # pragma: no cover - network/format guard
+            log.warning("web push send failed: %s", e)
+
+
+@app.get("/api/notifications/web-config")
+async def web_push_config():
+    """What the web app needs to subscribe a browser: whether it's on, and the
+    VAPID public key (safe to expose — it's the public half)."""
+    return {"enabled": webpush_configured(), "vapid_public_key": os.environ.get("VAPID_PUBLIC_KEY", "")}
 
 
 async def notify_invite_accepted(database, invite: dict, acceptor_name: str):
@@ -6375,6 +6424,48 @@ async def unregister_notification_token(payload: NotificationTokenIn, user=Depen
         {"token": token, "user_id": user["user_id"]},
         {"$set": {"active": False, "updated_at": utcnow()}},
     )
+    return {"ok": True}
+
+
+@app.post("/api/notifications/web-subscribe")
+async def web_push_subscribe(payload: dict = Body(...), user=Depends(require_user)):
+    """Save the PushSubscription a browser produced, tied to this user + family.
+    Keyed by endpoint, so re-subscribing the same browser just refreshes it."""
+    if not webpush_configured():
+        raise HTTPException(status_code=503, detail="Web push is not configured")
+    sub = (payload or {}).get("subscription") or payload
+    endpoint = (sub or {}).get("endpoint")
+    keys = (sub or {}).get("keys") or {}
+    if not endpoint or not keys.get("p256dh") or not keys.get("auth"):
+        raise HTTPException(status_code=400, detail="Invalid push subscription")
+    database = get_db()
+    await database["web_push_subscriptions"].update_one(
+        {"endpoint": endpoint},
+        {"$set": {
+            "endpoint": endpoint,
+            "keys": {"p256dh": keys["p256dh"], "auth": keys["auth"]},
+            "user_id": user["user_id"],
+            "family_id": user["family_id"],
+            "active": True,
+            "updated_at": utcnow(),
+        }},
+        upsert=True,
+    )
+    return {"ok": True}
+
+
+@app.post("/api/notifications/web-unsubscribe")
+async def web_push_unsubscribe(payload: dict = Body(default=None), user=Depends(require_user)):
+    """Drop a browser's subscription — on sign-out, or when browser notifications
+    are turned off. No endpoint given = drop all this user's browsers."""
+    endpoint = (payload or {}).get("endpoint")
+    database = get_db()
+    if endpoint:
+        await database["web_push_subscriptions"].update_one(
+            {"endpoint": endpoint, "user_id": user["user_id"]}, {"$set": {"active": False}})
+    else:
+        await database["web_push_subscriptions"].update_many(
+            {"user_id": user["user_id"]}, {"$set": {"active": False}})
     return {"ok": True}
 
 

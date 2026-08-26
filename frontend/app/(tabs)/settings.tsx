@@ -41,6 +41,7 @@ import { openReview } from '../../src/reviewPrompt';
 import { api, Card as CardType, Entitlements, FamilyInvite, FamilyMember, NotificationSettings } from '../../src/api';
 import { LANG_NAMES } from '../../src/i18n';
 import { appVersionInfo, ensureNotificationPermissions, registerForPushNotificationsAsync, sendLocalNotification, sendTestScheduledReminderNotification, syncCardReminderNotifications } from '../../src/notifications';
+import { requestWebPush } from '../../src/webpush';
 import { logger } from '../../src/logger';
 
 function formatBytes(bytes?: number | null) {
@@ -296,13 +297,20 @@ export default function Settings() {
 
     try {
       if (nextPrefs.card_reminders || nextPrefs.new_card_alerts) {
-        const granted = await ensureNotificationPermissions();
-        if (!granted) {
-          // Revert the optimistic toggle so it doesn't stay ON while
-          // notifications are actually off.
-          setNotificationPrefs(notificationPrefs);
-          setNotificationStatus(t('set_notif_permission_denied_long'));
-          return;
+        if (Platform.OS === 'web') {
+          // Browser push: request permission on this tap and subscribe. Even if
+          // the browser declines, the in-app bell still works, so we don't
+          // revert the toggle — we just note it below.
+          await requestWebPush();
+        } else {
+          const granted = await ensureNotificationPermissions();
+          if (!granted) {
+            // Revert the optimistic toggle so it doesn't stay ON while
+            // notifications are actually off.
+            setNotificationPrefs(notificationPrefs);
+            setNotificationStatus(t('set_notif_permission_denied_long'));
+            return;
+          }
         }
       }
 

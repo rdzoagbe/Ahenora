@@ -1653,6 +1653,19 @@ export const api = {
       method: 'POST',
       body: { token },
     }),
+  // Web Push (browser notifications when the tab is closed).
+  getWebPushConfig: () =>
+    request<{ enabled: boolean; vapid_public_key: string }>('/notifications/web-config'),
+  webPushSubscribe: (subscription: unknown) =>
+    request<{ ok: boolean }>('/notifications/web-subscribe', {
+      method: 'POST',
+      body: { subscription },
+    }),
+  webPushUnsubscribe: (endpoint?: string) =>
+    request<{ ok: boolean }>('/notifications/web-unsubscribe', {
+      method: 'POST',
+      body: { endpoint },
+    }),
   testNotification: () =>
     request<{ ok: boolean; tokens: number; result: unknown }>('/notifications/test', {
       method: 'POST',
