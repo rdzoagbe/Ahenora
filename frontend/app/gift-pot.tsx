@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Platform, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { ChevronLeft, Gift, Check } from 'lucide-react-native';
+import { ChevronLeft, Gift, Check, Users, Link2 } from 'lucide-react-native';
 
 import { PressScale } from '../src/components/PressScale';
 import { useUI, UIColors } from '../src/components/Kit';
@@ -107,6 +107,42 @@ export default function GiftPotRoute() {
     finally { setBusy(false); }
   }, [pot]);
 
+  const [shareMsg, setShareMsg] = useState<string | null>(null);
+  const potLink = (token: string) => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      return `${window.location.origin}/app/pot/${token}`;
+    }
+    return `https://ahenora.com/app/pot/${token}`;
+  };
+
+  // Turn on (or reuse) the share link and hand it out — the outer circle.
+  const inviteOthers = useCallback(async () => {
+    if (!pot) return;
+    setBusy(true);
+    try {
+      const updated = pot.share_token ? pot : await api.shareGiftPot(pot.pot_id);
+      setPot(updated);
+      const url = potLink(updated.share_token as string);
+      if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) {
+        await navigator.clipboard.writeText(url);
+        setShareMsg(t('gp_link_copied'));
+      } else {
+        await Share.share({ message: `${t('gp_share_message', { title: updated.title })}\n\n${url}`, url });
+      }
+    } catch (e) {
+      if ((e as { status?: number })?.status === 402) promptUpgrade('gift_pot');
+      else logger.warn('share pot failed', e);
+    } finally {
+      setBusy(false);
+    }
+  }, [pot, t, promptUpgrade]);
+
+  const togglePaid = useCallback(async (contribId: string, paid: boolean) => {
+    if (!pot) return;
+    try { setPot(await api.setContributionPaid(pot.pot_id, contribId, paid)); }
+    catch (e) { logger.warn('mark paid failed', e); }
+  }, [pot]);
+
   const goBack = () => (router.canGoBack() ? router.back() : router.replace('/(tabs)/feed'));
 
   if (!ready) return <SafeAreaView style={styles.safe} edges={['top', 'bottom', 'left', 'right']} />;
@@ -162,13 +198,37 @@ export default function GiftPotRoute() {
             {pot.contributions.length === 0 ? (
               <Text style={styles.emptyRow}>{t('gp_nobody_yet')}</Text>
             ) : pot.contributions.map((c) => (
-              <View key={c.user_id} style={styles.row}>
+              <View key={c.contrib_id} style={styles.row}>
                 <View style={styles.avatar}><Text style={styles.avatarText}>{(c.name || '?').slice(0, 1).toUpperCase()}</Text></View>
-                <Text style={styles.rowName} numberOfLines={1}>{c.name}</Text>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.rowName} numberOfLines={1}>
+                    {c.name}{c.source === 'link' ? <Text style={styles.viaLink}>  · {t('gp_via_link')}</Text> : null}
+                  </Text>
+                  {c.method ? <Text style={styles.rowMethod}>{t(`gp_method_${c.method}`)}</Text> : null}
+                </View>
                 <Text style={styles.rowAmount}>{t('gp_money', { amount: String(c.amount) })}</Text>
+                {/* The organiser marks who has actually settled up. */}
+                <PressScale
+                  testID={`gift-pot-paid-${c.contrib_id}`}
+                  onPress={() => togglePaid(c.contrib_id, !c.paid)}
+                  style={[styles.paidToggle, c.paid && styles.paidToggleOn]}
+                  accessibilityLabel={c.paid ? t('gp_paid') : t('gp_mark_paid')}
+                >
+                  <Check color={c.paid ? '#fff' : ui.muted} size={14} />
+                </PressScale>
               </View>
             ))}
           </View>
+
+          {/* Invite others — the outer circle. Anyone with the link can chip in
+              without joining the household. */}
+          {pot.status !== 'closed' ? (
+            <PressScale testID="gift-pot-invite" onPress={inviteOthers} disabled={busy} style={styles.inviteBtn}>
+              {pot.shared ? <Link2 color={ui.orangeText} size={16} /> : <Users color={ui.orangeText} size={16} />}
+              <Text style={styles.inviteBtnText}>{pot.shared ? t('gp_copy_link') : t('gp_invite_others')}</Text>
+            </PressScale>
+          ) : null}
+          {shareMsg ? <Text style={styles.shareMsg}>{shareMsg}</Text> : null}
 
           {/* Chip in */}
           {pot.status !== 'closed' ? (
@@ -248,6 +308,13 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   avatarText: { color: '#fff', fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
   rowName: { flex: 1, color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
   rowAmount: { color: ui.orangeText, fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
+  rowMethod: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 11.5, marginTop: 1 },
+  viaLink: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 11 },
+  paidToggle: { width: 26, height: 26, borderRadius: 13, borderWidth: 1.5, borderColor: ui.line, alignItems: 'center', justifyContent: 'center', marginLeft: 10 },
+  paidToggleOn: { backgroundColor: ui.mintText, borderColor: ui.mintText },
+  inviteBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: ui.orangeSoft, borderWidth: 1, borderColor: ui.orange, paddingVertical: 13, borderRadius: 14, marginBottom: 8 },
+  inviteBtnText: { color: ui.orangeText, fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
+  shareMsg: { color: ui.mintText, fontFamily: 'Inter_600SemiBold', fontSize: 12.5, textAlign: 'center', marginBottom: 12 },
 
   chipLabel: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 14, marginBottom: 10 },
   chipRow: { flexDirection: 'row', gap: 10 },

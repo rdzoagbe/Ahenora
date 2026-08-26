@@ -103,6 +103,7 @@ function RootNavigator() {
         <Stack.Screen name="member" />
         <Stack.Screen name="conversation" />
         <Stack.Screen name="gift-pot" />
+        <Stack.Screen name="pot/[token]" />
         <Stack.Screen name="+not-found" />
       </Stack>
     </>

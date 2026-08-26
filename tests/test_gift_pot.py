@@ -9,6 +9,7 @@ trusted for in the test double are done in Python in the endpoints.
 Run with:  python3 -m unittest discover -s tests -v
 """
 import asyncio
+import json
 import os
 import sys
 import unittest
@@ -239,3 +240,160 @@ class YearlyRecurrence(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(HAVE, "backend deps not installed")
+class GiftPotSharing(unittest.TestCase):
+    """Phase B — the outer circle: a share link that lets extended family and
+    friends (no household account) contribute to ONE pot and see nothing else.
+    These are the security-critical tests: the public view is an allow-list, so
+    prove it leaks nothing about the household, and that the token scopes access
+    to exactly one pot."""
+
+    def setUp(self):
+        self.db = FakeDatabase()
+        self._get_db = server.get_db
+        server.get_db = lambda: self.db
+        self._had_rc = os.environ.get("RC_WEBHOOK_SECRET")
+        os.environ["RC_WEBHOOK_SECRET"] = "gift-pot-test"
+        run(self._seed())
+
+    def tearDown(self):
+        server.get_db = self._get_db
+        if self._had_rc is None:
+            os.environ.pop("RC_WEBHOOK_SECRET", None)
+        else:
+            os.environ["RC_WEBHOOK_SECRET"] = self._had_rc
+
+    async def _seed(self):
+        await self.db["families"].insert_one({
+            "family_id": "fam1", "plan": "executive", "billing_cycle": "monthly",
+            "grandfathered": False, "updated_at": server.utcnow()})
+        await self.db["users"].insert_one(
+            {"user_id": "u_r", "family_id": "fam1", "name": "Roland Mensah"})
+        await self.db["family_members"].insert_one(
+            {"member_id": "m_r", "family_id": "fam1", "user_id": "u_r",
+             "name": "Roland Mensah", "role": "Parent"})
+
+    def _org(self):
+        return {"user_id": "u_r", "family_id": "fam1", "name": "Roland Mensah"}
+
+    def _make_shared_pot(self):
+        pot = run(server.create_gift_pot(
+            server.GiftPotIn(title="Ama", per_head=10, target_total=50,
+                             note="Let's get her the scooter"), self._org()))
+        shared = run(server.share_gift_pot(pot["pot_id"], self._org()))
+        return shared
+
+    # --- sharing lifecycle ------------------------------------------------
+    def test_share_mints_a_token_and_is_stable(self):
+        pot = self._make_shared_pot()
+        self.assertTrue(pot["share_token"])
+        self.assertTrue(pot["shared"])
+        again = run(server.share_gift_pot(pot["pot_id"], self._org()))
+        self.assertEqual(again["share_token"], pot["share_token"])   # reused, not rotated
+
+    def test_unshare_kills_the_public_link(self):
+        pot = self._make_shared_pot()
+        token = pot["share_token"]
+        self.assertTrue(run(server.view_shared_pot(token)))          # works while shared
+        run(server.unshare_gift_pot(pot["pot_id"], self._org()))
+        with self.assertRaises(server.HTTPException) as e:
+            run(server.view_shared_pot(token))
+        self.assertEqual(e.exception.status_code, 404)
+
+    # --- the public view leaks NOTHING about the household ---------------
+    def test_public_view_is_a_minimal_allowlist(self):
+        pot = self._make_shared_pot()
+        # an outsider joins with an amount
+        run(server.join_shared_pot(pot["share_token"],
+            server.PotJoinIn(name="Auntie Efua", amount=25, method="transfer")))
+        view = run(server.view_shared_pot(pot["share_token"]))
+        allowed = {"title", "occasion", "per_head", "target_total", "total_pledged",
+                   "contributor_count", "status", "note", "organiser_name", "contributors"}
+        self.assertEqual(set(view.keys()), allowed)     # exactly these, nothing more
+        # none of the household internals ever appear
+        blob = json.dumps(view)
+        for leak in ("fam1", "u_r", "m_r", "family_id", "card_id", "for_member_id",
+                     "pot_id", "share_token", "user_id"):
+            self.assertNotIn(leak, blob, f"public view leaked {leak}")
+        # first names only — no surname
+        self.assertEqual(view["organiser_name"], "Roland")
+        # who's in is shown, but NOT how much each gave
+        self.assertEqual(view["contributors"], [{"name": "Auntie", "paid": False}])
+        self.assertEqual(view["total_pledged"], 25)     # the total is fine to show
+
+    def test_a_token_unlocks_only_its_own_pot(self):
+        p1 = self._make_shared_pot()
+        p2 = run(server.create_gift_pot(server.GiftPotIn(title="Kofi", per_head=5), self._org()))
+        p2 = run(server.share_gift_pot(p2["pot_id"], self._org()))
+        self.assertEqual(run(server.view_shared_pot(p1["share_token"]))["title"], "Ama")
+        self.assertEqual(run(server.view_shared_pot(p2["share_token"]))["title"], "Kofi")
+
+    def test_an_empty_or_unknown_token_never_leaks_an_unshared_pot(self):
+        run(server.create_gift_pot(server.GiftPotIn(title="Unshared"), self._org()))
+        for bad in ("", "   ", "nope-not-a-token"):
+            with self.assertRaises(server.HTTPException) as e:
+                run(server.view_shared_pot(bad))
+            self.assertEqual(e.exception.status_code, 404)
+
+    # --- external contribution --------------------------------------------
+    def test_an_outsider_can_join_with_just_a_name(self):
+        pot = self._make_shared_pot()
+        run(server.join_shared_pot(pot["share_token"],
+            server.PotJoinIn(name="Cousin Yaw", amount=15, method="cash")))
+        # organiser sees the full row, with source 'link' and no user_id
+        org = run(server.get_gift_pot(pot["pot_id"], self._org()))
+        link_rows = [c for c in org["contributions"] if c["source"] == "link"]
+        self.assertEqual(len(link_rows), 1)
+        self.assertEqual(link_rows[0]["name"], "Cousin Yaw")
+        self.assertEqual(link_rows[0]["amount"], 15)
+        self.assertEqual(link_rows[0]["method"], "cash")
+        self.assertIsNone(link_rows[0]["user_id"])
+        self.assertFalse(link_rows[0]["paid"])
+
+    def test_joining_is_ungated_works_regardless_of_plan(self):
+        # Even if the household were free, an already-shared pot must accept
+        # outsiders — the outsider has no plan; the gate was on the organiser.
+        pot = self._make_shared_pot()
+        run(self.db["families"].update_one({"family_id": "fam1"}, {"$set": {"plan": "village"}}))
+        self.assertTrue(run(server.join_shared_pot(pot["share_token"],
+            server.PotJoinIn(name="Neighbour", amount=10))))
+
+    def test_a_closed_pot_refuses_new_outsiders(self):
+        pot = self._make_shared_pot()
+        run(server.close_gift_pot(pot["pot_id"], self._org()))
+        with self.assertRaises(server.HTTPException) as e:
+            run(server.join_shared_pot(pot["share_token"], server.PotJoinIn(name="Late", amount=5)))
+        self.assertEqual(e.exception.status_code, 409)
+
+    # --- the organiser runs the money side --------------------------------
+    def test_organiser_marks_a_pledge_paid_and_the_public_view_reflects_it(self):
+        pot = self._make_shared_pot()
+        run(server.join_shared_pot(pot["share_token"],
+            server.PotJoinIn(name="Auntie Efua", amount=25)))
+        org = run(server.get_gift_pot(pot["pot_id"], self._org()))
+        cid = org["contributions"][0]["contrib_id"]
+        run(server.set_contribution_paid(pot["pot_id"], cid, server.GiftPaidIn(paid=True), self._org()))
+        org = run(server.get_gift_pot(pot["pot_id"], self._org()))
+        self.assertTrue(org["contributions"][0]["paid"])
+        self.assertEqual(org["paid_total"], 25)
+        # the public view shows 'in & paid' but still no amount
+        view = run(server.view_shared_pot(pot["share_token"]))
+        self.assertEqual(view["contributors"][0], {"name": "Auntie", "paid": True})
+
+    def test_organiser_can_remove_a_bogus_pledge(self):
+        pot = self._make_shared_pot()
+        run(server.join_shared_pot(pot["share_token"], server.PotJoinIn(name="Spam", amount=999)))
+        org = run(server.get_gift_pot(pot["pot_id"], self._org()))
+        cid = org["contributions"][0]["contrib_id"]
+        run(server.remove_contribution(pot["pot_id"], cid, self._org()))
+        self.assertEqual(run(server.get_gift_pot(pot["pot_id"], self._org()))["contributor_count"], 0)
+
+    def test_outsider_cannot_reach_household_endpoints(self):
+        # There is simply no unauthenticated path to get_gift_pot / list — they
+        # require a member. This documents that the ONLY public surface is the
+        # token view/join.
+        pot = self._make_shared_pot()
+        with self.assertRaises(Exception):
+            run(server.get_gift_pot(pot["pot_id"], {"user_id": "x", "family_id": "other"}))
