@@ -25,6 +25,7 @@ try:
 except ImportError:
     AsyncIOMotorClient = None
 from google.oauth2 import id_token as google_id_token
+import apple_auth
 from google.auth.transport.requests import Request as GoogleRequest
 try:
     from google import genai
@@ -406,6 +407,14 @@ def advance_due_date(dt: datetime, recurrence: str) -> datetime:
                 return dt.replace(year=year, month=month, day=day)
             except ValueError:
                 continue
+    if recurrence == "yearly":
+        # Birthdays and anniversaries. A Feb-29 date lands on Feb 28 in a
+        # common year rather than skipping the occurrence entirely.
+        for day in (dt.day, 28):
+            try:
+                return dt.replace(year=dt.year + 1, day=day)
+            except ValueError:
+                continue
     return dt
 
 
@@ -762,6 +771,10 @@ PLAN_CATALOG = {
             "weekly_report": False,
             "helper_accounts": False,
             "priority_support": False,
+            # The gift pot (pooling for a birthday/occasion) is a Family feature.
+            # The birthday REMINDER itself is a plain card and stays free — only
+            # the pot that pools contributions is gated.
+            "gift_pot": False,
         },
     },
     # The middle tier — shown as "Family". The stored id stays "executive" so
@@ -783,6 +796,7 @@ PLAN_CATALOG = {
             "weekly_report": True,
             "helper_accounts": False,
             "priority_support": False,
+            "gift_pot": True,
         },
     },
     # The top tier — "Household". For two homes and bigger, blended or
@@ -805,6 +819,7 @@ PLAN_CATALOG = {
             "weekly_report": True,
             "helper_accounts": True,
             "priority_support": True,
+            "gift_pot": True,
         },
     },
 }
@@ -829,6 +844,7 @@ PREMIUM_FEATURE_MESSAGES = {
     "carpool": "Carpool Coordinator is available on Premium.",
     "weekly_report": "Weekly Report is available on Premium.",
     "helper_accounts": "Helper and carer accounts are available on the Household plan.",
+    "gift_pot": "The Gift Pot is available on Family.",
 }
 
 
@@ -3218,7 +3234,7 @@ _FAMILY_SCOPED_COLLECTIONS = (
     "cards", "carpools", "chore_logs", "chores", "expenses", "family_invites",
     "family_members", "handoff_notes", "meal_plans_saved", "meals", "redemptions",
     "rewards", "routine_logs", "routines", "shopping_history", "shopping_list",
-    "star_transactions", "templates", "vault", "expense_settlements",
+    "star_transactions", "templates", "vault", "expense_settlements", "gift_pots",
 )
 
 
@@ -3521,6 +3537,130 @@ async def exchange_session(payload: SessionIn):
         }
     )
 
+    return {"user": public_user(user), "session_token": raw_session}
+
+
+class AppleSessionIn(BaseModel):
+    identity_token: str
+    # Apple gives the name ONLY on the very first authorisation, so the app
+    # forwards it then; afterwards we already have it stored.
+    full_name: Optional[str] = None
+    invite_token: Optional[str] = None
+    language: Optional[str] = None
+
+
+@app.post("/api/auth/apple")
+async def exchange_apple_session(payload: AppleSessionIn):
+    """Sign in with Apple — required by App Store rule 4.8 in any app that also
+    offers Google sign-in, so this gates the iOS release.
+
+    Mirrors the Google flow: verify the token is genuinely Apple's, then find or
+    create the account. Two Apple-specific wrinkles are handled here. First,
+    Apple's Hide My Email gives a private relay address that is still a real,
+    verified inbox — treated like any other verified email. Second, the person's
+    name arrives only on first authorisation, so it is stored then and never
+    overwritten with a blank on later sign-ins.
+    """
+    database = get_db()
+    audiences = [a for a in (
+        os.environ.get("APPLE_BUNDLE_ID") or "com.householdcoo.app",
+        os.environ.get("APPLE_SERVICES_ID") or "",
+    ) if a]
+    try:
+        claims = await asyncio.wait_for(
+            asyncio.to_thread(apple_auth.verify_apple_identity_token,
+                              payload.identity_token, audiences),
+            timeout=10,
+        )
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="Timed out reaching Apple to verify sign-in")
+    except ValueError as e:
+        # Specific reason in the log, generic message to the client.
+        log.warning("Apple token verification failed: %s", e)
+        raise HTTPException(status_code=401, detail="Could not verify Apple sign-in. Please try again.")
+
+    apple_sub = claims["sub"]
+    email = (claims.get("email") or "").strip().lower()
+    # Apple sends email_verified as the string "true" or a bool depending on the
+    # flow; accept both. A private-relay address is verified by construction.
+    verified_raw = claims.get("email_verified")
+    email_verified = verified_raw is True or str(verified_raw).lower() == "true"
+    name = (payload.full_name or "").strip() or (email.split("@")[0] if email else "Parent")
+
+    invite, target_family_id = None, None
+    if payload.invite_token:
+        invite = await database["family_invites"].find_one(
+            {"token": payload.invite_token}, {"_id": 0})
+        if not invite:
+            raise HTTPException(status_code=404, detail="Invite not found")
+        if invite.get("expires_at") and _expired(invite["expires_at"]):
+            await database["family_invites"].update_one(
+                {"invite_id": invite["invite_id"]},
+                {"$set": {"status": "expired", "updated_at": utcnow()}})
+            raise HTTPException(status_code=410, detail="Invite has expired")
+        if invite.get("status") == "accepted" and invite.get("accepted_by_email") != email:
+            raise HTTPException(status_code=409, detail="Invite has already been accepted")
+        target_family_id = invite["family_id"]
+
+    user = await database["users"].find_one({"apple_sub": apple_sub}, {"_id": 0})
+
+    if not user and email and email_verified:
+        # Same rule as Google: never mint a second row for an inbox that already
+        # has an account — link Apple to it instead, so an email/password user
+        # who later taps "Sign in with Apple" lands in their own household.
+        existing = await database["users"].find_one({"email": email}, {"_id": 0})
+        if existing:
+            await database["users"].update_one(
+                {"user_id": existing["user_id"]},
+                {"$set": {"apple_sub": apple_sub, "updated_at": utcnow()}})
+            user = {**existing, "apple_sub": apple_sub}
+
+    if not user:
+        family_id = target_family_id or new_id("family")
+        user = {
+            "user_id": new_id("user"),
+            "apple_sub": apple_sub,
+            "email": email,
+            "name": name,
+            "picture": None,
+            "family_id": family_id,
+            "language": payload.language if payload.language in ("en", "es", "fr", "de") else "en",
+            "onboarding_completed": False,
+            "created_at": utcnow(),
+            "updated_at": utcnow(),
+        }
+        await database["users"].insert_one(user)
+        if not target_family_id:
+            await _seed_new_family(database, user, family_id, email, name)
+        else:
+            await add_user_to_family_if_needed(database, user, target_family_id,
+                                               invite_member_role(invite))
+    else:
+        # Never blank a stored name: Apple only sends it the first time.
+        updates = {"updated_at": utcnow()}
+        if email:
+            updates["email"] = email
+        if payload.full_name and not (user.get("name") or "").strip():
+            updates["name"] = payload.full_name.strip()
+        old_family_id = user.get("family_id")
+        if target_family_id:
+            updates["family_id"] = target_family_id
+        await database["users"].update_one({"user_id": user["user_id"]}, {"$set": updates})
+        user = await database["users"].find_one({"user_id": user["user_id"]}, {"_id": 0})
+        if target_family_id:
+            await add_user_to_family_if_needed(database, user, target_family_id,
+                                               invite_member_role(invite))
+            await _bring_children_along(database, old_family_id, target_family_id)
+
+    if invite:
+        await database["family_invites"].update_one(
+            {"invite_id": invite["invite_id"]},
+            {"$set": {"status": "accepted", "accepted_at": utcnow(),
+                      "accepted_by_user_id": user["user_id"],
+                      "accepted_by_email": email, "updated_at": utcnow()}})
+        await notify_invite_accepted(database, invite, user.get("name") or email)
+
+    raw_session = await _issue_session(database, user["user_id"])
     return {"user": public_user(user), "session_token": raw_session}
 
 
@@ -7219,7 +7359,7 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
     if (
         changes.get("status") == "DONE"
         and card["status"] != "DONE"
-        and card.get("recurrence") in {"daily", "weekly", "monthly"}
+        and card.get("recurrence") in {"daily", "weekly", "monthly", "yearly"}
     ):
         base_due = ensure_aware_utc(card.get("due_date")) or utcnow()
         next_doc = {
@@ -8959,6 +9099,7 @@ async def get_entitlements(user=Depends(require_user)):
             "allowance": sub["limits"].get("allowance", False),
             "carpool": sub["limits"].get("carpool", False),
             "weekly_report": sub["limits"].get("weekly_report", False),
+            "gift_pot": sub["limits"].get("gift_pot", False),
         },
     }
 
@@ -9999,6 +10140,271 @@ async def settle_up(user=Depends(require_full_member)):
         "created_at": utcnow(),
     })
     return await compute_settlement(database, user["family_id"], me)
+
+
+# -----------------------------------------------------------------------------
+# The Gift Pot — pool for a birthday (or other occasion). A Family feature.
+# -----------------------------------------------------------------------------
+# Coordination, not a bank: the pot tracks who is chipping in and how much toward
+# one shared gift, so a family buys one good present instead of five small ones.
+# It moves no money — like settle-up, it keeps the tally honest and lets people
+# square up however they already do. The birthday REMINDER (a BIRTHDAY card) is
+# free; only the pool that this collects is gated to Family.
+
+class GiftPotIn(BaseModel):
+    # The pot usually hangs off a BIRTHDAY card, but can stand alone.
+    card_id: Optional[str] = None
+    # Whose occasion it is. When this member has an account, the pot is hidden
+    # from them — it is their surprise.
+    for_member_id: Optional[str] = None
+    title: str = ""                      # e.g. "Ama" — denormalised for display
+    occasion: str = "birthday"
+    per_head: float = Field(default=10.0, ge=0, le=1_000_000)
+    target_total: Optional[float] = Field(default=None, ge=0, le=1_000_000)
+    note: Optional[str] = None
+
+
+class GiftChipIn(BaseModel):
+    amount: float = Field(ge=0, le=1_000_000)
+
+
+async def _celebrant_user_id(database, family_id: str, member_id: Optional[str]) -> Optional[str]:
+    """The account (if any) of the member the pot is FOR, so we can hide their
+    own surprise from them. A young child has no account → None → nothing hidden."""
+    if not member_id:
+        return None
+    m = await database["family_members"].find_one(
+        {"family_id": family_id, "member_id": member_id}, {"_id": 0, "user_id": 1})
+    return (m or {}).get("user_id")
+
+
+async def _celebrant_from_card(database, family_id: str, card: Optional[dict]) -> Optional[str]:
+    """Whose birthday a BIRTHDAY card is for, resolved to an account so the pot
+    can be hidden from them. The privacy control can't depend on the client
+    saying who it is — the client doesn't know (a BIRTHDAY card carries only a
+    title and an optional assignee). So we resolve it here: an explicit assignee
+    first, then a family member whose name appears as a whole word in the title
+    ("Keigh's birthday" → Keigh). A child matches too but has no account, so
+    resolves to None — their pot is rightly visible to both parents."""
+    if not card:
+        return None
+    assignee = (card.get("assignee") or "").strip()
+    if assignee:
+        uid = await resolve_member_user_id(database, family_id, assignee)
+        if uid:
+            return uid
+    title = (card.get("title") or "").lower()
+    if not title:
+        return None
+    async for m in database["family_members"].find({"family_id": family_id}, {"_id": 0}):
+        uid = m.get("user_id")
+        nm = (m.get("name") or "").strip().lower()
+        if uid and nm and re.search(r"\b" + re.escape(nm) + r"\b", title):
+            return uid
+    return None
+
+
+def public_gift_pot(pot: dict, viewer_user_id: str) -> dict:
+    contributions = pot.get("contributions") or []
+    total = round(sum(float(c.get("amount") or 0) for c in contributions), 2)
+    target = pot.get("target_total")
+    return {
+        "pot_id": pot["pot_id"],
+        "family_id": pot["family_id"],
+        "card_id": pot.get("card_id"),
+        "for_member_id": pot.get("for_member_id"),
+        "title": pot.get("title") or "",
+        "occasion": pot.get("occasion") or "birthday",
+        "per_head": round(float(pot.get("per_head") or 0), 2),
+        "target_total": round(float(target), 2) if target is not None else None,
+        "status": pot.get("status") or "open",
+        "note": pot.get("note"),
+        "contributions": [
+            {"user_id": c.get("user_id"), "name": c.get("name") or "",
+             "amount": round(float(c.get("amount") or 0), 2), "at": iso(c.get("at"))}
+            for c in contributions
+        ],
+        "total_pledged": total,
+        "contributor_count": len(contributions),
+        # Whether THIS viewer has already chipped in, and how much — so the app
+        # can render "Chip in" vs "Update your €10" without extra logic.
+        "your_amount": next((round(float(c.get("amount") or 0), 2)
+                             for c in contributions if c.get("user_id") == viewer_user_id), None),
+        "created_by_user_id": pot.get("created_by_user_id"),
+        "created_by_name": pot.get("created_by_name"),
+        "created_at": iso(pot.get("created_at")),
+        "updated_at": iso(pot.get("updated_at")),
+    }
+
+
+async def _visible_pots(database, family_id: str, viewer_user_id: str) -> list:
+    """Every pot in the household the viewer is allowed to see — i.e. not the
+    ones celebrating the viewer themselves (their own surprise). fake_mongo does
+    not evaluate $ne reliably, so the celebrant filter is done in Python."""
+    out = []
+    async for pot in database["gift_pots"].find({"family_id": family_id}, {"_id": 0}):
+        if pot.get("for_user_id") and pot["for_user_id"] == viewer_user_id:
+            continue
+        out.append(pot)
+    out.sort(key=lambda p: p.get("created_at") or utcnow(), reverse=True)
+    return out
+
+
+@app.get("/api/gift-pots")
+async def list_gift_pots(user=Depends(require_full_member)):
+    """Read is ungated so the app can always show what exists (a free family
+    simply has none — creating one is the gated step). Excludes any pot that
+    would spoil the viewer's own surprise."""
+    database = get_db()
+    pots = await _visible_pots(database, user["family_id"], user["user_id"])
+    return [public_gift_pot(p, user["user_id"]) for p in pots]
+
+
+@app.get("/api/gift-pots/{pot_id}")
+async def get_gift_pot(pot_id: str, user=Depends(require_full_member)):
+    database = get_db()
+    pot = await database["gift_pots"].find_one(
+        {"pot_id": pot_id, "family_id": user["family_id"]}, {"_id": 0})
+    if not pot:
+        raise HTTPException(404, "Gift pot not found")
+    if pot.get("for_user_id") and pot["for_user_id"] == user["user_id"]:
+        # Their own surprise — pretend it does not exist rather than 403 (which
+        # would itself reveal that a pot is being planned for them).
+        raise HTTPException(404, "Gift pot not found")
+    return public_gift_pot(pot, user["user_id"])
+
+
+@app.post("/api/gift-pots")
+async def create_gift_pot(payload: GiftPotIn, user=Depends(require_full_member)):
+    await require_feature(user, "gift_pot")
+    database = get_db()
+    family_id = user["family_id"]
+
+    title = (payload.title or "").strip()[:80]
+    card = None
+    if payload.card_id:
+        card = await database["cards"].find_one(
+            {"card_id": payload.card_id, "family_id": family_id}, {"_id": 0})
+        if not card:
+            raise HTTPException(404, "Card not found")
+        # One pot per card — do not let two co-parents open rival pots for the
+        # same birthday.
+        existing = await database["gift_pots"].find_one(
+            {"family_id": family_id, "card_id": payload.card_id}, {"_id": 0})
+        if existing:
+            # The dedup must not become a side-door onto the surprise: if this
+            # is the celebrant, give them the same 404 as everywhere else.
+            if existing.get("for_user_id") and existing["for_user_id"] == user["user_id"]:
+                raise HTTPException(404, "Gift pot not found")
+            return public_gift_pot(existing, user["user_id"])
+        if not title:
+            title = (card.get("title") or "").strip()[:80]
+
+    # Resolve the celebrant so their own surprise can be hidden from them. An
+    # explicit for_member_id wins; otherwise derive it from the birthday card.
+    for_user_id = await _celebrant_user_id(database, family_id, payload.for_member_id)
+    if not for_user_id and card:
+        for_user_id = await _celebrant_from_card(database, family_id, card)
+    now = utcnow()
+    doc = {
+        "pot_id": new_id("pot"),
+        "family_id": family_id,
+        "card_id": payload.card_id,
+        "for_member_id": payload.for_member_id,
+        "for_user_id": for_user_id,
+        "title": title,
+        "occasion": (payload.occasion or "birthday").strip()[:40],
+        "per_head": round(float(payload.per_head), 2),
+        "target_total": round(float(payload.target_total), 2) if payload.target_total is not None else None,
+        "status": "open",
+        "note": sanitize_message_text(payload.note or "", 300).strip() or None,
+        "contributions": [],
+        # Optimistic-concurrency counter — bumped by every write to contributions
+        # or status, so two co-parents chipping in at once can't clobber each
+        # other via a read-modify-write from a stale copy (see chip_in).
+        "rev": 0,
+        "created_by_user_id": user["user_id"],
+        "created_by_name": user.get("name", ""),
+        "created_at": now,
+        "updated_at": now,
+    }
+    await database["gift_pots"].insert_one(doc)
+    return public_gift_pot(doc, user["user_id"])
+
+
+@app.post("/api/gift-pots/{pot_id}/chip-in")
+async def chip_in_gift_pot(pot_id: str, payload: GiftChipIn, user=Depends(require_full_member)):
+    await require_feature(user, "gift_pot")
+    database = get_db()
+    me = user["user_id"]
+    amount = round(float(payload.amount), 2)
+
+    # Compare-and-set on `rev`: read, rebuild this person's single pledge, then
+    # write only if the pot hasn't changed underneath us. Two co-parents
+    # chipping in from the same reminder can't lose each other's pledge (a plain
+    # read-modify-write of the whole array would), and a chip-in racing a close
+    # fails the rev check, re-reads, and sees the 409. fake_mongo is
+    # single-threaded so the loop settles first try there.
+    for _ in range(6):
+        pot = await database["gift_pots"].find_one(
+            {"pot_id": pot_id, "family_id": user["family_id"]}, {"_id": 0})
+        if not pot:
+            raise HTTPException(404, "Gift pot not found")
+        if pot.get("for_user_id") and pot["for_user_id"] == me:
+            raise HTTPException(404, "Gift pot not found")   # don't reveal the surprise
+        if pot.get("status") == "closed":
+            raise HTTPException(409, "This gift pot is closed.")
+
+        rev = pot.get("rev", 0)
+        # One pledge per person: chipping in again updates your amount rather
+        # than stacking a second; amount 0 withdraws it.
+        contributions = [c for c in (pot.get("contributions") or []) if c.get("user_id") != me]
+        if amount > 0:
+            contributions.append({"user_id": me, "name": user.get("name", ""),
+                                  "amount": amount, "at": utcnow()})
+        result = await database["gift_pots"].update_one(
+            {"pot_id": pot_id, "family_id": user["family_id"], "rev": rev},
+            {"$set": {"contributions": contributions, "updated_at": utcnow()},
+             "$inc": {"rev": 1}},
+        )
+        if result.matched_count:
+            pot["contributions"] = contributions
+            return public_gift_pot(pot, me)
+    # Lost the CAS six times running — extraordinarily unlikely outside a
+    # pathological hot loop; surface it rather than silently doing nothing.
+    raise HTTPException(409, "Please try again.")
+
+
+@app.post("/api/gift-pots/{pot_id}/close")
+async def close_gift_pot(pot_id: str, user=Depends(require_full_member)):
+    """Mark the pot filled/settled. Idempotent — closing an already-closed pot
+    is a no-op that returns it, so two co-parents tapping at once is harmless."""
+    await require_feature(user, "gift_pot")
+    database = get_db()
+    pot = await database["gift_pots"].find_one(
+        {"pot_id": pot_id, "family_id": user["family_id"]}, {"_id": 0})
+    if not pot:
+        raise HTTPException(404, "Gift pot not found")
+    if pot.get("status") != "closed":
+        # Bump rev too, so a chip-in that read this pot as still open before the
+        # close committed fails its compare-and-set and re-reads the 409.
+        await database["gift_pots"].update_one(
+            {"pot_id": pot_id, "family_id": user["family_id"]},
+            {"$set": {"status": "closed", "updated_at": utcnow()}, "$inc": {"rev": 1}},
+        )
+        pot["status"] = "closed"
+    return public_gift_pot(pot, user["user_id"])
+
+
+@app.delete("/api/gift-pots/{pot_id}")
+async def delete_gift_pot(pot_id: str, user=Depends(require_full_member)):
+    await require_feature(user, "gift_pot")
+    database = get_db()
+    result = await database["gift_pots"].delete_one(
+        {"pot_id": pot_id, "family_id": user["family_id"]})
+    if result.deleted_count == 0:
+        raise HTTPException(404, "Gift pot not found")
+    return {"ok": True}
 
 
 # -----------------------------------------------------------------------------

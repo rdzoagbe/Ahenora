@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Platform, Pressable, StyleSheet, Switch, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import * as Google from 'expo-auth-session/providers/google';
 import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import { CalendarDays, Car, CheckCircle2, ChevronLeft, ChevronRight, Clock, ExternalLink, Eye, Lock, MapPin, Plus, RefreshCw, Trash2, User, Users, Video, X, Pencil } from 'lucide-react-native';
+import { CalendarDays, Car, CheckCircle2, ChevronLeft, ChevronRight, Clock, ExternalLink, Eye, Gift, Lock, MapPin, Plus, RefreshCw, Trash2, User, Users, Video, X, Pencil } from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
@@ -15,7 +15,7 @@ import { logger } from '../../src/logger';
 import { TabScreen } from '../../src/components/TabScreen';
 import { Card as KitCard, IconTile, ScreenHeader, UI, useUI, UIColors } from '../../src/components/Kit';
 import { useStore } from '../../src/store';
-import { api, logEvent, CalendarImportResult, Card, Carpool } from '../../src/api';
+import { api, logEvent, CalendarImportResult, Card, Carpool, GiftPot } from '../../src/api';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { AddCardModal } from '../../src/components/AddCardModal';
 import AppToast from '../../src/components/AppToast';
@@ -140,6 +140,7 @@ export default function Calendar() {
   const { t, lang, dataVersion, user, subscription, refreshSubscription } = useStore();
   const { toast, showToast } = useToast();
   const { isLocked, promptUpgrade } = usePremiumGate();
+  const router = useRouter();
   const carpoolLocked = isLocked('carpool');
   const { width: windowWidth } = useWindowDimensions();
 
@@ -205,6 +206,9 @@ export default function Calendar() {
   const [activeMonth, setActiveMonth] = useState(() => new Date());
   const [selectedDay, setSelectedDay] = useState<string | null>(dateKey(new Date()));
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
+  // Gift pots keyed by the birthday card they belong to, so a BIRTHDAY row can
+  // show its pot's progress inline without a per-row fetch.
+  const [giftPotByCard, setGiftPotByCard] = useState<Record<string, GiftPot>>({});
   // The card being edited. Until now a card could not be corrected at all -
   // a typo, a date that moved, the wrong person - short of deleting it and
   // starting again, which took its history with it.
@@ -271,7 +275,7 @@ export default function Calendar() {
   const load = useCallback(async () => {
     logEvent('calendar_open');
     try {
-      const [cardsRes, carpoolRes, membersRes, sharedRes] = await Promise.allSettled([
+      const [cardsRes, carpoolRes, membersRes, sharedRes, potsRes] = await Promise.allSettled([
         api.listCards(), api.listCarpools(), api.familyMembers(),
         // The banner's number has to come from the same place the panel's
         // does. Counting `cards` looked equivalent and was not: /api/cards
@@ -280,8 +284,14 @@ export default function Calendar() {
         // undated ones, which the panel shows. Two numbers for one idea,
         // disagreeing one tap apart, on a privacy control.
         api.sharingSummary(),
+        api.listGiftPots().catch(() => []),
       ]);
       if (sharedRes.status === 'fulfilled') setShareCounts(sharedRes.value);
+      if (potsRes.status === 'fulfilled') {
+        const map: Record<string, GiftPot> = {};
+        for (const p of potsRes.value) if (p.card_id) map[p.card_id] = p;
+        setGiftPotByCard(map);
+      }
       if (cardsRes.status === 'fulfilled') setCards(cardsRes.value.filter((card) => card.status === 'OPEN' && card.due_date));
       if (carpoolRes.status === 'fulfilled') setCarpools(carpoolRes.value);
       if (membersRes.status === 'fulfilled') {
@@ -1128,7 +1138,20 @@ export default function Calendar() {
                         {card.source === 'CALENDAR' ? <CalendarDays color={ui.muted} size={12} /> : null}
                         <Text style={[styles.eventTitle, { flexShrink: 1 }]} numberOfLines={1}>{cleanText(card.title)}</Text>
                       </View>
-                      <Text style={styles.eventSub} numberOfLines={1}>{sub}</Text>
+                      {card.type === 'BIRTHDAY' && giftPotByCard[card.card_id] ? (
+                        <View style={styles.potChip}>
+                          <Gift color={ui.orangeText} size={11} />
+                          <Text style={styles.potChipText}>
+                            {t('gp_chip', {
+                              total: String(giftPotByCard[card.card_id].total_pledged),
+                              target: String(Math.round(giftPotByCard[card.card_id].target_total
+                                ?? giftPotByCard[card.card_id].per_head * Math.max(giftPotByCard[card.card_id].contributor_count, 2))),
+                            })}
+                          </Text>
+                        </View>
+                      ) : (
+                        <Text style={styles.eventSub} numberOfLines={1}>{sub}</Text>
+                      )}
                     </View>
                   </PressScale>
                 );
@@ -1305,6 +1328,23 @@ export default function Calendar() {
                 </PressScale>
               );
             })()}
+            {selectedCard.type === 'BIRTHDAY' ? (
+              <PressScale
+                testID="calendar-open-gift-pot"
+                onPress={() => {
+                  const card = selectedCard;
+                  setSelectedCard(null);
+                  router.push({ pathname: '/gift-pot',
+                    params: { cardId: card.card_id, name: cleanText(card.title) } } as never);
+                }}
+                style={styles.giftPotBtn}
+              >
+                <Gift color="#FFFFFF" size={18} />
+                <Text style={styles.giftPotBtnText}>
+                  {giftPotByCard[selectedCard.card_id] ? t('gp_open') : t('gp_start_cta')}
+                </Text>
+              </PressScale>
+            ) : null}
             <PressScale
               testID="calendar-complete-card"
               onPress={() => {
@@ -1533,6 +1573,8 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   eventBar: { width: 4, alignSelf: 'stretch', borderRadius: 99, minHeight: 34 },
   eventTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 15, lineHeight: 20 },
   eventSub: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, marginTop: 2 },
+  potChip: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4, alignSelf: 'flex-start', backgroundColor: ui.orangeSoft, borderRadius: 99, paddingHorizontal: 8, paddingVertical: 2 },
+  potChipText: { color: ui.orangeText, fontFamily: 'Inter_800ExtraBold', fontSize: 11 },
 
   detailSheet: { backgroundColor: ui.card, borderTopLeftRadius: 30, borderTopRightRadius: 30, borderWidth: 1, borderColor: ui.line, padding: 24, paddingBottom: 110 },
   detailHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
@@ -1546,6 +1588,8 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   detailChipText: { flex: 1, color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 14, lineHeight: 20 },
   completeBtn: { marginTop: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, minHeight: 54, borderRadius: 99, backgroundColor: ui.orangeDeep },
   completeBtnText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 16 },
+  giftPotBtn: { marginTop: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, minHeight: 54, borderRadius: 99, backgroundColor: ui.orange },
+  giftPotBtnText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 16 },
   shareBtn: { marginTop: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 50, borderRadius: 99, borderWidth: 1.5, borderColor: ui.orange + '66', backgroundColor: ui.orangeSoft },
   shareBtnText: { color: ui.orangeText, fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
   sharedBadge: { marginTop: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 46, borderRadius: 99, backgroundColor: ui.mint },

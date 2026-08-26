@@ -185,6 +185,51 @@ export default function Landing() {
     router.replace('/feed');
   }, [inviteToken, router, setUserFromAuth]);
 
+  /** Sign in with Apple. Required by the App Store in any app that also offers
+   *  Google sign-in, and on iOS it is the button most people reach for. Apple
+   *  returns the person's name ONLY on the first authorisation, so it is passed
+   *  along when present and never sent blank on later sign-ins. */
+  const signInWithApple = useCallback(async () => {
+    if (signingIn) return;
+    setSigningIn(true);
+    try {
+      const AppleAuthentication = await import('expo-apple-authentication');
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+      if (!credential.identityToken) throw new Error('No identity token from Apple');
+      const full = [credential.fullName?.givenName, credential.fullName?.familyName]
+        .filter(Boolean).join(' ').trim();
+      const { api } = await import('../src/api');
+      const authResult = await api.exchangeAppleSession(
+        credential.identityToken, full || undefined, inviteToken || undefined);
+      await setUserFromAuth(authResult.user, authResult.session_token, 'apple');
+      router.replace('/feed');
+    } catch (e: any) {
+      // Cancelling the sheet is a choice, not an error.
+      if (e?.code === 'ERR_REQUEST_CANCELED') return;
+      logger.warn('apple sign-in failed', e);
+      Alert.alert(t('land_apple_failed_title'), t('land_apple_failed_msg'));
+    } finally {
+      setSigningIn(false);
+    }
+  }, [signingIn, inviteToken, router, setUserFromAuth, t]);
+
+  // Apple's button belongs only where Apple sign-in exists.
+  const [appleAvailable, setAppleAvailable] = useState(false);
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return;
+    let alive = true;
+    import('expo-apple-authentication')
+      .then((m) => m.isAvailableAsync())
+      .then((ok) => { if (alive) setAppleAvailable(!!ok); })
+      .catch(() => undefined);
+    return () => { alive = false; };
+  }, []);
+
   useEffect(() => {
     const handleGoogleResponse = async () => {
       if (!response || handledResponseRef.current) return;
@@ -472,6 +517,20 @@ export default function Landing() {
             ) : (
               /* New or unrecognised device: the full set of doors. */
               <>
+                {appleAvailable ? (
+                  <PressScale
+                    testID="apple-signin"
+                    onPress={signInWithApple}
+                    disabled={signingIn}
+                    style={[styles.cta, styles.appleCta, signingIn && styles.ctaDisabled]}
+                    accessibilityLabel={t('land_apple_signin')}
+                    accessibilityRole="button"
+                  >
+                    <Text style={styles.appleGlyph}></Text>
+                    <Text style={[styles.ctaText, { color: '#FFFFFF' }]}>{t('land_apple_signin')}</Text>
+                  </PressScale>
+                ) : null}
+
                 <PressScale
                   testID="google-signin"
                   onPress={signIn}
@@ -625,6 +684,8 @@ const styles = StyleSheet.create({
     marginBottom: 14,
     maxWidth: 340,
   },
+  appleCta: { backgroundColor: '#000000', borderWidth: 0 },
+  appleGlyph: { color: '#FFFFFF', fontSize: 17, marginTop: -2 },
   tourBtn: {
     flexDirection: 'row',
     alignItems: 'center',

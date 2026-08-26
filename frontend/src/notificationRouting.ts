@@ -15,6 +15,12 @@ export function targetForNotification(data: unknown): { pathname: string; params
       return d.thread
         ? { pathname: '/conversation', params: { thread: String(d.thread), title: String(d.title || '') } }
         : { pathname: '/(tabs)/feed' };
+    case 'gift_pot':
+      return d.pot_id
+        ? { pathname: '/gift-pot', params: { potId: String(d.pot_id) } }
+        : d.card_id
+          ? { pathname: '/gift-pot', params: { cardId: String(d.card_id), name: String(d.name || '') } }
+          : { pathname: '/(tabs)/feed' };
     case 'task_assigned':
     case 'new_card':
     case 'shared_card':

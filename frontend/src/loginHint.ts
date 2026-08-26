@@ -13,7 +13,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
  */
 export interface LoginHint {
   email: string;
-  method: 'google' | 'email';
+  method: 'google' | 'email' | 'apple';
 }
 
 const KEY = 'coo_last_login_hint';
@@ -33,7 +33,7 @@ export async function getLoginHint(): Promise<LoginHint | null> {
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (parsed && typeof parsed.email === 'string'
-      && (parsed.method === 'google' || parsed.method === 'email')) {
+      && (parsed.method === 'google' || parsed.method === 'email' || parsed.method === 'apple')) {
       return parsed as LoginHint;
     }
     return null;
