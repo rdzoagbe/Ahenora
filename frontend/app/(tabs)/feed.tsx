@@ -52,6 +52,7 @@ import { TabScreen } from '../../src/components/TabScreen';
 import { GettingStarted } from '../../src/components/GettingStarted';
 import { UpgradeBanner } from '../../src/components/UpgradeBanner';
 import { CoParentNudge } from '../../src/components/CoParentNudge';
+import { BirthdayGiftNudge } from '../../src/components/BirthdayGiftNudge';
 import { StreakChip } from '../../src/components/StreakChip';
 import { useStore } from '../../src/store';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
@@ -635,7 +636,16 @@ export default function Feed() {
     const priority = uniqueCards([...overdue, ...signSlips, ...todayCards, ...assignedToMe])
       .sort((a, b) => (dueTime(a) || Number.MAX_SAFE_INTEGER) - (dueTime(b) || Number.MAX_SAFE_INTEGER));
 
-    return { overdue, todayCards, signSlips, weekCards, next24h, calmScore, priority };
+    // The soonest birthday in the next fortnight — the trigger for the gift-pot
+    // nudge. Birthdays are BIRTHDAY cards with a due date, so nothing new is
+    // synthesised; this just finds the nearest one still ahead.
+    const nextBirthday = activeCards
+      .filter((card) => card.type === 'BIRTHDAY')
+      .map((card) => ({ card, time: dueTime(card) }))
+      .filter((x) => x.time != null && x.time >= now && x.time <= now + 14 * 24 * 60 * 60 * 1000)
+      .sort((a, b) => (a.time as number) - (b.time as number))[0]?.card || null;
+
+    return { overdue, todayCards, signSlips, weekCards, next24h, calmScore, priority, nextBirthday };
   }, [activeCards, assigned, user?.user_id]);
 
   const tabCards = useMemo(() => {
@@ -1021,6 +1031,20 @@ export default function Feed() {
               visible={members.length <= 1}
               onInvite={() => { requestInvite(); router.navigate('/(tabs)/settings' as never); }}
             />
+
+            {/* A birthday within the fortnight → offer to pool for one gift.
+                The reminder is free; starting the pot is where Family gates. */}
+            {dashboard.nextBirthday ? (
+              <BirthdayGiftNudge
+                cardId={dashboard.nextBirthday.card_id}
+                title={dashboard.nextBirthday.title}
+                days={Math.max(0, Math.ceil(((dueTime(dashboard.nextBirthday) || Date.now()) - Date.now()) / (24 * 60 * 60 * 1000)))}
+                onOpen={() => router.push({
+                  pathname: '/gift-pot',
+                  params: { cardId: dashboard.nextBirthday!.card_id, name: dashboard.nextBirthday!.title },
+                } as never)}
+              />
+            ) : null}
 
             {/* Quick templates */}
             {enabledTemplates.length > 0 ? (

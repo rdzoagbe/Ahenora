@@ -1100,6 +1100,7 @@ export interface Subscription {
     allowance: boolean;
     carpool: boolean;
     weekly_report: boolean;
+    gift_pot: boolean;
   };
   price_monthly: number;
   price_yearly: number;
@@ -1134,7 +1135,37 @@ export interface Entitlements {
     allowance: boolean;
     carpool: boolean;
     weekly_report: boolean;
+    gift_pot: boolean;
   };
+}
+
+export interface GiftContribution {
+  user_id: string;
+  name: string;
+  amount: number;
+  at: string | null;
+}
+
+export interface GiftPot {
+  pot_id: string;
+  family_id: string;
+  card_id: string | null;
+  for_member_id: string | null;
+  title: string;
+  occasion: string;
+  per_head: number;
+  target_total: number | null;
+  status: 'open' | 'closed';
+  note: string | null;
+  contributions: GiftContribution[];
+  total_pledged: number;
+  contributor_count: number;
+  /** What THIS viewer has already pledged (null if they haven't). */
+  your_amount: number | null;
+  created_by_user_id: string;
+  created_by_name: string;
+  created_at: string | null;
+  updated_at: string | null;
 }
 
 export interface PlanLimitError {
@@ -1457,6 +1488,38 @@ export const api = {
    *  never resolve optimistically while the item is still visible. */
   unshareCard: (id: string) =>
     request<Card>(`/cards/${id}/unshare`, { method: 'POST' }),
+
+  // ---- The Gift Pot (pool for a birthday/occasion; a Family feature) -------
+  listGiftPots: () => request<GiftPot[]>('/gift-pots'),
+  getGiftPot: (id: string) => request<GiftPot>(`/gift-pots/${id}`),
+  createGiftPot: (data: {
+    card_id?: string; for_member_id?: string; title?: string;
+    occasion?: string; per_head?: number; target_total?: number; note?: string;
+  }) => {
+    cache.invalidatePrefix('listGiftPots');
+    return request<GiftPot>('/gift-pots', { method: 'POST', body: data }).then((r) => {
+      cache.invalidatePrefix('listGiftPots');
+      return r;
+    });
+  },
+  chipInGiftPot: (id: string, amount: number) => {
+    cache.invalidatePrefix('listGiftPots');
+    return request<GiftPot>(`/gift-pots/${id}/chip-in`, { method: 'POST', body: { amount } }).then((r) => {
+      cache.invalidatePrefix('listGiftPots');
+      return r;
+    });
+  },
+  closeGiftPot: (id: string) => {
+    cache.invalidatePrefix('listGiftPots');
+    return request<GiftPot>(`/gift-pots/${id}/close`, { method: 'POST' }).then((r) => {
+      cache.invalidatePrefix('listGiftPots');
+      return r;
+    });
+  },
+  deleteGiftPot: (id: string) => {
+    cache.invalidatePrefix('listGiftPots');
+    return request<{ ok: boolean }>(`/gift-pots/${id}`, { method: 'DELETE' });
+  },
   /** What this build should compare itself against. Unauthenticated: a client
    *  too old to be updated may also be too old to sign in cleanly. */
   appVersionInfo: () =>

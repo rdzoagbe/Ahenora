@@ -531,6 +531,7 @@ const PLAN_THEMES: Record<
       'pf_prem_4',
       'pf_prem_5',
       'pf_prem_6',
+      'pf_prem_7',
     ],
   },
   household: {

@@ -10,7 +10,7 @@ import { localeFor } from '../utils/date';
 
 // Premium features gated behind paid plans (Executive+). Keep keys in sync with
 // the backend PLAN_CATALOG limit flags and PREMIUM_FEATURE_MESSAGES.
-export type PremiumFeature = 'meal_planner' | 'allowance' | 'carpool' | 'weekly_report';
+export type PremiumFeature = 'meal_planner' | 'allowance' | 'carpool' | 'weekly_report' | 'gift_pot';
 
 /**
  * Hook for premium feature gating. `isLocked(feature)` tells you whether the
