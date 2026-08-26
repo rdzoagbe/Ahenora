@@ -16,8 +16,12 @@
       "bundleIdentifier": "com.householdcoo.app",
       "infoPlist": {
         "NSCameraUsageDescription": "Ahenora uses the camera only when you choose Scan to capture household documents, school letters, appointment cards, or bills.",
-        "NSPhotoLibraryUsageDescription": "Ahenora uses your photo library only when you choose a photo to scan or attach to a household document."
-      }
+        "NSPhotoLibraryUsageDescription": "Ahenora uses your photo library only when you choose a photo to scan or attach to a household document.",
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSUserTrackingUsageDescription": "Ahenora does not track you across other apps or websites."
+      },
+      "usesAppleSignIn": true,
+      "buildNumber": "1"
     },
     "android": {
       "package": "com.householdcoo.app",

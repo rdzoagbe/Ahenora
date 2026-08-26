@@ -35,7 +35,7 @@ interface StoreState {
   refreshSubscription: () => Promise<void>;
   logout: () => Promise<void>;
   deleteAccount: (data: { password?: string; confirm?: boolean }) => Promise<void>;
-  setUserFromAuth: (user: User, token: string, method?: 'google' | 'email') => Promise<void>;
+  setUserFromAuth: (user: User, token: string, method?: 'google' | 'email' | 'apple') => Promise<void>;
   upgradePrompt: { feature: string; message: string } | null;
   showUpgradePrompt: (feature: string, message: string) => void;
   dismissUpgradePrompt: () => void;
@@ -282,7 +282,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return () => sub.remove();
   }, [user, refreshUnreadChats]);
 
-  const setUserFromAuth = useCallback(async (u: User, token: string, method?: 'google' | 'email') => {
+  const setUserFromAuth = useCallback(async (u: User, token: string, method?: 'google' | 'email' | 'apple') => {
     await tokenStore.set(token);
 
     const savedToken = await tokenStore.get();

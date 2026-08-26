@@ -1176,6 +1176,19 @@ export function logEvent(name: string): void {
 
 export const api = {
   // Auth
+  // Sign in with Apple — required by the App Store in any app that also offers
+  // Google sign-in. Apple hands over the name only on the FIRST authorisation,
+  // so it rides along when present and is never sent blank afterwards.
+  exchangeAppleSession: (identity_token: string, full_name?: string, invite_token?: string) =>
+    request<{ user: User; session_token: string }>('/auth/apple', {
+      method: 'POST',
+      body: {
+        identity_token,
+        ...(full_name ? { full_name } : {}),
+        ...(invite_token ? { invite_token } : {}),
+        language: detectDeviceLang(),
+      },
+    }),
   exchangeSession: (session_id: string, invite_token?: string) =>
     request<{ user: User; session_token: string }>('/auth/session', {
       method: 'POST',

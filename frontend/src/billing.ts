@@ -5,8 +5,9 @@
 // before the billing AAB exists.
 //
 // Store setup lives outside the code: products premium_monthly / premium_yearly
-// in Play Console, linked in RevenueCat with entitlement "premium", and the
-// public Android SDK key exposed as EXPO_PUBLIC_REVENUECAT_ANDROID_KEY.
+// in Play Console (and their App Store equivalents), linked in RevenueCat with
+// entitlement "premium", and the public SDK keys exposed as
+// EXPO_PUBLIC_REVENUECAT_ANDROID_KEY / EXPO_PUBLIC_REVENUECAT_IOS_KEY.
 
 import { Platform } from 'react-native';
 import { logger } from './logger';
@@ -38,12 +39,19 @@ const ENTITLEMENT_ID = 'premium';
 // forks/testing; the fallback keeps OTA bundles working even when the update
 // pipeline doesn't inject env vars.
 const FALLBACK_ANDROID_KEY = 'goog_wiMoDbBhcLrvPdUSRbZqXDhKkQi';
+// The iOS public key is added when the App Store app exists in RevenueCat.
+// Empty until then, which makes every iOS billing entry point return
+// `available: false` rather than misconfigure itself — the same graceful
+// degradation the Android side already has for builds without the native module.
+const IOS_KEY = process.env.EXPO_PUBLIC_REVENUECAT_IOS_KEY?.trim() || '';
 
 let configuredFor: string | null = null;
 
 async function getPurchases(): Promise<any | null> {
   if (Platform.OS === 'web') return null;
-  const apiKey = process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY?.trim() || FALLBACK_ANDROID_KEY;
+  const apiKey = Platform.OS === 'ios'
+    ? IOS_KEY
+    : (process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY?.trim() || FALLBACK_ANDROID_KEY);
   if (!apiKey) return null;
   try {
     const mod: any = await import('react-native-purchases');

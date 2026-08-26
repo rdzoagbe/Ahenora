@@ -25,6 +25,7 @@ try:
 except ImportError:
     AsyncIOMotorClient = None
 from google.oauth2 import id_token as google_id_token
+import apple_auth
 from google.auth.transport.requests import Request as GoogleRequest
 try:
     from google import genai
@@ -3521,6 +3522,130 @@ async def exchange_session(payload: SessionIn):
         }
     )
 
+    return {"user": public_user(user), "session_token": raw_session}
+
+
+class AppleSessionIn(BaseModel):
+    identity_token: str
+    # Apple gives the name ONLY on the very first authorisation, so the app
+    # forwards it then; afterwards we already have it stored.
+    full_name: Optional[str] = None
+    invite_token: Optional[str] = None
+    language: Optional[str] = None
+
+
+@app.post("/api/auth/apple")
+async def exchange_apple_session(payload: AppleSessionIn):
+    """Sign in with Apple — required by App Store rule 4.8 in any app that also
+    offers Google sign-in, so this gates the iOS release.
+
+    Mirrors the Google flow: verify the token is genuinely Apple's, then find or
+    create the account. Two Apple-specific wrinkles are handled here. First,
+    Apple's Hide My Email gives a private relay address that is still a real,
+    verified inbox — treated like any other verified email. Second, the person's
+    name arrives only on first authorisation, so it is stored then and never
+    overwritten with a blank on later sign-ins.
+    """
+    database = get_db()
+    audiences = [a for a in (
+        os.environ.get("APPLE_BUNDLE_ID") or "com.householdcoo.app",
+        os.environ.get("APPLE_SERVICES_ID") or "",
+    ) if a]
+    try:
+        claims = await asyncio.wait_for(
+            asyncio.to_thread(apple_auth.verify_apple_identity_token,
+                              payload.identity_token, audiences),
+            timeout=10,
+        )
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="Timed out reaching Apple to verify sign-in")
+    except ValueError as e:
+        # Specific reason in the log, generic message to the client.
+        log.warning("Apple token verification failed: %s", e)
+        raise HTTPException(status_code=401, detail="Could not verify Apple sign-in. Please try again.")
+
+    apple_sub = claims["sub"]
+    email = (claims.get("email") or "").strip().lower()
+    # Apple sends email_verified as the string "true" or a bool depending on the
+    # flow; accept both. A private-relay address is verified by construction.
+    verified_raw = claims.get("email_verified")
+    email_verified = verified_raw is True or str(verified_raw).lower() == "true"
+    name = (payload.full_name or "").strip() or (email.split("@")[0] if email else "Parent")
+
+    invite, target_family_id = None, None
+    if payload.invite_token:
+        invite = await database["family_invites"].find_one(
+            {"token": payload.invite_token}, {"_id": 0})
+        if not invite:
+            raise HTTPException(status_code=404, detail="Invite not found")
+        if invite.get("expires_at") and _expired(invite["expires_at"]):
+            await database["family_invites"].update_one(
+                {"invite_id": invite["invite_id"]},
+                {"$set": {"status": "expired", "updated_at": utcnow()}})
+            raise HTTPException(status_code=410, detail="Invite has expired")
+        if invite.get("status") == "accepted" and invite.get("accepted_by_email") != email:
+            raise HTTPException(status_code=409, detail="Invite has already been accepted")
+        target_family_id = invite["family_id"]
+
+    user = await database["users"].find_one({"apple_sub": apple_sub}, {"_id": 0})
+
+    if not user and email and email_verified:
+        # Same rule as Google: never mint a second row for an inbox that already
+        # has an account — link Apple to it instead, so an email/password user
+        # who later taps "Sign in with Apple" lands in their own household.
+        existing = await database["users"].find_one({"email": email}, {"_id": 0})
+        if existing:
+            await database["users"].update_one(
+                {"user_id": existing["user_id"]},
+                {"$set": {"apple_sub": apple_sub, "updated_at": utcnow()}})
+            user = {**existing, "apple_sub": apple_sub}
+
+    if not user:
+        family_id = target_family_id or new_id("family")
+        user = {
+            "user_id": new_id("user"),
+            "apple_sub": apple_sub,
+            "email": email,
+            "name": name,
+            "picture": None,
+            "family_id": family_id,
+            "language": payload.language if payload.language in ("en", "es", "fr", "de") else "en",
+            "onboarding_completed": False,
+            "created_at": utcnow(),
+            "updated_at": utcnow(),
+        }
+        await database["users"].insert_one(user)
+        if not target_family_id:
+            await _seed_new_family(database, user, family_id, email, name)
+        else:
+            await add_user_to_family_if_needed(database, user, target_family_id,
+                                               invite_member_role(invite))
+    else:
+        # Never blank a stored name: Apple only sends it the first time.
+        updates = {"updated_at": utcnow()}
+        if email:
+            updates["email"] = email
+        if payload.full_name and not (user.get("name") or "").strip():
+            updates["name"] = payload.full_name.strip()
+        old_family_id = user.get("family_id")
+        if target_family_id:
+            updates["family_id"] = target_family_id
+        await database["users"].update_one({"user_id": user["user_id"]}, {"$set": updates})
+        user = await database["users"].find_one({"user_id": user["user_id"]}, {"_id": 0})
+        if target_family_id:
+            await add_user_to_family_if_needed(database, user, target_family_id,
+                                               invite_member_role(invite))
+            await _bring_children_along(database, old_family_id, target_family_id)
+
+    if invite:
+        await database["family_invites"].update_one(
+            {"invite_id": invite["invite_id"]},
+            {"$set": {"status": "accepted", "accepted_at": utcnow(),
+                      "accepted_by_user_id": user["user_id"],
+                      "accepted_by_email": email, "updated_at": utcnow()}})
+        await notify_invite_accepted(database, invite, user.get("name") or email)
+
+    raw_session = await _issue_session(database, user["user_id"])
     return {"user": public_user(user), "session_token": raw_session}
 
 

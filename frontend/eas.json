@@ -20,7 +20,12 @@
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "243255248169-cei972lc7kmfig6tmjb6l2nlmgqkjf22.apps.googleusercontent.com",
         "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "243255248169-n4l7es5ecr3j85v00dia2icp9kjo7umh.apps.googleusercontent.com",
         "EXPO_PUBLIC_REVENUECAT_ANDROID_KEY": "goog_wiMoDbBhcLrvPdUSRbZqXDhKkQi",
-        "EXPO_PUBLIC_MICROSOFT_CLIENT_ID": "d9a47680-a27e-4b02-8013-bd946c099f9e"
+        "EXPO_PUBLIC_MICROSOFT_CLIENT_ID": "d9a47680-a27e-4b02-8013-bd946c099f9e",
+        "EXPO_PUBLIC_REVENUECAT_IOS_KEY": ""
+      },
+      "ios": {
+        "simulator": false,
+        "resourceClass": "m-medium"
       }
     },
     "production": {
@@ -35,7 +40,11 @@
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "243255248169-cei972lc7kmfig6tmjb6l2nlmgqkjf22.apps.googleusercontent.com",
         "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "243255248169-n4l7es5ecr3j85v00dia2icp9kjo7umh.apps.googleusercontent.com",
         "EXPO_PUBLIC_REVENUECAT_ANDROID_KEY": "goog_wiMoDbBhcLrvPdUSRbZqXDhKkQi",
-        "EXPO_PUBLIC_MICROSOFT_CLIENT_ID": "d9a47680-a27e-4b02-8013-bd946c099f9e"
+        "EXPO_PUBLIC_MICROSOFT_CLIENT_ID": "d9a47680-a27e-4b02-8013-bd946c099f9e",
+        "EXPO_PUBLIC_REVENUECAT_IOS_KEY": ""
+      },
+      "ios": {
+        "resourceClass": "m-medium"
       }
     }
   },
@@ -45,6 +54,11 @@
         "serviceAccountKeyPath": "./play-service-account.json",
         "track": "internal",
         "releaseStatus": "completed"
+      },
+      "ios": {
+        "appleId": "REPLACE_WITH_APPLE_ID_EMAIL",
+        "ascAppId": "REPLACE_WITH_APP_STORE_CONNECT_APP_ID",
+        "appleTeamId": "REPLACE_WITH_TEAM_ID"
       }
     },
     "production": {
@@ -52,6 +66,11 @@
         "serviceAccountKeyPath": "./play-service-account.json",
         "track": "production",
         "releaseStatus": "draft"
+      },
+      "ios": {
+        "appleId": "REPLACE_WITH_APPLE_ID_EMAIL",
+        "ascAppId": "REPLACE_WITH_APP_STORE_CONNECT_APP_ID",
+        "appleTeamId": "REPLACE_WITH_TEAM_ID"
       }
     }
   }
