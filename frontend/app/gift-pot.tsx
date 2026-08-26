@@ -59,6 +59,14 @@ export default function GiftPotRoute() {
 
   useEffect(() => { if (ready) load(); }, [ready, load]);
 
+  // Pre-fill the amount with what you've already pledged, so "Update" starts
+  // from your real current pledge instead of a blank default that would
+  // silently overwrite it with €10.
+  useEffect(() => {
+    if (pot?.your_amount != null) setAmount(String(pot.your_amount));
+    else if (pot) setAmount(String(pot.per_head || 10));
+  }, [pot?.pot_id, pot?.your_amount, pot?.per_head]);
+
   const startPot = useCallback(async () => {
     if (locked) { promptUpgrade('gift_pot'); return; }
     setBusy(true);

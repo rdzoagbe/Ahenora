@@ -174,6 +174,49 @@ class GiftPot(unittest.TestCase):
             run(server.chip_in_gift_pot(pid, server.GiftChipIn(amount=5), self._user()))
         self.assertEqual(e.exception.status_code, 409)
 
+    # --- the surprise, resolved from the CARD (the real client path) ------
+    def test_a_pot_created_from_a_card_naming_a_parent_hides_from_that_parent(self):
+        # This is the path the app actually uses: the client sends only card_id
+        # (never for_member_id), so the celebrant must be resolved server-side
+        # from the birthday card's title. Keigh's birthday → hidden from Keigh.
+        run(self._set_plan("executive"))
+        run(self.db["cards"].insert_one({
+            "card_id": "card_keigh", "family_id": "fam1", "type": "BIRTHDAY",
+            "title": "Keigh's birthday 🎂", "status": "OPEN", "created_at": server.utcnow()}))
+        run(server.create_gift_pot(server.GiftPotIn(card_id="card_keigh"), self._user("u_r")))
+        self.assertEqual(run(server.list_gift_pots(self._user("u_k"))), [])   # celebrant blind
+        self.assertEqual(len(run(server.list_gift_pots(self._user("u_r")))), 1)  # giver sees it
+
+    def test_a_child_birthday_card_pot_is_visible_to_both_parents(self):
+        run(self._set_plan("executive"))
+        run(self.db["cards"].insert_one({
+            "card_id": "card_ama", "family_id": "fam1", "type": "BIRTHDAY",
+            "title": "Ama's birthday", "status": "OPEN", "created_at": server.utcnow()}))
+        run(server.create_gift_pot(server.GiftPotIn(card_id="card_ama"), self._user("u_r")))
+        self.assertEqual(len(run(server.list_gift_pots(self._user("u_r")))), 1)
+        self.assertEqual(len(run(server.list_gift_pots(self._user("u_k")))), 1)
+
+    def test_the_dedup_path_also_hides_from_the_celebrant(self):
+        # A second create for the same card returns the existing pot — but must
+        # 404 for the celebrant, not hand them their own surprise.
+        run(self._set_plan("executive"))
+        run(self.db["cards"].insert_one({
+            "card_id": "card_keigh2", "family_id": "fam1", "type": "BIRTHDAY",
+            "title": "Keigh's birthday", "status": "OPEN", "created_at": server.utcnow()}))
+        run(server.create_gift_pot(server.GiftPotIn(card_id="card_keigh2"), self._user("u_r")))
+        with self.assertRaises(server.HTTPException) as e:
+            run(server.create_gift_pot(server.GiftPotIn(card_id="card_keigh2"), self._user("u_k")))
+        self.assertEqual(e.exception.status_code, 404)
+
+    # --- the delete gate --------------------------------------------------
+    def test_deleting_a_pot_is_refused_on_the_free_plan(self):
+        run(self._set_plan("executive"))
+        pot = run(server.create_gift_pot(server.GiftPotIn(title="Ama"), self._user()))
+        run(self._set_plan("village"))     # family lapsed to free
+        with self.assertRaises(server.HTTPException) as e:
+            run(server.delete_gift_pot(pot["pot_id"], self._user()))
+        self.assertEqual(e.exception.status_code, 402)
+
     # --- account deletion cleans it up -----------------------------------
     def test_gift_pots_is_purged_on_account_deletion(self):
         self.assertIn("gift_pots", server._FAMILY_SCOPED_COLLECTIONS)

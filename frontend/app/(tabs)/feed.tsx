@@ -638,15 +638,23 @@ export default function Feed() {
 
     // The soonest birthday in the next fortnight — the trigger for the gift-pot
     // nudge. Birthdays are BIRTHDAY cards with a due date, so nothing new is
-    // synthesised; this just finds the nearest one still ahead.
+    // synthesised; this just finds the nearest one still ahead. It skips the
+    // viewer's OWN birthday: nobody should be nudged to pool for their own gift,
+    // and seeing the pot for it would spoil the surprise.
+    const myName = (members.find((m) => m.user_id === uid)?.name || '').trim().toLowerCase();
+    const isMyBirthday = (card: Card) => {
+      if (!myName) return false;
+      const hay = `${card.title || ''} ${card.assignee || ''}`.toLowerCase();
+      return new RegExp(`\\b${myName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(hay);
+    };
     const nextBirthday = activeCards
-      .filter((card) => card.type === 'BIRTHDAY')
+      .filter((card) => card.type === 'BIRTHDAY' && !isMyBirthday(card))
       .map((card) => ({ card, time: dueTime(card) }))
       .filter((x) => x.time != null && x.time >= now && x.time <= now + 14 * 24 * 60 * 60 * 1000)
       .sort((a, b) => (a.time as number) - (b.time as number))[0]?.card || null;
 
     return { overdue, todayCards, signSlips, weekCards, next24h, calmScore, priority, nextBirthday };
-  }, [activeCards, assigned, user?.user_id]);
+  }, [activeCards, assigned, user?.user_id, members]);
 
   const tabCards = useMemo(() => {
     const now = Date.now();
@@ -1036,6 +1044,7 @@ export default function Feed() {
                 The reminder is free; starting the pot is where Family gates. */}
             {dashboard.nextBirthday ? (
               <BirthdayGiftNudge
+                key={dashboard.nextBirthday.card_id}
                 cardId={dashboard.nextBirthday.card_id}
                 title={dashboard.nextBirthday.title}
                 days={Math.max(0, Math.ceil(((dueTime(dashboard.nextBirthday) || Date.now()) - Date.now()) / (24 * 60 * 60 * 1000)))}

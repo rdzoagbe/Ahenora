@@ -10178,6 +10178,32 @@ async def _celebrant_user_id(database, family_id: str, member_id: Optional[str])
     return (m or {}).get("user_id")
 
 
+async def _celebrant_from_card(database, family_id: str, card: Optional[dict]) -> Optional[str]:
+    """Whose birthday a BIRTHDAY card is for, resolved to an account so the pot
+    can be hidden from them. The privacy control can't depend on the client
+    saying who it is — the client doesn't know (a BIRTHDAY card carries only a
+    title and an optional assignee). So we resolve it here: an explicit assignee
+    first, then a family member whose name appears as a whole word in the title
+    ("Keigh's birthday" → Keigh). A child matches too but has no account, so
+    resolves to None — their pot is rightly visible to both parents."""
+    if not card:
+        return None
+    assignee = (card.get("assignee") or "").strip()
+    if assignee:
+        uid = await resolve_member_user_id(database, family_id, assignee)
+        if uid:
+            return uid
+    title = (card.get("title") or "").lower()
+    if not title:
+        return None
+    async for m in database["family_members"].find({"family_id": family_id}, {"_id": 0}):
+        uid = m.get("user_id")
+        nm = (m.get("name") or "").strip().lower()
+        if uid and nm and re.search(r"\b" + re.escape(nm) + r"\b", title):
+            return uid
+    return None
+
+
 def public_gift_pot(pot: dict, viewer_user_id: str) -> dict:
     contributions = pot.get("contributions") or []
     total = round(sum(float(c.get("amount") or 0) for c in contributions), 2)
@@ -10266,11 +10292,19 @@ async def create_gift_pot(payload: GiftPotIn, user=Depends(require_full_member))
         existing = await database["gift_pots"].find_one(
             {"family_id": family_id, "card_id": payload.card_id}, {"_id": 0})
         if existing:
+            # The dedup must not become a side-door onto the surprise: if this
+            # is the celebrant, give them the same 404 as everywhere else.
+            if existing.get("for_user_id") and existing["for_user_id"] == user["user_id"]:
+                raise HTTPException(404, "Gift pot not found")
             return public_gift_pot(existing, user["user_id"])
         if not title:
             title = (card.get("title") or "").strip()[:80]
 
+    # Resolve the celebrant so their own surprise can be hidden from them. An
+    # explicit for_member_id wins; otherwise derive it from the birthday card.
     for_user_id = await _celebrant_user_id(database, family_id, payload.for_member_id)
+    if not for_user_id and card:
+        for_user_id = await _celebrant_from_card(database, family_id, card)
     now = utcnow()
     doc = {
         "pot_id": new_id("pot"),
@@ -10285,6 +10319,10 @@ async def create_gift_pot(payload: GiftPotIn, user=Depends(require_full_member))
         "status": "open",
         "note": sanitize_message_text(payload.note or "", 300).strip() or None,
         "contributions": [],
+        # Optimistic-concurrency counter — bumped by every write to contributions
+        # or status, so two co-parents chipping in at once can't clobber each
+        # other via a read-modify-write from a stale copy (see chip_in).
+        "rev": 0,
         "created_by_user_id": user["user_id"],
         "created_by_name": user.get("name", ""),
         "created_at": now,
@@ -10298,31 +10336,43 @@ async def create_gift_pot(payload: GiftPotIn, user=Depends(require_full_member))
 async def chip_in_gift_pot(pot_id: str, payload: GiftChipIn, user=Depends(require_full_member)):
     await require_feature(user, "gift_pot")
     database = get_db()
-    pot = await database["gift_pots"].find_one(
-        {"pot_id": pot_id, "family_id": user["family_id"]}, {"_id": 0})
-    if not pot:
-        raise HTTPException(404, "Gift pot not found")
-    if pot.get("for_user_id") and pot["for_user_id"] == user["user_id"]:
-        raise HTTPException(404, "Gift pot not found")   # don't reveal the surprise
-    if pot.get("status") == "closed":
-        raise HTTPException(409, "This gift pot is closed.")
-
-    # One pledge per person: chipping in again updates your amount rather than
-    # stacking a second row. Rebuilt in Python because fake_mongo cannot do a
-    # positional array update.
     me = user["user_id"]
-    contributions = [c for c in (pot.get("contributions") or []) if c.get("user_id") != me]
     amount = round(float(payload.amount), 2)
-    if amount > 0:
-        contributions.append({"user_id": me, "name": user.get("name", ""),
-                              "amount": amount, "at": utcnow()})
-    # amount == 0 withdraws the pledge (the filter above already removed it).
-    await database["gift_pots"].update_one(
-        {"pot_id": pot_id, "family_id": user["family_id"]},
-        {"$set": {"contributions": contributions, "updated_at": utcnow()}},
-    )
-    pot["contributions"] = contributions
-    return public_gift_pot(pot, me)
+
+    # Compare-and-set on `rev`: read, rebuild this person's single pledge, then
+    # write only if the pot hasn't changed underneath us. Two co-parents
+    # chipping in from the same reminder can't lose each other's pledge (a plain
+    # read-modify-write of the whole array would), and a chip-in racing a close
+    # fails the rev check, re-reads, and sees the 409. fake_mongo is
+    # single-threaded so the loop settles first try there.
+    for _ in range(6):
+        pot = await database["gift_pots"].find_one(
+            {"pot_id": pot_id, "family_id": user["family_id"]}, {"_id": 0})
+        if not pot:
+            raise HTTPException(404, "Gift pot not found")
+        if pot.get("for_user_id") and pot["for_user_id"] == me:
+            raise HTTPException(404, "Gift pot not found")   # don't reveal the surprise
+        if pot.get("status") == "closed":
+            raise HTTPException(409, "This gift pot is closed.")
+
+        rev = pot.get("rev", 0)
+        # One pledge per person: chipping in again updates your amount rather
+        # than stacking a second; amount 0 withdraws it.
+        contributions = [c for c in (pot.get("contributions") or []) if c.get("user_id") != me]
+        if amount > 0:
+            contributions.append({"user_id": me, "name": user.get("name", ""),
+                                  "amount": amount, "at": utcnow()})
+        result = await database["gift_pots"].update_one(
+            {"pot_id": pot_id, "family_id": user["family_id"], "rev": rev},
+            {"$set": {"contributions": contributions, "updated_at": utcnow()},
+             "$inc": {"rev": 1}},
+        )
+        if result.matched_count:
+            pot["contributions"] = contributions
+            return public_gift_pot(pot, me)
+    # Lost the CAS six times running — extraordinarily unlikely outside a
+    # pathological hot loop; surface it rather than silently doing nothing.
+    raise HTTPException(409, "Please try again.")
 
 
 @app.post("/api/gift-pots/{pot_id}/close")
@@ -10336,9 +10386,11 @@ async def close_gift_pot(pot_id: str, user=Depends(require_full_member)):
     if not pot:
         raise HTTPException(404, "Gift pot not found")
     if pot.get("status") != "closed":
+        # Bump rev too, so a chip-in that read this pot as still open before the
+        # close committed fails its compare-and-set and re-reads the 409.
         await database["gift_pots"].update_one(
             {"pot_id": pot_id, "family_id": user["family_id"]},
-            {"$set": {"status": "closed", "updated_at": utcnow()}},
+            {"$set": {"status": "closed", "updated_at": utcnow()}, "$inc": {"rev": 1}},
         )
         pot["status"] = "closed"
     return public_gift_pot(pot, user["user_id"])
@@ -10346,6 +10398,7 @@ async def close_gift_pot(pot_id: str, user=Depends(require_full_member)):
 
 @app.delete("/api/gift-pots/{pot_id}")
 async def delete_gift_pot(pot_id: str, user=Depends(require_full_member)):
+    await require_feature(user, "gift_pot")
     database = get_db()
     result = await database["gift_pots"].delete_one(
         {"pot_id": pot_id, "family_id": user["family_id"]})
