@@ -297,6 +297,12 @@ const NOTIF_ASKED_KEY = 'coo_notif_permission_asked';
  */
 export async function ensureAskedNotificationPermissionOnce() {
   try {
+    // Web has its own path: the browser prompt belongs on a real tap (the
+    // Settings toggle), and registration there means a Web Push subscription,
+    // not an Expo token. Auto-prompting here granted permission and then
+    // registered nothing — a browser that agreed to notifications and never
+    // got one. Leave web alone.
+    if (Platform.OS === 'web') return;
     const asked = await AsyncStorage.getItem(NOTIF_ASKED_KEY);
     if (asked) { await ensurePushRegistered(); return; }
     await AsyncStorage.setItem(NOTIF_ASKED_KEY, '1');

@@ -35,13 +35,20 @@ export default function Root({ children }: PropsWithChildren) {
           dangerouslySetInnerHTML={{
             __html: `
 (function () {
-  if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) return;
-  try { if (localStorage.getItem('coo_install_hint_dismissed')) return; } catch (e) { return; }
+  // The service worker is what receives Web Push, so it must register for
+  // EVERYONE — including an installed PWA (the only way iOS can get push at
+  // all) and anyone who dismissed the install bar. It used to sit below the
+  // two early returns beneath this, which meant exactly those users never
+  // registered, and navigator.serviceWorker.ready then hung forever.
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function () {
       navigator.serviceWorker.register('/app/sw.js', { scope: '/app/' }).catch(function () {});
     });
   }
+
+  // Below: the install hint only. Its guards must never gate the worker above.
+  if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) return;
+  try { if (localStorage.getItem('coo_install_hint_dismissed')) return; } catch (e) { return; }
   var fr = (navigator.language || '').toLowerCase().indexOf('fr') === 0;
   var isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
   var deferred = null;

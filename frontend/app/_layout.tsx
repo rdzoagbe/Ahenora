@@ -18,12 +18,13 @@ import {
   PlayfairDisplay_700Bold,
   PlayfairDisplay_800ExtraBold,
 } from '@expo-google-fonts/playfair-display';
+import { Platform } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StoreProvider, useStore } from '../src/store';
 import { UpgradeModal } from '../src/components/UpgradeModal';
 import { WebUpdateBanner } from '../src/components/WebUpdateBanner';
 import { UpdateNotice } from '../src/components/UpdateNotice';
-import { ensurePushRegistered, attachNotificationRouting } from '../src/notifications';
+import { ensurePushRegistered, attachNotificationRouting, targetForNotification } from '../src/notifications';
 
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
@@ -56,6 +57,23 @@ function RootNavigator() {
       router.push(t as never);
     }).then((fn) => { if (active) cleanup = fn; else fn(); });
     return () => { active = false; cleanup(); };
+  }, [user, router]);
+
+  // The web twin of the tap routing above. The service worker posts the payload
+  // of a tapped browser notification to the focused tab; without a listener the
+  // tap just focused whatever screen was already open, so a "Roland handed you
+  // the school run" notification never actually opened the task.
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !user) return;
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+    const onMessage = (event: MessageEvent) => {
+      const payload = (event as MessageEvent<{ type?: string; data?: Record<string, unknown> }>).data;
+      if (!payload || payload.type !== 'push-notification-tap') return;
+      const target = targetForNotification(payload.data || {});
+      if (target) router.push(target as never);
+    };
+    navigator.serviceWorker.addEventListener('message', onMessage);
+    return () => navigator.serviceWorker.removeEventListener('message', onMessage);
   }, [user, router]);
 
   return (
