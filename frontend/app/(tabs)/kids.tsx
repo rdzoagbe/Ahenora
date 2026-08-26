@@ -1299,8 +1299,16 @@ export default function Kids() {
                   open the teen invite sheet on a six-year-old, which is how a
                   button that led nowhere got shipped. */}
               {threads.some((x) => x.member_id === activeChild.member_id) ? (
+                /* Labelled, not a bare icon in the corner. A pale outlined
+                   glyph next to bold orange buttons read as decoration — a
+                   parent looking for "can I message my kid?" did not find it.
+                   It now says what it does: a note for a young child (they read
+                   it in Kid Mode), a message for a teen with their own account. */
                 <PressScale testID="child-message" onPress={() => openThread(activeChild)} style={styles.focusMsg} accessibilityLabel={t('hub_tab_chat')} hitSlop={6}>
-                  <MessageCircle color={ui.orangeText} size={18} />
+                  <MessageCircle color="#FFFFFF" size={16} />
+                  <Text style={styles.focusMsgText} numberOfLines={1}>
+                    {(activeChild.role || '').toLowerCase() === 'teen' ? t('kids_message_short') : t('kids_leave_note')}
+                  </Text>
                 </PressScale>
               ) : (
                 <View style={{ width: 36 }} />
@@ -2483,7 +2491,8 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   focusHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingBottom: 6, marginBottom: 2 },
   focusBack: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line },
   focusTitle: { flex: 1, fontFamily: 'Inter_800ExtraBold', fontSize: 22, letterSpacing: -0.3, color: ui.text },
-  focusMsg: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: ui.orangeSoft, borderWidth: 1, borderColor: ui.line },
+  focusMsg: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 36, paddingHorizontal: 12, borderRadius: 99, justifyContent: 'center', backgroundColor: ui.orangeDeep },
+  focusMsgText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 12.5 },
   scroll: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 40 },
   bellWrap: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
 

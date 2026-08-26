@@ -1103,8 +1103,11 @@ export default function Kitchen() {
                 <Text style={styles.secTitle}>{t('vault_shopping_list')}</Text>
               </View>
               <View style={styles.secRight}>
-                <PressScale testID="shop-history" accessibilityRole="button" accessibilityLabel={t('a11y_history')} onPress={openShopHistory} style={styles.histBtn}>
-                  <History color={ui.text} size={18} />
+                {/* Matches the "Clear done" pill beside it rather than sitting
+                    there as an unlabelled grey square. */}
+                <PressScale testID="shop-history" accessibilityRole="button" accessibilityLabel={t('a11y_history')} onPress={openShopHistory} style={styles.histPill}>
+                  <History color={ui.muted} size={13} />
+                  <Text style={styles.histPillText} numberOfLines={1}>{t('kitchen_past_trips')}</Text>
                 </PressScale>
                 {checkedItems.length > 0 ? (
                   <PressScale onPress={clearChecked} style={styles.clearBtn}>
@@ -1348,8 +1351,12 @@ export default function Kitchen() {
                   <PressScale onPress={() => setShowMealAdd(true)} style={[styles.mealActionBtn, { backgroundColor: ui.lavender }]}>
                     <Text style={[styles.clearBtnText, { color: ui.lavenderText }]} numberOfLines={1}>{t('vault_add_short')}</Text>
                   </PressScale>
-                  <PressScale testID="meal-history" accessibilityRole="button" accessibilityLabel={t('a11y_history')} onPress={openMealHistory} style={styles.histBtn}>
-                    <History color={ui.text} size={18} />
+                  {/* Was a bare grey icon square beside three coloured, labelled
+                      pills — it read as a stray control rather than an action.
+                      Now it matches its siblings and says what it opens. */}
+                  <PressScale testID="meal-history" accessibilityRole="button" accessibilityLabel={t('a11y_history')} onPress={openMealHistory} style={[styles.mealActionBtn, { backgroundColor: ui.soft, borderWidth: 1, borderColor: ui.line }]}>
+                    <History color={ui.muted} size={14} />
+                    <Text style={[styles.clearBtnText, { color: ui.muted }]} numberOfLines={1}>{t('kitchen_saved')}</Text>
                   </PressScale>
                 </View>
               </>
@@ -2420,6 +2427,8 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   secCount: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
 
   clearBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 99, backgroundColor: ui.mint },
+  histPill: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 11, paddingVertical: 6, borderRadius: 99, backgroundColor: ui.soft, borderWidth: 1, borderColor: ui.line },
+  histPillText: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 12 },
   clearBtnText: { color: ui.mintText, fontFamily: 'Inter_700Bold', fontSize: 12 },
 
   card: { borderRadius: 20, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, padding: 14, gap: 4 },
@@ -2470,13 +2479,16 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   // dead space on the right made them look like leftovers rather than a set.
   // The history icon keeps its square: stretching an icon-only, rarely-used
   // control to a quarter of the row would give it the same weight as Capture.
-  mealActions: { flexDirection: 'row', alignItems: 'stretch', gap: 8, marginBottom: 12 },
+  // Four actions do not fit one phone row: forcing them to share it shrank every
+  // pill until its label truncated ("Sync to l…", "Capture reci…", "+ A…").
+  // Let them wrap instead — two comfortable rows beat one unreadable one.
+  mealActions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 12 },
   // flexGrow rather than flex: 1. Exactly equal thirds is narrower than "Sync
   // to list" needs (~98px with its padding, against ~90px available on a 390px
   // phone) and German is longer still, so equal widths would truncate the label
   // it is named after. Growing from natural width fills the row just as
   // completely without clipping anything.
-  mealActionBtn: { flexGrow: 1, flexShrink: 1, flexBasis: 'auto', minWidth: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 9, borderRadius: 99 },
+  mealActionBtn: { flexGrow: 0, flexShrink: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 13, paddingVertical: 9, borderRadius: 99 },
   restoreDismiss: { padding: 4, marginLeft: 2 },
   shopFooterRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
   selectModeBtn: {
