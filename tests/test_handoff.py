@@ -95,8 +95,12 @@ class HandOff(unittest.TestCase):
 
     # --- the silences ---------------------------------------------------
     def test_assigning_something_to_yourself_says_nothing(self):
+        # No HAND-OFF ping: nobody was handed anything. (The co-parent may still
+        # get the ordinary "new shared card" household alert — a different
+        # notification with a different opt-out, so assert on the hand-off.)
         self._card(ROLAND, "My own errand", assignee="Roland")
-        self.assertEqual(self.pushes, [])
+        self.assertEqual([p for p in self.pushes
+                          if p["data"].get("type") == "assignment"], [])
 
     def test_a_private_task_kept_to_yourself_is_nobodys_business(self):
         # Private + assigned to YOURSELF stays silent and private — the surprise
@@ -106,8 +110,10 @@ class HandOff(unittest.TestCase):
         self.assertEqual(self.pushes, [])
 
     def test_a_child_has_no_login_so_nothing_is_sent(self):
+        # A child has no account, so there is nobody to hand-off-push to.
         self._card(ROLAND, "Tidy room", assignee="Ama")
-        self.assertEqual(self.pushes, [])
+        self.assertEqual([p for p in self.pushes
+                          if p["data"].get("type") == "assignment"], [])
 
     def test_resaving_without_touching_the_assignee_does_not_ping_again(self):
         card = self._card(ROLAND, "School run", assignee="Keigh")

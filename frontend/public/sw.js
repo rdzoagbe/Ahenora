@@ -16,7 +16,11 @@ self.addEventListener('push', (event) => {
     icon: '/app/icon-192.png',
     badge: '/app/icon-192.png',
     data: payload.data || {},
-    tag: (payload.data && payload.data.type) || undefined,
+    // Tag per THING, not per type — tagging by type alone made a second chat
+    // message silently replace the first, so three messages showed as one.
+    tag: [(payload.data && payload.data.type) || 'ahenora',
+          (payload.data && (payload.data.card_id || payload.data.thread || payload.data.id)) || Date.now()].join(':'),
+    renotify: true,
   };
   event.waitUntil(self.registration.showNotification(title, options));
 });

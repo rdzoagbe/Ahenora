@@ -315,7 +315,10 @@ export default function Settings() {
       }
 
       let warning = '';
-      if (nextPrefs.new_card_alerts) {
+      // Expo's push registration is native-only: on web it throws a raw
+      // developer error about app.json's vapidPublicKey, which was being shown
+      // verbatim to the user. Browser push is handled by requestWebPush above.
+      if (nextPrefs.new_card_alerts && Platform.OS !== 'web') {
         const push = await registerForPushNotificationsAsync().catch((e) => ({ granted: false, error: e?.message || t('set_push_registration_failed') }));
         const expoPushToken = 'expoPushToken' in push ? push.expoPushToken : undefined;
         const pushError = 'error' in push ? push.error : undefined;

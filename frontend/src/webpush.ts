@@ -22,6 +22,22 @@ function supported(): boolean {
 }
 
 /**
+ * `navigator.serviceWorker.ready` never rejects — if nothing ever registers in
+ * this scope it simply hangs, which once froze the whole Settings screen. Race
+ * it against a timeout so every caller is guaranteed to return.
+ */
+async function readyOrNull(ms = 5000): Promise<ServiceWorkerRegistration | null> {
+  try {
+    return await Promise.race([
+      navigator.serviceWorker.ready,
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
+    ]);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Subscribe this browser to push. When `prompt` is false we only proceed if the
  * user has already granted permission (a quiet re-subscribe for a returning
  * user); when true we ask — so the Settings toggle can request it on a real tap,
@@ -33,7 +49,8 @@ async function enableWebPush(prompt: boolean): Promise<boolean> {
     const cfg = await api.getWebPushConfig();
     if (!cfg.enabled || !cfg.vapid_public_key) return false;
 
-    const reg = await navigator.serviceWorker.ready;
+    const reg = await readyOrNull();
+    if (!reg) return false;                     // worker never registered here
     let sub = await reg.pushManager.getSubscription();
     if (!sub) {
       if (Notification.permission === 'denied') return false;
@@ -65,7 +82,8 @@ export const requestWebPush = () => enableWebPush(true);
 export async function teardownWebPush(): Promise<void> {
   if (!supported()) return;
   try {
-    const reg = await navigator.serviceWorker.ready;
+    const reg = await readyOrNull();
+    if (!reg) return;
     const sub = await reg.pushManager.getSubscription();
     if (sub) {
       await api.webPushUnsubscribe(sub.endpoint).catch(() => undefined);

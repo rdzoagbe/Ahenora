@@ -2335,40 +2335,22 @@ async def send_new_card_alert(family_id: str, card: dict, created_by_user_id: Op
     if created_by_user_id:
         skip.add(created_by_user_id)
 
-    docs = [d async for d in database["notification_tokens"].find(
-        {"family_id": family_id, "active": True}, {"_id": 0})]
-
-    for token_doc in _latest_token_per_user(docs):
-        uid = token_doc.get("user_id")
-        if uid in skip:
+    # Recipients are the household's ACCOUNTS, not its Expo token rows. Deriving
+    # them from tokens meant a browser-only member was never even a candidate —
+    # they heard about a new card only if they also had the Android app. Each
+    # one then goes through send_push_to_user, which fans out to phone AND
+    # browser and applies their opt-out preference.
+    for account in await _family_accounts(database, family_id):
+        uid = account.get("user_id")
+        if not uid or uid in skip:
             continue
-
-        prefs = await database["notification_settings"].find_one(
-            {"user_id": uid}, {"_id": 0})
-        if not alerts_enabled(prefs, "new_card_alerts"):
-            continue
-
-        token = token_doc.get("token")
-        if not token or not token.startswith("ExponentPushToken"):
-            continue
-
-        messages.append(
-            {
-                "to": token,
-                "sound": "default",
-                "title": "New Ahenora card",
-                "body": card.get("title") or "A new card was added.",
-                "data": {
-                    "type": "new_card",
-                    "card_id": card.get("card_id"),
-                    "family_id": family_id,
-                },
-                "channelId": "household-alerts", "priority": "high",
-            }
+        await send_push_to_user(
+            database, uid,
+            "New Ahenora card",
+            card.get("title") or "A new card was added.",
+            {"type": "new_card", "card_id": card.get("card_id"), "family_id": family_id},
+            pref_key="new_card_alerts",
         )
-
-    if messages:
-        await send_expo_push_messages(messages, database)
 
 
 async def send_coparent_alert(family_id: str, title: str, body: str, data_type: str, created_by_user_id: Optional[str] = None):
@@ -2382,32 +2364,21 @@ async def send_coparent_alert(family_id: str, title: str, body: str, data_type: 
     if len(preview) > 120:
         preview = preview[:117].rstrip() + "…"
 
-    docs = [d async for d in database["notification_tokens"].find(
-        {"family_id": family_id, "active": True}, {"_id": 0})]
-    for token_doc in _latest_token_per_user(docs):
-        uid = token_doc.get("user_id")
-        if created_by_user_id and uid == created_by_user_id:
+    # As with new-card alerts: fan out over the household's ACCOUNTS, not its
+    # Expo token rows, so a browser-only co-parent hears about a hand-off note
+    # or an announcement too. send_push_to_user reaches phone + browser and
+    # honours the recipient's opt-out.
+    for account in await _family_accounts(database, family_id):
+        uid = account.get("user_id")
+        if not uid or (created_by_user_id and uid == created_by_user_id):
             continue
-        prefs = await database["notification_settings"].find_one(
-            {"user_id": uid}, {"_id": 0})
-        if not alerts_enabled(prefs, "new_card_alerts"):
-            continue
-        token = token_doc.get("token")
-        if not token or not token.startswith("ExponentPushToken"):
-            continue
-        messages.append(
-            {
-                "to": token,
-                "sound": "default",
-                "title": title,
-                "body": preview or "Open Ahenora to see it.",
-                "data": {"type": data_type, "family_id": family_id},
-                "channelId": "household-alerts", "priority": "high",
-            }
+        await send_push_to_user(
+            database, uid,
+            title,
+            preview or "Open Ahenora to see it.",
+            {"type": data_type, "family_id": family_id},
+            pref_key="new_card_alerts",
         )
-
-    if messages:
-        await send_expo_push_messages(messages, database)
 
 
 # -----------------------------------------------------------------------------
@@ -2445,11 +2416,13 @@ async def _reminder_recipients(database, card: dict) -> list[str]:
         uid = await resolve_member_user_id(database, card["family_id"], assignee)
         if uid:
             return [uid]
-    docs = [d async for d in database["notification_tokens"].find(
-        {"family_id": card["family_id"], "active": True}, {"_id": 0})]
+    # The unclaimed-card fallback: everyone in the household with an account.
+    # This used to be derived from Expo token rows, which meant a browser-only
+    # household got no due reminders at all — the send path reaches browsers,
+    # but nobody was ever listed as a recipient.
     seen, out = set(), []
-    for token_doc in _latest_token_per_user(docs):
-        uid = token_doc.get("user_id")
+    for account in await _family_accounts(database, card["family_id"]):
+        uid = account.get("user_id")
         if uid and uid not in seen:
             seen.add(uid)
             out.append(uid)
