@@ -868,7 +868,12 @@ async def require_feature(user: dict, feature: str):
     sub = await build_subscription(user["family_id"])
     if is_admin_user(user):
         return apply_admin_subscription(sub)
-    if not sub["limits"].get(feature, True):
+    # Fail CLOSED: an unknown feature is locked, not free. Every gated feature
+    # today defines its flag in all three PLAN_CATALOG tiers, so this default is
+    # never actually reached — but if a future feature is added to require_feature
+    # and someone forgets its flag in a plan, it must lock, not silently unlock
+    # for everyone.
+    if not sub["limits"].get(feature, False):
         plan_limit_error(
             feature=feature,
             current_plan=sub["plan"],
