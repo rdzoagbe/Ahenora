@@ -8077,9 +8077,9 @@ def _event_attendee_contacts(event: dict) -> list[dict]:
 # recognise a birthday among imported calendar events so it becomes a BIRTHDAY
 # card — which is what makes the gift-pot nudge offer to start a pot for it.
 _BIRTHDAY_WORDS = ("birthday", "b-day", "bday", "🎂",
-                   "anniversaire",              # fr
-                   "cumpleaños", "cumpleanos", "cumple",  # es
-                   "geburtstag")                # de
+                   "anniversary", "anniversaire", "anniv",   # en / fr + short form
+                   "cumpleaños", "cumpleanos", "cumple",     # es
+                   "geburtstag")                             # de
 
 
 def _looks_like_birthday(title: Optional[str], event_type: Optional[str] = None) -> bool:

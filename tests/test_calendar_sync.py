@@ -160,6 +160,12 @@ class GoogleImport(unittest.TestCase):
         result, db = self.run_import2([gevent(summary="Anniversaire d'Ama")], FakeCards())
         self.assertEqual(db.cards.rows[0]["type"], "BIRTHDAY")
 
+    def test_short_and_english_forms_are_recognised(self):
+        # "Anniv Sarah" and English "Anniversary" were slipping through as tasks.
+        for title in ("Anniv Sarah Pariss", "Anniversary with Wife"):
+            _, db = self.run_import2([gevent(summary=title)], FakeCards())
+            self.assertEqual(db.cards.rows[0]["type"], "BIRTHDAY", title)
+
     def test_an_unchanged_event_is_skipped_not_duplicated(self):
         result, db = self.run_import2([gevent()], FakeCards([existing_card()]))
         self.assertEqual(result["imported"], 0)
