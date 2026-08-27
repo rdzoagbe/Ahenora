@@ -1528,6 +1528,17 @@ export const api = {
       return r;
     });
   },
+  // Edit a pot's details (organiser only). Only sent fields change; pass
+  // clear_target to wipe the target rather than raise it.
+  editGiftPot: (id: string, data: {
+    title?: string; per_head?: number; target_total?: number; note?: string; clear_target?: boolean;
+  }) => {
+    cache.invalidatePrefix('listGiftPots');
+    return request<GiftPot>(`/gift-pots/${id}`, { method: 'PATCH', body: data }).then((r) => {
+      cache.invalidatePrefix('listGiftPots');
+      return r;
+    });
+  },
   chipInGiftPot: (id: string, amount: number, method?: GiftMethod) => {
     cache.invalidatePrefix('listGiftPots');
     return request<GiftPot>(`/gift-pots/${id}/chip-in`, { method: 'POST', body: { amount, ...(method ? { method } : {}) } }).then((r) => {

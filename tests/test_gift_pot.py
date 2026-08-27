@@ -118,6 +118,73 @@ class GiftPot(unittest.TestCase):
         self.assertEqual(got["contributor_count"], 0)
         self.assertIsNone(got["your_amount"])
 
+    # --- editing the pot --------------------------------------------------
+    def test_editing_updates_only_the_sent_fields(self):
+        run(self._set_plan("executive"))
+        pot = run(server.create_gift_pot(
+            server.GiftPotIn(title="Ama", per_head=10, target_total=50, note="a bike"), self._user()))
+        pid = pot["pot_id"]
+        # Change only the per-head; title/target/note must survive untouched.
+        got = run(server.edit_gift_pot(pid, server.GiftPotEditIn(per_head=15), self._user()))
+        self.assertEqual(got["per_head"], 15)
+        self.assertEqual(got["title"], "Ama")
+        self.assertEqual(got["target_total"], 50)
+        self.assertEqual(got["note"], "a bike")
+
+    def test_editing_can_change_title_target_and_note(self):
+        run(self._set_plan("executive"))
+        pot = run(server.create_gift_pot(server.GiftPotIn(title="Ama", per_head=10), self._user()))
+        got = run(server.edit_gift_pot(
+            pot["pot_id"],
+            server.GiftPotEditIn(title="Ama's big day", target_total=80, note="ideas welcome"),
+            self._user()))
+        self.assertEqual(got["title"], "Ama's big day")
+        self.assertEqual(got["target_total"], 80)
+        self.assertEqual(got["note"], "ideas welcome")
+
+    def test_editing_can_clear_the_target(self):
+        run(self._set_plan("executive"))
+        pot = run(server.create_gift_pot(
+            server.GiftPotIn(title="Ama", per_head=10, target_total=50), self._user()))
+        got = run(server.edit_gift_pot(
+            pot["pot_id"], server.GiftPotEditIn(clear_target=True), self._user()))
+        self.assertIsNone(got["target_total"])
+
+    def test_editing_never_touches_pledges(self):
+        run(self._set_plan("executive"))
+        pot = run(server.create_gift_pot(server.GiftPotIn(title="Ama", per_head=10), self._user()))
+        pid = pot["pot_id"]
+        run(server.chip_in_gift_pot(pid, server.GiftChipIn(amount=12), self._user("u_r")))
+        got = run(server.edit_gift_pot(pid, server.GiftPotEditIn(per_head=20), self._user()))
+        self.assertEqual(got["total_pledged"], 12)
+        self.assertEqual(got["contributor_count"], 1)
+
+    def test_editing_is_refused_on_the_free_plan(self):
+        run(self._set_plan("executive"))
+        pot = run(server.create_gift_pot(server.GiftPotIn(title="Ama"), self._user()))
+        run(self._set_plan("village"))
+        with self.assertRaises(server.HTTPException) as e:
+            run(server.edit_gift_pot(pot["pot_id"], server.GiftPotEditIn(title="x"), self._user()))
+        self.assertEqual(e.exception.status_code, 402)
+
+    def test_a_celebrant_cannot_edit_their_own_surprise(self):
+        run(self._set_plan("executive"))
+        pot = run(server.create_gift_pot(
+            server.GiftPotIn(title="Keigh", for_member_id="m_u_k", per_head=10), self._user("u_r")))
+        with self.assertRaises(server.HTTPException) as e:
+            run(server.edit_gift_pot(pot["pot_id"], server.GiftPotEditIn(title="x"), self._user("u_k")))
+        self.assertEqual(e.exception.status_code, 404)
+
+    def test_another_family_cannot_edit_your_pot(self):
+        run(self._set_plan("executive"))
+        pot = run(server.create_gift_pot(server.GiftPotIn(title="Ama"), self._user("u_r")))
+        outsider = {"user_id": "u_x", "family_id": "fam2", "name": "Outsider"}
+        # Blocked either way — the plan gate fires first for a family with no
+        # subscription, and _load_own_pot would 404 even if it didn't.
+        with self.assertRaises(server.HTTPException) as e:
+            run(server.edit_gift_pot(pot["pot_id"], server.GiftPotEditIn(title="x"), outsider))
+        self.assertIn(e.exception.status_code, (402, 404))
+
     # --- the surprise -----------------------------------------------------
     def test_a_pot_for_a_parent_is_hidden_from_that_parent(self):
         run(self._set_plan("executive"))
