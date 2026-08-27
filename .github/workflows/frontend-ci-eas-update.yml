@@ -84,6 +84,10 @@ jobs:
       EXPO_PUBLIC_BACKEND_URL: ${{ secrets.EXPO_PUBLIC_BACKEND_URL || vars.EXPO_PUBLIC_BACKEND_URL }}
       EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: ${{ secrets.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || vars.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID }}
       EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: ${{ secrets.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || vars.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID }}
+      # Stamp the deployed web bundle with the commit it was built from, so
+      # Settings shows which build is live — the web has no OTA update id, so
+      # this is the only per-deploy signal there.
+      EXPO_PUBLIC_BUILD_TAG: ${{ github.sha }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7

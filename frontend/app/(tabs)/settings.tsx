@@ -41,6 +41,7 @@ import { openReview } from '../../src/reviewPrompt';
 import { api, Card as CardType, Entitlements, FamilyInvite, FamilyMember, NotificationSettings } from '../../src/api';
 import { LANG_NAMES } from '../../src/i18n';
 import { appVersionInfo, ensureNotificationPermissions, registerForPushNotificationsAsync, sendLocalNotification, sendTestScheduledReminderNotification, syncCardReminderNotifications } from '../../src/notifications';
+import { BUILD_TAG } from '../../src/buildInfo';
 import { requestWebPush } from '../../src/webpush';
 import { logger } from '../../src/logger';
 
@@ -141,7 +142,13 @@ export default function Settings() {
   const versionLabel = useMemo(() => {
     const store = Constants.expoConfig?.version || '—';
     const update = Updates.isEmbeddedLaunch ? null : (Updates.updateId || '').slice(0, 8);
-    return update ? `${store} · ${update}` : store;
+    // The build stamp, stamped into every deployed export at CI time. On the
+    // web there is no OTA update id, so without this a redeploy is invisible —
+    // the version stayed "1.1.0" forever and there was no way to tell which
+    // build you were actually looking at. Now the short commit shows, so
+    // "am I on the latest?" has a readable answer on every platform.
+    const build = BUILD_TAG && BUILD_TAG !== 'dev' ? BUILD_TAG.slice(0, 7) : null;
+    return [store, update, build].filter(Boolean).join(' · ');
   }, []);
 
   /**

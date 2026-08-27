@@ -31,6 +31,9 @@ jobs:
       EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: ${{ secrets.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || vars.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID }}
       EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: ${{ secrets.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || vars.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID }}
       EXPO_NO_TELEMETRY: 1
+      # Stamp the preview OTA with its commit, so Settings shows which preview
+      # build a phone is actually running.
+      EXPO_PUBLIC_BUILD_TAG: ${{ github.sha }}
     steps:
       - name: Verify EXPO_TOKEN is set
         run: |
