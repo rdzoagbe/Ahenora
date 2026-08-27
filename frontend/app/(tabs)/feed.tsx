@@ -226,6 +226,9 @@ function activityPhrase(entry: ActivityEntry, t: TFunc): string {
     case 'list_cleared': return t('act_list_cleared', { n: String(entry.amount ?? 0) });
     case 'week_planned': return t('act_week_planned');
     case 'doc_shared': return t('act_doc_shared', { subject: entry.subject });
+    case 'pot_pledge':
+      return t('act_pot_pledge', { amount: String(entry.amount ?? 0), subject: entry.subject });
+    case 'santa_opened': return t('act_santa_opened');
     default: return '';
   }
 }

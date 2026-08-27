@@ -60,8 +60,10 @@ export function GiftingStrip({
 
   if (!hasBirthdays && !hasSanta) return null;
 
-  const bothTabs = hasBirthdays && hasSanta;
-  const active = bothTabs ? tab : (hasBirthdays ? 'giftpot' : 'santa');
+  // Both tabs are ALWAYS shown once the card is on screen, so Secret Santa is
+  // discoverable (and startable) even when there's no draw yet — an empty tab
+  // simply offers to start one, rather than hiding the feature.
+  const active = tab;
 
   const santaSub = (d: SantaDraw): string => {
     const people = d.participant_count === 1 ? t('ss_one_person') : t('ss_n_people', { n: String(d.participant_count) });
@@ -72,29 +74,26 @@ export function GiftingStrip({
 
   return (
     <View style={styles.card}>
-      {bothTabs ? (
-        <View style={styles.seg}>
-          <PressScale testID="gifting-tab-giftpot" onPress={() => setTab('giftpot')} style={[styles.segBtn, active === 'giftpot' && styles.segBtnOn]}>
-            <Gift color={active === 'giftpot' ? ui.orangeText : ui.muted} size={14} />
-            <Text style={[styles.segText, active === 'giftpot' && styles.segTextOn]}>{t('gp_title')}</Text>
-          </PressScale>
-          <PressScale testID="gifting-tab-santa" onPress={() => setTab('santa')} style={[styles.segBtn, active === 'santa' && styles.segBtnOn]}>
-            <Gift color={active === 'santa' ? ui.orangeText : ui.muted} size={14} />
-            <Text style={[styles.segText, active === 'santa' && styles.segTextOn]}>{t('ss_title')}</Text>
-          </PressScale>
-        </View>
-      ) : (
-        <View style={styles.head}>
-          <Gift color={ui.orangeText} size={17} />
-          <Text style={styles.title}>{active === 'giftpot' ? t('gp_title') : t('ss_title')}</Text>
-        </View>
-      )}
+      <View style={styles.seg}>
+        <PressScale testID="gifting-tab-giftpot" onPress={() => setTab('giftpot')} style={[styles.segBtn, active === 'giftpot' && styles.segBtnOn]}>
+          <Gift color={active === 'giftpot' ? ui.orangeText : ui.muted} size={14} />
+          <Text style={[styles.segText, active === 'giftpot' && styles.segTextOn]}>{t('gp_title')}</Text>
+        </PressScale>
+        <PressScale testID="gifting-tab-santa" onPress={() => setTab('santa')} style={[styles.segBtn, active === 'santa' && styles.segBtnOn]}>
+          <Gift color={active === 'santa' ? ui.orangeText : ui.muted} size={14} />
+          <Text style={[styles.segText, active === 'santa' && styles.segTextOn]}>{t('ss_title')}</Text>
+        </PressScale>
+      </View>
 
       {active === 'giftpot' ? (
-        <GiftPotContent
-          birthdays={birthdays} potByCard={potByCard} lang={lang} styles={styles} ui={ui} t={t}
-          onOpen={onOpenBirthday} onSeeAll={onSeeAllBirthdays}
-        />
+        hasBirthdays ? (
+          <GiftPotContent
+            birthdays={birthdays} potByCard={potByCard} lang={lang} styles={styles} ui={ui} t={t}
+            onOpen={onOpenBirthday} onSeeAll={onSeeAllBirthdays}
+          />
+        ) : (
+          <Text style={styles.emptyTab}>{t('gp_none_soon')}</Text>
+        )
       ) : (
         <View>
           {draws.slice(0, MAX_ROWS).map((d, i) => (
@@ -187,6 +186,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   head: { flexDirection: 'row', alignItems: 'center', gap: 9, paddingBottom: 2 },
   title: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 15, letterSpacing: -0.2 },
   monthLine: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 11.5, marginTop: 8, marginLeft: 2 },
+  emptyTab: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 13, textAlign: 'center', paddingVertical: 18 },
 
   row: { flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 10, borderTopWidth: 1, borderTopColor: ui.line },
   rowFirst: { borderTopWidth: 0, marginTop: 6 },

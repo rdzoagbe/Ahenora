@@ -1198,13 +1198,16 @@ async def roll_week_if_stale(database, member: dict) -> dict:
 ACTIVITY_KINDS = {
     "task_created", "task_done", "task_assigned", "stars_awarded",
     "member_joined", "week_planned", "list_cleared", "doc_shared",
+    # Gifting: someone chipped into a pot, or opened their Secret Santa link.
+    "pot_pledge", "santa_opened",
 }
 ACTIVITY_KEEP = 60
 
 
 async def log_activity(database, user: dict, kind: str, subject: str = "",
                        amount: Optional[int] = None, target: str = "",
-                       shared: bool = True, ref: str = "") -> None:
+                       shared: bool = True, ref: str = "",
+                       hidden_by: Optional[list] = None) -> None:
     """Record who did what, for the household feed.
 
     The app could always say a task was done; it could never say by whom, so
@@ -1239,8 +1242,9 @@ async def log_activity(database, user: dict, kind: str, subject: str = "",
             "shared": bool(shared),
             "ref": (ref or "")[:64],
             # Per-person "hide from my view" for shared lines — the record
-            # stays for everyone else, it just leaves your feed.
-            "hidden_by": [],
+            # stays for everyone else, it just leaves your feed. Seeded here so
+            # a surprise (a gift pot's celebrant) never sees the line at all.
+            "hidden_by": [x for x in (hidden_by or []) if x],
             "created_at": utcnow(),
         })
     except Exception as exc:  # noqa: BLE001 — never break the caller
@@ -10513,6 +10517,14 @@ async def chip_in_gift_pot(pot_id: str, payload: GiftChipIn, user=Depends(requir
         )
         if result.matched_count:
             pot["contributions"] = contributions
+            # Tell the household on the Feed — but only on a first pledge (an
+            # update shouldn't re-announce), and never to the celebrant of a
+            # surprise pot.
+            if existing is None and amount > 0:
+                await log_activity(
+                    database, user, "pot_pledge", subject=pot.get("title") or "",
+                    amount=int(round(amount)), ref=pot_id,
+                    hidden_by=[pot.get("for_user_id")] if pot.get("for_user_id") else None)
             return public_gift_pot(pot, me)
     # Lost the CAS six times running — extraordinarily unlikely outside a
     # pathological hot loop; surface it rather than silently doing nothing.
@@ -10719,6 +10731,14 @@ async def join_shared_pot(token: str, payload: PotJoinIn):
              "$inc": {"rev": 1}})
         if result.matched_count:
             pot["contributions"] = contributions
+            # Surface the outsider's pledge on the organiser's Feed. No account,
+            # so the actor is just their name; hidden from the celebrant of a
+            # surprise pot.
+            await log_activity(
+                database, {"family_id": pot["family_id"], "user_id": None, "name": name},
+                "pot_pledge", subject=pot.get("title") or "",
+                amount=int(round(amount)), ref=pot["pot_id"],
+                hidden_by=[pot.get("for_user_id")] if pot.get("for_user_id") else None)
             return public_pot_link_view(pot)
     raise HTTPException(409, "Please try again.")
 
@@ -11118,6 +11138,9 @@ async def my_santa_match(draw_id: str, user=Depends(require_full_member)):
         await database["santa_draws"].update_one(
             {"draw_id": draw_id, "family_id": user["family_id"]},
             {"$set": {"participants": draw["participants"]}})
+        # Delivery confirmation on the Feed — never reveals the match itself.
+        await log_activity(database, user, "santa_opened",
+                           subject=draw.get("title") or "", ref=draw_id)
     return santa_match_view(draw, me)
 
 
@@ -11159,6 +11182,12 @@ async def public_santa_match(token: str):
         await database["santa_draws"].update_one(
             {"draw_id": draw["draw_id"], "family_id": draw["family_id"]},
             {"$set": {"participants": draw["participants"]}})
+        # An outsider confirming receipt — actor is just their name. Safe: it
+        # says they opened their link, nothing about who they drew.
+        await log_activity(
+            database,
+            {"family_id": draw["family_id"], "user_id": None, "name": participant.get("name") or ""},
+            "santa_opened", subject=draw.get("title") or "", ref=draw["draw_id"])
     return santa_match_view(draw, participant)
 
 
