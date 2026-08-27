@@ -3,6 +3,7 @@ import io
 import re
 import json
 import base64
+import random
 import asyncio
 import hashlib
 import hmac
@@ -13,7 +14,7 @@ import urllib.error
 import urllib.request
 import urllib.parse
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from typing import Any, List, Optional
 from fastapi import FastAPI, HTTPException, Depends, Header, UploadFile, File, Query, Body
 import requests
 import webpush as webpush_lib
@@ -775,6 +776,10 @@ PLAN_CATALOG = {
             # The birthday REMINDER itself is a plain card and stays free — only
             # the pot that pools contributions is gated.
             "gift_pot": False,
+            # Secret Santa: a free family can build the list and shuffle to see
+            # it work, but SENDING everyone their match is the Family gate. The
+            # draw itself is ungated (see shuffle); only /send checks this flag.
+            "secret_santa": False,
         },
     },
     # The middle tier — shown as "Family". The stored id stays "executive" so
@@ -797,6 +802,7 @@ PLAN_CATALOG = {
             "helper_accounts": False,
             "priority_support": False,
             "gift_pot": True,
+            "secret_santa": True,
         },
     },
     # The top tier — "Household". For two homes and bigger, blended or
@@ -820,6 +826,7 @@ PLAN_CATALOG = {
             "helper_accounts": True,
             "priority_support": True,
             "gift_pot": True,
+            "secret_santa": True,
         },
     },
 }
@@ -845,6 +852,7 @@ PREMIUM_FEATURE_MESSAGES = {
     "weekly_report": "Weekly Report is available on Premium.",
     "helper_accounts": "Helper and carer accounts are available on the Household plan.",
     "gift_pot": "The Gift Pot is available on Family.",
+    "secret_santa": "Sending a Secret Santa draw is available on Family.",
 }
 
 
@@ -3240,6 +3248,7 @@ _FAMILY_SCOPED_COLLECTIONS = (
     "family_members", "handoff_notes", "meal_plans_saved", "meals", "redemptions",
     "rewards", "routine_logs", "routines", "shopping_history", "shopping_list",
     "star_transactions", "templates", "vault", "expense_settlements", "gift_pots",
+    "santa_draws",
 )
 
 
@@ -9130,6 +9139,7 @@ async def get_entitlements(user=Depends(require_user)):
             "carpool": sub["limits"].get("carpool", False),
             "weekly_report": sub["limits"].get("weekly_report", False),
             "gift_pot": sub["limits"].get("gift_pot", False),
+            "secret_santa": sub["limits"].get("secret_santa", False),
         },
     }
 
@@ -10711,6 +10721,427 @@ async def join_shared_pot(token: str, payload: PotJoinIn):
             pot["contributions"] = contributions
             return public_pot_link_view(pot)
     raise HTTPException(409, "Please try again.")
+
+
+# -----------------------------------------------------------------------------
+# Secret Santa — a name-draw gift exchange.
+#
+# The organiser lists everyone (household members and outsiders), taps shuffle,
+# and the server draws a valid assignment: everyone gives to someone, no one
+# gets themselves, and any "keep apart" pairs never match. The full map is
+# stored server-side and NEVER serialised back to any device — not even the
+# organiser's. Each person reveals only their own match: members in the app,
+# outsiders through a one-match link. Building and shuffling are free; SENDING
+# the matches is the Family gate (the funnel: feel it work, then pay to use it).
+# -----------------------------------------------------------------------------
+
+
+class SantaParticipantIn(BaseModel):
+    name: str = Field(min_length=1, max_length=60)
+    # A household member the participant maps to (so they reveal in-app and are
+    # never handed a link). Absent → an outsider, reached by link.
+    member_id: Optional[str] = None
+
+
+class SantaDrawIn(BaseModel):
+    title: str = Field(default="", max_length=80)
+    budget: Optional[float] = Field(default=None, ge=0, le=1_000_000)
+    # Free-form display date ("24 Dec", "2026-12-24") — never parsed, just shown.
+    draw_by: Optional[str] = Field(default=None, max_length=40)
+    participants: List[SantaParticipantIn] = Field(default_factory=list)
+    # Symmetric "keep apart" pairs, as pairs of participant names. Names are the
+    # stable handle the client has before pids exist; resolved to pids on save.
+    exclusions: List[List[str]] = Field(default_factory=list)
+
+
+# Editing is the same shape; every field optional so only what's sent changes.
+class SantaDrawEditIn(BaseModel):
+    title: Optional[str] = Field(default=None, max_length=80)
+    budget: Optional[float] = Field(default=None, ge=0, le=1_000_000)
+    draw_by: Optional[str] = Field(default=None, max_length=40)
+    participants: Optional[List[SantaParticipantIn]] = None
+    exclusions: Optional[List[List[str]]] = None
+    clear_budget: bool = False
+
+
+MAX_SANTA_PARTICIPANTS = 60
+
+
+def _derange(pids: List[str], excluded: set) -> Optional[dict]:
+    """A random valid Secret Santa assignment, or None if one is impossible.
+
+    Returns {giver_pid: receiver_pid} where every giver gives once, every
+    receiver receives once, no one draws themselves, and no `excluded`
+    frozenset({a, b}) pair is matched (in either direction). Randomised
+    backtracking: it tries random receivers and backs out of dead ends, so it
+    both finds a valid draw whenever one exists AND varies the result run to
+    run. Family draws are tiny (well under a hundred people), so the search is
+    effectively instant."""
+    n = len(pids)
+    if n < 2:
+        return None
+    givers = pids[:]
+    random.shuffle(givers)
+    used: set = set()
+    assignment: dict = {}
+
+    def bad(g: str, r: str) -> bool:
+        return g == r or frozenset({g, r}) in excluded
+
+    def bt(i: int) -> bool:
+        if i == len(givers):
+            return True
+        g = givers[i]
+        candidates = [r for r in pids if r not in used and not bad(g, r)]
+        random.shuffle(candidates)
+        # Most-constrained-first would be faster, but for these sizes plain
+        # randomised order is instant and keeps draws varied.
+        for r in candidates:
+            assignment[g] = r
+            used.add(r)
+            if bt(i + 1):
+                return True
+            used.discard(r)
+            del assignment[g]
+        return False
+
+    return assignment if bt(0) else None
+
+
+async def _build_participants(database, family_id: str, items: List[SantaParticipantIn]) -> list:
+    """Normalise incoming participants into stored rows with stable pids. A
+    member_id is resolved to that member's account (if any) so they can reveal
+    in-app; everyone else is an outsider reached by link."""
+    rows = []
+    seen_names = set()
+    for it in items:
+        name = (it.name or "").strip()[:60]
+        if not name:
+            continue
+        # De-dup on name (case-insensitive) so one person isn't drawn twice.
+        key = name.lower()
+        if key in seen_names:
+            continue
+        seen_names.add(key)
+        user_id = None
+        source = "link"
+        if it.member_id:
+            m = await database["family_members"].find_one(
+                {"family_id": family_id, "member_id": it.member_id}, {"_id": 0, "user_id": 1})
+            if m:
+                user_id = m.get("user_id")
+                source = "member"
+        rows.append({
+            "pid": new_id("sp"),
+            "name": name,
+            "member_id": it.member_id,
+            "user_id": user_id,
+            "source": source,
+            "token": None,        # minted for link participants on /send
+            "opened_at": None,
+        })
+    return rows
+
+
+def _resolve_exclusions(participants: list, pairs: List[List[str]]) -> list:
+    """Turn name pairs into pid pairs, dropping any that don't resolve to two
+    distinct participants."""
+    by_name = {}
+    for p in participants:
+        by_name.setdefault((p["name"] or "").strip().lower(), p["pid"])
+    out = []
+    for pair in pairs or []:
+        if not isinstance(pair, list) or len(pair) != 2:
+            continue
+        a = by_name.get((pair[0] or "").strip().lower())
+        b = by_name.get((pair[1] or "").strip().lower())
+        if a and b and a != b and [a, b] not in out and [b, a] not in out:
+            out.append([a, b])
+    return out
+
+
+def public_santa_draw(draw: dict, viewer_user_id: str) -> dict:
+    """The ORGANISER / household view. Rich enough to run the draw — headcount,
+    delivery status, who's kept apart — but it deliberately carries NO part of
+    the assignment map. Not even the viewer's own match: that comes only from
+    /my-match, so a draw object can never be the thing that spoils the surprise.
+    Link tokens for outsiders are exposed once sent, so the organiser can
+    forward each person their private link."""
+    participants = draw.get("participants") or []
+    pid_name = {p["pid"]: p.get("name") or "" for p in participants}
+    status = draw.get("status") or "draft"
+    sent = status in ("sent", "closed")
+    viewer_p = next((p for p in participants
+                     if p.get("user_id") and p.get("user_id") == viewer_user_id), None)
+    return {
+        "draw_id": draw["draw_id"],
+        "family_id": draw["family_id"],
+        "title": draw.get("title") or "",
+        "budget": (round(float(draw["budget"]), 2) if draw.get("budget") is not None else None),
+        "draw_by": draw.get("draw_by"),
+        "status": status,
+        "participants": [
+            {"pid": p["pid"], "name": p.get("name") or "",
+             "source": p.get("source") or ("member" if p.get("user_id") else "link"),
+             "member_id": p.get("member_id"),
+             "is_member": bool(p.get("user_id")),
+             "opened": bool(p.get("opened_at")),
+             # Only meaningful once sent, and only for outsiders (members reveal
+             # in-app). None otherwise.
+             "token": (p.get("token") if sent and p.get("source") == "link" else None)}
+            for p in participants
+        ],
+        "exclusions": [[pid_name.get(a, ""), pid_name.get(b, "")]
+                       for a, b in (draw.get("exclusions") or [])],
+        "participant_count": len(participants),
+        "opened_count": sum(1 for p in participants if p.get("opened_at")),
+        # What the viewer may do, never the answer itself.
+        "viewer_is_participant": bool(viewer_p),
+        "viewer_can_reveal": bool(viewer_p) and sent,
+        "created_by_user_id": draw.get("created_by_user_id"),
+        "created_by_name": draw.get("created_by_name"),
+        "created_at": iso(draw.get("created_at")),
+        "updated_at": iso(draw.get("updated_at")),
+        "sent_at": iso(draw.get("sent_at")),
+    }
+
+
+def santa_match_view(draw: dict, giver: dict) -> dict:
+    """The payoff, and the ONLY place an assignment is revealed: what one person
+    sees — the single name they drew, plus the budget and date. No headcount, no
+    other pairings, nothing about who drew them."""
+    assignments = draw.get("assignments") or {}
+    receiver_pid = assignments.get(giver["pid"])
+    receiver = next((p for p in (draw.get("participants") or []) if p["pid"] == receiver_pid), None)
+    return {
+        "draw_title": draw.get("title") or "",
+        "budget": (round(float(draw["budget"]), 2) if draw.get("budget") is not None else None),
+        "draw_by": draw.get("draw_by"),
+        "organiser_name": draw.get("created_by_name") or "",
+        "giver_name": giver.get("name") or "",
+        "giftee_name": (receiver.get("name") if receiver else "") or "",
+    }
+
+
+async def _load_santa_draw(database, draw_id: str, user: dict) -> dict:
+    draw = await database["santa_draws"].find_one(
+        {"draw_id": draw_id, "family_id": user["family_id"]}, {"_id": 0})
+    if not draw:
+        raise HTTPException(404, "Secret Santa draw not found")
+    return draw
+
+
+@app.get("/api/santa")
+async def list_santa_draws(user=Depends(require_full_member)):
+    database = get_db()
+    draws = []
+    async for d in database["santa_draws"].find({"family_id": user["family_id"]}, {"_id": 0}):
+        draws.append(d)
+    draws.sort(key=lambda d: d.get("created_at") or utcnow(), reverse=True)
+    return [public_santa_draw(d, user["user_id"]) for d in draws]
+
+
+@app.get("/api/santa/{draw_id}")
+async def get_santa_draw(draw_id: str, user=Depends(require_full_member)):
+    database = get_db()
+    draw = await _load_santa_draw(database, draw_id, user)
+    return public_santa_draw(draw, user["user_id"])
+
+
+@app.post("/api/santa")
+async def create_santa_draw(payload: SantaDrawIn, user=Depends(require_full_member)):
+    # Ungated: building and shuffling are free. Only /send checks the flag.
+    database = get_db()
+    family_id = user["family_id"]
+    if len(payload.participants) > MAX_SANTA_PARTICIPANTS:
+        raise HTTPException(400, f"A draw can hold at most {MAX_SANTA_PARTICIPANTS} people.")
+    participants = await _build_participants(database, family_id, payload.participants)
+    now = utcnow()
+    doc = {
+        "draw_id": new_id("santa"),
+        "family_id": family_id,
+        "title": (payload.title or "").strip()[:80],
+        "budget": (round(float(payload.budget), 2) if payload.budget is not None else None),
+        "draw_by": (payload.draw_by or "").strip()[:40] or None,
+        "status": "draft",
+        "participants": participants,
+        "exclusions": _resolve_exclusions(participants, payload.exclusions),
+        "assignments": {},
+        "rev": 0,
+        "created_by_user_id": user["user_id"],
+        "created_by_name": user.get("name", ""),
+        "created_at": now,
+        "updated_at": now,
+        "sent_at": None,
+    }
+    await database["santa_draws"].insert_one(doc)
+    return public_santa_draw(doc, user["user_id"])
+
+
+@app.patch("/api/santa/{draw_id}")
+async def edit_santa_draw(draw_id: str, payload: SantaDrawEditIn, user=Depends(require_full_member)):
+    """Edit a draw's details or its list. Locked once sent — the matches are
+    out, so the list can't change under them. Any change to the participants (or
+    exclusions) throws away a previous shuffle: the assignment no longer matches
+    the list, so status drops back to draft and must be reshuffled."""
+    database = get_db()
+    draw = await _load_santa_draw(database, draw_id, user)
+    if draw.get("status") in ("sent", "closed"):
+        raise HTTPException(409, "This draw has already been sent and can't be changed.")
+
+    changes: dict = {}
+    if payload.title is not None:
+        changes["title"] = (payload.title or "").strip()[:80]
+    if payload.clear_budget:
+        changes["budget"] = None
+    elif payload.budget is not None:
+        changes["budget"] = round(float(payload.budget), 2)
+    if payload.draw_by is not None:
+        changes["draw_by"] = (payload.draw_by or "").strip()[:40] or None
+
+    participants = draw.get("participants") or []
+    relist = payload.participants is not None
+    if relist:
+        if len(payload.participants) > MAX_SANTA_PARTICIPANTS:
+            raise HTTPException(400, f"A draw can hold at most {MAX_SANTA_PARTICIPANTS} people.")
+        participants = await _build_participants(database, user["family_id"], payload.participants)
+        changes["participants"] = participants
+    if relist or payload.exclusions is not None:
+        # Re-resolve exclusions against the (possibly new) participant list.
+        pairs_names = payload.exclusions
+        if pairs_names is None:
+            # Keep existing pairs, mapped back to names so they re-resolve.
+            pid_name = {p["pid"]: p.get("name") or "" for p in (draw.get("participants") or [])}
+            pairs_names = [[pid_name.get(a, ""), pid_name.get(b, "")]
+                           for a, b in (draw.get("exclusions") or [])]
+        changes["exclusions"] = _resolve_exclusions(participants, pairs_names)
+    # Changing the list invalidates any draw already made.
+    if relist and draw.get("status") == "matched":
+        changes["status"] = "draft"
+        changes["assignments"] = {}
+
+    if changes:
+        changes["updated_at"] = utcnow()
+        await database["santa_draws"].update_one(
+            {"draw_id": draw_id, "family_id": user["family_id"]},
+            {"$set": changes, "$inc": {"rev": 1}})
+        draw.update(changes)
+    return public_santa_draw(draw, user["user_id"])
+
+
+@app.post("/api/santa/{draw_id}/shuffle")
+async def shuffle_santa_draw(draw_id: str, user=Depends(require_full_member)):
+    """Draw the names (free). Computes a valid assignment and stores it — but
+    returns only the draw view, never the map. Reshuffle freely until sent;
+    after sending, the draw is locked."""
+    database = get_db()
+    draw = await _load_santa_draw(database, draw_id, user)
+    if draw.get("status") in ("sent", "closed"):
+        raise HTTPException(409, "This draw has already been sent.")
+    participants = draw.get("participants") or []
+    if len(participants) < 2:
+        raise HTTPException(400, "Add at least two people before drawing.")
+    pids = [p["pid"] for p in participants]
+    excluded = {frozenset(pair) for pair in (draw.get("exclusions") or [])}
+    assignment = _derange(pids, excluded)
+    if assignment is None:
+        raise HTTPException(
+            409, "No draw is possible with these 'keep apart' pairs — remove one and try again.")
+    await database["santa_draws"].update_one(
+        {"draw_id": draw_id, "family_id": user["family_id"]},
+        {"$set": {"assignments": assignment, "status": "matched", "updated_at": utcnow()},
+         "$inc": {"rev": 1}})
+    draw["assignments"] = assignment
+    draw["status"] = "matched"
+    return public_santa_draw(draw, user["user_id"])
+
+
+@app.post("/api/santa/{draw_id}/send")
+async def send_santa_draw(draw_id: str, user=Depends(require_full_member)):
+    """Lock the draw and hand everyone their match — THE Family gate. Mints a
+    private one-match link for each outsider (members reveal in-app); after this
+    the list can't change."""
+    await require_feature(user, "secret_santa")
+    database = get_db()
+    draw = await _load_santa_draw(database, draw_id, user)
+    if draw.get("status") == "draft" or not (draw.get("assignments") or {}):
+        raise HTTPException(409, "Shuffle the names before sending.")
+    if draw.get("status") in ("sent", "closed"):
+        return public_santa_draw(draw, user["user_id"])   # idempotent
+    participants = draw.get("participants") or []
+    for p in participants:
+        if p.get("source") == "link" and not p.get("token"):
+            p["token"] = secrets.token_urlsafe(24)
+    await database["santa_draws"].update_one(
+        {"draw_id": draw_id, "family_id": user["family_id"]},
+        {"$set": {"participants": participants, "status": "sent",
+                  "sent_at": utcnow(), "updated_at": utcnow()},
+         "$inc": {"rev": 1}})
+    draw["participants"] = participants
+    draw["status"] = "sent"
+    draw["sent_at"] = utcnow()
+    return public_santa_draw(draw, user["user_id"])
+
+
+@app.get("/api/santa/{draw_id}/my-match")
+async def my_santa_match(draw_id: str, user=Depends(require_full_member)):
+    """A household member reveals THEIR OWN match — the only authenticated way
+    to see an assignment, and only your own. Available once the draw is sent."""
+    database = get_db()
+    draw = await _load_santa_draw(database, draw_id, user)
+    if draw.get("status") not in ("sent", "closed"):
+        raise HTTPException(409, "This draw hasn't been sent yet.")
+    me = next((p for p in (draw.get("participants") or [])
+               if p.get("user_id") and p.get("user_id") == user["user_id"]), None)
+    if not me:
+        raise HTTPException(404, "You're not in this draw.")
+    if not me.get("opened_at"):
+        me["opened_at"] = utcnow()
+        await database["santa_draws"].update_one(
+            {"draw_id": draw_id, "family_id": user["family_id"]},
+            {"$set": {"participants": draw["participants"]}})
+    return santa_match_view(draw, me)
+
+
+@app.delete("/api/santa/{draw_id}")
+async def delete_santa_draw(draw_id: str, user=Depends(require_full_member)):
+    database = get_db()
+    result = await database["santa_draws"].delete_one(
+        {"draw_id": draw_id, "family_id": user["family_id"]})
+    if result.deleted_count == 0:
+        raise HTTPException(404, "Secret Santa draw not found")
+    return {"ok": True}
+
+
+async def _santa_by_token(database, token: str) -> Optional[tuple]:
+    """Find the (draw, participant) a link token belongs to. Empty tokens never
+    match. fake_mongo can't evaluate nested array queries, so scan in Python."""
+    if not token or not token.strip():
+        return None
+    async for draw in database["santa_draws"].find({}, {"_id": 0}):
+        for p in draw.get("participants") or []:
+            if p.get("token") and p.get("token") == token:
+                return draw, p
+    return None
+
+
+@app.get("/api/santa/match/{token}")
+async def public_santa_match(token: str):
+    """The PUBLIC one-match reveal — no account. A single link shows one person
+    the one name they drew, and nothing else about the draw."""
+    database = get_db()
+    found = await _santa_by_token(database, token)
+    if not found:
+        raise HTTPException(404, "This Secret Santa link isn’t active.")
+    draw, participant = found
+    if draw.get("status") not in ("sent", "closed"):
+        raise HTTPException(404, "This Secret Santa link isn’t active.")
+    if not participant.get("opened_at"):
+        participant["opened_at"] = utcnow()
+        await database["santa_draws"].update_one(
+            {"draw_id": draw["draw_id"], "family_id": draw["family_id"]},
+            {"$set": {"participants": draw["participants"]}})
+    return santa_match_view(draw, participant)
 
 
 # -----------------------------------------------------------------------------
