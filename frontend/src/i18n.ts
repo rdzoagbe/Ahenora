@@ -450,6 +450,8 @@ const en: Dict = {
   "gp_footnote": "A shared tally, not a payment. Settle up however you like.",
   "gp_chip": "€{total}/€{target}",
   "gp_open": "Open gift pot",
+  "gp_start_short": "Start a pot",
+  "gp_see_all": "See all {n} birthdays",
   // --- Gift Pot sharing ---
   "gp_via_link": "via link",
   "gp_paid": "Paid",
@@ -2159,6 +2161,8 @@ const es: Dict = {
   "gp_footnote": "Un registro compartido, no un pago. Ajustad como queráis.",
   "gp_chip": "{total} €/{target} €",
   "gp_open": "Abrir el bote",
+  "gp_start_short": "Crear un bote",
+  "gp_see_all": "Ver los {n} cumpleaños",
   // --- Gift Pot sharing ---
   "gp_via_link": "por enlace",
   "gp_paid": "Pagado",
@@ -3862,6 +3866,8 @@ const fr: Dict = {
   "gp_footnote": "Un simple suivi, pas un paiement. Réglez comme vous voulez.",
   "gp_chip": "{total} €/{target} €",
   "gp_open": "Ouvrir la cagnotte",
+  "gp_start_short": "Lancer une cagnotte",
+  "gp_see_all": "Voir les {n} anniversaires",
   // --- Gift Pot sharing ---
   "gp_via_link": "par lien",
   "gp_paid": "Réglé",
@@ -5565,6 +5571,8 @@ const de: Dict = {
   "gp_footnote": "Eine gemeinsame Übersicht, keine Zahlung. Rechnet ab, wie ihr wollt.",
   "gp_chip": "{total} €/{target} €",
   "gp_open": "Geschenk-Topf öffnen",
+  "gp_start_short": "Topf starten",
+  "gp_see_all": "Alle {n} Geburtstage ansehen",
   // --- Gift Pot sharing ---
   "gp_via_link": "per Link",
   "gp_paid": "Bezahlt",
