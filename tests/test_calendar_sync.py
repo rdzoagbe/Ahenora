@@ -138,6 +138,28 @@ class GoogleImport(unittest.TestCase):
         self.assertEqual(result["imported"], 1)
         self.assertEqual(db.cards.rows[0]["google_event_id"], "ev1")
 
+    def test_a_birthday_event_imports_as_a_recurring_birthday_card(self):
+        # The calendar trigger: a birthday in the calendar becomes a BIRTHDAY
+        # card (yearly), which is what lets the feed offer to start a gift pot.
+        result, db = self.run_import2([gevent(summary="Ama's birthday 🎂")], FakeCards())
+        self.assertEqual(result["imported"], 1)
+        card = db.cards.rows[0]
+        self.assertEqual(card["type"], "BIRTHDAY")
+        self.assertEqual(card["recurrence"], "yearly")
+
+    def test_google_eventtype_birthday_is_recognised_even_without_the_word(self):
+        result, db = self.run_import2([gevent(summary="Sam", eventType="birthday")], FakeCards())
+        self.assertEqual(db.cards.rows[0]["type"], "BIRTHDAY")
+
+    def test_a_plain_meeting_stays_a_task(self):
+        result, db = self.run_import2([gevent(summary="Team standup")], FakeCards())
+        self.assertEqual(db.cards.rows[0]["type"], "TASK")
+        self.assertEqual(db.cards.rows[0]["recurrence"], "none")
+
+    def test_a_birthday_in_french_is_recognised(self):
+        result, db = self.run_import2([gevent(summary="Anniversaire d'Ama")], FakeCards())
+        self.assertEqual(db.cards.rows[0]["type"], "BIRTHDAY")
+
     def test_an_unchanged_event_is_skipped_not_duplicated(self):
         result, db = self.run_import2([gevent()], FakeCards([existing_card()]))
         self.assertEqual(result["imported"], 0)

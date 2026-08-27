@@ -8073,6 +8073,26 @@ def _event_attendee_contacts(event: dict) -> list[dict]:
     return contacts
 
 
+# Birthday words across the app's four languages, plus the cake emoji. Used to
+# recognise a birthday among imported calendar events so it becomes a BIRTHDAY
+# card — which is what makes the gift-pot nudge offer to start a pot for it.
+_BIRTHDAY_WORDS = ("birthday", "b-day", "bday", "🎂",
+                   "anniversaire",              # fr
+                   "cumpleaños", "cumpleanos", "cumple",  # es
+                   "geburtstag")                # de
+
+
+def _looks_like_birthday(title: Optional[str], event_type: Optional[str] = None) -> bool:
+    """Whether a calendar event is a birthday. Google tags true birthday events
+    with eventType 'birthday'; otherwise (and for Outlook) we match the title
+    against birthday words in the languages the app speaks. A wedding anniversary
+    would match 'anniversaire' too — that's fine, a gift pot suits it just as well."""
+    if (event_type or "").strip().lower() == "birthday":
+        return True
+    t = (title or "").lower()
+    return any(w in t for w in _BIRTHDAY_WORDS)
+
+
 async def _fetch_google_calendar_events(access_token: str, days: int) -> list[dict]:
     now = utcnow()
     time_min = now.isoformat().replace("+00:00", "Z")
@@ -8234,10 +8254,14 @@ async def import_google_calendar(payload: CalendarImportIn, user=Depends(require
             f"Google Calendar: {html_link}" if html_link else "",
         ]
 
+        # A birthday in the calendar becomes a BIRTHDAY card that recurs yearly,
+        # so the gift-pot nudge can offer to start a pot for it — the calendar
+        # trigger Roland asked for. Everything else is a plain task.
+        is_bday = _looks_like_birthday(title, event.get("eventType"))
         card = {
             "card_id": new_id("card"),
             "family_id": user["family_id"],
-            "type": "TASK",
+            "type": "BIRTHDAY" if is_bday else "TASK",
             "title": title,
             "description": "\n".join([p for p in description_parts if p]),
             "assignee": user.get("name"),
@@ -8245,7 +8269,7 @@ async def import_google_calendar(payload: CalendarImportIn, user=Depends(require
             "status": "OPEN",
             "source": "CALENDAR",
             "image_base64": None,
-            "recurrence": "none",
+            "recurrence": "yearly" if is_bday else "none",
             "reminder_minutes": 60,
             "google_event_id": event_id,
             "google_ical_uid": event.get("iCalUID"),
@@ -8463,10 +8487,11 @@ async def import_microsoft_calendar(payload: CalendarImportIn, user=Depends(requ
             f"Outlook: {web_link}" if web_link else "",
         ]
 
+        is_bday = _looks_like_birthday(title)
         card = {
             "card_id": new_id("card"),
             "family_id": user["family_id"],
-            "type": "TASK",
+            "type": "BIRTHDAY" if is_bday else "TASK",
             "title": title,
             "description": "\n".join([p for p in description_parts if p]),
             "assignee": user.get("name"),
@@ -8474,7 +8499,7 @@ async def import_microsoft_calendar(payload: CalendarImportIn, user=Depends(requ
             "status": "OPEN",
             "source": "CALENDAR",
             "image_base64": None,
-            "recurrence": "none",
+            "recurrence": "yearly" if is_bday else "none",
             "reminder_minutes": 60,
             "ms_event_id": event_id,
             "google_ical_uid": event.get("iCalUId"),
