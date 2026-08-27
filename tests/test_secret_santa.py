@@ -278,6 +278,23 @@ class SecretSanta(unittest.TestCase):
         draw = self._mk(names=("Ama", "Ama", "Bob"))
         self.assertEqual(draw["participant_count"], 2)
 
+    def test_an_outsider_phone_is_kept_for_texting(self):
+        draw = run(server.create_santa_draw(server.SantaDrawIn(
+            title="X", participants=[P("Roland"), P("Maman")] + [
+                server.SantaParticipantIn(name="Sarah", phone="+33 6 12 34 56 78")]),
+            self._user()))
+        sarah = next(p for p in draw["participants"] if p["name"] == "Sarah")
+        self.assertEqual(sarah["phone"], "+33 6 12 34 56 78")
+
+    def test_a_member_phone_is_dropped(self):
+        # Members reveal in-app, so no phone is stored even if one is sent.
+        draw = run(server.create_santa_draw(server.SantaDrawIn(
+            title="X", participants=[
+                server.SantaParticipantIn(name="Roland", member_id="m_u_r", phone="0612345678"),
+                P("Maman")]), self._user()))
+        roland = next(p for p in draw["participants"] if p["name"] == "Roland")
+        self.assertIsNone(roland["phone"])
+
 
 @unittest.skipUnless(HAVE, "backend deps not installed")
 class Derangement(unittest.TestCase):

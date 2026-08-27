@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Modal, Platform, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Linking, Modal, Platform, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { ChevronLeft, Gift, Check, Users, Link2, Pencil, X } from 'lucide-react-native';
+import { ChevronLeft, Gift, Check, Users, Link2, Pencil, X, MessageCircle } from 'lucide-react-native';
 
 import { PressScale } from '../src/components/PressScale';
 import { useUI, UIColors } from '../src/components/Kit';
@@ -132,6 +132,28 @@ export default function GiftPotRoute() {
     } catch (e) {
       if ((e as { status?: number })?.status === 402) promptUpgrade('gift_pot');
       else logger.warn('share pot failed', e);
+    } finally {
+      setBusy(false);
+    }
+  }, [pot, t, promptUpgrade]);
+
+  // Text the invite link from the organiser's own phone — for people whose
+  // email you don't have. Opens the native messaging app with the link ready;
+  // the organiser picks the recipient. No SMS provider, no cost.
+  const textPotLink = useCallback(async () => {
+    if (!pot) return;
+    setBusy(true);
+    try {
+      const updated = pot.share_token ? pot : await api.shareGiftPot(pot.pot_id);
+      setPot(updated);
+      const url = potLink(updated.share_token as string);
+      const body = t('gp_text_body', { title: updated.title, link: url });
+      const sep = Platform.OS === 'ios' ? '&' : '?';
+      await Linking.openURL(`sms:${sep}body=${encodeURIComponent(body)}`)
+        .catch(() => Share.share({ message: body }).catch(() => undefined));
+    } catch (e) {
+      if ((e as { status?: number })?.status === 402) promptUpgrade('gift_pot');
+      else logger.warn('text pot link failed', e);
     } finally {
       setBusy(false);
     }
@@ -271,10 +293,16 @@ export default function GiftPotRoute() {
           {/* Invite others — the outer circle. Anyone with the link can chip in
               without joining the household. */}
           {pot.status !== 'closed' ? (
-            <PressScale testID="gift-pot-invite" onPress={inviteOthers} disabled={busy} style={styles.inviteBtn}>
-              {pot.shared ? <Link2 color={ui.orangeText} size={16} /> : <Users color={ui.orangeText} size={16} />}
-              <Text style={styles.inviteBtnText}>{pot.shared ? t('gp_copy_link') : t('gp_invite_others')}</Text>
-            </PressScale>
+            <View style={styles.inviteRow}>
+              <PressScale testID="gift-pot-invite" onPress={inviteOthers} disabled={busy} style={[styles.inviteBtn, { flex: 1 }]}>
+                {pot.shared ? <Link2 color={ui.orangeText} size={16} /> : <Users color={ui.orangeText} size={16} />}
+                <Text style={styles.inviteBtnText}>{pot.shared ? t('gp_copy_link') : t('gp_invite_others')}</Text>
+              </PressScale>
+              <PressScale testID="gift-pot-text" onPress={textPotLink} disabled={busy} style={styles.textBtn} accessibilityLabel={t('gp_text_link')}>
+                <MessageCircle color={ui.orangeText} size={16} />
+                <Text style={styles.inviteBtnText}>{t('gp_text_link')}</Text>
+              </PressScale>
+            </View>
           ) : null}
           {shareMsg ? <Text style={styles.shareMsg}>{shareMsg}</Text> : null}
 
@@ -397,7 +425,9 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   viaLink: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 11 },
   paidToggle: { width: 26, height: 26, borderRadius: 13, borderWidth: 1.5, borderColor: ui.line, alignItems: 'center', justifyContent: 'center', marginLeft: 10 },
   paidToggleOn: { backgroundColor: ui.mintText, borderColor: ui.mintText },
-  inviteBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: ui.orangeSoft, borderWidth: 1, borderColor: ui.orange, paddingVertical: 13, borderRadius: 14, marginBottom: 8 },
+  inviteRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
+  inviteBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: ui.orangeSoft, borderWidth: 1, borderColor: ui.orange, paddingVertical: 13, borderRadius: 14 },
+  textBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, backgroundColor: ui.orangeSoft, borderWidth: 1, borderColor: ui.orange, paddingVertical: 13, paddingHorizontal: 16, borderRadius: 14 },
   inviteBtnText: { color: ui.orangeText, fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
   shareMsg: { color: ui.mintText, fontFamily: 'Inter_600SemiBold', fontSize: 12.5, textAlign: 'center', marginBottom: 12 },
 
