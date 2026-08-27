@@ -1207,8 +1207,9 @@ export interface SantaParticipant {
   source: 'member' | 'link';
   member_id: string | null;
   is_member: boolean;
-  /** Optional phone for an outsider, so the organiser can text their link. */
-  phone: string | null;
+  /** Optional phone OR email for an outsider, so the organiser can send their
+   *  link from their own device. */
+  contact: string | null;
   opened: boolean;
   /** The private one-match link token — outsiders only, and only once sent. */
   token: string | null;
@@ -1248,7 +1249,7 @@ export interface SantaMatch {
 export interface SantaParticipantInput {
   name: string;
   member_id?: string;
-  phone?: string;
+  contact?: string;
 }
 
 export interface PlanLimitError {
