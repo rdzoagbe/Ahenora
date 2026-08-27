@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Linking, Modal, Platform, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Linking, Modal, Platform, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ChevronLeft, Gift, Check, Shuffle, Send, Trash2, X, Plus, Lock, MessageCircle } from 'lucide-react-native';
 
 import { PressScale } from '../src/components/PressScale';
+import { KeyboardAwareScrollView } from '../src/components/KeyboardAwareScrollView';
 import { useUI, UIColors } from '../src/components/Kit';
 import { useStore } from '../src/store';
 import { usePremiumGate } from '../src/components/PremiumGate';
@@ -236,7 +237,7 @@ export default function SantaRoute() {
         </PressScale>
         <Text style={styles.headTitle} numberOfLines={1}>{t('ss_title')}</Text>
         {draw && draw.status !== 'sent' ? (
-          <PressScale testID="santa-delete" onPress={removeDraw} style={styles.iconBtn} accessibilityLabel={t('ss_delete')}>
+          <PressScale testID="santa-delete" onPress={removeDraw} disabled={busy} style={styles.iconBtn} accessibilityLabel={t('ss_delete')}>
             <Trash2 color={ui.muted} size={19} />
           </PressScale>
         ) : <View style={{ width: 36 }} />}
@@ -247,9 +248,8 @@ export default function SantaRoute() {
       ) : isBuilding ? (
         // ---- Build the list ------------------------------------------------
         // Keyboard-aware: any field the organiser types into (a name, a phone,
-        // an email) rises above the keyboard instead of hiding under it.
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
+        // an email) is scrolled clear of the keyboard instead of hiding under it.
+        <KeyboardAwareScrollView contentContainerStyle={styles.scroll}>
           {!draw ? (
             <View style={styles.introHead}>
               <View style={styles.bigIcon}><Gift color={ui.orangeText} size={28} /></View>
@@ -354,8 +354,7 @@ export default function SantaRoute() {
           </PressScale>
           {locked ? <Text style={styles.lockNote}>{t('ss_family_note')}</Text> : null}
           <View style={{ height: 24 }} />
-        </ScrollView>
-        </KeyboardAvoidingView>
+        </KeyboardAwareScrollView>
       ) : draw && draw.status === 'matched' ? (
         // ---- Matched: ready to send ---------------------------------------
         <ScrollView contentContainerStyle={styles.scroll}>

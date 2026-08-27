@@ -111,7 +111,7 @@ export default function DateTimePickerSheet({
       <View style={[styles.timeInputWrap, { backgroundColor: c.bgSoft, borderColor: c.cardBorder }]}>
         <Clock color={c.textMuted} size={14} />
         <TextInput
-          testID="due-time-input"
+          testID="due-time-input" returnKeyType="done" onSubmitEditing={() => save()}
           value={timeText}
           onChangeText={setTimeText}
           placeholder="HH:mm"

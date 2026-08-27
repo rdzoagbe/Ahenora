@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Alert, Modal, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { BlurView } from 'expo-blur';
@@ -275,7 +275,7 @@ export default function AccountScreen() {
       <Modal visible={supportOpen} transparent animationType="fade" onRequestClose={() => setSupportOpen(false)}>
         <BlurView intensity={40} tint={theme.mode === 'light' ? 'light' : 'dark'} style={StyleSheet.absoluteFill} />
         <View style={[styles.modalBackdrop, { backgroundColor: theme.mode === 'light' ? 'rgba(255,255,255,0.52)' : 'rgba(8,9,16,0.6)' }]} />
-        <View style={styles.modalCenter}>
+        <KeyboardAvoidingView style={styles.modalCenter} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <View style={[styles.modalSheet, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder, shadowColor: theme.colors.shadow }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: theme.colors.text }]}>{t('acc_contact_support')}</Text>
@@ -320,14 +320,14 @@ export default function AccountScreen() {
               </Text>
             </PressScale>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Change Password Modal */}
       <Modal visible={pwOpen} transparent animationType="fade" onRequestClose={() => setPwOpen(false)}>
         <BlurView intensity={40} tint={theme.mode === 'light' ? 'light' : 'dark'} style={StyleSheet.absoluteFill} />
         <View style={[styles.modalBackdrop, { backgroundColor: theme.mode === 'light' ? 'rgba(255,255,255,0.52)' : 'rgba(8,9,16,0.6)' }]} />
-        <View style={styles.modalCenter}>
+        <KeyboardAvoidingView style={styles.modalCenter} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <View style={[styles.modalSheet, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder, shadowColor: theme.colors.shadow }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: theme.colors.text }]}>{t('acc_change_password')}</Text>
@@ -353,7 +353,7 @@ export default function AccountScreen() {
 
             <Text style={[styles.modalLabel, { color: theme.colors.textMuted }]}>{t('acc_pw_new')}</Text>
             <PasswordInput
-              testID="pw-new"
+              testID="pw-new" returnKeyType="done" onSubmitEditing={() => submitChangePassword()}
               style={[styles.modalInput, { color: theme.colors.text, borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}
               value={pwNew}
               onChangeText={setPwNew}
@@ -376,7 +376,7 @@ export default function AccountScreen() {
               </Text>
             </PressScale>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );

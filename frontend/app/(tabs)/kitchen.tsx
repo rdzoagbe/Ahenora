@@ -989,8 +989,12 @@ export default function Kitchen() {
     finally { setHistLoading(false); }
   }, []);
 
+  const savingPlanRef = useRef(false);
   const saveCurrentPlan = useCallback(async () => {
     if (meals.length === 0) { showToast(t('kitchen_nothing_to_save'), 'info'); return; }
+    // Guard against a fast double-tap (or Return-then-tap) creating two plans.
+    if (savingPlanRef.current) return;
+    savingPlanRef.current = true;
     const name = savePlanName.trim() || t('kitchen_saved_plan_default');
     try {
       await api.saveMealPlan(name);
@@ -998,6 +1002,7 @@ export default function Kitchen() {
       setSavedPlans(await api.listSavedPlans().catch(() => []));
       showToast(t('kitchen_plan_saved'), 'success');
     } catch { showToast(t('vault_could_not_add_meal'), 'error'); }
+    finally { savingPlanRef.current = false; }
   }, [meals.length, savePlanName, showToast]);
 
   const reusePlan = useCallback(async (id: string) => {

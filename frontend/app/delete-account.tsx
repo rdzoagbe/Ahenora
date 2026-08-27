@@ -87,7 +87,7 @@ export default function DeleteAccountScreen() {
         </Text>
         {hasPassword ? (
           <PasswordInput
-            testID="delete-account-password"
+            testID="delete-account-password" returnKeyType="done" onSubmitEditing={() => confirmThenDelete()}
             value={password}
             onChangeText={setPassword}
             placeholder={t('del_password_ph')}
@@ -99,7 +99,7 @@ export default function DeleteAccountScreen() {
           />
         ) : (
           <TextInput
-            testID="delete-account-confirm"
+            testID="delete-account-confirm" returnKeyType="done" onSubmitEditing={() => confirmThenDelete()}
             value={confirmWord}
             onChangeText={setConfirmWord}
             autoCapitalize="characters"

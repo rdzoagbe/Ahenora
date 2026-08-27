@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, StyleSheet, Text, TextInput, View } from 'react-native';
+import { KeyboardAwareScrollView } from '../src/components/KeyboardAwareScrollView';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ArrowRight, Check, LayoutGrid, ListChecks, Lock, Plus, Sparkles, Star, UserPlus, UtensilsCrossed, X } from 'lucide-react-native';
@@ -147,7 +148,7 @@ export default function Onboarding() {
           ))}
         </View>
 
-        <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        <KeyboardAwareScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           {/* Step 0 — welcome + language */}
           {step === 0 ? (
             <View>
@@ -305,7 +306,7 @@ export default function Onboarding() {
               </View>
             </View>
           ) : null}
-        </ScrollView>
+        </KeyboardAwareScrollView>
 
         {/* Footer actions */}
         <View style={styles.footer}>
