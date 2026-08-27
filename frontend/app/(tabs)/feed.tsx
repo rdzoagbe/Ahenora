@@ -1023,98 +1023,28 @@ export default function Feed() {
                 {/* Calm was a hero-sized card; as an ambient signal it earns a
                     pill, not the top third of the screen. */}
                 <View style={styles.heroMetaRow}>
+                  {/* A plain-language status you can act on, not a bare number:
+                      "All calm" when nothing's overdue, else a count that reads
+                      as a nudge. */}
                   <PressScale
                     onPress={() => Alert.alert(t('feed_calm_title'), t('feed_calm_explain'))}
-                    style={styles.calmPill}
+                    style={[styles.calmPill, dashboard.overdue.length > 0 && styles.calmPillWarn]}
                     accessibilityRole="button"
                     accessibilityLabel={t('feed_calm_title')}
                   >
-                    <Text style={styles.calmPillText}>{t('feed_calm')} {dashboard.calmScore}/100</Text>
+                    <Text style={[styles.calmPillText, dashboard.overdue.length > 0 && styles.calmPillTextWarn]}>
+                      {dashboard.overdue.length > 0
+                        ? t('feed_calm_overdue', { n: String(dashboard.overdue.length) })
+                        : t('feed_calm_ok')}
+                    </Text>
                   </PressScale>
                 </View>
               </View>
             </View>
 
-            <View style={styles.captureCard}>
-              <PressScale onPress={openManual} style={styles.captureInput} testID="feed-open-add">
-                <View style={styles.plusSoft}><Plus color={ui.orange} size={22} /></View>
-                <Text style={styles.capturePlaceholder} numberOfLines={1}>{t('feed_add_placeholder')}</Text>
-              </PressScale>
-              <View style={styles.captureActions}>
-                <PressScale onPress={() => setShowCamera(true)} style={styles.actionPill}>
-                  <View style={[styles.actionDot, { backgroundColor: ui.lavender }]}>
-                    <Camera color={ui.lavenderText} size={18} />
-                  </View>
-                  <Text style={styles.actionPillText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>{t('feed_photo')}</Text>
-                </PressScale>
-                <PressScale onPress={() => setShowVoice(true)} style={styles.actionPill}>
-                  <View style={[styles.actionDot, { backgroundColor: ui.mint }]}>
-                    <Mic color={ui.mintText} size={18} />
-                  </View>
-                  <Text style={styles.actionPillText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>{t('feed_voice')}</Text>
-                </PressScale>
-                <PressScale onPress={openManual} style={[styles.actionPill, styles.actionPillAccent]}>
-                  <View style={[styles.actionDot, { backgroundColor: 'rgba(255,255,255,0.24)' }]}>
-                    <Plus color="#FFFFFF" size={18} />
-                  </View>
-                  <Text style={styles.actionPillAccentText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>{t('feed_add')}</Text>
-                </PressScale>
-              </View>
-            </View>
-
-            {/* A gentle nudge to Premium — free households only, self-snoozes */}
-            <UpgradeBanner />
-
-            {/* First-run checklist for new households (self-hides once done) */}
-            <GettingStarted
-              hasMember={members.length > 1}
-              hasCard={cards.length > 0}
-              hasDoc={vaultCount > 0}
-              onAddMember={() => router.navigate('/(tabs)/kids')}
-              onAddCard={openManual}
-              onAddDoc={() => router.navigate('/(tabs)/vault')}
-            />
-
-            {/* Solo household → the highest-value next step is bringing in the
-                co-parent (growth + retention). Vanishes once someone joins. */}
-            <CoParentNudge
-              visible={members.length <= 1}
-              onInvite={() => { requestInvite(); router.navigate('/(tabs)/settings' as never); }}
-            />
-
-            {/* Upcoming birthdays, gathered into one compact strip. Hidden when
-                there are none. Tapping a row opens (or starts) that birthday's
-                pot — where chipping in, sharing and marking paid all live. */}
-            <GiftingStrip
-              birthdays={dashboard.upcomingBirthdays}
-              potByCard={giftPotByCard}
-              santaDraws={santaDraws}
-              lang={lang}
-              onOpenBirthday={(card) => router.push({
-                pathname: '/gift-pot',
-                params: { cardId: card.card_id, name: card.title },
-              } as never)}
-              onSeeAllBirthdays={() => router.navigate('/(tabs)/calendar')}
-              onOpenSanta={(draw) => router.push({ pathname: '/santa', params: { drawId: draw.draw_id } } as never)}
-              onNewSanta={() => router.push('/santa' as never)}
-            />
-
-            {/* Quick templates */}
-            {enabledTemplates.length > 0 ? (
-              <View style={styles.templateRow}>
-                {enabledTemplates.slice(0, 4).map((tpl) => (
-                  <PressScale
-                    key={tpl.template_id}
-                    onPress={() => runTemplate(tpl)}
-                    disabled={runningTemplate !== null}
-                    style={[styles.templateChip, runningTemplate !== null && { opacity: 0.5 }]}
-                  >
-                    <Zap color={ui.orange} size={14} />
-                    <Text style={styles.templateChipText} numberOfLines={1}>{tpl.title}</Text>
-                  </PressScale>
-                ))}
-              </View>
-            ) : null}
+            {/* The day leads now — the task list (with handed-to-you pinned)
+                renders first, right below. Capture, gifting, first-run cards
+                and templates follow it. */}
 
             {/* The stats strip lived here: "Due today / Sign slips / This
                 week" — three numbers sitting above the task list that shows
@@ -1205,6 +1135,75 @@ export default function Feed() {
                 <Text style={styles.seeAllText}>{t('feed_show_less')}</Text>
               </PressScale>
             ) : null}
+
+            {/* Quick capture — one slim bar with camera/mic tucked to the right,
+                so there's a single, clear "add" gesture that doesn't echo the
+                nav bar's ＋ (was a full Add/Photo/Voice card up top). */}
+            <View style={styles.addBar}>
+              <PressScale onPress={openManual} style={styles.addBarMain} testID="feed-open-add">
+                <View style={styles.addBarPlus}><Plus color="#FFFFFF" size={18} /></View>
+                <Text style={styles.addBarText} numberOfLines={1}>{t('feed_add_placeholder')}</Text>
+              </PressScale>
+              <PressScale onPress={() => setShowCamera(true)} style={styles.addBarIcon} accessibilityRole="button" accessibilityLabel={t('feed_photo')}>
+                <Camera color={ui.muted} size={19} />
+              </PressScale>
+              <PressScale onPress={() => setShowVoice(true)} style={styles.addBarIcon} accessibilityRole="button" accessibilityLabel={t('feed_voice')}>
+                <Mic color={ui.muted} size={19} />
+              </PressScale>
+            </View>
+
+            {/* Quick templates — one tap to run a saved routine. Sits by the
+                add bar since it's another way to add. */}
+            {enabledTemplates.length > 0 ? (
+              <View style={styles.templateRow}>
+                {enabledTemplates.slice(0, 4).map((tpl) => (
+                  <PressScale
+                    key={tpl.template_id}
+                    onPress={() => runTemplate(tpl)}
+                    disabled={runningTemplate !== null}
+                    style={[styles.templateChip, runningTemplate !== null && { opacity: 0.5 }]}
+                  >
+                    <Zap color={ui.orange} size={14} />
+                    <Text style={styles.templateChipText} numberOfLines={1}>{tpl.title}</Text>
+                  </PressScale>
+                ))}
+              </View>
+            ) : null}
+
+            {/* Upcoming birthdays / Secret Santa, gathered into one compact
+                strip. Hidden when there's nothing live. */}
+            <GiftingStrip
+              birthdays={dashboard.upcomingBirthdays}
+              potByCard={giftPotByCard}
+              santaDraws={santaDraws}
+              lang={lang}
+              onOpenBirthday={(card) => router.push({
+                pathname: '/gift-pot',
+                params: { cardId: card.card_id, name: card.title },
+              } as never)}
+              onSeeAllBirthdays={() => router.navigate('/(tabs)/calendar')}
+              onOpenSanta={(draw) => router.push({ pathname: '/santa', params: { drawId: draw.draw_id } } as never)}
+              onNewSanta={() => router.push('/santa' as never)}
+            />
+
+            {/* A gentle nudge to Premium — free households only, self-snoozes */}
+            <UpgradeBanner />
+
+            {/* First-run checklist — demoted below the day; self-hides once done */}
+            <GettingStarted
+              hasMember={members.length > 1}
+              hasCard={cards.length > 0}
+              hasDoc={vaultCount > 0}
+              onAddMember={() => router.navigate('/(tabs)/kids')}
+              onAddCard={openManual}
+              onAddDoc={() => router.navigate('/(tabs)/vault')}
+            />
+
+            {/* Solo household → bring in the co-parent. Vanishes once someone joins. */}
+            <CoParentNudge
+              visible={members.length <= 1}
+              onInvite={() => { requestInvite(); router.navigate('/(tabs)/settings' as never); }}
+            />
 
             {/* One row stands in for the whole retrospective half of the Feed —
                 who did what, the board, notes, the weekly report. Collapsed by
@@ -1821,6 +1820,8 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     fontSize: 12.5,
     letterSpacing: 0.2,
   },
+  calmPillWarn: { backgroundColor: ui.orangeSoft },
+  calmPillTextWarn: { color: ui.orangeText },
   seeAllBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1879,6 +1880,21 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     fontFamily: 'Inter_800ExtraBold',
     fontSize: 12,
   },
+  // Slim quick-capture bar (replaced the tall Add/Photo/Voice card).
+  addBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: ui.card,
+    borderWidth: 1,
+    borderColor: ui.line,
+    borderRadius: 14,
+    paddingRight: 4,
+    marginBottom: 12,
+  },
+  addBarMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, paddingLeft: 12 },
+  addBarPlus: { width: 26, height: 26, borderRadius: 8, backgroundColor: ui.orange, alignItems: 'center', justifyContent: 'center' },
+  addBarText: { flex: 1, color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 14 },
+  addBarIcon: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   captureCard: {
     borderRadius: 22,
     backgroundColor: ui.card,
