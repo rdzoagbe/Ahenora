@@ -273,6 +273,31 @@ export default function SantaRoute() {
           </View>
 
           <Text style={styles.label}>{t('ss_whos_in')} · {parts.length}</Text>
+
+          {/* Add an outsider by name — kept at the TOP of the section so the
+              keyboard can never cover it (it used to sit at the bottom of the
+              scroll and hide behind the keyboard). New people land in the list
+              just below. */}
+          <View style={styles.addRow}>
+            <View style={[styles.field, { flex: 1 }]}>
+              <TextInput testID="santa-add-name" value={addName} onChangeText={setAddName} onSubmitEditing={addOutsider} placeholder={t('ss_add_person_ph')} placeholderTextColor={ui.muted} style={styles.fieldInput} returnKeyType="done" blurOnSubmit={false} />
+            </View>
+            <PressScale testID="santa-add-outsider" onPress={addOutsider} style={styles.addBtn}>
+              <Plus color="#fff" size={17} /><Text style={styles.addBtnText}>{t('ss_add_person')}</Text>
+            </PressScale>
+          </View>
+
+          {/* Add from household */}
+          {availableMembers.length > 0 ? (
+            <View style={styles.chipsWrap}>
+              {availableMembers.map((m) => (
+                <PressScale key={m.member_id} testID={`santa-add-${m.member_id}`} onPress={() => addMember(m)} style={styles.addChip}>
+                  <Plus color={ui.orangeText} size={13} /><Text style={styles.addChipText}>{m.name}</Text>
+                </PressScale>
+              ))}
+            </View>
+          ) : null}
+
           <View style={styles.card}>
             {parts.length === 0 ? (
               <Text style={styles.emptyRow}>—</Text>
@@ -311,23 +336,6 @@ export default function SantaRoute() {
                 </View>
               );
             })}
-          </View>
-
-          {/* Add from household */}
-          {availableMembers.length > 0 ? (
-            <View style={styles.chipsWrap}>
-              {availableMembers.map((m) => (
-                <PressScale key={m.member_id} testID={`santa-add-${m.member_id}`} onPress={() => addMember(m)} style={styles.addChip}>
-                  <Plus color={ui.orangeText} size={13} /><Text style={styles.addChipText}>{m.name}</Text>
-                </PressScale>
-              ))}
-            </View>
-          ) : null}
-
-          {/* Add an outsider by name */}
-          <View style={styles.addRow}>
-            <View style={[styles.field, { flex: 1 }]}><TextInput testID="santa-add-name" value={addName} onChangeText={setAddName} onSubmitEditing={addOutsider} placeholder={t('ss_add_person_ph')} placeholderTextColor={ui.muted} style={styles.fieldInput} returnKeyType="done" /></View>
-            <PressScale testID="santa-add-outsider" onPress={addOutsider} style={styles.addBtn}><Text style={styles.addBtnText}>{t('ss_add_person')}</Text></PressScale>
           </View>
 
           {/* Keep-apart pairs */}
@@ -485,8 +493,8 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   addChipText: { color: ui.orangeText, fontFamily: 'Inter_700Bold', fontSize: 12.5 },
 
   addRow: { flexDirection: 'row', gap: 10, marginTop: 10, alignItems: 'stretch' },
-  addBtn: { backgroundColor: ui.orangeSoft, borderWidth: 1, borderColor: ui.line, paddingHorizontal: 16, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  addBtnText: { color: ui.orangeText, fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
+  addBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: ui.orange, paddingHorizontal: 18, borderRadius: 12 },
+  addBtnText: { color: '#fff', fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
 
   keepApart: { marginTop: 14, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, borderRadius: 14, padding: 13 },
   keepApartTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 13, marginBottom: 8 },
