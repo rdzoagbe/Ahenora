@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Linking, Modal, Platform, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ActivityIndicator, Linking, Platform, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ChevronLeft, Gift, Check, Users, Link2, Pencil, X, MessageCircle } from 'lucide-react-native';
 
 import { PressScale } from '../src/components/PressScale';
+import KeyboardAwareBottomSheet from '../src/components/KeyboardAwareBottomSheet';
 import { useUI, UIColors } from '../src/components/Kit';
 import { useStore } from '../src/store';
 import { usePremiumGate } from '../src/components/PremiumGate';
@@ -23,7 +24,6 @@ import { logger } from '../src/logger';
  */
 export default function GiftPotRoute() {
   const ui = useUI();
-  const insets = useSafeAreaInsets();
   const router = useRouter();
   const { t } = useStore();
   const { isLocked, promptUpgrade } = usePremiumGate();
@@ -348,41 +348,42 @@ export default function GiftPotRoute() {
         </ScrollView>
       )}
 
-      {/* Edit sheet — organiser tweaks the pot's details. */}
-      <Modal visible={editing} transparent animationType="fade" onRequestClose={() => setEditing(false)}>
-        <View style={styles.sheetBackdrop}>
-          <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 16) + 18 }]}>
-            <View style={styles.sheetHead}>
-              <Text style={styles.sheetTitle}>{t('gp_edit_title')}</Text>
-              <PressScale testID="gift-pot-edit-close" onPress={() => setEditing(false)} style={styles.backBtn} accessibilityLabel={t('gp_cancel')}>
-                <X color={ui.muted} size={20} />
-              </PressScale>
-            </View>
-            <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 4 }}>
-              <Text style={styles.fieldLabel}>{t('gp_field_name')}</Text>
-              <TextInput testID="gift-pot-edit-title" value={eTitle} onChangeText={setETitle} style={styles.field} placeholderTextColor={ui.muted} />
-
-              <Text style={styles.fieldLabel}>{t('gp_field_per_head')}</Text>
-              <View style={styles.fieldMoney}>
-                <Text style={styles.euro}>€</Text>
-                <TextInput testID="gift-pot-edit-perhead" value={ePerHead} onChangeText={setEPerHead} keyboardType="decimal-pad" style={styles.fieldMoneyInput} placeholderTextColor={ui.muted} />
-              </View>
-
-              <Text style={styles.fieldLabel}>{t('gp_field_target')}</Text>
-              <View style={styles.fieldMoney}>
-                <Text style={styles.euro}>€</Text>
-                <TextInput testID="gift-pot-edit-target" value={eTarget} onChangeText={setETarget} keyboardType="decimal-pad" style={styles.fieldMoneyInput} placeholder="—" placeholderTextColor={ui.muted} />
-              </View>
-
-              <Text style={styles.fieldLabel}>{t('gp_field_note')}</Text>
-              <TextInput testID="gift-pot-edit-note" value={eNote} onChangeText={setENote} style={[styles.field, styles.fieldMulti]} multiline placeholder={t('gp_note_ph')} placeholderTextColor={ui.muted} />
-            </ScrollView>
-            <PressScale testID="gift-pot-edit-save" onPress={saveEdit} disabled={busy} style={[styles.cta, { marginTop: 18 }]}>
-              <Text style={styles.ctaText}>{t('gp_save')}</Text>
-            </PressScale>
-          </View>
+      {/* Edit sheet — organiser tweaks the pot's details. Uses the app's
+          keyboard-aware sheet so fields rise above the keyboard and the Save
+          action stays pinned clear of the system nav bar. */}
+      <KeyboardAwareBottomSheet
+        visible={editing}
+        onClose={() => setEditing(false)}
+        footer={
+          <PressScale testID="gift-pot-edit-save" onPress={saveEdit} disabled={busy} style={styles.cta}>
+            <Text style={styles.ctaText}>{t('gp_save')}</Text>
+          </PressScale>
+        }
+      >
+        <View style={styles.sheetHead}>
+          <Text style={styles.sheetTitle}>{t('gp_edit_title')}</Text>
+          <PressScale testID="gift-pot-edit-close" onPress={() => setEditing(false)} style={styles.backBtn} accessibilityLabel={t('gp_cancel')}>
+            <X color={ui.muted} size={20} />
+          </PressScale>
         </View>
-      </Modal>
+        <Text style={styles.fieldLabel}>{t('gp_field_name')}</Text>
+        <TextInput testID="gift-pot-edit-title" value={eTitle} onChangeText={setETitle} style={styles.field} placeholderTextColor={ui.muted} />
+
+        <Text style={styles.fieldLabel}>{t('gp_field_per_head')}</Text>
+        <View style={styles.fieldMoney}>
+          <Text style={styles.euro}>€</Text>
+          <TextInput testID="gift-pot-edit-perhead" value={ePerHead} onChangeText={setEPerHead} keyboardType="decimal-pad" style={styles.fieldMoneyInput} placeholderTextColor={ui.muted} />
+        </View>
+
+        <Text style={styles.fieldLabel}>{t('gp_field_target')}</Text>
+        <View style={styles.fieldMoney}>
+          <Text style={styles.euro}>€</Text>
+          <TextInput testID="gift-pot-edit-target" value={eTarget} onChangeText={setETarget} keyboardType="decimal-pad" style={styles.fieldMoneyInput} placeholder="—" placeholderTextColor={ui.muted} />
+        </View>
+
+        <Text style={styles.fieldLabel}>{t('gp_field_note')}</Text>
+        <TextInput testID="gift-pot-edit-note" value={eNote} onChangeText={setENote} style={[styles.field, styles.fieldMulti]} multiline placeholder={t('gp_note_ph')} placeholderTextColor={ui.muted} />
+      </KeyboardAwareBottomSheet>
     </SafeAreaView>
   );
 }
@@ -442,8 +443,6 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   chipBtn: { backgroundColor: ui.orange, paddingVertical: 14, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   chipBtnText: { color: '#fff', fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
 
-  sheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: ui.bg, borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: 18, paddingBottom: 26, maxHeight: '88%' },
   sheetHead: { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
   sheetTitle: { flex: 1, color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 18 },
   fieldLabel: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 12.5, marginBottom: 6, marginTop: 12 },

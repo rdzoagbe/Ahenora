@@ -10756,13 +10756,17 @@ async def join_shared_pot(token: str, payload: PotJoinIn):
 # -----------------------------------------------------------------------------
 
 
-def _clean_phone(phone: Optional[str]) -> Optional[str]:
-    """A phone number kept only as display/dial text — never validated as a real
-    line, never used to send anything server-side. The organiser's own device
-    does the texting (an sms: link), so this is just what to pre-fill."""
-    raw = (phone or "").strip()
+def _clean_contact(contact: Optional[str]) -> Optional[str]:
+    """A phone number OR an email, kept only as display text so the organiser
+    can hand someone their link from their own device (an sms: or mailto: link).
+    Never validated, dialled, or messaged server-side. An '@' marks it an email
+    (light sanitise); otherwise it's treated as a phone."""
+    raw = (contact or "").strip()
     if not raw:
         return None
+    if "@" in raw:
+        kept = "".join(c for c in raw if not c.isspace())
+        return kept[:120] or None
     kept = "".join(c for c in raw if c.isdigit() or c in "+ ()-.")
     return kept[:24] or None
 
@@ -10772,10 +10776,10 @@ class SantaParticipantIn(BaseModel):
     # A household member the participant maps to (so they reveal in-app and are
     # never handed a link). Absent → an outsider, reached by link.
     member_id: Optional[str] = None
-    # Optional phone for an outsider, so the organiser can text them their link
-    # from their own phone. Stored as display text only — never dialled or
-    # messaged server-side.
-    phone: Optional[str] = None
+    # Optional phone OR email for an outsider, so the organiser can send them
+    # their link from their own phone. Display text only — never contacted
+    # server-side.
+    contact: Optional[str] = None
 
 
 class SantaDrawIn(BaseModel):
@@ -10872,8 +10876,8 @@ async def _build_participants(database, family_id: str, items: List[SantaPartici
             "member_id": it.member_id,
             "user_id": user_id,
             "source": source,
-            # Members reveal in-app, so a phone is only kept for outsiders.
-            "phone": None if source == "member" else _clean_phone(it.phone),
+            # Members reveal in-app, so a contact is only kept for outsiders.
+            "contact": None if source == "member" else _clean_contact(it.contact),
             "token": None,        # minted for link participants on /send
             "opened_at": None,
         })
@@ -10922,7 +10926,7 @@ def public_santa_draw(draw: dict, viewer_user_id: str) -> dict:
              "source": p.get("source") or ("member" if p.get("user_id") else "link"),
              "member_id": p.get("member_id"),
              "is_member": bool(p.get("user_id")),
-             "phone": p.get("phone"),
+             "contact": p.get("contact"),
              "opened": bool(p.get("opened_at")),
              # Only meaningful once sent, and only for outsiders (members reveal
              # in-app). None otherwise.
