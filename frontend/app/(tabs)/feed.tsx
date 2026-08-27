@@ -84,6 +84,21 @@ function dueTime(card: Card) {
   return Number.isNaN(time) ? null : time;
 }
 
+// Recognise a birthday (or anniversary — both suit a gift pot) from a title,
+// across the app's languages and the common short forms people actually type.
+// Mirrors the backend detector but a touch broader, so the Gift Pot strip picks
+// up birthdays that were imported before the backend learned to type them.
+const BIRTHDAY_WORDS = [
+  'birthday', 'b-day', 'bday', '🎂',
+  'anniversary', 'anniversaire', 'anniv',       // en / fr + short form
+  'cumpleaños', 'cumpleanos', 'cumple',          // es
+  'geburtstag',                                  // de
+];
+function looksLikeBirthday(title?: string | null): boolean {
+  const t = (title || '').toLowerCase();
+  return !!t && BIRTHDAY_WORDS.some((w) => t.includes(w));
+}
+
 function sameLocalDay(a: Date, b: Date) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
@@ -650,18 +665,24 @@ export default function Feed() {
     // synthesised; this just finds the nearest one still ahead. It skips the
     // viewer's OWN birthday: nobody should be nudged to pool for their own gift,
     // and seeing the pot for it would spoil the surprise.
+    // Whose birthday it is lives in the TITLE ("Nawelle's birthday"), never the
+    // assignee — a calendar import stamps the assignee as the importer, so
+    // reading it there made every imported birthday look like the viewer's own
+    // and vanish from the strip. Match the viewer's name in the title only.
     const myName = (members.find((m) => m.user_id === uid)?.name || '').trim().toLowerCase();
+    const firstName = myName.split(' ')[0];
     const isMyBirthday = (card: Card) => {
-      if (!myName) return false;
-      const hay = `${card.title || ''} ${card.assignee || ''}`.toLowerCase();
-      return new RegExp(`\\b${myName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(hay);
+      if (!firstName) return false;
+      return new RegExp(`\\b${firstName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`)
+        .test((card.title || '').toLowerCase());
     };
     // Every birthday in a rolling ~60-day window, soonest first — the Gift Pot
-    // strip. Nothing is synthesised: these are BIRTHDAY cards (created by hand,
-    // or recognised on calendar import). The viewer's own birthday is skipped so
-    // they aren't nudged to pool for their own gift.
+    // strip. A card counts as a birthday when its type is BIRTHDAY OR its title
+    // reads like one, so birthdays already imported as plain events (before the
+    // importer learned to type them) still show, with no re-import. The viewer's
+    // own is skipped so they aren't nudged to pool for their own gift.
     const upcomingBirthdays = activeCards
-      .filter((card) => card.type === 'BIRTHDAY' && !isMyBirthday(card))
+      .filter((card) => (card.type === 'BIRTHDAY' || looksLikeBirthday(card.title)) && !isMyBirthday(card))
       .map((card) => ({ card, time: dueTime(card) }))
       .filter((x) => x.time != null && x.time >= now && x.time <= now + 60 * 24 * 60 * 60 * 1000)
       .sort((a, b) => (a.time as number) - (b.time as number))
