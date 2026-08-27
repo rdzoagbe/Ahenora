@@ -185,6 +185,40 @@ class GiftPot(unittest.TestCase):
             run(server.edit_gift_pot(pot["pot_id"], server.GiftPotEditIn(title="x"), outsider))
         self.assertIn(e.exception.status_code, (402, 404))
 
+    # --- feed notifications ----------------------------------------------
+    def test_a_first_pledge_logs_a_feed_line(self):
+        run(self._set_plan("executive"))
+        pot = run(server.create_gift_pot(server.GiftPotIn(title="Ama", per_head=10), self._user()))
+        run(server.chip_in_gift_pot(pot["pot_id"], server.GiftChipIn(amount=15), self._user("u_r")))
+        act = run(self.db["activity"].find_one({"kind": "pot_pledge"}, {"_id": 0}))
+        self.assertIsNotNone(act)
+        self.assertEqual(act["actor_name"], "Roland")
+        self.assertEqual(act["amount"], 15)
+        self.assertEqual(act["hidden_by"], [])          # not a surprise → visible to all
+
+    def test_updating_a_pledge_does_not_re_announce(self):
+        run(self._set_plan("executive"))
+        pot = run(server.create_gift_pot(server.GiftPotIn(title="Ama", per_head=10), self._user()))
+        pid = pot["pot_id"]
+        run(server.chip_in_gift_pot(pid, server.GiftChipIn(amount=10), self._user("u_r")))
+        run(server.chip_in_gift_pot(pid, server.GiftChipIn(amount=20), self._user("u_r")))
+        n = 0
+        async def count():
+            nonlocal n
+            async for _ in self.db["activity"].find({"kind": "pot_pledge"}, {"_id": 0}):
+                n += 1
+        run(count())
+        self.assertEqual(n, 1)                          # one line, not two
+
+    def test_a_surprise_pledge_is_hidden_from_the_celebrant(self):
+        run(self._set_plan("executive"))
+        # Roland opens a pot for Keigh; Roland pledges.
+        pot = run(server.create_gift_pot(
+            server.GiftPotIn(title="Keigh", for_member_id="m_u_k", per_head=10), self._user("u_r")))
+        run(server.chip_in_gift_pot(pot["pot_id"], server.GiftChipIn(amount=15), self._user("u_r")))
+        act = run(self.db["activity"].find_one({"kind": "pot_pledge"}, {"_id": 0}))
+        self.assertIn("u_k", act["hidden_by"])          # the celebrant never sees it
+
     # --- the surprise -----------------------------------------------------
     def test_a_pot_for_a_parent_is_hidden_from_that_parent(self):
         run(self._set_plan("executive"))

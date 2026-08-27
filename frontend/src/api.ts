@@ -1017,7 +1017,8 @@ export interface ActivityEntry {
   actor_name: string;
   actor_user_id?: string | null;
   kind: 'task_created' | 'task_done' | 'task_assigned' | 'stars_awarded'
-      | 'member_joined' | 'week_planned' | 'list_cleared' | 'doc_shared';
+      | 'member_joined' | 'week_planned' | 'list_cleared' | 'doc_shared'
+      | 'pot_pledge' | 'santa_opened';
   subject: string;
   /** Who the event landed on, for the ones that are about a person too. */
   target?: string;

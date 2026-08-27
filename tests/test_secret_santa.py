@@ -286,6 +286,19 @@ class SecretSanta(unittest.TestCase):
         sarah = next(p for p in draw["participants"] if p["name"] == "Sarah")
         self.assertEqual(sarah["phone"], "+33 6 12 34 56 78")
 
+    def test_opening_a_match_logs_a_feed_line(self):
+        run(self._set_plan("executive"))
+        draw = run(server.create_santa_draw(server.SantaDrawIn(
+            title="Xmas", participants=[P("Roland", "m_u_r"), P("Keigh", "m_u_k"), P("Maman")]),
+            self._user()))
+        run(server.shuffle_santa_draw(draw["draw_id"], self._user()))
+        run(server.send_santa_draw(draw["draw_id"], self._user()))
+        run(server.my_santa_match(draw["draw_id"], self._user("u_r")))
+        acts = run(self.db["activity"].find_one({"kind": "santa_opened"}, {"_id": 0}))
+        self.assertIsNotNone(acts)
+        self.assertEqual(acts["subject"], "Xmas")
+        self.assertEqual(acts["actor_name"], "Roland")
+
     def test_a_member_phone_is_dropped(self):
         # Members reveal in-app, so no phone is stored even if one is sent.
         draw = run(server.create_santa_draw(server.SantaDrawIn(
