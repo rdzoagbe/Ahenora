@@ -10194,6 +10194,20 @@ class GiftPotIn(BaseModel):
     note: Optional[str] = None
 
 
+class GiftPotEditIn(BaseModel):
+    # The organiser tweaking the pot's details after starting it. Every field is
+    # optional — only what's sent gets changed. per_head/target drive the target
+    # bar; title and note are display-only.
+    title: Optional[str] = None
+    per_head: Optional[float] = Field(default=None, ge=0, le=1_000_000)
+    target_total: Optional[float] = Field(default=None, ge=0, le=1_000_000)
+    note: Optional[str] = None
+    # Sentinel so the client can clear the target ("no fixed target") rather than
+    # only ever raise it. Omitting target_total leaves it untouched; sending
+    # clear_target true wipes it.
+    clear_target: bool = False
+
+
 class GiftChipIn(BaseModel):
     amount: float = Field(ge=0, le=1_000_000)
     # How a household member says they'll give. Optional — members often just
@@ -10525,6 +10539,38 @@ async def delete_gift_pot(pot_id: str, user=Depends(require_full_member)):
     if result.deleted_count == 0:
         raise HTTPException(404, "Gift pot not found")
     return {"ok": True}
+
+
+@app.patch("/api/gift-pots/{pot_id}")
+async def edit_gift_pot(pot_id: str, payload: GiftPotEditIn, user=Depends(require_full_member)):
+    """Edit a pot's details — title, per-head suggestion, target, note. Only the
+    organiser side can reach this (a pot that would spoil the caller's own
+    surprise 404s, same as everywhere), and it never touches contributions or
+    status. rev is bumped so a racing chip-in re-reads rather than clobbering."""
+    await require_feature(user, "gift_pot")
+    database = get_db()
+    pot = await _load_own_pot(database, pot_id, user)
+
+    changes: dict = {}
+    if payload.title is not None:
+        changes["title"] = (payload.title or "").strip()[:80]
+    if payload.per_head is not None:
+        changes["per_head"] = round(float(payload.per_head), 2)
+    if payload.clear_target:
+        changes["target_total"] = None
+    elif payload.target_total is not None:
+        changes["target_total"] = round(float(payload.target_total), 2)
+    if payload.note is not None:
+        changes["note"] = sanitize_message_text(payload.note or "", 300).strip() or None
+
+    if changes:
+        changes["updated_at"] = utcnow()
+        await database["gift_pots"].update_one(
+            {"pot_id": pot_id, "family_id": user["family_id"]},
+            {"$set": changes, "$inc": {"rev": 1}},
+        )
+        pot.update(changes)
+    return public_gift_pot(pot, user["user_id"])
 
 
 async def _load_own_pot(database, pot_id: str, user: dict) -> dict:

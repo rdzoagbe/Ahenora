@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Platform, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Modal, Platform, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { ChevronLeft, Gift, Check, Users, Link2 } from 'lucide-react-native';
+import { ChevronLeft, Gift, Check, Users, Link2, Pencil, X } from 'lucide-react-native';
 
 import { PressScale } from '../src/components/PressScale';
 import { useUI, UIColors } from '../src/components/Kit';
@@ -143,6 +143,48 @@ export default function GiftPotRoute() {
     catch (e) { logger.warn('mark paid failed', e); }
   }, [pot]);
 
+  // --- Editing the pot's details -----------------------------------------
+  const [editing, setEditing] = useState(false);
+  const [eTitle, setETitle] = useState('');
+  const [ePerHead, setEPerHead] = useState('');
+  const [eTarget, setETarget] = useState('');
+  const [eNote, setENote] = useState('');
+
+  const openEdit = useCallback(() => {
+    if (!pot) return;
+    setETitle(pot.title || '');
+    setEPerHead(String(pot.per_head ?? ''));
+    setETarget(pot.target_total != null ? String(pot.target_total) : '');
+    setENote(pot.note || '');
+    setEditing(true);
+  }, [pot]);
+
+  const num = (s: string) => {
+    const v = parseFloat(s.replace(',', '.'));
+    return Number.isFinite(v) ? Math.round(v * 100) / 100 : undefined;
+  };
+
+  const saveEdit = useCallback(async () => {
+    if (!pot) return;
+    const targetTrimmed = eTarget.trim();
+    setBusy(true);
+    try {
+      const updated = await api.editGiftPot(pot.pot_id, {
+        title: eTitle.trim(),
+        per_head: num(ePerHead) ?? pot.per_head,
+        note: eNote.trim(),
+        ...(targetTrimmed ? { target_total: num(targetTrimmed) } : { clear_target: true }),
+      });
+      setPot(updated);
+      setEditing(false);
+    } catch (e) {
+      if ((e as { status?: number })?.status === 402) promptUpgrade('gift_pot');
+      else logger.warn('edit pot failed', e);
+    } finally {
+      setBusy(false);
+    }
+  }, [pot, eTitle, ePerHead, eTarget, eNote, promptUpgrade]);
+
   const goBack = () => (router.canGoBack() ? router.back() : router.replace('/(tabs)/feed'));
 
   if (!ready) return <SafeAreaView style={styles.safe} edges={['top', 'bottom', 'left', 'right']} />;
@@ -158,7 +200,13 @@ export default function GiftPotRoute() {
           <ChevronLeft color={ui.text} size={22} />
         </PressScale>
         <Text style={styles.headTitle} numberOfLines={1}>{t('gp_title')}</Text>
-        <View style={{ width: 36 }} />
+        {pot && pot.status !== 'closed' ? (
+          <PressScale testID="gift-pot-edit" onPress={openEdit} style={styles.backBtn} accessibilityLabel={t('gp_edit')}>
+            <Pencil color={ui.text} size={19} />
+          </PressScale>
+        ) : (
+          <View style={{ width: 36 }} />
+        )}
       </View>
 
       {loading ? (
@@ -251,7 +299,8 @@ export default function GiftPotRoute() {
                 </View>
                 <PressScale testID="gift-pot-chipin" onPress={chipIn} disabled={busy} style={styles.chipBtn}>
                   <Text style={styles.chipBtnText}>
-                    {pot.your_amount != null ? t('gp_update') : t('gp_chip_in')}
+                    {(pot.your_amount != null ? t('gp_update') : t('gp_chip_in'))}
+                    {amount.trim() ? `  ${t('gp_money', { amount: String(num(amount) ?? amount) })}` : ''}
                   </Text>
                 </PressScale>
               </View>
@@ -269,6 +318,42 @@ export default function GiftPotRoute() {
           <Text style={styles.footnote}>{t('gp_footnote')}</Text>
         </ScrollView>
       )}
+
+      {/* Edit sheet — organiser tweaks the pot's details. */}
+      <Modal visible={editing} transparent animationType="fade" onRequestClose={() => setEditing(false)}>
+        <View style={styles.sheetBackdrop}>
+          <View style={styles.sheet}>
+            <View style={styles.sheetHead}>
+              <Text style={styles.sheetTitle}>{t('gp_edit_title')}</Text>
+              <PressScale testID="gift-pot-edit-close" onPress={() => setEditing(false)} style={styles.backBtn} accessibilityLabel={t('gp_cancel')}>
+                <X color={ui.muted} size={20} />
+              </PressScale>
+            </View>
+            <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 4 }}>
+              <Text style={styles.fieldLabel}>{t('gp_field_name')}</Text>
+              <TextInput testID="gift-pot-edit-title" value={eTitle} onChangeText={setETitle} style={styles.field} placeholderTextColor={ui.muted} />
+
+              <Text style={styles.fieldLabel}>{t('gp_field_per_head')}</Text>
+              <View style={styles.fieldMoney}>
+                <Text style={styles.euro}>€</Text>
+                <TextInput testID="gift-pot-edit-perhead" value={ePerHead} onChangeText={setEPerHead} keyboardType="decimal-pad" style={styles.fieldMoneyInput} placeholderTextColor={ui.muted} />
+              </View>
+
+              <Text style={styles.fieldLabel}>{t('gp_field_target')}</Text>
+              <View style={styles.fieldMoney}>
+                <Text style={styles.euro}>€</Text>
+                <TextInput testID="gift-pot-edit-target" value={eTarget} onChangeText={setETarget} keyboardType="decimal-pad" style={styles.fieldMoneyInput} placeholder="—" placeholderTextColor={ui.muted} />
+              </View>
+
+              <Text style={styles.fieldLabel}>{t('gp_field_note')}</Text>
+              <TextInput testID="gift-pot-edit-note" value={eNote} onChangeText={setENote} style={[styles.field, styles.fieldMulti]} multiline placeholder={t('gp_note_ph')} placeholderTextColor={ui.muted} />
+            </ScrollView>
+            <PressScale testID="gift-pot-edit-save" onPress={saveEdit} disabled={busy} style={[styles.cta, { marginTop: 18 }]}>
+              <Text style={styles.ctaText}>{t('gp_save')}</Text>
+            </PressScale>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -317,12 +402,24 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   shareMsg: { color: ui.mintText, fontFamily: 'Inter_600SemiBold', fontSize: 12.5, textAlign: 'center', marginBottom: 12 },
 
   chipLabel: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 14, marginBottom: 10 },
-  chipRow: { flexDirection: 'row', gap: 10 },
-  inputWrap: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: ui.bg, borderRadius: 12, borderWidth: 1, borderColor: ui.line, paddingHorizontal: 12 },
+  // Amount input and chip-in button stacked, each full width — the button is
+  // the same size as the space meant for the amount, not a narrow tag beside it.
+  chipRow: { flexDirection: 'column', gap: 10 },
+  inputWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: ui.bg, borderRadius: 12, borderWidth: 1, borderColor: ui.line, paddingHorizontal: 14 },
   euro: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 16, marginRight: 4 },
-  input: { flex: 1, color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 16, paddingVertical: 11 },
-  chipBtn: { backgroundColor: ui.orange, paddingHorizontal: 20, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  chipBtnText: { color: '#fff', fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
+  input: { flex: 1, color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 16, paddingVertical: 13 },
+  chipBtn: { backgroundColor: ui.orange, paddingVertical: 14, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  chipBtnText: { color: '#fff', fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
+
+  sheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+  sheet: { backgroundColor: ui.bg, borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: 18, paddingBottom: 26, maxHeight: '88%' },
+  sheetHead: { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
+  sheetTitle: { flex: 1, color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 18 },
+  fieldLabel: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 12.5, marginBottom: 6, marginTop: 12 },
+  field: { backgroundColor: ui.card, borderRadius: 12, borderWidth: 1, borderColor: ui.line, paddingHorizontal: 14, paddingVertical: 13, color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 15 },
+  fieldMulti: { minHeight: 72, textAlignVertical: 'top' },
+  fieldMoney: { flexDirection: 'row', alignItems: 'center', backgroundColor: ui.card, borderRadius: 12, borderWidth: 1, borderColor: ui.line, paddingHorizontal: 14 },
+  fieldMoneyInput: { flex: 1, color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 15, paddingVertical: 13 },
 
   ghostBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, paddingVertical: 13, borderRadius: 14, marginBottom: 14 },
   ghostBtnText: { color: ui.orangeText, fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
