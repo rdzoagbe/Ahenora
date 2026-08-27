@@ -242,10 +242,23 @@ export default function Calendar() {
     process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID?.trim() ||
     '243255248169-n4l7es5ecr3j85v00dia2icp9kjo7umh.apps.googleusercontent.com';
 
+  // On the web, Google checks the redirect_uri against the console's allow-list.
+  // Without one set here, expo-auth-session generated a default (the bare
+  // origin) that isn't registered, so calendar sync failed with
+  // redirect_uri_mismatch — while native worked (it uses the app scheme). Reuse
+  // the SAME 'oauthredirect' URL that web Google sign-in already uses and that
+  // is therefore already registered; native keeps its default (undefined).
+  const webCalendarRedirect = useMemo(
+    () => (Platform.OS === 'web'
+      ? AuthSession.makeRedirectUri({ scheme: 'householdcoo', path: 'oauthredirect' })
+      : undefined),
+    [],
+  );
   const [calendarRequest, calendarResponse, promptCalendarAsync] = Google.useAuthRequest({
     androidClientId,
     webClientId,
     scopes: ['openid', 'profile', 'email', GOOGLE_CALENDAR_SCOPE],
+    redirectUri: webCalendarRedirect,
   });
 
   const msRedirectUri = useMemo(() => AuthSession.makeRedirectUri({ scheme: 'householdcoo', path: 'auth' }), []);

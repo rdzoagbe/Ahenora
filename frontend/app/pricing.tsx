@@ -16,7 +16,12 @@ export default function PricingScreen() {
   const styles = useMemo(() => createStyles(ui), [ui]);
 
   const goBack = () => {
-    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.history.length > 1) {
+    // Use the router's OWN stack, not window.history.length: on the web the
+    // browser history counts entries from before the app loaded (arriving from
+    // a search result, say), so length>1 was true while the router had nothing
+    // to pop — router.back() then did nothing and the button looked dead. This
+    // is the same pattern every other screen uses.
+    if (router.canGoBack()) {
       router.back();
     } else {
       router.replace(user ? '/(tabs)/feed' : '/');

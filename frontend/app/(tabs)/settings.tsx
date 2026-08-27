@@ -556,20 +556,36 @@ export default function Settings() {
     preferences: 'preferences language translation locale',
     more: 'more history completed cards replay setup onboarding usage limits version update metrics',
   };
-  // Open when the user tapped it, or when their search names it. A search also
-  // hides the groups it does not match, so "pin" leaves only Household on screen.
-  const groupOpen = (id: string, keywords: string) => !!openGroups[id] || (q.length > 0 && keywords.includes(q));
+  // Everything is shown at once now — no tap to reveal a setting. Only "More"
+  // (the rarely-used overflow: history, usage, version, dev tools) stays behind
+  // a menu. A search still hides the groups it does not match, so "pin" leaves
+  // only Household on screen; the matched group is always open.
+  const COLLAPSIBLE = 'more';
+  const groupOpen = (id: string, keywords: string) =>
+    id !== COLLAPSIBLE || !!openGroups[id] || (q.length > 0 && keywords.includes(q));
   const groupVisible = (keywords: string) => q.length === 0 || keywords.includes(q);
-  const groupHead = (id: string, icon: React.ReactNode, title: string, subtitle: string, keywords: string) => (
-    <PressScale testID={`settings-group-${id}`} onPress={() => toggleGroup(id)} style={styles.groupHead}>
-      {icon}
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={styles.groupTitle}>{title}</Text>
-        {subtitle ? <Text style={styles.groupSubtitle} numberOfLines={1}>{subtitle}</Text> : null}
-      </View>
-      <Chevron open={groupOpen(id, keywords)} />
-    </PressScale>
-  );
+  const groupHead = (id: string, icon: React.ReactNode, title: string, subtitle: string, keywords: string) => {
+    const collapsible = id === COLLAPSIBLE;
+    const inner = (
+      <>
+        {icon}
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={styles.groupTitle}>{title}</Text>
+          {subtitle ? <Text style={styles.groupSubtitle} numberOfLines={1}>{subtitle}</Text> : null}
+        </View>
+        {collapsible ? <Chevron open={groupOpen(id, keywords)} /> : null}
+      </>
+    );
+    // An always-open section is a plain label, not a button — no chevron, not
+    // pressable, so nothing invites a tap that would do nothing.
+    return collapsible ? (
+      <PressScale testID={`settings-group-${id}`} onPress={() => toggleGroup(id)} style={styles.groupHead}>
+        {inner}
+      </PressScale>
+    ) : (
+      <View testID={`settings-group-${id}`} style={styles.groupHead}>{inner}</View>
+    );
+  };
 
   return (
     <SwipeableTabView style={styles.container}>

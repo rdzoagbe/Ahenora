@@ -1139,10 +1139,17 @@ export interface Entitlements {
   };
 }
 
+export type GiftMethod = 'cash' | 'transfer' | 'gift' | 'other';
+
 export interface GiftContribution {
-  user_id: string;
+  contrib_id: string;
+  /** null for an outsider who joined via the share link (no account). */
+  user_id: string | null;
   name: string;
   amount: number;
+  method: GiftMethod | null;
+  paid: boolean;
+  source: 'member' | 'link';
   at: string | null;
 }
 
@@ -1159,13 +1166,32 @@ export interface GiftPot {
   note: string | null;
   contributions: GiftContribution[];
   total_pledged: number;
+  paid_total: number;
   contributor_count: number;
   /** What THIS viewer has already pledged (null if they haven't). */
   your_amount: number | null;
+  /** The share token, once the organiser has turned on the link (else null). */
+  share_token: string | null;
+  shared: boolean;
   created_by_user_id: string;
   created_by_name: string;
   created_at: string | null;
   updated_at: string | null;
+}
+
+/** The minimal, safe view an invited outsider sees from the share link — no
+ *  household data, no per-person amounts. Mirrors the backend allow-list. */
+export interface PublicPot {
+  title: string;
+  occasion: string;
+  per_head: number;
+  target_total: number | null;
+  total_pledged: number;
+  contributor_count: number;
+  status: 'open' | 'closed';
+  note: string | null;
+  organiser_name: string;
+  contributors: { name: string; paid: boolean }[];
 }
 
 export interface PlanLimitError {
@@ -1502,13 +1528,36 @@ export const api = {
       return r;
     });
   },
-  chipInGiftPot: (id: string, amount: number) => {
+  chipInGiftPot: (id: string, amount: number, method?: GiftMethod) => {
     cache.invalidatePrefix('listGiftPots');
-    return request<GiftPot>(`/gift-pots/${id}/chip-in`, { method: 'POST', body: { amount } }).then((r) => {
+    return request<GiftPot>(`/gift-pots/${id}/chip-in`, { method: 'POST', body: { amount, ...(method ? { method } : {}) } }).then((r) => {
       cache.invalidatePrefix('listGiftPots');
       return r;
     });
   },
+  // Turn the share link on/off (invite the outer circle). Returns the pot with
+  // its share_token.
+  shareGiftPot: (id: string) => {
+    cache.invalidatePrefix('listGiftPots');
+    return request<GiftPot>(`/gift-pots/${id}/share`, { method: 'POST' });
+  },
+  unshareGiftPot: (id: string) => {
+    cache.invalidatePrefix('listGiftPots');
+    return request<GiftPot>(`/gift-pots/${id}/unshare`, { method: 'POST' });
+  },
+  // Organiser-only money controls.
+  setContributionPaid: (potId: string, contribId: string, paid: boolean) => {
+    cache.invalidatePrefix('listGiftPots');
+    return request<GiftPot>(`/gift-pots/${potId}/contributions/${contribId}/paid`, { method: 'POST', body: { paid } });
+  },
+  removeContribution: (potId: string, contribId: string) => {
+    cache.invalidatePrefix('listGiftPots');
+    return request<GiftPot>(`/gift-pots/${potId}/contributions/${contribId}`, { method: 'DELETE' });
+  },
+  // The PUBLIC share link — no auth. Anyone with the token can view and join.
+  getPublicPot: (token: string) => request<PublicPot>(`/pot/${encodeURIComponent(token)}`),
+  joinPublicPot: (token: string, data: { name: string; amount: number; method?: GiftMethod }) =>
+    request<PublicPot>(`/pot/${encodeURIComponent(token)}/join`, { method: 'POST', body: data }),
   closeGiftPot: (id: string) => {
     cache.invalidatePrefix('listGiftPots');
     return request<GiftPot>(`/gift-pots/${id}/close`, { method: 'POST' }).then((r) => {

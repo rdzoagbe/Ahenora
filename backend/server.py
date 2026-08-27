@@ -868,7 +868,12 @@ async def require_feature(user: dict, feature: str):
     sub = await build_subscription(user["family_id"])
     if is_admin_user(user):
         return apply_admin_subscription(sub)
-    if not sub["limits"].get(feature, True):
+    # Fail CLOSED: an unknown feature is locked, not free. Every gated feature
+    # today defines its flag in all three PLAN_CATALOG tiers, so this default is
+    # never actually reached — but if a future feature is added to require_feature
+    # and someone forgets its flag in a plan, it must lock, not silently unlock
+    # for everyone.
+    if not sub["limits"].get(feature, False):
         plan_limit_error(
             feature=feature,
             current_plan=sub["plan"],
@@ -10166,6 +10171,35 @@ class GiftPotIn(BaseModel):
 
 class GiftChipIn(BaseModel):
     amount: float = Field(ge=0, le=1_000_000)
+    # How a household member says they'll give. Optional — members often just
+    # pledge; the organiser can fill it in later.
+    method: Optional[str] = None
+
+
+class GiftPaidIn(BaseModel):
+    paid: bool = True
+
+
+# What an INVITED OUTSIDER sends to join a pot from the share link. No account —
+# just a name and what they'll give. Everything is bounded: a public endpoint
+# takes no one's word for a size.
+class PotJoinIn(BaseModel):
+    name: str = Field(min_length=1, max_length=60)
+    amount: float = Field(ge=0, le=1_000_000)
+    method: Optional[str] = None
+
+
+# The ways someone can say they'll give. Coordination, not processing — the app
+# never moves money; the organiser reconciles against real life.
+GIFT_METHODS = {"cash", "transfer", "gift", "other"}
+# A hard cap on pledges per pot, so a public endpoint can't be used to grow one
+# document without bound.
+MAX_POT_CONTRIBUTIONS = 300
+
+
+def _clean_method(method: Optional[str]) -> Optional[str]:
+    m = (method or "").strip().lower()
+    return m if m in GIFT_METHODS else None
 
 
 async def _celebrant_user_id(database, family_id: str, member_id: Optional[str]) -> Optional[str]:
@@ -10204,10 +10238,27 @@ async def _celebrant_from_card(database, family_id: str, card: Optional[dict]) -
     return None
 
 
+def _first_name(name: Optional[str]) -> str:
+    """Just the first name — what an outsider on the share link is shown, never a
+    full identity."""
+    return (name or "").strip().split(" ")[0] if (name or "").strip() else ""
+
+
+def _pot_total(contributions: list) -> float:
+    return round(sum(float(c.get("amount") or 0) for c in contributions), 2)
+
+
+def _pot_target(pot: dict, contributions: list) -> Optional[float]:
+    t = pot.get("target_total")
+    return round(float(t), 2) if t is not None else None
+
+
 def public_gift_pot(pot: dict, viewer_user_id: str) -> dict:
+    """The ORGANISER / household view — full detail, including per-person amounts,
+    payment method, and paid status, so the organiser can run the pot."""
     contributions = pot.get("contributions") or []
-    total = round(sum(float(c.get("amount") or 0) for c in contributions), 2)
-    target = pot.get("target_total")
+    total = _pot_total(contributions)
+    share_token = pot.get("share_token")
     return {
         "pot_id": pot["pot_id"],
         "family_id": pot["family_id"],
@@ -10216,24 +10267,59 @@ def public_gift_pot(pot: dict, viewer_user_id: str) -> dict:
         "title": pot.get("title") or "",
         "occasion": pot.get("occasion") or "birthday",
         "per_head": round(float(pot.get("per_head") or 0), 2),
-        "target_total": round(float(target), 2) if target is not None else None,
+        "target_total": _pot_target(pot, contributions),
         "status": pot.get("status") or "open",
         "note": pot.get("note"),
         "contributions": [
-            {"user_id": c.get("user_id"), "name": c.get("name") or "",
-             "amount": round(float(c.get("amount") or 0), 2), "at": iso(c.get("at"))}
+            {"contrib_id": c.get("contrib_id"), "user_id": c.get("user_id"),
+             "name": c.get("name") or "",
+             "amount": round(float(c.get("amount") or 0), 2),
+             "method": c.get("method"), "paid": bool(c.get("paid")),
+             "source": c.get("source") or ("member" if c.get("user_id") else "link"),
+             "at": iso(c.get("at"))}
             for c in contributions
         ],
         "total_pledged": total,
+        "paid_total": round(sum(float(c.get("amount") or 0)
+                                for c in contributions if c.get("paid")), 2),
         "contributor_count": len(contributions),
-        # Whether THIS viewer has already chipped in, and how much — so the app
-        # can render "Chip in" vs "Update your €10" without extra logic.
         "your_amount": next((round(float(c.get("amount") or 0), 2)
-                             for c in contributions if c.get("user_id") == viewer_user_id), None),
+                             for c in contributions if c.get("user_id") and c.get("user_id") == viewer_user_id), None),
+        # Whether the pot has a live share link, and the token to build it. Only
+        # ever returned to the household side.
+        "share_token": share_token,
+        "shared": bool(share_token),
         "created_by_user_id": pot.get("created_by_user_id"),
         "created_by_name": pot.get("created_by_name"),
         "created_at": iso(pot.get("created_at")),
         "updated_at": iso(pot.get("updated_at")),
+    }
+
+
+def public_pot_link_view(pot: dict) -> dict:
+    """The OUTSIDER view, served from the share link with no account. Minimal and
+    safe by construction: it exposes only what a would-be gift-giver needs and
+    NOTHING about the household — no family_id, no card, no member ids, no user
+    ids, no individual amounts, no other pots. First names only. This is the one
+    window an unauthenticated stranger gets, so it is built as an allow-list, not
+    a redaction of the full object."""
+    contributions = pot.get("contributions") or []
+    return {
+        "title": pot.get("title") or "",
+        "occasion": pot.get("occasion") or "birthday",
+        "per_head": round(float(pot.get("per_head") or 0), 2),
+        "target_total": _pot_target(pot, contributions),
+        "total_pledged": _pot_total(contributions),
+        "contributor_count": len(contributions),
+        "status": pot.get("status") or "open",
+        "note": pot.get("note"),
+        "organiser_name": _first_name(pot.get("created_by_name")),
+        # Who's in — first names and whether they've settled up, but NOT how much
+        # each gave (that's between each giver and the organiser).
+        "contributors": [
+            {"name": _first_name(c.get("name")), "paid": bool(c.get("paid"))}
+            for c in contributions
+        ],
     }
 
 
@@ -10319,6 +10405,8 @@ async def create_gift_pot(payload: GiftPotIn, user=Depends(require_full_member))
         "status": "open",
         "note": sanitize_message_text(payload.note or "", 300).strip() or None,
         "contributions": [],
+        # A live share link exists only once the organiser asks for one (/share).
+        "share_token": None,
         # Optimistic-concurrency counter — bumped by every write to contributions
         # or status, so two co-parents chipping in at once can't clobber each
         # other via a read-modify-write from a stale copy (see chip_in).
@@ -10357,11 +10445,18 @@ async def chip_in_gift_pot(pot_id: str, payload: GiftChipIn, user=Depends(requir
 
         rev = pot.get("rev", 0)
         # One pledge per person: chipping in again updates your amount rather
-        # than stacking a second; amount 0 withdraws it.
+        # than stacking a second; amount 0 withdraws it. Preserve the paid flag
+        # the organiser may already have set on this member's row.
+        existing = next((c for c in (pot.get("contributions") or [])
+                         if c.get("user_id") == me), None)
         contributions = [c for c in (pot.get("contributions") or []) if c.get("user_id") != me]
         if amount > 0:
-            contributions.append({"user_id": me, "name": user.get("name", ""),
-                                  "amount": amount, "at": utcnow()})
+            contributions.append({
+                "contrib_id": (existing or {}).get("contrib_id") or new_id("gc"),
+                "user_id": me, "name": user.get("name", ""),
+                "amount": amount, "method": _clean_method(payload.method),
+                "paid": bool((existing or {}).get("paid")),
+                "source": "member", "at": utcnow()})
         result = await database["gift_pots"].update_one(
             {"pot_id": pot_id, "family_id": user["family_id"], "rev": rev},
             {"$set": {"contributions": contributions, "updated_at": utcnow()},
@@ -10405,6 +10500,146 @@ async def delete_gift_pot(pot_id: str, user=Depends(require_full_member)):
     if result.deleted_count == 0:
         raise HTTPException(404, "Gift pot not found")
     return {"ok": True}
+
+
+async def _load_own_pot(database, pot_id: str, user: dict) -> dict:
+    """A pot in the caller's household they're allowed to act on — not one that
+    would spoil their own surprise."""
+    pot = await database["gift_pots"].find_one(
+        {"pot_id": pot_id, "family_id": user["family_id"]}, {"_id": 0})
+    if not pot:
+        raise HTTPException(404, "Gift pot not found")
+    if pot.get("for_user_id") and pot["for_user_id"] == user["user_id"]:
+        raise HTTPException(404, "Gift pot not found")
+    return pot
+
+
+@app.post("/api/gift-pots/{pot_id}/share")
+async def share_gift_pot(pot_id: str, user=Depends(require_full_member)):
+    """Turn on the share link — the outer circle. Extended family and friends who
+    aren't in the household can be invited to this ONE pot with the link, and see
+    nothing else. The token is minted once and reused, so the link is stable
+    until the organiser revokes it."""
+    await require_feature(user, "gift_pot")
+    database = get_db()
+    pot = await _load_own_pot(database, pot_id, user)
+    token = pot.get("share_token")
+    if not token:
+        token = secrets.token_urlsafe(24)
+        await database["gift_pots"].update_one(
+            {"pot_id": pot_id, "family_id": user["family_id"]},
+            {"$set": {"share_token": token, "updated_at": utcnow()}})
+        pot["share_token"] = token
+    return public_gift_pot(pot, user["user_id"])
+
+
+@app.post("/api/gift-pots/{pot_id}/unshare")
+async def unshare_gift_pot(pot_id: str, user=Depends(require_full_member)):
+    """Revoke the share link. Anyone still holding the old URL gets a 404 — the
+    outer circle is closed again. Pledges already made stay."""
+    await require_feature(user, "gift_pot")
+    database = get_db()
+    pot = await _load_own_pot(database, pot_id, user)
+    await database["gift_pots"].update_one(
+        {"pot_id": pot_id, "family_id": user["family_id"]},
+        {"$set": {"share_token": None, "updated_at": utcnow()}})
+    pot["share_token"] = None
+    return public_gift_pot(pot, user["user_id"])
+
+
+@app.post("/api/gift-pots/{pot_id}/contributions/{contrib_id}/paid")
+async def set_contribution_paid(pot_id: str, contrib_id: str, payload: GiftPaidIn,
+                                user=Depends(require_full_member)):
+    """The organiser is the source of truth for money: only they mark a pledge
+    settled (they got the cash / saw the transfer). The app never handles funds."""
+    await require_feature(user, "gift_pot")
+    database = get_db()
+    pot = await _load_own_pot(database, pot_id, user)
+    contributions = pot.get("contributions") or []
+    found = False
+    for c in contributions:
+        if c.get("contrib_id") == contrib_id:
+            c["paid"] = bool(payload.paid)
+            found = True
+            break
+    if not found:
+        raise HTTPException(404, "Contribution not found")
+    await database["gift_pots"].update_one(
+        {"pot_id": pot_id, "family_id": user["family_id"]},
+        {"$set": {"contributions": contributions, "updated_at": utcnow()}, "$inc": {"rev": 1}})
+    pot["contributions"] = contributions
+    return public_gift_pot(pot, user["user_id"])
+
+
+@app.delete("/api/gift-pots/{pot_id}/contributions/{contrib_id}")
+async def remove_contribution(pot_id: str, contrib_id: str, user=Depends(require_full_member)):
+    """Remove a pledge — a duplicate, or a bogus one that came in over the public
+    link. The organiser curates; a name-only link means the app can't."""
+    await require_feature(user, "gift_pot")
+    database = get_db()
+    pot = await _load_own_pot(database, pot_id, user)
+    contributions = [c for c in (pot.get("contributions") or [])
+                     if c.get("contrib_id") != contrib_id]
+    await database["gift_pots"].update_one(
+        {"pot_id": pot_id, "family_id": user["family_id"]},
+        {"$set": {"contributions": contributions, "updated_at": utcnow()}, "$inc": {"rev": 1}})
+    pot["contributions"] = contributions
+    return public_gift_pot(pot, user["user_id"])
+
+
+# ---- The public share link — NO authentication. Scoped to one pot by token. ---
+
+async def _pot_by_token(database, token: str) -> dict:
+    """Resolve the single pot a share token unlocks. An empty/None token must
+    never match a pot that simply hasn't been shared, so it is rejected up
+    front — otherwise find_one({share_token: None}) could hand out an unshared
+    pot at random."""
+    token = (token or "").strip()
+    if not token:
+        raise HTTPException(404, "Gift pot not found")
+    pot = await database["gift_pots"].find_one({"share_token": token}, {"_id": 0})
+    if not pot:
+        raise HTTPException(404, "Gift pot not found")
+    return pot
+
+
+@app.get("/api/pot/{token}")
+async def view_shared_pot(token: str):
+    """What an invited outsider sees — no account, no household, just this pot.
+    Deliberately ungated: the person on the link has no plan of their own; the
+    Family gate lives on the organiser who created and shared it."""
+    return public_pot_link_view(await _pot_by_token(get_db(), token))
+
+
+@app.post("/api/pot/{token}/join")
+async def join_shared_pot(token: str, payload: PotJoinIn):
+    """An outsider says they're in — a name and what they'll give. No account.
+    Everything is bounded (name, amount, method, and a hard cap on pledges per
+    pot), because a public endpoint trusts nothing. The organiser reconciles and
+    marks it paid later; the giver's amount is never shown to other outsiders."""
+    database = get_db()
+    for _ in range(6):
+        pot = await _pot_by_token(database, token)
+        if pot.get("status") == "closed":
+            raise HTTPException(409, "This gift pot is closed.")
+        contributions = list(pot.get("contributions") or [])
+        if len(contributions) >= MAX_POT_CONTRIBUTIONS:
+            raise HTTPException(409, "This gift pot is full.")
+        rev = pot.get("rev", 0)
+        name = sanitize_message_text(payload.name, 60).strip() or "Someone"
+        amount = round(float(payload.amount), 2)
+        contributions.append({
+            "contrib_id": new_id("gc"), "user_id": None, "name": name,
+            "amount": amount, "method": _clean_method(payload.method),
+            "paid": False, "source": "link", "at": utcnow()})
+        result = await database["gift_pots"].update_one(
+            {"pot_id": pot["pot_id"], "share_token": token, "rev": rev},
+            {"$set": {"contributions": contributions, "updated_at": utcnow()},
+             "$inc": {"rev": 1}})
+        if result.matched_count:
+            pot["contributions"] = contributions
+            return public_pot_link_view(pot)
+    raise HTTPException(409, "Please try again.")
 
 
 # -----------------------------------------------------------------------------
