@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Linking, Modal, Platform, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ChevronLeft, Gift, Check, Users, Link2, Pencil, X, MessageCircle } from 'lucide-react-native';
 
@@ -23,6 +23,7 @@ import { logger } from '../src/logger';
  */
 export default function GiftPotRoute() {
   const ui = useUI();
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const { t } = useStore();
   const { isLocked, promptUpgrade } = usePremiumGate();
@@ -350,7 +351,7 @@ export default function GiftPotRoute() {
       {/* Edit sheet — organiser tweaks the pot's details. */}
       <Modal visible={editing} transparent animationType="fade" onRequestClose={() => setEditing(false)}>
         <View style={styles.sheetBackdrop}>
-          <View style={styles.sheet}>
+          <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 16) + 18 }]}>
             <View style={styles.sheetHead}>
               <Text style={styles.sheetTitle}>{t('gp_edit_title')}</Text>
               <PressScale testID="gift-pot-edit-close" onPress={() => setEditing(false)} style={styles.backBtn} accessibilityLabel={t('gp_cancel')}>

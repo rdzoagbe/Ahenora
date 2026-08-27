@@ -1213,7 +1213,11 @@ export default function Feed() {
               <View style={styles.householdIcon}><History color={ui.mintText} size={17} /></View>
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={styles.householdTitle}>{t('feed_household')}</Text>
-                <Text style={styles.householdSub} numberOfLines={1}>{householdSummary}</Text>
+                {/* The teaser repeats the newest line; hide it once the list
+                    below is open so the row reads as a header, not a duplicate. */}
+                {!showHousehold ? (
+                  <Text style={styles.householdSub} numberOfLines={1}>{householdSummary}</Text>
+                ) : null}
               </View>
               {householdActivity.length > 0 ? (
                 <View style={styles.householdCount}><Text style={styles.householdCountText}>{householdActivity.length}</Text></View>
@@ -1227,11 +1231,10 @@ export default function Feed() {
                 who did what, notes, the family board, the weekly report and
                 the household snapshot. Opened from the row above. */}
             {householdActivity.length > 0 ? (
+              // No inner header — the "Household" row above already labels this,
+              // so the list flows straight under it as one unit (was two stacked
+              // near-identical cards).
               <View style={styles.activityCard}>
-                <View style={styles.activityHead}>
-                  <History color={ui.mintText} size={17} />
-                  <Text style={styles.activityTitle}>{t('feed_activity_title')}</Text>
-                </View>
                 {householdActivity.map((entry) => (
                   <View key={entry.activity_id} style={styles.activityRow}>
                     <View style={styles.activityDot} />
