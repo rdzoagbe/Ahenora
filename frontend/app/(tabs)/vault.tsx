@@ -555,7 +555,7 @@ export default function Vault() {
         </View>
 
         <Text style={styles.label}>{t('title')}</Text>
-        <TextInput testID="vault-title" value={title} onChangeText={setTitle} placeholder={t('title')} placeholderTextColor={ui.muted} style={styles.input} returnKeyType="next" />
+        <TextInput testID="vault-title" onSubmitEditing={() => save()} value={title} onChangeText={setTitle} placeholder={t('title')} placeholderTextColor={ui.muted} style={styles.input} returnKeyType="next" />
 
         <Text style={styles.label}>{t('doc_category')}</Text>
         <View style={styles.catRow}>

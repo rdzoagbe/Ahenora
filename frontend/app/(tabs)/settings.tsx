@@ -1179,7 +1179,7 @@ export default function Settings() {
         ) : (
           <>
             <TextInput
-              testID="invite-label"
+              testID="invite-label" returnKeyType="done" onSubmitEditing={() => shareNewLink()}
               value={inviteLabel}
               onChangeText={setInviteLabel}
               placeholder={t('set_invite_link_for_ph')}

@@ -1474,7 +1474,7 @@ export default function Calendar() {
 
             <Text style={styles.custodyFieldLabel}>{t('custody_away_label_q')}</Text>
             <TextInput
-              testID="custody-away-label"
+              testID="custody-away-label" returnKeyType="done" onSubmitEditing={() => saveCustody()}
               value={custLabel}
               onChangeText={setCustLabel}
               placeholder={t('custody_away_placeholder')}

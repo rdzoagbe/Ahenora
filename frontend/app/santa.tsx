@@ -237,7 +237,7 @@ export default function SantaRoute() {
         </PressScale>
         <Text style={styles.headTitle} numberOfLines={1}>{t('ss_title')}</Text>
         {draw && draw.status !== 'sent' ? (
-          <PressScale testID="santa-delete" onPress={removeDraw} style={styles.iconBtn} accessibilityLabel={t('ss_delete')}>
+          <PressScale testID="santa-delete" onPress={removeDraw} disabled={busy} style={styles.iconBtn} accessibilityLabel={t('ss_delete')}>
             <Trash2 color={ui.muted} size={19} />
           </PressScale>
         ) : <View style={{ width: 36 }} />}

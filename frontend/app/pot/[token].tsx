@@ -131,7 +131,7 @@ export default function PublicPotRoute() {
                 <View style={styles.amountWrap}>
                   <Text style={styles.euro}>€</Text>
                   <TextInput
-                    testID="pub-pot-amount"
+                    testID="pub-pot-amount" returnKeyType="done" onSubmitEditing={() => join()}
                     value={amount}
                     onChangeText={setAmount}
                     keyboardType="decimal-pad"

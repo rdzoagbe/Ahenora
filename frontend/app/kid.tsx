@@ -271,7 +271,7 @@ export default function KidScreen() {
                   style={[styles.textInput, fError && { borderColor: ui.danger }]}
                 />
                 <PasswordInput
-                  testID="kid-forgot-password"
+                  testID="kid-forgot-password" returnKeyType="done" onSubmitEditing={() => leaveWithPassword()}
                   value={fPassword}
                   onChangeText={(v) => { setFPassword(v); setFError(null); }}
                   placeholder={t('email_password_placeholder_login')}
@@ -297,7 +297,7 @@ export default function KidScreen() {
                 <Text style={styles.modalTitle}>{t('kid_hand_back')}</Text>
                 <Text style={styles.modalBody}>{t('kid_hand_back_help')}</Text>
                 <TextInput
-                  testID="kid-exit-pin"
+                  testID="kid-exit-pin" returnKeyType="done" onSubmitEditing={() => leave()}
                   value={pin}
                   onChangeText={(v) => { setPin(v); setPinError(false); }}
                   placeholder="••••"

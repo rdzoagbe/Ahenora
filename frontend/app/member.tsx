@@ -291,7 +291,7 @@ export default function MemberProfile() {
         {renaming ? (
           <View style={styles.renameBox}>
             <TextInput
-              testID="member-rename-input"
+              testID="member-rename-input" returnKeyType="done" onSubmitEditing={() => saveName()}
               value={nameDraft}
               onChangeText={setNameDraft}
               placeholder={displayName}

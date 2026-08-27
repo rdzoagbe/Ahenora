@@ -317,7 +317,7 @@ export default function GiftPotRoute() {
                 <View style={styles.inputWrap}>
                   <Text style={styles.euro}>€</Text>
                   <TextInput
-                    testID="gift-pot-amount"
+                    testID="gift-pot-amount" returnKeyType="done" onSubmitEditing={() => chipIn()}
                     value={amount}
                     onChangeText={setAmount}
                     keyboardType="decimal-pad"

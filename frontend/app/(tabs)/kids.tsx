@@ -2071,7 +2071,7 @@ export default function Kids() {
         <Text style={styles.label}>{t('kids_starting_stars')}</Text>
         <TextInput testID="child-starting-stars" value={childStartingStars} onChangeText={(v) => setChildStartingStars(cleanNumber(v))} keyboardType="number-pad" placeholder="0" placeholderTextColor={ui.muted} style={styles.input} />
         <Text style={styles.label}>{t('kids_pin_optional')}</Text>
-        <TextInput testID="child-pin" value={childPin} onChangeText={(v) => setChildPin(cleanNumber(v).slice(0, 4))} keyboardType="number-pad" secureTextEntry placeholder={t('kids_pin_placeholder')} placeholderTextColor={ui.muted} style={styles.input} />
+        <TextInput testID="child-pin" returnKeyType="done" onSubmitEditing={() => createChild()} value={childPin} onChangeText={(v) => setChildPin(cleanNumber(v).slice(0, 4))} keyboardType="number-pad" secureTextEntry placeholder={t('kids_pin_placeholder')} placeholderTextColor={ui.muted} style={styles.input} />
         <View style={styles.sheetFooter}>
           <PressScale testID="cancel-child" onPress={() => setShowChildSheet(false)} style={styles.cancelBtn}><Text style={styles.cancelText}>{t('cancel')}</Text></PressScale>
           <PressScale testID="save-child" onPress={createChild} disabled={saving || !childName.trim()} style={[styles.saveBtn, (!childName.trim() || saving) && { opacity: 0.5 }]}><Text style={styles.saveText}>{saving ? '...' : t('kids_save_child')}</Text></PressScale>
@@ -2104,7 +2104,7 @@ export default function Kids() {
 
         <Text style={styles.label}>{t('teen_invite_email')}</Text>
         <TextInput
-          testID="teen-email" value={teenEmail} onChangeText={setTeenEmail}
+          testID="teen-email" onSubmitEditing={() => inviteTeen()} value={teenEmail} onChangeText={setTeenEmail}
           keyboardType="email-address" autoCapitalize="none" autoCorrect={false}
           placeholder="teen@email.com" placeholderTextColor={ui.muted}
           style={styles.input} returnKeyType="done"
@@ -2162,7 +2162,7 @@ export default function Kids() {
           {activeChild?.has_pin ? t('kids_change_pin') : t('kids_set_pin')}
         </Text>
         <TextInput
-          testID="manage-child-pin"
+          testID="manage-child-pin" returnKeyType="done" onSubmitEditing={() => saveManagedChild()}
           value={managePin}
           onChangeText={(v) => setManagePin(cleanNumber(v).slice(0, 4))}
           keyboardType="number-pad"
@@ -2208,7 +2208,7 @@ export default function Kids() {
         <Text style={styles.label}>{t('kids_amount')}</Text>
         <TextInput testID="star-amount" value={starAmount} onChangeText={(v) => setStarAmount(cleanNumber(v))} keyboardType="number-pad" placeholder="5" placeholderTextColor={ui.muted} style={styles.input} />
         <Text style={styles.label}>{t('kids_reason')}</Text>
-        <TextInput testID="star-reason" value={starReason} onChangeText={setStarReason} placeholder={starMode === 'add' ? t('kids_reason_add_placeholder') : t('kids_reason_remove_placeholder')} placeholderTextColor={ui.muted} style={styles.input} />
+        <TextInput testID="star-reason" returnKeyType="done" onSubmitEditing={() => adjustStars()} value={starReason} onChangeText={setStarReason} placeholder={starMode === 'add' ? t('kids_reason_add_placeholder') : t('kids_reason_remove_placeholder')} placeholderTextColor={ui.muted} style={styles.input} />
         <View style={styles.sheetFooter}>
           <PressScale testID="cancel-stars" onPress={() => setShowStarSheet(false)} style={styles.cancelBtn}><Text style={styles.cancelText}>{t('cancel')}</Text></PressScale>
           <PressScale testID="save-stars" onPress={adjustStars} disabled={saving || !starAmount} style={[styles.saveBtn, (!starAmount || saving) && { opacity: 0.5 }]}><Text style={styles.saveText}>{saving ? '...' : t('save')}</Text></PressScale>
@@ -2289,7 +2289,7 @@ export default function Kids() {
         </View>
         <Text style={styles.sheetHelp}>{t('kids_fix_help', { name: activeChild?.name || '' })}</Text>
         <Text style={styles.label}>{t('kids_correct_total')}</Text>
-        <TextInput testID="fix-balance-input" value={fixValue} onChangeText={(v) => setFixValue(cleanNumber(v))} keyboardType="number-pad" placeholder="0" placeholderTextColor={ui.muted} style={styles.input} />
+        <TextInput testID="fix-balance-input" returnKeyType="done" onSubmitEditing={() => fixBalance()} value={fixValue} onChangeText={(v) => setFixValue(cleanNumber(v))} keyboardType="number-pad" placeholder="0" placeholderTextColor={ui.muted} style={styles.input} />
         <View style={styles.sheetFooter}>
           <PressScale testID="cancel-fix" onPress={() => setShowFixSheet(false)} style={styles.cancelBtn}><Text style={styles.cancelText}>{t('cancel')}</Text></PressScale>
           <PressScale testID="save-fix" onPress={fixBalance} disabled={saving} style={[styles.saveBtn, saving && { opacity: 0.5 }]}><Text style={styles.saveText}>{saving ? '...' : t('save')}</Text></PressScale>
@@ -2385,7 +2385,7 @@ export default function Kids() {
         </View>
         <Text style={styles.sheetHelp}>{t('kids_for')} {activeChild?.name || t('kids_selected_child')}</Text>
         <Text style={styles.label}>{t('kids_amount')}</Text>
-        <TextInput testID="allowance-amount" value={alwAmount} onChangeText={(v) => setAlwAmount(cleanNumber(v))} keyboardType="number-pad" placeholder="5" placeholderTextColor={ui.muted} style={styles.input} />
+        <TextInput testID="allowance-amount" returnKeyType="done" onSubmitEditing={() => saveAllowance()} value={alwAmount} onChangeText={(v) => setAlwAmount(cleanNumber(v))} keyboardType="number-pad" placeholder="5" placeholderTextColor={ui.muted} style={styles.input} />
         <Text style={styles.label}>{t('kids_frequency')}</Text>
         <View style={styles.freqRow}>
           {['weekly', 'biweekly', 'monthly'].map((f) => (

@@ -393,7 +393,7 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
                 maxLength={10}
               />
               <TextInput
-                testID="exp-date"
+                testID="exp-date" returnKeyType="done" onSubmitEditing={() => save()}
                 style={styles.input}
                 value={when}
                 onChangeText={setWhen}

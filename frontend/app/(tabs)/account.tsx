@@ -353,7 +353,7 @@ export default function AccountScreen() {
 
             <Text style={[styles.modalLabel, { color: theme.colors.textMuted }]}>{t('acc_pw_new')}</Text>
             <PasswordInput
-              testID="pw-new"
+              testID="pw-new" returnKeyType="done" onSubmitEditing={() => submitChangePassword()}
               style={[styles.modalInput, { color: theme.colors.text, borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}
               value={pwNew}
               onChangeText={setPwNew}
