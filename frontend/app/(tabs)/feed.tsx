@@ -52,12 +52,12 @@ import { TabScreen } from '../../src/components/TabScreen';
 import { GettingStarted } from '../../src/components/GettingStarted';
 import { UpgradeBanner } from '../../src/components/UpgradeBanner';
 import { CoParentNudge } from '../../src/components/CoParentNudge';
-import { GiftPotStrip } from '../../src/components/GiftPotStrip';
+import { GiftingStrip } from '../../src/components/GiftingStrip';
 import { StreakChip } from '../../src/components/StreakChip';
 import { useStore } from '../../src/store';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { useUI, UIColors } from '../../src/components/Kit';
-import { api, logEvent, ActivityEntry, Announcement, Card, CardType, CustodyConfig, FamilyMember, GiftPot, HandoffNote, Template, WeeklyReport } from '../../src/api';
+import { api, logEvent, ActivityEntry, Announcement, Card, CardType, CustodyConfig, FamilyMember, GiftPot, SantaDraw, HandoffNote, Template, WeeklyReport } from '../../src/api';
 import { syncCardReminderNotifications, syncMorningDigest, syncDinnerReminder, syncSundayRecap, ensureAskedNotificationPermissionOnce } from '../../src/notifications';
 import { logger } from '../../src/logger';
 import { isoWeek } from '../../src/utils/date';
@@ -335,6 +335,8 @@ export default function Feed() {
   // Gift pots keyed by their birthday card, so the Gift Pot strip can show a
   // pot's progress inline. Fetched alongside the feed; empty is fine.
   const [giftPotByCard, setGiftPotByCard] = useState<Record<string, GiftPot>>({});
+  // Active Secret Santa draws, shown in the gifting card's second tab.
+  const [santaDraws, setSantaDraws] = useState<SantaDraw[]>([]);
   // Card ids the user just completed/dismissed. A refetch that raced the write
   // can return them still OPEN; we hide those until the server confirms, so a
   // dismissed card never reappears.
@@ -393,7 +395,7 @@ export default function Feed() {
     logEvent('feed_open');
     ensureAskedNotificationPermissionOnce().catch(() => undefined);
     try {
-      const [cardsResult, membersResult, rewardsResult, vaultResult, notesResult, templatesResult, annResult, potsResult] = await Promise.allSettled([
+      const [cardsResult, membersResult, rewardsResult, vaultResult, notesResult, templatesResult, annResult, potsResult, santaResult] = await Promise.allSettled([
         api.listCards(),
         api.familyMembers(),
         api.listRewards(),
@@ -402,12 +404,14 @@ export default function Feed() {
         api.listTemplates(),
         api.listAnnouncements(),
         api.listGiftPots().catch(() => [] as GiftPot[]),
+        api.listSantaDraws().catch(() => [] as SantaDraw[]),
       ]);
       if (potsResult.status === 'fulfilled') {
         const map: Record<string, GiftPot> = {};
         for (const p of potsResult.value) if (p.card_id) map[p.card_id] = p;
         setGiftPotByCard(map);
       }
+      if (santaResult.status === 'fulfilled') setSantaDraws(santaResult.value);
 
       let loadedCards: Card[] = [];
       if (cardsResult.status === 'fulfilled') {
@@ -1078,15 +1082,18 @@ export default function Feed() {
             {/* Upcoming birthdays, gathered into one compact strip. Hidden when
                 there are none. Tapping a row opens (or starts) that birthday's
                 pot — where chipping in, sharing and marking paid all live. */}
-            <GiftPotStrip
+            <GiftingStrip
               birthdays={dashboard.upcomingBirthdays}
               potByCard={giftPotByCard}
+              santaDraws={santaDraws}
               lang={lang}
-              onOpen={(card) => router.push({
+              onOpenBirthday={(card) => router.push({
                 pathname: '/gift-pot',
                 params: { cardId: card.card_id, name: card.title },
               } as never)}
-              onSeeAll={() => router.navigate('/(tabs)/calendar')}
+              onSeeAllBirthdays={() => router.navigate('/(tabs)/calendar')}
+              onOpenSanta={(draw) => router.push({ pathname: '/santa', params: { drawId: draw.draw_id } } as never)}
+              onNewSanta={() => router.push('/santa' as never)}
             />
 
             {/* Quick templates */}

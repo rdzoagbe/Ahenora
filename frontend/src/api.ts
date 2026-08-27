@@ -1101,6 +1101,7 @@ export interface Subscription {
     carpool: boolean;
     weekly_report: boolean;
     gift_pot: boolean;
+    secret_santa: boolean;
   };
   price_monthly: number;
   price_yearly: number;
@@ -1136,6 +1137,7 @@ export interface Entitlements {
     carpool: boolean;
     weekly_report: boolean;
     gift_pot: boolean;
+    secret_santa: boolean;
   };
 }
 
@@ -1192,6 +1194,57 @@ export interface PublicPot {
   note: string | null;
   organiser_name: string;
   contributors: { name: string; paid: boolean }[];
+}
+
+// ── Secret Santa ────────────────────────────────────────────────────────────
+
+export type SantaStatus = 'draft' | 'matched' | 'sent' | 'closed';
+
+export interface SantaParticipant {
+  pid: string;
+  name: string;
+  source: 'member' | 'link';
+  member_id: string | null;
+  is_member: boolean;
+  opened: boolean;
+  /** The private one-match link token — outsiders only, and only once sent. */
+  token: string | null;
+}
+
+export interface SantaDraw {
+  draw_id: string;
+  family_id: string;
+  title: string;
+  budget: number | null;
+  draw_by: string | null;
+  status: SantaStatus;
+  participants: SantaParticipant[];
+  /** "Keep apart" pairs, as pairs of names (for display). */
+  exclusions: [string, string][];
+  participant_count: number;
+  opened_count: number;
+  viewer_is_participant: boolean;
+  viewer_can_reveal: boolean;
+  created_by_user_id: string;
+  created_by_name: string;
+  created_at: string | null;
+  updated_at: string | null;
+  sent_at: string | null;
+}
+
+/** The single match one person sees — nothing else about the draw. */
+export interface SantaMatch {
+  draw_title: string;
+  budget: number | null;
+  draw_by: string | null;
+  organiser_name: string;
+  giver_name: string;
+  giftee_name: string;
+}
+
+export interface SantaParticipantInput {
+  name: string;
+  member_id?: string;
 }
 
 export interface PlanLimitError {
@@ -1580,6 +1633,41 @@ export const api = {
     cache.invalidatePrefix('listGiftPots');
     return request<{ ok: boolean }>(`/gift-pots/${id}`, { method: 'DELETE' });
   },
+
+  // ── Secret Santa ──────────────────────────────────────────────────────────
+  listSantaDraws: () => request<SantaDraw[]>('/santa'),
+  getSantaDraw: (id: string) => request<SantaDraw>(`/santa/${id}`),
+  createSantaDraw: (data: {
+    title?: string; budget?: number | null; draw_by?: string | null;
+    participants: SantaParticipantInput[]; exclusions?: [string, string][];
+  }) => {
+    cache.invalidatePrefix('listSantaDraws');
+    return request<SantaDraw>('/santa', { method: 'POST', body: data });
+  },
+  editSantaDraw: (id: string, data: {
+    title?: string; budget?: number | null; draw_by?: string | null;
+    participants?: SantaParticipantInput[]; exclusions?: [string, string][]; clear_budget?: boolean;
+  }) => {
+    cache.invalidatePrefix('listSantaDraws');
+    return request<SantaDraw>(`/santa/${id}`, { method: 'PATCH', body: data });
+  },
+  shuffleSantaDraw: (id: string) => {
+    cache.invalidatePrefix('listSantaDraws');
+    return request<SantaDraw>(`/santa/${id}/shuffle`, { method: 'POST' });
+  },
+  sendSantaDraw: (id: string) => {
+    cache.invalidatePrefix('listSantaDraws');
+    return request<SantaDraw>(`/santa/${id}/send`, { method: 'POST' });
+  },
+  deleteSantaDraw: (id: string) => {
+    cache.invalidatePrefix('listSantaDraws');
+    return request<{ ok: boolean }>(`/santa/${id}`, { method: 'DELETE' });
+  },
+  /** The calling member's own match (once sent). */
+  getMySantaMatch: (id: string) => request<SantaMatch>(`/santa/${id}/my-match`),
+  /** The PUBLIC one-match reveal for an outsider's link token — no auth. */
+  getPublicSantaMatch: (token: string) =>
+    request<SantaMatch>(`/santa/match/${encodeURIComponent(token)}`),
   /** What this build should compare itself against. Unauthenticated: a client
    *  too old to be updated may also be too old to sign in cleanly. */
   appVersionInfo: () =>

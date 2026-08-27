@@ -104,6 +104,8 @@ function RootNavigator() {
         <Stack.Screen name="conversation" />
         <Stack.Screen name="gift-pot" />
         <Stack.Screen name="pot/[token]" />
+        <Stack.Screen name="santa" />
+        <Stack.Screen name="santa-match/[token]" />
         <Stack.Screen name="+not-found" />
       </Stack>
     </>
