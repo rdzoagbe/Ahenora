@@ -315,7 +315,7 @@ export default function SantaRoute() {
 
           {/* Add an outsider by name */}
           <View style={styles.addRow}>
-            <View style={styles.field}><TextInput testID="santa-add-name" value={addName} onChangeText={setAddName} onSubmitEditing={addOutsider} placeholder={t('ss_add_person_ph')} placeholderTextColor={ui.muted} style={styles.fieldInput} returnKeyType="done" /></View>
+            <View style={[styles.field, { flex: 1 }]}><TextInput testID="santa-add-name" value={addName} onChangeText={setAddName} onSubmitEditing={addOutsider} placeholder={t('ss_add_person_ph')} placeholderTextColor={ui.muted} style={styles.fieldInput} returnKeyType="done" /></View>
             <PressScale testID="santa-add-outsider" onPress={addOutsider} style={styles.addBtn}><Text style={styles.addBtnText}>{t('ss_add_person')}</Text></PressScale>
           </View>
 
