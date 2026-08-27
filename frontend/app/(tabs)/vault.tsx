@@ -6,7 +6,6 @@ import {
   ScrollView,
   TextInput,
   Platform,
-  Pressable,
   Image,
   Alert,
   Modal,
@@ -418,6 +417,13 @@ export default function Vault() {
           <ScreenHeader
             eyebrow={t('vault_secure_storage')}
             title={t('vault')}
+            right={
+              // Add lives in the header now — a floating FAB down by the tab bar
+              // read as a second, duplicate "+" beside the nav bar's own.
+              <PressScale testID="vault-add" onPress={openAdd} accessibilityRole="button" accessibilityLabel={t('a11y_add')} style={styles.headerAddBtn}>
+                <Plus color="#FFFFFF" size={20} />
+              </PressScale>
+            }
           />
 
           <FirstRunTip
@@ -537,16 +543,6 @@ export default function Vault() {
 
           <View style={{ height: 140 }} />
       </TabScreen>
-
-      <Pressable
-        style={({ pressed }) => [styles.fab, pressed && styles.fabPressed]}
-        onPress={openAdd}
-        testID="vault-add"
-        accessibilityRole="button"
-        accessibilityLabel={t('a11y_add')}
-      >
-        <Plus color="#FFFFFF" size={28} />
-      </Pressable>
 
       <KeyboardAwareBottomSheet visible={showAdd} onClose={closeAdd} contentStyle={styles.sheet}>
         <View style={styles.sheetHeader}>
@@ -755,8 +751,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   emptyBtn: { marginTop: 6, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: ui.orangeDeep, paddingHorizontal: 18, paddingVertical: 12, borderRadius: 99 },
   emptyBtnText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
 
-  fab: { position: 'absolute', right: 22, bottom: 102, width: 61, height: 61, borderRadius: 999, backgroundColor: ui.orangeDeep, alignItems: 'center', justifyContent: 'center', shadowColor: '#000000', shadowOpacity: 0.18, shadowRadius: 16, shadowOffset: { width: 0, height: 10 }, elevation: 7, zIndex: 30 },
-  fabPressed: { backgroundColor: '#D9530F', transform: [{ scale: 0.96 }] },
+  headerAddBtn: { width: 40, height: 40, borderRadius: 99, alignItems: 'center', justifyContent: 'center', backgroundColor: ui.orangeDeep },
 
   backdrop: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(8,9,16,0.5)' },
   sheet: { backgroundColor: ui.card, borderTopLeftRadius: 34, borderTopRightRadius: 34, borderWidth: 1, borderColor: ui.line, padding: 26, paddingBottom: 140 },
