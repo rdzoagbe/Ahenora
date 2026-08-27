@@ -52,12 +52,12 @@ import { TabScreen } from '../../src/components/TabScreen';
 import { GettingStarted } from '../../src/components/GettingStarted';
 import { UpgradeBanner } from '../../src/components/UpgradeBanner';
 import { CoParentNudge } from '../../src/components/CoParentNudge';
-import { BirthdayGiftNudge } from '../../src/components/BirthdayGiftNudge';
+import { GiftPotStrip } from '../../src/components/GiftPotStrip';
 import { StreakChip } from '../../src/components/StreakChip';
 import { useStore } from '../../src/store';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { useUI, UIColors } from '../../src/components/Kit';
-import { api, logEvent, ActivityEntry, Announcement, Card, CardType, CustodyConfig, FamilyMember, HandoffNote, Template, WeeklyReport } from '../../src/api';
+import { api, logEvent, ActivityEntry, Announcement, Card, CardType, CustodyConfig, FamilyMember, GiftPot, HandoffNote, Template, WeeklyReport } from '../../src/api';
 import { syncCardReminderNotifications, syncMorningDigest, syncDinnerReminder, syncSundayRecap, ensureAskedNotificationPermissionOnce } from '../../src/notifications';
 import { logger } from '../../src/logger';
 import { isoWeek } from '../../src/utils/date';
@@ -301,7 +301,7 @@ const ANN_SEEN_KEY = 'coo_family_board_seen_at';
 const SEEN_ALERTS_KEY = 'coo_seen_alert_ids';
 
 export default function Feed() {
-  const { user, t, subscription, dataVersion, requestInvite } = useStore();
+  const { user, t, lang, subscription, dataVersion, requestInvite } = useStore();
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
   const [assigned, setAssigned] = useState<Card[]>([]);
   // The web build is prerendered at BUILD time. Anything derived from "now" —
@@ -317,6 +317,9 @@ export default function Feed() {
   const router = useRouter();
   const styles = useMemo(() => createStyles(ui), [ui]);
   const [cards, setCards] = useState<Card[]>([]);
+  // Gift pots keyed by their birthday card, so the Gift Pot strip can show a
+  // pot's progress inline. Fetched alongside the feed; empty is fine.
+  const [giftPotByCard, setGiftPotByCard] = useState<Record<string, GiftPot>>({});
   // Card ids the user just completed/dismissed. A refetch that raced the write
   // can return them still OPEN; we hide those until the server confirms, so a
   // dismissed card never reappears.
@@ -375,7 +378,7 @@ export default function Feed() {
     logEvent('feed_open');
     ensureAskedNotificationPermissionOnce().catch(() => undefined);
     try {
-      const [cardsResult, membersResult, rewardsResult, vaultResult, notesResult, templatesResult, annResult] = await Promise.allSettled([
+      const [cardsResult, membersResult, rewardsResult, vaultResult, notesResult, templatesResult, annResult, potsResult] = await Promise.allSettled([
         api.listCards(),
         api.familyMembers(),
         api.listRewards(),
@@ -383,7 +386,13 @@ export default function Feed() {
         api.listHandoffNotes(),
         api.listTemplates(),
         api.listAnnouncements(),
+        api.listGiftPots().catch(() => [] as GiftPot[]),
       ]);
+      if (potsResult.status === 'fulfilled') {
+        const map: Record<string, GiftPot> = {};
+        for (const p of potsResult.value) if (p.card_id) map[p.card_id] = p;
+        setGiftPotByCard(map);
+      }
 
       let loadedCards: Card[] = [];
       if (cardsResult.status === 'fulfilled') {
@@ -647,13 +656,18 @@ export default function Feed() {
       const hay = `${card.title || ''} ${card.assignee || ''}`.toLowerCase();
       return new RegExp(`\\b${myName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(hay);
     };
-    const nextBirthday = activeCards
+    // Every birthday in a rolling ~60-day window, soonest first — the Gift Pot
+    // strip. Nothing is synthesised: these are BIRTHDAY cards (created by hand,
+    // or recognised on calendar import). The viewer's own birthday is skipped so
+    // they aren't nudged to pool for their own gift.
+    const upcomingBirthdays = activeCards
       .filter((card) => card.type === 'BIRTHDAY' && !isMyBirthday(card))
       .map((card) => ({ card, time: dueTime(card) }))
-      .filter((x) => x.time != null && x.time >= now && x.time <= now + 14 * 24 * 60 * 60 * 1000)
-      .sort((a, b) => (a.time as number) - (b.time as number))[0]?.card || null;
+      .filter((x) => x.time != null && x.time >= now && x.time <= now + 60 * 24 * 60 * 60 * 1000)
+      .sort((a, b) => (a.time as number) - (b.time as number))
+      .map((x) => x.card);
 
-    return { overdue, todayCards, signSlips, weekCards, next24h, calmScore, priority, nextBirthday };
+    return { overdue, todayCards, signSlips, weekCards, next24h, calmScore, priority, upcomingBirthdays };
   }, [activeCards, assigned, user?.user_id, members]);
 
   const tabCards = useMemo(() => {
@@ -1040,20 +1054,19 @@ export default function Feed() {
               onInvite={() => { requestInvite(); router.navigate('/(tabs)/settings' as never); }}
             />
 
-            {/* A birthday within the fortnight → offer to pool for one gift.
-                The reminder is free; starting the pot is where Family gates. */}
-            {dashboard.nextBirthday ? (
-              <BirthdayGiftNudge
-                key={dashboard.nextBirthday.card_id}
-                cardId={dashboard.nextBirthday.card_id}
-                title={dashboard.nextBirthday.title}
-                days={Math.max(0, Math.ceil(((dueTime(dashboard.nextBirthday) || Date.now()) - Date.now()) / (24 * 60 * 60 * 1000)))}
-                onOpen={() => router.push({
-                  pathname: '/gift-pot',
-                  params: { cardId: dashboard.nextBirthday!.card_id, name: dashboard.nextBirthday!.title },
-                } as never)}
-              />
-            ) : null}
+            {/* Upcoming birthdays, gathered into one compact strip. Hidden when
+                there are none. Tapping a row opens (or starts) that birthday's
+                pot — where chipping in, sharing and marking paid all live. */}
+            <GiftPotStrip
+              birthdays={dashboard.upcomingBirthdays}
+              potByCard={giftPotByCard}
+              lang={lang}
+              onOpen={(card) => router.push({
+                pathname: '/gift-pot',
+                params: { cardId: card.card_id, name: card.title },
+              } as never)}
+              onSeeAll={() => router.navigate('/(tabs)/calendar')}
+            />
 
             {/* Quick templates */}
             {enabledTemplates.length > 0 ? (
