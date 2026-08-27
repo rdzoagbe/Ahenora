@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams } from 'expo-router';
 import { Gift, Check } from 'lucide-react-native';
 
 import { PressScale } from '../../src/components/PressScale';
 import { useUI, UIColors } from '../../src/components/Kit';
+import { KeyboardAwareScrollView } from '../../src/components/KeyboardAwareScrollView';
 import { useStore } from '../../src/store';
 import { api, PublicPot, GiftMethod } from '../../src/api';
 import { logger } from '../../src/logger';
@@ -79,7 +80,7 @@ export default function PublicPotRoute() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <KeyboardAwareScrollView contentContainerStyle={styles.scroll}>
         {loading ? (
           <View style={styles.center}><ActivityIndicator color={ui.orange} /></View>
         ) : invalid || !pot ? (
@@ -163,7 +164,7 @@ export default function PublicPotRoute() {
             <Text style={styles.brandFoot}>{t('pub_pot_what_is')}</Text>
           </>
         )}
-      </ScrollView>
+      </KeyboardAwareScrollView>
     </SafeAreaView>
   );
 }

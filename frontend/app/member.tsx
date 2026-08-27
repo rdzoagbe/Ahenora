@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, StyleSheet, Text, TextInput, View } from 'react-native';
+import { KeyboardAwareScrollView } from '../src/components/KeyboardAwareScrollView';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ChevronLeft, ChevronRight, KeyRound, MessageCircle, Pencil, Shield, Star, Trash2 } from 'lucide-react-native';
@@ -258,7 +259,7 @@ export default function MemberProfile() {
         <View style={{ width: 36 }} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
+      <KeyboardAwareScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
         {/* The conversation is a door, not the page: it opens as its own screen,
             the same one the Hub opens, so there is a single chat surface. Not on
             your OWN profile — you cannot message yourself, and offering
@@ -333,7 +334,7 @@ export default function MemberProfile() {
             <Text style={[styles.actText, { color: ui.danger }]}>{t('hub_remove')}</Text>
           </PressScale>
         ) : null}
-      </ScrollView>
+      </KeyboardAwareScrollView>
 
 
       <PinPadModal
