@@ -10736,11 +10736,26 @@ async def join_shared_pot(token: str, payload: PotJoinIn):
 # -----------------------------------------------------------------------------
 
 
+def _clean_phone(phone: Optional[str]) -> Optional[str]:
+    """A phone number kept only as display/dial text — never validated as a real
+    line, never used to send anything server-side. The organiser's own device
+    does the texting (an sms: link), so this is just what to pre-fill."""
+    raw = (phone or "").strip()
+    if not raw:
+        return None
+    kept = "".join(c for c in raw if c.isdigit() or c in "+ ()-.")
+    return kept[:24] or None
+
+
 class SantaParticipantIn(BaseModel):
     name: str = Field(min_length=1, max_length=60)
     # A household member the participant maps to (so they reveal in-app and are
     # never handed a link). Absent → an outsider, reached by link.
     member_id: Optional[str] = None
+    # Optional phone for an outsider, so the organiser can text them their link
+    # from their own phone. Stored as display text only — never dialled or
+    # messaged server-side.
+    phone: Optional[str] = None
 
 
 class SantaDrawIn(BaseModel):
@@ -10837,6 +10852,8 @@ async def _build_participants(database, family_id: str, items: List[SantaPartici
             "member_id": it.member_id,
             "user_id": user_id,
             "source": source,
+            # Members reveal in-app, so a phone is only kept for outsiders.
+            "phone": None if source == "member" else _clean_phone(it.phone),
             "token": None,        # minted for link participants on /send
             "opened_at": None,
         })
@@ -10885,6 +10902,7 @@ def public_santa_draw(draw: dict, viewer_user_id: str) -> dict:
              "source": p.get("source") or ("member" if p.get("user_id") else "link"),
              "member_id": p.get("member_id"),
              "is_member": bool(p.get("user_id")),
+             "phone": p.get("phone"),
              "opened": bool(p.get("opened_at")),
              # Only meaningful once sent, and only for outsiders (members reveal
              # in-app). None otherwise.

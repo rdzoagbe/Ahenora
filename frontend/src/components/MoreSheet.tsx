@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { ChevronRight, Lock, Settings as SettingsIcon, Smile, User, X } from 'lucide-react-native';
+import { ChevronRight, Gift, Lock, Settings as SettingsIcon, Smile, User, X } from 'lucide-react-native';
 
 import { PressScale } from './PressScale';
 import { useUI, UIColors } from './Kit';
@@ -40,6 +40,8 @@ export function MoreSheet({ visible, onClose }: { visible: boolean; onClose: () 
   const items = [
     { key: 'kid', icon: Smile, tone: ui.mintText, soft: ui.mint,
       title: t('kid_hand_over'), sub: t('kid_hand_over_sub'), path: '' },
+    { key: 'santa', icon: Gift, tone: ui.orangeText, soft: ui.orangeSoft,
+      title: t('ss_more_title'), sub: t('ss_more_sub'), path: '/santa' },
     { key: 'vault', icon: Lock, tone: ui.lavenderText, soft: ui.lavender,
       title: t('vault'), sub: t('nav_more_vault_sub'), path: '/(tabs)/vault' },
     { key: 'settings', icon: SettingsIcon, tone: ui.orange, soft: ui.orangeSoft,

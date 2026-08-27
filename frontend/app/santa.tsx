@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Modal, Platform, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Linking, Modal, Platform, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { ChevronLeft, Gift, Check, Shuffle, Send, Trash2, X, Plus, Lock } from 'lucide-react-native';
+import { ChevronLeft, Gift, Check, Shuffle, Send, Trash2, X, Plus, Lock, MessageCircle } from 'lucide-react-native';
 
 import { PressScale } from '../src/components/PressScale';
 import { useUI, UIColors } from '../src/components/Kit';
@@ -19,7 +19,7 @@ import { logger } from '../src/logger';
  *
  * Params: drawId (open an existing draw) OR none (build a new one).
  */
-type Part = { name: string; member_id?: string; source: 'member' | 'link' };
+type Part = { name: string; member_id?: string; source: 'member' | 'link'; phone?: string };
 
 export default function SantaRoute() {
   const ui = useUI();
@@ -57,7 +57,7 @@ export default function SantaRoute() {
     setTitle(d.title || '');
     setBudget(d.budget != null ? String(d.budget) : '');
     setDrawBy(d.draw_by || '');
-    setParts(d.participants.map((p) => ({ name: p.name, member_id: p.member_id || undefined, source: p.source })));
+    setParts(d.participants.map((p) => ({ name: p.name, member_id: p.member_id || undefined, source: p.source, phone: p.phone || undefined })));
     setPairs((d.exclusions || []).map((e) => [e[0], e[1]] as [string, string]));
     setPairPick(null);
   }, []);
@@ -113,6 +113,19 @@ export default function SantaRoute() {
     setPairs((ps) => ps.filter(([a, b]) => a !== name && b !== name));
     if (pairPick === name) setPairPick(null);
   };
+  const setPartPhone = (name: string, phone: string) =>
+    setParts((p) => p.map((x) => (x.name === name ? { ...x, phone } : x)));
+
+  // Text a person their link from the ORGANISER's own phone — no SMS provider,
+  // no cost. Opens the native messaging app with the number and message ready
+  // to send; falls back to the share sheet where sms: isn't available (web).
+  const textPerson = (phone: string, link: string) => {
+    const body = t('ss_text_body', { link });
+    const num = (phone || '').replace(/[^0-9+]/g, '');
+    const sep = Platform.OS === 'ios' ? '&' : '?';
+    const url = `sms:${num}${sep}body=${encodeURIComponent(body)}`;
+    Linking.openURL(url).catch(() => { Share.share({ message: body }).catch(() => undefined); });
+  };
   const tapPair = (name: string) => {
     if (pairPick === null) { setPairPick(name); return; }
     if (pairPick === name) { setPairPick(null); return; }
@@ -132,7 +145,7 @@ export default function SantaRoute() {
   const shuffle = useCallback(async () => {
     setError(null);
     if (parts.length < 2) { setError(t('ss_need_two')); return; }
-    const participants = parts.map((p) => ({ name: p.name, member_id: p.member_id }));
+    const participants = parts.map((p) => ({ name: p.name, member_id: p.member_id, phone: p.phone }));
     const payload = {
       title: title.trim(),
       budget: num(budget) ?? null,
@@ -266,7 +279,22 @@ export default function SantaRoute() {
                   </PressScale>
                   <View style={{ flex: 1, minWidth: 0 }}>
                     <Text style={styles.rowName} numberOfLines={1}>{p.name}</Text>
-                    <Text style={styles.rowMeta}>{p.source === 'member' ? t('ss_in_household') : t('ss_by_link')}</Text>
+                    {p.source === 'member' ? (
+                      <Text style={styles.rowMeta}>{t('ss_in_household')}</Text>
+                    ) : (
+                      <View style={styles.phoneWrap}>
+                        <MessageCircle color={ui.muted} size={12} />
+                        <TextInput
+                          testID={`santa-phone-${p.name}`}
+                          value={p.phone || ''}
+                          onChangeText={(v) => setPartPhone(p.name, v)}
+                          placeholder={t('ss_phone_ph')}
+                          placeholderTextColor={ui.muted}
+                          keyboardType="phone-pad"
+                          style={styles.phoneInput}
+                        />
+                      </View>
+                    )}
                   </View>
                   <PressScale onPress={() => removePart(p.name)} style={styles.removeBtn} accessibilityLabel="Remove"><X color={ui.muted} size={16} /></PressScale>
                 </View>
@@ -369,6 +397,11 @@ export default function SantaRoute() {
                 </View>
                 {p.opened ? (
                   <View style={styles.pillMint}><Text style={styles.pillMintText}>{t('ss_status_opened')}</Text></View>
+                ) : p.token && p.phone ? (
+                  <PressScale onPress={() => textPerson(p.phone as string, santaLink(p.token as string))} style={styles.pillOrange}>
+                    <MessageCircle color={ui.orangeText} size={12} />
+                    <Text style={styles.pillOrangeText}>{t('ss_text')}</Text>
+                  </PressScale>
                 ) : p.token ? (
                   <PressScale onPress={() => copyLink(p.token as string, p.name)} style={styles.pillOrange}>
                     <Text style={styles.pillOrangeText}>{copiedFor === p.name ? '✓' : t('ss_copy_link')}</Text>
@@ -432,6 +465,8 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   avatarText: { color: '#fff', fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
   rowName: { color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 14.5 },
   rowMeta: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 11.5, marginTop: 1 },
+  phoneWrap: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 },
+  phoneInput: { flex: 1, color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 12.5, paddingVertical: 2 },
   removeBtn: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
 
   chipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
@@ -471,7 +506,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
 
   pillMint: { backgroundColor: ui.mint, borderRadius: 99, paddingHorizontal: 10, paddingVertical: 4 },
   pillMintText: { color: ui.mintText, fontFamily: 'Inter_800ExtraBold', fontSize: 11 },
-  pillOrange: { backgroundColor: ui.orangeSoft, borderRadius: 99, paddingHorizontal: 11, paddingVertical: 5 },
+  pillOrange: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: ui.orangeSoft, borderRadius: 99, paddingHorizontal: 11, paddingVertical: 5 },
   pillOrangeText: { color: ui.orangeText, fontFamily: 'Inter_800ExtraBold', fontSize: 11.5 },
   pillLine: { backgroundColor: ui.soft, borderRadius: 99, paddingHorizontal: 10, paddingVertical: 4 },
   pillLineText: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 11 },
