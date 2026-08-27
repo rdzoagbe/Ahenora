@@ -1231,10 +1231,11 @@ export default function Feed() {
                 who did what, notes, the family board, the weekly report and
                 the household snapshot. Opened from the row above. */}
             {householdActivity.length > 0 ? (
-              // No inner header — the "Household" row above already labels this,
-              // so the list flows straight under it as one unit (was two stacked
-              // near-identical cards).
               <View style={styles.activityCard}>
+                <View style={styles.activityHead}>
+                  <History color={ui.mintText} size={17} />
+                  <Text style={styles.activityTitle}>{t('feed_activity_title')}</Text>
+                </View>
                 {householdActivity.map((entry) => (
                   <View key={entry.activity_id} style={styles.activityRow}>
                     <View style={styles.activityDot} />
