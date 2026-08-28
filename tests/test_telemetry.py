@@ -157,6 +157,41 @@ class SmokeCleanup(unittest.TestCase):
         # The abandoned solo family goes; the still-populated one is refused.
         self.assertEqual([f["family_id"] for f in db["families"].rows], ["fam1"])
 
+    def test_residue_from_an_aborted_run_is_swept(self):
+        """One cancelled run used to latch the smoke test red forever.
+
+        A run that dies between joining and cleanup leaves its member row in
+        the inviter's household. The smoke test asserts on the shared display
+        name, so that orphan fails every later run. Cleanup now sweeps smoke
+        rows whose account is gone — but must spare the live inviter, whose
+        address matches the smoke pattern too.
+        """
+        smoke = {"user_id": "u_s", "family_id": "fam1", "name": "Smoke Invitee",
+                 "email": "smoke-abc123@household-coo.smoke"}
+        db = FakeDB(
+            # u_inv is the live inviter and keeps its account; u_old is
+            # residue — its account was deleted by an earlier run.
+            users=FakeColl([{"user_id": "u_s"}, {"user_id": "u_inv"}]),
+            family_members=FakeColl([
+                {"user_id": "u_s", "member_id": "m_now", "family_id": "fam1",
+                 "email": smoke["email"], "name": "Smoke Invitee"},
+                {"user_id": "u_old", "member_id": "m_stale", "family_id": "fam1",
+                 "email": "smoke-deadbeef@household-coo.smoke", "name": "Smoke Invitee"},
+                {"user_id": "u_inv", "member_id": "m_inviter", "family_id": "fam1",
+                 "email": "smoke-inviter@household-coo.smoke", "name": "Smoke Inviter"},
+                {"user_id": "u_real", "member_id": "m_real", "family_id": "fam1",
+                 "email": "someone@example.com", "name": "A Real Person"},
+            ]),
+            families=FakeColl([{"family_id": "fam1"}]),
+        )
+        server.get_db = lambda: db
+        res = asyncio.run(server.smoke_cleanup(server.SmokeCleanupIn(), user=smoke))
+        self.assertTrue(res["ok"])
+        left = sorted(m["member_id"] for m in db["family_members"].rows)
+        # This run's row and the orphan both go; the live inviter and any
+        # real household member stay untouched.
+        self.assertEqual(left, ["m_inviter", "m_real"])
+
 
 if __name__ == "__main__":
     unittest.main()

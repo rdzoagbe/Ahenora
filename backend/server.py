@@ -3285,6 +3285,33 @@ async def smoke_cleanup(payload: Optional[SmokeCleanupIn] = Body(None), user=Dep
     await database["user_sessions"].delete_many({"user_id": uid})
     await database["notification_tokens"].delete_many({"user_id": uid})
     await database["users"].delete_many({"user_id": uid})
+
+    # Sweep residue left by earlier runs that never reached this endpoint — a
+    # cancelled workflow, or a failure at any step before cleanup. Those runs
+    # leave a member row behind in the inviter's household, and because the
+    # smoke test asserts on the shared display name ("Smoke Invitee"), ONE
+    # aborted run latches the check red on every run after it, forever.
+    #
+    # The rule is deliberately narrow: a smoke-addressed member row whose
+    # account no longer exists is by definition leftover. The live inviter
+    # (smoke-inviter@…) keeps its users doc, so it is never swept — which
+    # matters, since its address matches the smoke pattern too.
+    #
+    # Scoped to this caller's household, which at cleanup time IS the
+    # inviter's family (the invitee joined it), so this stays a small indexed
+    # read rather than a scan. Matching is done in Python, not with $regex.
+    family_id = user.get("family_id")
+    if family_id:
+        candidates = [m async for m in
+                      database["family_members"].find({"family_id": family_id}, {"_id": 0})
+                      if _SMOKE_EMAIL_RE.match((m.get("email") or "").strip().lower())]
+        for m in candidates:
+            owner = None
+            if m.get("user_id"):
+                owner = await database["users"].find_one({"user_id": m["user_id"]}, {"_id": 0})
+            if owner is None:
+                await database["family_members"].delete_many({"member_id": m["member_id"]})
+
     for fid in ((payload.family_ids if payload else None) or [])[:5]:
         remaining = await database["family_members"].find_one({"family_id": fid}, {"_id": 0})
         if remaining is None:
