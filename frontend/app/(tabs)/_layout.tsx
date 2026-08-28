@@ -5,7 +5,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Home, Calendar as CalendarIcon, Lock, Settings as SettingsIcon, UtensilsCrossed, Users, Plus } from 'lucide-react-native';
 import { useStore } from '../../src/store';
 import { useBreakpoint } from '../../src/responsive';
-import { InviteJoinPrompt } from '../../src/components/InviteJoinPrompt';
 import { GlobalCapture } from '../../src/components/GlobalCapture';
 import { MoreSheet } from '../../src/components/MoreSheet';
 
@@ -293,7 +292,6 @@ export default function TabLayout() {
       {isWide && <SidebarNav width={sidebarW} />}
       <GlobalCapture visible={quickAddOpen} onClose={() => setQuickAddOpen(false)} />
       <MoreSheet visible={householdMenuOpen} onClose={closeHouseholdMenu} />
-      <InviteJoinPrompt />
     </>
   );
 }

@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { Stack, useRouter } from 'expo-router';
+import { InviteJoinPrompt } from '../src/components/InviteJoinPrompt';
 // Side effect: maps Alert.alert onto browser dialogs on web, where the RN
 // implementation is a no-op and every confirm button silently did nothing.
 import '../src/webAlert';
@@ -91,6 +92,14 @@ function RootNavigator() {
           the store when this build can no longer be updated at all, or read
           what changed after a version lands. */}
       <UpdateNotice />
+      {/* An invite waiting for this email must be offered BEFORE the app
+          walks the person into building a household of their own. Mounted
+          here rather than inside (tabs) — where it used to live — because
+          registration lands on onboarding first, and by the time the tabs
+          rendered the new household already existed. Six of nine invitees
+          signed up on the invited address and ended up alone because of
+          exactly that ordering. It renders nothing without a session. */}
+      <InviteJoinPrompt />
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.colors.bg } }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="oauthredirect" />
