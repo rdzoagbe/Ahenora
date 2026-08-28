@@ -31,6 +31,24 @@ EXPECTED_MARKER = os.environ.get("EXPECTED_INVITE_FLOW", "")
 INVITER_EMAIL = "smoke-inviter@household-coo.smoke"
 
 
+# Railway replaces the container on every deploy, and a merge to main
+# redeploys the backend even for a frontend-only change. For a few seconds
+# during that swap the edge answers 502/503/504, or refuses the connection
+# outright, on whichever call happens to land in the gap.
+#
+# That is not production being broken, it is production being replaced — and
+# it is exactly what this check kept reporting: every step of the journey
+# green, then a bare 502 on the last call. No amount of waiting BEFORE the
+# journey can fix it, because the cutover can land in the middle of one.
+#
+# So gateway-level answers are retried briefly. Anything the APPLICATION
+# itself returns — a 4xx, or a 500 from our own code — is passed straight
+# through untouched: swallowing those is precisely how this check would start
+# lying, and a check that lies is worse than no check.
+GATEWAY_STATUSES = {502, 503, 504}
+GATEWAY_BACKOFF = (3, 6, 9, 12)
+
+
 def call(method, path, body=None, token=None, timeout=30):
     req = urllib.request.Request(
         f"{BASE}/api{path}",
@@ -41,15 +59,32 @@ def call(method, path, body=None, token=None, timeout=30):
         },
         method=method,
     )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as res:
-            return res.status, json.loads(res.read().decode() or "{}")
-    except urllib.error.HTTPError as e:
-        raw = e.read().decode(errors="replace")
+    for attempt, pause in enumerate((*GATEWAY_BACKOFF, None)):
         try:
-            return e.code, json.loads(raw)
-        except Exception:
-            return e.code, {"detail": raw[:200]}
+            with urllib.request.urlopen(req, timeout=timeout) as res:
+                return res.status, json.loads(res.read().decode() or "{}")
+        except urllib.error.HTTPError as e:
+            raw = e.read().decode(errors="replace")
+            if e.code in GATEWAY_STATUSES and pause is not None:
+                print(f"...   {e.code} from the edge on {method} {path}; "
+                      f"retrying in {pause}s (deploy cutover?)")
+                time.sleep(pause)
+                continue
+            try:
+                return e.code, json.loads(raw)
+            except Exception:
+                return e.code, {"detail": raw[:200]}
+        except urllib.error.URLError as e:
+            # Connection refused or reset: the old container is going away.
+            # Previously uncaught, so a restart mid-journey ended the run in a
+            # traceback rather than a readable line.
+            if pause is not None:
+                print(f"...   no connection on {method} {path}: {e.reason}; "
+                      f"retrying in {pause}s (deploy cutover?)")
+                time.sleep(pause)
+                continue
+            return 0, {"detail": f"connection failed after retries: {e.reason}"}
+    return 0, {"detail": "unreachable"}
 
 
 def fail(step, detail):
@@ -66,11 +101,24 @@ def main():
         fail("setup", "SMOKE_PASSWORD is not set")
 
     # 1. Health — and wait for the expected deploy marker if one was given.
+    #
+    # Two healthy answers in a row, not one. A single OK is satisfied by the
+    # instance that is on its way out during a deploy, which is how the journey
+    # kept starting seconds before the swap. The marker cannot help here: it
+    # only moves when somebody bumps it by hand, so it reads the same before
+    # and after a deploy.
     deadline = time.time() + 600
+    healthy_streak = 0
     while True:
         status, health = call("GET", "/health")
+        if status != 200 or health.get("status") != "ok":
+            healthy_streak = 0
         if status == 200 and health.get("status") == "ok":
             marker = health.get("invite_flow", "")
+            healthy_streak += 1
+            if (not EXPECTED_MARKER or marker == EXPECTED_MARKER) and healthy_streak < 2:
+                time.sleep(5)
+                continue
             if not EXPECTED_MARKER or marker == EXPECTED_MARKER:
                 ok("health", f"db {health.get('db_latency_ms')}ms, invite_flow {marker or 'n/a'}")
                 # Which build is actually serving. The deploy marker above only
