@@ -2589,12 +2589,20 @@ async def require_user(authorization: str = Header(default=""),
         raise HTTPException(status_code=403, detail="teen_mode")
 
     # Daily-active tracking, throttled to one write per user per day.
+    #
+    # last_active_at is stamped HERE, not only in /auth/me where it started.
+    # That mattered more than it looks: this gate runs on every authenticated
+    # request, while /auth/me runs about once per cold start, so the two
+    # disagreed by roughly 9x on the same day — the Usage screen showed 9
+    # active from the counter below and 1 from the timestamp. Every retention
+    # number reading the timestamp was wrong by that factor. Same throttled
+    # write, one more field, no extra cost.
     today = utcnow().strftime("%Y-%m-%d")
     if user.get("last_active_day") != today:
         try:
             await database["users"].update_one(
                 {"user_id": user["user_id"]},
-                {"$set": {"last_active_day": today}},
+                {"$set": {"last_active_day": today, "last_active_at": utcnow()}},
             )
             await database["metrics_daily"].update_one(
                 {"date": today, "name": "active_users"},
@@ -12792,13 +12800,22 @@ async def metrics_retention(weeks: int = 8, user=Depends(require_user), database
     # One scan: every account with the three fields that matter.
     accounts = []
     async for row in database["users"].find(
-            {}, {"_id": 0, "user_id": 1, "family_id": 1,
-                 "created_at": 1, "last_active_at": 1}):
+            {}, {"_id": 0, "user_id": 1, "family_id": 1, "created_at": 1,
+                 "last_active_at": 1, "last_active_day": 1}):
         accounts.append(row)
 
     def active_since(row, when) -> bool:
         seen = _coerce_dt(row.get("last_active_at"))
-        return bool(seen and seen >= when)
+        if seen:
+            return seen >= when
+        # Fall back to the day stamp. require_user has written it on every
+        # authenticated request since the counter shipped, whereas the
+        # timestamp above was only written by /auth/me until now — so for
+        # anyone who has not opened the app since this fix, the day stamp is
+        # the only honest record that they were ever here. Ignoring it would
+        # throw away real history and report a churn that did not happen.
+        day = (row.get("last_active_day") or "").strip()
+        return bool(day) and day >= when.strftime("%Y-%m-%d")
 
     # Group accounts into households.
     households: dict = {}

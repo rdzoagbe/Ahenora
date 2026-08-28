@@ -119,6 +119,36 @@ class Retention(unittest.TestCase):
         self.assertEqual(res["accounts"]["active_7d"], 0)
         self.assertEqual(res["weekly_return_rate"]["solo_adult_pct"], 0.0)
 
+    def test_the_day_stamp_counts_when_the_timestamp_is_missing(self):
+        """The 9-vs-1 bug: last_active_at was written only by /auth/me, while
+        require_user stamped last_active_day on every authenticated request.
+        Anyone who has not opened the app since the fix has only the day stamp,
+        and reading the timestamp alone reported a churn that never happened."""
+        day = (self.now - timedelta(days=2)).strftime("%Y-%m-%d")
+        res = self._run([{"user_id": "u1", "family_id": "famA",
+                          "created_at": self.now - timedelta(days=10),
+                          "last_active_day": day}])
+        self.assertEqual(res["accounts"]["active_7d"], 1)
+        self.assertEqual(res["weekly_return_rate"]["solo_adult_pct"], 100.0)
+
+    def test_an_old_day_stamp_is_still_churn(self):
+        """The fallback must not resurrect everyone who ever signed in."""
+        day = (self.now - timedelta(days=40)).strftime("%Y-%m-%d")
+        res = self._run([{"user_id": "u1", "family_id": "famA",
+                          "created_at": self.now - timedelta(days=60),
+                          "last_active_day": day}])
+        self.assertEqual(res["accounts"]["active_7d"], 0)
+        self.assertEqual(res["accounts"]["active_30d"], 0)
+
+    def test_the_timestamp_wins_when_both_are_present(self):
+        """A fresh timestamp is the better signal; the day stamp is a floor."""
+        stale = (self.now - timedelta(days=40)).strftime("%Y-%m-%d")
+        res = self._run([{"user_id": "u1", "family_id": "famA",
+                          "created_at": self.now - timedelta(days=60),
+                          "last_active_at": self.now,
+                          "last_active_day": stale}])
+        self.assertEqual(res["accounts"]["active_1d"], 1)
+
     def test_cohorts_are_bucketed_by_signup_week_and_windowed(self):
         res = self._run([
             self._acct("new1", "f1", days_old=1, seen_days_ago=0),
