@@ -54,6 +54,7 @@ import { UpgradeBanner } from '../../src/components/UpgradeBanner';
 import { CoParentNudge } from '../../src/components/CoParentNudge';
 import { GiftingStrip } from '../../src/components/GiftingStrip';
 import { StreakChip } from '../../src/components/StreakChip';
+import { WindowedList } from '../../src/components/WindowedList';
 import { useStore } from '../../src/store';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { useUI, UIColors } from '../../src/components/Kit';
@@ -767,6 +768,7 @@ export default function Feed() {
   // server-resolved /cards/mine list (already not-DONE), filtered to OPEN.
   const handedToMe = assigned.filter((c) => c.status === 'OPEN');
   const handedIds = new Set(handedToMe.map((c) => c.card_id));
+
   const restOfList = visibleCards.filter((c) => !handedIds.has(c.card_id));
   const firstName = (user?.name || '').split(' ')[0] || '';
   const headline = greetingFallback(firstName, t, now);
@@ -1107,12 +1109,18 @@ export default function Feed() {
                         <Text style={styles.handedTitle}>{t('feed_assigned_title')}</Text>
                         <Text style={styles.handedCount}>{handedToMe.length}</Text>
                       </View>
-                      {handedToMe.map((card) => (
-                        <View key={card.card_id}>
-                          <TaskRow card={card} onOpen={() => setSelectedCard(card)} onComplete={() => toggle(card)} styles={styles} />
-                          <View style={styles.rowDivider} />
-                        </View>
-                      ))}
+                      <WindowedList
+                        testID="feed-assigned-scroll"
+                        count={handedToMe.length}
+                        window={3}
+                      >
+                        {handedToMe.map((card) => (
+                          <View key={card.card_id}>
+                            <TaskRow card={card} onOpen={() => setSelectedCard(card)} onComplete={() => toggle(card)} styles={styles} />
+                            <View style={styles.rowDivider} />
+                          </View>
+                        ))}
+                      </WindowedList>
                     </View>
                   ) : null}
                   {restOfList.map((card, index) => (
