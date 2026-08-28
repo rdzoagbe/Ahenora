@@ -9,7 +9,7 @@ import {
   View,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import {
   AlertTriangle,
   BarChart3,
@@ -345,6 +345,9 @@ export default function Feed() {
   // dismissed card never reappears.
   const pendingDismissRef = useRef<Set<string>>(new Set());
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
+  // Set when a tapped notification named the card it was about.
+  const { cardId: notifiedCardId } = useLocalSearchParams<{ cardId?: string }>();
+  const openedFromNotification = useRef<string | null>(null);
   // The task being edited. Tasks live on the Feed now, but editing was only
   // ever wired on the Calendar — so opening one here gave no way to fix its
   // title or hand it to someone. The pencil in the detail sheet opens the same
@@ -597,6 +600,25 @@ export default function Feed() {
   }, [announcements, annSeenAt]);
 
   const activeCards = useMemo(() => cards.filter((card) => card.status === 'OPEN'), [cards]);
+
+  // Open the card a notification was about, once the lists it could be in have
+  // loaded. Searching `cards` and `assigned` rather than what is on screen: the
+  // Feed shows today, and a reminder can name something due next week, which is
+  // exactly the case that would otherwise open nothing.
+  //
+  // Guarded by the id itself, not a boolean, so a second notification for a
+  // different card still opens while the first is being handled — and so the
+  // sheet does not reappear after the reader dismisses it and the list reloads.
+  useEffect(() => {
+    if (!notifiedCardId || loading) return;
+    if (openedFromNotification.current === notifiedCardId) return;
+    const found = [...cards, ...assigned].find((c) => c.card_id === notifiedCardId);
+    openedFromNotification.current = notifiedCardId;
+    // Not found is not an error: the card may have been completed or deleted
+    // between the push and the tap. Leave the reader on the Feed rather than
+    // on a failure they can do nothing about.
+    if (found) setSelectedCard(found);
+  }, [notifiedCardId, loading, cards, assigned]);
 
   const pastEvents = useMemo(() => {
     const startToday = new Date();

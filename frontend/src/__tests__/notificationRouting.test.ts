@@ -21,6 +21,32 @@ describe('targetForNotification', () => {
     }
   });
 
+  it('carries the card id so the Feed can open the thing the push was about', () => {
+    // The reported bug: the tap DID navigate, to the Feed, which is the screen
+    // the app already opens on — so tapping "Roland handed you the school run"
+    // was indistinguishable from just opening the app. The server was already
+    // sending card_id; this map was dropping it.
+    for (const type of ['task_assigned', 'new_card', 'shared_card', 'card_reminder']) {
+      expect(targetForNotification({ type, card_id: 'card_123' }))
+        .toEqual({ pathname: '/(tabs)/feed', params: { cardId: 'card_123' } });
+    }
+  });
+
+  it('still opens the Feed when a card push arrives without an id', () => {
+    // Older app builds and any push written before card_id existed.
+    expect(targetForNotification({ type: 'task_assigned' }))
+      .toEqual({ pathname: '/(tabs)/feed' });
+  });
+
+  it('does not invent a card for events that are not about one', () => {
+    // A hand-off note is about the day and an announcement is to the household;
+    // neither has a card to open, so neither should carry a param.
+    for (const type of ['handoff_note', 'announcement']) {
+      expect(targetForNotification({ type, card_id: 'card_123' }))
+        .toEqual({ pathname: '/(tabs)/feed' });
+    }
+  });
+
   it('opens the Family hub for stars, rewards, joins and the teen loop', () => {
     for (const type of ['star_milestone', 'teen_approval', 'teen_star', 'reward_redeemed', 'family_joined', 'invite_accepted']) {
       expect(targetForNotification({ type })).toEqual({ pathname: '/(tabs)/kids' });

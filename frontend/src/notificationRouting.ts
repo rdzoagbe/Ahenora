@@ -21,10 +21,20 @@ export function targetForNotification(data: unknown): { pathname: string; params
         : d.card_id
           ? { pathname: '/gift-pot', params: { cardId: String(d.card_id), name: String(d.name || '') } }
           : { pathname: '/(tabs)/feed' };
+    // These carry the card they are about, and dropping it was the whole
+    // complaint: the tap DID navigate, to the Feed, which is the screen the app
+    // already opens on — so opening "Roland handed you the school run" looked
+    // identical to opening the app. Passing the id through lets the Feed open
+    // the thing the notification was about.
     case 'task_assigned':
     case 'new_card':
     case 'shared_card':
     case 'card_reminder':
+      return d.card_id
+        ? { pathname: '/(tabs)/feed', params: { cardId: String(d.card_id) } }
+        : { pathname: '/(tabs)/feed' };
+    // No single card to open: a hand-off note is a message about the day, and
+    // an announcement is addressed to the household.
     case 'handoff_note':
     case 'announcement':
       return { pathname: '/(tabs)/feed' };
