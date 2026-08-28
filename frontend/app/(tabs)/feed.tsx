@@ -55,7 +55,6 @@ import { CoParentNudge } from '../../src/components/CoParentNudge';
 import { GiftingStrip } from '../../src/components/GiftingStrip';
 import { StreakChip } from '../../src/components/StreakChip';
 import { WindowedList } from '../../src/components/WindowedList';
-import { handedWorkForToday } from '../../src/handedWork';
 import { useStore } from '../../src/store';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { useUI, UIColors } from '../../src/components/Kit';
@@ -771,14 +770,19 @@ export default function Feed() {
   const householdSummary = householdActivity.length > 0
     ? `${householdActivity[0].actor_name || t('feed_activity_someone')} ${activityPhrase(householdActivity[0], t)}`
     : t('feed_household_empty');
-  // Work handed TO you is pinned to the Feed regardless of its date: an
-  // assigned task due next week once showed nowhere on the Feed and only on
-  // the Calendar, which was a reported failure. The one exception is a
-  // RECURRING chore that is not due yet — completing one creates its next
-  // occurrence immediately, and listing tomorrow's instance today (same title,
-  // new id) reads exactly like the task you just ticked refusing to go. The
-  // rule lives in handedWork.ts so it can be tested on its own.
-  const handedToMe = handedWorkForToday(assigned);
+  // Work handed TO you is pinned to the Feed regardless of its date, and that
+  // includes work that is not due yet.
+  //
+  // Two attempts have now been made to hide things from this list and both were
+  // wrong. Intersecting it with the current tab's slice hid an assigned task due
+  // next week, which showed nowhere but the Calendar. Hiding a recurring chore
+  // until its turn came round stopped you completing one early — and a chore you
+  // have actually done must be tickable whether or not the date agrees.
+  //
+  // So nothing is filtered by date here. Completing a recurring task does
+  // surface its next occurrence straight away; the row carries its own due date,
+  // which is what tells the two apart.
+  const handedToMe = assigned.filter((c) => c.status === 'OPEN');
   const handedIds = new Set(handedToMe.map((c) => c.card_id));
 
   const restOfList = visibleCards.filter((c) => !handedIds.has(c.card_id));
