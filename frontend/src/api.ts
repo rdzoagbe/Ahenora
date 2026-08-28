@@ -869,6 +869,27 @@ export interface FunnelSummary {
   active_7d: number;
 }
 
+/**
+ * Retention, counted in ADULTS rather than members: a child profile is a
+ * family_members row but not an account, so FunnelSummary.multi_member_households
+ * counts a lone parent with two kids as shared. Here a household is shared only
+ * when a second person actually holds an account.
+ */
+export interface RetentionSummary {
+  generated_at: string | null;
+  window_weeks: number;
+  accounts: { total: number; active_1d: number; active_7d: number; active_30d: number };
+  households: {
+    total: number;
+    solo_adult: number;
+    two_plus_adults: number;
+    two_plus_adults_active_7d: number;
+  };
+  /** Null, not zero, when a population is empty — nothing to divide. */
+  weekly_return_rate: { solo_adult_pct: number | null; two_plus_adults_pct: number | null };
+  cohorts: { week: string; signups: number; still_active: number; retained_pct: number | null }[];
+}
+
 export interface AiHealth {
   key_configured: boolean;
   library_loaded: boolean;
@@ -1371,6 +1392,8 @@ export const api = {
     request<{ days: number; rows: MetricRow[] }>(`/metrics/summary?days=${days}`),
   getMetricsFunnel: (days = 30) =>
     request<FunnelSummary>(`/metrics/funnel?days=${days}`),
+  getMetricsRetention: (weeks = 8) =>
+    request<RetentionSummary>(`/metrics/retention?weeks=${weeks}`),
   // AI reliability probe (admin). probe=0 is free (reports configured state);
   // probe=1 does one tiny real generation. The Metrics screen uses probe=0.
   getAiHealth: () =>
