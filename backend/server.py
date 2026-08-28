@@ -12883,6 +12883,104 @@ async def metrics_retention(weeks: int = 8, user=Depends(require_user), database
     }
 
 
+@app.get("/api/metrics/invites")
+async def metrics_invites(days: int = 30, user=Depends(require_user), database=Depends(get_db)):
+    """Why invitations do not turn into co-parents. Admin only.
+
+    The funnel says invites are sent and mostly not accepted. That single
+    number hides two causes with OPPOSITE fixes, and guessing between them
+    wastes the work:
+
+      * the invited person never made an account at all — the link or the
+        email never reached them, or did not persuade them. A delivery and
+        wording problem.
+      * they DID make an account and are sitting in a household of their own —
+        they tried and the join did not take. A technical problem, and this
+        app has form: the five acceptance routes exist because one iPhone
+        content blocker silently killed specific request shapes, and that
+        failure looked exactly like "people are not accepting".
+
+    Reading the invited address against the accounts table separates them. A
+    third outcome is worth naming too: the invitee is in the inviting family
+    but the invite still reads pending, which means the join worked and only
+    the record lagged — real success that the funnel counts as failure.
+
+    Computed from two scans, in Python, for the same reasons as the retention
+    read-out: small population, admin-only, and a query shape the test double
+    can actually exercise.
+    """
+    if not is_admin_user(user):
+        raise HTTPException(status_code=403, detail="Admin only")
+    days = max(1, min(days, 365))
+    now = utcnow()
+    cutoff = now - timedelta(days=days)
+
+    invites = []
+    async for row in database["family_invites"].find({}, {"_id": 0}):
+        made = _coerce_dt(row.get("created_at"))
+        if made and made >= cutoff:
+            invites.append(row)
+
+    # Index accounts by address once, so the outcome lookup is a dict hit.
+    by_email: dict = {}
+    async for acct in database["users"].find(
+            {}, {"_id": 0, "user_id": 1, "family_id": 1, "email": 1}):
+        addr = (acct.get("email") or "").strip().lower()
+        if addr:
+            by_email[addr] = acct
+
+    sent = len(invites)
+    accepted = pending = expired = 0
+    joined = elsewhere = never = lagging = 0
+    oldest_pending_days = None
+
+    for inv in invites:
+        addr = (inv.get("email") or "").strip().lower()
+        who = by_email.get(addr)
+        in_family = bool(who and who.get("family_id") == inv.get("family_id"))
+
+        if (inv.get("status") or "") == "accepted":
+            accepted += 1
+        elif _expired(inv.get("expires_at")):
+            expired += 1
+        else:
+            pending += 1
+            made = _coerce_dt(inv.get("created_at"))
+            if made:
+                age = (now - made).days
+                oldest_pending_days = max(oldest_pending_days or 0, age)
+
+        # The outcome, judged by where the person actually IS rather than by
+        # what the invite record claims.
+        if in_family:
+            joined += 1
+            if (inv.get("status") or "") != "accepted":
+                lagging += 1
+        elif who:
+            elsewhere += 1
+        else:
+            never += 1
+
+    return {
+        "generated_at": iso(now),
+        "window_days": days,
+        "status": {
+            "sent": sent,
+            "accepted": accepted,
+            "pending": pending,
+            "expired": expired,
+            "oldest_pending_days": oldest_pending_days,
+        },
+        # The split that decides what to fix.
+        "outcome": {
+            "in_the_household": joined,
+            "signed_up_but_not_joined": elsewhere,
+            "never_signed_up": never,
+            "joined_while_invite_still_pending": lagging,
+        },
+    }
+
+
 @app.post("/api/support/contact")
 async def submit_support_contact(
     body: SupportContactIn,

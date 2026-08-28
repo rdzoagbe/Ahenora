@@ -9,7 +9,7 @@ import { AmbientBackground } from '../src/components/AmbientBackground';
 import { useUI, UIColors } from '../src/components/Kit';
 import { useStore } from '../src/store';
 import { api, MetricRow, VersionAdoption, PlanAdoption, FunnelSummary,
-  RetentionSummary, AiHealth, SubscriberList } from '../src/api';
+  RetentionSummary, InviteBreakdown, AiHealth, SubscriberList } from '../src/api';
 import { logger } from '../src/logger';
 
 // Admin-only screen — plain English labels are fine (only the owner sees it).
@@ -38,6 +38,7 @@ export default function MetricsScreen() {
   const [showAllSubs, setShowAllSubs] = useState(false);
   const [funnel, setFunnel] = useState<FunnelSummary | null>(null);
   const [retention, setRetention] = useState<RetentionSummary | null>(null);
+  const [invites, setInvites] = useState<InviteBreakdown | null>(null);
   const [aiHealth, setAiHealth] = useState<AiHealth | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -66,6 +67,9 @@ export default function MetricsScreen() {
     // Retention, counted in ADULTS — the funnel's 2+-members number counts child
     // profiles, so it cannot answer whether a second grown-up actually stuck.
     api.getMetricsRetention(8).then(setRetention).catch((e) => logger.warn('retention load failed', e?.message || e));
+    // Why invites do not land — a delivery problem and a broken join look
+    // identical in the funnel's acceptance rate and need opposite fixes.
+    api.getInviteBreakdown(30).then(setInvites).catch((e) => logger.warn('invite breakdown load failed', e?.message || e));
     // probe=0 (default) — free, reports configured/plumbing state, no token cost.
     api.getAiHealth().then(setAiHealth).catch((e) => logger.warn('ai health load failed', e?.message || e));
   }, []);
@@ -195,6 +199,59 @@ export default function MetricsScreen() {
             </>
           ) : (
             <Text style={styles.muted}>No funnel data yet — fills in as people sign up and invite.</Text>
+          )}
+
+          {/* Invites — the funnel says most are not accepted; this says why. */}
+          <Text style={styles.sectionTitle}>Invites — why they don&apos;t land</Text>
+          {invites ? (
+            <>
+              <View style={styles.card}>
+                {([
+                  ['Sent', invites.status.sent, null],
+                  ['Accepted', invites.status.accepted, invites.status.sent],
+                  ['Still waiting', invites.status.pending, invites.status.sent],
+                  ['Expired unanswered', invites.status.expired, invites.status.sent],
+                ] as [string, number, number | null][])
+                  .map(([label, n, denom], i) => (
+                    <View key={label} style={[styles.eventRow, i === 0 && { borderTopWidth: 0 }]}>
+                      <Text style={styles.eventLabel}>{label}</Text>
+                      <Text style={styles.eventCount}>
+                        {n}{denom && denom > 0 ? ` · ${Math.round((100 * n) / denom)}%` : ''}
+                      </Text>
+                    </View>
+                  ))}
+              </View>
+
+              {/* The split that decides what to fix. */}
+              <View style={styles.card}>
+                {([
+                  ['They are in the household', invites.outcome.in_the_household],
+                  ['Signed up, never joined', invites.outcome.signed_up_but_not_joined],
+                  ['Never signed up at all', invites.outcome.never_signed_up],
+                ] as [string, number][])
+                  .map(([label, n], i) => (
+                    <View key={label} style={[styles.eventRow, i === 0 && { borderTopWidth: 0 }]}>
+                      <Text style={styles.eventLabel}>{label}</Text>
+                      <Text style={styles.eventCount}>{n}</Text>
+                    </View>
+                  ))}
+              </View>
+              <Text style={styles.hint}>
+                {'\u201C'}Never signed up{'\u201D'} means the link or the email never reached them, or
+                did not persuade them — that is wording and delivery.
+                {' '}{'\u201C'}Signed up, never joined{'\u201D'} means they tried and the join failed:
+                that is a bug, and it has happened here before when a content blocker
+                killed the accept request. Whichever number is larger is the one to work on.
+                {invites.outcome.joined_while_invite_still_pending > 0
+                  ? ` ${invites.outcome.joined_while_invite_still_pending} joined while the invite still reads pending — real successes the acceptance rate counts as failures.`
+                  : ''}
+                {invites.status.oldest_pending_days != null
+                  ? ` Oldest unanswered invite: ${invites.status.oldest_pending_days} days.`
+                  : ''}
+              </Text>
+            </>
+          ) : (
+            <Text style={styles.muted}>No invite data yet — fills in as invites go out.</Text>
           )}
 
           {/* Retention — the question the funnel cannot answer. Its
