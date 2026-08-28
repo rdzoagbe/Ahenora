@@ -1123,6 +1123,16 @@ export default function Feed() {
                       </WindowedList>
                     </View>
                   ) : null}
+                  {/* Two lists share this card, and until now the seam between
+                      them was drawn with the same divider used BETWEEN rows of
+                      one list — so the handed section's scroll area looked like
+                      it had simply stopped working partway down. This names the
+                      second list, which is the cheapest way to say "different
+                      list, not more of the same one". Only when both are
+                      present: on its own, the list below needs no label. */}
+                  {handedToMe.length > 0 && restOfList.length > 0 ? (
+                    <Text style={styles.restTitle}>{t('feed_rest_title')}</Text>
+                  ) : null}
                   {restOfList.map((card, index) => (
                     <View key={card.card_id}>
                       <TaskRow card={card} onOpen={() => setSelectedCard(card)} onComplete={() => toggle(card)} styles={styles} />
@@ -2162,6 +2172,14 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   // An in-list group header, not a card: the hand-off group lives inside the
   // task list now, so it needs a label with the weight of a section marker
   // rather than the chrome of a container.
+  // A quieter twin of handedHeader: same alignment so the two read as siblings,
+  // muted rather than orange so it labels without competing with the section
+  // that carries the emphasis.
+  restTitle: {
+    color: ui.muted, fontFamily: 'Inter_800ExtraBold', fontSize: 11.5,
+    letterSpacing: 0.8, textTransform: 'uppercase',
+    paddingHorizontal: 14, paddingTop: 14, paddingBottom: 6,
+  },
   handedHeader: {
     flexDirection: 'row', alignItems: 'center', gap: 7,
     paddingHorizontal: 14, paddingTop: 12, paddingBottom: 6,
