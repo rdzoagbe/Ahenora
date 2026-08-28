@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -55,6 +54,7 @@ import { UpgradeBanner } from '../../src/components/UpgradeBanner';
 import { CoParentNudge } from '../../src/components/CoParentNudge';
 import { GiftingStrip } from '../../src/components/GiftingStrip';
 import { StreakChip } from '../../src/components/StreakChip';
+import { WindowedList } from '../../src/components/WindowedList';
 import { useStore } from '../../src/store';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { useUI, UIColors } from '../../src/components/Kit';
@@ -769,31 +769,6 @@ export default function Feed() {
   const handedToMe = assigned.filter((c) => c.status === 'OPEN');
   const handedIds = new Set(handedToMe.map((c) => c.card_id));
 
-  // Five handed-over rows ate a third of the screen before the add bar, which
-  // pushed Gift pot and Secret Santa below the fold. The list keeps every row
-  // but only shows HANDED_WINDOW of them at a time and scrolls inside itself.
-  //
-  // The window height is MEASURED rather than a hardcoded row height: the rows
-  // grow with the reader's font size, and a fixed constant would clip a row in
-  // half on a large-text phone. One row's height is the measured content over
-  // the row count, so the window is always exactly whole rows.
-  const HANDED_WINDOW = 3;
-  const handedWindowed = handedToMe.length > HANDED_WINDOW;
-  const [handedContentH, setHandedContentH] = useState(0);
-  const [handedOffsetY, setHandedOffsetY] = useState(0);
-  const handedWindowH = handedWindowed && handedContentH > 0
-    ? (handedContentH / handedToMe.length) * HANDED_WINDOW
-    : undefined;
-  // Rail geometry. The thumb's LENGTH is the share of the list you can see, so
-  // its size alone says how much is hidden; its position is how far down you
-  // are. The 4pt inset top and bottom is the rail's own margin.
-  const handedTrackH = handedWindowH ? handedWindowH - 8 : 0;
-  const handedThumbH = handedTrackH > 0
-    ? Math.max(24, handedTrackH * (handedWindowH! / Math.max(handedContentH, 1)))
-    : 0;
-  const handedThumbY = handedTrackH > 0
-    ? (handedOffsetY / Math.max(handedContentH - handedWindowH!, 1)) * (handedTrackH - handedThumbH)
-    : 0;
   const restOfList = visibleCards.filter((c) => !handedIds.has(c.card_id));
   const firstName = (user?.name || '').split(' ')[0] || '';
   const headline = greetingFallback(firstName, t, now);
@@ -1134,42 +1109,18 @@ export default function Feed() {
                         <Text style={styles.handedTitle}>{t('feed_assigned_title')}</Text>
                         <Text style={styles.handedCount}>{handedToMe.length}</Text>
                       </View>
-                      <View style={styles.handedWindow}>
-                        <ScrollView
-                          testID="feed-assigned-scroll"
-                          style={[{ flex: 1 }, handedWindowH ? { maxHeight: handedWindowH } : null]}
-                          // Without this the inner list does not scroll on
-                          // Android at all — the drag is taken by the Feed.
-                          nestedScrollEnabled
-                          // The system scrollbar is a hairline that fades after
-                          // a second; the rail beside this is drawn instead.
-                          showsVerticalScrollIndicator={false}
-                          scrollEventThrottle={16}
-                          onContentSizeChange={(_w, h) => setHandedContentH(h)}
-                          onScroll={(e) => setHandedOffsetY(e.nativeEvent.contentOffset.y)}
-                        >
-                          {handedToMe.map((card) => (
-                            <View key={card.card_id}>
-                              <TaskRow card={card} onOpen={() => setSelectedCard(card)} onComplete={() => toggle(card)} styles={styles} />
-                              <View style={styles.rowDivider} />
-                            </View>
-                          ))}
-                        </ScrollView>
-                        {/* The rail says two things a badge cannot: that this
-                            list moves at all, and roughly how much is below.
-                            Only drawn when there is actually something to
-                            reach. */}
-                        {handedWindowed && handedWindowH ? (
-                          <View style={styles.handedRail}>
-                            <View
-                              style={[styles.handedThumb, {
-                                height: handedThumbH,
-                                transform: [{ translateY: handedThumbY }],
-                              }]}
-                            />
+                      <WindowedList
+                        testID="feed-assigned-scroll"
+                        count={handedToMe.length}
+                        window={3}
+                      >
+                        {handedToMe.map((card) => (
+                          <View key={card.card_id}>
+                            <TaskRow card={card} onOpen={() => setSelectedCard(card)} onComplete={() => toggle(card)} styles={styles} />
+                            <View style={styles.rowDivider} />
                           </View>
-                        ) : null}
-                      </View>
+                        ))}
+                      </WindowedList>
                     </View>
                   ) : null}
                   {restOfList.map((card, index) => (
@@ -2211,12 +2162,6 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   // An in-list group header, not a card: the hand-off group lives inside the
   // task list now, so it needs a label with the weight of a section marker
   // rather than the chrome of a container.
-  handedWindow: { flexDirection: 'row', alignItems: 'stretch', gap: 7, paddingRight: 8 },
-  handedRail: {
-    width: 4, borderRadius: 999, marginVertical: 4,
-    backgroundColor: ui.line, overflow: 'hidden',
-  },
-  handedThumb: { width: 4, borderRadius: 999, backgroundColor: ui.orange },
   handedHeader: {
     flexDirection: 'row', alignItems: 'center', gap: 7,
     paddingHorizontal: 14, paddingTop: 12, paddingBottom: 6,

@@ -158,39 +158,79 @@ class SmokeCleanup(unittest.TestCase):
         self.assertEqual([f["family_id"] for f in db["families"].rows], ["fam1"])
 
     def test_residue_from_an_aborted_run_is_swept(self):
-        """One cancelled run used to latch the smoke test red forever.
+        """A run that dies before cleanup leaves a LIVE account behind.
 
-        A run that dies between joining and cleanup leaves its member row in
-        the inviter's household. The smoke test asserts on the shared display
-        name, so that orphan fails every later run. Cleanup now sweeps smoke
-        rows whose account is gone — but must spare the live inviter, whose
-        address matches the smoke pattern too.
+        This is the case an earlier version of the sweep got wrong. It removed
+        only rows whose account was already gone — true of an orphan, but a run
+        that never reaches cleanup deletes nothing, so its user doc and sessions
+        are still there. The rule skipped exactly the residue it was written for
+        and production stayed red.
+
+        What separates residue from the household is the role: the persistent
+        inviter is the founder and holds a Parent row; every invitee joins with
+        the typed relationship. Both addresses match the smoke pattern, so the
+        role is the only safe discriminator.
         """
         smoke = {"user_id": "u_s", "family_id": "fam1", "name": "Smoke Invitee",
                  "email": "smoke-abc123@household-coo.smoke"}
         db = FakeDB(
-            # u_inv is the live inviter and keeps its account; u_old is
-            # residue — its account was deleted by an earlier run.
-            users=FakeColl([{"user_id": "u_s"}, {"user_id": "u_inv"}]),
+            # Every account here is ALIVE — nothing has been cleaned up.
+            users=FakeColl([{"user_id": "u_s"}, {"user_id": "u_old"},
+                            {"user_id": "u_inv"}, {"user_id": "u_real"}]),
             family_members=FakeColl([
                 {"user_id": "u_s", "member_id": "m_now", "family_id": "fam1",
-                 "email": smoke["email"], "name": "Smoke Invitee"},
+                 "email": smoke["email"], "name": "Smoke Invitee", "role": "Smoke test"},
+                # Residue from a cancelled run: account intact, row intact.
                 {"user_id": "u_old", "member_id": "m_stale", "family_id": "fam1",
-                 "email": "smoke-deadbeef@household-coo.smoke", "name": "Smoke Invitee"},
+                 "email": "smoke-deadbeef@household-coo.smoke",
+                 "name": "Smoke Invitee", "role": "Smoke test"},
+                # The inviter persists across runs and must survive.
                 {"user_id": "u_inv", "member_id": "m_inviter", "family_id": "fam1",
-                 "email": "smoke-inviter@household-coo.smoke", "name": "Smoke Inviter"},
+                 "email": "smoke-inviter@household-coo.smoke",
+                 "name": "Smoke Inviter", "role": "Parent"},
                 {"user_id": "u_real", "member_id": "m_real", "family_id": "fam1",
-                 "email": "someone@example.com", "name": "A Real Person"},
+                 "email": "someone@example.com", "name": "A Real Person", "role": "Parent"},
             ]),
+            user_sessions=FakeColl([{"user_id": "u_old"}, {"user_id": "u_inv"}]),
+            notification_tokens=FakeColl([{"user_id": "u_old"}]),
+            family_invites=FakeColl([{"email": "smoke-deadbeef@household-coo.smoke",
+                                      "invite_id": "i_old"}]),
             families=FakeColl([{"family_id": "fam1"}]),
         )
         server.get_db = lambda: db
         res = asyncio.run(server.smoke_cleanup(server.SmokeCleanupIn(), user=smoke))
         self.assertTrue(res["ok"])
-        left = sorted(m["member_id"] for m in db["family_members"].rows)
-        # This run's row and the orphan both go; the live inviter and any
+
+        # This run's row and the still-live orphan both go; the inviter and any
         # real household member stay untouched.
-        self.assertEqual(left, ["m_inviter", "m_real"])
+        self.assertEqual(sorted(m["member_id"] for m in db["family_members"].rows),
+                         ["m_inviter", "m_real"])
+        # The orphan's ACCOUNT goes with its row — leaving the user behind would
+        # hand the next run a half-deleted account.
+        self.assertEqual(sorted(u["user_id"] for u in db["users"].rows),
+                         ["u_inv", "u_real"])
+        self.assertEqual([s["user_id"] for s in db["user_sessions"].rows], ["u_inv"])
+        self.assertEqual(db["notification_tokens"].rows, [])
+        self.assertEqual(db["family_invites"].rows, [])
+
+    def test_a_parent_row_on_a_smoke_address_is_never_swept(self):
+        """The inviter's own address matches the smoke pattern. It must survive
+        even when it is the only smoke row in the family."""
+        smoke = {"user_id": "u_s", "family_id": "fam1", "name": "Smoke Invitee",
+                 "email": "smoke-abc123@household-coo.smoke"}
+        db = FakeDB(
+            users=FakeColl([{"user_id": "u_s"}, {"user_id": "u_inv"}]),
+            family_members=FakeColl([
+                {"user_id": "u_inv", "member_id": "m_inviter", "family_id": "fam1",
+                 "email": "smoke-inviter@household-coo.smoke",
+                 "name": "Smoke Inviter", "role": "Parent"},
+            ]),
+            families=FakeColl([{"family_id": "fam1"}]),
+        )
+        server.get_db = lambda: db
+        asyncio.run(server.smoke_cleanup(server.SmokeCleanupIn(), user=smoke))
+        self.assertEqual([m["member_id"] for m in db["family_members"].rows], ["m_inviter"])
+        self.assertEqual([u["user_id"] for u in db["users"].rows], ["u_inv"])
 
 
 if __name__ == "__main__":

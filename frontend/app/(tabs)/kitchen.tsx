@@ -11,6 +11,7 @@ import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { SpendingView } from '../../src/components/SpendingView';
 import { PressScale } from '../../src/components/PressScale';
 import { KeyboardAwareScrollView } from '../../src/components/KeyboardAwareScrollView';
+import { WindowedList } from '../../src/components/WindowedList';
 import { localeFor } from '../../src/utils/date';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
 import AppToast from '../../src/components/AppToast';
@@ -1202,37 +1203,42 @@ export default function Kitchen() {
                 </View>
               ) : null}
 
-              {uncheckedItems.map((item, index) => (
-                <PressScale
-                  key={item.item_id}
-                  onPress={() => (selectMode ? toggleSelected(item.item_id) : toggleShopItem(item))}
-                  onLongPress={() => { setSelectMode(true); toggleSelected(item.item_id); }}
-                  style={[styles.row, selectMode && selectedIds.has(item.item_id) && styles.rowSelected]}
-                >
-                  {selectMode ? (
-                    <View style={[styles.selBox, selectedIds.has(item.item_id) && styles.selBoxOn]}>
-                      {selectedIds.has(item.item_id) ? <Check color={ui.bg} size={13} /> : null}
-                    </View>
-                  ) : (
-                    <View style={styles.numBadge}><Text style={styles.numText}>{index + 1}</Text></View>
-                  )}
-                  <Text style={styles.rowText}>{item.name}</Text>
-                  {(() => {
-                    // Everything stored before this shipped is "Other", because the
-                    // app never sent a category. Derive from the name in that case
-                    // so existing lists gain aisles without a data migration.
-                    const cat = item.category && item.category !== 'Other'
-                      ? item.category
-                      : categoriseShoppingItem(item.name) || item.category;
-                    return cat ? <Text style={styles.rowCat}>{catLabel(cat, t)}</Text> : null;
-                  })()}
+              {/* A full weekly shop ran the page on for screens, burying the
+                  meal ideas and the history beneath it. Ten at a time, the
+                  rest inside. */}
+              <WindowedList testID="shop-list-scroll" count={uncheckedItems.length} window={10}>
+                {uncheckedItems.map((item, index) => (
                   <PressScale
-                  accessibilityRole="button"
-                  accessibilityLabel={t('a11y_delete')} onPress={() => deleteShopItem(item.item_id)} hitSlop={12} style={{ padding: 4 }}>
-                    <Trash2 color={ui.muted} size={15} />
+                    key={item.item_id}
+                    onPress={() => (selectMode ? toggleSelected(item.item_id) : toggleShopItem(item))}
+                    onLongPress={() => { setSelectMode(true); toggleSelected(item.item_id); }}
+                    style={[styles.row, selectMode && selectedIds.has(item.item_id) && styles.rowSelected]}
+                  >
+                    {selectMode ? (
+                      <View style={[styles.selBox, selectedIds.has(item.item_id) && styles.selBoxOn]}>
+                        {selectedIds.has(item.item_id) ? <Check color={ui.bg} size={13} /> : null}
+                      </View>
+                    ) : (
+                      <View style={styles.numBadge}><Text style={styles.numText}>{index + 1}</Text></View>
+                    )}
+                    <Text style={styles.rowText}>{item.name}</Text>
+                    {(() => {
+                      // Everything stored before this shipped is "Other", because the
+                      // app never sent a category. Derive from the name in that case
+                      // so existing lists gain aisles without a data migration.
+                      const cat = item.category && item.category !== 'Other'
+                        ? item.category
+                        : categoriseShoppingItem(item.name) || item.category;
+                      return cat ? <Text style={styles.rowCat}>{catLabel(cat, t)}</Text> : null;
+                    })()}
+                    <PressScale
+                    accessibilityRole="button"
+                    accessibilityLabel={t('a11y_delete')} onPress={() => deleteShopItem(item.item_id)} hitSlop={12} style={{ padding: 4 }}>
+                      <Trash2 color={ui.muted} size={15} />
+                    </PressScale>
                   </PressScale>
-                </PressScale>
-              ))}
+                ))}
+              </WindowedList>
               {uncheckedItems.length > 0 ? <Text style={styles.hint}>{t('vault_shop_tap_hint')}</Text> : null}
 
               {checkedItems.length > 0 ? (
