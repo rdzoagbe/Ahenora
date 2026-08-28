@@ -1415,6 +1415,10 @@ export const api = {
     request<FunnelSummary>(`/metrics/funnel?days=${days}`),
   getMetricsRetention: (weeks = 8) =>
     request<RetentionSummary>(`/metrics/retention?weeks=${weeks}`),
+  /** People this household invited who never made it in — feeds the re-send nudge. */
+  strandedInvites: () =>
+    request<{ email: string; relationship: string | null; reason: 'signed_up' | 'expired'; invited_at: string | null }[]>(
+      '/family/invites/stranded'),
   getInviteBreakdown: (days = 30) =>
     request<InviteBreakdown>(`/metrics/invites?days=${days}`),
   // AI reliability probe (admin). probe=0 is free (reports configured state);

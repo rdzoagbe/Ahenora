@@ -322,6 +322,9 @@ export default function Feed() {
   const { user, t, lang, subscription, dataVersion, requestInvite } = useStore();
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
   const [assigned, setAssigned] = useState<Card[]>([]);
+  // Someone this household invited who never made it in. Only the household
+  // that sent an invitation can send it again, so the prompt belongs here.
+  const [stranded, setStranded] = useState<{ email: string; reason: string } | null>(null);
   // The web build is prerendered at BUILD time. Anything derived from "now" —
   // the date line, the greeting, the sun or moon — then disagrees with what
   // the browser computes, and React throws away the entire server render as a
@@ -455,6 +458,10 @@ export default function Feed() {
       // What was handed to me. Same best-effort rule: this strip never gets
       // to take the feed down with it.
       api.listAssignedToMe().then(setAssigned).catch(() => undefined);
+      // Best-effort: a nudge is never worth failing the Feed for.
+      api.strandedInvites()
+        .then((rows) => setStranded(rows?.[0] ? { email: rows[0].email, reason: rows[0].reason } : null))
+        .catch(() => undefined);
 
       // Safe here rather than on first paint — see the `now` state above.
       setNow(new Date());
@@ -1215,6 +1222,15 @@ export default function Feed() {
             <CoParentNudge
               visible={members.length <= 1}
               onInvite={() => { requestInvite(); router.navigate('/(tabs)/settings' as never); }}
+              stranded={stranded}
+              onResend={async (email) => {
+                try {
+                  await api.invite(email);
+                  return true;
+                } catch {
+                  return false;
+                }
+              }}
             />
 
             {/* One row stands in for the whole retrospective half of the Feed —

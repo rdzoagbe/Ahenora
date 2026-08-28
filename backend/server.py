@@ -5169,6 +5169,77 @@ async def family_invites(user=Depends(require_user)):
     return rows
 
 
+@app.get("/api/family/invites/stranded")
+async def stranded_invites(user=Depends(require_user)):
+    """People this household invited who never made it in.
+
+    Two thirds of real invitations ended with the invited person holding an
+    ACCOUNT and sitting in a household of their own: they arrived and could not
+    get through the door. The join itself is fixed now, but nothing reaches back
+    for the people already stranded, and only the household that invited them
+    can invite them again — a founder cannot reach into somebody else's family.
+
+    So the prompt has to go to the inviter, which is what this feeds. Scoped to
+    the caller's own household and their own invitations: no new information is
+    revealed, it is the address they typed being read back to them.
+
+    Two cases are worth re-sending, and they are told apart because the wording
+    should differ:
+
+      * signed_up  — they made an account and are not here. The strong case:
+                     they tried.
+      * expired    — the invitation aged out unanswered. Weaker, but a fortnight
+                     used to be the whole window, so plenty died of the clock.
+
+    Deliberately NOT listed: an invite still pending and in date (it may simply
+    be new), and anyone already in the household (it worked).
+    """
+    database = get_db()
+    family_id = user.get("family_id")
+    if not family_id:
+        return []
+
+    invites = []
+    async for row in database["family_invites"].find({"family_id": family_id}, {"_id": 0}):
+        invites.append(row)
+    if not invites:
+        return []
+
+    # One pass over the accounts, indexed by address, so the check below is a
+    # dict hit rather than a query per invitation.
+    by_email: dict = {}
+    async for acct in database["users"].find({}, {"_id": 0, "family_id": 1, "email": 1}):
+        addr = (acct.get("email") or "").strip().lower()
+        if addr:
+            by_email[addr] = acct
+
+    out = []
+    for inv in invites:
+        addr = (inv.get("email") or "").strip().lower()
+        if not addr:
+            continue
+        who = by_email.get(addr)
+        if who and who.get("family_id") == family_id:
+            continue  # already here: it worked
+        if who:
+            reason = "signed_up"
+        elif _expired(inv.get("expires_at")) or (inv.get("status") or "") == "expired":
+            reason = "expired"
+        else:
+            continue  # still pending and in date — give it time
+        out.append({
+            "email": inv.get("email"),
+            "relationship": inv.get("relationship") or None,
+            "reason": reason,
+            "invited_at": iso(_coerce_dt(inv.get("created_at"))),
+        })
+
+    # The ones who actually tried first — that is the invitation most worth
+    # sending again.
+    out.sort(key=lambda r: (r["reason"] != "signed_up", r["invited_at"] or ""))
+    return out
+
+
 @app.get("/api/family/invites/for-me")
 async def invites_for_me(
     redeem: Optional[str] = None,
