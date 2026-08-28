@@ -8,7 +8,8 @@ import { PressScale } from '../src/components/PressScale';
 import { AmbientBackground } from '../src/components/AmbientBackground';
 import { useUI, UIColors } from '../src/components/Kit';
 import { useStore } from '../src/store';
-import { api, MetricRow, VersionAdoption, PlanAdoption, FunnelSummary, AiHealth, SubscriberList } from '../src/api';
+import { api, MetricRow, VersionAdoption, PlanAdoption, FunnelSummary,
+  RetentionSummary, AiHealth, SubscriberList } from '../src/api';
 import { logger } from '../src/logger';
 
 // Admin-only screen — plain English labels are fine (only the owner sees it).
@@ -36,6 +37,7 @@ export default function MetricsScreen() {
   const [subs, setSubs] = useState<SubscriberList | null>(null);
   const [showAllSubs, setShowAllSubs] = useState(false);
   const [funnel, setFunnel] = useState<FunnelSummary | null>(null);
+  const [retention, setRetention] = useState<RetentionSummary | null>(null);
   const [aiHealth, setAiHealth] = useState<AiHealth | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -61,6 +63,9 @@ export default function MetricsScreen() {
     api.getSubscribers().then(setSubs).catch((e) => logger.warn('subscribers load failed', e?.message || e));
     // The activation + growth funnel — the "make the launch stick" scoreboard.
     api.getMetricsFunnel(30).then(setFunnel).catch((e) => logger.warn('funnel load failed', e?.message || e));
+    // Retention, counted in ADULTS — the funnel's 2+-members number counts child
+    // profiles, so it cannot answer whether a second grown-up actually stuck.
+    api.getMetricsRetention(8).then(setRetention).catch((e) => logger.warn('retention load failed', e?.message || e));
     // probe=0 (default) — free, reports configured/plumbing state, no token cost.
     api.getAiHealth().then(setAiHealth).catch((e) => logger.warn('ai health load failed', e?.message || e));
   }, []);
@@ -190,6 +195,83 @@ export default function MetricsScreen() {
             </>
           ) : (
             <Text style={styles.muted}>No funnel data yet — fills in as people sign up and invite.</Text>
+          )}
+
+          {/* Retention — the question the funnel cannot answer. Its
+              2+-members count includes child profiles, so a lone parent with
+              two kids reads as shared there. This counts ACCOUNTS, and puts
+              solo against shared so the theory can be killed by the data. */}
+          <Text style={styles.sectionTitle}>Retention — does a second adult keep them?</Text>
+          {retention ? (
+            <>
+              <View style={styles.card}>
+                {([
+                  ['Households', retention.households.total, null],
+                  ['One adult', retention.households.solo_adult, retention.households.total],
+                  ['Two or more adults', retention.households.two_plus_adults, retention.households.total],
+                  ['…and active this week', retention.households.two_plus_adults_active_7d, retention.households.two_plus_adults],
+                  ['Accounts active today', retention.accounts.active_1d, retention.accounts.total],
+                  ['Accounts active this week', retention.accounts.active_7d, retention.accounts.total],
+                  ['Accounts active this month', retention.accounts.active_30d, retention.accounts.total],
+                ] as [string, number, number | null][])
+                  .map(([label, n, denom], i) => (
+                    <View key={label} style={[styles.eventRow, i === 0 && { borderTopWidth: 0 }]}>
+                      <Text style={styles.eventLabel}>{label}</Text>
+                      <Text style={styles.eventCount}>
+                        {n}{denom && denom > 0 ? ` · ${Math.round((100 * n) / denom)}%` : ''}
+                      </Text>
+                    </View>
+                  ))}
+              </View>
+
+              {/* The comparison this screen exists for. */}
+              <View style={styles.card}>
+                <View style={[styles.eventRow, { borderTopWidth: 0 }]}>
+                  <Text style={styles.eventLabel}>Weekly return · one adult</Text>
+                  <Text style={styles.eventCount}>
+                    {retention.weekly_return_rate.solo_adult_pct == null
+                      ? '—' : `${retention.weekly_return_rate.solo_adult_pct}%`}
+                  </Text>
+                </View>
+                <View style={styles.eventRow}>
+                  <Text style={styles.eventLabel}>Weekly return · two or more</Text>
+                  <Text style={styles.eventCount}>
+                    {retention.weekly_return_rate.two_plus_adults_pct == null
+                      ? '—' : `${retention.weekly_return_rate.two_plus_adults_pct}%`}
+                  </Text>
+                </View>
+              </View>
+              <Text style={styles.hint}>
+                If the second line is well above the first, getting a second adult in IS the
+                retention strategy and the roadmap follows from it. If they are close, that
+                theory is dead and the effort belongs elsewhere. A dash means nobody is in
+                that group yet — not zero.
+              </Text>
+
+              {retention.cohorts.length > 0 ? (
+                <>
+                  <Text style={styles.sectionTitle}>Still here, by signup week</Text>
+                  <View style={styles.card}>
+                    {retention.cohorts.map((c, i) => (
+                      <View key={c.week} style={[styles.eventRow, i === 0 && { borderTopWidth: 0 }]}>
+                        <Text style={styles.eventLabel}>Week of {c.week}</Text>
+                        <Text style={styles.eventCount}>
+                          {c.still_active}/{c.signups}
+                          {c.retained_pct == null ? '' : ` · ${c.retained_pct}%`}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                  <Text style={styles.hint}>
+                    Of the people who joined that week, how many opened the app in the last
+                    seven days. A curve that flattens is a product people keep; one that
+                    slides to zero is a product they try.
+                  </Text>
+                </>
+              ) : null}
+            </>
+          ) : (
+            <Text style={styles.muted}>No retention data yet — fills in as people sign up and return.</Text>
           )}
 
           {/* AI health — every AI feature degrades gracefully, so a broken

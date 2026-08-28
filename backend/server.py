@@ -12757,6 +12757,115 @@ async def metrics_funnel(days: int = 30, user=Depends(require_user), database=De
     }
 
 
+@app.get("/api/metrics/retention")
+async def metrics_retention(weeks: int = 8, user=Depends(require_user), database=Depends(get_db)):
+    """Does the second adult keep a household alive? Admin only.
+
+    The funnel above answers "do people arrive and set up". This answers the
+    only question that decides whether the app survives: do they come back, and
+    what separates the ones who do.
+
+    Two things it deliberately does differently from the funnel:
+
+    * ADULTS, not members. The funnel's multi_member_households counts rows in
+      family_members, and a child profile is a row — so a lone parent with two
+      kids counts as a shared household there. It cannot say anything about
+      second adults. Here an adult is an ACCOUNT: a users doc. Child profiles
+      have no users doc and are never counted.
+
+    * Solo vs shared retention side by side. That comparison is the whole point.
+      If shared households come back at a materially higher rate, then getting
+      the second adult in IS the retention strategy and the roadmap follows from
+      it. If the two rates are close, that theory is dead and the effort belongs
+      somewhere else. Either answer is worth more than a guess.
+
+    Computed from one pass over users, in Python: the population is small, this
+    is admin-only and called by hand, and it keeps the query shape trivial
+    enough to be exercised by the test double.
+    """
+    if not is_admin_user(user):
+        raise HTTPException(status_code=403, detail="Admin only")
+    weeks = max(1, min(weeks, 52))
+    now = utcnow()
+    d1, d7, d30 = (now - timedelta(days=n) for n in (1, 7, 30))
+
+    # One scan: every account with the three fields that matter.
+    accounts = []
+    async for row in database["users"].find(
+            {}, {"_id": 0, "user_id": 1, "family_id": 1,
+                 "created_at": 1, "last_active_at": 1}):
+        accounts.append(row)
+
+    def active_since(row, when) -> bool:
+        seen = _coerce_dt(row.get("last_active_at"))
+        return bool(seen and seen >= when)
+
+    # Group accounts into households.
+    households: dict = {}
+    for row in accounts:
+        fid = row.get("family_id")
+        if fid:
+            households.setdefault(fid, []).append(row)
+
+    solo_total = shared_total = solo_live = shared_live = 0
+    for members in households.values():
+        # A household is "live" if ANY of its adults opened the app this week —
+        # the household is the unit that churns, not the individual.
+        live = any(active_since(m, d7) for m in members)
+        if len(members) >= 2:
+            shared_total += 1
+            shared_live += 1 if live else 0
+        else:
+            solo_total += 1
+            solo_live += 1 if live else 0
+
+    def pct(part: int, whole: int):
+        return round(100.0 * part / whole, 1) if whole else None
+
+    # Cohort survival: of the accounts that signed up in a given week, how many
+    # were still opening the app in the last seven days. A single last_active_at
+    # cannot give true D1/D7 (that needs per-day history, which metrics_daily
+    # holds only in aggregate), but "are they still here" is the question that
+    # actually matters and this answers it honestly.
+    cohorts: dict = {}
+    horizon = now - timedelta(weeks=weeks)
+    for row in accounts:
+        born = _coerce_dt(row.get("created_at"))
+        if not born or born < horizon:
+            continue
+        monday = (born - timedelta(days=born.weekday())).strftime("%Y-%m-%d")
+        slot = cohorts.setdefault(monday, {"week": monday, "signups": 0, "still_active": 0})
+        slot["signups"] += 1
+        slot["still_active"] += 1 if active_since(row, d7) else 0
+    for slot in cohorts.values():
+        slot["retained_pct"] = pct(slot["still_active"], slot["signups"])
+
+    return {
+        "generated_at": iso(now),
+        "window_weeks": weeks,
+        "accounts": {
+            "total": len(accounts),
+            "active_1d": sum(1 for r in accounts if active_since(r, d1)),
+            "active_7d": sum(1 for r in accounts if active_since(r, d7)),
+            "active_30d": sum(1 for r in accounts if active_since(r, d30)),
+        },
+        "households": {
+            "total": len(households),
+            "solo_adult": solo_total,
+            "two_plus_adults": shared_total,
+            # The activation number to move: a household with a second adult
+            # actually using it, not merely invited.
+            "two_plus_adults_active_7d": shared_live,
+        },
+        # The hypothesis, stated so it can be falsified.
+        "weekly_return_rate": {
+            "solo_adult_pct": pct(solo_live, solo_total),
+            "two_plus_adults_pct": pct(shared_live, shared_total),
+        },
+        "cohorts": sorted(cohorts.values(), key=lambda c: c["week"], reverse=True),
+    }
+
+
 @app.post("/api/support/contact")
 async def submit_support_contact(
     body: SupportContactIn,
