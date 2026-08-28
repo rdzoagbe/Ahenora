@@ -76,7 +76,6 @@ interface VoiceDraft {
   save_to_vault?: boolean;
 }
 
-type FeedTab = 'today' | 'upcoming' | 'all';
 
 
 function dueTime(card: Card) {
@@ -363,7 +362,6 @@ export default function Feed() {
   const [showCamera, setShowCamera] = useState(false);
   const [addSource, setAddSource] = useState<'MANUAL' | 'VOICE' | 'CAMERA'>('MANUAL');
   const [voiceDraft, setVoiceDraft] = useState<VoiceDraft | null>(null);
-  const [activeTab, setActiveTab] = useState<FeedTab>('today');
   const [notes, setNotes] = useState<HandoffNote[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [noteText, setNoteText] = useState('');
@@ -699,51 +697,33 @@ export default function Feed() {
     return { overdue, todayCards, signSlips, weekCards, next24h, calmScore, priority, upcomingBirthdays };
   }, [activeCards, assigned, user?.user_id, members]);
 
-  const tabCards = useMemo(() => {
-    const now = Date.now();
-    const today = new Date();
-
-    if (activeTab === 'today') {
-      // Undated tasks are "anytime today" — a freshly added task with no due
-      // date must be visible immediately, not hidden until the All tab.
-      const undated = activeCards.filter((card) => dueTime(card) === null);
-      // A task you handed to someone else is a live commitment you are
-      // tracking, so it belongs on your own default Feed too — not buried under
-      // Upcoming or only findable on the Calendar, which is what made an
-      // assigned task "show only in the calendar" for the person who set it.
-      // (Work handed TO you is pinned separately, above the list.)
-      const me = (user?.name || '').trim().toLowerCase();
-      const iAssigned = activeCards.filter(
-        (card) => card.created_by_user_id === user?.user_id
-          && (card.assignee || '').trim()
-          && (card.assignee || '').trim().toLowerCase() !== me,
-      );
-      return uniqueCards([...dashboard.overdue, ...dashboard.todayCards, ...undated, ...iAssigned])
-        .sort((a, b) => (dueTime(a) ?? Number.MAX_SAFE_INTEGER) - (dueTime(b) ?? Number.MAX_SAFE_INTEGER));
-    }
-
-    if (activeTab === 'upcoming') {
-      return activeCards
-        .filter((card) => {
-          const time = dueTime(card);
-          return Boolean(time && time > now && !sameLocalDay(new Date(time), today));
-        })
-        .sort((a, b) => (dueTime(a) || 0) - (dueTime(b) || 0));
-    }
-
-    return [...activeCards].sort((a, b) => {
-      const at = dueTime(a);
-      const bt = dueTime(b);
-      if (!at && !bt) return 0;
-      if (!at) return 1;
-      if (!bt) return -1;
-      return at - bt;
-    });
-  }, [activeTab, activeCards, dashboard, user]);
+  // The Feed is today, and only today. Upcoming and All were tabs here until
+  // the Calendar tab (a better calendar) and the header Search (a better
+  // finder) made them the second-best route to their own jobs, while the row
+  // itself cost ~50px at the top of the most-visited screen and put a decision
+  // on a home screen that should have none.
+  const feedCards = useMemo(() => {
+    // Undated tasks are "anytime today" — a freshly added task with no due
+    // date must be visible immediately, not hidden until some other view.
+    const undated = activeCards.filter((card) => dueTime(card) === null);
+    // A task you handed to someone else is a live commitment you are
+    // tracking, so it belongs on your own Feed too — not only findable on the
+    // Calendar, which is what made an assigned task "show only in the
+    // calendar" for the person who set it. (Work handed TO you is pinned
+    // separately, above the list.)
+    const me = (user?.name || '').trim().toLowerCase();
+    const iAssigned = activeCards.filter(
+      (card) => card.created_by_user_id === user?.user_id
+        && (card.assignee || '').trim()
+        && (card.assignee || '').trim().toLowerCase() !== me,
+    );
+    return uniqueCards([...dashboard.overdue, ...dashboard.todayCards, ...undated, ...iAssigned])
+      .sort((a, b) => (dueTime(a) ?? Number.MAX_SAFE_INTEGER) - (dueTime(b) ?? Number.MAX_SAFE_INTEGER));
+  }, [activeCards, dashboard, user]);
 
   const TASK_CAP = 5;
-  const visibleCards = showAllTasks ? tabCards : tabCards.slice(0, TASK_CAP);
-  const hiddenTaskCount = tabCards.length - visibleCards.length;
+  const visibleCards = showAllTasks ? feedCards : feedCards.slice(0, TASK_CAP);
+  const hiddenTaskCount = feedCards.length - visibleCards.length;
   // Hand-offs lead the list; everything else follows. Split rather than
   // duplicated, so a task with your name on it appears exactly once.
   // "Keigh gave Roland the swimming kit" is not news to Roland when the task
@@ -1056,14 +1036,6 @@ export default function Feed() {
                 Counting is not a feature when the things being counted are
                 right there. */}
 
-            <View style={styles.tabRow}>
-              {(['today', 'upcoming', 'all'] as const).map((tab) => (
-                <PressScale key={tab} onPress={() => setActiveTab(tab)} style={styles.tabItem} testID={`feed-tab-${tab}`}>
-                  <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>{tab === 'today' ? t('feed_today') : tab === 'upcoming' ? t('feed_upcoming') : t('feed_all')}</Text>
-                  {activeTab === tab ? <View style={styles.tabUnderline} /> : null}
-                </PressScale>
-              ))}
-            </View>
 
             <View style={styles.listCard}>
               {loading ? (
@@ -1082,7 +1054,7 @@ export default function Feed() {
               ) : visibleCards.length === 0 && handedToMe.length === 0 ? (
                 <View style={styles.emptyBox}>
                   <CheckCircle2 color={ui.mintText} size={22} />
-                  <Text style={styles.emptyTitle}>{activeTab === 'today' ? t('feed_nothing_urgent') : t('feed_nothing_to_show')}</Text>
+                  <Text style={styles.emptyTitle}>{t('feed_nothing_urgent')}</Text>
                   <Text style={styles.emptySub}>{t('feed_empty_hint')}</Text>
                   <PressScale
                     testID="feed-empty-scan"
@@ -1148,7 +1120,7 @@ export default function Feed() {
                 <Text style={styles.seeAllText}>{t('feed_see_all_tasks', { n: hiddenTaskCount })}</Text>
                 <ChevronRight color={ui.orangeText} size={16} />
               </PressScale>
-            ) : showAllTasks && tabCards.length > TASK_CAP ? (
+            ) : showAllTasks && feedCards.length > TASK_CAP ? (
               <PressScale testID="feed-see-less" onPress={() => setShowAllTasks(false)} style={styles.seeAllBtn}>
                 <Text style={styles.seeAllText}>{t('feed_show_less')}</Text>
               </PressScale>
@@ -1329,11 +1301,10 @@ export default function Feed() {
                 the tab you were on. The reassurance still exists; it is just
                 said once, in the place that owns it. */}
             {alertCount > 0 ? (
-              <PressScale style={styles.alertBanner} onPress={() => setActiveTab('today')}>
+              <View style={styles.alertBanner}>
                 <View style={styles.alertIcon}><Star color="#FFFFFF" fill="#FFFFFF" size={19} /></View>
                 <Text style={styles.alertText} numberOfLines={2}>{alertText}</Text>
-                <ChevronRight color={ui.text} size={22} />
-              </PressScale>
+              </View>
             ) : null}
 
             {pastEvents.length > 0 && !pastPromptDismissed ? (
@@ -2012,34 +1983,6 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     fontFamily: 'Inter_800ExtraBold',
     fontSize: 14,
     lineHeight: 20,
-  },
-  tabRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 28,
-    borderBottomWidth: 1,
-    borderBottomColor: ui.line,
-    marginBottom: 12,
-  },
-  tabItem: {
-    paddingBottom: 10,
-  },
-  tabText: {
-    color: ui.muted,
-    fontFamily: 'Inter_800ExtraBold',
-    fontSize: 15,
-  },
-  tabTextActive: {
-    color: ui.text,
-  },
-  tabUnderline: {
-    position: 'absolute',
-    bottom: -1,
-    left: 0,
-    right: 0,
-    height: 2,
-    borderRadius: 99,
-    backgroundColor: ui.orangeDeep,
   },
   listCard: {
     overflow: 'hidden',
