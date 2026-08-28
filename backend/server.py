@@ -398,8 +398,29 @@ def ensure_aware_utc(value):
     return None
 
 
-def advance_due_date(dt: datetime, recurrence: str) -> datetime:
-    """Return the next occurrence for a recurring card's due date."""
+def advance_due_date(dt: datetime, recurrence: str, after: Optional[datetime] = None) -> datetime:
+    """Return the next occurrence for a recurring card's due date.
+
+    With `after`, keep stepping until the result is past that moment instead of
+    stopping at one interval. That matters because chores are finished LATE. A
+    daily card three weeks overdue used to spawn its next occurrence one day
+    after the OLD due date — still three weeks in the past, so it came straight
+    back into today's list the instant it was ticked off, and ticking it again
+    produced another past date. Reported exactly that way: "I marked it done and
+    it keeps coming back."
+
+    Stepping is bounded. An unrecognised recurrence returns `dt` unchanged, and
+    looping on a value that never moves would hang the request that completes
+    the card, so the loop stops if a step makes no progress.
+    """
+    if after is not None:
+        nxt = advance_due_date(dt, recurrence)
+        while nxt <= after:
+            step = advance_due_date(nxt, recurrence)
+            if step <= nxt:
+                break  # unknown recurrence: no progress, do not spin
+            nxt = step
+        return nxt
     if recurrence == "daily":
         return dt + timedelta(days=1)
     if recurrence == "weekly":
@@ -7442,7 +7463,8 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
             "title": card["title"],
             "description": card.get("description"),
             "assignee": card.get("assignee"),
-            "due_date": advance_due_date(base_due, card["recurrence"]),
+            # Roll past now, or a late-completed chore reappears immediately.
+            "due_date": advance_due_date(base_due, card["recurrence"], after=utcnow()),
             "status": "OPEN",
             "source": card.get("source", "MANUAL"),
             "image_base64": card.get("image_base64"),
