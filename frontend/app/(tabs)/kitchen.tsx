@@ -10,6 +10,7 @@ import { Plus, X, Trash2, ShoppingCart, Check, UtensilsCrossed, ChevronLeft, His
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { SpendingView } from '../../src/components/SpendingView';
 import { PressScale } from '../../src/components/PressScale';
+import { KeyboardAwareScrollView } from '../../src/components/KeyboardAwareScrollView';
 import { localeFor } from '../../src/utils/date';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
 import AppToast from '../../src/components/AppToast';
@@ -1761,7 +1762,7 @@ export default function Kitchen() {
                     <Text style={styles.recipeLoadingText}>{t('cook_generating')}</Text>
                   </View>
                 ) : (
-                  <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.recipeScroll}>
+                  <KeyboardAwareScrollView style={{ flex: 1 }} contentContainerStyle={styles.recipeScroll}>
                     <Text style={styles.recipeTitle}>{cookingRecipe.title}</Text>
                     {isGenerated && recipeDiet === 'vegetarian' ? (
                       <View testID="recipe-veg-badge" style={styles.vegBadge}>
@@ -1998,7 +1999,7 @@ export default function Kitchen() {
                         {isGenerated ? `${t('cook_ai_note')} ${t('cook_allergen_note')}` : t('cook_allergen_note')}
                       </Text>
                     </View>
-                  </ScrollView>
+                  </KeyboardAwareScrollView>
                 )}
 
                 {/* Preview from the browser: commit it to the chosen day from
