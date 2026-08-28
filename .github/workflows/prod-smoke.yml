@@ -46,7 +46,14 @@ jobs:
             echo "present=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Wait for Railway deploy to settle
+      # A coarse buffer, not the guarantee. This sleep is a guess at how long
+      # Railway takes, and a guess is what it was: a merge whose cutover landed
+      # just after the three minutes ran the journey against the instance being
+      # replaced, and reported a 502 on whichever call was in flight when it
+      # went. The real handling now lives in prod_smoke.py — two consecutive
+      # healthy answers before starting, and gateway-level answers retried
+      # during the journey — so this only spares the obvious churn.
+      - name: Let the obvious deploy churn pass
         if: steps.secret.outputs.present == 'true' && github.event_name == 'push'
         run: sleep 180
 
