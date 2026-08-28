@@ -6,6 +6,7 @@ import KeyboardAwareBottomSheet from './KeyboardAwareBottomSheet';
 import { PressScale } from './PressScale';
 import { useUI, UIColors } from './Kit';
 import { useStore } from '../store';
+import { parseDisplayDate } from '../dateDisplay';
 
 type DatePickerSheetProps = {
   visible: boolean;
@@ -60,7 +61,13 @@ export default function DatePickerSheet({
 
   // This year and the next two — a gift deadline is never further out, and a
   // short list keeps the column tappable rather than an endless scroll.
-  const years = useMemo(() => [0, 1, 2].map((n) => today.getFullYear() + n), [today]);
+  const years = useMemo(() => {
+    const base = [0, 1, 2].map((n) => today.getFullYear() + n);
+    // A deadline already set outside that window has to be listed, or the
+    // column highlights nothing, scrolls to the top, and quietly saves a
+    // different year than the one being shown.
+    return base.includes(year) ? base : [...base, year].sort((a, b) => a - b);
+  }, [today, year]);
 
   // Never offer the 31st of a 30-day month, or 30 Feb.
   const daysInMonth = useMemo(() => new Date(year, month + 1, 0).getDate(), [year, month]);
@@ -68,10 +75,11 @@ export default function DatePickerSheet({
 
   useEffect(() => {
     if (!visible) return;
-    // Re-open on the day already chosen where it can be read back, so the
-    // picker never silently discards what the organiser set last time.
-    const parsed = value ? new Date(value) : null;
-    if (parsed && !Number.isNaN(parsed.getTime())) {
+    // Re-open on the day already chosen. Read back with the same locale that
+    // wrote it — new Date() manages this only in English, so in fr/es/de the
+    // picker used to open on today and quietly lose the chosen deadline.
+    const parsed = value ? parseDisplayDate(value, locale) : null;
+    if (parsed) {
       setDay(parsed.getDate());
       setMonth(parsed.getMonth());
       setYear(parsed.getFullYear());

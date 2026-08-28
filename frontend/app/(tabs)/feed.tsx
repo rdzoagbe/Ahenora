@@ -620,11 +620,19 @@ export default function Feed() {
     if (!notifiedCardId || loading) return;
     if (openedFromNotification.current === notifiedCardId) return;
     const found = [...cards, ...assigned].find((c) => c.card_id === notifiedCardId);
+    // Latch only once the card is actually in hand. `assigned` is a separate
+    // fetch that settles on its own schedule, after `loading` has cleared, so
+    // latching on the first run raced it: a task_assigned push — the most
+    // common kind, and the one this exists for — would find nothing, mark
+    // itself handled, and never open when the list arrived a moment later.
+    //
+    // Not finding it is not an error either. The card may have been completed
+    // or deleted between the push and the tap, in which case nothing is
+    // latched, the search costs one pass over two small arrays whenever they
+    // change, and the reader is simply left on the Feed.
+    if (!found) return;
     openedFromNotification.current = notifiedCardId;
-    // Not found is not an error: the card may have been completed or deleted
-    // between the push and the tap. Leave the reader on the Feed rather than
-    // on a failure they can do nothing about.
-    if (found) setSelectedCard(found);
+    setSelectedCard(found);
   }, [notifiedCardId, loading, cards, assigned]);
 
   const pastEvents = useMemo(() => {

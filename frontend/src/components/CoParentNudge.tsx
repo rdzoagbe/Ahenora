@@ -8,6 +8,11 @@ import { useStore } from '../store';
 import { useUI, UIColors } from './Kit';
 
 const DISMISS_KEY = 'coo_coparent_nudge_dismissed';
+// A separate flag, because the two prompts mean different things and so does
+// dismissing them. "Stop asking me to invite a co-parent" is a statement about
+// the household; "stop telling me this person is stuck outside it" is about one
+// invitation the reader already chose to send.
+const RECOVER_DISMISS_KEY = 'coo_coparent_recover_dismissed';
 
 interface Props {
   /** True while the household is still solo (only the current user). */
@@ -37,18 +42,30 @@ export function CoParentNudge({ visible, onInvite, stranded, onResend }: Props) 
   const styles = useMemo(() => createStyles(ui), [ui]);
   // null = still reading the flag (avoid a flash); false = show; true = hidden.
   const [dismissed, setDismissed] = useState<boolean | null>(null);
+  const [recoverDismissed, setRecoverDismissed] = useState<boolean | null>(null);
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
 
   useEffect(() => {
     AsyncStorage.getItem(DISMISS_KEY).then((v) => setDismissed(v === '1')).catch(() => setDismissed(false));
+    AsyncStorage.getItem(RECOVER_DISMISS_KEY)
+      .then((v) => setRecoverDismissed(v === '1'))
+      .catch(() => setRecoverDismissed(false));
   }, []);
 
   // The stranded case outranks the generic ask: "Sarah signed up but never
   // joined — send it again" is strictly more useful than "invite a co-parent",
   // and both would otherwise want the same slot on a solo household's Feed.
   const recover = stranded && onResend ? stranded : null;
-  if (!visible || dismissed !== false) return null;
+  if (!visible) return null;
+  // Dismissing "invite a co-parent" means "I am a single parent, stop asking".
+  // It cannot also mean "never tell me that the person I DID invite is stuck
+  // outside my household" — that is news about something the reader already
+  // chose to do, and silencing it hid the prompt from exactly the people it
+  // exists for, since anyone who invited someone had usually dismissed the
+  // generic ask long before. The recovery prompt is not silenced by that flag;
+  // it disappears on its own when there is nobody left stranded.
+  if (recover ? recoverDismissed !== false : dismissed !== false) return null;
 
   const resend = async () => {
     if (!recover || sending) return;
@@ -61,6 +78,11 @@ export function CoParentNudge({ visible, onInvite, stranded, onResend }: Props) 
   };
 
   const dismiss = () => {
+    if (recover) {
+      setRecoverDismissed(true);
+      AsyncStorage.setItem(RECOVER_DISMISS_KEY, '1').catch(() => {});
+      return;
+    }
     setDismissed(true);
     AsyncStorage.setItem(DISMISS_KEY, '1').catch(() => {});
   };
