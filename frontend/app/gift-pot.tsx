@@ -5,6 +5,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ChevronLeft, Gift, Check, Users, Link2, Pencil, X, MessageCircle } from 'lucide-react-native';
 
 import { PressScale } from '../src/components/PressScale';
+import { KeyboardAwareScrollView } from '../src/components/KeyboardAwareScrollView';
 import KeyboardAwareBottomSheet from '../src/components/KeyboardAwareBottomSheet';
 import { useUI, UIColors } from '../src/components/Kit';
 import { useStore } from '../src/store';
@@ -247,7 +248,7 @@ export default function GiftPotRoute() {
         </View>
       ) : (
         // ---- The pot -----------------------------------------------------
-        <ScrollView contentContainerStyle={styles.scroll}>
+        <KeyboardAwareScrollView contentContainerStyle={styles.scroll}>
           <View style={styles.hero}>
             <View style={styles.bigIcon}><Gift color={ui.orangeText} size={30} /></View>
             <Text style={styles.amount}>
@@ -345,7 +346,7 @@ export default function GiftPotRoute() {
           ) : null}
 
           <Text style={styles.footnote}>{t('gp_footnote')}</Text>
-        </ScrollView>
+        </KeyboardAwareScrollView>
       )}
 
       {/* Edit sheet — organiser tweaks the pot's details. Uses the app's

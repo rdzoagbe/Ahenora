@@ -2,10 +2,11 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Linking, Modal, Platform, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { ChevronLeft, Gift, Check, Shuffle, Send, Trash2, X, Plus, Lock, MessageCircle } from 'lucide-react-native';
+import { ChevronLeft, Gift, Check, Shuffle, Send, Trash2, X, Plus, Lock, MessageCircle, CalendarDays } from 'lucide-react-native';
 
 import { PressScale } from '../src/components/PressScale';
 import { KeyboardAwareScrollView } from '../src/components/KeyboardAwareScrollView';
+import DatePickerSheet from '../src/components/DatePickerSheet';
 import { useUI, UIColors } from '../src/components/Kit';
 import { useStore } from '../src/store';
 import { usePremiumGate } from '../src/components/PremiumGate';
@@ -47,6 +48,7 @@ export default function SantaRoute() {
   const [pairs, setPairs] = useState<[string, string][]>([]);
   const [pairPick, setPairPick] = useState<string | null>(null);
   const [addName, setAddName] = useState('');
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
 
   // The reveal (a member seeing their own match).
   const [reveal, setReveal] = useState<SantaMatch | null>(null);
@@ -268,7 +270,15 @@ export default function SantaRoute() {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.label}>{t('ss_draw_by')}</Text>
-              <View style={styles.field}><TextInput testID="santa-drawby" value={drawBy} onChangeText={setDrawBy} placeholder={t('ss_draw_by_ph')} placeholderTextColor={ui.muted} style={styles.fieldInput} /></View>
+              {/* A deadline is picked, not spelled. This was a free-text box,
+                  so the date it held depended on however the organiser typed
+                  it. */}
+              <PressScale testID="santa-drawby" onPress={() => setDatePickerOpen(true)} style={styles.field}>
+                <CalendarDays color={ui.muted} size={15} />
+                <Text style={[styles.fieldValue, !drawBy && styles.fieldPlaceholder]} numberOfLines={1}>
+                  {drawBy || t('ss_draw_by_ph')}
+                </Text>
+              </PressScale>
             </View>
           </View>
 
@@ -452,6 +462,14 @@ export default function SantaRoute() {
           </View>
         </View>
       </Modal>
+
+      <DatePickerSheet
+        visible={datePickerOpen}
+        value={drawBy}
+        title={t('ss_draw_by')}
+        onChange={(v) => setDrawBy(v || '')}
+        onClose={() => setDatePickerOpen(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -462,7 +480,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   iconBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   headTitle: { flex: 1, textAlign: 'center', fontFamily: 'Inter_800ExtraBold', fontSize: 18, color: ui.text },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 28 },
-  scroll: { padding: 16, paddingBottom: 120 },
+  scroll: { padding: 16, paddingBottom: 160 },
 
   introHead: { alignItems: 'center', marginBottom: 10 },
   bigIcon: { width: 60, height: 60, borderRadius: 19, backgroundColor: ui.orangeSoft, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
@@ -473,6 +491,8 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   field: { backgroundColor: ui.card, borderRadius: 12, borderWidth: 1, borderColor: ui.line, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center' },
   fieldMoney: { backgroundColor: ui.card, borderRadius: 12, borderWidth: 1, borderColor: ui.line, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center' },
   fieldInput: { flex: 1, color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 15, paddingVertical: 13 },
+  fieldValue: { flex: 1, color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 15, paddingVertical: 13, marginLeft: 8 },
+  fieldPlaceholder: { color: ui.muted, fontFamily: 'Inter_600SemiBold' },
   euro: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 15, marginRight: 4 },
   two: { flexDirection: 'row', gap: 10 },
 
@@ -493,7 +513,11 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   addChipText: { color: ui.orangeText, fontFamily: 'Inter_700Bold', fontSize: 12.5 },
 
   addRow: { flexDirection: 'row', gap: 10, marginTop: 10, alignItems: 'stretch' },
-  addBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: ui.orange, paddingHorizontal: 18, borderRadius: 12 },
+  // minHeight, not alignItems:'stretch' on the row: stretch does not reach
+  // through PressScale's own wrapper, which is why this button kept rendering
+  // half the height of the field beside it. 48 is that field's measured height
+  // (13pt padding either side of a 15pt line, plus its 1pt border).
+  addBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: ui.orange, paddingHorizontal: 18, minHeight: 48, borderRadius: 12 },
   addBtnText: { color: '#fff', fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
 
   keepApart: { marginTop: 14, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, borderRadius: 14, padding: 13 },
