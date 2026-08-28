@@ -890,6 +890,27 @@ export interface RetentionSummary {
   cohorts: { week: string; signups: number; still_active: number; retained_pct: number | null }[];
 }
 
+/**
+ * Why invitations do not become co-parents. The outcome split is the point:
+ * "never signed up" is a delivery/wording problem, "signed up but not joined"
+ * is a broken join — opposite fixes, and the funnel's single acceptance
+ * percentage cannot tell them apart.
+ */
+export interface InviteBreakdown {
+  generated_at: string | null;
+  window_days: number;
+  status: {
+    sent: number; accepted: number; pending: number; expired: number;
+    oldest_pending_days: number | null;
+  };
+  outcome: {
+    in_the_household: number;
+    signed_up_but_not_joined: number;
+    never_signed_up: number;
+    joined_while_invite_still_pending: number;
+  };
+}
+
 export interface AiHealth {
   key_configured: boolean;
   library_loaded: boolean;
@@ -1394,6 +1415,8 @@ export const api = {
     request<FunnelSummary>(`/metrics/funnel?days=${days}`),
   getMetricsRetention: (weeks = 8) =>
     request<RetentionSummary>(`/metrics/retention?weeks=${weeks}`),
+  getInviteBreakdown: (days = 30) =>
+    request<InviteBreakdown>(`/metrics/invites?days=${days}`),
   // AI reliability probe (admin). probe=0 is free (reports configured state);
   // probe=1 does one tiny real generation. The Metrics screen uses probe=0.
   getAiHealth: () =>
