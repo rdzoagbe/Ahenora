@@ -96,7 +96,13 @@ GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
 # clock resets on use (see _touch_session), so an active family is never signed
 # out while an abandoned session still lapses.
 SESSION_DAYS = int(os.environ.get("SESSION_DAYS", "90"))
-INVITE_DAYS = int(os.environ.get("INVITE_DAYS", "14"))
+# Two weeks was shorter than the gap between "I'll set this up" and the two
+# of you actually sitting down together: 78% of real invites expired
+# unanswered. A co-parent invite carries no urgency and no secret worth
+# ageing out on a timer — the token is already unguessable, the inviter can
+# revoke it, and the household can delete it. Still bounded, so an address
+# that was never going to answer does not stay claimable forever.
+INVITE_DAYS = int(os.environ.get("INVITE_DAYS", "60"))
 # Invite links must open SOMEWHERE on every device. The old default was the
 # native custom scheme, which does nothing on a phone without the app —
 # an iPhone tapping it got silence. The web companion handles ?invite=
