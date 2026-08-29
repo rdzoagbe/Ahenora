@@ -183,6 +183,13 @@
   /* Three tiers now, so the row widens and the cards wrap rather than being
      squeezed: a plan whose price wraps mid-figure reads as a mistake. */
   .plans { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px; max-width: 1080px; margin: 0 auto; }
+  .cycle { display: flex; justify-content: center; gap: 4px; margin: 0 auto 22px; padding: 4px;
+           background: var(--bg-warm); border: 1px solid var(--line); border-radius: 999px; width: max-content; }
+  .cycle-btn { font: inherit; font-size: 14px; font-weight: 600; color: var(--muted); cursor: pointer;
+               background: none; border: 0; padding: 9px 20px; border-radius: 999px; }
+  .cycle-btn.is-on { background: var(--card); color: var(--ink); box-shadow: var(--shadow-sm); }
+  .cycle-btn:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
+  .saving { margin: 6px 0 0; font-size: 13.5px; font-weight: 600; color: var(--orange); }
   .plan { border: 1px solid var(--line); border-radius: var(--radius); padding: 28px; background: var(--card); box-shadow: var(--shadow-sm); }
   .plan.featured { border-color: color-mix(in srgb, var(--orange) 55%, var(--line)); background: linear-gradient(180deg, var(--tint), var(--card) 42%); position: relative; }
   .plan .tag { position: absolute; top: 20px; right: 20px; font-size: 11px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; color: #fff; background: var(--orange); padding: 4px 10px; border-radius: 999px; }
@@ -273,6 +280,42 @@
     primary.textContent = 'Open Ahenora in your browser';
     secondary.setAttribute('href', 'https://play.google.com/store/apps/details?id=com.householdcoo.app');
     secondary.textContent = 'On Android? Get it on Google Play';
+
+    // The closing call to action was hardcoded to Google Play, so an iPhone
+    // visitor who read the whole page arrived at a store they cannot install
+    // from. Same for the header button.
+    ['cta-final', 'cta-header'].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      el.setAttribute('href', '/app/');
+      el.textContent = el.id === 'cta-header' ? 'Open the app' : 'Open Ahenora in your browser';
+    });
+  });
+
+  // Monthly / yearly. Prices live on the element as data attributes so the
+  // markup ships correct with JavaScript off — what you see before this runs
+  // is the monthly price, which is the honest default.
+  document.addEventListener('DOMContentLoaded', function () {
+    var buttons = document.querySelectorAll('.cycle-btn');
+    if (!buttons.length) return;
+    function show(cycle) {
+      document.querySelectorAll('.price[data-m]').forEach(function (el) {
+        var yearly = cycle === 'yearly';
+        el.innerHTML = (yearly ? el.dataset.y : el.dataset.m) +
+          ' <span>' + (yearly ? el.dataset.yNote : el.dataset.mNote) + '</span>';
+      });
+      document.querySelectorAll('.saving').forEach(function (el) {
+        el.hidden = cycle !== 'yearly';
+      });
+      buttons.forEach(function (b) {
+        var on = b.dataset.cycle === cycle;
+        b.classList.toggle('is-on', on);
+        b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+    }
+    buttons.forEach(function (b) {
+      b.addEventListener('click', function () { show(b.dataset.cycle); });
+    });
   });
 </script>
 </head>
@@ -285,7 +328,7 @@
     <a class="quiet" href="#features">Features</a>
     <a class="quiet" href="#plans">Pricing</a>
     <a class="quiet webapp" href="/app/">Open the web app</a>
-    <a class="btn sm" href="https://play.google.com/store/apps/details?id=com.householdcoo.app">Get the app</a>
+    <a class="btn sm" id="cta-header" href="https://play.google.com/store/apps/details?id=com.householdcoo.app">Get the app</a>
   </div>
 </header>
 
@@ -407,6 +450,14 @@
         <h2>Simple plans</h2>
         <p>Every parent is always free. We only ever meter on household size — never on the features that keep your family coordinated.</p>
       </div>
+      <!-- Monthly / yearly, the same choice the app offers. The saving is shown
+           PER CARD because it is not the same on both: a year of Premium saves
+           40%, a year of Household saves 17%. One badge over the toggle would
+           have been a false claim on one of the two. -->
+      <div class="cycle" role="group" aria-label="Billing period">
+        <button type="button" class="cycle-btn is-on" data-cycle="monthly" aria-pressed="true">Monthly</button>
+        <button type="button" class="cycle-btn" data-cycle="yearly" aria-pressed="false">Yearly</button>
+      </div>
       <div class="plans">
         <div class="plan">
           <h3>Free</h3>
@@ -420,9 +471,13 @@
           </ul>
         </div>
         <div class="plan featured">
-          <span class="tag">Save 40% yearly</span>
+          <span class="tag">Most families</span>
           <h3>Premium</h3>
-          <div class="price">&euro;6.99 <span>/ month &middot; &euro;49.99 / year</span></div>
+          <div class="price"
+               data-m="&euro;6.99" data-m-note="/ month"
+               data-y="&euro;49.99" data-y-note="/ year &middot; &euro;4.17 a month">
+            &euro;6.99 <span>/ month</span></div>
+          <p class="saving" hidden>Saves &euro;33.89 a year &mdash; 40% off monthly</p>
           <ul>
             <li class="lead">Everything in Free, plus:</li>
             <li>Up to 5 children and caregivers</li>
@@ -433,7 +488,11 @@
         </div>
         <div class="plan">
           <h3>Household</h3>
-          <div class="price">&euro;14.99 <span>/ month &middot; &euro;149.99 / year</span></div>
+          <div class="price"
+               data-m="&euro;14.99" data-m-note="/ month"
+               data-y="&euro;149.99" data-y-note="/ year &middot; &euro;12.50 a month">
+            &euro;14.99 <span>/ month</span></div>
+          <p class="saving" hidden>Saves &euro;29.89 a year &mdash; 17% off monthly</p>
           <ul>
             <li class="lead">Everything in Premium, plus:</li>
             <li>Up to 10 children and 20 people</li>
@@ -443,7 +502,7 @@
           </ul>
         </div>
       </div>
-      <p class="cta-note" style="text-align:center; margin-top: 22px;">Prices in euros. Subscribe by card on the web, or through Google Play in the app &mdash; cancel any time, either way.</p>
+      <p class="cta-note" style="text-align:center; margin-top: 22px;">Prices in euros. Subscribe by card on the web &mdash; including on iPhone &mdash; or through Google Play in the Android app. Cancel any time, either way.</p>
     </div>
   </section>
 
@@ -453,7 +512,17 @@
       <p class="lede">
         Add one thing you'd otherwise have to remember. That's the whole first step.
       </p>
-      <a class="btn" href="https://play.google.com/store/apps/details?id=com.householdcoo.app">Get it on Google Play</a>
+      <a class="btn" id="cta-final" href="https://play.google.com/store/apps/details?id=com.householdcoo.app">Get it on Google Play</a>
+      <!-- Said plainly rather than left to be discovered. There is no iPhone
+           app, and an iPhone owner should learn that here and not after
+           searching the App Store for a name that is not in it. What they get
+           instead is the same app in the browser — the identical codebase,
+           with notifications and card payment — so this is a route, not an
+           apology. -->
+      <p class="cta-note" style="margin-top: 16px;">
+        No iPhone app yet &mdash; on iOS, Ahenora runs in your browser at
+        <a href="/app/">ahenora.com/app</a>, with notifications, and card payment.
+      </p>
     </div>
   </section>
 
