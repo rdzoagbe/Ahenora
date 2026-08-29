@@ -45,11 +45,43 @@ INVITER_EMAIL = "smoke-inviter@household-coo.smoke"
 # itself returns — a 4xx, or a 500 from our own code — is passed straight
 # through untouched: swallowing those is precisely how this check would start
 # lying, and a check that lies is worse than no check.
+#
+# One more distinction, which the first version of this missed. Retrying is
+# only free when the call can be made twice without changing anything. A GET
+# can. So can a login, and so can the cleanup, whose whole job is deletion.
+# /auth/register, /family/invite and /family/invite/accept cannot: if the first
+# attempt DID reach the app and the answer was lost on the way back, the retry
+# registers a second account or accepts an invitation twice.
+#
+# For those, only the answers that prove the request never arrived are retried:
+# a 503, which is the edge with nothing behind it to talk to, and a refused
+# connection, which never opened. A 502 or a 504 means the edge did reach a
+# container — it may well have done the work before dying — and a reset
+# mid-flight says the same. Those are reported, not repeated.
 GATEWAY_STATUSES = {502, 503, 504}
+NEVER_DELIVERED = {503}
 GATEWAY_BACKOFF = (3, 6, 9, 12)
 
 
-def call(method, path, body=None, token=None, timeout=30):
+def _never_opened(err):
+    """True when the connection was refused outright, so nothing was sent.
+
+    A refusal is the edge with no container behind it — the safe case. A reset
+    or a timeout happens on a connection that WAS open, and the request may
+    have been served before it broke.
+    """
+    reason = getattr(err, "reason", None)
+    if isinstance(reason, ConnectionRefusedError):
+        return True
+    return "refused" in str(reason).lower()
+
+
+def call(method, path, body=None, token=None, timeout=30, retry_safe=None):
+    """One API call. `retry_safe` says whether repeating it is harmless;
+    GETs are, and anything else has to say so for itself."""
+    if retry_safe is None:
+        retry_safe = method == "GET"
+    retriable = GATEWAY_STATUSES if retry_safe else NEVER_DELIVERED
     req = urllib.request.Request(
         f"{BASE}/api{path}",
         data=json.dumps(body).encode() if body is not None else None,
@@ -65,11 +97,14 @@ def call(method, path, body=None, token=None, timeout=30):
                 return res.status, json.loads(res.read().decode() or "{}")
         except urllib.error.HTTPError as e:
             raw = e.read().decode(errors="replace")
-            if e.code in GATEWAY_STATUSES and pause is not None:
+            if e.code in retriable and pause is not None:
                 print(f"...   {e.code} from the edge on {method} {path}; "
                       f"retrying in {pause}s (deploy cutover?)")
                 time.sleep(pause)
                 continue
+            if e.code in GATEWAY_STATUSES and not retry_safe:
+                print(f"...   {e.code} from the edge on {method} {path}; "
+                      f"not retried — the call may already have gone through")
             try:
                 return e.code, json.loads(raw)
             except Exception:
@@ -78,6 +113,10 @@ def call(method, path, body=None, token=None, timeout=30):
             # Connection refused or reset: the old container is going away.
             # Previously uncaught, so a restart mid-journey ended the run in a
             # traceback rather than a readable line.
+            if not retry_safe and not _never_opened(e):
+                print(f"...   connection lost on {method} {path}: {e.reason}; "
+                      f"not retried — the call may already have gone through")
+                return 0, {"detail": f"connection lost mid-call: {e.reason}"}
             if pause is not None:
                 print(f"...   no connection on {method} {path}: {e.reason}; "
                       f"retrying in {pause}s (deploy cutover?)")
@@ -145,7 +184,8 @@ def main():
         time.sleep(20)
 
     # 2. Inviter: login, or register on the very first run.
-    status, res = call("POST", "/auth/login", {"email": INVITER_EMAIL, "password": PASSWORD})
+    status, res = call("POST", "/auth/login", {"email": INVITER_EMAIL, "password": PASSWORD},
+                       retry_safe=True)
     if status == 401:
         status, res = call("POST", "/auth/register",
                            {"name": "Smoke Inviter", "email": INVITER_EMAIL, "password": PASSWORD})
@@ -204,7 +244,8 @@ def main():
     ok("membership + relationship verified")
 
     # 8. Leave no residue.
-    status, res = call("POST", "/auth/smoke-cleanup", {"family_ids": [family_b]}, token=token_b)
+    status, res = call("POST", "/auth/smoke-cleanup", {"family_ids": [family_b]}, token=token_b,
+                       retry_safe=True)
     if status != 200:
         fail("cleanup", f"{status}: {res}")
     status, res = call("GET", "/family/members", token=token_a)

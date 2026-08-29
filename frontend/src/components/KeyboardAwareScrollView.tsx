@@ -34,6 +34,19 @@ import {
  * contentContainerStyle is never fought with). The room is created first, then
  * the scroll happens — otherwise it would be clamped again.
  *
+ * OPEN QUESTION, deliberately not acted on. Android's manifest sets
+ * `adjustResize`, so in principle the window has ALREADY shrunk by the
+ * keyboard's height by the time this runs, and the spacer then adds that
+ * height a second time — enough empty room below the form to scroll the whole
+ * thing off the top. That reasoning says to drop the spacer on Android.
+ *
+ * The evidence says otherwise: the bug this fixed was reported on Android, and
+ * adjustResize alone did not fix it there. Something — edge-to-edge insets,
+ * the pushed-route host, a modal — is eating the resize. Guessing which, and
+ * removing the spacer on that guess, would bring back a field you cannot see
+ * in order to remove some empty scroll space you can. So the spacer stays
+ * until somebody watches a form on a real handset and says which it is.
+ *
  * Drop-in replacement for ScrollView: same props, forwards the ref.
  */
 export const KeyboardAwareScrollView = forwardRef<ScrollView, ScrollViewProps>(

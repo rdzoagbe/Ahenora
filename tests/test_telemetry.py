@@ -233,5 +233,64 @@ class SmokeCleanup(unittest.TestCase):
         self.assertEqual([u["user_id"] for u in db["users"].rows], ["u_inv"])
 
 
+    def test_the_settings_and_tickets_a_smoke_run_leaves_go_too(self):
+        """Both halves of the cleanup used to name their collections by hand,
+        and both lists were short: user_sessions and notification_tokens, but
+        not notification_settings or support_tickets. So every run left two
+        rows behind for good, and an aborted one left them attached to an
+        account that no longer existed.
+
+        Both halves now go through the same purge the real account-deletion
+        path uses, which knows the full list.
+        """
+        smoke = {"user_id": "u_s", "family_id": "fam1", "name": "Smoke Invitee",
+                 "email": "smoke-abc123@household-coo.smoke"}
+        db = FakeDB(
+            users=FakeColl([{"user_id": "u_s"}, {"user_id": "u_old"},
+                            {"user_id": "u_real"}]),
+            family_members=FakeColl([
+                {"user_id": "u_s", "member_id": "m_now", "family_id": "fam1",
+                 "email": smoke["email"], "role": "Smoke test"},
+                {"user_id": "u_old", "member_id": "m_stale", "family_id": "fam1",
+                 "email": "smoke-deadbeef@household-coo.smoke", "role": "Smoke test"},
+                {"user_id": "u_real", "member_id": "m_real", "family_id": "fam1",
+                 "email": "someone@example.com", "role": "Parent"},
+            ]),
+            notification_settings=FakeColl([
+                {"user_id": "u_s"}, {"user_id": "u_old"}, {"user_id": "u_real"}]),
+            support_tickets=FakeColl([
+                {"user_id": "u_s"}, {"user_id": "u_old"}, {"user_id": "u_real"}]),
+            families=FakeColl([{"family_id": "fam1"}]),
+        )
+        server.get_db = lambda: db
+        asyncio.run(server.smoke_cleanup(server.SmokeCleanupIn(), user=smoke))
+        # The caller's own rows and the aborted run's rows are both gone; the
+        # real household member keeps hers.
+        self.assertEqual([r["user_id"] for r in db["notification_settings"].rows],
+                         ["u_real"])
+        self.assertEqual([r["user_id"] for r in db["support_tickets"].rows],
+                         ["u_real"])
+
+    def test_an_accepted_invitation_to_a_smoke_address_is_cleared_too(self):
+        """The shared purge keeps a real user's accepted invitation as history.
+        A smoke address has no history worth keeping, and an accepted one left
+        lying around is what latches the next run red."""
+        smoke = {"user_id": "u_s", "family_id": "fam1",
+                 "email": "smoke-abc123@household-coo.smoke"}
+        db = FakeDB(
+            users=FakeColl([{"user_id": "u_s"}]),
+            family_members=FakeColl([]),
+            family_invites=FakeColl([
+                {"email": smoke["email"], "invite_id": "i_done", "status": "accepted"},
+                {"email": "someone@example.com", "invite_id": "i_keep",
+                 "status": "accepted"},
+            ]),
+            families=FakeColl([{"family_id": "fam1"}]),
+        )
+        server.get_db = lambda: db
+        asyncio.run(server.smoke_cleanup(server.SmokeCleanupIn(), user=smoke))
+        self.assertEqual([i["invite_id"] for i in db["family_invites"].rows], ["i_keep"])
+
+
 if __name__ == "__main__":
     unittest.main()

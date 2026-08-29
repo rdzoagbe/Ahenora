@@ -65,10 +65,17 @@ class SmokeRetry(unittest.TestCase):
 
     def test_a_502_during_cutover_is_retried_and_then_succeeds(self):
         calls = self._serve([_http_error(502), _http_error(502), _Res(200, b'{"ok": true}')])
-        status, body = prod_smoke.call("POST", "/auth/smoke-cleanup")
+        status, body = prod_smoke.call("GET", "/health")
         self.assertEqual(status, 200)
         self.assertEqual(body, {"ok": True})
         self.assertEqual(calls["n"], 3)
+
+    def test_a_call_that_declares_itself_safe_is_retried_even_though_it_posts(self):
+        """Cleanup deletes; doing it twice is doing it once."""
+        calls = self._serve([_http_error(502), _Res(200, b'{"ok": true}')])
+        status, _ = prod_smoke.call("POST", "/auth/smoke-cleanup", retry_safe=True)
+        self.assertEqual(status, 200)
+        self.assertEqual(calls["n"], 2)
 
     def test_a_refused_connection_is_retried_too(self):
         """The old container going away. Previously uncaught, so a restart
@@ -107,6 +114,88 @@ class SmokeRetry(unittest.TestCase):
                 status, _ = prod_smoke.call("GET", "/x")
                 self.assertEqual(status, code)
                 self.assertEqual(calls["n"], 1)
+
+
+
+class SmokeRetryIsNotBlind(unittest.TestCase):
+    """A retry is only free when the call can be made twice.
+
+    The version before this one retried every gateway answer on every method.
+    A 502 is the edge reporting that it DID reach a container and got a bad
+    answer back — the register or the invite-accept may already have run. So
+    the retry could register the invitee twice, or accept an invitation twice,
+    and the check would then report a failure that it had caused itself.
+    """
+
+    def setUp(self):
+        self._urlopen = prod_smoke.urllib.request.urlopen
+        self._sleep = prod_smoke.time.sleep
+        prod_smoke.time.sleep = lambda *_: None
+
+    def tearDown(self):
+        prod_smoke.urllib.request.urlopen = self._urlopen
+        prod_smoke.time.sleep = self._sleep
+
+    def _serve(self, sequence):
+        seq = list(sequence)
+        calls = {"n": 0}
+
+        def fake(req, timeout=None):
+            calls["n"] += 1
+            item = seq.pop(0)
+            if isinstance(item, Exception):
+                raise item
+            return item
+        prod_smoke.urllib.request.urlopen = fake
+        return calls
+
+    def test_a_post_is_not_repeated_after_a_502(self):
+        calls = self._serve([_http_error(502), _Res(200)])
+        status, _ = prod_smoke.call("POST", "/auth/register", {"email": "a@b.c"})
+        self.assertEqual(status, 502)
+        self.assertEqual(calls["n"], 1)
+
+    def test_a_post_is_not_repeated_after_a_504(self):
+        """A timeout is the worst case of all: the work very likely happened."""
+        calls = self._serve([_http_error(504), _Res(200)])
+        status, _ = prod_smoke.call("POST", "/family/invite/accept", {"token": "t"})
+        self.assertEqual(status, 504)
+        self.assertEqual(calls["n"], 1)
+
+    def test_a_post_is_repeated_after_a_503_because_nothing_was_listening(self):
+        """The edge with no container behind it. The request never arrived, so
+        sending it again cannot duplicate anything — and this is the common
+        shape of a Railway cutover, so it is worth keeping."""
+        calls = self._serve([_http_error(503), _Res(200, b'{"ok": true}')])
+        status, _ = prod_smoke.call("POST", "/family/invite", {"email": "a@b.c"})
+        self.assertEqual(status, 200)
+        self.assertEqual(calls["n"], 2)
+
+    def test_a_post_is_repeated_when_the_connection_was_refused(self):
+        calls = self._serve([
+            urllib.error.URLError(ConnectionRefusedError(111, "Connection refused")),
+            _Res(200),
+        ])
+        status, _ = prod_smoke.call("POST", "/family/invite", {"email": "a@b.c"})
+        self.assertEqual(status, 200)
+        self.assertEqual(calls["n"], 2)
+
+    def test_a_post_is_not_repeated_when_the_connection_broke_mid_call(self):
+        """A reset means the socket was open — the request went out."""
+        calls = self._serve([urllib.error.URLError("Connection reset by peer"), _Res(200)])
+        status, body = prod_smoke.call("POST", "/auth/register", {"email": "a@b.c"})
+        self.assertEqual(status, 0)
+        self.assertIn("mid-call", body["detail"])
+        self.assertEqual(calls["n"], 1)
+
+    def test_a_get_is_still_retried_on_anything_gateway_shaped(self):
+        for item in (_http_error(502), _http_error(504),
+                     urllib.error.URLError("Connection reset by peer")):
+            with self.subTest(item=item):
+                calls = self._serve([item, _Res(200)])
+                status, _ = prod_smoke.call("GET", "/health")
+                self.assertEqual(status, 200)
+                self.assertEqual(calls["n"], 2)
 
 
 if __name__ == "__main__":
