@@ -12,7 +12,7 @@ export default function PrivacyScreen() {
         {
           title: 'Who is responsible for your data',
           body: [
-            'Ahenora is built and operated by Roland Dzoagbe, established in France, who is the data controller for the purposes of the EU General Data Protection Regulation. Contact: rolanddzoagbe@gmail.com.',
+            'Ahenora is built and operated by Roland Dzoagbe, established in France, who is the data controller for the purposes of the EU General Data Protection Regulation. Contact: privacy@ahenora.com.',
             'There is no advertising network in Ahenora, no data broker, and no sale of personal data — not as a policy we might revise, but because the app has no mechanism to do it.',
           ],
         },
@@ -46,7 +46,7 @@ export default function PrivacyScreen() {
             'A young child appears in Ahenora only as a profile that a parent or guardian creates and controls: a name, optionally an age, a PIN, stars and rewards, and notes a parent writes for them. That information is provided by the parent, who consents on the child\'s behalf and can see, correct or delete all of it at any time from within the app.',
             'Kid mode is a restricted view on a parent\'s own device. It shows a child their own chores, stars and notes. It cannot reach household data, cannot send messages, and cannot make any change that matters. A child never signs in.',
             'A teenager aged 13 or over may be invited to hold their own account. A teen sees their own schedule, chores and conversation with their parents, and nothing else about the household — not the family calendar, not expenses, not the vault. That boundary is enforced on the server for every request, and it is a promise we make to the teenager as much as to the parent.',
-            'We do not knowingly collect personal information from a child directly. If you believe a child has provided us information without a parent\'s involvement, email rolanddzoagbe@gmail.com and we will delete it.',
+            'We do not knowingly collect personal information from a child directly. If you believe a child has provided us information without a parent\'s involvement, email privacy@ahenora.com and we will delete it.',
           ],
         },
         {
@@ -87,7 +87,7 @@ export default function PrivacyScreen() {
         {
           title: 'Your rights',
           body: [
-            'You can ask us for a copy of your data, to correct it, to delete it, to restrict or object to how we use it, or to receive it in a portable form. Email rolanddzoagbe@gmail.com and we will respond within one month.',
+            'You can ask us for a copy of your data, to correct it, to delete it, to restrict or object to how we use it, or to receive it in a portable form. Email privacy@ahenora.com and we will respond within one month.',
             'Where we rely on your consent, you can withdraw it at any time — that does not undo what was done while it was given.',
             'We do not sell personal information and we do not share it for cross-context behavioural advertising.',
             'If you think we have got this wrong, you can complain to a data protection authority. Ours is the CNIL, the French Commission nationale de l\'informatique et des libertés. If you live elsewhere in the EU or in the UK, you can complain to the authority in your own country instead.',
@@ -104,10 +104,10 @@ export default function PrivacyScreen() {
         },
         {
           title: 'Changes and contact',
-          body: 'We will announce material changes in the app before they take effect, and update the date at the top of this policy. For any privacy or deletion request, contact rolanddzoagbe@gmail.com and include the email address your Ahenora account uses, so we can match the request to the right account.',
+          body: 'We will announce material changes in the app before they take effect, and update the date at the top of this policy. For any privacy or deletion request, contact privacy@ahenora.com and include the email address your Ahenora account uses, so we can match the request to the right account.',
         },
       ]}
-      footer={'This policy applies to the current version of Ahenora. Contact rolanddzoagbe@gmail.com with any questions.'}
+      footer={'This policy applies to the current version of Ahenora. Contact privacy@ahenora.com with any questions.'}
     />
   );
 }

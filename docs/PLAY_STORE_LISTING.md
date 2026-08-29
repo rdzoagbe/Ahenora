@@ -57,7 +57,7 @@ Start free with the Village plan. Bring calm to your household — try Ahenora t
 *(Play has no separate keyword field — ranking comes from the title + short + full
 description above, so that copy is where the keyword work actually lands.)*
 
-**Contact email:** rolanddzoagbe@gmail.com
+**Contact email:** support@ahenora.com
 
 **Website** (optional): your GitHub Pages URL or leave blank
 
@@ -126,7 +126,7 @@ Answers based on how the app actually works.
 **Is all data encrypted in transit?** Yes (all API traffic is HTTPS).
 
 **Do you provide a way for users to request that their data be deleted?** Yes
-(in-app Account deletion screen + email request to rolanddzoagbe@gmail.com).
+(in-app Account deletion screen + email request to privacy@ahenora.com).
 
 **Data types collected** (all used for App functionality / Account management,
 **not** for advertising or third-party marketing):

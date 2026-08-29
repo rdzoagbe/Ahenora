@@ -67,12 +67,12 @@ export default function TermsScreen() {
           body: [
             'Ahenora is operated from France. These terms, and any dispute arising out of them or out of your use of the app, are governed by French law, and the French courts have jurisdiction.',
             'If you are a consumer, none of that takes anything away from you. You keep every mandatory protection given to you by the law of the country where you live, and you may bring proceedings in the courts of that country. We will only bring a claim against a consumer in the courts of the country where they live.',
-            'Before any of that, please write to rolanddzoagbe@gmail.com. Almost everything is settled that way, and we would rather settle it that way.',
+            'Before any of that, please write to support@ahenora.com. Almost everything is settled that way, and we would rather settle it that way.',
           ],
         },
         {
           title: 'Support',
-          body: 'For support, deletion requests, or privacy questions, contact rolanddzoagbe@gmail.com. Include your Ahenora account email and a short description of the issue.',
+          body: 'For support, contact support@ahenora.com. For privacy, data-protection or deletion requests, contact privacy@ahenora.com. Include your Ahenora account email and a short description of the issue.',
         },
       ]}
       footer={'These terms may be updated as Ahenora evolves. Material changes will be announced in the app before they take effect.'}
