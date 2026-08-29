@@ -1,39 +1,72 @@
-# Household COO 🏡
+# Ahenora 🏡
 
-**Run your household, calmly.** Household COO is a family-organization app for Android: shared tasks and reminders, a family calendar, kids' chores with star rewards, document scanning with AI, a secure document vault, meal planning, and shopping lists — all in one place.
+**Run your household, calmly.** Ahenora is a family-organisation app: shared tasks and
+reminders, a family calendar, kids' chores with star rewards, document scanning with AI,
+a secure document vault, meal planning, shopping lists and grocery spending — all in one
+private place.
 
-Available in **English, French, Spanish, and German**.
+Built for every shape of family — solo parents, co-parents and busy households.
 
-## 📱 Become a tester
+Available in **English, French, Spanish and German**.
 
-The app is in **closed testing on Google Play** ahead of its public launch — and we'd love your help. Android users only.
+## 📲 Get it
 
-1. **Send your Gmail** (the address your Play Store uses) to **rolanddzoagbe@gmail.com** with the subject *"COO tester"*
-2. Once you're added, open the opt-in link and tap **Become a tester**:
-   👉 https://play.google.com/apps/testing/com.householdcoo.app
-3. Install the app from the Play Store and use it for two weeks:
-   👉 https://play.google.com/store/apps/details?id=com.householdcoo.app
+- **Android:** [Google Play](https://play.google.com/store/apps/details?id=com.householdcoo.app)
+- **Any browser:** [ahenora.com](https://ahenora.com) — the same app, no install
 
-Honest feedback — what's confusing, broken, or missing — is exactly what we need. Thank you! 🙏
+## ✨ What it does
 
-## ✨ Features
+- **Smart Feed** — the household's day at a glance: overdue, due today, what's ahead
+- **Family calendar** — shared events, optional Google and Outlook import, alternating custody
+- **Kids & chores** — assign chores, award stars, redeem rewards, optional child PINs and a
+  kid-only mode on a shared phone
+- **Teen accounts** — a teenager gets their own login and sees only their own life
+- **AI document scan** — photograph a school letter, bill or appointment card and it becomes
+  a task with a date
+- **Secure vault** — household documents by category, with expiry alerts and per-item privacy
+- **Meal planner & shopping list** — plan the week, send the ingredients to the list, or
+  photograph a paper list and have it read
+- **Grocery spending** — scan a receipt and it reads the shop, the total and every line, so the
+  shopping list can say where a thing is cheaper per kilo
+- **Handoff notes, announcements and chat** — keep the household, and a co-parent, in the loop
+- **Carpool, gift pots and Secret Santa** — the seasonal jobs a family actually has
+- **Morning digest** — a daily notification with what is due today
+- **Works offline** — tick things off with no signal; it syncs when you are back
 
-- **Smart Feed** — your household's day at a glance: overdue, due today, and upcoming
-- **AI document scan** — photograph a school letter, bill, or appointment card and it becomes an actionable task
-- **Kids & chores** — assign chores, award stars, redeem rewards (with optional child PINs)
-- **Family calendar** — shared events, with optional Google Calendar import
-- **Secure vault** — store household documents by category, with expiry alerts
-- **Meal planner & shopping list** — plan the week, sync ingredients to the list
-- **Handoff notes & announcements** — keep the whole household in the loop
-- **Morning digest** — a daily 7:30 notification with what's due today
+## 💳 Plans
+
+Every parent is always free. Metering is on household size, never on the features that keep a
+family coordinated. Prices in euros; pay by card on the web or through Google Play in the app.
+
+| | Free | Premium | Household |
+|---|---|---|---|
+| | €0 | €6.99 / mo · €49.99 / yr | €14.99 / mo · €149.99 / yr |
+| People | 2 adults + 2 children | up to 12, 5 children | up to 20, 10 children |
+| Tasks, calendar, lists | ✅ | ✅ | ✅ |
+| Chores, stars, rewards | ✅ | ✅ | ✅ |
+| Meal planner & recipe AI | — | ✅ | ✅ |
+| Pocket money & weekly report | — | ✅ | ✅ |
+| Carpool | — | ✅ | ✅ |
+| Document vault | 25 MB | 500 MB | 10 GB |
+| AI scans / month | 5 | 100 | unlimited |
+| Helper & nanny accounts | — | — | ✅ |
+| More than one property | — | — | ✅ |
+| Priority support | — | — | ✅ |
 
 ## 🛠 Tech
 
-- **App:** React Native + Expo (SDK 54), TypeScript, expo-router
+- **App:** React Native + Expo (SDK 57), TypeScript, expo-router — one codebase for Android
+  and the web
 - **Backend:** FastAPI + MongoDB, deployed on Railway
-- **Delivery:** EAS Build & OTA Updates via GitHub Actions
+- **Billing:** RevenueCat for Google Play, Stripe Checkout for the web
+- **Delivery:** every merge to `main` reaches all three destinations by itself — the website,
+  production app users, and the preview channel
+- **Checks:** ~800 backend tests, a frontend suite, and 15 browser harnesses that drive the
+  real web build in Chromium
 
 ## 📄 Legal
 
-- [Privacy Policy](https://rdzoagbe.github.io/Ahenora/privacy.html)
+- [Privacy Policy](https://ahenora.com/privacy.html)
+- [Terms](https://ahenora.com/terms.html)
+- [Delete your account](https://ahenora.com/delete-account.html)
 - Contact: rolanddzoagbe@gmail.com
