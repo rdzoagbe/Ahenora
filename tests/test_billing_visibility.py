@@ -238,7 +238,7 @@ class TheSweepHealsAMissedWebhook(unittest.TestCase):
             [{"user_id": "u_payer", "family_id": "famB"}],
         )
         self._answer({"u_payer": subscriber()})
-        res = asyncio.run(server.sweep_billing_once(self.db, "sk", 50))
+        res = asyncio.run(server.sweep_billing_once(self.db, 50, "sk"))
 
         self.assertEqual(res["corrected"], 1)
         fam = asyncio.run(self.db["families"].find_one({"family_id": "famB"}))
@@ -251,7 +251,7 @@ class TheSweepHealsAMissedWebhook(unittest.TestCase):
             [{"user_id": "u_payer", "family_id": "famB"}],
         )
         self._answer({"u_payer": subscriber()})
-        asyncio.run(server.sweep_billing_once(self.db, "sk", 50))
+        asyncio.run(server.sweep_billing_once(self.db, 50, "sk"))
 
         rows = asyncio.run(self._events())
         self.assertEqual(len(rows), 1)
@@ -271,7 +271,7 @@ class TheSweepHealsAMissedWebhook(unittest.TestCase):
             [{"user_id": "u_card", "family_id": "famPaid"}],
         )
         self._answer({"u_card": subscriber(active=False)})
-        asyncio.run(server.sweep_billing_once(self.db, "sk", 50))
+        asyncio.run(server.sweep_billing_once(self.db, 50, "sk"))
 
         fam = asyncio.run(self.db["families"].find_one({"family_id": "famPaid"}))
         self.assertEqual(fam["plan"], "executive")
@@ -287,7 +287,7 @@ class TheSweepHealsAMissedWebhook(unittest.TestCase):
              {"user_id": "u_coparent", "family_id": "famB"}],
         )
         self._answer({"u_coparent": subscriber()})
-        res = asyncio.run(server.sweep_billing_once(self.db, "sk", 50))
+        res = asyncio.run(server.sweep_billing_once(self.db, 50, "sk"))
 
         self.assertEqual(res["corrected"], 1)
         self.assertIn("u_coparent", self.asked)
@@ -304,7 +304,7 @@ class TheSweepHealsAMissedWebhook(unittest.TestCase):
              {"user_id": "u_payer", "family_id": "fam2"}],
         )
         self._answer({"u_payer": subscriber()})
-        res = asyncio.run(server.sweep_billing_once(self.db, "sk", 50))
+        res = asyncio.run(server.sweep_billing_once(self.db, 50, "sk"))
 
         self.assertEqual(res["checked"], 2)
         self.assertEqual(res["corrected"], 1)
@@ -320,12 +320,12 @@ class TheSweepHealsAMissedWebhook(unittest.TestCase):
         )
         self._answer({"u3": subscriber()})
 
-        first = asyncio.run(server.sweep_billing_once(self.db, "sk", 2))
+        first = asyncio.run(server.sweep_billing_once(self.db, 2, "sk"))
         self.assertEqual(first["checked"], 2)
         self.assertEqual(first["candidates"], 4)
         seen_first = list(self.asked)
 
-        second = asyncio.run(server.sweep_billing_once(self.db, "sk", 2))
+        second = asyncio.run(server.sweep_billing_once(self.db, 2, "sk"))
         self.assertEqual(second["checked"], 2)
         # The second pass asks the two nobody asked the first time.
         self.assertEqual(set(self.asked[len(seen_first):]) & set(seen_first), set())
@@ -355,12 +355,31 @@ class TheSweepHealsAMissedWebhook(unittest.TestCase):
         server._fetch_rc_subscriber = leaky
 
         with self.assertLogs(server.log, level="INFO") as caught:
-            asyncio.run(server.sweep_billing_once(self.db, key, 50))
+            asyncio.run(server.sweep_billing_once(self.db, 50, key))
 
         blob = "\n".join(caught.output)
         self.assertNotIn(key, blob)
         # Still diagnosable: the status survives.
         self.assertIn("502", blob)
+
+    def test_a_pass_with_no_key_configured_does_nothing_quietly(self):
+        """The scheduler no longer checks for the key before calling — the pass
+        owns that, so it has to answer sensibly when there is none."""
+        self._seed(
+            [{"family_id": "famB", "plan": "village"}],
+            [{"user_id": "u_payer", "family_id": "famB"}],
+        )
+        self._answer({"u_payer": subscriber()})
+        real = os.environ.pop("REVENUECAT_SECRET_KEY", None)
+        try:
+            res = asyncio.run(server.sweep_billing_once(self.db, 50))
+        finally:
+            if real is not None:
+                os.environ["REVENUECAT_SECRET_KEY"] = real
+        self.assertEqual(res, {"checked": 0, "corrected": 0, "candidates": 0})
+        self.assertEqual(self.asked, [])
+        fam = asyncio.run(self.db["families"].find_one({"family_id": "famB"}))
+        self.assertEqual(fam["plan"], "village")
 
     def test_a_household_product_lifts_to_the_top_tier(self):
         self._seed(
@@ -368,7 +387,7 @@ class TheSweepHealsAMissedWebhook(unittest.TestCase):
             [{"user_id": "u_payer", "family_id": "famB"}],
         )
         self._answer({"u_payer": subscriber(product="ahenora_household_monthly")})
-        asyncio.run(server.sweep_billing_once(self.db, "sk", 50))
+        asyncio.run(server.sweep_billing_once(self.db, 50, "sk"))
 
         fam = asyncio.run(self.db["families"].find_one({"family_id": "famB"}))
         self.assertEqual(fam["plan"], "household")
@@ -380,7 +399,7 @@ class TheSweepHealsAMissedWebhook(unittest.TestCase):
             [{"user_id": "u_payer", "family_id": "famB"}],
         )
         self._answer({})
-        res = asyncio.run(server.sweep_billing_once(self.db, "sk", 50))
+        res = asyncio.run(server.sweep_billing_once(self.db, 50, "sk"))
         self.assertEqual(res, {"checked": 0, "corrected": 0, "candidates": 0})
 
 

@@ -9130,13 +9130,21 @@ BILLING_SWEEP_INTERVAL = int(os.environ.get("BILLING_SWEEP_INTERVAL", str(6 * 36
 BILLING_SWEEP_BUDGET = int(os.environ.get("BILLING_SWEEP_BUDGET", "200"))
 
 
-async def sweep_billing_once(database: Any, secret: str, budget: int) -> dict:
+async def sweep_billing_once(database: Any, budget: int, secret: str = "") -> dict:
     """One pass: ask RevenueCat about the adults of households that read free.
 
     Only unpaid households are candidates, because those are the ones where a
     missed webhook costs money. Within them every adult is a candidate, since
     app_user_id is whoever actually pressed buy — not necessarily the founder.
+
+    The key is read HERE rather than handed in. The scheduler above has no use
+    for it — it only needs to know how many households were corrected — and a
+    caller that never holds the key cannot leak it, which is the whole lesson of
+    the exception handlers below. Tests pass one explicitly.
     """
+    secret = secret or os.environ.get("REVENUECAT_SECRET_KEY", "")
+    if not secret:
+        return {"checked": 0, "corrected": 0, "candidates": 0}
     unpaid: set = set()
     async for fam in database["families"].find({}, {"_id": 0, "family_id": 1, "plan": 1}):
         if (fam.get("plan") or "village") == "village" and fam.get("family_id"):
@@ -9207,19 +9215,17 @@ async def sweep_billing_once(database: Any, secret: str, budget: int) -> dict:
 
 
 async def _billing_sweep_loop():
+    # The key is deliberately absent from this scope. The pass fetches its own,
+    # so nothing here — not the counts it returns, not an exception escaping it
+    # — can carry the key into a log line.
     while True:
         await asyncio.sleep(BILLING_SWEEP_INTERVAL)
-        secret = os.environ.get("REVENUECAT_SECRET_KEY", "")
-        if not secret:
-            continue
         try:
-            result = await sweep_billing_once(get_db(), secret, BILLING_SWEEP_BUDGET)
+            result = await sweep_billing_once(get_db(), BILLING_SWEEP_BUDGET)
             if result["corrected"]:
                 log.warning("billing sweep: corrected %s household(s) of %s checked",
                             result["corrected"], result["checked"])
         except Exception as e:  # a pass must never kill the loop
-            # The type, not the exception: this call was handed the RevenueCat
-            # key, so anything raised out of it is a possible carrier for it.
             log.warning("billing sweep pass failed: %s", type(e).__name__)
 
 
