@@ -949,6 +949,36 @@ export interface PlanAdoption {
   active_free_premium_families: number;
 }
 
+/**
+ * One thing a payment provider told us. The unmatched rows are the point: a
+ * webhook we answered 200 to but could not place is a purchase that reached
+ * nobody, and the provider will never send it again.
+ */
+export interface BillingEvent {
+  source: 'revenuecat' | 'stripe' | 'sweep' | string;
+  event_type: string;
+  matched: boolean;
+  family_id: string | null;
+  app_user_id: string | null;
+  product_id: string | null;
+  plan: string | null;
+  detail: string | null;
+  received_at: string | null;
+}
+
+export interface BillingEventLog {
+  revenuecat_configured: boolean;
+  stripe_configured: boolean;
+  sweep_enabled: boolean;
+  /** False means nothing has EVER arrived — the webhook is not pointed at us. */
+  ever_received: boolean;
+  last_event_at: string | null;
+  total: number;
+  unmatched: number;
+  by_source: Record<string, number>;
+  events: BillingEvent[];
+}
+
 export interface Subscriber {
   family_id: string;
   plan: string;
@@ -1431,6 +1461,8 @@ export const api = {
     request<PlanAdoption>('/admin/plan-adoption'),
   getSubscribers: () =>
     request<SubscriberList>('/admin/subscribers'),
+  getBillingEvents: (limit = 40) =>
+    request<BillingEventLog>(`/admin/billing-events?limit=${limit}`),
   listInvites: () => request<FamilyInvite[]>('/family/invites'),
   completeInvite: (inviteId: string) => {
     invalidateUsageCaches();
