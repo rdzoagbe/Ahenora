@@ -1,12 +1,26 @@
 name: Preview update (private OTA)
 
-# Manually-triggered over-the-air update to the *preview* channel only.
+# Over-the-air update to the *preview* channel only.
 # Publishes whatever is on the chosen branch to the "preview" EAS branch, so a
 # device running a preview build picks it up in ~1 minute — without a rebuild,
 # without a Play submit, and WITHOUT touching production users (they are on the
-# separate "production" channel). Trigger from the draft branch to preview
-# work-in-progress privately.
+# separate "production" channel).
+#
+# It runs on every merge to main, because the three places this app reaches
+# people should never be able to drift apart: the website, production users,
+# and the preview device. The other two already published themselves on a merge
+# — only this one waited to be asked, so the preview build was current exactly
+# as often as somebody remembered to ask. That is not a delivery mechanism, it
+# is a habit, and it is the same shape of gap that left ahenora.com three days
+# stale while every check stayed green.
+#
+# workflow_dispatch stays, for previewing a draft branch before it merges.
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/preview-update.yml'
   workflow_dispatch:
     inputs:
       message:
@@ -63,5 +77,5 @@ jobs:
             --platform android \
             --branch preview \
             --environment preview \
-            --message "${{ github.event.inputs.message }} ($GITHUB_SHA)" \
+            --message "${{ github.event.inputs.message || 'merge to main' }} ($GITHUB_SHA)" \
             --non-interactive
