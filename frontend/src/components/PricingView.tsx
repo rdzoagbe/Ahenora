@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -73,6 +73,35 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
   useEffect(() => {
     subRef.current = subscription;
   }, [subscription]);
+
+  /**
+   * Wait for the plan the person just paid for to actually arrive.
+   *
+   * Neither store tells this app anything. Google Play tells RevenueCat,
+   * RevenueCat tells our server, and our server tells us — so at the moment
+   * purchasePackage resolves, the backend usually still says "village".
+   *
+   * The old native path read once, immediately, and then said "Purchase
+   * complete" whatever came back. Two things made that wrong. The read was
+   * served from the 30-second response cache — filled seconds earlier when the
+   * buyer opened this very screen — so it returned the free plan even when the
+   * server already knew better. And the message claimed success while the
+   * screen behind it still showed Free, which is the worst moment in the whole
+   * app to be told something that is not true.
+   *
+   * The web checkout path already did this properly. This is the same thing:
+   * bust the cache, ask a few times, and say plainly when it has not landed
+   * yet rather than celebrating.
+   */
+  const waitForPaidPlan = useCallback(async (): Promise<boolean> => {
+    for (let i = 0; i < 6; i++) {
+      bustSubscriptionCache();
+      await refreshSubscription().catch(() => undefined);
+      if (subRef.current?.plan && subRef.current.plan !== 'village') return true;
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+    return false;
+  }, [refreshSubscription]);
 
   const handleChoose = async (plan: Plan) => {
     if (!user) {
@@ -149,8 +178,13 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
       }
       if (res.cancelled) return;
       if (res.ok && res.premium) {
-        await refreshSubscription().catch(() => undefined);
-        Alert.alert(t('price_purchase_done_title'), t('price_purchase_done_msg'));
+        // The store says it went through. Whether OUR side knows yet is a
+        // separate question, and the honest answer is worth waiting for.
+        if (await waitForPaidPlan()) {
+          Alert.alert(t('price_purchase_done_title'), t('price_purchase_done_msg'));
+        } else {
+          Alert.alert(t('price_checkout_pending_title'), t('price_checkout_pending_msg'));
+        }
       } else {
         Alert.alert(t('price_purchase_failed_title'), t('price_purchase_failed_msg'));
       }
@@ -210,13 +244,7 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
     (async () => {
       // Poll until the plan lifts off free — any paid tier counts (Family OR
       // Household), so a Household buyer isn't left waiting the full window.
-      let paid = false;
-      for (let i = 0; i < 6; i++) {
-        bustSubscriptionCache();
-        await refreshSubscription().catch(() => undefined);
-        if (subRef.current?.plan && subRef.current.plan !== 'village') { paid = true; break; }
-        await new Promise((r) => setTimeout(r, 2000));
-      }
+      const paid = await waitForPaidPlan();
       // Only celebrate if the plan actually changed. If the webhook hasn't
       // landed yet, say so honestly rather than claiming a purchase that the
       // screen still shows as free.
@@ -226,7 +254,7 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
         Alert.alert(t('price_checkout_pending_title'), t('price_checkout_pending_msg'));
       }
     })();
-  }, [onWeb, refreshSubscription, t]);
+  }, [onWeb, refreshSubscription, waitForPaidPlan, t]);
 
   const handleRestore = async () => {
     if (!user || busy) return;
@@ -246,8 +274,13 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
         return;
       }
       if (res.ok && res.premium) {
-        await refreshSubscription().catch(() => undefined);
-        Alert.alert(t('price_purchase_done_title'), t('price_purchase_done_msg'));
+        // Restoring has the same lag as buying: the receipt replay reaches
+        // RevenueCat, which reaches our server, which is who we ask.
+        if (await waitForPaidPlan()) {
+          Alert.alert(t('price_purchase_done_title'), t('price_purchase_done_msg'));
+        } else {
+          Alert.alert(t('price_checkout_pending_title'), t('price_checkout_pending_msg'));
+        }
       } else {
         Alert.alert(t('price_restore_title'), t('price_restore_none'));
       }

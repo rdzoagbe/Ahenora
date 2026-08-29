@@ -59,6 +59,7 @@ HARNESSES = [
     # range where layouts actually break went unchecked.
     "e2e_smallscreen.py",
     "e2e_offline.py",
+    "e2e_calendar.py",
     "e2e_webupdate.py",
     "e2e_journey.py",
 ]

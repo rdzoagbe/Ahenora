@@ -57,6 +57,9 @@ from ai_safety import (
     validate_chef_answer,
     SHOPPING_SCAN_SYSTEM_PROMPT,
     validate_shopping_scan,
+    RECEIPT_SCAN_SYSTEM_PROMPT,
+    validate_receipt_scan,
+    RECEIPT_UNITS,
     RECIPE_PHOTO_SYSTEM_PROMPT,
     validate_captured_recipe,
     VAULT_CATEGORIES,
@@ -2595,6 +2598,11 @@ INDEXES = {
     "family_invites": ["family_id", "email", "token"],
     "cards": ["family_id", "card_id"],
     "notification_tokens": ["user_id"],
+    # The billing log is read newest-first and trimmed by event_id.
+    "billing_events": ["received_at", "event_id"],
+    # Price history is read by product across shops, and by expense when one
+    # is deleted.
+    "expense_items": ["family_id", "name_key", "expense_id"],
 }
 
 
@@ -2931,6 +2939,23 @@ class ShoppingItemPatchIn(BaseModel):
     category: Optional[str] = None
 
 
+class ExpenseLineIn(BaseModel):
+    """One product on a receipt.
+
+    The unit matters more than it looks. A price is only comparable against
+    another shop once it is per kilo or per litre — 1.20 against 0.89 says
+    nothing while one is a 500g bag and the other a kilo, and a comparison
+    that ignores that is worse than no comparison, because it is confident.
+    So the amount and its unit travel with the price, and a line that has no
+    usable amount is stored as spending with no unit price at all rather than
+    being quietly given one.
+    """
+    name: str = Field(max_length=40)
+    qty: Optional[float] = Field(default=None, ge=0, le=100000)
+    unit: str = "piece"
+    line_total: float = Field(ge=0, le=10000)
+
+
 class ExpenseIn(BaseModel):
     description: str = ""
     # A negative expense silently skews the split totals; nobody spends a
@@ -2948,6 +2973,11 @@ class ExpenseIn(BaseModel):
     # Split 50/50 with the co-parent — a shared cost the two of them square up on.
     # Off by default: an ordinary household expense is nobody's debt.
     split: bool = False
+    # The lines on the receipt, when there was a receipt to read. Optional: an
+    # expense typed by hand has a total and nothing else, and always will.
+    # Capped at the same ceiling the scan validates to.
+    items: list[ExpenseLineIn] = Field(default=[], max_length=80)
+
 
 
 class TemplateIn(BaseModel):
@@ -8850,6 +8880,84 @@ async def set_custody(payload: CustodyConfigIn, user=Depends(require_full_member
 RC_PREMIUM_EVENTS = {"INITIAL_PURCHASE", "RENEWAL", "UNCANCELLATION", "PRODUCT_CHANGE", "NON_RENEWING_PURCHASE"}
 RC_DOWNGRADE_EVENTS = {"EXPIRATION"}
 
+# How many billing events to keep. They exist to answer "did the money reach
+# us", which is a question about the last few weeks, not about all time.
+BILLING_EVENT_KEEP = int(os.environ.get("BILLING_EVENT_KEEP", "500"))
+
+
+def rc_plan_from_product(product: Optional[str]) -> tuple[str, str]:
+    """Which plan and cycle a store product grants.
+
+    The same three lines had been written out at each of the three places that
+    needed them — the webhook, the reconcile endpoint, and now the sweep — so a
+    new product naming convention would have had to be remembered in three
+    places or silently disagree in one.
+    """
+    pid = (product or "").lower()
+    return ("household" if "household" in pid else "executive",
+            "yearly" if ("year" in pid or "annual" in pid) else "monthly")
+
+
+async def record_billing_event(
+    database: Any,
+    *,
+    source: str,
+    event_type: str,
+    matched: bool,
+    family_id: Optional[str] = None,
+    app_user_id: Optional[str] = None,
+    product_id: Optional[str] = None,
+    plan: Optional[str] = None,
+    detail: Optional[str] = None,
+) -> None:
+    """Write down that a payment provider told us something.
+
+    Until this existed there were three ways for a real purchase to never reach
+    a family's plan, and NONE of them was visible from inside the app:
+
+      * the webhook secret is unset, so every event is refused with a 503;
+      * the webhook was never pointed at us, so nothing arrives at all;
+      * the event arrived carrying an app_user_id we do not know, and the
+        handler acknowledged it with a 200 so the provider never retried.
+
+    All three look identical from the admin screen: a household that paid and
+    reads as free. The only trace was a line in the server log, which is not
+    somewhere a founder looks — the last one was found because the STORE sent
+    an email, not because the app said anything.
+
+    So every event is recorded, matched or not. An unmatched row is the loud
+    one: it means money arrived and we could not say whose it was.
+    """
+    try:
+        await database["billing_events"].insert_one({
+            "event_id": new_id("bev"),
+            "source": source,
+            "event_type": event_type or "",
+            "matched": bool(matched),
+            "family_id": family_id,
+            "app_user_id": app_user_id,
+            "product_id": product_id,
+            "plan": plan,
+            "detail": detail,
+            "received_at": utcnow(),
+        })
+        # Trim to the newest N. Bounded work, and only when it is actually
+        # needed — a log that grows forever is its own small outage later.
+        total = await database["billing_events"].count_documents({})
+        if total > BILLING_EVENT_KEEP:
+            rows = [r async for r in database["billing_events"].find({}, {"_id": 0})]
+            rows.sort(key=lambda r: _coerce_dt(r.get("received_at")) or utcnow())
+            for stale in rows[: total - BILLING_EVENT_KEEP]:
+                await database["billing_events"].delete_many(
+                    {"event_id": stale.get("event_id")})
+    except Exception as e:  # recording must never break the webhook itself
+        # Neither the event type nor the exception goes in. event_type is a
+        # field off a webhook body — attacker-shaped text, newlines and all,
+        # which is how a log gets forged — and the exception came out of a call
+        # that had the family's data in hand. The source and the failure's type
+        # are enough to tell "the log is broken" from "nothing is arriving".
+        log.warning("could not record a %s billing event: %s", source, type(e).__name__)
+
 
 @app.post("/api/billing/revenuecat-webhook")
 async def revenuecat_webhook(payload: dict, authorization: Optional[str] = Header(default=None)):
@@ -8873,15 +8981,18 @@ async def revenuecat_webhook(payload: dict, authorization: Optional[str] = Heade
     user = await database["users"].find_one({"user_id": app_user_id}, {"_id": 0})
     if not user:
         # Unknown user (e.g. sandbox/anonymous id) — acknowledge so RC stops
-        # retrying; nothing to update on our side.
+        # retrying; nothing to update on our side. Recorded, because a 200 here
+        # means the provider considers the money delivered and will never send
+        # it again: this row is the only evidence a purchase went nowhere.
         log.warning("RC webhook for unknown app_user_id=%s type=%s", app_user_id, event_type)
+        await record_billing_event(
+            database, source="revenuecat", event_type=event_type, matched=False,
+            app_user_id=app_user_id, product_id=event.get("product_id"),
+            detail="no account carries this app_user_id",
+        )
         return {"ok": True, "matched": False}
 
-    product_id = (event.get("product_id") or "").lower()
-    cycle = "yearly" if ("year" in product_id or "annual" in product_id) else "monthly"
-    # Which tier the Play product grants: a "household" product lifts to the top
-    # tier, anything else to Family. Keeps the two stores on one plan vocabulary.
-    granted_plan = "household" if "household" in product_id else "executive"
+    granted_plan, cycle = rc_plan_from_product(event.get("product_id"))
     changes = {
         "rc_last_event": event_type,
         "rc_product_id": event.get("product_id"),
@@ -8906,6 +9017,11 @@ async def revenuecat_webhook(payload: dict, authorization: Optional[str] = Heade
         {"family_id": user["family_id"]}, {"$set": changes}
     )
     log.info("RC webhook applied: family=%s type=%s plan=%s", user["family_id"], event_type, changes.get("plan", "unchanged"))
+    await record_billing_event(
+        database, source="revenuecat", event_type=event_type, matched=True,
+        family_id=user["family_id"], app_user_id=app_user_id,
+        product_id=event.get("product_id"), plan=changes.get("plan"),
+    )
     return {"ok": True, "matched": True}
 
 
@@ -8975,9 +9091,7 @@ async def reconcile_billing(user: dict = Depends(require_user)):
     family = await get_family_doc(user["family_id"])
     changes = {"rc_reconciled_at": utcnow(), "updated_at": utcnow()}
     if active:
-        product_id = (product or "").lower()
-        changes["plan"] = "household" if "household" in product_id else "executive"
-        changes["billing_cycle"] = "yearly" if ("year" in product_id or "annual" in product_id) else "monthly"
+        changes["plan"], changes["billing_cycle"] = rc_plan_from_product(product)
         changes["rc_product_id"] = product
     elif family.get("plan") in ("executive", "household") and family.get("rc_last_event"):
         changes["plan"] = "village"
@@ -8995,6 +9109,222 @@ async def reconcile_billing(user: dict = Depends(require_user)):
     if is_admin_user(user):
         return apply_admin_subscription(sub)
     return sub
+
+
+# -----------------------------------------------------------------------------
+# The billing sweep — the backstop for a webhook that never arrived.
+#
+# reconcile_billing above heals ONE household, and only when somebody from that
+# household opens the plans screen. That is the wrong person to depend on: the
+# family that paid and reads as free has no reason to go looking, and the
+# founder who would go looking cannot run it for them.
+#
+# So the server asks on its own. Slowly, and in one direction only.
+#
+# ONE DIRECTION: the sweep upgrades and never downgrades. A missed EXPIRATION
+# leaves somebody on a plan slightly too long, which costs a little goodwill; a
+# sweep that silently revokes a plan because RevenueCat answered oddly once
+# takes a paying customer's features away with nobody watching. Downgrades stay
+# where they have a human or a webhook behind them — the per-user reconcile
+# already does them, guarded on the family carrying webhook state.
+BILLING_SWEEP_ENABLED = os.environ.get("BILLING_SWEEP", "on").strip().lower() != "off"
+BILLING_SWEEP_INTERVAL = int(os.environ.get("BILLING_SWEEP_INTERVAL", str(6 * 3600)))
+# A ceiling on RevenueCat calls per pass. Households are checked oldest-first,
+# so a base larger than the budget is covered across successive passes rather
+# than half-checked forever.
+BILLING_SWEEP_BUDGET = int(os.environ.get("BILLING_SWEEP_BUDGET", "200"))
+
+
+async def sweep_billing_once(database: Any, budget: int = 0, secret: str = "") -> dict:
+    """One pass: ask RevenueCat about the adults of households that read free.
+
+    Only unpaid households are candidates, because those are the ones where a
+    missed webhook costs money. Within them every adult is a candidate, since
+    app_user_id is whoever actually pressed buy — not necessarily the founder.
+
+    The key is read HERE rather than handed in. The scheduler above has no use
+    for it — it only needs to know how many households were corrected — and a
+    caller that never holds the key cannot leak it, which is the whole lesson of
+    the exception handlers below. Tests pass one explicitly.
+    """
+    secret = secret or os.environ.get("REVENUECAT_SECRET_KEY", "")
+    if not secret:
+        return {"checked": 0, "corrected": 0, "candidates": 0}
+    # The budget is read here for the same reason the key is: the scheduler
+    # below has no use for either, and a caller that holds neither cannot leak
+    # them. It also keeps BILLING_SWEEP_BUDGET out of the scheduler's scope —
+    # CodeQL classifies data by NAME, reads "BILLING" as financial detail, and
+    # so treats anything this function returns to a caller that passed it as
+    # sensitive. The counts are two integers; the taint is the constant's name.
+    budget = budget or BILLING_SWEEP_BUDGET
+    unpaid: set = set()
+    async for fam in database["families"].find({}, {"_id": 0, "family_id": 1, "plan": 1}):
+        if (fam.get("plan") or "village") == "village" and fam.get("family_id"):
+            unpaid.add(fam["family_id"])
+    if not unpaid:
+        return {"checked": 0, "corrected": 0, "candidates": 0}
+
+    candidates = []
+    async for u in database["users"].find(
+            {}, {"_id": 0, "user_id": 1, "family_id": 1, "rc_swept_at": 1}):
+        if u.get("family_id") in unpaid and u.get("user_id"):
+            candidates.append(u)
+
+    # Oldest-checked first, never-checked before that. Sorted in Python: a
+    # never-swept row has no key at all, and Mongo's own sort would have to be
+    # taught an ordering between "missing" and a datetime.
+    epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
+    candidates.sort(key=lambda u: _coerce_dt(u.get("rc_swept_at")) or epoch)
+
+    checked = corrected = 0
+    now = utcnow()
+    for cand in candidates[:max(0, budget)]:
+        uid = cand["user_id"]
+        try:
+            data = await _fetch_rc_subscriber(uid, secret)
+        except HTTPException as e:
+            # RevenueCat does not know this id, or is having a moment. Neither is
+            # this household's fault and neither should end the pass.
+            #
+            # The STATUS is logged, never the detail. _fetch_rc_subscriber builds
+            # that detail by interpolating the underlying urllib error, and a
+            # urllib error can carry the request it failed on — including the
+            # Authorization header holding the RevenueCat key. Railway keeps
+            # these logs, so echoing it would write the key down in clear text
+            # somewhere it does not belong. The code is the useful half anyway:
+            # 404 means "never bought anything", 5xx means "ask again later".
+            log.info("billing sweep: no answer for one user (status %s)", e.status_code)
+            await database["users"].update_one(
+                {"user_id": uid}, {"$set": {"rc_swept_at": now}})
+            checked += 1
+            continue
+
+        checked += 1
+        await database["users"].update_one({"user_id": uid}, {"$set": {"rc_swept_at": now}})
+        active, product = rc_entitlement_state((data or {}).get("subscriber") or {}, now)
+        if not active:
+            continue
+
+        fid = cand["family_id"]
+        plan, cycle = rc_plan_from_product(product)
+        await database["families"].update_one({"family_id": fid}, {"$set": {
+            "plan": plan,
+            "billing_cycle": cycle,
+            "rc_product_id": product,
+            "rc_reconciled_at": now,
+            "updated_at": now,
+        }})
+        corrected += 1
+        unpaid.discard(fid)
+        # The plan, not the household. Which family it was is in the billing
+        # event written below, where it is behind the admin gate rather than in
+        # a log that ships to a third party and is kept for months.
+        log.warning("billing sweep corrected a household to %s (missed webhook)", plan)
+        await record_billing_event(
+            database, source="sweep", event_type="RECONCILED", matched=True,
+            family_id=fid, app_user_id=uid, product_id=product, plan=plan,
+            detail="RevenueCat says paid; no webhook had reached us",
+        )
+
+    return {"checked": checked, "corrected": corrected, "candidates": len(candidates)}
+
+
+async def _billing_sweep_loop():
+    # The key and the budget are both deliberately absent from this scope. The
+    # pass fetches its own, so nothing here — not the counts it returns, not an
+    # exception escaping it — can carry either into a log line.
+    while True:
+        await asyncio.sleep(BILLING_SWEEP_INTERVAL)
+        try:
+            # Nothing the pass returns is logged, and nothing is lost by that.
+            # Every correction already writes a billing_events row tagged
+            # "sweep", which /api/admin/billing-events surfaces — queryable,
+            # behind the admin gate, and readable inside the app instead of in
+            # a hosting provider's log. The line that used to be here also
+            # tripped CodeQL: the pass reads BILLING_SWEEP_BUDGET, "BILLING"
+            # sits in the scanner's financial-data name pattern, and so its
+            # return value counted as somebody's financial details. Two
+            # integers. Removing the duplicate beats arguing with the name.
+            await sweep_billing_once(get_db())
+        except Exception as e:  # a pass must never kill the loop
+            log.warning("billing sweep pass failed: %s", type(e).__name__)
+
+
+@app.on_event("startup")
+async def start_billing_sweep():
+    # Same guard as the reminder scheduler: only under a real server with a
+    # database, and killable from the environment without a code change.
+    if db is None or not BILLING_SWEEP_ENABLED:
+        return
+    asyncio.create_task(_billing_sweep_loop())
+    # The interval and the budget are deliberately not in this line. They are
+    # two integers off the environment and there is nothing private about
+    # either, but CodeQL classifies data by NAME and "BILLING_*" sits in its
+    # financial-data pattern next to bank and credit — so logging them reads to
+    # the scanner as writing somebody's financial details to a log.
+    #
+    # Arguing with that is not worth a permanently red security gate, and
+    # nothing is actually lost: both values are in the environment that set
+    # them, and /api/admin/billing-events reports whether the sweep is running.
+    log.info("Billing sweep started")
+
+
+@app.get("/api/admin/billing-events")
+async def admin_billing_events(user=Depends(require_user), limit: int = Query(default=40, ge=1, le=200)):
+    """What the payment providers have actually told us, and when.
+
+    This is the screen that would have answered the question the store's email
+    raised: somebody subscribed, and the app never showed it. Three states, and
+    they need opposite fixes:
+
+      * nothing has EVER arrived — the webhook is not pointed at us, or the
+        secret is unset and every event is being refused with a 503. Nothing in
+        the code can fix that; it is a dashboard and an environment variable.
+      * events arrive UNMATCHED — they reach us and carry an app_user_id or a
+        Stripe customer we cannot place. Real money, landing nowhere.
+      * events arrive matched — billing is working, and a household reading as
+        free is a different bug.
+
+    Admin-only: it spans every household.
+    """
+    if not is_admin_user(user):
+        raise HTTPException(status_code=403, detail="Admins only")
+    database = get_db()
+
+    rows = [r async for r in database["billing_events"].find({}, {"_id": 0})]
+    rows.sort(key=lambda r: _coerce_dt(r.get("received_at")) or utcnow(), reverse=True)
+
+    unmatched = [r for r in rows if not r.get("matched")]
+    by_source: dict = {}
+    for r in rows:
+        by_source[r.get("source") or "?"] = by_source.get(r.get("source") or "?", 0) + 1
+
+    def _row(r):
+        return {
+            "source": r.get("source"),
+            "event_type": r.get("event_type"),
+            "matched": bool(r.get("matched")),
+            "family_id": r.get("family_id"),
+            "app_user_id": r.get("app_user_id"),
+            "product_id": r.get("product_id"),
+            "plan": r.get("plan"),
+            "detail": r.get("detail"),
+            "received_at": iso(_coerce_dt(r.get("received_at"))),
+        }
+
+    newest = rows[0] if rows else None
+    return {
+        # The two switches that decide whether events can arrive at all.
+        "revenuecat_configured": bool(os.environ.get("RC_WEBHOOK_SECRET")),
+        "stripe_configured": bool(os.environ.get("STRIPE_WEBHOOK_SECRET")),
+        "sweep_enabled": BILLING_SWEEP_ENABLED and bool(os.environ.get("REVENUECAT_SECRET_KEY")),
+        "ever_received": bool(rows),
+        "last_event_at": iso(_coerce_dt(newest.get("received_at"))) if newest else None,
+        "total": len(rows),
+        "unmatched": len(unmatched),
+        "by_source": by_source,
+        "events": [_row(r) for r in rows[:limit]],
+    }
 
 
 # -----------------------------------------------------------------------------
@@ -9269,9 +9599,16 @@ async def stripe_webhook(request: Request):
     family = await _stripe_family_for_event(database, family_id, customer)
     if not family:
         # Unknown family (e.g. a test event, or a customer we never stored) —
-        # acknowledge so Stripe stops retrying.
+        # acknowledge so Stripe stops retrying. Recorded for the same reason as
+        # the RevenueCat side: a 200 ends the provider's retries, so without a
+        # row here a card payment that landed nowhere leaves no trace at all.
         log.warning("Stripe webhook for unknown family: type=%s customer=%s",
                     event.get("type"), customer)
+        await record_billing_event(
+            database, source="stripe", event_type=str(event.get("type") or ""),
+            matched=False, app_user_id=customer,
+            detail="no household carries this Stripe customer",
+        )
         return {"ok": True, "matched": False}
 
     await database["families"].update_one(
@@ -9279,6 +9616,11 @@ async def stripe_webhook(request: Request):
     )
     log.info("Stripe webhook applied: family=%s type=%s plan=%s",
              family["family_id"], event.get("type"), changes.get("plan", "unchanged"))
+    await record_billing_event(
+        database, source="stripe", event_type=str(event.get("type") or ""),
+        matched=True, family_id=family["family_id"], app_user_id=customer,
+        plan=changes.get("plan"),
+    )
     return {"ok": True, "matched": True}
 
 
@@ -10040,6 +10382,78 @@ async def scan_shopping_list(
     return {"items": items}
 
 
+
+@app.post("/api/expenses/scan-receipt")
+async def scan_receipt(
+    payload: dict = Body(...),
+    user: dict = Depends(require_full_member),
+    database=Depends(get_db),
+):
+    """Read a photo of a till receipt into a shop, a date, a total and lines.
+
+    Returns candidates only — nothing is saved here, exactly like the shopping
+    -list scan. The app shows the lines in a ticked preview (unsure reads come
+    unticked) and commits the selection through the ordinary add, so a misread
+    price never lands silently.
+
+    Reading the LINES, not just the total, is the whole point. A total says a
+    household spent ninety euros at one shop and eighty at another, which
+    compares basket sizes rather than prices. The lines are what let the app
+    eventually say the thing a family can act on: these onions cost less per
+    kilo at that shop than at this one.
+    """
+    image_b64 = str(payload.get("image_base64") or "")
+    if "," in image_b64:
+        image_b64 = image_b64.split(",")[-1]
+    if len(image_b64) < 100:
+        raise HTTPException(400, "No photo attached.")
+    if len(image_b64) > MAX_IMAGE_B64_CHARS:
+        raise HTTPException(413, "That photo is too large.")
+
+    if not GOOGLE_API_KEY:
+        raise HTTPException(503, "Photo scanning is unavailable right now.")
+
+    sub = await build_subscription(user["family_id"])
+    family = await get_family_doc(user["family_id"])
+    if not is_admin_user(user) and family.get("ai_scans_used", 0) >= sub["limits"]["ai_scans_per_month"]:
+        plan_limit_error(
+            feature="ai_scans",
+            current_plan=sub["plan"],
+            limit=sub["limits"]["ai_scans_per_month"],
+            used=family.get("ai_scans_used", 0),
+            message="AI scan limit reached for this billing period.",
+        )
+
+    try:
+        text = await _gemini_vision(
+            "Read the shop receipt in this photo.",
+            image_b64,
+            system=RECEIPT_SCAN_SYSTEM_PROMPT,
+            fast=True,
+        )
+        parsed = extract_json(text)
+        if parsed is None:
+            raise UnsafeRecipe("unparseable")
+        result = validate_receipt_scan(parsed)
+    except UnsafeRecipe as exc:
+        log.info("receipt scan rejected by safety gate: %s", exc.reason)
+        raise HTTPException(422, "We could not read a receipt in that photo.")
+    except Exception as exc:
+        log.warning("receipt scan failed: %s", type(exc).__name__)
+        raise HTTPException(502, "We could not read a receipt in that photo.")
+
+    if not is_admin_user(user):
+        # Same guarded increment as the shopping scan: two concurrent scans
+        # cannot both push the counter past the limit.
+        await database["families"].update_one(
+            {"family_id": user["family_id"],
+             "ai_scans_used": {"$lt": sub["limits"]["ai_scans_per_month"]}},
+            {"$inc": {"ai_scans_used": 1}, "$set": {"updated_at": utcnow()}},
+        )
+
+    return result
+
+
 class BulkShoppingIn(BaseModel):
     # One insert per name, so an uncapped list is one request that drives
     # arbitrarily many writes. A household shopping list is dozens of items,
@@ -10293,6 +10707,42 @@ async def add_expense(payload: ExpenseIn, user=Depends(require_full_member)):
         "split": bool(payload.split),
     }
     await database["expenses"].insert_one(doc)
+
+    # The lines, when a receipt was read. Stored beside the expense rather than
+    # inside it: they are queried by product across shops and months, which is a
+    # different shape of question from "what did we spend", and burying them in
+    # an array would mean loading every expense to answer it.
+    if payload.items:
+        spent_on = doc["spent_on"]
+        lines = []
+        for line in payload.items:
+            name = sanitize_message_text(line.name or "", 40).replace("\n", " ").strip()
+            if not name:
+                continue
+            qty = float(line.qty) if line.qty and line.qty > 0 else None
+            unit = line.unit if line.unit in RECEIPT_UNITS else "piece"
+            total = round(float(line.line_total), 2)
+            lines.append({
+                "line_id": new_id("eln"),
+                "expense_id": doc["expense_id"],
+                "family_id": user["family_id"],
+                "shop": merchant,
+                "spent_on": spent_on,
+                "name": name,
+                # Folded once, here, so every later comparison groups on the
+                # same key without each caller inventing its own rule.
+                "name_key": name.strip().lower(),
+                "qty": qty,
+                "unit": unit,
+                "line_total": total,
+                # Only ever set when the amount makes it real. A None here is
+                # the honest answer to "what does this cost per kilo".
+                "unit_price": round(total / qty, 4) if qty else None,
+                "created_at": now,
+            })
+        for line in lines:
+            await database["expense_items"].insert_one(line)
+
     return public_expense(doc)
 
 
@@ -10304,6 +10754,11 @@ async def delete_expense(expense_id: str, user=Depends(require_full_member)):
     )
     if result.deleted_count == 0:
         raise HTTPException(404, "Expense not found")
+    # The lines go with it. Leaving them would keep a deleted receipt quoting
+    # prices in comparisons — the one kind of stale data nobody would think to
+    # look for, because the receipt it came from is no longer on the screen.
+    await database["expense_items"].delete_many(
+        {"expense_id": expense_id, "family_id": user["family_id"]})
     return {"ok": True}
 
 

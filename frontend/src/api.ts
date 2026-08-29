@@ -949,6 +949,59 @@ export interface PlanAdoption {
   active_free_premium_families: number;
 }
 
+/**
+ * One thing a payment provider told us. The unmatched rows are the point: a
+ * webhook we answered 200 to but could not place is a purchase that reached
+ * nobody, and the provider will never send it again.
+ */
+export interface BillingEvent {
+  source: 'revenuecat' | 'stripe' | 'sweep' | string;
+  event_type: string;
+  matched: boolean;
+  family_id: string | null;
+  app_user_id: string | null;
+  product_id: string | null;
+  plan: string | null;
+  detail: string | null;
+  received_at: string | null;
+}
+
+export interface BillingEventLog {
+  revenuecat_configured: boolean;
+  stripe_configured: boolean;
+  sweep_enabled: boolean;
+  /** False means nothing has EVER arrived — the webhook is not pointed at us. */
+  ever_received: boolean;
+  last_event_at: string | null;
+  total: number;
+  unmatched: number;
+  by_source: Record<string, number>;
+  events: BillingEvent[];
+}
+
+/** One line read off a till receipt, before anyone has confirmed it. */
+export interface ScannedReceiptItem {
+  name: string;
+  /** null when the amount could not be read — then there is no unit price. */
+  qty: number | null;
+  unit: 'kg' | 'g' | 'l' | 'ml' | 'piece' | string;
+  line_total: number;
+  /** Only ever set when qty is real. A price with no amount cannot be compared. */
+  unit_price: number | null;
+  unsure: boolean;
+}
+
+export interface ScannedReceipt {
+  shop: string;
+  /** Empty when the date could not be read — the app asks rather than guessing. */
+  date: string;
+  total: number;
+  lines_total: number;
+  /** False means the lines disagree with the printed total: show both, fix neither. */
+  reconciles: boolean;
+  items: ScannedReceiptItem[];
+}
+
 export interface Subscriber {
   family_id: string;
   plan: string;
@@ -1431,6 +1484,8 @@ export const api = {
     request<PlanAdoption>('/admin/plan-adoption'),
   getSubscribers: () =>
     request<SubscriberList>('/admin/subscribers'),
+  getBillingEvents: (limit = 40) =>
+    request<BillingEventLog>(`/admin/billing-events?limit=${limit}`),
   listInvites: () => request<FamilyInvite[]>('/family/invites'),
   completeInvite: (inviteId: string) => {
     invalidateUsageCaches();
@@ -2103,6 +2158,11 @@ export const api = {
     request<{ ok: boolean; deleted: number }>('/shopping/history', { method: 'DELETE' }),
 
   // Expenses
+  scanReceipt: (imageBase64: string) =>
+    request<ScannedReceipt>('/expenses/scan-receipt', {
+      method: 'POST',
+      body: { image_base64: imageBase64 },
+    }),
   listExpenses: (days = 30) => request<Expense[]>(`/expenses?days=${days}`),
   getExpenseSummary: (days = 30) => request<ExpenseSummary>(`/expenses/summary?days=${days}`),
   getExpenseOverview: (months = 6, category?: string) =>
@@ -2111,6 +2171,8 @@ export const api = {
   addExpense: (data: {
     description?: string; amount: number; category?: string; child_member_id?: string;
     merchant?: string; spent_on?: string; split?: boolean;
+    /** Receipt lines, when a receipt was read. A typed expense has none. */
+    items?: { name: string; qty: number | null; unit: string; line_total: number }[];
   }) =>
     request<Expense>('/expenses', { method: 'POST', body: data }),
   deleteExpense: (expenseId: string) =>

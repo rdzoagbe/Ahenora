@@ -9,7 +9,8 @@ import { AmbientBackground } from '../src/components/AmbientBackground';
 import { useUI, UIColors } from '../src/components/Kit';
 import { useStore } from '../src/store';
 import { api, MetricRow, VersionAdoption, PlanAdoption, FunnelSummary,
-  RetentionSummary, InviteBreakdown, AiHealth, SubscriberList } from '../src/api';
+  RetentionSummary, InviteBreakdown, AiHealth, SubscriberList,
+  BillingEventLog } from '../src/api';
 import { logger } from '../src/logger';
 
 // Admin-only screen — plain English labels are fine (only the owner sees it).
@@ -36,6 +37,7 @@ export default function MetricsScreen() {
   const [plans, setPlans] = useState<PlanAdoption | null>(null);
   const [subs, setSubs] = useState<SubscriberList | null>(null);
   const [showAllSubs, setShowAllSubs] = useState(false);
+  const [billing, setBilling] = useState<BillingEventLog | null>(null);
   const [funnel, setFunnel] = useState<FunnelSummary | null>(null);
   const [retention, setRetention] = useState<RetentionSummary | null>(null);
   const [invites, setInvites] = useState<InviteBreakdown | null>(null);
@@ -62,6 +64,10 @@ export default function MetricsScreen() {
     api.getPlanAdoption().then(setPlans).catch((e) => logger.warn('plan adoption load failed', e?.message || e));
     // The per-household list behind those totals — who is on what, with a contact.
     api.getSubscribers().then(setSubs).catch((e) => logger.warn('subscribers load failed', e?.message || e));
+    // What the payment providers have actually told us. A sale that never
+    // showed up here is the difference between "nobody bought" and "the money
+    // arrived and we dropped it" — and those need opposite fixes.
+    api.getBillingEvents(40).then(setBilling).catch((e) => logger.warn('billing events load failed', e?.message || e));
     // The activation + growth funnel — the "make the launch stick" scoreboard.
     api.getMetricsFunnel(30).then(setFunnel).catch((e) => logger.warn('funnel load failed', e?.message || e));
     // Retention, counted in ADULTS — the funnel's 2+-members number counts child
@@ -522,6 +528,75 @@ export default function MetricsScreen() {
               </View>
             </>
           ) : null}
+
+
+          {/* Billing events — did the money actually reach us */}
+          <Text style={styles.sectionTitle}>Billing events</Text>
+          {billing ? (
+            <>
+              {!billing.ever_received ? (
+                <View style={[styles.card, styles.warnCard]}>
+                  <Text style={styles.warnText}>
+                    No billing event has EVER reached this server. Either the webhook is not
+                    pointed at /api/billing/revenuecat-webhook, or its secret is unset and every
+                    event is being refused. A purchase made now would not lift anyone&apos;s plan.
+                  </Text>
+                </View>
+              ) : billing.unmatched > 0 ? (
+                <View style={[styles.card, styles.warnCard]}>
+                  <Text style={styles.warnText}>
+                    {billing.unmatched} event{billing.unmatched === 1 ? '' : 's'} arrived that we
+                    could not match to a household. That is real money landing nowhere — the store
+                    got a 200 back and will not send it again.
+                  </Text>
+                </View>
+              ) : null}
+              <View style={styles.tileRow}>
+                <View style={styles.tile}>
+                  <Text style={styles.tileNum}>{billing.total}</Text>
+                  <Text style={styles.tileLabel}>Events recorded</Text>
+                </View>
+                <View style={styles.tile}>
+                  <Text style={styles.tileNum}>{billing.unmatched}</Text>
+                  <Text style={styles.tileLabel}>Reached nobody</Text>
+                </View>
+              </View>
+              <Text style={styles.hint}>
+                Play via RevenueCat: {billing.revenuecat_configured ? 'on' : 'OFF'} · Card via
+                Stripe: {billing.stripe_configured ? 'on' : 'OFF'} · Self-heal sweep:{' '}
+                {billing.sweep_enabled ? 'on' : 'OFF'}
+                {billing.last_event_at ? ` · last event ${billing.last_event_at.slice(0, 16).replace('T', ' ')}` : ''}
+              </Text>
+              {billing.events.length ? (
+                <View style={styles.card}>
+                  {billing.events.slice(0, 12).map((e, i) => (
+                    <View key={`${e.received_at}-${i}`} style={[styles.subRow, i === 0 && { borderTopWidth: 0 }]}>
+                      <View style={styles.subLeft}>
+                        <Text style={styles.subName} numberOfLines={1}>
+                          {e.event_type || '(no type)'}
+                        </Text>
+                        <Text style={styles.subEmail} numberOfLines={1}>
+                          {e.detail || e.product_id || e.app_user_id || '—'}
+                        </Text>
+                      </View>
+                      <View style={styles.subRight}>
+                        <View style={[styles.subTag, e.matched ? styles.subTagPaid : styles.subTagFree]}>
+                          <Text style={[styles.subTagText, { color: e.matched ? ui.orangeText : ui.danger }]}>
+                            {e.matched ? (e.plan || 'applied') : 'reached nobody'}
+                          </Text>
+                        </View>
+                        <Text style={styles.subMeta} numberOfLines={1}>
+                          {e.source}{e.received_at ? ` · ${e.received_at.slice(5, 16).replace('T', ' ')}` : ''}
+                        </Text>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
+            </>
+          ) : (
+            <Text style={styles.muted}>No billing data yet.</Text>
+          )}
 
           {/* OTA adoption — who is on the runtime that can receive updates */}
           <Text style={styles.sectionTitle}>Update adoption</Text>

@@ -500,6 +500,38 @@ export default function Calendar() {
 
   const groups = useMemo(() => groupByDay(cards, selectedDay), [cards, selectedDay]);
 
+  // Past days, held back.
+  //
+  // With no day picked this list is headed "Upcoming" and, until now, listed
+  // every open dated card oldest first — so the top of it was the most overdue
+  // thing in the house, and what was actually coming up sat below however many
+  // months of it. The screen said one thing and showed another.
+  //
+  // They are held back, never hidden and never completed. A date passing is not
+  // evidence that a job was done, and the app has no business deciding it was:
+  // that judgement belongs to the person, which is why the row below counts
+  // them and opens.
+  //
+  // Only in the undated view. Picking a day is asking for that day, and an
+  // answer that quietly drops half of it would be a worse lie than the one this
+  // fixes.
+  const [showEarlier, setShowEarlier] = useState(false);
+  const todayKey = dateKey(new Date());
+  const earlierGroups = useMemo(
+    () => (selectedDay ? [] : groups.filter((g) => g.day < todayKey)),
+    [groups, selectedDay, todayKey],
+  );
+  const aheadGroups = useMemo(
+    () => (selectedDay ? groups : groups.filter((g) => g.day >= todayKey)),
+    [groups, selectedDay, todayKey],
+  );
+  const earlierCount = useMemo(
+    () => earlierGroups.reduce((n, g) => n + g.items.length, 0),
+    [earlierGroups],
+  );
+  // What the timeline actually draws: the earlier ones only once asked for.
+  const shownGroups = showEarlier ? [...earlierGroups, ...aheadGroups] : aheadGroups;
+
   // The seven days of the week the selection sits in, Sunday first.
   const weekDays = useMemo(() => {
     const anchor = selectedDay ? new Date(`${selectedDay}T00:00:00`) : new Date();
@@ -869,8 +901,24 @@ export default function Calendar() {
             {(() => {
               // My agenda = my own events; Shared agenda = the whole shared
               // pool (mine shared + a co-parent's, told apart by shared_by_name).
-              const myEvents = cards.filter((c) => !c.shared_by_name);
-              const sharedEvents = cards.filter((c) => c.shared || c.shared_by_name);
+              //
+              // An agenda is what is coming, and this one was neither filtered
+              // by date nor sorted — it showed the first two of whatever order
+              // the server returned, so "My agenda" could open on a dentist
+              // appointment from last month while this week sat out of sight
+              // behind "show more". Soonest first, from today.
+              //
+              // Past events are not lost: the timeline below holds them behind
+              // its own counted row. Nothing here decides they were done.
+              const ahead = cards
+                .filter((c) => {
+                  const key = cardDateKey(c);
+                  return !!key && key >= todayKey;
+                })
+                .sort((a, b) =>
+                  new Date(a.due_date || '').getTime() - new Date(b.due_date || '').getTime());
+              const myEvents = ahead.filter((c) => !c.shared_by_name);
+              const sharedEvents = ahead.filter((c) => c.shared || c.shared_by_name);
               const items = agendaTab === 'mine' ? myEvents : sharedEvents;
               const privateCount = shareCounts?.private ?? 0;
               // Sits above the month grid, so cap the preview and offer the rest.
@@ -1115,7 +1163,7 @@ export default function Calendar() {
 
           {loading ? (
             <ActivityIndicator color={ui.orange} style={{ marginTop: 30 }} />
-          ) : groups.length === 0 ? (
+          ) : shownGroups.length === 0 && earlierCount === 0 ? (
             <KitCard style={styles.empty}>
               <View style={styles.emptyIcon}>
                 <CalendarDays color={ui.muted} size={26} />
@@ -1134,7 +1182,25 @@ export default function Calendar() {
             </KitCard>
           ) : (
             <KitCard style={styles.timelineCard}>
-              {groups.flatMap((group) => group.items).map((card, index, arr) => {
+              {/* The way back to what has already been. Counted, so nobody has
+                  to wonder whether anything is behind it. */}
+              {earlierCount > 0 ? (
+                <PressScale
+                  testID="calendar-earlier-toggle"
+                  onPress={() => setShowEarlier((v) => !v)}
+                  style={styles.earlierRow}
+                >
+                  <Text style={styles.earlierText}>
+                    {showEarlier
+                      ? t('cal_hide_earlier')
+                      : t('cal_show_earlier', { n: earlierCount })}
+                  </Text>
+                </PressScale>
+              ) : null}
+              {shownGroups.length === 0 ? (
+                <Text style={styles.earlierEmpty}>{t('cal_nothing_ahead')}</Text>
+              ) : null}
+              {shownGroups.flatMap((group) => group.items).map((card, index, arr) => {
                 const color = TYPE_COLOR[card.type] || ui.mintText;
                 const isGoogle = card.source === 'CALENDAR' || card.external_source === 'google_calendar';
                 const { time, ampm } = timeParts(card.due_date);
@@ -1578,6 +1644,15 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   emptySyncText: { color: ui.orangeText, fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
 
   timelineCard: { paddingHorizontal: 16 },
+  earlierRow: {
+    alignItems: 'center', paddingVertical: 11,
+    borderBottomWidth: 1, borderBottomColor: ui.line,
+  },
+  earlierText: { fontFamily: 'Inter_600SemiBold', fontSize: 12.5, color: ui.muted },
+  earlierEmpty: {
+    fontFamily: 'Inter_500Medium', fontSize: 13, color: ui.muted,
+    paddingVertical: 18, textAlign: 'center',
+  },
   eventRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14 },
   eventRowBorder: { borderBottomWidth: 1, borderBottomColor: ui.line },
   timeBlock: { width: 50, alignItems: 'flex-start' },

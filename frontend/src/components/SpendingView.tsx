@@ -1,13 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator, Alert, ScrollView, StyleSheet, Switch, Text, TextInput, View,
+  ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, View,
 } from 'react-native';
-import { Plus, Trash2, TrendingDown, TrendingUp, Scale } from 'lucide-react-native';
+import { Camera, Plus, Trash2, TrendingDown, TrendingUp, Scale } from 'lucide-react-native';
+import * as ImagePicker from 'expo-image-picker';
 
 import { PressScale } from './PressScale';
 import { useUI, UIColors } from './Kit';
 import { useStore } from '../store';
-import { api, Expense, ExpenseOverview, MerchantRow, SettlementInfo } from '../api';
+import { api, Expense, ExpenseOverview, MerchantRow, ScannedReceipt,
+  SettlementInfo } from '../api';
 import { localeFor } from '../utils/date';
 import { logger } from '../logger';
 
@@ -79,6 +81,14 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
   const [settlement, setSettlement] = useState<SettlementInfo | null>(null);
   const [settling, setSettling] = useState(false);
 
+  // Receipt capture. `scan` holds what the reader made of the photo — nothing
+  // is saved until the lines have been looked at, the same posture the
+  // shopping-list scan already takes.
+  const [scanning, setScanning] = useState(false);
+  const [scan, setScan] = useState<ScannedReceipt | null>(null);
+  const [keep, setKeep] = useState<boolean[]>([]);
+  const [scanError, setScanError] = useState<string | null>(null);
+
 
   const load = useCallback(async () => {
     try {
@@ -128,6 +138,90 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
       setSaving(false);
     }
   }, [shop, amount, when, splitOn, load, t]);
+
+  /**
+   * Photograph the receipt and read it.
+   *
+   * Nothing is saved here. The lines come back as candidates and go into a
+   * review sheet with the unsure ones unticked, exactly like the shopping-list
+   * scan — a misread PRICE is worse than a misread item, because it does not
+   * look wrong. It just quietly makes every later comparison false.
+   */
+  const captureReceipt = useCallback(async (source: 'camera' | 'library') => {
+    setScanError(null);
+    try {
+      if (Platform.OS !== 'web') {
+        const perm = source === 'camera'
+          ? await ImagePicker.requestCameraPermissionsAsync()
+          : await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!perm.granted) {
+          throw new Error(t(source === 'camera'
+            ? 'cam_camera_permission_denied' : 'cam_gallery_permission_denied'));
+        }
+      }
+      const res = source === 'camera'
+        ? await ImagePicker.launchCameraAsync({ base64: true, quality: 0.55, mediaTypes: ImagePicker.MediaTypeOptions.Images })
+        : await ImagePicker.launchImageLibraryAsync({ base64: true, quality: 0.55, mediaTypes: ImagePicker.MediaTypeOptions.Images });
+      if (res.canceled || !res.assets?.[0]) return;
+      const asset = res.assets[0];
+      // Native hands back base64; web hands back a data URL instead.
+      const base64 = asset.base64 ?? (asset.uri?.startsWith('data:') ? asset.uri.split(',')[1] : null);
+      if (!base64) return;
+
+      setScanning(true);
+      const read = await api.scanReceipt(base64);
+      setScan(read);
+      // Unsure lines start unticked. Saying "no" to a bad read must be the
+      // lazy option, not the diligent one.
+      setKeep(read.items.map((i) => !i.unsure));
+      setShop(read.shop || '');
+      setAmount(read.total ? String(read.total.toFixed(2)) : '');
+      // An unreadable date comes back empty and today is the honest default —
+      // it is at least a date the person can see is wrong.
+      setWhen(read.date || todayISO());
+    } catch (e: any) {
+      logger.warn('receipt scan failed', e);
+      setScanError(e?.message || t('exp_scan_failed'));
+    } finally {
+      setScanning(false);
+    }
+  }, [t]);
+
+  /** Commit the reviewed receipt: the expense, and the lines kept with it. */
+  const saveScanned = useCallback(async () => {
+    if (!scan) return;
+    const value = parseAmount(amount);
+    if (value === null) {
+      Alert.alert(t('exp_bad_amount_title'), t('exp_bad_amount_body'));
+      return;
+    }
+    setSaving(true);
+    try {
+      await api.addExpense({
+        merchant: shop.trim(),
+        description: shop.trim(),
+        amount: value,
+        category: CATEGORY,
+        spent_on: when,
+        split: splitOn,
+        items: scan.items
+          .filter((_, i) => keep[i])
+          .map((i) => ({ name: i.name, qty: i.qty, unit: i.unit, line_total: i.line_total })),
+      });
+      setScan(null);
+      setKeep([]);
+      setShop('');
+      setAmount('');
+      setWhen(todayISO());
+      setSplitOn(false);
+      await load();
+    } catch (e: any) {
+      logger.warn('receipt save failed', e);
+      Alert.alert(t('exp_save_failed'), e?.message || '');
+    } finally {
+      setSaving(false);
+    }
+  }, [scan, keep, amount, shop, when, splitOn, load, t]);
 
   const settleUp = useCallback(async () => {
     setSettling(true);
@@ -192,6 +286,38 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
         <View style={styles.center}><ActivityIndicator color={ui.orange} /></View>
       ) : (
         <Wrapper {...wrapperProps}>
+
+          {/* The two ways in, at the top.
+
+              The add button used to sit at the very bottom — under the summary,
+              the chart, "who paid", "where it went" and up to twenty receipt
+              rows. On a household with any history that is three screens of
+              scrolling, so the primary action of the screen was the least
+              reachable thing on it, and it read as missing. */}
+          {!scan ? (
+            <View style={styles.actionRow}>
+              <PressScale
+                testID="exp-scan-receipt"
+                onPress={() => captureReceipt('camera')}
+                disabled={scanning}
+                style={[styles.primary, styles.actionHalf, scanning && styles.dim]}
+              >
+                <Camera color="#fff" size={17} />
+                <Text style={styles.primaryText}>
+                  {scanning ? t('exp_scan_reading') : t('exp_scan_receipt')}
+                </Text>
+              </PressScale>
+              <PressScale
+                testID="exp-add-open"
+                onPress={() => setAdding((v) => !v)}
+                style={[styles.ghost, styles.actionHalf]}
+              >
+                <Plus color={ui.text} size={17} />
+                <Text style={styles.ghostText}>{t('exp_add')}</Text>
+              </PressScale>
+            </View>
+          ) : null}
+          {scanError ? <Text style={styles.scanErr}>{scanError}</Text> : null}
 
           {/* One month or six — the same screen, so there is nothing new to learn. */}
           <View style={styles.seg}>
@@ -368,6 +494,103 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
             </View>
           ) : null}
 
+          {/* ---- The receipt, for review ----
+
+              Everything here is a candidate. The point of showing the lines at
+              all, rather than just the total, is that the total compares basket
+              SIZES between shops while the lines compare prices — but a line is
+              only worth keeping if it is right, so the read is put in front of
+              a person before any of it is stored. */}
+          {scan ? (
+            <View style={styles.card}>
+              <Text style={styles.lbl}>{t('exp_scan_review')}</Text>
+
+              {/* The arithmetic, reported and never repaired. If the lines do
+                  not add up to the printed total, something was misread — and
+                  a wrong price is silent in a way a wrong name is not. */}
+              {!scan.reconciles ? (
+                <View style={styles.warn}>
+                  <Text style={styles.warnText}>
+                    {t('exp_scan_mismatch', {
+                      lines: money(scan.lines_total), total: money(scan.total),
+                    })}
+                  </Text>
+                </View>
+              ) : null}
+
+              <TextInput
+                testID="exp-scan-shop"
+                style={styles.input}
+                value={shop}
+                onChangeText={setShop}
+                placeholder={t('exp_shop_ph')}
+                placeholderTextColor={ui.muted}
+                maxLength={60}
+              />
+              <TextInput
+                testID="exp-scan-total"
+                style={styles.input}
+                value={amount}
+                onChangeText={setAmount}
+                placeholder={t('exp_amount_ph')}
+                placeholderTextColor={ui.muted}
+                keyboardType="decimal-pad"
+                maxLength={10}
+              />
+              <TextInput
+                testID="exp-scan-date"
+                style={styles.input}
+                value={when}
+                onChangeText={setWhen}
+                placeholder="YYYY-MM-DD"
+                placeholderTextColor={ui.muted}
+                maxLength={10}
+              />
+              {!scan.date ? <Text style={styles.hint}>{t('exp_scan_no_date')}</Text> : null}
+
+              {scan.items.map((item, i) => (
+                <PressScale
+                  key={`${item.name}-${i}`}
+                  testID={`exp-scan-line-${i}`}
+                  onPress={() => setKeep((prev) => prev.map((v, j) => (j === i ? !v : v)))}
+                  style={[styles.row, i > 0 && styles.rowDivider]}
+                >
+                  <View style={[styles.tick, keep[i] && styles.tickOn]} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.shopName, !keep[i] && styles.rowOff]} numberOfLines={1}>
+                      {item.name}
+                    </Text>
+                    <Text style={styles.shopSub}>
+                      {/* The per-unit price is the number that can be compared
+                          with another shop. A line whose amount could not be
+                          read has none, and says so rather than showing a
+                          figure that means nothing. */}
+                      {item.unit_price != null && item.qty != null
+                        ? `${item.qty}${item.unit === 'piece' ? '' : ' ' + item.unit} · ${money(item.unit_price)}/${item.unit}`
+                        : t('exp_scan_no_unit')}
+                      {item.unsure ? ` · ${t('exp_scan_unsure')}` : ''}
+                    </Text>
+                  </View>
+                  <Text style={[styles.rowAmount, !keep[i] && styles.rowOff]}>
+                    {money(item.line_total)}
+                  </Text>
+                </PressScale>
+              ))}
+
+              <PressScale
+                testID="exp-scan-save"
+                onPress={saveScanned}
+                disabled={saving}
+                style={[styles.primary, saving && styles.dim]}
+              >
+                <Text style={styles.primaryText}>{saving ? t('exp_saving') : t('exp_save')}</Text>
+              </PressScale>
+              <PressScale onPress={() => { setScan(null); setKeep([]); }} style={styles.quiet}>
+                <Text style={styles.quietText}>{t('cancel')}</Text>
+              </PressScale>
+            </View>
+          ) : null}
+
           {/* ---- Add one ---- */}
           {adding ? (
             <View style={styles.card}>
@@ -426,12 +649,7 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
                 <Text style={styles.quietText}>{t('cancel')}</Text>
               </PressScale>
             </View>
-          ) : (
-            <PressScale testID="exp-add-open" onPress={() => setAdding(true)} style={styles.primary}>
-              <Plus color="#fff" size={18} />
-              <Text style={styles.primaryText}>{t('exp_add')}</Text>
-            </PressScale>
-          )}
+          ) : null}
         </Wrapper>
       )}
     </View>
@@ -519,5 +737,22 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   splitLabel: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 14.5 },
   splitSub: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 2 },
   quiet: { alignItems: 'center', paddingVertical: 10 },
+  actionRow: { flexDirection: 'row', gap: 8 },
+  actionHalf: { flex: 1, marginTop: 0 },
+  ghost: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
+    borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft,
+    borderRadius: 14, paddingVertical: 14,
+  },
+  ghostText: { fontFamily: 'Inter_600SemiBold', fontSize: 14, color: ui.text },
+  scanErr: { fontFamily: 'Inter_500Medium', fontSize: 12.5, color: ui.danger },
+  warn: { backgroundColor: ui.orangeSoft, borderRadius: 12, padding: 10 },
+  warnText: { fontFamily: 'Inter_500Medium', fontSize: 12.5, color: ui.orangeText },
+  tick: {
+    width: 18, height: 18, borderRadius: 5, marginRight: 10,
+    borderWidth: 1.5, borderColor: ui.line,
+  },
+  tickOn: { backgroundColor: ui.orange, borderColor: ui.orange },
+  rowOff: { color: ui.muted, textDecorationLine: 'line-through' },
   quietText: { fontFamily: 'Inter_600SemiBold', fontSize: 14, color: ui.muted },
 });
