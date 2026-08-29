@@ -21,7 +21,8 @@ import { TabScreen } from '../../src/components/TabScreen';
 import { ScreenHeader, useUI, UIColors } from '../../src/components/Kit';
 
 import { useStore } from '../../src/store';
-import { api, MealPlan, ShoppingItem, ShoppingHistoryEntry, SavedMealPlan, Diet, AiRecipe, FrequentItem } from '../../src/api';
+import { api, MealPlan, ShoppingItem, ShoppingHistoryEntry, SavedMealPlan, Diet, AiRecipe,
+  FrequentItem, PriceCompare } from '../../src/api';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { logger } from '../../src/logger';
 import { suggestWeek, MealSuggestion, SuggestLang, localizedMealTitle, localizedMealIngredients, resolveRecipeId, recipeIngredients, searchRecipes } from '../../src/mealSuggestions';
@@ -245,6 +246,28 @@ export default function Kitchen() {
   // Snapping this week's paper list usually means REPLACING last week's,
   // not appending to it — offered right where the decision is made.
   const [scanReplace, setScanReplace] = useState(false);
+
+  // What the household's own receipts say each thing costs, per shop. Loaded
+  // once with the list because the moment it is worth knowing is BEFORE the
+  // trip — a saving reported afterwards is a post-mortem.
+  const [prices, setPrices] = useState<PriceCompare | null>(null);
+  useEffect(() => {
+    api.getPriceCompare().then(setPrices).catch(() => setPrices(null));
+  }, [dataVersion]);
+
+  // Item name -> the cheaper shop, when the receipts can honestly say. The
+  // server has already refused anything thin: one visit, mismatched units,
+  // stale prices. So anything here is safe to show.
+  const cheaperBy = useMemo(() => {
+    const out = new Map<string, { shop: string; saving: number; unit: string }>();
+    (prices?.comparable ?? []).forEach((row) => {
+      if (!row.saving) return;
+      out.set(row.name_key, {
+        shop: row.cheapest, saving: row.saving.per_unit, unit: row.unit,
+      });
+    });
+    return out;
+  }, [prices]);
 
   const addScannedItems = useCallback(async () => {
     const picked = scanItems.filter((i) => i.checked).map((i) => i.name);
@@ -1221,7 +1244,26 @@ export default function Kitchen() {
                     ) : (
                       <View style={styles.numBadge}><Text style={styles.numText}>{index + 1}</Text></View>
                     )}
-                    <Text style={styles.rowText}>{item.name}</Text>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={styles.rowText}>{item.name}</Text>
+                      {/* What the family's own receipts say. Shown here, on the
+                          list, because the decision this can change is made
+                          before leaving the house — the Spending tab reports
+                          the same thing after the money is gone. */}
+                      {(() => {
+                        const tip = cheaperBy.get(item.name.trim().toLowerCase());
+                        if (!tip) return null;
+                        return (
+                          <Text style={styles.rowCheaper} numberOfLines={1}>
+                            {t('kit_cheaper_at', {
+                              shop: tip.shop,
+                              amount: `${t('currency_symbol')}${tip.saving.toFixed(2)}`,
+                              unit: tip.unit,
+                            })}
+                          </Text>
+                        );
+                      })()}
+                    </View>
                     {(() => {
                       // Everything stored before this shipped is "Other", because the
                       // app never sent a category. Derive from the name in that case
@@ -2475,7 +2517,10 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   numBadge: { width: 24, height: 24, borderRadius: 99, backgroundColor: ui.orangeSoft, alignItems: 'center', justifyContent: 'center' },
   numText: { color: ui.orangeText, fontFamily: 'Inter_800ExtraBold', fontSize: 12 },
   hint: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12, textAlign: 'center', paddingTop: 10 },
-  rowText: { flex: 1, color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 15 },
+  rowText: { color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 15 },
+  rowCheaper: {
+    color: ui.mintText, fontFamily: 'Inter_500Medium', fontSize: 11.5, marginTop: 1,
+  },
   rowTextDone: { textDecorationLine: 'line-through', color: ui.muted },
   rowCat: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12 },
   divider: { marginTop: 8, paddingVertical: 4 },

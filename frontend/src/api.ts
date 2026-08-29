@@ -1009,6 +1009,33 @@ export interface ScannedReceipt {
   items: ScannedReceiptItem[];
 }
 
+/** What one shop charges this household for one thing, per unit. */
+export interface PriceShop {
+  shop: string;
+  unit_price: number;
+  /** Separate visits behind the figure. Below the server's minimum it is not reported at all. */
+  visits: number;
+  last_seen: string | null;
+}
+
+export interface PriceItem {
+  name: string;
+  name_key: string;
+  unit: string;
+  shops: PriceShop[];
+  cheapest: string;
+  /** null when only one shop qualifies — known, but nothing to compare against. */
+  saving: { per_unit: number; against: string; percent: number } | null;
+}
+
+export interface PriceCompare {
+  window_days: number;
+  min_observations: number;
+  items: PriceItem[];
+  /** Only the rows that can actually advise. */
+  comparable: PriceItem[];
+}
+
 export interface Subscriber {
   family_id: string;
   plan: string;
@@ -2170,6 +2197,7 @@ export const api = {
       method: 'POST',
       body: { image_base64: imageBase64 },
     }),
+  getPriceCompare: () => request<PriceCompare>('/expenses/price-compare'),
   listExpenses: (days = 30) => request<Expense[]>(`/expenses?days=${days}`),
   getExpenseSummary: (days = 30) => request<ExpenseSummary>(`/expenses/summary?days=${days}`),
   getExpenseOverview: (months = 6, category?: string) =>
