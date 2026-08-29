@@ -437,6 +437,13 @@ export type Recurrence = 'none' | 'daily' | 'weekly' | 'monthly';
 
 export interface Card {
   card_id: string;
+  /**
+   * Only ever set on the reply to completing a RECURRING card: when the next
+   * occurrence was spawned, and for when. The app says so — a chore that
+   * reappears with a new date is otherwise indistinguishable from a tick that
+   * did not save.
+   */
+  next_occurrence?: string;
   family_id: string;
   type: CardType;
   title: string;

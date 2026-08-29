@@ -7616,6 +7616,7 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
             await notify_assignment(database, user, merged, new_assignee)
 
     # When a recurring card is completed, spawn its next occurrence.
+    next_occurrence = None
     if (
         changes.get("status") == "DONE"
         and card["status"] != "DONE"
@@ -7649,6 +7650,13 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
             "visible_to": card.get("visible_to"),
         }
         await database["cards"].insert_one(next_doc)
+        # Handed back so the app can SAY what just happened. Ticking a weekly
+        # chore makes it vanish and a fresh one appear with next week's date,
+        # and from the outside that is indistinguishable from the tick not
+        # working — which is exactly what was reported. Hiding the new one was
+        # tried and was wrong: it removed the ability to finish a chore early.
+        # The card is not the problem, the silence is.
+        next_occurrence = next_doc["due_date"]
 
     if award_child:
         member = await database["family_members"].find_one(
@@ -7672,7 +7680,10 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
             )
             await send_star_milestone_alert(user["family_id"], member.get("name", "Your child"), old_stars, old_stars + 5)
 
-    return public_card(updated)
+    out = public_card(updated)
+    if next_occurrence:
+        out["next_occurrence"] = iso(next_occurrence)
+    return out
 
 
 @app.post("/api/cards/{card_id}/unshare")

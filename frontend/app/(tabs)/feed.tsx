@@ -61,8 +61,10 @@ import { useUI, UIColors } from '../../src/components/Kit';
 import { api, logEvent, ActivityEntry, Announcement, Card, CardType, CustodyConfig, FamilyMember, GiftPot, SantaDraw, HandoffNote, Template, WeeklyReport } from '../../src/api';
 import { syncCardReminderNotifications, syncMorningDigest, syncDinnerReminder, syncSundayRecap, ensureAskedNotificationPermissionOnce } from '../../src/notifications';
 import { logger } from '../../src/logger';
-import { isoWeek } from '../../src/utils/date';
+import { isoWeek, localeFor } from '../../src/utils/date';
 import { recordWin } from '../../src/reviewPrompt';
+import AppToast from '../../src/components/AppToast';
+import { useToast } from '../../src/hooks/useToast';
 
 interface VoiceDraft {
   transcript: string;
@@ -351,6 +353,7 @@ export default function Feed() {
   // Set when a tapped notification named the card it was about.
   const { cardId: notifiedCardId } = useLocalSearchParams<{ cardId?: string }>();
   const openedFromNotification = useRef<string | null>(null);
+  const { toast, showToast } = useToast(3200);
   // The task being edited. Tasks live on the Feed now, but editing was only
   // ever wired on the Calendar — so opening one here gave no way to fix its
   // title or hand it to someone. The pencil in the detail sheet opens the same
@@ -845,8 +848,22 @@ export default function Feed() {
     // it sitting in the section with a stale count until the next reload.
     if (next === 'DONE') setAssigned((prev) => prev.filter((c) => c.card_id !== card.card_id));
     try {
-      await api.updateCard(card.card_id, { status: next });
+      const saved = await api.updateCard(card.card_id, { status: next });
       if (next === 'DONE') recordWin();
+      // A recurring chore does not stay done — the server spawns the next one
+      // the moment this is ticked. From the outside that looks exactly like the
+      // tick failing: the row vanishes and an identical row appears with a new
+      // date. Hiding the new one was tried and was wrong; it removed the
+      // ability to finish a chore ahead of its date. So it is SAID instead.
+      if (next === 'DONE' && saved?.next_occurrence) {
+        const when = new Date(saved.next_occurrence);
+        if (!Number.isNaN(when.getTime())) {
+          showToast(t('feed_recurring_next', {
+            date: when.toLocaleDateString(localeFor(lang),
+              { weekday: 'short', day: 'numeric', month: 'short' }),
+          }), 'info');
+        }
+      }
     } catch {
       pendingDismissRef.current.delete(card.card_id);
       Alert.alert(t('feed_could_not_update'), t('feed_change_not_saved'));
@@ -1697,6 +1714,7 @@ export default function Feed() {
           ))
         )}
       </KeyboardAwareBottomSheet>
+      <AppToast visible={Boolean(toast)} message={toast?.message || null} tone={toast?.tone || 'info'} />
     </SwipeableTabView>
   );
 }
