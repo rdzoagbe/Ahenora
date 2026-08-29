@@ -332,6 +332,36 @@ class TheSweepHealsAMissedWebhook(unittest.TestCase):
         fam = asyncio.run(self.db["families"].find_one({"family_id": "fam3"}))
         self.assertEqual(fam["plan"], "executive")
 
+    def test_the_revenuecat_key_never_reaches_the_log(self):
+        """_fetch_rc_subscriber builds its detail by interpolating the urllib
+        error it caught, and a urllib error can carry the request it failed on
+        — Authorization header and all. Railway keeps these logs, so echoing
+        that detail would write the RevenueCat key down in clear text.
+
+        The status code carries the useful half (404 = never bought anything,
+        5xx = ask again later) and carries nothing else.
+        """
+        key = "sk_live_" + secrets.token_hex(16)
+        self._seed(
+            [{"family_id": "famB", "plan": "village"}],
+            [{"user_id": "u_payer", "family_id": "famB"}],
+        )
+
+        async def leaky(user_id, secret):
+            # Exactly the shape _fetch_rc_subscriber produces on a network fault.
+            raise server.HTTPException(
+                status_code=502,
+                detail=f"RevenueCat request failed: <urlopen error {secret}>")
+        server._fetch_rc_subscriber = leaky
+
+        with self.assertLogs(server.log, level="INFO") as caught:
+            asyncio.run(server.sweep_billing_once(self.db, key, 50))
+
+        blob = "\n".join(caught.output)
+        self.assertNotIn(key, blob)
+        # Still diagnosable: the status survives.
+        self.assertIn("502", blob)
+
     def test_a_household_product_lifts_to_the_top_tier(self):
         self._seed(
             [{"family_id": "famB", "plan": "village"}],

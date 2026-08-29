@@ -9137,7 +9137,15 @@ async def sweep_billing_once(database: Any, secret: str, budget: int) -> dict:
         except HTTPException as e:
             # RevenueCat does not know this id, or is having a moment. Neither is
             # this household's fault and neither should end the pass.
-            log.info("billing sweep: no answer for user=%s (%s)", uid, e.detail)
+            #
+            # The STATUS is logged, never the detail. _fetch_rc_subscriber builds
+            # that detail by interpolating the underlying urllib error, and a
+            # urllib error can carry the request it failed on — including the
+            # Authorization header holding the RevenueCat key. Railway keeps
+            # these logs, so echoing it would write the key down in clear text
+            # somewhere it does not belong. The code is the useful half anyway:
+            # 404 means "never bought anything", 5xx means "ask again later".
+            log.info("billing sweep: no answer for one user (status %s)", e.status_code)
             await database["users"].update_one(
                 {"user_id": uid}, {"$set": {"rc_swept_at": now}})
             checked += 1
@@ -9182,7 +9190,9 @@ async def _billing_sweep_loop():
                 log.warning("billing sweep: corrected %s household(s) of %s checked",
                             result["corrected"], result["checked"])
         except Exception as e:  # a pass must never kill the loop
-            log.warning("billing sweep pass failed: %s", e)
+            # The type, not the exception: this call was handed the RevenueCat
+            # key, so anything raised out of it is a possible carrier for it.
+            log.warning("billing sweep pass failed: %s", type(e).__name__)
 
 
 @app.on_event("startup")
