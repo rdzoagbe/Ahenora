@@ -870,7 +870,9 @@ export interface FunnelSummary {
   onboarded: number;
   invites_sent: number;
   invites_accepted: number;
-  multi_member_households: number;
+  /** Households with a second ADULT. Member rows include children, so a count
+   *  of those answered a different question — and disagreed with retention. */
+  two_plus_adult_households: number;
   sharing_households: number;
   active_1d: number;
   active_7d: number;
@@ -878,9 +880,10 @@ export interface FunnelSummary {
 
 /**
  * Retention, counted in ADULTS rather than members: a child profile is a
- * family_members row but not an account, so FunnelSummary.multi_member_households
- * counts a lone parent with two kids as shared. Here a household is shared only
- * when a second person actually holds an account.
+ * family_members row but not an account, so a household is shared here only
+ * when a second person actually holds one. The funnel counts it the same way
+ * now — it used to count member rows, which made a lone parent with two kids
+ * look shared and made the two halves of one screen disagree.
  */
 export interface RetentionSummary {
   generated_at: string | null;

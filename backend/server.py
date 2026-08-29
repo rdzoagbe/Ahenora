@@ -13479,6 +13479,28 @@ async def metrics_summary(days: int = 14, user=Depends(require_user)):
     return {"days": days, "rows": rows}
 
 
+def account_active_since(row: dict, when: datetime) -> bool:
+    """Was this account used at or after `when`?
+
+    Two fields record it and neither covers the whole history. last_active_at is
+    a timestamp that require_user only began writing on EVERY request today;
+    before that only /auth/me set it, which is where a 9x undercount came from.
+    last_active_day is a date string the daily counter has written for far
+    longer. Reading the timestamp alone throws away real history and reports a
+    churn that did not happen.
+
+    Lives here rather than inside one endpoint because the funnel and the
+    retention read-out were answering the same question differently — the funnel
+    counted only the timestamp, so the two sections of one screen disagreed
+    about who was active.
+    """
+    seen = _coerce_dt(row.get("last_active_at"))
+    if seen:
+        return seen >= when
+    day = (row.get("last_active_day") or "").strip()
+    return bool(day) and day >= when.strftime("%Y-%m-%d")
+
+
 @app.get("/api/metrics/funnel")
 async def metrics_funnel(days: int = 30, user=Depends(require_user), database=Depends(get_db)):
     """The activation + growth funnel, computed from existing collections (no
@@ -13496,24 +13518,51 @@ async def metrics_funnel(days: int = 30, user=Depends(require_user), database=De
 
     users_col = database["users"]
     invites_col = database["family_invites"]
-    members_col = database["family_members"]
     cards_col = database["cards"]
 
     async def count_group(col, match):
-        """Distinct family_id count matching `match`, via aggregation."""
-        n = 0
-        pipeline = [{"$match": match}, {"$group": {"_id": "$family_id"}}, {"$count": "c"}]
-        async for row in col.aggregate(pipeline):
-            n = row.get("c", 0)
-        return n
+        """How many distinct households have a row matching `match`.
 
-    multi_member = 0
-    async for row in members_col.aggregate([
-        {"$group": {"_id": "$family_id", "n": {"$sum": 1}}},
-        {"$match": {"n": {"$gt": 1}}},
-        {"$count": "c"},
-    ]):
-        multi_member = row.get("c", 0)
+        A plain scan rather than an aggregation pipeline, for the same reason
+        the counts below are: the population is small, this is admin-only and
+        called by hand, and the test double cannot run aggregations — so the
+        one number still using one was the reason this endpoint had no tests at
+        all, while quietly reporting two figures that meant something other
+        than their label.
+        """
+        seen = set()
+        async for row in col.find(match, {"_id": 0, "family_id": 1}):
+            if row.get("family_id"):
+                seen.add(row["family_id"])
+        return len(seen)
+
+    # Households with a second ADULT, and who was active — both from one pass
+    # over accounts.
+    #
+    # This used to count rows in family_members with n > 1, and children are
+    # members. So a solo parent with two kids read as a shared household, and
+    # the number overstated the one thing the whole product depends on. It also
+    # disagreed with the retention read-out below it, which had counted adults
+    # from the start precisely because member rows cannot answer this.
+    #
+    # An adult is an account. Children have no login, so grouping users by
+    # household is the definition, and it is the same one retention uses.
+    accounts = []
+    async for row in users_col.find(
+            {}, {"_id": 0, "family_id": 1, "last_active_at": 1, "last_active_day": 1}):
+        accounts.append(row)
+
+    households: dict = {}
+    for row in accounts:
+        fid = row.get("family_id")
+        if fid:
+            households.setdefault(fid, []).append(row)
+    two_plus_adults = sum(1 for members in households.values() if len(members) > 1)
+
+    # Counted the same way retention counts them, so one screen stops giving two
+    # answers: the timestamp when it exists, the day stamp when it does not.
+    active_1d = sum(1 for row in accounts if account_active_since(row, d1))
+    active_7d = sum(1 for row in accounts if account_active_since(row, d7))
 
     return {
         "window_days": days,
@@ -13525,12 +13574,13 @@ async def metrics_funnel(days: int = 30, user=Depends(require_user), database=De
         "invites_sent": await invites_col.count_documents({"created_at": {"$gte": cutoff}}),
         "invites_accepted": await invites_col.count_documents(
             {"status": "accepted", "accepted_at": {"$gte": cutoff}}),
-        # Activation state (all-time): the household actually became shared
-        "multi_member_households": multi_member,
+        # Activation state (all-time): the household actually became shared.
+        # Named for what it counts — a second ADULT, not a second member row.
+        "two_plus_adult_households": two_plus_adults,
         "sharing_households": await count_group(cards_col, {"shared": True}),
         # Retention
-        "active_1d": await users_col.count_documents({"last_active_at": {"$gte": d1}}),
-        "active_7d": await users_col.count_documents({"last_active_at": {"$gte": d7}}),
+        "active_1d": active_1d,
+        "active_7d": active_7d,
     }
 
 
@@ -13544,11 +13594,11 @@ async def metrics_retention(weeks: int = 8, user=Depends(require_user), database
 
     Two things it deliberately does differently from the funnel:
 
-    * ADULTS, not members. The funnel's multi_member_households counts rows in
-      family_members, and a child profile is a row — so a lone parent with two
-      kids counts as a shared household there. It cannot say anything about
-      second adults. Here an adult is an ACCOUNT: a users doc. Child profiles
-      have no users doc and are never counted.
+    * ADULTS, not members. An adult is an ACCOUNT: a users doc. Child profiles
+      are family_members rows with no users doc, and are never counted. The
+      funnel used to count member rows, so a lone parent with two kids read as
+      a shared household there and the two sections of one screen disagreed;
+      the funnel now counts adults the same way, from the same definition.
 
     * Solo vs shared retention side by side. That comparison is the whole point.
       If shared households come back at a materially higher rate, then getting
@@ -13573,18 +13623,7 @@ async def metrics_retention(weeks: int = 8, user=Depends(require_user), database
                  "last_active_at": 1, "last_active_day": 1}):
         accounts.append(row)
 
-    def active_since(row, when) -> bool:
-        seen = _coerce_dt(row.get("last_active_at"))
-        if seen:
-            return seen >= when
-        # Fall back to the day stamp. require_user has written it on every
-        # authenticated request since the counter shipped, whereas the
-        # timestamp above was only written by /auth/me until now — so for
-        # anyone who has not opened the app since this fix, the day stamp is
-        # the only honest record that they were ever here. Ignoring it would
-        # throw away real history and report a churn that did not happen.
-        day = (row.get("last_active_day") or "").strip()
-        return bool(day) and day >= when.strftime("%Y-%m-%d")
+    active_since = account_active_since
 
     # Group accounts into households.
     households: dict = {}
