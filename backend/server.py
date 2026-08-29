@@ -9244,8 +9244,16 @@ async def start_billing_sweep():
     if db is None or not BILLING_SWEEP_ENABLED:
         return
     asyncio.create_task(_billing_sweep_loop())
-    log.info("Billing sweep started (every %ss, budget %s)",
-             BILLING_SWEEP_INTERVAL, BILLING_SWEEP_BUDGET)
+    # The interval and the budget are deliberately not in this line. They are
+    # two integers off the environment and there is nothing private about
+    # either, but CodeQL classifies data by NAME and "BILLING_*" sits in its
+    # financial-data pattern next to bank and credit — so logging them reads to
+    # the scanner as writing somebody's financial details to a log.
+    #
+    # Arguing with that is not worth a permanently red security gate, and
+    # nothing is actually lost: both values are in the environment that set
+    # them, and /api/admin/billing-events reports whether the sweep is running.
+    log.info("Billing sweep started")
 
 
 @app.get("/api/admin/billing-events")
