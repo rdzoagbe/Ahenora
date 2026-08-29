@@ -9236,10 +9236,16 @@ async def _billing_sweep_loop():
     while True:
         await asyncio.sleep(BILLING_SWEEP_INTERVAL)
         try:
-            result = await sweep_billing_once(get_db())
-            if result["corrected"]:
-                log.warning("billing sweep: corrected %s household(s) of %s checked",
-                            result["corrected"], result["checked"])
+            # Nothing the pass returns is logged, and nothing is lost by that.
+            # Every correction already writes a billing_events row tagged
+            # "sweep", which /api/admin/billing-events surfaces — queryable,
+            # behind the admin gate, and readable inside the app instead of in
+            # a hosting provider's log. The line that used to be here also
+            # tripped CodeQL: the pass reads BILLING_SWEEP_BUDGET, "BILLING"
+            # sits in the scanner's financial-data name pattern, and so its
+            # return value counted as somebody's financial details. Two
+            # integers. Removing the duplicate beats arguing with the name.
+            await sweep_billing_once(get_db())
         except Exception as e:  # a pass must never kill the loop
             log.warning("billing sweep pass failed: %s", type(e).__name__)
 
