@@ -9,6 +9,7 @@ Run with:  python3 -m unittest discover -s tests -v
 """
 
 import asyncio
+from datetime import timedelta
 import os
 import sys
 import unittest
@@ -95,6 +96,91 @@ class AdminSubscribers(unittest.TestCase):
         by_id = {r["family_id"]: r for r in self._list(ADMIN)["subscribers"]}
         self.assertTrue(by_id["fam_stripe"]["has_active_device"])
         self.assertFalse(by_id["fam_play"]["has_active_device"])
+
+
+
+@unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
+class WhenTheyLastUsedIt(unittest.TestCase):
+    """"Never opened" was reading a push token, not usage.
+
+    The list built its idea of an active household from notification_tokens and
+    printed "Never opened" when there was none. Anyone who declined the
+    notification prompt, or used the web app, was reported as never having
+    opened it — Roland found himself in his own list that way.
+
+    What it reports now is when somebody last used the app, taken from the two
+    fields that record it. Reading only the newer of the two would report
+    everyone who last opened it before today as never having opened it, which
+    is the same mistake wearing different clothes.
+    """
+
+    def setUp(self):
+        self.db = FakeDatabase()
+        self._get_db = server.get_db
+        self._admins = server.ADMIN_EMAILS
+        server.get_db = lambda: self.db
+        server.ADMIN_EMAILS = {"boss@ahenora.com"}
+        self.now = server.utcnow()
+
+    def tearDown(self):
+        server.get_db = self._get_db
+        server.ADMIN_EMAILS = self._admins
+
+    def _run(self, member):
+        asyncio.run(self.db["families"].insert_one(
+            {"family_id": "fam1", "plan": "village"}))
+        asyncio.run(self.db["users"].insert_one(
+            {"user_id": "u1", "family_id": "fam1", "name": "Roland",
+             "email": "r@x.test", "created_at": self.now, **member}))
+        out = asyncio.run(server.admin_subscribers(
+            user={"user_id": "u_a", "family_id": "famA", "email": "boss@ahenora.com"}))
+        return out["subscribers"][0]
+
+    def test_someone_who_uses_the_app_is_not_called_never_opened(self):
+        """The reported case. No push token, real usage."""
+        row = self._run({"last_active_at": self.now})
+        self.assertIsNotNone(row["last_active"])
+        self.assertFalse(row["has_active_device"])
+
+    def test_the_older_date_field_still_counts(self):
+        """last_active_at only began being written on every request today.
+        Before that, the daily counter wrote last_active_day. Ignoring it would
+        erase everyone's history at a stroke."""
+        day = (self.now - timedelta(days=9)).strftime("%Y-%m-%d")
+        row = self._run({"last_active_day": day})
+        self.assertIsNotNone(row["last_active"])
+        self.assertIn(day[:10], row["last_active"])
+
+    def test_the_timestamp_wins_when_both_are_there(self):
+        row = self._run({
+            "last_active_at": self.now,
+            "last_active_day": (self.now - timedelta(days=30)).strftime("%Y-%m-%d"),
+        })
+        seen = server.ensure_aware_utc(server.parse_dt(row["last_active"]))
+        self.assertGreater(seen, self.now - timedelta(days=1))
+
+    def test_a_household_reports_its_most_recent_member(self):
+        """One person going quiet does not make the household quiet."""
+        asyncio.run(self.db["families"].insert_one(
+            {"family_id": "fam2", "plan": "village"}))
+        for uid, days in (("a", 40), ("b", 2)):
+            asyncio.run(self.db["users"].insert_one({
+                "user_id": uid, "family_id": "fam2", "email": f"{uid}@x.test",
+                "created_at": self.now,
+                "last_active_at": self.now - timedelta(days=days)}))
+        out = asyncio.run(server.admin_subscribers(
+            user={"user_id": "u_a", "family_id": "famA", "email": "boss@ahenora.com"}))
+        row = next(r for r in out["subscribers"] if r["family_id"] == "fam2")
+        seen = server.ensure_aware_utc(server.parse_dt(row["last_active"]))
+        self.assertGreater(seen, self.now - timedelta(days=3))
+
+    def test_nothing_recorded_reports_nothing_rather_than_a_claim(self):
+        row = self._run({})
+        self.assertIsNone(row["last_active"])
+
+    def test_an_unparseable_day_does_not_break_the_screen(self):
+        row = self._run({"last_active_day": "sometime last spring"})
+        self.assertIsNone(row["last_active"])
 
 
 if __name__ == "__main__":

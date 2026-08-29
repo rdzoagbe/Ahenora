@@ -26,6 +26,32 @@ const EVENT_LABELS: Record<string, string> = {
 };
 const EVENT_ORDER = Object.keys(EVENT_LABELS);
 
+
+/**
+ * How long ago somebody last used the app, in words.
+ *
+ * The Subscribers list used to read a push-notification token and print
+ * "Never opened" when there wasn't one — so anyone who declined the
+ * notification prompt, or used the web app, was reported as never having
+ * opened it. Roland appeared in his own list that way.
+ *
+ * A date is more useful than a badge anyway: "3 weeks ago" tells you something
+ * "Active" does not. Null stays honest — it means nothing was recorded, which
+ * is not a claim that they never came.
+ */
+function lastSeenLabel(iso: string | null): string {
+  if (!iso) return 'No activity recorded';
+  const then = new Date(iso);
+  if (Number.isNaN(then.getTime())) return 'No activity recorded';
+  const days = Math.floor((Date.now() - then.getTime()) / 86400000);
+  if (days <= 0) return 'Active today';
+  if (days === 1) return 'Yesterday';
+  if (days < 7) return `${days} days ago`;
+  if (days < 14) return 'Last week';
+  if (days < 60) return `${Math.floor(days / 7)} weeks ago`;
+  return `${Math.floor(days / 30)} months ago`;
+}
+
 export default function MetricsScreen() {
   const router = useRouter();
   const { t, user } = useStore();
@@ -513,7 +539,7 @@ export default function MetricsScreen() {
                         {s.paying
                           ? (s.billing_source === 'stripe' ? 'Card (Stripe)'
                              : s.billing_source === 'google_play' ? 'Google Play' : '—')
-                          : (s.has_active_device ? 'Active' : 'Never opened')}
+                          : lastSeenLabel(s.last_active)}
                       </Text>
                     </View>
                   </View>
