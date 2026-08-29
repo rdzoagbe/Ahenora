@@ -60,6 +60,7 @@ HARNESSES = [
     "e2e_smallscreen.py",
     "e2e_offline.py",
     "e2e_calendar.py",
+    "e2e_invite.py",
     "e2e_webupdate.py",
     "e2e_journey.py",
 ]

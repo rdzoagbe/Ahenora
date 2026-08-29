@@ -5,6 +5,7 @@ import { Users, X, ArrowRight } from 'lucide-react-native';
 
 import { PressScale } from './PressScale';
 import { useStore } from '../store';
+import { shareHouseholdInvite } from '../inviteShare';
 import { useUI, UIColors } from './Kit';
 
 const DISMISS_KEY = 'coo_coparent_nudge_dismissed';
@@ -17,6 +18,8 @@ const RECOVER_DISMISS_KEY = 'coo_coparent_recover_dismissed';
 interface Props {
   /** True while the household is still solo (only the current user). */
   visible: boolean;
+  /** The slower route: the Settings screen, where an invitation can be typed
+   *  to a specific address. Kept as a quiet second option, not the headline. */
   onInvite: () => void;
   /**
    * Someone this household already invited who never made it in. When present
@@ -37,7 +40,7 @@ interface Props {
  * Dismissible for genuine single parents, who can still invite from Settings.
  */
 export function CoParentNudge({ visible, onInvite, stranded, onResend }: Props) {
-  const { t } = useStore();
+  const { t, user } = useStore();
   const ui = useUI();
   const styles = useMemo(() => createStyles(ui), [ui]);
   // null = still reading the flag (avoid a flash); false = show; true = hidden.
@@ -45,6 +48,9 @@ export function CoParentNudge({ visible, onInvite, stranded, onResend }: Props) 
   const [recoverDismissed, setRecoverDismissed] = useState<boolean | null>(null);
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
+  // Set when the browser has no share sheet and the link went to the clipboard,
+  // or when sharing failed and the link is being handed back rather than lost.
+  const [linkNote, setLinkNote] = useState<string | null>(null);
 
   useEffect(() => {
     AsyncStorage.getItem(DISMISS_KEY).then((v) => setDismissed(v === '1')).catch(() => setDismissed(false));
@@ -72,6 +78,29 @@ export function CoParentNudge({ visible, onInvite, stranded, onResend }: Props) 
     setSending(true);
     try {
       if (await onResend!(recover.email)) setSent(true);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  // The whole point of this component. One tap: mint a link, open the share
+  // sheet, let them send it however they already talk to the person. No
+  // navigation, and nothing to type — the email field in Settings is what the
+  // 87% who never invited anybody were being asked for.
+  const shareInvite = async () => {
+    if (sending) return;
+    setSending(true);
+    setLinkNote(null);
+    try {
+      const out = await shareHouseholdInvite({
+        inviterName: user?.name || '',
+        title: t('cp_share_title'),
+        invitedYou: t('cp_share_invited_you'),
+      });
+      if (out.kind === 'shared') setSent(true);
+      else if (out.kind === 'copied') { setSent(true); setLinkNote(t('cp_share_copied')); }
+      else if (out.kind === 'failed' && out.url) setLinkNote(out.url);
+      else setLinkNote(t('cp_share_unavailable'));
     } finally {
       setSending(false);
     }
@@ -127,12 +156,27 @@ export function CoParentNudge({ visible, onInvite, stranded, onResend }: Props) 
           <PressScale
             testID="cp-nudge-invite"
             accessibilityRole="button"
-            accessibilityLabel={t('cp_nudge_cta')}
-            onPress={onInvite}
-            style={styles.cta}
+            accessibilityLabel={t('cp_share_cta')}
+            onPress={shareInvite}
+            disabled={sending || sent}
+            style={[styles.cta, (sending || sent) && styles.ctaOff]}
           >
-            <Text style={styles.ctaText}>{t('cp_nudge_cta')}</Text>
-            <ArrowRight color="#fff" size={16} />
+            <Text style={styles.ctaText}>
+              {sent ? t('cp_share_sent') : sending ? t('cp_share_sending') : t('cp_share_cta')}
+            </Text>
+            {sent ? null : <ArrowRight color="#fff" size={16} />}
+          </PressScale>
+          {linkNote ? <Text style={styles.note} selectable>{linkNote}</Text> : null}
+          {/* Still reachable for anyone who would rather send it to a specific
+              address — just no longer the only way through. */}
+          <PressScale
+            testID="cp-nudge-by-email"
+            accessibilityRole="button"
+            accessibilityLabel={t('cp_share_by_email')}
+            onPress={onInvite}
+            style={styles.secondary}
+          >
+            <Text style={styles.secondaryText}>{t('cp_share_by_email')}</Text>
           </PressScale>
         </>
       )}
@@ -141,6 +185,13 @@ export function CoParentNudge({ visible, onInvite, stranded, onResend }: Props) 
 }
 
 const createStyles = (ui: UIColors) => StyleSheet.create({
+  note: {
+    color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 8,
+  },
+  secondary: { alignItems: 'center', paddingVertical: 10, marginTop: 2 },
+  secondaryText: {
+    color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 13,
+  },
   card: { borderRadius: 20, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.orangeSoft, padding: 16, marginBottom: 16 },
   dismiss: { position: 'absolute', top: 10, right: 10, padding: 6, zIndex: 1 },
   iconTile: { width: 44, height: 44, borderRadius: 13, backgroundColor: ui.orangeSoft, alignItems: 'center', justifyContent: 'center', marginBottom: 11 },
