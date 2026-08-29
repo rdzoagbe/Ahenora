@@ -8951,7 +8951,12 @@ async def record_billing_event(
                 await database["billing_events"].delete_many(
                     {"event_id": stale.get("event_id")})
     except Exception as e:  # recording must never break the webhook itself
-        log.warning("could not record billing event (%s/%s): %s", source, event_type, e)
+        # Neither the event type nor the exception goes in. event_type is a
+        # field off a webhook body — attacker-shaped text, newlines and all,
+        # which is how a log gets forged — and the exception came out of a call
+        # that had the family's data in hand. The source and the failure's type
+        # are enough to tell "the log is broken" from "nothing is arriving".
+        log.warning("could not record a %s billing event: %s", source, type(e).__name__)
 
 
 @app.post("/api/billing/revenuecat-webhook")
@@ -9204,7 +9209,10 @@ async def sweep_billing_once(database: Any, budget: int, secret: str = "") -> di
         }})
         corrected += 1
         unpaid.discard(fid)
-        log.warning("billing sweep corrected family=%s to %s (missed webhook)", fid, plan)
+        # The plan, not the household. Which family it was is in the billing
+        # event written below, where it is behind the admin gate rather than in
+        # a log that ships to a third party and is kept for months.
+        log.warning("billing sweep corrected a household to %s (missed webhook)", plan)
         await record_billing_event(
             database, source="sweep", event_type="RECONCILED", matched=True,
             family_id=fid, app_user_id=uid, product_id=product, plan=plan,
