@@ -15,6 +15,7 @@ Run with:  python3 -m unittest discover -s tests -v
 """
 import asyncio
 import os
+import secrets
 import sys
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -32,7 +33,12 @@ if HAVE_DEPS:
     import server
     from fake_mongo import FakeDatabase
 
-RC_SECRET = "rc_webhook_secret"
+# Generated per run rather than written down. A literal here would be a
+# credential-shaped string flowing into a parameter named `authorization`,
+# which is the one pattern static analysis is right to refuse in a repository —
+# and the tests do not care what the value is, only that the right one is
+# accepted and a wrong one is refused.
+RC_SECRET = secrets.token_hex(16)
 ADMIN_EMAIL = "boss@ahenora.com"
 ADMIN = {"user_id": "u_admin", "family_id": "famA", "email": ADMIN_EMAIL}
 
