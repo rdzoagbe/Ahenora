@@ -901,8 +901,24 @@ export default function Calendar() {
             {(() => {
               // My agenda = my own events; Shared agenda = the whole shared
               // pool (mine shared + a co-parent's, told apart by shared_by_name).
-              const myEvents = cards.filter((c) => !c.shared_by_name);
-              const sharedEvents = cards.filter((c) => c.shared || c.shared_by_name);
+              //
+              // An agenda is what is coming, and this one was neither filtered
+              // by date nor sorted — it showed the first two of whatever order
+              // the server returned, so "My agenda" could open on a dentist
+              // appointment from last month while this week sat out of sight
+              // behind "show more". Soonest first, from today.
+              //
+              // Past events are not lost: the timeline below holds them behind
+              // its own counted row. Nothing here decides they were done.
+              const ahead = cards
+                .filter((c) => {
+                  const key = cardDateKey(c);
+                  return !!key && key >= todayKey;
+                })
+                .sort((a, b) =>
+                  new Date(a.due_date || '').getTime() - new Date(b.due_date || '').getTime());
+              const myEvents = ahead.filter((c) => !c.shared_by_name);
+              const sharedEvents = ahead.filter((c) => c.shared || c.shared_by_name);
               const items = agendaTab === 'mine' ? myEvents : sharedEvents;
               const privateCount = shareCounts?.private ?? 0;
               // Sits above the month grid, so cap the preview and offer the rest.

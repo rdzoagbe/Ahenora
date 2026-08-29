@@ -71,6 +71,23 @@ async def main():
 
         await page.goto(f"{WEB}/calendar", wait_until="domcontentloaded")
         await page.wait_for_timeout(3500)
+
+        # The calendar opens on today, showing only today. The undated list —
+        # the one headed "Upcoming", and the one this is about — is reached by
+        # paging the month, which clears the day selection. Forward and back
+        # lands on this month with nothing selected.
+        # The agenda panel above the grid is an agenda: what is coming, soonest
+        # first. It used to show the first two of whatever order the server
+        # returned, so it could open on last month while this week sat behind
+        # "show more".
+        body0 = await page.inner_text("body")
+        r["agenda_shows_what_is_ahead"] = "School trip soon" in body0
+        r["agenda_is_not_showing_the_past"] = (
+            "Bins yesterday" not in body0 and "Dentist last month" not in body0)
+        await page.click('[data-testid="next-month"]')
+        await page.wait_for_timeout(500)
+        await page.click('[data-testid="prev-month"]')
+        await page.wait_for_timeout(1200)
         body = await page.inner_text("body")
 
         # The list is what is ahead. The two past ones are not in it.
@@ -97,6 +114,23 @@ async def main():
         await page.click('[data-testid="calendar-earlier-toggle"]')
         await page.wait_for_timeout(600)
         r["closing_it_hides_them_again"] = "Dentist last month" not in await page.inner_text("body")
+
+        # Asking for a day still answers with that whole day, past or not.
+        # A view that quietly dropped half of a day somebody explicitly picked
+        # would be a worse lie than the one this fixes.
+        await page.click('[data-testid="prev-month"]')
+        await page.wait_for_timeout(800)
+        await page.click('[data-testid="next-month"]')
+        await page.wait_for_timeout(800)
+        picked = False
+        for sel in await page.locator('[data-testid^="calendar-day-"]').all():
+            if (await sel.get_attribute("data-testid") or "").endswith(yesterday[:10]):
+                await sel.click()
+                picked = True
+                break
+        if picked:
+            await page.wait_for_timeout(900)
+            r["picking_a_past_day_shows_it"] = "Bins yesterday" in await page.inner_text("body")
 
         # Nothing was completed on the way. A date passing is not a decision.
         cards = api("GET", "/cards", None, tok)
