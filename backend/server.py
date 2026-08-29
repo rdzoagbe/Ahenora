@@ -7616,6 +7616,7 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
             await notify_assignment(database, user, merged, new_assignee)
 
     # When a recurring card is completed, spawn its next occurrence.
+    next_occurrence = None
     if (
         changes.get("status") == "DONE"
         and card["status"] != "DONE"
@@ -7649,6 +7650,13 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
             "visible_to": card.get("visible_to"),
         }
         await database["cards"].insert_one(next_doc)
+        # Handed back so the app can SAY what just happened. Ticking a weekly
+        # chore makes it vanish and a fresh one appear with next week's date,
+        # and from the outside that is indistinguishable from the tick not
+        # working — which is exactly what was reported. Hiding the new one was
+        # tried and was wrong: it removed the ability to finish a chore early.
+        # The card is not the problem, the silence is.
+        next_occurrence = next_doc["due_date"]
 
     if award_child:
         member = await database["family_members"].find_one(
@@ -7672,7 +7680,10 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
             )
             await send_star_milestone_alert(user["family_id"], member.get("name", "Your child"), old_stars, old_stars + 5)
 
-    return public_card(updated)
+    out = public_card(updated)
+    if next_occurrence:
+        out["next_occurrence"] = iso(next_occurrence)
+    return out
 
 
 @app.post("/api/cards/{card_id}/unshare")
@@ -10381,6 +10392,114 @@ async def scan_shopping_list(
 
     return {"items": items}
 
+
+
+
+# How far back a price is worth quoting. Groceries move; a figure from last
+# spring is not a fact about this week, and quoting it confidently is worse
+# than saying nothing.
+PRICE_WINDOW_DAYS = int(os.environ.get("PRICE_WINDOW_DAYS", "90"))
+# How many separate visits a shop needs before its price for something counts.
+# One observation is a promotion, not a price.
+PRICE_MIN_OBSERVATIONS = 2
+
+
+def _median(values: list) -> float:
+    ordered = sorted(values)
+    mid = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[mid]
+    return (ordered[mid - 1] + ordered[mid]) / 2
+
+
+@app.get("/api/expenses/price-compare")
+async def price_compare(user=Depends(require_full_member)):
+    """What this household pays for each thing, per shop.
+
+    The point of reading receipt LINES rather than totals. A total says ninety
+    euros at one shop and eighty at another, which compares basket sizes; this
+    compares prices, which is the thing a family can act on.
+
+    Four rules keep it from being confidently wrong, and each of them is a
+    reason to say LESS:
+
+      * only within one unit. 1.20 against 0.89 says nothing while one is a
+        500g bag and the other a kilo, so a product bought by weight in one
+        shop and by the piece in another is not compared at all.
+      * the MEDIAN of a shop's observations, never the latest. One price is a
+        promotion; the middle of several is what the shop charges.
+      * at least two separate visits per shop, or it is not a price yet.
+      * nothing older than PRICE_WINDOW_DAYS, and the date comes back with the
+        answer so the app can show how stale it is.
+
+    A saving is only reported when two shops both clear all four. Everything
+    else is returned as "known" without a comparison, which is honest: it means
+    the household has bought it but nowhere near enough to say anything.
+    """
+    database = get_db()
+    cutoff = utcnow() - timedelta(days=PRICE_WINDOW_DAYS)
+
+    # name_key + unit is the comparison key. Same words, same unit, or the
+    # numbers are not about the same thing.
+    groups: dict = {}
+    async for line in database["expense_items"].find(
+            {"family_id": user["family_id"]}, {"_id": 0}):
+        price = line.get("unit_price")
+        shop = (line.get("shop") or "").strip()
+        when = _coerce_dt(line.get("spent_on"))
+        if not price or not shop or not when or when < cutoff:
+            continue
+        key = (line.get("name_key") or "", line.get("unit") or "piece")
+        if not key[0]:
+            continue
+        groups.setdefault(key, {}).setdefault(shop, []).append(
+            {"price": float(price), "when": when, "name": line.get("name") or key[0]})
+
+    items = []
+    for (name_key, unit), by_shop in groups.items():
+        shops = []
+        for shop, seen in by_shop.items():
+            if len(seen) < PRICE_MIN_OBSERVATIONS:
+                continue
+            shops.append({
+                "shop": shop,
+                "unit_price": round(_median([s["price"] for s in seen]), 4),
+                "visits": len(seen),
+                "last_seen": iso(max(s["when"] for s in seen)),
+            })
+        if not shops:
+            continue
+        shops.sort(key=lambda r: r["unit_price"])
+        display = by_shop[shops[0]["shop"]][0]["name"]
+
+        row = {
+            "name": display,
+            "name_key": name_key,
+            "unit": unit,
+            "shops": shops,
+            "cheapest": shops[0]["shop"],
+            "saving": None,
+        }
+        # Only a comparison when there is something to compare against.
+        if len(shops) > 1:
+            row["saving"] = {
+                "per_unit": round(shops[-1]["unit_price"] - shops[0]["unit_price"], 4),
+                "against": shops[-1]["shop"],
+                "percent": round(
+                    (shops[-1]["unit_price"] - shops[0]["unit_price"])
+                    / shops[-1]["unit_price"] * 100, 1) if shops[-1]["unit_price"] else 0.0,
+            }
+        items.append(row)
+
+    # Biggest difference first: that is where a habit is worth changing.
+    items.sort(key=lambda r: (r["saving"] or {}).get("per_unit", 0), reverse=True)
+    return {
+        "window_days": PRICE_WINDOW_DAYS,
+        "min_observations": PRICE_MIN_OBSERVATIONS,
+        "items": items,
+        # Only the rows that can actually advise. The app leads with these.
+        "comparable": [r for r in items if r["saving"]],
+    }
 
 
 @app.post("/api/expenses/scan-receipt")

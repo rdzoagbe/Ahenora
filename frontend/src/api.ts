@@ -437,6 +437,13 @@ export type Recurrence = 'none' | 'daily' | 'weekly' | 'monthly';
 
 export interface Card {
   card_id: string;
+  /**
+   * Only ever set on the reply to completing a RECURRING card: when the next
+   * occurrence was spawned, and for when. The app says so — a chore that
+   * reappears with a new date is otherwise indistinguishable from a tick that
+   * did not save.
+   */
+  next_occurrence?: string;
   family_id: string;
   type: CardType;
   title: string;
@@ -1000,6 +1007,33 @@ export interface ScannedReceipt {
   /** False means the lines disagree with the printed total: show both, fix neither. */
   reconciles: boolean;
   items: ScannedReceiptItem[];
+}
+
+/** What one shop charges this household for one thing, per unit. */
+export interface PriceShop {
+  shop: string;
+  unit_price: number;
+  /** Separate visits behind the figure. Below the server's minimum it is not reported at all. */
+  visits: number;
+  last_seen: string | null;
+}
+
+export interface PriceItem {
+  name: string;
+  name_key: string;
+  unit: string;
+  shops: PriceShop[];
+  cheapest: string;
+  /** null when only one shop qualifies — known, but nothing to compare against. */
+  saving: { per_unit: number; against: string; percent: number } | null;
+}
+
+export interface PriceCompare {
+  window_days: number;
+  min_observations: number;
+  items: PriceItem[];
+  /** Only the rows that can actually advise. */
+  comparable: PriceItem[];
 }
 
 export interface Subscriber {
@@ -2163,6 +2197,7 @@ export const api = {
       method: 'POST',
       body: { image_base64: imageBase64 },
     }),
+  getPriceCompare: () => request<PriceCompare>('/expenses/price-compare'),
   listExpenses: (days = 30) => request<Expense[]>(`/expenses?days=${days}`),
   getExpenseSummary: (days = 30) => request<ExpenseSummary>(`/expenses/summary?days=${days}`),
   getExpenseOverview: (months = 6, category?: string) =>
