@@ -10,6 +10,26 @@ on:
     paths:
       - 'docs/**'
       - '.github/workflows/pages-deploy.yml'
+  # The push trigger above CANNOT see the commit that matters.
+  #
+  # Every merge touching frontend/** rebuilds the web export and commits it back
+  # to main as "Web: rebuild ahenora.com export for <sha>". That commit is made
+  # by a job using GITHUB_TOKEN, and GitHub deliberately does not raise workflow
+  # events for pushes made with that token — it is their guard against a
+  # workflow triggering itself forever.
+  #
+  # So the one commit that changes docs/ never reached the trigger that deploys
+  # docs/. ahenora.com sat on the export from 26 August while five merges went
+  # by, and nothing anywhere said so: every check was green, main was current,
+  # and the site was three days stale. It was found because somebody looked at
+  # the website and could not see their own change.
+  #
+  # Listening for the rebuild workflow FINISHING closes that gap: workflow_run
+  # fires regardless of which token pushed what.
+  workflow_run:
+    workflows: ["Frontend CI and Expo update"]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
 
 # Least-privilege token: read the repo, write the Pages deployment.
@@ -25,6 +45,13 @@ concurrency:
 
 jobs:
   deploy:
+    # workflow_run fires on completion whatever the outcome, and a frontend run
+    # that failed did not rebuild the export — publishing on its back would at
+    # best redeploy what is already live and at worst ship a half-written one.
+    # The other two triggers carry no workflow_run payload, so they pass.
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
