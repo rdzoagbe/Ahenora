@@ -7247,7 +7247,8 @@ async def admin_subscribers(user=Depends(require_user)):
     # user) stands in as the household's contact.
     by_family: dict = {}
     async for u in database["users"].find(
-        {}, {"_id": 0, "family_id": 1, "name": 1, "email": 1, "created_at": 1}
+        {}, {"_id": 0, "family_id": 1, "name": 1, "email": 1, "created_at": 1,
+             "last_active_at": 1, "last_active_day": 1}
     ):
         fid = u.get("family_id")
         if fid:
@@ -7268,6 +7269,26 @@ async def admin_subscribers(user=Depends(require_user)):
             return v.timestamp() if hasattr(v, "timestamp") else 0.0
         except (ValueError, OSError, TypeError):
             return 0.0
+
+    def _last_seen(member: dict):
+        """When this person last used the app, from whichever field has it.
+
+        Two fields record the same fact and neither covers the whole history.
+        last_active_at is a timestamp and only began being written on every
+        request today; before that it was set in /auth/me alone. last_active_day
+        is a date string and has been written by the daily-active counter for
+        much longer. Reading only the timestamp would report everyone who last
+        opened the app before today as never having opened it — which is the
+        same shape of mistake this is fixing.
+        """
+        stamped = _coerce_dt(member.get("last_active_at"))
+        if stamped:
+            return stamped
+        day = str(member.get("last_active_day") or "")
+        try:
+            return datetime.strptime(day, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        except ValueError:
+            return None
 
     rows = []
     paying = 0
@@ -7291,7 +7312,17 @@ async def admin_subscribers(user=Depends(require_user)):
             "owner_name": contact.get("name", ""),
             "owner_email": contact.get("email", ""),
             "member_accounts": len(members),
+            # Push registration. Kept because it answers a real question — can
+            # this household be reached by a notification — but it is NOT
+            # whether they use the app, which is what the screen was reading it
+            # as. Someone who declines the notification prompt, or uses the web
+            # app, has no token and had been reported as never having opened it.
             "has_active_device": fid in active,
+            # When anyone in the household last used the app. None only when
+            # nothing was ever recorded, which is not the same as never opening
+            # it — registering is opening it — so the screen says so carefully.
+            "last_active": _iso(max(
+                (d for d in (_last_seen(m) for m in members) if d), default=None)),
             "created_at": _iso(fam.get("created_at")),
             "subscribed_at": _iso(fam.get("stripe_event_at") or fam.get("rc_event_at")),
         })

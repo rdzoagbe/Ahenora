@@ -1045,7 +1045,14 @@ export interface Subscriber {
   owner_name: string;
   owner_email: string;
   member_accounts: number;
+  /** Has a live push token — reachable by notification. NOT "uses the app". */
   has_active_device: boolean;
+  /**
+   * When anyone in the household last used the app. Null only when nothing was
+   * ever recorded — which is not the same as never having opened it, since
+   * registering is opening it.
+   */
+  last_active: string | null;
   created_at: string | null;
   subscribed_at: string | null;
 }
