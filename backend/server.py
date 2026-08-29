@@ -57,6 +57,9 @@ from ai_safety import (
     validate_chef_answer,
     SHOPPING_SCAN_SYSTEM_PROMPT,
     validate_shopping_scan,
+    RECEIPT_SCAN_SYSTEM_PROMPT,
+    validate_receipt_scan,
+    RECEIPT_UNITS,
     RECIPE_PHOTO_SYSTEM_PROMPT,
     validate_captured_recipe,
     VAULT_CATEGORIES,
@@ -2597,6 +2600,9 @@ INDEXES = {
     "notification_tokens": ["user_id"],
     # The billing log is read newest-first and trimmed by event_id.
     "billing_events": ["received_at", "event_id"],
+    # Price history is read by product across shops, and by expense when one
+    # is deleted.
+    "expense_items": ["family_id", "name_key", "expense_id"],
 }
 
 
@@ -2933,6 +2939,23 @@ class ShoppingItemPatchIn(BaseModel):
     category: Optional[str] = None
 
 
+class ExpenseLineIn(BaseModel):
+    """One product on a receipt.
+
+    The unit matters more than it looks. A price is only comparable against
+    another shop once it is per kilo or per litre — 1.20 against 0.89 says
+    nothing while one is a 500g bag and the other a kilo, and a comparison
+    that ignores that is worse than no comparison, because it is confident.
+    So the amount and its unit travel with the price, and a line that has no
+    usable amount is stored as spending with no unit price at all rather than
+    being quietly given one.
+    """
+    name: str = Field(max_length=40)
+    qty: Optional[float] = Field(default=None, ge=0, le=100000)
+    unit: str = "piece"
+    line_total: float = Field(ge=0, le=10000)
+
+
 class ExpenseIn(BaseModel):
     description: str = ""
     # A negative expense silently skews the split totals; nobody spends a
@@ -2950,6 +2973,11 @@ class ExpenseIn(BaseModel):
     # Split 50/50 with the co-parent — a shared cost the two of them square up on.
     # Off by default: an ordinary household expense is nobody's debt.
     split: bool = False
+    # The lines on the receipt, when there was a receipt to read. Optional: an
+    # expense typed by hand has a total and nothing else, and always will.
+    # Capped at the same ceiling the scan validates to.
+    items: list[ExpenseLineIn] = Field(default=[], max_length=80)
+
 
 
 class TemplateIn(BaseModel):
@@ -10319,6 +10347,78 @@ async def scan_shopping_list(
     return {"items": items}
 
 
+
+@app.post("/api/expenses/scan-receipt")
+async def scan_receipt(
+    payload: dict = Body(...),
+    user: dict = Depends(require_full_member),
+    database=Depends(get_db),
+):
+    """Read a photo of a till receipt into a shop, a date, a total and lines.
+
+    Returns candidates only — nothing is saved here, exactly like the shopping
+    -list scan. The app shows the lines in a ticked preview (unsure reads come
+    unticked) and commits the selection through the ordinary add, so a misread
+    price never lands silently.
+
+    Reading the LINES, not just the total, is the whole point. A total says a
+    household spent ninety euros at one shop and eighty at another, which
+    compares basket sizes rather than prices. The lines are what let the app
+    eventually say the thing a family can act on: these onions cost less per
+    kilo at that shop than at this one.
+    """
+    image_b64 = str(payload.get("image_base64") or "")
+    if "," in image_b64:
+        image_b64 = image_b64.split(",")[-1]
+    if len(image_b64) < 100:
+        raise HTTPException(400, "No photo attached.")
+    if len(image_b64) > MAX_IMAGE_B64_CHARS:
+        raise HTTPException(413, "That photo is too large.")
+
+    if not GOOGLE_API_KEY:
+        raise HTTPException(503, "Photo scanning is unavailable right now.")
+
+    sub = await build_subscription(user["family_id"])
+    family = await get_family_doc(user["family_id"])
+    if not is_admin_user(user) and family.get("ai_scans_used", 0) >= sub["limits"]["ai_scans_per_month"]:
+        plan_limit_error(
+            feature="ai_scans",
+            current_plan=sub["plan"],
+            limit=sub["limits"]["ai_scans_per_month"],
+            used=family.get("ai_scans_used", 0),
+            message="AI scan limit reached for this billing period.",
+        )
+
+    try:
+        text = await _gemini_vision(
+            "Read the shop receipt in this photo.",
+            image_b64,
+            system=RECEIPT_SCAN_SYSTEM_PROMPT,
+            fast=True,
+        )
+        parsed = extract_json(text)
+        if parsed is None:
+            raise UnsafeRecipe("unparseable")
+        result = validate_receipt_scan(parsed)
+    except UnsafeRecipe as exc:
+        log.info("receipt scan rejected by safety gate: %s", exc.reason)
+        raise HTTPException(422, "We could not read a receipt in that photo.")
+    except Exception as exc:
+        log.warning("receipt scan failed: %s", type(exc).__name__)
+        raise HTTPException(502, "We could not read a receipt in that photo.")
+
+    if not is_admin_user(user):
+        # Same guarded increment as the shopping scan: two concurrent scans
+        # cannot both push the counter past the limit.
+        await database["families"].update_one(
+            {"family_id": user["family_id"],
+             "ai_scans_used": {"$lt": sub["limits"]["ai_scans_per_month"]}},
+            {"$inc": {"ai_scans_used": 1}, "$set": {"updated_at": utcnow()}},
+        )
+
+    return result
+
+
 class BulkShoppingIn(BaseModel):
     # One insert per name, so an uncapped list is one request that drives
     # arbitrarily many writes. A household shopping list is dozens of items,
@@ -10572,6 +10672,42 @@ async def add_expense(payload: ExpenseIn, user=Depends(require_full_member)):
         "split": bool(payload.split),
     }
     await database["expenses"].insert_one(doc)
+
+    # The lines, when a receipt was read. Stored beside the expense rather than
+    # inside it: they are queried by product across shops and months, which is a
+    # different shape of question from "what did we spend", and burying them in
+    # an array would mean loading every expense to answer it.
+    if payload.items:
+        spent_on = doc["spent_on"]
+        lines = []
+        for line in payload.items:
+            name = sanitize_message_text(line.name or "", 40).replace("\n", " ").strip()
+            if not name:
+                continue
+            qty = float(line.qty) if line.qty and line.qty > 0 else None
+            unit = line.unit if line.unit in RECEIPT_UNITS else "piece"
+            total = round(float(line.line_total), 2)
+            lines.append({
+                "line_id": new_id("eln"),
+                "expense_id": doc["expense_id"],
+                "family_id": user["family_id"],
+                "shop": merchant,
+                "spent_on": spent_on,
+                "name": name,
+                # Folded once, here, so every later comparison groups on the
+                # same key without each caller inventing its own rule.
+                "name_key": name.strip().lower(),
+                "qty": qty,
+                "unit": unit,
+                "line_total": total,
+                # Only ever set when the amount makes it real. A None here is
+                # the honest answer to "what does this cost per kilo".
+                "unit_price": round(total / qty, 4) if qty else None,
+                "created_at": now,
+            })
+        for line in lines:
+            await database["expense_items"].insert_one(line)
+
     return public_expense(doc)
 
 
@@ -10583,6 +10719,11 @@ async def delete_expense(expense_id: str, user=Depends(require_full_member)):
     )
     if result.deleted_count == 0:
         raise HTTPException(404, "Expense not found")
+    # The lines go with it. Leaving them would keep a deleted receipt quoting
+    # prices in comparisons — the one kind of stale data nobody would think to
+    # look for, because the receipt it came from is no longer on the screen.
+    await database["expense_items"].delete_many(
+        {"expense_id": expense_id, "family_id": user["family_id"]})
     return {"ok": True}
 
 
