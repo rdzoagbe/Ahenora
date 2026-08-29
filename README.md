@@ -69,4 +69,4 @@ family coordinated. Prices in euros; pay by card on the web or through Google Pl
 - [Privacy Policy](https://ahenora.com/privacy.html)
 - [Terms](https://ahenora.com/terms.html)
 - [Delete your account](https://ahenora.com/delete-account.html)
-- Contact: rolanddzoagbe@gmail.com
+- Contact: contact@ahenora.com
