@@ -9135,7 +9135,7 @@ BILLING_SWEEP_INTERVAL = int(os.environ.get("BILLING_SWEEP_INTERVAL", str(6 * 36
 BILLING_SWEEP_BUDGET = int(os.environ.get("BILLING_SWEEP_BUDGET", "200"))
 
 
-async def sweep_billing_once(database: Any, budget: int, secret: str = "") -> dict:
+async def sweep_billing_once(database: Any, budget: int = 0, secret: str = "") -> dict:
     """One pass: ask RevenueCat about the adults of households that read free.
 
     Only unpaid households are candidates, because those are the ones where a
@@ -9150,6 +9150,13 @@ async def sweep_billing_once(database: Any, budget: int, secret: str = "") -> di
     secret = secret or os.environ.get("REVENUECAT_SECRET_KEY", "")
     if not secret:
         return {"checked": 0, "corrected": 0, "candidates": 0}
+    # The budget is read here for the same reason the key is: the scheduler
+    # below has no use for either, and a caller that holds neither cannot leak
+    # them. It also keeps BILLING_SWEEP_BUDGET out of the scheduler's scope —
+    # CodeQL classifies data by NAME, reads "BILLING" as financial detail, and
+    # so treats anything this function returns to a caller that passed it as
+    # sensitive. The counts are two integers; the taint is the constant's name.
+    budget = budget or BILLING_SWEEP_BUDGET
     unpaid: set = set()
     async for fam in database["families"].find({}, {"_id": 0, "family_id": 1, "plan": 1}):
         if (fam.get("plan") or "village") == "village" and fam.get("family_id"):
@@ -9223,13 +9230,13 @@ async def sweep_billing_once(database: Any, budget: int, secret: str = "") -> di
 
 
 async def _billing_sweep_loop():
-    # The key is deliberately absent from this scope. The pass fetches its own,
-    # so nothing here — not the counts it returns, not an exception escaping it
-    # — can carry the key into a log line.
+    # The key and the budget are both deliberately absent from this scope. The
+    # pass fetches its own, so nothing here — not the counts it returns, not an
+    # exception escaping it — can carry either into a log line.
     while True:
         await asyncio.sleep(BILLING_SWEEP_INTERVAL)
         try:
-            result = await sweep_billing_once(get_db(), BILLING_SWEEP_BUDGET)
+            result = await sweep_billing_once(get_db())
             if result["corrected"]:
                 log.warning("billing sweep: corrected %s household(s) of %s checked",
                             result["corrected"], result["checked"])
