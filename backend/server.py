@@ -2573,6 +2573,48 @@ async def start_reminder_scheduler():
     log.info("Reminder scheduler started (every %ss)", REMINDER_SCAN_INTERVAL)
 
 
+# Every one of these is a field the code above looks up by, on a collection
+# that grows with the number of households. Without them Mongo reads the whole
+# collection for each lookup — which nobody notices at seventy households and
+# which is the first thing to fall over at seventy thousand.
+#
+# The one that matters most is user_sessions.token_hash: require_user runs it
+# on EVERY authenticated request, so an unindexed sessions collection is a full
+# scan per API call. users.email is next — login, registration and the stranded
+# -invite check all reach for an account by address.
+#
+# All non-unique on purpose. A unique index would be the better statement of
+# intent for users.email, but creating one against live data fails outright if
+# a single duplicate exists, and a startup that refuses to start is a worse
+# outcome than a duplicate. Creating an index that is already there is a no-op,
+# so this is safe to run on every boot.
+INDEXES = {
+    "users": ["email", "user_id"],
+    "user_sessions": ["token_hash", "user_id"],
+    "family_members": ["family_id", "user_id", "member_id"],
+    "family_invites": ["family_id", "email", "token"],
+    "cards": ["family_id", "card_id"],
+    "notification_tokens": ["user_id"],
+}
+
+
+@app.on_event("startup")
+async def ensure_indexes():
+    """Create the lookup indexes if they are missing.
+
+    Never fatal: an index that cannot be built is a slow app, and a slow app
+    beats one that will not boot.
+    """
+    if db is None:
+        return
+    for collection, fields in INDEXES.items():
+        for field in fields:
+            try:
+                await db[collection].create_index(field)
+            except Exception as e:
+                log.warning("could not index %s.%s: %s", collection, field, e)
+
+
 async def require_user(authorization: str = Header(default=""),
                        x_client_platform: str = Header(default="")):
     database = get_db()
@@ -3306,6 +3348,28 @@ async def _purge_user_account(database: Any, user_id: str, email: str) -> None:
     await database["users"].delete_many({"user_id": user_id})
 
 
+async def _purge_smoke_account(database: Any, user_id: Optional[str], email: str) -> None:
+    """Erase one smoke-test account, wherever the erasing is being done from.
+
+    Both halves of the cleanup below — the caller deleting itself, and the sweep
+    deleting residue from a run that died early — were doing the same job with
+    two hand-written lists of collections, and both lists were short. They named
+    user_sessions and notification_tokens but not notification_settings or
+    support_tickets, so every aborted run left two rows behind for good.
+
+    _purge_user_account is the account-deletion path a real user gets and it
+    already knows the full list, so it is the thing to call. It differs in one
+    way that matters here: it clears only PENDING invitations, because a real
+    user's accepted invitation is history worth keeping. A smoke address has no
+    history worth keeping, and an accepted one left lying around is exactly what
+    latches the next run red, so every invitation to the address goes too.
+    """
+    if user_id:
+        await _purge_user_account(database, user_id, email)
+    if email:
+        await database["family_invites"].delete_many({"email": email})
+
+
 @app.post("/api/auth/smoke-cleanup")
 async def smoke_cleanup(payload: Optional[SmokeCleanupIn] = Body(None), user=Depends(require_user)):
     """Self-deletion for smoke-test accounts, so repeated production runs
@@ -3316,10 +3380,7 @@ async def smoke_cleanup(payload: Optional[SmokeCleanupIn] = Body(None), user=Dep
         raise HTTPException(status_code=403, detail="Not a smoke-test account")
     uid = user["user_id"]
     await database["family_members"].delete_many({"user_id": uid})
-    await database["family_invites"].delete_many({"email": email})
-    await database["user_sessions"].delete_many({"user_id": uid})
-    await database["notification_tokens"].delete_many({"user_id": uid})
-    await database["users"].delete_many({"user_id": uid})
+    await _purge_smoke_account(database, uid, email)
 
     # Sweep residue left by earlier runs that never reached this endpoint — a
     # cancelled workflow, or a failure at any step before cleanup. Those runs
@@ -3351,15 +3412,9 @@ async def smoke_cleanup(payload: Optional[SmokeCleanupIn] = Body(None), user=Dep
                  if _SMOKE_EMAIL_RE.match((m.get("email") or "").strip().lower())
                  and not _is_parent_role(m.get("role"))]
         for m in stale:
-            stale_uid = m.get("user_id")
             await database["family_members"].delete_many({"member_id": m["member_id"]})
-            if stale_uid:
-                await database["users"].delete_many({"user_id": stale_uid})
-                await database["user_sessions"].delete_many({"user_id": stale_uid})
-                await database["notification_tokens"].delete_many({"user_id": stale_uid})
-            stale_email = (m.get("email") or "").strip().lower()
-            if stale_email:
-                await database["family_invites"].delete_many({"email": stale_email})
+            await _purge_smoke_account(
+                database, m.get("user_id"), (m.get("email") or "").strip().lower())
 
     for fid in ((payload.family_ids if payload else None) or [])[:5]:
         remaining = await database["family_members"].find_one({"family_id": fid}, {"_id": 0})
@@ -5180,8 +5235,11 @@ async def stranded_invites(user=Depends(require_user)):
     can invite them again — a founder cannot reach into somebody else's family.
 
     So the prompt has to go to the inviter, which is what this feeds. Scoped to
-    the caller's own household and their own invitations: no new information is
-    revealed, it is the address they typed being read back to them.
+    the caller's own household and their own invitations — the addresses they
+    typed, read back to them. It does tell them one thing they did not type:
+    that an address has an account. That is bounded to people they had already
+    invited, and it is the whole point of the "they signed up" wording, but it
+    is not nothing, so it is written down rather than waved away.
 
     Two cases are worth re-sending, and they are told apart because the wording
     should differ:
@@ -5205,12 +5263,19 @@ async def stranded_invites(user=Depends(require_user)):
     if not invites:
         return []
 
-    # One pass over the accounts, indexed by address, so the check below is a
-    # dict hit rather than a query per invitation.
+    # Look up only the addresses this household actually wrote to. The first
+    # version read every account in the database to build the index, which is
+    # invisible at seventy households and a full collection scan on every Feed
+    # load at seventy thousand. A household's invitations are a handful, and
+    # addresses are stored folded, so a point lookup each is both cheaper and
+    # bounded by the caller's own data rather than by everyone else's.
     by_email: dict = {}
-    async for acct in database["users"].find({}, {"_id": 0, "family_id": 1, "email": 1}):
-        addr = (acct.get("email") or "").strip().lower()
-        if addr:
+    for addr in {(inv.get("email") or "").strip().lower() for inv in invites}:
+        if not addr:
+            continue
+        acct = await database["users"].find_one(
+            {"email": addr}, {"_id": 0, "family_id": 1, "email": 1})
+        if acct:
             by_email[addr] = acct
 
     out = []

@@ -25,10 +25,15 @@ if HAVE_DEPS:
 class FakeColl:
     def __init__(self, rows=None):
         self.rows = list(rows or [])
+        self.queries = []   # every filter this collection was asked for
+
+    def _match(self, q):
+        return [r for r in self.rows
+                if not q or all(r.get(k2) == v for k2, v in q.items())]
 
     def find(self, q=None, *a, **k):
-        rows = [r for r in self.rows
-                if not q or all(r.get(k2) == v for k2, v in q.items())]
+        self.queries.append(dict(q or {}))
+        rows = self._match(q)
 
         class Cursor:
             def __aiter__(self):
@@ -37,6 +42,11 @@ class FakeColl:
                         yield r
                 return gen()
         return Cursor()
+
+    async def find_one(self, q=None, *a, **k):
+        self.queries.append(dict(q or {}))
+        found = self._match(q)
+        return found[0] if found else None
 
 
 class FakeDB:
@@ -58,8 +68,8 @@ class StrandedInvites(unittest.TestCase):
         server.get_db = self._get_db
 
     def _run(self, invites, users):
-        db = FakeDB(family_invites=FakeColl(invites), users=FakeColl(users))
-        server.get_db = lambda: db
+        self.db = FakeDB(family_invites=FakeColl(invites), users=FakeColl(users))
+        server.get_db = lambda: self.db
         return asyncio.run(server.stranded_invites(user=self.me))
 
     def _inv(self, email, fam="famA", status="pending", expires_in=7):
@@ -100,10 +110,91 @@ class StrandedInvites(unittest.TestCase):
         ], [{"email": "tried@x.test", "family_id": "famOWN"}])
         self.assertEqual([r["reason"] for r in res], ["signed_up", "expired"])
 
+
+    def test_it_never_reads_the_whole_users_collection(self):
+        """This runs on every Feed load. The first version built its index by
+        reading EVERY account in the database — invisible at seventy
+        households, a full collection scan per Feed load at seventy thousand.
+        The work must be bounded by the caller's own invitations."""
+        strangers = [{"email": f"nobody{i}@x.test", "family_id": f"fam{i}"}
+                     for i in range(50)]
+        self._run(
+            [self._inv("one@x.test"), self._inv("two@x.test")],
+            [{"email": "one@x.test", "family_id": "famB"}] + strangers,
+        )
+        asked = self.db.colls["users"].queries
+        self.assertTrue(asked, "the accounts were never consulted at all")
+        for q in asked:
+            self.assertIn("email", q,
+                          f"accounts read without narrowing to an address: {q}")
+            self.assertIn(q["email"], {"one@x.test", "two@x.test"})
+        # Two distinct addresses were invited, so at most two lookups.
+        self.assertLessEqual(len(asked), 2)
+
+    def test_the_same_address_invited_twice_is_looked_up_once(self):
+        rows = self._run(
+            [self._inv("again@x.test"), self._inv("again@x.test", expires_in=30)],
+            [{"email": "again@x.test", "family_id": "famB"}],
+        )
+        self.assertEqual(len(self.db.colls["users"].queries), 1)
+        self.assertTrue(all(r["reason"] == "signed_up" for r in rows))
+
     def test_a_user_with_no_household_gets_an_empty_list(self):
         server.get_db = lambda: FakeDB(family_invites=FakeColl([]), users=FakeColl([]))
         res = asyncio.run(server.stranded_invites(user={"user_id": "u", "family_id": None}))
         self.assertEqual(res, [])
+
+
+
+@unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
+class LookupIndexes(unittest.TestCase):
+    """The point lookups above are only cheaper than a scan if they are indexed.
+
+    Nothing in this app ever created an index, so every lookup by address, by
+    session token or by household was a full collection read. Narrowing the
+    stranded-invite check to per-address lookups would have made it WORSE
+    without these — two scans instead of one.
+    """
+
+    def test_every_field_the_hot_paths_look_up_by_is_indexed(self):
+        for collection, field in (
+            # require_user runs this on every single authenticated request.
+            ("user_sessions", "token_hash"),
+            # Login, registration, and the stranded-invite check.
+            ("users", "email"),
+            ("users", "user_id"),
+            ("family_members", "family_id"),
+            ("family_invites", "family_id"),
+            ("family_invites", "email"),
+            ("cards", "family_id"),
+        ):
+            with self.subTest(collection=collection, field=field):
+                self.assertIn(field, server.INDEXES.get(collection, []))
+
+    def test_a_broken_index_does_not_stop_the_app_from_booting(self):
+        """A slow app beats one that will not start."""
+        class Boom:
+            async def create_index(self, *a, **k):
+                raise RuntimeError("no permission to build indexes")
+
+        class DB:
+            def __getitem__(self, _name):
+                return Boom()
+
+        real_db = server.db
+        server.db = DB()
+        try:
+            asyncio.run(server.ensure_indexes())  # must not raise
+        finally:
+            server.db = real_db
+
+    def test_it_does_nothing_at_all_without_a_database(self):
+        real_db = server.db
+        server.db = None
+        try:
+            asyncio.run(server.ensure_indexes())
+        finally:
+            server.db = real_db
 
 
 if __name__ == "__main__":
