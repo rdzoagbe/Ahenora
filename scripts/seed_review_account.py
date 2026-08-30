@@ -100,9 +100,14 @@ def main():
             "To get a token: sign in at https://ahenora.com/app as the admin,\n"
             "open the browser devtools console and run:\n"
             "    localStorage.getItem('coo_session_token')")
+    # A prefix list is the wrong shape for this: the first version checked
+    # YOUR_/CHOOSE_/PASTE_ and then the instructions said PICK_A_REAL_ONE, which
+    # sailed through and created a real account. Match the SHAPE of a
+    # placeholder instead — SCREAMING_SNAKE_CASE is not a password anyone picks.
+    import re as _re
     for name, value in (("--review-email", a.review_email),
                         ("--review-password", a.review_password)):
-        if value.startswith(("YOUR_", "CHOOSE_", "PASTE_")) or " " in value:
+        if _re.fullmatch(r"[A-Z][A-Z0-9]*(_[A-Z0-9]+)+", value) or " " in value:
             raise SystemExit(f"{name} still looks like a placeholder: {value!r}")
 
     # Prove the admin credential works before creating anything.
