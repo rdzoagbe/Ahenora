@@ -7560,6 +7560,42 @@ async def admin_run_due_reminders(user=Depends(require_user)):
     return {"sent": sent}
 
 
+class GrandfatherIn(BaseModel):
+    email: str
+    grandfathered: bool = True
+
+
+@app.post("/api/admin/grandfather")
+async def admin_set_grandfathered(payload: GrandfatherIn, user=Depends(require_user)):
+    """Give one household the top tier, without making it an admin household.
+
+    Written for the App Review demo account, and the distinction is the whole
+    point. The obvious shortcut — add the reviewer's address to ADMIN_EMAILS —
+    would work, because family_has_admin() hands an admin household the top
+    plan. It would also hand whoever holds those credentials every /api/admin
+    route: the subscriber list, billing events, the dedupe tools. Those
+    credentials get typed into a form at Apple and live in a review queue.
+
+    `grandfathered` is the flag that already means "top tier, no purchase" and
+    nothing else, so it is the right one to reuse. Reversible by posting false.
+    """
+    if not is_admin_user(user):
+        raise HTTPException(status_code=403, detail="Admins only")
+    database = get_db()
+    email = (payload.email or "").strip().lower()
+    if not email:
+        raise HTTPException(status_code=400, detail="email is required")
+    target = await database["users"].find_one({"email": email}, {"_id": 0})
+    if not target or not target.get("family_id"):
+        raise HTTPException(status_code=404, detail="No account with that email")
+    await database["families"].update_one(
+        {"family_id": target["family_id"]},
+        {"$set": {"grandfathered": bool(payload.grandfathered), "updated_at": utcnow()}},
+    )
+    return {"ok": True, "family_id": target["family_id"],
+            "grandfathered": bool(payload.grandfathered)}
+
+
 @app.get("/api/admin/version-adoption")
 async def version_adoption(user=Depends(require_user)):
     """Who is on which build — the answer to "did the OTA reach everyone".
