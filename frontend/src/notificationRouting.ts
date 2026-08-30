@@ -37,7 +37,20 @@ export function targetForNotification(data: unknown): { pathname: string; params
     // an announcement is addressed to the household.
     case 'handoff_note':
     case 'announcement':
+    // The digest and the weekly recap are both about "everything", which is
+    // what the Feed is.
+    case 'morning_digest':
+    case 'daily_tip':
+    case 'sunday_recap':
       return { pathname: '/(tabs)/feed' };
+    // These name a specific screen, and landing anywhere else makes the tap
+    // useless: a dinner nudge you have to go and find is not a nudge.
+    case 'dinner_reminder':
+      return { pathname: '/(tabs)/kitchen' };
+    case 'calendar_nightly':
+      return { pathname: '/(tabs)/calendar' };
+    case 'allowance_reminder':
+      return { pathname: '/(tabs)/kids' };
     case 'family_invite':
     case 'family_joined':
     case 'invite_accepted':

@@ -505,50 +505,36 @@ export default function Feed() {
                 body: `${dueTomorrow.length} ${dueTomorrow.length === 1 ? t('digest_item_one') : t('digest_item_many')}: ${names}${extra}`,
               };
             }
-            const tipKeys = ['tip_scan', 'tip_note', 'tip_kids', 'tip_meal', 'tip_vault'];
-            const tipKey = tipKeys[new Date().getDate() % tipKeys.length];
-            const quietTip = { title: t('digest_title'), body: t(tipKey) };
-            // Quiet tip is silent (low-priority channel) so it is enabled by
-            // default; the content digest still respects the reminders toggle.
-            syncMorningDigest(true, prefs.card_reminders ? payload : null, quietTip).catch(() => undefined);
+            // Both halves of the morning are the server's job now. It used to
+            // schedule the CONTENT digest for tomorrow 07:30 from here — one
+            // shot, only if somebody opened the Feed, carrying the agenda as it
+            // looked at that moment. So it arrived only on days following a day
+            // the app was opened, and could not know about anything added
+            // afterwards. Roland had appointments and no notification; that is
+            // the mechanism.
+            //
+            // The quiet-day TIP went with it. Left here it was scheduled for
+            // 07:30 every day regardless, while the server sent the digest at
+            // 07:30 too — so a busy day produced both, under the same title.
+            // Only the server knows whether a day is actually quiet.
+            //
+            // Passing null for both keeps the local ones cancelled, which is
+            // what stops two arriving.
+            syncMorningDigest(false, null, null).catch(() => undefined);
 
-            // Dinner-tonight nudge: 17:30 local, only when a meal is planned for
-            // today. Ties the Kitchen tab to a daily moment. Rides the reminders toggle.
-            Promise.allSettled([api.listMeals(), api.listShopping()])
-              .then(([mealRes, shopRes]) => {
-                const WEEK = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-                const today = WEEK[new Date().getDay()];
-                const meals = mealRes.status === 'fulfilled' ? mealRes.value : [];
-                const todaysMeal = meals.find((m) => m.day === today);
-                if (!prefs.card_reminders || !todaysMeal) {
-                  syncDinnerReminder(false, null).catch(() => undefined);
-                  return;
-                }
-                const shop = shopRes.status === 'fulfilled' ? shopRes.value : [];
-                const toBuy = shop.filter((i) => !i.checked).length;
-                const body = toBuy > 0
-                  ? t('dinner_to_buy', { meal: todaysMeal.title, n: String(toBuy) })
-                  : todaysMeal.title;
-                syncDinnerReminder(true, { title: t('dinner_title'), body }).catch(() => undefined);
-              })
-              .catch(() => undefined);
-
-            // Sunday recap: a feel-good weekly summary pushed Sunday 18:00 local.
-            // Only when there's something to celebrate; rides the reminders toggle.
-            if (prefs.card_reminders) {
-              api.reportLite()
-                .then((r) => {
-                  if ((r.tasks_done || 0) + (r.stars_earned || 0) <= 0) {
-                    syncSundayRecap(false, null).catch(() => undefined);
-                    return;
-                  }
-                  const body = t('recap_body', { tasks: String(r.tasks_done), stars: String(r.stars_earned) });
-                  syncSundayRecap(true, { title: t('recap_title'), body }).catch(() => undefined);
-                })
-                .catch(() => undefined);
-            } else {
-              syncSundayRecap(false, null).catch(() => undefined);
-            }
+            // Dinner nudge (17:30) and Sunday recap (18:00) are the server's
+            // job now, for the same reason as the digest: they were one-shot
+            // local notifications, only ever (re)scheduled while somebody had
+            // the Feed open, carrying whatever the meal plan and the week's
+            // tally looked like at that moment. Someone who did not open this
+            // screen simply never got them.
+            //
+            // send_daily_local_pushes fires both at the right local hour from
+            // current data, whether or not anything was opened. Cancelling here
+            // is what stops two of each arriving — a duplicate notification is
+            // how an app gets muted.
+            syncDinnerReminder(false, null).catch(() => undefined);
+            syncSundayRecap(false, null).catch(() => undefined);
           })
           .catch(() => undefined);
       }

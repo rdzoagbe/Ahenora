@@ -75,7 +75,7 @@ describe('api.exchangeSession', () => {
     const [url, opts] = (global.fetch as jest.Mock).mock.calls[0];
     expect(url).toBe('https://test-backend.example.com/api/auth/session');
     expect(opts.method).toBe('POST');
-    expect(JSON.parse(opts.body)).toEqual({ session_id: 'sess-abc' });
+    expect(JSON.parse(opts.body)).toEqual({ session_id: 'sess-abc', language: 'en' });
     expect(result).toEqual(payload);
   });
 
@@ -88,6 +88,7 @@ describe('api.exchangeSession', () => {
     expect(JSON.parse(opts.body)).toEqual({
       session_id: 'sess-abc',
       invite_token: 'inv-xyz',
+      language: 'en',
     });
   });
 });

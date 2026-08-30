@@ -238,6 +238,12 @@ async function getAllowanceMap(): Promise<Record<string, string>> {
  * frequency never leaves a stale reminder behind. The message strings are
  * built by the caller (which has the translator); this only schedules.
  */
+/**
+ * Sent by the server now (see DAILY_PUSH_JOBS): a day's warning before pocket
+ * money falls due. Scheduled here it only existed for someone who had opened
+ * the Kids tab, and it went stale the moment a payment moved the due date.
+ * Kept to cancel what an older build left behind: ([], false).
+ */
 export async function syncAllowanceReminders(
   items: { id: string; fireAt: number; title: string; body: string }[],
   enabled: boolean,
@@ -501,10 +507,13 @@ async function cancelScheduledByType(Notifications: any, types: string[]) {
 let digestScheduleLock: Promise<unknown> = Promise.resolve();
 
 /**
- * Schedules (or clears) tomorrow's 07:30 local "morning digest" notification.
- * The caller recomputes the digest on every sync, so content staleness is
- * bounded by the user's last app open. No backend scheduler or timezone
- * bookkeeping needed — the OS fires it in the device's local time.
+ * The CONTENT digest now comes from the server (send_daily_local_pushes), which
+ * knows the agenda at 07:30 rather than whenever the app was last opened. What
+ * is left here is the quiet-day tip: a silent, low-priority nudge with no agenda
+ * in it, which needs no push token and loses nothing if a day is skipped.
+ *
+ * Passing a non-null `digest` still works and is still cancelled correctly, but
+ * the app passes null — two 07:30 notifications is how an app gets muted.
  */
 export function syncMorningDigest(
   enabled: boolean,
@@ -568,9 +577,10 @@ async function syncMorningDigestImpl(
 const DINNER_ID_KEY = 'coo_dinner_reminder_id';
 
 /**
- * Schedules (or clears) a "dinner tonight" nudge for 17:30 local — but only
- * when there's a meal planned for today and 17:30 is still ahead. Ties the
- * meal planner to a daily moment. Caller passes pre-localized content.
+ * Sent by the server now (see DAILY_PUSH_JOBS). Kept so the app can CANCEL what
+ * an older build scheduled: this was a one-shot local notification, written only
+ * while somebody had the Feed open, so it never existed for anyone who did not
+ * open that screen. Called with (false, null).
  */
 export async function syncDinnerReminder(
   enabled: boolean,
@@ -618,9 +628,8 @@ export async function syncDinnerReminder(
 const RECAP_ID_KEY = 'coo_sunday_recap_id';
 
 /**
- * Schedules (or clears) a "Sunday recap" nudge for the upcoming Sunday 18:00
- * local — a feel-good weekly summary that also pulls people back to plan the
- * week. Recomputed on each app open; caller passes pre-localized content.
+ * Sent by the server now (see DAILY_PUSH_JOBS). Kept to cancel what an older
+ * build scheduled — see syncDinnerReminder for why. Called with (false, null).
  */
 export async function syncSundayRecap(
   enabled: boolean,
@@ -670,11 +679,9 @@ export async function syncSundayRecap(
 const CAL_NIGHTLY_ID_KEY = 'coo_calendar_nightly_id';
 
 /**
- * Schedules (or clears) a nightly "here's tomorrow" agenda reminder for ~20:15
- * local. Caller passes pre-localized content built from the upcoming agenda.
- * Rescheduled on each calendar open (mirrors the morning digest) so the body
- * always reflects the latest plan. Fires tonight if 20:15 is still ahead,
- * otherwise tomorrow evening.
+ * Sent by the server now (see DAILY_PUSH_JOBS). It used to be rescheduled on
+ * each Calendar open, which meant it only existed for someone who opened that
+ * tab that day. Kept to cancel what an older build left behind: (false, null).
  */
 export async function syncCalendarNightly(
   enabled: boolean,

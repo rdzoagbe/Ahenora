@@ -20,6 +20,8 @@
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "243255248169-cei972lc7kmfig6tmjb6l2nlmgqkjf22.apps.googleusercontent.com",
         "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "243255248169-n4l7es5ecr3j85v00dia2icp9kjo7umh.apps.googleusercontent.com",
         "EXPO_PUBLIC_REVENUECAT_ANDROID_KEY": "goog_wiMoDbBhcLrvPdUSRbZqXDhKkQi",
+        "EXPO_PUBLIC_REVENUECAT_IOS_KEY": "appl_HVpQCCAyxumGBOVqRGoDqJmxqop",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "243255248169-hj776p5o5db76dn2q5562sflbfa6gvfh.apps.googleusercontent.com",
         "EXPO_PUBLIC_MICROSOFT_CLIENT_ID": "d9a47680-a27e-4b02-8013-bd946c099f9e"
       },
       "ios": {
@@ -39,6 +41,8 @@
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "243255248169-cei972lc7kmfig6tmjb6l2nlmgqkjf22.apps.googleusercontent.com",
         "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "243255248169-n4l7es5ecr3j85v00dia2icp9kjo7umh.apps.googleusercontent.com",
         "EXPO_PUBLIC_REVENUECAT_ANDROID_KEY": "goog_wiMoDbBhcLrvPdUSRbZqXDhKkQi",
+        "EXPO_PUBLIC_REVENUECAT_IOS_KEY": "appl_HVpQCCAyxumGBOVqRGoDqJmxqop",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "243255248169-hj776p5o5db76dn2q5562sflbfa6gvfh.apps.googleusercontent.com",
         "EXPO_PUBLIC_MICROSOFT_CLIENT_ID": "d9a47680-a27e-4b02-8013-bd946c099f9e"
       },
       "ios": {
@@ -54,9 +58,9 @@
         "releaseStatus": "completed"
       },
       "ios": {
-        "appleId": "REPLACE_WITH_APPLE_ID_EMAIL",
-        "ascAppId": "REPLACE_WITH_APP_STORE_CONNECT_APP_ID",
-        "appleTeamId": "REPLACE_WITH_TEAM_ID"
+        "appleId": "roland.dzoagbe@hotmail.com",
+        "ascAppId": "6806811163",
+        "appleTeamId": "Y2Y8A56NR6"
       }
     },
     "production": {
@@ -66,9 +70,9 @@
         "releaseStatus": "draft"
       },
       "ios": {
-        "appleId": "REPLACE_WITH_APPLE_ID_EMAIL",
-        "ascAppId": "REPLACE_WITH_APP_STORE_CONNECT_APP_ID",
-        "appleTeamId": "REPLACE_WITH_TEAM_ID"
+        "appleId": "roland.dzoagbe@hotmail.com",
+        "ascAppId": "6806811163",
+        "appleTeamId": "Y2Y8A56NR6"
       }
     }
   }

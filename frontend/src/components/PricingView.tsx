@@ -29,6 +29,33 @@ import { purchasePremium, restorePurchases } from '../billing';
 // paths point here instead of dead-ending on "coming soon".
 const ANDROID_STORE_URL = 'https://play.google.com/store/apps/details?id=com.householdcoo.app';
 
+/**
+ * What to say when store billing is not available here.
+ *
+ * On the web and on Android, pointing at Google Play is the helpful answer:
+ * that is where subscribing actually works.
+ *
+ * On iOS it is an automatic rejection. App Store guideline 3.1.1 forbids
+ * steering a user to any purchase mechanism outside the app, and two of these
+ * alerts sent them to a COMPETITOR'S STORE. iOS gets a plain "not right now"
+ * with no link at all — which is also simply true: until the RevenueCat iOS
+ * key and the App Store Connect products exist, there is nothing to buy.
+ */
+function unavailableAlert(t: (k: string) => string) {
+  if (Platform.OS === 'ios') {
+    Alert.alert(t('price_unavailable_title'), t('price_unavailable_msg'));
+    return;
+  }
+  Alert.alert(
+    t('price_get_app_title'),
+    t('price_get_app_msg'),
+    [
+      { text: t('cancel'), style: 'cancel' },
+      { text: t('price_get_app_cta'), onPress: () => { Linking.openURL(ANDROID_STORE_URL).catch(() => undefined); } },
+    ],
+  );
+}
+
 // Three tiers: Free (Village) + Family (executive) + Household.
 const PLAN_ORDER: Plan[] = ['village', 'executive', 'household'];
 
@@ -130,14 +157,7 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
         if (!tier || !tierBuyable(plan)) {
           // This tier isn't buyable here yet (Stripe off, or this tier's prices
           // not set up) — point to Google Play rather than dead-ending.
-          Alert.alert(
-            t('price_get_app_title'),
-            t('price_get_app_msg'),
-            [
-              { text: t('cancel'), style: 'cancel' },
-              { text: t('price_get_app_cta'), onPress: () => { Linking.openURL(ANDROID_STORE_URL).catch(() => undefined); } },
-            ],
-          );
+          unavailableAlert(t);
           return;
         }
         try {
@@ -160,20 +180,17 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
       // Household's RevenueCat offering may not be set up on this build yet —
       // don't dead-end, point the buyer to the web where it always works.
       if (res.available && res.error === 'no_offering' && plan === 'household') {
-        Alert.alert(t('price_household_web_title'), t('price_household_web_msg'));
+        // Pointing at ahenora.com to pay is the same 3.1.1 problem as pointing
+        // at Google Play, just a different destination. iOS gets the neutral
+        // "not right now" instead.
+        if (Platform.OS === 'ios') unavailableAlert(t);
+        else Alert.alert(t('price_household_web_title'), t('price_household_web_msg'));
         return;
       }
       if (!res.available) {
         // No store billing here — almost always because this is the web app.
         // Don't dead-end: offer to open Google Play, where subscribing works.
-        Alert.alert(
-          t('price_get_app_title'),
-          t('price_get_app_msg'),
-          [
-            { text: t('cancel'), style: 'cancel' },
-            { text: t('price_get_app_cta'), onPress: () => { Linking.openURL(ANDROID_STORE_URL).catch(() => undefined); } },
-          ],
-        );
+        unavailableAlert(t);
         return;
       }
       if (res.cancelled) return;
@@ -263,14 +280,7 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
       const res = await restorePurchases(user.user_id);
       if (!res.available) {
         // Same as purchase: restoring only works in the app. Point there.
-        Alert.alert(
-          t('price_get_app_title'),
-          t('price_get_app_msg'),
-          [
-            { text: t('cancel'), style: 'cancel' },
-            { text: t('price_get_app_cta'), onPress: () => { Linking.openURL(ANDROID_STORE_URL).catch(() => undefined); } },
-          ],
-        );
+        unavailableAlert(t);
         return;
       }
       if (res.ok && res.premium) {

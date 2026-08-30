@@ -42,3 +42,9 @@ app-example
 
 # Google Play service account key (never commit — used by `eas submit`)
 play-service-account.json
+
+# App Store Connect API key (never commit — used by `eas submit`). Written by
+# the iOS workflow from a secret and shredded at the end of the job; ignored
+# here so a local `eas submit` experiment can never leave one behind.
+asc-api-key.p8
+*.p8

@@ -254,9 +254,16 @@ export default function Calendar() {
       : undefined),
     [],
   );
+  // Same platform-bound rule as sign-in: an Android OAuth client is refused when
+  // the request comes from iOS. Without an iOS client this request had no usable
+  // client id at all on iOS, so "Connect Google Calendar" was a button that could
+  // only fail. Absent, the entry point is hidden rather than offered.
+  const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID?.trim() || '';
+  const googleCalendarAvailable = Platform.OS !== 'ios' || Boolean(iosClientId);
   const [calendarRequest, calendarResponse, promptCalendarAsync] = Google.useAuthRequest({
     androidClientId,
     webClientId,
+    ...(iosClientId ? { iosClientId } : {}),
     scopes: ['openid', 'profile', 'email', GOOGLE_CALENDAR_SCOPE],
     redirectUri: webCalendarRedirect,
   });
@@ -473,19 +480,15 @@ export default function Calendar() {
 
   useEffect(() => { autoSyncCalendar(); }, [autoSyncCalendar]);
 
-  // Nightly agenda reminder (~20:15 local) with tomorrow's plan. Rescheduled
-  // whenever the agenda changes so the body stays current.
+  // The nightly agenda (~20:15 local) is sent by the server now. It used to be
+  // scheduled here, from this effect — which meant it only existed for someone
+  // who had opened the Calendar tab that day, and it carried the agenda as it
+  // looked at that moment. send_daily_local_pushes builds it from the current
+  // agenda at 20:15 in the person's own zone instead. Cancelling here is what
+  // stops two arriving.
   useEffect(() => {
-    const tomorrow = startOfLocalDay(new Date());
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const tomorrowKey = dateKey(tomorrow);
-    const count = cards.filter((c) => cardDateKey(c) === tomorrowKey).length;
-    const content = count > 0
-      ? { title: t('cal_nightly_title'),
-          body: count === 1 ? t('cal_nightly_body_one') : t('cal_nightly_body', { count }) }
-      : null;
-    syncCalendarNightly(true, content).catch(() => undefined);
-  }, [cards, t]);
+    syncCalendarNightly(false, null).catch(() => undefined);
+  }, []);
 
   const monthDays = useMemo(() => buildMonthDays(activeMonth), [activeMonth]);
   const countsByDay = useMemo(() => {
@@ -683,7 +686,11 @@ export default function Calendar() {
       return;
     }
 
-    if (!webClientId || !androidClientId) {
+    // googleCalendarAvailable covers iOS specifically: an Android OAuth client is
+    // refused for an iOS request, so without an iOS client there is no usable
+    // client id and the sheet could only fail. Refuse here, with the wording that
+    // is actually true, rather than opening it.
+    if (!webClientId || !androidClientId || !googleCalendarAvailable) {
       Alert.alert(t('cal_google_not_configured'), t('cal_missing_oauth_client_ids'));
       setCalendarSyncStatus(t('cal_oauth_client_ids_missing'));
       return;
