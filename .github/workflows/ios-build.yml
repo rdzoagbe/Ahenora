@@ -108,15 +108,75 @@ jobs:
             --profile "${{ github.event.inputs.profile }}" \
             --non-interactive
 
+      # Authentication for a NON-INTERACTIVE submit. An Apple ID alone cannot
+      # do this: the Developer Program requires two-factor auth, and there is
+      # nobody at a keyboard to approve a prompt. Two ways round it, and the
+      # first is much the better one:
+      #
+      #   1. An App Store Connect API KEY (.p8 + key id + issuer id). No 2FA
+      #      involved at all, revocable on its own, and not tied to a person —
+      #      so it keeps working if the account owner changes their password.
+      #   2. An app-specific password, generated at appleid.apple.com. Simpler
+      #      to create, but it is a credential on the human account and dies
+      #      with a password change.
+      #
+      # Set ONE of them in Settings > Secrets and variables > Actions.
+      - name: Prepare App Store Connect credentials
+        if: ${{ github.event.inputs.submit == 'true' }}
+        id: asc
+        working-directory: frontend
+        env:
+          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          if [ -n "$ASC_API_KEY_P8" ] && [ -n "$ASC_KEY_ID" ] && [ -n "$ASC_ISSUER_ID" ]; then
+            umask 077
+            printf '%s' "$ASC_API_KEY_P8" > asc-api-key.p8
+            echo "method=api-key" >> "$GITHUB_OUTPUT"
+            echo "Using an App Store Connect API key." >> "$GITHUB_STEP_SUMMARY"
+          elif [ -n "$APPLE_APP_SPECIFIC_PASSWORD" ]; then
+            echo "method=app-password" >> "$GITHUB_OUTPUT"
+            echo "Using an app-specific password." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::error title=No App Store Connect credentials::Set ASC_API_KEY_P8 + ASC_KEY_ID + ASC_ISSUER_ID (preferred), or APPLE_APP_SPECIFIC_PASSWORD."
+            {
+              echo "### Cannot submit — no credentials"
+              echo ""
+              echo "A non-interactive submit needs one of:"
+              echo ""
+              echo "- \`ASC_API_KEY_P8\` (contents of the .p8), \`ASC_KEY_ID\`, \`ASC_ISSUER_ID\`"
+              echo "  — App Store Connect > Users and Access > Integrations > App Store Connect API"
+              echo "- \`APPLE_APP_SPECIFIC_PASSWORD\` — appleid.apple.com > Sign-In and Security"
+              echo ""
+              echo "The build itself is unaffected and is on the EAS dashboard."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
       - name: Submit latest build to App Store Connect
         if: ${{ github.event.inputs.submit == 'true' }}
         working-directory: frontend
+        env:
+          # Read by eas-cli when the matching secret was provided above. Both
+          # are set unconditionally; only the configured one holds a value.
+          EXPO_ASC_API_KEY_PATH: ${{ steps.asc.outputs.method == 'api-key' && './asc-api-key.p8' || '' }}
+          EXPO_ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          EXPO_ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          EXPO_APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
         run: |
           npx eas-cli@latest submit \
             --platform ios \
             --profile production \
             --latest \
             --non-interactive
+
+      # The .p8 is a long-lived credential. It never outlives the job.
+      - name: Shred the API key
+        if: ${{ always() }}
+        working-directory: frontend
+        run: rm -f asc-api-key.p8
 
       - name: Say what landed where
         if: ${{ always() }}
