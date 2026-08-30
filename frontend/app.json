@@ -21,8 +21,8 @@
         "ITSAppUsesNonExemptEncryption": false,
         "NSUserTrackingUsageDescription": "Ahenora does not track you across other apps or websites."
       },
-      "usesAppleSignIn": true,
-      "buildNumber": "1"
+      "_comment_buildNumber": "Deliberately absent. eas.json sets appVersionSource=remote, so EAS owns the build number and increments it per build; a value here is ignored and only creates a second, stale source of truth. EAS warns about this on every build.",
+      "usesAppleSignIn": true
     },
     "android": {
       "package": "com.householdcoo.app",
