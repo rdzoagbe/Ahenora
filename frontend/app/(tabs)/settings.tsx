@@ -42,7 +42,7 @@ import { api, Card as CardType, Entitlements, FamilyInvite, FamilyMember, Notifi
 import { LANG_NAMES } from '../../src/i18n';
 import { appVersionInfo, ensureNotificationPermissions, registerForPushNotificationsAsync, sendLocalNotification, sendTestScheduledReminderNotification, syncCardReminderNotifications } from '../../src/notifications';
 import { BUILD_TAG } from '../../src/buildInfo';
-import { requestWebPush, webPushBlockedReason } from '../../src/webpush';
+import { requestWebPush } from '../../src/webpush';
 import { logger } from '../../src/logger';
 
 function formatBytes(bytes?: number | null) {
@@ -309,17 +309,20 @@ export default function Settings() {
           // Browser push: request permission on this tap and subscribe. Even if
           // the browser declines, the in-app bell still works, so we don't
           // revert the toggle — we just note it below.
-          const active = await requestWebPush();
           // A co-parent on an iPhone had every toggle ON and never got a single
           // notification: Safari refuses to create a push subscription for a
           // plain tab, so the switch was promising something the browser was
-          // never going to do. Say so, and say what fixes it.
-          if (!active) {
-            const reason = webPushBlockedReason();
-            if (reason === 'ios-home-screen') webPushNote = t('set_notif_web_ios_home');
-            else if (reason === 'denied') webPushNote = t('set_notif_permission_denied_long');
-            else if (reason === 'unsupported') webPushNote = t('set_notif_web_unsupported');
-          }
+          // never going to do. Say so, and say what fixes it — and say it for
+          // every way this can fail, not just that one. A dismissed prompt, a
+          // server with no VAPID keys and a service worker that never
+          // registered all left the user reading "Reminder alerts are on" over
+          // no subscription at all.
+          const reason = await requestWebPush();
+          if (reason === 'ios-home-screen') webPushNote = t('set_notif_web_ios_home');
+          else if (reason === 'denied') webPushNote = t('set_notif_permission_denied_long');
+          else if (reason === 'dismissed' || reason === 'not-asked') webPushNote = t('set_notif_web_dismissed');
+          else if (reason === 'unsupported') webPushNote = t('set_notif_web_unsupported');
+          else if (reason !== 'ok') webPushNote = t('set_notif_web_failed');
         } else {
           const granted = await ensureNotificationPermissions();
           if (!granted) {

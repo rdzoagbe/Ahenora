@@ -2197,6 +2197,16 @@ PUSH_I18N = {
         "reminder_title": "Reminder ⏰",
         "reminder_body": "{title} — due {due}",
         # Wall-clock daily notifications (server-sent; see DAILY_PUSH_JOBS).
+        # Quiet-day tips, rotated by date. Sent instead of a digest when
+        # nothing is on, so a quiet day is a gentle presence rather than
+        # the words "0 things today".
+        "tips": [
+            "Quiet day 😌 Try scanning a school letter or a bill 📸",
+            "Leave a handoff note for your co-parent 💬",
+            "Add a chore and award some stars today ⭐",
+            "Plan tonight's dinner in Meals & Recipes 🍝",
+            "Save an important document to your Vault 🔒",
+        ],
         "digest_title": "Today",
         "digest_item_one": "thing today",
         "digest_item_many": "things today",
@@ -2223,6 +2233,16 @@ PUSH_I18N = {
         "teen_star_body": "{title}",
         "reminder_title": "Rappel ⏰",
         "reminder_body": "{title} — pour le {due}",
+        # Quiet-day tips, rotated by date. Sent instead of a digest when
+        # nothing is on, so a quiet day is a gentle presence rather than
+        # the words "0 things today".
+        "tips": [
+            "Journée calme 😌 Essayez de scanner un mot d'école ou une facture 📸",
+            "Laissez une note de relais à votre co-parent 💬",
+            "Ajoutez une corvée et offrez des étoiles aujourd'hui ⭐",
+            "Planifiez le dîner de ce soir dans le planificateur de repas 🍝",
+            "Enregistrez un document important dans votre coffre 🔒",
+        ],
         "digest_title": "Aujourd'hui",
         "digest_item_one": "chose aujourd'hui",
         "digest_item_many": "choses aujourd'hui",
@@ -2249,6 +2269,16 @@ PUSH_I18N = {
         "teen_star_body": "{title}",
         "reminder_title": "Recordatorio ⏰",
         "reminder_body": "{title} — para el {due}",
+        # Quiet-day tips, rotated by date. Sent instead of a digest when
+        # nothing is on, so a quiet day is a gentle presence rather than
+        # the words "0 things today".
+        "tips": [
+            "Día tranquilo 😌 Prueba a escanear una carta del colegio o una factura 📸",
+            "Deja una nota de relevo para el otro progenitor 💬",
+            "Añade una tarea y regala estrellas hoy ⭐",
+            "Planifica la cena de esta noche en el planificador 🍝",
+            "Guarda un documento importante en tu bóveda 🔒",
+        ],
         "digest_title": "Hoy",
         "digest_item_one": "cosa hoy",
         "digest_item_many": "cosas hoy",
@@ -2275,6 +2305,16 @@ PUSH_I18N = {
         "teen_star_body": "{title}",
         "reminder_title": "Erinnerung ⏰",
         "reminder_body": "{title} — fällig am {due}",
+        # Quiet-day tips, rotated by date. Sent instead of a digest when
+        # nothing is on, so a quiet day is a gentle presence rather than
+        # the words "0 things today".
+        "tips": [
+            "Ruhiger Tag 😌 Scanne doch einen Schulbrief oder eine Rechnung 📸",
+            "Hinterlasse eine Übergabenotiz für deinen Co-Elternteil 💬",
+            "Füge eine Aufgabe hinzu und vergib heute Sterne ⭐",
+            "Plane das Abendessen im Essensplaner 🍝",
+            "Speichere ein wichtiges Dokument in deinem Tresor 🔒",
+        ],
         "digest_title": "Heute",
         "digest_item_one": "Sache heute",
         "digest_item_many": "Sachen heute",
@@ -2674,6 +2714,20 @@ def _local_day_bounds(local: datetime, offset_days: int = 0):
     return start, end
 
 
+def _visible_to(user: dict, card: dict) -> bool:
+    """Whether this person is allowed to see this card at all.
+
+    A digest names card TITLES on a lock screen, so it has to obey the same
+    scoping the screens do. A teen who happened to have a push token would
+    otherwise have been read their parents' private card titles every morning —
+    a worse leak than the missing notification this whole change is about.
+    """
+    if not user.get("is_teen"):
+        return True
+    return _teen_can_see(card, (user.get("name") or "").strip().lower(),
+                         user.get("user_id") or "")
+
+
 async def _build_morning_digest(database, user, local, L):
     """Everything still open and due before this local day is out."""
     _, end_of_day = _local_day_bounds(local)
@@ -2681,12 +2735,22 @@ async def _build_morning_digest(database, user, local, L):
     async for card in database["cards"].find(
             {"family_id": user.get("family_id"), "status": "OPEN"}, {"_id": 0}):
         due = ensure_aware_utc(card.get("due_date"))
-        if due and due < end_of_day:
+        if due and due < end_of_day and _visible_to(user, card):
             title = (card.get("title") or "").strip()
             if title:
                 titles.append(title)
     body = digest_body(titles, L["digest_item_one"], L["digest_item_many"])
-    return (L["digest_title"], body) if body else None
+    if body:
+        return (L["digest_title"], body)
+    # Nothing on. The quiet-day tip used to be scheduled on the phone for 07:30
+    # while the server digest fired at 07:30 too — so a BUSY day produced both,
+    # from the same title, which is the duplicate this whole change exists to
+    # avoid. Only the server knows whether the day is quiet, so the tip belongs
+    # here. Silent, low-priority channel: a presence, not an interruption.
+    tips = L.get("tips") or []
+    if not tips:
+        return None
+    return (L["digest_title"], tips[local.day % len(tips)], "daily-tips", "daily_tip")
 
 
 async def _build_dinner_reminder(database, user, local, L):
@@ -2717,7 +2781,7 @@ async def _build_calendar_nightly(database, user, local, L):
     async for card in database["cards"].find(
             {"family_id": user.get("family_id"), "status": "OPEN"}, {"_id": 0}):
         due = ensure_aware_utc(card.get("due_date"))
-        if due and start <= due < end:
+        if due and start <= due < end and _visible_to(user, card):
             count += 1
     if count == 0:
         return None
@@ -2782,6 +2846,7 @@ DAILY_PUSH_JOBS = [
      "pref": "card_reminders", "channel": "card-reminders",
      "build": _build_dinner_reminder},
     {"key": "sunday_recap", "hour": 18, "minute": 0, "weekday": 6,
+     "adults_only": True,
      "grace": EVENING_GRACE_MINUTES, "claim": "recap_sent_for",
      "pref": "card_reminders", "channel": "card-reminders",
      "build": _build_sunday_recap},
@@ -2797,21 +2862,32 @@ DAILY_PUSH_JOBS = [
 
 
 async def _push_zones(database) -> dict:
-    """user_id -> IANA zone, from their devices. Only people with a live token.
+    """user_id -> IANA zone, for everyone who can actually receive a push.
 
-    Everyone else is unreachable anyway — the same gate every other push goes
-    through — so there is nothing to compute for them.
+    BOTH rails, because send_push_to_user delivers to both: Expo tokens for
+    phones and web_push_subscriptions for browsers. Reading only the phone
+    table would have silently excluded every browser-only user from all five
+    daily reminders — which is precisely the person who reported the problem.
+
+    A zone from any of their devices will do; a browser that never sent one
+    falls back, which is wrong by at most a few hours rather than absent.
     """
     zones: dict = {}
-    async for tok in database["notification_tokens"].find(
-            {"active": True}, {"_id": 0, "user_id": 1, "timezone": 1}):
-        uid = tok.get("user_id")
+
+    def offer(uid, zone):
         if not uid:
-            continue
-        if tok.get("timezone") and not zones.get(uid):
-            zones[uid] = tok["timezone"]
+            return
+        if zone and not zones.get(uid):
+            zones[uid] = zone
         else:
             zones.setdefault(uid, None)
+
+    async for tok in database["notification_tokens"].find(
+            {"active": True}, {"_id": 0, "user_id": 1, "timezone": 1}):
+        offer(tok.get("user_id"), tok.get("timezone"))
+    async for sub in database["web_push_subscriptions"].find(
+            {"active": True}, {"_id": 0, "user_id": 1, "timezone": 1}):
+        offer(sub.get("user_id"), sub.get("timezone"))
     return zones
 
 
@@ -2850,19 +2926,29 @@ async def run_daily_local_push(database, job: dict, now: Optional[datetime] = No
             L = PUSH_I18N.get(user.get("language") or "en", PUSH_I18N["en"])
             built = await job["build"](database, user, local, L)
 
-            # Claim the day BEFORE sending. A crash mid-send costs one
-            # notification; claiming afterwards would risk sending it twice, and
-            # a duplicate 07:30 notification is how an app gets muted.
-            await database["users"].update_one(
+            # Claim the day BEFORE sending, and only proceed if THIS call won
+            # the claim. Writing it and ignoring the result made the idempotency
+            # hold within one process only: two workers overlapping during a
+            # rolling deploy would both read "not sent", both write, and both
+            # send. A duplicate 07:30 notification is how an app gets muted.
+            # (send_due_card_reminders has always checked modified_count; this
+            # did not.) A crash after the claim costs one notification, which is
+            # the right way round.
+            claim = await database["users"].update_one(
                 {"user_id": user_id, job["claim"]: {"$ne": today}},
                 {"$set": {job["claim"]: today}})
+            if claim.modified_count == 0:
+                continue  # another tick or another worker got there first
             if not built:
                 continue  # nothing to say; stay quiet rather than say "0 things"
 
-            title, body = built
+            # A builder may override the channel and the push type — the quiet
+            # tip is the same job as the digest but must not buzz.
+            title, body = built[0], built[1]
+            channel = built[2] if len(built) > 2 else job["channel"]
+            kind = built[3] if len(built) > 3 else job["key"]
             await send_push_to_user(
-                database, user_id, title, body, {"type": job["key"]},
-                channel=job["channel"])
+                database, user_id, title, body, {"type": kind}, channel=channel)
             sent += 1
         except Exception as e:  # one person's bad data never stops the pass
             log.warning("%s skipped for a user: %s", job["key"], type(e).__name__)
@@ -7130,6 +7216,10 @@ async def register_notification_token(payload: NotificationTokenIn, user=Depends
         # token is, so adoption reporting tracks the real fleet, not history.
         "app_version": (payload.app_version or "").strip()[:20] or None,
         "runtime_version": (payload.runtime_version or "").strip()[:20] or None,
+        # The device's zone, so a 07:30 digest means 07:30 where the person is.
+        # Validated rather than trusted: an unknown name would raise inside the
+        # daily push pass and stop every later user in it.
+        "timezone": _valid_timezone(payload.timezone),
         "active": True,
         "updated_at": utcnow(),
     }
@@ -7182,6 +7272,9 @@ async def web_push_subscribe(payload: dict = Body(...), user=Depends(require_use
             "keys": {"p256dh": keys["p256dh"], "auth": keys["auth"]},
             "user_id": user["user_id"],
             "family_id": user["family_id"],
+            # Same reason as the phone token: the daily reminders fire at a
+            # local wall-clock hour, and a browser has a zone too.
+            "timezone": _valid_timezone((payload or {}).get("timezone")),
             "active": True,
             "updated_at": utcnow(),
         }},

@@ -505,26 +505,22 @@ export default function Feed() {
                 body: `${dueTomorrow.length} ${dueTomorrow.length === 1 ? t('digest_item_one') : t('digest_item_many')}: ${names}${extra}`,
               };
             }
-            const tipKeys = ['tip_scan', 'tip_note', 'tip_kids', 'tip_meal', 'tip_vault'];
-            const tipKey = tipKeys[new Date().getDate() % tipKeys.length];
-            const quietTip = { title: t('digest_title'), body: t(tipKey) };
-            // The CONTENT digest is the server's job now. It used to be
-            // scheduled here for tomorrow 07:30 — one shot, only if somebody
-            // opened the Feed, carrying the agenda as it looked at that moment.
-            // So it arrived only on days following a day the app was opened,
-            // and could not know about anything added afterwards. Roland had
-            // appointments and no notification; that is the mechanism.
+            // Both halves of the morning are the server's job now. It used to
+            // schedule the CONTENT digest for tomorrow 07:30 from here — one
+            // shot, only if somebody opened the Feed, carrying the agenda as it
+            // looked at that moment. So it arrived only on days following a day
+            // the app was opened, and could not know about anything added
+            // afterwards. Roland had appointments and no notification; that is
+            // the mechanism.
             //
-            // send_morning_digests fires it from the reminder loop at 07:30 in
-            // the person's own zone, whether or not they have opened anything.
-            // Passing null here keeps the local one cancelled, so the two
-            // cannot both arrive — a duplicate 07:30 notification is how an app
-            // gets muted.
+            // The quiet-day TIP went with it. Left here it was scheduled for
+            // 07:30 every day regardless, while the server sent the digest at
+            // 07:30 too — so a busy day produced both, under the same title.
+            // Only the server knows whether a day is actually quiet.
             //
-            // The quiet tip stays local: it is a low-priority nudge with no
-            // agenda in it, nothing is lost if a quiet day is skipped, and it
-            // does not need a push token to work.
-            syncMorningDigest(true, null, quietTip).catch(() => undefined);
+            // Passing null for both keeps the local ones cancelled, which is
+            // what stops two arriving.
+            syncMorningDigest(false, null, null).catch(() => undefined);
 
             // Dinner nudge (17:30) and Sunday recap (18:00) are the server's
             // job now, for the same reason as the digest: they were one-shot

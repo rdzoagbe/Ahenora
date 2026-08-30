@@ -503,18 +503,14 @@ export default function Kids() {
       Promise.allSettled([api.listRoutines(), api.listAllowances(), api.listChores(), api.listRedemptions('pending')])
         .then(async ([rtnRes, alwRes, choreRes, redRes]) => {
           if (rtnRes.status === 'fulfilled') setRoutines(rtnRes.value);
-          if (alwRes.status === 'fulfilled') {
-            setAllowances(alwRes.value);
-            // A day-before nudge for each child's pocket money — easy to forget
-            // because it is a date, not a task. Scheduled on-device, so it fires
-            // even with the app closed; re-synced on every load so a changed
-            // amount or frequency never leaves a stale reminder behind.
-            // Allowance heads-up is sent by the server now. Scheduled here it
-            // only existed for someone who had opened the Kids tab, and it went
-            // stale the moment a payment moved the next due date. Cancelling
-            // clears any left over from an older build so nobody hears it twice.
-            syncAllowanceReminders([], false).catch(() => undefined);
-          }
+          if (alwRes.status === 'fulfilled') setAllowances(alwRes.value);
+          // Allowance heads-up is sent by the server now. Scheduled here it only
+          // existed for someone who had opened the Kids tab, and it went stale
+          // the moment a payment moved the next due date. This cancel clears
+          // what an older build left behind, so nobody hears it twice — and it
+          // sits OUTSIDE the fulfilled check on purpose: a failed listAllowances
+          // is exactly when the stale local reminders would survive.
+          syncAllowanceReminders([], false).catch(() => undefined);
           if (choreRes.status === 'fulfilled') setChores(choreRes.value);
           // A server that predates redemptions 404s here; an older app should
           // still show stars rather than an error, so a failure just leaves

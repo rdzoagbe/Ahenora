@@ -295,3 +295,125 @@ class TheWholePass(PassBase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+@unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
+class WhoTheServerCanEvenSee(PassBase):
+    """Every one of these was found by review, and every one was invisible to
+    the first round of tests because those tests wrote the DB directly instead
+    of going through the route a real device uses."""
+
+    def test_the_ordinary_register_route_stores_the_zone(self):
+        """It did not. Only the TEEN route did — so every adult fell back to
+        Europe/Paris and a New York user would have been woken at 01:30."""
+        doc = asyncio.run(self._register("America/New_York"))
+        self.assertEqual(doc.get("timezone"), "America/New_York")
+
+    def test_a_nonsense_zone_is_refused_rather_than_stored(self):
+        doc = asyncio.run(self._register("Mars/Olympus"))
+        self.assertIsNone(doc.get("timezone"))
+
+    async def _register(self, tz):
+        import server as srv
+        payload = srv.NotificationTokenIn(token="tok1", platform="android", timezone=tz)
+        srv.get_db = lambda: self.db
+        await srv.register_notification_token(
+            payload, user={"user_id": "u1", "family_id": "fam1", "email": "r@x.test"})
+        return await self.db["notification_tokens"].find_one({"token": "tok1"}, {"_id": 0})
+
+    def test_a_browser_only_user_is_not_invisible(self):
+        """_push_zones read the phone table only, so someone who uses the web
+        app and nothing else received none of the five daily reminders — which
+        is exactly the co-parent who reported the problem. send_push_to_user
+        delivers to both rails; the scheduler has to look at both too."""
+        asyncio.run(self.db["users"].insert_one(
+            {"user_id": "web1", "family_id": "fam1", "language": "en"}))
+        asyncio.run(self.db["web_push_subscriptions"].insert_one(
+            {"endpoint": "https://push.example/x", "user_id": "web1",
+             "family_id": "fam1", "active": True, "timezone": PARIS}))
+        zones = asyncio.run(server._push_zones(self.db))
+        self.assertEqual(zones.get("web1"), PARIS)
+
+
+@unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
+class WhatATeenIsToldAboutTheHousehold(PassBase):
+    def seed_teen_and_cards(self):
+        asyncio.run(self.db["users"].insert_one(
+            {"user_id": "teen1", "family_id": "fam1", "name": "Ana",
+             "language": "en", "is_teen": True}))
+        asyncio.run(self.db["notification_tokens"].insert_one(
+            {"token": "tt", "user_id": "teen1", "family_id": "fam1",
+             "active": True, "timezone": PARIS}))
+        # A parent's private card, and one handed to the teen.
+        asyncio.run(self.db["cards"].insert_one(
+            {"card_id": "priv", "family_id": "fam1", "status": "OPEN",
+             "title": "Divorce lawyer", "shared": False,
+             "created_by_user_id": "u1",
+             "due_date": self.utc(12, 0)}))
+        asyncio.run(self.db["cards"].insert_one(
+            {"card_id": "hers", "family_id": "fam1", "status": "OPEN",
+             "title": "Swimming kit", "shared": False, "assignee": "ana",
+             "created_by_user_id": "u1", "due_date": self.utc(12, 0)}))
+
+    def test_a_parents_private_card_never_reaches_a_teens_lock_screen(self):
+        """The digest names card TITLES. Unfiltered, it read a teen their
+        parents' private cards every morning — a worse leak than the missing
+        notification this change is about."""
+        self.seed_teen_and_cards()
+        self.run_job("morning_digest", self.utc(7, 35))
+        self.assertEqual(len(self.sent), 1)
+        self.assertNotIn("Divorce lawyer", self.sent[0]["body"])
+
+    def test_but_her_own_task_still_reaches_her(self):
+        self.seed_teen_and_cards()
+        self.run_job("morning_digest", self.utc(7, 35))
+        self.assertIn("Swimming kit", self.sent[0]["body"])
+
+    def test_the_nightly_agenda_counts_only_what_she_may_see(self):
+        self.seed_teen_and_cards()
+        asyncio.run(self.db["cards"].update_one(
+            {"card_id": "priv"}, {"$set": {"due_date": self.utc(12, 0, day=31)}}))
+        asyncio.run(self.db["cards"].update_one(
+            {"card_id": "hers"}, {"$set": {"due_date": self.utc(12, 0, day=31)}}))
+        self.run_job("calendar_nightly", self.utc(20, 20))
+        self.assertIn("1", self.sent[0]["body"])
+
+    def test_the_household_recap_is_not_a_teens_business(self):
+        self.seed_teen_and_cards()
+        asyncio.run(self.db["cards"].insert_one(
+            {"card_id": "done1", "family_id": "fam1", "status": "DONE",
+             "title": "Bins", "completed_at": self.utc(10, 0) - timedelta(days=1)}))
+        self.assertEqual(self.run_job("sunday_recap", self.utc(18, 5)), 0)
+
+
+@unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
+class TheClaim(PassBase):
+    def test_only_the_call_that_wins_the_claim_sends(self):
+        """The claim was written and its result thrown away, so the idempotency
+        held within one process only: two workers overlapping during a rolling
+        deploy would both read "not sent", both write, and both send."""
+        self.seed_user()
+        asyncio.run(self.db["meals"].insert_one(
+            {"meal_id": "m1", "family_id": "fam1", "day": "sunday",
+             "meal_type": "dinner", "title": "Lasagne"}))
+        # The real interleaving: BOTH workers read the user doc before either
+        # writes, so the early "already sent today" read passes for both and the
+        # conditional write is the only thing left that can tell them apart.
+        # Losing that write is what this worker is doing here.
+        class Lost:
+            modified_count = 0
+
+        users = self.db["users"]
+        real_update = users.update_one
+
+        async def lost_race(flt, update, *a, **kw):
+            if "dinner_sent_for" in (update.get("$set") or {}):
+                return Lost()
+            return await real_update(flt, update, *a, **kw)
+
+        users.update_one = lost_race
+        try:
+            self.assertEqual(self.run_job("dinner_reminder", self.utc(17, 35)), 0)
+        finally:
+            users.update_one = real_update
+        self.assertEqual(self.sent, [])

@@ -80,7 +80,9 @@ class TheDigestPass(unittest.TestCase):
         self.sent = []
 
         async def fake_push(database, user_id, title, body, data, **kw):
-            self.sent.append({"user_id": user_id, "title": title, "body": body})
+            self.sent.append({"user_id": user_id, "title": title, "body": body,
+                              "type": data.get("type"),
+                              "channel": kw.get("channel")})
         self._push = server.send_push_to_user
         server.send_push_to_user = fake_push
         # 07:35 in Paris.
@@ -120,15 +122,34 @@ class TheDigestPass(unittest.TestCase):
         self.assertEqual(self.run_pass(), 0)
         self.assertEqual(len(self.sent), 1)
 
-    def test_a_quiet_day_says_nothing(self):
+    def test_a_quiet_day_never_says_zero_things(self):
         """"0 things today" is noise, and noise is how people turn alerts off."""
         self.seed(due_in_hours=None)
-        self.assertEqual(self.run_pass(), 0)
-        self.assertEqual(self.sent, [])
+        self.run_pass()
+        for msg in self.sent:
+            self.assertNotIn("0 ", msg["body"])
+
+    def test_a_quiet_day_sends_the_tip_instead(self):
+        """The tip used to be scheduled on the phone for 07:30 — every day,
+        regardless — while the server sent the digest at 07:30 too. A busy day
+        produced both, under the same title. Only the server knows whether a
+        day is actually quiet, so the tip is decided here."""
+        self.seed(due_in_hours=None)
+        self.assertEqual(self.run_pass(), 1)
+        self.assertEqual(self.sent[0]["type"], "daily_tip")
+        self.assertEqual(self.sent[0]["channel"], "daily-tips")
+
+    def test_a_busy_day_sends_the_digest_and_not_the_tip(self):
+        """The exact collision: never both."""
+        self.seed()
+        self.assertEqual(self.run_pass(), 1)
+        self.assertEqual(len(self.sent), 1)
+        self.assertEqual(self.sent[0]["type"], "morning_digest")
 
     def test_tomorrow_is_not_today(self):
         self.seed(due_in_hours=30)
-        self.assertEqual(self.run_pass(), 0)
+        self.run_pass()
+        self.assertEqual(self.sent[0]["type"], "daily_tip")
 
     def test_somebody_in_another_zone_waits_for_their_own_morning(self):
         """05:35 UTC is 07:35 in Paris and 00:35 in New York."""

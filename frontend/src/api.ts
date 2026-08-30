@@ -2037,7 +2037,8 @@ export const api = {
   registerTeenNotificationToken: (token: string, platform?: string, appVersion?: string, runtimeVersion?: string) =>
     request<{ ok: boolean }>('/teen/notifications/register', {
       method: 'POST',
-      body: { token, platform, app_version: appVersion, runtime_version: runtimeVersion },
+      body: { token, platform, app_version: appVersion, runtime_version: runtimeVersion,
+              timezone: deviceTimeZone() },
     }),
   // Deactivate this device's token on logout so a shared/resold phone stops
   // receiving the last household's pushes.
@@ -2052,7 +2053,9 @@ export const api = {
   webPushSubscribe: (subscription: unknown) =>
     request<{ ok: boolean }>('/notifications/web-subscribe', {
       method: 'POST',
-      body: { subscription },
+      // The zone matters here too: browser subscribers get the same daily
+      // reminders, at the same local hours.
+      body: { subscription, timezone: deviceTimeZone() },
     }),
   webPushUnsubscribe: (endpoint?: string) =>
     request<{ ok: boolean }>('/notifications/web-unsubscribe', {
