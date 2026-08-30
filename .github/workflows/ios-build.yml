@@ -1,0 +1,128 @@
+name: EAS Build (iOS)
+
+# Manually-triggered cloud build (+ optional auto-submit to App Store Connect).
+#
+# Deliberately a SEPARATE workflow from the Android one rather than a platform
+# input on it. The Android build is live and shipping to real users; the iOS
+# path is new, needs credentials nobody has yet, and will fail repeatedly while
+# it is being set up. Those two things should not share a file.
+#
+# What this cannot do for you: an iOS build needs an Apple Developer Program
+# membership, and a signing certificate + provisioning profile that EAS creates
+# ONCE from an interactive `eas credentials` run. Until that exists, this
+# workflow stops at the preflight below with a readable message rather than
+# failing four minutes into a build with an Xcode error.
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: 'EAS build profile'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - preview
+      submit:
+        description: 'Auto-submit to App Store Connect after build'
+        required: true
+        default: false
+        type: boolean
+
+concurrency:
+  group: ios-build-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build (and submit) iOS app
+    runs-on: ubuntu-latest
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      EXPO_NO_TELEMETRY: 1
+    steps:
+      - name: Verify EXPO_TOKEN is set
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "EXPO_TOKEN secret is missing. Add it under Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      # Fails FAST and says exactly which field is still a placeholder. The
+      # alternative is a build that runs for ten minutes and then dies on an
+      # authentication error that names none of them.
+      - name: Preflight — is the Apple side configured?
+        working-directory: frontend
+        env:
+          WANT_SUBMIT: ${{ github.event.inputs.submit }}
+        run: |
+          missing=""
+          for field in appleId ascAppId appleTeamId; do
+            if grep -q "\"$field\": \"REPLACE_WITH" eas.json; then
+              missing="$missing $field"
+            fi
+          done
+          if [ -n "$missing" ]; then
+            {
+              echo "### iOS submit is not configured yet"
+              echo ""
+              echo "These fields in \`frontend/eas.json\` are still placeholders:**$missing**"
+              echo ""
+              echo "They come from the Apple Developer account:"
+              echo "- \`appleId\` — the Apple ID email on the Developer Program membership"
+              echo "- \`appleTeamId\` — Membership details in the Apple Developer portal"
+              echo "- \`ascAppId\` — the numeric App ID, after the app record exists in App Store Connect"
+            } >> "$GITHUB_STEP_SUMMARY"
+            if [ "$WANT_SUBMIT" = "true" ]; then
+              echo "::error title=Cannot submit::eas.json still has placeholder Apple fields:$missing"
+              exit 1
+            fi
+            echo "::warning title=Build only::Apple submit fields are placeholders; this run will build but not submit."
+          fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm install --no-audit --no-fund
+
+      # No --auto-submit here: submitting is a separate, explicitly-guarded step
+      # below, so a build that succeeds is never silently followed by a submit
+      # that fails for an unrelated reason.
+      - name: Build with EAS
+        working-directory: frontend
+        run: |
+          npx eas-cli@latest build \
+            --platform ios \
+            --profile "${{ github.event.inputs.profile }}" \
+            --non-interactive
+
+      - name: Submit latest build to App Store Connect
+        if: ${{ github.event.inputs.submit == 'true' }}
+        working-directory: frontend
+        run: |
+          npx eas-cli@latest submit \
+            --platform ios \
+            --profile production \
+            --latest \
+            --non-interactive
+
+      - name: Say what landed where
+        if: ${{ always() }}
+        run: |
+          if [ "${{ github.event.inputs.submit }}" = "true" ]; then
+            echo "Submitted to App Store Connect. It appears in TestFlight after Apple finishes processing (usually 10-30 minutes)." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Built only. The .ipa is on the EAS dashboard and can be uploaded by hand via Transporter." >> "$GITHUB_STEP_SUMMARY"
+          fi
