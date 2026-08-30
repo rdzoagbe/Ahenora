@@ -15,11 +15,19 @@ queue.
 The existing smoke accounts are no use for this: they self-purge, and they live
 on a .smoke domain that could never receive mail.
 
-Usage:
+Usage (admin session token — works whatever sign-in method the admin uses):
+
     python3 scripts/seed_review_account.py \\
         --api https://household-coo-production.up.railway.app/api \\
-        --admin-email you@example.com --admin-password '...' \\
+        --admin-token 'PASTE_TOKEN' \\
         --review-email appreview@ahenora.com --review-password '...'
+
+Get the token by signing in at https://ahenora.com/app as the admin, then in
+the browser devtools console:
+
+    localStorage.getItem('coo_session_token')
+
+--admin-email with --admin-password still works for a password account.
 
 Re-running is safe: if the review account already exists it signs in instead of
 registering, and seeding skips anything already there.
@@ -69,12 +77,43 @@ DINNERS = [("monday", "Spaghetti Bolognese"), ("tuesday", "Taco night"),
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--api", required=True, help="e.g. https://host/api")
-    ap.add_argument("--admin-email", required=True)
-    ap.add_argument("--admin-password", required=True)
+    # Two ways to authenticate as an admin, because a founder who signs in with
+    # Google has no password to give: /auth/login answers "No password account
+    # found for this email. Try Google sign-in." A session token works for any
+    # sign-in method, and keeps a password off the command line and out of shell
+    # history either way.
+    ap.add_argument("--admin-token", help="session token (see --help notes)")
+    ap.add_argument("--admin-email")
+    ap.add_argument("--admin-password")
     ap.add_argument("--review-email", required=True)
     ap.add_argument("--review-password", required=True)
     a = ap.parse_args()
     api = a.api.rstrip("/")
+
+    # Checked FIRST, before anything is created. The original order registered
+    # the review account and only then tried to authenticate as admin — so a
+    # wrong admin credential left a real, half-made account on production that
+    # a re-run then could not sign into. Fail before touching anything.
+    if not a.admin_token and not (a.admin_email and a.admin_password):
+        raise SystemExit(
+            "Need --admin-token, or --admin-email with --admin-password.\n"
+            "To get a token: sign in at https://ahenora.com/app as the admin,\n"
+            "open the browser devtools console and run:\n"
+            "    localStorage.getItem('coo_session_token')")
+    for name, value in (("--review-email", a.review_email),
+                        ("--review-password", a.review_password)):
+        if value.startswith(("YOUR_", "CHOOSE_", "PASTE_")) or " " in value:
+            raise SystemExit(f"{name} still looks like a placeholder: {value!r}")
+
+    # Prove the admin credential works before creating anything.
+    if a.admin_token:
+        admin_tok = a.admin_token.strip()
+    else:
+        admin_tok = call(api, "POST", "/auth/login",
+                         {"email": a.admin_email,
+                          "password": a.admin_password})["session_token"]
+    me = call(api, "GET", "/auth/me", token=admin_tok)
+    print("authenticated as", (me or {}).get("email", "?"))
 
     # 1. The review account itself. Registering a second time returns a
     #    conflict, so fall through to signing in — that is what makes a re-run
@@ -92,8 +131,6 @@ def main():
     call(api, "POST", "/auth/complete-onboarding", {}, tok, allow=(400, 404))
 
     # 2. Top tier, via the flag that means exactly that and nothing else.
-    admin_tok = call(api, "POST", "/auth/login",
-                     {"email": a.admin_email, "password": a.admin_password})["session_token"]
     granted = call(api, "POST", "/admin/grandfather",
                    {"email": a.review_email, "grandfathered": True}, admin_tok)
     print("entitlement:", granted)
