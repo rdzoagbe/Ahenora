@@ -34,6 +34,7 @@ registering, and seeding skips anything already there.
 """
 import argparse
 import json
+import os
 import sys
 import urllib.error
 import urllib.request
@@ -82,7 +83,13 @@ def main():
     # found for this email. Try Google sign-in." A session token works for any
     # sign-in method, and keeps a password off the command line and out of shell
     # history either way.
-    ap.add_argument("--admin-token", help="session token (see --help notes)")
+    # A session token can begin with "-", and argparse then reads it as another
+    # flag no matter how it is quoted. AHENORA_ADMIN_TOKEN avoids that entirely,
+    # and keeps a live credential out of shell history where it would otherwise
+    # sit for as long as the history file does.
+    ap.add_argument("--admin-token",
+                    default=os.environ.get("AHENORA_ADMIN_TOKEN", ""),
+                    help="session token; or set AHENORA_ADMIN_TOKEN instead")
     ap.add_argument("--admin-email")
     ap.add_argument("--admin-password")
     ap.add_argument("--review-email", required=True)
