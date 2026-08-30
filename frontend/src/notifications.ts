@@ -334,6 +334,55 @@ export async function ensureAskedNotificationPermissionOnce() {
  * each launch also refreshes a rotated Expo token, which otherwise goes stale
  * and silently stops routing to the phone.
  */
+/**
+ * Ask for notification permission, and register the device if it is given.
+ *
+ * ensurePushRegistered already runs at launch and does the right thing — but it
+ * returns immediately unless permission has ALREADY been granted, and until now
+ * the only place in the whole app that ever ASKED was the Settings screen. On
+ * Android 13 and later notifications are denied until an app requests them, so
+ * anybody who never went into Settings and found the toggle was never asked,
+ * never granted, and could never be sent anything.
+ *
+ * That is why notification_tokens is all but empty, why the server can push to
+ * nobody, and why the only notifications anyone saw were LOCAL ones — which
+ * exist only if the app was open to schedule them. "If I don't open the app I
+ * don't get the notification" is exactly that.
+ *
+ * Returns whether permission ended up granted, so a caller can say something
+ * true afterwards rather than assuming.
+ */
+export async function requestAndRegisterPush(isTeen = false): Promise<boolean> {
+  try {
+    const reg = await registerForPushNotificationsAsync();
+    if (!reg.expoPushToken) {
+      if (reg.error) logger.warn('push permission not usable', reg.error);
+      return false;
+    }
+    const { appVersion, runtimeVersion } = await appVersionInfo();
+    // A teen's session is refused by the parent route, same as at launch.
+    const register = isTeen ? api.registerTeenNotificationToken : api.registerNotificationToken;
+    await register(reg.expoPushToken, Platform.OS, appVersion, runtimeVersion);
+    return true;
+  } catch (e) {
+    logger.warn('requestAndRegisterPush failed', e);
+    return false;
+  }
+}
+
+/** Has this device already been asked, and said yes? Never prompts. */
+export async function pushPermissionGranted(): Promise<boolean> {
+  if (Platform.OS === 'web') return true;   // web push has its own path
+  try {
+    const Notifications = await getNotificationsModule();
+    if (!Notifications) return true;        // nothing to ask for; stay quiet
+    const perm = await Notifications.getPermissionsAsync();
+    return perm.status === 'granted';
+  } catch {
+    return true;
+  }
+}
+
 export async function ensurePushRegistered(isTeen = false): Promise<void> {
   try {
     const Notifications = await getNotificationsModule();
