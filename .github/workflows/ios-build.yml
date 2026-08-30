@@ -68,6 +68,18 @@ jobs:
               missing="$missing $field"
             fi
           done
+          # The two iOS-only public keys live in EAS environment variables, not
+          # in eas.json — an empty value there is rejected outright ("is not
+          # allowed to be empty") and fails the build before it starts. Absent
+          # is the correct way to say "not configured yet": the app degrades to
+          # hiding Google sign-in and reporting subscriptions unavailable. Worth
+          # saying out loud, because a build in that state must not be submitted.
+          for var in EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID EXPO_PUBLIC_REVENUECAT_IOS_KEY; do
+            if ! grep -q "$var" eas.json; then
+              echo "::warning title=$var is not set::Google sign-in is hidden and subscriptions are unavailable in this build. Fine for TestFlight, NOT for App Review."
+            fi
+          done
+
           if [ -n "$missing" ]; then
             {
               echo "### iOS submit is not configured yet"
