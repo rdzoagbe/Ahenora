@@ -69,8 +69,10 @@ def api(m, p, b=None, t=None):
 
 def seed():
     c = CONTENT[LANG]
+    # Unique per language: the capture is run once per locale against one
+    # backend, and a fixed address made the second run die on 409 Conflict.
     u = api("POST", "/auth/register",
-            {"name": "Jordan", "email": f"e2e-admin@sim.test",
+            {"name": "Jordan", "email": f"e2e-admin-{LANG}@sim.test",
              "password": "password123"})
     tok = u["session_token"]
     api("POST", "/auth/complete-onboarding", {}, tok)
@@ -132,8 +134,24 @@ async def main():
         await p.add_init_script(f"localStorage.setItem('coo_session_token','{tok}');")
 
         async def shot(screen, name, before=None):
-            await p.goto(f"{WEB}/{screen}", wait_until="domcontentloaded")
+            # Verify the page actually RENDERED before photographing it.
+            #
+            # This did not check, and a misconfigured web root produced six
+            # screenshots of "Error 404: File not found" — saved without a
+            # single complaint, ready to be uploaded to a store listing. A
+            # capture script that cannot tell an app from an error page is
+            # worse than one that crashes, because the output looks like work.
+            resp = await p.goto(f"{WEB}/{screen}", wait_until="domcontentloaded")
+            if resp is not None and resp.status >= 400:
+                raise SystemExit(f"{screen}: server returned {resp.status} — "
+                                 f"is the web root right? serve_web serves <root>/docs")
             await p.wait_for_timeout(3800)
+            body = await p.inner_text("body")
+            if "Error code:" in body or "File not found" in body:
+                raise SystemExit(f"{screen}: got an error page, not the app")
+            # The app always renders its tab bar; an empty React root does not.
+            if not await p.query_selector("[data-testid]"):
+                raise SystemExit(f"{screen}: page rendered nothing recognisable")
             if before:
                 await before()
                 await p.wait_for_timeout(1400)
@@ -147,9 +165,14 @@ async def main():
         async def open_meal_planner():
             # Kitchen opens on the shopping list; switch to the meal planner,
             # which is the seeded weekly plan and the stronger store screen.
-            await p.click('[data-testid="kitchen-switch"]')
+            #
+            # The old kitchen-switch / kitchen-pick-meal pair went away when the
+            # Kitchen was rebuilt around three tabs (list / meals / spending).
+            # Nothing caught it, because this script is run by hand at listing
+            # time rather than by the harness runner — so it stayed broken from
+            # the redesign until the next time somebody needed screenshots.
+            await p.click('[data-testid="kitchen-tab-meal"]')
             await p.wait_for_timeout(600)
-            await p.click('[data-testid="kitchen-pick-meal"]')
         await shot("kitchen", "04-kitchen", before=open_meal_planner)
 
         async def open_quickadd():

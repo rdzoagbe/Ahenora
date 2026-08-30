@@ -29,12 +29,16 @@ RAW, OUT = sys.argv[1], sys.argv[2]
 LANG = sys.argv[3] if len(sys.argv) > 3 else "en"
 STORE = sys.argv[4] if len(sys.argv) > 4 else "play"
 
-CANVAS = {"play": (1200, 2133), "appstore": (1320, 2868)}
+# (width, height, phone width as a fraction of the canvas). The App Store
+# canvas is proportionally MUCH taller than Play's, so reusing Play's phone
+# width left a broad empty band between the headline and the device. The phone
+# grows to fill it instead.
+CANVAS = {"play": (1200, 2133, 0.6333), "appstore": (1320, 2868, 0.76)}
 if STORE not in CANVAS:
     sys.exit(f"unknown store {STORE!r}; expected one of {sorted(CANVAS)}")
 os.makedirs(OUT, exist_ok=True)
 
-W, H = CANVAS[STORE]
+W, H, PHONE_W = CANVAS[STORE]
 GOLD = (250, 178, 46)
 ORANGE = (211, 84, 0)
 FONT_B = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
@@ -121,7 +125,7 @@ def build(raw_name, headline, subhead, out_name):
     wrap_center(draw, subhead, sf, W / 2, y, (255, 255, 255, 235), line_gap=round(6 * _w))
 
     phone = Image.open(os.path.join(RAW, raw_name)).convert("RGB")
-    target_w = round(W * 0.6333)
+    target_w = round(W * PHONE_W)
     target_h = int(phone.height * target_w / phone.width)
     phone = phone.resize((target_w, target_h), Image.LANCZOS)
     radius = round(46 * _w)
