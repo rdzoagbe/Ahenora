@@ -52,6 +52,7 @@ import { TabScreen } from '../../src/components/TabScreen';
 import { GettingStarted } from '../../src/components/GettingStarted';
 import { UpgradeBanner } from '../../src/components/UpgradeBanner';
 import { CoParentNudge } from '../../src/components/CoParentNudge';
+import { NotificationsNudge } from '../../src/components/NotificationsNudge';
 import { GiftingStrip } from '../../src/components/GiftingStrip';
 import { StreakChip } from '../../src/components/StreakChip';
 import { WindowedList } from '../../src/components/WindowedList';
@@ -1249,6 +1250,12 @@ export default function Feed() {
               onAddCard={openManual}
               onAddDoc={() => router.navigate('/(tabs)/vault')}
             />
+
+            {/* Reminders can only arrive if the OS was ever asked. It never was
+                outside a toggle buried in Settings, so most households have no
+                token and the server can push them nothing. Shown here because
+                onboarding only reaches the people who arrive next. */}
+            <NotificationsNudge />
 
             {/* Solo household → bring in the co-parent. Vanishes once someone joins. */}
             <CoParentNudge

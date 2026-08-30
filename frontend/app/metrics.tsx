@@ -211,7 +211,7 @@ export default function MetricsScreen() {
                   ['Finished onboarding', funnel.onboarded, funnel.signups],
                   ['Invites sent', funnel.invites_sent, null],
                   ['Invites accepted', funnel.invites_accepted, funnel.invites_sent],
-                  ['Households with 2+ members', funnel.multi_member_households, null],
+                  ['Households with 2+ adults', funnel.two_plus_adult_households, null],
                   ['Households that shared', funnel.sharing_households, null],
                   ['Active today', funnel.active_1d, funnel.total_users],
                   ['Active this week', funnel.active_7d, funnel.total_users],
