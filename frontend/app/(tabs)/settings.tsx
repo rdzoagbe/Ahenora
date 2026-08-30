@@ -42,7 +42,7 @@ import { api, Card as CardType, Entitlements, FamilyInvite, FamilyMember, Notifi
 import { LANG_NAMES } from '../../src/i18n';
 import { appVersionInfo, ensureNotificationPermissions, registerForPushNotificationsAsync, sendLocalNotification, sendTestScheduledReminderNotification, syncCardReminderNotifications } from '../../src/notifications';
 import { BUILD_TAG } from '../../src/buildInfo';
-import { requestWebPush } from '../../src/webpush';
+import { requestWebPush, webPushBlockedReason } from '../../src/webpush';
 import { logger } from '../../src/logger';
 
 function formatBytes(bytes?: number | null) {
@@ -302,13 +302,24 @@ export default function Settings() {
     setNotificationStatus(null);
     setNotificationPrefs(nextPrefs);
 
+    let webPushNote = '';
     try {
       if (nextPrefs.card_reminders || nextPrefs.new_card_alerts) {
         if (Platform.OS === 'web') {
           // Browser push: request permission on this tap and subscribe. Even if
           // the browser declines, the in-app bell still works, so we don't
           // revert the toggle — we just note it below.
-          await requestWebPush();
+          const active = await requestWebPush();
+          // A co-parent on an iPhone had every toggle ON and never got a single
+          // notification: Safari refuses to create a push subscription for a
+          // plain tab, so the switch was promising something the browser was
+          // never going to do. Say so, and say what fixes it.
+          if (!active) {
+            const reason = webPushBlockedReason();
+            if (reason === 'ios-home-screen') webPushNote = t('set_notif_web_ios_home');
+            else if (reason === 'denied') webPushNote = t('set_notif_permission_denied_long');
+            else if (reason === 'unsupported') webPushNote = t('set_notif_web_unsupported');
+          }
         } else {
           const granted = await ensureNotificationPermissions();
           if (!granted) {
@@ -321,7 +332,9 @@ export default function Settings() {
         }
       }
 
-      let warning = '';
+      // The browser's own verdict outranks a cheerful "reminders are on":
+      // saying both would be the exact confusion this note exists to end.
+      let warning = webPushNote;
       // Expo's push registration is native-only: on web it throws a raw
       // developer error about app.json's vapidPublicKey, which was being shown
       // verbatim to the user. Browser push is handled by requestWebPush above.
@@ -342,7 +355,9 @@ export default function Settings() {
       if (nextPrefs.card_reminders) {
         const cards = await api.listCards();
         const result = await syncCardReminderNotifications(cards, true, t('notif_due_soon'));
-        setNotificationStatus(result.scheduled ? `${result.scheduled} reminder notification${result.scheduled === 1 ? '' : 's'} scheduled.` : warning || t('set_reminder_alerts_on'));
+        setNotificationStatus(warning || (result.scheduled
+          ? `${result.scheduled} reminder notification${result.scheduled === 1 ? '' : 's'} scheduled.`
+          : t('set_reminder_alerts_on')));
       } else {
         await syncCardReminderNotifications([], false).catch(() => undefined);
         setNotificationStatus(nextPrefs.new_card_alerts ? warning || t('set_new_card_alerts_on') : t('set_notifications_off'));

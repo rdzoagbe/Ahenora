@@ -473,19 +473,15 @@ export default function Calendar() {
 
   useEffect(() => { autoSyncCalendar(); }, [autoSyncCalendar]);
 
-  // Nightly agenda reminder (~20:15 local) with tomorrow's plan. Rescheduled
-  // whenever the agenda changes so the body stays current.
+  // The nightly agenda (~20:15 local) is sent by the server now. It used to be
+  // scheduled here, from this effect — which meant it only existed for someone
+  // who had opened the Calendar tab that day, and it carried the agenda as it
+  // looked at that moment. send_daily_local_pushes builds it from the current
+  // agenda at 20:15 in the person's own zone instead. Cancelling here is what
+  // stops two arriving.
   useEffect(() => {
-    const tomorrow = startOfLocalDay(new Date());
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const tomorrowKey = dateKey(tomorrow);
-    const count = cards.filter((c) => cardDateKey(c) === tomorrowKey).length;
-    const content = count > 0
-      ? { title: t('cal_nightly_title'),
-          body: count === 1 ? t('cal_nightly_body_one') : t('cal_nightly_body', { count }) }
-      : null;
-    syncCalendarNightly(true, content).catch(() => undefined);
-  }, [cards, t]);
+    syncCalendarNightly(false, null).catch(() => undefined);
+  }, []);
 
   const monthDays = useMemo(() => buildMonthDays(activeMonth), [activeMonth]);
   const countsByDay = useMemo(() => {

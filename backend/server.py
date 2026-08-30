@@ -13,6 +13,7 @@ import html
 import urllib.error
 import urllib.request
 import urllib.parse
+from zoneinfo import ZoneInfo
 from datetime import datetime, timedelta, timezone
 from typing import Any, List, Optional
 from fastapi import FastAPI, HTTPException, Depends, Header, UploadFile, File, Query, Body
@@ -2195,6 +2196,20 @@ PUSH_I18N = {
         "teen_star_body": "{title}",
         "reminder_title": "Reminder ⏰",
         "reminder_body": "{title} — due {due}",
+        # Wall-clock daily notifications (server-sent; see DAILY_PUSH_JOBS).
+        "digest_title": "Today",
+        "digest_item_one": "thing today",
+        "digest_item_many": "things today",
+        "dinner_title": "Dinner tonight 🍽",
+        "dinner_body_buy": "{meal} — {n} still to buy",
+        "nightly_title": "Tomorrow 📅",
+        "nightly_body_one": "1 thing planned tomorrow",
+        "nightly_body": "{n} things planned tomorrow",
+        "recap_title": "Your week ✨",
+        "recap_body": "{tasks} done, {stars} stars earned.",
+        "allowance_title": "Allowance due tomorrow 💶",
+        "allowance_body": "{name}'s pocket money is due tomorrow.",
+        "allowance_body_many": "{n} allowances are due tomorrow.",
     },
     "fr": {
         "invited_title": "{name} vous invite dans son foyer",
@@ -2208,6 +2223,19 @@ PUSH_I18N = {
         "teen_star_body": "{title}",
         "reminder_title": "Rappel ⏰",
         "reminder_body": "{title} — pour le {due}",
+        "digest_title": "Aujourd'hui",
+        "digest_item_one": "chose aujourd'hui",
+        "digest_item_many": "choses aujourd'hui",
+        "dinner_title": "Dîner ce soir 🍽",
+        "dinner_body_buy": "{meal} — {n} article(s) à acheter",
+        "nightly_title": "Demain 📅",
+        "nightly_body_one": "1 chose prévue demain",
+        "nightly_body": "{n} choses prévues demain",
+        "recap_title": "Votre semaine ✨",
+        "recap_body": "{tasks} tâches faites, {stars} étoiles gagnées.",
+        "allowance_title": "Argent de poche demain 💶",
+        "allowance_body": "L'argent de poche de {name} est dû demain.",
+        "allowance_body_many": "{n} versements d'argent de poche sont dus demain.",
     },
     "es": {
         "invited_title": "{name} te invitó a su hogar",
@@ -2221,6 +2249,19 @@ PUSH_I18N = {
         "teen_star_body": "{title}",
         "reminder_title": "Recordatorio ⏰",
         "reminder_body": "{title} — para el {due}",
+        "digest_title": "Hoy",
+        "digest_item_one": "cosa hoy",
+        "digest_item_many": "cosas hoy",
+        "dinner_title": "Cena de esta noche 🍽",
+        "dinner_body_buy": "{meal} — faltan {n} por comprar",
+        "nightly_title": "Mañana 📅",
+        "nightly_body_one": "1 cosa prevista mañana",
+        "nightly_body": "{n} cosas previstas mañana",
+        "recap_title": "Tu semana ✨",
+        "recap_body": "{tasks} hechas, {stars} estrellas ganadas.",
+        "allowance_title": "Paga pendiente mañana 💶",
+        "allowance_body": "La paga de {name} vence mañana.",
+        "allowance_body_many": "{n} pagas vencen mañana.",
     },
     "de": {
         "invited_title": "{name} hat dich in den Haushalt eingeladen",
@@ -2234,6 +2275,19 @@ PUSH_I18N = {
         "teen_star_body": "{title}",
         "reminder_title": "Erinnerung ⏰",
         "reminder_body": "{title} — fällig am {due}",
+        "digest_title": "Heute",
+        "digest_item_one": "Sache heute",
+        "digest_item_many": "Sachen heute",
+        "dinner_title": "Abendessen heute 🍽",
+        "dinner_body_buy": "{meal} — {n} noch zu kaufen",
+        "nightly_title": "Morgen 📅",
+        "nightly_body_one": "1 Sache für morgen geplant",
+        "nightly_body": "{n} Sachen für morgen geplant",
+        "recap_title": "Deine Woche ✨",
+        "recap_body": "{tasks} erledigt, {stars} Sterne verdient.",
+        "allowance_title": "Taschengeld morgen fällig 💶",
+        "allowance_body": "Das Taschengeld von {name} ist morgen fällig.",
+        "allowance_body_many": "{n} Taschengelder sind morgen fällig.",
     },
 }
 
@@ -2556,12 +2610,295 @@ async def send_due_card_reminders(database, now: Optional[datetime] = None) -> i
     return sent
 
 
+# Daily notifications that are supposed to arrive at a wall-clock time.
+#
+# Five of them — the morning digest, the dinner nudge, the nightly agenda, the
+# Sunday recap and the allowance heads-up — used to be scheduled on the phone
+# as one-shot local notifications, and every one of them had the same defect:
+# the schedule was only (re)written while somebody had the app open, on the
+# screen that owns it. So the morning digest arrived only on days FOLLOWING a
+# day the Feed was opened, carrying the agenda as it looked at that moment; the
+# nightly agenda needed the Calendar tab opened that day; the allowance
+# reminder needed the Kids tab. A local notification cannot know about anything
+# that happens after it is set, and it is never set at all by someone who did
+# not open the right screen. Roland had appointments and no notification: that
+# is the mechanism, not bad luck.
+#
+# They are sent from here instead. The server always knows the current data, and
+# it does not need anyone to open anything.
+DIGEST_HOUR = int(os.environ.get("DIGEST_HOUR", "7"))
+DIGEST_MINUTE = int(os.environ.get("DIGEST_MINUTE", "30"))
+# How late is too late. If a pass is missed — a deploy, a restart — someone at
+# 07:45 should still hear; someone at 16:00 should not get a "today" digest
+# that has stopped being useful. Evening jobs get a tighter window because a
+# "dinner tonight" nudge at 21:00 is worse than no nudge.
+DIGEST_GRACE_MINUTES = int(os.environ.get("DIGEST_GRACE_MINUTES", "180"))
+EVENING_GRACE_MINUTES = int(os.environ.get("EVENING_GRACE_MINUTES", "120"))
+
+
+def _local_now(zone: Optional[str], now: datetime) -> datetime:
+    try:
+        return now.astimezone(ZoneInfo(zone or DEFAULT_TIMEZONE))
+    except Exception:
+        return now.astimezone(ZoneInfo(DEFAULT_TIMEZONE))
+
+
+def local_slot_is_due(local: datetime, hour: int, minute: int, grace: int) -> bool:
+    """Has this person's HH:MM passed, recently enough to still be worth saying?"""
+    target = local.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if local < target:
+        return False
+    return (local - target) <= timedelta(minutes=grace)
+
+
+def digest_is_due(local: datetime) -> bool:
+    return local_slot_is_due(local, DIGEST_HOUR, DIGEST_MINUTE, DIGEST_GRACE_MINUTES)
+
+
+def digest_body(titles: list, one: str, many: str) -> Optional[str]:
+    """"3 things today: bins · dentist · swimming +1", or nothing to say."""
+    if not titles:
+        return None
+    shown = " · ".join(titles[:3])
+    extra = f" +{len(titles) - 3}" if len(titles) > 3 else ""
+    word = one if len(titles) == 1 else many
+    return f"{len(titles)} {word}: {shown}{extra}"
+
+
+def _local_day_bounds(local: datetime, offset_days: int = 0):
+    """The UTC instants that bracket a local calendar day, for querying due dates."""
+    day = (local + timedelta(days=offset_days)).replace(
+        hour=0, minute=0, second=0, microsecond=0)
+    start = day.astimezone(timezone.utc)
+    end = (day + timedelta(days=1)).astimezone(timezone.utc)
+    return start, end
+
+
+async def _build_morning_digest(database, user, local, L):
+    """Everything still open and due before this local day is out."""
+    _, end_of_day = _local_day_bounds(local)
+    titles = []
+    async for card in database["cards"].find(
+            {"family_id": user.get("family_id"), "status": "OPEN"}, {"_id": 0}):
+        due = ensure_aware_utc(card.get("due_date"))
+        if due and due < end_of_day:
+            title = (card.get("title") or "").strip()
+            if title:
+                titles.append(title)
+    body = digest_body(titles, L["digest_item_one"], L["digest_item_many"])
+    return (L["digest_title"], body) if body else None
+
+
+async def _build_dinner_reminder(database, user, local, L):
+    """Tonight's planned meal, plus how much of the list is still unbought."""
+    today = DAYS_OF_WEEK[local.weekday()]
+    meals = [m async for m in database["meals"].find(
+        {"family_id": user.get("family_id")}, {"_id": 0}) if m.get("day") == today]
+    if not meals:
+        return None
+    # Dinner if the family planned one, otherwise whatever they planned today.
+    meal = next((m for m in meals if m.get("meal_type") == "dinner"), meals[0])
+    title = (meal.get("title") or "").strip()
+    if not title:
+        return None
+    to_buy = 0
+    async for item in database["shopping_list"].find(
+            {"family_id": user.get("family_id")}, {"_id": 0}):
+        if not item.get("checked"):
+            to_buy += 1
+    body = L["dinner_body_buy"].format(meal=title, n=to_buy) if to_buy else title
+    return (L["dinner_title"], body)
+
+
+async def _build_calendar_nightly(database, user, local, L):
+    """How tomorrow looks, said the evening before while it can still be changed."""
+    start, end = _local_day_bounds(local, 1)
+    count = 0
+    async for card in database["cards"].find(
+            {"family_id": user.get("family_id"), "status": "OPEN"}, {"_id": 0}):
+        due = ensure_aware_utc(card.get("due_date"))
+        if due and start <= due < end:
+            count += 1
+    if count == 0:
+        return None
+    body = L["nightly_body_one"] if count == 1 else L["nightly_body"].format(n=count)
+    return (L["nightly_title"], body)
+
+
+async def _build_sunday_recap(database, user, local, L):
+    """A week's worth of done things — only when there is something to celebrate."""
+    week_ago = local.astimezone(timezone.utc) - timedelta(days=7)
+    fid = user.get("family_id")
+    tasks = 0
+    async for card in database["cards"].find(
+            {"family_id": fid, "status": "DONE"}, {"_id": 0}):
+        completed = ensure_aware_utc(card.get("completed_at"))
+        if completed and completed >= week_ago:
+            tasks += 1
+    stars = 0
+    async for txn in database["star_transactions"].find({"family_id": fid}, {"_id": 0}):
+        created = ensure_aware_utc(txn.get("created_at"))
+        if created and created >= week_ago and (txn.get("delta") or 0) > 0:
+            stars += txn["delta"]
+    if tasks + stars <= 0:
+        return None
+    return (L["recap_title"], L["recap_body"].format(tasks=tasks, stars=stars))
+
+
+async def _build_allowance_reminder(database, user, local, L):
+    """Pocket money falling due tomorrow, so a parent has a day to get cash out."""
+    start, end = _local_day_bounds(local, 1)
+    names = []
+    async for row in database["allowances"].find(
+            {"family_id": user.get("family_id")}, {"_id": 0}):
+        if not (row.get("amount") or 0) > 0:
+            continue
+        due = ensure_aware_utc(allowance_next_due(row))
+        if not (due and start <= due < end):
+            continue
+        member = await database["family_members"].find_one(
+            {"member_id": row.get("member_id")}, {"_id": 0})
+        names.append(((member or {}).get("name") or "").strip() or "—")
+    if not names:
+        return None
+    if len(names) == 1:
+        body = L["allowance_body"].format(name=names[0])
+    else:
+        body = L["allowance_body_many"].format(n=len(names))
+    return (L["allowance_title"], body)
+
+
+# hour/minute are LOCAL to each person. `claim` is the field on the user doc
+# that records which local date this job last fired for — separate per job, so
+# a quiet dinner never suppresses tomorrow's digest. `weekday` pins a job to one
+# day (Python's Monday=0). `adults_only` keeps money talk off a teen's phone.
+DAILY_PUSH_JOBS = [
+    {"key": "morning_digest", "hour": DIGEST_HOUR, "minute": DIGEST_MINUTE,
+     "grace": DIGEST_GRACE_MINUTES, "claim": "digest_sent_for",
+     "pref": "card_reminders", "channel": "card-reminders",
+     "build": _build_morning_digest},
+    {"key": "dinner_reminder", "hour": 17, "minute": 30,
+     "grace": EVENING_GRACE_MINUTES, "claim": "dinner_sent_for",
+     "pref": "card_reminders", "channel": "card-reminders",
+     "build": _build_dinner_reminder},
+    {"key": "sunday_recap", "hour": 18, "minute": 0, "weekday": 6,
+     "grace": EVENING_GRACE_MINUTES, "claim": "recap_sent_for",
+     "pref": "card_reminders", "channel": "card-reminders",
+     "build": _build_sunday_recap},
+    {"key": "calendar_nightly", "hour": 20, "minute": 15,
+     "grace": EVENING_GRACE_MINUTES, "claim": "nightly_sent_for",
+     "pref": "card_reminders", "channel": "card-reminders",
+     "build": _build_calendar_nightly},
+    {"key": "allowance_reminder", "hour": 9, "minute": 0, "adults_only": True,
+     "grace": DIGEST_GRACE_MINUTES, "claim": "allowance_sent_for",
+     "pref": "card_reminders", "channel": "card-reminders",
+     "build": _build_allowance_reminder},
+]
+
+
+async def _push_zones(database) -> dict:
+    """user_id -> IANA zone, from their devices. Only people with a live token.
+
+    Everyone else is unreachable anyway — the same gate every other push goes
+    through — so there is nothing to compute for them.
+    """
+    zones: dict = {}
+    async for tok in database["notification_tokens"].find(
+            {"active": True}, {"_id": 0, "user_id": 1, "timezone": 1}):
+        uid = tok.get("user_id")
+        if not uid:
+            continue
+        if tok.get("timezone") and not zones.get(uid):
+            zones[uid] = tok["timezone"]
+        else:
+            zones.setdefault(uid, None)
+    return zones
+
+
+async def run_daily_local_push(database, job: dict, now: Optional[datetime] = None,
+                               zones: Optional[dict] = None) -> int:
+    """One pass of one job: anyone whose local slot has just gone by hears it.
+
+    Idempotent on the person's LOCAL date, because that is the unit these are
+    about — one per day where they are, whatever the server's day happens to be.
+    """
+    now = now or utcnow()
+    zones = zones if zones is not None else await _push_zones(database)
+    sent = 0
+
+    for user_id, zone in zones.items():
+        try:
+            local = _local_now(zone, now)
+            if job.get("weekday") is not None and local.weekday() != job["weekday"]:
+                continue
+            if not local_slot_is_due(local, job["hour"], job["minute"], job["grace"]):
+                continue
+            user = await database["users"].find_one({"user_id": user_id}, {"_id": 0})
+            if not user:
+                continue
+            if job.get("adults_only") and user.get("is_teen"):
+                continue
+            today = local.strftime("%Y-%m-%d")
+            if user.get(job["claim"]) == today:
+                continue
+
+            settings = await database["notification_settings"].find_one(
+                {"user_id": user_id}, {"_id": 0})
+            if not alerts_enabled(settings, job["pref"]):
+                continue
+
+            L = PUSH_I18N.get(user.get("language") or "en", PUSH_I18N["en"])
+            built = await job["build"](database, user, local, L)
+
+            # Claim the day BEFORE sending. A crash mid-send costs one
+            # notification; claiming afterwards would risk sending it twice, and
+            # a duplicate 07:30 notification is how an app gets muted.
+            await database["users"].update_one(
+                {"user_id": user_id, job["claim"]: {"$ne": today}},
+                {"$set": {job["claim"]: today}})
+            if not built:
+                continue  # nothing to say; stay quiet rather than say "0 things"
+
+            title, body = built
+            await send_push_to_user(
+                database, user_id, title, body, {"type": job["key"]},
+                channel=job["channel"])
+            sent += 1
+        except Exception as e:  # one person's bad data never stops the pass
+            log.warning("%s skipped for a user: %s", job["key"], type(e).__name__)
+    return sent
+
+
+async def send_morning_digests(database, now: Optional[datetime] = None) -> int:
+    return await run_daily_local_push(database, DAILY_PUSH_JOBS[0], now)
+
+
+async def send_daily_local_pushes(database, now: Optional[datetime] = None) -> int:
+    """Every wall-clock job, one shared zone lookup. Returns how many were sent."""
+    zones = await _push_zones(database)
+    total = 0
+    for job in DAILY_PUSH_JOBS:
+        try:
+            total += await run_daily_local_push(database, job, now, zones)
+        except Exception as e:  # one bad job never stops the others
+            log.warning("daily push job %s failed: %s", job["key"], e)
+    return total
+
+
 async def _reminder_scheduler_loop():
     while True:
         try:
             await send_due_card_reminders(get_db())
         except Exception as e:  # a tick must never kill the loop
             log.warning("reminder scheduler tick failed: %s", e)
+        try:
+            # Rides the same tick. Everything here answers "what does this
+            # person need to know now", and one loop is one thing to reason
+            # about. Each job is cheap on a tick where nobody's local slot has
+            # come round, which is almost every tick.
+            await send_daily_local_pushes(get_db())
+        except Exception as e:
+            log.warning("daily push tick failed: %s", e)
         await asyncio.sleep(REMINDER_SCAN_INTERVAL)
 
 
@@ -2908,6 +3245,24 @@ class CalendarImportIn(BaseModel):
     days: int = 30
 
 
+# A digest at 07:30 has to mean 07:30 where the person actually is. Nothing in
+# the app had ever needed a user's zone, so the device sends it with its push
+# token and it is checked here — an unrecognised name would otherwise raise deep
+# inside the digest pass and silence everyone scheduled after it.
+DEFAULT_TIMEZONE = os.environ.get("DEFAULT_TIMEZONE", "Europe/Paris")
+
+
+def _valid_timezone(name: Optional[str]) -> Optional[str]:
+    candidate = (name or "").strip()[:64]
+    if not candidate:
+        return None
+    try:
+        ZoneInfo(candidate)
+        return candidate
+    except Exception:
+        return None
+
+
 class NotificationTokenIn(BaseModel):
     token: str
     platform: Optional[str] = None
@@ -2915,6 +3270,11 @@ class NotificationTokenIn(BaseModel):
     # Optional so an older client that does not send them still registers.
     app_version: Optional[str] = None
     runtime_version: Optional[str] = None
+    # The device's IANA zone, e.g. "Europe/Paris". Needed because a digest at
+    # 07:30 has to mean 07:30 where the person is, and nothing else in the app
+    # ever needed to know. Optional: an older client simply does not send it,
+    # and the fallback below covers them.
+    timezone: Optional[str] = None
 
 
 class NotificationPrefsIn(BaseModel):
@@ -5764,6 +6124,9 @@ async def teen_register_notification_token(payload: NotificationTokenIn, teen=De
         "platform": payload.platform,
         "app_version": (payload.app_version or "").strip()[:20] or None,
         "runtime_version": (payload.runtime_version or "").strip()[:20] or None,
+        # Validated rather than trusted: an unknown zone would raise inside the
+        # digest loop and stop every later user in that pass.
+        "timezone": _valid_timezone(payload.timezone),
         "active": True,
         "updated_at": utcnow(),
     }

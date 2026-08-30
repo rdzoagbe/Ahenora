@@ -57,4 +57,22 @@ describe('targetForNotification', () => {
     expect(targetForNotification({ type: 'something_new' })).toEqual({ pathname: '/(tabs)/feed' });
     expect(targetForNotification({})).toEqual({ pathname: '/(tabs)/feed' });
   });
+
+  it('sends each daily reminder to the screen it is about', () => {
+    // These arrive from the server now, and a tap that lands on the Feed makes
+    // the notification useless: a dinner nudge you then have to go and find is
+    // not a nudge.
+    expect(targetForNotification({ type: 'dinner_reminder' }))
+      .toEqual({ pathname: '/(tabs)/kitchen' });
+    expect(targetForNotification({ type: 'calendar_nightly' }))
+      .toEqual({ pathname: '/(tabs)/calendar' });
+    expect(targetForNotification({ type: 'allowance_reminder' }))
+      .toEqual({ pathname: '/(tabs)/kids' });
+  });
+
+  it('keeps the round-ups on the Feed, which is the screen about everything', () => {
+    ['morning_digest', 'daily_tip', 'sunday_recap'].forEach((type) => {
+      expect(targetForNotification({ type })).toEqual({ pathname: '/(tabs)/feed' });
+    });
+  });
 });

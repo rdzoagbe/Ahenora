@@ -1428,6 +1428,20 @@ export function logEvent(name: string): void {
   }).catch(() => undefined);
 }
 
+/**
+ * The device's IANA zone, e.g. "Europe/Paris". Sent with the push token because
+ * the server needs it to fire a 07:30 digest at 07:30 where the person is —
+ * nothing else in the app ever had to know. Empty if the platform will not say,
+ * and the server falls back rather than guessing wrong.
+ */
+function deviceTimeZone(): string | undefined {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export const api = {
   // Auth
   // Sign in with Apple — required by the App Store in any app that also offers
@@ -2015,7 +2029,8 @@ export const api = {
   registerNotificationToken: (token: string, platform?: string, appVersion?: string, runtimeVersion?: string) =>
     request<{ ok: boolean }>('/notifications/register', {
       method: 'POST',
-      body: { token, platform, app_version: appVersion, runtime_version: runtimeVersion },
+      body: { token, platform, app_version: appVersion, runtime_version: runtimeVersion,
+              timezone: deviceTimeZone() },
     }),
   // Teens live on the /teen/* allowlist; the parent register route 403s them,
   // so they register here or they never receive a single push.

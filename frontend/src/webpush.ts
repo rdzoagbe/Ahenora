@@ -72,6 +72,40 @@ async function enableWebPush(prompt: boolean): Promise<boolean> {
   }
 }
 
+/**
+ * Why browser notifications cannot be turned on here — or 'ok' if they can.
+ *
+ * This exists because of a real report: a co-parent on an iPhone had every
+ * notification toggle switched ON in the web app and never received a single
+ * notification. The toggles are stored server-side and looked correct; what was
+ * missing was a push SUBSCRIPTION, which Safari on iOS refuses to create unless
+ * the site has been added to the Home Screen. `supported()` returned false and
+ * we said nothing, so the UI promised something the browser would never deliver.
+ *
+ * 'ios-home-screen' is the actionable one: the person can fix it in two taps,
+ * but only if we tell them.
+ */
+export type WebPushBlock = 'ok' | 'ios-home-screen' | 'denied' | 'unsupported';
+
+export function webPushBlockedReason(): WebPushBlock {
+  if (Platform.OS !== 'web') return 'ok';           // native has its own path
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') return 'unsupported';
+  if (supported()) {
+    return typeof Notification !== 'undefined' && Notification.permission === 'denied'
+      ? 'denied' : 'ok';
+  }
+  // iOS and iPadOS: every browser is Safari underneath, and none of them expose
+  // PushManager to a plain tab. Added to the Home Screen, the same page does.
+  const ua = navigator.userAgent || '';
+  const isApple = /iPad|iPhone|iPod/.test(ua)
+    || (/Macintosh/.test(ua) && (navigator as any).maxTouchPoints > 1);
+  const standalone = (navigator as any).standalone === true
+    || (typeof window.matchMedia === 'function'
+        && window.matchMedia('(display-mode: standalone)').matches);
+  if (isApple && !standalone) return 'ios-home-screen';
+  return 'unsupported';
+}
+
 /** Quiet re-subscribe on sign-in — only if permission is already granted. */
 export const setupWebPush = () => enableWebPush(false);
 

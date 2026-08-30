@@ -509,18 +509,11 @@ export default function Kids() {
             // because it is a date, not a task. Scheduled on-device, so it fires
             // even with the app closed; re-synced on every load so a changed
             // amount or frequency never leaves a stale reminder behind.
-            const reminders = alwRes.value
-              .filter((a) => a.amount > 0 && a.next_due_at)
-              .map((a) => ({
-                id: a.allowance_id,
-                fireAt: new Date(a.next_due_at).getTime() - 24 * 60 * 60 * 1000,
-                title: t('kids_allowance_reminder_title'),
-                body: t('kids_allowance_reminder_body', {
-                  name: m.find((x) => x.member_id === a.member_id)?.name || '',
-                  amount: `${t('currency_symbol')}${a.amount}`,
-                }),
-              }));
-            syncAllowanceReminders(reminders, true).catch(() => undefined);
+            // Allowance heads-up is sent by the server now. Scheduled here it
+            // only existed for someone who had opened the Kids tab, and it went
+            // stale the moment a payment moved the next due date. Cancelling
+            // clears any left over from an older build so nobody hears it twice.
+            syncAllowanceReminders([], false).catch(() => undefined);
           }
           if (choreRes.status === 'fulfilled') setChores(choreRes.value);
           // A server that predates redemptions 404s here; an older app should
@@ -969,29 +962,13 @@ export default function Kids() {
         [activeChild.member_id]: (prev[activeChild.member_id] || 0) + res.transaction.amount,
       }));
       showToast(t('kids_allowance_paid', { amount: `${t('currency_symbol')}${res.transaction.amount}` }), 'success');
-      // Paying moves the next-due date forward, so reschedule the day-before
-      // reminders now rather than waiting for the next screen load.
-      syncAllowanceReminders(
-        nextAllowances
-          .filter((a) => a.amount > 0 && a.next_due_at)
-          .map((a) => ({
-            id: a.allowance_id,
-            fireAt: new Date(a.next_due_at).getTime() - 24 * 60 * 60 * 1000,
-            title: t('kids_allowance_reminder_title'),
-            body: t('kids_allowance_reminder_body', {
-              name: members.find((x) => x.member_id === a.member_id)?.name || '',
-              amount: `${t('currency_symbol')}${a.amount}`,
-            }),
-          })),
-        true,
-      ).catch(() => undefined);
     } catch (e: any) {
       logger.warn('Pay allowance failed:', e?.message || e);
       showToast(e?.message || t('kids_allowance_error'), 'error');
     } finally {
       moneySavingRef.current = false;
     }
-  }, [activeChild, allowances, members, showToast, t]);
+  }, [activeChild, allowances, showToast, t]);
 
   const openMoneySheet = useCallback(async () => {
     if (!activeChild) return;
