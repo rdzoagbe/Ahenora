@@ -2718,14 +2718,22 @@ def _visible_to(user: dict, card: dict) -> bool:
     """Whether this person is allowed to see this card at all.
 
     A digest names card TITLES on a lock screen, so it has to obey the same
-    scoping the screens do. A teen who happened to have a push token would
-    otherwise have been read their parents' private card titles every morning —
-    a worse leak than the missing notification this whole change is about.
+    scoping the screens do — and there are TWO rules, not one. Review caught
+    the teen half of this: a teen with a push token was being read their
+    parents' private card titles every morning. The fix at the time returned
+    True for everyone who was not a teen, which left the adult half of the same
+    leak standing: a co-parent's private card (shared=False, and in a separated
+    household that is exactly the sensitive one) went straight into the other
+    parent's 07:30 notification.
+
+    Both rules are the ones the screens already use. Neither is re-implemented
+    here, because a privacy rule with two copies is a privacy rule with one
+    stale copy.
     """
-    if not user.get("is_teen"):
-        return True
-    return _teen_can_see(card, (user.get("name") or "").strip().lower(),
-                         user.get("user_id") or "")
+    if user.get("is_teen"):
+        return _teen_can_see(card, (user.get("name") or "").strip().lower(),
+                             user.get("user_id") or "")
+    return _card_visible_to(card, user.get("user_id"))
 
 
 async def _build_morning_digest(database, user, local, L):
@@ -8266,22 +8274,23 @@ async def card_conflicts(
     start = target - timedelta(hours=2)
     end = target + timedelta(hours=2)
 
+    # Filtered in Python, not in the query. The $or this replaced matched
+    # `shared: True` — but an ASSIGNED card is shared AND carries a visible_to
+    # set that narrows it further, and no $or expressed that, so a scoped task
+    # leaked to an adult who was not on it. The search endpoint says this in as
+    # many words: re-implementing the visibility rules in a query language is
+    # how they drift. One predicate, used everywhere.
     query = {
         "family_id": user["family_id"],
         "due_date": {"$gte": start, "$lte": end},
-        # Don't surface a co-parent's private items as conflicts.
-        "$or": [
-            {"shared": True},
-            {"created_by_user_id": user["user_id"]},
-            {"created_by_user_id": {"$exists": False}},
-        ],
     }
     if exclude_id:
         query["card_id"] = {"$ne": exclude_id}
 
     rows = []
     async for item in database["cards"].find(query, {"_id": 0}):
-        rows.append(public_card(item))
+        if _card_visible_to(item, user["user_id"]):
+            rows.append(public_card(item))
     return rows
 
 
@@ -10216,9 +10225,15 @@ async def weekly_brief(user=Depends(require_user)):
             message="Weekly Brief is available on Executive and Family Office plans.",
         )
 
+    # Only what this person may actually see. Unfiltered, a co-parent's PRIVATE
+    # card titles were summarised into the other parent's brief — and, when a
+    # key is configured, posted to an external model on the way. In a separated
+    # household the private card is precisely the one that must not travel.
+    # Same predicate the feed uses; the rule is not re-implemented here.
     cards = []
     async for item in database["cards"].find({"family_id": user["family_id"], "status": "OPEN"}, {"_id": 0}):
-        cards.append(item)
+        if _card_visible_to(item, user["user_id"]):
+            cards.append(item)
 
     if not cards:
         brief = "You have a clear runway this week. Use the space to reset routines, confirm calendars, and get ahead on one important family task."
@@ -13665,20 +13680,25 @@ async def weekly_report(user: dict = Depends(require_user), database=Depends(get
         cat = e.get("category", "Other")
         expense_categories[cat] = expense_categories.get(cat, 0) + e.get("amount", 0)
 
-    upcoming_cards = await database["cards"].find(
+    # Same correction as the conflict check: the $or here matched `shared: True`
+    # and so let through a SCOPED assigned card, which is shared but restricted
+    # by visible_to. This report prints titles, so it goes through the one
+    # predicate rather than a second, weaker copy of the rule. Fetched wide and
+    # trimmed to ten AFTER filtering, or a private item would silently consume
+    # one of the ten slots.
+    upcoming_rows = await database["cards"].find(
         {
             "family_id": fid,
             "status": "OPEN",
             "due_date": {"$gte": now, "$lte": now + timedelta(days=7)},
-            # Don't list a co-parent's private item titles in this report.
-            "$or": [
-                {"shared": True},
-                {"created_by_user_id": user["user_id"]},
-                {"created_by_user_id": {"$exists": False}},
-            ],
         },
-        {"_id": 0, "title": 1, "due_date": 1, "type": 1, "assignee": 1},
-    ).sort("due_date", 1).to_list(10)
+        {"_id": 0, "title": 1, "due_date": 1, "type": 1, "assignee": 1,
+         "shared": 1, "created_by_user_id": 1, "visible_to": 1},
+    ).sort("due_date", 1).to_list(200)
+    upcoming_cards = [
+        {k: r[k] for k in ("title", "due_date", "type", "assignee") if k in r}
+        for r in upcoming_rows if _card_visible_to(r, user["user_id"])
+    ][:10]
 
     routine_logs = await database["routine_logs"].count_documents(
         {"family_id": fid, "completed_at": {"$gte": week_ago}}
