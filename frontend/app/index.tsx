@@ -97,12 +97,25 @@ export default function Landing() {
   const androidClientId =
     (typeof process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID === 'string' && process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID.trim())
     || FALLBACK_ANDROID;
+  // A Google OAuth client is bound to ONE platform: an Android client is tied to
+  // the package name and signing fingerprint and is rejected outright when a
+  // request comes from iOS. This was passed as the generic `clientId`, so on iOS
+  // the Google button would have opened a sheet that failed every time — and a
+  // sign-in door that cannot open is an App Review rejection, not a papercut.
+  // No fallback constant on purpose: an empty value must HIDE the button, not
+  // quietly reuse a client that belongs to another platform.
+  const iosClientId =
+    (typeof process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID === 'string' && process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID.trim())
+    || '';
+  // Every other platform keeps working exactly as before.
+  const googleAvailable = Platform.OS !== 'ios' || Boolean(iosClientId);
   const webRedirectUri = Platform.OS !== 'android' ? AuthSession.makeRedirectUri({ scheme: 'householdcoo', path: 'oauthredirect' }) : undefined;
 
   const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
-    clientId: androidClientId,
+    clientId: Platform.OS === 'ios' ? (iosClientId || androidClientId) : androidClientId,
     webClientId,
     androidClientId,
+    ...(iosClientId ? { iosClientId } : {}),
     redirectUri: webRedirectUri,
   });
 
@@ -469,7 +482,7 @@ export default function Landing() {
           </View>
 
           <View style={styles.buttonStack}>
-            {loginHint && !inviteToken ? (
+            {loginHint && !inviteToken && !(loginHint.method === 'google' && !googleAvailable) ? (
               /* Returning user: greet them and offer one tap back in as the
                  account they last used. "Not you?" drops to the full doors. */
               <>
@@ -531,6 +544,7 @@ export default function Landing() {
                   </PressScale>
                 ) : null}
 
+                {googleAvailable ? (
                 <PressScale
                   testID="google-signin"
                   onPress={signIn}
@@ -554,6 +568,7 @@ export default function Landing() {
                     </>
                   )}
                 </PressScale>
+                ) : null}
 
                 <PressScale
                   testID="email-login"

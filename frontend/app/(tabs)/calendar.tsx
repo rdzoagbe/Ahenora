@@ -254,9 +254,16 @@ export default function Calendar() {
       : undefined),
     [],
   );
+  // Same platform-bound rule as sign-in: an Android OAuth client is refused when
+  // the request comes from iOS. Without an iOS client this request had no usable
+  // client id at all on iOS, so "Connect Google Calendar" was a button that could
+  // only fail. Absent, the entry point is hidden rather than offered.
+  const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID?.trim() || '';
+  const googleCalendarAvailable = Platform.OS !== 'ios' || Boolean(iosClientId);
   const [calendarRequest, calendarResponse, promptCalendarAsync] = Google.useAuthRequest({
     androidClientId,
     webClientId,
+    ...(iosClientId ? { iosClientId } : {}),
     scopes: ['openid', 'profile', 'email', GOOGLE_CALENDAR_SCOPE],
     redirectUri: webCalendarRedirect,
   });
@@ -679,7 +686,11 @@ export default function Calendar() {
       return;
     }
 
-    if (!webClientId || !androidClientId) {
+    // googleCalendarAvailable covers iOS specifically: an Android OAuth client is
+    // refused for an iOS request, so without an iOS client there is no usable
+    // client id and the sheet could only fail. Refuse here, with the wording that
+    // is actually true, rather than opening it.
+    if (!webClientId || !androidClientId || !googleCalendarAvailable) {
       Alert.alert(t('cal_google_not_configured'), t('cal_missing_oauth_client_ids'));
       setCalendarSyncStatus(t('cal_oauth_client_ids_missing'));
       return;
