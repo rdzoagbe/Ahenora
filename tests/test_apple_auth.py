@@ -24,7 +24,7 @@ try:
 except ImportError:
     HAVE = False
 
-BUNDLE = "com.householdcoo.app"
+BUNDLE = "com.ahenora.app"   # iOS bundle id; NOT the Android package name
 
 
 def _b64(data: bytes) -> str:
@@ -210,3 +210,41 @@ class AppleSignInEndpoint(unittest.TestCase):
         with self.assertRaises(server.HTTPException) as e:
             asyncio.run(server.exchange_apple_session(payload))
         self.assertEqual(e.exception.status_code, 401)
+
+
+try:
+    import fastapi  # noqa: F401
+    import server as _server
+    HAVE_SERVER = True
+except ImportError:
+    HAVE_SERVER = False
+
+
+@unittest.skipUnless(HAVE_SERVER, "backend dependencies not installed")
+class TheOldBundleIdIsNotOurs(unittest.TestCase):
+    """com.householdcoo.app was unavailable on Apple — bundle ids are globally
+    unique across every developer account, and somebody else holds that one.
+
+    That makes it dangerous rather than merely wrong. Whoever owns that App ID
+    can mint Apple identity tokens carrying it as the audience; accepting one
+    would let them authenticate against this backend. It has to fail closed even
+    if a stale APPLE_BUNDLE_ID is still sitting in Railway from before the
+    change, which is exactly the state the deploy will be in.
+    """
+
+    def test_it_is_refused_even_when_the_environment_asks_for_it(self):
+        import asyncio
+        srv = _server
+        old = os.environ.get("APPLE_BUNDLE_ID")
+        os.environ["APPLE_BUNDLE_ID"] = "com.householdcoo.app"
+        try:
+            payload = srv.AppleSessionIn(identity_token="irrelevant.for.this.check")
+            with self.assertRaises(srv.HTTPException) as caught:
+                asyncio.run(srv.exchange_apple_session(payload))
+            # 503 (no usable audience), never a 401 from actually verifying it.
+            self.assertEqual(caught.exception.status_code, 503)
+        finally:
+            if old is None:
+                os.environ.pop("APPLE_BUNDLE_ID", None)
+            else:
+                os.environ["APPLE_BUNDLE_ID"] = old

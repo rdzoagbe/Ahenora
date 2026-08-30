@@ -4194,11 +4194,26 @@ async def exchange_apple_session(payload: AppleSessionIn):
     name arrives only on first authorisation, so it is stored then and never
     overwritten with a blank on later sign-ins.
     """
-    database = get_db()
+    # Audience first, before anything else is touched: a misconfigured audience
+    # is a refusal, not a request worth starting.
+    # The iOS bundle id is com.ahenora.app, NOT the Android package name.
+    # com.householdcoo.app was unavailable on Apple — globally unique across all
+    # developer accounts, and somebody else holds it. That makes it actively
+    # dangerous as an audience: whoever owns that App ID can mint Apple identity
+    # tokens carrying it, and accepting one here would let them sign in as any
+    # Ahenora user whose Apple sub they could obtain. So it is filtered out
+    # explicitly rather than merely not being the default — a stale
+    # APPLE_BUNDLE_ID left in Railway from before this change must fail closed,
+    # not quietly re-open the hole.
+    NEVER_TRUST = {"com.householdcoo.app"}
     audiences = [a for a in (
-        os.environ.get("APPLE_BUNDLE_ID") or "com.householdcoo.app",
+        os.environ.get("APPLE_BUNDLE_ID") or "com.ahenora.app",
         os.environ.get("APPLE_SERVICES_ID") or "",
-    ) if a]
+    ) if a and a not in NEVER_TRUST]
+    if not audiences:
+        log.error("Apple sign-in has no usable audience; check APPLE_BUNDLE_ID")
+        raise HTTPException(status_code=503, detail="Apple sign-in is not configured")
+    database = get_db()
     try:
         claims = await asyncio.wait_for(
             asyncio.to_thread(apple_auth.verify_apple_identity_token,

@@ -14,7 +14,7 @@
     "ios": {
       "_comment_supportsTablet": "false for the first release. Claiming iPad support makes iPad screenshots MANDATORY on the listing and puts the app in front of a reviewer on an iPad — and only two files in the codebase use useBreakpoint(), so the layout is a phone layout. The app still runs on iPad in iPhone compatibility mode. Flip this to true when the tablet layout is actually built and tested, not before.",
       "supportsTablet": false,
-      "bundleIdentifier": "com.householdcoo.app",
+      "bundleIdentifier": "com.ahenora.app",
       "infoPlist": {
         "NSCameraUsageDescription": "Ahenora uses the camera only when you choose Scan to capture household documents, school letters, appointment cards, or bills.",
         "NSPhotoLibraryUsageDescription": "Ahenora uses your photo library only when you choose a photo to scan or attach to a household document.",
