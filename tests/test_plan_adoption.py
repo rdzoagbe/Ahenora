@@ -57,12 +57,30 @@ class PlanAdoptionReadout(unittest.TestCase):
         else:
             os.environ["RC_WEBHOOK_SECRET"] = self._secret
 
-    def _family(self, family_id, plan="village", admin_email=None, with_device=True):
+    def _family(self, family_id, plan="village", admin_email=None,
+                with_device=True, active=None):
+        """Seed one household.
+
+        `active` decides whether it counts as LIVE, and that is now measured by
+        whether an adult opened the app — not by whether anyone owns a push
+        token. Those were the same thing in this fixture until the endpoint
+        stopped conflating them, which is exactly the conflation that made
+        pct_active_paying read high: a household using the app daily with
+        notifications declined was invisible.
+
+        Defaults to `with_device` so the existing cases keep their meaning.
+        """
+        live = with_device if active is None else active
+
         async def seed():
             await self.db["families"].insert_one({"family_id": family_id, "plan": plan})
-            if admin_email:
-                await self.db["users"].insert_one({
-                    "user_id": f"u_{family_id}", "family_id": family_id, "email": admin_email})
+            # Every household has an adult account; whether it is RECENTLY
+            # active is what decides the "live" population.
+            doc = {"user_id": f"u_{family_id}", "family_id": family_id,
+                   "email": admin_email or f"{family_id}@x.com"}
+            if live:
+                doc["last_active_at"] = server.utcnow()
+            await self.db["users"].insert_one(doc)
             if with_device:
                 await self.db["notification_tokens"].insert_one({
                     "token": f"tok_{family_id}", "family_id": family_id,
@@ -108,14 +126,30 @@ class PlanAdoptionReadout(unittest.TestCase):
         self.assertEqual(out["paying_families"], 0)
 
     def test_conversion_is_measured_against_active_families(self):
-        self._family("f1", plan="executive", with_device=True)   # active + paying
-        self._family("f2", plan="village", with_device=True)     # active + free
-        self._family("f3", plan="village", with_device=False)    # signed up, never opened
+        self._family("f1", plan="executive", active=True)    # active + paying
+        self._family("f2", plan="village", active=True)      # active + free
+        self._family("f3", plan="village", active=False)     # signed up, never opened
         out = self._run()
         self.assertEqual(out["total_families"], 3)
-        self.assertEqual(out["active_families_with_device"], 2)
+        self.assertEqual(out["active_families"], 2)
         self.assertEqual(out["active_paying_families"], 1)
         self.assertEqual(out["pct_active_paying"], 50.0)
+
+    def test_a_live_household_that_declined_notifications_still_counts(self):
+        """The reason the denominator moved off push tokens.
+
+        Before the permission prompt shipped almost nobody had a token, so a
+        household using the app every day was missing from the denominator —
+        and pct_active_paying read HIGHER than the truth. Flattering errors are
+        the ones nobody questions."""
+        self._family("f1", plan="executive", with_device=True, active=True)
+        self._family("f2", plan="village", with_device=False, active=True)
+        self._family("f3", plan="village", with_device=False, active=True)
+        out = self._run()
+        self.assertEqual(out["active_families"], 3)
+        self.assertEqual(out["families_with_a_device"], 1)
+        # 1 of 3, not the 1 of 1 the old denominator would have reported.
+        self.assertEqual(out["pct_active_paying"], 33.3)
 
     def test_empty_base_is_zero_not_a_crash(self):
         out = self._run()

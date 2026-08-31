@@ -7739,8 +7739,30 @@ async def plan_adoption(user=Depends(require_user)):
 
     billing_live = bool(os.environ.get("RC_WEBHOOK_SECRET"))
 
-    # Which families own an active device — the population that actually opened
-    # the app, so the conversion rate is measured against real households.
+    # Which households are actually LIVE — measured by whether somebody opened
+    # the app, not by whether they own a push token.
+    #
+    # This used to read notification_tokens, which exist only where someone
+    # granted notification permission. Before the permission prompt shipped
+    # that was almost nobody, so the conversion denominator counted a handful
+    # of households and pct_active_paying read far HIGHER than the truth — the
+    # flattering direction, which is the one nobody questions.
+    #
+    # account_active_since is the same definition the funnel and the retention
+    # read-out use, so all three sections of the Metrics screen now agree on
+    # what "active" means. They previously did not.
+    live_cutoff = utcnow() - timedelta(days=30)
+    families_live: set = set()
+    async for acct in database["users"].find(
+        {}, {"_id": 0, "family_id": 1, "last_active_at": 1, "last_active_day": 1}
+    ):
+        fid = acct.get("family_id")
+        if fid and account_active_since(acct, live_cutoff):
+            families_live.add(fid)
+
+    # Kept alongside, because it is the number that answers a DIFFERENT
+    # question — how much of the base can receive a push at all — and the gap
+    # between the two is itself worth seeing.
     families_with_device: set = set()
     async for tok in database["notification_tokens"].find(
         {"active": True}, {"_id": 0, "family_id": 1}
@@ -7767,7 +7789,7 @@ async def plan_adoption(user=Depends(require_user)):
         is_tester = await family_has_admin(database, fam.get("family_id", ""))
         if is_tester:
             tester_households += 1
-        if fam.get("family_id") in families_with_device:
+        if fam.get("family_id") in families_live:
             active_total += 1
             if is_paying:
                 active_paying += 1
@@ -7786,7 +7808,11 @@ async def plan_adoption(user=Depends(require_user)):
         "paying_families": paying,
         "tester_households": tester_households,
         "free_premium_families": free_premium,
-        "active_families_with_device": active_total,
+        # Renamed from active_families_with_device: it no longer means that, and
+        # a field whose name outlives its meaning is how this screen got into
+        # trouble in the first place.
+        "active_families": active_total,
+        "families_with_a_device": len(families_with_device),
         "active_paying_families": active_paying,
         "pct_active_paying": round(100 * active_paying / active_total, 1) if active_total else 0.0,
         "active_free_premium_families": active_free_premium,
