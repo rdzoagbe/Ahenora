@@ -13999,9 +13999,19 @@ class SupportContactIn(BaseModel):
 # -----------------------------------------------------------------------------
 # Metrics (first-party, count-only — no payloads, no third-party SDKs)
 # -----------------------------------------------------------------------------
+# Every name the app may report. An event NOT in here is dropped silently —
+# log_metric_event answers {"ok": False} and logEvent() is fire-and-forget, so
+# nothing anywhere notices. On the Metrics screen that reads as "this never
+# happens", which is indistinguishable from "this is not being recorded".
+#
+# tests/test_metric_event_names.py keeps this in step with what the app
+# actually sends. It was added because onboarding_skipped had been sent and
+# dropped for as long as it had existed: the screen showed nobody skipping
+# onboarding, when in truth nobody's skip was ever counted.
 ALLOWED_EVENTS = {
     "feed_open", "scan_used", "card_created", "vault_added", "vault_shared",
-    "kids_open", "calendar_open", "onboarding_done", "calendar_import_cancelled",
+    "kids_open", "calendar_open", "onboarding_done", "onboarding_skipped",
+    "calendar_import_cancelled",
     # AI reliability: bumped server-side from the central Gemini path so the
     # Metrics screen can show a real success rate, not just a live probe.
     "ai_call_ok", "ai_call_error",
