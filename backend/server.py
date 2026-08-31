@@ -3969,6 +3969,19 @@ async def delete_account(payload: DeleteAccountIn, user=Depends(require_user)):
     return {"ok": True, "deleted_household": deleted_household}
 
 
+def _secret_fingerprint(value: str) -> dict:
+    """Identify a secret without exposing it: its length and 8 hex of SHA-256.
+
+    Stripped first, so the reported fingerprint is of the value the comparison
+    will actually use rather than of whatever whitespace came with it.
+    """
+    cleaned = (value or "").strip()
+    if not cleaned:
+        return {"set": False, "length": 0, "sha8": ""}
+    return {"set": True, "length": len(cleaned),
+            "sha8": hashlib.sha256(cleaned.encode()).hexdigest()[:8]}
+
+
 @app.get("/api/health/config")
 async def health_config(user=Depends(require_user)):
     """Admin-only configuration inventory (was previously public on `/`)."""
@@ -3985,6 +3998,22 @@ async def health_config(user=Depends(require_user)):
         "google_android_configured": bool(GOOGLE_ANDROID_CLIENT_ID),
         "google_client_ids_count": len(GOOGLE_CLIENT_IDS),
         "billing_configured": bool(os.environ.get("RC_WEBHOOK_SECRET")),
+        # Fingerprints of the webhook secrets the RUNNING process actually
+        # holds, so "did my dashboard edit reach the server?" is answerable in
+        # one request instead of firing a test event and reading deploy logs.
+        #
+        # An environment variable edited in a dashboard and an environment
+        # variable loaded by a live process are different things, and nothing
+        # made the difference visible: a stale value in memory looks exactly
+        # like a wrong value on the other side. Compare these against the
+        # supplied_sha in an "RC webhook auth mismatch" log line, or against
+        # your own sha256 of the value you believe you set.
+        #
+        # Eight hex characters of SHA-256, admin-only. Identifies a value
+        # without being useful for recovering it, and the length is included
+        # because truncation is the other common failure.
+        "rc_secret_sha": _secret_fingerprint(os.environ.get("RC_WEBHOOK_SECRET", "")),
+        "stripe_secret_sha": _secret_fingerprint(os.environ.get("STRIPE_WEBHOOK_SECRET", "")),
     }
 
 # -----------------------------------------------------------------------------
@@ -7648,11 +7677,30 @@ async def version_adoption(user=Depends(require_user)):
     runtime_counts = _counts(by_runtime)
     on_current = runtime_counts.get(MIN_SUPPORTED_RUNTIME, 0)
     total_users = len(seen_users)
+
+    # How much of the install base this read-out can see at all.
+    #
+    # Every number above is computed over accounts that have a REGISTERED PUSH
+    # TOKEN, and a token exists only where someone granted notification
+    # permission. Until the permission prompt shipped, that was almost nobody —
+    # so "78% on the current runtime" could mean 7 of 9 people while reading
+    # like 78% of the fleet. The percentage was not wrong; it was answering a
+    # narrower question than its name suggested.
+    #
+    # Reporting the account total alongside makes the denominator visible, so a
+    # confident-looking percentage over a handful of devices cannot be mistaken
+    # for coverage.
+    total_accounts = await database["users"].count_documents({})
     return {
         "current_runtime": MIN_SUPPORTED_RUNTIME,
         "store_version": CURRENT_STORE_VERSION,
         "users_on_current_runtime": on_current,
         "total_users_with_a_device": total_users,
+        "total_accounts": total_accounts,
+        # What share of all accounts this read-out can see. A low number here
+        # means every percentage below describes a minority of your users.
+        "pct_of_accounts_visible": (
+            round(100 * total_users / total_accounts, 1) if total_accounts else 0.0),
         "pct_on_current_runtime": round(100 * on_current / total_users, 1) if total_users else 0.0,
         "by_runtime": runtime_counts,
         "by_app_version": _counts(by_version),
@@ -7691,8 +7739,30 @@ async def plan_adoption(user=Depends(require_user)):
 
     billing_live = bool(os.environ.get("RC_WEBHOOK_SECRET"))
 
-    # Which families own an active device — the population that actually opened
-    # the app, so the conversion rate is measured against real households.
+    # Which households are actually LIVE — measured by whether somebody opened
+    # the app, not by whether they own a push token.
+    #
+    # This used to read notification_tokens, which exist only where someone
+    # granted notification permission. Before the permission prompt shipped
+    # that was almost nobody, so the conversion denominator counted a handful
+    # of households and pct_active_paying read far HIGHER than the truth — the
+    # flattering direction, which is the one nobody questions.
+    #
+    # account_active_since is the same definition the funnel and the retention
+    # read-out use, so all three sections of the Metrics screen now agree on
+    # what "active" means. They previously did not.
+    live_cutoff = utcnow() - timedelta(days=30)
+    families_live: set = set()
+    async for acct in database["users"].find(
+        {}, {"_id": 0, "family_id": 1, "last_active_at": 1, "last_active_day": 1}
+    ):
+        fid = acct.get("family_id")
+        if fid and account_active_since(acct, live_cutoff):
+            families_live.add(fid)
+
+    # Kept alongside, because it is the number that answers a DIFFERENT
+    # question — how much of the base can receive a push at all — and the gap
+    # between the two is itself worth seeing.
     families_with_device: set = set()
     async for tok in database["notification_tokens"].find(
         {"active": True}, {"_id": 0, "family_id": 1}
@@ -7719,7 +7789,7 @@ async def plan_adoption(user=Depends(require_user)):
         is_tester = await family_has_admin(database, fam.get("family_id", ""))
         if is_tester:
             tester_households += 1
-        if fam.get("family_id") in families_with_device:
+        if fam.get("family_id") in families_live:
             active_total += 1
             if is_paying:
                 active_paying += 1
@@ -7738,7 +7808,11 @@ async def plan_adoption(user=Depends(require_user)):
         "paying_families": paying,
         "tester_households": tester_households,
         "free_premium_families": free_premium,
-        "active_families_with_device": active_total,
+        # Renamed from active_families_with_device: it no longer means that, and
+        # a field whose name outlives its meaning is how this screen got into
+        # trouble in the first place.
+        "active_families": active_total,
+        "families_with_a_device": len(families_with_device),
         "active_paying_families": active_paying,
         "pct_active_paying": round(100 * active_paying / active_total, 1) if active_total else 0.0,
         "active_free_premium_families": active_free_premium,
@@ -13970,9 +14044,19 @@ class SupportContactIn(BaseModel):
 # -----------------------------------------------------------------------------
 # Metrics (first-party, count-only — no payloads, no third-party SDKs)
 # -----------------------------------------------------------------------------
+# Every name the app may report. An event NOT in here is dropped silently —
+# log_metric_event answers {"ok": False} and logEvent() is fire-and-forget, so
+# nothing anywhere notices. On the Metrics screen that reads as "this never
+# happens", which is indistinguishable from "this is not being recorded".
+#
+# tests/test_metric_event_names.py keeps this in step with what the app
+# actually sends. It was added because onboarding_skipped had been sent and
+# dropped for as long as it had existed: the screen showed nobody skipping
+# onboarding, when in truth nobody's skip was ever counted.
 ALLOWED_EVENTS = {
     "feed_open", "scan_used", "card_created", "vault_added", "vault_shared",
-    "kids_open", "calendar_open", "onboarding_done", "calendar_import_cancelled",
+    "kids_open", "calendar_open", "onboarding_done", "onboarding_skipped",
+    "calendar_import_cancelled",
     # AI reliability: bumped server-side from the central Gemini path so the
     # Metrics screen can show a real success rate, not just a live probe.
     "ai_call_ok", "ai_call_error",
