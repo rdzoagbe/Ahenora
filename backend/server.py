@@ -7677,11 +7677,30 @@ async def version_adoption(user=Depends(require_user)):
     runtime_counts = _counts(by_runtime)
     on_current = runtime_counts.get(MIN_SUPPORTED_RUNTIME, 0)
     total_users = len(seen_users)
+
+    # How much of the install base this read-out can see at all.
+    #
+    # Every number above is computed over accounts that have a REGISTERED PUSH
+    # TOKEN, and a token exists only where someone granted notification
+    # permission. Until the permission prompt shipped, that was almost nobody —
+    # so "78% on the current runtime" could mean 7 of 9 people while reading
+    # like 78% of the fleet. The percentage was not wrong; it was answering a
+    # narrower question than its name suggested.
+    #
+    # Reporting the account total alongside makes the denominator visible, so a
+    # confident-looking percentage over a handful of devices cannot be mistaken
+    # for coverage.
+    total_accounts = await database["users"].count_documents({})
     return {
         "current_runtime": MIN_SUPPORTED_RUNTIME,
         "store_version": CURRENT_STORE_VERSION,
         "users_on_current_runtime": on_current,
         "total_users_with_a_device": total_users,
+        "total_accounts": total_accounts,
+        # What share of all accounts this read-out can see. A low number here
+        # means every percentage below describes a minority of your users.
+        "pct_of_accounts_visible": (
+            round(100 * total_users / total_accounts, 1) if total_accounts else 0.0),
         "pct_on_current_runtime": round(100 * on_current / total_users, 1) if total_users else 0.0,
         "by_runtime": runtime_counts,
         "by_app_version": _counts(by_version),
