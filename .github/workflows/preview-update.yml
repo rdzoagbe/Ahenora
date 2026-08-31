@@ -74,7 +74,12 @@ jobs:
         working-directory: frontend
         run: |
           npx eas-cli@latest update \
-            --platform android \
+            # ALL platforms, not android. These workflows were written when
+            # Android was the only target, and `--platform android` would have
+            # meant every OTA silently reaching half the users the moment iOS
+            # went live — a green workflow shipping nothing to iPhone.
+            # One runtimeVersion serves both, so one update covers both.
+            --platform all \
             --branch preview \
             --environment preview \
             --message "${{ github.event.inputs.message || 'merge to main' }} ($GITHUB_SHA)" \
