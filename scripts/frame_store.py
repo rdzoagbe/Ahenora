@@ -33,7 +33,13 @@ STORE = sys.argv[4] if len(sys.argv) > 4 else "play"
 # canvas is proportionally MUCH taller than Play's, so reusing Play's phone
 # width left a broad empty band between the headline and the device. The phone
 # grows to fill it instead.
-CANVAS = {"play": (1200, 2133, 0.6333), "appstore": (1320, 2868, 0.76)}
+# App Store slots differ by device class and App Store Connect only accepts the
+# exact pixel sizes for the slot you are filling, so both are generated:
+#   appstore   6.9" iPhone (16 Pro Max)   1320x2868
+#   appstore65 6.5" iPhone (11 Pro Max)   1284x2778
+CANVAS = {"play": (1200, 2133, 0.6333),
+          "appstore": (1320, 2868, 0.76),
+          "appstore65": (1284, 2778, 0.76)}
 if STORE not in CANVAS:
     sys.exit(f"unknown store {STORE!r}; expected one of {sorted(CANVAS)}")
 os.makedirs(OUT, exist_ok=True)

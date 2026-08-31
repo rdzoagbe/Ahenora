@@ -9522,12 +9522,17 @@ async def revenuecat_webhook(payload: dict, authorization: Optional[str] = Heade
     """RevenueCat server-to-server events — the single source of truth for who
     has Premium once billing is live. app_user_id is our user_id (the app calls
     Purchases.logIn(user_id)), which maps to the family that gets the plan."""
-    secret = os.environ.get("RC_WEBHOOK_SECRET", "")
+    # .strip() on BOTH sides. It used to strip only the incoming header, so a
+    # trailing newline on the environment variable — invisible in any dashboard,
+    # and routinely added by a paste — made the two never match however
+    # carefully the value was copied. The failure looks exactly like a wrong
+    # secret, which is the worst way for a whitespace bug to present.
+    secret = os.environ.get("RC_WEBHOOK_SECRET", "").strip()
     if not secret:
         raise HTTPException(status_code=503, detail="Billing not configured")
     supplied = (authorization or "").strip()
     if supplied.startswith("Bearer "):
-        supplied = supplied[7:]
+        supplied = supplied[7:].strip()
     if not secrets.compare_digest(supplied, secret):
         raise HTTPException(status_code=401, detail="Bad webhook signature")
 
@@ -10140,7 +10145,10 @@ async def stripe_webhook(request: Request):
     """Stripe server-to-server events — the source of truth for card payers,
     exactly as the RevenueCat webhook is for Google Play. Signature-verified
     against the endpoint secret; a bad or replayed signature is refused."""
-    secret = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+    # Stripped for the same reason as the RevenueCat secret above: this one
+    # feeds an HMAC, so a stray newline silently changes every computed
+    # signature rather than being ignored.
+    secret = os.environ.get("STRIPE_WEBHOOK_SECRET", "").strip()
     if not secret:
         raise HTTPException(status_code=503, detail="Billing not configured")
     body = await request.body()
