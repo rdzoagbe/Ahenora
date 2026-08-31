@@ -3969,6 +3969,19 @@ async def delete_account(payload: DeleteAccountIn, user=Depends(require_user)):
     return {"ok": True, "deleted_household": deleted_household}
 
 
+def _secret_fingerprint(value: str) -> dict:
+    """Identify a secret without exposing it: its length and 8 hex of SHA-256.
+
+    Stripped first, so the reported fingerprint is of the value the comparison
+    will actually use rather than of whatever whitespace came with it.
+    """
+    cleaned = (value or "").strip()
+    if not cleaned:
+        return {"set": False, "length": 0, "sha8": ""}
+    return {"set": True, "length": len(cleaned),
+            "sha8": hashlib.sha256(cleaned.encode()).hexdigest()[:8]}
+
+
 @app.get("/api/health/config")
 async def health_config(user=Depends(require_user)):
     """Admin-only configuration inventory (was previously public on `/`)."""
@@ -3985,6 +3998,22 @@ async def health_config(user=Depends(require_user)):
         "google_android_configured": bool(GOOGLE_ANDROID_CLIENT_ID),
         "google_client_ids_count": len(GOOGLE_CLIENT_IDS),
         "billing_configured": bool(os.environ.get("RC_WEBHOOK_SECRET")),
+        # Fingerprints of the webhook secrets the RUNNING process actually
+        # holds, so "did my dashboard edit reach the server?" is answerable in
+        # one request instead of firing a test event and reading deploy logs.
+        #
+        # An environment variable edited in a dashboard and an environment
+        # variable loaded by a live process are different things, and nothing
+        # made the difference visible: a stale value in memory looks exactly
+        # like a wrong value on the other side. Compare these against the
+        # supplied_sha in an "RC webhook auth mismatch" log line, or against
+        # your own sha256 of the value you believe you set.
+        #
+        # Eight hex characters of SHA-256, admin-only. Identifies a value
+        # without being useful for recovering it, and the length is included
+        # because truncation is the other common failure.
+        "rc_secret_sha": _secret_fingerprint(os.environ.get("RC_WEBHOOK_SECRET", "")),
+        "stripe_secret_sha": _secret_fingerprint(os.environ.get("STRIPE_WEBHOOK_SECRET", "")),
     }
 
 # -----------------------------------------------------------------------------
