@@ -9534,6 +9534,24 @@ async def revenuecat_webhook(payload: dict, authorization: Optional[str] = Heade
     if supplied.startswith("Bearer "):
         supplied = supplied[7:].strip()
     if not secrets.compare_digest(supplied, secret):
+        # Say WHY, in the logs, without printing either secret.
+        #
+        # A bare 401 sent us round three rounds of "re-copy the value", which
+        # cannot fix a mismatch whose cause you cannot see. Lengths tell you
+        # instantly whether it is truncation or whitespace; the short digests
+        # tell you whether two values that are the same LENGTH are the same
+        # value. Eight hex characters of SHA-256 identify a mismatch without
+        # being useful for recovering a secret.
+        #
+        # Logged, never returned: the caller here is unauthenticated.
+        log.warning(
+            "RC webhook auth mismatch: supplied_len=%d expected_len=%d "
+            "supplied_sha=%s expected_sha=%s header_present=%s",
+            len(supplied), len(secret),
+            hashlib.sha256(supplied.encode()).hexdigest()[:8],
+            hashlib.sha256(secret.encode()).hexdigest()[:8],
+            bool(authorization),
+        )
         raise HTTPException(status_code=401, detail="Bad webhook signature")
 
     database = get_db()
