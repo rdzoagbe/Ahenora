@@ -198,17 +198,30 @@ jobs:
         working-directory: frontend
         run: npm install --no-audit --no-fund
 
+      # Android only, deliberately and temporarily.
+      #
+      # One runtimeVersion serves both platforms, so `--platform all` is the
+      # correct steady state and this MUST go back to it: leaving it at android
+      # once iOS is live means every OTA silently reaches half the users, and
+      # the workflow stays green while shipping nothing to iPhone.
+      #
+      # It is android today because the first iOS build is in App Review. An
+      # update published to this channel can be picked up by the build the
+      # reviewer is running, changing the app underneath a review in progress.
+      # Flip both this workflow and preview-update.yml back to `all` the day
+      # iOS is approved.
+      #
+      # The comments live ABOVE the run block, not inside it: a `#` line inside
+      # a `\` continuation does not comment the flag out, it ends the command
+      # early and leaves the next line to be executed as its own command. The
+      # previous version of this step did exactly that and would have exited
+      # 127 on the next merge to main.
       - name: Publish update to the Expo production branch
         if: steps.expo_config.outputs.publish == 'true'
         working-directory: frontend
         run: |
           npx eas-cli@latest update \
-            # ALL platforms, not android. These workflows were written when
-            # Android was the only target, and `--platform android` would have
-            # meant every OTA silently reaching half the users the moment iOS
-            # went live — a green workflow shipping nothing to iPhone.
-            # One runtimeVersion serves both, so one update covers both.
-            --platform all \
+            --platform android \
             --branch production \
             --environment production \
             --message "GitHub $GITHUB_SHA" \
