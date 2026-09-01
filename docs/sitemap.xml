@@ -5,9 +5,19 @@
   this site is unreliable. Update it when a page is added — there are few
   enough that this is a smaller cost than a generator nobody runs.
 -->
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:xhtml="http://www.w3.org/1999/xhtml">
   <url>
     <loc>https://ahenora.com/</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://ahenora.com/"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://ahenora.com/fr.html"/>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://ahenora.com/fr.html</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://ahenora.com/"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://ahenora.com/fr.html"/>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
   </url>

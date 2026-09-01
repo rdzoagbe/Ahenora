@@ -1,24 +1,24 @@
 <!doctype html>
-<html lang="en">
+<html lang="fr">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Ahenora — the calm home base for family life</title>
-<meta name="description" content="One shared, private place for tasks, the family calendar, kids' chores, meals and documents. For every family — solo parents, co-parents and busy households.">
+<title>Ahenora — l'organisation familiale, enfin au calme</title>
+<meta name="description" content="Un seul espace partagé et privé pour les tâches, l'agenda familial, les corvées des enfants, les repas et les documents. Pour toutes les familles — parents solos, coparents et foyers bien remplis.">
 <link rel="icon" href="assets/icon.png">
 <link rel="apple-touch-icon" href="assets/icon.png">
 
-<meta property="og:title" content="Ahenora — the calm home base for family life">
-<meta property="og:description" content="One shared, private place for tasks, the family calendar, kids' chores, meals and documents. For every family — solo parents, co-parents and busy households.">
+<meta property="og:title" content="Ahenora — l'organisation familiale, enfin au calme">
+<meta property="og:description" content="Un seul espace partagé et privé pour les tâches, l'agenda familial, les corvées des enfants, les repas et les documents. Pour toutes les familles — parents solos, coparents et foyers bien remplis.">
 <meta property="og:image" content="https://ahenora.com/assets/icon.png">
-<meta property="og:url" content="https://ahenora.com/">
+<meta property="og:url" content="https://ahenora.com/fr.html">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary_large_image">
 
 <!-- Canonical: the site answers on ahenora.com and www.ahenora.com, and GitHub
      Pages will serve both. Without this Google picks one itself and splits the
      ranking signals between two addresses for the same page. -->
-<link rel="canonical" href="https://ahenora.com/">
+<link rel="canonical" href="https://ahenora.com/fr.html">
 <!-- The pair, declared on BOTH pages. Without this Google sees two pages with
      the same structure and images and picks one as canonical, dropping the
      other — so the French page would exist and never be served to the people
@@ -42,9 +42,9 @@
   "applicationCategory": "LifestyleApplication",
   "applicationSubCategory": "Family organiser",
   "operatingSystem": "Android, iOS",
-  "url": "https://ahenora.com/",
+  "url": "https://ahenora.com/fr.html",
   "installUrl": "https://play.google.com/store/apps/details?id=com.householdcoo.app",
-  "inLanguage": ["en", "fr", "es", "de"],
+  "inLanguage": "fr",
   "offers": {
     "@type": "Offer",
     "price": "0",
@@ -330,9 +330,9 @@
     if (!primary || !secondary) return;
     // iPhone/iPad/desktop: lead with the web app, since there is no iOS app yet.
     primary.setAttribute('href', '/app/');
-    primary.textContent = 'Open Ahenora in your browser';
+    primary.textContent = 'Ouvrir Ahenora dans votre navigateur';
     secondary.setAttribute('href', 'https://play.google.com/store/apps/details?id=com.householdcoo.app');
-    secondary.textContent = 'On Android? Get it on Google Play';
+    secondary.textContent = 'Sur Android\u00a0? Installer depuis Google Play';
 
     // The closing call to action was hardcoded to Google Play, so an iPhone
     // visitor who read the whole page arrived at a store they cannot install
@@ -341,7 +341,7 @@
       var el = document.getElementById(id);
       if (!el) return;
       el.setAttribute('href', '/app/');
-      el.textContent = el.id === 'cta-header' ? 'Open the app' : 'Open Ahenora in your browser';
+      el.textContent = el.id === 'cta-header' ? 'Ouvrir l\u2019app' : 'Ouvrir Ahenora dans votre navigateur';
     });
   });
 
@@ -378,11 +378,11 @@
   <div class="wrap nav">
     <a class="brand" href="#top"><img src="assets/icon.png" alt=""> Ahenora</a>
     <div class="nav-spacer"></div>
-    <a class="quiet" href="#features">Features</a>
-    <a class="quiet" href="#plans">Pricing</a>
-    <a class="quiet webapp" href="/app/">Open the web app</a>
-    <a class="nav-lang" href="/fr.html" hreflang="fr" lang="fr">Français</a>
-        <a class="btn sm" id="cta-header" href="https://play.google.com/store/apps/details?id=com.householdcoo.app">Get the app</a>
+    <a class="quiet" href="#features">Fonctionnalités</a>
+    <a class="quiet" href="#plans">Tarifs</a>
+    <a class="quiet webapp" href="/app/">Ouvrir l'application web</a>
+    <a class="nav-lang" href="/" hreflang="en" lang="en">English</a>
+        <a class="btn sm" id="cta-header" href="https://play.google.com/store/apps/details?id=com.householdcoo.app">Télécharger l'app</a>
   </div>
 </header>
 
@@ -391,20 +391,20 @@
   <div class="wrap hero">
     <div class="hero-grid">
       <div>
-        <span class="eyebrow"><span class="dot"></span> Now on Google Play &middot; free to start</span>
-        <h1>The household runs on someone's memory. Let it run on something calmer.</h1>
+        <span class="eyebrow"><span class="dot"></span> Sur Google Play &middot; gratuit au départ</span>
+        <h1>La maison tourne grâce à la mémoire de quelqu'un. Et si elle tournait plus sereinement&nbsp;?</h1>
         <p class="lede">
-          Ahenora holds tasks, the family calendar, kids' chores, meals and school
-          paperwork in one shared, private place — so family life never depends on
-          one person remembering all of it. For solo parents, co-parents across two
-          homes, and every busy household in between.
+          Ahenora réunit les tâches, l'agenda familial, les corvées des enfants, les repas
+          et les papiers de l'école dans un seul espace partagé et privé — pour que la vie
+          de famille ne repose plus sur la mémoire d'une seule personne. Pour les parents
+          solos, les coparents entre deux maisons, et tous les foyers bien remplis.
         </p>
         <div class="cta-row">
-          <a class="btn" id="cta-primary" href="https://play.google.com/store/apps/details?id=com.householdcoo.app">Get it on Google Play</a>
-          <a class="btn ghost" id="cta-secondary" href="/app/">Use it on the web</a>
-          <a class="btn ghost" href="https://youtu.be/DPPmZJIrYPQ">Watch the 30-second tour</a>
+          <a class="btn" id="cta-primary" href="https://play.google.com/store/apps/details?id=com.householdcoo.app">Télécharger sur Google Play</a>
+          <a class="btn ghost" id="cta-secondary" href="/app/">Utiliser sur le web</a>
+          <a class="btn ghost" href="https://youtu.be/DPPmZJIrYPQ">Voir la démo de 30 secondes</a>
         </div>
-        <p class="cta-note"><strong>Free to start</strong> &middot; No ads &middot; Your family's data is never sold</p>
+        <p class="cta-note"><strong>Gratuit au départ</strong> &middot; Sans publicité &middot; Les données de votre famille ne sont jamais vendues</p>
       </div>
       <div class="phone-stack">
         <div class="device"><img src="assets/shot-feed.jpg" alt="The Ahenora feed showing today's tasks and family activity" width="500" height="1082" loading="eager"></div>
@@ -416,50 +416,50 @@
   <section class="alt" id="features">
     <div class="wrap">
       <div class="section-head">
-        <span class="kicker">What's inside</span>
-        <h2>Everything a household actually needs</h2>
-        <p>Not another to-do list — the specific things that quietly fall through the cracks in a busy family.</p>
+        <span class="kicker">Ce qu'il y a dedans</span>
+        <h2>Tout ce dont un foyer a vraiment besoin</h2>
+        <p>Pas une énième liste de tâches — précisément ce qui passe à la trappe dans une famille chargée.</p>
       </div>
       <div class="grid">
         <div class="card">
           <div class="ico">📋</div>
-          <h3>Tasks that come back</h3>
-          <p>Sign slips, RSVPs, bin night. Assign them, set reminders, and let recurring routines return on their own.</p>
+          <h3>Les tâches qui reviennent</h3>
+          <p>Mots à signer, réponses à donner, sortir les poubelles. Attribuez-les, ajoutez des rappels, et laissez les routines revenir toutes seules.</p>
         </div>
         <div class="card">
           <div class="ico">📅</div>
-          <h3>One shared calendar</h3>
-          <p>Import Google or Outlook so events become actionable cards. Everyone sees the same week.</p>
+          <h3>Un agenda partagé</h3>
+          <p>Importez Google ou Outlook&nbsp;: vos événements deviennent des cartes sur lesquelles agir. Tout le monde voit la même semaine.</p>
         </div>
         <div class="card">
           <div class="ico">⭐</div>
-          <h3>Kids, chores and stars</h3>
-          <p>Chores with stars, rewards and pocket money — so routines stick without the daily negotiation.</p>
+          <h3>Enfants, corvées et étoiles</h3>
+          <p>Des corvées avec des étoiles, des récompenses et de l'argent de poche — pour que les routines tiennent sans négocier chaque jour.</p>
         </div>
         <div class="card">
           <div class="ico">🍽️</div>
-          <h3>Meals, shopping and what it cost</h3>
-          <p>Plan the week's dinners — or ask the AI for a recipe — and turn it all into one shared shopping list. Log what each shop cost and see where the money actually goes, by month and by shop.</p>
+          <h3>Repas, courses et ce que ça coûte</h3>
+          <p>Planifiez les dîners de la semaine — ou demandez une recette à l'IA — et transformez le tout en une liste de courses partagée. Notez le montant de chaque course et voyez où part vraiment l'argent, par mois et par magasin.</p>
         </div>
         <div class="card">
           <div class="ico">📄</div>
-          <h3>Scan the paperwork</h3>
-          <p>Photograph a school letter or appointment card and turn it straight into a task or a saved document.</p>
+          <h3>Scannez les papiers</h3>
+          <p>Photographiez un mot de l'école ou une carte de rendez-vous&nbsp;: il devient directement une tâche ou un document classé.</p>
         </div>
         <div class="card">
           <div class="ico">🔒</div>
-          <h3>A vault for documents</h3>
-          <p>Passports, insurance, medical records — organised by category, private to your household.</p>
+          <h3>Un coffre pour vos documents</h3>
+          <p>Passeports, assurances, documents médicaux — classés par catégorie, privés à votre foyer.</p>
         </div>
         <div class="card" style="border-color: color-mix(in srgb, var(--orange) 45%, var(--line)); background: linear-gradient(180deg, var(--tint), var(--card) 46%);">
           <div class="ico">💬</div>
-          <h3>Family messages <span style="font-size:11px; font-weight:800; letter-spacing:.05em; color:#fff; background:var(--orange); padding:2px 8px; border-radius:999px; vertical-align:middle;">NEW</span></h3>
-          <p>Talk to your co-parent, your teen or the childminder without leaving the app — and write notes your younger children read on the family phone. Every private conversation includes a parent, by design.</p>
+          <h3>Messages familiaux <span style="font-size:11px; font-weight:800; letter-spacing:.05em; color:#fff; background:var(--orange); padding:2px 8px; border-radius:999px; vertical-align:middle;">NOUVEAU</span></h3>
+          <p>Parlez à votre coparent, à votre ado ou à la nounou sans quitter l'app — et laissez des mots que vos plus jeunes lisent sur le téléphone familial. Chaque conversation privée inclut un parent, par principe.</p>
         </div>
         <div class="card" style="border-color: color-mix(in srgb, var(--orange) 45%, var(--line)); background: linear-gradient(180deg, var(--tint), var(--card) 46%);">
           <div class="ico">🧑‍🎓</div>
-          <h3>Teen accounts <span style="font-size:11px; font-weight:800; letter-spacing:.05em; color:#fff; background:var(--orange); padding:2px 8px; border-radius:999px; vertical-align:middle;">NEW</span></h3>
-          <p>Give your 13–17-year-old their own private space — just their tasks and shared events, nothing else of the family's. They earn stars you approve.</p>
+          <h3>Comptes ado <span style="font-size:11px; font-weight:800; letter-spacing:.05em; color:#fff; background:var(--orange); padding:2px 8px; border-radius:999px; vertical-align:middle;">NOUVEAU</span></h3>
+          <p>Offrez à votre ado de 13 à 17 ans son propre espace — uniquement ses tâches et les événements partagés, rien d'autre de la famille. Il gagne des étoiles que vous validez.</p>
         </div>
       </div>
     </div>
@@ -468,30 +468,30 @@
   <section>
     <div class="wrap">
       <div class="section-head">
-        <span class="kicker">Built around real families</span>
-        <h2>One home or two, it all stays in step</h2>
+        <span class="kicker">Pensé pour les vraies familles</span>
+        <h2>Une maison ou deux, tout reste synchronisé</h2>
         <p>
-          Whether you're carrying it solo, sharing it with a partner, or co-parenting across
-          two homes, Ahenora gives everyone the same private source of truth — so nobody has
-          to chase anybody to stay coordinated.
+          Que vous portiez tout seul, à deux, ou en coparentalité entre deux maisons, Ahenora
+          donne à chacun la même référence, privée et partagée — pour que personne n'ait à
+          courir après personne pour rester coordonné.
         </p>
       </div>
       <div class="shots">
         <figure>
           <div class="device"><img src="assets/shot-feed.jpg" alt="Feed screen with today's tasks" width="500" height="1082" loading="lazy"></div>
-          <figcaption>Today, at a glance</figcaption>
+          <figcaption>Aujourd'hui, en un coup d'œil</figcaption>
         </figure>
         <figure>
           <div class="device"><img src="assets/shot-calendar.jpg" alt="Shared family calendar" width="500" height="1082" loading="lazy"></div>
-          <figcaption>The shared calendar</figcaption>
+          <figcaption>L'agenda partagé</figcaption>
         </figure>
         <figure>
           <div class="device"><img src="assets/shot-kids.jpg" alt="Kids chores, stars and rewards" width="500" height="1082" loading="lazy"></div>
-          <figcaption>Chores and rewards</figcaption>
+          <figcaption>Corvées et récompenses</figcaption>
         </figure>
         <figure>
           <div class="device"><img src="assets/shot-kitchen.jpg" alt="Meal planner and shopping list" width="500" height="1082" loading="lazy"></div>
-          <figcaption>Meals and shopping</figcaption>
+          <figcaption>Repas et courses</figcaption>
         </figure>
       </div>
     </div>
@@ -500,73 +500,73 @@
   <section class="alt" id="plans">
     <div class="wrap">
       <div class="section-head">
-        <span class="kicker">Pricing</span>
-        <h2>Simple plans</h2>
-        <p>Every parent is always free. We only ever meter on household size — never on the features that keep your family coordinated.</p>
+        <span class="kicker">Tarifs</span>
+        <h2>Des formules simples</h2>
+        <p>Chaque parent est toujours gratuit. Nous ne comptons que la taille du foyer — jamais les fonctionnalités qui gardent votre famille coordonnée.</p>
       </div>
       <!-- Monthly / yearly, the same choice the app offers. The saving is shown
            PER CARD because it is not the same on both: a year of Premium saves
            40%, a year of Household saves 17%. One badge over the toggle would
            have been a false claim on one of the two. -->
       <div class="cycle" role="group" aria-label="Billing period">
-        <button type="button" class="cycle-btn is-on" data-cycle="monthly" aria-pressed="true">Monthly</button>
-        <button type="button" class="cycle-btn" data-cycle="yearly" aria-pressed="false">Yearly</button>
+        <button type="button" class="cycle-btn is-on" data-cycle="monthly" aria-pressed="true">Mensuel</button>
+        <button type="button" class="cycle-btn" data-cycle="yearly" aria-pressed="false">Annuel</button>
       </div>
       <div class="plans">
         <div class="plan">
-          <h3>Free</h3>
+          <h3>Gratuit</h3>
           <div class="price">&euro;0</div>
           <ul>
-            <li>Up to two adults and two children</li>
-            <li>Tasks, calendar and shared lists</li>
-            <li>Kids' chores, stars and rewards</li>
-            <li>View any document you've saved</li>
-            <li>All reminders and nudges</li>
+            <li>Jusqu'à deux adultes et deux enfants</li>
+            <li>Tâches, agenda et listes partagées</li>
+            <li>Corvées, étoiles et récompenses</li>
+            <li>Consultez tous vos documents enregistrés</li>
+            <li>Tous les rappels et relances</li>
           </ul>
         </div>
         <div class="plan featured">
-          <span class="tag">Most families</span>
+          <span class="tag">La plupart des familles</span>
           <h3>Premium</h3>
           <div class="price"
-               data-m="&euro;6.99" data-m-note="/ month"
+               data-m="&euro;6.99" data-m-note="/ mois"
                data-y="&euro;49.99" data-y-note="/ year &middot; &euro;4.17 a month">
-            &euro;6.99 <span>/ month</span></div>
-          <p class="saving" hidden>Saves &euro;33.89 a year &mdash; 40% off monthly</p>
+            &euro;6.99 <span>/ mois</span></div>
+          <p class="saving" hidden>Économisez 33,89&nbsp;&euro; par an &mdash; 40&nbsp;% de moins qu'au mois</p>
           <ul>
-            <li class="lead">Everything in Free, plus:</li>
-            <li>Up to 5 children and caregivers</li>
-            <li>Meal planner, saved plans and recipe AI</li>
-            <li>Pocket money and the weekly report</li>
-            <li>Carpool and a larger document vault</li>
+            <li class="lead">Tout du plan Gratuit, plus&nbsp;:</li>
+            <li>Jusqu'à 5 enfants et aidants</li>
+            <li>Planificateur de repas, plans enregistrés et IA recettes</li>
+            <li>Argent de poche et rapport hebdomadaire</li>
+            <li>Covoiturage et un coffre plus grand</li>
           </ul>
         </div>
         <div class="plan">
-          <h3>Household</h3>
+          <h3>Foyer</h3>
           <div class="price"
-               data-m="&euro;14.99" data-m-note="/ month"
+               data-m="&euro;14.99" data-m-note="/ mois"
                data-y="&euro;149.99" data-y-note="/ year &middot; &euro;12.50 a month">
-            &euro;14.99 <span>/ month</span></div>
-          <p class="saving" hidden>Saves &euro;29.89 a year &mdash; 17% off monthly</p>
+            &euro;14.99 <span>/ mois</span></div>
+          <p class="saving" hidden>Économisez 29,89&nbsp;&euro; par an &mdash; 17&nbsp;% de moins qu'au mois</p>
           <ul>
-            <li class="lead">Everything in Premium, plus:</li>
-            <li>Up to 10 children and 20 people</li>
-            <li>Helper and nanny accounts</li>
-            <li>More than one property</li>
-            <li>10&nbsp;GB document vault and priority support</li>
+            <li class="lead">Tout du plan Premium, plus&nbsp;:</li>
+            <li>Jusqu'à 10 enfants et 20 personnes</li>
+            <li>Comptes aidants et nounou</li>
+            <li>Plusieurs logements</li>
+            <li>Coffre de 10&nbsp;Go et assistance prioritaire</li>
           </ul>
         </div>
       </div>
-      <p class="cta-note" style="text-align:center; margin-top: 22px;">Prices in euros. Subscribe by card on the web &mdash; including on iPhone &mdash; or through Google Play in the Android app. Cancel any time, either way.</p>
+      <p class="cta-note" style="text-align:center; margin-top: 22px;">Prix en euros. Abonnez-vous par carte sur le web &mdash; y compris sur iPhone &mdash; ou via Google Play dans l'app Android. Résiliable à tout moment, dans les deux cas.</p>
     </div>
   </section>
 
   <section class="final">
     <div class="wrap">
-      <h2>Start with tonight</h2>
+      <h2>Commencez par ce soir</h2>
       <p class="lede">
-        Add one thing you'd otherwise have to remember. That's the whole first step.
+        Ajoutez une seule chose que vous auriez dû retenir. C'est tout le premier pas.
       </p>
-      <a class="btn" id="cta-final" href="https://play.google.com/store/apps/details?id=com.householdcoo.app">Get it on Google Play</a>
+      <a class="btn" id="cta-final" href="https://play.google.com/store/apps/details?id=com.householdcoo.app">Télécharger sur Google Play</a>
       <!-- Said plainly rather than left to be discovered. There is no iPhone
            app, and an iPhone owner should learn that here and not after
            searching the App Store for a name that is not in it. What they get
@@ -574,8 +574,8 @@
            with notifications and card payment — so this is a route, not an
            apology. -->
       <p class="cta-note" style="margin-top: 16px;">
-        No iPhone app yet &mdash; on iOS, Ahenora runs in your browser at
-        <a href="/app/">ahenora.com/app</a>, with notifications, and card payment.
+        Pas encore d'app iPhone &mdash; sur iOS, Ahenora fonctionne dans votre navigateur sur
+        <a href="/app/">ahenora.com/app</a>, avec les notifications et le paiement par carte.
       </p>
     </div>
   </section>
@@ -585,24 +585,24 @@
 <footer>
   <div class="wrap">
     <div class="social">
-      <a href="https://www.instagram.com/ahenoraapp/" target="_blank" rel="noopener" aria-label="Follow Ahenora on Instagram">
+      <a href="https://www.instagram.com/ahenoraapp/" target="_blank" rel="noopener" aria-label="Suivre Ahenora sur Instagram">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5.5"></rect><circle cx="12" cy="12" r="4.2"></circle><circle cx="17.6" cy="6.4" r="1.1" fill="currentColor" stroke="none"></circle></svg>
         Follow on Instagram
       </a>
-      <a href="https://www.tiktok.com/@thehouseholdcoo" target="_blank" rel="noopener" aria-label="Follow Ahenora on TikTok">
+      <a href="https://www.tiktok.com/@thehouseholdcoo" target="_blank" rel="noopener" aria-label="Suivre Ahenora sur TikTok">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M16.5 3h-2.9v12.1a2.3 2.3 0 1 1-2.3-2.3c.24 0 .47.04.69.1v-3a5.3 5.3 0 1 0 4.6 5.25V9.02a6.5 6.5 0 0 0 3.9 1.3V7.4a3.6 3.6 0 0 1-2.36-.9A3.6 3.6 0 0 1 16.5 3Z"></path></svg>
         Follow on TikTok
       </a>
     </div>
     <div class="foot-links">
-      <a href="privacy.html">Privacy Policy</a>
-      <a href="terms.html">Terms &amp; Support</a>
-      <a href="delete-account.html">Delete your account</a>
+      <a href="privacy.html">Politique de confidentialité</a>
+      <a href="terms.html">Conditions &amp; assistance</a>
+      <a href="delete-account.html">Supprimer votre compte</a>
       <a href="https://play.google.com/store/apps/details?id=com.householdcoo.app">Google Play</a>
-      <a href="https://youtu.be/DPPmZJIrYPQ">Promo video</a>
-      <a href="mailto:support@ahenora.com">Support</a>
+      <a href="https://youtu.be/DPPmZJIrYPQ">Vidéo de présentation</a>
+      <a href="mailto:support@ahenora.com">Assistance</a>
     </div>
-    <div>© 2026 Dzoagbe Labs · Ahenora · Available in English, French, Spanish and German.</div>
+    <div>© 2026 Dzoagbe Labs · Ahenora · Disponible en français, anglais, espagnol et allemand.</div>
   </div>
 </footer>
 

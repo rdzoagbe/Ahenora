@@ -130,5 +130,83 @@ class Metadata(unittest.TestCase):
         self.assertGreater(len(desc), 70, "too short to say anything useful")
 
 
+class FrenchPage(unittest.TestCase):
+    """The market is France and the site was English-only.
+
+    A translated page that Google treats as a duplicate of the English one is
+    worse than no translation: it exists, costs upkeep, and is never served to
+    the people it was written for. hreflang is what prevents that, and it only
+    works when BOTH pages declare the pair — a one-sided declaration is
+    ignored.
+    """
+
+    def test_it_exists_and_declares_french(self):
+        self.assertIn('<html lang="fr">', read("fr.html"))
+
+    def test_each_page_is_its_own_canonical(self):
+        # Pointing the French page at the English canonical would ask Google to
+        # drop it, which is the exact failure this is meant to avoid.
+        self.assertIn('rel="canonical" href="%s/fr.html"' % SITE, read("fr.html"))
+        self.assertIn('rel="canonical" href="%s/"' % SITE, read("index.html"))
+
+    def test_both_pages_declare_the_same_pair(self):
+        for name in ("index.html", "fr.html"):
+            html = read(name)
+            self.assertIn('hreflang="en" href="%s/"' % SITE, html, name)
+            self.assertIn('hreflang="fr" href="%s/fr.html"' % SITE, html, name)
+            self.assertIn('hreflang="x-default"', html, name)
+
+    def test_a_reader_can_get_from_one_to_the_other(self):
+        # A page reachable only by a crawler is a page no person will find.
+        self.assertIn('href="/fr.html" hreflang="fr"', read("index.html"))
+        self.assertIn('href="/" hreflang="en"', read("fr.html"))
+
+    def test_no_english_marketing_copy_survives_on_it(self):
+        # A half-translated page reads as abandoned. Checked by looking for
+        # English function words in the rendered text, which cannot appear in
+        # French copy.
+        html = read("fr.html")
+        body = html[html.index("<body"):]
+        body = re.sub(r"<script.*?</script>", "", body, flags=re.S)
+        body = re.sub(r"<style.*?</style>", "", body, flags=re.S)
+        body = re.sub(r"<!--.*?-->", "", body, flags=re.S)
+        texts = [t.strip() for t in re.split(r"<[^>]+>", body) if t.strip()]
+        tells = re.compile(r"\b(the|your|and|with|for|that|every|without|you)\b", re.I)
+        leftovers = [t for t in texts if len(t) > 2 and tells.search(t)]
+        self.assertEqual(leftovers, [], "untranslated copy: %s" % leftovers[:3])
+
+    def test_the_prices_still_say_the_same_numbers(self):
+        # Translated marketing that quietly restates a price is a promise the
+        # billing code will not keep.
+        for figure in ("33,89", "29,89"):
+            self.assertIn(figure, read("fr.html"))
+        for figure in ("33.89", "29.89"):
+            self.assertIn(figure, read("index.html"))
+
+    def test_the_labels_javascript_writes_are_translated_too(self):
+        """The CTAs are rewritten at runtime by the platform-detect script.
+
+        A scan of the static markup misses them entirely — it strips <script>
+        — so the French page rendered with "Open the app" and "Open Ahenora in
+        your browser" while every static string was correct. Found by opening
+        the page in a browser, which is the only source that tells the truth
+        about what a visitor reads.
+        """
+        script = read("fr.html")
+        script = script[script.index("<script"):]
+        assigned = re.findall(r"textContent = ([^;]+);", script)
+        self.assertTrue(assigned, "the CTA script changed shape; re-check it")
+        for expression in assigned:
+            for word in ("Open", "your browser", "On Android"):
+                self.assertNotIn(
+                    word, expression,
+                    "untranslated runtime label on the French page: %s" % expression)
+
+    def test_it_is_in_the_sitemap_with_its_alternates(self):
+        xml = read("sitemap.xml")
+        self.assertIn("%s/fr.html" % SITE, xml)
+        self.assertIn('hreflang="fr"', xml)
+
+
 if __name__ == "__main__":
     unittest.main()
