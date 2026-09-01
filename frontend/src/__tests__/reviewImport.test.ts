@@ -86,3 +86,87 @@ describe('the review sheet', () => {
     }
   });
 });
+
+describe('putting an event on a date', () => {
+  it('tapping the selected day again opens the create sheet on it', () => {
+    // Every calendar people already use lets you touch a date to add to it.
+    // Here the gesture only filtered a list, and the way in was a separate
+    // button you had to notice.
+    expect(CALENDAR).toContain('if (selectedDay === key) {');
+    expect(CALENDAR).toContain('openAddEventOn(date);');
+  });
+
+  it('the first tap still just shows the day', () => {
+    // Opening a create sheet before the person has seen what is on that day
+    // talks over the answer to the question they asked by tapping.
+    expect(CALENDAR).toContain('selectDayOnly(key, date);');
+  });
+
+  it('the button and the day-tap share one prefill path', () => {
+    // Two constructions of "noon on the chosen day" is how they drift apart.
+    const opener = CALENDAR.slice(
+      CALENDAR.indexOf('const openAddEventOn'),
+      CALENDAR.indexOf('const openAddEvent ='));
+    expect(opener).toContain('base.setHours(12, 0, 0, 0);');
+    expect(CALENDAR).toContain('openAddEventOn(selectedDay ?');
+  });
+
+  it('the + prefills the day being looked at, not today', () => {
+    const capture = read('src', 'components', 'GlobalCapture.tsx');
+    expect(capture).toContain('selectedCalendarDayAt()');
+    expect(capture).not.toContain('due_date: new Date().toISOString()');
+  });
+
+  it('the shared day is cleared when the calendar goes away', () => {
+    // Otherwise "+" on another screen inherits a date from a screen nobody
+    // is looking at.
+    expect(CALENDAR).toContain('return () => setSelectedCalendarDay(null);');
+  });
+
+  it('builds the day at noon, not midnight', () => {
+    // Midnight local sent as UTC lands on the previous day west of Greenwich,
+    // so an event added on the 14th shows up on the 13th.
+    const bridge = read('src', 'calendarSelection.ts');
+    expect(bridge).toContain('date.setHours(hour, 0, 0, 0);');
+    expect(bridge).toContain('hour = 12');
+  });
+});
+
+describe('a birthday actually repeats', () => {
+  const MODAL = read('src', 'components', 'AddCardModal.tsx');
+
+  it('yearly is offered', () => {
+    expect(MODAL).toContain("'none', 'daily', 'weekly', 'monthly', 'yearly'");
+    expect(API).toContain("'monthly' | 'yearly'");
+  });
+
+  it('picking BIRTHDAY implies it', () => {
+    expect(MODAL).toContain("if (typ.key === 'BIRTHDAY') setRecurrence('yearly');");
+  });
+
+  it('and leaving BIRTHDAY takes it back', () => {
+    // Otherwise a dentist appointment quietly inherits "every year".
+    expect(MODAL).toContain("else if (recurrence === 'yearly') setRecurrence('none');");
+  });
+
+  it('is translated everywhere', () => {
+    const hits = I18N.match(/^\s*rec_yearly:/gm) || [];
+    expect(hits).toHaveLength(4);
+  });
+});
+
+describe('the waiting count is visible', () => {
+  it('shows a pill when something is pending', () => {
+    expect(CALENDAR).toContain('calendar-pending-review');
+    expect(CALENDAR).toContain('pendingCount > 0 && !reviewOpen');
+  });
+
+  it('refreshes on focus and after a review', () => {
+    expect(CALENDAR).toContain('load(); refreshPending();');
+    expect(CALENDAR).toContain('setReviewOpen(false); load(); refreshPending();');
+  });
+
+  it('a failed count never breaks the calendar', () => {
+    expect(CALENDAR).toContain('.catch(() => setPendingCount(0));');
+  });
+});

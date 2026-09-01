@@ -22,6 +22,7 @@ import { useUI, UIColors } from './Kit';
 import { useStore } from '../store';
 import { api, CardType } from '../api';
 import { logger } from '../logger';
+import { selectedCalendarDayAt } from '../calendarSelection';
 
 // Mirrors AddCardModal's internal draft shape (structural) — the object it
 // accepts as `initialDraft`.
@@ -128,12 +129,21 @@ export function GlobalCapture({ visible, onClose }: { visible: boolean; onClose:
   }, [afterPicker]);
 
   const openEvent = useCallback(() => {
+    // The day the calendar is showing, if it is showing one. This used to be
+    // new Date() unconditionally: select the 14th, tap "+", and the sheet
+    // opened on today — which is worse than no prefill, because it looks
+    // deliberate and gets saved. Falls back to noon today everywhere else.
+    const base = selectedCalendarDayAt() || (() => {
+      const now = new Date();
+      now.setHours(12, 0, 0, 0);
+      return now;
+    })();
     setDraft({
       type: 'APPOINTMENT',
       title: '',
       description: '',
       assignee: '',
-      due_date: new Date().toISOString(),
+      due_date: base.toISOString(),
       transcript: '',
     });
     setAddSource('MANUAL');

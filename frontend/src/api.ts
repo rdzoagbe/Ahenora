@@ -433,7 +433,7 @@ async function request<T = unknown>(
 
 export type CardType = 'SIGN_SLIP' | 'RSVP' | 'TASK' | 'BIRTHDAY' | 'SCHOOL' | 'APPOINTMENT' | 'VACATION';
 export type CardStatus = 'OPEN' | 'DONE';
-export type Recurrence = 'none' | 'daily' | 'weekly' | 'monthly';
+export type Recurrence = 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly';
 
 /**
  * A proposed event that has not been accepted yet. Produced by a calendar

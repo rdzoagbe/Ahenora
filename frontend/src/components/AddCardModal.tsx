@@ -69,7 +69,11 @@ const TYPES: { key: CardType; labelKey: string; color: string; icon: any }[] = [
   { key: 'VACATION', labelKey: 'type_vacation', color: '#14B8A6', icon: Plane },
 ];
 
-const RECURRENCES: Recurrence[] = ['none', 'daily', 'weekly', 'monthly'];
+// yearly was missing, so a birthday added by hand fired once and never came
+// back. The server has always understood it — calendar import creates yearly
+// cards — but there was no way to choose it, and PATCH refused it, which is
+// why an imported birthday could not even be edited.
+const RECURRENCES: Recurrence[] = ['none', 'daily', 'weekly', 'monthly', 'yearly'];
 const REMINDERS: { mins: number; key: string }[] = [
   { mins: 0, key: 'rem_none' },
   { mins: 15, key: 'rem_15' },
@@ -379,7 +383,17 @@ export function AddCardModal({
                     <PressScale
                       key={typ.key}
                       testID={`type-${typ.key}`}
-                      onPress={() => setType(typ.key)}
+                      onPress={() => {
+                        setType(typ.key);
+                        // A birthday that happens once is not a birthday. The
+                        // chip existed and the card still fired a single time,
+                        // because yearly could not be chosen — so picking the
+                        // type now implies the repeat, and leaving BIRTHDAY
+                        // takes it back rather than stranding "yearly" on a
+                        // dentist appointment.
+                        if (typ.key === 'BIRTHDAY') setRecurrence('yearly');
+                        else if (recurrence === 'yearly') setRecurrence('none');
+                      }}
                       style={[
                         styles.typeBtn,
                         {
