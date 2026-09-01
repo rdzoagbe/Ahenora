@@ -25,7 +25,8 @@ import asyncio
 import os
 import sys
 import unittest
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "backend"))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
@@ -55,7 +56,28 @@ class ReadPathBase(unittest.TestCase):
         self.db = FakeDatabase()
         self._get_db = server.get_db
         server.get_db = lambda: self.db
-        self.now = server.utcnow()
+        # Pinned to a morning in the zone the digest test uses, not to the
+        # wall clock. Every seeded card is due `now + 3 hours`, and the digest
+        # lists what is due TODAY in Europe/Paris — so with a real `utcnow()`
+        # the card crossed Paris midnight and left the digest entirely from
+        # 19:00 UTC onwards. The suite passed all day and failed every evening,
+        # which is exactly the shape of failure nobody attributes to the clock:
+        # CI usually ran before dinner, so it looked green for weeks.
+        #
+        # 08:00 Paris keeps `now + 3 hours` at 11:00 the same day whatever time
+        # the suite is run, and a morning digest computed at 08:00 is also what
+        # the feature actually does.
+        # TOMORROW morning, not today's: two read paths in this file want
+        # different things from the same instant. The digest needs the card to
+        # fall on the local day it is computed for; the weekly report only
+        # lists deadlines still ahead. Pinning to 08:00 today satisfied the
+        # first and broke the second, because 11:00 today is already past by
+        # the afternoon. 08:00 tomorrow is both a fixed local morning AND
+        # always in the future, whatever time the suite runs.
+        paris = ZoneInfo("Europe/Paris")
+        self.now = ((datetime.now(paris) + timedelta(days=1))
+                    .replace(hour=8, minute=0, second=0, microsecond=0)
+                    .astimezone(timezone.utc))
 
         async def seed():
             for u, role in ((ROLAND, "Parent"), (KIM, "Parent"), (HELPER, "Helper")):
