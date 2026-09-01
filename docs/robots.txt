@@ -1,0 +1,13 @@
+# ahenora.com
+#
+# Everything here is meant to be found. The one thing that is not is the web
+# app itself: /app is the exported React build, whose routes are screens behind
+# a sign-in, not pages anyone should reach from a search result. Indexing them
+# spends crawl budget on shells that render nothing without an account, and
+# puts "Loading…" in Google's results.
+
+User-agent: *
+Allow: /
+Disallow: /app/
+
+Sitemap: https://ahenora.com/sitemap.xml
