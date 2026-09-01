@@ -15,6 +15,46 @@
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary_large_image">
 
+<!-- Canonical: the site answers on ahenora.com and www.ahenora.com, and GitHub
+     Pages will serve both. Without this Google picks one itself and splits the
+     ranking signals between two addresses for the same page. -->
+<link rel="canonical" href="https://ahenora.com/">
+
+<!-- Structured data. This is how a search engine learns that the page is ABOUT
+     an application rather than merely mentioning one: the category it belongs
+     to, what it costs, and where to install it. It is what earns the app-style
+     result — name, icon, price — instead of a plain blue link.
+     Kept in step with the real listing by hand; a price or a store link that
+     contradicts the store is worse than no markup at all. -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "MobileApplication",
+  "name": "Ahenora",
+  "applicationCategory": "LifestyleApplication",
+  "applicationSubCategory": "Family organiser",
+  "operatingSystem": "Android, iOS",
+  "url": "https://ahenora.com/",
+  "installUrl": "https://play.google.com/store/apps/details?id=com.householdcoo.app",
+  "inLanguage": ["en", "fr", "es", "de"],
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "EUR",
+    "description": "Free to use, with an optional subscription for premium features."
+  },
+  "description": "One shared, private place for a household: the family calendar, tasks, kids' chores and pocket money, meal planning, the shopping list and important documents. Built for co-parents, single parents and busy families.",
+  "featureList": [
+    "Shared family calendar",
+    "Household tasks and hand-offs between co-parents",
+    "Kids' chores, stars and pocket money",
+    "Meal planning and recipes",
+    "Shared shopping list",
+    "Secure document vault"
+  ]
+}
+</script>
+
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@600;700;800&display=swap" rel="stylesheet">
