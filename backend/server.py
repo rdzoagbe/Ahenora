@@ -4786,6 +4786,24 @@ async def logout(user=Depends(require_user), authorization: str = Header(default
     return {"ok": True}
 
 
+@app.post("/api/auth/logout-everywhere")
+async def logout_everywhere(user=Depends(require_user)):
+    """End every session this account holds, not just the one asking.
+
+    /auth/logout deletes one row — the token in the Authorization header — which
+    is right for "sign out on this device" and useless for "a token of mine has
+    been exposed". Changing the password already clears every session, so a
+    password account had a way out; a Google or Apple account has no password to
+    change and therefore had none at all. This is that way out.
+
+    Includes the caller's own token: after this, everything must sign in again,
+    which is exactly what a leaked-token response should mean.
+    """
+    database = get_db()
+    result = await database["user_sessions"].delete_many({"user_id": user["user_id"]})
+    return {"ok": True, "sessions_ended": result.deleted_count}
+
+
 @app.post("/api/auth/complete-onboarding")
 async def complete_onboarding(user=Depends(require_user)):
     database = get_db()
@@ -7623,6 +7641,77 @@ async def admin_set_grandfathered(payload: GrandfatherIn, user=Depends(require_u
     )
     return {"ok": True, "family_id": target["family_id"],
             "grandfathered": bool(payload.grandfathered)}
+
+
+class PurgeAccountIn(BaseModel):
+    email: str
+    confirm_email: str
+
+
+@app.post("/api/admin/purge-account")
+async def admin_purge_account(payload: PurgeAccountIn, user=Depends(require_user)):
+    """Delete an account by email, for accounts nobody can sign in to.
+
+    /auth/delete-account is self-service by design and that is right: it is the
+    store-required path and it proves identity before destroying data. It also
+    means an account whose password is unknown — a seeder that wrote a
+    placeholder, an abandoned OAuth signup — cannot be removed by anyone, and
+    accumulates on production forever.
+
+    Deliberately narrow. It reuses the same teardown as self-service deletion so
+    the two cannot drift, refuses to touch an admin account (nothing here should
+    be able to delete the operator running it), and requires the address twice:
+    the realistic accident is purging apple-review@ahenora.com while meaning to
+    purge review@ahenora.com, and a second typing is the cheapest guard against
+    a one-word slip that ends a live App Review.
+
+    No deletion email is sent — these are not people, and the address may not be
+    deliverable.
+    """
+    if not is_admin_user(user):
+        raise HTTPException(status_code=403, detail="Admins only")
+    email = (payload.email or "").strip().lower()
+    confirm = (payload.confirm_email or "").strip().lower()
+    if not email:
+        raise HTTPException(status_code=400, detail="email is required")
+    if email != confirm:
+        raise HTTPException(
+            status_code=400,
+            detail="email and confirm_email must match exactly")
+    if is_admin_email(email):
+        raise HTTPException(
+            status_code=403, detail="Refusing to purge an admin account")
+
+    database = get_db()
+    target = await database["users"].find_one({"email": email}, {"_id": 0})
+    if not target:
+        raise HTTPException(status_code=404, detail="No account with that email")
+    if target["user_id"] == user["user_id"]:
+        raise HTTPException(status_code=403, detail="Use /auth/delete-account for your own")
+
+    family_id = target.get("family_id")
+
+    # Same rule as self-service deletion, asked of `users` for the same reason:
+    # a founder's member row can predate user_id linkage, so family_members
+    # would miss them and purge a household that still has an owner.
+    other_account = None
+    if family_id:
+        other_account = await database["users"].find_one(
+            {"family_id": family_id, "user_id": {"$ne": target["user_id"]}},
+            {"_id": 0})
+
+    deleted_household = False
+    if family_id and other_account is None:
+        await _purge_family(database, family_id)
+        deleted_household = True
+    elif family_id:
+        await database["family_members"].delete_many(
+            {"family_id": family_id, "user_id": target["user_id"]})
+
+    await _purge_user_account(database, target["user_id"], email)
+    log.warning("admin purge: %s removed account %s (household=%s)",
+                (user.get("email") or "")[:64], email, deleted_household)
+    return {"ok": True, "email": email, "deleted_household": deleted_household}
 
 
 @app.get("/api/admin/version-adoption")
