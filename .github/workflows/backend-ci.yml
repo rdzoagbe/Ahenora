@@ -56,7 +56,41 @@ jobs:
       - name: Byte-compile the backend
         run: python -m compileall -q backend
 
-      # ai_safety.py depends only on the standard library, by design — the gate
-      # should not be able to fail because an install failed.
-      - name: Run safety gate tests
+      # Without this the job was theatre. Nearly every test file opens with
+      #
+      #     try: import fastapi
+      #     except ImportError: HAVE_DEPS = False
+      #     @unittest.skipUnless(HAVE_DEPS, ...)
+      #
+      # which is right for a contributor's laptop and catastrophic in CI with
+      # no install step: 805 of 926 tests SKIPPED and the job reported OK in
+      # under a second. Every test covering authorization, privacy, billing and
+      # the destructive admin routes was in the skipped set. A green tick meant
+      # "the imports failed", and nothing downstream could tell the difference.
+      - name: Install backend dependencies
+        run: |
+          pip install -r backend/requirements.txt
+          pip install pyyaml
+
+      - name: Run the test suite
         run: python -m unittest discover -s tests -v
+
+      # The install above can rot the same way it was missing — a dependency
+      # dropped from requirements.txt puts the suite straight back to skipping
+      # green. So assert on the count: the suite must actually EXECUTE most of
+      # what it discovers, and say so out loud when it does not.
+      - name: Fail if the suite skipped instead of running
+        run: |
+          python - <<'PY'
+          import sys, unittest
+          result = unittest.TextTestRunner(verbosity=0).run(
+              unittest.defaultTestLoader.discover("tests"))
+          ran = result.testsRun - len(result.skipped)
+          print(f"discovered={result.testsRun} executed={ran} "
+                f"skipped={len(result.skipped)}")
+          if result.testsRun and len(result.skipped) > result.testsRun * 0.1:
+              sys.exit(
+                  f"{len(result.skipped)} of {result.testsRun} tests SKIPPED. "
+                  "A dependency is missing, so this job is not testing anything. "
+                  "Green here would be a lie.")
+          PY

@@ -3814,6 +3814,20 @@ _FAMILY_SCOPED_COLLECTIONS = (
     "rewards", "routine_logs", "routines", "shopping_history", "shopping_list",
     "star_transactions", "templates", "vault", "expense_settlements", "gift_pots",
     "santa_draws",
+    # Added after a review found them missing from BOTH deletion paths. Every
+    # one carries family_id and every one is personal content:
+    #   messages       — the household chat and the parent↔teen threads, i.e.
+    #                    the most sensitive text in the product, kept forever
+    #                    after the household that wrote it asked to be erased.
+    #   expense_items  — the itemised lines behind each expense.
+    # This list is what /auth/delete-account promises the store and the user;
+    # a collection missing from it is a deletion that silently did not happen.
+    "messages", "expense_items",
+    # Diagnostic rows, but they carry user_id, family_id and the person's NAME.
+    # They self-expire after 14 days, which is a fine retention rule and a poor
+    # answer to "delete my data": it would keep a deleted user's name for another
+    # fortnight. Found by the drift check in test_deletion_completeness.
+    "client_errors",
 )
 
 
@@ -3824,8 +3838,13 @@ async def _purge_family(database: Any, family_id: str) -> None:
 
 
 async def _purge_user_account(database: Any, user_id: str, email: str) -> None:
+    # web_push_subscriptions was missing: a browser subscription outlived the
+    # account that created it, so a deleted user's endpoint stayed in the table
+    # the daily push job reads. _push_zones() reads BOTH notification_tokens and
+    # web_push_subscriptions, so listing only the first deleted half the ways
+    # this person could still be contacted.
     for collection in ("user_sessions", "notification_tokens", "notification_settings",
-                       "support_tickets"):
+                       "support_tickets", "web_push_subscriptions"):
         await database[collection].delete_many({"user_id": user_id})
     if email:
         await database["family_invites"].delete_many({"email": email, "status": "pending"})
@@ -3967,6 +3986,12 @@ async def delete_account(payload: DeleteAccountIn, user=Depends(require_user)):
     await send_account_deleted_email(email, fresh.get("name") or "")
 
     return {"ok": True, "deleted_household": deleted_household}
+
+
+# Bounds how often the RevenueCat webhook prints its diagnostic line. See the
+# comment at the mismatch branch: the endpoint is unauthenticated, so the line
+# is reachable by anyone who can send a POST.
+_rc_mismatch_log: dict = {"count": 0, "window_started": None}
 
 
 def _secret_fingerprint(value: str) -> dict:
@@ -4784,6 +4809,24 @@ async def logout(user=Depends(require_user), authorization: str = Header(default
         {"user_id": user["user_id"], "token_hash": sha256(token)}
     )
     return {"ok": True}
+
+
+@app.post("/api/auth/logout-everywhere")
+async def logout_everywhere(user=Depends(require_user)):
+    """End every session this account holds, not just the one asking.
+
+    /auth/logout deletes one row — the token in the Authorization header — which
+    is right for "sign out on this device" and useless for "a token of mine has
+    been exposed". Changing the password already clears every session, so a
+    password account had a way out; a Google or Apple account has no password to
+    change and therefore had none at all. This is that way out.
+
+    Includes the caller's own token: after this, everything must sign in again,
+    which is exactly what a leaked-token response should mean.
+    """
+    database = get_db()
+    result = await database["user_sessions"].delete_many({"user_id": user["user_id"]})
+    return {"ok": True, "sessions_ended": result.deleted_count}
 
 
 @app.post("/api/auth/complete-onboarding")
@@ -7625,6 +7668,77 @@ async def admin_set_grandfathered(payload: GrandfatherIn, user=Depends(require_u
             "grandfathered": bool(payload.grandfathered)}
 
 
+class PurgeAccountIn(BaseModel):
+    email: str
+    confirm_email: str
+
+
+@app.post("/api/admin/purge-account")
+async def admin_purge_account(payload: PurgeAccountIn, user=Depends(require_user)):
+    """Delete an account by email, for accounts nobody can sign in to.
+
+    /auth/delete-account is self-service by design and that is right: it is the
+    store-required path and it proves identity before destroying data. It also
+    means an account whose password is unknown — a seeder that wrote a
+    placeholder, an abandoned OAuth signup — cannot be removed by anyone, and
+    accumulates on production forever.
+
+    Deliberately narrow. It reuses the same teardown as self-service deletion so
+    the two cannot drift, refuses to touch an admin account (nothing here should
+    be able to delete the operator running it), and requires the address twice:
+    the realistic accident is purging apple-review@ahenora.com while meaning to
+    purge review@ahenora.com, and a second typing is the cheapest guard against
+    a one-word slip that ends a live App Review.
+
+    No deletion email is sent — these are not people, and the address may not be
+    deliverable.
+    """
+    if not is_admin_user(user):
+        raise HTTPException(status_code=403, detail="Admins only")
+    email = (payload.email or "").strip().lower()
+    confirm = (payload.confirm_email or "").strip().lower()
+    if not email:
+        raise HTTPException(status_code=400, detail="email is required")
+    if email != confirm:
+        raise HTTPException(
+            status_code=400,
+            detail="email and confirm_email must match exactly")
+    if is_admin_email(email):
+        raise HTTPException(
+            status_code=403, detail="Refusing to purge an admin account")
+
+    database = get_db()
+    target = await database["users"].find_one({"email": email}, {"_id": 0})
+    if not target:
+        raise HTTPException(status_code=404, detail="No account with that email")
+    if target["user_id"] == user["user_id"]:
+        raise HTTPException(status_code=403, detail="Use /auth/delete-account for your own")
+
+    family_id = target.get("family_id")
+
+    # Same rule as self-service deletion, asked of `users` for the same reason:
+    # a founder's member row can predate user_id linkage, so family_members
+    # would miss them and purge a household that still has an owner.
+    other_account = None
+    if family_id:
+        other_account = await database["users"].find_one(
+            {"family_id": family_id, "user_id": {"$ne": target["user_id"]}},
+            {"_id": 0})
+
+    deleted_household = False
+    if family_id and other_account is None:
+        await _purge_family(database, family_id)
+        deleted_household = True
+    elif family_id:
+        await database["family_members"].delete_many(
+            {"family_id": family_id, "user_id": target["user_id"]})
+
+    await _purge_user_account(database, target["user_id"], email)
+    log.warning("admin purge: %s removed account %s (household=%s)",
+                (user.get("email") or "")[:64], email, deleted_household)
+    return {"ok": True, "email": email, "deleted_household": deleted_household}
+
+
 @app.get("/api/admin/version-adoption")
 async def version_adoption(user=Depends(require_user)):
     """Who is on which build — the answer to "did the OTA reach everyone".
@@ -9618,6 +9732,26 @@ async def revenuecat_webhook(payload: dict, authorization: Optional[str] = Heade
         # being useful for recovering a secret.
         #
         # Logged, never returned: the caller here is unauthenticated.
+        #
+        # Rate-limited for the same reason. This endpoint takes unauthenticated
+        # POSTs, so anyone can make it log — and the line repeats the LIVE
+        # secret's length and fingerprint every time. Unbounded, that is a
+        # stranger's lever on our log volume and an endlessly repeated hint
+        # about a secret we hold. The diagnostics exist to debug a real
+        # misconfiguration, which needs a handful of lines, not a stream: after
+        # the first few in a window it drops to a bare count with no
+        # fingerprints at all.
+        _rc_mismatch_log["count"] += 1
+        now_ts = utcnow()
+        started = _rc_mismatch_log["window_started"]
+        if started is None or (now_ts - started).total_seconds() > 3600:
+            _rc_mismatch_log["window_started"] = now_ts
+            _rc_mismatch_log["count"] = 1
+        if _rc_mismatch_log["count"] > 10:
+            if _rc_mismatch_log["count"] % 100 == 0:
+                log.warning("RC webhook auth mismatch x%d this hour (details "
+                            "suppressed)", _rc_mismatch_log["count"])
+            raise HTTPException(status_code=401, detail="Bad signature")
         log.warning(
             "RC webhook auth mismatch: supplied_len=%d expected_len=%d "
             "supplied_sha=%s expected_sha=%s header_present=%s",

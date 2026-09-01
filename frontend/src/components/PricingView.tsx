@@ -29,6 +29,13 @@ import { purchasePremium, restorePurchases } from '../billing';
 // paths point here instead of dead-ending on "coming soon".
 const ANDROID_STORE_URL = 'https://play.google.com/store/apps/details?id=com.householdcoo.app';
 
+// App Review guideline 3.1.2 requires the paywall itself to state the title,
+// length and price of each subscription and to link out to the Terms of Use
+// and the privacy policy. The cards carry title/length/price; these two links
+// carry the rest. They must stay on the paywall, not only in Settings.
+const TERMS_URL = 'https://ahenora.com/terms.html';
+const PRIVACY_URL = 'https://ahenora.com/privacy.html';
+
 /**
  * What to say when store billing is not available here.
  *
@@ -81,7 +88,28 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
   const { t, subscription, user, refreshSubscription } = useStore();
   const ui = useUI();
   const styles = useMemo(() => createStyles(ui), [ui]);
-  const [cycle, setCycle] = useState<BillingCycle>('yearly');
+  // Which cycle the screen is showing. Derived rather than synced: an effect
+  // that pushed the subscription into state would render once on the wrong
+  // value first, and lint is right to object to it.
+  //
+  // Yearly is the right default for someone deciding — it is the better deal
+  // and the saving is the point of the toggle. It is the wrong thing to show
+  // someone who has already decided: a monthly subscriber opening this screen
+  // saw yearly prices with "billed yearly" under them, which reads as a
+  // statement about THEIR subscription rather than an offer.
+  //
+  // Guarded on a PAID plan, not merely on the field being present: a family is
+  // created with billing_cycle "monthly" whatever it is paying (server.py
+  // creates it that way), so keying off the field alone would snap every free
+  // account to monthly and quietly delete the yearly default for exactly the
+  // people the default exists for.
+  //
+  // A null pick means "not touched yet", so once the user works the toggle
+  // their choice wins and a background refresh cannot drag it back mid-decision.
+  const [pickedCycle, setPickedCycle] = useState<BillingCycle | null>(null);
+  const subscribedCycle: BillingCycle | null =
+    subscription && subscription.plan !== 'village' ? subscription.billing_cycle : null;
+  const cycle: BillingCycle = pickedCycle ?? subscribedCycle ?? 'yearly';
   const [busy, setBusy] = useState(false);
   // The Stripe config (web only): whether card checkout is on, and which tiers
   // are buyable yet. Null until asked.
@@ -315,7 +343,7 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
         </View>
 
         <View>
-          <BillingToggle value={cycle} onChange={setCycle} t={t} styles={styles} />
+          <BillingToggle value={cycle} onChange={setPickedCycle} t={t} styles={styles} />
           <Text style={styles.billingNote}>
             {t('price_billing_note')}
           </Text>
@@ -341,6 +369,27 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
               />
             </View>
           ))}
+        </View>
+
+        <View style={styles.legalWrap}>
+          <Text style={styles.legalNote}>{t('pricing_autorenew_note')}</Text>
+          <View style={styles.legalLinks}>
+            <PressScale
+              testID="pricing-terms-link"
+              onPress={() => Linking.openURL(TERMS_URL)}
+              style={styles.legalLinkHit}
+            >
+              <Text style={styles.legalLinkText}>{t('pricing_terms_link')}</Text>
+            </PressScale>
+            <Text style={styles.legalDot}>·</Text>
+            <PressScale
+              testID="pricing-privacy-link"
+              onPress={() => Linking.openURL(PRIVACY_URL)}
+              style={styles.legalLinkHit}
+            >
+              <Text style={styles.legalLinkText}>{t('pricing_privacy_link')}</Text>
+            </PressScale>
+          </View>
         </View>
 
         <View style={styles.faqWrap}>
@@ -892,6 +941,24 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     fontSize: 14,
     letterSpacing: 0.3,
   },
+  legalWrap: { marginTop: 22, alignItems: 'center', gap: 6 },
+  legalNote: {
+    color: ui.muted,
+    fontFamily: 'Inter_400Regular',
+    fontSize: 11,
+    lineHeight: 16,
+    textAlign: 'center',
+    paddingHorizontal: 8,
+  },
+  legalLinks: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  legalLinkHit: { paddingVertical: 6, paddingHorizontal: 6 },
+  legalLinkText: {
+    color: ui.text,
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 12,
+    textDecorationLine: 'underline',
+  },
+  legalDot: { color: ui.muted, fontFamily: 'Inter_400Regular', fontSize: 12 },
   faqWrap: { marginTop: 32 },
   faqTitle: {
     color: ui.text,

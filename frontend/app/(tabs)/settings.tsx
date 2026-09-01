@@ -52,6 +52,19 @@ function formatBytes(bytes?: number | null) {
   return `${Math.max(1, Math.round(value / 1024))} KB`;
 }
 
+// Teens are not adults. The server meters slots with ^(child|teen)$ and the
+// kids screen lists teens alongside children, so counting "not child" as an
+// adult made two parents and a teen read "3 adults" in the one place that
+// summarises your own family — and disagreed with the server's own idea of who
+// is a grown-up. Non-parent adults (a grandparent, a nanny) stay adults.
+//
+// Module scope on purpose: declared inside the component it would be a new
+// function every render, which either defeats the useMemo that uses it or
+// leaves an exhaustive-deps warning that is wrong to silence.
+const YOUNG_ROLES = ['child', 'teen'];
+const isYoung = (m: { role?: string }) =>
+  YOUNG_ROLES.includes(m.role?.toLowerCase() || '');
+
 export default function Settings() {
   const { user, t, lang, logout, subscription, appearanceMode, setAppearance, inviteRequested, clearInviteRequest, membersRequested, clearMembersRequest } = useStore();
   const router = useRouter();
@@ -207,8 +220,10 @@ export default function Settings() {
   // Case-insensitive on purpose: the backend queries roles with ^child$/i,
   // so the client must not be stricter than the server about casing. The
   // kids page already compares this way.
-  const childMembers = useMemo(() => members.filter((m) => m.role?.toLowerCase() === 'child'), [members]);
-  const adultCount = Math.max(1, members.filter((m) => m.role?.toLowerCase() !== 'child').length);
+  // Children AND teens: both are young people in the household, and the
+  // summary line counts them together so adults + young people = everyone.
+  const childMembers = useMemo(() => members.filter(isYoung), [members]);
+  const adultCount = Math.max(1, members.filter((m) => !isYoung(m)).length);
   // Adults with their own sign-in AND a parenting role are the co-parents;
   // a grandparent or nanny with an account is family, not a co-parent.
   const coParents = useMemo(
@@ -219,6 +234,25 @@ export default function Settings() {
     [members],
   );
   const isCoParented = coParents.length >= 2;
+  // What this group actually contains, in its own words. It used to read
+  // "N slots" from member_slots_used, which is every family_members row plus
+  // every pending invite — children included. So a household of two adults and
+  // three children announced "5 slots" above a list showing two people, and the
+  // header described a different set than the thing underneath it. Slots are a
+  // billing concept and still belong on the plan row, where the limit is shown
+  // beside them and the number means something.
+  const householdSummary = useMemo(() => {
+    // The repo's plural convention: a dedicated _one key, chosen at the call
+    // site. "1 adults" in the one place that summarises your own family would
+    // be a small thing done carelessly.
+    const n = (key: string, count: number) =>
+      t(count === 1 ? `${key}_one` : key, { count });
+    const pending = invites.filter((i) => i.status === 'pending').length;
+    const parts = [n('set_adults_count', adultCount)];
+    if (childMembers.length) parts.push(n('set_children_count', childMembers.length));
+    if (pending) parts.push(n('set_invites_pending_count', pending));
+    return parts.join(' · ');
+  }, [adultCount, childMembers.length, invites, t]);
   const planLabel = subscription?.plan === 'family_office' ? 'Family Office' : subscription?.plan === 'executive' ? 'Executive Family' : 'Village';
   const weeklyBrief = Boolean(entitlements?.weekly_brief || subscription?.limits?.weekly_brief);
   const initial = (user?.name?.[0] || 'C').toUpperCase();
@@ -654,7 +688,7 @@ export default function Settings() {
               <View style={styles.planDivider} />
               <View style={styles.planCol}>
                 <Text style={styles.planTitle}>{memberSlotsUsed} member{memberSlotsUsed === 1 ? '' : 's'}</Text>
-                <Text style={styles.planSub}>{adultCount} adult{adultCount === 1 ? '' : 's'}, {childMembers.length} kid{childMembers.length === 1 ? '' : 's'}</Text>
+                <Text style={styles.planSub}>{adultCount} adult{adultCount === 1 ? '' : 's'}, {childMembers.length} young{childMembers.length === 1 ? '' : ''} {childMembers.length === 1 ? 'person' : 'people'}</Text>
               </View>
               <ChevronRight color={ui.muted} size={20} />
             </Card>
@@ -792,7 +826,7 @@ export default function Settings() {
           {groupHead('household',
             <IconTile bg={ui.orangeSoft}><Users color={ui.orange} size={18} /></IconTile>,
             t('set_household'),
-            isCoParented ? `${t('set_co_parents')}: ${coParents.map((m) => m.name).join(' & ')}` : `${memberSlotsUsed} ${t('set_slots')}`,
+            isCoParented ? `${t('set_co_parents')}: ${coParents.map((m) => m.name).join(' & ')}` : householdSummary,
             GK.household)}
           {groupOpen('household', GK.household) ? (<>
           <Card style={styles.cardPad}>

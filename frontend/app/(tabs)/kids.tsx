@@ -52,7 +52,16 @@ import { Card, IconTile, ProgressBar, ScreenHeader, UI, useUI, UIColors } from '
 import { useStore } from '../../src/store';
 import { api, logEvent, AllowanceConfig, AllowanceTxn, ChatThreadSummary, Chore, FamilyMember, Redemption, Routine, StarTransaction } from '../../src/api';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { logger } from '../../src/logger';
+
+// The teen-accounts hint is a one-time announcement, so what it needs is a
+// memory, not a timer. Scoped to the device, not the household: the key has no
+// family id in it, and an earlier version of this comment claimed it did. The
+// announcement is about a FEATURE of the app rather than about your family, so
+// device scope is the right scope — but the comment has to say what the code
+// does, not what would have sounded better.
+const TEEN_HINT_SEEN_KEY = 'ahenora.teenHintSeen';
 import { recordWin } from '../../src/reviewPrompt';
 import { isAlreadySettled, mergeRedemptions, restoreRedemption } from '../../src/redemptions';
 import { webConfirm } from '../../src/confirm';
@@ -144,8 +153,29 @@ export default function Kids() {
   // Teen-finished tasks waiting for a parent to award the star.
   const [teenApprovals, setTeenApprovals] = useState<{ card_id: string; title: string; teen_name: string }[]>([]);
   const [approvingId, setApprovingId] = useState<string | null>(null);
-  // The teen-accounts hint flashes briefly on open, then gets out of the way.
-  const [showTeenHint, setShowTeenHint] = useState(true);
+
+
+  // Show it once, then remember. Two separate steps, and the split matters.
+  //
+  // Reading only says whether this device has already been told. Writing
+  // happens when the hint is genuinely ON SCREEN — see the effect further
+  // down — because the hint renders inside the "you have children" branch. A
+  // parent who opens Kids before adding a child would otherwise burn the
+  // announcement without ever having seen it, which is the same bug as showing
+  // it forever, just in the opposite direction and harder to notice.
+  //
+  // There is no dismiss control, so "seen" can only mean displayed.
+  const [teenHintEligible, setTeenHintEligible] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    AsyncStorage.getItem(TEEN_HINT_SEEN_KEY)
+      .then((seen) => {
+        if (!cancelled && !seen) setTeenHintEligible(true);
+      })
+      .catch((error) => logger.warn('Teen hint read failed:', error));
+    return () => { cancelled = true; };
+  }, []);
+
 
   // Which day the quick-adds are being credited to. Null means today, which
   // is the ordinary case; picking a day is how a parent fills in a missed one.
@@ -303,6 +333,18 @@ export default function Kids() {
   }, []);
   const activeChild = children.find((c) => c.member_id === selectedChild) || children[0];
   const isFocused = Boolean(focusedChild) && Boolean(activeChild);
+
+  // The hint's real gate is !isFocused: with a child profile open, Kids renders
+  // that profile and the hint never appears. Marking it seen on mount would
+  // therefore burn the announcement for a parent who happened to arrive with a
+  // child selected — the same bug as showing it forever, in the opposite
+  // direction and harder to notice. Mark it when it is genuinely on screen.
+  const showTeenHint = teenHintEligible && !isFocused;
+  useEffect(() => {
+    if (!showTeenHint) return;
+    AsyncStorage.setItem(TEEN_HINT_SEEN_KEY, '1')
+      .catch((error) => logger.warn('Teen hint write failed:', error));
+  }, [showTeenHint]);
   const stars = activeChild?.stars || 0;
   // The bank is `stars`; the weekly meter is `week_earned`. A weekend treat is
   // measured against the week's earnings, everything else against the bank.
@@ -549,10 +591,9 @@ export default function Kids() {
   loadRef.current = load;
   useFocusEffect(useCallback(() => {
     loadRef.current();
-    // Flash the teen-accounts hint on open, then hide it after 2s.
-    setShowTeenHint(true);
-    const timer = setTimeout(() => setShowTeenHint(false), 2000);
-    return () => clearTimeout(timer);
+    // The teen-accounts hint used to be re-flashed here on every focus, which
+    // is why it kept reappearing long after it had been read. It is a one-time
+    // announcement now, owned by the effect near the top of this component.
   }, []));
 
   // Reload in place after a capture from the global "+".
@@ -1398,9 +1439,10 @@ export default function Kids() {
               </View>
               ) : null}
 
-              {/* New-feature nudge: teens get their own account. Flashes for a
-                  couple of seconds on open, then hides so it never nags. */}
-              {!isFocused && showTeenHint ? (
+              {/* New-feature nudge: teens get their own account. Shown once
+                  per device and then remembered; showTeenHint already carries
+                  the !isFocused gate. */}
+              {showTeenHint ? (
               <View style={styles.teenHint}>
                 <Text style={styles.teenHintNew}>NEW</Text>
                 <Text style={styles.teenHintText}>{t('kids_teen_hint')}</Text>
@@ -2621,7 +2663,13 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   teenChipBadge: { backgroundColor: ui.orangeSoft, borderRadius: 99, paddingHorizontal: 7, paddingVertical: 2, marginLeft: 6 },
   teenChipBadgeText: { fontFamily: 'Inter_800ExtraBold', fontSize: 9, letterSpacing: 0.3, textTransform: 'uppercase' },
   teenHint: { flexDirection: 'row', alignItems: 'center', gap: 9, backgroundColor: ui.orangeSoft, borderRadius: 14, borderWidth: 1, borderColor: 'rgba(245,101,25,0.22)', paddingVertical: 10, paddingHorizontal: 12, marginBottom: 14 },
-  teenHintNew: { fontFamily: 'Inter_800ExtraBold', fontSize: 10, letterSpacing: 0.4, color: '#fff', backgroundColor: ui.orange, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 99, overflow: 'hidden' },
+  // White on ui.orange measures 3.11:1 — below the 4.5 WCAG AA needs for text
+  // this size. It was never caught because the badge used to be removed after
+  // two seconds, so the contrast harness photographed the screen without it;
+  // making the hint persist is what finally made the defect measurable. Dark
+  // ink on the same orange is 5.82:1, and ui.orange is identical in both
+  // themes, so one pair fixes light and dark together.
+  teenHintNew: { fontFamily: 'Inter_800ExtraBold', fontSize: 10, letterSpacing: 0.4, color: '#2A0E02', backgroundColor: ui.orange, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 99, overflow: 'hidden' },
   teenHintText: { flex: 1, fontFamily: 'Inter_600SemiBold', fontSize: 12.5, color: ui.orangeText, lineHeight: 17 },
   approvalsCard: { backgroundColor: ui.card, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(245,101,25,0.28)', padding: 16, marginBottom: 14 },
   approvalsTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 16, color: ui.text, letterSpacing: -0.2 },
