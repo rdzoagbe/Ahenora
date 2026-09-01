@@ -22,6 +22,7 @@ import { useUI, UIColors } from './Kit';
 import { useStore } from '../store';
 import { api, CardType } from '../api';
 import { logger } from '../logger';
+import { selectedCalendarDayAt } from '../calendarSelection';
 
 // Mirrors AddCardModal's internal draft shape (structural) — the object it
 // accepts as `initialDraft`.
@@ -35,6 +36,10 @@ interface CaptureDraft {
   image_base64?: string | null;
   vault_category?: string;
   save_to_vault?: boolean;
+  // Carried from the document scan so the sheet can offer the calendar.
+  is_event?: boolean;
+  expires_on?: string | null;
+  location?: string | null;
 }
 
 type Primary = 'task' | 'event' | 'scan';
@@ -124,12 +129,21 @@ export function GlobalCapture({ visible, onClose }: { visible: boolean; onClose:
   }, [afterPicker]);
 
   const openEvent = useCallback(() => {
+    // The day the calendar is showing, if it is showing one. This used to be
+    // new Date() unconditionally: select the 14th, tap "+", and the sheet
+    // opened on today — which is worse than no prefill, because it looks
+    // deliberate and gets saved. Falls back to noon today everywhere else.
+    const base = selectedCalendarDayAt() || (() => {
+      const now = new Date();
+      now.setHours(12, 0, 0, 0);
+      return now;
+    })();
     setDraft({
       type: 'APPOINTMENT',
       title: '',
       description: '',
       assignee: '',
-      due_date: new Date().toISOString(),
+      due_date: base.toISOString(),
       transcript: '',
     });
     setAddSource('MANUAL');
@@ -208,6 +222,9 @@ export function GlobalCapture({ visible, onClose }: { visible: boolean; onClose:
             due_date: d.due_date || null,
             image_base64: d.image_base64 || null,
             vault_category: d.vault_category || '',
+            is_event: d.is_event,
+            expires_on: d.expires_on || null,
+            location: d.location || null,
             save_to_vault: d.save_to_vault !== false,
           });
           setAddSource('CAMERA');

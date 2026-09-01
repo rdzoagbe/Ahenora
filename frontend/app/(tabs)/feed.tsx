@@ -77,6 +77,10 @@ interface VoiceDraft {
   image_base64?: string | null;
   vault_category?: string;
   save_to_vault?: boolean;
+  // Carried from the document scan so the sheet can offer the calendar.
+  is_event?: boolean;
+  expires_on?: string | null;
+  location?: string | null;
 }
 
 
@@ -1524,6 +1528,9 @@ export default function Feed() {
             // was masked only because save_to_vault happens to be false when
             // the category is empty. One line from undoing the invariant.
             vault_category: draft.vault_category || '',
+            is_event: draft.is_event,
+            expires_on: draft.expires_on || null,
+            location: draft.location || null,
             save_to_vault: draft.save_to_vault !== false,
           });
           setAddSource('CAMERA');

@@ -87,9 +87,9 @@ class TeenMode(unittest.TestCase):
     def test_teen_home_scoping(self):
         """Own task + shared event show; a parent-private task never does."""
         self._card(type="TASK", title="Tidy your room", assignee="Ama", shared=False)
-        self._card(type="EVENT", title="Family movie night", shared=True)
+        self._card(type="APPOINTMENT", title="Family movie night", shared=True)
         self._card(type="TASK", title="Pay the mortgage", assignee="Roland", shared=False)
-        self._card(type="EVENT", title="Secret parent dinner", shared=False)
+        self._card(type="APPOINTMENT", title="Secret parent dinner", shared=False)
 
         teen = asyncio.run(server.require_teen(authorization=f"Bearer {self.teen_token}"))
         home = asyncio.run(server.teen_home(teen=teen))

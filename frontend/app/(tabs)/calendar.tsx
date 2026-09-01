@@ -19,6 +19,8 @@ import { api, logEvent, CalendarImportResult, Card, Carpool, GiftPot } from '../
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { AddCardModal } from '../../src/components/AddCardModal';
 import AppToast from '../../src/components/AppToast';
+import { ReviewImportSheet } from '../../src/components/ReviewImportSheet';
+import { setSelectedCalendarDay } from '../../src/calendarSelection';
 import { useToast } from '../../src/hooks/useToast';
 import { localeFor, isoWeek, custodyIsOurs } from '../../src/utils/date';
 import { sendLocalNotification, syncCalendarNightly } from '../../src/notifications';
@@ -182,6 +184,11 @@ export default function Calendar() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<CalendarImportResult | null>(null);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  // How many proposed events are waiting. Without this the review list is
+  // something you have to remember exists: the scan sheet says "head to your
+  // Calendar", and the calendar said nothing when you got there.
+  const [pendingCount, setPendingCount] = useState(0);
   // Shown after the morning auto-pull: a quiet, dismissible note that the day
   // came in on its own, with a nudge to the Import button to double-check.
   const [morningNotice, setMorningNotice] = useState(false);
@@ -205,6 +212,20 @@ export default function Calendar() {
   }, []);
   const [activeMonth, setActiveMonth] = useState(() => new Date());
   const [selectedDay, setSelectedDay] = useState<string | null>(dateKey(new Date()));
+  // Publish the selection so the tab-bar "+" can prefill the day being looked
+  // at instead of today, and clear it on unmount so "+" elsewhere in the app
+  // never inherits a stale date from a screen nobody is on.
+  useEffect(() => {
+    setSelectedCalendarDay(selectedDay);
+    return () => setSelectedCalendarDay(null);
+  }, [selectedDay]);
+
+  const refreshPending = useCallback(() => {
+    api.listEventCandidates()
+      .then((out) => setPendingCount(out.count))
+      // Best effort: a count that fails to load must never break the calendar.
+      .catch(() => setPendingCount(0));
+  }, []);
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
   // Gift pots keyed by the birthday card they belong to, so a BIRTHDAY row can
   // show its pot's progress inline without a per-row fetch.
@@ -367,7 +388,7 @@ export default function Calendar() {
     }
   }, [load]);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusEffect(useCallback(() => { load(); refreshPending(); }, [load, refreshPending]));
 
   // Reload in place after a capture from the global "+".
   useEffect(() => {
@@ -392,11 +413,17 @@ export default function Calendar() {
       const myGen = ++syncGenRef.current;
       setSyncing(true);
       try {
-        const result = await api.importGoogleCalendar(accessToken, 30);
+        // review: the events are staged, not written. Nothing reaches the
+        // calendar until the person says which ones belong there.
+        const result = await api.importGoogleCalendar(accessToken, 30, true);
         if (myGen !== syncGenRef.current) return;
         setSyncResult(result);
         await load();
-        Alert.alert(t('cal_calendar_synced'), syncSummary(result));
+        // Staged imports open the review list instead of announcing a total.
+        // A count of things already done is not something a person can act on;
+        // a list they can edit is.
+        if (result.imported > 0) setReviewOpen(true);
+        else Alert.alert(t('cal_calendar_synced'), syncSummary(result));
       } catch (e: any) {
         logger.warn('calendar sync failed', e);
         Alert.alert(t('cal_calendar_sync_failed'), e?.message || t('cal_please_try_again'));
@@ -554,11 +581,17 @@ export default function Calendar() {
     setActiveMonth(new Date(anchor.getFullYear(), anchor.getMonth(), 1));
   };
 
-  const openAddEvent = () => {
-    const base = selectedDay ? new Date(`${selectedDay}T12:00:00`) : new Date();
-    if (!selectedDay) base.setHours(12, 0, 0, 0);
+  // One place that opens the create sheet on a given day, so the button and
+  // the day-tap cannot drift into prefilling different dates.
+  const openAddEventOn = (date: Date) => {
+    const base = new Date(date);
+    base.setHours(12, 0, 0, 0);
     setAddDraft({ transcript: '', type: 'APPOINTMENT', title: '', description: '', assignee: '', due_date: base.toISOString() });
     setAddOpen(true);
+  };
+
+  const openAddEvent = () => {
+    openAddEventOn(selectedDay ? new Date(`${selectedDay}T12:00:00`) : new Date());
   };
 
   const locale = localeFor(lang);
@@ -772,11 +805,15 @@ export default function Calendar() {
           Alert.alert(t('cal_calendar_sync_failed'), t('cal_google_no_access_token'));
           return;
         }
-        const result = await api.importMicrosoftCalendar(accessToken, 30);
+        const result = await api.importMicrosoftCalendar(accessToken, 30, true);
         if (myGen !== syncGenRef.current) return;
         setSyncResult(result);
         await load();
-        Alert.alert(t('cal_calendar_synced'), syncSummary(result));
+        // Staged imports open the review list instead of announcing a total.
+        // A count of things already done is not something a person can act on;
+        // a list they can edit is.
+        if (result.imported > 0) setReviewOpen(true);
+        else Alert.alert(t('cal_calendar_synced'), syncSummary(result));
       } catch (e: any) {
         logger.warn('microsoft calendar sync failed', e);
         Alert.alert(t('cal_calendar_sync_failed'), e?.message || t('cal_please_try_again'));
@@ -825,7 +862,23 @@ export default function Calendar() {
     setSelectedDay(null);
   };
 
+  // Tapping a day the second time adds to it. Every other calendar people use
+  // lets you put something on a date by touching the date; here the only way
+  // in was to tap the day, then find a separate "Add event" button — so the
+  // gesture everyone already knows did nothing but filter a list.
+  //
+  // The second tap rather than the first, because the first tap has a job:
+  // showing what is already on that day. Opening a create sheet before the
+  // person has seen the day would talk over the answer to "what's on".
   const onSelectDay = (key: string, date: Date) => {
+    if (selectedDay === key) {
+      openAddEventOn(date);
+      return;
+    }
+    selectDayOnly(key, date);
+  };
+
+  const selectDayOnly = (key: string, date: Date) => {
     setSelectedDay(key);
     if (date.getMonth() !== activeMonth.getMonth() || date.getFullYear() !== activeMonth.getFullYear()) {
       setActiveMonth(new Date(date.getFullYear(), date.getMonth(), 1));
@@ -862,6 +915,20 @@ export default function Calendar() {
               )
             }
           />
+
+          {/* Events proposed by a sync or a scan, waiting on a decision. */}
+          {pendingCount > 0 && !reviewOpen ? (
+            <PressScale
+              testID="calendar-pending-review"
+              onPress={() => setReviewOpen(true)}
+              style={styles.pendingPill}
+            >
+              <CalendarDays color={ui.orangeText} size={16} />
+              <Text style={styles.pendingPillText}>
+                {t('review_waiting', { n: pendingCount })}
+              </Text>
+            </PressScale>
+          ) : null}
 
           {/* Morning auto-import notice — dismissible; also clears if they tap Import. */}
           {morningNotice ? (
@@ -1565,6 +1632,17 @@ export default function Calendar() {
 
       {/* One screen, two modes: the add sheet edits an existing card too, so
           there is no second copy of every field to drift out of step. */}
+      {/* Mounted only while open, so each review starts from a clean slate
+          without a reset effect. */}
+      {reviewOpen ? (
+      <ReviewImportSheet
+        visible
+        onClose={() => { setReviewOpen(false); load(); refreshPending(); }}
+        onDone={(created) => {
+          if (created > 0) showToast(t('review_added', { n: created }), 'success');
+        }}
+      />
+      ) : null}
       <AddCardModal
         visible={!!editing}
         editCard={editing}
@@ -1589,6 +1667,15 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: ui.bg },
   scroll: { paddingHorizontal: 20, paddingTop: 8 },
   syncIconBtn: { width: 40, height: 40, borderRadius: 99, alignItems: 'center', justifyContent: 'center', backgroundColor: ui.orangeDeep },
+  pendingPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: ui.orangeSoft, borderWidth: 1, borderColor: ui.line,
+    borderRadius: 14, paddingVertical: 10, paddingHorizontal: 12,
+    marginTop: 10,
+  },
+  pendingPillText: {
+    color: ui.orangeText, fontFamily: 'Inter_600SemiBold', fontSize: 13, flex: 1,
+  },
 
   morningNotice: {
     flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 16,
