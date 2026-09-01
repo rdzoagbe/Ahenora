@@ -35,6 +35,10 @@ interface CaptureDraft {
   image_base64?: string | null;
   vault_category?: string;
   save_to_vault?: boolean;
+  // Carried from the document scan so the sheet can offer the calendar.
+  is_event?: boolean;
+  expires_on?: string | null;
+  location?: string | null;
 }
 
 type Primary = 'task' | 'event' | 'scan';
@@ -208,6 +212,9 @@ export function GlobalCapture({ visible, onClose }: { visible: boolean; onClose:
             due_date: d.due_date || null,
             image_base64: d.image_base64 || null,
             vault_category: d.vault_category || '',
+            is_event: d.is_event,
+            expires_on: d.expires_on || null,
+            location: d.location || null,
             save_to_vault: d.save_to_vault !== false,
           });
           setAddSource('CAMERA');

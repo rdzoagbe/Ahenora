@@ -1404,6 +1404,7 @@ def public_vault_doc(doc: dict) -> dict:
         "visibility": doc.get("visibility") or "shared",
         "owner_user_id": doc.get("owner_user_id"),
         "owner_name": doc.get("owner_name"),
+        "expiry_date": iso(doc.get("expiry_date")),
         "created_at": iso(doc["created_at"]),
     }
 
@@ -3218,6 +3219,27 @@ class AiAssignIn(BaseModel):
 MAX_IMAGE_B64_CHARS = 14 * 1024 * 1024
 
 
+# What a card may be, in one place. This set was written out by hand inside
+# PATCH and nowhere else: POST validated NEITHER type nor recurrence, so the
+# two endpoints disagreed about what a valid card is and arbitrary strings
+# could be stored by the route people actually use.
+CARD_TYPE_VALUES = frozenset({
+    "SIGN_SLIP", "RSVP", "TASK", "BIRTHDAY", "SCHOOL", "APPOINTMENT", "VACATION",
+})
+
+# yearly was missing from the PATCH whitelist while the SERVER ITSELF creates
+# yearly cards on calendar import, so an imported birthday could not be edited:
+# the app sent the recurrence back unchanged and the save was refused.
+RECURRENCE_VALUES = frozenset({"none", "daily", "weekly", "monthly", "yearly"})
+
+# Cards that are things happening at a time, as opposed to things to be done.
+# The teen home screen split on `type == "EVENT"`, a value that exists nowhere:
+# not in the client's CardType union, not in CARD_TYPE_VALUES, not on any chip.
+# Every card therefore fell through to the to-do branch and a teen's agenda was
+# permanently empty, with their appointments listed as chores.
+AGENDA_CARD_TYPES = frozenset({"APPOINTMENT", "SCHOOL", "BIRTHDAY", "VACATION"})
+
+
 class CardIn(BaseModel):
     type: str = "TASK"
     title: str
@@ -3261,6 +3283,12 @@ class VaultIn(BaseModel):
     # "private" (default) or "shared". A co-parent joining a household must
     # not inherit sight of documents nobody chose to share.
     visibility: Optional[str] = None
+    # When the document stops being valid. /api/vault/expiry-alerts has existed
+    # for a while and could never fire: nothing wrote this field, PATCH
+    # /vault/{id}/expiry was called from nowhere in the app, and the serialiser
+    # did not return it. A read path with no producer reports "no documents
+    # expiring soon" whether or not that is true.
+    expiry_date: Optional[str] = None
 
 
 class VaultVisibilityIn(BaseModel):
@@ -6376,7 +6404,7 @@ async def teen_home(teen=Depends(require_teen)):
         row = {"card_id": card["card_id"], "title": card.get("title") or "",
                "due_date": iso(card.get("due_date")),
                "status": card.get("status"), "assignee": card.get("assignee")}
-        if ctype == "EVENT":
+        if ctype in AGENDA_CARD_TYPES:
             agenda.append(row)
         else:  # TASK / note-style → the teen's to-dos
             if card.get("status") != "DONE":
@@ -8173,6 +8201,14 @@ async def _assigned_visibility(database, family_id: str, creator_uid: Optional[s
 @app.post("/api/cards")
 async def create_card(payload: CardIn, user=Depends(require_user)):
     database = get_db()
+    # POST validated NEITHER type nor recurrence while PATCH validated both, so
+    # the two endpoints disagreed about what a valid card is — and the route
+    # people actually use was the permissive one. Refusing beats storing a
+    # value that no edit will ever accept back.
+    if payload.type not in CARD_TYPE_VALUES:
+        raise HTTPException(status_code=400, detail="Invalid card type")
+    if payload.recurrence not in RECURRENCE_VALUES:
+        raise HTTPException(status_code=400, detail="Invalid recurrence")
     assignee = (payload.assignee or "").strip() or None
     # Handing a task to SOMEONE ELSE makes it a shared task — you cannot give the
     # co-parent, a kid, a teen or a helper a job and keep it hidden from them or
@@ -8275,7 +8311,7 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
             changes["stars_awarded"] = True
 
     if payload.type is not None:
-        if payload.type not in {"SIGN_SLIP", "RSVP", "TASK", "BIRTHDAY", "SCHOOL", "APPOINTMENT", "VACATION"}:
+        if payload.type not in CARD_TYPE_VALUES:
             raise HTTPException(status_code=400, detail="Invalid card type")
         changes["type"] = payload.type
 
@@ -8652,6 +8688,10 @@ async def create_vault_doc(payload: VaultIn, user=Depends(require_full_member)):
         "owner_name": user.get("name"),
         "created_at": utcnow(),
     }
+    if payload.expiry_date:
+        parsed_expiry = parse_dt(payload.expiry_date)
+        if parsed_expiry:
+            doc["expiry_date"] = parsed_expiry
     await database["vault"].insert_one(doc)
     await database["families"].update_one(
         {"family_id": user["family_id"]},
@@ -9243,6 +9283,68 @@ async def _stage_candidate(database: Any, user: dict, card: dict,
     })
     await database["event_candidates"].insert_one(doc)
     return candidate_id
+
+
+class ScanEventIn(BaseModel):
+    title: str
+    description: Optional[str] = None
+    due_date: str
+    type: str = "APPOINTMENT"
+    location: Optional[str] = None
+    reminder_minutes: int = 60
+
+
+@app.post("/api/calendar/candidates/from-scan")
+async def stage_scanned_event(payload: ScanEventIn, user=Depends(require_user),
+                              database=Depends(get_db)):
+    """A scanned document that turned out to be an appointment.
+
+    The photo path already extracted the date and already knew the document was
+    a dentist letter; what it could not do was put the appointment anywhere,
+    because the scan was only ever allowed to produce SIGN_SLIP, RSVP or TASK
+    and the calendar only reads APPOINTMENT. So the date was found, shown, and
+    then quietly filed in the Feed.
+
+    It becomes a candidate rather than a card so the keep-or-share decision
+    happens in one place — the review list — instead of being asked twice in
+    two different shapes.
+    """
+    database = database or get_db()
+    title = (payload.title or "").strip()[:200]
+    if not title:
+        raise HTTPException(status_code=400, detail="A title is required")
+    due = parse_dt(payload.due_date)
+    if not due:
+        raise HTTPException(status_code=400, detail="A valid date is required")
+
+    card_type = (payload.type or "APPOINTMENT").strip().upper()
+    if card_type not in CARD_TYPE_VALUES:
+        card_type = "APPOINTMENT"
+
+    # Same event twice from two photographs of the same letter is a real thing
+    # people do. Title plus day is the honest key: the same appointment
+    # rescanned, not two genuinely different events that happen to share a day.
+    dedupe_key = f"scan:{title.lower()}:{due.date().isoformat()}"
+    if await _candidate_exists(database, user["family_id"], dedupe_key):
+        return {"ok": True, "staged": False, "reason": "already_pending"}
+
+    card = {
+        "type": card_type,
+        "title": title,
+        "description": (payload.description or "").strip()[:2000],
+        "due_date": due,
+        "recurrence": "none",
+        "reminder_minutes": max(0, min(payload.reminder_minutes, 60 * 24 * 7)),
+        "source": "CAMERA",
+        "external_source": "document_scan",
+    }
+    candidate_id = await _stage_candidate(
+        database, user, card,
+        source_kind="document_scan",
+        dedupe_key=dedupe_key,
+        location=(payload.location or "").strip()[:200],
+    )
+    return {"ok": True, "staged": True, "candidate_id": candidate_id}
 
 
 @app.get("/api/calendar/candidates")

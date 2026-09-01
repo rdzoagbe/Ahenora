@@ -34,6 +34,12 @@ interface VoiceDraft {
   image_base64?: string | null;
   vault_category?: string;
   save_to_vault?: boolean;
+  /** Set by the document scan: this is something happening at a time. */
+  is_event?: boolean;
+  /** When the document itself stops being valid, not when to act on it. */
+  expires_on?: string | null;
+  /** Where it happens, when the document says so. */
+  location?: string | null;
 }
 
 interface Props {
@@ -216,9 +222,17 @@ export function AddCardModal({
     setDueDate(dateSuggest.date.toISOString());
   };
 
+  // A scanned document the model read as something happening at a time, with a
+  // date to go with it. The server decides this (`is_event`) so the rule lives
+  // in one place and is tested; the sheet only asks whether this is that case
+  // and whether we are creating rather than editing.
+  const stagesAsEvent = !editCard && !!initialDraft?.is_event && !!dueDate;
+
   // Where this card will land, for the one-line destination hint.
   const destKey =
-    type === 'APPOINTMENT' ? 'add_dest_calendar' : saveToVault ? 'add_dest_vault' : 'add_dest_feed';
+    stagesAsEvent || type === 'APPOINTMENT'
+      ? 'add_dest_calendar'
+      : saveToVault ? 'add_dest_vault' : 'add_dest_feed';
 
   const handleSave = async () => {
     if (!title.trim()) return;
@@ -239,6 +253,19 @@ export function AddCardModal({
           reminder_minutes: reminderMins,
           shared,
         } as any);
+      } else if (stagesAsEvent) {
+        // A scanned appointment does not become a card here. It becomes a
+        // CANDIDATE, so the keep-or-share decision is made in one place — the
+        // calendar's review list — rather than being asked once in this sheet
+        // and again in that one. Nothing lands on the calendar unseen.
+        await api.stageScannedEvent({
+          title: title.trim(),
+          description: desc.trim(),
+          due_date: dueDate!,
+          type,
+          location: initialDraft?.location || null,
+          reminder_minutes: reminderMins,
+        });
       } else {
         await api.createCard({
           type,
@@ -283,13 +310,30 @@ export function AddCardModal({
           // an answer.
           category: initialDraft!.vault_category!,
           image_base64: initialDraft!.image_base64!,
+          // When the document itself stops being valid — a passport, a policy.
+          // /api/vault/expiry-alerts has existed for a while with nothing
+          // writing this, so it could only ever report "nothing expiring".
+          expiry_date: initialDraft?.expires_on || null,
         });
-        Alert.alert(t('addcard_saved_title'), t('addcard_saved_vault_message'));
+        // One message covering both halves, because both happened: the paper
+        // is filed and the appointment is waiting to be confirmed. Saying only
+        // "saved to vault" would hide the half the person has to act on.
+        Alert.alert(
+          t('addcard_saved_title'),
+          stagesAsEvent
+            ? t('addcard_saved_vault_and_event_message')
+            : t('addcard_saved_vault_message'),
+        );
       } catch (e: any) {
         // Card already saved; only the vault copy failed — inform, don't retry.
         logger.warn('vault save error', e);
         Alert.alert(t('addcard_card_saved_title'), t('addcard_vault_failed_message'));
       }
+    } else if (stagesAsEvent) {
+      // Staged but not filed — a letter worth an appointment but not worth
+      // keeping. The person still has to be told where the event went, or it
+      // looks like the scan did nothing.
+      Alert.alert(t('addcard_saved_title'), t('addcard_saved_event_message'));
     }
   };
 

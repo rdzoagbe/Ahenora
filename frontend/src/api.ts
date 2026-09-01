@@ -1233,6 +1233,17 @@ export interface ScanResult {
   amount?: string | null;
   save_to_vault?: boolean;
   understood?: boolean;
+  /**
+   * The server's judgement that this belongs on the calendar: an event type
+   * AND a date. Decided there rather than here so the rule is written once and
+   * tested — a date alone is a deadline, and an event with no date is not
+   * something anyone can be reminded of.
+   */
+  is_event?: boolean;
+  /** When the DOCUMENT stops being valid — a passport, a policy, a permit. */
+  expires_on?: string | null;
+  /** Where it happens, when the document says. */
+  location?: string | null;
   recipe?: CapturedRecipe;
 }
 
@@ -1654,6 +1665,19 @@ export const api = {
       method: 'POST',
       body: { access_token, days, review },
     }),
+  // A scanned document the model read as an appointment. Staged, not created:
+  // it joins the same review list a calendar sync fills, so the keep-or-share
+  // decision is made in one place.
+  stageScannedEvent: (body: {
+    title: string;
+    description?: string;
+    due_date: string;
+    type?: string;
+    location?: string | null;
+    reminder_minutes?: number;
+  }) =>
+    request<{ ok: boolean; staged: boolean; candidate_id?: string; reason?: string }>(
+      '/calendar/candidates/from-scan', { method: 'POST', body }),
   listEventCandidates: () =>
     request<{ candidates: EventCandidate[]; count: number }>('/calendar/candidates'),
   decideEventCandidates: (body: {
@@ -1979,7 +2003,7 @@ export const api = {
       body: { visibility },
     });
   },
-  createVaultDoc: (data: { title: string; category: string; image_base64: string; mime_type?: string; file_name?: string; visibility?: VaultVisibility }) => {
+  createVaultDoc: (data: { title: string; category: string; image_base64: string; mime_type?: string; file_name?: string; visibility?: VaultVisibility; expiry_date?: string | null }) => {
     cache.invalidate('listVault');
     invalidateUsageCaches();
     return request<VaultDoc>('/vault', { method: 'POST', body: data });
