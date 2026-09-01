@@ -1312,6 +1312,12 @@ def public_card(card: dict) -> dict:
         "image_base64": card.get("image_base64"),
         "recurrence": card.get("recurrence", "none"),
         "reminder_minutes": card.get("reminder_minutes", 60),
+        # Where it is. Imported events used to flatten the venue into the
+        # description as the text "Location: ...", and a manually created event
+        # had nowhere to put one at all — so "soccer at Parc des Sports" could
+        # only ever be typed into the title. Empty string, never None, so the
+        # app can render it without a null check.
+        "location": card.get("location") or "",
         "created_at": iso(card["created_at"]),
         "completed_at": iso(card.get("completed_at")),
         "completed_by_name": card.get("completed_by_name"),
@@ -3222,6 +3228,7 @@ class CardIn(BaseModel):
     image_base64: Optional[str] = Field(default=None, max_length=MAX_IMAGE_B64_CHARS)
     recurrence: str = "none"
     reminder_minutes: int = 60
+    location: Optional[str] = None
     # Shared unless someone says otherwise. It was private by default, which
     # inverted the whole product: a task added with the + button was invisible
     # to the rest of the household and notified nobody, so a co-parent could
@@ -3241,6 +3248,7 @@ class CardPatchIn(BaseModel):
     status: Optional[str] = None
     recurrence: Optional[str] = None
     reminder_minutes: Optional[int] = None
+    location: Optional[str] = None
     shared: Optional[bool] = None
 
 
@@ -3337,6 +3345,25 @@ class VisionIn(BaseModel):
 class CalendarImportIn(BaseModel):
     access_token: str
     days: int = 30
+    # Staging rather than writing. Import used to put every event it found
+    # straight into the family's calendar, so a work diary full of stand-ups
+    # landed next to the school run and the only way back was deleting them one
+    # at a time. With review=True the events become candidates instead, and the
+    # person picks what belongs to the household before anything is created.
+    #
+    # Defaults to False so an older app build — one that has not taken the OTA
+    # yet — keeps working exactly as it did rather than importing nothing.
+    review: bool = False
+
+
+class CandidateDecisionIn(BaseModel):
+    keep: List[str] = Field(default_factory=list)
+    drop: List[str] = Field(default_factory=list)
+    # Applied to everything kept in this pass. Sharing is asked once, at the
+    # end, about the batch — which is how a person actually thinks about it
+    # ("these are all for the family") rather than event by event.
+    shared: bool = False
+    assignee: Optional[str] = None
 
 
 # A digest at 07:30 has to mean 07:30 where the person actually is. Nothing in
@@ -3823,6 +3850,10 @@ _FAMILY_SCOPED_COLLECTIONS = (
     # This list is what /auth/delete-account promises the store and the user;
     # a collection missing from it is a deletion that silently did not happen.
     "messages", "expense_items",
+    # Proposed events waiting on a decision. Caught by the drift check in
+    # test_deletion_completeness the moment the collection was added, which is
+    # what that test is for.
+    "event_candidates",
     # Diagnostic rows, but they carry user_id, family_id and the person's NAME.
     # They self-expire after 14 days, which is a fine retention rule and a poor
     # answer to "delete my data": it would keep a deleted user's name for another
@@ -8165,6 +8196,7 @@ async def create_card(payload: CardIn, user=Depends(require_user)):
         "image_base64": payload.image_base64,
         "recurrence": payload.recurrence,
         "reminder_minutes": payload.reminder_minutes,
+        "location": (payload.location or "").strip()[:200],
         "created_at": utcnow(),
         "completed_at": None,
         "created_by_user_id": user["user_id"],
@@ -8271,6 +8303,9 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
         if payload.reminder_minutes < 0:
             raise HTTPException(status_code=400, detail="Reminder must be zero or positive")
         changes["reminder_minutes"] = payload.reminder_minutes
+
+    if payload.location is not None:
+        changes["location"] = payload.location.strip()[:200]
 
     if payload.shared is not None:
         # Only the person who added a private item may change its sharing here
@@ -9146,6 +9181,177 @@ async def _fetch_google_calendar_events(access_token: str, days: int) -> list[di
     return data.get("items") or []
 
 
+# -----------------------------------------------------------------------------
+# Event candidates: nothing reaches the calendar without being chosen
+# -----------------------------------------------------------------------------
+#
+# A candidate is a proposed event that has not been accepted yet. Every source
+# that can suggest an event — a calendar import today, a scanned school letter
+# or a forwarded email later — writes candidates, and the person keeps or drops
+# each one before a card exists.
+#
+# Deliberately its own collection rather than a flag on `cards`. A `pending`
+# card would have to be filtered out of the calendar, the feed, search, the
+# conflict check, the reminder scheduler and every future query; one missed
+# filter puts an unreviewed event on someone's calendar, and that is exactly
+# the failure this feature exists to prevent. A separate collection cannot
+# leak into a query that does not name it.
+CANDIDATE_TTL_DAYS = 30
+
+
+def public_candidate(doc: dict) -> dict:
+    return {
+        "candidate_id": doc.get("candidate_id"),
+        "type": doc.get("type") or "TASK",
+        "title": doc.get("title") or "",
+        "description": doc.get("description") or "",
+        "due_date": iso(doc.get("due_date")),
+        "location": doc.get("location") or "",
+        "recurrence": doc.get("recurrence") or "none",
+        "source_kind": doc.get("source_kind") or "",
+        "created_at": iso(doc.get("created_at")),
+    }
+
+
+async def _candidate_exists(database: Any, family_id: str, dedupe_key: str) -> bool:
+    if not dedupe_key:
+        return False
+    found = await database["event_candidates"].find_one(
+        {"family_id": family_id, "dedupe_key": dedupe_key}, {"_id": 0})
+    return found is not None
+
+
+async def _stage_candidate(database: Any, user: dict, card: dict,
+                           source_kind: str, dedupe_key: str = "",
+                           location: str = "") -> str:
+    """Park a proposed event. The shape is the card it will become, so
+    accepting is a copy rather than a second, drifting construction."""
+    candidate_id = new_id("cand")
+    doc = dict(card)
+    doc.pop("card_id", None)
+    doc.update({
+        "candidate_id": candidate_id,
+        "family_id": user["family_id"],
+        # Candidates belong to the person who pulled them in, not the family:
+        # someone else's work diary is not the household's business until they
+        # say it is.
+        "created_by_user_id": user["user_id"],
+        "source_kind": source_kind,
+        "dedupe_key": dedupe_key,
+        "location": location,
+        "created_at": utcnow(),
+    })
+    await database["event_candidates"].insert_one(doc)
+    return candidate_id
+
+
+@app.get("/api/calendar/candidates")
+async def list_event_candidates(user=Depends(require_user), database=Depends(get_db)):
+    """What a sync or a scan proposed, still waiting on a decision."""
+    # Sweep anything nobody ever answered. A queue that only grows becomes a
+    # thing people avoid opening.
+    await database["event_candidates"].delete_many({
+        "family_id": user["family_id"],
+        "created_at": {"$lt": utcnow() - timedelta(days=CANDIDATE_TTL_DAYS)},
+    })
+
+    items = []
+    cursor = database["event_candidates"].find(
+        {"family_id": user["family_id"],
+         "created_by_user_id": user["user_id"]},
+        {"_id": 0},
+    ).sort("due_date", 1)
+    async for doc in cursor:
+        items.append(public_candidate(doc))
+    return {"candidates": items, "count": len(items)}
+
+
+@app.post("/api/calendar/candidates/decide")
+async def decide_event_candidates(payload: CandidateDecisionIn,
+                                  user=Depends(require_user),
+                                  database=Depends(get_db)):
+    """Keep some, drop the rest — and say once who they are for.
+
+    Scoped to the caller's own candidates twice over (family AND user), so one
+    parent cannot accept or discard what the other pulled in.
+    """
+    database = database or get_db()
+    keep_ids = [c for c in (payload.keep or []) if isinstance(c, str)][:200]
+    drop_ids = [c for c in (payload.drop or []) if isinstance(c, str)][:200]
+    overlap = set(keep_ids) & set(drop_ids)
+    if overlap:
+        raise HTTPException(
+            status_code=400,
+            detail="A candidate cannot be both kept and dropped")
+
+    assignee = (payload.assignee or "").strip()
+    shared = bool(payload.shared)
+    # Same rule the card routes use: something handed to another person has to
+    # be visible to them, or the hand-off is a note to nobody.
+    if assignee and assignee.lower() != (user.get("name") or "").strip().lower():
+        shared = True
+
+    created = 0
+    for candidate_id in keep_ids:
+        doc = await database["event_candidates"].find_one(
+            {"family_id": user["family_id"],
+             "created_by_user_id": user["user_id"],
+             "candidate_id": candidate_id},
+            {"_id": 0},
+        )
+        if not doc:
+            continue
+        card = {
+            "card_id": new_id("card"),
+            "family_id": user["family_id"],
+            "type": doc.get("type") or "TASK",
+            "title": doc.get("title") or "Calendar event",
+            "description": doc.get("description") or "",
+            "assignee": assignee or user.get("name"),
+            "due_date": doc.get("due_date"),
+            "status": "OPEN",
+            "source": doc.get("source") or "CALENDAR",
+            "image_base64": None,
+            "recurrence": doc.get("recurrence") or "none",
+            "reminder_minutes": doc.get("reminder_minutes", 60),
+            "location": doc.get("location") or "",
+            "google_event_id": doc.get("google_event_id"),
+            "google_ical_uid": doc.get("google_ical_uid"),
+            "external_source": doc.get("external_source"),
+            "created_at": utcnow(),
+            "completed_at": None,
+            "created_by_user_id": user["user_id"],
+            "shared": shared,
+        }
+        if shared and card["assignee"]:
+            # Same scoping the card routes use: an assigned card is visible to
+            # the parents and the assignee, not to the whole household.
+            visible = await _assigned_visibility(
+                database, user["family_id"], user["user_id"], card["assignee"])
+            if visible:
+                card["visible_to"] = visible
+        await database["cards"].insert_one(card)
+        await database["event_candidates"].delete_many(
+            {"family_id": user["family_id"], "candidate_id": candidate_id})
+        created += 1
+        if shared and assignee:
+            await notify_assignment(database, user, card, assignee)
+
+    dropped = 0
+    for candidate_id in drop_ids:
+        result = await database["event_candidates"].delete_many({
+            "family_id": user["family_id"],
+            "created_by_user_id": user["user_id"],
+            "candidate_id": candidate_id,
+        })
+        dropped += result.deleted_count
+
+    remaining = await database["event_candidates"].count_documents(
+        {"family_id": user["family_id"], "created_by_user_id": user["user_id"]})
+    return {"ok": True, "created": created, "dropped": dropped,
+            "remaining": remaining}
+
+
 @app.post("/api/calendar/import")
 async def import_google_calendar(payload: CalendarImportIn, user=Depends(require_user)):
     database = get_db()
@@ -9273,6 +9479,7 @@ async def import_google_calendar(payload: CalendarImportIn, user=Depends(require
             "image_base64": None,
             "recurrence": "yearly" if is_bday else "none",
             "reminder_minutes": 60,
+            "location": location,
             "google_event_id": event_id,
             "google_ical_uid": event.get("iCalUID"),
             "external_source": "google_calendar",
@@ -9283,6 +9490,22 @@ async def import_google_calendar(payload: CalendarImportIn, user=Depends(require
             "created_by_user_id": user["user_id"],
             "shared": False,
         }
+
+        if payload.review:
+            # Staged, not created. The dedupe key is the provider's event id,
+            # so syncing twice before the person has answered does not queue
+            # the same school concert twice.
+            if await _candidate_exists(database, user["family_id"], event_id):
+                skipped += 1
+            else:
+                await _stage_candidate(
+                    database, user, card,
+                    source_kind="google_calendar",
+                    dedupe_key=event_id,
+                    location=location,
+                )
+                imported += 1
+            continue
 
         await database["cards"].insert_one(card)
         imported += 1
@@ -9503,6 +9726,7 @@ async def import_microsoft_calendar(payload: CalendarImportIn, user=Depends(requ
             "image_base64": None,
             "recurrence": "yearly" if is_bday else "none",
             "reminder_minutes": 60,
+            "location": location,
             "ms_event_id": event_id,
             "google_ical_uid": event.get("iCalUId"),
             "external_source": "microsoft_calendar",
@@ -9512,6 +9736,22 @@ async def import_microsoft_calendar(payload: CalendarImportIn, user=Depends(requ
             "created_by_user_id": user["user_id"],
             "shared": False,
         }
+
+        if payload.review:
+            # Staged, not created. The dedupe key is the provider's event id,
+            # so syncing twice before the person has answered does not queue
+            # the same school concert twice.
+            if await _candidate_exists(database, user["family_id"], event_id):
+                skipped += 1
+            else:
+                await _stage_candidate(
+                    database, user, card,
+                    source_kind="microsoft_calendar",
+                    dedupe_key=event_id,
+                    location=location,
+                )
+                imported += 1
+            continue
 
         await database["cards"].insert_one(card)
         imported += 1
