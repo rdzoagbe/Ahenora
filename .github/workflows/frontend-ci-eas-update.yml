@@ -69,6 +69,22 @@ jobs:
       - name: Run lint
         run: npm run lint --if-present
 
+      # Neither of these was ever wired up, and the expo-update job below
+      # `needs: frontend-ci` — so every OTA that has ever shipped to a real
+      # Android phone was gated on LINT ALONE. package.json has had `test` and
+      # `typecheck` scripts the whole time; CI simply never called them. A type
+      # error or a failing test could not turn this workflow red, which is the
+      # same failure as the backend job skipping its suite: the check existed,
+      # it just was not measuring what its name implied.
+      #
+      # No --if-present here, deliberately. These scripts must exist; if one is
+      # renamed away, the job should go red rather than quietly stop checking.
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Run tests
+        run: npm test -- --ci
+
 
   web-export:
     name: Rebuild the ahenora.com web app

@@ -3814,6 +3814,20 @@ _FAMILY_SCOPED_COLLECTIONS = (
     "rewards", "routine_logs", "routines", "shopping_history", "shopping_list",
     "star_transactions", "templates", "vault", "expense_settlements", "gift_pots",
     "santa_draws",
+    # Added after a review found them missing from BOTH deletion paths. Every
+    # one carries family_id and every one is personal content:
+    #   messages       — the household chat and the parent↔teen threads, i.e.
+    #                    the most sensitive text in the product, kept forever
+    #                    after the household that wrote it asked to be erased.
+    #   expense_items  — the itemised lines behind each expense.
+    # This list is what /auth/delete-account promises the store and the user;
+    # a collection missing from it is a deletion that silently did not happen.
+    "messages", "expense_items",
+    # Diagnostic rows, but they carry user_id, family_id and the person's NAME.
+    # They self-expire after 14 days, which is a fine retention rule and a poor
+    # answer to "delete my data": it would keep a deleted user's name for another
+    # fortnight. Found by the drift check in test_deletion_completeness.
+    "client_errors",
 )
 
 
@@ -3824,8 +3838,13 @@ async def _purge_family(database: Any, family_id: str) -> None:
 
 
 async def _purge_user_account(database: Any, user_id: str, email: str) -> None:
+    # web_push_subscriptions was missing: a browser subscription outlived the
+    # account that created it, so a deleted user's endpoint stayed in the table
+    # the daily push job reads. _push_zones() reads BOTH notification_tokens and
+    # web_push_subscriptions, so listing only the first deleted half the ways
+    # this person could still be contacted.
     for collection in ("user_sessions", "notification_tokens", "notification_settings",
-                       "support_tickets"):
+                       "support_tickets", "web_push_subscriptions"):
         await database[collection].delete_many({"user_id": user_id})
     if email:
         await database["family_invites"].delete_many({"email": email, "status": "pending"})
@@ -3967,6 +3986,12 @@ async def delete_account(payload: DeleteAccountIn, user=Depends(require_user)):
     await send_account_deleted_email(email, fresh.get("name") or "")
 
     return {"ok": True, "deleted_household": deleted_household}
+
+
+# Bounds how often the RevenueCat webhook prints its diagnostic line. See the
+# comment at the mismatch branch: the endpoint is unauthenticated, so the line
+# is reachable by anyone who can send a POST.
+_rc_mismatch_log: dict = {"count": 0, "window_started": None}
 
 
 def _secret_fingerprint(value: str) -> dict:
@@ -9707,6 +9732,26 @@ async def revenuecat_webhook(payload: dict, authorization: Optional[str] = Heade
         # being useful for recovering a secret.
         #
         # Logged, never returned: the caller here is unauthenticated.
+        #
+        # Rate-limited for the same reason. This endpoint takes unauthenticated
+        # POSTs, so anyone can make it log — and the line repeats the LIVE
+        # secret's length and fingerprint every time. Unbounded, that is a
+        # stranger's lever on our log volume and an endlessly repeated hint
+        # about a secret we hold. The diagnostics exist to debug a real
+        # misconfiguration, which needs a handful of lines, not a stream: after
+        # the first few in a window it drops to a bare count with no
+        # fingerprints at all.
+        _rc_mismatch_log["count"] += 1
+        now_ts = utcnow()
+        started = _rc_mismatch_log["window_started"]
+        if started is None or (now_ts - started).total_seconds() > 3600:
+            _rc_mismatch_log["window_started"] = now_ts
+            _rc_mismatch_log["count"] = 1
+        if _rc_mismatch_log["count"] > 10:
+            if _rc_mismatch_log["count"] % 100 == 0:
+                log.warning("RC webhook auth mismatch x%d this hour (details "
+                            "suppressed)", _rc_mismatch_log["count"])
+            raise HTTPException(status_code=401, detail="Bad signature")
         log.warning(
             "RC webhook auth mismatch: supplied_len=%d expected_len=%d "
             "supplied_sha=%s expected_sha=%s header_present=%s",

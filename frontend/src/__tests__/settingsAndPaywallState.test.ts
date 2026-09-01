@@ -106,21 +106,52 @@ describe('paywall billing cycle', () => {
 });
 
 describe('teen hint', () => {
+  it('is no longer re-flashed on every focus', () => {
+    // This was the actual bug. A useFocusEffect set it true and hid it after
+    // two seconds, EVERY time the Kids tab was focused — so the announcement
+    // replayed forever. Nothing may set it from a focus effect again.
+    expect(KIDS).not.toContain('setShowTeenHint');
+    const focusEffect = KIDS.slice(
+      KIDS.indexOf('useFocusEffect(useCallback(() => {'),
+      KIDS.indexOf('}, []));', KIDS.indexOf('useFocusEffect(useCallback(() => {')));
+    expect(focusEffect.length).toBeGreaterThan(20);
+    expect(focusEffect).not.toContain('TeenHint');
+  });
+
   it('starts hidden, so a storage failure shows nothing rather than nagging', () => {
-    expect(KIDS).toContain('const [showTeenHint, setShowTeenHint] = useState(false)');
+    expect(KIDS).toContain('const [teenHintEligible, setTeenHintEligible] = useState(false)');
   });
 
   it('is shown once and remembered', () => {
-    expect(KIDS).toContain('TEEN_HINT_SEEN_KEY');
     expect(KIDS).toContain('AsyncStorage.getItem(TEEN_HINT_SEEN_KEY)');
     expect(KIDS).toContain("AsyncStorage.setItem(TEEN_HINT_SEEN_KEY, '1')");
   });
 
-  it('marks it seen on display, because the hint has no dismiss control', () => {
-    const effect = KIDS.slice(
-      KIDS.indexOf('AsyncStorage.getItem(TEEN_HINT_SEEN_KEY)'),
-      KIDS.indexOf('.catch', KIDS.indexOf('AsyncStorage.getItem(TEEN_HINT_SEEN_KEY)')));
-    expect(effect).toContain('setShowTeenHint(true)');
-    expect(effect).toContain('setItem');
+  it('marks it seen only once it is really on screen', () => {
+    // Reading eligibility on mount is fine; WRITING on mount would burn the
+    // announcement for a parent who arrived with a child profile open, since
+    // the hint does not render in that state. The write is gated on the same
+    // value that decides whether it is drawn.
+    expect(KIDS).toContain('const showTeenHint = teenHintEligible && !isFocused;');
+    const writer = KIDS.slice(
+      KIDS.indexOf('if (!showTeenHint) return;'),
+      KIDS.indexOf('}, [showTeenHint]);'));
+    expect(writer.length).toBeGreaterThan(20);
+    expect(writer).toContain("AsyncStorage.setItem(TEEN_HINT_SEEN_KEY, '1')");
+  });
+
+  it('declares the young-role helper before anything uses it', () => {
+    // useMemo runs its factory during render, so a helper declared below a
+    // useMemo that calls it is a ReferenceError on first paint, not a lint nit.
+    // tsc does not catch this shape.
+    const helper = SETTINGS.indexOf('const isYoung =');
+    const firstUse = SETTINGS.indexOf('members.filter(isYoung)');
+    expect(helper).toBeGreaterThan(-1);
+    expect(firstUse).toBeGreaterThan(helper);
+  });
+
+  it('counts teens as young people, matching the server', () => {
+    // The server meters slots with ^(child|teen)$; the client must agree.
+    expect(SETTINGS).toContain("const YOUNG_ROLES = ['child', 'teen']");
   });
 });

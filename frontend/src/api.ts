@@ -953,7 +953,12 @@ export interface PlanAdoption {
   paying_families: number;
   tester_households: number;
   free_premium_families: number;
-  active_families_with_device: number;
+  // Renamed server-side: it counts households that OPENED THE APP, which is
+  // not the same as households that once registered a device. The screen kept
+  // reading the old name and rendered a blank cell — a dashboard silently
+  // showing nothing where a number belongs is worse than one showing zero.
+  active_families: number;
+  families_with_a_device: number;
   active_paying_families: number;
   pct_active_paying: number;
   active_free_premium_families: number;

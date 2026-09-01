@@ -114,17 +114,25 @@ class PublishSteps(unittest.TestCase):
     def test_a_narrowed_platform_says_why_and_when_it_goes_back(self):
         # `all` is the steady state. Anything narrower is a temporary measure,
         # and a temporary measure with no written expiry becomes permanent.
-        for path in WORKFLOWS:
+        #
+        # Read the flag from the PUBLISH STEP, not from the file. Searching the
+        # whole file found `--platform web` from the web-export job first, so
+        # this check was reading a different flag than the one it names — and
+        # would have gone red the moment someone did the flip-back it exists to
+        # encourage. A guard that fires on the correct action is worse than no
+        # guard, so it reuses the same step parser as every other test here.
+        for wf, _, run in publish_steps():
+            path = next(p for p in WORKFLOWS if os.path.basename(p) == wf)
             with open(path) as fh:
                 text = fh.read()
-            match = re.search(r"--platform\s+(\S+)", text)
+            match = re.search(r"--platform\s+(\S+)", run)
             if match and match.group(1) != "all":
                 self.assertIn("temporar", text.lower(),
-                              f"{os.path.basename(path)} narrows the platform "
-                              f"without saying it is temporary")
+                              f"{wf} narrows the platform without saying it "
+                              f"is temporary")
                 self.assertIn("back to", text.lower(),
-                              f"{os.path.basename(path)} narrows the platform "
-                              f"without saying when it goes back to all")
+                              f"{wf} narrows the platform without saying when "
+                              f"it goes back to all")
 
 
 if __name__ == "__main__":

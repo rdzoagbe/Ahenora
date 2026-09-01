@@ -52,6 +52,19 @@ function formatBytes(bytes?: number | null) {
   return `${Math.max(1, Math.round(value / 1024))} KB`;
 }
 
+// Teens are not adults. The server meters slots with ^(child|teen)$ and the
+// kids screen lists teens alongside children, so counting "not child" as an
+// adult made two parents and a teen read "3 adults" in the one place that
+// summarises your own family — and disagreed with the server's own idea of who
+// is a grown-up. Non-parent adults (a grandparent, a nanny) stay adults.
+//
+// Module scope on purpose: declared inside the component it would be a new
+// function every render, which either defeats the useMemo that uses it or
+// leaves an exhaustive-deps warning that is wrong to silence.
+const YOUNG_ROLES = ['child', 'teen'];
+const isYoung = (m: { role?: string }) =>
+  YOUNG_ROLES.includes(m.role?.toLowerCase() || '');
+
 export default function Settings() {
   const { user, t, lang, logout, subscription, appearanceMode, setAppearance, inviteRequested, clearInviteRequest, membersRequested, clearMembersRequest } = useStore();
   const router = useRouter();
@@ -207,8 +220,10 @@ export default function Settings() {
   // Case-insensitive on purpose: the backend queries roles with ^child$/i,
   // so the client must not be stricter than the server about casing. The
   // kids page already compares this way.
-  const childMembers = useMemo(() => members.filter((m) => m.role?.toLowerCase() === 'child'), [members]);
-  const adultCount = Math.max(1, members.filter((m) => m.role?.toLowerCase() !== 'child').length);
+  // Children AND teens: both are young people in the household, and the
+  // summary line counts them together so adults + young people = everyone.
+  const childMembers = useMemo(() => members.filter(isYoung), [members]);
+  const adultCount = Math.max(1, members.filter((m) => !isYoung(m)).length);
   // Adults with their own sign-in AND a parenting role are the co-parents;
   // a grandparent or nanny with an account is family, not a co-parent.
   const coParents = useMemo(
@@ -673,7 +688,7 @@ export default function Settings() {
               <View style={styles.planDivider} />
               <View style={styles.planCol}>
                 <Text style={styles.planTitle}>{memberSlotsUsed} member{memberSlotsUsed === 1 ? '' : 's'}</Text>
-                <Text style={styles.planSub}>{adultCount} adult{adultCount === 1 ? '' : 's'}, {childMembers.length} kid{childMembers.length === 1 ? '' : 's'}</Text>
+                <Text style={styles.planSub}>{adultCount} adult{adultCount === 1 ? '' : 's'}, {childMembers.length} young{childMembers.length === 1 ? '' : ''} {childMembers.length === 1 ? 'person' : 'people'}</Text>
               </View>
               <ChevronRight color={ui.muted} size={20} />
             </Card>

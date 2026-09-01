@@ -90,10 +90,17 @@ jobs:
       # 127 on the next merge to main.
       - name: Publish update to the preview channel
         working-directory: frontend
+        # The dispatch input goes through env, never straight into the script.
+        # Interpolated with ${{ }} it is pasted into the shell BEFORE bash sees
+        # it, so a message containing a quote and a semicolon runs as commands
+        # — in the one job that holds EXPO_TOKEN and publishes code to real
+        # devices. As an env var it is only ever data.
+        env:
+          UPDATE_MESSAGE: ${{ github.event.inputs.message || 'merge to main' }}
         run: |
           npx eas-cli@latest update \
             --platform android \
             --branch preview \
             --environment preview \
-            --message "${{ github.event.inputs.message || 'merge to main' }} ($GITHUB_SHA)" \
+            --message "$UPDATE_MESSAGE ($GITHUB_SHA)" \
             --non-interactive

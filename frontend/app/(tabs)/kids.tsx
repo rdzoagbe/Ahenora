@@ -56,8 +56,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { logger } from '../../src/logger';
 
 // The teen-accounts hint is a one-time announcement, so what it needs is a
-// memory, not a timer. Kept per household: someone who joins a second family
-// has not been told about it there.
+// memory, not a timer. Scoped to the device, not the household: the key has no
+// family id in it, and an earlier version of this comment claimed it did. The
+// announcement is about a FEATURE of the app rather than about your family, so
+// device scope is the right scope — but the comment has to say what the code
+// does, not what would have sounded better.
 const TEEN_HINT_SEEN_KEY = 'ahenora.teenHintSeen';
 import { recordWin } from '../../src/reviewPrompt';
 import { isAlreadySettled, mergeRedemptions, restoreRedemption } from '../../src/redemptions';
@@ -150,28 +153,29 @@ export default function Kids() {
   // Teen-finished tasks waiting for a parent to award the star.
   const [teenApprovals, setTeenApprovals] = useState<{ card_id: string; title: string; teen_name: string }[]>([]);
   const [approvingId, setApprovingId] = useState<string | null>(null);
-  // The teen-accounts hint. Starts hidden and is switched on only if this
-  // device has never been shown it — the reverse of what it used to do, which
-  // was start visible and never turn off, because the "flashes briefly then
-  // hides" behaviour its comment described was never actually written.
-  // Starting hidden also means a storage failure shows nothing rather than
-  // nagging forever with no way to make it stick.
-  const [showTeenHint, setShowTeenHint] = useState(false);
 
-  // Show it once, then remember. Marking it seen as soon as it goes up — not
-  // on a dismiss tap — is deliberate: there is no dismiss control on this
-  // hint, so "seen" has to mean displayed, or it would never be marked at all.
+
+  // Show it once, then remember. Two separate steps, and the split matters.
+  //
+  // Reading only says whether this device has already been told. Writing
+  // happens when the hint is genuinely ON SCREEN — see the effect further
+  // down — because the hint renders inside the "you have children" branch. A
+  // parent who opens Kids before adding a child would otherwise burn the
+  // announcement without ever having seen it, which is the same bug as showing
+  // it forever, just in the opposite direction and harder to notice.
+  //
+  // There is no dismiss control, so "seen" can only mean displayed.
+  const [teenHintEligible, setTeenHintEligible] = useState(false);
   useEffect(() => {
     let cancelled = false;
     AsyncStorage.getItem(TEEN_HINT_SEEN_KEY)
       .then((seen) => {
-        if (cancelled || seen) return;
-        setShowTeenHint(true);
-        return AsyncStorage.setItem(TEEN_HINT_SEEN_KEY, '1');
+        if (!cancelled && !seen) setTeenHintEligible(true);
       })
-      .catch((error) => logger.warn('Teen hint state failed:', error));
+      .catch((error) => logger.warn('Teen hint read failed:', error));
     return () => { cancelled = true; };
   }, []);
+
 
   // Which day the quick-adds are being credited to. Null means today, which
   // is the ordinary case; picking a day is how a parent fills in a missed one.
@@ -329,6 +333,18 @@ export default function Kids() {
   }, []);
   const activeChild = children.find((c) => c.member_id === selectedChild) || children[0];
   const isFocused = Boolean(focusedChild) && Boolean(activeChild);
+
+  // The hint's real gate is !isFocused: with a child profile open, Kids renders
+  // that profile and the hint never appears. Marking it seen on mount would
+  // therefore burn the announcement for a parent who happened to arrive with a
+  // child selected — the same bug as showing it forever, in the opposite
+  // direction and harder to notice. Mark it when it is genuinely on screen.
+  const showTeenHint = teenHintEligible && !isFocused;
+  useEffect(() => {
+    if (!showTeenHint) return;
+    AsyncStorage.setItem(TEEN_HINT_SEEN_KEY, '1')
+      .catch((error) => logger.warn('Teen hint write failed:', error));
+  }, [showTeenHint]);
   const stars = activeChild?.stars || 0;
   // The bank is `stars`; the weekly meter is `week_earned`. A weekend treat is
   // measured against the week's earnings, everything else against the bank.
@@ -575,10 +591,9 @@ export default function Kids() {
   loadRef.current = load;
   useFocusEffect(useCallback(() => {
     loadRef.current();
-    // Flash the teen-accounts hint on open, then hide it after 2s.
-    setShowTeenHint(true);
-    const timer = setTimeout(() => setShowTeenHint(false), 2000);
-    return () => clearTimeout(timer);
+    // The teen-accounts hint used to be re-flashed here on every focus, which
+    // is why it kept reappearing long after it had been read. It is a one-time
+    // announcement now, owned by the effect near the top of this component.
   }, []));
 
   // Reload in place after a capture from the global "+".
@@ -1424,9 +1439,10 @@ export default function Kids() {
               </View>
               ) : null}
 
-              {/* New-feature nudge: teens get their own account. Flashes for a
-                  couple of seconds on open, then hides so it never nags. */}
-              {!isFocused && showTeenHint ? (
+              {/* New-feature nudge: teens get their own account. Shown once
+                  per device and then remembered; showTeenHint already carries
+                  the !isFocused gate. */}
+              {showTeenHint ? (
               <View style={styles.teenHint}>
                 <Text style={styles.teenHintNew}>NEW</Text>
                 <Text style={styles.teenHintText}>{t('kids_teen_hint')}</Text>
