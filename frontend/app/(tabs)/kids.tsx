@@ -2663,7 +2663,13 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   teenChipBadge: { backgroundColor: ui.orangeSoft, borderRadius: 99, paddingHorizontal: 7, paddingVertical: 2, marginLeft: 6 },
   teenChipBadgeText: { fontFamily: 'Inter_800ExtraBold', fontSize: 9, letterSpacing: 0.3, textTransform: 'uppercase' },
   teenHint: { flexDirection: 'row', alignItems: 'center', gap: 9, backgroundColor: ui.orangeSoft, borderRadius: 14, borderWidth: 1, borderColor: 'rgba(245,101,25,0.22)', paddingVertical: 10, paddingHorizontal: 12, marginBottom: 14 },
-  teenHintNew: { fontFamily: 'Inter_800ExtraBold', fontSize: 10, letterSpacing: 0.4, color: '#fff', backgroundColor: ui.orange, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 99, overflow: 'hidden' },
+  // White on ui.orange measures 3.11:1 — below the 4.5 WCAG AA needs for text
+  // this size. It was never caught because the badge used to be removed after
+  // two seconds, so the contrast harness photographed the screen without it;
+  // making the hint persist is what finally made the defect measurable. Dark
+  // ink on the same orange is 5.82:1, and ui.orange is identical in both
+  // themes, so one pair fixes light and dark together.
+  teenHintNew: { fontFamily: 'Inter_800ExtraBold', fontSize: 10, letterSpacing: 0.4, color: '#2A0E02', backgroundColor: ui.orange, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 99, overflow: 'hidden' },
   teenHintText: { flex: 1, fontFamily: 'Inter_600SemiBold', fontSize: 12.5, color: ui.orangeText, lineHeight: 17 },
   approvalsCard: { backgroundColor: ui.card, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(245,101,25,0.28)', padding: 16, marginBottom: 14 },
   approvalsTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 16, color: ui.text, letterSpacing: -0.2 },
