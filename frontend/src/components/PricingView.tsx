@@ -88,7 +88,28 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
   const { t, subscription, user, refreshSubscription } = useStore();
   const ui = useUI();
   const styles = useMemo(() => createStyles(ui), [ui]);
-  const [cycle, setCycle] = useState<BillingCycle>('yearly');
+  // Which cycle the screen is showing. Derived rather than synced: an effect
+  // that pushed the subscription into state would render once on the wrong
+  // value first, and lint is right to object to it.
+  //
+  // Yearly is the right default for someone deciding — it is the better deal
+  // and the saving is the point of the toggle. It is the wrong thing to show
+  // someone who has already decided: a monthly subscriber opening this screen
+  // saw yearly prices with "billed yearly" under them, which reads as a
+  // statement about THEIR subscription rather than an offer.
+  //
+  // Guarded on a PAID plan, not merely on the field being present: a family is
+  // created with billing_cycle "monthly" whatever it is paying (server.py
+  // creates it that way), so keying off the field alone would snap every free
+  // account to monthly and quietly delete the yearly default for exactly the
+  // people the default exists for.
+  //
+  // A null pick means "not touched yet", so once the user works the toggle
+  // their choice wins and a background refresh cannot drag it back mid-decision.
+  const [pickedCycle, setPickedCycle] = useState<BillingCycle | null>(null);
+  const subscribedCycle: BillingCycle | null =
+    subscription && subscription.plan !== 'village' ? subscription.billing_cycle : null;
+  const cycle: BillingCycle = pickedCycle ?? subscribedCycle ?? 'yearly';
   const [busy, setBusy] = useState(false);
   // The Stripe config (web only): whether card checkout is on, and which tiers
   // are buyable yet. Null until asked.
@@ -322,7 +343,7 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
         </View>
 
         <View>
-          <BillingToggle value={cycle} onChange={setCycle} t={t} styles={styles} />
+          <BillingToggle value={cycle} onChange={setPickedCycle} t={t} styles={styles} />
           <Text style={styles.billingNote}>
             {t('price_billing_note')}
           </Text>

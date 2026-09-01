@@ -219,6 +219,25 @@ export default function Settings() {
     [members],
   );
   const isCoParented = coParents.length >= 2;
+  // What this group actually contains, in its own words. It used to read
+  // "N slots" from member_slots_used, which is every family_members row plus
+  // every pending invite — children included. So a household of two adults and
+  // three children announced "5 slots" above a list showing two people, and the
+  // header described a different set than the thing underneath it. Slots are a
+  // billing concept and still belong on the plan row, where the limit is shown
+  // beside them and the number means something.
+  const householdSummary = useMemo(() => {
+    // The repo's plural convention: a dedicated _one key, chosen at the call
+    // site. "1 adults" in the one place that summarises your own family would
+    // be a small thing done carelessly.
+    const n = (key: string, count: number) =>
+      t(count === 1 ? `${key}_one` : key, { count });
+    const pending = invites.filter((i) => i.status === 'pending').length;
+    const parts = [n('set_adults_count', adultCount)];
+    if (childMembers.length) parts.push(n('set_children_count', childMembers.length));
+    if (pending) parts.push(n('set_invites_pending_count', pending));
+    return parts.join(' · ');
+  }, [adultCount, childMembers.length, invites, t]);
   const planLabel = subscription?.plan === 'family_office' ? 'Family Office' : subscription?.plan === 'executive' ? 'Executive Family' : 'Village';
   const weeklyBrief = Boolean(entitlements?.weekly_brief || subscription?.limits?.weekly_brief);
   const initial = (user?.name?.[0] || 'C').toUpperCase();
@@ -792,7 +811,7 @@ export default function Settings() {
           {groupHead('household',
             <IconTile bg={ui.orangeSoft}><Users color={ui.orange} size={18} /></IconTile>,
             t('set_household'),
-            isCoParented ? `${t('set_co_parents')}: ${coParents.map((m) => m.name).join(' & ')}` : `${memberSlotsUsed} ${t('set_slots')}`,
+            isCoParented ? `${t('set_co_parents')}: ${coParents.map((m) => m.name).join(' & ')}` : householdSummary,
             GK.household)}
           {groupOpen('household', GK.household) ? (<>
           <Card style={styles.cardPad}>

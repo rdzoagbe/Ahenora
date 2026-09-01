@@ -52,7 +52,13 @@ import { Card, IconTile, ProgressBar, ScreenHeader, UI, useUI, UIColors } from '
 import { useStore } from '../../src/store';
 import { api, logEvent, AllowanceConfig, AllowanceTxn, ChatThreadSummary, Chore, FamilyMember, Redemption, Routine, StarTransaction } from '../../src/api';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { logger } from '../../src/logger';
+
+// The teen-accounts hint is a one-time announcement, so what it needs is a
+// memory, not a timer. Kept per household: someone who joins a second family
+// has not been told about it there.
+const TEEN_HINT_SEEN_KEY = 'ahenora.teenHintSeen';
 import { recordWin } from '../../src/reviewPrompt';
 import { isAlreadySettled, mergeRedemptions, restoreRedemption } from '../../src/redemptions';
 import { webConfirm } from '../../src/confirm';
@@ -144,8 +150,28 @@ export default function Kids() {
   // Teen-finished tasks waiting for a parent to award the star.
   const [teenApprovals, setTeenApprovals] = useState<{ card_id: string; title: string; teen_name: string }[]>([]);
   const [approvingId, setApprovingId] = useState<string | null>(null);
-  // The teen-accounts hint flashes briefly on open, then gets out of the way.
-  const [showTeenHint, setShowTeenHint] = useState(true);
+  // The teen-accounts hint. Starts hidden and is switched on only if this
+  // device has never been shown it — the reverse of what it used to do, which
+  // was start visible and never turn off, because the "flashes briefly then
+  // hides" behaviour its comment described was never actually written.
+  // Starting hidden also means a storage failure shows nothing rather than
+  // nagging forever with no way to make it stick.
+  const [showTeenHint, setShowTeenHint] = useState(false);
+
+  // Show it once, then remember. Marking it seen as soon as it goes up — not
+  // on a dismiss tap — is deliberate: there is no dismiss control on this
+  // hint, so "seen" has to mean displayed, or it would never be marked at all.
+  useEffect(() => {
+    let cancelled = false;
+    AsyncStorage.getItem(TEEN_HINT_SEEN_KEY)
+      .then((seen) => {
+        if (cancelled || seen) return;
+        setShowTeenHint(true);
+        return AsyncStorage.setItem(TEEN_HINT_SEEN_KEY, '1');
+      })
+      .catch((error) => logger.warn('Teen hint state failed:', error));
+    return () => { cancelled = true; };
+  }, []);
 
   // Which day the quick-adds are being credited to. Null means today, which
   // is the ordinary case; picking a day is how a parent fills in a missed one.
