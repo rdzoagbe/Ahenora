@@ -177,11 +177,30 @@ class FrenchPage(unittest.TestCase):
 
     def test_the_prices_still_say_the_same_numbers(self):
         # Translated marketing that quietly restates a price is a promise the
-        # billing code will not keep.
-        for figure in ("33,89", "29,89"):
-            self.assertIn(figure, read("fr.html"))
-        for figure in ("33.89", "29.89"):
+        # billing code will not keep. Same figures, French separators.
+        fr = read("fr.html")
+        for figure in ("6,99", "49,99", "14,99", "149,99", "33,89", "29,89"):
+            self.assertIn(figure, fr, "missing price %s" % figure)
+        for figure in ("6.99", "49.99", "33.89"):
             self.assertIn(figure, read("index.html"))
+
+    def test_no_english_price_format_survives(self):
+        # The prices live in data-* attributes as well as in the visible
+        # markup, and attributes are not text nodes — so the copy scan passed
+        # while the page still rendered "€49.99 / year · €4.17 a month" the
+        # moment someone touched the yearly toggle. Caught by driving the
+        # toggle in a browser; guarded here by shape.
+        html = read("fr.html")
+        # Developer comments are not copy — "Monthly / yearly" describes the
+        # toggle to whoever edits this file and is never shown to anyone.
+        html = re.sub(r"<!--.*?-->", "", html, flags=re.S)
+        html = re.sub(r"^\s*//.*$", "", html, flags=re.M)
+        self.assertNotRegex(
+            html, r"&euro;\d",
+            "English price format (symbol first, decimal point) on the French page")
+        for phrase in ("/ year", "a month", "/ month"):
+            self.assertNotIn(phrase, html,
+                             "untranslated price note: %s" % phrase)
 
     def test_the_labels_javascript_writes_are_translated_too(self):
         """The CTAs are rewritten at runtime by the platform-detect script.

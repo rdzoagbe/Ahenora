@@ -312,8 +312,15 @@
   // Anyone landing here with an invite token belongs in the app, not on the
   // marketing page — forward immediately, keeping the whole query string.
   (function () {
-    if (/[?&]invite=/.test(window.location.search)) {
-      window.location.replace('/app/' + window.location.search + window.location.hash);
+    // Forward ONLY the invite token, re-encoded, onto a fixed relative path.
+    // The old version pasted the whole query string and fragment onto '/app/'
+    // and handed the result to location.replace — user-controlled text flowing
+    // straight into a navigation sink. Nothing about the rest of the query
+    // string was ever needed here, so taking one value is both safer and more
+    // honest about what this redirect is for.
+    var invite = new URLSearchParams(window.location.search).get('invite');
+    if (invite) {
+      window.location.replace('/app/?invite=' + encodeURIComponent(invite));
     }
   })();
 
@@ -354,8 +361,14 @@
     function show(cycle) {
       document.querySelectorAll('.price[data-m]').forEach(function (el) {
         var yearly = cycle === 'yearly';
-        el.innerHTML = (yearly ? el.dataset.y : el.dataset.m) +
-          ' <span>' + (yearly ? el.dataset.yNote : el.dataset.mNote) + '</span>';
+        // Built as nodes rather than an HTML string. The values come from this
+        // page's own data attributes, but assembling markup out of DOM text is
+        // the shape of an XSS bug whether or not this instance is exploitable —
+        // and it is no harder to write it as text.
+        var note = document.createElement('span');
+        note.textContent = yearly ? el.dataset.yNote : el.dataset.mNote;
+        el.textContent = (yearly ? el.dataset.y : el.dataset.m) + ' ';
+        el.appendChild(note);
       });
       document.querySelectorAll('.saving').forEach(function (el) {
         el.hidden = cycle !== 'yearly';

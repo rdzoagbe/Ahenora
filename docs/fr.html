@@ -312,8 +312,15 @@
   // Anyone landing here with an invite token belongs in the app, not on the
   // marketing page — forward immediately, keeping the whole query string.
   (function () {
-    if (/[?&]invite=/.test(window.location.search)) {
-      window.location.replace('/app/' + window.location.search + window.location.hash);
+    // Forward ONLY the invite token, re-encoded, onto a fixed relative path.
+    // The old version pasted the whole query string and fragment onto '/app/'
+    // and handed the result to location.replace — user-controlled text flowing
+    // straight into a navigation sink. Nothing about the rest of the query
+    // string was ever needed here, so taking one value is both safer and more
+    // honest about what this redirect is for.
+    var invite = new URLSearchParams(window.location.search).get('invite');
+    if (invite) {
+      window.location.replace('/app/?invite=' + encodeURIComponent(invite));
     }
   })();
 
@@ -354,8 +361,14 @@
     function show(cycle) {
       document.querySelectorAll('.price[data-m]').forEach(function (el) {
         var yearly = cycle === 'yearly';
-        el.innerHTML = (yearly ? el.dataset.y : el.dataset.m) +
-          ' <span>' + (yearly ? el.dataset.yNote : el.dataset.mNote) + '</span>';
+        // Built as nodes rather than an HTML string. The values come from this
+        // page's own data attributes, but assembling markup out of DOM text is
+        // the shape of an XSS bug whether or not this instance is exploitable —
+        // and it is no harder to write it as text.
+        var note = document.createElement('span');
+        note.textContent = yearly ? el.dataset.yNote : el.dataset.mNote;
+        el.textContent = (yearly ? el.dataset.y : el.dataset.m) + ' ';
+        el.appendChild(note);
       });
       document.querySelectorAll('.saving').forEach(function (el) {
         el.hidden = cycle !== 'yearly';
@@ -515,7 +528,7 @@
       <div class="plans">
         <div class="plan">
           <h3>Gratuit</h3>
-          <div class="price">&euro;0</div>
+          <div class="price">0&nbsp;&euro;</div>
           <ul>
             <li>Jusqu'à deux adultes et deux enfants</li>
             <li>Tâches, agenda et listes partagées</li>
@@ -528,9 +541,9 @@
           <span class="tag">La plupart des familles</span>
           <h3>Premium</h3>
           <div class="price"
-               data-m="&euro;6.99" data-m-note="/ mois"
-               data-y="&euro;49.99" data-y-note="/ year &middot; &euro;4.17 a month">
-            &euro;6.99 <span>/ mois</span></div>
+               data-m="6,99&nbsp;&euro;" data-m-note="/ mois"
+               data-y="49,99&nbsp;&euro;" data-y-note="/ an &middot; 4,17&nbsp;&euro; par mois">
+            6,99&nbsp;&euro; <span>/ mois</span></div>
           <p class="saving" hidden>Économisez 33,89&nbsp;&euro; par an &mdash; 40&nbsp;% de moins qu'au mois</p>
           <ul>
             <li class="lead">Tout du plan Gratuit, plus&nbsp;:</li>
@@ -543,9 +556,9 @@
         <div class="plan">
           <h3>Foyer</h3>
           <div class="price"
-               data-m="&euro;14.99" data-m-note="/ mois"
-               data-y="&euro;149.99" data-y-note="/ year &middot; &euro;12.50 a month">
-            &euro;14.99 <span>/ mois</span></div>
+               data-m="14,99&nbsp;&euro;" data-m-note="/ mois"
+               data-y="149,99&nbsp;&euro;" data-y-note="/ an &middot; 12,50&nbsp;&euro; par mois">
+            14,99&nbsp;&euro; <span>/ mois</span></div>
           <p class="saving" hidden>Économisez 29,89&nbsp;&euro; par an &mdash; 17&nbsp;% de moins qu'au mois</p>
           <ul>
             <li class="lead">Tout du plan Premium, plus&nbsp;:</li>
