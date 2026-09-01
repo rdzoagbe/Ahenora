@@ -435,6 +435,23 @@ export type CardType = 'SIGN_SLIP' | 'RSVP' | 'TASK' | 'BIRTHDAY' | 'SCHOOL' | '
 export type CardStatus = 'OPEN' | 'DONE';
 export type Recurrence = 'none' | 'daily' | 'weekly' | 'monthly';
 
+/**
+ * A proposed event that has not been accepted yet. Produced by a calendar
+ * sync today, and by a scanned document or a forwarded email later — the
+ * review list does not care which, which is the point of the shape.
+ */
+export interface EventCandidate {
+  candidate_id: string;
+  type: CardType;
+  title: string;
+  description: string;
+  due_date?: string | null;
+  location: string;
+  recurrence: Recurrence;
+  source_kind: string;
+  created_at: string;
+}
+
 export interface Card {
   card_id: string;
   /**
@@ -455,6 +472,8 @@ export interface Card {
   image_base64?: string | null;
   recurrence: Recurrence;
   reminder_minutes: number;
+  /** Where it happens. Always a string from the server, "" when unset. */
+  location?: string;
   created_at: string;
   completed_at?: string | null;
   completed_by_name?: string | null;
@@ -1620,16 +1639,31 @@ export const api = {
       { headers: { 'X-Confirm': token } },
     );
   },
-  importGoogleCalendar: (access_token: string, days = 30) =>
+  // `review` stages the events instead of writing them straight into the
+  // calendar; the app then shows what was found and the person keeps or drops
+  // each one. Passed explicitly rather than defaulted server-side so an older
+  // build, which cannot show the review list, keeps its old behaviour instead
+  // of importing into a queue nobody can open.
+  importGoogleCalendar: (access_token: string, days = 30, review = false) =>
     request<CalendarImportResult>('/calendar/import', {
       method: 'POST',
-      body: { access_token, days },
+      body: { access_token, days, review },
     }),
-  importMicrosoftCalendar: (access_token: string, days = 30) =>
+  importMicrosoftCalendar: (access_token: string, days = 30, review = false) =>
     request<CalendarImportResult>('/calendar/import-microsoft', {
       method: 'POST',
-      body: { access_token, days },
+      body: { access_token, days, review },
     }),
+  listEventCandidates: () =>
+    request<{ candidates: EventCandidate[]; count: number }>('/calendar/candidates'),
+  decideEventCandidates: (body: {
+    keep: string[];
+    drop: string[];
+    shared: boolean;
+    assignee?: string | null;
+  }) =>
+    request<{ ok: boolean; created: number; dropped: number; remaining: number }>(
+      '/calendar/candidates/decide', { method: 'POST', body }),
   listCalendarContacts: () => request<CalendarContact[]>('/calendar/contacts'),
   // Family
   familyMembers: () => {

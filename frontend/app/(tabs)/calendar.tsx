@@ -19,6 +19,7 @@ import { api, logEvent, CalendarImportResult, Card, Carpool, GiftPot } from '../
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { AddCardModal } from '../../src/components/AddCardModal';
 import AppToast from '../../src/components/AppToast';
+import { ReviewImportSheet } from '../../src/components/ReviewImportSheet';
 import { useToast } from '../../src/hooks/useToast';
 import { localeFor, isoWeek, custodyIsOurs } from '../../src/utils/date';
 import { sendLocalNotification, syncCalendarNightly } from '../../src/notifications';
@@ -182,6 +183,7 @@ export default function Calendar() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<CalendarImportResult | null>(null);
+  const [reviewOpen, setReviewOpen] = useState(false);
   // Shown after the morning auto-pull: a quiet, dismissible note that the day
   // came in on its own, with a nudge to the Import button to double-check.
   const [morningNotice, setMorningNotice] = useState(false);
@@ -392,11 +394,17 @@ export default function Calendar() {
       const myGen = ++syncGenRef.current;
       setSyncing(true);
       try {
-        const result = await api.importGoogleCalendar(accessToken, 30);
+        // review: the events are staged, not written. Nothing reaches the
+        // calendar until the person says which ones belong there.
+        const result = await api.importGoogleCalendar(accessToken, 30, true);
         if (myGen !== syncGenRef.current) return;
         setSyncResult(result);
         await load();
-        Alert.alert(t('cal_calendar_synced'), syncSummary(result));
+        // Staged imports open the review list instead of announcing a total.
+        // A count of things already done is not something a person can act on;
+        // a list they can edit is.
+        if (result.imported > 0) setReviewOpen(true);
+        else Alert.alert(t('cal_calendar_synced'), syncSummary(result));
       } catch (e: any) {
         logger.warn('calendar sync failed', e);
         Alert.alert(t('cal_calendar_sync_failed'), e?.message || t('cal_please_try_again'));
@@ -772,11 +780,15 @@ export default function Calendar() {
           Alert.alert(t('cal_calendar_sync_failed'), t('cal_google_no_access_token'));
           return;
         }
-        const result = await api.importMicrosoftCalendar(accessToken, 30);
+        const result = await api.importMicrosoftCalendar(accessToken, 30, true);
         if (myGen !== syncGenRef.current) return;
         setSyncResult(result);
         await load();
-        Alert.alert(t('cal_calendar_synced'), syncSummary(result));
+        // Staged imports open the review list instead of announcing a total.
+        // A count of things already done is not something a person can act on;
+        // a list they can edit is.
+        if (result.imported > 0) setReviewOpen(true);
+        else Alert.alert(t('cal_calendar_synced'), syncSummary(result));
       } catch (e: any) {
         logger.warn('microsoft calendar sync failed', e);
         Alert.alert(t('cal_calendar_sync_failed'), e?.message || t('cal_please_try_again'));
@@ -1565,6 +1577,17 @@ export default function Calendar() {
 
       {/* One screen, two modes: the add sheet edits an existing card too, so
           there is no second copy of every field to drift out of step. */}
+      {/* Mounted only while open, so each review starts from a clean slate
+          without a reset effect. */}
+      {reviewOpen ? (
+      <ReviewImportSheet
+        visible
+        onClose={() => { setReviewOpen(false); load(); }}
+        onDone={(created) => {
+          if (created > 0) showToast(t('review_added', { n: created }), 'success');
+        }}
+      />
+      ) : null}
       <AddCardModal
         visible={!!editing}
         editCard={editing}
