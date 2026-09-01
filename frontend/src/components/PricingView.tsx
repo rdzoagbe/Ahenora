@@ -29,6 +29,13 @@ import { purchasePremium, restorePurchases } from '../billing';
 // paths point here instead of dead-ending on "coming soon".
 const ANDROID_STORE_URL = 'https://play.google.com/store/apps/details?id=com.householdcoo.app';
 
+// App Review guideline 3.1.2 requires the paywall itself to state the title,
+// length and price of each subscription and to link out to the Terms of Use
+// and the privacy policy. The cards carry title/length/price; these two links
+// carry the rest. They must stay on the paywall, not only in Settings.
+const TERMS_URL = 'https://ahenora.com/terms.html';
+const PRIVACY_URL = 'https://ahenora.com/privacy.html';
+
 /**
  * What to say when store billing is not available here.
  *
@@ -341,6 +348,27 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
               />
             </View>
           ))}
+        </View>
+
+        <View style={styles.legalWrap}>
+          <Text style={styles.legalNote}>{t('pricing_autorenew_note')}</Text>
+          <View style={styles.legalLinks}>
+            <PressScale
+              testID="pricing-terms-link"
+              onPress={() => Linking.openURL(TERMS_URL)}
+              style={styles.legalLinkHit}
+            >
+              <Text style={styles.legalLinkText}>{t('pricing_terms_link')}</Text>
+            </PressScale>
+            <Text style={styles.legalDot}>·</Text>
+            <PressScale
+              testID="pricing-privacy-link"
+              onPress={() => Linking.openURL(PRIVACY_URL)}
+              style={styles.legalLinkHit}
+            >
+              <Text style={styles.legalLinkText}>{t('pricing_privacy_link')}</Text>
+            </PressScale>
+          </View>
         </View>
 
         <View style={styles.faqWrap}>
@@ -892,6 +920,24 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     fontSize: 14,
     letterSpacing: 0.3,
   },
+  legalWrap: { marginTop: 22, alignItems: 'center', gap: 6 },
+  legalNote: {
+    color: ui.muted,
+    fontFamily: 'Inter_400Regular',
+    fontSize: 11,
+    lineHeight: 16,
+    textAlign: 'center',
+    paddingHorizontal: 8,
+  },
+  legalLinks: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  legalLinkHit: { paddingVertical: 6, paddingHorizontal: 6 },
+  legalLinkText: {
+    color: ui.text,
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 12,
+    textDecorationLine: 'underline',
+  },
+  legalDot: { color: ui.muted, fontFamily: 'Inter_400Regular', fontSize: 12 },
   faqWrap: { marginTop: 32 },
   faqTitle: {
     color: ui.text,
