@@ -70,7 +70,7 @@ jobs:
         working-directory: frontend
         run: npm install --no-audit --no-fund
 
-      - name: Publish Android update to the preview channel
+      - name: Publish update to the preview channel
         working-directory: frontend
         run: |
           npx eas-cli@latest update \

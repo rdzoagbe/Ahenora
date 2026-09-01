@@ -140,7 +140,7 @@ jobs:
           git push origin main
 
   expo-update:
-    name: Publish Android EAS update
+    name: Publish EAS update
     runs-on: ubuntu-latest
     needs: frontend-ci
     if: github.ref == 'refs/heads/main'
@@ -198,7 +198,7 @@ jobs:
         working-directory: frontend
         run: npm install --no-audit --no-fund
 
-      - name: Publish Android update to Expo production branch
+      - name: Publish update to the Expo production branch
         if: steps.expo_config.outputs.publish == 'true'
         working-directory: frontend
         run: |
