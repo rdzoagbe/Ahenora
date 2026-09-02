@@ -30,6 +30,10 @@ if HAVE_DEPS:
 
 PARENT = {"user_id": "u_p", "family_id": "fam1", "name": "Amara", "email": "a@x.com"}
 
+# Seven days of the three everyday jobs, plus the seventh-day bonus. Once the
+# same number as the target; now deliberately above it.
+PERFECT_WEEK = 7 * 7 + (server.FULL_WEEK_BONUS if HAVE_DEPS else 1)
+
 
 @unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
 class WeeklyStars(unittest.TestCase):
@@ -84,14 +88,29 @@ class WeeklyStars(unittest.TestCase):
         self.assertEqual(m["stars"], 46)          # bank grew
         self.assertEqual(m["week_earned"], 6)     # meter ticked
 
-    def test_a_removal_touches_the_bank_but_not_the_meter(self):
-        # Undoing a mis-award must not quietly leave weekly credit behind.
+    def test_a_removal_comes_off_the_week_as_well_as_the_bank(self):
+        # This used to leave the meter standing at 6 — under a comment saying a
+        # mis-award "must not quietly leave weekly credit behind", which is the
+        # opposite of what it asserted. Both readings now agree: take four back
+        # and the week is worth four less.
         self._award(6)
         asyncio.run(server.adjust_member_stars(
             "kid1", server.StarAdjustmentIn(delta=-4, reason="Mistake"), user=dict(PARENT)))
         m = self._member()
         self.assertEqual(m["stars"], 42)
-        self.assertEqual(m["week_earned"], 6)
+        self.assertEqual(m["week_earned"], 2)
+
+    def test_a_removal_never_pushes_the_week_below_nothing(self):
+        # The bank holds 40 from earlier weeks and 2 was earned today. Taking
+        # 10 back is a real correction against the bank, but this week cannot
+        # be worth minus eight.
+        self._award(2)
+        asyncio.run(server.adjust_member_stars(
+            "kid1", server.StarAdjustmentIn(delta=-10, reason="Rough day"), user=dict(PARENT)))
+        m = self._member()
+        self.assertEqual(m["stars"], 32)
+        self.assertEqual(m["week_earned"], 0)
+        self.assertEqual(server.public_member(m)["week_earned"], 0)
 
     def test_a_saved_reward_spends_the_bank_and_ignores_the_week(self):
         # Big saved-up reward: affordable from the 40-star bank with zero earned
@@ -225,20 +244,23 @@ class TheWeekIsTheCurrency(unittest.TestCase):
                 user=dict(self.PARENT)))
         self.assertEqual(e.exception.status_code, 400)
 
-    def test_a_full_week_of_jobs_actually_reaches_the_target(self):
-        # 7 a day over seven days is 49 — one short. The seventh active day
-        # pays the last star so a perfect week lands exactly on the target.
+    def test_a_full_week_of_jobs_clears_the_target_with_room_to_spare(self):
+        # 7 a day over seven days is 49, plus the seventh-day bonus: 50. The
+        # target is 35, so a perfect week now overshoots it — which is the
+        # right way round. The goal is the good week; the bonus is for going
+        # past it.
         for day in range(7):
             self._earn(7, day_offset=day)
         member = self._member()
-        self.assertEqual(member["week_earned"], server.WEEKLY_TARGET)
-        self.assertEqual(member["stars"], server.WEEKLY_TARGET)
+        self.assertEqual(member["week_earned"], PERFECT_WEEK)
+        self.assertEqual(member["stars"], PERFECT_WEEK)
+        self.assertGreater(member["week_earned"], server.DEFAULT_WEEKLY_TARGET)
 
     def test_the_full_week_bonus_is_paid_once(self):
         for day in range(7):
             self._earn(7, day_offset=day)
         self._earn(3, day_offset=6)      # more work on an already-counted day
-        self.assertEqual(self._member()["week_earned"], server.WEEKLY_TARGET + 3)
+        self.assertEqual(self._member()["week_earned"], PERFECT_WEEK + 3)
 
     def test_a_treat_can_be_claimed_before_the_week_is_full(self):
         # The loyalty-card rule: 50 is the celebration, not the gate. A child
@@ -284,5 +306,5 @@ class TheWeekIsTheCurrency(unittest.TestCase):
         for day in range(7):
             self._earn(7, day_offset=day)
         self._claim()
-        self.assertEqual(self._member()["week_earned"], server.WEEKLY_TARGET)
+        self.assertEqual(self._member()["week_earned"], PERFECT_WEEK)
         self.assertTrue(server.public_member(self._member())["week_claimed"])

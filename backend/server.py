@@ -1161,7 +1161,7 @@ def public_member(member: dict) -> dict:
         # The rule the week is measured against, and whether it has already
         # been cashed in — held here so the client never keeps its own copy
         # of a number the server enforces.
-        "weekly_target": WEEKLY_TARGET,
+        "weekly_target": weekly_target_for(member),
         "week_claimed": _coerce_dt(member.get("week_claimed_for")) == current_week_start(),
         "has_pin": bool(member.get("pin_hash")),
         "has_account": bool(member.get("user_id")),
@@ -1177,15 +1177,37 @@ def public_member(member: dict) -> dict:
     }
 
 
-# What a full week of the everyday jobs is worth, and the target it buys.
+# What a good week comes to, when nobody has said otherwise.
 #
-# The three quick jobs come to 7 a day — 49 over seven days, one short of the
-# target. That gap was deliberate and wrong: a goal a perfect week cannot reach
-# reads as "you did everything and it still is not enough", which is the exact
-# discouragement the weekly rhythm exists to avoid. The seventh active day pays
-# the last star, so a complete week lands exactly on 50 and the final one is
-# plainly for keeping it up.
-WEEKLY_TARGET = 50
+# This was 50: the three quick jobs are worth 7 a day, so 50 was seven perfect
+# days plus the full-week bonus — a target only a spotless week could reach.
+# Real weeks have a sick day, a sleepover and a Tuesday nobody opened the app,
+# so the goal sat permanently out of reach and the ring never filled. A target
+# nobody reaches teaches the same thing as no target at all.
+#
+# 35 is five solid days of the everyday jobs. A perfect week now overshoots it,
+# which is the right way round: the goal is the good week, and the bonus star
+# on the seventh day is for going past it.
+DEFAULT_WEEKLY_TARGET = 35
+
+# Every household counts a week differently — a five-year-old and a fifteen-
+# year-old are not on the same scale — so the number is a per-child setting and
+# this is only where it starts. Bounded so the ring stays a ring: a target of 0
+# is complete before the week begins, and one in the thousands never moves.
+MIN_WEEKLY_TARGET = 5
+MAX_WEEKLY_TARGET = 500
+
+
+def weekly_target_for(member: dict) -> int:
+    """The child's own target, or the default for everyone set up before it existed."""
+    raw = member.get("weekly_target")
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return DEFAULT_WEEKLY_TARGET
+    if value < MIN_WEEKLY_TARGET or value > MAX_WEEKLY_TARGET:
+        return DEFAULT_WEEKLY_TARGET
+    return value
 FULL_WEEK_BONUS = 1
 FULL_WEEK_DAYS = 7
 
@@ -1370,6 +1392,24 @@ def public_redemption(r: dict) -> dict:
     }
 
 
+# What a ledger entry is, and — the part that matters — whether it moved the
+# weekly meter.
+#
+# Every entry is a signed number and a free-text reason, which is not enough to
+# tell a parent taking a star back ("-5, being stubborn") from a child spending
+# their savings ("-30, Cinema"). Both are negative; only the first one comes off
+# this week. Without this the Kids screen's day row had to guess, and guessing
+# meant a saved-up reward quietly wiping out the week the child had just earned.
+STAR_KIND_STARTING = "starting"   # the balance a child was set up with
+STAR_KIND_EARN = "earn"           # a job done — banks and ticks the week
+STAR_KIND_ADJUST = "adjust"       # a parent adding or taking back — moves both
+STAR_KIND_SPEND = "spend"         # a reward redeemed — the bank only
+STAR_KIND_REFUND = "refund"       # a reward that could not be delivered
+
+# The kinds that move `week_earned`. Anything else touches the saved bank alone.
+STAR_KINDS_WEEKLY = frozenset({STAR_KIND_EARN, STAR_KIND_ADJUST})
+
+
 def public_star_transaction(transaction: dict) -> dict:
     return {
         "transaction_id": transaction["transaction_id"],
@@ -1386,6 +1426,10 @@ def public_star_transaction(transaction: dict) -> dict:
         # while the meter above — which already reads awarded_for — counted it
         # on Tuesday. The row and the meter must describe the same week.
         "awarded_for": iso(transaction.get("awarded_for")) if transaction.get("awarded_for") else None,
+        # Null on every entry written before this existed. The app reads a null
+        # the way the app used to behave: a positive counted towards the week,
+        # a negative did not — which was true of all of them back then.
+        "kind": transaction.get("kind"),
     }
 
 
@@ -3344,6 +3388,10 @@ class MemberPatchIn(BaseModel):
     # and the age was never asked for, so it had to be correctable later. Send
     # 0 to clear one that was set by mistake.
     age: Optional[int] = None
+    # How many stars this child's week is measured against. Per child, because
+    # a five-year-old and a fifteen-year-old are not on the same scale. Send 0
+    # to go back to the household default.
+    weekly_target: Optional[int] = None
 
 
 class StarAdjustmentIn(BaseModel):
@@ -5153,6 +5201,7 @@ async def create_family_member(payload: ChildIn, user=Depends(require_full_membe
             "family_id": user["family_id"],
             "member_id": member["member_id"],
             "delta": starting_stars,
+            "kind": STAR_KIND_STARTING,
             "reason": "Starting stars",
             "created_by_user_id": user["user_id"],
             "created_by_name": user.get("name"),
@@ -5232,6 +5281,22 @@ async def update_family_member(member_id: str, payload: MemberPatchIn, user=Depe
                        "and over. Remove the account first if that age is right.")
         else:
             changes["age"] = age
+
+    payload_target = getattr(payload, "weekly_target", None)
+    if payload_target is not None:
+        target = int(payload_target)
+        if target == 0:
+            # Back to the default, rather than storing today's default as this
+            # child's own number — otherwise a later change to the default
+            # would silently skip every child who had ever "reset" theirs.
+            changes["weekly_target"] = None
+        elif not (MIN_WEEKLY_TARGET <= target <= MAX_WEEKLY_TARGET):
+            raise HTTPException(
+                status_code=400,
+                detail=f"A weekly goal has to be between {MIN_WEEKLY_TARGET} and {MAX_WEEKLY_TARGET} stars.",
+            )
+        else:
+            changes["weekly_target"] = target
 
     if not changes:
         return public_member(member)
@@ -5436,6 +5501,7 @@ async def award_stars_to_member(
         "family_id": family_id,
         "member_id": member_id,
         "delta": delta,
+        "kind": STAR_KIND_EARN,
         "reason": reason,
         "created_by_user_id": user.get("user_id"),
         "created_by_name": user.get("name"),
@@ -5525,6 +5591,7 @@ async def adjust_member_stars(member_id: str, payload: StarAdjustmentIn, user=De
         "family_id": user["family_id"],
         "member_id": member_id,
         "delta": delta,
+        "kind": STAR_KIND_ADJUST,
         "reason": reason or ("Parent added stars" if delta > 0 else "Parent removed stars"),
         "created_by_user_id": user["user_id"],
         "created_by_name": user.get("name"),
@@ -5539,15 +5606,25 @@ async def adjust_member_stars(member_id: str, payload: StarAdjustmentIn, user=De
     # when two removals race.
     #
     # A positive adjustment is a child earning — it banks AND ticks the weekly
-    # meter, exactly like a finished chore. A removal is a correction against
-    # the bank only; it leaves the meter alone, so undoing a mis-award does not
-    # quietly hand back a weekend treat the child never earned.
+    # meter, exactly like a finished chore.
+    #
+    # A removal now moves BOTH, which is a change: it used to touch the bank
+    # only and leave the meter standing. That made the ring un-auditable — a
+    # week showing 30 could be a week where 40 was awarded and 10 taken back,
+    # and no parent could tell which. Taking a star back is a real answer to a
+    # real afternoon, and the week has to show it. The meter is only ever
+    # reduced by what is actually in it: a removal against a bank built up over
+    # months must not push this week below nothing.
     star_filter = {"member_id": member_id, "family_id": user["family_id"]}
     inc = {"stars": delta}
     if delta > 0:
         inc["week_earned"] = delta
     else:
         star_filter["stars"] = {"$gte": -delta}
+        week_now = max(0, int(member.get("week_earned", 0) or 0))
+        taken = min(-delta, week_now)
+        if taken:
+            inc["week_earned"] = -taken
     result = await database["family_members"].update_one(star_filter, {"$inc": inc})
     if result.matched_count == 0:
         raise HTTPException(status_code=400, detail="Stars cannot go below zero")
@@ -9035,6 +9112,7 @@ async def redeem_reward(reward_id: str, payload: RedeemIn, user=Depends(require_
         "family_id": user["family_id"],
         "member_id": member["member_id"],
         "delta": -cost,
+        "kind": STAR_KIND_SPEND,
         "reason": reward.get("title") or "Reward redeemed",
         "created_by_user_id": user["user_id"],
         "created_by_name": user.get("name"),
@@ -9189,6 +9267,7 @@ async def cancel_redemption(redemption_id: str, user=Depends(require_user)):
                 "family_id": user["family_id"],
                 "member_id": redemption["member_id"],
                 "delta": cost,
+                "kind": STAR_KIND_REFUND,
                 # The bare title, matching the spend entry. An English word like
                 # "Refund:" would sit untranslated in a German family's ledger,
                 # and the + sign against the earlier − already tells the story.

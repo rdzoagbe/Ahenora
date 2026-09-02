@@ -4,6 +4,7 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -14,7 +15,11 @@ import { Lang, SUPPORTED_LANGS, translate, detectDeviceLang } from './i18n';
 import { AppearanceMode, AppTheme, getTheme, resolveAppearance, ResolvedAppearance } from './theme';
 import { logger } from './logger';
 import { saveLoginHint, clearLoginHint } from './loginHint';
-import { deactivatePushOnLogout } from './notifications';
+import {
+  deactivatePushOnLogout,
+  scheduleSignedOutReminder,
+  cancelSignedOutReminder,
+} from './notifications';
 import { setupWebPush, teardownWebPush } from './webpush';
 
 export type { Lang } from './i18n';
@@ -85,6 +90,28 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   // First-open default follows the device / browser language; a signed-in
   // account's own saved language overrides it in refreshUser.
   const [lang, setLangState] = useState<Lang>(detectDeviceLang);
+  // The 401 handler is registered once, with no deps, so it cannot close over
+  // `lang` directly — it would forever schedule the reminder in whatever
+  // language the app started in. A ref keeps it on the current one.
+  const langRef = useRef(lang);
+  useEffect(() => {
+    langRef.current = lang;
+  }, [lang]);
+
+  /**
+   * A signed-out device gets no server pushes — by design, so a shared or
+   * resold phone stops receiving a household's business. That leaves silence
+   * as the only symptom of an expired session, which reads as "the app is
+   * broken". So on the way out we leave one LOCAL, content-free notification
+   * behind: no names, no agenda, just "you're signed out". It needs no session,
+   * which is exactly why it still works.
+   */
+  const leaveSignedOutReminder = useCallback(() => {
+    scheduleSignedOutReminder({
+      title: translate(langRef.current, 'notif_signed_out_title'),
+      body: translate(langRef.current, 'notif_signed_out_body'),
+    }).catch(() => undefined);
+  }, []);
   const [subscription, setSubscription] = useState<Subscription | null>(null);
   // Follow the phone unless the parent has said otherwise. Defaulting to light
   // meant someone on a dark phone opening this at bedtime — which is when a
@@ -243,13 +270,18 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
     setSubscription(null);
     setLoading(false);
-  }, []);
+    // Last, deliberately: deactivatePushOnLogout above cancels every scheduled
+    // notification, so anything queued before it would be wiped.
+    leaveSignedOutReminder();
+  }, [leaveSignedOutReminder]);
 
   // Delete the account server-side, then tear the local session down exactly
   // as logout does — a deleted account must leave nothing behind on the device.
   const deleteAccount = useCallback(async (data: { password?: string; confirm?: boolean }) => {
     await api.deleteAccount(data);
     await tokenStore.clear();
+    // A deleted account is not a paused one — no "you're signed out" nudge.
+    await cancelSignedOutReminder().catch(() => undefined);
     // A deleted account leaves nothing behind — including the welcome-back hint.
     await clearLoginHint().catch(() => undefined);
     await clearSnapshots().catch(() => undefined);
@@ -300,6 +332,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     // here" is exactly the question the auth screen needs to answer.
     AsyncStorage.setItem(RETURNING_USER_KEY, '1').catch(() => undefined);
 
+    // Signed in again — the reminder has done its job, or never needed to.
+    cancelSignedOutReminder().catch(() => undefined);
+
     setUser(u);
 
     if (SUPPORTED_LANGS.includes(u.language as Lang)) {
@@ -334,9 +369,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       setUser(null);
       setSubscription(null);
       setLoading(false);
+      // The expiry path, which is the one nobody notices: there is no valid
+      // session left to deactivate the push token with, so the only thing that
+      // can still reach this phone is something scheduled on it.
+      leaveSignedOutReminder();
     });
     return () => setUnauthorizedHandler(null);
-  }, []);
+  }, [leaveSignedOutReminder]);
 
   useEffect(() => {
     AsyncStorage.getItem(APPEARANCE_STORAGE_KEY)

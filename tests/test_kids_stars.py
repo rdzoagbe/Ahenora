@@ -482,10 +482,14 @@ class ManagingAChild(unittest.TestCase):
         # Stars move through the audited endpoint that writes a ledger entry,
         # so the model itself must refuse them — testing only the handler body
         # would stay green the day somebody adds a stars field to the model.
-        # Age joined name and avatar deliberately: it is a detail a parent can
-        # correct in place, with no balance or history hanging off it.
-        self.assertEqual(set(server.MemberPatchIn.model_fields), {"name", "avatar", "age"})
+        # Age and weekly_target joined name and avatar deliberately: both are
+        # details a parent can correct in place, with no balance or history
+        # hanging off them. The weekly goal sets what the ring is measured
+        # against; it never moves a star.
+        self.assertEqual(set(server.MemberPatchIn.model_fields),
+                         {"name", "avatar", "age", "weekly_target"})
         self.assertNotIn("stars", server.MemberPatchIn.model_fields)
+        self.assertNotIn("week_earned", server.MemberPatchIn.model_fields)
 
     def test_an_age_can_be_set_on_a_child_added_long_ago(self):
         # Children are added in a hurry at setup and were never asked their age,
