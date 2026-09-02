@@ -19,3 +19,4 @@ pillow>=12.3.0
 google-auth>=2.57.0
 openpyxl>=3.1.5  # looks unused, is not: pd.read_excel(engine="openpyxl") passes it as a string
 python-docx>=1.2.0
+qrcode>=8.0  # scripts/build_flyers.py; the flyer test rebuilds and compares

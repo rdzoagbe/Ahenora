@@ -9,5 +9,7 @@
 User-agent: *
 Allow: /
 Disallow: /app/
+# Print artefacts: A3 posters meant for a printer, not for a search result.
+Disallow: /print/
 
 Sitemap: https://ahenora.com/sitemap.xml
