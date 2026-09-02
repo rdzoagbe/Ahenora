@@ -1,21 +1,21 @@
 fastapi==0.141.1
 uvicorn==0.52.4
-cryptography>=50.0.0  # hard dependency of google-auth (id-token verification)
+cryptography>=50.0.1  # hard dependency of google-auth (id-token verification)
 pymongo==4.17.0  # transitive via motor; pinned deliberately so deploys don't drift
 pydantic>=2.13.4
 tzdata>=2026.3
 motor==3.7.1
 pytest>=9.1.1
 black>=26.5.1
-isort>=8.0.1
+isort>=9.0.1
 flake8>=7.3.0
 mypy>=2.3.1
 requests>=2.34.2
 pandas>=3.0.5,<4  # the unbounded floor was already resolving 3.x on every deploy; now it says so, bounded against the next major
 numpy>=2.4.6  # transitive via pandas; floor pinned deliberately
 python-multipart>=0.0.32  # no import anywhere; FastAPI needs it for multipart uploads
-google-genai>=2.19.0,<3
+google-genai>=2.20.0,<3
 pillow>=12.3.0
-google-auth>=2.56.3
+google-auth>=2.57.0
 openpyxl>=3.1.5  # looks unused, is not: pd.read_excel(engine="openpyxl") passes it as a string
 python-docx>=1.2.0
