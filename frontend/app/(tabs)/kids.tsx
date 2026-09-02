@@ -79,6 +79,36 @@ type StarMode = 'add' | 'remove';
 
 const DEFAULT_REWARD_ICON = String.fromCodePoint(0x1F381);
 
+/**
+ * Two routines most households already run, as a starting point.
+ *
+ * Typing five steps and five durations into a bottom sheet is the kind of
+ * setup people abandon halfway. These fill the sheet in one tap and every
+ * field stays editable — the preset is a draft, not a template.
+ */
+const ROUTINE_PRESETS = [
+  {
+    key: 'morning' as const,
+    nameKey: 'kids_routine_preset_morning',
+    steps: [
+      { labelKey: 'kids_step_dressed', minutes: 5 },
+      { labelKey: 'kids_step_breakfast', minutes: 15 },
+      { labelKey: 'kids_step_teeth', minutes: 2 },
+      { labelKey: 'kids_step_bag', minutes: 3 },
+    ],
+  },
+  {
+    key: 'bedtime' as const,
+    nameKey: 'kids_routine_preset_bedtime',
+    steps: [
+      { labelKey: 'kids_step_tidy', minutes: 5 },
+      { labelKey: 'kids_step_bath', minutes: 10 },
+      { labelKey: 'kids_step_teeth', minutes: 2 },
+      { labelKey: 'kids_step_story', minutes: 10 },
+    ],
+  },
+];
+
 /** Enough to name most treats without opening the emoji keyboard. */
 const REWARD_ICONS = [
   DEFAULT_REWARD_ICON,                 // gift
@@ -278,6 +308,10 @@ export default function Kids() {
   const [allowances, setAllowances] = useState<AllowanceConfig[]>([]);
   const [balances, setBalances] = useState<Record<string, number>>({});
   const [chores, setChores] = useState<Chore[]>([]);
+  const [showRoutineSheet, setShowRoutineSheet] = useState(false);
+  const [routineName, setRoutineName] = useState('');
+  const [routineStars, setRoutineStars] = useState('2');
+  const [routineSteps, setRoutineSteps] = useState<{ label: string; minutes: string }[]>([]);
   const [showChoreSheet, setShowChoreSheet] = useState(false);
   const [choreTitle, setChoreTitle] = useState('');
   const [choreStars, setChoreStars] = useState('3');
@@ -1231,6 +1265,62 @@ export default function Kids() {
     } catch { showToast(t('kids_rotate_chore_error'), 'error'); }
   }, [showToast]);
 
+  // ---- Morning routines ---------------------------------------------------
+  //
+  // The third feature in this family that could be run and deleted but never
+  // created. Listing, logging and deleting were wired; createRoutine was not,
+  // and the section only rendered once a routine existed — so nobody without
+  // one could ever get a first.
+
+  const openRoutineSheet = useCallback(() => {
+    setRoutineName('');
+    setRoutineStars('2');
+    // One empty step, so the shape of the thing is visible before anything is
+    // typed. An empty list reads as a broken sheet.
+    setRoutineSteps([{ label: '', minutes: '5' }]);
+    setShowRoutineSheet(true);
+  }, []);
+
+  const applyRoutinePreset = useCallback((preset: typeof ROUTINE_PRESETS[number]) => {
+    setRoutineName(t(preset.nameKey));
+    setRoutineSteps(preset.steps.map((step) => ({
+      label: t(step.labelKey), minutes: String(step.minutes),
+    })));
+  }, [t]);
+
+  const createRoutine = useCallback(async () => {
+    if (!activeChild) return;
+    const name = routineName.trim();
+    if (!name) { showToast(t('kids_routine_name_required'), 'error'); return; }
+    // A blank row is somebody who added a step and changed their mind, not an
+    // error worth stopping for. A routine of nothing but blanks is.
+    const steps = routineSteps
+      .map((step) => ({
+        label: step.label.trim(),
+        duration_seconds: Math.max(1, parseInt(step.minutes || '0', 10) || 1) * 60,
+      }))
+      .filter((step) => step.label.length > 0);
+    if (steps.length === 0) { showToast(t('kids_routine_steps_required'), 'error'); return; }
+
+    setSaving(true);
+    try {
+      const created = await api.createRoutine({
+        name,
+        steps,
+        member_id: activeChild.member_id,
+        star_reward: Math.max(0, parseInt(routineStars || '0', 10) || 0),
+      });
+      setRoutines((prev) => [...prev, created]);
+      setShowRoutineSheet(false);
+      showToast(t('kids_routine_added', { name: created.name }), 'success');
+    } catch (e: any) {
+      logger.warn('Create routine failed:', e?.message || e);
+      showToast(e?.message || t('kids_routine_add_error'), 'error');
+    } finally {
+      setSaving(false);
+    }
+  }, [activeChild, routineName, routineStars, routineSteps, showToast, t]);
+
   /**
    * Open the "add a chore" sheet, with the child whose page this is already
    * ticked. A chore reached from a child's page is nearly always for them.
@@ -2172,14 +2262,28 @@ export default function Kids() {
             </View>
           ) : null}
 
-          {/* Morning Routines — part of the focused child's page, not the roster */}
-          {isFocused && showMore && activeChild && childRoutines.length > 0 ? (
+          {/* Morning Routines — part of the focused child's page, not the roster.
+              Ungated for the same reason the Chore Wheel was: it rendered only
+              when a routine existed and nothing could create the first one. */}
+          {isFocused && showMore && activeChild ? (
             <>
               <View style={styles.featureHeader}>
                 <Timer color={ui.lavenderText} size={18} />
                 <Text style={styles.featureHeaderText}>{t('kids_morning_routines')}</Text>
+                <PressScale
+                  testID="kids-add-routine"
+                  accessibilityRole="button"
+                  onPress={openRoutineSheet}
+                  style={styles.featureHeaderBtn}
+                >
+                  <Plus color={ui.lavenderText} size={14} />
+                  <Text style={[styles.featureHeaderBtnText, { color: ui.lavenderText }]}>{t('kids_add_routine')}</Text>
+                </PressScale>
               </View>
               <Card style={styles.cardPad}>
+                {childRoutines.length === 0 ? (
+                  <Text style={styles.featureEmpty}>{t('kids_routines_empty')}</Text>
+                ) : null}
                 {childRoutines.map((rtn) => (
                   <View key={rtn.routine_id} style={styles.featureRow}>
                     <View style={{ flex: 1, minWidth: 0 }}>
@@ -2569,6 +2673,113 @@ export default function Kids() {
             onPress={saveReward}
             disabled={saving || !rewardTitle.trim() || !rewardCost}
             style={[styles.saveBtn, (saving || !rewardTitle.trim() || !rewardCost) && { opacity: 0.5 }]}
+          >
+            <Text style={styles.saveText}>{saving ? '...' : t('save')}</Text>
+          </PressScale>
+        </View>
+      </KeyboardAwareBottomSheet>
+
+      {/* Build a routine: a name, some steps, and what finishing it is worth */}
+      <KeyboardAwareBottomSheet visible={showRoutineSheet} onClose={() => setShowRoutineSheet(false)} contentStyle={styles.sheet}>
+        <View style={styles.sheetHeader}>
+          <Text style={styles.sheetTitle}>{t('kids_add_routine')}</Text>
+          <PressScale
+            accessibilityRole="button"
+            accessibilityLabel={t('close')}
+            testID="close-routine-sheet"
+            onPress={() => setShowRoutineSheet(false)}
+            style={styles.iconBtn}
+          >
+            <X color={ui.text} size={20} />
+          </PressScale>
+        </View>
+        {/* Start from something. Five steps and five durations typed into a
+            bottom sheet is where this kind of setup gets abandoned. */}
+        <View style={styles.quickRow}>
+          {ROUTINE_PRESETS.map((preset) => (
+            <PressScale
+              key={preset.key}
+              testID={`routine-preset-${preset.key}`}
+              accessibilityRole="button"
+              onPress={() => applyRoutinePreset(preset)}
+              style={styles.quickStarBtn}
+            >
+              <Text style={styles.quickStarText} numberOfLines={1}>{t(preset.nameKey)}</Text>
+            </PressScale>
+          ))}
+        </View>
+        <Text style={styles.label}>{t('kids_routine_name_label')}</Text>
+        <TextInput
+          testID="routine-name"
+          value={routineName}
+          onChangeText={setRoutineName}
+          placeholder={t('kids_routine_name_placeholder')}
+          placeholderTextColor={ui.muted}
+          style={styles.input}
+        />
+        <Text style={styles.label}>{t('kids_routine_steps_label')}</Text>
+        {routineSteps.map((step, index) => (
+          <View key={index} style={styles.stepRow}>
+            <TextInput
+              testID={`routine-step-${index}`}
+              value={step.label}
+              onChangeText={(v) => setRoutineSteps((prev) =>
+                prev.map((row, i) => (i === index ? { ...row, label: v } : row)))}
+              placeholder={t('kids_routine_step_placeholder')}
+              placeholderTextColor={ui.muted}
+              style={[styles.input, styles.stepLabelInput]}
+            />
+            <TextInput
+              testID={`routine-step-mins-${index}`}
+              value={step.minutes}
+              onChangeText={(v) => setRoutineSteps((prev) =>
+                prev.map((row, i) => (i === index ? { ...row, minutes: cleanNumber(v) } : row)))}
+              keyboardType="number-pad"
+              placeholder="5"
+              placeholderTextColor={ui.muted}
+              style={[styles.input, styles.stepMinsInput]}
+            />
+            <PressScale
+              accessibilityRole="button"
+              accessibilityLabel={t('a11y_delete')}
+              testID={`routine-step-remove-${index}`}
+              onPress={() => setRoutineSteps((prev) => prev.filter((_, i) => i !== index))}
+              style={styles.featureIconBtn}
+            >
+              <Trash2 color={ui.muted} size={15} />
+            </PressScale>
+          </View>
+        ))}
+        <PressScale
+          testID="routine-add-step"
+          accessibilityRole="button"
+          onPress={() => setRoutineSteps((prev) => [...prev, { label: '', minutes: '5' }])}
+          style={styles.addStepBtn}
+        >
+          <Plus color={ui.lavenderText} size={14} />
+          <Text style={[styles.featureHeaderBtnText, { color: ui.lavenderText }]}>{t('kids_routine_add_step')}</Text>
+        </PressScale>
+        <Text style={styles.label}>{t('kids_routine_worth_label')}</Text>
+        <TextInput
+          testID="routine-stars"
+          value={routineStars}
+          onChangeText={(v) => setRoutineStars(cleanNumber(v))}
+          keyboardType="number-pad"
+          returnKeyType="done"
+          onSubmitEditing={createRoutine}
+          placeholder="2"
+          placeholderTextColor={ui.muted}
+          style={styles.input}
+        />
+        <View style={styles.sheetFooter}>
+          <PressScale testID="cancel-routine" onPress={() => setShowRoutineSheet(false)} style={styles.cancelBtn}>
+            <Text style={styles.cancelText}>{t('cancel')}</Text>
+          </PressScale>
+          <PressScale
+            testID="save-routine"
+            onPress={createRoutine}
+            disabled={saving || !routineName.trim()}
+            style={[styles.saveBtn, (saving || !routineName.trim()) && { opacity: 0.5 }]}
           >
             <Text style={styles.saveText}>{saving ? '...' : t('save')}</Text>
           </PressScale>
@@ -3195,6 +3406,12 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   featureHeaderBtn: { marginLeft: 'auto', flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 6, paddingHorizontal: 10, borderRadius: 999, borderWidth: 1, borderColor: ui.line },
   featureHeaderBtnText: { fontFamily: 'Inter_700Bold', fontSize: 12 },
   featureEmpty: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 19, paddingVertical: 6 },
+  // Label, minutes, bin — on one line, because a routine is read as a list and
+  // stacking each step three rows deep makes four steps fill the screen.
+  stepRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  stepLabelInput: { flex: 1, minWidth: 0 },
+  stepMinsInput: { width: 68, textAlign: 'center' },
+  addStepBtn: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 999, borderWidth: 1, borderColor: ui.line, marginTop: 4 },
   sheetToggleRow: { marginTop: 12, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 14, borderWidth: 1, borderColor: ui.line },
   sheetToggleText: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 14 },
   sheetToggleHint: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 2 },

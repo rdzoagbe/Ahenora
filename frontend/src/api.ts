@@ -2364,7 +2364,11 @@ export const api = {
 
   // Morning Routines
   listRoutines: () => request<Routine[]>('/routines'),
-  createRoutine: (data: { name: string; steps: { label: string; duration_seconds: number }[]; member_id?: string }) =>
+  createRoutine: (data: {
+    name: string; steps: { label: string; duration_seconds: number }[]; member_id?: string;
+    /** Stars for finishing the whole routine. The server defaults it to 2. */
+    star_reward?: number;
+  }) =>
     request<Routine>('/routines', { method: 'POST', body: data }),
   deleteRoutine: (id: string) => request<{ ok: boolean }>(`/routines/${id}`, { method: 'DELETE' }),
   logRoutineCompletion: (id: string) =>

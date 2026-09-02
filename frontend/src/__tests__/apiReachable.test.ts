@@ -35,7 +35,6 @@ const NO_SCREEN_YET: Record<string, string> = {
   changeSubscription: 'Plan changes go through the store, not the app.',
   conflicts: 'Calendar conflict detection — no screen designed yet.',
   createCarpool: 'Carpool: backend only, never designed.',
-  createRoutine: 'Morning routines can be listed, logged and deleted, but not created. Same gap chores had.',
   createTemplate: 'Task templates: the Feed loads them, nothing manages them.',
   deleteTemplate: 'Task templates: see createTemplate.',
   toggleTemplate: 'Task templates: see createTemplate.',
@@ -113,8 +112,9 @@ describe('every API the app ships has a way into it', () => {
     expect(gone).toEqual([]);
   });
 
-  it('the two features this test was written for are wired up', () => {
-    for (const name of ['createChore', 'createReward', 'updateReward', 'deleteReward', 'redeemReward']) {
+  it('the features this test was written for are wired up', () => {
+    for (const name of ['createChore', 'createRoutine', 'createReward', 'updateReward',
+                        'deleteReward', 'redeemReward']) {
       expect(called(name)).toBe(true);
     }
   });
