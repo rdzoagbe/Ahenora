@@ -435,6 +435,85 @@ export async function deactivatePushOnLogout(): Promise<void> {
   }
 }
 
+const SIGNED_OUT_ID_KEY = 'coo_signed_out_reminder_id';
+
+/**
+ * The one notification a signed-out device may still get.
+ *
+ * A signed-out phone has no session, so the server cannot — and must not — send
+ * it anything: household content on a shared or resold phone is exactly what
+ * `deactivatePushOnLogout` exists to stop. But the silence itself is worth
+ * knowing about. Somebody whose session expired overnight just sees no morning
+ * reminders and assumes the app is broken.
+ *
+ * So this is a LOCAL notification, scheduled on the device at sign-out, with no
+ * household content in it at all — no names, no agenda, nothing but "you're
+ * signed out". It needs no token and no session, which is the whole point: it
+ * is the only thing that still works once the session is gone. One per
+ * sign-out, at 08:00, just after where the morning digest would have been.
+ */
+export async function scheduleSignedOutReminder(content: {
+  title: string;
+  body: string;
+}): Promise<{ scheduled: boolean }> {
+  try {
+    const Notifications = await getNotificationsModule();
+    if (!Notifications) return { scheduled: false };
+
+    await cancelSignedOutReminder();
+
+    const permissions = await Notifications.getPermissionsAsync();
+    if (permissions.status !== 'granted') return { scheduled: false };
+
+    await configureNotificationChannels();
+
+    // Next 08:00 — today's if it hasn't passed, tomorrow's otherwise. Signing
+    // out at 22:00 should not fire fourteen hours of nothing later than needed,
+    // and signing out at 06:00 should not wait a whole extra day.
+    const at = new Date();
+    at.setHours(8, 0, 0, 0);
+    if (at.getTime() <= Date.now()) at.setDate(at.getDate() + 1);
+
+    const identifier = await Notifications.scheduleNotificationAsync({
+      content: {
+        title: content.title,
+        body: content.body,
+        sound: true,
+        data: { type: 'signed_out' },
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: at,
+        channelId: 'card-reminders',
+      } as any,
+    });
+    await AsyncStorage.setItem(SIGNED_OUT_ID_KEY, identifier).catch(() => undefined);
+    return { scheduled: true };
+  } catch (e) {
+    logger.warn('scheduleSignedOutReminder failed', e);
+    return { scheduled: false };
+  }
+}
+
+/** Called on every successful sign-in: the reminder has served its purpose. */
+export async function cancelSignedOutReminder(): Promise<void> {
+  try {
+    const Notifications = await getNotificationsModule();
+    if (!Notifications) return;
+
+    const previous = await AsyncStorage.getItem(SIGNED_OUT_ID_KEY).catch(() => null);
+    if (previous) {
+      await Notifications.cancelScheduledNotificationAsync(previous).catch(() => undefined);
+      await AsyncStorage.removeItem(SIGNED_OUT_ID_KEY).catch(() => undefined);
+    }
+    // Clear orphans too: a sign-out that raced a sign-in, or an id key wiped by
+    // a reinstall, must not leave a stray "you are signed out" in the tray.
+    await cancelScheduledByType(Notifications, ['signed_out']);
+  } catch (e) {
+    logger.warn('cancelSignedOutReminder failed', e);
+  }
+}
+
 // True once the cold-start notification tap has been routed, so re-running this
 // (which happens on every user refresh) never re-navigates to the same tap.
 let coldStartRouted = false;
