@@ -2986,7 +2986,21 @@ async def send_daily_local_pushes(database, now: Optional[datetime] = None) -> i
     return total
 
 
+# Proof of life for the loop below. A digest that never arrives has two very
+# different causes — nobody was due, or nothing was running — and until this
+# existed there was no way to tell them apart from the outside. The scheduler
+# lives in the web process, so a container restart or a sleeping service takes
+# it with them, silently, and the local slot passes.
+_scheduler_state: dict = {
+    "booted_at": None,      # when this process started the loop
+    "last_tick_at": None,   # when it last completed a pass
+    "ticks": 0,
+    "last_error": None,
+}
+
+
 async def _reminder_scheduler_loop():
+    _scheduler_state["booted_at"] = utcnow()
     while True:
         try:
             await send_due_card_reminders(get_db())
@@ -3000,6 +3014,12 @@ async def _reminder_scheduler_loop():
             await send_daily_local_pushes(get_db())
         except Exception as e:
             log.warning("daily push tick failed: %s", e)
+            _scheduler_state["last_error"] = f"{type(e).__name__}: {e}"[:200]
+        # Stamped at the END of the pass: a tick that starts and hangs has not
+        # done its job, and reporting it as alive would be the same lie as a
+        # green test that skipped.
+        _scheduler_state["last_tick_at"] = utcnow()
+        _scheduler_state["ticks"] += 1
         await asyncio.sleep(REMINDER_SCAN_INTERVAL)
 
 
@@ -4064,6 +4084,99 @@ def _secret_fingerprint(value: str) -> dict:
         return {"set": False, "length": 0, "sha8": ""}
     return {"set": True, "length": len(cleaned),
             "sha8": hashlib.sha256(cleaned.encode()).hexdigest()[:8]}
+
+
+@app.get("/api/health/push")
+async def health_push(user=Depends(require_user), database=Depends(get_db)):
+    """Why a notification did or did not arrive.
+
+    A digest that never lands has two very different causes — nobody was due,
+    or nothing was running — and from the outside they look identical. The
+    scheduler lives in the web process, so a container restart or a sleeping
+    service takes it down silently and the local slot simply passes; nothing
+    logs "I was asleep at 07:30".
+
+    So this reports the loop's own heartbeat first, then, per job, how many
+    people have already been served TODAY IN THEIR OWN ZONE, and finally the
+    caller's own row — because "did I get it" is the question actually being
+    asked, and it is answerable per person.
+    """
+    if not is_admin_user(user):
+        raise HTTPException(status_code=403, detail="Admin only")
+    database = database or get_db()
+    now = utcnow()
+
+    last_tick = _scheduler_state.get("last_tick_at")
+    # A loop that ticks every 60s and has not ticked in 5 minutes is not slow,
+    # it is gone. Said as a verdict rather than a raw timestamp, because a
+    # timestamp needs arithmetic before it means anything.
+    if not REMINDER_SCHEDULER_ENABLED:
+        verdict = "disabled"
+    elif last_tick is None:
+        verdict = "never_ran"
+    elif (now - last_tick).total_seconds() > max(300, REMINDER_SCAN_INTERVAL * 5):
+        verdict = "stalled"
+    else:
+        verdict = "alive"
+
+    zones = await _push_zones(database)
+    phones = await database["notification_tokens"].count_documents({"active": True})
+    browsers = await database["web_push_subscriptions"].count_documents({"active": True})
+
+    jobs = []
+    for job in DAILY_PUSH_JOBS:
+        served = due = 0
+        for user_id, zone in zones.items():
+            local = _local_now(zone, now)
+            if job.get("weekday") is not None and local.weekday() != job["weekday"]:
+                continue
+            today = local.strftime("%Y-%m-%d")
+            row = await database["users"].find_one(
+                {"user_id": user_id}, {"_id": 0, job["claim"]: 1})
+            if row and row.get(job["claim"]) == today:
+                served += 1
+            elif local_slot_is_due(local, job["hour"], job["minute"], job["grace"]):
+                # Past its slot, still inside the grace window, not yet served.
+                due += 1
+        jobs.append({
+            "key": job["key"],
+            "at": "%02d:%02d local" % (job["hour"], job["minute"]),
+            "grace_minutes": job["grace"],
+            "served_today": served,
+            "waiting_now": due,
+        })
+
+    me = await database["users"].find_one({"user_id": user["user_id"]}, {"_id": 0})
+    prefs = await database["notification_settings"].find_one(
+        {"user_id": user["user_id"]}, {"_id": 0})
+    my_zone = zones.get(user["user_id"])
+    return {
+        "scheduler": {
+            "state": verdict,
+            "enabled": REMINDER_SCHEDULER_ENABLED,
+            "interval_seconds": REMINDER_SCAN_INTERVAL,
+            "booted_at": iso(_scheduler_state.get("booted_at")),
+            "last_tick_at": iso(last_tick),
+            "seconds_since_tick": (
+                round((now - last_tick).total_seconds()) if last_tick else None),
+            "ticks": _scheduler_state.get("ticks", 0),
+            "last_error": _scheduler_state.get("last_error"),
+        },
+        "reach": {
+            "people_reachable": len(zones),
+            "active_phone_tokens": phones,
+            "active_web_subscriptions": browsers,
+        },
+        "jobs": jobs,
+        "you": {
+            "reachable": user["user_id"] in zones,
+            "timezone": my_zone,
+            "local_time": iso(_local_now(my_zone, now)) if my_zone else None,
+            "reminders_enabled": alerts_enabled(prefs, "card_reminders"),
+            "claims": {job["claim"]: (me or {}).get(job["claim"])
+                       for job in DAILY_PUSH_JOBS},
+        },
+    }
 
 
 @app.get("/api/health/config")
