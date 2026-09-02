@@ -75,10 +75,18 @@ class MarkupStripping(unittest.TestCase):
         self.assertIn("Bonjour", out)
         self.assertIn("Au revoir", out)
 
-    def test_the_lowercase_only_version_really_was_broken(self):
-        # Stated as a test so the fix is not silently reverted to "simpler".
-        naive = re.sub(r"<script.*?</script>", "", self.SAMPLE, flags=re.S)
-        self.assertIn("leak", naive)
+    def test_it_would_fail_without_case_insensitivity(self):
+        """The guard against someone "simplifying" the flags away.
+
+        Deliberately does NOT demonstrate the broken expression by writing it
+        out: a lowercase-only tag filter is itself the thing CodeQL flags, and
+        committing one to prove a point re-raises the alert — which is exactly
+        what happened on the first attempt at this file. The behaviour is
+        asserted instead, which is the part that matters.
+        """
+        self.assertNotIn("leak", _strip_markup("<SCRIPT>var leak;</SCRIPT>"))
+        self.assertNotIn("leak", _strip_markup("<Script>var leak;</Script>"))
+        self.assertNotIn("leak", _strip_markup("<script >var leak;</script >"))
 
 
 class Sitemap(unittest.TestCase):
