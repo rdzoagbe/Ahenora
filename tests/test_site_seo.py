@@ -32,6 +32,55 @@ def read(name):
         return fh.read()
 
 
+def _strip_markup(html: str) -> str:
+    """Remove scripts, styles and comments before reading a page as copy.
+
+    Case-insensitive on purpose. HTML tag names are case-insensitive, so a
+    filter written only for lowercase <script> silently passes <SCRIPT> through
+    — which is what CodeQL means by a bad HTML filtering regexp. Kept in one
+    place so the next check that needs it cannot reintroduce the flaw.
+    """
+    flags = re.S | re.I
+    for pattern in (r"<script\b.*?</script\s*>", r"<style\b.*?</style\s*>", r"<!--.*?-->"):
+        html = re.sub(pattern, "", html, flags=flags)
+    return html
+
+
+class MarkupStripping(unittest.TestCase):
+    """The filter that decides what counts as page copy.
+
+    CodeQL flagged the original as a bad HTML filtering regexp: written only
+    for lowercase <script>, it let <SCRIPT> through. That is not academic here
+    — script source is full of English, so the "no English on the French page"
+    check would have failed on JavaScript and sent someone hunting for copy
+    that was already correct.
+    """
+
+    SAMPLE = (
+        "<p>Bonjour</p>"
+        "<SCRIPT>var leak = 'the your and with';</SCRIPT>"
+        "<Style>.x { color: red }</Style>"
+        "<!-- Monthly / yearly -->"
+        "<p>Au revoir</p>"
+    )
+
+    def test_it_strips_tags_whatever_their_case(self):
+        out = _strip_markup(self.SAMPLE)
+        self.assertNotIn("leak", out)
+        self.assertNotIn("color: red", out)
+        self.assertNotIn("Monthly", out)
+
+    def test_it_keeps_the_actual_copy(self):
+        out = _strip_markup(self.SAMPLE)
+        self.assertIn("Bonjour", out)
+        self.assertIn("Au revoir", out)
+
+    def test_the_lowercase_only_version_really_was_broken(self):
+        # Stated as a test so the fix is not silently reverted to "simpler".
+        naive = re.sub(r"<script.*?</script>", "", self.SAMPLE, flags=re.S)
+        self.assertIn("leak", naive)
+
+
 class Sitemap(unittest.TestCase):
     def urls(self):
         ns = {"s": "http://www.sitemaps.org/schemas/sitemap/0.9"}
@@ -167,9 +216,12 @@ class FrenchPage(unittest.TestCase):
         # French copy.
         html = read("fr.html")
         body = html[html.index("<body"):]
-        body = re.sub(r"<script.*?</script>", "", body, flags=re.S)
-        body = re.sub(r"<style.*?</style>", "", body, flags=re.S)
-        body = re.sub(r"<!--.*?-->", "", body, flags=re.S)
+        # re.I matters: HTML tag names are case-insensitive, so <SCRIPT> is a
+        # script and this filter did not strip it. CodeQL flagged it as a bad
+        # HTML filtering regexp and it was right — a filter that misses half
+        # the tags it names would have let script source through as "copy" and
+        # failed the English check for a reason that is not about English.
+        body = _strip_markup(body)
         texts = [t.strip() for t in re.split(r"<[^>]+>", body) if t.strip()]
         tells = re.compile(r"\b(the|your|and|with|for|that|every|without|you)\b", re.I)
         leftovers = [t for t in texts if len(t) > 2 and tells.search(t)]
@@ -193,7 +245,7 @@ class FrenchPage(unittest.TestCase):
         html = read("fr.html")
         # Developer comments are not copy — "Monthly / yearly" describes the
         # toggle to whoever edits this file and is never shown to anyone.
-        html = re.sub(r"<!--.*?-->", "", html, flags=re.S)
+        html = re.sub(r"<!--.*?-->", "", html, flags=re.S | re.I)
         html = re.sub(r"^\s*//.*$", "", html, flags=re.M)
         self.assertNotRegex(
             html, r"&euro;\d",
