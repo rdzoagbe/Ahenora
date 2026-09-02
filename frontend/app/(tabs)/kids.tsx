@@ -36,6 +36,7 @@ import {
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { syncAllowanceReminders } from '../../src/notifications';
 import { PressScale } from '../../src/components/PressScale';
+import { weekDayCells as buildWeekDayCells } from '../../src/weekStars';
 import { StarCelebration, CelebrationContent } from '../../src/components/StarCelebration';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
 import DateTimePickerSheet from '../../src/components/DateTimePickerSheet';
@@ -105,14 +106,20 @@ const REWARD_IDEAS = [
 ] as const;
 
 /**
- * What a good week comes to.
+ * What a good week comes to, when nobody has said otherwise.
  *
- * The three quick jobs are worth 7 a day, so a full week of them lands on 49 —
- * this target is that week, rounded to a number a child can hold in their head,
- * and it sits just above what the jobs alone give so the last star comes from
- * something asked for. It is what the cheaper rewards are priced against.
+ * This was 50 — seven perfect days of the three quick jobs plus the seventh-day
+ * bonus. A goal only a spotless week can reach never gets reached, so the ring
+ * never filled and the number stopped meaning anything. 35 is five solid days;
+ * a perfect week now overshoots it, which is the right way round.
+ *
+ * The server owns the real number and it is per child. These are the fallback
+ * for a member record that predates the setting, and the bounds the sheet
+ * checks before asking the server to reject it.
  */
-const WEEKLY_TARGET = 50;
+const DEFAULT_WEEKLY_TARGET = 35;
+const MIN_WEEKLY_TARGET = 5;
+const MAX_WEEKLY_TARGET = 500;
 
 /** What all three quick jobs come to in one day. Derived, never typed twice. */
 const QUICK_ADDS = [
@@ -208,6 +215,8 @@ export default function Kids() {
   const [teenSending, setTeenSending] = useState(false);
 
   const [showStarSheet, setShowStarSheet] = useState(false);
+  const [showGoalSheet, setShowGoalSheet] = useState(false);
+  const [goalValue, setGoalValue] = useState('');
   const [starMode, setStarMode] = useState<StarMode>('add');
   const [starAmount, setStarAmount] = useState('5');
   const [starReason, setStarReason] = useState('');
@@ -349,69 +358,20 @@ export default function Kids() {
   // The bank is `stars`; the weekly meter is `week_earned`. A weekend treat is
   // measured against the week's earnings, everything else against the bank.
   const weekEarned = activeChild?.week_earned || 0;
-  /**
-   * One cell per day of the current week, Monday first, carrying the stars
-   * earned that day.
-   *
-   * Built from the star ledger already loaded for this child, so the row costs
-   * nothing extra. Only positive movements count: a correction that removes
-   * stars is not a day's effort undone, and showing it as one would read as a
-   * punishment on the child's own screen.
-   */
-  const weekDayCells = useMemo(() => {
-    // The week has to start where the SERVER starts it. `week_earned` rolls at
-    // UTC Monday (current_week_start); drawing these boxes from local midnight
-    // meant that for the whole timezone offset the row and the meter above it
-    // described different weeks — a full row of stars over a bar reading 0, or
-    // stars counted by the meter that no box showed.
-    const now = new Date();
-    const monday = new Date(Date.UTC(
-      now.getUTCFullYear(), now.getUTCMonth(),
-      now.getUTCDate() - ((now.getUTCDay() + 6) % 7),
-    ));
-
-    const dayKey = (d: Date) => `${d.getUTCFullYear()}-${d.getUTCMonth()}-${d.getUTCDate()}`;
-    const earnedByDay: Record<string, number> = {};
-    historyItems.forEach((txn) => {
-      // The day it was FOR, falling back to the day it was given. A parent
-      // catching up on Sunday credits Tuesday, and the meter above already
-      // counts it on Tuesday — the row has to agree or one of them is lying.
-      const stamp = txn.awarded_for || txn.created_at;
-      if (!stamp || txn.delta <= 0) return;
-      const when = new Date(stamp);
-      if (Number.isNaN(when.getTime()) || when < monday) return;
-      const k = dayKey(when);
-      earnedByDay[k] = (earnedByDay[k] || 0) + txn.delta;
-    });
-
-    const todayKey = dayKey(now);
-    return Array.from({ length: 7 }, (_, i) => {
-      const d = new Date(monday);
-      d.setUTCDate(monday.getUTCDate() + i);
-      const k = dayKey(d);
-      return {
-        key: k,
-        // What the server wants back when a parent fills in a missed day. Noon
-        // UTC, not midnight: the day is the point, and a midnight stamp lands
-        // in the previous day for anyone west of UTC.
-        iso: new Date(d.getTime() + 12 * 3600 * 1000).toISOString(),
-        letter: d.toLocaleDateString(localeFor(lang), { weekday: 'narrow', timeZone: 'UTC' }),
-        name: d.toLocaleDateString(localeFor(lang), { weekday: 'long', timeZone: 'UTC' }),
-        earned: earnedByDay[k] || 0,
-        isToday: k === todayKey,
-        // Sunday's stars cannot be given on Wednesday. The server refuses it;
-        // the row should not offer it either.
-        isFuture: d.getTime() > now.getTime(),
-      };
-    });
-  }, [historyItems, lang]);
+  // One cell per day of the current week, Monday first. The arithmetic lives
+  // in src/weekStars.ts so it can be tested against the rules the server
+  // enforces, rather than read by eye inside a component.
+  const weekDayCells = useMemo(
+    () => buildWeekDayCells(historyItems, new Date(), localeFor(lang)),
+    [historyItems, lang],
+  );
   const backdateDayCell = useMemo(
     () => weekDayCells.find((d) => d.iso === backdateDay) || null,
     [weekDayCells, backdateDay],
   );
   // The server owns the target; the constant is only the fallback for a member
   // record that predates it, so the two can never quietly disagree.
-  const weeklyTarget = activeChild?.weekly_target || WEEKLY_TARGET;
+  const weeklyTarget = activeChild?.weekly_target || DEFAULT_WEEKLY_TARGET;
   const weekClaimed = !!activeChild?.week_claimed;
   const weekFull = weekEarned >= weeklyTarget;
 
@@ -628,7 +588,10 @@ export default function Kids() {
     }
     setStarMode(mode);
     setStarAmount(amount);
-    setStarReason(mode === 'add' ? t('kids_good_job') : '');
+    // Deliberately empty in both directions. "Good job!" as a default answer to
+    // "what did they do" is the reason the ledger filled up with stars nobody
+    // could account for a week later.
+    setStarReason('');
     setShowStarSheet(true);
   };
 
@@ -960,6 +923,35 @@ export default function Kids() {
       showToast(e?.message || t('kids_update_stars_error'), 'error');
     } finally {
       setClaiming(false);
+    }
+  };
+
+  /**
+   * Change what this child's week is measured against.
+   *
+   * The goal used to be one number for every household and every age: 50,
+   * which is seven perfect days of the three everyday jobs plus the bonus. A
+   * ring that only a spotless week fills is a ring that never fills, and a
+   * five-year-old and a fifteen-year-old were being held to it equally.
+   */
+  const saveWeeklyGoal = async () => {
+    if (!activeChild) return;
+    const target = parseInt(goalValue || '', 10);
+    if (Number.isNaN(target) || target < MIN_WEEKLY_TARGET || target > MAX_WEEKLY_TARGET) {
+      showToast(t('kids_goal_range', { min: MIN_WEEKLY_TARGET, max: MAX_WEEKLY_TARGET }), 'error');
+      return;
+    }
+    setSaving(true);
+    try {
+      const updated = await api.updateFamilyMember(activeChild.member_id, { weekly_target: target });
+      setMembers((prev) => prev.map((m) => (m.member_id === updated.member_id ? { ...m, ...updated } : m)));
+      setShowGoalSheet(false);
+      showToast(t('kids_goal_saved', { n: updated.weekly_target || target }), 'success');
+    } catch (e: any) {
+      logger.warn('Weekly goal save failed:', e?.message || e);
+      showToast(e?.message || t('kids_update_stars_error'), 'error');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -1567,7 +1559,35 @@ export default function Kids() {
                         <Text style={styles.leadStarText}>+{n}</Text>
                       </PressScale>
                     ))}
+                    {/* The one a household actually needs most days: a job that
+                        is not on any list. Everything above awards a number
+                        with no task attached, and the three fixed jobs below
+                        cover bed, reading and the table — so "she cleared out
+                        the garage" had nowhere to go but a tab two screens
+                        away that nobody found. */}
+                    <PressScale
+                      testID="kids-give-other"
+                      accessibilityRole="button"
+                      onPress={() => openStarSheet('add', '')}
+                      style={[styles.leadStar, styles.leadStarOther]}
+                    >
+                      <Plus color={ui.orangeText} size={15} />
+                      <Text style={[styles.leadStarText, { color: ui.orangeText }]}>{t('kids_other')}</Text>
+                    </PressScale>
                   </View>
+                  {/* The other half of the same conversation, and deliberately
+                      the quieter half: giving is the point, taking back is the
+                      exception. It existed already, three taps deep behind the
+                      Stars tab, which is the same as not existing. */}
+                  <PressScale
+                    testID="kids-take-back"
+                    accessibilityRole="button"
+                    onPress={() => openStarSheet('remove', '')}
+                    style={styles.takeBackRow}
+                  >
+                    <Minus color={ui.muted} size={14} />
+                    <Text style={styles.takeBackText}>{t('kids_remove_stars')}</Text>
+                  </PressScale>
 
                   <Text style={styles.leadLabel}>{t('kids_today')}</Text>
                   {QUICK_ADDS.map((q) => (
@@ -1643,10 +1663,17 @@ export default function Kids() {
                         two ways inside the page's most prominent card, which is
                         the confusion the whole redesign exists to remove. */}
                       <View style={styles.weekGoalWrap}>
-                        <View style={styles.weekGoalRow}>
+                        <PressScale
+                          testID="kids-edit-goal"
+                          accessibilityRole="button"
+                          accessibilityLabel={t('kids_goal_edit')}
+                          onPress={() => { setGoalValue(String(weeklyTarget)); setShowGoalSheet(true); }}
+                          style={styles.weekGoalRow}
+                        >
                           <Text style={styles.weekGoalTitle} numberOfLines={1}>{t('kids_week_target_title')}</Text>
                           <Text style={styles.weekGoalCount}>{weekEarned} / {weeklyTarget}</Text>
-                        </View>
+                          <Pencil color={ui.muted} size={13} />
+                        </PressScale>
                         <View style={{ marginTop: 8 }}>
                           <ProgressBar
                             pct={Math.min(100, Math.round((weekEarned / weeklyTarget) * 100))}
@@ -2220,13 +2247,77 @@ export default function Kids() {
                   accessibilityLabel={t('close')} testID="close-stars" onPress={() => setShowStarSheet(false)} style={styles.iconBtn}><X color={ui.text} size={20} /></PressScale>
         </View>
         <Text style={styles.sheetHelp}>{t('kids_for')} {activeChild?.name || t('kids_selected_child')}</Text>
+        {/* The job first, the number second. It used to be the other way round
+            and the reason came pre-filled with "Good job!", so the fastest path
+            through this sheet recorded an amount and no task — a history of
+            anonymous stars nobody could later explain. Naming the thing is the
+            point of opening the sheet at all; the quick chips outside it are
+            there for when it is not. */}
+        <Text style={styles.label}>{starMode === 'add' ? t('kids_what_they_did') : t('kids_reason')}</Text>
+        <TextInput testID="star-reason" autoFocus returnKeyType="next" value={starReason} onChangeText={setStarReason} placeholder={starMode === 'add' ? t('kids_reason_add_placeholder') : t('kids_reason_remove_placeholder')} placeholderTextColor={ui.muted} style={styles.input} />
         <Text style={styles.label}>{t('kids_amount')}</Text>
-        <TextInput testID="star-amount" value={starAmount} onChangeText={(v) => setStarAmount(cleanNumber(v))} keyboardType="number-pad" placeholder="5" placeholderTextColor={ui.muted} style={styles.input} />
-        <Text style={styles.label}>{t('kids_reason')}</Text>
-        <TextInput testID="star-reason" returnKeyType="done" onSubmitEditing={() => adjustStars()} value={starReason} onChangeText={setStarReason} placeholder={starMode === 'add' ? t('kids_reason_add_placeholder') : t('kids_reason_remove_placeholder')} placeholderTextColor={ui.muted} style={styles.input} />
+        <TextInput testID="star-amount" returnKeyType="done" onSubmitEditing={() => adjustStars()} value={starAmount} onChangeText={(v) => setStarAmount(cleanNumber(v))} keyboardType="number-pad" placeholder="5" placeholderTextColor={ui.muted} style={styles.input} />
         <View style={styles.sheetFooter}>
           <PressScale testID="cancel-stars" onPress={() => setShowStarSheet(false)} style={styles.cancelBtn}><Text style={styles.cancelText}>{t('cancel')}</Text></PressScale>
           <PressScale testID="save-stars" onPress={adjustStars} disabled={saving || !starAmount} style={[styles.saveBtn, (!starAmount || saving) && { opacity: 0.5 }]}><Text style={styles.saveText}>{saving ? '...' : t('save')}</Text></PressScale>
+        </View>
+      </KeyboardAwareBottomSheet>
+
+      {/* What this child's week is measured against */}
+      <KeyboardAwareBottomSheet visible={showGoalSheet} onClose={() => setShowGoalSheet(false)} contentStyle={styles.sheet}>
+        <View style={styles.sheetHeader}>
+          <Text style={styles.sheetTitle}>{t('kids_goal_sheet_title', { name: activeChild?.name || '' })}</Text>
+          <PressScale
+            accessibilityRole="button"
+            accessibilityLabel={t('close')}
+            testID="close-goal"
+            onPress={() => setShowGoalSheet(false)}
+            style={styles.iconBtn}
+          >
+            <X color={ui.text} size={20} />
+          </PressScale>
+        </View>
+        <Text style={styles.sheetHelp}>{t('kids_goal_help', { n: QUICK_ADD_DAY })}</Text>
+        <Text style={styles.label}>{t('kids_goal_label')}</Text>
+        <TextInput
+          testID="goal-value"
+          value={goalValue}
+          onChangeText={(v) => setGoalValue(cleanNumber(v))}
+          keyboardType="number-pad"
+          returnKeyType="done"
+          onSubmitEditing={saveWeeklyGoal}
+          placeholder={String(DEFAULT_WEEKLY_TARGET)}
+          placeholderTextColor={ui.muted}
+          style={styles.input}
+        />
+        {/* The everyday jobs are worth QUICK_ADD_DAY a day, so these are two,
+            four and six solid days — the goal expressed in the unit a parent
+            actually thinks in. Derived, so they stay true if a job's value
+            changes. */}
+        <View style={styles.quickRow}>
+          {[2, 4, 6].map((days) => (
+            <PressScale
+              key={days}
+              testID={`goal-days-${days}`}
+              onPress={() => setGoalValue(String(days * QUICK_ADD_DAY))}
+              style={styles.quickStarBtn}
+            >
+              <Text style={styles.quickStarText}>{t('kids_goal_days', { n: days, stars: days * QUICK_ADD_DAY })}</Text>
+            </PressScale>
+          ))}
+        </View>
+        <View style={styles.sheetFooter}>
+          <PressScale testID="cancel-goal" onPress={() => setShowGoalSheet(false)} style={styles.cancelBtn}>
+            <Text style={styles.cancelText}>{t('cancel')}</Text>
+          </PressScale>
+          <PressScale
+            testID="save-goal"
+            onPress={saveWeeklyGoal}
+            disabled={saving || !goalValue}
+            style={[styles.saveBtn, (!goalValue || saving) && { opacity: 0.5 }]}
+          >
+            <Text style={styles.saveText}>{saving ? '...' : t('save')}</Text>
+          </PressScale>
         </View>
       </KeyboardAwareBottomSheet>
 
@@ -2490,6 +2581,12 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   leadRow: { flexDirection: 'row', gap: 10 },
   leadStar: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: ui.orange, borderRadius: 14, paddingVertical: 13 },
   leadStarText: { fontFamily: 'Inter_800ExtraBold', fontSize: 15, color: '#fff' },
+  // Same size and shape as the amounts beside it — it is not a lesser action —
+  // but outlined rather than filled, because it opens a sheet instead of
+  // awarding a star on the spot.
+  leadStarOther: { backgroundColor: ui.orangeSoft, borderWidth: 1, borderColor: ui.orange },
+  takeBackRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, marginTop: 2 },
+  takeBackText: { fontFamily: 'Inter_600SemiBold', fontSize: 13, color: ui.muted },
   todayRow: { flexDirection: 'row', alignItems: 'center', gap: 11, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, borderRadius: 12, paddingVertical: 11, paddingHorizontal: 12, marginBottom: 7 },
   todayIcon: { width: 30, height: 30, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   todayText: { flex: 1, fontFamily: 'Inter_600SemiBold', fontSize: 14, color: ui.text },

@@ -1774,7 +1774,12 @@ export const api = {
   },
   memberStarHistory: (member_id: string) =>
     request<StarTransaction[]>(`/family/members/${member_id}/star-history`),
-  updateFamilyMember: (member_id: string, data: { name?: string; avatar?: string; age?: number }) => {
+  updateFamilyMember: (
+    member_id: string,
+    // weekly_target: how many stars this child's week is measured against.
+    // Send 0 to go back to the household default.
+    data: { name?: string; avatar?: string; age?: number; weekly_target?: number },
+  ) => {
     cache.invalidate('familyMembers');
     return request<FamilyMember>(`/family/members/${member_id}`, { method: 'PATCH', body: data });
   },
