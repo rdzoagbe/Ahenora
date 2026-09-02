@@ -96,7 +96,17 @@ export function GiftingStrip({
           <Text style={[styles.segText, active === 'santa' && styles.segTextOn]}>{t('ss_title')}</Text>
         </PressScale>
       </View>
-      ) : null}
+      ) : (
+        /* The title used to live in the segmented control above, so hiding
+           Secret Santa took the heading with it and the card sat on the Feed
+           with no name — a list of birthdays and amounts under nothing. A
+           one-option segmented control would be a control that does nothing,
+           but the card still has to say what it is. */
+        <View style={styles.soloHead}>
+          <Gift color={ui.orangeText} size={14} />
+          <Text style={styles.soloHeadText}>{t('gp_title')}</Text>
+        </View>
+      )}
 
       {active === 'giftpot' ? (
         hasBirthdays ? (
@@ -191,6 +201,10 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   card: { backgroundColor: ui.card, borderRadius: 18, borderWidth: 1, borderColor: ui.line, paddingHorizontal: 14, paddingTop: 12, paddingBottom: 6, marginBottom: 16 },
 
   seg: { flexDirection: 'row', backgroundColor: ui.soft, borderRadius: 12, padding: 4, gap: 4, marginBottom: 4 },
+  // The heading when there is only one thing in the card. Same weight and size
+  // as the segment labels it replaces, so the Feed reads the same either way.
+  soloHead: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 6, paddingHorizontal: 2, marginBottom: 2 },
+  soloHeadText: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 12.5, letterSpacing: -0.1, textTransform: 'uppercase' },
   segBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 8, borderRadius: 9 },
   segBtnOn: { backgroundColor: ui.card },
   segText: { color: ui.muted, fontFamily: 'Inter_800ExtraBold', fontSize: 12.5, letterSpacing: -0.1 },

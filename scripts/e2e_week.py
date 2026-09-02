@@ -90,14 +90,37 @@ async def main():
         await page.wait_for_timeout(900)
 
         body = await page.inner_text("body")
-        r["shows_the_week_target"] = "50" in body
-        r["ideas_have_no_star_prices"] = "Pizza night" in body
-        # The arithmetic that answers "how does this reach 50?" — it was true
+        # Against the target the SERVER reports, not a number typed here. This
+        # read "50" — the old fixed target — and went on passing after the
+        # default moved to 35, because some other number on the page happened
+        # to contain "50". An assertion that cannot fail is not an assertion.
+        member_now = [m for m in api("GET", "/family/members", None, tok)
+                      if m["member_id"] == mid][0]
+        target = int(member_now.get("weekly_target") or 0)
+        r["shows_the_week_target"] = bool(target) and str(target) in body
+        # Read off the chip itself rather than the whole page: "Pizza night is
+        # somewhere in the body" was true whether or not it carried a price.
+        idea_text = await page.inner_text('[data-testid="ri_pizza"]')
+        r["ideas_have_no_star_prices"] = ("Pizza" in idea_text
+                                          and not any(c.isdigit() for c in idea_text))
+        # The arithmetic that answers "how does the week add up?" — it was true
         # from the start and stated nowhere, which is what made the target
         # look arbitrary.
         r["says_how_the_week_adds_up"] = "7 a day" in body
-        # The priced list is gone; the week is the only currency now.
-        r["no_competing_priced_list"] = "Saved up for" not in body
+        # Two currencies, one price between them.
+        #
+        # This used to assert that the priced list was GONE — the week having
+        # become the only currency. The list is back, deliberately: without it
+        # the Feed counted rewards nobody could see, and no household could ever
+        # create a first one. What must not come back is the confusion that
+        # removed it, which was never the list itself but the same treat carrying
+        # two prices at once — a meter above and a star cost a few rows below,
+        # rarely agreeing.
+        #
+        # So the rule is now the one worth keeping: the week's ideas are free
+        # (asserted above — they show no cost), and the saved-up list is the
+        # only thing on the page that names a price.
+        r["saved_up_list_is_reachable"] = "Saved up for" in body
 
         if past:
             key = f"{past.year}-{past.month - 1}-{past.day}"
