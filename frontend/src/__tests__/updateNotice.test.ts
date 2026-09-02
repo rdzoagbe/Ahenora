@@ -66,3 +66,40 @@ describe('what we announce', () => {
     });
   });
 });
+
+describe('the relaunch banner asks once, not on every launch', () => {
+  // Reported: "each time I open the app it says update even though there's no
+  // update." There was one — a staged bundle that only applies on relaunch —
+  // but dismissal lived in component state, so closing the banner lasted until
+  // the screen unmounted and the same notice about the same update came back
+  // every single time the app opened. A banner that repeats itself is a banner
+  // people stop reading.
+  const SOURCE = require('fs').readFileSync(
+    require('path').join(__dirname, '..', 'components', 'UpdateNotice.tsx'), 'utf8');
+
+  it('remembers the dismissal on the device, not just in state', () => {
+    expect(SOURCE).toContain("const DISMISSED_UPDATE_KEY = 'coo_dismissed_update_id'");
+    expect(SOURCE).toMatch(/AsyncStorage\.setItem\(DISMISSED_UPDATE_KEY/);
+    expect(SOURCE).toMatch(/AsyncStorage\.getItem\(DISMISSED_UPDATE_KEY\)/);
+  });
+
+  it('keys the dismissal to the update, so the next one still gets its say', () => {
+    // Muting "updates" as a category would mean the person never hears about
+    // another one. Muting THIS update is the honest version.
+    expect(SOURCE).toContain('downloadedUpdate');
+    expect(SOURCE).toMatch(/pendingUpdateId === mutedUpdateId/);
+  });
+
+  it('only silences the relaunch notice, never the stranded-build one', () => {
+    // A build too old to update itself cannot be fixed by waiting, so that
+    // notice outranks everything and is not mutable.
+    expect(SOURCE).toMatch(/notice === 'store'\s*\n?\s*\?\s*'store'/);
+    expect(SOURCE).toMatch(/isUpdatePending && !relaunchMuted/);
+  });
+
+  it('waits for the stored answer before drawing anything', () => {
+    // Rendering first and reading storage after shows the banner and then
+    // snatches it away, which looks like a glitch.
+    expect(SOURCE).toMatch(/dismissed \|\| !muteLoaded\) return null/);
+  });
+});

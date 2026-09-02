@@ -38,6 +38,21 @@ import { logger } from '../logger';
  */
 
 const SEEN_VERSION_KEY = 'coo_seen_app_version';
+/**
+ * The staged update this device has already been told about.
+ *
+ * Dismissal used to live in component state, so it lasted exactly as long as
+ * the screen did. A staged update stays staged until the app actually
+ * relaunches — so anyone who closed the banner instead of tapping Relaunch was
+ * shown the same notice about the same update every single time they opened
+ * the app, which reads as "it keeps saying there's an update when there isn't".
+ * There was one; it just had not been applied, and saying so on a loop is how a
+ * banner teaches people to ignore banners.
+ *
+ * Keyed by the update's own id, so this silences THAT update and nothing else:
+ * the next one published still gets its say.
+ */
+const DISMISSED_UPDATE_KEY = 'coo_dismissed_update_id';
 
 type Notice = 'store' | 'relaunch' | 'whatsNew' | null;
 
@@ -59,9 +74,11 @@ export function UpdateNotice() {
   const insets = useSafeAreaInsets();
   const styles = createStyles(ui);
 
-  const { isUpdatePending } = Updates.useUpdates();
+  const { isUpdatePending, downloadedUpdate } = Updates.useUpdates();
   const [notice, setNotice] = useState<Notice>(null);
   const [dismissed, setDismissed] = useState(false);
+  const [mutedUpdateId, setMutedUpdateId] = useState<string | null>(null);
+  const pendingUpdateId = downloadedUpdate?.updateId ?? null;
   const [storeUrl, setStoreUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -101,16 +118,39 @@ export function UpdateNotice() {
     return () => { cancelled = true; };
   }, [version]);
 
+  // Which staged update this device has already declined, read once. Null while
+  // it loads, which is why the banner waits for it below rather than flashing
+  // up and disappearing.
+  const [muteLoaded, setMuteLoaded] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    AsyncStorage.getItem(DISMISSED_UPDATE_KEY)
+      .then((value) => { if (!cancelled) setMutedUpdateId(value); })
+      .catch(() => undefined)
+      .finally(() => { if (!cancelled) setMuteLoaded(true); });
+    return () => { cancelled = true; };
+  }, []);
+
   // A staged update outranks "what's new" — applying it is the useful action,
   // and the notes it would show are for the version about to be replaced.
-  const shown: Notice = notice === 'store' ? 'store' : (isUpdatePending ? 'relaunch' : notice);
+  // A staged update the person has already waved away is not news the second
+  // time. Anything without an id (a rollback directive) can still speak, since
+  // there is nothing to remember it by.
+  const relaunchMuted = !!pendingUpdateId && pendingUpdateId === mutedUpdateId;
+  const shown: Notice = notice === 'store'
+    ? 'store'
+    : (isUpdatePending && !relaunchMuted ? 'relaunch' : notice);
 
   const dismiss = useCallback(async () => {
     setDismissed(true);
     if (shown === 'whatsNew') {
       await AsyncStorage.setItem(SEEN_VERSION_KEY, version).catch(() => undefined);
     }
-  }, [shown, version]);
+    if (shown === 'relaunch' && pendingUpdateId) {
+      setMutedUpdateId(pendingUpdateId);
+      await AsyncStorage.setItem(DISMISSED_UPDATE_KEY, pendingUpdateId).catch(() => undefined);
+    }
+  }, [shown, version, pendingUpdateId]);
 
   const act = useCallback(async () => {
     if (busy) return;
@@ -126,7 +166,9 @@ export function UpdateNotice() {
     }
   }, [busy, shown, storeUrl, dismiss]);
 
-  if (!shown || dismissed) return null;
+  // Waiting on the muted id rather than rendering without it: showing the
+  // banner and then yanking it away is worse than a beat of nothing.
+  if (!shown || dismissed || !muteLoaded) return null;
 
   const copy = {
     store: { title: t('update_store_title'), body: t('update_store_body'), cta: t('update_store_cta'), Icon: Store },

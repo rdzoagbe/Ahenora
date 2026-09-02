@@ -51,7 +51,7 @@ import { TabScreen } from '../../src/components/TabScreen';
 import { Card, IconTile, ProgressBar, ScreenHeader, UI, useUI, UIColors } from '../../src/components/Kit';
 
 import { useStore } from '../../src/store';
-import { api, logEvent, AllowanceConfig, AllowanceTxn, ChatThreadSummary, Chore, FamilyMember, Redemption, Routine, StarTransaction } from '../../src/api';
+import { api, logEvent, AllowanceConfig, AllowanceTxn, ChatThreadSummary, Chore, FamilyMember, Redemption, Reward, Routine, StarTransaction } from '../../src/api';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { logger } from '../../src/logger';
@@ -78,6 +78,46 @@ function formatDueDate(iso: string, locale: string): string {
 type StarMode = 'add' | 'remove';
 
 const DEFAULT_REWARD_ICON = String.fromCodePoint(0x1F381);
+
+/**
+ * Two routines most households already run, as a starting point.
+ *
+ * Typing five steps and five durations into a bottom sheet is the kind of
+ * setup people abandon halfway. These fill the sheet in one tap and every
+ * field stays editable — the preset is a draft, not a template.
+ */
+const ROUTINE_PRESETS = [
+  {
+    key: 'morning' as const,
+    nameKey: 'kids_routine_preset_morning',
+    steps: [
+      { labelKey: 'kids_step_dressed', minutes: 5 },
+      { labelKey: 'kids_step_breakfast', minutes: 15 },
+      { labelKey: 'kids_step_teeth', minutes: 2 },
+      { labelKey: 'kids_step_bag', minutes: 3 },
+    ],
+  },
+  {
+    key: 'bedtime' as const,
+    nameKey: 'kids_routine_preset_bedtime',
+    steps: [
+      { labelKey: 'kids_step_tidy', minutes: 5 },
+      { labelKey: 'kids_step_bath', minutes: 10 },
+      { labelKey: 'kids_step_teeth', minutes: 2 },
+      { labelKey: 'kids_step_story', minutes: 10 },
+    ],
+  },
+];
+
+/** Enough to name most treats without opening the emoji keyboard. */
+const REWARD_ICONS = [
+  DEFAULT_REWARD_ICON,                 // gift
+  String.fromCodePoint(0x1F3AE),       // video game
+  String.fromCodePoint(0x1F368),       // ice cream
+  String.fromCodePoint(0x1F3AC),       // clapper board
+  String.fromCodePoint(0x1F6F4),       // scooter
+  String.fromCodePoint(0x1F4DA),       // books
+];
 
 /**
  * What a finished week can buy.
@@ -268,6 +308,21 @@ export default function Kids() {
   const [allowances, setAllowances] = useState<AllowanceConfig[]>([]);
   const [balances, setBalances] = useState<Record<string, number>>({});
   const [chores, setChores] = useState<Chore[]>([]);
+  const [showRoutineSheet, setShowRoutineSheet] = useState(false);
+  const [routineName, setRoutineName] = useState('');
+  const [routineStars, setRoutineStars] = useState('2');
+  const [routineSteps, setRoutineSteps] = useState<{ label: string; minutes: string }[]>([]);
+  const [showChoreSheet, setShowChoreSheet] = useState(false);
+  const [choreTitle, setChoreTitle] = useState('');
+  const [choreStars, setChoreStars] = useState('3');
+  const [choreWeekly, setChoreWeekly] = useState(false);
+  const [choreMembers, setChoreMembers] = useState<string[]>([]);
+  const [rewards, setRewards] = useState<Reward[]>([]);
+  const [showRewardSheet, setShowRewardSheet] = useState(false);
+  const [editingReward, setEditingReward] = useState<Reward | null>(null);
+  const [rewardTitle, setRewardTitle] = useState('');
+  const [rewardCost, setRewardCost] = useState('20');
+  const [rewardIcon, setRewardIcon] = useState(DEFAULT_REWARD_ICON);
 
   // Teens live in this section too — same wallet (stars, redeem, adjust), so a
   // parent manages a young person's rewards whether they're a managed child or
@@ -502,8 +557,10 @@ export default function Kids() {
       setSelectedChild(nextSelected);
       await refreshHistory(nextSelected);
 
-      Promise.allSettled([api.listRoutines(), api.listAllowances(), api.listChores(), api.listRedemptions('pending')])
-        .then(async ([rtnRes, alwRes, choreRes, redRes]) => {
+      Promise.allSettled([api.listRoutines(), api.listAllowances(), api.listChores(),
+                          api.listRedemptions('pending'), api.listRewards()])
+        .then(async ([rtnRes, alwRes, choreRes, redRes, rewardRes]) => {
+          if (rewardRes.status === 'fulfilled') setRewards(rewardRes.value);
           if (rtnRes.status === 'fulfilled') setRoutines(rtnRes.value);
           if (alwRes.status === 'fulfilled') setAllowances(alwRes.value);
           // Allowance heads-up is sent by the server now. Scheduled here it only
@@ -1208,6 +1265,200 @@ export default function Kids() {
     } catch { showToast(t('kids_rotate_chore_error'), 'error'); }
   }, [showToast]);
 
+  // ---- Morning routines ---------------------------------------------------
+  //
+  // The third feature in this family that could be run and deleted but never
+  // created. Listing, logging and deleting were wired; createRoutine was not,
+  // and the section only rendered once a routine existed — so nobody without
+  // one could ever get a first.
+
+  const openRoutineSheet = useCallback(() => {
+    setRoutineName('');
+    setRoutineStars('2');
+    // One empty step, so the shape of the thing is visible before anything is
+    // typed. An empty list reads as a broken sheet.
+    setRoutineSteps([{ label: '', minutes: '5' }]);
+    setShowRoutineSheet(true);
+  }, []);
+
+  const applyRoutinePreset = useCallback((preset: typeof ROUTINE_PRESETS[number]) => {
+    setRoutineName(t(preset.nameKey));
+    setRoutineSteps(preset.steps.map((step) => ({
+      label: t(step.labelKey), minutes: String(step.minutes),
+    })));
+  }, [t]);
+
+  const createRoutine = useCallback(async () => {
+    if (!activeChild) return;
+    const name = routineName.trim();
+    if (!name) { showToast(t('kids_routine_name_required'), 'error'); return; }
+    // A blank row is somebody who added a step and changed their mind, not an
+    // error worth stopping for. A routine of nothing but blanks is.
+    const steps = routineSteps
+      .map((step) => ({
+        label: step.label.trim(),
+        duration_seconds: Math.max(1, parseInt(step.minutes || '0', 10) || 1) * 60,
+      }))
+      .filter((step) => step.label.length > 0);
+    if (steps.length === 0) { showToast(t('kids_routine_steps_required'), 'error'); return; }
+
+    setSaving(true);
+    try {
+      const created = await api.createRoutine({
+        name,
+        steps,
+        member_id: activeChild.member_id,
+        star_reward: Math.max(0, parseInt(routineStars || '0', 10) || 0),
+      });
+      setRoutines((prev) => [...prev, created]);
+      setShowRoutineSheet(false);
+      showToast(t('kids_routine_added', { name: created.name }), 'success');
+    } catch (e: any) {
+      logger.warn('Create routine failed:', e?.message || e);
+      showToast(e?.message || t('kids_routine_add_error'), 'error');
+    } finally {
+      setSaving(false);
+    }
+  }, [activeChild, routineName, routineStars, routineSteps, showToast, t]);
+
+  /**
+   * Open the "add a chore" sheet, with the child whose page this is already
+   * ticked. A chore reached from a child's page is nearly always for them.
+   */
+  const openChoreSheet = useCallback(() => {
+    setChoreTitle('');
+    setChoreStars('3');
+    setChoreWeekly(false);
+    setChoreMembers(activeChild ? [activeChild.member_id] : []);
+    setShowChoreSheet(true);
+  }, [activeChild]);
+
+  /**
+   * The missing half of the Chore Wheel.
+   *
+   * Listing, finishing, rotating and deleting were all wired; creating never
+   * was. The wheel only rendered when a chore already existed, so a household
+   * with none saw nothing at all and had no way to change that — a feature
+   * that could only ever be emptied.
+   */
+  const createChore = useCallback(async () => {
+    const title = choreTitle.trim();
+    if (!title) { showToast(t('kids_chore_title_required'), 'error'); return; }
+    const stars = Math.max(0, parseInt(choreStars || '0', 10) || 0);
+    if (choreMembers.length === 0) { showToast(t('kids_chore_who_required'), 'error'); return; }
+    setSaving(true);
+    try {
+      const created = await api.createChore({
+        title,
+        frequency: choreWeekly ? 'weekly' : 'daily',
+        assigned_members: choreMembers,
+        // Rotating between one person is just that person, and the wheel hides
+        // the rotate control in that case anyway.
+        rotate: choreMembers.length > 1,
+        star_reward: stars,
+      });
+      setChores((prev) => [...prev, created]);
+      setShowChoreSheet(false);
+      showToast(t('kids_chore_added', { title: created.title }), 'success');
+    } catch (e: any) {
+      logger.warn('Create chore failed:', e?.message || e);
+      showToast(e?.message || t('kids_chore_add_error'), 'error');
+    } finally {
+      setSaving(false);
+    }
+  }, [choreTitle, choreStars, choreWeekly, choreMembers, showToast, t]);
+
+  // ---- Saved-up rewards ---------------------------------------------------
+  //
+  // The week card above is one currency: fill the week, pick a treat, pay
+  // nothing. This is the other: a priced thing a child saves the BANK for over
+  // weeks. Both existed on the server the whole time; only the week had a
+  // screen, so a household could see "4 rewards" counted on the Feed and had
+  // nowhere to look at them, let alone add one.
+
+  const openRewardSheet = useCallback((reward?: Reward) => {
+    setEditingReward(reward || null);
+    setRewardTitle(reward?.title || '');
+    setRewardCost(String(reward?.cost_stars ?? 20));
+    setRewardIcon(reward?.icon || DEFAULT_REWARD_ICON);
+    setShowRewardSheet(true);
+  }, []);
+
+  const saveReward = useCallback(async () => {
+    const title = rewardTitle.trim();
+    if (!title) { showToast(t('kids_reward_title_required'), 'error'); return; }
+    const cost = parseInt(rewardCost || '0', 10);
+    if (!cost || cost < 1) { showToast(t('kids_valid_amount'), 'error'); return; }
+    setSaving(true);
+    try {
+      const icon = rewardIcon.trim() || DEFAULT_REWARD_ICON;
+      if (editingReward) {
+        const updated = await api.updateReward(editingReward.reward_id, { title, cost_stars: cost, icon });
+        setRewards((prev) => prev.map((r) => (r.reward_id === updated.reward_id ? updated : r)));
+      } else {
+        const created = await api.createReward({ title, cost_stars: cost, icon });
+        setRewards((prev) => [...prev, created]);
+      }
+      setShowRewardSheet(false);
+      showToast(t('kids_reward_saved', { title }), 'success');
+    } catch (e: any) {
+      logger.warn('Save reward failed:', e?.message || e);
+      showToast(e?.message || t('kids_reward_save_error'), 'error');
+    } finally {
+      setSaving(false);
+    }
+  }, [rewardTitle, rewardCost, rewardIcon, editingReward, showToast, t]);
+
+  const removeReward = useCallback((reward: Reward) => {
+    const go = async () => {
+      // Optimistic: the row is gone from the screen before the round trip, and
+      // put back if the server refuses. Deleting a reward takes nothing from
+      // anyone — stars already spent on it stay spent, in the ledger.
+      setRewards((prev) => prev.filter((r) => r.reward_id !== reward.reward_id));
+      try {
+        await api.deleteReward(reward.reward_id);
+      } catch (e: any) {
+        setRewards((prev) => [...prev, reward]);
+        showToast(e?.message || t('kids_reward_save_error'), 'error');
+      }
+    };
+    const title = t('kids_reward_delete_q', { title: reward.title });
+    if (Platform.OS === 'web') { if (webConfirm(title)) go(); return; }
+    Alert.alert(title, '', [
+      { text: t('cancel'), style: 'cancel' },
+      { text: t('kids_delete'), style: 'destructive', onPress: go },
+    ]);
+  }, [showToast, t]);
+
+  /**
+   * Spend the bank on a saved-up reward.
+   *
+   * The week meter is untouched — that is the server's rule, not a display
+   * choice: savings and the week are two different things, and cashing one in
+   * must not empty the other.
+   */
+  const redeemReward = useCallback(async (reward: Reward) => {
+    if (!activeChild) { showToast(t('kids_select_child_first'), 'error'); return; }
+    if (starActionRef.current) return;
+    starActionRef.current = true;
+    try {
+      const res = await api.redeemReward(reward.reward_id, activeChild.member_id);
+      setMembers((prev) => prev.map((m) => (m.member_id === res.member.member_id ? res.member : m)));
+      if (res.redemption) {
+        setRedemptions((prev) => [res.redemption as Redemption, ...prev]);
+        addedIdsRef.current.add(res.redemption.redemption_id);
+      }
+      showToast(t('kids_reward_redeemed', { title: reward.title }), 'success');
+      setCelebration({ kind: 'reward', title: reward.title });
+      await refreshHistory(activeChild.member_id);
+    } catch (e: any) {
+      logger.warn('Redeem failed:', e?.message || e);
+      showToast(e?.message || t('kids_reward_redeem_error'), 'error');
+    } finally {
+      starActionRef.current = false;
+    }
+  }, [activeChild, refreshHistory, showToast, t]);
+
   const deleteChore = useCallback((choreId: string) => {
     Alert.alert(t('kids_delete_chore_q'), t('kids_delete_chore_msg'), [
       { text: t('cancel'), style: 'cancel' },
@@ -1880,14 +2131,80 @@ export default function Kids() {
                         </View>
                       </Card>
 
-                      {/* The priced "saved up for" list is gone. The week is
-                          the currency now, and running both meant two prices
-                          for the same treat — the meter above and a star cost
-                          a few rows below, rarely agreeing. Nothing is lost:
-                          rewards and balances stay in the database untouched,
-                          the bank still shows at the top of the page, and
-                          anything already redeemed still appears above as
-                          owed until it is handed over. */}
+                      {/* Saved up for — the other currency, back with a way in.
+                          The week above is free: fill it, pick a treat. This is
+                          the bank: a priced thing worth saving weeks for. Two
+                          prices for one treat was the original confusion, so
+                          they are two lists with two headings and the cost only
+                          ever appears on this one. It was taken out entirely
+                          when the week became the main currency, which left the
+                          Feed counting "4 rewards" against a screen that had
+                          stopped existing — and a new household could never
+                          make a first one. */}
+                      <View style={styles.blockHead}>
+                        <Text style={styles.blockTitle}>{t('kids_saved_up_for')}</Text>
+                        <PressScale
+                          testID="kids-add-reward"
+                          accessibilityRole="button"
+                          onPress={() => openRewardSheet()}
+                          style={styles.featureHeaderBtn}
+                        >
+                          <Plus color={ui.orangeText} size={14} />
+                          <Text style={[styles.featureHeaderBtnText, { color: ui.orangeText }]}>{t('kids_add_reward')}</Text>
+                        </PressScale>
+                      </View>
+                      <Card style={styles.cardPad}>
+                        {rewards.length === 0 ? (
+                          <Text style={styles.featureEmpty}>{t('kids_rewards_empty')}</Text>
+                        ) : rewards.map((reward, index, arr) => {
+                          const affordable = stars >= reward.cost_stars;
+                          return (
+                            <View
+                              key={reward.reward_id}
+                              style={[styles.rewardRow, index < arr.length - 1 && styles.rewardRowBorder]}
+                            >
+                              <IconTile bg={ui.orangeSoft} size={42} radius={13}>
+                                <Text style={styles.rewardEmoji}>{reward.icon || DEFAULT_REWARD_ICON}</Text>
+                              </IconTile>
+                              <PressScale
+                                accessibilityRole="button"
+                                accessibilityLabel={t('kids_reward_edit', { title: reward.title })}
+                                testID={`reward-edit-${reward.reward_id}`}
+                                onPress={() => openRewardSheet(reward)}
+                                style={{ flex: 1, minWidth: 0 }}
+                              >
+                                <Text style={styles.pendingTitle} numberOfLines={1}>{reward.title}</Text>
+                                <Text style={styles.pendingMeta} numberOfLines={1}>
+                                  {/* What it costs, and — when they cannot yet
+                                      afford it — how far off they are. A price
+                                      alone makes a child do the subtraction. */}
+                                  {affordable
+                                    ? t('kids_reward_cost', { n: reward.cost_stars })
+                                    : t('kids_reward_short_by', { n: reward.cost_stars - stars })}
+                                </Text>
+                              </PressScale>
+                              <PressScale
+                                testID={`reward-redeem-${reward.reward_id}`}
+                                accessibilityRole="button"
+                                disabled={!affordable}
+                                onPress={() => redeemReward(reward)}
+                                style={[styles.featureActionBtn, { backgroundColor: ui.orange }, !affordable && { opacity: 0.4 }]}
+                              >
+                                <Text style={styles.featureActionText}>{t('kids_reward_redeem')}</Text>
+                              </PressScale>
+                              <PressScale
+                                accessibilityRole="button"
+                                accessibilityLabel={t('a11y_delete')}
+                                testID={`reward-delete-${reward.reward_id}`}
+                                onPress={() => removeReward(reward)}
+                                style={styles.featureIconBtn}
+                              >
+                                <Trash2 color={ui.muted} size={15} />
+                              </PressScale>
+                            </View>
+                          );
+                        })}
+                      </Card>
                     </>
                   )}
 
@@ -1945,14 +2262,28 @@ export default function Kids() {
             </View>
           ) : null}
 
-          {/* Morning Routines — part of the focused child's page, not the roster */}
-          {isFocused && showMore && activeChild && childRoutines.length > 0 ? (
+          {/* Morning Routines — part of the focused child's page, not the roster.
+              Ungated for the same reason the Chore Wheel was: it rendered only
+              when a routine existed and nothing could create the first one. */}
+          {isFocused && showMore && activeChild ? (
             <>
               <View style={styles.featureHeader}>
                 <Timer color={ui.lavenderText} size={18} />
                 <Text style={styles.featureHeaderText}>{t('kids_morning_routines')}</Text>
+                <PressScale
+                  testID="kids-add-routine"
+                  accessibilityRole="button"
+                  onPress={openRoutineSheet}
+                  style={styles.featureHeaderBtn}
+                >
+                  <Plus color={ui.lavenderText} size={14} />
+                  <Text style={[styles.featureHeaderBtnText, { color: ui.lavenderText }]}>{t('kids_add_routine')}</Text>
+                </PressScale>
               </View>
               <Card style={styles.cardPad}>
+                {childRoutines.length === 0 ? (
+                  <Text style={styles.featureEmpty}>{t('kids_routines_empty')}</Text>
+                ) : null}
                 {childRoutines.map((rtn) => (
                   <View key={rtn.routine_id} style={styles.featureRow}>
                     <View style={{ flex: 1, minWidth: 0 }}>
@@ -2047,14 +2378,29 @@ export default function Kids() {
             </>
           ) : null}
 
-          {/* Chore Wheel — part of the focused child's page, not the roster */}
-          {isFocused && showMore && activeChild && chores.length > 0 ? (
+          {/* Chore Wheel — part of the focused child's page, not the roster.
+              No longer gated on there already being a chore: it used to render
+              only when one existed, and nothing anywhere could create one, so a
+              household with none saw an empty page and had no way off it. */}
+          {isFocused && showMore && activeChild ? (
             <>
               <View style={styles.featureHeader}>
                 <RotateCcw color={ui.mintText} size={18} />
                 <Text style={styles.featureHeaderText}>{t('kids_chore_wheel')}</Text>
+                <PressScale
+                  testID="kids-add-chore"
+                  accessibilityRole="button"
+                  onPress={openChoreSheet}
+                  style={styles.featureHeaderBtn}
+                >
+                  <Plus color={ui.mintText} size={14} />
+                  <Text style={[styles.featureHeaderBtnText, { color: ui.mintText }]}>{t('kids_add_chore')}</Text>
+                </PressScale>
               </View>
               <Card style={styles.cardPad}>
+                {chores.length === 0 ? (
+                  <Text style={styles.featureEmpty}>{t('kids_chores_empty')}</Text>
+                ) : null}
                 {chores.map((chore) => (
                   <View key={chore.chore_id} style={styles.featureRow}>
                     <View style={{ flex: 1, minWidth: 0 }}>
@@ -2260,6 +2606,266 @@ export default function Kids() {
         <View style={styles.sheetFooter}>
           <PressScale testID="cancel-stars" onPress={() => setShowStarSheet(false)} style={styles.cancelBtn}><Text style={styles.cancelText}>{t('cancel')}</Text></PressScale>
           <PressScale testID="save-stars" onPress={adjustStars} disabled={saving || !starAmount} style={[styles.saveBtn, (!starAmount || saving) && { opacity: 0.5 }]}><Text style={styles.saveText}>{saving ? '...' : t('save')}</Text></PressScale>
+        </View>
+      </KeyboardAwareBottomSheet>
+
+      {/* Add or edit a saved-up reward */}
+      <KeyboardAwareBottomSheet visible={showRewardSheet} onClose={() => setShowRewardSheet(false)} contentStyle={styles.sheet}>
+        <View style={styles.sheetHeader}>
+          <Text style={styles.sheetTitle}>
+            {editingReward ? t('kids_edit_reward') : t('kids_add_reward')}
+          </Text>
+          <PressScale
+            accessibilityRole="button"
+            accessibilityLabel={t('close')}
+            testID="close-reward-sheet"
+            onPress={() => setShowRewardSheet(false)}
+            style={styles.iconBtn}
+          >
+            <X color={ui.text} size={20} />
+          </PressScale>
+        </View>
+        <Text style={styles.sheetHelp}>{t('kids_reward_help')}</Text>
+        <Text style={styles.label}>{t('kids_reward_title_label')}</Text>
+        <TextInput
+          testID="reward-title"
+          autoFocus
+          value={rewardTitle}
+          onChangeText={setRewardTitle}
+          placeholder={t('kids_reward_title_placeholder')}
+          placeholderTextColor={ui.muted}
+          style={styles.input}
+        />
+        <Text style={styles.label}>{t('kids_reward_cost_label')}</Text>
+        <TextInput
+          testID="reward-cost"
+          value={rewardCost}
+          onChangeText={(v) => setRewardCost(cleanNumber(v))}
+          keyboardType="number-pad"
+          returnKeyType="done"
+          onSubmitEditing={saveReward}
+          placeholder="20"
+          placeholderTextColor={ui.muted}
+          style={styles.input}
+        />
+        {/* A picture beats a typed emoji on a phone keyboard, and the row is
+            short enough to scan. Anything else can still be typed in. */}
+        <Text style={styles.label}>{t('kids_reward_icon_label')}</Text>
+        <View style={styles.quickRow}>
+          {REWARD_ICONS.map((icon) => (
+            <PressScale
+              key={icon}
+              testID={`reward-icon-${icon}`}
+              accessibilityRole="button"
+              onPress={() => setRewardIcon(icon)}
+              style={[styles.quickStarBtn, rewardIcon === icon && { backgroundColor: ui.orangeSoft, borderColor: ui.orange }]}
+            >
+              <Text style={styles.rewardEmoji}>{icon}</Text>
+            </PressScale>
+          ))}
+        </View>
+        <View style={styles.sheetFooter}>
+          <PressScale testID="cancel-reward" onPress={() => setShowRewardSheet(false)} style={styles.cancelBtn}>
+            <Text style={styles.cancelText}>{t('cancel')}</Text>
+          </PressScale>
+          <PressScale
+            testID="save-reward"
+            onPress={saveReward}
+            disabled={saving || !rewardTitle.trim() || !rewardCost}
+            style={[styles.saveBtn, (saving || !rewardTitle.trim() || !rewardCost) && { opacity: 0.5 }]}
+          >
+            <Text style={styles.saveText}>{saving ? '...' : t('save')}</Text>
+          </PressScale>
+        </View>
+      </KeyboardAwareBottomSheet>
+
+      {/* Build a routine: a name, some steps, and what finishing it is worth */}
+      <KeyboardAwareBottomSheet visible={showRoutineSheet} onClose={() => setShowRoutineSheet(false)} contentStyle={styles.sheet}>
+        <View style={styles.sheetHeader}>
+          <Text style={styles.sheetTitle}>{t('kids_add_routine')}</Text>
+          <PressScale
+            accessibilityRole="button"
+            accessibilityLabel={t('close')}
+            testID="close-routine-sheet"
+            onPress={() => setShowRoutineSheet(false)}
+            style={styles.iconBtn}
+          >
+            <X color={ui.text} size={20} />
+          </PressScale>
+        </View>
+        {/* Start from something. Five steps and five durations typed into a
+            bottom sheet is where this kind of setup gets abandoned. */}
+        <View style={styles.quickRow}>
+          {ROUTINE_PRESETS.map((preset) => (
+            <PressScale
+              key={preset.key}
+              testID={`routine-preset-${preset.key}`}
+              accessibilityRole="button"
+              onPress={() => applyRoutinePreset(preset)}
+              style={styles.quickStarBtn}
+            >
+              <Text style={styles.quickStarText} numberOfLines={1}>{t(preset.nameKey)}</Text>
+            </PressScale>
+          ))}
+        </View>
+        <Text style={styles.label}>{t('kids_routine_name_label')}</Text>
+        <TextInput
+          testID="routine-name"
+          value={routineName}
+          onChangeText={setRoutineName}
+          placeholder={t('kids_routine_name_placeholder')}
+          placeholderTextColor={ui.muted}
+          style={styles.input}
+        />
+        <Text style={styles.label}>{t('kids_routine_steps_label')}</Text>
+        {routineSteps.map((step, index) => (
+          <View key={index} style={styles.stepRow}>
+            <TextInput
+              testID={`routine-step-${index}`}
+              value={step.label}
+              onChangeText={(v) => setRoutineSteps((prev) =>
+                prev.map((row, i) => (i === index ? { ...row, label: v } : row)))}
+              placeholder={t('kids_routine_step_placeholder')}
+              placeholderTextColor={ui.muted}
+              style={[styles.input, styles.stepLabelInput]}
+            />
+            <TextInput
+              testID={`routine-step-mins-${index}`}
+              value={step.minutes}
+              onChangeText={(v) => setRoutineSteps((prev) =>
+                prev.map((row, i) => (i === index ? { ...row, minutes: cleanNumber(v) } : row)))}
+              keyboardType="number-pad"
+              placeholder="5"
+              placeholderTextColor={ui.muted}
+              style={[styles.input, styles.stepMinsInput]}
+            />
+            <PressScale
+              accessibilityRole="button"
+              accessibilityLabel={t('a11y_delete')}
+              testID={`routine-step-remove-${index}`}
+              onPress={() => setRoutineSteps((prev) => prev.filter((_, i) => i !== index))}
+              style={styles.featureIconBtn}
+            >
+              <Trash2 color={ui.muted} size={15} />
+            </PressScale>
+          </View>
+        ))}
+        <PressScale
+          testID="routine-add-step"
+          accessibilityRole="button"
+          onPress={() => setRoutineSteps((prev) => [...prev, { label: '', minutes: '5' }])}
+          style={styles.addStepBtn}
+        >
+          <Plus color={ui.lavenderText} size={14} />
+          <Text style={[styles.featureHeaderBtnText, { color: ui.lavenderText }]}>{t('kids_routine_add_step')}</Text>
+        </PressScale>
+        <Text style={styles.label}>{t('kids_routine_worth_label')}</Text>
+        <TextInput
+          testID="routine-stars"
+          value={routineStars}
+          onChangeText={(v) => setRoutineStars(cleanNumber(v))}
+          keyboardType="number-pad"
+          returnKeyType="done"
+          onSubmitEditing={createRoutine}
+          placeholder="2"
+          placeholderTextColor={ui.muted}
+          style={styles.input}
+        />
+        <View style={styles.sheetFooter}>
+          <PressScale testID="cancel-routine" onPress={() => setShowRoutineSheet(false)} style={styles.cancelBtn}>
+            <Text style={styles.cancelText}>{t('cancel')}</Text>
+          </PressScale>
+          <PressScale
+            testID="save-routine"
+            onPress={createRoutine}
+            disabled={saving || !routineName.trim()}
+            style={[styles.saveBtn, (saving || !routineName.trim()) && { opacity: 0.5 }]}
+          >
+            <Text style={styles.saveText}>{saving ? '...' : t('save')}</Text>
+          </PressScale>
+        </View>
+      </KeyboardAwareBottomSheet>
+
+      {/* Add a chore to the wheel */}
+      <KeyboardAwareBottomSheet visible={showChoreSheet} onClose={() => setShowChoreSheet(false)} contentStyle={styles.sheet}>
+        <View style={styles.sheetHeader}>
+          <Text style={styles.sheetTitle}>{t('kids_add_chore')}</Text>
+          <PressScale
+            accessibilityRole="button"
+            accessibilityLabel={t('close')}
+            testID="close-chore-sheet"
+            onPress={() => setShowChoreSheet(false)}
+            style={styles.iconBtn}
+          >
+            <X color={ui.text} size={20} />
+          </PressScale>
+        </View>
+        <Text style={styles.label}>{t('kids_chore_title_label')}</Text>
+        <TextInput
+          testID="chore-title"
+          autoFocus
+          value={choreTitle}
+          onChangeText={setChoreTitle}
+          placeholder={t('kids_chore_title_placeholder')}
+          placeholderTextColor={ui.muted}
+          style={styles.input}
+        />
+        <Text style={styles.label}>{t('kids_chore_worth_label')}</Text>
+        <TextInput
+          testID="chore-stars"
+          value={choreStars}
+          onChangeText={(v) => setChoreStars(cleanNumber(v))}
+          keyboardType="number-pad"
+          placeholder="3"
+          placeholderTextColor={ui.muted}
+          style={styles.input}
+        />
+        {/* Who it goes to. More than one turns it into a wheel: finishing it
+            pays whoever had it and hands it to the next name. */}
+        <Text style={styles.label}>{t('kids_chore_who_label')}</Text>
+        <View style={styles.quickRow}>
+          {children.map((child) => {
+            const picked = choreMembers.includes(child.member_id);
+            return (
+              <PressScale
+                key={child.member_id}
+                testID={`chore-who-${child.member_id}`}
+                accessibilityRole="button"
+                onPress={() => setChoreMembers((prev) => (picked
+                  ? prev.filter((id) => id !== child.member_id)
+                  : [...prev, child.member_id]))}
+                style={[styles.quickStarBtn, picked && { backgroundColor: ui.orangeSoft, borderColor: ui.orange }]}
+              >
+                <Text style={[styles.quickStarText, picked && { color: ui.orangeText }]} numberOfLines={1}>
+                  {child.name}
+                </Text>
+              </PressScale>
+            );
+          })}
+        </View>
+        <PressScale
+          testID="chore-weekly"
+          accessibilityRole="button"
+          onPress={() => setChoreWeekly((v) => !v)}
+          style={styles.sheetToggleRow}
+        >
+          <Text style={styles.sheetToggleText}>
+            {choreWeekly ? t('kids_chore_weekly') : t('kids_chore_daily')}
+          </Text>
+          <Text style={styles.sheetToggleHint}>{t('kids_chore_frequency_hint')}</Text>
+        </PressScale>
+        <View style={styles.sheetFooter}>
+          <PressScale testID="cancel-chore" onPress={() => setShowChoreSheet(false)} style={styles.cancelBtn}>
+            <Text style={styles.cancelText}>{t('cancel')}</Text>
+          </PressScale>
+          <PressScale
+            testID="save-chore"
+            onPress={createChore}
+            disabled={saving || !choreTitle.trim() || choreMembers.length === 0}
+            style={[styles.saveBtn, (saving || !choreTitle.trim() || choreMembers.length === 0) && { opacity: 0.5 }]}
+          >
+            <Text style={styles.saveText}>{saving ? '...' : t('save')}</Text>
+          </PressScale>
         </View>
       </KeyboardAwareBottomSheet>
 
@@ -2795,6 +3401,20 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   saveText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
 
   featureHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 22, marginBottom: 10 },
+  // Sits at the end of the section header, where the eye already is when it is
+  // reading "Chore Wheel" and finding nothing under it.
+  featureHeaderBtn: { marginLeft: 'auto', flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 6, paddingHorizontal: 10, borderRadius: 999, borderWidth: 1, borderColor: ui.line },
+  featureHeaderBtnText: { fontFamily: 'Inter_700Bold', fontSize: 12 },
+  featureEmpty: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 19, paddingVertical: 6 },
+  // Label, minutes, bin — on one line, because a routine is read as a list and
+  // stacking each step three rows deep makes four steps fill the screen.
+  stepRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  stepLabelInput: { flex: 1, minWidth: 0 },
+  stepMinsInput: { width: 68, textAlign: 'center' },
+  addStepBtn: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 999, borderWidth: 1, borderColor: ui.line, marginTop: 4 },
+  sheetToggleRow: { marginTop: 12, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 14, borderWidth: 1, borderColor: ui.line },
+  sheetToggleText: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 14 },
+  sheetToggleHint: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 2 },
   featureHeaderText: { flex: 1, color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 17 },
   featureRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: ui.line },
   featureRowTitle: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 15 },
