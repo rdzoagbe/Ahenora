@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { reportColdStart } from '../src/perf';
 import { Stack, useRouter } from 'expo-router';
 import { InviteJoinPrompt } from '../src/components/InviteJoinPrompt';
 // Side effect: maps Alert.alert onto browser dialogs on web, where the RN
@@ -136,6 +137,12 @@ export default function RootLayout() {
   useEffect(() => {
     if (fontsLoaded) {
       SplashScreen.hideAsync().catch(() => undefined);
+      // Cold start ends when the splash comes down, because that is the first
+      // moment a person can see and touch anything. Measuring to "the bundle
+      // finished evaluating" would report a number nobody experiences, and
+      // measuring to a screen's data arriving would blame the network for a
+      // launch that felt fine.
+      reportColdStart();
     }
   }, [fontsLoaded]);
 
