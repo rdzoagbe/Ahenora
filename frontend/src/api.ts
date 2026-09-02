@@ -1464,6 +1464,27 @@ export function logEvent(name: string): void {
 }
 
 /**
+ * Fire-and-forget duration, in milliseconds. Same contract as logEvent: never
+ * throws, never retries, and an unknown name is quietly dropped by the server
+ * rather than surfaced here — an app build ahead of the server must not show a
+ * person an error about telemetry.
+ */
+export function logTiming(name: string, ms: number): void {
+  // Guard here as well as on the server: a NaN from a clock that misbehaved
+  // would be sent as null and counted as zero, which reads as "instant".
+  if (!Number.isFinite(ms) || ms < 0) return;
+  const rounded = Math.round(ms);
+  tokenStore.get().then((token) => {
+    if (!token) return;
+    fetch(`${BASE}/api/metrics/timing`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ name, ms: rounded }),
+    }).catch(() => undefined);
+  }).catch(() => undefined);
+}
+
+/**
  * The device's IANA zone, e.g. "Europe/Paris". Sent with the push token because
  * the server needs it to fire a 07:30 digest at 07:30 where the person is —
  * nothing else in the app ever had to know. Empty if the platform will not say,

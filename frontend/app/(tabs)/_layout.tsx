@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Tabs, usePathname, useRouter } from 'expo-router';
 import { View, StyleSheet, Text, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Home, Calendar as CalendarIcon, Lock, Settings as SettingsIcon, UtensilsCrossed, Users, Plus } from 'lucide-react-native';
 import { useStore } from '../../src/store';
+import { markStart, markEnd } from '../../src/perf';
 import { useBreakpoint } from '../../src/responsive';
 import { GlobalCapture } from '../../src/components/GlobalCapture';
 import { MoreSheet } from '../../src/components/MoreSheet';
@@ -72,6 +73,17 @@ function SidebarNav({ width }: { width: number }) {
   const { isDesktop } = useBreakpoint();
   const router = useRouter();
   const pathname = usePathname();
+  // Which tab we are waiting to see. A ref, not state: this must not cause a
+  // render of the nav bar on every tap.
+  const pendingTabRef = useRef<string | null>(null);
+  useEffect(() => {
+    const waiting = pendingTabRef.current;
+    if (!waiting) return;
+    if (pathname === `/${waiting}` || pathname.endsWith(waiting)) {
+      pendingTabRef.current = null;
+      markEnd(`tab:${waiting}`, 'tab_switch');
+    }
+  }, [pathname]);
   const insets = useSafeAreaInsets();
   const light = theme.mode === 'light';
 
@@ -107,7 +119,15 @@ function SidebarNav({ width }: { width: number }) {
         return (
           <TouchableOpacity
             key={name}
-            onPress={() => router.navigate(`/(tabs)/${name}` as any)}
+            onPress={() => {
+              // Started on the tap, ended when the destination's pathname
+              // actually changes (see the effect below). Timing the navigate
+              // call itself would report how long a function took to return,
+              // which is always fast and always meaningless.
+              markStart(`tab:${name}`);
+              pendingTabRef.current = name;
+              router.navigate(`/(tabs)/${name}` as any);
+            }}
             style={[
               styles.sidebarItem,
               isDesktop ? styles.sidebarItemWide : styles.sidebarItemCompact,

@@ -8,7 +8,7 @@ import { useUI, UIColors } from './Kit';
 import { useStore } from '../store';
 import { api, EventCandidate, FamilyMember } from '../api';
 import { logger } from '../logger';
-import { toLocalDateInput, toLocalTimeInput } from '../utils/date';
+import { localeFor, toLocalTimeInput } from '../utils/date';
 
 /**
  * "Here's what we found. What do you want to keep?"
@@ -35,7 +35,7 @@ export function ReviewImportSheet({
   onDone?: (created: number) => void;
 }) {
   const ui = useUI();
-  const { t, user } = useStore();
+  const { t, user, lang } = useStore();
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => createStyles(ui), [ui]);
 
@@ -83,6 +83,12 @@ export function ReviewImportSheet({
     return () => { cancelled = true; };
   }, [load, user?.name]);
 
+  // The sheet is source-agnostic by design; the copy was not. It said "events
+  // from your calendar" over a list that came from photographing a school
+  // letter — a small lie, and the kind that makes someone distrust the rest.
+  const fromScanOnly =
+    items.length > 0 && items.every((c) => c.source_kind === 'document_scan');
+
   const keptIds = items.filter((c) => keep[c.candidate_id]).map((c) => c.candidate_id);
   const droppedIds = items.filter((c) => !keep[c.candidate_id]).map((c) => c.candidate_id);
 
@@ -105,10 +111,23 @@ export function ReviewImportSheet({
     }
   };
 
-  // The helpers take the ISO string the API returns, not a Date — they parse
-  // it themselves and fall back to now on an unparseable value.
-  const when = (c: EventCandidate) =>
-    c.due_date ? `${toLocalDateInput(c.due_date)} · ${toLocalTimeInput(c.due_date)}` : '';
+  // "Mon 14 Sep · 18:30", not "2026-09-14 · 18:30". The first version reused
+  // toLocalDateInput, which exists to fill a date INPUT and so returns the
+  // machine form — correct there, wrong the moment a person reads it. Seeing
+  // it on screen is what made that obvious; it looked fine in the source.
+  //
+  // The weekday earns its place here: deciding whether an event belongs to the
+  // household is mostly "is that a school night", which a number cannot answer.
+  const locale = localeFor(lang);
+  const when = (c: EventCandidate) => {
+    if (!c.due_date) return '';
+    const at = new Date(c.due_date);
+    if (Number.isNaN(at.getTime())) return '';
+    const day = at.toLocaleDateString(locale, {
+      weekday: 'short', day: 'numeric', month: 'short',
+    });
+    return `${day} · ${toLocalTimeInput(c.due_date)}`;
+  };
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -124,9 +143,25 @@ export function ReviewImportSheet({
               <X color={ui.text} size={18} />
             </PressScale>
           </View>
+          {step === 'pick' && items.length > 3 ? (
+            <PressScale
+              testID="review-toggle-all"
+              onPress={() => {
+                const next: Record<string, boolean> = {};
+                const turningOn = keptIds.length === 0;
+                items.forEach((c) => { next[c.candidate_id] = turningOn; });
+                setKeep(next);
+              }}
+              style={styles.bulkBtn}
+            >
+              <Text style={styles.bulkText}>
+                {keptIds.length === 0 ? t('review_keep_all') : t('review_drop_all')}
+              </Text>
+            </PressScale>
+          ) : null}
           <Text style={styles.sub}>
             {step === 'pick'
-              ? t('review_sub', { n: items.length })
+              ? t(fromScanOnly ? 'review_sub_scan' : 'review_sub', { n: items.length })
               : t('review_share_sub', { n: keptIds.length })}
           </Text>
 
@@ -251,6 +286,12 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   head: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   title: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 21, letterSpacing: -0.4 },
   iconBtn: { padding: 6, borderRadius: 999, backgroundColor: ui.soft },
+  bulkBtn: {
+    alignSelf: 'flex-start', paddingVertical: 4, paddingHorizontal: 10,
+    borderRadius: 999, borderWidth: 1, borderColor: ui.line,
+    backgroundColor: ui.soft, marginTop: 8,
+  },
+  bulkText: { color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 12 },
   sub: { color: ui.muted, fontFamily: 'Inter_400Regular', fontSize: 13, marginTop: 4, marginBottom: 10 },
   scroll: { flexGrow: 0 },
   scrollInner: { paddingBottom: 8, gap: 8 },

@@ -14576,6 +14576,144 @@ async def log_metric_event(payload: MetricEventIn, user=Depends(require_user)):
     return {"ok": True}
 
 
+# -----------------------------------------------------------------------------
+# Timings: how the app FEELS, as a number rather than an impression
+# -----------------------------------------------------------------------------
+#
+# "Smooth" has been an assumption. Nothing measured cold start or how long a
+# tab took to appear, so a regression would have arrived as a review rather
+# than as a chart.
+#
+# Bucketed, not raw. Storing a row per sample grows without limit and needs an
+# aggregate to read; storing counts per bucket is one $inc and answers the
+# question people actually ask — "is it usually fast, and how often is it
+# bad?". A mean alone hides exactly the tail that makes an app feel broken.
+TIMING_BUCKETS_MS = {
+    # Launch to the first screen a person can act on.
+    "cold_start": (1000, 2000, 3000, 5000),
+    # Tap a tab to that tab being drawn.
+    "tab_switch": (100, 250, 500, 1000),
+    # A screen's own data arriving after it is on screen.
+    "screen_load": (250, 500, 1000, 2000),
+}
+ALLOWED_TIMINGS = frozenset(TIMING_BUCKETS_MS)
+MAX_TIMING_MS = 120_000
+
+
+def _timing_bucket(name: str, ms: int) -> int:
+    """Which bucket a sample falls in: 0 is fastest, len(thresholds) is the tail."""
+    for index, threshold in enumerate(TIMING_BUCKETS_MS[name]):
+        if ms < threshold:
+            return index
+    return len(TIMING_BUCKETS_MS[name])
+
+
+def _bucket_labels(name: str) -> list:
+    thresholds = TIMING_BUCKETS_MS[name]
+    labels = [f"<{thresholds[0]}ms"]
+    for low, high in zip(thresholds, thresholds[1:]):
+        labels.append(f"{low}-{high}ms")
+    labels.append(f">{thresholds[-1]}ms")
+    return labels
+
+
+class TimingIn(BaseModel):
+    name: str
+    ms: int
+
+
+@app.post("/api/metrics/timing")
+async def log_timing(payload: TimingIn, user=Depends(require_user)):
+    """Record one duration. Fire-and-forget, like the event counter.
+
+    Silently ignores an unknown name rather than erroring: telemetry must never
+    be the reason a screen fails, and an app version ahead of the server will
+    send names this one has not heard of.
+    """
+    name = (payload.name or "").strip()
+    if name not in ALLOWED_TIMINGS:
+        return {"ok": False}
+    try:
+        ms = int(payload.ms)
+    except (TypeError, ValueError):
+        return {"ok": False}
+    # A negative sample means a clock went backwards; an enormous one means the
+    # phone was asleep mid-measurement. Neither describes the app.
+    if ms < 0 or ms > MAX_TIMING_MS:
+        return {"ok": False}
+
+    database = get_db()
+    today = utcnow().strftime("%Y-%m-%d")
+    try:
+        await database["metrics_timings"].update_one(
+            {"date": today, "name": name},
+            {"$inc": {"count": 1, "total_ms": ms,
+                      # Flat key: the test double applies $inc without walking
+                      # dotted paths, and a bucket that silently never
+                      # increments is worse than no bucket at all.
+                      f"b{_timing_bucket(name, ms)}": 1}},
+            upsert=True,
+        )
+    except Exception:
+        pass
+    return {"ok": True}
+
+
+@app.get("/api/metrics/timings")
+async def metrics_timings(days: int = 14, user=Depends(require_user)):
+    """What the app felt like, per timing, over the window."""
+    if not is_admin_user(user):
+        raise HTTPException(status_code=403, detail="Admin only")
+    database = get_db()
+    days = max(1, min(days, 90))
+    cutoff = (utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
+
+    totals: dict = {}
+    async for row in database["metrics_timings"].find({}, {"_id": 0}):
+        if (row.get("date") or "") < cutoff:
+            continue
+        name = row.get("name")
+        if name not in ALLOWED_TIMINGS:
+            continue
+        agg = totals.setdefault(
+            name, {"count": 0, "total_ms": 0,
+                   "buckets": [0] * (len(TIMING_BUCKETS_MS[name]) + 1)})
+        agg["count"] += row.get("count") or 0
+        agg["total_ms"] += row.get("total_ms") or 0
+        for index in range(len(agg["buckets"])):
+            agg["buckets"][index] += row.get(f"b{index}") or 0
+
+    out = []
+    for name, agg in sorted(totals.items()):
+        count = agg["count"]
+        buckets = agg["buckets"]
+        # The bucket the median falls in, reported as the RANGE it is in.
+        # Interpolating a single number out of buckets invents precision the
+        # data does not have, and a made-up millisecond is worse than an
+        # honest range.
+        median_range = None
+        if count:
+            seen, half = 0, count / 2
+            for index, n in enumerate(buckets):
+                seen += n
+                if seen >= half:
+                    median_range = _bucket_labels(name)[index]
+                    break
+        # The share in the slowest bucket is the number that matters: it is the
+        # proportion of times the app felt broken.
+        worst = buckets[-1]
+        out.append({
+            "name": name,
+            "samples": count,
+            "mean_ms": round(agg["total_ms"] / count) if count else None,
+            "median_bucket": median_range,
+            "labels": _bucket_labels(name),
+            "buckets": buckets,
+            "pct_in_slowest": round(100 * worst / count, 1) if count else None,
+        })
+    return {"days": days, "timings": out}
+
+
 @app.get("/api/metrics/summary")
 async def metrics_summary(days: int = 14, user=Depends(require_user)):
     if not is_admin_user(user):
