@@ -182,3 +182,35 @@ export function custodyIsOurs(date: Date, ourWeeks: CustodyWeeks): boolean {
   const { even } = isoWeek(date);
   return ourWeeks === 'even' ? even : !even;
 }
+
+/**
+ * The month grid, Monday first.
+ *
+ * It used to start on Sunday (`getDay()`, where Sunday is 0), which is the US
+ * convention and wrong twice over here. France reads a calendar L M M J V S D,
+ * and — the part that actually matters — alternating custody is decided by ISO
+ * week parity, and an ISO week starts on Monday. A Sunday-first row spans TWO
+ * custody weeks, so the colour changed halfway along it: correct per day, and
+ * unreadable as a schedule. Monday first makes every row exactly one custody
+ * week in one colour, which is how a judgment written in semaines paires /
+ * impaires is meant to be read.
+ */
+export function buildMonthDays(baseDate: Date) {
+  const first = new Date(baseDate.getFullYear(), baseDate.getMonth(), 1);
+  const last = new Date(baseDate.getFullYear(), baseDate.getMonth() + 1, 0);
+  const leading = (first.getDay() + 6) % 7;   // Monday = 0 … Sunday = 6
+  const total = leading + last.getDate();
+  const trailing = Math.ceil(total / 7) * 7 - total;
+  const days: { date: Date; inMonth: boolean }[] = [];
+
+  for (let i = leading; i > 0; i -= 1) {
+    days.push({ date: new Date(baseDate.getFullYear(), baseDate.getMonth(), 1 - i), inMonth: false });
+  }
+  for (let day = 1; day <= last.getDate(); day += 1) {
+    days.push({ date: new Date(baseDate.getFullYear(), baseDate.getMonth(), day), inMonth: true });
+  }
+  for (let i = 1; i <= trailing; i += 1) {
+    days.push({ date: new Date(baseDate.getFullYear(), baseDate.getMonth() + 1, i), inMonth: false });
+  }
+  return days;
+}

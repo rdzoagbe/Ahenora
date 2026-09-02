@@ -54,6 +54,7 @@ import { UpgradeBanner } from '../../src/components/UpgradeBanner';
 import { CoParentNudge } from '../../src/components/CoParentNudge';
 import { NotificationsNudge } from '../../src/components/NotificationsNudge';
 import { GiftingStrip } from '../../src/components/GiftingStrip';
+import { CoParentBalance } from '../../src/components/CoParentBalance';
 import { StreakChip } from '../../src/components/StreakChip';
 import { WindowedList } from '../../src/components/WindowedList';
 import { useStore } from '../../src/store';
@@ -1227,6 +1228,11 @@ export default function Feed() {
               onOpenSanta={(draw) => router.push({ pathname: '/santa', params: { drawId: draw.draw_id } } as never)}
               onNewSanta={() => router.push('/santa' as never)}
             />
+
+            {/* Who is up on the shared costs. Renders nothing unless the
+                household is two parents who have actually split something —
+                the number lived four taps deep inside the Kitchen tab. */}
+            <CoParentBalance />
 
             {/* A gentle nudge to Premium — free households only, self-snoozes */}
             <UpgradeBanner />

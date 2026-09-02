@@ -22,7 +22,7 @@ import AppToast from '../../src/components/AppToast';
 import { ReviewImportSheet } from '../../src/components/ReviewImportSheet';
 import { setSelectedCalendarDay } from '../../src/calendarSelection';
 import { useToast } from '../../src/hooks/useToast';
-import { localeFor, isoWeek, custodyIsOurs } from '../../src/utils/date';
+import { localeFor, isoWeek, custodyIsOurs, buildMonthDays } from '../../src/utils/date';
 import { sendLocalNotification, syncCalendarNightly } from '../../src/notifications';
 import { cleanText, openExternal, parseDescription } from '../../src/eventDescription';
 
@@ -98,26 +98,6 @@ function timeParts(value?: string | null) {
   h = h % 12;
   if (h === 0) h = 12;
   return { time: `${h}:${String(m).padStart(2, '0')}`, ampm };
-}
-
-function buildMonthDays(baseDate: Date) {
-  const first = new Date(baseDate.getFullYear(), baseDate.getMonth(), 1);
-  const last = new Date(baseDate.getFullYear(), baseDate.getMonth() + 1, 0);
-  const leading = first.getDay();
-  const total = leading + last.getDate();
-  const trailing = Math.ceil(total / 7) * 7 - total;
-  const days: { date: Date; inMonth: boolean }[] = [];
-
-  for (let i = leading; i > 0; i -= 1) {
-    days.push({ date: new Date(baseDate.getFullYear(), baseDate.getMonth(), 1 - i), inMonth: false });
-  }
-  for (let day = 1; day <= last.getDate(); day += 1) {
-    days.push({ date: new Date(baseDate.getFullYear(), baseDate.getMonth(), day), inMonth: true });
-  }
-  for (let i = 1; i <= trailing; i += 1) {
-    days.push({ date: new Date(baseDate.getFullYear(), baseDate.getMonth() + 1, i), inMonth: false });
-  }
-  return days;
 }
 
 function groupByDay(cards: Card[], selectedDay: string | null) {
@@ -299,9 +279,15 @@ export default function Calendar() {
   const ui = useUI();
   const styles = useMemo(() => createStyles(ui), [ui]);
 
-  const calendarContentWidth = Math.max(280, windowWidth - 84);
+  // The week-number gutter down the left edge. A French custody judgment is
+  // written in semaines paires / impaires, so the number of the week IS the
+  // schedule — and until now the app computed the parity, coloured the month
+  // with it, and never showed the parent the number their court document
+  // actually refers to.
+  const WEEK_GUTTER = 22;
+  const calendarContentWidth = Math.max(280, windowWidth - 84 - WEEK_GUTTER);
   const daySize = Math.max(40, Math.min(52, Math.floor(calendarContentWidth / 7)));
-  const gridWidth = daySize * 7;
+  const gridWidth = daySize * 7 + WEEK_GUTTER;
 
   // One sentence for every sync outcome. "0 events imported" alone reads as
   // "nothing happened" when a meeting actually moved — say what changed.
@@ -518,6 +504,16 @@ export default function Calendar() {
   }, []);
 
   const monthDays = useMemo(() => buildMonthDays(activeMonth), [activeMonth]);
+  // Seven at a time, each row carrying its ISO week number. The grid starts on
+  // Monday, so a row IS an ISO week and one number describes all of it.
+  const monthRows = useMemo(() => {
+    const rows: { key: string; week: number; days: typeof monthDays }[] = [];
+    for (let i = 0; i < monthDays.length; i += 7) {
+      const days = monthDays.slice(i, i + 7);
+      rows.push({ key: dateKey(days[0].date), week: isoWeek(days[0].date).week, days });
+    }
+    return rows;
+  }, [monthDays]);
   const countsByDay = useMemo(() => {
     const counts: Record<string, number> = {};
     cards.forEach((card) => {
@@ -566,7 +562,9 @@ export default function Calendar() {
   const weekDays = useMemo(() => {
     const anchor = selectedDay ? new Date(`${selectedDay}T00:00:00`) : new Date();
     const start = new Date(anchor);
-    start.setDate(anchor.getDate() - anchor.getDay());
+    // Back to Monday, matching the month grid and the ISO week the custody
+    // colours are computed from.
+    start.setDate(anchor.getDate() - ((anchor.getDay() + 6) % 7));
     return Array.from({ length: 7 }, (_, i) => {
       const d = new Date(start);
       d.setDate(start.getDate() + i);
@@ -1153,13 +1151,22 @@ export default function Calendar() {
             {viewMode === 'month' ? (
               <>
                 <View style={[styles.weekHeader, { width: gridWidth }]}>
-                  {['day_sunday', 'day_monday', 'day_tuesday', 'day_wednesday', 'day_thursday', 'day_friday', 'day_saturday'].map((k) => t(k).charAt(0).toUpperCase()).map((day, index) => (
+                  <View style={{ width: WEEK_GUTTER }} />
+                  {['day_monday', 'day_tuesday', 'day_wednesday', 'day_thursday', 'day_friday', 'day_saturday', 'day_sunday'].map((k) => t(k).charAt(0).toUpperCase()).map((day, index) => (
                     <Text key={`${day}-${index}`} style={[styles.weekLabel, { width: daySize }]}>{day}</Text>
                   ))}
                 </View>
 
-                <View style={[styles.monthGrid, { width: gridWidth }]}>
-                  {monthDays.map(({ date, inMonth }) => {
+                <View style={{ width: gridWidth, alignSelf: 'center' }}>
+                  {monthRows.map((row) => (
+                    <View key={row.key} style={styles.monthRow}>
+                      {/* S27, S28 — the number, not a decoration. Reading
+                          "semaines impaires" off a judgment and finding the
+                          same number here is the whole point. */}
+                      <View style={[styles.weekNumCell, { width: WEEK_GUTTER }]}>
+                        <Text style={styles.weekNumText}>S{row.week}</Text>
+                      </View>
+                      {row.days.map(({ date, inMonth }) => {
                     const key = dateKey(date);
                     const count = countsByDay[key] || 0;
                     const isToday = key === dateKey(new Date());
@@ -1187,11 +1194,16 @@ export default function Calendar() {
                         )}
                       </PressScale>
                     );
-                  })}
+                      })}
+                    </View>
+                  ))}
                 </View>
               </>
             ) : (
               <View style={[styles.weekStrip, { width: gridWidth }]}>
+                <View style={[styles.weekNumCell, { width: WEEK_GUTTER }]}>
+                  <Text style={styles.weekNumText}>S{isoWeek(weekDays[0]).week}</Text>
+                </View>
                 {weekDays.map((date) => {
                   const key = dateKey(date);
                   const count = countsByDay[key] || 0;
@@ -1694,7 +1706,12 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   monthTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 18, letterSpacing: -0.2 },
   weekHeader: { flexDirection: 'row', alignSelf: 'center', marginBottom: 6 },
   weekLabel: { textAlign: 'center', fontFamily: 'Inter_700Bold', fontSize: 12, color: ui.muted },
-  monthGrid: { flexDirection: 'row', flexWrap: 'wrap', alignSelf: 'center' },
+  monthRow: { flexDirection: 'row', alignItems: 'center' },
+  weekNumCell: { alignItems: 'center', justifyContent: 'center' },
+  // Quiet on purpose: it is a reference, not a thing to tap. It has to be
+  // legible to somebody checking it against a court document, and invisible to
+  // everybody else.
+  weekNumText: { fontFamily: 'Inter_600SemiBold', fontSize: 9.5, color: ui.muted, letterSpacing: -0.2 },
   dayCell: { alignItems: 'center', justifyContent: 'center', borderRadius: 14 },
   dayCellSelected: { backgroundColor: ui.orangeDeep },
   viewToggle: { flexDirection: 'row', gap: 6, alignSelf: 'center', marginBottom: 12, backgroundColor: ui.soft, borderRadius: 10, padding: 3 },
