@@ -383,7 +383,20 @@ async function request<T = unknown>(
       // null the store user — dumping a still-signed-in parent on the landing
       // screen just because an overnight kid session lapsed. So exclude /kid/.
       const CREDENTIAL_PATHS = ['/auth/', '/kid/'];
-      const isCredentialCheck = CREDENTIAL_PATHS.some((p) => path.startsWith(p));
+      // ...except the ones under /auth/ where a 401 is not "wrong password" but
+      // "this session is gone". /auth/me is the app's own session probe: a 401
+      // there is the single clearest statement the server can make that the
+      // token is dead. Sweeping it under the credential rule left the app
+      // half-signed-in — the cached name and email still on screen while every
+      // request failed — and the only way out was finding Log out by hand.
+      //
+      // Rare until today: sessions mostly ended by logging out. Now that
+      // /auth/logout-everywhere exists, a session revoked from another device
+      // is a normal thing to happen while the app is open.
+      const SESSION_IS_GONE_PATHS = ['/auth/me'];
+      const isCredentialCheck =
+        CREDENTIAL_PATHS.some((p) => path.startsWith(p)) &&
+        !SESSION_IS_GONE_PATHS.some((p) => path.startsWith(p));
       if (res.status === 401 && !isCredentialCheck) {
         await tokenStore.clear().catch(() => undefined);
         cache.clear();
