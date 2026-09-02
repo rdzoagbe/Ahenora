@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Gift, ChevronRight, Plus } from 'lucide-react-native';
 
+import { SECRET_SANTA_ENABLED } from '../features';
 import { PressScale } from './PressScale';
 import { useStore } from '../store';
 import { useUI, UIColors } from './Kit';
@@ -48,7 +49,13 @@ export function GiftingStrip({
   const ui = useUI();
   const styles = useMemo(() => createStyles(ui), [ui]);
 
-  const draws = santaDraws.filter((d) => d.status !== 'closed');
+  // Seasonal and currently hidden (src/features.ts). Emptying the list here
+  // rather than branching further down means every downstream condition —
+  // whether the card shows at all, which side it opens on, whether the toggle
+  // is worth drawing — resolves correctly on its own.
+  const draws = SECRET_SANTA_ENABLED
+    ? santaDraws.filter((d) => d.status !== 'closed')
+    : [];
   const hasBirthdays = birthdays.length > 0;
   const hasSanta = draws.length > 0;
 
@@ -63,7 +70,11 @@ export function GiftingStrip({
   // Both tabs are ALWAYS shown once the card is on screen, so Secret Santa is
   // discoverable (and startable) even when there's no draw yet — an empty tab
   // simply offers to start one, rather than hiding the feature.
-  const active = tab;
+  //
+  // Unless the feature is off, in which case the card is gift pot only and a
+  // one-option segmented control would be a control that does nothing.
+  const showSegments = SECRET_SANTA_ENABLED;
+  const active = SECRET_SANTA_ENABLED ? tab : 'giftpot';
 
   const santaSub = (d: SantaDraw): string => {
     const people = d.participant_count === 1 ? t('ss_one_person') : t('ss_n_people', { n: String(d.participant_count) });
@@ -74,6 +85,7 @@ export function GiftingStrip({
 
   return (
     <View style={styles.card}>
+      {showSegments ? (
       <View style={styles.seg}>
         <PressScale testID="gifting-tab-giftpot" onPress={() => setTab('giftpot')} style={[styles.segBtn, active === 'giftpot' && styles.segBtnOn]}>
           <Gift color={active === 'giftpot' ? ui.orangeText : ui.muted} size={14} />
@@ -84,6 +96,7 @@ export function GiftingStrip({
           <Text style={[styles.segText, active === 'santa' && styles.segTextOn]}>{t('ss_title')}</Text>
         </PressScale>
       </View>
+      ) : null}
 
       {active === 'giftpot' ? (
         hasBirthdays ? (

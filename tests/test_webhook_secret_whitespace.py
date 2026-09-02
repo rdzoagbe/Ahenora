@@ -89,3 +89,65 @@ class TheSecretComparison(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+@unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
+class MismatchLoggingIsBounded(unittest.TestCase):
+    """The diagnostic line is reachable by anyone who can send a POST.
+
+    The RevenueCat webhook takes unauthenticated requests, and its mismatch
+    branch logs the LIVE secret's length and SHA-256 prefix. That is the right
+    thing to log once while debugging a misconfiguration and the wrong thing to
+    let a stranger replay indefinitely: it is both a lever on log volume and an
+    endlessly repeated hint about a secret we hold.
+    """
+
+    def setUp(self):
+        self._secret = os.environ.get("RC_WEBHOOK_SECRET")
+        os.environ["RC_WEBHOOK_SECRET"] = "the-real-secret"
+        server._rc_mismatch_log["count"] = 0
+        server._rc_mismatch_log["window_started"] = None
+
+    def tearDown(self):
+        if self._secret is None:
+            os.environ.pop("RC_WEBHOOK_SECRET", None)
+        else:
+            os.environ["RC_WEBHOOK_SECRET"] = self._secret
+        server._rc_mismatch_log["count"] = 0
+        server._rc_mismatch_log["window_started"] = None
+
+    def _attempt(self):
+        with self.assertRaises(server.HTTPException) as caught:
+            asyncio.run(server.revenuecat_webhook(
+                payload={"event": {"type": "TEST"}},
+                authorization="Bearer wrong"))
+        return caught.exception.status_code
+
+    def test_every_attempt_is_still_rejected(self):
+        # Rate limiting the LOG must never rate limit the AUTH: a flood must
+        # not become a way to slip a request through.
+        for _ in range(40):
+            self.assertEqual(self._attempt(), 401)
+
+    def test_the_fingerprint_stops_being_printed_after_a_few_attempts(self):
+        import logging
+        records = []
+
+        class Capture(logging.Handler):
+            def emit(self, record):
+                records.append(record.getMessage())
+
+        handler = Capture()
+        server.log.addHandler(handler)
+        try:
+            for _ in range(40):
+                self._attempt()
+        finally:
+            server.log.removeHandler(handler)
+
+        detailed = [r for r in records if "expected_sha" in r]
+        self.assertGreater(len(detailed), 0, "no diagnostics at all is too far")
+        self.assertLessEqual(
+            len(detailed), 10,
+            "the live secret's fingerprint was printed %d times by an "
+            "unauthenticated caller" % len(detailed))

@@ -1312,6 +1312,12 @@ def public_card(card: dict) -> dict:
         "image_base64": card.get("image_base64"),
         "recurrence": card.get("recurrence", "none"),
         "reminder_minutes": card.get("reminder_minutes", 60),
+        # Where it is. Imported events used to flatten the venue into the
+        # description as the text "Location: ...", and a manually created event
+        # had nowhere to put one at all — so "soccer at Parc des Sports" could
+        # only ever be typed into the title. Empty string, never None, so the
+        # app can render it without a null check.
+        "location": card.get("location") or "",
         "created_at": iso(card["created_at"]),
         "completed_at": iso(card.get("completed_at")),
         "completed_by_name": card.get("completed_by_name"),
@@ -1398,6 +1404,7 @@ def public_vault_doc(doc: dict) -> dict:
         "visibility": doc.get("visibility") or "shared",
         "owner_user_id": doc.get("owner_user_id"),
         "owner_name": doc.get("owner_name"),
+        "expiry_date": iso(doc.get("expiry_date")),
         "created_at": iso(doc["created_at"]),
     }
 
@@ -3212,6 +3219,27 @@ class AiAssignIn(BaseModel):
 MAX_IMAGE_B64_CHARS = 14 * 1024 * 1024
 
 
+# What a card may be, in one place. This set was written out by hand inside
+# PATCH and nowhere else: POST validated NEITHER type nor recurrence, so the
+# two endpoints disagreed about what a valid card is and arbitrary strings
+# could be stored by the route people actually use.
+CARD_TYPE_VALUES = frozenset({
+    "SIGN_SLIP", "RSVP", "TASK", "BIRTHDAY", "SCHOOL", "APPOINTMENT", "VACATION",
+})
+
+# yearly was missing from the PATCH whitelist while the SERVER ITSELF creates
+# yearly cards on calendar import, so an imported birthday could not be edited:
+# the app sent the recurrence back unchanged and the save was refused.
+RECURRENCE_VALUES = frozenset({"none", "daily", "weekly", "monthly", "yearly"})
+
+# Cards that are things happening at a time, as opposed to things to be done.
+# The teen home screen split on `type == "EVENT"`, a value that exists nowhere:
+# not in the client's CardType union, not in CARD_TYPE_VALUES, not on any chip.
+# Every card therefore fell through to the to-do branch and a teen's agenda was
+# permanently empty, with their appointments listed as chores.
+AGENDA_CARD_TYPES = frozenset({"APPOINTMENT", "SCHOOL", "BIRTHDAY", "VACATION"})
+
+
 class CardIn(BaseModel):
     type: str = "TASK"
     title: str
@@ -3222,6 +3250,7 @@ class CardIn(BaseModel):
     image_base64: Optional[str] = Field(default=None, max_length=MAX_IMAGE_B64_CHARS)
     recurrence: str = "none"
     reminder_minutes: int = 60
+    location: Optional[str] = None
     # Shared unless someone says otherwise. It was private by default, which
     # inverted the whole product: a task added with the + button was invisible
     # to the rest of the household and notified nobody, so a co-parent could
@@ -3241,6 +3270,7 @@ class CardPatchIn(BaseModel):
     status: Optional[str] = None
     recurrence: Optional[str] = None
     reminder_minutes: Optional[int] = None
+    location: Optional[str] = None
     shared: Optional[bool] = None
 
 
@@ -3253,6 +3283,12 @@ class VaultIn(BaseModel):
     # "private" (default) or "shared". A co-parent joining a household must
     # not inherit sight of documents nobody chose to share.
     visibility: Optional[str] = None
+    # When the document stops being valid. /api/vault/expiry-alerts has existed
+    # for a while and could never fire: nothing wrote this field, PATCH
+    # /vault/{id}/expiry was called from nowhere in the app, and the serialiser
+    # did not return it. A read path with no producer reports "no documents
+    # expiring soon" whether or not that is true.
+    expiry_date: Optional[str] = None
 
 
 class VaultVisibilityIn(BaseModel):
@@ -3337,6 +3373,25 @@ class VisionIn(BaseModel):
 class CalendarImportIn(BaseModel):
     access_token: str
     days: int = 30
+    # Staging rather than writing. Import used to put every event it found
+    # straight into the family's calendar, so a work diary full of stand-ups
+    # landed next to the school run and the only way back was deleting them one
+    # at a time. With review=True the events become candidates instead, and the
+    # person picks what belongs to the household before anything is created.
+    #
+    # Defaults to False so an older app build — one that has not taken the OTA
+    # yet — keeps working exactly as it did rather than importing nothing.
+    review: bool = False
+
+
+class CandidateDecisionIn(BaseModel):
+    keep: List[str] = Field(default_factory=list)
+    drop: List[str] = Field(default_factory=list)
+    # Applied to everything kept in this pass. Sharing is asked once, at the
+    # end, about the batch — which is how a person actually thinks about it
+    # ("these are all for the family") rather than event by event.
+    shared: bool = False
+    assignee: Optional[str] = None
 
 
 # A digest at 07:30 has to mean 07:30 where the person actually is. Nothing in
@@ -3814,6 +3869,24 @@ _FAMILY_SCOPED_COLLECTIONS = (
     "rewards", "routine_logs", "routines", "shopping_history", "shopping_list",
     "star_transactions", "templates", "vault", "expense_settlements", "gift_pots",
     "santa_draws",
+    # Added after a review found them missing from BOTH deletion paths. Every
+    # one carries family_id and every one is personal content:
+    #   messages       — the household chat and the parent↔teen threads, i.e.
+    #                    the most sensitive text in the product, kept forever
+    #                    after the household that wrote it asked to be erased.
+    #   expense_items  — the itemised lines behind each expense.
+    # This list is what /auth/delete-account promises the store and the user;
+    # a collection missing from it is a deletion that silently did not happen.
+    "messages", "expense_items",
+    # Proposed events waiting on a decision. Caught by the drift check in
+    # test_deletion_completeness the moment the collection was added, which is
+    # what that test is for.
+    "event_candidates",
+    # Diagnostic rows, but they carry user_id, family_id and the person's NAME.
+    # They self-expire after 14 days, which is a fine retention rule and a poor
+    # answer to "delete my data": it would keep a deleted user's name for another
+    # fortnight. Found by the drift check in test_deletion_completeness.
+    "client_errors",
 )
 
 
@@ -3824,8 +3897,13 @@ async def _purge_family(database: Any, family_id: str) -> None:
 
 
 async def _purge_user_account(database: Any, user_id: str, email: str) -> None:
+    # web_push_subscriptions was missing: a browser subscription outlived the
+    # account that created it, so a deleted user's endpoint stayed in the table
+    # the daily push job reads. _push_zones() reads BOTH notification_tokens and
+    # web_push_subscriptions, so listing only the first deleted half the ways
+    # this person could still be contacted.
     for collection in ("user_sessions", "notification_tokens", "notification_settings",
-                       "support_tickets"):
+                       "support_tickets", "web_push_subscriptions"):
         await database[collection].delete_many({"user_id": user_id})
     if email:
         await database["family_invites"].delete_many({"email": email, "status": "pending"})
@@ -3969,6 +4047,25 @@ async def delete_account(payload: DeleteAccountIn, user=Depends(require_user)):
     return {"ok": True, "deleted_household": deleted_household}
 
 
+# Bounds how often the RevenueCat webhook prints its diagnostic line. See the
+# comment at the mismatch branch: the endpoint is unauthenticated, so the line
+# is reachable by anyone who can send a POST.
+_rc_mismatch_log: dict = {"count": 0, "window_started": None}
+
+
+def _secret_fingerprint(value: str) -> dict:
+    """Identify a secret without exposing it: its length and 8 hex of SHA-256.
+
+    Stripped first, so the reported fingerprint is of the value the comparison
+    will actually use rather than of whatever whitespace came with it.
+    """
+    cleaned = (value or "").strip()
+    if not cleaned:
+        return {"set": False, "length": 0, "sha8": ""}
+    return {"set": True, "length": len(cleaned),
+            "sha8": hashlib.sha256(cleaned.encode()).hexdigest()[:8]}
+
+
 @app.get("/api/health/config")
 async def health_config(user=Depends(require_user)):
     """Admin-only configuration inventory (was previously public on `/`)."""
@@ -3985,6 +4082,22 @@ async def health_config(user=Depends(require_user)):
         "google_android_configured": bool(GOOGLE_ANDROID_CLIENT_ID),
         "google_client_ids_count": len(GOOGLE_CLIENT_IDS),
         "billing_configured": bool(os.environ.get("RC_WEBHOOK_SECRET")),
+        # Fingerprints of the webhook secrets the RUNNING process actually
+        # holds, so "did my dashboard edit reach the server?" is answerable in
+        # one request instead of firing a test event and reading deploy logs.
+        #
+        # An environment variable edited in a dashboard and an environment
+        # variable loaded by a live process are different things, and nothing
+        # made the difference visible: a stale value in memory looks exactly
+        # like a wrong value on the other side. Compare these against the
+        # supplied_sha in an "RC webhook auth mismatch" log line, or against
+        # your own sha256 of the value you believe you set.
+        #
+        # Eight hex characters of SHA-256, admin-only. Identifies a value
+        # without being useful for recovering it, and the length is included
+        # because truncation is the other common failure.
+        "rc_secret_sha": _secret_fingerprint(os.environ.get("RC_WEBHOOK_SECRET", "")),
+        "stripe_secret_sha": _secret_fingerprint(os.environ.get("STRIPE_WEBHOOK_SECRET", "")),
     }
 
 # -----------------------------------------------------------------------------
@@ -4755,6 +4868,24 @@ async def logout(user=Depends(require_user), authorization: str = Header(default
         {"user_id": user["user_id"], "token_hash": sha256(token)}
     )
     return {"ok": True}
+
+
+@app.post("/api/auth/logout-everywhere")
+async def logout_everywhere(user=Depends(require_user)):
+    """End every session this account holds, not just the one asking.
+
+    /auth/logout deletes one row — the token in the Authorization header — which
+    is right for "sign out on this device" and useless for "a token of mine has
+    been exposed". Changing the password already clears every session, so a
+    password account had a way out; a Google or Apple account has no password to
+    change and therefore had none at all. This is that way out.
+
+    Includes the caller's own token: after this, everything must sign in again,
+    which is exactly what a leaked-token response should mean.
+    """
+    database = get_db()
+    result = await database["user_sessions"].delete_many({"user_id": user["user_id"]})
+    return {"ok": True, "sessions_ended": result.deleted_count}
 
 
 @app.post("/api/auth/complete-onboarding")
@@ -6273,7 +6404,7 @@ async def teen_home(teen=Depends(require_teen)):
         row = {"card_id": card["card_id"], "title": card.get("title") or "",
                "due_date": iso(card.get("due_date")),
                "status": card.get("status"), "assignee": card.get("assignee")}
-        if ctype == "EVENT":
+        if ctype in AGENDA_CARD_TYPES:
             agenda.append(row)
         else:  # TASK / note-style → the teen's to-dos
             if card.get("status") != "DONE":
@@ -7596,6 +7727,77 @@ async def admin_set_grandfathered(payload: GrandfatherIn, user=Depends(require_u
             "grandfathered": bool(payload.grandfathered)}
 
 
+class PurgeAccountIn(BaseModel):
+    email: str
+    confirm_email: str
+
+
+@app.post("/api/admin/purge-account")
+async def admin_purge_account(payload: PurgeAccountIn, user=Depends(require_user)):
+    """Delete an account by email, for accounts nobody can sign in to.
+
+    /auth/delete-account is self-service by design and that is right: it is the
+    store-required path and it proves identity before destroying data. It also
+    means an account whose password is unknown — a seeder that wrote a
+    placeholder, an abandoned OAuth signup — cannot be removed by anyone, and
+    accumulates on production forever.
+
+    Deliberately narrow. It reuses the same teardown as self-service deletion so
+    the two cannot drift, refuses to touch an admin account (nothing here should
+    be able to delete the operator running it), and requires the address twice:
+    the realistic accident is purging apple-review@ahenora.com while meaning to
+    purge review@ahenora.com, and a second typing is the cheapest guard against
+    a one-word slip that ends a live App Review.
+
+    No deletion email is sent — these are not people, and the address may not be
+    deliverable.
+    """
+    if not is_admin_user(user):
+        raise HTTPException(status_code=403, detail="Admins only")
+    email = (payload.email or "").strip().lower()
+    confirm = (payload.confirm_email or "").strip().lower()
+    if not email:
+        raise HTTPException(status_code=400, detail="email is required")
+    if email != confirm:
+        raise HTTPException(
+            status_code=400,
+            detail="email and confirm_email must match exactly")
+    if is_admin_email(email):
+        raise HTTPException(
+            status_code=403, detail="Refusing to purge an admin account")
+
+    database = get_db()
+    target = await database["users"].find_one({"email": email}, {"_id": 0})
+    if not target:
+        raise HTTPException(status_code=404, detail="No account with that email")
+    if target["user_id"] == user["user_id"]:
+        raise HTTPException(status_code=403, detail="Use /auth/delete-account for your own")
+
+    family_id = target.get("family_id")
+
+    # Same rule as self-service deletion, asked of `users` for the same reason:
+    # a founder's member row can predate user_id linkage, so family_members
+    # would miss them and purge a household that still has an owner.
+    other_account = None
+    if family_id:
+        other_account = await database["users"].find_one(
+            {"family_id": family_id, "user_id": {"$ne": target["user_id"]}},
+            {"_id": 0})
+
+    deleted_household = False
+    if family_id and other_account is None:
+        await _purge_family(database, family_id)
+        deleted_household = True
+    elif family_id:
+        await database["family_members"].delete_many(
+            {"family_id": family_id, "user_id": target["user_id"]})
+
+    await _purge_user_account(database, target["user_id"], email)
+    log.warning("admin purge: %s removed account %s (household=%s)",
+                (user.get("email") or "")[:64], email, deleted_household)
+    return {"ok": True, "email": email, "deleted_household": deleted_household}
+
+
 @app.get("/api/admin/version-adoption")
 async def version_adoption(user=Depends(require_user)):
     """Who is on which build — the answer to "did the OTA reach everyone".
@@ -7648,11 +7850,30 @@ async def version_adoption(user=Depends(require_user)):
     runtime_counts = _counts(by_runtime)
     on_current = runtime_counts.get(MIN_SUPPORTED_RUNTIME, 0)
     total_users = len(seen_users)
+
+    # How much of the install base this read-out can see at all.
+    #
+    # Every number above is computed over accounts that have a REGISTERED PUSH
+    # TOKEN, and a token exists only where someone granted notification
+    # permission. Until the permission prompt shipped, that was almost nobody —
+    # so "78% on the current runtime" could mean 7 of 9 people while reading
+    # like 78% of the fleet. The percentage was not wrong; it was answering a
+    # narrower question than its name suggested.
+    #
+    # Reporting the account total alongside makes the denominator visible, so a
+    # confident-looking percentage over a handful of devices cannot be mistaken
+    # for coverage.
+    total_accounts = await database["users"].count_documents({})
     return {
         "current_runtime": MIN_SUPPORTED_RUNTIME,
         "store_version": CURRENT_STORE_VERSION,
         "users_on_current_runtime": on_current,
         "total_users_with_a_device": total_users,
+        "total_accounts": total_accounts,
+        # What share of all accounts this read-out can see. A low number here
+        # means every percentage below describes a minority of your users.
+        "pct_of_accounts_visible": (
+            round(100 * total_users / total_accounts, 1) if total_accounts else 0.0),
         "pct_on_current_runtime": round(100 * on_current / total_users, 1) if total_users else 0.0,
         "by_runtime": runtime_counts,
         "by_app_version": _counts(by_version),
@@ -7691,8 +7912,30 @@ async def plan_adoption(user=Depends(require_user)):
 
     billing_live = bool(os.environ.get("RC_WEBHOOK_SECRET"))
 
-    # Which families own an active device — the population that actually opened
-    # the app, so the conversion rate is measured against real households.
+    # Which households are actually LIVE — measured by whether somebody opened
+    # the app, not by whether they own a push token.
+    #
+    # This used to read notification_tokens, which exist only where someone
+    # granted notification permission. Before the permission prompt shipped
+    # that was almost nobody, so the conversion denominator counted a handful
+    # of households and pct_active_paying read far HIGHER than the truth — the
+    # flattering direction, which is the one nobody questions.
+    #
+    # account_active_since is the same definition the funnel and the retention
+    # read-out use, so all three sections of the Metrics screen now agree on
+    # what "active" means. They previously did not.
+    live_cutoff = utcnow() - timedelta(days=30)
+    families_live: set = set()
+    async for acct in database["users"].find(
+        {}, {"_id": 0, "family_id": 1, "last_active_at": 1, "last_active_day": 1}
+    ):
+        fid = acct.get("family_id")
+        if fid and account_active_since(acct, live_cutoff):
+            families_live.add(fid)
+
+    # Kept alongside, because it is the number that answers a DIFFERENT
+    # question — how much of the base can receive a push at all — and the gap
+    # between the two is itself worth seeing.
     families_with_device: set = set()
     async for tok in database["notification_tokens"].find(
         {"active": True}, {"_id": 0, "family_id": 1}
@@ -7719,7 +7962,7 @@ async def plan_adoption(user=Depends(require_user)):
         is_tester = await family_has_admin(database, fam.get("family_id", ""))
         if is_tester:
             tester_households += 1
-        if fam.get("family_id") in families_with_device:
+        if fam.get("family_id") in families_live:
             active_total += 1
             if is_paying:
                 active_paying += 1
@@ -7738,7 +7981,11 @@ async def plan_adoption(user=Depends(require_user)):
         "paying_families": paying,
         "tester_households": tester_households,
         "free_premium_families": free_premium,
-        "active_families_with_device": active_total,
+        # Renamed from active_families_with_device: it no longer means that, and
+        # a field whose name outlives its meaning is how this screen got into
+        # trouble in the first place.
+        "active_families": active_total,
+        "families_with_a_device": len(families_with_device),
         "active_paying_families": active_paying,
         "pct_active_paying": round(100 * active_paying / active_total, 1) if active_total else 0.0,
         "active_free_premium_families": active_free_premium,
@@ -7954,6 +8201,14 @@ async def _assigned_visibility(database, family_id: str, creator_uid: Optional[s
 @app.post("/api/cards")
 async def create_card(payload: CardIn, user=Depends(require_user)):
     database = get_db()
+    # POST validated NEITHER type nor recurrence while PATCH validated both, so
+    # the two endpoints disagreed about what a valid card is — and the route
+    # people actually use was the permissive one. Refusing beats storing a
+    # value that no edit will ever accept back.
+    if payload.type not in CARD_TYPE_VALUES:
+        raise HTTPException(status_code=400, detail="Invalid card type")
+    if payload.recurrence not in RECURRENCE_VALUES:
+        raise HTTPException(status_code=400, detail="Invalid recurrence")
     assignee = (payload.assignee or "").strip() or None
     # Handing a task to SOMEONE ELSE makes it a shared task — you cannot give the
     # co-parent, a kid, a teen or a helper a job and keep it hidden from them or
@@ -7977,6 +8232,7 @@ async def create_card(payload: CardIn, user=Depends(require_user)):
         "image_base64": payload.image_base64,
         "recurrence": payload.recurrence,
         "reminder_minutes": payload.reminder_minutes,
+        "location": (payload.location or "").strip()[:200],
         "created_at": utcnow(),
         "completed_at": None,
         "created_by_user_id": user["user_id"],
@@ -8055,7 +8311,7 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
             changes["stars_awarded"] = True
 
     if payload.type is not None:
-        if payload.type not in {"SIGN_SLIP", "RSVP", "TASK", "BIRTHDAY", "SCHOOL", "APPOINTMENT", "VACATION"}:
+        if payload.type not in CARD_TYPE_VALUES:
             raise HTTPException(status_code=400, detail="Invalid card type")
         changes["type"] = payload.type
 
@@ -8083,6 +8339,9 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
         if payload.reminder_minutes < 0:
             raise HTTPException(status_code=400, detail="Reminder must be zero or positive")
         changes["reminder_minutes"] = payload.reminder_minutes
+
+    if payload.location is not None:
+        changes["location"] = payload.location.strip()[:200]
 
     if payload.shared is not None:
         # Only the person who added a private item may change its sharing here
@@ -8429,6 +8688,10 @@ async def create_vault_doc(payload: VaultIn, user=Depends(require_full_member)):
         "owner_name": user.get("name"),
         "created_at": utcnow(),
     }
+    if payload.expiry_date:
+        parsed_expiry = parse_dt(payload.expiry_date)
+        if parsed_expiry:
+            doc["expiry_date"] = parsed_expiry
     await database["vault"].insert_one(doc)
     await database["families"].update_one(
         {"family_id": user["family_id"]},
@@ -8958,6 +9221,239 @@ async def _fetch_google_calendar_events(access_token: str, days: int) -> list[di
     return data.get("items") or []
 
 
+# -----------------------------------------------------------------------------
+# Event candidates: nothing reaches the calendar without being chosen
+# -----------------------------------------------------------------------------
+#
+# A candidate is a proposed event that has not been accepted yet. Every source
+# that can suggest an event — a calendar import today, a scanned school letter
+# or a forwarded email later — writes candidates, and the person keeps or drops
+# each one before a card exists.
+#
+# Deliberately its own collection rather than a flag on `cards`. A `pending`
+# card would have to be filtered out of the calendar, the feed, search, the
+# conflict check, the reminder scheduler and every future query; one missed
+# filter puts an unreviewed event on someone's calendar, and that is exactly
+# the failure this feature exists to prevent. A separate collection cannot
+# leak into a query that does not name it.
+CANDIDATE_TTL_DAYS = 30
+
+
+def public_candidate(doc: dict) -> dict:
+    return {
+        "candidate_id": doc.get("candidate_id"),
+        "type": doc.get("type") or "TASK",
+        "title": doc.get("title") or "",
+        "description": doc.get("description") or "",
+        "due_date": iso(doc.get("due_date")),
+        "location": doc.get("location") or "",
+        "recurrence": doc.get("recurrence") or "none",
+        "source_kind": doc.get("source_kind") or "",
+        "created_at": iso(doc.get("created_at")),
+    }
+
+
+async def _candidate_exists(database: Any, family_id: str, dedupe_key: str) -> bool:
+    if not dedupe_key:
+        return False
+    found = await database["event_candidates"].find_one(
+        {"family_id": family_id, "dedupe_key": dedupe_key}, {"_id": 0})
+    return found is not None
+
+
+async def _stage_candidate(database: Any, user: dict, card: dict,
+                           source_kind: str, dedupe_key: str = "",
+                           location: str = "") -> str:
+    """Park a proposed event. The shape is the card it will become, so
+    accepting is a copy rather than a second, drifting construction."""
+    candidate_id = new_id("cand")
+    doc = dict(card)
+    doc.pop("card_id", None)
+    doc.update({
+        "candidate_id": candidate_id,
+        "family_id": user["family_id"],
+        # Candidates belong to the person who pulled them in, not the family:
+        # someone else's work diary is not the household's business until they
+        # say it is.
+        "created_by_user_id": user["user_id"],
+        "source_kind": source_kind,
+        "dedupe_key": dedupe_key,
+        "location": location,
+        "created_at": utcnow(),
+    })
+    await database["event_candidates"].insert_one(doc)
+    return candidate_id
+
+
+class ScanEventIn(BaseModel):
+    title: str
+    description: Optional[str] = None
+    due_date: str
+    type: str = "APPOINTMENT"
+    location: Optional[str] = None
+    reminder_minutes: int = 60
+
+
+@app.post("/api/calendar/candidates/from-scan")
+async def stage_scanned_event(payload: ScanEventIn, user=Depends(require_user),
+                              database=Depends(get_db)):
+    """A scanned document that turned out to be an appointment.
+
+    The photo path already extracted the date and already knew the document was
+    a dentist letter; what it could not do was put the appointment anywhere,
+    because the scan was only ever allowed to produce SIGN_SLIP, RSVP or TASK
+    and the calendar only reads APPOINTMENT. So the date was found, shown, and
+    then quietly filed in the Feed.
+
+    It becomes a candidate rather than a card so the keep-or-share decision
+    happens in one place — the review list — instead of being asked twice in
+    two different shapes.
+    """
+    database = database or get_db()
+    title = (payload.title or "").strip()[:200]
+    if not title:
+        raise HTTPException(status_code=400, detail="A title is required")
+    due = parse_dt(payload.due_date)
+    if not due:
+        raise HTTPException(status_code=400, detail="A valid date is required")
+
+    card_type = (payload.type or "APPOINTMENT").strip().upper()
+    if card_type not in CARD_TYPE_VALUES:
+        card_type = "APPOINTMENT"
+
+    # Same event twice from two photographs of the same letter is a real thing
+    # people do. Title plus day is the honest key: the same appointment
+    # rescanned, not two genuinely different events that happen to share a day.
+    dedupe_key = f"scan:{title.lower()}:{due.date().isoformat()}"
+    if await _candidate_exists(database, user["family_id"], dedupe_key):
+        return {"ok": True, "staged": False, "reason": "already_pending"}
+
+    card = {
+        "type": card_type,
+        "title": title,
+        "description": (payload.description or "").strip()[:2000],
+        "due_date": due,
+        "recurrence": "none",
+        "reminder_minutes": max(0, min(payload.reminder_minutes, 60 * 24 * 7)),
+        "source": "CAMERA",
+        "external_source": "document_scan",
+    }
+    candidate_id = await _stage_candidate(
+        database, user, card,
+        source_kind="document_scan",
+        dedupe_key=dedupe_key,
+        location=(payload.location or "").strip()[:200],
+    )
+    return {"ok": True, "staged": True, "candidate_id": candidate_id}
+
+
+@app.get("/api/calendar/candidates")
+async def list_event_candidates(user=Depends(require_user), database=Depends(get_db)):
+    """What a sync or a scan proposed, still waiting on a decision."""
+    # Sweep anything nobody ever answered. A queue that only grows becomes a
+    # thing people avoid opening.
+    await database["event_candidates"].delete_many({
+        "family_id": user["family_id"],
+        "created_at": {"$lt": utcnow() - timedelta(days=CANDIDATE_TTL_DAYS)},
+    })
+
+    items = []
+    cursor = database["event_candidates"].find(
+        {"family_id": user["family_id"],
+         "created_by_user_id": user["user_id"]},
+        {"_id": 0},
+    ).sort("due_date", 1)
+    async for doc in cursor:
+        items.append(public_candidate(doc))
+    return {"candidates": items, "count": len(items)}
+
+
+@app.post("/api/calendar/candidates/decide")
+async def decide_event_candidates(payload: CandidateDecisionIn,
+                                  user=Depends(require_user),
+                                  database=Depends(get_db)):
+    """Keep some, drop the rest — and say once who they are for.
+
+    Scoped to the caller's own candidates twice over (family AND user), so one
+    parent cannot accept or discard what the other pulled in.
+    """
+    database = database or get_db()
+    keep_ids = [c for c in (payload.keep or []) if isinstance(c, str)][:200]
+    drop_ids = [c for c in (payload.drop or []) if isinstance(c, str)][:200]
+    overlap = set(keep_ids) & set(drop_ids)
+    if overlap:
+        raise HTTPException(
+            status_code=400,
+            detail="A candidate cannot be both kept and dropped")
+
+    assignee = (payload.assignee or "").strip()
+    shared = bool(payload.shared)
+    # Same rule the card routes use: something handed to another person has to
+    # be visible to them, or the hand-off is a note to nobody.
+    if assignee and assignee.lower() != (user.get("name") or "").strip().lower():
+        shared = True
+
+    created = 0
+    for candidate_id in keep_ids:
+        doc = await database["event_candidates"].find_one(
+            {"family_id": user["family_id"],
+             "created_by_user_id": user["user_id"],
+             "candidate_id": candidate_id},
+            {"_id": 0},
+        )
+        if not doc:
+            continue
+        card = {
+            "card_id": new_id("card"),
+            "family_id": user["family_id"],
+            "type": doc.get("type") or "TASK",
+            "title": doc.get("title") or "Calendar event",
+            "description": doc.get("description") or "",
+            "assignee": assignee or user.get("name"),
+            "due_date": doc.get("due_date"),
+            "status": "OPEN",
+            "source": doc.get("source") or "CALENDAR",
+            "image_base64": None,
+            "recurrence": doc.get("recurrence") or "none",
+            "reminder_minutes": doc.get("reminder_minutes", 60),
+            "location": doc.get("location") or "",
+            "google_event_id": doc.get("google_event_id"),
+            "google_ical_uid": doc.get("google_ical_uid"),
+            "external_source": doc.get("external_source"),
+            "created_at": utcnow(),
+            "completed_at": None,
+            "created_by_user_id": user["user_id"],
+            "shared": shared,
+        }
+        if shared and card["assignee"]:
+            # Same scoping the card routes use: an assigned card is visible to
+            # the parents and the assignee, not to the whole household.
+            visible = await _assigned_visibility(
+                database, user["family_id"], user["user_id"], card["assignee"])
+            if visible:
+                card["visible_to"] = visible
+        await database["cards"].insert_one(card)
+        await database["event_candidates"].delete_many(
+            {"family_id": user["family_id"], "candidate_id": candidate_id})
+        created += 1
+        if shared and assignee:
+            await notify_assignment(database, user, card, assignee)
+
+    dropped = 0
+    for candidate_id in drop_ids:
+        result = await database["event_candidates"].delete_many({
+            "family_id": user["family_id"],
+            "created_by_user_id": user["user_id"],
+            "candidate_id": candidate_id,
+        })
+        dropped += result.deleted_count
+
+    remaining = await database["event_candidates"].count_documents(
+        {"family_id": user["family_id"], "created_by_user_id": user["user_id"]})
+    return {"ok": True, "created": created, "dropped": dropped,
+            "remaining": remaining}
+
+
 @app.post("/api/calendar/import")
 async def import_google_calendar(payload: CalendarImportIn, user=Depends(require_user)):
     database = get_db()
@@ -9085,6 +9581,7 @@ async def import_google_calendar(payload: CalendarImportIn, user=Depends(require
             "image_base64": None,
             "recurrence": "yearly" if is_bday else "none",
             "reminder_minutes": 60,
+            "location": location,
             "google_event_id": event_id,
             "google_ical_uid": event.get("iCalUID"),
             "external_source": "google_calendar",
@@ -9095,6 +9592,22 @@ async def import_google_calendar(payload: CalendarImportIn, user=Depends(require
             "created_by_user_id": user["user_id"],
             "shared": False,
         }
+
+        if payload.review:
+            # Staged, not created. The dedupe key is the provider's event id,
+            # so syncing twice before the person has answered does not queue
+            # the same school concert twice.
+            if await _candidate_exists(database, user["family_id"], event_id):
+                skipped += 1
+            else:
+                await _stage_candidate(
+                    database, user, card,
+                    source_kind="google_calendar",
+                    dedupe_key=event_id,
+                    location=location,
+                )
+                imported += 1
+            continue
 
         await database["cards"].insert_one(card)
         imported += 1
@@ -9315,6 +9828,7 @@ async def import_microsoft_calendar(payload: CalendarImportIn, user=Depends(requ
             "image_base64": None,
             "recurrence": "yearly" if is_bday else "none",
             "reminder_minutes": 60,
+            "location": location,
             "ms_event_id": event_id,
             "google_ical_uid": event.get("iCalUId"),
             "external_source": "microsoft_calendar",
@@ -9324,6 +9838,22 @@ async def import_microsoft_calendar(payload: CalendarImportIn, user=Depends(requ
             "created_by_user_id": user["user_id"],
             "shared": False,
         }
+
+        if payload.review:
+            # Staged, not created. The dedupe key is the provider's event id,
+            # so syncing twice before the person has answered does not queue
+            # the same school concert twice.
+            if await _candidate_exists(database, user["family_id"], event_id):
+                skipped += 1
+            else:
+                await _stage_candidate(
+                    database, user, card,
+                    source_kind="microsoft_calendar",
+                    dedupe_key=event_id,
+                    location=location,
+                )
+                imported += 1
+            continue
 
         await database["cards"].insert_one(card)
         imported += 1
@@ -9544,6 +10074,26 @@ async def revenuecat_webhook(payload: dict, authorization: Optional[str] = Heade
         # being useful for recovering a secret.
         #
         # Logged, never returned: the caller here is unauthenticated.
+        #
+        # Rate-limited for the same reason. This endpoint takes unauthenticated
+        # POSTs, so anyone can make it log — and the line repeats the LIVE
+        # secret's length and fingerprint every time. Unbounded, that is a
+        # stranger's lever on our log volume and an endlessly repeated hint
+        # about a secret we hold. The diagnostics exist to debug a real
+        # misconfiguration, which needs a handful of lines, not a stream: after
+        # the first few in a window it drops to a bare count with no
+        # fingerprints at all.
+        _rc_mismatch_log["count"] += 1
+        now_ts = utcnow()
+        started = _rc_mismatch_log["window_started"]
+        if started is None or (now_ts - started).total_seconds() > 3600:
+            _rc_mismatch_log["window_started"] = now_ts
+            _rc_mismatch_log["count"] = 1
+        if _rc_mismatch_log["count"] > 10:
+            if _rc_mismatch_log["count"] % 100 == 0:
+                log.warning("RC webhook auth mismatch x%d this hour (details "
+                            "suppressed)", _rc_mismatch_log["count"])
+            raise HTTPException(status_code=401, detail="Bad signature")
         log.warning(
             "RC webhook auth mismatch: supplied_len=%d expected_len=%d "
             "supplied_sha=%s expected_sha=%s header_present=%s",
@@ -13970,9 +14520,19 @@ class SupportContactIn(BaseModel):
 # -----------------------------------------------------------------------------
 # Metrics (first-party, count-only — no payloads, no third-party SDKs)
 # -----------------------------------------------------------------------------
+# Every name the app may report. An event NOT in here is dropped silently —
+# log_metric_event answers {"ok": False} and logEvent() is fire-and-forget, so
+# nothing anywhere notices. On the Metrics screen that reads as "this never
+# happens", which is indistinguishable from "this is not being recorded".
+#
+# tests/test_metric_event_names.py keeps this in step with what the app
+# actually sends. It was added because onboarding_skipped had been sent and
+# dropped for as long as it had existed: the screen showed nobody skipping
+# onboarding, when in truth nobody's skip was ever counted.
 ALLOWED_EVENTS = {
     "feed_open", "scan_used", "card_created", "vault_added", "vault_shared",
-    "kids_open", "calendar_open", "onboarding_done", "calendar_import_cancelled",
+    "kids_open", "calendar_open", "onboarding_done", "onboarding_skipped",
+    "calendar_import_cancelled",
     # AI reliability: bumped server-side from the central Gemini path so the
     # Metrics screen can show a real success rate, not just a live probe.
     "ai_call_ok", "ai_call_error",

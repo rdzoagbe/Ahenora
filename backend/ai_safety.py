@@ -334,7 +334,15 @@ def validate_captured_recipe(parsed: dict) -> dict:
 # model is told this list, the validator enforces it, and the app renders it.
 VAULT_CATEGORIES = ("Medical", "School", "Insurance", "Legal", "Bills")
 
-CARD_TYPES = ("SIGN_SLIP", "RSVP", "TASK")
+# APPOINTMENT is what the app treats as calendar-bound, and its absence here
+# was the reason a scanned dentist letter extracted the right date and then
+# landed in the Feed: the model was never allowed to say "this is a thing that
+# happens at a time". SCHOOL is the same story for a term date or a concert.
+CARD_TYPES = ("SIGN_SLIP", "RSVP", "TASK", "APPOINTMENT", "SCHOOL")
+
+# The subset that means "this belongs on the calendar". A card of one of these
+# types WITH a date is offered as an event; everything else stays a feed item.
+CALENDAR_CARD_TYPES = ("APPOINTMENT", "SCHOOL", "RSVP")
 
 MAX_DESCRIPTION_LEN = 240
 MAX_AMOUNT_LEN = 24
@@ -347,17 +355,27 @@ say what it is and what the family needs to do about it.
 
 Rules you must follow:
 - Return JSON only, with keys "kind", "type", "title", "description",
-  "assignee", "due_date", "vault_category", "save_to_vault" and "amount".
+  "assignee", "due_date", "vault_category", "save_to_vault", "expires_on" and "amount".
 - "kind" is "recipe" if the photo is a recipe — a cookbook page, a magazine
   page, a recipe card — and "document" for everything else. When it is
   "recipe", the other keys still describe it as a document; a second pass
   reads the recipe itself.
-- "type" is one of SIGN_SLIP, RSVP, TASK. Use SIGN_SLIP where something must
-  be signed and returned, RSVP where a reply is wanted by a date.
+- "type" is one of SIGN_SLIP, RSVP, TASK, APPOINTMENT, SCHOOL. Use
+  APPOINTMENT where the document is about the family being somewhere at a
+  time — a dentist or doctor slot, a parents evening, a fitting, a viewing.
+  Use SCHOOL for a school date the family attends or must remember — a
+  concert, a sports day, a trip, a term date. Use SIGN_SLIP where something
+  must be signed and returned, RSVP where a reply is wanted by a date, and
+  TASK for anything else that simply has to be done.
 - "title" is what a parent would call this, in a few words. Not a sentence.
 - "description" is one short sentence saying what has to happen. No markdown.
 - "due_date" is an ISO date string if the document states or implies one, and
-  null otherwise. Never invent a date to fill the field.
+  null otherwise. Never invent a date to fill the field. When the document
+  gives a time as well as a date, include it: "2026-03-14T09:30:00".
+- "expires_on" is an ISO date for a document that stops being valid — a
+  passport, an insurance policy, a permit, a membership. Null otherwise. This
+  is the date the DOCUMENT expires, which is not the same as a date the family
+  has to act on.
 - "vault_category" is one of: {categories}. Use Bills for anything asking for
   money — utilities, council tax, subscriptions, invoices.
 - "amount" is the sum owed, as printed and with its currency symbol
@@ -451,6 +469,9 @@ def validate_document_scan(parsed: dict, members: list) -> dict:
             assignee = member
             break
 
+    due_date = _iso_date_or_none(parsed.get("due_date"))
+    save_to_vault = parsed.get("save_to_vault") is not False
+
     amount = sanitize_user_text(str(parsed.get("amount") or ""), MAX_AMOUNT_LEN)
     # Money or nothing. A free-text "amount" that is really a sentence would
     # be rendered as a figure, and a figure is read as fact.
@@ -464,10 +485,19 @@ def validate_document_scan(parsed: dict, members: list) -> dict:
         "title": title,
         "description": description,
         "assignee": assignee,
-        "due_date": _iso_date_or_none(parsed.get("due_date")),
+        "due_date": due_date,
         "vault_category": category,
         "amount": amount or None,
-        "save_to_vault": parsed.get("save_to_vault") is not False,
+        "save_to_vault": save_to_vault,
+        # When the DOCUMENT stops being valid — a passport, a policy, a permit.
+        # Not the same as a date the family has to act on, which is due_date.
+        "expires_on": _iso_date_or_none(parsed.get("expires_on")),
+        # What the app should do with this, decided here rather than in the
+        # client, so the rule is written once and tested. A scan that belongs on
+        # the calendar is one the model typed as an event AND gave a date to: a
+        # date on its own is a deadline, and an event type with no date is not
+        # something anyone can be reminded of.
+        "is_event": bool(due_date) and card_type in CALENDAR_CARD_TYPES,
     }
 
 

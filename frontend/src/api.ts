@@ -433,7 +433,24 @@ async function request<T = unknown>(
 
 export type CardType = 'SIGN_SLIP' | 'RSVP' | 'TASK' | 'BIRTHDAY' | 'SCHOOL' | 'APPOINTMENT' | 'VACATION';
 export type CardStatus = 'OPEN' | 'DONE';
-export type Recurrence = 'none' | 'daily' | 'weekly' | 'monthly';
+export type Recurrence = 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly';
+
+/**
+ * A proposed event that has not been accepted yet. Produced by a calendar
+ * sync today, and by a scanned document or a forwarded email later — the
+ * review list does not care which, which is the point of the shape.
+ */
+export interface EventCandidate {
+  candidate_id: string;
+  type: CardType;
+  title: string;
+  description: string;
+  due_date?: string | null;
+  location: string;
+  recurrence: Recurrence;
+  source_kind: string;
+  created_at: string;
+}
 
 export interface Card {
   card_id: string;
@@ -455,6 +472,8 @@ export interface Card {
   image_base64?: string | null;
   recurrence: Recurrence;
   reminder_minutes: number;
+  /** Where it happens. Always a string from the server, "" when unset. */
+  location?: string;
   created_at: string;
   completed_at?: string | null;
   completed_by_name?: string | null;
@@ -953,7 +972,12 @@ export interface PlanAdoption {
   paying_families: number;
   tester_households: number;
   free_premium_families: number;
-  active_families_with_device: number;
+  // Renamed server-side: it counts households that OPENED THE APP, which is
+  // not the same as households that once registered a device. The screen kept
+  // reading the old name and rendered a blank cell — a dashboard silently
+  // showing nothing where a number belongs is worse than one showing zero.
+  active_families: number;
+  families_with_a_device: number;
   active_paying_families: number;
   pct_active_paying: number;
   active_free_premium_families: number;
@@ -1209,6 +1233,17 @@ export interface ScanResult {
   amount?: string | null;
   save_to_vault?: boolean;
   understood?: boolean;
+  /**
+   * The server's judgement that this belongs on the calendar: an event type
+   * AND a date. Decided there rather than here so the rule is written once and
+   * tested — a date alone is a deadline, and an event with no date is not
+   * something anyone can be reminded of.
+   */
+  is_event?: boolean;
+  /** When the DOCUMENT stops being valid — a passport, a policy, a permit. */
+  expires_on?: string | null;
+  /** Where it happens, when the document says. */
+  location?: string | null;
   recipe?: CapturedRecipe;
 }
 
@@ -1615,16 +1650,44 @@ export const api = {
       { headers: { 'X-Confirm': token } },
     );
   },
-  importGoogleCalendar: (access_token: string, days = 30) =>
+  // `review` stages the events instead of writing them straight into the
+  // calendar; the app then shows what was found and the person keeps or drops
+  // each one. Passed explicitly rather than defaulted server-side so an older
+  // build, which cannot show the review list, keeps its old behaviour instead
+  // of importing into a queue nobody can open.
+  importGoogleCalendar: (access_token: string, days = 30, review = false) =>
     request<CalendarImportResult>('/calendar/import', {
       method: 'POST',
-      body: { access_token, days },
+      body: { access_token, days, review },
     }),
-  importMicrosoftCalendar: (access_token: string, days = 30) =>
+  importMicrosoftCalendar: (access_token: string, days = 30, review = false) =>
     request<CalendarImportResult>('/calendar/import-microsoft', {
       method: 'POST',
-      body: { access_token, days },
+      body: { access_token, days, review },
     }),
+  // A scanned document the model read as an appointment. Staged, not created:
+  // it joins the same review list a calendar sync fills, so the keep-or-share
+  // decision is made in one place.
+  stageScannedEvent: (body: {
+    title: string;
+    description?: string;
+    due_date: string;
+    type?: string;
+    location?: string | null;
+    reminder_minutes?: number;
+  }) =>
+    request<{ ok: boolean; staged: boolean; candidate_id?: string; reason?: string }>(
+      '/calendar/candidates/from-scan', { method: 'POST', body }),
+  listEventCandidates: () =>
+    request<{ candidates: EventCandidate[]; count: number }>('/calendar/candidates'),
+  decideEventCandidates: (body: {
+    keep: string[];
+    drop: string[];
+    shared: boolean;
+    assignee?: string | null;
+  }) =>
+    request<{ ok: boolean; created: number; dropped: number; remaining: number }>(
+      '/calendar/candidates/decide', { method: 'POST', body }),
   listCalendarContacts: () => request<CalendarContact[]>('/calendar/contacts'),
   // Family
   familyMembers: () => {
@@ -1940,7 +2003,7 @@ export const api = {
       body: { visibility },
     });
   },
-  createVaultDoc: (data: { title: string; category: string; image_base64: string; mime_type?: string; file_name?: string; visibility?: VaultVisibility }) => {
+  createVaultDoc: (data: { title: string; category: string; image_base64: string; mime_type?: string; file_name?: string; visibility?: VaultVisibility; expiry_date?: string | null }) => {
     cache.invalidate('listVault');
     invalidateUsageCaches();
     return request<VaultDoc>('/vault', { method: 'POST', body: data });
