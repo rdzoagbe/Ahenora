@@ -1392,6 +1392,24 @@ def public_redemption(r: dict) -> dict:
     }
 
 
+# What a ledger entry is, and — the part that matters — whether it moved the
+# weekly meter.
+#
+# Every entry is a signed number and a free-text reason, which is not enough to
+# tell a parent taking a star back ("-5, being stubborn") from a child spending
+# their savings ("-30, Cinema"). Both are negative; only the first one comes off
+# this week. Without this the Kids screen's day row had to guess, and guessing
+# meant a saved-up reward quietly wiping out the week the child had just earned.
+STAR_KIND_STARTING = "starting"   # the balance a child was set up with
+STAR_KIND_EARN = "earn"           # a job done — banks and ticks the week
+STAR_KIND_ADJUST = "adjust"       # a parent adding or taking back — moves both
+STAR_KIND_SPEND = "spend"         # a reward redeemed — the bank only
+STAR_KIND_REFUND = "refund"       # a reward that could not be delivered
+
+# The kinds that move `week_earned`. Anything else touches the saved bank alone.
+STAR_KINDS_WEEKLY = frozenset({STAR_KIND_EARN, STAR_KIND_ADJUST})
+
+
 def public_star_transaction(transaction: dict) -> dict:
     return {
         "transaction_id": transaction["transaction_id"],
@@ -1408,6 +1426,10 @@ def public_star_transaction(transaction: dict) -> dict:
         # while the meter above — which already reads awarded_for — counted it
         # on Tuesday. The row and the meter must describe the same week.
         "awarded_for": iso(transaction.get("awarded_for")) if transaction.get("awarded_for") else None,
+        # Null on every entry written before this existed. The app reads a null
+        # the way the app used to behave: a positive counted towards the week,
+        # a negative did not — which was true of all of them back then.
+        "kind": transaction.get("kind"),
     }
 
 
@@ -5179,6 +5201,7 @@ async def create_family_member(payload: ChildIn, user=Depends(require_full_membe
             "family_id": user["family_id"],
             "member_id": member["member_id"],
             "delta": starting_stars,
+            "kind": STAR_KIND_STARTING,
             "reason": "Starting stars",
             "created_by_user_id": user["user_id"],
             "created_by_name": user.get("name"),
@@ -5478,6 +5501,7 @@ async def award_stars_to_member(
         "family_id": family_id,
         "member_id": member_id,
         "delta": delta,
+        "kind": STAR_KIND_EARN,
         "reason": reason,
         "created_by_user_id": user.get("user_id"),
         "created_by_name": user.get("name"),
@@ -5567,6 +5591,7 @@ async def adjust_member_stars(member_id: str, payload: StarAdjustmentIn, user=De
         "family_id": user["family_id"],
         "member_id": member_id,
         "delta": delta,
+        "kind": STAR_KIND_ADJUST,
         "reason": reason or ("Parent added stars" if delta > 0 else "Parent removed stars"),
         "created_by_user_id": user["user_id"],
         "created_by_name": user.get("name"),
@@ -9087,6 +9112,7 @@ async def redeem_reward(reward_id: str, payload: RedeemIn, user=Depends(require_
         "family_id": user["family_id"],
         "member_id": member["member_id"],
         "delta": -cost,
+        "kind": STAR_KIND_SPEND,
         "reason": reward.get("title") or "Reward redeemed",
         "created_by_user_id": user["user_id"],
         "created_by_name": user.get("name"),
@@ -9241,6 +9267,7 @@ async def cancel_redemption(redemption_id: str, user=Depends(require_user)):
                 "family_id": user["family_id"],
                 "member_id": redemption["member_id"],
                 "delta": cost,
+                "kind": STAR_KIND_REFUND,
                 # The bare title, matching the spend entry. An English word like
                 # "Refund:" would sit untranslated in a German family's ledger,
                 # and the + sign against the earlier − already tells the story.

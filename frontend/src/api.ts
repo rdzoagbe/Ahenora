@@ -887,6 +887,11 @@ export interface StarTransaction {
   created_at?: string | null;
   /** The day the star was for — set when a parent fills in a missed day. */
   awarded_for?: string | null;
+  /** What the entry is: 'starting' | 'earn' | 'adjust' | 'spend' | 'refund'.
+   *  Only 'earn' and 'adjust' move the weekly meter — a redeemed reward comes
+   *  out of the saved bank and leaves the week alone. Null on entries written
+   *  before the field existed. */
+  kind?: string | null;
 }
 
 export interface MetricRow {

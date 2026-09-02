@@ -130,3 +130,87 @@ class WeeklyTarget(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
+class TheLedgerSaysWhatEachEntryIs(unittest.TestCase):
+    """A signed number is not enough to know whether the week moved.
+
+    "-5, being stubborn" and "-30, Cinema" are both negative, and only the
+    first comes off this week: the server never docks `week_earned` for a
+    redemption, because the bank is savings and the week is a separate meter.
+    The app reads this ledger to draw the row of day cells under the meter, so
+    without a `kind` it had to guess from the sign — and guessing meant a
+    saved-up reward wiping out the week the child had just earned.
+    """
+
+    def setUp(self):
+        self.db = FakeDatabase()
+        self._get_db = server.get_db
+        self._alert = server.send_star_milestone_alert
+
+        async def _no_alert(*a, **k):
+            return None
+
+        server.send_star_milestone_alert = _no_alert
+        server.get_db = lambda: self.db
+        asyncio.run(self.db["family_members"].insert_one({
+            "member_id": "kid1", "family_id": "fam1", "name": "Ama",
+            "role": "child", "stars": 40, "week_earned": 0,
+        }))
+        asyncio.run(self.db["rewards"].insert_one({
+            "reward_id": "r1", "family_id": "fam1", "title": "Cinema", "cost_stars": 30,
+        }))
+
+    def tearDown(self):
+        server.get_db = self._get_db
+        server.send_star_milestone_alert = self._alert
+
+    def _ledger(self):
+        return asyncio.run(self.db["star_transactions"].find({}).to_list(None))
+
+    def _member(self):
+        return asyncio.run(self.db["family_members"].find_one({"member_id": "kid1"}, {"_id": 0}))
+
+    def test_a_parents_adjustment_is_tagged_as_one(self):
+        asyncio.run(server.adjust_member_stars(
+            "kid1", server.StarAdjustmentIn(delta=5, reason="Tidied the garage"),
+            user=dict(PARENT)))
+        self.assertEqual(self._ledger()[0]["kind"], server.STAR_KIND_ADJUST)
+
+    def test_a_job_done_is_tagged_as_earned(self):
+        asyncio.run(server.award_stars_to_member(
+            self.db, "fam1", "kid1", 5, "Chore done", dict(PARENT)))
+        self.assertEqual(self._ledger()[0]["kind"], server.STAR_KIND_EARN)
+
+    def test_a_redeemed_reward_is_tagged_as_a_spend_and_leaves_the_week_alone(self):
+        payload = type("P", (), {"member_id": "kid1"})()
+        asyncio.run(server.redeem_reward("r1", payload, user=dict(PARENT)))
+
+        spend = [t for t in self._ledger() if t["delta"] < 0][0]
+        self.assertEqual(spend["kind"], server.STAR_KIND_SPEND)
+        # The two halves of the same rule: the bank pays, the week does not.
+        self.assertEqual(self._member()["stars"], 10)
+        self.assertEqual(self._member()["week_earned"], 0)
+
+    def test_only_earning_and_adjusting_move_the_week(self):
+        # The set the app filters on. Adding a kind here without deciding which
+        # side of this line it falls on is the bug this names.
+        self.assertEqual(
+            server.STAR_KINDS_WEEKLY,
+            frozenset({server.STAR_KIND_EARN, server.STAR_KIND_ADJUST}),
+        )
+        for kind in (server.STAR_KIND_SPEND, server.STAR_KIND_REFUND, server.STAR_KIND_STARTING):
+            self.assertNotIn(kind, server.STAR_KINDS_WEEKLY)
+
+    def test_the_transaction_the_app_receives_carries_the_kind(self):
+        out = asyncio.run(server.adjust_member_stars(
+            "kid1", server.StarAdjustmentIn(delta=3, reason="Homework"), user=dict(PARENT)))
+        self.assertEqual(out["transaction"]["kind"], server.STAR_KIND_ADJUST)
+
+    def test_an_entry_written_before_this_existed_reports_no_kind(self):
+        # The app reads a null the way it used to behave — a positive counted
+        # towards the week, a negative did not, which was true of all of them.
+        legacy = {"transaction_id": "t_old", "family_id": "fam1", "member_id": "kid1",
+                  "delta": -5, "reason": "Old row", "created_at": server.utcnow()}
+        self.assertIsNone(server.public_star_transaction(legacy)["kind"])

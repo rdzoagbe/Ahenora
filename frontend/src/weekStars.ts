@@ -17,6 +17,27 @@ export interface StarLedgerEntry {
   awarded_for?: string | null;
   /** The moment the star was actually given. */
   created_at?: string | null;
+  /** What this entry is. Null on everything written before the field existed. */
+  kind?: string | null;
+}
+
+/**
+ * Does this entry move the weekly meter?
+ *
+ * A signed number and a free-text reason cannot tell a parent taking a star
+ * back ("−5, being stubborn") from a child spending their savings ("−30,
+ * Cinema"). Both are negative; only the first comes off this week — the server
+ * never docks `week_earned` for a redemption, because the bank is savings and
+ * the week is a separate meter. Reading every negative as a removal made a
+ * saved-up reward wipe out the week the child had just earned.
+ *
+ * A null kind is an entry written before the field existed, and back then no
+ * negative moved the meter at all. Reading a null the old way is therefore not
+ * a guess: it is what actually happened to those rows.
+ */
+export function countsTowardWeek(entry: StarLedgerEntry): boolean {
+  if (entry.kind) return entry.kind === 'earn' || entry.kind === 'adjust';
+  return entry.delta > 0;
 }
 
 export interface WeekDayCell {
@@ -54,6 +75,10 @@ const dayKey = (d: Date) => `${d.getUTCFullYear()}-${d.getUTCMonth()}-${d.getUTC
  * and 4 taken back reads 6 above, and a row still adding to 10 would make one
  * of the two a liar.
  *
+ * Only entries that move the meter are counted — a reward redeemed out of the
+ * saved bank is not this week undone, and the meter above does not treat it as
+ * one either.
+ *
  * An award lands on the day it was FOR (`awarded_for`), so a parent catching up
  * on Sunday credits Tuesday. A removal is not a day — nobody un-does a Tuesday —
  * so it comes off the days that have stars, most recent first, which is how
@@ -73,6 +98,7 @@ export function weekDayCells(
   const monday = weekStartUTC(now);
 
   const thisWeek = entries
+    .filter(countsTowardWeek)
     .map((txn) => {
       const stamp = txn.awarded_for || txn.created_at;
       const when = stamp ? new Date(stamp) : null;

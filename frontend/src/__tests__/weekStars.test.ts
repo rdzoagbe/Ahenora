@@ -5,7 +5,7 @@
  * week_earned) and the row of day cells (built here from the ledger). Every
  * test below is really the same assertion: they agree.
  */
-import { weekDayCells, weekStartUTC, weekTotal } from '../weekStars';
+import { countsTowardWeek, weekDayCells, weekStartUTC, weekTotal } from '../weekStars';
 
 // A Wednesday, so there is a settled Monday and Tuesday behind it and a
 // Thursday ahead — the shape most of these rules need.
@@ -14,8 +14,11 @@ const monday = weekStartUTC(WED);
 const dayOfWeek = (i: number, hour = 9) =>
   new Date(monday.getTime() + i * 86400000 + hour * 3600000).toISOString();
 
+// A star given or taken back by a parent — the two kinds that move the weekly
+// meter. Redemptions and refunds have their own tests further down.
 const txn = (delta: number, awardedFor: string, givenAt?: string) => ({
   delta,
+  kind: delta > 0 ? 'earn' : 'adjust',
   awarded_for: awardedFor,
   created_at: givenAt || awardedFor,
 });
@@ -156,5 +159,51 @@ describe('weekDayCells', () => {
   it('ignores a zero-delta entry', () => {
     const out = cells([txn(0, dayOfWeek(0))]);
     expect(weekTotal(out)).toBe(0);
+  });
+});
+
+describe('countsTowardWeek', () => {
+  // The bug this exists to prevent: a child saves 40 stars over a month, spends
+  // 30 on a reward, and the week they had just earned emptied out on screen —
+  // while the meter above it, which the server never docks for a redemption,
+  // still read what it read. Spending savings is not a week undone.
+  const cells = (entries: any[]) => weekDayCells(entries, WED, 'en-GB');
+
+  it('counts a job done and a parent’s adjustment', () => {
+    expect(countsTowardWeek({ delta: 5, kind: 'earn' })).toBe(true);
+    expect(countsTowardWeek({ delta: -5, kind: 'adjust' })).toBe(true);
+  });
+
+  it('ignores a reward spent out of the saved bank, and its refund', () => {
+    expect(countsTowardWeek({ delta: -30, kind: 'spend' })).toBe(false);
+    expect(countsTowardWeek({ delta: 30, kind: 'refund' })).toBe(false);
+  });
+
+  it('ignores the balance a child was set up with', () => {
+    expect(countsTowardWeek({ delta: 40, kind: 'starting' })).toBe(false);
+  });
+
+  it('reads an untagged entry the way the app used to behave', () => {
+    // Nulls are rows written before the field existed, and back then no
+    // negative moved the meter. This is what happened to them, not a guess.
+    expect(countsTowardWeek({ delta: 5 })).toBe(true);
+    expect(countsTowardWeek({ delta: -5 })).toBe(false);
+    expect(countsTowardWeek({ delta: -5, kind: null })).toBe(false);
+  });
+
+  it('leaves the week alone when a saved-up reward is redeemed', () => {
+    const out = cells([
+      { delta: 10, kind: 'earn', awarded_for: dayOfWeek(0), created_at: dayOfWeek(0) },
+      { delta: -30, kind: 'spend', created_at: dayOfWeek(2) },
+    ]);
+    expect(weekTotal(out)).toBe(10);
+  });
+
+  it('still takes a parent’s removal off the week', () => {
+    const out = cells([
+      { delta: 10, kind: 'earn', awarded_for: dayOfWeek(0), created_at: dayOfWeek(0) },
+      { delta: -4, kind: 'adjust', awarded_for: dayOfWeek(2), created_at: dayOfWeek(2) },
+    ]);
+    expect(weekTotal(out)).toBe(6);
   });
 });
