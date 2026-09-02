@@ -1,0 +1,623 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ahenora — l'organisation familiale, enfin au calme</title>
+<meta name="description" content="Un seul espace partagé et privé pour les tâches, l'agenda familial, les corvées des enfants, les repas et les documents. Pour toutes les familles — parents solos, coparents et foyers bien remplis.">
+<link rel="icon" href="assets/icon.png">
+<link rel="apple-touch-icon" href="assets/icon.png">
+
+<meta property="og:title" content="Ahenora — l'organisation familiale, enfin au calme">
+<meta property="og:description" content="Un seul espace partagé et privé pour les tâches, l'agenda familial, les corvées des enfants, les repas et les documents. Pour toutes les familles — parents solos, coparents et foyers bien remplis.">
+<meta property="og:image" content="https://ahenora.com/assets/icon.png">
+<meta property="og:url" content="https://ahenora.com/fr.html">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+
+<!-- Canonical: the site answers on ahenora.com and www.ahenora.com, and GitHub
+     Pages will serve both. Without this Google picks one itself and splits the
+     ranking signals between two addresses for the same page. -->
+<link rel="canonical" href="https://ahenora.com/fr.html">
+<!-- The pair, declared on BOTH pages. Without this Google sees two pages with
+     the same structure and images and picks one as canonical, dropping the
+     other — so the French page would exist and never be served to the people
+     it was written for. x-default names the fallback for everyone else. -->
+<link rel="alternate" hreflang="en" href="https://ahenora.com/">
+<link rel="alternate" hreflang="fr" href="https://ahenora.com/fr.html">
+<link rel="alternate" hreflang="x-default" href="https://ahenora.com/">
+
+
+<!-- Structured data. This is how a search engine learns that the page is ABOUT
+     an application rather than merely mentioning one: the category it belongs
+     to, what it costs, and where to install it. It is what earns the app-style
+     result — name, icon, price — instead of a plain blue link.
+     Kept in step with the real listing by hand; a price or a store link that
+     contradicts the store is worse than no markup at all. -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "MobileApplication",
+  "name": "Ahenora",
+  "applicationCategory": "LifestyleApplication",
+  "applicationSubCategory": "Family organiser",
+  "operatingSystem": "Android, iOS",
+  "url": "https://ahenora.com/fr.html",
+  "installUrl": "https://play.google.com/store/apps/details?id=com.householdcoo.app",
+  "inLanguage": "fr",
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "EUR",
+    "description": "Free to use, with an optional subscription for premium features."
+  },
+  "description": "One shared, private place for a household: the family calendar, tasks, kids' chores and pocket money, meal planning, the shopping list and important documents. Built for co-parents, single parents and busy families.",
+  "featureList": [
+    "Shared family calendar",
+    "Household tasks and hand-offs between co-parents",
+    "Kids' chores, stars and pocket money",
+    "Meal planning and recipes",
+    "Shared shopping list",
+    "Secure document vault"
+  ]
+}
+</script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@600;700;800&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --bg: #F6F3EE;
+    --bg-warm: #F1EBE1;
+    --card: #FFFFFF;
+    --ink: #101318;
+    --muted: #5F656E;
+    --line: #E6E1DA;
+    --orange: #F56519;
+    --orange-deep: #E2560E;
+    --orange-ink: #B8410A;
+    --tint: #FFF0E7;
+    --mint: #DFF7EC;
+    --mint-ink: #0A7D52;
+    --shadow: 0 20px 50px -24px rgba(59, 38, 20, 0.28);
+    --shadow-sm: 0 6px 20px -10px rgba(59, 38, 20, 0.22);
+    --radius: 22px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #17130F;
+      --bg-warm: #1E1813;
+      --card: #221C16;
+      --ink: #F4EEE6;
+      --muted: #B2A594;
+      --line: #33291F;
+      --orange: #FB7A34;
+      --orange-deep: #F56519;
+      --orange-ink: #F9A46A;
+      --tint: #2A1F16;
+      --mint: #16281F;
+      --mint-ink: #5FD3A0;
+      --shadow: 0 24px 56px -20px rgba(0,0,0,.6);
+      --shadow-sm: 0 8px 22px -12px rgba(0,0,0,.5);
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+  a { color: var(--orange-ink); }
+  .serif { font-family: 'Playfair Display', Georgia, serif; }
+
+  /* ---------- header ---------- */
+  header {
+    position: sticky; top: 0; z-index: 30;
+    background: color-mix(in srgb, var(--bg) 82%, transparent);
+    backdrop-filter: saturate(160%) blur(14px);
+    -webkit-backdrop-filter: saturate(160%) blur(14px);
+    border-bottom: 1px solid var(--line);
+  }
+  .nav { display: flex; align-items: center; gap: 14px; padding: 13px 0; }
+  .brand { display: flex; align-items: center; gap: 11px; font-weight: 800; text-decoration: none; color: var(--ink); font-size: 18px; letter-spacing: -0.01em; }
+  .brand img { width: 34px; height: 34px; border-radius: 10px; box-shadow: var(--shadow-sm); }
+  .nav-spacer { flex: 1; }
+  .nav a.quiet { color: var(--muted); text-decoration: none; font-size: 15px; font-weight: 500; }
+  .nav a.quiet:hover { color: var(--ink); }
+
+  /* ---------- buttons ---------- */
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px; padding: 14px 24px; border-radius: 999px;
+    font-weight: 700; text-decoration: none; font-size: 16px; line-height: 1.2; text-align: center;
+    white-space: nowrap;
+    background: var(--orange); color: #fff; border: 1px solid transparent;
+    box-shadow: 0 10px 26px -12px rgba(245, 101, 25, 0.7);
+    transition: transform .14s ease, background .14s ease, box-shadow .14s ease;
+  }
+  .btn:hover { background: var(--orange-deep); transform: translateY(-2px); box-shadow: 0 16px 32px -14px rgba(245, 101, 25, 0.75); }
+  .btn.ghost { background: var(--card); color: var(--ink); border-color: var(--line); box-shadow: var(--shadow-sm); }
+  .btn.ghost:hover { background: var(--tint); border-color: color-mix(in srgb, var(--orange) 30%, var(--line)); }
+  .btn.sm { padding: 10px 18px; font-size: 15px; }
+
+  /* ---------- hero ---------- */
+  .hero { padding: 76px 0 60px; position: relative; overflow: hidden; }
+  .hero::before {
+    content: ""; position: absolute; top: -180px; right: -140px; width: 520px; height: 520px;
+    background: radial-gradient(circle, color-mix(in srgb, var(--orange) 20%, transparent), transparent 68%);
+    pointer-events: none; z-index: 0;
+  }
+  .hero-grid { position: relative; z-index: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center; }
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 700; letter-spacing: .02em;
+    color: var(--orange-ink); background: var(--tint);
+    padding: 7px 14px; border-radius: 999px; margin-bottom: 22px;
+    border: 1px solid color-mix(in srgb, var(--orange) 22%, transparent);
+  }
+  .eyebrow .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--mint-ink); }
+  h1 { font-family: 'Playfair Display', Georgia, serif; font-weight: 800; font-size: clamp(30px, 7.6vw, 60px); line-height: 1.08; letter-spacing: -0.015em; margin: 0 0 20px; }
+  .lede { font-size: 19px; color: var(--muted); margin: 0 0 30px; max-width: 33em; }
+  .cta-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .cta-note { font-size: 14px; color: var(--muted); margin-top: 16px; }
+  .cta-note strong { color: var(--ink); font-weight: 600; }
+
+  .phone-stack { display: flex; gap: 22px; justify-content: center; align-items: flex-start; }
+
+  /* Phone-mockup frame: a dark bezel that turns a flat screenshot into a
+     device, and bridges the light app screenshot into the (light or dark)
+     page. Reused by the hero and the shots row. */
+  .device {
+    --bezel: #1B1712;
+    position: relative; background: var(--bezel); border-radius: 34px;
+    padding: 9px; box-shadow: var(--shadow);
+    border: 1px solid color-mix(in srgb, var(--bezel) 70%, #000);
+  }
+  .device::before {
+    content: ""; position: absolute; top: 15px; left: 50%; transform: translateX(-50%);
+    width: 34%; height: 6px; border-radius: 99px; background: rgba(255,255,255,0.14); z-index: 2;
+  }
+  .device img { display: block; width: 100%; border-radius: 26px; }
+
+  .phone-stack .device { width: 100%; max-width: 272px; }
+  .phone-stack .device.offset { margin-top: 58px; }
+  /* Crop the hero phones to a top peek — taller than the 4-up row so the
+     staggered pair fills the hero's right column and anchors to the headline
+     rather than floating with a gap above. */
+  .phone-stack .device img { aspect-ratio: 2 / 3; height: auto; object-fit: cover; object-position: top center; }
+
+  /* ---------- sections ---------- */
+  section { padding: 72px 0; }
+  section[id], main[id] { scroll-margin-top: 76px; }
+  .section-head { max-width: 44em; margin: 0 auto 44px; text-align: center; }
+  .kicker { display: inline-block; font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--orange-ink); margin-bottom: 12px; }
+  h2 { font-family: 'Playfair Display', Georgia, serif; font-weight: 700; font-size: clamp(28px, 3.6vw, 40px); letter-spacing: -0.01em; margin: 0 0 14px; }
+  .section-head p { color: var(--muted); font-size: 18px; margin: 0; }
+  .alt { background: var(--bg-warm); border-block: 1px solid var(--line); }
+
+  /* ---------- feature grid ---------- */
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 26px; box-shadow: var(--shadow-sm);
+    transition: transform .15s ease, box-shadow .15s ease;
+  }
+  .card:hover { transform: translateY(-3px); box-shadow: var(--shadow); }
+  .card h3 { margin: 0 0 8px; font-size: 18.5px; font-weight: 700; letter-spacing: -0.01em; }
+  .card p { margin: 0; color: var(--muted); font-size: 15px; }
+  .card .ico {
+    width: 46px; height: 46px; border-radius: 13px; display: grid; place-items: center;
+    background: var(--tint); margin-bottom: 16px; font-size: 22px;
+  }
+
+  /* ---------- shots ---------- */
+  .shots { display: grid; grid-template-columns: repeat(4, 1fr); gap: 22px; align-items: start; }
+  .shots figure { margin: 0; }
+  .shots .device { box-shadow: var(--shadow-sm); }
+  /* A 4-up row of full 2.16:1 phones reads as tall thin strips. Crop each to a
+     top "peek" — the branded header + first cards that identify the feature —
+     so the row stays balanced instead of stretching down the page. */
+  .shots .device img { aspect-ratio: 4 / 5; height: auto; object-fit: cover; object-position: top center; }
+  .shots figcaption { font-size: 14px; color: var(--muted); margin-top: 14px; text-align: center; font-weight: 500; }
+
+  /* ---------- pricing ---------- */
+  /* Three tiers now, so the row widens and the cards wrap rather than being
+     squeezed: a plan whose price wraps mid-figure reads as a mistake. */
+  .plans { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px; max-width: 1080px; margin: 0 auto; }
+  .cycle { display: flex; justify-content: center; gap: 4px; margin: 0 auto 22px; padding: 4px;
+           background: var(--bg-warm); border: 1px solid var(--line); border-radius: 999px; width: max-content; }
+  .cycle-btn { font: inherit; font-size: 14px; font-weight: 600; color: var(--muted); cursor: pointer;
+               background: none; border: 0; padding: 9px 20px; border-radius: 999px; }
+  .cycle-btn.is-on { background: var(--card); color: var(--ink); box-shadow: var(--shadow-sm); }
+  .cycle-btn:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
+  .saving { margin: 6px 0 0; font-size: 13.5px; font-weight: 600; color: var(--orange); }
+  .plan { border: 1px solid var(--line); border-radius: var(--radius); padding: 28px; background: var(--card); box-shadow: var(--shadow-sm); }
+  .plan.featured { border-color: color-mix(in srgb, var(--orange) 55%, var(--line)); background: linear-gradient(180deg, var(--tint), var(--card) 42%); position: relative; }
+  .plan .tag { position: absolute; top: 20px; right: 20px; font-size: 11px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; color: #fff; background: var(--orange); padding: 4px 10px; border-radius: 999px; }
+  .plan h3 { margin: 0 0 4px; font-size: 21px; font-weight: 700; }
+  .price { font-family: 'Playfair Display', Georgia, serif; font-size: 38px; font-weight: 700; letter-spacing: -0.01em; margin: 10px 0 4px; }
+  .price span { font-family: 'Inter', sans-serif; font-size: 15px; font-weight: 500; color: var(--muted); }
+  .plan ul { list-style: none; padding: 0; margin: 18px 0 0; color: var(--ink); font-size: 15px; }
+  .plan li { margin: 0; padding: 9px 0 9px 28px; position: relative; border-top: 1px solid var(--line); }
+  .plan li:first-child { border-top: 0; }
+  .plan li::before { content: "✓"; position: absolute; left: 0; top: 9px; color: var(--mint-ink); font-weight: 800; }
+  .plan li.lead::before { content: ""; }
+  .plan li.lead { color: var(--muted); font-weight: 600; padding-left: 0; }
+
+  /* ---------- final cta ---------- */
+  .final { text-align: center; }
+  .final .lede { margin: 0 auto 28px; }
+
+  /* ---------- footer ---------- */
+  footer { border-top: 1px solid var(--line); padding: 40px 0 60px; color: var(--muted); font-size: 14px; background: var(--bg-warm); }
+  .foot-links { display: flex; flex-wrap: wrap; gap: 20px; margin-bottom: 16px; }
+  .foot-links a { color: var(--muted); text-decoration: none; font-weight: 500; }
+  .foot-links a:hover { color: var(--ink); text-decoration: underline; }
+  .social { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 22px; }
+  .social a {
+    display: inline-flex; align-items: center; gap: 8px; padding: 9px 16px; border-radius: 999px;
+    border: 1px solid var(--line); background: var(--card); color: var(--ink);
+    text-decoration: none; font-weight: 600; font-size: 14px; box-shadow: var(--shadow-sm);
+    transition: background .14s ease, border-color .14s ease, transform .14s ease;
+  }
+  .social a:hover { background: var(--tint); border-color: color-mix(in srgb, var(--orange) 30%, var(--line)); transform: translateY(-1px); }
+  .social svg { flex: none; }
+
+  @media (max-width: 900px) {
+    .hero-grid { grid-template-columns: 1fr; gap: 40px; }
+    .grid { grid-template-columns: repeat(2, 1fr); }
+    .shots { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 620px) {
+    .hero { padding: 52px 0 44px; }
+    .grid, .plans { grid-template-columns: 1fr; }
+    .nav { gap: 10px; }
+    .nav a.quiet { font-size: 14px; }
+    /* The header has four things on one row at 390px; trimming the pill and the
+       wordmark is what keeps "Get the app" on a single line. */
+    .brand { font-size: 16.5px; gap: 8px; }
+    .brand img { width: 30px; height: 30px; }
+    .btn.sm { padding: 9px 15px; font-size: 14px; }
+    .lede { font-size: 17px; }
+    /* The web-app link is redundant on mobile (the hero CTA covers it) and its
+       length crowds the header — drop it here so Features/Pricing/Get-the-app
+       sit cleanly on one row. */
+    .nav a.quiet.webapp { display: none; }
+    /* One centred phone in the hero on narrow screens. */
+    .phone-stack .device.offset { display: none; }
+    .phone-stack .device { max-width: 280px; }
+  }
+  @media (max-width: 380px) {
+    /* On the narrowest phones the header cannot hold a wordmark, two links and
+       a pill: the pill will not wrap (it reads as broken when it does) so it
+       pushed the page sideways instead. The two links are in-page anchors to
+       sections you reach by scrolling anyway — the pill is the one that has to
+       survive. */
+    .nav a.quiet { display: none; }
+  }
+  .nav-lang {
+    color: var(--muted); text-decoration: none; font-size: 13px; font-weight: 600;
+    padding: 6px 10px; border-radius: 999px; border: 1px solid var(--line);
+  }
+  .nav-lang:hover { color: var(--ink); }
+</style>
+<script>
+  // Anyone landing here with an invite token belongs in the app, not on the
+  // marketing page — forward immediately, keeping the whole query string.
+  (function () {
+    // Forward ONLY the invite token, re-encoded, onto a fixed relative path.
+    // The old version pasted the whole query string and fragment onto '/app/'
+    // and handed the result to location.replace — user-controlled text flowing
+    // straight into a navigation sink. Nothing about the rest of the query
+    // string was ever needed here, so taking one value is both safer and more
+    // honest about what this redirect is for.
+    var invite = new URLSearchParams(window.location.search).get('invite');
+    if (invite) {
+      window.location.replace('/app/?invite=' + encodeURIComponent(invite));
+    }
+  })();
+
+  // Make the hero's primary button fit the visitor's device: Android phones
+  // get the Play Store (the native app), iPhone/desktop get the web app. The
+  // page still ships BOTH links, so nothing is hidden — we only reorder which
+  // one is the bold primary. Default (Android) already matches the markup.
+  document.addEventListener('DOMContentLoaded', function () {
+    var ua = navigator.userAgent || '';
+    var isAndroid = /Android/i.test(ua) && !/CrOS/i.test(ua);
+    if (isAndroid) return; // markup default already leads with Play — leave it.
+    var primary = document.getElementById('cta-primary');
+    var secondary = document.getElementById('cta-secondary');
+    if (!primary || !secondary) return;
+    // iPhone/iPad/desktop: lead with the web app, since there is no iOS app yet.
+    primary.setAttribute('href', '/app/');
+    primary.textContent = 'Ouvrir Ahenora dans votre navigateur';
+    secondary.setAttribute('href', 'https://play.google.com/store/apps/details?id=com.householdcoo.app');
+    secondary.textContent = 'Sur Android\u00a0? Installer depuis Google Play';
+
+    // The closing call to action was hardcoded to Google Play, so an iPhone
+    // visitor who read the whole page arrived at a store they cannot install
+    // from. Same for the header button.
+    ['cta-final', 'cta-header'].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      el.setAttribute('href', '/app/');
+      el.textContent = el.id === 'cta-header' ? 'Ouvrir l\u2019app' : 'Ouvrir Ahenora dans votre navigateur';
+    });
+  });
+
+  // Monthly / yearly. Prices live on the element as data attributes so the
+  // markup ships correct with JavaScript off — what you see before this runs
+  // is the monthly price, which is the honest default.
+  document.addEventListener('DOMContentLoaded', function () {
+    var buttons = document.querySelectorAll('.cycle-btn');
+    if (!buttons.length) return;
+    function show(cycle) {
+      document.querySelectorAll('.price[data-m]').forEach(function (el) {
+        var yearly = cycle === 'yearly';
+        // Built as nodes rather than an HTML string. The values come from this
+        // page's own data attributes, but assembling markup out of DOM text is
+        // the shape of an XSS bug whether or not this instance is exploitable —
+        // and it is no harder to write it as text.
+        var note = document.createElement('span');
+        note.textContent = yearly ? el.dataset.yNote : el.dataset.mNote;
+        el.textContent = (yearly ? el.dataset.y : el.dataset.m) + ' ';
+        el.appendChild(note);
+      });
+      document.querySelectorAll('.saving').forEach(function (el) {
+        el.hidden = cycle !== 'yearly';
+      });
+      buttons.forEach(function (b) {
+        var on = b.dataset.cycle === cycle;
+        b.classList.toggle('is-on', on);
+        b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+    }
+    buttons.forEach(function (b) {
+      b.addEventListener('click', function () { show(b.dataset.cycle); });
+    });
+  });
+</script>
+</head>
+<body>
+
+<header>
+  <div class="wrap nav">
+    <a class="brand" href="#top"><img src="assets/icon.png" alt=""> Ahenora</a>
+    <div class="nav-spacer"></div>
+    <a class="quiet" href="#features">Fonctionnalités</a>
+    <a class="quiet" href="#plans">Tarifs</a>
+    <a class="quiet webapp" href="/app/">Ouvrir l'application web</a>
+    <a class="nav-lang" href="/" hreflang="en" lang="en">English</a>
+        <a class="btn sm" id="cta-header" href="https://play.google.com/store/apps/details?id=com.householdcoo.app">Télécharger l'app</a>
+  </div>
+</header>
+
+<main id="top">
+
+  <div class="wrap hero">
+    <div class="hero-grid">
+      <div>
+        <span class="eyebrow"><span class="dot"></span> Sur Google Play &middot; gratuit au départ</span>
+        <h1>La maison tourne grâce à la mémoire de quelqu'un. Et si elle tournait plus sereinement&nbsp;?</h1>
+        <p class="lede">
+          Ahenora réunit les tâches, l'agenda familial, les corvées des enfants, les repas
+          et les papiers de l'école dans un seul espace partagé et privé — pour que la vie
+          de famille ne repose plus sur la mémoire d'une seule personne. Pour les parents
+          solos, les coparents entre deux maisons, et tous les foyers bien remplis.
+        </p>
+        <div class="cta-row">
+          <a class="btn" id="cta-primary" href="https://play.google.com/store/apps/details?id=com.householdcoo.app">Télécharger sur Google Play</a>
+          <a class="btn ghost" id="cta-secondary" href="/app/">Utiliser sur le web</a>
+          <a class="btn ghost" href="https://youtu.be/DPPmZJIrYPQ">Voir la démo de 30 secondes</a>
+        </div>
+        <p class="cta-note"><strong>Gratuit au départ</strong> &middot; Sans publicité &middot; Les données de votre famille ne sont jamais vendues</p>
+      </div>
+      <div class="phone-stack">
+        <div class="device"><img src="assets/shot-feed.jpg" alt="The Ahenora feed showing today's tasks and family activity" width="500" height="1082" loading="eager"></div>
+        <div class="device offset"><img src="assets/shot-kids.jpg" alt="The Kids screen showing chores, stars and rewards" width="500" height="1082" loading="lazy"></div>
+      </div>
+    </div>
+  </div>
+
+  <section class="alt" id="features">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="kicker">Ce qu'il y a dedans</span>
+        <h2>Tout ce dont un foyer a vraiment besoin</h2>
+        <p>Pas une énième liste de tâches — précisément ce qui passe à la trappe dans une famille chargée.</p>
+      </div>
+      <div class="grid">
+        <div class="card">
+          <div class="ico">📋</div>
+          <h3>Les tâches qui reviennent</h3>
+          <p>Mots à signer, réponses à donner, sortir les poubelles. Attribuez-les, ajoutez des rappels, et laissez les routines revenir toutes seules.</p>
+        </div>
+        <div class="card">
+          <div class="ico">📅</div>
+          <h3>Un agenda partagé</h3>
+          <p>Importez Google ou Outlook&nbsp;: vos événements deviennent des cartes sur lesquelles agir. Tout le monde voit la même semaine.</p>
+        </div>
+        <div class="card">
+          <div class="ico">⭐</div>
+          <h3>Enfants, corvées et étoiles</h3>
+          <p>Des corvées avec des étoiles, des récompenses et de l'argent de poche — pour que les routines tiennent sans négocier chaque jour.</p>
+        </div>
+        <div class="card">
+          <div class="ico">🍽️</div>
+          <h3>Repas, courses et ce que ça coûte</h3>
+          <p>Planifiez les dîners de la semaine — ou demandez une recette à l'IA — et transformez le tout en une liste de courses partagée. Notez le montant de chaque course et voyez où part vraiment l'argent, par mois et par magasin.</p>
+        </div>
+        <div class="card">
+          <div class="ico">📄</div>
+          <h3>Scannez les papiers</h3>
+          <p>Photographiez un mot de l'école ou une carte de rendez-vous&nbsp;: il devient directement une tâche ou un document classé.</p>
+        </div>
+        <div class="card">
+          <div class="ico">🔒</div>
+          <h3>Un coffre pour vos documents</h3>
+          <p>Passeports, assurances, documents médicaux — classés par catégorie, privés à votre foyer.</p>
+        </div>
+        <div class="card" style="border-color: color-mix(in srgb, var(--orange) 45%, var(--line)); background: linear-gradient(180deg, var(--tint), var(--card) 46%);">
+          <div class="ico">💬</div>
+          <h3>Messages familiaux <span style="font-size:11px; font-weight:800; letter-spacing:.05em; color:#fff; background:var(--orange); padding:2px 8px; border-radius:999px; vertical-align:middle;">NOUVEAU</span></h3>
+          <p>Parlez à votre coparent, à votre ado ou à la nounou sans quitter l'app — et laissez des mots que vos plus jeunes lisent sur le téléphone familial. Chaque conversation privée inclut un parent, par principe.</p>
+        </div>
+        <div class="card" style="border-color: color-mix(in srgb, var(--orange) 45%, var(--line)); background: linear-gradient(180deg, var(--tint), var(--card) 46%);">
+          <div class="ico">🧑‍🎓</div>
+          <h3>Comptes ado <span style="font-size:11px; font-weight:800; letter-spacing:.05em; color:#fff; background:var(--orange); padding:2px 8px; border-radius:999px; vertical-align:middle;">NOUVEAU</span></h3>
+          <p>Offrez à votre ado de 13 à 17 ans son propre espace — uniquement ses tâches et les événements partagés, rien d'autre de la famille. Il gagne des étoiles que vous validez.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <div class="section-head">
+        <span class="kicker">Pensé pour les vraies familles</span>
+        <h2>Une maison ou deux, tout reste synchronisé</h2>
+        <p>
+          Que vous portiez tout seul, à deux, ou en coparentalité entre deux maisons, Ahenora
+          donne à chacun la même référence, privée et partagée — pour que personne n'ait à
+          courir après personne pour rester coordonné.
+        </p>
+      </div>
+      <div class="shots">
+        <figure>
+          <div class="device"><img src="assets/shot-feed.jpg" alt="Feed screen with today's tasks" width="500" height="1082" loading="lazy"></div>
+          <figcaption>Aujourd'hui, en un coup d'œil</figcaption>
+        </figure>
+        <figure>
+          <div class="device"><img src="assets/shot-calendar.jpg" alt="Shared family calendar" width="500" height="1082" loading="lazy"></div>
+          <figcaption>L'agenda partagé</figcaption>
+        </figure>
+        <figure>
+          <div class="device"><img src="assets/shot-kids.jpg" alt="Kids chores, stars and rewards" width="500" height="1082" loading="lazy"></div>
+          <figcaption>Corvées et récompenses</figcaption>
+        </figure>
+        <figure>
+          <div class="device"><img src="assets/shot-kitchen.jpg" alt="Meal planner and shopping list" width="500" height="1082" loading="lazy"></div>
+          <figcaption>Repas et courses</figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <section class="alt" id="plans">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="kicker">Tarifs</span>
+        <h2>Des formules simples</h2>
+        <p>Chaque parent est toujours gratuit. Nous ne comptons que la taille du foyer — jamais les fonctionnalités qui gardent votre famille coordonnée.</p>
+      </div>
+      <!-- Monthly / yearly, the same choice the app offers. The saving is shown
+           PER CARD because it is not the same on both: a year of Premium saves
+           40%, a year of Household saves 17%. One badge over the toggle would
+           have been a false claim on one of the two. -->
+      <div class="cycle" role="group" aria-label="Billing period">
+        <button type="button" class="cycle-btn is-on" data-cycle="monthly" aria-pressed="true">Mensuel</button>
+        <button type="button" class="cycle-btn" data-cycle="yearly" aria-pressed="false">Annuel</button>
+      </div>
+      <div class="plans">
+        <div class="plan">
+          <h3>Gratuit</h3>
+          <div class="price">0&nbsp;&euro;</div>
+          <ul>
+            <li>Jusqu'à deux adultes et deux enfants</li>
+            <li>Tâches, agenda et listes partagées</li>
+            <li>Corvées, étoiles et récompenses</li>
+            <li>Consultez tous vos documents enregistrés</li>
+            <li>Tous les rappels et relances</li>
+          </ul>
+        </div>
+        <div class="plan featured">
+          <span class="tag">La plupart des familles</span>
+          <h3>Premium</h3>
+          <div class="price"
+               data-m="6,99&nbsp;&euro;" data-m-note="/ mois"
+               data-y="49,99&nbsp;&euro;" data-y-note="/ an &middot; 4,17&nbsp;&euro; par mois">
+            6,99&nbsp;&euro; <span>/ mois</span></div>
+          <p class="saving" hidden>Économisez 33,89&nbsp;&euro; par an &mdash; 40&nbsp;% de moins qu'au mois</p>
+          <ul>
+            <li class="lead">Tout du plan Gratuit, plus&nbsp;:</li>
+            <li>Jusqu'à 5 enfants et aidants</li>
+            <li>Planificateur de repas, plans enregistrés et IA recettes</li>
+            <li>Argent de poche et rapport hebdomadaire</li>
+            <li>Covoiturage et un coffre plus grand</li>
+          </ul>
+        </div>
+        <div class="plan">
+          <h3>Foyer</h3>
+          <div class="price"
+               data-m="14,99&nbsp;&euro;" data-m-note="/ mois"
+               data-y="149,99&nbsp;&euro;" data-y-note="/ an &middot; 12,50&nbsp;&euro; par mois">
+            14,99&nbsp;&euro; <span>/ mois</span></div>
+          <p class="saving" hidden>Économisez 29,89&nbsp;&euro; par an &mdash; 17&nbsp;% de moins qu'au mois</p>
+          <ul>
+            <li class="lead">Tout du plan Premium, plus&nbsp;:</li>
+            <li>Jusqu'à 10 enfants et 20 personnes</li>
+            <li>Comptes aidants et nounou</li>
+            <li>Plusieurs logements</li>
+            <li>Coffre de 10&nbsp;Go et assistance prioritaire</li>
+          </ul>
+        </div>
+      </div>
+      <p class="cta-note" style="text-align:center; margin-top: 22px;">Prix en euros. Abonnez-vous par carte sur le web &mdash; y compris sur iPhone &mdash; ou via Google Play dans l'app Android. Résiliable à tout moment, dans les deux cas.</p>
+    </div>
+  </section>
+
+  <section class="final">
+    <div class="wrap">
+      <h2>Commencez par ce soir</h2>
+      <p class="lede">
+        Ajoutez une seule chose que vous auriez dû retenir. C'est tout le premier pas.
+      </p>
+      <a class="btn" id="cta-final" href="https://play.google.com/store/apps/details?id=com.householdcoo.app">Télécharger sur Google Play</a>
+      <!-- Said plainly rather than left to be discovered. There is no iPhone
+           app, and an iPhone owner should learn that here and not after
+           searching the App Store for a name that is not in it. What they get
+           instead is the same app in the browser — the identical codebase,
+           with notifications and card payment — so this is a route, not an
+           apology. -->
+      <p class="cta-note" style="margin-top: 16px;">
+        Pas encore d'app iPhone &mdash; sur iOS, Ahenora fonctionne dans votre navigateur sur
+        <a href="/app/">ahenora.com/app</a>, avec les notifications et le paiement par carte.
+      </p>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="social">
+      <a href="https://www.instagram.com/ahenoraapp/" target="_blank" rel="noopener" aria-label="Suivre Ahenora sur Instagram">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5.5"></rect><circle cx="12" cy="12" r="4.2"></circle><circle cx="17.6" cy="6.4" r="1.1" fill="currentColor" stroke="none"></circle></svg>
+        Follow on Instagram
+      </a>
+      <a href="https://www.tiktok.com/@thehouseholdcoo" target="_blank" rel="noopener" aria-label="Suivre Ahenora sur TikTok">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M16.5 3h-2.9v12.1a2.3 2.3 0 1 1-2.3-2.3c.24 0 .47.04.69.1v-3a5.3 5.3 0 1 0 4.6 5.25V9.02a6.5 6.5 0 0 0 3.9 1.3V7.4a3.6 3.6 0 0 1-2.36-.9A3.6 3.6 0 0 1 16.5 3Z"></path></svg>
+        Follow on TikTok
+      </a>
+    </div>
+    <div class="foot-links">
+      <a href="privacy.html">Politique de confidentialité</a>
+      <a href="terms.html">Conditions &amp; assistance</a>
+      <a href="delete-account.html">Supprimer votre compte</a>
+      <a href="https://play.google.com/store/apps/details?id=com.householdcoo.app">Google Play</a>
+      <a href="https://youtu.be/DPPmZJIrYPQ">Vidéo de présentation</a>
+      <a href="mailto:support@ahenora.com">Assistance</a>
+    </div>
+    <div>© 2026 Dzoagbe Labs · Ahenora · Disponible en français, anglais, espagnol et allemand.</div>
+  </div>
+</footer>
+
+</body>
+</html>

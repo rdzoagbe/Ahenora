@@ -150,9 +150,19 @@ class Retention(unittest.TestCase):
         self.assertEqual(res["accounts"]["active_1d"], 1)
 
     def test_cohorts_are_bucketed_by_signup_week_and_windowed(self):
+        # Both newcomers must land in ONE cohort for the 50% below to mean
+        # anything, and "1 and 2 days old" does not guarantee that: cohorts
+        # bucket by the Monday of created_at, so on a Tuesday those two dates
+        # straddle a week boundary and split into two cohorts of one. Anchor
+        # them to the Monday of last week instead — same bucket on every day of
+        # every week, and still comfortably inside the 8-week horizon.
+        last_monday = (self.now - timedelta(days=7 + self.now.weekday()))
+        days_to = lambda dt: (self.now - dt).days
         res = self._run([
-            self._acct("new1", "f1", days_old=1, seen_days_ago=0),
-            self._acct("new2", "f2", days_old=2, seen_days_ago=30),
+            self._acct("new1", "f1", days_old=days_to(last_monday), seen_days_ago=0),
+            self._acct("new2", "f2",
+                       days_old=days_to(last_monday + timedelta(days=1)),
+                       seen_days_ago=30),
             # Older than the window: excluded from cohorts, still an account.
             self._acct("old", "f3", days_old=400, seen_days_ago=0),
         ], weeks=8)

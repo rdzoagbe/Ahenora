@@ -31,6 +31,9 @@ interface Draft {
   image_base64?: string | null;
   vault_category?: string;
   save_to_vault?: boolean;
+  is_event?: boolean;
+  expires_on?: string | null;
+  location?: string | null;
 }
 
 interface Props {
@@ -162,6 +165,11 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
       // Nothing is filed anywhere without a drawer chosen for it. An
       // uncategorised document in the vault is a document nobody finds again.
       save_to_vault: scan?.save_to_vault !== false && !!category,
+      // Carried through so the sheet can offer the calendar. Dropping these
+      // here is how the scan's own conclusion gets lost between two screens.
+      is_event: scan?.is_event,
+      expires_on: scan?.expires_on || null,
+      location: scan?.location || null,
     });
   };
 

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The five real pages. Deliberately hand-written and short: a sitemap listing
+  files that do not exist, or app shells that need a login, teaches Google that
+  this site is unreliable. Update it when a page is added — there are few
+  enough that this is a smaller cost than a generator nobody runs.
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:xhtml="http://www.w3.org/1999/xhtml">
+  <url>
+    <loc>https://ahenora.com/</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://ahenora.com/"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://ahenora.com/fr.html"/>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://ahenora.com/fr.html</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://ahenora.com/"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://ahenora.com/fr.html"/>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://ahenora.com/privacy.html</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+  </url>
+  <url>
+    <loc>https://ahenora.com/terms.html</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+  </url>
+  <url>
+    <loc>https://ahenora.com/delete-account.html</loc>
+    <changefreq>yearly</changefreq>
+    <priority>0.3</priority>
+  </url>
+</urlset>

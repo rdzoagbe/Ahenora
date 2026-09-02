@@ -484,7 +484,11 @@ export default function MetricsScreen() {
               <View style={styles.card}>
                 <View style={[styles.eventRow, { borderTopWidth: 0 }]}>
                   <Text style={styles.eventLabel}>Active households (opened app)</Text>
-                  <Text style={styles.eventCount}>{plans.active_families_with_device}</Text>
+                  <Text style={styles.eventCount}>{plans.active_families}</Text>
+                </View>
+                <View style={styles.eventRow}>
+                  <Text style={styles.eventLabel}>Households with a device registered</Text>
+                  <Text style={styles.eventCount}>{plans.families_with_a_device}</Text>
                 </View>
                 <View style={styles.eventRow}>
                   <Text style={styles.eventLabel}>Total households (incl. never-opened)</Text>
