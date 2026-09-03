@@ -1,9 +1,16 @@
 """The centre + captures — it opens the picker and never changes tab.
 
-From each of the four daily tabs: open +, confirm the right primary tile, run
+From Calendar, Family and Kitchen: open +, confirm the right primary tile, run
 the universal "Task" action, and assert the AddCardModal opened WITHOUT the
-page navigating away. Plus the feed shopping quick-add: type an item, add it,
-and confirm we stayed put.
+page navigating away. Plus the shopping quick-add: type an item, add it, and
+confirm we stayed put.
+
+The FEED is deliberately different, and that difference is asserted here too.
+Two adds sat inches apart on that screen and the smaller one did more — the
+capture bar routes a typed line to the shopping list, the week's menu or a
+task. So on the Feed the + points at the bar instead of opening a second
+sheet. Scan and voice did not go anywhere: they are the camera and microphone
+on the bar itself, and the long-hand composer is the third icon beside them.
 """
 import asyncio, json, sys, urllib.request
 from playwright.async_api import async_playwright
@@ -26,7 +33,6 @@ def api(m, p, b=None, t=None):
 # Per tab: the primary-tile wording the picker must lead with. Calendar leads
 # with "New event"; every other tab leads with the add-a-task wording.
 PRIMARY = {
-    "feed": "Add a task",
     "calendar": "New event",
     "kids": "Add a task",
     "kitchen": "Add a task",
@@ -66,7 +72,9 @@ async def main():
         def path_of(url):
             return url.split("?", 1)[0].split("#", 1)[0]
 
-        for tab in ("feed", "calendar", "kids", "kitchen"):
+        # The Feed is handled separately below — its + focuses the capture bar
+        # rather than opening this picker.
+        for tab in ("calendar", "kids", "kitchen"):
             await page.goto(f"{WEB}/{tab}", wait_until="domcontentloaded")
             await page.wait_for_timeout(2400)
             before = path_of(page.url)
@@ -96,8 +104,30 @@ async def main():
                 await page.click('[data-testid="close-add-card"]')
                 await page.wait_for_timeout(400)
 
-        # Feed shopping quick-add: type an item, add it, stay put.
+        # The Feed's + points at the capture bar instead of opening the picker.
+        # It is the same button in the same place — only its job changes, and
+        # only on the one screen that already had a second way to add.
         await page.goto(f"{WEB}/feed", wait_until="domcontentloaded")
+        await page.wait_for_timeout(2400)
+        feed_before = path_of(page.url)
+        await page.click('[data-testid="tab-add"]')
+        await page.wait_for_timeout(900)
+        r["feed_plus_focuses_the_capture_bar"] = await page.evaluate(
+            '''() => {
+                 const el = document.querySelector('[data-testid="feed-capture-input"]');
+                 return !!el && document.activeElement === el;
+               }''')
+        r["feed_plus_opens_no_picker"] = await page.locator(
+            '[data-testid="quickadd-primary"]').count() == 0
+        r["feed_plus_stayed_put"] = path_of(page.url) == feed_before
+        # Scan and voice are still on the Feed — on the bar, not behind the +.
+        r["feed_keeps_scan_and_voice"] = (
+            await page.locator('[data-testid="feed-open-add"]').count() == 1)
+        await page.keyboard.press("Escape")
+        await page.wait_for_timeout(300)
+
+        # Shopping quick-add, from a tab where the + still opens the picker.
+        await page.goto(f"{WEB}/kitchen", wait_until="domcontentloaded")
         await page.wait_for_timeout(2400)
         before = path_of(page.url)
         await page.click('[data-testid="tab-add"]')

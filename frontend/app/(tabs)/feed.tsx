@@ -70,6 +70,7 @@ import { recordWin } from '../../src/reviewPrompt';
 import AppToast from '../../src/components/AppToast';
 import { useToast } from '../../src/hooks/useToast';
 import { detectCaptureIntent } from '../../src/captureIntent';
+import { onCaptureFocus } from '../../src/captureFocus';
 
 interface VoiceDraft {
   transcript: string;
@@ -364,6 +365,7 @@ export default function Feed() {
   const openedFromNotification = useRef<string | null>(null);
   const { toast, showToast } = useToast(3200);
   const [captureText, setCaptureText] = useState('');
+  const captureRef = useRef<TextInput>(null);
   const [capturing, setCapturing] = useState(false);
   /**
    * The placeholder rotates through what the bar can actually do.
@@ -670,6 +672,11 @@ export default function Feed() {
    * it did and offers a way back, because the cost of a wrong guess has to be
    * one tap rather than a hunt through three tabs.
    */
+  // The centre ＋ points here instead of opening a second sheet. Registered
+  // while the Feed is mounted; the bridge falls back to the sheet when nobody
+  // is listening, so the button is never one that does nothing.
+  useEffect(() => onCaptureFocus(() => captureRef.current?.focus()), []);
+
   const runCapture = useCallback(async () => {
     const text = captureText.trim();
     if (!text || capturing) return;
@@ -1144,8 +1151,6 @@ export default function Feed() {
               </View>
             </View>
 
-            <StreakChip />
-
             <View style={styles.heroRow}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.heroTitle} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.6}>{headline}</Text>
@@ -1171,9 +1176,72 @@ export default function Feed() {
               </View>
             </View>
 
-            {/* The day leads now — the task list (with handed-to-you pinned)
-                renders first, right below. Capture, gifting, first-run cards
-                and templates follow it. */}
+            {/* Capture leads now, and the day follows it.
+                The bar used to sit UNDER the list, where a footer goes — and it
+                is the most capable control on the screen: a typed line goes to
+                the shopping list, the week's menu or a task, on its own. The
+                first thing you can do belongs above the first thing you read. */}
+            {/* Quick capture — one slim bar with camera/mic tucked to the right,
+                so there's a single, clear "add" gesture that doesn't echo the
+                nav bar's ＋ (was a full Add/Photo/Voice card up top). */}
+            <View style={styles.addBar}>
+              {/* Typeable, not a button that opens a composer.
+                  It was a button, and every line it produced was a card —
+                  because a card was the only thing it could make. So "ajoute du
+                  lait à la liste" became a task about milk, while the shopping
+                  list and the meal planner sat two taps further in. The most
+                  capable parts of the app were the hardest to reach. */}
+              <View style={styles.addBarPlus}><Plus color="#FFFFFF" size={18} /></View>
+              <TextInput
+                ref={captureRef}
+                testID="feed-capture-input"
+                value={captureText}
+                onChangeText={setCaptureText}
+                onSubmitEditing={runCapture}
+                returnKeyType="done"
+                blurOnSubmit={false}
+                placeholder={capturePlaceholder}
+                placeholderTextColor={ui.muted}
+                style={styles.addBarInput}
+              />
+              {captureText.trim() ? (
+                <PressScale onPress={runCapture} disabled={capturing} style={styles.addBarSend} testID="feed-capture-send">
+                  <ArrowUp color="#FFFFFF" size={17} />
+                </PressScale>
+              ) : null}
+              {/* The long-hand composer is still one tap away, for anything the
+                  bar should not be guessing at. */}
+              {!captureText.trim() ? (
+                <PressScale onPress={openManual} style={styles.addBarIcon} testID="feed-open-add" accessibilityRole="button" accessibilityLabel={t('feed_add_placeholder')}>
+                  <ListPlus color={ui.muted} size={19} />
+                </PressScale>
+              ) : null}
+              <PressScale onPress={() => setShowCamera(true)} style={styles.addBarIcon} accessibilityRole="button" accessibilityLabel={t('feed_photo')}>
+                <Camera color={ui.muted} size={19} />
+              </PressScale>
+              <PressScale onPress={() => setShowVoice(true)} style={styles.addBarIcon} accessibilityRole="button" accessibilityLabel={t('feed_voice')}>
+                <Mic color={ui.muted} size={19} />
+              </PressScale>
+            </View>
+
+            {/* Quick templates — one tap to run a saved routine. Sits by the
+                add bar since it's another way to add. */}
+            {enabledTemplates.length > 0 ? (
+              <View style={styles.templateRow}>
+                {enabledTemplates.slice(0, 4).map((tpl) => (
+                  <PressScale
+                    key={tpl.template_id}
+                    onPress={() => runTemplate(tpl)}
+                    disabled={runningTemplate !== null}
+                    style={[styles.templateChip, runningTemplate !== null && { opacity: 0.5 }]}
+                  >
+                    <Zap color={ui.orange} size={14} />
+                    <Text style={styles.templateChipText} numberOfLines={1}>{tpl.title}</Text>
+                  </PressScale>
+                ))}
+              </View>
+            ) : null}
+
 
             {/* The stats strip lived here: "Due today / Sign slips / This
                 week" — three numbers sitting above the task list that shows
@@ -1273,65 +1341,11 @@ export default function Feed() {
               </PressScale>
             ) : null}
 
-            {/* Quick capture — one slim bar with camera/mic tucked to the right,
-                so there's a single, clear "add" gesture that doesn't echo the
-                nav bar's ＋ (was a full Add/Photo/Voice card up top). */}
-            <View style={styles.addBar}>
-              {/* Typeable, not a button that opens a composer.
-                  It was a button, and every line it produced was a card —
-                  because a card was the only thing it could make. So "ajoute du
-                  lait à la liste" became a task about milk, while the shopping
-                  list and the meal planner sat two taps further in. The most
-                  capable parts of the app were the hardest to reach. */}
-              <View style={styles.addBarPlus}><Plus color="#FFFFFF" size={18} /></View>
-              <TextInput
-                testID="feed-capture-input"
-                value={captureText}
-                onChangeText={setCaptureText}
-                onSubmitEditing={runCapture}
-                returnKeyType="done"
-                blurOnSubmit={false}
-                placeholder={capturePlaceholder}
-                placeholderTextColor={ui.muted}
-                style={styles.addBarInput}
-              />
-              {captureText.trim() ? (
-                <PressScale onPress={runCapture} disabled={capturing} style={styles.addBarSend} testID="feed-capture-send">
-                  <ArrowUp color="#FFFFFF" size={17} />
-                </PressScale>
-              ) : null}
-              {/* The long-hand composer is still one tap away, for anything the
-                  bar should not be guessing at. */}
-              {!captureText.trim() ? (
-                <PressScale onPress={openManual} style={styles.addBarIcon} testID="feed-open-add" accessibilityRole="button" accessibilityLabel={t('feed_add_placeholder')}>
-                  <ListPlus color={ui.muted} size={19} />
-                </PressScale>
-              ) : null}
-              <PressScale onPress={() => setShowCamera(true)} style={styles.addBarIcon} accessibilityRole="button" accessibilityLabel={t('feed_photo')}>
-                <Camera color={ui.muted} size={19} />
-              </PressScale>
-              <PressScale onPress={() => setShowVoice(true)} style={styles.addBarIcon} accessibilityRole="button" accessibilityLabel={t('feed_voice')}>
-                <Mic color={ui.muted} size={19} />
-              </PressScale>
-            </View>
-
-            {/* Quick templates — one tap to run a saved routine. Sits by the
-                add bar since it's another way to add. */}
-            {enabledTemplates.length > 0 ? (
-              <View style={styles.templateRow}>
-                {enabledTemplates.slice(0, 4).map((tpl) => (
-                  <PressScale
-                    key={tpl.template_id}
-                    onPress={() => runTemplate(tpl)}
-                    disabled={runningTemplate !== null}
-                    style={[styles.templateChip, runningTemplate !== null && { opacity: 0.5 }]}
-                  >
-                    <Zap color={ui.orange} size={14} />
-                    <Text style={styles.templateChipText} numberOfLines={1}>{tpl.title}</Text>
-                  </PressScale>
-                ))}
-              </View>
-            ) : null}
+            {/* The streak sat between the date and the greeting, third of three
+                pills before a single task was visible. It is a reward for
+                coming back, not a status to read first — so it moves below the
+                day it is a reward for. */}
+            <StreakChip />
 
             {/* Upcoming birthdays / Secret Santa, gathered into one compact
                 strip. Hidden when there's nothing live. */}

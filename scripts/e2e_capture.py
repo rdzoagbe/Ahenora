@@ -68,6 +68,22 @@ async def main():
         r["the_bar_is_typeable"] = await page.locator(
             '[data-testid="feed-capture-input"]').count() == 1
 
+        # The centre ＋ points at the bar instead of opening a second sheet.
+        # It is the primary create on four other tabs, so it is not removed —
+        # on the Feed it stops competing and starts pointing.
+        await page.click('[data-testid="tab-add"]')
+        await page.wait_for_timeout(900)
+        r["the_plus_focuses_the_bar"] = await page.evaluate(
+            '''() => {
+                 const el = document.querySelector('[data-testid="feed-capture-input"]');
+                 return !!el && document.activeElement === el;
+               }''')
+        # ...and does not open the capture sheet on top of it.
+        r["and_opens_no_second_sheet"] = await page.locator(
+            '[data-testid="quickadd-primary"]').count() == 0
+        await page.keyboard.press("Escape")
+        await page.wait_for_timeout(300)
+
         # --- the shopping list -------------------------------------------
         await type_line("add milk and bread to the list")
         shopping = [i["name"].lower() for i in api("GET", "/shopping", None, tok)]
