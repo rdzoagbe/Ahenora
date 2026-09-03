@@ -11,6 +11,8 @@ import { api, logEvent } from '../src/api';
 import { LANG_NAMES, SUPPORTED_LANGS } from '../src/i18n';
 import type { Lang } from '../src/i18n';
 import { logger } from '../src/logger';
+import { isoWeek } from '../src/utils/date';
+import type { CustodyWeeks } from '../src/utils/date';
 
 // Guided, account-seeding onboarding: by the time the user lands on the
 // dashboard it already has a task, a shopping list and (optionally) a co-parent
@@ -26,9 +28,25 @@ export default function Onboarding() {
   const [shopItems, setShopItems] = useState<string[]>(['', '', '']);
   const [shopDraft, setShopDraft] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
+  /**
+   * Alternating custody, asked at setup instead of found by accident.
+   *
+   * It was already built — the calendar colours each week by ISO parity, the
+   * way a French judgment is written (semaines paires / impaires) — behind a
+   * button on the Calendar tab. So the single feature a separated parent came
+   * for could go unfound for a week, which for that parent is the difference
+   * between an app that understands their life and another shared to-do list.
+   *
+   * null = not answered yet, which is also "no". Nothing is written unless a
+   * parity is actually chosen.
+   */
+  const [custodyWeeks, setCustodyWeeks] = useState<CustodyWeeks | null>(null);
   const [finishing, setFinishing] = useState(false);
 
   const firstName = (user?.name || '').split(' ')[0];
+  // Which ISO week it is right now, so the custody question can be answered by
+  // looking at this week rather than remembering a court document.
+  const thisWeek = useMemo(() => isoWeek(new Date()), []);
 
   // Prefill example content once we know the user's language (mockup: "Buy
   // groceries" + Milk/Bread/Eggs). Editable + removable; only non-empty seeds.
@@ -75,6 +93,15 @@ export default function Onboarding() {
       try { await api.bulkAddShopping(names); }
       catch (e) { logger.warn('onboarding seed shopping failed', e); }
     }
+    // Before the invite, because the co-parent's first sight of the app should
+    // already have the schedule in it. Best-effort like every other seed.
+    if (custodyWeeks) {
+      try {
+        await api.setCustody({ enabled: true, our_weeks: custodyWeeks, away_label: '' });
+        logEvent('onboarding_custody_set');
+      } catch (e) { logger.warn('onboarding custody failed', e); }
+    }
+
     const email = inviteEmail.trim();
     let inviteFailed = false;
     if (email && /\S+@\S+\.\S+/.test(email)) {
@@ -268,7 +295,45 @@ export default function Onboarding() {
               </View>
               <Text style={[styles.title, { color: theme.colors.text }]}>{t('ob_invite_title')}</Text>
               <Text style={[styles.sub, { color: theme.colors.textMuted }]}>{t('ob_invite_why')}</Text>
-              <Text style={[styles.subSmall, { color: theme.colors.textMuted }]}>{t('ob_invite_hint')}</Text>
+
+              {/* Asked here rather than on a step of its own: this is already
+                  the screen about the other parent, and a fifth step is a
+                  fifth chance to abandon setup. */}
+              <Text style={[styles.subSmall, { color: theme.colors.text, marginTop: 18, marginBottom: 2 }]}>
+                {t('ob_custody_q')}
+              </Text>
+              <Text style={[styles.subSmall, { color: theme.colors.textMuted }]}>
+                {/* The current week number, so the answer can be checked against
+                    this week rather than recalled from a document. */}
+                {t('ob_custody_hint', { week: thisWeek.week, parity: t(thisWeek.even ? 'custody_parity_even' : 'custody_parity_odd') })}
+              </Text>
+              <View style={styles.custodyRow}>
+                {([null, 'even', 'odd'] as const).map((opt) => {
+                  const active = custodyWeeks === opt;
+                  return (
+                    <PressScale
+                      key={String(opt)}
+                      testID={`onboarding-custody-${opt ?? 'none'}`}
+                      onPress={() => setCustodyWeeks(opt)}
+                      style={[
+                        styles.custodyChip,
+                        { backgroundColor: theme.colors.bgSoft, borderColor: active ? theme.colors.accent : theme.colors.cardBorder },
+                      ]}
+                    >
+                      <Text
+                        style={[styles.custodyChipText, { color: active ? theme.colors.accent : theme.colors.text }]}
+                        numberOfLines={1}
+                      >
+                        {opt === null ? t('ob_custody_no') : t(opt === 'even' ? 'custody_even_weeks' : 'custody_odd_weeks')}
+                      </Text>
+                    </PressScale>
+                  );
+                })}
+              </View>
+
+              <Text style={[styles.subSmall, { color: theme.colors.textMuted, marginTop: 18 }]}>
+                {custodyWeeks ? t('ob_invite_hint_coparent') : t('ob_invite_hint')}
+              </Text>
               <View style={[styles.inputRow, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
                 <TextInput
                   testID="onboarding-invite"
@@ -351,6 +416,12 @@ const chipStyles = StyleSheet.create({
 
 const createStyles = (c: any) =>
   StyleSheet.create({
+    custodyRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
+    custodyChip: {
+      flex: 1, alignItems: 'center', justifyContent: 'center',
+      paddingVertical: 11, paddingHorizontal: 8, borderRadius: 12, borderWidth: 1,
+    },
+    custodyChipText: { fontFamily: 'Inter_700Bold', fontSize: 13 },
     container: { flex: 1 },
     safe: { flex: 1, paddingHorizontal: 22 },
     dots: { flexDirection: 'row', gap: 8, justifyContent: 'center', paddingTop: 14, paddingBottom: 6 },
