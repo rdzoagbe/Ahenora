@@ -14724,6 +14724,9 @@ class SupportContactIn(BaseModel):
 ALLOWED_EVENTS = {
     "feed_open", "scan_used", "card_created", "vault_added", "vault_shared",
     "kids_open", "calendar_open", "onboarding_done", "onboarding_skipped",
+    # How many households say they share custody at setup. The wedge the app is
+    # positioned on, and until now nothing counted whether anyone answered yes.
+    "onboarding_custody_set",
     "calendar_import_cancelled",
     # AI reliability: bumped server-side from the central Gemini path so the
     # Metrics screen can show a real success rate, not just a live probe.
