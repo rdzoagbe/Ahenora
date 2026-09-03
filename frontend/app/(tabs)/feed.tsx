@@ -12,6 +12,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import {
   AlertTriangle,
+  ArrowUp,
   BarChart3,
   Bell,
   LayoutGrid,
@@ -24,6 +25,7 @@ import {
   Clock,
   ExternalLink,
   History,
+  ListPlus,
   MapPin,
   Megaphone,
   MessageSquare,
@@ -67,6 +69,7 @@ import { isoWeek, localeFor } from '../../src/utils/date';
 import { recordWin } from '../../src/reviewPrompt';
 import AppToast from '../../src/components/AppToast';
 import { useToast } from '../../src/hooks/useToast';
+import { detectCaptureIntent } from '../../src/captureIntent';
 
 interface VoiceDraft {
   transcript: string;
@@ -360,6 +363,24 @@ export default function Feed() {
   const { cardId: notifiedCardId } = useLocalSearchParams<{ cardId?: string }>();
   const openedFromNotification = useRef<string | null>(null);
   const { toast, showToast } = useToast(3200);
+  const [captureText, setCaptureText] = useState('');
+  const [capturing, setCapturing] = useState(false);
+  /**
+   * The placeholder rotates through what the bar can actually do.
+   *
+   * A field that only ever says "Add a task" teaches people it makes tasks, and
+   * they never try the rest. Melimelo's assistant does this and it is the whole
+   * reason their AI reads as more capable than ours — ours does more and says
+   * less. Picked once per mount rather than on a timer: text that changes while
+   * somebody is reading it is a distraction, not a hint.
+   */
+  const capturePlaceholder = useMemo(() => {
+    const options = [
+      t('feed_capture_eg_task'), t('feed_capture_eg_shopping'),
+      t('feed_capture_eg_meal'), t('feed_capture_eg_date'),
+    ];
+    return options[Math.floor(Math.random() * options.length)];
+  }, [t]);
   // The task being edited. Tasks live on the Feed now, but editing was only
   // ever wired on the Calendar — so opening one here gave no way to fix its
   // title or hand it to someone. The pencil in the detail sheet opens the same
@@ -640,6 +661,72 @@ export default function Feed() {
       return time !== null && time < startToday.getTime();
     });
   }, [activeCards]);
+
+  /**
+   * Take the line, work out what it is, and do it.
+   *
+   * The routing lives in src/captureIntent.ts and is deliberately timid: a card
+   * unless the line explicitly asks for something else. Every outcome says what
+   * it did and offers a way back, because the cost of a wrong guess has to be
+   * one tap rather than a hunt through three tabs.
+   */
+  const runCapture = useCallback(async () => {
+    const text = captureText.trim();
+    if (!text || capturing) return;
+    let intent = detectCaptureIntent(text, lang);
+    if (!intent) return;
+
+    setCapturing(true);
+    try {
+      if (intent.kind === 'shopping') {
+        await Promise.all(intent.items.map((name) => api.addShoppingItem({ name })));
+        setCaptureText('');
+        showToast(
+          t('feed_capture_to_list', { n: intent.items.length }),
+          'success',
+          { label: t('feed_capture_open'), onPress: () => router.navigate('/(tabs)/kitchen') },
+        );
+        return;
+      }
+      // The meal planner is Premium. Routing a free household's line to it
+      // would hand them a 402 and lose what they typed — so the line becomes
+      // a task instead, which still says exactly what they meant. Degrading
+      // to something useful beats failing at something better.
+      if (intent.kind === 'meal' && !subscription?.limits?.meal_planner) {
+        intent = { kind: 'card', title: text, due: null, dueLabel: null };
+      }
+      if (intent.kind === 'meal') {
+        await api.createMeal({ day: intent.day, title: intent.title });
+        setCaptureText('');
+        showToast(
+          t('feed_capture_to_meals', { title: intent.title }),
+          'success',
+          { label: t('feed_capture_open'), onPress: () => router.navigate('/(tabs)/kitchen') },
+        );
+        return;
+      }
+      const created = await api.createCard({
+        type: 'TASK',
+        title: intent.title,
+        ...(intent.due ? { due_date: intent.due.toISOString() } : {}),
+      });
+      setCaptureText('');
+      setCards((prev) => [created, ...prev]);
+      logEvent('card_created');
+      showToast(
+        intent.dueLabel
+          ? t('feed_capture_task_dated', { when: intent.dueLabel })
+          : t('feed_capture_task'),
+        'success',
+        { label: t('feed_capture_edit'), onPress: () => setEditing(created) },
+      );
+    } catch (e: any) {
+      logger.warn('capture failed', e);
+      showToast(e?.message || t('feed_could_not_update'), 'error');
+    } finally {
+      setCapturing(false);
+    }
+  }, [captureText, capturing, lang, showToast, t, router, subscription]);
 
   const clearPastEvents = useCallback(async () => {
     const ids = pastEvents.map((c) => c.card_id);
@@ -1190,10 +1277,36 @@ export default function Feed() {
                 so there's a single, clear "add" gesture that doesn't echo the
                 nav bar's ＋ (was a full Add/Photo/Voice card up top). */}
             <View style={styles.addBar}>
-              <PressScale onPress={openManual} style={styles.addBarMain} testID="feed-open-add">
-                <View style={styles.addBarPlus}><Plus color="#FFFFFF" size={18} /></View>
-                <Text style={styles.addBarText} numberOfLines={1}>{t('feed_add_placeholder')}</Text>
-              </PressScale>
+              {/* Typeable, not a button that opens a composer.
+                  It was a button, and every line it produced was a card —
+                  because a card was the only thing it could make. So "ajoute du
+                  lait à la liste" became a task about milk, while the shopping
+                  list and the meal planner sat two taps further in. The most
+                  capable parts of the app were the hardest to reach. */}
+              <View style={styles.addBarPlus}><Plus color="#FFFFFF" size={18} /></View>
+              <TextInput
+                testID="feed-capture-input"
+                value={captureText}
+                onChangeText={setCaptureText}
+                onSubmitEditing={runCapture}
+                returnKeyType="done"
+                blurOnSubmit={false}
+                placeholder={capturePlaceholder}
+                placeholderTextColor={ui.muted}
+                style={styles.addBarInput}
+              />
+              {captureText.trim() ? (
+                <PressScale onPress={runCapture} disabled={capturing} style={styles.addBarSend} testID="feed-capture-send">
+                  <ArrowUp color="#FFFFFF" size={17} />
+                </PressScale>
+              ) : null}
+              {/* The long-hand composer is still one tap away, for anything the
+                  bar should not be guessing at. */}
+              {!captureText.trim() ? (
+                <PressScale onPress={openManual} style={styles.addBarIcon} testID="feed-open-add" accessibilityRole="button" accessibilityLabel={t('feed_add_placeholder')}>
+                  <ListPlus color={ui.muted} size={19} />
+                </PressScale>
+              ) : null}
               <PressScale onPress={() => setShowCamera(true)} style={styles.addBarIcon} accessibilityRole="button" accessibilityLabel={t('feed_photo')}>
                 <Camera color={ui.muted} size={19} />
               </PressScale>
@@ -1727,7 +1840,7 @@ export default function Feed() {
           ))
         )}
       </KeyboardAwareBottomSheet>
-      <AppToast visible={Boolean(toast)} message={toast?.message || null} tone={toast?.tone || 'info'} />
+      <AppToast visible={Boolean(toast)} message={toast?.message || null} tone={toast?.tone || 'info'} action={toast?.action} />
     </SwipeableTabView>
   );
 }
@@ -1965,8 +2078,18 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     marginBottom: 12,
   },
   addBarMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, paddingLeft: 12 },
-  addBarPlus: { width: 26, height: 26, borderRadius: 8, backgroundColor: ui.orange, alignItems: 'center', justifyContent: 'center' },
+  addBarPlus: { width: 26, height: 26, borderRadius: 8, marginLeft: 12, backgroundColor: ui.orange, alignItems: 'center', justifyContent: 'center' },
   addBarText: { flex: 1, color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 14 },
+  // The bar is a field now. Same height and rhythm as the button it replaced,
+  // so the Feed does not shift under anyone who knew where it was.
+  addBarInput: {
+    flex: 1, color: ui.text, fontFamily: 'Inter_500Medium', fontSize: 14,
+    paddingVertical: 12, paddingLeft: 10, paddingRight: 4,
+  },
+  addBarSend: {
+    width: 32, height: 32, borderRadius: 999, marginRight: 6,
+    backgroundColor: ui.orange, alignItems: 'center', justifyContent: 'center',
+  },
   addBarIcon: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   captureCard: {
     borderRadius: 22,

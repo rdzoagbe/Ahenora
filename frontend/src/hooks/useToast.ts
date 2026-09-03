@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ToastTone } from '../components/AppToast';
 
-export type ToastState = { message: string; tone: ToastTone };
+export type ToastState = {
+  message: string;
+  tone: ToastTone;
+  action?: { label: string; onPress: () => void };
+};
 
 /**
  * A single auto-dismissing toast.
@@ -24,9 +28,15 @@ export function useToast(duration = 2300) {
   }, []);
 
   const showToast = useCallback(
-    (message: string, tone: ToastTone = 'info') => {
+    (
+      message: string,
+      tone: ToastTone = 'info',
+      // One optional way back. The capture bar decides where a typed line
+      // goes, so a wrong guess has to cost a tap, not a hunt.
+      action?: { label: string; onPress: () => void },
+    ) => {
       clear();
-      setToast({ message, tone });
+      setToast({ message, tone, action });
       timer.current = setTimeout(() => setToast(null), duration);
     },
     [clear, duration],
