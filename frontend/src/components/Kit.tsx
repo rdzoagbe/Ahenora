@@ -92,11 +92,15 @@ export function ScreenHeader({
   title,
   right,
   titleSize = 30,
+  showAdd = true,
 }: {
   eyebrow: string;
   title: string;
   right?: React.ReactNode;
   titleSize?: number;
+  /** Off where "add" has no obvious meaning — Settings, Search, Chat. More is
+   *  in the tab bar now, so those headers simply carry nothing on the right. */
+  showAdd?: boolean;
 }) {
   const ui = useUI();
   const { openQuickAdd, t } = useStore();
@@ -114,16 +118,18 @@ export function ScreenHeader({
               the four destinations. The corner it freed goes to the thing you
               actually came here to do: add something. Same picker the raised ＋
               used to open, same testID — only the door moved. */}
-          <PressScale
-            testID="tab-add"
-            onPress={openQuickAdd}
-            style={kit.hubBtn}
-            accessibilityRole="button"
-            accessibilityLabel={t('a11y_add')}
-          >
-            <Plus color={ui.orangeText} size={19} />
-            <Text style={[kit.hubLabel, { color: ui.muted }]}>{t('a11y_add')}</Text>
-          </PressScale>
+          {showAdd ? (
+            <PressScale
+              testID="tab-add"
+              onPress={openQuickAdd}
+              style={kit.hubBtn}
+              accessibilityRole="button"
+              accessibilityLabel={t('a11y_add')}
+            >
+              <Plus color={ui.orangeText} size={19} />
+              <Text style={[kit.hubLabel, { color: ui.muted }]}>{t('a11y_add')}</Text>
+            </PressScale>
+          ) : null}
         </View>
       </View>
     </View>

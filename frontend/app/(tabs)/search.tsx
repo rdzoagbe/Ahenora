@@ -107,6 +107,7 @@ export default function SearchScreen() {
     <TabScreen tab="Search" refreshing={false} onRefresh={() => run(query)}
       scrollViewProps={{ contentContainerStyle: styles.scroll, keyboardShouldPersistTaps: 'handled' }}>
       <ScreenHeader
+          showAdd={false}
         eyebrow={t('search_eyebrow')}
         title={t('search_title')}
         titleSize={34}
