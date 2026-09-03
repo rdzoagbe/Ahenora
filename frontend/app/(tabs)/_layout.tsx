@@ -7,6 +7,7 @@ import { useStore } from '../../src/store';
 import { markStart, markEnd } from '../../src/perf';
 import { useBreakpoint } from '../../src/responsive';
 import { GlobalCapture } from '../../src/components/GlobalCapture';
+import { requestCaptureFocus } from '../../src/captureFocus';
 import { MoreSheet } from '../../src/components/MoreSheet';
 
 // ─── Phone: floating pill tab bar ────────────────────────────────────────────
@@ -178,6 +179,7 @@ function PhoneTabBar({ state, navigation, style, onAdd }: {
   const { t, theme, unreadChats } = useStore();
   const c = theme.colors;
   const current = state.routes[state.index]?.name;
+  const onFeed = current === 'feed';
 
   const tab = (name: string, Icon: any, labelKey: string, badge = 0) => {
     const focused = current === name;
@@ -202,15 +204,24 @@ function PhoneTabBar({ state, navigation, style, onAdd }: {
       {tab('feed', Home, 'feed')}
       {tab('calendar', CalendarIcon, 'calendar')}
       <View style={styles.barSlot}>
+        {/* On the Feed the ＋ points at the capture bar rather than opening a
+            second sheet — one "add" gesture on the one screen that has two. It
+            is drawn outlined there to say so, and stays filled and fully active
+            on every other tab, where it is still the primary create. */}
         <TouchableOpacity
           testID="tab-add"
           accessibilityRole="button"
           accessibilityLabel={t('qa_title')}
           activeOpacity={0.85}
           onPress={onAdd}
-          style={[styles.addBtn, { backgroundColor: c.accent, shadowColor: c.accent }]}
+          style={[
+            styles.addBtn,
+            onFeed
+              ? { backgroundColor: c.bgElevated, borderWidth: 2, borderColor: c.accent, shadowOpacity: 0 }
+              : { backgroundColor: c.accent, shadowColor: c.accent },
+          ]}
         >
-          <Plus color="#FFFFFF" size={28} strokeWidth={2.6} />
+          <Plus color={onFeed ? c.accent : '#FFFFFF'} size={28} strokeWidth={2.6} />
         </TouchableOpacity>
       </View>
       {tab('kids', Users, 'family_tab', unreadChats)}
@@ -287,7 +298,11 @@ export default function TabLayout() {
               state={props.state}
               navigation={props.navigation}
               style={floatingTabStyle}
-              onAdd={() => setQuickAddOpen(true)}
+              // On the Feed, hand the gesture to the capture bar. It answers
+              // false when the Feed is not listening — a fast tab switch, an
+              // older build — and the sheet opens as it always did, so the ＋
+              // is never a button that does nothing.
+              onAdd={() => { if (!requestCaptureFocus()) setQuickAddOpen(true); }}
             />
           )
         }
