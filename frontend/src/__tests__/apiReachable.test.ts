@@ -51,6 +51,7 @@ const NO_SCREEN_YET: Record<string, string> = {
   sharedWithCoparent: 'Server-side filter with no screen behind it.',
   testNotification: 'A debug endpoint, deliberately not in the app.',
   verifyMemberPin: 'Kid mode verifies through exitKidSession instead — the feature works, this method is redundant.',
+  voiceTranscribe: 'Voice capture transcribes through the scan path today.',
 };
 
 /** Method names declared on the exported `api` object. */

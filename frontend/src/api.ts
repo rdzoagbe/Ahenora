@@ -2296,12 +2296,7 @@ export const api = {
       clearTimeout(timeoutId);
     }
 
-    // Carries the status, like request() does. Without it a caller cannot tell
-    // "you are out of AI scans" (402) from "transcription broke", and the two
-    // deserve completely different sentences.
-    if (!res.ok) {
-      throw Object.assign(new Error(`${res.status}: ${await res.text()}`), { status: res.status });
-    }
+    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
 
     return res.json();
   },

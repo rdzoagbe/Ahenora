@@ -1696,10 +1696,6 @@ export default function Feed() {
           setShowVoice(false);
           setShowAdd(true);
         }}
-        // Out of AI allowance, or transcription broke: open the composer rather
-        // than end on an error. Same call the scan path makes — losing the
-        // allowance should not also cost you the thing you were doing.
-        onFallbackToTyping={openManual}
       />
 
       <AddCardModal
