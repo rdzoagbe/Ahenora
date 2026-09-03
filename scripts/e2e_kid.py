@@ -153,12 +153,26 @@ async def main():
         tidy = [c for c in cards if c["title"] == "Tidy your room"][0]
         r["her_tick_off_reached_the_server"] = tidy["status"] == "DONE"
         r["it_is_recorded_as_hers"] = tidy.get("completed_by_name") == "Ama"
-        # Finishing her own job pays 5 stars (30 -> 35). Kid-mode
-        # self-completion earns, the same as a parent marking it done — it used
-        # to award nothing, leaving the whole earning loop dead.
+        # Finishing her own job used to pay 5 stars on the spot (30 -> 35), so
+        # a child holding a phone could award themselves by ticking chores
+        # nobody had checked. It now waits for a parent, exactly as a teen's
+        # finished task always has: the balance does not move, and the job
+        # turns up in the parent's approval list.
         earned = [m for m in api("GET", "/family/members", None, tok)
                   if m["member_id"] == ama["member_id"]][0]
-        r["finishing_her_job_earned_stars"] = earned["stars"] == 35
+        r["finishing_her_job_pays_nothing_yet"] = earned["stars"] == 30
+        waiting = api("GET", "/family/teen-approvals", None, tok)["approvals"]
+        r["it_is_waiting_on_a_parent"] = any(
+            a["card_id"] == tidy["card_id"] and (a.get("who") == "Ama") for a in waiting)
+
+        # A parent approves it, choosing what it was worth. Only now does she
+        # have the stars to spend below — which is the point of the whole
+        # change, and worth proving rather than assuming.
+        api("POST", f"/family/teen-approvals/{tidy['card_id']}",
+            {"approve": True, "stars": 5}, tok)
+        approved = [m for m in api("GET", "/family/members", None, tok)
+                    if m["member_id"] == ama["member_id"]][0]
+        r["a_parents_approval_pays_her"] = approved["stars"] == 35
 
         await p.click('text=Ice cream')
         await p.wait_for_timeout(3500)
