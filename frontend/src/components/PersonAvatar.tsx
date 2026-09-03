@@ -1,15 +1,16 @@
 import React from 'react';
 import { View, Text, Image, StyleSheet, TouchableOpacity } from 'react-native';
-import Svg, { Circle, Path, Rect } from 'react-native-svg';
+import { SvgXml } from 'react-native-svg';
 import { useStore } from '../store';
+import { AVATAR_ART, SKIN_TOKEN } from '../avatarArt';
 
 /**
  * The holder for a person's picture.
  *
- * Three things can sit in it, in order: one of four house illustrations, a
+ * Three things can sit in it, in order: one of the house illustrations, a
  * photo URL (Google sign-in already hands us one), or the initial. The
- * fallback matters — a household is half-set-up most of the time, and a
- * blank ring reads as a bug.
+ * fallback matters — a household is half-set-up most of the time, and a blank
+ * ring reads as a bug.
  *
  * Illustrations are drawn, not photographed, on purpose: nobody has to find a
  * picture of their eight-year-old to make the app look finished, and there is
@@ -18,59 +19,48 @@ import { useStore } from '../store';
 export const AVATAR_KINDS = ['man', 'woman', 'boy', 'girl'] as const;
 export type AvatarKind = typeof AVATAR_KINDS[number];
 
-/** Illustration values are stored as `illus:<kind>` so a photo URL still reads as a URL. */
+/**
+ * Five tones rather than the two that were asked for. It costs one hex each —
+ * the drawing is identical and the tone is a string replace — and two tones
+ * makes a household pick the nearer of two, which is worse than not offering
+ * the choice at all.
+ */
+export const SKIN_TONES = ['ffdbb4', 'edb98a', 'd08b5b', 'ae5d29', '614335'] as const;
+export const DEFAULT_TONE = 1;
+
+/** Stored as `illus:<kind>` or `illus:<kind>:<tone>`, so a photo URL still reads as a URL. */
 export const ILLUS_PREFIX = 'illus:';
 
-export function avatarKind(value?: string | null): AvatarKind | null {
-  if (!value || !value.startsWith(ILLUS_PREFIX)) return null;
-  const kind = value.slice(ILLUS_PREFIX.length) as AvatarKind;
-  return (AVATAR_KINDS as readonly string[]).includes(kind) ? kind : null;
+export function avatarValue(kind: AvatarKind, tone: number): string {
+  return `${ILLUS_PREFIX}${kind}:${tone}`;
 }
 
-// Skin and hair stay neutral rather than trying to depict any one family —
-// a silhouette that is clearly "a grown-up" or "a child" is what the header
-// needs to say, and guessing further would get it wrong more often than right.
-const PALETTE: Record<AvatarKind, { skin: string; hair: string; body: string }> = {
-  man:   { skin: '#E8BE9A', hair: '#3B3230', body: '#2F5D57' },
-  woman: { skin: '#EFC7A6', hair: '#4A2F26', body: '#B4553F' },
-  boy:   { skin: '#E8BE9A', hair: '#5A4033', body: '#3F6E9E' },
-  girl:  { skin: '#EFC7A6', hair: '#6B4327', body: '#8A5BA6' },
-};
+/** Parses a stored value. Tone is optional: rows written before tones existed
+ *  carry only a kind, and must keep rendering rather than fall back to a letter. */
+export function parseAvatar(value?: string | null): { kind: AvatarKind; tone: number } | null {
+  if (!value || !value.startsWith(ILLUS_PREFIX)) return null;
+  const [kind, rawTone] = value.slice(ILLUS_PREFIX.length).split(':');
+  if (!(AVATAR_KINDS as readonly string[]).includes(kind)) return null;
+  const tone = Number(rawTone);
+  return {
+    kind: kind as AvatarKind,
+    tone: Number.isInteger(tone) && tone >= 0 && tone < SKIN_TONES.length ? tone : DEFAULT_TONE,
+  };
+}
 
-function Illustration({ kind, size }: { kind: AvatarKind; size: number }) {
-  const p = PALETTE[kind];
-  const child = kind === 'boy' || kind === 'girl';
-  const long = kind === 'woman' || kind === 'girl';
-  // Children get a bigger head on narrower shoulders — the one cue that still
-  // reads at 30 points, where a hairstyle or a collar would not.
-  const r = child ? 8.2 : 7.6;
-  const cy = child ? 14.6 : 14.2;
-  const brow = cy - 1.2;  // where the hair stops and the face starts
-  const cap = r + 0.9;    // the hair overhangs the skull a little
-  const shoulder = child
-    ? 'M8.5 40c0-6.9 5.2-10.9 11.5-10.9S31.5 33.1 31.5 40z'
-    : 'M5 40c0-8.1 6.7-12.3 15-12.3S35 31.9 35 40z';
-  // Long hair is two rounded columns BEHIND the head, drawn before the face so
-  // the face covers where they meet it. Short hair is a single half-disc cap
-  // sitting on the brow. Both are flat shapes rather than crescents fitted to
-  // the skull: the first version tried the crescent and drew a stray arc.
-  const sidePanel = (x: number) => `M${x} ${brow} h3.6 v${r + 9.5} a1.8 1.8 0 0 1 -3.6 0 z`;
-  const hairCap = `M${20 - cap} ${brow} a${cap} ${cap} 0 0 1 ${cap * 2} 0 z`;
-  return (
-    <Svg width={size} height={size} viewBox="0 0 40 40">
-      <Rect width={40} height={40} fill="#ECEEEC" />
-      {long ? (
-        <>
-          <Path d={sidePanel(20 - cap)} fill={p.hair} />
-          <Path d={sidePanel(20 + cap - 3.6)} fill={p.hair} />
-        </>
-      ) : null}
-      <Path d={`M17.4 ${cy + r - 2} h5.2 v6 h-5.2 z`} fill={p.skin} />
-      <Path d={shoulder} fill={p.body} />
-      <Circle cx={20} cy={cy} r={r} fill={p.skin} />
-      <Path d={hairCap} fill={p.hair} />
-    </Svg>
-  );
+/** Back-compat name for callers that only need to know an illustration is set. */
+export function avatarKind(value?: string | null): AvatarKind | null {
+  return parseAvatar(value)?.kind ?? null;
+}
+
+function Illustration({ kind, tone, size }: { kind: AvatarKind; tone: number; size: number }) {
+  const art = AVATAR_ART[kind];
+  if (!art) return null;
+  // The whole reason the art carries a token instead of a colour: one drawing
+  // serves every tone, so five tones cost five hex values rather than five
+  // copies of the same 5KB picture.
+  const xml = art.split(SKIN_TOKEN).join(`#${SKIN_TONES[tone]}`);
+  return <SvgXml xml={xml} width={size} height={size} />;
 }
 
 export function PersonAvatar({
@@ -86,18 +76,18 @@ export function PersonAvatar({
 }) {
   const { theme } = useStore();
   const ui = theme.colors;
-  const kind = avatarKind(avatar);
-  const isPhoto = !!avatar && !kind && /^https?:\/\//.test(avatar);
+  const illus = parseAvatar(avatar);
+  const isPhoto = !!avatar && !illus && /^https?:\/\//.test(avatar);
   const box = [
     styles.box,
     { width: size, height: size, borderRadius: size / 2, backgroundColor: ui.accentSoft },
     ring ? { borderWidth: 1.5, borderColor: ui.cardBorder } : null,
   ];
 
-  if (kind) {
+  if (illus) {
     return (
       <View style={box}>
-        <Illustration kind={kind} size={size} />
+        <Illustration kind={illus.kind} tone={illus.tone} size={size} />
       </View>
     );
   }
@@ -120,17 +110,12 @@ export function PersonAvatar({
   );
 }
 
-const styles = StyleSheet.create({
-  box: { alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  initial: { fontFamily: 'Inter_800ExtraBold' },
-});
-
 /**
- * The four drawings, offered in a row, plus the letter you already had.
+ * Two axes, not twenty tiles.
  *
- * Inline rather than behind a sheet: five choices do not earn a modal, and a
- * picture is the kind of thing you change by seeing the options next to the
- * thing they will replace.
+ * Who you are and what you look like are separate questions, so the picker
+ * asks them separately: four people on one row, five tones on the next. A
+ * twenty-tile grid would be the same information laid out as a puzzle.
  */
 export function AvatarPicker({
   name,
@@ -145,10 +130,11 @@ export function AvatarPicker({
 }) {
   const { theme, t } = useStore();
   const ui = theme.colors;
-  const current = avatarKind(value);
+  const current = parseAvatar(value);
+  const tone = current?.tone ?? DEFAULT_TONE;
 
-  const option = (kind: AvatarKind | null) => {
-    const selected = kind === current;
+  const person = (kind: AvatarKind | null) => {
+    const selected = kind === (current?.kind ?? null);
     return (
       <TouchableOpacity
         key={kind || 'none'}
@@ -158,29 +144,70 @@ export function AvatarPicker({
         accessibilityLabel={t(kind ? `avatar_${kind}` : 'avatar_none')}
         disabled={busy}
         activeOpacity={0.8}
-        onPress={() => onPick(kind ? `${ILLUS_PREFIX}${kind}` : null)}
+        onPress={() => onPick(kind ? avatarValue(kind, tone) : null)}
         style={[
           pickerStyles.option,
-          { borderColor: selected ? ui.accent : theme.colors.cardBorder, opacity: busy ? 0.6 : 1 },
-          selected ? { borderWidth: 2.5 } : null,
+          { borderColor: selected ? ui.accent : ui.cardBorder, opacity: busy ? 0.6 : 1 },
+          selected ? pickerStyles.optionOn : null,
         ]}
       >
         {/* The picker draws its own ring, so the avatars inside go without —
-            two concentric rings on a 44pt target reads as a target, not a face. */}
-        <PersonAvatar name={name} avatar={kind ? `${ILLUS_PREFIX}${kind}` : null} size={40} ring={false} />
+            two concentric rings on a 46pt target reads as a target, not a face. */}
+        <PersonAvatar
+          name={name}
+          avatar={kind ? avatarValue(kind, tone) : null}
+          size={40}
+          ring={false}
+        />
       </TouchableOpacity>
     );
   };
 
   return (
-    <View style={pickerStyles.row}>
-      {AVATAR_KINDS.map((k) => option(k))}
-      {option(null)}
+    <View style={pickerStyles.wrap}>
+      <View style={pickerStyles.row}>
+        {AVATAR_KINDS.map((k) => person(k))}
+        {person(null)}
+      </View>
+
+      {/* The tones only mean something once a drawing is chosen — offering
+          them over a letter would be a control with nothing to change. */}
+      {current ? (
+        <View style={pickerStyles.row}>
+          <Text style={[pickerStyles.label, { color: ui.textMuted }]}>{t('avatar_skin')}</Text>
+          {SKIN_TONES.map((hex, i) => (
+            <TouchableOpacity
+              key={hex}
+              testID={`avatar-tone-${i}`}
+              accessibilityRole="button"
+              accessibilityState={{ selected: i === tone }}
+              accessibilityLabel={t('avatar_skin_n', { n: i + 1 })}
+              disabled={busy}
+              activeOpacity={0.8}
+              onPress={() => onPick(avatarValue(current.kind, i))}
+              style={[
+                pickerStyles.swatch,
+                { backgroundColor: `#${hex}`, borderColor: i === tone ? ui.accent : ui.cardBorder },
+                i === tone ? pickerStyles.optionOn : null,
+              ]}
+            />
+          ))}
+        </View>
+      ) : null}
     </View>
   );
 }
 
+const styles = StyleSheet.create({
+  box: { alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  initial: { fontFamily: 'Inter_800ExtraBold' },
+});
+
 const pickerStyles = StyleSheet.create({
+  wrap: { gap: 12 },
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'center' },
-  option: { width: 46, height: 46, borderRadius: 23, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
+  option: { width: 46, height: 46, borderRadius: 23, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  optionOn: { borderWidth: 2.5 },
+  swatch: { width: 30, height: 30, borderRadius: 15, borderWidth: 1.5 },
+  label: { fontFamily: 'Inter_600SemiBold', fontSize: 12.5, marginRight: 2 },
 });
