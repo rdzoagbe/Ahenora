@@ -18,7 +18,8 @@
       "infoPlist": {
         "NSCameraUsageDescription": "Ahenora uses the camera only when you choose Scan to capture household documents, school letters, appointment cards, or bills.",
         "NSPhotoLibraryUsageDescription": "Ahenora uses your photo library only when you choose a photo to scan or attach to a household document.",
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSMicrophoneUsageDescription": "Ahenora uses the microphone only while you hold the record button, to turn a spoken note into a task. The recording is sent for transcription and is not stored."
       },
       "_comment_buildNumber": "Deliberately absent. eas.json sets appVersionSource=remote, so EAS owns the build number and increments it per build; a value here is ignored and only creates a second, stale source of truth. EAS warns about this on every build.",
       "_comment_NSUserTrackingUsageDescription": "Deliberately absent. Its mere presence tells Apple the app MAY request tracking permission, and App Store Connect then refuses the submission unless App Privacy also declares tracking: 'Your app contains NSUserTrackingUsageDescription... update your App Privacy response to indicate that data collected from this app will be used for tracking purposes, or update your app binary'. Ahenora does not track: no expo-tracking-transparency, no ATT request anywhere. Adding a reassuring string here costs a rebuild and contradicts the privacy answers.",
@@ -33,6 +34,7 @@
       },
       "permissions": [
         "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
         "android.permission.POST_NOTIFICATIONS"
       ],
       "blockedPermissions": [
@@ -65,7 +67,13 @@
         }
       ],
       "expo-web-browser",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Ahenora uses the microphone only while you hold the record button, to turn a spoken note into a task."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
