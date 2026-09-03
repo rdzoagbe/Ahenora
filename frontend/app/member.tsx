@@ -6,6 +6,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ChevronLeft, ChevronRight, KeyRound, MessageCircle, Pencil, Shield, Star, Trash2 } from 'lucide-react-native';
 
 import { PressScale } from '../src/components/PressScale';
+import { PersonAvatar, AvatarPicker } from '../src/components/PersonAvatar';
 import { PinPadModal } from '../src/components/PinPadModal';
 import { useUI, UIColors } from '../src/components/Kit';
 import { useStore } from '../src/store';
@@ -93,6 +94,29 @@ export default function MemberProfile() {
       setBusy(false);
     }
   }, [id, busy, loadMember, t]);
+
+  // The picture is one PATCH away and there are five choices, so it saves on
+  // tap rather than behind a Save button. Optimistic: the row you just tapped
+  // has to look chosen immediately or the tap reads as ignored.
+  const [avatar, setAvatar] = useState<string | null>(null);
+  const [savingAvatar, setSavingAvatar] = useState(false);
+  useEffect(() => { setAvatar(member?.avatar ?? null); }, [member?.avatar]);
+
+  const saveAvatar = async (next: string | null) => {
+    if (!id || savingAvatar || next === avatar) return;
+    const previous = avatar;
+    setAvatar(next);
+    setSavingAvatar(true);
+    try {
+      // The API takes a string; '' is how you clear it back to the letter.
+      await api.updateFamilyMember(id, { avatar: next ?? '' });
+    } catch (e: any) {
+      setAvatar(previous);
+      Alert.alert(t('set_remove_member_error'), e?.message || t('set_please_try_again'));
+    } finally {
+      setSavingAvatar(false);
+    }
+  };
 
   const saveName = async () => {
     const next = nameDraft.trim();
@@ -288,6 +312,17 @@ export default function MemberProfile() {
         {/* Manage — the reason Settings no longer needs a members section. */}
         <Text style={styles.sec}>{t('hub_manage')}</Text>
 
+        <View style={styles.pictureBox}>
+          <View style={styles.pictureHead}>
+            <PersonAvatar name={displayName} avatar={avatar} size={40} />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={styles.rowTitle}>{t('hub_picture')}</Text>
+              <Text style={styles.rowSub} numberOfLines={2}>{t('hub_picture_sub')}</Text>
+            </View>
+          </View>
+          <AvatarPicker name={displayName} value={avatar} onPick={saveAvatar} busy={savingAvatar} />
+        </View>
+
         {renaming ? (
           <View style={styles.renameBox}>
             <TextInput
@@ -424,6 +459,11 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   // flex so a long label (German's 'Aus dem Haushalt entfernen') wraps inside
   // the row instead of pushing the row wider than the screen.
   actText: { flex: 1, fontFamily: 'Inter_600SemiBold', fontSize: 14.5, color: ui.text },
+  pictureBox: {
+    backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line,
+    borderRadius: 16, padding: 14, gap: 12, marginBottom: 10,
+  },
+  pictureHead: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   renameBox: { flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 8 },
   renameInput: {
     flex: 1, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, borderRadius: 12,

@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { StyleProp, StyleSheet, Text, TextStyle, View, ViewStyle } from 'react-native';
-import { ChevronDown, ChevronRight, LayoutGrid } from 'lucide-react-native';
+import { ChevronDown, ChevronRight, Plus } from 'lucide-react-native';
 import { PressScale } from './PressScale';
 import { useStore } from '../store';
 
@@ -92,14 +92,18 @@ export function ScreenHeader({
   title,
   right,
   titleSize = 30,
+  showAdd = true,
 }: {
   eyebrow: string;
   title: string;
   right?: React.ReactNode;
   titleSize?: number;
+  /** Off where "add" has no obvious meaning — Settings, Search, Chat. More is
+   *  in the tab bar now, so those headers simply carry nothing on the right. */
+  showAdd?: boolean;
 }) {
   const ui = useUI();
-  const { openHouseholdMenu, t } = useStore();
+  const { openQuickAdd, t } = useStore();
   return (
     <View>
       <Text style={[kit.brand, { color: ui.orangeText }]}>Ahenora</Text>
@@ -110,16 +114,22 @@ export function ScreenHeader({
         </View>
         <View style={kit.headerRight}>
           {right}
-          <PressScale
-            testID="header-household-menu"
-            onPress={openHouseholdMenu}
-            style={kit.hubBtn}
-            accessibilityRole="button"
-            accessibilityLabel={t('nav_household')}
-          >
-            <LayoutGrid color={ui.text} size={19} />
-            <Text style={[kit.hubLabel, { color: ui.muted }]}>{t('nav_more')}</Text>
-          </PressScale>
+          {/* More moved into the tab bar, where it now sits on its own beside
+              the four destinations. The corner it freed goes to the thing you
+              actually came here to do: add something. Same picker the raised ＋
+              used to open, same testID — only the door moved. */}
+          {showAdd ? (
+            <PressScale
+              testID="tab-add"
+              onPress={openQuickAdd}
+              style={kit.hubBtn}
+              accessibilityRole="button"
+              accessibilityLabel={t('a11y_add')}
+            >
+              <Plus color={ui.orangeText} size={19} />
+              <Text style={[kit.hubLabel, { color: ui.muted }]}>{t('a11y_add')}</Text>
+            </PressScale>
+          ) : null}
         </View>
       </View>
     </View>

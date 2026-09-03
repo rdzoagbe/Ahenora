@@ -55,7 +55,8 @@ export default function ChatTab() {
 
   return (
     <TabScreen tab="Chat" refreshing={refreshing} onRefresh={onRefresh} scrollViewProps={{ contentContainerStyle: styles.list }}>
-      <ScreenHeader eyebrow={t('nav_more_chat_sub')} title={t('chat_title')} />
+      <ScreenHeader
+          showAdd={false} eyebrow={t('nav_more_chat_sub')} title={t('chat_title')} />
       {threads === null ? (
         <View style={styles.center}><ActivityIndicator color={ui.orange} /></View>
       ) : (

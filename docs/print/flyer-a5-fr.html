@@ -11,15 +11,15 @@
      handout and the poster can never drift apart. The 12mm margin is because
      most office printers cannot go nearer than 10mm, and a headline clipped
      by the printer is a wasted ream. */
-  @page { size: A3 portrait; margin: 0; }
+  @page { size: A5 portrait; margin: 0; }
   * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   /* Both boxes clipped to the sheet. The scaled A5 measured 210.08mm against a
      210mm page — eight hundredths of a millimetre, and Chrome duly emitted a
      second, blank page. Nothing here may overflow by any amount. */
   html, body { margin: 0; padding: 0; overflow: hidden; }
-  html { width: 297mm; height: 420mm; }
+  html { width: 148mm; height: 210mm; }
   body {
-    width: 297mm; height: 420mm;
+    width: 148mm; height: 210mm;
     background: #EFE4D8;
     font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
     overflow: hidden; position: relative;
@@ -33,7 +33,7 @@
   .sheet {
     position: absolute; top: 0; left: 0;
     width: 297mm; height: 420mm;
-    transform: scale(1); transform-origin: top left;
+    transform: scale(0.49832); transform-origin: top left;
     color: #101318; background: #EFE4D8;
     display: flex; flex-direction: column;
   }

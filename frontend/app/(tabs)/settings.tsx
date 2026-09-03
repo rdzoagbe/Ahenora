@@ -654,7 +654,8 @@ export default function Settings() {
         onRefresh={handleRefresh}
         scrollViewProps={{ contentContainerStyle: styles.scroll, keyboardShouldPersistTaps: 'handled' }}
       >
-          <ScreenHeader eyebrow={t('set_manage')} title={t('set_settings')} />
+          <ScreenHeader
+          showAdd={false} eyebrow={t('set_manage')} title={t('set_settings')} />
 
           {/* Profile */}
           <PressScale testID="settings-open-account" onPress={() => router.push('/account')} style={styles.headerGap}>

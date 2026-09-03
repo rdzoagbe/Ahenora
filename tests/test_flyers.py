@@ -30,10 +30,11 @@ if HAVE_QR:
 ROOT = os.path.join(os.path.dirname(__file__), "..")
 PRINT_DIR = os.path.join(ROOT, "docs", "print")
 LANGS = ("fr", "en")
+SIZES = ("a3", "a5")
 
 
-def flyer(code):
-    with open(os.path.join(PRINT_DIR, f"flyer-a3-{code}.html"), encoding="utf-8") as fh:
+def flyer(code, size="a3"):
+    with open(os.path.join(PRINT_DIR, f"flyer-{size}-{code}.html"), encoding="utf-8") as fh:
         return fh.read()
 
 
@@ -47,16 +48,48 @@ class TheFlyers(unittest.TestCase):
             cards = "".join(
                 f'<div class="card"><h3>{h}</h3><p>{p}</p></div>'
                 for h, p in copy["bullets"])
-            expected = build_flyers.TEMPLATE.format(
-                qr=build_flyers.qr_svg(build_flyers.URL, 62), cards=cards, **copy)
-            self.assertEqual(
-                flyer(code), expected,
-                f"docs/print/flyer-a3-{code}.html was edited by hand; change "
-                f"scripts/build_flyers.py and rebuild instead")
+            for size, dims in build_flyers.SIZES.items():
+                expected = build_flyers.TEMPLATE.format(
+                    qr=build_flyers.qr_svg(build_flyers.URL, 62), cards=cards,
+                    **dims, **copy)
+                self.assertEqual(
+                    flyer(code, size), expected,
+                    f"docs/print/flyer-{size}-{code}.html was edited by hand; "
+                    f"change scripts/build_flyers.py and rebuild instead")
 
-    def test_each_flyer_is_a3(self):
+    def test_each_sheet_declares_its_own_page_size(self):
+        # Both sizes exist and each asks the printer for the right sheet. An A5
+        # that still says A3 prints one corner of the design, very large.
         for code in LANGS:
-            self.assertIn("size: A3 portrait", flyer(code))
+            self.assertIn("size: A3 portrait", flyer(code, "a3"))
+            self.assertIn("size: A5 portrait", flyer(code, "a5"))
+
+    def test_nothing_can_overflow_onto_a_second_sheet(self):
+        # The A5 scales an A3 composition, and a transform scales what is
+        # painted without shrinking the space it claims. That overflowed the
+        # page by 0.08mm and Chrome emitted a second, blank sheet — which on a
+        # print run is double the paper for nothing. Both boxes stay clipped.
+        for code in LANGS:
+            for size in SIZES:
+                html = flyer(code, size)
+                self.assertIn("html, body {", html)
+                self.assertIn("overflow: hidden;", html)
+                self.assertIn("position: absolute; top: 0; left: 0;", html)
+
+    def test_the_sheet_puts_ink_on_the_paper(self):
+        # The first print run came back looking like a photocopy: a cream a
+        # hair off white, white cards, and orange only in hairlines. These are
+        # the fields that fixed it, and losing them again should fail here
+        # rather than at a print shop.
+        for code in LANGS:
+            for size in SIZES:
+                html = flyer(code, size)
+                self.assertIn("background: #D2540E", html)   # the orange banner
+                self.assertIn("background: #16181D", html)   # the dark footer
+                self.assertIn("background: #FFE3D2", html)   # a tinted card
+                # Backgrounds are dropped by browsers when printing unless this
+                # is set, which would undo every colour above.
+                self.assertIn("print-color-adjust: exact", html)
 
     def test_the_qr_is_vector_not_a_bitmap(self):
         # A raster QR blurs when a copier scales the sheet, and being scaled is

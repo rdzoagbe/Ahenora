@@ -97,7 +97,7 @@ async def main():
             await shot("05_kitchen_spending.png", "/kitchen", taps=['[data-testid="kitchen-tab-spend"]'])
             await shot("06_kitchen_meals.png", "/kitchen", taps=['[data-testid="kitchen-tab-meal"]'])
             await shot("07_settings.png", "/settings")
-            await shot("08_addcard.png", "/feed", taps=['[data-testid="tab-add"]'], wait_ms=2600)
+            await shot("08_addcard.png", "/feed", taps=['[data-testid="feed-open-add"]'], wait_ms=2600)
             await shot("09_feed_320.png", "/feed", width=320)
             await shot("10_kitchen_spend_320.png", "/kitchen", width=320, taps=['[data-testid="kitchen-tab-spend"]'])
             await shot("11_calendar_320.png", "/calendar", width=320)

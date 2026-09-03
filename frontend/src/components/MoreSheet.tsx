@@ -11,11 +11,14 @@ import { useStore } from '../store';
 import { HandOverSheet } from './HandOverSheet';
 
 /**
- * Destinations that don't earn a permanent seat in a five-slot phone bar.
- * A household opens the vault occasionally and settings rarely; putting them
- * here buys back the width the four daily tabs were starving for — and gives
- * everything we add next (expenses, carpool) somewhere to land that isn't
- * another 10px label.
+ * What the four-seat phone bar can't hold. A household opens the vault
+ * occasionally and settings rarely; putting them here buys back the width the
+ * four daily tabs were starving for — and gives everything we add next
+ * (carpool, roles) somewhere to land that isn't another 10px label.
+ *
+ * The bar calls this button More, so the sheet is headed More. It used to say
+ * Household, which meant the one thing a parent had to read to know they had
+ * opened the right drawer disagreed with the thing they had just tapped.
  *
  * Destinations, though — not tools. Search briefly lived here as well as in
  * the feed header, which bought nothing: from any other tab it is two taps
@@ -49,7 +52,7 @@ export function MoreSheet({ visible, onClose }: { visible: boolean; onClose: () 
       title: t('vault'), sub: t('nav_more_vault_sub'), path: '/(tabs)/vault' },
     { key: 'settings', icon: SettingsIcon, tone: ui.orange, soft: ui.orangeSoft,
       title: t('settings'), sub: t('nav_more_settings_sub'), path: '/(tabs)/settings' },
-    { key: 'account', icon: User, tone: ui.mintText, soft: ui.mint,
+    { key: 'account', icon: User, tone: ui.blueText, soft: ui.blue,
       title: t('nav_more_account'), sub: t('nav_more_account_sub'), path: '/(tabs)/account' },
   ].filter((it) => !(user?.is_helper && (it.key === 'vault' || it.key === 'kid')));
   // A helper never sees the private document vault, and can't hand the device
@@ -67,7 +70,7 @@ export function MoreSheet({ visible, onClose }: { visible: boolean; onClose: () 
       <View style={[styles.panel, { paddingBottom: Math.max(insets.bottom, 16) + 18 }]}>
         <View style={styles.grabber} />
         <View style={styles.header}>
-          <Text style={styles.title}>{t('nav_household')}</Text>
+          <Text style={styles.title}>{t('nav_more')}</Text>
           <PressScale
             testID="more-close"
             accessibilityRole="button"

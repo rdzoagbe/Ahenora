@@ -1,14 +1,13 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Tabs, usePathname, useRouter } from 'expo-router';
 import { View, StyleSheet, Text, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Home, Calendar as CalendarIcon, Lock, Settings as SettingsIcon, UtensilsCrossed, Users, Plus } from 'lucide-react-native';
+import { Home, Calendar as CalendarIcon, LayoutGrid, Lock, Settings as SettingsIcon, UtensilsCrossed, Users } from 'lucide-react-native';
 import { useStore } from '../../src/store';
 import { markStart, markEnd } from '../../src/perf';
 import { useBreakpoint } from '../../src/responsive';
-import { GlobalCapture } from '../../src/components/GlobalCapture';
-import { requestCaptureFocus } from '../../src/captureFocus';
 import { MoreSheet } from '../../src/components/MoreSheet';
+import { GlobalCapture } from '../../src/components/GlobalCapture';
 
 // ─── Phone: floating pill tab bar ────────────────────────────────────────────
 
@@ -16,8 +15,8 @@ import { MoreSheet } from '../../src/components/MoreSheet';
  * One tab. Every tab spells its name under the icon — a bar you have to tap
  * to learn is a bar doing half its job. The active one gets the accent pill
  * and ink; the rest sit quiet in muted text, so five small labels read as a
- * legend rather than noise. (Only five seats — four destinations and More —
- * so there is room for all of them.)
+ * legend rather than noise. (Only four seats in the pill, so there is room
+ * for all of them.)
  */
 function TabIcon({ focused, Icon, label, badge = 0 }: { focused: boolean; Icon: any; label: string; badge?: number }) {
   const { theme } = useStore();
@@ -70,7 +69,7 @@ const NAV_ITEMS = [
 ] as const;
 
 function SidebarNav({ width }: { width: number }) {
-  const { theme, t, unreadChats } = useStore();
+  const { theme, t, unreadChats, openHouseholdMenu } = useStore();
   const { isDesktop } = useBreakpoint();
   const router = useRouter();
   const pathname = usePathname();
@@ -157,6 +156,22 @@ function SidebarNav({ width }: { width: number }) {
           </TouchableOpacity>
         );
       })}
+
+      {/* The phone bar grew a More button; the sidebar needs the same door or
+          hand-off and Your account become unreachable on a wide screen. */}
+      <TouchableOpacity
+        testID="sidebar-more"
+        onPress={openHouseholdMenu}
+        style={[styles.sidebarItem, isDesktop ? styles.sidebarItemWide : styles.sidebarItemCompact]}
+        activeOpacity={0.75}
+        accessibilityRole="button"
+        accessibilityLabel={t('nav_more')}
+      >
+        <LayoutGrid color={theme.colors.textSoft} size={20} strokeWidth={2.0} />
+        {isDesktop && (
+          <Text style={[styles.sidebarLabel, { color: theme.colors.textMuted }]}>{t('nav_more')}</Text>
+        )}
+      </TouchableOpacity>
     </View>
   );
 }
@@ -164,22 +179,22 @@ function SidebarNav({ width }: { width: number }) {
 // ─── Phone: the bar itself ───────────────────────────────────────────────────
 
 /**
- * The phone bar: four daily destinations and a centre ➕ for quick capture.
- * Rendering it ourselves (rather than styling the default bar) is what lets the
- * ➕ open a sheet instead of navigating — on web the built-in tab buttons are
- * anchors, which always navigate. The less-daily places (Vault, Settings,
- * Account, Hand-off) live in the Household menu, opened from the Feed header.
+ * The phone bar: four daily destinations in one pill, and More beside it.
+ * Rendering it ourselves (rather than styling the default bar) is what lets
+ * More open a sheet instead of navigating — on web the built-in tab buttons
+ * are anchors, which always navigate. The less-daily places (Vault, Settings,
+ * Account, Hand-off) live in the More sheet it opens.
  */
-function PhoneTabBar({ state, navigation, style, onAdd }: {
+function PhoneTabBar({ state, navigation, style, onMore }: {
   state: { index: number; routes: { key: string; name: string }[] };
   navigation: any;
   style: object;
-  onAdd: () => void;
+  onMore: () => void;
 }) {
   const { t, theme, unreadChats } = useStore();
   const c = theme.colors;
   const current = state.routes[state.index]?.name;
-  const onFeed = current === 'feed';
+  const insets = useSafeAreaInsets();
 
   const tab = (name: string, Icon: any, labelKey: string, badge = 0) => {
     const focused = current === name;
@@ -199,33 +214,42 @@ function PhoneTabBar({ state, navigation, style, onAdd }: {
     );
   };
 
+  // Two objects, not five seats.
+  //
+  // The four destinations are the same kind of thing — places you go — so they
+  // share one pill. More is not a destination, it is the drawer holding
+  // everything that is not a place, so it gets its own button beside the pill
+  // rather than a seat in the row. The bar already floated with a 30px radius
+  // and 20px insets; this stops pretending the drawer is a fifth tab.
+  //
+  // The raised ＋ is gone. On the Feed the capture bar carries it, with the
+  // composer, camera and microphone beside it; the other three tabs now carry
+  // their own ＋ in their header, so the gesture exists everywhere it did — it
+  // is just no longer a button overlapping the content above the bar.
   return (
-    <View style={[style, styles.bar]}>
-      {tab('feed', Home, 'feed')}
-      {tab('calendar', CalendarIcon, 'calendar')}
-      <View style={styles.barSlot}>
-        {/* On the Feed the ＋ points at the capture bar rather than opening a
-            second sheet — one "add" gesture on the one screen that has two. It
-            is drawn outlined there to say so, and stays filled and fully active
-            on every other tab, where it is still the primary create. */}
-        <TouchableOpacity
-          testID="tab-add"
-          accessibilityRole="button"
-          accessibilityLabel={t('qa_title')}
-          activeOpacity={0.85}
-          onPress={onAdd}
-          style={[
-            styles.addBtn,
-            onFeed
-              ? { backgroundColor: c.bgElevated, borderWidth: 2, borderColor: c.accent, shadowOpacity: 0 }
-              : { backgroundColor: c.accent, shadowColor: c.accent },
-          ]}
-        >
-          <Plus color={onFeed ? c.accent : '#FFFFFF'} size={28} strokeWidth={2.6} />
-        </TouchableOpacity>
+    <View style={[styles.barWrap, { bottom: Math.max(insets.bottom, 14) }]} pointerEvents="box-none">
+      <View style={[style, styles.bar]}>
+        {tab('feed', Home, 'feed')}
+        {tab('calendar', CalendarIcon, 'calendar')}
+        {tab('kids', Users, 'family_tab', unreadChats)}
+        {tab('kitchen', UtensilsCrossed, 'kitchen')}
       </View>
-      {tab('kids', Users, 'family_tab', unreadChats)}
-      {tab('kitchen', UtensilsCrossed, 'kitchen')}
+      <TouchableOpacity
+        testID="tab-more"
+        accessibilityRole="button"
+        accessibilityLabel={t('nav_more')}
+        activeOpacity={0.85}
+        onPress={onMore}
+        style={[
+          styles.moreBtn,
+          { backgroundColor: c.tabBar, borderColor: c.tabBorder, shadowColor: '#202323' },
+        ]}
+      >
+        <LayoutGrid color={c.textMuted} size={20} />
+        <Text style={[styles.moreLabel, { color: c.textMuted }]} numberOfLines={1}>
+          {t('nav_more')}
+        </Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -239,11 +263,9 @@ function PhoneTabBar({ state, navigation, style, onAdd }: {
 let onboardingRedirectedFor: string | null = null;
 
 export default function TabLayout() {
-  const { t, theme, user, loading, householdMenuOpen, closeHouseholdMenu } = useStore();
+  const { t, theme, user, loading, householdMenuOpen, openHouseholdMenu, closeHouseholdMenu, quickAddOpen, closeQuickAdd } = useStore();
   const { isWide, sidebarW } = useBreakpoint();
-  const insets = useSafeAreaInsets();
   const router = useRouter();
-  const [quickAddOpen, setQuickAddOpen] = useState(false);
 
   // If the session is cleared (logout or expiry), return to the landing screen.
   useEffect(() => {
@@ -266,11 +288,10 @@ export default function TabLayout() {
     }
   }, [loading, user, router]);
 
+  // The pill holds the four destinations only; More is laid out next to it by
+  // barWrap, so the pill no longer stretches to the right edge.
   const floatingTabStyle = {
-    position: 'absolute' as const,
-    left: 20,
-    right: 20,
-    bottom: Math.max(insets.bottom, 14),
+    flex: 1,
     height: 74,
     borderRadius: 30,
     backgroundColor: theme.colors.tabBar,
@@ -298,11 +319,7 @@ export default function TabLayout() {
               state={props.state}
               navigation={props.navigation}
               style={floatingTabStyle}
-              // On the Feed, hand the gesture to the capture bar. It answers
-              // false when the Feed is not listening — a fast tab switch, an
-              // older build — and the sheet opens as it always did, so the ＋
-              // is never a button that does nothing.
-              onAdd={() => { if (!requestCaptureFocus()) setQuickAddOpen(true); }}
+              onMore={openHouseholdMenu}
             />
           )
         }
@@ -325,7 +342,7 @@ export default function TabLayout() {
       </Tabs>
 
       {isWide && <SidebarNav width={sidebarW} />}
-      <GlobalCapture visible={quickAddOpen} onClose={() => setQuickAddOpen(false)} />
+      <GlobalCapture visible={quickAddOpen} onClose={closeQuickAdd} />
       <MoreSheet visible={householdMenuOpen} onClose={closeHouseholdMenu} />
     </>
   );
@@ -341,18 +358,30 @@ const styles = StyleSheet.create({
     justifyContent: 'space-around',
   },
   barSlot: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  addBtn: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
+  // Positions the two objects the bar is now made of. box-none on the wrapper
+  // so the gap between them does not swallow taps meant for the screen.
+  barWrap: {
+    position: 'absolute',
+    left: 20,
+    right: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  moreBtn: {
+    width: 62,
+    height: 74,
+    borderRadius: 26,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: -16,
-    shadowOpacity: 0.4,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 5 },
-    elevation: 8,
+    gap: 4,
+    elevation: 10,
+    shadowOpacity: 0.16,
+    shadowRadius: 22,
+    shadowOffset: { width: 0, height: 12 },
   },
+  moreLabel: { fontFamily: 'Inter_700Bold', fontSize: 10, letterSpacing: -0.1 },
   tabItem: {
     alignItems: 'center',
     justifyContent: 'center',

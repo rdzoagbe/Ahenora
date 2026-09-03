@@ -15,7 +15,6 @@ import {
   ArrowUp,
   BarChart3,
   Bell,
-  LayoutGrid,
   Search as SearchIcon,
   UserCheck,
   CalendarDays,
@@ -48,7 +47,7 @@ import { PressScale } from '../../src/components/PressScale';
 import { AddCardModal } from '../../src/components/AddCardModal';
 import { VoiceCaptureModal } from '../../src/components/VoiceCaptureModal';
 import { CameraCaptureModal } from '../../src/components/CameraCaptureModal';
-import { MoreSheet } from '../../src/components/MoreSheet';
+import { PersonAvatar } from '../../src/components/PersonAvatar';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
 import { TabScreen } from '../../src/components/TabScreen';
 import { GettingStarted } from '../../src/components/GettingStarted';
@@ -389,7 +388,6 @@ export default function Feed() {
   // add/edit sheet the Calendar uses, in edit mode.
   const [editing, setEditing] = useState<Card | null>(null);
   const [showAlerts, setShowAlerts] = useState(false);
-  const [householdOpen, setHouseholdOpen] = useState(false);
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [rewardCount, setRewardCount] = useState(0);
   const [vaultCount, setVaultCount] = useState(0);
@@ -915,6 +913,11 @@ export default function Feed() {
     ? `${alertCount} ${alertCount === 1 ? t('feed_thing_needs') : t('feed_things_need')} — ${dashboard.priority[0]?.title || t('feed_review_list')}.`
     : t('feed_nothing_critical');
 
+  // Your own picture: the illustration you picked on your member page if there
+  // is one, otherwise the photo Google handed us at sign-in, otherwise your
+  // initial. The member row is checked first because it is the one you chose.
+  const myAvatar = members.find((m) => m.is_me)?.avatar || user?.picture || null;
+
   const openManual = () => {
     setVoiceDraft(null);
     setAddSource('MANUAL');
@@ -1139,14 +1142,18 @@ export default function Feed() {
                     <View style={styles.bellBadge}><Text style={styles.bellBadgeText}>{Math.min(unseenAlertCount, 9)}</Text></View>
                   ) : null}
                 </PressScale>
+                {/* The grid moved down to the tab bar, where More now sits on
+                    its own. The corner it freed goes to whoever is signed in —
+                    a portrait next to a greeting that already uses their name.
+                    It opens your own profile. */}
                 <PressScale
-                  testID="feed-household-menu"
-                  onPress={() => setHouseholdOpen(true)}
+                  testID="feed-portrait"
+                  onPress={() => router.navigate('/(tabs)/account' as never)}
                   style={styles.bellWrap}
                   accessibilityRole="button"
-                  accessibilityLabel={t('nav_household')}
+                  accessibilityLabel={t('nav_more_account')}
                 >
-                  <LayoutGrid color={ui.text} size={23} />
+                  <PersonAvatar name={user?.name} avatar={myAvatar} size={30} />
                 </PressScale>
               </View>
             </View>
@@ -1181,9 +1188,10 @@ export default function Feed() {
                 is the most capable control on the screen: a typed line goes to
                 the shopping list, the week's menu or a task, on its own. The
                 first thing you can do belongs above the first thing you read. */}
-            {/* Quick capture — one slim bar with camera/mic tucked to the right,
-                so there's a single, clear "add" gesture that doesn't echo the
-                nav bar's ＋ (was a full Add/Photo/Voice card up top). */}
+            {/* Quick capture — one slim bar with camera/mic tucked to the
+                right. The tab bar carries no ＋ at all now, so this is the
+                Feed's single, unambiguous "add" gesture (was a full
+                Add/Photo/Voice card up top). */}
             <View style={styles.addBar}>
               {/* Typeable, not a button that opens a composer.
                   It was a button, and every line it produced was a card —
@@ -1648,7 +1656,6 @@ export default function Feed() {
           from the "Add a task…" card at the top of the feed. */}
       {/* The Household menu (Vault, Settings, Account, Hand-off) — opened from
           the grid button in the header, now that Kitchen has its own tab. */}
-      <MoreSheet visible={householdOpen} onClose={() => setHouseholdOpen(false)} />
 
       <CameraCaptureModal
         visible={showCamera}
@@ -2097,7 +2104,10 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   // The bar is a field now. Same height and rhythm as the button it replaced,
   // so the Feed does not shift under anyone who knew where it was.
   addBarInput: {
-    flex: 1, color: ui.text, fontFamily: 'Inter_500Medium', fontSize: 14,
+    // minWidth 0 because a flex child on web defaults to min-width:auto, and
+    // an <input> reports a content-based minimum. Without it the field refuses
+    // to shrink on a narrow phone and shoves the mic off the right edge.
+    flex: 1, minWidth: 0, color: ui.text, fontFamily: 'Inter_500Medium', fontSize: 14,
     paddingVertical: 12, paddingLeft: 10, paddingRight: 4,
   },
   addBarSend: {

@@ -104,6 +104,45 @@ async def main():
         r["member_page_fits"] = await fits("member page")
         r["member_page_has_manage"] = await page.locator('[data-testid="member-rename"]').count() >= 1
 
+        # The picture holder: five choices, and the one you tap has to survive
+        # the round trip. A picker that looks chosen but saves nothing is the
+        # failure mode worth a harness — it is invisible until you come back.
+        offered = True
+        for k in ("man", "woman", "boy", "girl", "none"):
+            if await page.locator(f'[data-testid="avatar-{k}"]').count() != 1:
+                offered = False
+        r["member_page_offers_pictures"] = offered
+
+        # The skin tones only appear once a drawing is chosen — a tone over a
+        # letter would be a control with nothing to change.
+        r["no_tones_before_a_drawing_is_chosen"] = await page.locator(
+            '[data-testid="avatar-tone-0"]').count() == 0
+        await page.click('[data-testid="avatar-girl"]')
+        await page.wait_for_timeout(1400)
+
+        def saved_avatar():
+            row = next((m for m in api("GET", "/family/members", None, tok)
+                        if m["member_id"] == mid), None)
+            return (row or {}).get("avatar")
+
+        r["picking_a_drawing_saves_it"] = saved_avatar() == "illus:girl:1"
+        tones = await page.locator('[data-testid^="avatar-tone-"]').count()
+        r["five_skin_tones_are_offered"] = tones == 5
+
+        # Changing the tone must keep the person you already chose. Rebuilding
+        # the value from scratch here is how you lose the drawing on a recolour.
+        await page.click('[data-testid="avatar-tone-4"]')
+        await page.wait_for_timeout(1400)
+        r["changing_tone_keeps_the_person"] = saved_avatar() == "illus:girl:4"
+
+        await page.reload(wait_until="domcontentloaded")
+        await page.wait_for_timeout(2200)
+        r["and_it_is_still_chosen_on_return"] = await page.get_attribute(
+            '[data-testid="avatar-girl"]', "aria-checked") == "true"
+        r["the_tone_survives_too"] = await page.get_attribute(
+            '[data-testid="avatar-tone-4"]', "aria-checked") == "true"
+        r["member_page_still_fits_with_a_picture"] = await fits("member page + picture")
+
         await page.screenshot(path="smallscreen_member.png", full_page=True)
         # Say WHICH error. "no_js_errors: False" on its own sends the next
         # person hunting blind, which is exactly what it did to me.
