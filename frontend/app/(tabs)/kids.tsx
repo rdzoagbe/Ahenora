@@ -48,6 +48,7 @@ import FirstRunTip from '../../src/components/FirstRunTip';
 import ErrorState from '../../src/components/ErrorState';
 import LoadingOverlay from '../../src/components/LoadingOverlay';
 import { TabScreen } from '../../src/components/TabScreen';
+import { PersonAvatar, avatarKind } from '../../src/components/PersonAvatar';
 import { Card, IconTile, ProgressBar, ScreenHeader, UI, useUI, UIColors } from '../../src/components/Kit';
 
 import { useStore } from '../../src/store';
@@ -477,9 +478,15 @@ export default function Kids() {
                       4.5:1. Deep orange (#CA470A) beats ui.orange's 3.11:1;
                       a fixed slate beats ui.muted, which is a *light* slate in
                       dark mode (#CBD5E1) where white would be unreadable. */}
-                  <View style={[styles.hubAvatar, { backgroundColor: isParent ? UI.orangeDeep : '#5F656E' }]}>
-                    <Text style={styles.hubAvatarText}>{m.name[0]?.toUpperCase()}</Text>
-                  </View>
+                  {avatarKind(m.avatar) ? (
+                    <View style={styles.hubAvatarIllus}>
+                      <PersonAvatar name={m.name} avatar={m.avatar} size={44} ring={false} />
+                    </View>
+                  ) : (
+                    <View style={[styles.hubAvatar, { backgroundColor: isParent ? UI.orangeDeep : '#5F656E' }]}>
+                      <Text style={styles.hubAvatarText}>{m.name[0]?.toUpperCase()}</Text>
+                    </View>
+                  )}
                   <View style={{ flex: 1, minWidth: 0 }}>
                     <View style={styles.hubNameRow}>
                       <Text style={styles.hubName} numberOfLines={1}>
@@ -1644,8 +1651,10 @@ export default function Kids() {
                       onPress={() => openChild(child)}
                       style={[styles.hubRow, active && styles.hubRowActive]}
                     >
-                      <View style={[styles.hubAvatar, { backgroundColor: tint }]}>
-                        <Text style={styles.hubAvatarText}>{child.name[0]?.toUpperCase()}</Text>
+                      <View style={[styles.hubAvatar, avatarKind(child.avatar) ? styles.hubAvatarIllus : { backgroundColor: tint }]}>
+                        {avatarKind(child.avatar)
+                          ? <PersonAvatar name={child.name} avatar={child.avatar} size={44} ring={false} />
+                          : <Text style={styles.hubAvatarText}>{child.name[0]?.toUpperCase()}</Text>}
                         {child.has_pin ? <View style={styles.lockBadge}><Lock color={ui.bg} size={8} /></View> : null}
                         {owed > 0 ? (
                           <View
@@ -1732,8 +1741,10 @@ export default function Kids() {
                   {/* Wallet */}
                   <Card style={styles.walletCard}>
                     <View style={styles.walletRow}>
-                    <View style={[styles.walletAvatar, { backgroundColor: ui.orangeSoft }]}>
-                      <Text style={[styles.walletAvatarText, { color: ui.orangeText }]}>{activeChild.name[0]?.toUpperCase()}</Text>
+                    <View style={[styles.walletAvatar, avatarKind(activeChild.avatar) ? styles.walletAvatarIllus : { backgroundColor: ui.orangeSoft }]}>
+                      {avatarKind(activeChild.avatar)
+                        ? <PersonAvatar name={activeChild.name} avatar={activeChild.avatar} size={52} ring={false} />
+                        : <Text style={[styles.walletAvatarText, { color: ui.orangeText }]}>{activeChild.name[0]?.toUpperCase()}</Text>}
                     </View>
                     <View style={{ flex: 1, minWidth: 0 }}>
                       {/* Built from a template, not string concatenation: the
@@ -3174,6 +3185,9 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   hubLabel: { fontFamily: 'Inter_800ExtraBold', fontSize: 11, letterSpacing: 0.8, textTransform: 'uppercase', color: ui.muted, marginLeft: 4, marginBottom: 8, marginTop: 8 },
   hubRow: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, borderRadius: 16, padding: 12, marginBottom: 9 },
   hubAvatar: { width: 44, height: 44, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  // An illustration is drawn to the edges of its box, so the holder clips
+  // it to the same rounded square the initial tile uses.
+  hubAvatarIllus: { width: 44, height: 44, borderRadius: 13, overflow: 'hidden' },
   hubAvatarText: { fontFamily: 'Inter_800ExtraBold', fontSize: 16, color: '#fff' },
   hubNameRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   hubName: { fontFamily: 'Inter_700Bold', fontSize: 15, color: ui.text, flexShrink: 1 },
@@ -3230,6 +3244,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   walletRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   giveAccountRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, borderTopWidth: 1, borderTopColor: '#F1EFEA', marginTop: 14, paddingTop: 14 },
   walletAvatar: { width: 52, height: 52, borderRadius: 99, alignItems: 'center', justifyContent: 'center' },
+  walletAvatarIllus: { width: 52, height: 52, borderRadius: 99, overflow: 'hidden' },
   walletAvatarText: { fontFamily: 'Inter_800ExtraBold', fontSize: 20 },
   walletLabel: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 13, flexShrink: 1 },
   walletLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },

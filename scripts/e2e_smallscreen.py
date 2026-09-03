@@ -104,6 +104,24 @@ async def main():
         r["member_page_fits"] = await fits("member page")
         r["member_page_has_manage"] = await page.locator('[data-testid="member-rename"]').count() >= 1
 
+        # The picture holder: five choices, and the one you tap has to survive
+        # the round trip. A picker that looks chosen but saves nothing is the
+        # failure mode worth a harness — it is invisible until you come back.
+        r["member_page_offers_pictures"] = all(
+            await page.locator(f'[data-testid="avatar-{k}"]').count() == 1
+            for k in ("man", "woman", "boy", "girl", "none"))
+        await page.click('[data-testid="avatar-girl"]')
+        await page.wait_for_timeout(1400)
+        saved = next((m for m in api("GET", "/family/members", None, tok)
+                      if m["member_id"] == mid), None)
+        r["picking_a_drawing_saves_it"] = (saved or {}).get("avatar") == "illus:girl"
+
+        await page.reload(wait_until="domcontentloaded")
+        await page.wait_for_timeout(2200)
+        r["and_it_is_still_chosen_on_return"] = await page.get_attribute(
+            '[data-testid="avatar-girl"]', "aria-selected") == "true"
+        r["member_page_still_fits_with_a_picture"] = await fits("member page + picture")
+
         await page.screenshot(path="smallscreen_member.png", full_page=True)
         # Say WHICH error. "no_js_errors: False" on its own sends the next
         # person hunting blind, which is exactly what it did to me.

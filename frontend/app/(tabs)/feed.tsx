@@ -913,6 +913,11 @@ export default function Feed() {
     ? `${alertCount} ${alertCount === 1 ? t('feed_thing_needs') : t('feed_things_need')} — ${dashboard.priority[0]?.title || t('feed_review_list')}.`
     : t('feed_nothing_critical');
 
+  // Your own picture: the illustration you picked on your member page if there
+  // is one, otherwise the photo Google handed us at sign-in, otherwise your
+  // initial. The member row is checked first because it is the one you chose.
+  const myAvatar = members.find((m) => m.is_me)?.avatar || user?.picture || null;
+
   const openManual = () => {
     setVoiceDraft(null);
     setAddSource('MANUAL');
@@ -1148,7 +1153,7 @@ export default function Feed() {
                   accessibilityRole="button"
                   accessibilityLabel={t('nav_more_account')}
                 >
-                  <PersonAvatar name={user?.name} avatar={user?.picture} size={30} />
+                  <PersonAvatar name={user?.name} avatar={myAvatar} size={30} />
                 </PressScale>
               </View>
             </View>

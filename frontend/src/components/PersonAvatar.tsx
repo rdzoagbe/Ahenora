@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, Image, StyleSheet } from 'react-native';
+import { View, Text, Image, StyleSheet, TouchableOpacity } from 'react-native';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
 import { useStore } from '../store';
 
@@ -40,26 +40,35 @@ const PALETTE: Record<AvatarKind, { skin: string; hair: string; body: string }> 
 function Illustration({ kind, size }: { kind: AvatarKind; size: number }) {
   const p = PALETTE[kind];
   const child = kind === 'boy' || kind === 'girl';
-  // Children get a bigger head on a smaller body — the one cue that reads at
-  // 30px, where hairstyles and clothing do not.
-  const headR = child ? 9 : 7.5;
-  const headY = child ? 15.5 : 15;
-  const shoulder = child ? 'M8 40c0-7 5.4-10.5 12-10.5S32 33 32 40z' : 'M6 40c0-8 6.3-12 14-12s14 4 14 12z';
+  const long = kind === 'woman' || kind === 'girl';
+  // Children get a bigger head on narrower shoulders — the one cue that still
+  // reads at 30 points, where a hairstyle or a collar would not.
+  const r = child ? 8.2 : 7.6;
+  const cy = child ? 14.6 : 14.2;
+  const brow = cy - 1.2;  // where the hair stops and the face starts
+  const cap = r + 0.9;    // the hair overhangs the skull a little
+  const shoulder = child
+    ? 'M8.5 40c0-6.9 5.2-10.9 11.5-10.9S31.5 33.1 31.5 40z'
+    : 'M5 40c0-8.1 6.7-12.3 15-12.3S35 31.9 35 40z';
+  // Long hair is two rounded columns BEHIND the head, drawn before the face so
+  // the face covers where they meet it. Short hair is a single half-disc cap
+  // sitting on the brow. Both are flat shapes rather than crescents fitted to
+  // the skull: the first version tried the crescent and drew a stray arc.
+  const sidePanel = (x: number) => `M${x} ${brow} h3.6 v${r + 9.5} a1.8 1.8 0 0 1 -3.6 0 z`;
+  const hairCap = `M${20 - cap} ${brow} a${cap} ${cap} 0 0 1 ${cap * 2} 0 z`;
   return (
     <Svg width={size} height={size} viewBox="0 0 40 40">
       <Rect width={40} height={40} fill="#ECEEEC" />
+      {long ? (
+        <>
+          <Path d={sidePanel(20 - cap)} fill={p.hair} />
+          <Path d={sidePanel(20 + cap - 3.6)} fill={p.hair} />
+        </>
+      ) : null}
+      <Path d={`M17.4 ${cy + r - 2} h5.2 v6 h-5.2 z`} fill={p.skin} />
       <Path d={shoulder} fill={p.body} />
-      <Circle cx={20} cy={headY} r={headR} fill={p.skin} />
-      {kind === 'woman' || kind === 'girl' ? (
-        // Longer hair falls past the jaw; drawn behind nothing, so it reads
-        // even when the whole thing is 30 points wide.
-        <Path
-          d={`M${20 - headR - 1.5} ${headY + 5}c-.6-4 .4-7 .8-9.5C21 ${headY - headR - 3} 27 ${headY - headR + 1} ${20 + headR + 0.7} ${headY + 5}c-.5-3-1.6-5.4-3.4-6.6-2.7 1.8-6.1 1.8-8.8 0-1.8 1.2-2.9 3.6-3.4 6.6z`}
-          fill={p.hair}
-        />
-      ) : (
-        <Path d={`M${20 - headR} ${headY - 2.5}a${headR} ${headR} 0 0 1 ${headR * 2} 0c0-5-3-7-${headR} -7s-${headR} 2-${headR} 7z`} fill={p.hair} />
-      )}
+      <Circle cx={20} cy={cy} r={r} fill={p.skin} />
+      <Path d={hairCap} fill={p.hair} />
     </Svg>
   );
 }
@@ -114,4 +123,64 @@ export function PersonAvatar({
 const styles = StyleSheet.create({
   box: { alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   initial: { fontFamily: 'Inter_800ExtraBold' },
+});
+
+/**
+ * The four drawings, offered in a row, plus the letter you already had.
+ *
+ * Inline rather than behind a sheet: five choices do not earn a modal, and a
+ * picture is the kind of thing you change by seeing the options next to the
+ * thing they will replace.
+ */
+export function AvatarPicker({
+  name,
+  value,
+  onPick,
+  busy = false,
+}: {
+  name?: string | null;
+  value?: string | null;
+  onPick: (next: string | null) => void;
+  busy?: boolean;
+}) {
+  const { theme, t } = useStore();
+  const ui = theme.colors;
+  const current = avatarKind(value);
+
+  const option = (kind: AvatarKind | null) => {
+    const selected = kind === current;
+    return (
+      <TouchableOpacity
+        key={kind || 'none'}
+        testID={`avatar-${kind || 'none'}`}
+        accessibilityRole="button"
+        accessibilityState={{ selected }}
+        accessibilityLabel={t(kind ? `avatar_${kind}` : 'avatar_none')}
+        disabled={busy}
+        activeOpacity={0.8}
+        onPress={() => onPick(kind ? `${ILLUS_PREFIX}${kind}` : null)}
+        style={[
+          pickerStyles.option,
+          { borderColor: selected ? ui.accent : theme.colors.cardBorder, opacity: busy ? 0.6 : 1 },
+          selected ? { borderWidth: 2.5 } : null,
+        ]}
+      >
+        {/* The picker draws its own ring, so the avatars inside go without —
+            two concentric rings on a 44pt target reads as a target, not a face. */}
+        <PersonAvatar name={name} avatar={kind ? `${ILLUS_PREFIX}${kind}` : null} size={40} ring={false} />
+      </TouchableOpacity>
+    );
+  };
+
+  return (
+    <View style={pickerStyles.row}>
+      {AVATAR_KINDS.map((k) => option(k))}
+      {option(null)}
+    </View>
+  );
+}
+
+const pickerStyles = StyleSheet.create({
+  row: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'center' },
+  option: { width: 46, height: 46, borderRadius: 23, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
 });
