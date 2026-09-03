@@ -9,8 +9,9 @@ The FEED is deliberately different, and that difference is asserted here too.
 Two adds sat inches apart on that screen and the smaller one did more — the
 capture bar routes a typed line to the shopping list, the week's menu or a
 task. So on the Feed the + points at the bar instead of opening a second
-sheet. Scan and voice did not go anywhere: they are the camera and microphone
-on the bar itself, and the long-hand composer is the third icon beside them.
+sheet. Scan did not go anywhere: it is the camera on the bar itself, with the
+long-hand composer beside it. Voice was removed — the backend transcribes, but
+the recorder needs a native module the shipped binaries do not carry.
 """
 import asyncio, json, sys, urllib.request
 from playwright.async_api import async_playwright
@@ -114,10 +115,14 @@ async def main():
             '[data-testid="tab-add"]').count() == 0
         r["feed_capture_bar_is_the_add"] = await page.locator(
             '[data-testid="feed-capture-input"]').count() == 1
-        # Long-hand composer, scan and voice are still on the Feed — on the bar,
-        # not behind a picker.
-        r["feed_keeps_scan_and_voice"] = (
+        # The long-hand composer is still on the Feed, on the bar, not behind a
+        # picker. And nothing offers a microphone anywhere: a control that only
+        # ever says "coming soon" is worse than no control, and the last attempt
+        # to make it real took the app down.
+        r["feed_keeps_the_long_hand_composer"] = (
             await page.locator('[data-testid="feed-open-add"]').count() == 1)
+        r["nothing_offers_a_microphone"] = await page.locator(
+            '[data-testid="quickadd-voice"]').count() == 0
 
         # Shopping quick-add, from a tab whose header ＋ opens the picker.
         await page.goto(f"{WEB}/kitchen", wait_until="domcontentloaded")

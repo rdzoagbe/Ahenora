@@ -1,7 +1,7 @@
 import React from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ListPlus, ScanLine, Mic, ShoppingCart, ChevronRight, X } from 'lucide-react-native';
+import { ListPlus, ScanLine, ShoppingCart, ChevronRight, X } from 'lucide-react-native';
 
 import { PressScale } from './PressScale';
 import { useUI, UIColors } from './Kit';
@@ -29,7 +29,6 @@ export function QuickAddSheet({
   onPrimary,
   onTask,
   onScan,
-  onVoice,
   onShopping,
 }: {
   visible: boolean;
@@ -41,7 +40,6 @@ export function QuickAddSheet({
   onPrimary: () => void;
   onTask: () => void;
   onScan: () => void;
-  onVoice: () => void;
   onShopping: () => void;
 }) {
   const ui = useUI();
@@ -54,7 +52,6 @@ export function QuickAddSheet({
   const universal: { key: string; icon: IconType; label: string; onPress: () => void }[] = [
     { key: 'task', icon: ListPlus, label: t('qa_row_task'), onPress: onTask },
     { key: 'scan', icon: ScanLine, label: t('qa_row_scan'), onPress: onScan },
-    { key: 'voice', icon: Mic, label: t('qa_row_speak'), onPress: onVoice },
     { key: 'shopping', icon: ShoppingCart, label: t('qa_row_shopping'), onPress: onShopping },
   ];
 

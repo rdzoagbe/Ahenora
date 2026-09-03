@@ -15,7 +15,6 @@ import { ListPlus, ScanLine, CalendarPlus, Check, X } from 'lucide-react-native'
 
 import { QuickAddSheet } from './QuickAddSheet';
 import { CameraCaptureModal } from './CameraCaptureModal';
-import { VoiceCaptureModal } from './VoiceCaptureModal';
 import { AddCardModal } from './AddCardModal';
 import { PressScale } from './PressScale';
 import { useUI, UIColors } from './Kit';
@@ -47,7 +46,7 @@ type Primary = 'task' | 'event' | 'scan';
 /**
  * The global quick-capture that the centre ➕ opens. It CAPTURES and stays put:
  * the picker chooses an action, the matching surface (manual composer / scan /
- * voice / shopping) opens, the existing API saves it, a toast confirms, and the
+ * shopping) opens, the existing API saves it, a toast confirms, and the
  * user is returned exactly where they were. Nothing navigates.
  *
  * It reads `usePathname()` to lead with the primary create for the current tab,
@@ -61,7 +60,6 @@ export function GlobalCapture({ visible, onClose }: { visible: boolean; onClose:
   const styles = createStyles(ui);
 
   const [showCamera, setShowCamera] = useState(false);
-  const [showVoice, setShowVoice] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [addSource, setAddSource] = useState<'MANUAL' | 'VOICE' | 'CAMERA'>('MANUAL');
   const [draft, setDraft] = useState<CaptureDraft | null>(null);
@@ -154,9 +152,6 @@ export function GlobalCapture({ visible, onClose }: { visible: boolean; onClose:
     afterPicker(() => setShowCamera(true));
   }, [afterPicker]);
 
-  const openVoice = useCallback(() => {
-    afterPicker(() => setShowVoice(true));
-  }, [afterPicker]);
 
   const openShopping = useCallback(() => {
     setShoppingText('');
@@ -203,7 +198,6 @@ export function GlobalCapture({ visible, onClose }: { visible: boolean; onClose:
         onPrimary={onPrimary}
         onTask={openTask}
         onScan={openScan}
-        onVoice={openVoice}
         onShopping={openShopping}
       />
 
@@ -233,23 +227,6 @@ export function GlobalCapture({ visible, onClose }: { visible: boolean; onClose:
         }}
       />
 
-      <VoiceCaptureModal
-        visible={showVoice}
-        onClose={() => setShowVoice(false)}
-        onDraft={(d) => {
-          setDraft({
-            transcript: d.transcript,
-            type: d.type,
-            title: d.title,
-            description: d.description,
-            assignee: d.assignee,
-            due_date: d.due_date || null,
-          });
-          setAddSource('VOICE');
-          setShowVoice(false);
-          setShowAdd(true);
-        }}
-      />
 
       <AddCardModal
         visible={showAdd}
