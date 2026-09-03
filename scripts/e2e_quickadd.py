@@ -72,8 +72,10 @@ async def main():
         def path_of(url):
             return url.split("?", 1)[0].split("#", 1)[0]
 
-        # The Feed is handled separately below — its + focuses the capture bar
-        # rather than opening this picker.
+        # The picker used to hang off a raised ＋ in the tab bar. The bar now
+        # carries four destinations and More, so the ＋ moved into each screen's
+        # own header — same sheet, same testID, different door. The Feed is
+        # handled separately below: its capture bar is the add, so it has no ＋.
         for tab in ("calendar", "kids", "kitchen"):
             await page.goto(f"{WEB}/{tab}", wait_until="domcontentloaded")
             await page.wait_for_timeout(2400)
@@ -104,29 +106,20 @@ async def main():
                 await page.click('[data-testid="close-add-card"]')
                 await page.wait_for_timeout(400)
 
-        # The Feed's + points at the capture bar instead of opening the picker.
-        # It is the same button in the same place — only its job changes, and
-        # only on the one screen that already had a second way to add.
+        # The Feed carries no ＋ of its own: the capture bar is the add, and a
+        # second button beside it would just be asking the same question twice.
         await page.goto(f"{WEB}/feed", wait_until="domcontentloaded")
         await page.wait_for_timeout(2400)
-        feed_before = path_of(page.url)
-        await page.click('[data-testid="tab-add"]')
-        await page.wait_for_timeout(900)
-        r["feed_plus_focuses_the_capture_bar"] = await page.evaluate(
-            '''() => {
-                 const el = document.querySelector('[data-testid="feed-capture-input"]');
-                 return !!el && document.activeElement === el;
-               }''')
-        r["feed_plus_opens_no_picker"] = await page.locator(
-            '[data-testid="quickadd-primary"]').count() == 0
-        r["feed_plus_stayed_put"] = path_of(page.url) == feed_before
-        # Scan and voice are still on the Feed — on the bar, not behind the +.
+        r["feed_has_no_picker_plus"] = await page.locator(
+            '[data-testid="tab-add"]').count() == 0
+        r["feed_capture_bar_is_the_add"] = await page.locator(
+            '[data-testid="feed-capture-input"]').count() == 1
+        # Long-hand composer, scan and voice are still on the Feed — on the bar,
+        # not behind a picker.
         r["feed_keeps_scan_and_voice"] = (
             await page.locator('[data-testid="feed-open-add"]').count() == 1)
-        await page.keyboard.press("Escape")
-        await page.wait_for_timeout(300)
 
-        # Shopping quick-add, from a tab where the + still opens the picker.
+        # Shopping quick-add, from a tab whose header ＋ opens the picker.
         await page.goto(f"{WEB}/kitchen", wait_until="domcontentloaded")
         await page.wait_for_timeout(2400)
         before = path_of(page.url)

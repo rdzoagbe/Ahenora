@@ -47,6 +47,9 @@ interface StoreState {
   householdMenuOpen: boolean;
   openHouseholdMenu: () => void;
   closeHouseholdMenu: () => void;
+  quickAddOpen: boolean;
+  openQuickAdd: () => void;
+  closeQuickAdd: () => void;
   inviteRequested: boolean;
   requestInvite: () => void;
   clearInviteRequest: () => void;
@@ -128,6 +131,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [householdMenuOpen, setHouseholdMenuOpen] = useState(false);
   const openHouseholdMenu = useCallback(() => setHouseholdMenuOpen(true), []);
   const closeHouseholdMenu = useCallback(() => setHouseholdMenuOpen(false), []);
+  // The quick-add picker used to hang off a raised ＋ in the tab bar. The bar
+  // now holds four destinations and More, so the ＋ moved into each screen's
+  // own header — but it is still one sheet, mounted once, opened from here.
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const openQuickAdd = useCallback(() => setQuickAddOpen(true), []);
+  const closeQuickAdd = useCallback(() => setQuickAddOpen(false), []);
   // The Feed's "invite your co-parent" nudge lives on a different screen from the
   // invite sheet (Settings), so it raises this flag and navigates; Settings sees
   // it, opens the invite sheet, and clears it.
@@ -411,6 +420,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         householdMenuOpen,
         openHouseholdMenu,
         closeHouseholdMenu,
+        quickAddOpen,
+        openQuickAdd,
+        closeQuickAdd,
         inviteRequested,
         requestInvite,
         clearInviteRequest,

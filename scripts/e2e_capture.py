@@ -68,21 +68,17 @@ async def main():
         r["the_bar_is_typeable"] = await page.locator(
             '[data-testid="feed-capture-input"]').count() == 1
 
-        # The centre ＋ points at the bar instead of opening a second sheet.
-        # It is the primary create on four other tabs, so it is not removed —
-        # on the Feed it stops competing and starts pointing.
-        await page.click('[data-testid="tab-add"]')
-        await page.wait_for_timeout(900)
-        r["the_plus_focuses_the_bar"] = await page.evaluate(
-            '''() => {
-                 const el = document.querySelector('[data-testid="feed-capture-input"]');
-                 return !!el && document.activeElement === el;
-               }''')
-        # ...and does not open the capture sheet on top of it.
-        r["and_opens_no_second_sheet"] = await page.locator(
+        # On the Feed the bar IS the add — there is no second ＋ competing with
+        # it. The picker still exists for the other tabs, reached from their own
+        # header; it must not be sitting on the Feed as well.
+        r["the_feed_has_no_competing_plus"] = await page.locator(
+            '[data-testid="tab-add"]').count() == 0
+        r["and_no_picker_is_open"] = await page.locator(
             '[data-testid="quickadd-primary"]').count() == 0
-        await page.keyboard.press("Escape")
-        await page.wait_for_timeout(300)
+        # The long-hand composer stays one tap away for anything the bar should
+        # not be guessing at.
+        r["the_long_hand_composer_is_one_tap_away"] = await page.locator(
+            '[data-testid="feed-open-add"]').count() == 1
 
         # --- the shopping list -------------------------------------------
         await type_line("add milk and bread to the list")

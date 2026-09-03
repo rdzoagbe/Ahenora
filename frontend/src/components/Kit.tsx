@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { StyleProp, StyleSheet, Text, TextStyle, View, ViewStyle } from 'react-native';
-import { ChevronDown, ChevronRight, LayoutGrid } from 'lucide-react-native';
+import { ChevronDown, ChevronRight, Plus } from 'lucide-react-native';
 import { PressScale } from './PressScale';
 import { useStore } from '../store';
 
@@ -99,7 +99,7 @@ export function ScreenHeader({
   titleSize?: number;
 }) {
   const ui = useUI();
-  const { openHouseholdMenu, t } = useStore();
+  const { openQuickAdd, t } = useStore();
   return (
     <View>
       <Text style={[kit.brand, { color: ui.orangeText }]}>Ahenora</Text>
@@ -110,15 +110,19 @@ export function ScreenHeader({
         </View>
         <View style={kit.headerRight}>
           {right}
+          {/* More moved into the tab bar, where it now sits on its own beside
+              the four destinations. The corner it freed goes to the thing you
+              actually came here to do: add something. Same picker the raised ＋
+              used to open, same testID — only the door moved. */}
           <PressScale
-            testID="header-household-menu"
-            onPress={openHouseholdMenu}
+            testID="tab-add"
+            onPress={openQuickAdd}
             style={kit.hubBtn}
             accessibilityRole="button"
-            accessibilityLabel={t('nav_household')}
+            accessibilityLabel={t('a11y_add')}
           >
-            <LayoutGrid color={ui.text} size={19} />
-            <Text style={[kit.hubLabel, { color: ui.muted }]}>{t('nav_more')}</Text>
+            <Plus color={ui.orangeText} size={19} />
+            <Text style={[kit.hubLabel, { color: ui.muted }]}>{t('a11y_add')}</Text>
           </PressScale>
         </View>
       </View>

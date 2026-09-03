@@ -41,17 +41,20 @@ async def main():
         await p.wait_for_timeout(3000)
         bar = await p.inner_text("body")
         # Every tab spells its name under the icon — a bar you have to tap to
-        # learn is doing half its job. The daily bar is Feed · Calendar · ⊕ ·
-        # Family · Kitchen. Messaging moved into the Family Hub (open a member to
-        # chat), so the Messages inbox is no longer a bar seat; Kitchen took it.
+        # learn is doing half its job. The daily bar is Feed · Calendar ·
+        # Family · Kitchen in one pill, with More on its own button beside it.
+        # Messaging moved into the Family Hub (open a member to chat), so the
+        # Messages inbox is no longer a bar seat; Kitchen took it.
         r["active_tab_named"] = "Feed" in bar
         r["all_tabs_named"] = all(w in bar for w in ("Feed", "Calendar", "Family", "Kitchen"))
-        # The Household menu now lives in the feed header (Kitchen took the seat).
-        r["household_button_present"] = await p.locator('[data-testid="feed-household-menu"]').count() == 1
+        # More is a button beside the pill, not a fifth seat inside it — and it
+        # is reachable from every tab, not just the Feed.
+        r["more_button_present"] = await p.locator('[data-testid="tab-more"]').count() == 1
+        r["no_raised_plus_in_the_bar"] = await p.locator('[data-testid="tab-add"]').count() == 0
         await p.screenshot(path="nav_feed.png")
 
-        # The header menu opens a sheet with the hidden destinations
-        await p.click('[data-testid="feed-household-menu"]')
+        # The More button opens a sheet with the hidden destinations
+        await p.click('[data-testid="tab-more"]')
         await p.wait_for_timeout(1200)
         sheet = await p.inner_text("body")
         r["sheet_lists_vault"] = "Vault" in sheet
@@ -65,10 +68,9 @@ async def main():
         r["more_reaches_vault"] = "Vault" in await p.inner_text("body")
         await p.screenshot(path="nav_vault.png")
 
-        # Back to the feed to reach the menu again (it lives on the home tab)
-        await p.goto(f"{WEB}/feed", wait_until="domcontentloaded")
-        await p.wait_for_timeout(2000)
-        await p.click('[data-testid="feed-household-menu"]')
+        # More rides the tab bar, so it is reachable from wherever we landed —
+        # no trip back to the Feed to find it.
+        await p.click('[data-testid="tab-more"]')
         await p.wait_for_timeout(1000)
         await p.click('[data-testid="more-settings"]')
         await p.wait_for_timeout(3000)

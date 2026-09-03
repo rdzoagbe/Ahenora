@@ -175,12 +175,14 @@ async def main():
             await p.wait_for_timeout(600)
         await shot("kitchen", "04-kitchen", before=open_meal_planner)
 
+        # The picker lives in each screen's own header now, so shoot it where
+        # it actually is — the Feed's add is its capture bar.
         async def open_quickadd():
             await p.click('[data-testid="tab-add"]')
-        await shot("feed", "05-quickadd", before=open_quickadd)
+        await shot("calendar", "05-quickadd", before=open_quickadd)
 
         async def open_household():
-            await p.click('[data-testid="feed-household-menu"]')
+            await p.click('[data-testid="tab-more"]')
         await shot("feed", "06-household", before=open_household)
 
         await br.close()

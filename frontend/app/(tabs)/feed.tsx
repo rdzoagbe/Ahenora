@@ -15,7 +15,6 @@ import {
   ArrowUp,
   BarChart3,
   Bell,
-  LayoutGrid,
   Search as SearchIcon,
   UserCheck,
   CalendarDays,
@@ -48,7 +47,7 @@ import { PressScale } from '../../src/components/PressScale';
 import { AddCardModal } from '../../src/components/AddCardModal';
 import { VoiceCaptureModal } from '../../src/components/VoiceCaptureModal';
 import { CameraCaptureModal } from '../../src/components/CameraCaptureModal';
-import { MoreSheet } from '../../src/components/MoreSheet';
+import { PersonAvatar } from '../../src/components/PersonAvatar';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
 import { TabScreen } from '../../src/components/TabScreen';
 import { GettingStarted } from '../../src/components/GettingStarted';
@@ -389,7 +388,6 @@ export default function Feed() {
   // add/edit sheet the Calendar uses, in edit mode.
   const [editing, setEditing] = useState<Card | null>(null);
   const [showAlerts, setShowAlerts] = useState(false);
-  const [householdOpen, setHouseholdOpen] = useState(false);
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [rewardCount, setRewardCount] = useState(0);
   const [vaultCount, setVaultCount] = useState(0);
@@ -1139,14 +1137,18 @@ export default function Feed() {
                     <View style={styles.bellBadge}><Text style={styles.bellBadgeText}>{Math.min(unseenAlertCount, 9)}</Text></View>
                   ) : null}
                 </PressScale>
+                {/* The grid moved down to the tab bar, where More now sits on
+                    its own. The corner it freed goes to whoever is signed in —
+                    a portrait next to a greeting that already uses their name.
+                    It opens your own profile. */}
                 <PressScale
-                  testID="feed-household-menu"
-                  onPress={() => setHouseholdOpen(true)}
+                  testID="feed-portrait"
+                  onPress={() => router.navigate('/(tabs)/account' as never)}
                   style={styles.bellWrap}
                   accessibilityRole="button"
-                  accessibilityLabel={t('nav_household')}
+                  accessibilityLabel={t('nav_more_account')}
                 >
-                  <LayoutGrid color={ui.text} size={23} />
+                  <PersonAvatar name={user?.name} avatar={user?.picture} size={30} />
                 </PressScale>
               </View>
             </View>
@@ -1648,7 +1650,6 @@ export default function Feed() {
           from the "Add a task…" card at the top of the feed. */}
       {/* The Household menu (Vault, Settings, Account, Hand-off) — opened from
           the grid button in the header, now that Kitchen has its own tab. */}
-      <MoreSheet visible={householdOpen} onClose={() => setHouseholdOpen(false)} />
 
       <CameraCaptureModal
         visible={showCamera}
