@@ -138,9 +138,19 @@ export function AvatarPicker({
     return (
       <TouchableOpacity
         key={kind || 'none'}
+        // radio, not button: these are one-of-N choices, and a screen reader
+        // should say "selected" for the one in force. It is also the only role
+        // that carries the state — aria-selected is not valid on a button, so
+        // React Native Web drops it and the choice becomes invisible to
+        // assistive tech (and to a harness reading the same attribute).
         testID={`avatar-${kind || 'none'}`}
-        accessibilityRole="button"
-        accessibilityState={{ selected }}
+        accessibilityRole="radio"
+        // Both spellings on purpose. accessibilityState is what native reads;
+        // react-native-web 0.21 does NOT map its `checked` to aria-checked, so
+        // on the web the state simply never reached the DOM and the choice was
+        // invisible to a screen reader. The direct aria- prop is what does.
+        accessibilityState={{ checked: selected }}
+        aria-checked={selected}
         accessibilityLabel={t(kind ? `avatar_${kind}` : 'avatar_none')}
         disabled={busy}
         activeOpacity={0.8}
@@ -165,7 +175,7 @@ export function AvatarPicker({
 
   return (
     <View style={pickerStyles.wrap}>
-      <View style={pickerStyles.row}>
+      <View style={pickerStyles.row} accessibilityRole="radiogroup" accessibilityLabel={t('hub_picture')}>
         {AVATAR_KINDS.map((k) => person(k))}
         {person(null)}
       </View>
@@ -173,14 +183,15 @@ export function AvatarPicker({
       {/* The tones only mean something once a drawing is chosen — offering
           them over a letter would be a control with nothing to change. */}
       {current ? (
-        <View style={pickerStyles.row}>
+        <View style={pickerStyles.row} accessibilityRole="radiogroup" accessibilityLabel={t('avatar_skin')}>
           <Text style={[pickerStyles.label, { color: ui.textMuted }]}>{t('avatar_skin')}</Text>
           {SKIN_TONES.map((hex, i) => (
             <TouchableOpacity
               key={hex}
               testID={`avatar-tone-${i}`}
-              accessibilityRole="button"
-              accessibilityState={{ selected: i === tone }}
+              accessibilityRole="radio"
+              accessibilityState={{ checked: i === tone }}
+              aria-checked={i === tone}
               accessibilityLabel={t('avatar_skin_n', { n: i + 1 })}
               disabled={busy}
               activeOpacity={0.8}

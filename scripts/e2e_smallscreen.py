@@ -138,9 +138,9 @@ async def main():
         await page.reload(wait_until="domcontentloaded")
         await page.wait_for_timeout(2200)
         r["and_it_is_still_chosen_on_return"] = await page.get_attribute(
-            '[data-testid="avatar-girl"]', "aria-selected") == "true"
+            '[data-testid="avatar-girl"]', "aria-checked") == "true"
         r["the_tone_survives_too"] = await page.get_attribute(
-            '[data-testid="avatar-tone-4"]', "aria-selected") == "true"
+            '[data-testid="avatar-tone-4"]', "aria-checked") == "true"
         r["member_page_still_fits_with_a_picture"] = await fits("member page + picture")
 
         await page.screenshot(path="smallscreen_member.png", full_page=True)

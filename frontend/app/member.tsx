@@ -317,7 +317,7 @@ export default function MemberProfile() {
             <PersonAvatar name={displayName} avatar={avatar} size={40} />
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={styles.rowTitle}>{t('hub_picture')}</Text>
-              <Text style={styles.rowSub} numberOfLines={1}>{t('hub_picture_sub')}</Text>
+              <Text style={styles.rowSub} numberOfLines={2}>{t('hub_picture_sub')}</Text>
             </View>
           </View>
           <AvatarPicker name={displayName} value={avatar} onPick={saveAvatar} busy={savingAvatar} />
