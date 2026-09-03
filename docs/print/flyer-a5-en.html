@@ -1,8 +1,8 @@
 <!doctype html>
-<html lang="fr">
+<html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Ahenora — affiche</title>
+<title>Ahenora — poster</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Playfair+Display:wght@700;800&display=swap" rel="stylesheet">
@@ -11,15 +11,15 @@
      handout and the poster can never drift apart. The 12mm margin is because
      most office printers cannot go nearer than 10mm, and a headline clipped
      by the printer is a wasted ream. */
-  @page { size: A3 portrait; margin: 0; }
+  @page { size: A5 portrait; margin: 0; }
   * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   /* Both boxes clipped to the sheet. The scaled A5 measured 210.08mm against a
      210mm page — eight hundredths of a millimetre, and Chrome duly emitted a
      second, blank page. Nothing here may overflow by any amount. */
   html, body { margin: 0; padding: 0; overflow: hidden; }
-  html { width: 297mm; height: 420mm; }
+  html { width: 148mm; height: 210mm; }
   body {
-    width: 297mm; height: 420mm;
+    width: 148mm; height: 210mm;
     background: #EFE4D8;
     font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
     overflow: hidden; position: relative;
@@ -33,7 +33,7 @@
   .sheet {
     position: absolute; top: 0; left: 0;
     width: 297mm; height: 420mm;
-    transform: scale(1); transform-origin: top left;
+    transform: scale(0.49832); transform-origin: top left;
     color: #101318; background: #EFE4D8;
     display: flex; flex-direction: column;
   }
@@ -132,15 +132,15 @@
       <img src="../assets/icon.png" alt="">
       <span>Ahenora</span>
     </div>
-    <span class="eyebrow">Gratuit au départ · Sans publicité</span>
+    <span class="eyebrow">Free to start · No ads</span>
   </div>
 
-  <h1>La maison tourne grâce à la mémoire de quelqu’un.<span class="soft">Et si elle tournait plus sereinement&nbsp;?</span></h1>
-  <p class="lede">L’agenda familial, les corvées des enfants, les repas de la semaine et les papiers de l’école — dans un seul espace partagé et privé.</p>
+  <h1>The household runs on someone’s memory.<span class="soft">Let it run on something calmer.</span></h1>
+  <p class="lede">The family calendar, the kids’ chores, the week’s meals and the school paperwork — in one shared, private place.</p>
   </div>
 
   <div class="body">
-  <div class="grid"><div class="card"><h3>Un agenda partagé</h3><p>Toute la semaine de la famille d’un coup d’œil.</p></div><div class="card"><h3>Corvées et étoiles</h3><p>Des routines qui tiennent sans négocier chaque jour.</p></div><div class="card"><h3>Repas et courses</h3><p>Le dîner planifié devient la liste de courses.</p></div><div class="card"><h3>Scannez les papiers</h3><p>Un mot de l’école devient un rendez-vous dans l’agenda.</p></div></div>
+  <div class="grid"><div class="card"><h3>One shared calendar</h3><p>The whole family’s week at a glance.</p></div><div class="card"><h3>Chores and stars</h3><p>Routines that stick without the daily negotiation.</p></div><div class="card"><h3>Meals and shopping</h3><p>The dinner plan becomes the shopping list.</p></div><div class="card"><h3>Scan the paperwork</h3><p>A school letter becomes an appointment in the calendar.</p></div></div>
 
   <div class="shots">
     <div class="device tilt-l"><img src="../assets/shot-feed.jpg" alt=""></div>
@@ -152,10 +152,10 @@
   <div class="foot">
     <div class="qr"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 33 33" width="62mm" height="62mm" shape-rendering="crispEdges" role="img" aria-label="QR code to https://ahenora.com"><rect width="33" height="33" fill="#fff"/><g fill="#101318"><rect x="2" y="2" width="7" height="1"/><rect x="10" y="2" width="2" height="1"/><rect x="13" y="2" width="5" height="1"/><rect x="24" y="2" width="7" height="1"/><rect x="2" y="3" width="1" height="1"/><rect x="8" y="3" width="1" height="1"/><rect x="10" y="3" width="3" height="1"/><rect x="17" y="3" width="1" height="1"/><rect x="22" y="3" width="1" height="1"/><rect x="24" y="3" width="1" height="1"/><rect x="30" y="3" width="1" height="1"/><rect x="2" y="4" width="1" height="1"/><rect x="4" y="4" width="3" height="1"/><rect x="8" y="4" width="1" height="1"/><rect x="10" y="4" width="2" height="1"/><rect x="15" y="4" width="1" height="1"/><rect x="17" y="4" width="2" height="1"/><rect x="24" y="4" width="1" height="1"/><rect x="26" y="4" width="3" height="1"/><rect x="30" y="4" width="1" height="1"/><rect x="2" y="5" width="1" height="1"/><rect x="4" y="5" width="3" height="1"/><rect x="8" y="5" width="1" height="1"/><rect x="11" y="5" width="1" height="1"/><rect x="14" y="5" width="1" height="1"/><rect x="16" y="5" width="1" height="1"/><rect x="19" y="5" width="1" height="1"/><rect x="24" y="5" width="1" height="1"/><rect x="26" y="5" width="3" height="1"/><rect x="30" y="5" width="1" height="1"/><rect x="2" y="6" width="1" height="1"/><rect x="4" y="6" width="3" height="1"/><rect x="8" y="6" width="1" height="1"/><rect x="11" y="6" width="1" height="1"/><rect x="13" y="6" width="2" height="1"/><rect x="18" y="6" width="5" height="1"/><rect x="24" y="6" width="1" height="1"/><rect x="26" y="6" width="3" height="1"/><rect x="30" y="6" width="1" height="1"/><rect x="2" y="7" width="1" height="1"/><rect x="8" y="7" width="1" height="1"/><rect x="10" y="7" width="1" height="1"/><rect x="12" y="7" width="1" height="1"/><rect x="14" y="7" width="1" height="1"/><rect x="16" y="7" width="2" height="1"/><rect x="19" y="7" width="1" height="1"/><rect x="24" y="7" width="1" height="1"/><rect x="30" y="7" width="1" height="1"/><rect x="2" y="8" width="7" height="1"/><rect x="10" y="8" width="1" height="1"/><rect x="12" y="8" width="1" height="1"/><rect x="14" y="8" width="1" height="1"/><rect x="16" y="8" width="1" height="1"/><rect x="18" y="8" width="1" height="1"/><rect x="20" y="8" width="1" height="1"/><rect x="22" y="8" width="1" height="1"/><rect x="24" y="8" width="7" height="1"/><rect x="10" y="9" width="2" height="1"/><rect x="13" y="9" width="1" height="1"/><rect x="15" y="9" width="1" height="1"/><rect x="17" y="9" width="4" height="1"/><rect x="4" y="10" width="3" height="1"/><rect x="8" y="10" width="1" height="1"/><rect x="10" y="10" width="4" height="1"/><rect x="15" y="10" width="2" height="1"/><rect x="21" y="10" width="1" height="1"/><rect x="23" y="10" width="3" height="1"/><rect x="28" y="10" width="3" height="1"/><rect x="4" y="11" width="1" height="1"/><rect x="6" y="11" width="2" height="1"/><rect x="15" y="11" width="3" height="1"/><rect x="19" y="11" width="2" height="1"/><rect x="22" y="11" width="5" height="1"/><rect x="30" y="11" width="1" height="1"/><rect x="2" y="12" width="2" height="1"/><rect x="5" y="12" width="1" height="1"/><rect x="7" y="12" width="2" height="1"/><rect x="11" y="12" width="1" height="1"/><rect x="14" y="12" width="3" height="1"/><rect x="19" y="12" width="3" height="1"/><rect x="23" y="12" width="3" height="1"/><rect x="28" y="12" width="1" height="1"/><rect x="5" y="13" width="2" height="1"/><rect x="9" y="13" width="2" height="1"/><rect x="12" y="13" width="3" height="1"/><rect x="18" y="13" width="1" height="1"/><rect x="20" y="13" width="6" height="1"/><rect x="27" y="13" width="1" height="1"/><rect x="29" y="13" width="1" height="1"/><rect x="5" y="14" width="1" height="1"/><rect x="7" y="14" width="3" height="1"/><rect x="12" y="14" width="1" height="1"/><rect x="15" y="14" width="1" height="1"/><rect x="18" y="14" width="1" height="1"/><rect x="20" y="14" width="2" height="1"/><rect x="23" y="14" width="1" height="1"/><rect x="25" y="14" width="1" height="1"/><rect x="28" y="14" width="3" height="1"/><rect x="3" y="15" width="2" height="1"/><rect x="7" y="15" width="1" height="1"/><rect x="10" y="15" width="3" height="1"/><rect x="15" y="15" width="1" height="1"/><rect x="17" y="15" width="3" height="1"/><rect x="21" y="15" width="4" height="1"/><rect x="26" y="15" width="2" height="1"/><rect x="30" y="15" width="1" height="1"/><rect x="2" y="16" width="7" height="1"/><rect x="10" y="16" width="1" height="1"/><rect x="12" y="16" width="1" height="1"/><rect x="14" y="16" width="4" height="1"/><rect x="19" y="16" width="1" height="1"/><rect x="22" y="16" width="1" height="1"/><rect x="24" y="16" width="2" height="1"/><rect x="4" y="17" width="3" height="1"/><rect x="9" y="17" width="1" height="1"/><rect x="11" y="17" width="1" height="1"/><rect x="14" y="17" width="3" height="1"/><rect x="18" y="17" width="1" height="1"/><rect x="20" y="17" width="1" height="1"/><rect x="26" y="17" width="2" height="1"/><rect x="30" y="17" width="1" height="1"/><rect x="5" y="18" width="7" height="1"/><rect x="13" y="18" width="4" height="1"/><rect x="18" y="18" width="2" height="1"/><rect x="22" y="18" width="2" height="1"/><rect x="27" y="18" width="2" height="1"/><rect x="30" y="18" width="1" height="1"/><rect x="2" y="19" width="1" height="1"/><rect x="7" y="19" width="1" height="1"/><rect x="12" y="19" width="4" height="1"/><rect x="17" y="19" width="1" height="1"/><rect x="19" y="19" width="2" height="1"/><rect x="23" y="19" width="1" height="1"/><rect x="25" y="19" width="2" height="1"/><rect x="29" y="19" width="2" height="1"/><rect x="2" y="20" width="1" height="1"/><rect x="5" y="20" width="1" height="1"/><rect x="8" y="20" width="1" height="1"/><rect x="10" y="20" width="2" height="1"/><rect x="13" y="20" width="2" height="1"/><rect x="16" y="20" width="1" height="1"/><rect x="18" y="20" width="3" height="1"/><rect x="22" y="20" width="1" height="1"/><rect x="24" y="20" width="2" height="1"/><rect x="27" y="20" width="1" height="1"/><rect x="2" y="21" width="1" height="1"/><rect x="6" y="21" width="1" height="1"/><rect x="9" y="21" width="2" height="1"/><rect x="12" y="21" width="1" height="1"/><rect x="14" y="21" width="1" height="1"/><rect x="18" y="21" width="1" height="1"/><rect x="20" y="21" width="1" height="1"/><rect x="24" y="21" width="1" height="1"/><rect x="26" y="21" width="1" height="1"/><rect x="30" y="21" width="1" height="1"/><rect x="2" y="22" width="1" height="1"/><rect x="4" y="22" width="1" height="1"/><rect x="7" y="22" width="3" height="1"/><rect x="11" y="22" width="2" height="1"/><rect x="14" y="22" width="2" height="1"/><rect x="18" y="22" width="1" height="1"/><rect x="22" y="22" width="5" height="1"/><rect x="28" y="22" width="2" height="1"/><rect x="10" y="23" width="1" height="1"/><rect x="12" y="23" width="2" height="1"/><rect x="15" y="23" width="3" height="1"/><rect x="19" y="23" width="2" height="1"/><rect x="22" y="23" width="1" height="1"/><rect x="26" y="23" width="2" height="1"/><rect x="29" y="23" width="2" height="1"/><rect x="2" y="24" width="7" height="1"/><rect x="12" y="24" width="5" height="1"/><rect x="21" y="24" width="2" height="1"/><rect x="24" y="24" width="1" height="1"/><rect x="26" y="24" width="1" height="1"/><rect x="2" y="25" width="1" height="1"/><rect x="8" y="25" width="1" height="1"/><rect x="13" y="25" width="1" height="1"/><rect x="16" y="25" width="1" height="1"/><rect x="18" y="25" width="2" height="1"/><rect x="21" y="25" width="2" height="1"/><rect x="26" y="25" width="2" height="1"/><rect x="29" y="25" width="2" height="1"/><rect x="2" y="26" width="1" height="1"/><rect x="4" y="26" width="3" height="1"/><rect x="8" y="26" width="1" height="1"/><rect x="10" y="26" width="2" height="1"/><rect x="13" y="26" width="2" height="1"/><rect x="16" y="26" width="1" height="1"/><rect x="18" y="26" width="2" height="1"/><rect x="22" y="26" width="7" height="1"/><rect x="30" y="26" width="1" height="1"/><rect x="2" y="27" width="1" height="1"/><rect x="4" y="27" width="3" height="1"/><rect x="8" y="27" width="1" height="1"/><rect x="10" y="27" width="1" height="1"/><rect x="12" y="27" width="2" height="1"/><rect x="21" y="27" width="3" height="1"/><rect x="25" y="27" width="1" height="1"/><rect x="27" y="27" width="2" height="1"/><rect x="2" y="28" width="1" height="1"/><rect x="4" y="28" width="3" height="1"/><rect x="8" y="28" width="1" height="1"/><rect x="10" y="28" width="3" height="1"/><rect x="14" y="28" width="1" height="1"/><rect x="17" y="28" width="2" height="1"/><rect x="21" y="28" width="6" height="1"/><rect x="28" y="28" width="2" height="1"/><rect x="2" y="29" width="1" height="1"/><rect x="8" y="29" width="1" height="1"/><rect x="13" y="29" width="8" height="1"/><rect x="24" y="29" width="1" height="1"/><rect x="26" y="29" width="2" height="1"/><rect x="29" y="29" width="1" height="1"/><rect x="2" y="30" width="7" height="1"/><rect x="11" y="30" width="1" height="1"/><rect x="13" y="30" width="1" height="1"/><rect x="15" y="30" width="1" height="1"/><rect x="18" y="30" width="2" height="1"/><rect x="21" y="30" width="4" height="1"/><rect x="26" y="30" width="1" height="1"/><rect x="28" y="30" width="1" height="1"/></g></svg></div>
     <div class="foot-copy">
-      <span class="ios">Bientôt sur iPhone</span>
-      <p class="scan">Scannez pour installer</p>
+      <span class="ios">Coming soon to iPhone</span>
+      <p class="scan">Scan to install</p>
       <p class="url">ahenora.com</p>
-      <p class="platforms">Sur Android&nbsp;: installez depuis Google Play.<br>Sur iPhone aujourd’hui&nbsp;: Ahenora fonctionne dans votre navigateur.</p>
+      <p class="platforms">On Android: install from Google Play.<br>On iPhone today: Ahenora runs in your browser.</p>
     </div>
   </div>
   </div>
