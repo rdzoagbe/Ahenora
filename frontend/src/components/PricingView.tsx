@@ -476,7 +476,13 @@ function PlanCard({
 }) {
   const price = PLAN_PRICES[plan][cycle];
   const perMonth = cycle === 'yearly' ? price / 12 : price;
-  const priceDisplay = cycle === 'yearly' ? perMonth : price;
+  // The BILLED amount is the headline, always — on a yearly plan that is the
+  // year's price, not the twelfth of it. App Review rejected the reverse under
+  // guideline 3.1.2(c): a calculated monthly figure at 44px above the real
+  // charge at 11px is the charge being made less conspicuous than the estimate,
+  // which is the thing that rule exists to stop. The per-month equivalent is
+  // still shown, below and small, where a comparison belongs.
+  const priceDisplay = price;
   const isFree = plan === 'village';
   const isMiddle = plan === 'executive';
 
@@ -525,13 +531,15 @@ function PlanCard({
             <Text style={styles.priceValue}>
               {priceDisplay.toFixed(priceDisplay % 1 === 0 ? 0 : 2)}
             </Text>
-            <Text style={styles.pricePer}>{t('pricing_per_month')}</Text>
+            <Text style={styles.pricePer}>
+              {cycle === 'yearly' ? t('pricing_per_year') : t('pricing_per_month')}
+            </Text>
           </>
         )}
       </View>
       {!isFree && cycle === 'yearly' ? (
         <Text style={styles.yearlyNote}>
-          €{price.toFixed(2)} {t('pricing_billed_yearly')}
+          {t('pricing_billed_yearly_note', { amount: `€${perMonth.toFixed(2)}` })}
         </Text>
       ) : null}
 
