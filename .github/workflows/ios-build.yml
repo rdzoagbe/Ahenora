@@ -28,6 +28,11 @@ on:
         required: true
         default: false
         type: boolean
+      build:
+        description: 'Build first (uncheck to submit the existing latest EAS build)'
+        required: true
+        default: true
+        type: boolean
 
 concurrency:
   group: ios-build-${{ github.ref }}
@@ -112,7 +117,15 @@ jobs:
       # No --auto-submit here: submitting is a separate, explicitly-guarded step
       # below, so a build that succeeds is never silently followed by a submit
       # that fails for an unrelated reason.
+      #
+      # Skippable, because the submit step below is `--latest` and does not care
+      # how the build got there. Running with submit=false and then wanting the
+      # binary in App Store Connect used to mean building the same commit twice,
+      # ~7 minutes and an EAS build credit to upload something that already
+      # existed — and it landed under a second build number, which makes the
+      # version's build list harder to read, not easier.
       - name: Build with EAS
+        if: ${{ github.event.inputs.build != 'false' }}
         working-directory: frontend
         run: |
           npx eas-cli@latest build \
@@ -167,6 +180,8 @@ jobs:
             exit 1
           fi
 
+      # --latest is the build EAS made most recently for this project, whether
+      # that was the step above or an earlier run.
       - name: Submit latest build to App Store Connect
         if: ${{ github.event.inputs.submit == 'true' }}
         working-directory: frontend
