@@ -50,8 +50,9 @@ const NO_SCREEN_YET: Record<string, string> = {
   setWeekendGoal: 'Retired when the week became one target for everyone.',
   sharedWithCoparent: 'Server-side filter with no screen behind it.',
   testNotification: 'A debug endpoint, deliberately not in the app.',
+  voiceTranscribe:
+    'Backend is ready and tested; the recorder is not shipped. An OTA carrying\n     it reached binaries with no expo-audio and stopped the app launching, so\n     the microphone came back out. Ship a binary containing the module FIRST,\n     verify on a device that lacks it, then re-add the UI.',
   verifyMemberPin: 'Kid mode verifies through exitKidSession instead — the feature works, this method is redundant.',
-  voiceTranscribe: 'Voice capture transcribes through the scan path today.',
 };
 
 /** Method names declared on the exported `api` object. */

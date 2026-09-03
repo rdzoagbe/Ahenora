@@ -45,7 +45,6 @@ import { cleanText, openExternal, parseDescription } from '../../src/eventDescri
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { PressScale } from '../../src/components/PressScale';
 import { AddCardModal } from '../../src/components/AddCardModal';
-import { VoiceCaptureModal } from '../../src/components/VoiceCaptureModal';
 import { CameraCaptureModal } from '../../src/components/CameraCaptureModal';
 import { PersonAvatar } from '../../src/components/PersonAvatar';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
@@ -71,7 +70,8 @@ import { useToast } from '../../src/hooks/useToast';
 import { detectCaptureIntent } from '../../src/captureIntent';
 import { onCaptureFocus } from '../../src/captureFocus';
 
-interface VoiceDraft {
+/** What a scan hands the composer. */
+interface ScanDraft {
   transcript: string;
   type: CardType;
   title: string;
@@ -394,10 +394,11 @@ export default function Feed() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
-  const [showVoice, setShowVoice] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
-  const [addSource, setAddSource] = useState<'MANUAL' | 'VOICE' | 'CAMERA'>('MANUAL');
-  const [voiceDraft, setVoiceDraft] = useState<VoiceDraft | null>(null);
+  const [addSource, setAddSource] = useState<'MANUAL' | 'CAMERA'>('MANUAL');
+  // The scan's draft on its way to the composer. Named for voice when voice
+  // shared it; the camera is the only thing that fills it now.
+  const [pendingDraft, setPendingDraft] = useState<ScanDraft | null>(null);
   const [notes, setNotes] = useState<HandoffNote[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [noteText, setNoteText] = useState('');
@@ -919,7 +920,7 @@ export default function Feed() {
   const myAvatar = members.find((m) => m.is_me)?.avatar || user?.picture || null;
 
   const openManual = () => {
-    setVoiceDraft(null);
+    setPendingDraft(null);
     setAddSource('MANUAL');
     setShowAdd(true);
   };
@@ -1191,7 +1192,7 @@ export default function Feed() {
             {/* Quick capture — one slim bar with camera/mic tucked to the
                 right. The tab bar carries no ＋ at all now, so this is the
                 Feed's single, unambiguous "add" gesture (was a full
-                Add/Photo/Voice card up top). */}
+                Add/Photo card up top). */}
             <View style={styles.addBar}>
               {/* Typeable, not a button that opens a composer.
                   It was a button, and every line it produced was a card —
@@ -1226,9 +1227,6 @@ export default function Feed() {
               ) : null}
               <PressScale onPress={() => setShowCamera(true)} style={styles.addBarIcon} accessibilityRole="button" accessibilityLabel={t('feed_photo')}>
                 <Camera color={ui.muted} size={19} />
-              </PressScale>
-              <PressScale onPress={() => setShowVoice(true)} style={styles.addBarIcon} accessibilityRole="button" accessibilityLabel={t('feed_voice')}>
-                <Mic color={ui.muted} size={19} />
               </PressScale>
             </View>
 
@@ -1661,7 +1659,7 @@ export default function Feed() {
         visible={showCamera}
         onClose={() => setShowCamera(false)}
         onDraft={(draft) => {
-          setVoiceDraft({
+          setPendingDraft({
             transcript: '',
             type: draft.type,
             title: draft.title,
@@ -1687,26 +1685,16 @@ export default function Feed() {
         }}
       />
 
-      <VoiceCaptureModal
-        visible={showVoice}
-        onClose={() => setShowVoice(false)}
-        onDraft={(draft) => {
-          setVoiceDraft(draft);
-          setAddSource('VOICE');
-          setShowVoice(false);
-          setShowAdd(true);
-        }}
-      />
 
       <AddCardModal
         visible={showAdd}
         onClose={() => {
           setShowAdd(false);
-          setVoiceDraft(null);
+          setPendingDraft(null);
         }}
         onCreated={() => { logEvent('card_created'); load(); }}
         initialSource={addSource}
-        initialDraft={voiceDraft}
+        initialDraft={pendingDraft}
       />
 
       {/* Same sheet, edit mode — reached by the pencil on a task. Lets a task
@@ -2087,7 +2075,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     fontFamily: 'Inter_800ExtraBold',
     fontSize: 12,
   },
-  // Slim quick-capture bar (replaced the tall Add/Photo/Voice card).
+  // Slim quick-capture bar (replaced the tall Add/Photo card).
   addBar: {
     flexDirection: 'row',
     alignItems: 'center',
