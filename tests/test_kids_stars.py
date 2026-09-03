@@ -364,11 +364,17 @@ class ChoresAndRoutinesAwardStars(unittest.TestCase):
 
     # ---- assigned task cards --------------------------------------------
 
-    def test_marking_a_task_card_done_pays_the_child_and_ticks_the_week(self):
-        # Completing an assigned task card is a primary earning path. It used to
-        # bank +5 with a raw $inc that skipped the weekly meter and the ledger,
-        # so weekend treats (gated on week_earned) stayed locked and the ledger
-        # diverged from the balance. It now routes through the shared helper.
+    def test_marking_a_task_card_done_offers_stars_instead_of_inventing_them(self):
+        # This used to pay the child 5 stars, here, silently.
+        #
+        # A parent reported opening her daughter's page and finding points she
+        # had never given. The award was automatic, matched by NAME rather than
+        # id, and the response said nothing about it — so the app could not tell
+        # her either. Stars appeared on a screen she had not opened, with no
+        # trail back to a decision anyone made.
+        #
+        # Completing the task now says WHO finished it and awards nothing. The
+        # parent gives the stars, or does not.
         db = self._db()
         db["cards"].rows.append({
             "card_id": "card1", "family_id": "fam1", "type": "TASK",
@@ -376,25 +382,39 @@ class ChoresAndRoutinesAwardStars(unittest.TestCase):
             "source": "MANUAL", "shared": True, "created_by_user_id": "u1",
             "created_at": server.utcnow(),
         })
-        _alert = server.send_star_milestone_alert
+        out = asyncio.run(server.update_card(
+            "card1", server.CardPatchIn(status="DONE"), user=self.USER))
 
-        async def _no_alert(*a, **k):
-            return None
-
-        server.send_star_milestone_alert = _no_alert
-        try:
-            asyncio.run(server.update_card(
-                "card1", server.CardPatchIn(status="DONE"), user=self.USER))
-        finally:
-            server.send_star_milestone_alert = _alert
-
-        self.assertEqual(self._stars(db, "kid1"), 5)
+        self.assertEqual(self._stars(db, "kid1"), 0)
         member = next(m for m in db["family_members"].rows if m["member_id"] == "kid1")
-        self.assertEqual(member["week_earned"], 5)
-        ledger = db["star_transactions"].rows
-        self.assertEqual(len(ledger), 1)
-        self.assertEqual(ledger[0]["delta"], 5)
-        self.assertEqual(ledger[0]["member_id"], "kid1")
+        self.assertEqual(member.get("week_earned", 0), 0)
+        self.assertEqual(db["star_transactions"].rows, [])
+        # ...but the app is told, so it can offer.
+        self.assertEqual(out["child_finished"], {"member_id": "kid1", "name": "Ama"})
+
+    def test_a_task_finished_for_a_grown_up_says_nothing_about_a_child(self):
+        db = self._db()
+        db["cards"].rows.append({
+            "card_id": "card2", "family_id": "fam1", "type": "TASK",
+            "title": "Call the plumber", "assignee": "Parent", "status": "OPEN",
+            "source": "MANUAL", "shared": True, "created_by_user_id": "u1",
+            "created_at": server.utcnow(),
+        })
+        out = asyncio.run(server.update_card(
+            "card2", server.CardPatchIn(status="DONE"), user=self.USER))
+        self.assertNotIn("child_finished", out)
+        self.assertEqual(db["star_transactions"].rows, [])
+
+    def test_an_unassigned_task_says_nothing_about_a_child(self):
+        db = self._db()
+        db["cards"].rows.append({
+            "card_id": "card3", "family_id": "fam1", "type": "TASK",
+            "title": "Bins", "status": "OPEN", "source": "MANUAL",
+            "shared": True, "created_by_user_id": "u1", "created_at": server.utcnow(),
+        })
+        out = asyncio.run(server.update_card(
+            "card3", server.CardPatchIn(status="DONE"), user=self.USER))
+        self.assertNotIn("child_finished", out)
 
     # ---- routines -------------------------------------------------------
 

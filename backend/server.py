@@ -6661,7 +6661,11 @@ async def teen_approvals(user=Depends(require_user)):
         rows.append({
             "card_id": card["card_id"],
             "title": card.get("title") or "",
+            # `teen_name` is the field older builds read; kept so an app that
+            # has not taken the update still shows a name. `who` is the same
+            # value under a name that is true of a young child as well.
             "teen_name": card.get("completed_by_name") or card.get("assignee") or "",
+            "who": card.get("completed_by_name") or card.get("assignee") or "",
             "completed_at": iso(card.get("completed_at")),
         })
     rows.sort(key=lambda r: (r["completed_at"] is None, r["completed_at"] or ""), reverse=True)
@@ -6682,13 +6686,22 @@ async def resolve_teen_approval(card_id: str, payload: TeenApprovalIn, user=Depe
         raise HTTPException(status_code=404, detail="Nothing to approve")
 
     if payload.approve:
-        # Credit the teen who finished it — resolve their member row from the
-        # user_id recorded at completion.
+        # Credit whoever finished it. A teen has an account, so they resolve by
+        # the user_id recorded at completion; a young child in kid mode has no
+        # account at all, so their member id was written straight onto the card.
+        # Without the second path a kid's finished chore could be approved and
+        # pay nobody.
         card = await database["cards"].find_one(
             {"card_id": card_id, "family_id": user["family_id"]}, {"_id": 0})
-        teen_member = await database["family_members"].find_one(
-            {"family_id": user["family_id"], "user_id": (card or {}).get("completed_by_user_id")},
-            {"_id": 0})
+        pending_member_id = (card or {}).get("star_pending_member_id")
+        teen_member = None
+        if pending_member_id:
+            teen_member = await database["family_members"].find_one(
+                {"family_id": user["family_id"], "member_id": pending_member_id}, {"_id": 0})
+        if not teen_member:
+            teen_member = await database["family_members"].find_one(
+                {"family_id": user["family_id"], "user_id": (card or {}).get("completed_by_user_id")},
+                {"_id": 0})
         stars = max(1, min(int(payload.stars or 1), 20))
         if teen_member:
             await award_stars_to_member(
@@ -7113,30 +7126,50 @@ async def kid_finish_chore(card_id: str, child=Depends(require_child)):
     # a double tap had both requests see an unfinished chore and both pay for
     # it, leaving two ledger rows for one job and a weekly meter inflated
     # enough to unlock a treat that was not earned.
+    # Finishing your own chore used to pay 5 stars on the spot. A child holding
+    # a phone could therefore award themselves, repeatedly, by ticking chores
+    # nobody had checked — and the parent found out only by noticing the number
+    # had moved.
+    #
+    # It now goes where a teen's finished task has always gone: a parent
+    # approves it and chooses what it was worth. Same queue, same screen, one
+    # rule for every young person in the household.
+    #
+    # The guard rides in the filter, not in a variable read moments earlier: a
+    # double tap had both requests see an unfinished chore and both pay for it.
+    # `teen_star_status` is the storage field the approval queue already reads —
+    # kept as-is so pending rows written by an older build still resolve.
     claim = await database["cards"].update_one(
         {"card_id": card_id, "family_id": child["family_id"],
-         "stars_awarded": {"$ne": True}, "status": {"$ne": "DONE"}},
+         "teen_star_status": {"$nin": ["pending", "approved"]},
+         "status": {"$ne": "DONE"}},
         {"$set": {
             "status": "DONE", "completed_at": utcnow(),
             "completed_by_name": member.get("name") or "", "completed_by_user_id": None,
-            "stars_awarded": True}})
+            # A kid has no account, so the approval cannot resolve them by
+            # user_id the way it resolves a teen. Record the member directly.
+            "star_pending_member_id": member["member_id"],
+            "teen_star_status": "pending", "updated_at": utcnow()}})
     already = claim.matched_count == 0
     await log_activity(database, {"family_id": child["family_id"], "user_id": None,
                                   "name": member.get("name") or ""},
                        "task_done", card.get("title", ""))
-    # Finishing your own chore earns the same 5 stars the parent-marked path
-    # grants, through the shared helper so it ticks the weekly meter and writes
-    # the ledger. Without this a child in kid mode saw "done" but earned
-    # nothing, and the card was already DONE so no parent award could follow.
-    # Guarded so a re-tap on an already-finished chore can't pay twice.
+    # Tell the parents a star is waiting on them. Without this the child ticks a
+    # chore and it sits in a list nobody knows to open — which for a child is
+    # indistinguishable from the tick not working.
     if not already:
-        old_stars = int(member.get("stars", 0))
-        actor = {"family_id": child["family_id"], "user_id": None, "name": member.get("name") or ""}
-        await award_stars_to_member(database, child["family_id"], member["member_id"], 5,
-                                    card.get("title") or "Chore done", actor)
-        await send_star_milestone_alert(child["family_id"], member.get("name", "Your child"),
-                                        old_stars, old_stars + 5)
-    return {"ok": True}
+        try:
+            who = member.get("name") or "Your child"
+            title = (card.get("title") or "").strip()
+            await send_coparent_alert(
+                child["family_id"],
+                f"{who} finished a chore",
+                (f"“{title}” — approve their stars?" if title else "Approve their stars?"),
+                "teen_approval",
+            )
+        except Exception as e:
+            log.warning("kid approval alert failed: %s", e)
+    return {"ok": True, "awaiting_approval": not already}
 
 
 @app.post("/api/kid/rewards/{reward_id}/request")
@@ -8490,15 +8523,23 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
         # Who ticked it off — the question a co-parent actually asks.
         changes["completed_by_user_id"] = user["user_id"] if done else None
         changes["completed_by_name"] = (user.get("name") or "") if done else None
+        # Finishing a child's task used to pay them 5 stars, here, silently.
+        #
+        # A parent reported opening her daughter's page and finding points she
+        # had never given. She was right to be puzzled: the award was automatic,
+        # it was matched by NAME rather than id, and the response said nothing
+        # about it — so the app could not tell her either. Stars appeared on a
+        # screen she had not opened with no trail back to a decision.
+        #
+        # Stars now only ever come from a parent deciding to give them. This
+        # flag no longer pays anything; it says a child's task was just
+        # finished, so the app can OFFER the stars instead of inventing them.
         award_child = (
             card["status"] != "DONE"
             and payload.status == "DONE"
             and card["type"] == "TASK"
             and bool(card.get("assignee"))
-            and not card.get("stars_awarded")
         )
-        if award_child:
-            changes["stars_awarded"] = True
 
     if payload.type is not None:
         if payload.type not in CARD_TYPE_VALUES:
@@ -8653,6 +8694,9 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
         # The card is not the problem, the silence is.
         next_occurrence = next_doc["due_date"]
 
+    # Who just finished it, so the app can say "Ama finished Homework — give
+    # stars?" and hand the decision to the parent. Nothing is awarded here.
+    finished_by_child = None
     if award_child:
         member = await database["family_members"].find_one(
             {
@@ -8663,21 +8707,16 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
             {"_id": 0},
         )
         if member:
-            old_stars = int(member.get("stars", 0))
-            # Route through the shared helper so a finished chore ticks the
-            # weekly meter (week_earned, which gates weekend treats) and writes
-            # the star ledger — a raw $inc banked the stars but left both
-            # untouched, silently locking the weekend payoff and letting the
-            # ledger sum diverge from the balance.
-            await award_stars_to_member(
-                database, user["family_id"], member["member_id"], 5,
-                card.get("title") or "Chore done", user,
-            )
-            await send_star_milestone_alert(user["family_id"], member.get("name", "Your child"), old_stars, old_stars + 5)
+            finished_by_child = {
+                "member_id": member["member_id"],
+                "name": member.get("name") or "",
+            }
 
     out = public_card(updated)
     if next_occurrence:
         out["next_occurrence"] = iso(next_occurrence)
+    if finished_by_child:
+        out["child_finished"] = finished_by_child
     return out
 
 
