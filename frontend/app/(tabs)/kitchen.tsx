@@ -29,6 +29,7 @@ import { suggestWeek, MealSuggestion, SuggestLang, localizedMealTitle, localized
 import { quantityFor, shoppingNameFor, formatAiQuantity, AiIngredient } from '../../src/recipeQuantities';
 import { categoriseShoppingItem } from '../../src/shoppingCategories';
 import { recipeMethod } from '../../src/recipeSteps';
+import { apiErrorText, isAiAllowanceError } from '../../src/apiError';
 
 type KitchenView = 'shop' | 'meal' | 'spend';
 
@@ -235,9 +236,19 @@ export default function Kitchen() {
       setScanPhase('review');
     } catch (e: any) {
       setScanPhase('idle');
-      setScanError(e?.message || t('scan_failed'));
+      // Out of AI allowance is not a failure of the app, and it must not be a
+      // dead end: the sheet closes and the manual add takes over, because the
+      // allowance buys the SORTING, never the doing. Same decision the document
+      // scan already makes when it runs out.
+      if (isAiAllowanceError(e)) {
+        setShowScan(false);
+        setScanError(null);
+        showToast(t('err_ai_allowance'), 'info');
+        return;
+      }
+      setScanError(apiErrorText(e, t, 'scan_failed'));
     }
-  }, [t]);
+  }, [t, showToast]);
 
   const toggleScanItem = useCallback((idx: number) => {
     setScanItems((prev) => prev.map((it, i) => (i === idx ? { ...it, checked: !it.checked } : it)));
@@ -873,7 +884,7 @@ export default function Kitchen() {
       setCookingRecipe({ recipeId: null, title: dish, adHoc: recipe });
       setRecipeAiQuery('');
     } catch (e: any) {
-      showToast(e?.message || t('recipe_ai_failed'), 'error');
+      showToast(apiErrorText(e, t, 'recipe_ai_failed'), 'error');
     } finally {
       setRecipeAiBusy(false);
     }

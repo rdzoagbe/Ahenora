@@ -16,6 +16,7 @@ import {
 } from 'lucide-react-native';
 import { PressScale } from './PressScale';
 import { useStore } from '../store';
+import { apiErrorText } from '../apiError';
 import { localeFor } from '../utils/date';
 import { api, CardType, CapturedRecipe, ScanResult } from '../api';
 import { DOCUMENT_CATEGORIES, CATEGORY_STYLE } from '../documentCategories';
@@ -142,11 +143,11 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
           return;
         }
         logger.warn('vision extract failed', e);
-        setErr(e?.message || t('cam_vision_failed'));
+        setErr(apiErrorText(e, t, 'cam_vision_failed'));
         setPhase('error');
       }
     } catch (e: any) {
-      setErr(e?.message || t('cam_could_not_open_camera'));
+      setErr(apiErrorText(e, t, 'cam_could_not_open_camera'));
       setPhase('error');
     }
   };
@@ -189,7 +190,7 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
       onClose();
     } catch (e: any) {
       logger.warn('bulk add from recipe failed', e);
-      setErr(e?.message || t('cam_shopping_add_failed'));
+      setErr(apiErrorText(e, t, 'cam_shopping_add_failed'));
       setAdding(false);
     }
   };
