@@ -1183,9 +1183,10 @@ export default function Feed() {
                 is the most capable control on the screen: a typed line goes to
                 the shopping list, the week's menu or a task, on its own. The
                 first thing you can do belongs above the first thing you read. */}
-            {/* Quick capture — one slim bar with camera/mic tucked to the right,
-                so there's a single, clear "add" gesture that doesn't echo the
-                nav bar's ＋ (was a full Add/Photo/Voice card up top). */}
+            {/* Quick capture — one slim bar with camera/mic tucked to the
+                right. The tab bar carries no ＋ at all now, so this is the
+                Feed's single, unambiguous "add" gesture (was a full
+                Add/Photo/Voice card up top). */}
             <View style={styles.addBar}>
               {/* Typeable, not a button that opens a composer.
                   It was a button, and every line it produced was a card —
@@ -2098,7 +2099,10 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   // The bar is a field now. Same height and rhythm as the button it replaced,
   // so the Feed does not shift under anyone who knew where it was.
   addBarInput: {
-    flex: 1, color: ui.text, fontFamily: 'Inter_500Medium', fontSize: 14,
+    // minWidth 0 because a flex child on web defaults to min-width:auto, and
+    // an <input> reports a content-based minimum. Without it the field refuses
+    // to shrink on a narrow phone and shoves the mic off the right edge.
+    flex: 1, minWidth: 0, color: ui.text, fontFamily: 'Inter_500Medium', fontSize: 14,
     paddingVertical: 12, paddingLeft: 10, paddingRight: 4,
   },
   addBarSend: {

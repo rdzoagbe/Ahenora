@@ -101,7 +101,10 @@ export function PersonAvatar({
   }
   return (
     <View style={box}>
-      <Text style={[styles.initial, { color: ui.accentInk, fontSize: Math.round(size * 0.42) }]}>
+      {/* text, not accentInk: the initial renders at 13px inside a 30px ring,
+          and the brand ink on its own tint measures 4.47:1 — a hair under AA
+          for text this small. The ring already carries the accent. */}
+      <Text style={[styles.initial, { color: ui.text, fontSize: Math.round(size * 0.42) }]}>
         {(name || '?').trim().slice(0, 1).toUpperCase()}
       </Text>
     </View>

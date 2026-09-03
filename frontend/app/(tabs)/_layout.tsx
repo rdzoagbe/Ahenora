@@ -237,7 +237,7 @@ function PhoneTabBar({ state, navigation, style, onMore }: {
       <TouchableOpacity
         testID="tab-more"
         accessibilityRole="button"
-        accessibilityLabel={t('nav_household')}
+        accessibilityLabel={t('nav_more')}
         activeOpacity={0.85}
         onPress={onMore}
         style={[
