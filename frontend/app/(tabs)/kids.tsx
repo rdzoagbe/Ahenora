@@ -198,7 +198,9 @@ export default function Kids() {
   // just shows no badges.
   const [threads, setThreads] = useState<ChatThreadSummary[]>([]);
   // Teen-finished tasks waiting for a parent to award the star.
-  const [teenApprovals, setTeenApprovals] = useState<{ card_id: string; title: string; teen_name: string }[]>([]);
+  // Teens AND young children in kid mode: both finish a task and wait for a
+  // parent to say what it was worth. One queue, one screen, one rule.
+  const [teenApprovals, setTeenApprovals] = useState<{ card_id: string; title: string; teen_name: string; who?: string }[]>([]);
   const [approvingId, setApprovingId] = useState<string | null>(null);
 
 
@@ -1701,7 +1703,7 @@ export default function Kids() {
                     <View key={a.card_id} style={styles.approvalRow}>
                       <View style={{ flex: 1, minWidth: 0 }}>
                         <Text style={styles.approvalTask} numberOfLines={1}>{a.title}</Text>
-                        <Text style={styles.approvalWho}>{a.teen_name}</Text>
+                        <Text style={styles.approvalWho}>{a.who || a.teen_name}</Text>
                       </View>
                       <PressScale
                         testID={`teen-dismiss-${a.card_id}`}

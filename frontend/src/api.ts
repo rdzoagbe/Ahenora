@@ -474,6 +474,13 @@ export interface Card {
    * did not save.
    */
   next_occurrence?: string;
+  /**
+   * Only on the reply to completing a TASK assigned to a child: who just
+   * finished it. Nothing has been awarded — this used to pay them 5 stars
+   * silently, which is how a parent came to find points on her daughter's page
+   * that she had never given. The app offers; the parent decides.
+   */
+  child_finished?: { member_id: string; name: string };
   family_id: string;
   type: CardType;
   title: string;
@@ -1830,6 +1837,8 @@ export const api = {
       return r;
     });
   },
+  /** Completing a TASK assigned to a child returns `child_finished`. It does
+   *  NOT award anything — the app offers the stars and the parent decides. */
   updateCard: (id: string, data: Partial<Pick<Card, 'type' | 'title' | 'description' | 'assignee' | 'due_date' | 'status' | 'recurrence' | 'reminder_minutes' | 'shared'>>) => {
     cache.invalidatePrefix('listCards');
     return request<Card>(`/cards/${id}`, { method: 'PATCH', body: data }).then((r) => {
@@ -1995,7 +2004,13 @@ export const api = {
     request<{ ok: boolean }>('/kid/exit-forgot-pin', { method: 'POST', body: { email, password } }),
   // Parent side: teen tasks awaiting a star, and approving/dismissing them.
   getTeenApprovals: () =>
-    request<{ approvals: { card_id: string; title: string; teen_name: string; completed_at: string | null }[] }>('/family/teen-approvals'),
+    request<{ approvals: {
+      card_id: string; title: string;
+      /** The name older builds read. `who` is the same value, under a name that
+       *  is true of a young child as well — kid-mode chores queue here too. */
+      teen_name: string; who?: string;
+      completed_at: string | null;
+    }[] }>('/family/teen-approvals'),
   resolveTeenApproval: (cardId: string, approve: boolean, stars = 1) =>
     request<{ ok: boolean; status: string }>(`/family/teen-approvals/${cardId}`, {
       method: 'POST', body: { approve, stars },

@@ -166,25 +166,83 @@ class KidMode(unittest.TestCase):
         self.assertEqual(fresh["status"], "DONE")
         self.assertEqual(fresh["completed_by_name"], "Ama")
 
-    def test_finishing_your_own_chore_earns_stars_and_ticks_the_week(self):
-        # Self-completion in kid mode must actually pay — it used to set DONE and
-        # award nothing, so the whole kid-mode earning loop produced zero.
+    def test_finishing_your_own_chore_pays_nothing_until_a_parent_approves(self):
+        # It used to pay 5 stars on the spot. A child holding a phone could
+        # therefore award themselves, repeatedly, by ticking chores nobody had
+        # checked — and the parent found out only by noticing the number had
+        # moved. It now goes where a teen's finished task has always gone.
         card = self._chore("Tidy room")
         token = self._enter()["session_token"]
-        asyncio.run(server.kid_finish_chore(card["card_id"], child=self._child(token)))
-        m = asyncio.run(self.db["family_members"].find_one({"member_id": "m_ama"}, {"_id": 0}))
-        self.assertEqual(m["stars"], 25)          # 20 + 5 for the chore
-        self.assertEqual(m["week_earned"], 5)     # weekly meter ticked
-        ledger = asyncio.run(self.db["star_transactions"].find_one({"member_id": "m_ama"}))
-        self.assertIsNotNone(ledger)              # movement is in the ledger
+        out = asyncio.run(server.kid_finish_chore(card["card_id"], child=self._child(token)))
 
-    def test_a_finished_chore_cannot_be_paid_twice(self):
+        m = asyncio.run(self.db["family_members"].find_one({"member_id": "m_ama"}, {"_id": 0}))
+        self.assertEqual(m["stars"], 20)          # untouched
+        self.assertEqual(m.get("week_earned", 0), 0)
+        self.assertIsNone(asyncio.run(
+            self.db["star_transactions"].find_one({"member_id": "m_ama"})))
+        self.assertTrue(out["awaiting_approval"])
+
+    def test_the_chore_still_reads_as_done_for_the_child(self):
+        # Waiting on a parent must not look like the tick failing.
+        card = self._chore("Tidy room")
+        token = self._enter()["session_token"]
+        asyncio.run(server.kid_finish_chore(card["card_id"], child=self._child(token)))
+        fresh = asyncio.run(self.db["cards"].find_one({"card_id": card["card_id"]}))
+        self.assertEqual(fresh["status"], "DONE")
+
+    def test_it_lands_in_the_parents_approval_list(self):
+        card = self._chore("Tidy room")
+        token = self._enter()["session_token"]
+        asyncio.run(server.kid_finish_chore(card["card_id"], child=self._child(token)))
+        rows = asyncio.run(server.teen_approvals(user=dict(ROLAND)))["approvals"]
+        self.assertEqual([r["card_id"] for r in rows], [card["card_id"]])
+        self.assertEqual(rows[0]["who"], "Ama")
+
+    def test_approving_it_pays_the_child_the_parent_chose(self):
+        # A kid has no account, so the approval cannot resolve them by user_id
+        # the way it resolves a teen — the member id is written onto the card.
+        # Without that path an approved chore would pay nobody.
+        card = self._chore("Tidy room")
+        token = self._enter()["session_token"]
+        asyncio.run(server.kid_finish_chore(card["card_id"], child=self._child(token)))
+        asyncio.run(server.resolve_teen_approval(
+            card["card_id"], server.TeenApprovalIn(approve=True, stars=3),
+            user=dict(ROLAND)))
+        m = asyncio.run(self.db["family_members"].find_one({"member_id": "m_ama"}, {"_id": 0}))
+        self.assertEqual(m["stars"], 23)
+        self.assertEqual(m["week_earned"], 3)
+
+    def test_declining_it_pays_nothing(self):
+        card = self._chore("Tidy room")
+        token = self._enter()["session_token"]
+        asyncio.run(server.kid_finish_chore(card["card_id"], child=self._child(token)))
+        asyncio.run(server.resolve_teen_approval(
+            card["card_id"], server.TeenApprovalIn(approve=False),
+            user=dict(ROLAND)))
+        m = asyncio.run(self.db["family_members"].find_one({"member_id": "m_ama"}, {"_id": 0}))
+        self.assertEqual(m["stars"], 20)
+
+    def test_a_finished_chore_cannot_be_queued_twice(self):
         card = self._chore("Tidy room")
         token = self._enter()["session_token"]
         asyncio.run(server.kid_finish_chore(card["card_id"], child=self._child(token)))
         asyncio.run(server.kid_finish_chore(card["card_id"], child=self._child(token)))
+        rows = asyncio.run(server.teen_approvals(user=dict(ROLAND)))["approvals"]
+        self.assertEqual(len(rows), 1)
+
+    def test_re_ticking_after_approval_cannot_be_paid_again(self):
+        # The whole point: no path back to a second payment.
+        card = self._chore("Tidy room")
+        token = self._enter()["session_token"]
+        asyncio.run(server.kid_finish_chore(card["card_id"], child=self._child(token)))
+        asyncio.run(server.resolve_teen_approval(
+            card["card_id"], server.TeenApprovalIn(approve=True, stars=5),
+            user=dict(ROLAND)))
+        asyncio.run(server.kid_finish_chore(card["card_id"], child=self._child(token)))
+        rows = asyncio.run(server.teen_approvals(user=dict(ROLAND)))["approvals"]
+        self.assertEqual(rows, [])
         m = asyncio.run(self.db["family_members"].find_one({"member_id": "m_ama"}, {"_id": 0}))
-        self.assertEqual(m["stars"], 25)          # still just one award
+        self.assertEqual(m["stars"], 25)
 
     def test_they_cannot_finish_somebody_elses(self):
         card = self._chore("Do the taxes", assignee="Roland")

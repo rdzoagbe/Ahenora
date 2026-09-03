@@ -847,6 +847,13 @@ export default function Feed() {
       // tick failing: the row vanishes and an identical row appears with a new
       // date. Hiding the new one was tried and was wrong; it removed the
       // ability to finish a chore ahead of its date. So it is SAID instead.
+      // A child finished their task. This used to pay them 5 stars here,
+      // silently — which is how a parent came to open her daughter's page and
+      // find points she had never given. The stars are offered now, not taken:
+      // one tap to their page, where the give-stars controls are.
+      if (next === 'DONE' && saved?.child_finished) {
+        showToast(t('feed_child_finished', { name: saved.child_finished.name }), 'success');
+      }
       if (next === 'DONE' && saved?.next_occurrence) {
         const when = new Date(saved.next_occurrence);
         if (!Number.isNaN(when.getTime())) {

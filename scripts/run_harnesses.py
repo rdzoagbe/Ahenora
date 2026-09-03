@@ -46,6 +46,10 @@ HARNESSES = [
     # harness seeds content to exercise a feature, so day one — which is the
     # whole of a new family's first session — went unlooked-at for months.
     "e2e_firstrun.py",
+    # Setup itself, which had no harness at all: e2e_firstrun skips it by
+    # calling complete-onboarding directly, so the four steps every new
+    # household actually walks through were verified by nobody.
+    "e2e_onboarding.py",
     "e2e_pages.py",
     "e2e_nav.py",
     "e2e_quickadd.py",
