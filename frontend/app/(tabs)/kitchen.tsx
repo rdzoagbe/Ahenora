@@ -29,6 +29,8 @@ import { suggestWeek, MealSuggestion, SuggestLang, localizedMealTitle, localized
 import { quantityFor, shoppingNameFor, formatAiQuantity, AiIngredient } from '../../src/recipeQuantities';
 import { categoriseShoppingItem } from '../../src/shoppingCategories';
 import { recipeMethod } from '../../src/recipeSteps';
+import { apiErrorText, isAiAllowanceError } from '../../src/apiError';
+import { ScansLeft } from '../../src/components/ScansLeft';
 
 type KitchenView = 'shop' | 'meal' | 'spend';
 
@@ -235,9 +237,19 @@ export default function Kitchen() {
       setScanPhase('review');
     } catch (e: any) {
       setScanPhase('idle');
-      setScanError(e?.message || t('scan_failed'));
+      // Out of AI allowance is not a failure of the app, and it must not be a
+      // dead end: the sheet closes and the manual add takes over, because the
+      // allowance buys the SORTING, never the doing. Same decision the document
+      // scan already makes when it runs out.
+      if (isAiAllowanceError(e)) {
+        setShowScan(false);
+        setScanError(null);
+        showToast(t('err_ai_allowance'), 'info');
+        return;
+      }
+      setScanError(apiErrorText(e, t, 'scan_failed'));
     }
-  }, [t]);
+  }, [t, showToast]);
 
   const toggleScanItem = useCallback((idx: number) => {
     setScanItems((prev) => prev.map((it, i) => (i === idx ? { ...it, checked: !it.checked } : it)));
@@ -331,7 +343,7 @@ export default function Kitchen() {
       setCapturePhase('review');
     } catch (e: any) {
       setCapturePhase('idle');
-      setCaptureError(e?.message || t('capture_failed'));
+      setCaptureError(apiErrorText(e, t, 'capture_failed'));
     }
   }, [t]);
 
@@ -344,7 +356,7 @@ export default function Kitchen() {
       setShowCapture(false);
       showToast(`1 ${t('kitchen_meals_added')}`, 'success');
     } catch (e: any) {
-      showToast(e?.message || t('vault_could_not_add_meal'), 'error');
+      showToast(apiErrorText(e, t, 'vault_could_not_add_meal'), 'error');
     } finally {
       setCaptureAdding(false);
     }
@@ -740,7 +752,7 @@ export default function Kitchen() {
       const { answer } = await api.askChef(cookingRecipe.title, question, suggestLang);
       setChefAnswer(answer);
     } catch (e: any) {
-      showToast(e?.message || t('chef_failed'), 'error');
+      showToast(apiErrorText(e, t, 'chef_failed'), 'error');
     } finally {
       setChefBusy(false);
     }
@@ -830,7 +842,7 @@ export default function Kitchen() {
     } catch (e: any) {
       // Close the sheet rather than leave it sitting empty.
       setCookingRecipe(null);
-      showToast(e?.message || t('cook_failed'), 'error');
+      showToast(apiErrorText(e, t, 'cook_failed'), 'error');
     } finally {
       setGeneratingFor(null);
     }
@@ -852,7 +864,7 @@ export default function Kitchen() {
       setRecipeDiet(applied);
       setRecipeVariant(variant);
     } catch (e: any) {
-      showToast(e?.message || t('cook_failed'), 'error');
+      showToast(apiErrorText(e, t, 'cook_failed'), 'error');
     } finally {
       setRegenBusy(false);
     }
@@ -873,7 +885,7 @@ export default function Kitchen() {
       setCookingRecipe({ recipeId: null, title: dish, adHoc: recipe });
       setRecipeAiQuery('');
     } catch (e: any) {
-      showToast(e?.message || t('recipe_ai_failed'), 'error');
+      showToast(apiErrorText(e, t, 'recipe_ai_failed'), 'error');
     } finally {
       setRecipeAiBusy(false);
     }
@@ -911,7 +923,7 @@ export default function Kitchen() {
       setView('shop');
       showToast(t('cook_added_to_list', { n: names.length }), 'success');
     } catch (e: any) {
-      showToast(e?.message || t('cook_failed'), 'error');
+      showToast(apiErrorText(e, t, 'cook_failed'), 'error');
     }
   }, [mealLocked, showToast, t]);
 
@@ -924,7 +936,7 @@ export default function Kitchen() {
       await api.setMealDiet(next);
     } catch (e: any) {
       setHouseholdDiet(householdDiet);   // revert on failure
-      showToast(e?.message || t('cook_failed'), 'error');
+      showToast(apiErrorText(e, t, 'cook_failed'), 'error');
     }
   }, [householdDiet, showToast, t]);
 
@@ -2133,6 +2145,10 @@ export default function Kitchen() {
             <X color={ui.text} size={20} />
           </PressScale>
         </View>
+
+        {/* Said here, where the decision is, rather than in Settings where
+            nobody looks before photographing a school letter. */}
+        {scanPhase === 'idle' ? <ScansLeft /> : null}
 
         {scanPhase === 'reading' ? (
           <View style={{ alignItems: 'center', paddingVertical: 40, gap: 14 }}>

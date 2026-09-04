@@ -12,6 +12,7 @@ import { api, Expense, ExpenseOverview, MerchantRow, ScannedReceipt,
   SettlementInfo } from '../api';
 import { localeFor } from '../utils/date';
 import { logger } from '../logger';
+import { apiErrorText } from '../apiError';
 
 const CATEGORY = 'Groceries';
 const MONTHS = 6;
@@ -181,7 +182,9 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
       setWhen(read.date || todayISO());
     } catch (e: any) {
       logger.warn('receipt scan failed', e);
-      setScanError(e?.message || t('exp_scan_failed'));
+      // Running out of allowance must not cost the expense. The reading is what
+      // the allowance buys; typing the total was always available and stays so.
+      setScanError(apiErrorText(e, t, 'exp_scan_failed'));
     } finally {
       setScanning(false);
     }
