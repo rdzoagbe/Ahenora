@@ -456,7 +456,22 @@ export default function Kids() {
               const roleLc = (m.role || '').toLowerCase();
               const isParent = roleLc === 'parent' || roleLc === 'co-parent';
               const isHelper = roleLc === 'helper';
-              const badgeLabel = isParent
+              // Invited, but never actually signed in. The server has always
+              // known — has_account is false on a row with no login — and the
+              // app has never shown it, so a co-parent who joined and one who
+              // never did looked identical. That is not cosmetic: it is how a
+              // household can appear complete while the other parent sees
+              // nothing, and it turned one missed invite into three separate
+              // bug reports (missing children, missing notifications, a link
+              // that "didn't work") before anybody could tell they were one.
+              //
+              // `=== false` rather than `!m.has_account`: an older server that
+              // omits the field must read as "don't know", never as "absent".
+              // Adults only — a young child has no login by design.
+              const notJoined = (isParent || isHelper) && m.has_account === false;
+              const badgeLabel = notJoined
+                ? t('hub_role_invited')
+                : isParent
                 ? (m.is_founder ? t('hub_role_owner') : t('hub_role_coparent'))
                 : isHelper ? t('hub_role_helper') : m.role;
               // Anyone the server gave us a conversation with can be messaged
@@ -464,7 +479,9 @@ export default function Kids() {
               const memberThread = threads.find((x) => x.member_id === m.member_id);
               const hasThread = Boolean(memberThread);
               const unread = memberThread?.unread || 0;
-              const sub = isParent
+              const sub = notJoined
+                ? t('hub_not_joined_sub')
+                : isParent
                 ? (memberThread?.last_text || t('hub_coparent_sub'))
                 : isHelper ? t('hub_helper_sub') : t('hub_member_sub');
               return (
@@ -492,8 +509,11 @@ export default function Kids() {
                       <Text style={styles.hubName} numberOfLines={1}>
                         {m.name}{m.is_me ? ` · ${t('hub_you')}` : ''}
                       </Text>
-                      <View style={[styles.hubBadge, { backgroundColor: isParent ? ui.orangeSoft : ui.soft }]}>
-                        <Text style={[styles.hubBadgeText, { color: isParent ? ui.orangeText : ui.muted }]}>{badgeLabel}</Text>
+                      <View style={[styles.hubBadge, { backgroundColor: notJoined ? ui.soft : isParent ? ui.orangeSoft : ui.soft }]}>
+                        <Text
+                          testID={notJoined ? `hub-not-joined-${m.member_id}` : undefined}
+                          style={[styles.hubBadgeText, { color: notJoined ? ui.muted : isParent ? ui.orangeText : ui.muted }]}
+                        >{badgeLabel}</Text>
                       </View>
                     </View>
                     <Text style={styles.hubSub} numberOfLines={1}>{sub}</Text>
