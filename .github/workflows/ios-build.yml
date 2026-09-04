@@ -15,6 +15,14 @@ name: EAS Build (iOS)
 on:
   workflow_dispatch:
     inputs:
+      # preview-ios is the one to pick for a tester on TestFlight. `preview`
+      # is ad-hoc (distribution: internal) and needs a provisioning profile
+      # built from registered device UDIDs, which only an interactive
+      # `eas credentials` run can create — in CI it fails with "couldn't find
+      # any credentials suitable for internal distribution" before it builds
+      # anything. preview-ios uses the App Store credentials that already
+      # exist, goes out through TestFlight, and still reads the `preview`
+      # update channel so OTA fixes reach it.
       profile:
         description: 'EAS build profile'
         required: true
@@ -22,6 +30,7 @@ on:
         type: choice
         options:
           - production
+          - preview-ios
           - preview
       submit:
         description: 'Auto-submit to App Store Connect after build'
