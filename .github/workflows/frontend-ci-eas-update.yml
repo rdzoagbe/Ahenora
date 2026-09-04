@@ -66,6 +66,13 @@ jobs:
       - name: Check Android permissions
         run: node scripts/check-android-permissions.js
 
+      # An OTA carries JavaScript to binaries that already exist. A native
+      # dependency added in the same change is JS reaching for something they
+      # do not contain, and that does not degrade — the app stops starting.
+      # This is the gate that expo-audio went through without one.
+      - name: Check no native dependency snuck into an OTA
+        run: node scripts/check-native-deps.js
+
       - name: Run lint
         run: npm run lint --if-present
 
