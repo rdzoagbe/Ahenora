@@ -1852,6 +1852,11 @@ const en: Dict = {
   hub_you: 'You',
   hub_role_owner: 'You · Owner',
   hub_role_coparent: 'Co-parent',
+  // An adult who was invited but has never signed in. Their row is
+  // otherwise indistinguishable from someone who joined, which is how a
+  // household can look complete while half of it is not there.
+  hub_role_invited: 'Invited',
+  hub_not_joined_sub: "Hasn't joined yet — they won't see anything you add",
   hub_role_teen: 'Teen',
   hub_role_kid: 'Kid',
   hub_role_helper: 'Helper',
@@ -3808,6 +3813,8 @@ const es: Dict = {
   hub_you: 'Tú',
   hub_role_owner: 'Tú · Titular',
   hub_role_coparent: 'Copadre/madre',
+  hub_role_invited: 'Invitado',
+  hub_not_joined_sub: 'Todavía no se ha unido: no verá nada de lo que añadas',
   hub_role_teen: 'Adolescente',
   hub_role_kid: 'Niño',
   hub_role_helper: 'Ayudante',
@@ -5759,6 +5766,8 @@ const fr: Dict = {
   hub_you: 'Vous',
   hub_role_owner: 'Vous · Titulaire',
   hub_role_coparent: 'Coparent',
+  hub_role_invited: 'Invité',
+  hub_not_joined_sub: "N'a pas encore rejoint : il ne verra rien de ce que vous ajoutez",
   hub_role_teen: 'Ado',
   hub_role_kid: 'Enfant',
   hub_role_helper: 'Aidant',
@@ -7710,6 +7719,8 @@ const de: Dict = {
   hub_you: 'Du',
   hub_role_owner: 'Du · Inhaber',
   hub_role_coparent: 'Mit-Elternteil',
+  hub_role_invited: 'Eingeladen',
+  hub_not_joined_sub: 'Noch nicht beigetreten – sieht nichts, was du hinzufügst',
   hub_role_teen: 'Teenager',
   hub_role_kid: 'Kind',
   hub_role_helper: 'Helfer',
