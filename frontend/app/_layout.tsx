@@ -23,6 +23,7 @@ import {
 import { Platform } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StoreProvider, useStore } from '../src/store';
+import { RootErrorBoundary } from '../src/components/RootErrorBoundary';
 import { UpgradeModal } from '../src/components/UpgradeModal';
 import { WebUpdateBanner } from '../src/components/WebUpdateBanner';
 import { UpdateNotice } from '../src/components/UpdateNotice';
@@ -150,9 +151,16 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <StoreProvider>
-        <RootNavigator />
-      </StoreProvider>
+      {/* OUTSIDE StoreProvider on purpose. A boundary inside it cannot render
+          when the store is what threw, and the store is where a bad update is
+          most likely to land. Everything below this line — router, providers,
+          every modal — now fails into a panel instead of into a phone that
+          will not open the app. */}
+      <RootErrorBoundary>
+        <StoreProvider>
+          <RootNavigator />
+        </StoreProvider>
+      </RootErrorBoundary>
     </GestureHandlerRootView>
   );
 }
