@@ -1,5 +1,6 @@
 import os
 import io
+import unicodedata
 import re
 import json
 import base64
@@ -13679,6 +13680,62 @@ def normalize_diet(value) -> str:
     return VEGETARIAN if str(value or "").strip().lower() == VEGETARIAN else ""
 
 
+# The shared recipe library.
+#
+# A recipe for "poulet rôti" is the same recipe whoever asks. It is written from
+# the dish name, the language and the diet, and contains nothing about the
+# household that asked — so it can be written once and served to everyone.
+#
+# Before this, recipes cached on the MEAL DOCUMENT. Reopening the same planned
+# meal was free, but next week's plan is new meal documents, so the same seven
+# dinners were generated and charged again every week — and every household paid
+# separately for the same dish. That is how a subscriber on 100 scans a month
+# ran out preparing the week's meals: not by overusing anything, but by using
+# the meal planner the way it is meant to be used.
+RECIPE_LIBRARY = "recipe_library"
+# Long enough for "gratin dauphinois aux champignons", short enough that a
+# sentence somebody typed at the box does not become a shared key.
+RECIPE_KEY_MAX = 80
+
+
+def recipe_library_key(title: str, language: str, diet: str) -> Optional[str]:
+    """A stable id for a dish, or None when the title should not be shared.
+
+    Normalised hard — case, accents and punctuation removed — so "Poulet Rôti"
+    and "poulet roti" are one entry rather than two.
+    """
+    base = unicodedata.normalize("NFKD", (title or "").strip().lower())
+    base = "".join(c for c in base if not unicodedata.combining(c))
+    base = re.sub(r"[^a-z0-9 ]+", " ", base)
+    base = re.sub(r"\s+", " ", base).strip()
+    # Too short to be a dish, or long enough to be a note rather than a name.
+    if len(base) < 3 or len(base) > RECIPE_KEY_MAX:
+        return None
+    return f"{base}|{language}|{diet or 'any'}"
+
+
+async def recipe_from_library(database, key: Optional[str]) -> Optional[dict]:
+    if not key:
+        return None
+    row = await database[RECIPE_LIBRARY].find_one({"_id": key}, {"_id": 0, "recipe": 1})
+    return (row or {}).get("recipe")
+
+
+async def store_recipe_in_library(database, key: Optional[str], recipe: dict) -> None:
+    """Write-through. Never fatal: a recipe the family can already read must not
+    be lost because the shared copy failed to save."""
+    if not key or not recipe:
+        return
+    try:
+        await database[RECIPE_LIBRARY].update_one(
+            {"_id": key},
+            {"$set": {"recipe": recipe, "updated_at": utcnow()}},
+            upsert=True,
+        )
+    except Exception:
+        log.warning("could not add a recipe to the shared library")
+
+
 def recipe_slot(diet: str) -> str:
     """Where a generated recipe caches on the meal doc.
 
@@ -13727,9 +13784,22 @@ async def generate_meal_recipe(
 
     cached = (meal.get(slot) or {}).get(language)
     # A "different recipe" (variant>0) is a deliberate ask for something fresh,
-    # so it skips the cache; everything else serves the cached copy free.
+    # so it skips both caches; everything else serves a cached copy free.
     if cached and not variant:
         return {"recipe": cached, "cached": True, "diet": diet}
+
+    meal_title = sanitize_user_text(meal.get("title", ""))
+    library_key = None if variant else recipe_library_key(meal_title, language, diet)
+    # The dish has been written before, for this household or any other. Serve
+    # it, remember it on the meal so the next open does not even come here, and
+    # charge nothing: there is no AI call to pay for.
+    shared = await recipe_from_library(database, library_key)
+    if shared:
+        await database["meals"].update_one(
+            {"meal_id": meal_id},
+            {"$set": {f"{slot}.{language}": shared, "updated_at": utcnow()}},
+        )
+        return {"recipe": shared, "cached": True, "diet": diet}
 
     if not GOOGLE_API_KEY:
         raise HTTPException(503, "Recipe suggestions are unavailable right now.")
@@ -13784,6 +13854,9 @@ async def generate_meal_recipe(
         {"meal_id": meal_id, "family_id": user["family_id"]},
         {"$set": {f"{slot}.{language}": recipe}},
     )
+    # And into the shared library, so the next household to plan this dish —
+    # or this household next week, on a new meal document — gets it free.
+    await store_recipe_in_library(database, library_key, recipe)
     if not is_admin_user(user):
         # Guarded so two concurrent scans cannot both push the counter past the
         # limit: the increment only lands while the family is still under it.
@@ -13898,12 +13971,13 @@ async def generate_recipe_from_name(
 ):
     """Write a full recipe for any dish the family types, without a plan entry.
 
-    The meal-planner recipe route needs a saved meal to hang its cache on; this
-    is the same generator with the meal document removed, so "ask for fluffy
-    pancakes" returns a recipe straight from the Kitchen. Not cached (there is
-    nothing to cache it on), so each ask is metered against the family's AI
-    allowance exactly like a scan or a chef question. A vegetarian household
-    gets a vegetarian recipe without asking, same rule as the planner.
+    The same generator as the meal-planner route with the meal document
+    removed, so "ask for fluffy pancakes" returns a recipe straight from the
+    Kitchen. It used to have no cache at all — there was nothing to hang one on
+    — and every ask was metered. It shares the recipe library now, keyed on the
+    dish rather than on a document, so asking for a dish somebody has already
+    asked for costs nothing. A vegetarian household gets a vegetarian recipe
+    without asking, same rule as the planner.
     """
     await require_feature(user, "meal_planner")
 
@@ -13918,6 +13992,14 @@ async def generate_recipe_from_name(
     family = await get_family_doc(user["family_id"])
     diet = normalize_diet(payload.get("diet")) or normalize_diet(family.get("diet"))
     variant = max(0, min(int(payload.get("variant") or 0), 20))
+
+    # The library first: a dish already written for anyone, in this language and
+    # diet, is served without an AI call and therefore without a charge. A
+    # variant is a deliberate ask for something different, so it skips it.
+    library_key = None if variant else recipe_library_key(title, language, diet)
+    shared = await recipe_from_library(database, library_key)
+    if shared:
+        return {"recipe": shared, "cached": True, "diet": diet}
 
     sub = await build_subscription(user["family_id"])
     # Metered against the same monthly AI allowance as scans and the meal
@@ -13959,6 +14041,8 @@ async def generate_recipe_from_name(
             {"$inc": {"ai_scans_used": 1}, "$set": {"updated_at": utcnow()}},
         )
 
+    # Into the library, so nobody pays for this dish again.
+    await store_recipe_in_library(database, library_key, recipe)
     return {"recipe": recipe, "diet": diet}
 
 
