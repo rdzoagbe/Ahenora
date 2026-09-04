@@ -1464,8 +1464,15 @@ def public_vault_doc(doc: dict) -> dict:
     }
 
 
+# Where an invite link points when INVITE_BASE_URL is set to an empty string.
+# It used to be the custom scheme, which is a dead link in an email client on a
+# phone that does not have the app — which is every invited co-parent, since
+# being invited is how they come to install it.
+INVITE_FALLBACK_URL = "https://ahenora.com/app/"
+
+
 def build_invite_url(token: str) -> str:
-    base = INVITE_BASE_URL.strip() or "householdcoo:///"
+    base = INVITE_BASE_URL.strip() or INVITE_FALLBACK_URL
     if "{token}" in base:
         return base.replace("{token}", token)
     joiner = "&" if "?" in base else "?"
@@ -2798,14 +2805,30 @@ def _visible_to(user: dict, card: dict) -> bool:
     return _card_visible_to(card, user.get("user_id"))
 
 
+# How far back a still-open task keeps earning a place in the morning digest.
+#
+# There was no floor. "Due before this local day is out" included a task due
+# three weeks ago, so anything left open was read out again every single
+# morning, forever — which is how a co-parent came to describe the app as
+# sending notifications about a task from the past. A digest is what today
+# needs; a task nobody has touched in a fortnight is not news, and repeating it
+# daily teaches people to dismiss the whole thing unread.
+DIGEST_OVERDUE_DAYS = 7
+
+
 async def _build_morning_digest(database, user, local, L):
-    """Everything still open and due before this local day is out."""
+    """What today needs: due by end of day, and not stale enough to be nagging.
+
+    The lower bound is what stops this becoming a daily recital of everything
+    ever left undone — see DIGEST_OVERDUE_DAYS.
+    """
     _, end_of_day = _local_day_bounds(local)
+    floor = end_of_day - timedelta(days=DIGEST_OVERDUE_DAYS + 1)
     titles = []
     async for card in database["cards"].find(
             {"family_id": user.get("family_id"), "status": "OPEN"}, {"_id": 0}):
         due = ensure_aware_utc(card.get("due_date"))
-        if due and due < end_of_day and _visible_to(user, card):
+        if due and floor <= due < end_of_day and _visible_to(user, card):
             title = (card.get("title") or "").strip()
             if title:
                 titles.append(title)

@@ -18,7 +18,7 @@ import { PressScale } from '../src/components/PressScale';
 import { ValueTour } from '../src/components/ValueTour';
 import { useStore } from '../src/store';
 import { logger } from '../src/logger';
-import { extractInviteToken } from '../src/invite';
+import { extractInviteToken, rememberInvite, readStoredInvite, clearStoredInvite } from '../src/invite';
 import { getLoginHint, clearLoginHint, maskEmail, LoginHint } from '../src/loginHint';
 
 WebBrowser.maybeCompleteAuthSession();
@@ -144,28 +144,27 @@ export default function Landing() {
       }
     };
 
-    if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      const token = extractInviteToken(window.location.href);
+    // A link's token is put somewhere durable the moment it arrives, because
+    // signing in is what loses it: a new tab on web, a re-created activity on
+    // Android. When no link is at hand, whatever was stored earlier is used.
+    const arrive = async (token: string | null) => {
       if (token) {
-        try {
-          window.sessionStorage.setItem('pending_invite', token);
-        } catch {
-          // Ignore storage failure.
-        }
+        await rememberInvite(token);
         loadInvite(token);
       } else {
-        try {
-          loadInvite(window.sessionStorage.getItem('pending_invite'));
-        } catch {
-          // Ignore storage failure.
-        }
+        loadInvite(await readStoredInvite());
       }
+    };
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      arrive(extractInviteToken(window.location.href));
       return;
     }
 
-    Linking.getInitialURL().then((url) => loadInvite(extractInviteToken(url)));
+    Linking.getInitialURL().then((url) => arrive(extractInviteToken(url)));
     const subscription = Linking.addEventListener('url', ({ url }) => {
-      loadInvite(extractInviteToken(url));
+      const fromLink = extractInviteToken(url);
+      if (fromLink) arrive(fromLink);
     });
 
     return () => subscription.remove();
@@ -174,26 +173,16 @@ export default function Landing() {
   /** Turn a Google id_token into a session and land in the app. Shared by the
    *  native popup result and the web redirect return, so both finish identically. */
   const completeWithIdToken = useCallback(async (idToken: string) => {
-    let token = inviteToken || undefined;
-    if (!token && Platform.OS === 'web' && typeof window !== 'undefined') {
-      try {
-        token = window.sessionStorage.getItem('pending_invite') || undefined;
-      } catch {
-        // Ignore storage failure.
-      }
-    }
+    // Not `Platform.OS === 'web'` any more. Android tears the activity down
+    // behind Google's sheet often enough that component state is the one place
+    // the token cannot be trusted to survive.
+    const token = inviteToken || (await readStoredInvite()) || undefined;
 
     const { api } = await import('../src/api');
     const authResult = await api.exchangeSession(idToken, token);
     await setUserFromAuth(authResult.user, authResult.session_token, 'google');
 
-    if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      try {
-        window.sessionStorage.removeItem('pending_invite');
-      } catch {
-        // Ignore storage failure.
-      }
-    }
+    await clearStoredInvite();
 
     router.replace('/feed');
   }, [inviteToken, router, setUserFromAuth]);
@@ -333,14 +322,12 @@ export default function Landing() {
           return;
         }
 
-        let token = inviteToken || undefined;
-        if (!token && (Platform.OS as string) === 'web' && typeof window !== 'undefined') {
-          try { token = window.sessionStorage.getItem('pending_invite') || undefined; } catch { /* ignore */ }
-        }
+        const token = inviteToken || (await readStoredInvite()) || undefined;
 
         const { api: apiModule } = await import('../src/api');
         const authResult = await apiModule.exchangeSession(idToken, token);
         await setUserFromAuth(authResult.user, authResult.session_token, 'google');
+        await clearStoredInvite();
         router.replace('/feed');
         return;
       }
@@ -388,9 +375,7 @@ export default function Landing() {
 
   const handleEmailSuccess = () => {
     setShowEmailAuth(false);
-    if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      try { window.sessionStorage.removeItem('pending_invite'); } catch { /* ignore */ }
-    }
+    clearStoredInvite();
     router.replace('/feed');
   };
 

@@ -171,6 +171,31 @@ class TheDigestPass(unittest.TestCase):
         self.seed(tz="Mars/Olympus_Mons")
         self.assertEqual(self.run_pass(), 1)
 
+    def test_still_open_from_yesterday_is_still_today_s_problem(self):
+        """Overdue is the most useful thing a digest can say. The floor exists
+        to stop it nagging, not to hide what was missed."""
+        self.seed(due_in_hours=-20)
+        self.assertEqual(self.run_pass(), 1)
+        self.assertIn("Dentist", self.sent[0]["body"])
+
+    def test_a_task_from_three_weeks_ago_stops_being_news(self):
+        """Reported by a co-parent: "a past task keeps sending me
+        notifications". There was no lower bound at all, so anything left open
+        was read out every single morning, forever. That is how a household
+        learns to swipe the whole digest away unread."""
+        self.seed(due_in_hours=-24 * 21)
+        self.assertEqual(self.run_pass(), 1)
+        self.assertEqual(self.sent[0]["type"], "daily_tip")
+        self.assertNotIn("Dentist", self.sent[0]["body"])
+
+    def test_the_floor_is_where_it_says_it_is(self):
+        """Pinned so the window cannot drift silently: a week of grace, and the
+        constant is the only place it is decided."""
+        self.assertEqual(server.DIGEST_OVERDUE_DAYS, 7)
+        self.seed(due_in_hours=-24 * (server.DIGEST_OVERDUE_DAYS - 1))
+        self.assertEqual(self.run_pass(), 1)
+        self.assertEqual(self.sent[0]["type"], "morning_digest")
+
     def test_one_bad_user_does_not_stop_the_others(self):
         self.seed()
         asyncio.run(self.db["notification_tokens"].insert_one(
