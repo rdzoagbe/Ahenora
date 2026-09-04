@@ -217,6 +217,14 @@ export default function Settings() {
 
   const memberLimit = entitlements?.max_members ?? subscription?.limits?.max_members ?? 0;
   const memberSlotsUsed = entitlements?.member_slots_used ?? members.length + invites.filter((invite) => invite.status === 'pending').length;
+  // A paid plan's ceiling is a guard against a runaway loop, not a budget, so
+  // it is shown as one. "3 / 100000" invites a household to wonder what
+  // happens at 99999; the answer is that they will never get there.
+  const aiScansUsed = entitlements?.ai_scans_used ?? subscription?.ai_scans_used ?? 0;
+  const aiScansLimit = entitlements?.ai_scans_limit ?? subscription?.limits?.ai_scans_per_month;
+  const aiScansStat = !aiScansLimit || aiScansLimit >= 1000
+    ? `${aiScansUsed} / ∞`
+    : `${aiScansUsed}/${aiScansLimit}`;
   // Case-insensitive on purpose: the backend queries roles with ^child$/i,
   // so the client must not be stricter than the server about casing. The
   // kids page already compares this way.
@@ -1084,7 +1092,7 @@ export default function Settings() {
             {expandUsage ? (
               <View style={styles.statGrid}>
                 <StatBox label={t('set_stat_members')} value={`${memberSlotsUsed}/${memberLimit || '∞'}`} />
-                <StatBox label={t('set_stat_ai_scans')} value={entitlements ? `${entitlements.ai_scans_used}/${entitlements.ai_scans_limit}` : `${subscription?.ai_scans_used ?? 0}/${subscription?.limits?.ai_scans_per_month ?? '∞'}`} />
+                <StatBox label={t('set_stat_ai_scans')} value={aiScansStat} />
                 <StatBox label={t('set_stat_vault')} value={formatBytes(entitlements?.vault_bytes_used ?? subscription?.vault_bytes_used)} />
                 <StatBox label={t('set_stat_weekly_brief')} value={weeklyBrief ? t('set_on') : t('set_locked')} />
                 <View style={styles.testRow}>
