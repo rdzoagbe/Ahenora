@@ -16,7 +16,10 @@
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { extractInviteToken, rememberInvite, readStoredInvite, clearStoredInvite } from '../invite';
+import {
+  extractInviteToken, rememberInvite, readStoredInvite, clearStoredInvite,
+  signInWithPendingInvite, INVITE_REJECTED_ON_EMAIL,
+} from '../invite';
 
 // expo-linking reaches into expo-modules-core, which needs a native runtime
 // that does not exist here. Its parse() is stubbed to find nothing, so every
@@ -96,5 +99,79 @@ describe('keeping the token across a sign-in', () => {
     asMock.getItem.mockRejectedValue(new Error('SecurityError'));
     await expect(rememberInvite('tok')).resolves.toBeUndefined();
     await expect(readStoredInvite()).resolves.toBeNull();
+  });
+});
+
+describe('a bad invite must never be why somebody cannot sign in', () => {
+  // This risk is created by the fix above. While the token died with the
+  // browser tab a stale one was self-correcting; a token that persists gets
+  // re-sent on every attempt, and every auth route on the server refuses
+  // outright when the invite is unknown (404), expired (410) or already taken
+  // (409). One stale invite would lock a phone out of signing in entirely,
+  // with no way back short of reinstalling the app.
+  const rejected = (status: number) =>
+    Object.assign(new Error(`${status}: {"detail":"nope"}`), { status });
+
+  it('signs in anyway when the invite has expired', async () => {
+    await rememberInvite('stale');
+    const run = jest.fn()
+      .mockRejectedValueOnce(rejected(410))
+      .mockResolvedValueOnce({ user: 'me' });
+
+    await expect(signInWithPendingInvite(null, run)).resolves.toEqual({ user: 'me' });
+    expect(run).toHaveBeenNthCalledWith(1, 'stale');
+    expect(run).toHaveBeenNthCalledWith(2, undefined);
+  });
+
+  it('forgets the invite it just proved to be dead', async () => {
+    // Otherwise the next sign-in re-sends it and fails the same way — which is
+    // the lockout, one attempt later.
+    await rememberInvite('stale');
+    await signInWithPendingInvite(null, jest.fn()
+      .mockRejectedValueOnce(rejected(404))
+      .mockResolvedValueOnce({}));
+    expect(await readStoredInvite()).toBeNull();
+  });
+
+  it('does not swallow a real sign-in failure', async () => {
+    // A wrong password is 401 and must reach the person as a wrong password.
+    await rememberInvite('good');
+    const run = jest.fn().mockRejectedValue(rejected(401));
+    await expect(signInWithPendingInvite(null, run)).rejects.toThrow('401');
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(await readStoredInvite()).toBe('good');
+  });
+
+  it('spends the invite on success so it is not replayed', async () => {
+    await rememberInvite('good');
+    await signInWithPendingInvite(null, async () => ({}));
+    expect(await readStoredInvite()).toBeNull();
+  });
+
+  it('prefers the token in hand over the stored one', async () => {
+    await rememberInvite('older');
+    const run = jest.fn().mockResolvedValue({});
+    await signInWithPendingInvite('from-the-link', run);
+    expect(run).toHaveBeenCalledWith('from-the-link');
+  });
+
+  it('keeps the invite when 409 means the EMAIL is taken, not the invite', async () => {
+    // Register answers 409 for a duplicate account as well as for a spent
+    // invite. Dropping a good invite because somebody typed a known address
+    // would trade this bug for another one: they log in instead, and the join
+    // they were sent the link for is gone.
+    await rememberInvite('good');
+    const run = jest.fn().mockRejectedValue(rejected(409));
+    await expect(
+      signInWithPendingInvite(null, run, INVITE_REJECTED_ON_EMAIL),
+    ).rejects.toThrow('409');
+    expect(await readStoredInvite()).toBe('good');
+  });
+
+  it('runs once, with nothing, when there is no invite at all', async () => {
+    const run = jest.fn().mockResolvedValue({});
+    await signInWithPendingInvite(null, run);
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(run).toHaveBeenCalledWith(undefined);
   });
 });

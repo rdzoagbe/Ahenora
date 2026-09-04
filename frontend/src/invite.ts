@@ -94,3 +94,48 @@ export async function clearStoredInvite() {
     // Ignore storage failure.
   }
 }
+
+/**
+ * Run a sign-in with the pending invite, and never let a bad invite stop it.
+ *
+ * This became necessary the moment the token was made durable. Every auth
+ * route — Google, Apple, register, login — refuses outright when the invite is
+ * unknown (404), expired (410), or already taken by somebody else (409). While
+ * the token died with the browser tab that was survivable; a token that
+ * persists would be re-sent on every attempt, and one stale invite would lock
+ * a phone out of signing in at all, with no way back short of reinstalling.
+ *
+ * An invite is a nice-to-have on top of signing in — and there is a server-side
+ * safety net for it anyway (invites-for-me, which finds a waiting invite from
+ * the email alone). So a rejected invite is dropped and the sign-in goes
+ * through without it.
+ */
+// 404 unknown, 410 expired. 409 is "already accepted by somebody else" on the
+// Google and Apple routes, where nothing else answers 409 — but on email
+// register it is ALSO "an account with this email already exists", and
+// dropping a perfectly good invite because somebody typed a known address
+// would trade one bug for another. So the caller says which apply.
+const INVITE_REJECTED = [404, 410];
+const INVITE_REJECTED_UNAMBIGUOUS = [404, 409, 410];
+
+export const INVITE_REJECTED_ON_EMAIL = INVITE_REJECTED;
+
+export async function signInWithPendingInvite<T>(
+  known: string | null | undefined,
+  run: (token?: string) => Promise<T>,
+  rejectedStatuses: number[] = INVITE_REJECTED_UNAMBIGUOUS,
+): Promise<T> {
+  const token = known || (await readStoredInvite()) || undefined;
+  if (!token) return run(undefined);
+  try {
+    const result = await run(token);
+    // Consumed. Leaving it behind means re-sending it on the next sign-in,
+    // where it now reads as "already accepted".
+    await clearStoredInvite();
+    return result;
+  } catch (e: any) {
+    if (!rejectedStatuses.includes(e?.status)) throw e;
+    await clearStoredInvite();
+    return run(undefined);
+  }
+}

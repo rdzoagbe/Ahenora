@@ -18,6 +18,7 @@ import { PasswordInput } from './PasswordInput';
 import { useStore } from '../store';
 import { detectDeviceLang } from '../i18n';
 import { logger } from '../logger';
+import { signInWithPendingInvite, INVITE_REJECTED_ON_EMAIL } from '../invite';
 
 type Mode = 'signup' | 'login';
 
@@ -217,20 +218,27 @@ export function EmailAuthModal({ visible, onClose, onSuccess, inviteToken, initi
     setBusy(true);
     try {
       const { api } = await import('../api');
-      const result =
-        mode === 'signup'
-          ? await api.registerWithEmail({
-              name: name.trim(),
-              email: trimmedEmail,
-              password,
-              invite_token: inviteToken || undefined,
-              language: detectDeviceLang(),
-            })
-          : await api.loginWithEmail({
-              email: trimmedEmail,
-              password,
-              invite_token: inviteToken || undefined,
-            });
+      // The invite is read from durable storage as well as the prop, and an
+      // invite the server refuses (unknown, expired) is dropped so it can
+      // never be the reason somebody cannot get into their own account.
+      const result = await signInWithPendingInvite(
+        inviteToken,
+        (invite_token) =>
+          mode === 'signup'
+            ? api.registerWithEmail({
+                name: name.trim(),
+                email: trimmedEmail,
+                password,
+                invite_token,
+                language: detectDeviceLang(),
+              })
+            : api.loginWithEmail({
+                email: trimmedEmail,
+                password,
+                invite_token,
+              }),
+        INVITE_REJECTED_ON_EMAIL,
+      );
 
       await setUserFromAuth(result.user, result.session_token, 'email');
       reset();

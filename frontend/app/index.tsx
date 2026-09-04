@@ -18,7 +18,7 @@ import { PressScale } from '../src/components/PressScale';
 import { ValueTour } from '../src/components/ValueTour';
 import { useStore } from '../src/store';
 import { logger } from '../src/logger';
-import { extractInviteToken, rememberInvite, readStoredInvite, clearStoredInvite } from '../src/invite';
+import { extractInviteToken, rememberInvite, readStoredInvite, clearStoredInvite, signInWithPendingInvite } from '../src/invite';
 import { getLoginHint, clearLoginHint, maskEmail, LoginHint } from '../src/loginHint';
 
 WebBrowser.maybeCompleteAuthSession();
@@ -173,16 +173,14 @@ export default function Landing() {
   /** Turn a Google id_token into a session and land in the app. Shared by the
    *  native popup result and the web redirect return, so both finish identically. */
   const completeWithIdToken = useCallback(async (idToken: string) => {
-    // Not `Platform.OS === 'web'` any more. Android tears the activity down
-    // behind Google's sheet often enough that component state is the one place
-    // the token cannot be trusted to survive.
-    const token = inviteToken || (await readStoredInvite()) || undefined;
-
+    // The stored token is read here, not just component state: Android tears
+    // the activity down behind Google's sheet often enough that state is the
+    // one place it cannot be trusted to survive. A rejected invite is dropped
+    // rather than allowed to fail the sign-in.
     const { api } = await import('../src/api');
-    const authResult = await api.exchangeSession(idToken, token);
+    const authResult = await signInWithPendingInvite(
+      inviteToken, (token) => api.exchangeSession(idToken, token));
     await setUserFromAuth(authResult.user, authResult.session_token, 'google');
-
-    await clearStoredInvite();
 
     router.replace('/feed');
   }, [inviteToken, router, setUserFromAuth]);
@@ -206,8 +204,9 @@ export default function Landing() {
       const full = [credential.fullName?.givenName, credential.fullName?.familyName]
         .filter(Boolean).join(' ').trim();
       const { api } = await import('../src/api');
-      const authResult = await api.exchangeAppleSession(
-        credential.identityToken, full || undefined, inviteToken || undefined);
+      const authResult = await signInWithPendingInvite(
+        inviteToken,
+        (token) => api.exchangeAppleSession(credential.identityToken!, full || undefined, token));
       await setUserFromAuth(authResult.user, authResult.session_token, 'apple');
       router.replace('/feed');
     } catch (e: any) {
@@ -322,12 +321,10 @@ export default function Landing() {
           return;
         }
 
-        const token = inviteToken || (await readStoredInvite()) || undefined;
-
         const { api: apiModule } = await import('../src/api');
-        const authResult = await apiModule.exchangeSession(idToken, token);
+        const authResult = await signInWithPendingInvite(
+          inviteToken, (token) => apiModule.exchangeSession(idToken, token));
         await setUserFromAuth(authResult.user, authResult.session_token, 'google');
-        await clearStoredInvite();
         router.replace('/feed');
         return;
       }
