@@ -17,6 +17,7 @@ import {
 import { PressScale } from './PressScale';
 import { useStore } from '../store';
 import { apiErrorText } from '../apiError';
+import { ScansLeft } from './ScansLeft';
 import { localeFor } from '../utils/date';
 import { api, CardType, CapturedRecipe, ScanResult } from '../api';
 import { DOCUMENT_CATEGORIES, CATEGORY_STYLE } from '../documentCategories';
@@ -382,6 +383,12 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
                   </View>
                 )}
               </View>
+
+              {/* The allowance, said before it runs out — beside the buttons
+                  that spend it, not in Settings. */}
+              {phase === 'idle' && (
+                <View style={{ alignItems: 'center', marginTop: 12 }}><ScansLeft /></View>
+              )}
 
               {phase === 'error' && (
                 <View style={[styles.errorBox, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>

@@ -48,7 +48,8 @@ describe('what a failed call says out loud', () => {
   it('translates every new key in all four languages', () => {
     const I18N = fs.readFileSync(path.join(__dirname, '..', 'i18n.ts'), 'utf8');
     for (const key of ['err_ai_allowance', 'err_plan_feature', 'err_signed_out',
-                       'err_too_large', 'err_server', 'err_offline']) {
+                       'err_too_large', 'err_server', 'err_offline',
+                       'scans_left', 'scans_none_left']) {
       expect((I18N.match(new RegExp(`^\\s*${key}:`, 'gm')) || [])).toHaveLength(4);
     }
   });
@@ -56,6 +57,13 @@ describe('what a failed call says out loud', () => {
 
 describe('the AI surfaces that can run out', () => {
   const read = (p: string) => fs.readFileSync(path.join(__dirname, '..', '..', p), 'utf8');
+
+  it('the Kitchen never prints a raw server message', () => {
+    // Where the reported failure happened. Planning a week spends a scan per
+    // recipe opened, so this is the file most likely to meet the wall — and it
+    // had seven separate places that would have shown the backend's English.
+    expect(read('app/(tabs)/kitchen.tsx')).not.toMatch(/e\?\.message \|\| t\(/);
+  });
 
   it('no AI path prints the raw server message any more', () => {
     for (const file of [
@@ -68,6 +76,21 @@ describe('the AI surfaces that can run out', () => {
       expect(src).not.toMatch(/e\?\.message \|\| t\('(scan_failed|exp_scan_failed|cam_vision_failed|recipe_ai_failed)'\)/);
       expect(src).toContain('apiErrorText');
     }
+  });
+
+  it('warns before the wall, on the sheets that spend the allowance', () => {
+    // The count used to live only in Settings, which nobody opens before
+    // photographing a school letter — so the first mention of a limit was the
+    // limit stopping you.
+    for (const file of ['app/(tabs)/kitchen.tsx', 'src/components/CameraCaptureModal.tsx']) {
+      expect(read(file)).toContain('<ScansLeft />');
+    }
+    const comp = read('src/components/ScansLeft.tsx');
+    // Only when it is nearly gone: a counter on every scan turns a generous
+    // allowance into something to ration.
+    expect(comp).toContain('left > WARN_AT');
+    // And never on a plan whose ceiling nobody can reach.
+    expect(comp).toContain('limit >= 1000');
   });
 
   it('running out of scans hands the shopping list back to the person', () => {
