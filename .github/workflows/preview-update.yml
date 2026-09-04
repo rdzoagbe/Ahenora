@@ -70,18 +70,19 @@ jobs:
         working-directory: frontend
         run: npm install --no-audit --no-fund
 
-      # Android only, deliberately and temporarily.
+      # BOTH platforms — and unlike the production workflow, that is safe here.
       #
-      # One runtimeVersion serves both platforms, so `--platform all` is the
-      # correct steady state and this MUST go back to it: leaving it at android
-      # once iOS is live means every OTA silently reaches half the users, and
-      # the workflow stays green while shipping nothing to iPhone.
+      # This publishes to the `preview` EAS branch. App Review runs a build on
+      # the `production` channel, and the two never meet, so an update sent
+      # here cannot change the app underneath a review in progress. The
+      # production workflow stays pinned to android until iOS is approved; this
+      # one does not have to.
       #
-      # It is android today because the first iOS build is in App Review. An
-      # update published to this channel can be picked up by the build the
-      # reviewer is running, changing the app underneath a review in progress.
-      # Flip both this workflow and preview-update.yml back to `all` the day
-      # iOS is approved.
+      # It matters now because the iPhone tester is a real co-parent in a real
+      # household, reproducing bugs the Android side cannot: an invite arriving
+      # by email, opened on a phone, and a notification that has to cross
+      # between the two. Leaving her on a channel that receives nothing means
+      # every iOS fix waits on Apple before anybody can tell whether it worked.
       #
       # The comments live ABOVE the run block, not inside it: a `#` line inside
       # a `\` continuation does not comment the flag out, it ends the command
@@ -99,7 +100,7 @@ jobs:
           UPDATE_MESSAGE: ${{ github.event.inputs.message || 'merge to main' }}
         run: |
           npx eas-cli@latest update \
-            --platform android \
+            --platform all \
             --branch preview \
             --environment preview \
             --message "$UPDATE_MESSAGE ($GITHUB_SHA)" \
