@@ -786,6 +786,13 @@ async def _gemini_vision(prompt: str, image_base64: str, system: str = "", fast:
 # never a free way around the limit; max_members stays as a generous total
 # safety cap. "family_office" is retired — any family doc still carrying it
 # resolves to "executive" via plan_catalog_for().
+# A ceiling, not a budget. Paid plans are not supposed to meter AI: a household
+# that pays and then gets stopped mid-task costs a renewal to save fractions of
+# a cent, and that is exactly what happened to a subscriber preparing the week's
+# meals. The number stays finite only as a guard against a runaway loop, and it
+# is high enough that no household using the app normally will approach it.
+AI_SCANS_UNLIMITED = 100000
+
 PLAN_CATALOG = {
     "village": {
         "price_monthly": 0.0,
@@ -793,7 +800,10 @@ PLAN_CATALOG = {
         "limits": {
             "max_members": 10,
             "max_children": 2,
-            "ai_scans_per_month": 5,
+            # Ten, not five. The scan is the thing the listing and the flyer
+            # both lead with, and five is not enough times to feel it work
+            # before the app starts saying no.
+            "ai_scans_per_month": 10,
             "vault_bytes": 25 * 1024 * 1024,
             "weekly_brief": False,
             "multi_property": False,
@@ -823,7 +833,7 @@ PLAN_CATALOG = {
         "limits": {
             "max_members": 12,
             "max_children": 5,
-            "ai_scans_per_month": 100,
+            "ai_scans_per_month": AI_SCANS_UNLIMITED,
             "vault_bytes": 500 * 1024 * 1024,
             "weekly_brief": True,
             "multi_property": False,
@@ -847,7 +857,7 @@ PLAN_CATALOG = {
         "limits": {
             "max_members": 20,
             "max_children": 10,
-            "ai_scans_per_month": 100000,   # effectively unlimited
+            "ai_scans_per_month": AI_SCANS_UNLIMITED,
             "vault_bytes": 10 * 1024 * 1024 * 1024,   # 10 GB
             "weekly_brief": True,
             "multi_property": True,
