@@ -4,7 +4,7 @@ import * as Linking from 'expo-linking';
 import { UserPlus } from 'lucide-react-native';
 import { useStore } from '../store';
 import { api } from '../api';
-import { extractInviteToken, clearStoredInvite } from '../invite';
+import { extractInviteToken, readStoredInvite, rememberInvite, clearStoredInvite } from '../invite';
 import { logger } from '../logger';
 import { PressScale } from './PressScale';
 
@@ -56,7 +56,7 @@ export function InviteJoinPrompt() {
       try {
         const info = await api.getInvite(candidate);
         if (info.status === 'accepted') {
-          clearStoredInvite();
+          await clearStoredInvite();
           return;
         }
         if (!cancelled) {
@@ -66,26 +66,32 @@ export function InviteJoinPrompt() {
         }
       } catch (e: any) {
         logger.warn('pending invite lookup failed', e?.message || e);
-        clearStoredInvite();
+        await clearStoredInvite();
         await askServer();
       }
     };
 
-    if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      let stored: string | null = null;
-      try {
-        stored = window.sessionStorage.getItem('pending_invite');
-      } catch {
-        // Ignore storage failure.
+    // A link beats storage, and is written to storage on the way past — this
+    // prompt can be dismissed, and the app can be killed, before anyone taps
+    // Join. Native reads the same store as web now; it used to read nothing.
+    const arrive = async (fromLink: string | null) => {
+      if (fromLink) {
+        await rememberInvite(fromLink);
+        await consider(fromLink);
+        return;
       }
-      consider(stored || extractInviteToken(window.location.href));
+      await consider(await readStoredInvite());
+    };
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      arrive(extractInviteToken(window.location.href));
       return;
     }
 
-    Linking.getInitialURL().then((url) => consider(extractInviteToken(url)));
+    Linking.getInitialURL().then((url) => arrive(extractInviteToken(url)));
     const subscription = Linking.addEventListener('url', ({ url }) => {
       const fromLink = extractInviteToken(url);
-      if (fromLink) consider(fromLink);
+      if (fromLink) arrive(fromLink);
     });
     return () => {
       cancelled = true;
@@ -99,7 +105,7 @@ export function InviteJoinPrompt() {
   };
 
   const succeed = async () => {
-    clearStoredInvite();
+    await clearStoredInvite();
     setJoined(true);
     await refreshUser().catch(() => undefined);
     refreshSubscription();
