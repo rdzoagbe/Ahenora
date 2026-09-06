@@ -8,7 +8,7 @@ import { PressScale } from '../src/components/PressScale';
 import { AmbientBackground } from '../src/components/AmbientBackground';
 import { useUI, UIColors } from '../src/components/Kit';
 import { useStore } from '../src/store';
-import { api, MetricRow, VersionAdoption, PlanAdoption, FunnelSummary,
+import { api, MetricRow, VersionAdoption, PlanAdoption, FunnelSummary, PushHealth,
   RetentionSummary, InviteBreakdown, AiHealth, SubscriberList,
   BillingEventLog } from '../src/api';
 import { logger } from '../src/logger';
@@ -68,6 +68,7 @@ export default function MetricsScreen() {
   const [retention, setRetention] = useState<RetentionSummary | null>(null);
   const [invites, setInvites] = useState<InviteBreakdown | null>(null);
   const [aiHealth, setAiHealth] = useState<AiHealth | null>(null);
+  const [pushHealth, setPushHealth] = useState<PushHealth | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -104,6 +105,9 @@ export default function MetricsScreen() {
     api.getInviteBreakdown(30).then(setInvites).catch((e) => logger.warn('invite breakdown load failed', e?.message || e));
     // probe=0 (default) — free, reports configured/plumbing state, no token cost.
     api.getAiHealth().then(setAiHealth).catch((e) => logger.warn('ai health load failed', e?.message || e));
+    // A silent morning has two very different causes and they look identical
+    // from a phone. This separates them.
+    api.getPushHealth().then(setPushHealth).catch((e) => logger.warn('push health load failed', e?.message || e));
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -362,6 +366,87 @@ export default function MetricsScreen() {
           ) : (
             <Text style={styles.muted}>No retention data yet — fills in as people sign up and return.</Text>
           )}
+
+          {/* Notifications — the two reasons a morning is silent.
+              A daily job that ran and had nothing to say, and a scheduler that
+              is not running at all, are indistinguishable from the phone in
+              your hand. That ambiguity cost two rounds of "did I get no
+              notifications because nothing was due, or because it's broken?" —
+              so say which. `served today` counts people whose slot has been
+              claimed: the job ran for them, whether or not it spoke. */}
+          <Text style={styles.sectionTitle}>Notifications</Text>
+          {(() => {
+            const sch = pushHealth?.scheduler;
+            const live = sch?.state === 'alive';
+            return (
+              <>
+                <View style={styles.card}>
+                  <View style={[styles.eventRow, { borderTopWidth: 0 }]}>
+                    <Text style={styles.eventLabel}>Sender</Text>
+                    <Text style={[styles.eventCount,
+                      live && { color: ui.mintText },
+                      sch && !live && { color: ui.danger }]}>
+                      {sch ? sch.state : '—'}
+                    </Text>
+                  </View>
+                  <View style={styles.eventRow}>
+                    <Text style={styles.eventLabel}>Last tick</Text>
+                    <Text style={styles.eventCount}>
+                      {sch?.seconds_since_tick === null || sch?.seconds_since_tick === undefined
+                        ? '—' : `${sch.seconds_since_tick}s ago · ${sch.ticks} ticks`}
+                    </Text>
+                  </View>
+                  {sch?.last_error ? (
+                    <View style={styles.eventRow}>
+                      <Text style={styles.eventLabel}>Last error</Text>
+                      <Text style={[styles.eventCount, { color: ui.danger, flexShrink: 1, textAlign: 'right' }]} numberOfLines={2}>
+                        {sch.last_error}
+                      </Text>
+                    </View>
+                  ) : null}
+                  <View style={styles.eventRow}>
+                    <Text style={styles.eventLabel}>Reachable people</Text>
+                    <Text style={styles.eventCount}>
+                      {pushHealth
+                        ? `${pushHealth.reach.people_reachable} · ${pushHealth.reach.active_phone_tokens} phones · ${pushHealth.reach.active_web_subscriptions} browsers`
+                        : '—'}
+                    </Text>
+                  </View>
+                  <View style={styles.eventRow}>
+                    <Text style={styles.eventLabel}>You</Text>
+                    <Text style={[styles.eventCount,
+                      pushHealth && !pushHealth.you.reachable && { color: ui.danger }]}>
+                      {!pushHealth ? '—'
+                        : !pushHealth.you.reachable ? 'no device registered'
+                        : !pushHealth.you.reminders_enabled ? 'reminders OFF'
+                        : pushHealth.you.timezone || 'no timezone'}
+                    </Text>
+                  </View>
+                </View>
+
+                {pushHealth ? (
+                  <View style={styles.card}>
+                    {pushHealth.jobs.map((job, i) => (
+                      <View key={job.key} style={[styles.eventRow, i === 0 && { borderTopWidth: 0 }]}>
+                        <Text style={styles.eventLabel}>{job.key.replace(/_/g, ' ')} · {job.at}</Text>
+                        <Text style={[styles.eventCount, job.waiting_now > 0 && { color: ui.danger }]}>
+                          {job.served_today} served{job.waiting_now > 0 ? ` · ${job.waiting_now} late` : ''}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
+
+                <Text style={styles.hint}>
+                  &quot;Served&quot; means the job RAN for that person today — it may still
+                  have chosen to stay quiet because there was nothing to say. So a
+                  live sender with people served and nothing arriving is a content
+                  question, not a delivery one. &quot;Late&quot; is the real fault: past the
+                  slot, inside the grace window, still unserved.
+                </Text>
+              </>
+            );
+          })()}
 
           {/* AI health — every AI feature degrades gracefully, so a broken
               model can fail silently for weeks. This makes it visible: live

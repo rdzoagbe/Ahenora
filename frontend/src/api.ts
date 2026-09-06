@@ -965,6 +965,40 @@ export interface InviteBreakdown {
   };
 }
 
+/** /api/health/push — admin only. Answers the question a silent morning
+ *  raises: was there nothing to say, or is the sender broken? */
+export interface PushHealth {
+  scheduler: {
+    state: 'alive' | 'stalled' | 'never_ran' | 'disabled' | string;
+    enabled: boolean;
+    interval_seconds: number;
+    booted_at: string | null;
+    last_tick_at: string | null;
+    seconds_since_tick: number | null;
+    ticks: number;
+    last_error: string | null;
+  };
+  reach: {
+    people_reachable: number;
+    active_phone_tokens: number;
+    active_web_subscriptions: number;
+  };
+  jobs: {
+    key: string;
+    at: string;
+    grace_minutes: number;
+    served_today: number;
+    waiting_now: number;
+  }[];
+  you: {
+    reachable: boolean;
+    timezone: string | null;
+    local_time: string | null;
+    reminders_enabled: boolean;
+    claims: Record<string, string | null>;
+  };
+}
+
 export interface AiHealth {
   key_configured: boolean;
   library_loaded: boolean;
@@ -1617,6 +1651,8 @@ export const api = {
   // probe=1 does one tiny real generation. The Metrics screen uses probe=0.
   getAiHealth: () =>
     request<AiHealth>('/health/ai'),
+  getPushHealth: () =>
+    request<PushHealth>('/health/push'),
   getVersionAdoption: () =>
     request<VersionAdoption>('/admin/version-adoption'),
   getPlanAdoption: () =>
