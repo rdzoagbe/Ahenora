@@ -178,15 +178,67 @@ class TheDigestPass(unittest.TestCase):
         self.assertEqual(self.run_pass(), 1)
         self.assertIn("Dentist", self.sent[0]["body"])
 
-    def test_a_task_from_three_weeks_ago_stops_being_news(self):
+    def test_a_task_from_three_weeks_ago_stops_being_read_out_by_name(self):
         """Reported by a co-parent: "a past task keeps sending me
         notifications". There was no lower bound at all, so anything left open
         was read out every single morning, forever. That is how a household
         learns to swipe the whole digest away unread."""
         self.seed(due_in_hours=-24 * 21)
         self.assertEqual(self.run_pass(), 1)
-        self.assertEqual(self.sent[0]["type"], "daily_tip")
         self.assertNotIn("Dentist", self.sent[0]["body"])
+
+    def test_but_it_is_still_counted_rather_than_disappearing(self):
+        """The first version of the floor dropped stale items entirely, and an
+        empty digest falls through to the quiet-day tip — which ships silent on
+        a LOW-importance channel. So a morning with real unfinished work on it
+        arrived as nothing at all, and was reported as "I didn't get any
+        notifications". Old is not the same as done."""
+        self.seed(due_in_hours=-24 * 21)
+        self.assertEqual(self.run_pass(), 1)
+        self.assertEqual(self.sent[0]["type"], "morning_digest")
+        self.assertIn("1", self.sent[0]["body"])
+
+    def test_a_backlog_is_counted_not_recited(self):
+        """A count is a state — it shrinks as things are cleared and vanishes
+        when the house is clear. The titles are what nagged."""
+        for i, days in enumerate((12, 16, 25)):
+            asyncio.run(self.db["cards"].insert_one(
+                {"card_id": f"old{i}", "family_id": "fam1", "status": "OPEN",
+                 "title": f"Stale {i}", "due_date": self.now - timedelta(days=days)}))
+        self.seed(due_in_hours=None)
+        self.assertEqual(self.run_pass(), 1)
+        self.assertEqual(self.sent[0]["type"], "morning_digest")
+        self.assertIn("3", self.sent[0]["body"])
+        for i in range(3):
+            self.assertNotIn(f"Stale {i}", self.sent[0]["body"])
+
+    def test_today_still_wins_over_the_backlog(self):
+        """Something due today is the message. The backlog must never displace
+        it — that would be the old recital wearing a different hat."""
+        asyncio.run(self.db["cards"].insert_one(
+            {"card_id": "old1", "family_id": "fam1", "status": "OPEN",
+             "title": "Ancient", "due_date": self.now - timedelta(days=30)}))
+        self.seed()
+        self.assertEqual(self.run_pass(), 1)
+        self.assertIn("Dentist", self.sent[0]["body"])
+        self.assertNotIn("Ancient", self.sent[0]["body"])
+
+    def test_a_genuinely_clear_house_is_still_quiet(self):
+        """The tip is for a day with nothing on it. That case was right and
+        must stay right — the fix is about not calling a backlog "quiet"."""
+        self.seed(due_in_hours=None)
+        self.assertEqual(self.run_pass(), 1)
+        self.assertEqual(self.sent[0]["type"], "daily_tip")
+
+    def test_a_completed_old_task_is_not_a_backlog(self):
+        """Only OPEN work counts. Counting finished cards would invent a
+        backlog that grows forever and can never be cleared."""
+        asyncio.run(self.db["cards"].insert_one(
+            {"card_id": "done1", "family_id": "fam1", "status": "DONE",
+             "title": "Finished", "due_date": self.now - timedelta(days=30)}))
+        self.seed(due_in_hours=None)
+        self.assertEqual(self.run_pass(), 1)
+        self.assertEqual(self.sent[0]["type"], "daily_tip")
 
     def test_the_floor_is_where_it_says_it_is(self):
         """Pinned so the window cannot drift silently: a week of grace, and the

@@ -19,7 +19,12 @@ on:
       - 'tests/**'
       - 'legal/**'
       - 'scripts/**'
-      - '.github/workflows/backend-ci.yml'
+      # Every workflow, not just this one. tests/test_workflow_publish_steps.py
+      # reads the two OTA publish workflows, so a change to THOSE has to run
+      # these tests — and it did not. A deliberate platform split in
+      # preview-update.yml turned that test red and merged anyway, because the
+      # only workflow path watched here was this file's own.
+      - '.github/workflows/**'
   pull_request:
     branches:
       - main
@@ -28,7 +33,12 @@ on:
       - 'tests/**'
       - 'legal/**'
       - 'scripts/**'
-      - '.github/workflows/backend-ci.yml'
+      # Every workflow, not just this one. tests/test_workflow_publish_steps.py
+      # reads the two OTA publish workflows, so a change to THOSE has to run
+      # these tests — and it did not. A deliberate platform split in
+      # preview-update.yml turned that test red and merged anyway, because the
+      # only workflow path watched here was this file's own.
+      - '.github/workflows/**'
   workflow_dispatch:
 
 concurrency:
