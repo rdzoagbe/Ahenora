@@ -1409,6 +1409,9 @@ const en: Dict = {
   set_notif_test_sub: 'Check this phone can receive them',
   set_notif_test_sending: 'Sending…',
   set_notif_test_sent: 'Sent. It should arrive in a few seconds.',
+  // The test push ignores the toggle on purpose, so say why the real ones
+  // are still not arriving.
+  set_notif_test_muted: 'Sent — but reminders are switched OFF above, so real alerts stay silent.',
   // Zero devices is the real failure most of the time, and the one a
   // cheerful "sent!" would hide.
   set_notif_test_no_device: 'No device is registered for notifications on this account. Turn the toggle above off and on to register this phone.',
@@ -3379,6 +3382,7 @@ const es: Dict = {
   set_notif_test_sub: 'Comprueba que este teléfono puede recibirlas',
   set_notif_test_sending: 'Enviando…',
   set_notif_test_sent: 'Enviada. Debería llegar en unos segundos.',
+  set_notif_test_muted: 'Enviada, pero los recordatorios están DESACTIVADOS arriba, así que las alertas reales seguirán en silencio.',
   set_notif_test_no_device: 'No hay ningún dispositivo registrado para notificaciones en esta cuenta. Desactiva y vuelve a activar el ajuste de arriba para registrar este teléfono.',
   set_notif_test_failed: 'No se pudo enviar la notificación de prueba.',
   set_upgrade_to_unlock: 'Mejora tu plan para desbloquear',
@@ -5338,6 +5342,7 @@ const fr: Dict = {
   set_notif_test_sub: 'Vérifier que ce téléphone peut les recevoir',
   set_notif_test_sending: 'Envoi…',
   set_notif_test_sent: 'Envoyée. Elle devrait arriver dans quelques secondes.',
+  set_notif_test_muted: "Envoyée, mais les rappels sont DÉSACTIVÉS ci-dessus : les vraies alertes resteront silencieuses.",
   set_notif_test_no_device: "Aucun appareil n'est enregistré pour les notifications sur ce compte. Désactivez puis réactivez le réglage ci-dessus pour enregistrer ce téléphone.",
   set_notif_test_failed: "Impossible d'envoyer la notification test.",
   set_upgrade_to_unlock: 'Passez à un forfait supérieur pour débloquer',
@@ -7297,6 +7302,7 @@ const de: Dict = {
   set_notif_test_sub: 'Prüfen, ob dieses Telefon sie empfangen kann',
   set_notif_test_sending: 'Wird gesendet…',
   set_notif_test_sent: 'Gesendet. Sie sollte in wenigen Sekunden ankommen.',
+  set_notif_test_muted: 'Gesendet – aber Erinnerungen sind oben AUS, echte Hinweise bleiben also stumm.',
   set_notif_test_no_device: 'Für dieses Konto ist kein Gerät für Benachrichtigungen registriert. Schalte die Einstellung oben aus und wieder ein, um dieses Telefon zu registrieren.',
   set_notif_test_failed: 'Testbenachrichtigung konnte nicht gesendet werden.',
   set_upgrade_to_unlock: 'Upgrade zum Freischalten',
