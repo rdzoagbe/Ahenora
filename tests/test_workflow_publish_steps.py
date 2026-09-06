@@ -14,9 +14,17 @@ passes it too. Only running it and reading the arguments the command actually
 receives tells the truth — which is why the flag check below executes the step
 with the binary swapped for echo instead of searching its text.
 
-And the two workflows must publish to the same platforms. The production and
-preview channels drifting apart means a change is tested on one set of devices
-and shipped to another.
+And preview must cover at least what production ships to. The danger is
+shipping to a device nobody previewed on — so production's platforms have to be
+a SUBSET of preview's. The reverse is fine and is the situation today:
+production is pinned to android while App Review runs a build on that channel,
+and preview publishes to `all` so the iPhone tester receives fixes at all.
+
+This started as an equality check, which is a different claim and a wrong one.
+It broke the moment that deliberate, documented split was made — and nothing
+noticed, because backend CI only watched its own workflow file, not the two
+files this test actually reads. Both halves are fixed: the assertion says what
+it means, and the path filter now covers every workflow.
 
 Run with:  python3 -m unittest discover -s tests -v
 """
@@ -102,14 +110,34 @@ class PublishSteps(unittest.TestCase):
                               f"{wf} / {name}: {flag} never reaches the command. "
                               f"It got: {args!r}")
 
-    def test_production_and_preview_publish_to_the_same_platforms(self):
+    def test_preview_covers_everything_production_ships_to(self):
+        """Never ship to a device nobody previewed on."""
         found = {}
         for wf, _, run in publish_steps():
             match = re.search(r"--platform\s+(\S+)", run)
             self.assertIsNotNone(match, f"{wf} names no platform")
             found[wf] = match.group(1)
-        self.assertEqual(len(set(found.values())), 1,
-                         f"production and preview have drifted apart: {found}")
+
+        def devices(flag):
+            return {"android", "ios"} if flag == "all" else {flag}
+
+        production = devices(found["frontend-ci-eas-update.yml"])
+        preview = devices(found["preview-update.yml"])
+        self.assertTrue(
+            production <= preview,
+            "production ships to devices preview never reaches: "
+            f"production={sorted(production)} preview={sorted(preview)}")
+
+    def test_production_is_never_wider_than_the_binaries_allow(self):
+        """A guard on the pin itself, so it is a decision rather than a
+        leftover. Production is android-only ONLY while iOS is in App Review —
+        an update on that channel can change the app under a reviewer. When
+        iOS is approved this flips to `all`, and this test is the reminder:
+        it fails if production names a platform that is neither.
+        """
+        found = {wf: re.search(r"--platform\s+(\S+)", run).group(1)
+                 for wf, _, run in publish_steps()}
+        self.assertIn(found["frontend-ci-eas-update.yml"], ("android", "all"))
 
     def test_a_narrowed_platform_says_why_and_when_it_goes_back(self):
         # `all` is the steady state. Anything narrower is a temporary measure,

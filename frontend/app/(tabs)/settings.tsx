@@ -44,6 +44,7 @@ import { appVersionInfo, ensureNotificationPermissions, registerForPushNotificat
 import { BUILD_TAG } from '../../src/buildInfo';
 import { requestWebPush } from '../../src/webpush';
 import { logger } from '../../src/logger';
+import { apiErrorText } from '../../src/apiError';
 
 function formatBytes(bytes?: number | null) {
   const value = bytes || 0;
@@ -337,6 +338,25 @@ export default function Settings() {
       setInviteResult(`${t('set_share_sheet_error')} ${inviteUrl}`);
     }
   }, [user?.name]);
+
+  /** Ask the server to push to this account right now, and say what came back.
+   *
+   *  Deliberately reports the token count. "Sent" with zero tokens is the
+   *  actual failure most of the time — permission was never granted, or the
+   *  device registered under an account that has since been logged out — and
+   *  a cheerful "sent!" over nothing is how you end up believing the system
+   *  works when it does not. */
+  const sendTestNotification = useCallback(async () => {
+    setNotificationStatus(t('set_notif_test_sending'));
+    try {
+      const res = await api.testNotification();
+      setNotificationStatus(
+        res.tokens > 0 ? t('set_notif_test_sent') : t('set_notif_test_no_device'));
+    } catch (e: unknown) {
+      logger.warn('test notification failed', e);
+      setNotificationStatus(apiErrorText(e, t, 'set_notif_test_failed'));
+    }
+  }, [t]);
 
   const updateNotificationPrefs = useCallback(async (changes: Partial<NotificationSettings>) => {
     const nextPrefs = { ...notificationPrefs, ...changes };
@@ -798,6 +818,20 @@ export default function Settings() {
               subtitle={weeklyBrief ? t('set_weekly_digest_sub') : t('set_upgrade_to_unlock')}
               on={weeklyBrief}
               onPress={() => router.push('/pricing')}
+            />
+            {/* The server has had a test endpoint the whole time and the app
+                never offered a way to reach it. So "did I get no notifications
+                because there was nothing to say, or because they are broken?"
+                had no answer short of reading the code — which is exactly the
+                question that came back from a real morning. One tap settles
+                it, and it settles it on the phone that is actually in doubt. */}
+            <NavRow
+              testID="notif-send-test"
+              tile={<IconTile bg={ui.mint}><Bell color={ui.mintText} size={18} /></IconTile>}
+              title={t('set_notif_test')}
+              subtitle={t('set_notif_test_sub')}
+              right={<ChevronRight color={ui.muted} size={18} />}
+              onPress={sendTestNotification}
               divider={false}
             />
           </Card>

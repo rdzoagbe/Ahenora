@@ -2279,6 +2279,8 @@ PUSH_I18N = {
         "digest_title": "Today",
         "digest_item_one": "thing today",
         "digest_item_many": "things today",
+        "digest_backlog_one": "1 thing still open from earlier",
+        "digest_backlog_many": "{n} things still open from earlier",
         "dinner_title": "Dinner tonight 🍽",
         "dinner_body_buy": "{meal} — {n} still to buy",
         "nightly_title": "Tomorrow 📅",
@@ -2315,6 +2317,8 @@ PUSH_I18N = {
         "digest_title": "Aujourd'hui",
         "digest_item_one": "chose aujourd'hui",
         "digest_item_many": "choses aujourd'hui",
+        "digest_backlog_one": "1 chose encore en attente",
+        "digest_backlog_many": "{n} choses encore en attente",
         "dinner_title": "Dîner ce soir 🍽",
         "dinner_body_buy": "{meal} — {n} article(s) à acheter",
         "nightly_title": "Demain 📅",
@@ -2351,6 +2355,8 @@ PUSH_I18N = {
         "digest_title": "Hoy",
         "digest_item_one": "cosa hoy",
         "digest_item_many": "cosas hoy",
+        "digest_backlog_one": "1 cosa aún pendiente",
+        "digest_backlog_many": "{n} cosas aún pendientes",
         "dinner_title": "Cena de esta noche 🍽",
         "dinner_body_buy": "{meal} — faltan {n} por comprar",
         "nightly_title": "Mañana 📅",
@@ -2387,6 +2393,8 @@ PUSH_I18N = {
         "digest_title": "Heute",
         "digest_item_one": "Sache heute",
         "digest_item_many": "Sachen heute",
+        "digest_backlog_one": "1 Sache ist noch offen",
+        "digest_backlog_many": "{n} Sachen sind noch offen",
         "dinner_title": "Abendessen heute 🍽",
         "dinner_body_buy": "{meal} — {n} noch zu kaufen",
         "nightly_title": "Morgen 📅",
@@ -2820,21 +2828,47 @@ async def _build_morning_digest(database, user, local, L):
     """What today needs: due by end of day, and not stale enough to be nagging.
 
     The lower bound is what stops this becoming a daily recital of everything
-    ever left undone — see DIGEST_OVERDUE_DAYS.
+    ever left undone — see DIGEST_OVERDUE_DAYS. What falls past it is COUNTED
+    rather than dropped, because dropping it silently was its own bug: see
+    below.
     """
     _, end_of_day = _local_day_bounds(local)
     floor = end_of_day - timedelta(days=DIGEST_OVERDUE_DAYS + 1)
     titles = []
+    backlog = 0
     async for card in database["cards"].find(
             {"family_id": user.get("family_id"), "status": "OPEN"}, {"_id": 0}):
         due = ensure_aware_utc(card.get("due_date"))
-        if due and floor <= due < end_of_day and _visible_to(user, card):
+        if not due or not _visible_to(user, card):
+            continue
+        if floor <= due < end_of_day:
             title = (card.get("title") or "").strip()
             if title:
                 titles.append(title)
+        elif due < floor:
+            backlog += 1
     body = digest_body(titles, L["digest_item_one"], L["digest_item_many"])
     if body:
         return (L["digest_title"], body)
+
+    # Nothing due in the window, but the house is not actually clear: there is
+    # open work, it is just old.
+    #
+    # This was silence until now, and silence was wrong. The floor above was
+    # added so a task from three weeks ago would stop being read out every
+    # morning — but when the stale items are ALL a household has, an empty
+    # digest fell through to the quiet-day tip, which ships on a LOW-importance
+    # channel with no sound. So a morning with three unfinished jobs on it
+    # arrived as nothing at all. Reported as "I didn't get any notifications",
+    # by the person who asked for the floor in the first place.
+    #
+    # A count, not the titles. Re-reading the same three names every morning is
+    # the nagging that started this; "3 still open" is a state, it shrinks as
+    # they are cleared, and it is gone the moment the house is.
+    if backlog:
+        line = (L["digest_backlog_one"] if backlog == 1
+                else L["digest_backlog_many"].format(n=backlog))
+        return (L["digest_title"], line)
     # Nothing on. The quiet-day tip used to be scheduled on the phone for 07:30
     # while the server digest fired at 07:30 too — so a BUSY day produced both,
     # from the same title, which is the duplicate this whole change exists to
