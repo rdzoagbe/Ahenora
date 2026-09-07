@@ -221,18 +221,21 @@ jobs:
         working-directory: frontend
         run: npm install --no-audit --no-fund
 
-      # Android only, deliberately and temporarily.
+      # Both platforms. One runtimeVersion serves both, so this is the steady
+      # state and the only correct value now that iOS is live.
       #
-      # One runtimeVersion serves both platforms, so `--platform all` is the
-      # correct steady state and this MUST go back to it: leaving it at android
-      # once iOS is live means every OTA silently reaches half the users, and
-      # the workflow stays green while shipping nothing to iPhone.
+      # It was pinned to android from 2026-09-03 to 2026-09-07, while build 6 of
+      # 1.1.0 sat in App Review: an update published to this channel can be
+      # picked up by the build a reviewer is running, changing the app
+      # underneath a review in progress. Apple approved on 2026-09-07 and the
+      # pin came off the same day.
       #
-      # It is android today because the first iOS build is in App Review. An
-      # update published to this channel can be picked up by the build the
-      # reviewer is running, changing the app underneath a review in progress.
-      # Flip both this workflow and preview-update.yml back to `all` the day
-      # iOS is approved.
+      # Do not put it back without the same reason. Leaving it at android while
+      # iOS is live means every OTA silently reaches half the users and the
+      # workflow stays green while shipping nothing to iPhone — a fix that
+      # appears to have gone out and has not. tests/test_workflow_publish_steps.py
+      # holds the invariant: production's platforms must be a subset of
+      # preview's, so a change here is checked against where it is tested.
       #
       # The comments live ABOVE the run block, not inside it: a `#` line inside
       # a `\` continuation does not comment the flag out, it ends the command
@@ -244,7 +247,7 @@ jobs:
         working-directory: frontend
         run: |
           npx eas-cli@latest update \
-            --platform android \
+            --platform all \
             --branch production \
             --environment production \
             --message "GitHub $GITHUB_SHA" \
