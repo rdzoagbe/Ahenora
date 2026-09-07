@@ -204,6 +204,34 @@ app.add_middleware(
 )
 
 
+def billing_marker(family: Optional[dict]) -> Optional[str]:
+    """Which rail paid for this household's plan, or None if nothing did.
+
+    THE one place that question is answered. It used to be answered in two,
+    with two different rules, and they disagreed on a value neither author had
+    in mind: the empty string.
+
+      * the launch cleanup asked `{"rc_last_event": {"$exists": False}}`
+      * the admin screen asked `fam.get("rc_last_event")` — truthiness
+
+    A webhook whose payload carries no `type` stores `rc_last_event: ""`
+    (event.get("type", "")). That value EXISTS, so the cleanup skips the
+    household forever; it is FALSY, so the screen prints no rail. The result is
+    a household that looks like a testing-window leftover, is counted as a
+    paying subscriber in every total, and is structurally immune to the code
+    written to catch exactly it.
+
+    A blank marker is no marker. Both callers now ask here, so they cannot
+    drift apart again.
+    """
+    fam = family or {}
+    if (fam.get("stripe_last_event") or "").strip():
+        return "stripe"
+    if (fam.get("rc_last_event") or "").strip():
+        return "google_play"
+    return None
+
+
 @app.on_event("startup")
 async def reset_testing_window_plans():
     # Cleanup for when real billing goes live: a paid plan stored without ANY
@@ -212,15 +240,26 @@ async def reset_testing_window_plans():
     # carries a marker: rc_last_event (Google Play) OR stripe_last_event (card).
     # Both must be excluded — keying the reset to RevenueCat alone would wipe a
     # legitimate Stripe subscriber's plan back to free on every restart.
+    #
+    # Filtered in Python rather than in the query, so it asks billing_marker the
+    # same question the admin screen asks. The query form is what let the two
+    # disagree; see billing_marker above.
     if db is None or not billing_is_live():
         return
     try:
-        result = await db["families"].update_many(
-            {"plan": {"$ne": "village"},
-             "rc_last_event": {"$exists": False},
-             "stripe_last_event": {"$exists": False}},
-            {"$set": {"plan": "village", "updated_at": datetime.now(timezone.utc)}},
-        )
+        stale = []
+        async for fam in db["families"].find(
+                {"plan": {"$ne": "village"}}, {"_id": 0, "family_id": 1,
+                                               "rc_last_event": 1,
+                                               "stripe_last_event": 1}):
+            if not billing_marker(fam) and fam.get("family_id"):
+                stale.append(fam["family_id"])
+        for fid in stale:
+            await db["families"].update_one(
+                {"family_id": fid},
+                {"$set": {"plan": "village", "updated_at": datetime.now(timezone.utc)}},
+            )
+        result = type("R", (), {"modified_count": len(stale)})()
         if result.modified_count:
             log.info("Reset %d testing-window plan(s) to village", result.modified_count)
     except Exception as exc:  # pragma: no cover - startup must never crash the app
@@ -8351,8 +8390,7 @@ async def admin_subscribers(user=Depends(require_user)):
         is_paying = plan != "village"
         if is_paying:
             paying += 1
-        source = ("stripe" if fam.get("stripe_last_event")
-                  else "google_play" if fam.get("rc_last_event") else None)
+        source = billing_marker(fam)
         members = by_family.get(fid, [])
         # The creator: earliest-created user in the family.
         contact = min(members, key=lambda m: _epoch(m.get("created_at"))) if members else {}
@@ -8361,6 +8399,12 @@ async def admin_subscribers(user=Depends(require_user)):
             "plan": plan,
             "paying": is_paying,
             "billing_source": source,
+            # A paid plan with no rail behind it is not a subscriber. It is a
+            # testing-window leftover or an admin grant, and it had been
+            # rendering identically to somebody who actually pays — which is how
+            # "3 paying households" sat next to RevenueCat's 2 and neither
+            # number looked wrong.
+            "unpaid_premium": bool(is_paying and source is None),
             "billing_cycle": fam.get("billing_cycle"),
             "owner_name": contact.get("name", ""),
             "owner_email": contact.get("email", ""),
@@ -8385,6 +8429,10 @@ async def admin_subscribers(user=Depends(require_user)):
     return {
         "total": len(rows),
         "paying": paying,
+        # How many of those actually have a payment rail behind them. The two
+        # numbers being different is the interesting fact, so it is reported
+        # rather than left to be spotted by counting rows.
+        "paying_verified": sum(1 for r in rows if r["paying"] and not r["unpaid_premium"]),
         "subscribers": rows,
     }
 

@@ -602,6 +602,17 @@ export default function MetricsScreen() {
           {subs && subs.subscribers.length ? (
             <>
               <Text style={styles.sectionTitle}>Subscribers</Text>
+              {subs.paying_verified < subs.paying ? (
+                <View style={[styles.card, styles.warnCard]}>
+                  <Text style={styles.warnText}>
+                    {subs.paying} household{subs.paying === 1 ? ' is' : 's are'} on a paid plan
+                    but only {subs.paying_verified}{' '}
+                    {subs.paying_verified === 1 ? 'has' : 'have'} a payment behind{' '}
+                    {subs.paying_verified === 1 ? 'it' : 'them'}. The rest came from the testing
+                    window or an admin grant — real revenue is the verified number.
+                  </Text>
+                </View>
+              ) : null}
               <Text style={styles.hint}>
                 {subs.paying} paying of {subs.total} households. Paying first. Contact is the household&apos;s creator.
               </Text>
@@ -624,10 +635,17 @@ export default function MetricsScreen() {
                             : 'Free'}
                         </Text>
                       </View>
-                      <Text style={styles.subMeta} numberOfLines={1}>
+                      {/* A dash used to stand where the rail goes, and read as
+                          "unknown". It is not unknown: nobody paid. Saying so
+                          is the difference between three subscribers and one. */}
+                      <Text
+                        style={[styles.subMeta, s.unpaid_premium && { color: ui.danger }]}
+                        numberOfLines={1}
+                      >
                         {s.paying
                           ? (s.billing_source === 'stripe' ? 'Card (Stripe)'
-                             : s.billing_source === 'google_play' ? 'Google Play' : '—')
+                             : s.billing_source === 'google_play' ? 'Google Play'
+                             : 'no payment on record')
                           : lastSeenLabel(s.last_active)}
                       </Text>
                     </View>
