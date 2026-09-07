@@ -161,7 +161,9 @@ def decide(list_json: str, insights: dict[str, str], now: datetime,
     for platform, payload in sorted(insights.items()):
         launches, crashes = crash_signal(payload)
         if launches is None or crashes is None:
-            head = (payload or "").strip().replace("\n", " ")[:300]
+            # Whole payload, whitespace collapsed: it is counts and ids, and it
+            # is the only way the next parser gets written from evidence.
+            head = " ".join((payload or "").split())[:2000]
             reasons.append(
                 f"{platform}: could not read launch/crash counts, so no "
                 f"conclusion was drawn from them. The payload began: "
