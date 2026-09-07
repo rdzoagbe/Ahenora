@@ -2,9 +2,17 @@ name: OTA guard
 
 # Watch the update people are actually running.
 #
-# Production publishes to a percentage and nothing promotes itself, which buys
-# containment at the cost of a new silent failure: a fix sitting at 20% while
-# its author believes it shipped. Nobody notices a thing that did not happen.
+# Two halves, and only one of them is live today.
+#
+# THE CRASH CHECK IS LIVE. It reads launches and crashes for the newest update
+# and raises the alarm on the shape of the 2026-09-03 outage — almost every
+# launch failing.
+#
+# THE STALE-ROLLOUT CHECK IS DORMANT, because production no longer stages: a
+# --rollout-percentage jammed publishing on the merge after it shipped (EAS
+# permits one rollout in progress per runtime version) and was removed the same
+# day. The check costs nothing while every update is at 100%, and is waiting
+# for staging to come back — see docs/RUNBOOK-ota.md.
 #
 # So this looks, hourly, and speaks only when there is something to do. A green
 # run means nothing needed saying. A FAILED run is the alarm — it surfaces in
@@ -54,6 +62,14 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: 20
+
+      # eas-cli reads the Expo app config, which resolves config plugins from
+      # node_modules. Without this it fails with "Failed to resolve plugin for
+      # module expo-router" before it reaches the network.
+      - name: Install dependencies
+        if: steps.cfg.outputs.run == 'true'
+        working-directory: frontend
+        run: npm install --no-audit --no-fund
 
       - name: Gather
         id: gather

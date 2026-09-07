@@ -23,14 +23,13 @@ its own workflow file rather than the two files this test reads. Both halves are
 fixed — the assertion says what it means, and the path filter covers every
 workflow. Since 2026-09-07 iOS is live and both publish `all`.
 
-The third thing held here is newer and matters most. Production publishes to a
-PERCENTAGE. On 2026-09-03 an update reached every Android install at once and
-the app stopped starting; the same update today would reach both stores. Users
-outside a rollout are served the previous latest update on the branch, so a
-partial publish leaves everyone else exactly where they were rather than
-somewhere new. A hardcoded 100 would be the flag present and doing nothing,
-which is the shape of guard that reads as protection and is not — so that is
-asserted separately.
+The third thing held here is newer, and it is the opposite of what it was for
+one afternoon. NEITHER workflow may stage its rollout. Staging was added on
+2026-09-07 to contain a bad update and jammed publishing on the very next
+merge, because EAS permits only one rollout in progress per runtime version and
+nothing promoted the previous one. A pipeline that refuses to ship until
+somebody clicks is its own kind of outage. The flag stays out until the
+"what happens to the previous canary" question has an answer.
 
 Run with:  python3 -m unittest discover -s tests -v
 """
@@ -147,32 +146,35 @@ class PublishSteps(unittest.TestCase):
             "production ships to devices preview never reaches: "
             f"production={sorted(production)} preview={sorted(preview)}")
 
-    def test_production_publishes_to_a_percentage_not_everybody(self):
-        """The containment that did not exist on 2026-09-03.
+    def test_neither_workflow_stages_its_rollout(self):
+        """EAS permits ONE rollout in progress per runtime version.
 
-        An update reached every Android install at once and the app stopped
-        starting. It would now reach both stores. Users outside a rollout are
-        served the previous latest update on the branch — so the ones not in it
-        stay exactly where they already were, which is what makes a partial
-        publish safe rather than merely smaller.
+        A --rollout-percentage was added to the production publish on
+        2026-09-07 to contain a bad update. It shipped, and the very next merge
+        could not publish at all:
+
+            Cannot publish a new update with this runtime version while a
+            rollout is in progress for the same runtime version. Before
+            publishing a new update, the latest rollout percentage must be set
+            to 100% or the rollout update deleted.
+
+        Nothing auto-promoted, so every merge after the first jammed the
+        pipeline until somebody promoted by hand. On a repository that merges
+        several times a day that is not a safety feature — it stops fixes
+        reaching anybody, including urgent ones.
+
+        Staging is still the right idea. Before it comes back it needs an
+        answer to "what happens to the previous canary when a new update is
+        published" — promote it, delete it, or refuse — designed against the
+        constraint rather than discovered by breaking production. This test is
+        here so the flag cannot be re-added without reading that.
         """
-        run = dict((wf, r) for wf, _, r in publish_steps())["frontend-ci-eas-update.yml"]
-        self.assertIn("--rollout-percentage", run,
-                      "production publishes to 100% of both stores at once")
-
-    def test_the_rollout_percentage_is_never_hardcoded_to_everyone(self):
-        """A literal 100 here would be the flag present and doing nothing —
-        the shape of guard that reads as protection and is not."""
-        run = dict((wf, r) for wf, _, r in publish_steps())["frontend-ci-eas-update.yml"]
-        match = re.search(r"--rollout-percentage\s+(\S+)", run)
-        self.assertIsNotNone(match)
-        self.assertNotIn("100", match.group(1))
-
-    def test_preview_is_not_staged(self):
-        """Testers are the people who are supposed to get it first. Staging the
-        preview channel would mean some of them silently testing the old build."""
-        run = dict((wf, r) for wf, _, r in publish_steps())["preview-update.yml"]
-        self.assertNotIn("--rollout-percentage", run)
+        for wf, name, run in publish_steps():
+            self.assertNotIn(
+                "--rollout-percentage", run,
+                f"{wf} / {name} stages its rollout. EAS allows one rollout at a "
+                f"time per runtime version, so the next publish will fail until "
+                f"somebody promotes by hand. See this test's docstring.")
 
     def test_production_reaches_both_stores(self):
         """iOS went live on 2026-09-07, so there is no longer a reason to pin.

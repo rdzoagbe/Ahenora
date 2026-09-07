@@ -47,6 +47,10 @@ jobs:
         with:
           node-version: 20
 
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm install --no-audit --no-fund
+
       # Both platforms separately: iOS and Android fail in different ways, and
       # a combined number hides one store behind the other.
       - name: Insights
