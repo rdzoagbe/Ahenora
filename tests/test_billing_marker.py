@@ -62,6 +62,19 @@ class WhatCountsAsAPayment(unittest.TestCase):
         self.assertIsNone(server.billing_marker({"rc_last_event": None}))
         self.assertIsNone(server.billing_marker({"stripe_last_event": ""}))
 
+    def test_a_household_the_sweep_verified_is_a_payer(self):
+        """The one that nearly cost a real subscriber her plan. The sweep and
+        the reconcile repair a missed webhook by asking RevenueCat directly, so
+        there is no event to record — they write rc_product_id instead. That
+        household is the MOST certainly paying of any, and it used to read as
+        never having paid at all."""
+        self.assertEqual(
+            server.billing_marker({"rc_product_id": "premium_monthly"}), "google_play")
+
+    def test_a_blank_product_id_is_still_no_marker(self):
+        self.assertIsNone(server.billing_marker({"rc_product_id": ""}))
+        self.assertIsNone(server.billing_marker({"rc_product_id": None}))
+
     def test_a_card_payment_outranks_a_blank_play_marker(self):
         self.assertEqual(server.billing_marker(
             {"rc_last_event": "", "stripe_last_event": "invoice.paid"}), "stripe")
@@ -113,6 +126,14 @@ class TheLaunchCleanup(unittest.TestCase):
         self.seed("f_card", plan="household", stripe_last_event="invoice.paid")
         self.run_cleanup()
         self.assertEqual(self.plan_of("f_card"), "household")
+
+    def test_a_swept_subscriber_survives_the_cleanup(self):
+        """The loop this ends: cleanup wipes them on deploy, the sweep repairs
+        them six hours later, the next deploy wipes them again. The billing log
+        showed RECONCILED pairs twice a day on people who had already paid."""
+        self.seed("f_swept", plan="executive", rc_product_id="premium_monthly")
+        self.run_cleanup()
+        self.assertEqual(self.plan_of("f_swept"), "executive")
 
     def test_a_free_household_is_left_alone(self):
         self.seed("f_free", plan="village")
