@@ -96,7 +96,8 @@ export function UpdateNotice() {
           const info = await api.appVersionInfo().catch(() => null);
           const runtime = Updates.runtimeVersion || '';
           if (!cancelled && info?.min_runtime && runtime && isBelow(runtime, info.min_runtime)) {
-            setStoreUrl(info.android_store_url || null);
+            // Each platform's own store: an iPhone was being sent to Google Play.
+            setStoreUrl((Platform.OS === 'ios' ? info.ios_store_url : info.android_store_url) || null);
             setNotice('store');
             return;
           }

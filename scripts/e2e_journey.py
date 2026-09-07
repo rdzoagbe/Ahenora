@@ -306,7 +306,11 @@ async def main():
             r[f"{name}_premium_week_added"] = "Sync to list" in body
         await iphone.goto(f"{WEB}/settings", wait_until="domcontentloaded")
         await iphone.wait_for_timeout(2500)
-        r["B_sees_family_office"] = "Family Office" in await iphone.inner_text("body")
+        # The top tier by its real name. "Family Office" was a retired id the
+        # admin-household path still reported, and it read as a plan nobody
+        # could buy; Household is what the plans screen sells.
+        body_b = await iphone.inner_text("body")
+        r["B_sees_household_plan"] = "Household" in body_b and "Family Office" not in body_b
         await iphone.screenshot(path="journey_iphone_premium.png")
         await browser.close()
 
@@ -316,7 +320,7 @@ async def main():
     r["server_keigh_is_coparent"] = roles.get("Keigh Sim") == "Co-parent"
     r["server_child_in_family"] = roles.get("Jonael Sim") == "Child"
     sub = api("GET", "/subscription", token=tok_b)
-    r["server_household_shares_top_plan"] = sub.get("plan") == "family_office"
+    r["server_household_shares_top_plan"] = sub.get("plan") == "household"
 
     for k, v in r.items():
         print(f"{k}: {v}")

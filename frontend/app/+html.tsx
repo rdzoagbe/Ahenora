@@ -7,6 +7,19 @@ export default function Root({ children }: PropsWithChildren) {
     <html lang="en" style={{ height: "100%" }}>
       <head>
         <meta charSet="utf-8" />
+        {/* The static export had NO title at all — expo-router leaves an empty
+            placeholder for the client to fill, and the client never runs for
+            the thing that matters here: the link-preview fetcher in iMessage,
+            WhatsApp or a mail app that unfurls an invite URL. With nothing to
+            show, it fell back to whatever it could find, and what a co-parent
+            saw on receiving an invite was not the app's name. */}
+        <title>Ahenora</title>
+        <meta property="og:site_name" content="Ahenora" />
+        <meta property="og:title" content="Ahenora — the family calendar everyone can see" />
+        <meta property="og:description" content="Shared calendar, tasks and reminders for co-parents and families. One place everyone can trust." />
+        <meta property="og:type" content="website" />
+        <meta property="og:image" content="https://ahenora.com/app/apple-touch-icon.png" />
+        <meta name="twitter:card" content="summary" />
         <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
         <meta
           name="viewport"

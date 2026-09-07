@@ -21,6 +21,11 @@ const ASKED_KEY = 'coo_review_asked_at';
  *  a device the OS won't prompt on), we open this instead. */
 export const ANDROID_STORE_URL =
   'https://play.google.com/store/apps/details?id=com.householdcoo.app';
+/** The App Store listing (App Store Connect id, from eas.json). The review
+ *  action used to send an iPhone to Google Play. */
+export const IOS_STORE_URL = 'https://apps.apple.com/app/id6806811163';
+/** The "write a review" deep link on iOS opens the review sheet directly. */
+export const IOS_REVIEW_URL = `${IOS_STORE_URL}?action=write-review`;
 
 /** Wins required before we ask. Enough that the app has clearly delivered. */
 const WINS_BEFORE_ASK = 5;
@@ -85,6 +90,11 @@ export async function recordWin(): Promise<void> {
  * app installed).
  */
 export async function openReview(): Promise<void> {
+  if (Platform.OS === 'ios') {
+    await Linking.openURL(IOS_REVIEW_URL).catch((e) =>
+      logger.warn('could not open App Store listing', e));
+    return;
+  }
   const marketUrl = 'market://details?id=com.householdcoo.app';
   try {
     if (await Linking.canOpenURL(marketUrl)) {

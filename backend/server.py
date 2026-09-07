@@ -122,6 +122,14 @@ INVITE_BASE_URL = os.environ.get(
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
 INVITE_FROM_EMAIL = os.environ.get("INVITE_FROM_EMAIL", "")
 INVITE_REPLY_TO = os.environ.get("INVITE_REPLY_TO", "")
+# Where the in-app "Contact support" form is delivered. Falls back to the
+# invite reply-to and then the published support address, so the form is
+# never a black hole just because one variable was not set.
+SUPPORT_INBOX_EMAIL = (
+    os.environ.get("SUPPORT_INBOX_EMAIL", "").strip()
+    or INVITE_REPLY_TO.strip()
+    or "support@ahenora.com"
+)
 APP_NAME = os.environ.get("APP_NAME", "Ahenora")
 MAX_VOICE_AUDIO_BYTES = int(os.environ.get("MAX_VOICE_AUDIO_BYTES", str(12 * 1024 * 1024)))
 ADMIN_EMAILS_RAW = os.environ.get("ADMIN_EMAILS", "")
@@ -636,7 +644,11 @@ def apply_admin_subscription(subscription: dict) -> dict:
     # Admin/tester accounts keep their own family data, but plan limits are bypassed
     # so the founder can test every feature without changing customer billing rules.
     admin_sub = dict(subscription)
-    admin_sub["plan"] = "family_office"
+    # The TOP tier's real id. This used to be "family_office", a retired tier
+    # that plan_catalog_for() still resolves — so limits were right, but every
+    # member of an admin household saw "Family Office Plan" in Settings and an
+    # "Upgrade" button on a plan they were already above.
+    admin_sub["plan"] = "household"
     admin_sub["billing_cycle"] = admin_sub.get("billing_cycle", "yearly")
     admin_sub["grandfathered"] = True
     admin_sub["admin_unlocked"] = True
@@ -1163,7 +1175,7 @@ async def build_subscription(family_id: str):
         # middle tier's.
         limits = PLAN_CATALOG["household"]["limits"]
     return {
-        "plan": "family_office" if admin_household else family["plan"],
+        "plan": "household" if admin_household else family["plan"],
         # Lets the app show "you're previewing Premium free" notices so launch
         # gating never feels like a surprise takeaway.
         "testing_window": testing_window,
@@ -1530,6 +1542,30 @@ def public_vault_doc(doc: dict) -> dict:
 # being invited is how they come to install it.
 INVITE_FALLBACK_URL = "https://ahenora.com/app/"
 
+# The two stores, in one place. The App Store id is the App Store Connect id
+# from eas.json. The invite email used to name Google Play alone and tell an
+# iPhone "open it in your browser instead" — while the iOS app was live.
+ANDROID_STORE_URL = "https://play.google.com/store/apps/details?id=com.householdcoo.app"
+IOS_STORE_URL = os.environ.get("IOS_STORE_URL", "").strip() or "https://apps.apple.com/app/id6806811163"
+
+
+def sender_as_app(from_value: str) -> str:
+    """The From header with the app's name as the display name.
+
+    The mail address is configured (INVITE_FROM_EMAIL) and can carry any
+    display name — on 2026-09-07 it still said "Household COO", the product's
+    name from before the rename, and every invite reached a co-parent from a
+    sender they had never heard of. The address is kept; the name is the app's.
+    """
+    raw = (from_value or "").strip()
+    if not raw:
+        return raw
+    m = re.match(r"^(?:\"?([^\"<]*)\"?\s*)?<([^>]+)>$", raw)
+    addr = (m.group(2) if m else raw).strip()
+    if not addr or "@" not in addr:
+        return raw
+    return f"{APP_NAME} <{addr}>"
+
 
 def build_invite_url(token: str) -> str:
     base = INVITE_BASE_URL.strip() or INVITE_FALLBACK_URL
@@ -1539,13 +1575,9 @@ def build_invite_url(token: str) -> str:
     return f"{base}{joiner}invite={token}"
 
 
-async def send_invite_email(to_email: str, invite_url: str, inviter_name: str, inviter_email: str = "", relationship: str = "") -> dict:
-    if not RESEND_API_KEY or not INVITE_FROM_EMAIL:
-        return {
-            "sent": False,
-            "error": "Email delivery is not configured. Set RESEND_API_KEY and INVITE_FROM_EMAIL in Railway.",
-        }
-
+def build_invite_email(to_email: str, invite_url: str, inviter_name: str, inviter_email: str = "", relationship: str = "") -> dict:
+    """The Resend payload for an invitation — built apart from the sending so
+    the words a co-parent reads can be tested without a network."""
     safe_app_name = html.escape(APP_NAME)
     safe_inviter = html.escape(inviter_name or "A family member")
     safe_invite_url = html.escape(invite_url)
@@ -1576,10 +1608,11 @@ async def send_invite_email(to_email: str, invite_url: str, inviter_name: str, i
         f"{text_lead} — "
         "one shared place for schedules, tasks, the kids' stuff and important documents, so it "
         "doesn't all sit in one person's head.\n\n"
-        "Get the app on Google Play, then sign in with this email — your invitation will be "
+        "Get the app, then sign in with this email — your invitation will be "
         "waiting for you inside:\n"
-        "https://play.google.com/store/apps/details?id=com.householdcoo.app\n\n"
-        f"On an iPhone or a computer, open it in your browser instead:\n{invite_url}\n\n"
+        f"iPhone: {IOS_STORE_URL}\n"
+        f"Android: {ANDROID_STORE_URL}\n\n"
+        f"On a computer, open it in your browser instead:\n{invite_url}\n\n"
         "If you were not expecting this invitation, you can ignore this email."
     )
 
@@ -1592,15 +1625,18 @@ async def send_invite_email(to_email: str, invite_url: str, inviter_name: str, i
       one shared place for schedules, tasks, the kids' stuff and important documents, so it
       doesn't all sit in one person's head. Join in and share the load.
     </p>
-    <a href="https://play.google.com/store/apps/details?id=com.householdcoo.app" style="display:inline-block; background:#f26a1b; color:#ffffff; text-decoration:none; font-weight:700; padding:12px 22px; border-radius:10px; font-size:15px;">
-      Get the app on Google Play
+    <a href="{html.escape(IOS_STORE_URL)}" style="display:inline-block; background:#f26a1b; color:#ffffff; text-decoration:none; font-weight:700; padding:12px 22px; border-radius:10px; font-size:15px; margin:0 8px 8px 0;">
+      Get it on the App Store
+    </a>
+    <a href="{html.escape(ANDROID_STORE_URL)}" style="display:inline-block; background:#f26a1b; color:#ffffff; text-decoration:none; font-weight:700; padding:12px 22px; border-radius:10px; font-size:15px; margin:0 0 8px 0;">
+      Get it on Google Play
     </a>
     <p style="color:#4a4f50; font-size:14px; line-height:1.55; margin:18px 0 0;">
       Download the app and sign in with <strong>{safe_to}</strong> — your invitation
       will be waiting for you inside. Just accept it to join.
     </p>
     <p style="color:#747b7c; font-size:13px; line-height:1.5; margin:14px 0 0;">
-      On an iPhone or a computer? <a href="{safe_invite_url}" style="color:#b8410a;">Open {safe_app_name} in your browser</a> instead.
+      On a computer? <a href="{safe_invite_url}" style="color:#b8410a;">Open {safe_app_name} in your browser</a> instead.
     </p>
     <p style="color:#a0a6a7; font-size:12px; line-height:1.5; margin:20px 0 0;">
       If you weren't expecting this, you can safely ignore this email.
@@ -1610,7 +1646,7 @@ async def send_invite_email(to_email: str, invite_url: str, inviter_name: str, i
 """.strip()
 
     payload = {
-        "from": INVITE_FROM_EMAIL,
+        "from": sender_as_app(INVITE_FROM_EMAIL),
         "to": [to_email],
         "subject": subject,
         "text": text,
@@ -1626,6 +1662,16 @@ async def send_invite_email(to_email: str, invite_url: str, inviter_name: str, i
             "List-Unsubscribe": f"<mailto:{reply_to}?subject=unsubscribe>",
             "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
         }
+    return payload
+
+
+async def send_invite_email(to_email: str, invite_url: str, inviter_name: str, inviter_email: str = "", relationship: str = "") -> dict:
+    if not RESEND_API_KEY or not INVITE_FROM_EMAIL:
+        return {
+            "sent": False,
+            "error": "Email delivery is not configured. Set RESEND_API_KEY and INVITE_FROM_EMAIL in Railway.",
+        }
+    payload = build_invite_email(to_email, invite_url, inviter_name, inviter_email, relationship)
 
     def _send():
         req = urllib.request.Request(
@@ -2474,17 +2520,25 @@ PUSH_I18N = {
 
 
 async def send_push_to_user(database, user_id: str, title: str, body: str, data: dict,
-                            channel: str = "household-alerts", pref_key: Optional[str] = None):
+                            channel: str = "household-alerts", pref_key: Optional[str] = None) -> dict:
     """Push to one specific person's devices. Best effort, never raises.
 
     `channel` picks the Android notification channel (so a reminder can land on
     'card-reminders' and a person who muted just that category is respected).
     `pref_key`, when given, gates the send on that person's opt-out preference —
     so turning an alert off in Settings actually silences it.
+
+    Returns what it reached — `{"devices": n, "web": m}` plus `"muted"`,
+    `"error"` or `"expo"` (the sender's answer) when relevant. Callers that
+    care whether a person was actually told, rather than whether a send was
+    attempted, read this instead of guessing. It used to return nothing, and
+    "the inviter never got the push" was undiagnosable from the outside.
     """
+    reached = {"devices": 0, "web": 0}
     try:
         if pref_key and not await _wants_alert(database, user_id, pref_key):
-            return
+            reached["muted"] = True
+            return reached
         docs = [d async for d in database["notification_tokens"].find(
             {"user_id": user_id, "active": True}, {"_id": 0})]
         messages = []
@@ -2502,12 +2556,21 @@ async def send_push_to_user(database, user_id: str, title: str, body: str, data:
                     "channelId": channel, "priority": "high",
                 })
         if messages:
-            await send_expo_push_messages(messages, database)
+            expo = await send_expo_push_messages(messages, database)
+            if isinstance(expo, dict) and expo.get("error"):
+                # Counted as reaching nobody: Expo refused the batch.
+                reached["expo"] = str(expo.get("error"))[:160]
+            else:
+                reached["devices"] = len(messages)
         # The same notification, delivered to any browsers this person subscribed
         # (web/iPhone-Safari), so a lock-screen-less web user still gets it.
-        await send_web_push_to_user(database, user_id, title, body, data)
+        web = await send_web_push_to_user(database, user_id, title, body, data)
+        reached["web"] = int(web or 0)
     except Exception as e:
         log.warning("user push failed: %s", e)
+        reached["devices"] = reached["web"] = 0
+        reached["error"] = f"{type(e).__name__}: {e}"[:160]
+    return reached
 
 
 def webpush_configured() -> bool:
@@ -2517,12 +2580,13 @@ def webpush_configured() -> bool:
     return bool(os.environ.get("VAPID_PUBLIC_KEY") and os.environ.get("VAPID_PRIVATE_KEY"))
 
 
-async def send_web_push_to_user(database, user_id: str, title: str, body: str, data: dict):
+async def send_web_push_to_user(database, user_id: str, title: str, body: str, data: dict) -> int:
     """Deliver one notification to every browser this person has subscribed.
     Best effort, never raises. A push service that reports the subscription is
-    gone (404/410) gets that subscription pruned so we stop trying it."""
+    gone (404/410) gets that subscription pruned so we stop trying it.
+    Returns the number of browsers the push service accepted it for."""
     if not webpush_configured():
-        return
+        return 0
     priv = os.environ["VAPID_PRIVATE_KEY"]
     pub = os.environ["VAPID_PUBLIC_KEY"]
     subject = os.environ.get("VAPID_SUBJECT") or "mailto:support@ahenora.com"
@@ -2530,6 +2594,7 @@ async def send_web_push_to_user(database, user_id: str, title: str, body: str, d
 
     subs = [d async for d in database["web_push_subscriptions"].find(
         {"user_id": user_id, "active": True}, {"_id": 0})]
+    delivered = 0
     for sub in subs:
         try:
             url, headers, enc = webpush_lib.webpush_request(
@@ -2544,8 +2609,11 @@ async def send_web_push_to_user(database, user_id: str, title: str, body: str, d
                     {"endpoint": sub["endpoint"]}, {"$set": {"active": False}})
             elif resp.status_code >= 400:
                 log.warning("web push %s for %s: %s", resp.status_code, user_id, resp.text[:160])
+            else:
+                delivered += 1
         except Exception as e:  # pragma: no cover - network/format guard
             log.warning("web push send failed: %s", e)
+    return delivered
 
 
 @app.get("/api/notifications/web-config")
@@ -2555,20 +2623,47 @@ async def web_push_config():
     return {"enabled": webpush_configured(), "vapid_public_key": os.environ.get("VAPID_PUBLIC_KEY", "")}
 
 
-async def notify_invite_accepted(database, invite: dict, acceptor_name: str):
-    """Close the loop: the person who sent an invite hears when it lands."""
+async def notify_invite_accepted(database, invite: dict, acceptor_name: str) -> dict:
+    """Close the loop: the person who sent an invite hears when it lands.
+
+    Field report, 2026-09-07: the inviter said the invitee "got the invite on
+    the app, but I did not get the notification when she joined". The send
+    here was fire-and-forget, so nothing recorded whether it reached a device,
+    found none registered, or was never attempted — and the only way to answer
+    was to guess. Now the outcome is written onto the invite itself as
+    `accepted_notify`, which the admin Invites panel reads, so the next such
+    report is a lookup and not an investigation.
+    """
     inviter_id = invite.get("created_by_user_id")
+    trail: dict = {"at": utcnow(), "inviter_id": inviter_id, "devices": 0, "web": 0}
     if not inviter_id:
-        return
-    inviter = await database["users"].find_one({"user_id": inviter_id}, {"_id": 0})
-    lang = (inviter or {}).get("language") or "en"
-    L = PUSH_I18N.get(lang, PUSH_I18N["en"])
-    await send_push_to_user(
-        database, inviter_id,
-        L["accepted_title"].format(name=acceptor_name),
-        L["accepted_body"],
-        {"type": "invite_accepted", "invite_id": invite.get("invite_id")},
-    )
+        trail["skipped"] = "no inviter on the invite"
+    else:
+        inviter = await database["users"].find_one({"user_id": inviter_id}, {"_id": 0})
+        lang = (inviter or {}).get("language") or "en"
+        L = PUSH_I18N.get(lang, PUSH_I18N["en"])
+        reached = await send_push_to_user(
+            database, inviter_id,
+            L["accepted_title"].format(name=acceptor_name),
+            L["accepted_body"],
+            {"type": "invite_accepted", "invite_id": invite.get("invite_id")},
+        )
+        if isinstance(reached, dict):
+            trail.update(reached)
+        if not trail.get("devices") and not trail.get("web"):
+            trail["skipped"] = (trail.get("error") or trail.get("expo")
+                                or "inviter has no registered device or browser")
+            log.warning("invite %s accepted but inviter %s could not be told: %s",
+                        invite.get("invite_id"), inviter_id, trail["skipped"])
+        else:
+            log.info("invite %s accepted; inviter %s told on %d device(s), %d browser(s)",
+                     invite.get("invite_id"), inviter_id, trail["devices"], trail["web"])
+    try:
+        await database["family_invites"].update_one(
+            {"invite_id": invite.get("invite_id")}, {"$set": {"accepted_notify": trail}})
+    except Exception as exc:  # noqa: BLE001 — the trail must never fail a join
+        log.warning("invite acceptance trail not written: %s", exc)
+    return trail
 
 
 async def resolve_member_user_id(database, family_id: str, name: str) -> Optional[str]:
@@ -4007,7 +4102,7 @@ async def send_account_deleted_email(to_email: str, name: str) -> dict:
   </div>
 </div>""".strip()
     try:
-        return await _resend_send({"from": INVITE_FROM_EMAIL, "to": [to_email],
+        return await _resend_send({"from": sender_as_app(INVITE_FROM_EMAIL), "to": [to_email],
                                    "subject": subject, "text": text, "html": html_body})
     except Exception as exc:  # noqa: BLE001 — a receipt must never fail a delete
         log.warning("account-deleted email skipped: %s", exc)
@@ -4050,7 +4145,7 @@ async def send_password_reset_email(to_email: str, name: str, code: str) -> dict
   </div>
 </div>""".strip()
     try:
-        return await _resend_send({"from": INVITE_FROM_EMAIL, "to": [to_email],
+        return await _resend_send({"from": sender_as_app(INVITE_FROM_EMAIL), "to": [to_email],
                                    "subject": subject, "text": text, "html": html_body})
     except Exception as exc:  # noqa: BLE001 — never reveal delivery outcome to caller
         log.warning("password-reset email skipped: %s", exc)
@@ -5206,6 +5301,52 @@ async def set_language(payload: LanguageIn, user=Depends(require_user)):
 # -----------------------------------------------------------------------------
 # Family
 # -----------------------------------------------------------------------------
+async def _link_members_to_accounts(database: Any, family_id: str, members: list) -> list:
+    """Attach user_id to adult rows that predate the day rows carried one.
+
+    has_account is read straight off the row, so a founder whose row was
+    created before user_id linkage existed showed as INVITED — "Hasn't joined
+    yet" — in their own household, on every device, including their own. The
+    account is matched by the row's email, else by name (only when exactly one
+    account in the family has it), and the link is written back so this is
+    done once, not on every read.
+    """
+    unlinked = [m for m in members
+                if not m.get("user_id") and _is_adult_role(m.get("role"))]
+    if not unlinked:
+        return members
+    accounts = [u async for u in database["users"].find(
+        {"family_id": family_id}, {"_id": 0, "user_id": 1, "email": 1, "name": 1})]
+    taken = {m.get("user_id") for m in members if m.get("user_id")}
+    free = [u for u in accounts if u.get("user_id") and u["user_id"] not in taken]
+    by_email = {str(u.get("email") or "").strip().lower(): u for u in free if u.get("email")}
+    by_name: dict = {}
+    for u in free:
+        by_name.setdefault(str(u.get("name") or "").strip().lower(), []).append(u)
+    for m in unlinked:
+        email = str(m.get("email") or "").strip().lower()
+        name = str(m.get("name") or "").strip().lower()
+        match = by_email.get(email) if email else None
+        if not match and name and len(by_name.get(name, [])) == 1:
+            match = by_name[name][0]
+        if not match:
+            continue
+        m["user_id"] = match["user_id"]
+        free = [u for u in free if u["user_id"] != match["user_id"]]
+        by_email.pop(str(match.get("email") or "").strip().lower(), None)
+        by_name.pop(str(match.get("name") or "").strip().lower(), None)
+        try:
+            await database["family_members"].update_one(
+                {"member_id": m["member_id"]}, {"$set": {"user_id": match["user_id"]}})
+        except Exception as exc:  # noqa: BLE001 — a read must never fail on a backfill
+            log.warning("member %s not linked to account: %s", m.get("member_id"), exc)
+    return members
+
+
+def _is_adult_role(role) -> bool:
+    return str(role or "").strip().lower() in ("parent", "co-parent", "helper")
+
+
 @app.get("/api/family/members")
 async def family_members(user=Depends(require_user)):
     database = get_db()
@@ -5223,6 +5364,7 @@ async def family_members(user=Depends(require_user)):
     me = await _member_for_user(database, user["family_id"], user)
     my_member_id = me.get("member_id")
     my_email = str(user.get("email") or "").strip().lower()
+    raw = await _link_members_to_accounts(database, user["family_id"], raw)
     rows = []
     for item in raw:
         # Roll a child's weekly meter over on read, so the Kids screen always
@@ -8035,7 +8177,8 @@ async def app_version_info():
     return {
         "min_runtime": MIN_SUPPORTED_RUNTIME,
         "store_version": CURRENT_STORE_VERSION,
-        "android_store_url": "https://play.google.com/store/apps/details?id=com.householdcoo.app",
+        "android_store_url": ANDROID_STORE_URL,
+        "ios_store_url": IOS_STORE_URL,
         "backend_commit": commit,
     }
 
@@ -15643,6 +15786,7 @@ async def metrics_invites(days: int = 30, user=Depends(require_user), database=D
     sent = len(invites)
     accepted = pending = expired = 0
     joined = elsewhere = never = lagging = 0
+    told = unreachable = unrecorded = 0
     oldest_pending_days = None
 
     for inv in invites:
@@ -15652,6 +15796,15 @@ async def metrics_invites(days: int = 30, user=Depends(require_user), database=D
 
         if (inv.get("status") or "") == "accepted":
             accepted += 1
+            # Did the person who sent it hear that it landed? Written by
+            # notify_invite_accepted; absent on invites accepted before it was.
+            trail = inv.get("accepted_notify")
+            if not isinstance(trail, dict):
+                unrecorded += 1
+            elif (trail.get("devices") or 0) + (trail.get("web") or 0) > 0:
+                told += 1
+            else:
+                unreachable += 1
         elif _expired(inv.get("expires_at")):
             expired += 1
         else:
@@ -15689,7 +15842,81 @@ async def metrics_invites(days: int = 30, user=Depends(require_user), database=D
             "never_signed_up": never,
             "joined_while_invite_still_pending": lagging,
         },
+        # Whether the inviter was told, for every accepted invite in the
+        # window. "unreachable" is the one to act on: the join worked and
+        # nobody registered a device or browser to hear about it.
+        "inviter_told": {
+            "reached": told,
+            "unreachable": unreachable,
+            "not_recorded": unrecorded,
+        },
     }
+
+
+async def send_support_ticket_email(ticket: dict) -> dict:
+    """The support form, delivered to the person who answers it.
+
+    Reply-to is the user, so answering is one tap in a mail client. Best
+    effort, never raises: the ticket is already stored and visible in the
+    admin panel, and this is the second copy.
+    """
+    if not RESEND_API_KEY or not INVITE_FROM_EMAIL or not SUPPORT_INBOX_EMAIL:
+        return {"sent": False, "error": "email not configured"}
+    who = ticket.get("user_name") or ticket.get("user_email") or "A user"
+    subject = f"[{APP_NAME} support] {ticket.get('subject') or '(no subject)'}"
+    text = (
+        f"From: {who} <{ticket.get('user_email') or 'no email'}>\n"
+        f"Household: {ticket.get('family_id')}\n"
+        f"Ticket: {ticket.get('ticket_id')}\n\n"
+        f"{ticket.get('message') or ''}\n\n"
+        "Reply to this email to answer them directly."
+    )
+    html_body = (
+        "<div style=\"font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;font-size:15px;line-height:1.5;color:#202323\">"
+        f"<p><strong>{html.escape(who)}</strong> &lt;{html.escape(ticket.get('user_email') or 'no email')}&gt;<br>"
+        f"Household {html.escape(str(ticket.get('family_id') or ''))} · ticket {html.escape(str(ticket.get('ticket_id') or ''))}</p>"
+        f"<p style=\"white-space:pre-wrap\">{html.escape(ticket.get('message') or '')}</p>"
+        "<p style=\"color:#6b7280;font-size:13px\">Reply to this email to answer them directly.</p></div>"
+    )
+    payload = {
+        "from": sender_as_app(INVITE_FROM_EMAIL),
+        "to": [SUPPORT_INBOX_EMAIL],
+        "subject": subject,
+        "text": text,
+        "html": html_body,
+    }
+    if ticket.get("user_email"):
+        payload["reply_to"] = ticket["user_email"]
+    try:
+        return await _resend_send(payload)
+    except Exception as exc:  # noqa: BLE001 — never fail the form on mail
+        log.warning("support ticket email failed: %s", exc)
+        return {"sent": False, "error": f"{type(exc).__name__}: {exc}"[:160]}
+
+
+async def notify_admins_of_support_ticket(database, ticket: dict) -> dict:
+    """A push to every admin account, so a message from a user is heard on
+    the phone the founder actually carries. Returns what it reached."""
+    reached = {"admins": 0, "devices": 0, "web": 0}
+    if not ADMIN_EMAILS:
+        return reached
+    admins = [a async for a in database["users"].find(
+        {"email": {"$in": sorted(ADMIN_EMAILS)}}, {"_id": 0, "user_id": 1})]
+    who = ticket.get("user_name") or ticket.get("user_email") or "A user"
+    for admin in admins:
+        if not admin.get("user_id"):
+            continue
+        reached["admins"] += 1
+        got = await send_push_to_user(
+            database, admin["user_id"],
+            f"Support: {who}",
+            (ticket.get("subject") or "")[:120],
+            {"type": "support_ticket", "ticket_id": ticket.get("ticket_id")},
+        )
+        if isinstance(got, dict):
+            reached["devices"] += int(got.get("devices") or 0)
+            reached["web"] += int(got.get("web") or 0)
+    return reached
 
 
 @app.post("/api/support/contact")
@@ -15698,6 +15925,16 @@ async def submit_support_contact(
     user: dict = Depends(require_user),
     database=Depends(get_db),
 ):
+    """The in-app "Contact support" form.
+
+    For months this stored the ticket and did nothing else — no email, no
+    push, no screen that listed them. The app told the user "Your message has
+    been received. We'll get back to you soon." and nobody ever could, because
+    nobody was told. Now: stored (still first, so nothing is lost), emailed to
+    the support inbox with reply-to set to the user, pushed to every admin,
+    listed in the admin panel — and what each of those reached is written on
+    the ticket, so a missing reply is a lookup rather than a mystery.
+    """
     subject = body.subject.strip()[:200]
     message = body.message.strip()[:5000]
     if not subject or not message:
@@ -15714,7 +15951,98 @@ async def submit_support_contact(
         "created_at": utcnow(),
     }
     await database["support_tickets"].insert_one(ticket)
+    # Everything past this line is delivery of a message already safely
+    # stored. None of it may turn the user's "Sent!" into an error.
+    notified: dict = {"at": utcnow()}
+    try:
+        notified["email"] = await asyncio.wait_for(send_support_ticket_email(ticket), timeout=20.0)
+    except Exception as exc:  # noqa: BLE001
+        notified["email"] = {"sent": False, "error": f"{type(exc).__name__}: {exc}"[:160]}
+    try:
+        notified["push"] = await asyncio.wait_for(
+            notify_admins_of_support_ticket(database, ticket), timeout=10.0)
+    except Exception as exc:  # noqa: BLE001
+        notified["push"] = {"admins": 0, "devices": 0, "web": 0,
+                            "error": f"{type(exc).__name__}: {exc}"[:160]}
+    if not (notified["email"] or {}).get("sent") and not (
+            (notified["push"] or {}).get("devices") or (notified["push"] or {}).get("web")):
+        log.warning("support ticket %s stored but nobody was told: %s",
+                    ticket["ticket_id"], notified)
+    try:
+        await database["support_tickets"].update_one(
+            {"ticket_id": ticket["ticket_id"]}, {"$set": {"notified": notified}})
+    except Exception as exc:  # noqa: BLE001
+        log.warning("support ticket delivery trail not written: %s", exc)
     return {"ok": True, "ticket_id": ticket["ticket_id"]}
+
+
+def public_support_ticket(ticket: dict) -> dict:
+    notified = ticket.get("notified") if isinstance(ticket.get("notified"), dict) else {}
+    email = notified.get("email") if isinstance(notified.get("email"), dict) else None
+    push = notified.get("push") if isinstance(notified.get("push"), dict) else None
+    return {
+        "ticket_id": ticket.get("ticket_id"),
+        "family_id": ticket.get("family_id"),
+        "user_id": ticket.get("user_id"),
+        "user_email": ticket.get("user_email") or "",
+        "user_name": ticket.get("user_name") or "",
+        "subject": ticket.get("subject") or "",
+        "message": ticket.get("message") or "",
+        "status": ticket.get("status") or "open",
+        "created_at": iso(ticket.get("created_at")),
+        "closed_at": iso(ticket.get("closed_at")),
+        # None: the ticket predates delivery tracking — it was never sent
+        # anywhere, and the admin panel says so.
+        "emailed": (bool(email.get("sent")) if email else None),
+        "email_error": (email or {}).get("error"),
+        "pushed_devices": ((push or {}).get("devices") or 0) + ((push or {}).get("web") or 0),
+    }
+
+
+@app.get("/api/admin/support-tickets")
+async def admin_support_tickets(days: int = 365, user=Depends(require_user)):
+    """Every message sent through the in-app support form: open ones first,
+    newest first. Also the way to recover the tickets that were stored during
+    the months the form delivered nowhere. Admin-only."""
+    if not is_admin_user(user):
+        raise HTTPException(status_code=403, detail="Admins only")
+    database = get_db()
+    days = max(1, min(days, 3650))
+    cutoff = utcnow() - timedelta(days=days)
+    rows = []
+    async for t in database["support_tickets"].find({}, {"_id": 0}):
+        made = _coerce_dt(t.get("created_at"))
+        if made and made < cutoff:
+            continue
+        rows.append(public_support_ticket(t))
+    rows.sort(key=lambda t: ((t["status"] != "open"), t["created_at"] or ""), reverse=False)
+    open_rows = [t for t in rows if t["status"] == "open"]
+    open_rows.sort(key=lambda t: t["created_at"] or "", reverse=True)
+    closed_rows = [t for t in rows if t["status"] != "open"]
+    closed_rows.sort(key=lambda t: t["created_at"] or "", reverse=True)
+    return {
+        "generated_at": iso(utcnow()),
+        "window_days": days,
+        "open": len(open_rows),
+        "total": len(rows),
+        "email_configured": bool(RESEND_API_KEY and INVITE_FROM_EMAIL),
+        "inbox": SUPPORT_INBOX_EMAIL,
+        "never_delivered": sum(1 for t in rows if t["emailed"] is None and not t["pushed_devices"]),
+        "tickets": open_rows + closed_rows,
+    }
+
+
+@app.post("/api/admin/support-tickets/{ticket_id}/close")
+async def admin_close_support_ticket(ticket_id: str, user=Depends(require_user)):
+    if not is_admin_user(user):
+        raise HTTPException(status_code=403, detail="Admins only")
+    database = get_db()
+    res = await database["support_tickets"].update_one(
+        {"ticket_id": ticket_id},
+        {"$set": {"status": "closed", "closed_at": utcnow(), "closed_by": user["user_id"]}})
+    if not getattr(res, "matched_count", 1):
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    return {"ok": True, "ticket_id": ticket_id, "status": "closed"}
 
 
 # -----------------------------------------------------------------------------

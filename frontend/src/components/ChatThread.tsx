@@ -43,15 +43,45 @@ export function ChatThread({ load, send, markRead, emptyHint }: Props) {
   // keyboard. The height the OS reports is the one number that is true on both
   // platforms. The bottom inset is already paid by the SafeAreaView around this,
   // so it is taken off again here rather than counted twice.
+  //
+  // Android, second field report (2026-09-07, a Samsung): the composer was
+  // STILL under the keyboard. Whether the window resizes for the keyboard
+  // there depends on the OS version, edge-to-edge, and the keyboard app, and
+  // no formula from the reported height is right in every case — pad when the
+  // window already resized and the composer flies off the top; don't and it
+  // drowns. So on Android the composer is measured against the keyboard's
+  // top edge and only the actual overlap is padded, a few times through the
+  // keyboard's animation. Either regime comes out right.
   const [keyboard, setKeyboard] = useState(0);
+  const composerRef = useRef<View>(null);
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const timers: ReturnType<typeof setTimeout>[] = [];
     const shown = Keyboard.addListener(showEvent, (e) => {
-      setKeyboard(Math.max((e.endCoordinates?.height ?? 0) - insets.bottom, 0));
+      if (Platform.OS !== 'android') {
+        setKeyboard(Math.max((e.endCoordinates?.height ?? 0) - insets.bottom, 0));
+        return;
+      }
+      const keyboardTop = e.endCoordinates?.screenY;
+      if (typeof keyboardTop !== 'number') {
+        setKeyboard(Math.max((e.endCoordinates?.height ?? 0) - insets.bottom, 0));
+        return;
+      }
+      const settle = () => {
+        composerRef.current?.measureInWindow((_x, y, _w, h) => {
+          const overlap = Math.ceil(y + h - keyboardTop);
+          if (overlap > 0) setKeyboard((prev) => prev + overlap);
+        });
+      };
+      settle();
+      for (const ms of [80, 250, 500]) timers.push(setTimeout(settle, ms));
     });
-    const hidden = Keyboard.addListener(hideEvent, () => setKeyboard(0));
-    return () => { shown.remove(); hidden.remove(); };
+    const hidden = Keyboard.addListener(hideEvent, () => {
+      timers.splice(0).forEach(clearTimeout);
+      setKeyboard(0);
+    });
+    return () => { shown.remove(); hidden.remove(); timers.forEach(clearTimeout); };
   }, [insets.bottom]);
 
   // Opening the keyboard should not bury the newest message behind it.
@@ -117,7 +147,7 @@ export function ChatThread({ load, send, markRead, emptyHint }: Props) {
           </View>
         )}
       />
-      <View style={styles.composer}>
+      <View ref={composerRef} style={styles.composer} collapsable={false}>
         <TextInput
           testID="chat-input"
           style={styles.input}

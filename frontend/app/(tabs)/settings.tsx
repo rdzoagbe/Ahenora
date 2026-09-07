@@ -262,7 +262,15 @@ export default function Settings() {
     if (pending) parts.push(n('set_invites_pending_count', pending));
     return parts.join(' · ');
   }, [adultCount, childMembers.length, invites, t]);
-  const planLabel = subscription?.plan === 'family_office' ? 'Family Office' : subscription?.plan === 'executive' ? 'Executive Family' : 'Village';
+  // The same names the plans screen uses, so Settings and "View all plans"
+  // can never disagree. This used to hard-code "Executive Family" for the
+  // middle tier (the plans screen says "Family"), had no case at all for the
+  // top tier (a paying Household customer read "Village"), and showed the
+  // retired "Family Office" to every member of an admin household.
+  const planLabel =
+    subscription?.plan === 'household' || subscription?.plan === 'family_office' ? t('plan_household')
+    : subscription?.plan === 'executive' ? t('plan_executive')
+    : t('plan_village');
   const weeklyBrief = Boolean(entitlements?.weekly_brief || subscription?.limits?.weekly_brief);
   const initial = (user?.name?.[0] || 'C').toUpperCase();
 

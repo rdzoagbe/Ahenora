@@ -401,7 +401,13 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
           ].map(([q, a], i) => (
             <View key={i} style={styles.faqItem}>
               <Text style={styles.faqQ}>{q}</Text>
-              <Text style={styles.faqA}>{a}</Text>
+              {/* Row + flex:1 pins the answer's width to the column. On an
+                  iPhone the first answer was measured wider than the screen,
+                  cut mid-word at the edge, and its second line drawn nowhere
+                  — the space was there, the words were not. */}
+              <View style={styles.faqARow}>
+                <Text style={styles.faqA}>{a}</Text>
+              </View>
             </View>
           ))}
         </View>
@@ -985,7 +991,10 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     fontSize: 14,
     marginBottom: 4,
   },
+  faqARow: { flexDirection: 'row', alignSelf: 'stretch' },
   faqA: {
+    flex: 1,
+    flexShrink: 1,
     color: ui.muted,
     fontFamily: 'Inter_400Regular',
     fontSize: 13,

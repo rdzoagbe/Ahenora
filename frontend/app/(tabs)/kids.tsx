@@ -468,7 +468,8 @@ export default function Kids() {
               // `=== false` rather than `!m.has_account`: an older server that
               // omits the field must read as "don't know", never as "absent".
               // Adults only — a young child has no login by design.
-              const notJoined = (isParent || isHelper) && m.has_account === false;
+              // Never on your own row: you are, by definition, here.
+              const notJoined = (isParent || isHelper) && m.has_account === false && !m.is_me;
               const badgeLabel = notJoined
                 ? t('hub_role_invited')
                 : isParent
