@@ -5,6 +5,8 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ChevronLeft, Gift, Check, Shuffle, Send, Trash2, X, Plus, Lock, MessageCircle, CalendarDays } from 'lucide-react-native';
 
 import { PressScale } from '../src/components/PressScale';
+import AppToast from '../src/components/AppToast';
+import { useToast } from '../src/hooks/useToast';
 import { KeyboardAwareScrollView } from '../src/components/KeyboardAwareScrollView';
 import DatePickerSheet from '../src/components/DatePickerSheet';
 import { useUI, UIColors } from '../src/components/Kit';
@@ -25,6 +27,7 @@ type Part = { name: string; member_id?: string; source: 'member' | 'link'; conta
 
 export default function SantaRoute() {
   const ui = useUI();
+  const { toast, showToast } = useToast();
   const router = useRouter();
   const { t } = useStore();
   const { isLocked, promptUpgrade } = usePremiumGate();
@@ -188,10 +191,12 @@ export default function SantaRoute() {
     if (locked) { promptUpgrade('secret_santa'); return; }
     setBusy(true);
     try {
-      setDraw(await api.sendSantaDraw(draw.draw_id));
+      const sent = await api.sendSantaDraw(draw.draw_id);
+      setDraw(sent);
+      showToast(t('ss_sent_members', { n: String(sent.members_notified ?? 0) }), 'success');
     } catch (e) {
       if ((e as { status?: number })?.status === 402) promptUpgrade('secret_santa');
-      else logger.warn('santa send failed', e);
+      else { logger.warn('santa send failed', e); showToast(t('vault_could_not_update'), 'error'); }
     } finally {
       setBusy(false);
     }
@@ -201,7 +206,7 @@ export default function SantaRoute() {
     if (!draw) return;
     setBusy(true);
     try { setReveal(await api.getMySantaMatch(draw.draw_id)); }
-    catch (e) { logger.warn('santa reveal failed', e); }
+    catch (e) { logger.warn('santa reveal failed', e); showToast(t('vault_could_not_update'), 'error'); }
     finally { setBusy(false); }
   }, [draw]);
 
@@ -214,7 +219,7 @@ export default function SantaRoute() {
       } else {
         await Share.share({ message: url, url });
       }
-    } catch (e) { logger.warn('santa copy failed', e); }
+    } catch (e) { logger.warn('santa copy failed', e); showToast(t('vault_could_not_update'), 'error'); }
   }, []);
 
   const editList = () => { if (draw) seedBuildFrom(draw); setEditing(true); };
@@ -223,7 +228,7 @@ export default function SantaRoute() {
     if (!draw) { goBack(); return; }
     setBusy(true);
     try { await api.deleteSantaDraw(draw.draw_id); goBack(); }
-    catch (e) { logger.warn('santa delete failed', e); }
+    catch (e) { logger.warn('santa delete failed', e); showToast(t('vault_could_not_update'), 'error'); }
     finally { setBusy(false); }
   }, [draw]);
 
@@ -470,6 +475,7 @@ export default function SantaRoute() {
         onChange={(v) => setDrawBy(v || '')}
         onClose={() => setDatePickerOpen(false)}
       />
+      <AppToast visible={Boolean(toast)} message={toast?.message || null} tone={toast?.tone || 'info'} />
     </SafeAreaView>
   );
 }

@@ -5,6 +5,8 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ChevronLeft, Gift, Check, Users, Link2, Pencil, X, MessageCircle } from 'lucide-react-native';
 
 import { PressScale } from '../src/components/PressScale';
+import AppToast from '../src/components/AppToast';
+import { useToast } from '../src/hooks/useToast';
 import { KeyboardAwareScrollView } from '../src/components/KeyboardAwareScrollView';
 import KeyboardAwareBottomSheet from '../src/components/KeyboardAwareBottomSheet';
 import { useUI, UIColors } from '../src/components/Kit';
@@ -25,6 +27,7 @@ import { logger } from '../src/logger';
  */
 export default function GiftPotRoute() {
   const ui = useUI();
+  const { toast, showToast } = useToast();
   const router = useRouter();
   const { t } = useStore();
   const { isLocked, promptUpgrade } = usePremiumGate();
@@ -95,7 +98,7 @@ export default function GiftPotRoute() {
       setPot(await api.chipInGiftPot(pot.pot_id, value));
     } catch (e) {
       if ((e as { status?: number })?.status === 402) promptUpgrade('gift_pot');
-      else logger.warn('chip in failed', e);
+      else { logger.warn('chip in failed', e); showToast(t('vault_could_not_update'), 'error'); }
     } finally {
       setBusy(false);
     }
@@ -105,7 +108,7 @@ export default function GiftPotRoute() {
     if (!pot) return;
     setBusy(true);
     try { setPot(await api.closeGiftPot(pot.pot_id)); }
-    catch (e) { logger.warn('close pot failed', e); }
+    catch (e) { logger.warn('close pot failed', e); showToast(t('vault_could_not_update'), 'error'); }
     finally { setBusy(false); }
   }, [pot]);
 
@@ -133,7 +136,7 @@ export default function GiftPotRoute() {
       }
     } catch (e) {
       if ((e as { status?: number })?.status === 402) promptUpgrade('gift_pot');
-      else logger.warn('share pot failed', e);
+      else { logger.warn('share pot failed', e); showToast(t('vault_could_not_update'), 'error'); }
     } finally {
       setBusy(false);
     }
@@ -164,7 +167,7 @@ export default function GiftPotRoute() {
   const togglePaid = useCallback(async (contribId: string, paid: boolean) => {
     if (!pot) return;
     try { setPot(await api.setContributionPaid(pot.pot_id, contribId, paid)); }
-    catch (e) { logger.warn('mark paid failed', e); }
+    catch (e) { logger.warn('mark paid failed', e); showToast(t('vault_could_not_update'), 'error'); }
   }, [pot]);
 
   // --- Editing the pot's details -----------------------------------------
@@ -203,7 +206,7 @@ export default function GiftPotRoute() {
       setEditing(false);
     } catch (e) {
       if ((e as { status?: number })?.status === 402) promptUpgrade('gift_pot');
-      else logger.warn('edit pot failed', e);
+      else { logger.warn('edit pot failed', e); showToast(t('vault_could_not_update'), 'error'); }
     } finally {
       setBusy(false);
     }
@@ -385,6 +388,7 @@ export default function GiftPotRoute() {
         <Text style={styles.fieldLabel}>{t('gp_field_note')}</Text>
         <TextInput testID="gift-pot-edit-note" value={eNote} onChangeText={setENote} style={[styles.field, styles.fieldMulti]} multiline placeholder={t('gp_note_ph')} placeholderTextColor={ui.muted} />
       </KeyboardAwareBottomSheet>
+      <AppToast visible={Boolean(toast)} message={toast?.message || null} tone={toast?.tone || 'info'} />
     </SafeAreaView>
   );
 }

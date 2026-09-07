@@ -113,6 +113,55 @@ class TheOwnerIsNotInvited(unittest.TestCase):
         stored = asyncio.run(self.db["family_members"].find_one({"member_id": "m_roland"}, {"_id": 0}))
         self.assertEqual(stored["user_id"], "u_roland")
 
+    def test_the_founder_is_in_the_adults_conversation_and_gets_the_push(self):
+        # Chat resolves participants from member rows with a user_id. The
+        # founder's legacy row had none, so they were in no thread: their
+        # co-parent's messages notified nobody. Roland's phone, 2026-09-07.
+        who = asyncio.run(server._thread_participants(self.db, "fam", server.ADULTS_THREAD))
+        self.assertEqual(who, {"u_roland", "u_keigh"})
+        asyncio.run(self.db["notification_tokens"].insert_one(
+            {"user_id": "u_roland", "token": "ExponentPushToken[roland]", "active": True,
+             "platform": "android", "updated_at": server.utcnow()}))
+        sent = []
+
+        async def to_expo(messages, database=None):
+            sent.extend(messages)
+            return {"sent": len(messages)}
+
+        async def to_web(database, user_id, title, body, data):
+            return 0
+        real = (server.send_expo_push_messages, server.send_web_push_to_user)
+        server.send_expo_push_messages, server.send_web_push_to_user = to_expo, to_web
+        try:
+            asyncio.run(server._chat_notify(self.db, "fam", server.ADULTS_THREAD, "u_keigh", "Keigh", "Pick up Friday?"))
+        finally:
+            server.send_expo_push_messages, server.send_web_push_to_user = real
+        self.assertEqual([m["to"] for m in sent], ["ExponentPushToken[roland]"])
+        self.assertEqual(sent[0]["data"], {"type": "chat", "thread": server.ADULTS_THREAD})
+
+    def test_the_founder_gets_coparent_alerts_too(self):
+        # send_new_card_alert / send_coparent_alert pick recipients the same
+        # way chat does, so the unlinked owner missed every one of them.
+        asyncio.run(self.db["notification_tokens"].insert_one(
+            {"user_id": "u_roland", "token": "ExponentPushToken[roland]", "active": True,
+             "platform": "android", "updated_at": server.utcnow()}))
+        sent = []
+
+        async def to_expo(messages, database=None):
+            sent.extend(messages)
+            return {"sent": len(messages)}
+
+        async def to_web(database, user_id, title, body, data):
+            return 0
+        real = (server.send_expo_push_messages, server.send_web_push_to_user)
+        server.send_expo_push_messages, server.send_web_push_to_user = to_expo, to_web
+        try:
+            asyncio.run(server.send_coparent_alert(
+                "fam", "Hand-off note", "Isaiah has a cold", "handoff", created_by_user_id="u_keigh"))
+        finally:
+            server.send_expo_push_messages, server.send_web_push_to_user = real
+        self.assertEqual([m["to"] for m in sent], ["ExponentPushToken[roland]"])
+
     def test_a_name_shared_by_two_accounts_is_not_guessed(self):
         asyncio.run(self.db["users"].insert_one(
             {"user_id": "u_other", "email": "o@x.test", "name": "Roland Dzoagbe", "family_id": "fam"}))
