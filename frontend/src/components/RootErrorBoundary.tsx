@@ -58,7 +58,7 @@ class RootErrorBoundaryInner extends Component<Props & { dark: boolean }, State>
     // api.ts (and through it AsyncStorage). If THAT ever failed to load there
     // would be no boundary left to catch anything.
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { reportCrash } = require('../api') as typeof import('../api');
       reportCrash(error?.message, info?.componentStack);
     } catch { /* never a second crash */ }
