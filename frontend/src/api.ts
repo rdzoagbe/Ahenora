@@ -1127,6 +1127,9 @@ export interface Subscriber {
   plan: string;
   paying: boolean;
   billing_source: 'stripe' | 'google_play' | null;
+  /** Paid plan with no rail behind it — a testing-window leftover or an
+   *  admin grant, not a subscriber. */
+  unpaid_premium?: boolean;
   billing_cycle: string | null;
   owner_name: string;
   owner_email: string;
@@ -1146,6 +1149,9 @@ export interface Subscriber {
 export interface SubscriberList {
   total: number;
   paying: number;
+  /** Of `paying`, how many have a real payment rail behind them. A gap between
+   *  the two means somebody is on a paid plan nobody charged for. */
+  paying_verified: number;
   subscribers: Subscriber[];
 }
 
