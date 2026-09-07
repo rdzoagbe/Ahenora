@@ -242,36 +242,38 @@ jobs:
       # early and leaves the next line to be executed as its own command. The
       # previous version of this step did exactly that and would have exited
       # 127 on the next merge to main.
-      # A PARTIAL rollout, not the whole audience.
+      # NOT staged, and this is the second attempt at that decision.
       #
-      # On 2026-09-03 an update reached every Android install at once and the
-      # app stopped starting. Now it would reach both stores. The percentage is
-      # the difference between "a few people saw a broken screen for ten
-      # minutes" and "nobody can open Ahenora".
+      # A --rollout-percentage was added here on 2026-09-07 to contain a bad
+      # update. It shipped, and the very next merge could not publish at all:
       #
-      # What the flag actually does, from `eas update --help`: users outside the
-      # rollout are served the PREVIOUS latest update on the branch. So the
-      # other 80% are not on something untested — they stay exactly where they
-      # already were, which is the property that makes this worth having.
+      #   Cannot publish a new update with this runtime version while a rollout
+      #   is in progress for the same runtime version. Before publishing a new
+      #   update, the latest rollout percentage must be set to 100% or the
+      #   rollout update deleted.
       #
-      # Nothing auto-promotes. Reaching everyone is a person's decision, made
-      # after looking, via the Promote workflow. The cost of that choice is a
-      # fix that only reaches a fifth of users while its author believes it
-      # shipped, so the summary below is deliberately loud about it and the
-      # six-hourly stability check flags a rollout left partial.
+      # EAS permits ONE rollout in progress per runtime version. Since nothing
+      # auto-promotes, every merge after the first jammed the pipeline until a
+      # person went and promoted by hand. On a repository that merges several
+      # times a day that is not a safety feature, it is an outage of a
+      # different kind: fixes stop reaching anybody, including urgent ones.
+      #
+      # Staging is still the right idea and the promote / watch / rollback
+      # workflows remain. What it needs first is an answer to "what happens to
+      # the previous canary when a new update is published" — promote it,
+      # delete it, or refuse — and that answer has to be designed against the
+      # constraint above rather than discovered by breaking production. See
+      # docs/RUNBOOK-ota.md.
       - name: Publish update to the Expo production branch
         id: publish
         if: steps.expo_config.outputs.publish == 'true'
         working-directory: frontend
-        env:
-          ROLLOUT: ${{ vars.OTA_ROLLOUT_PERCENTAGE || '20' }}
         run: |
           set -o pipefail
           npx eas-cli@latest update \
             --platform all \
             --branch production \
             --environment production \
-            --rollout-percentage "$ROLLOUT" \
             --message "GitHub $GITHUB_SHA" \
             --json \
             --non-interactive | tee update.json
@@ -289,28 +291,26 @@ jobs:
             if (id) process.stdout.write(id);
           ')
           echo "group=$GROUP" >> "$GITHUB_OUTPUT"
-          echo "rollout=$ROLLOUT" >> "$GITHUB_OUTPUT"
 
-      - name: Say that this reached only some of them
+      # The group id is still worth printing even without a rollout: it is what
+      # OTA rollback and OTA watch both take, and hunting for it in the Expo
+      # dashboard while trying to undo a bad release is exactly the wrong time.
+      - name: Say what was published, and how to undo it
         if: steps.expo_config.outputs.publish == 'true'
         env:
           GROUP: ${{ steps.publish.outputs.group }}
-          ROLLOUT: ${{ steps.publish.outputs.rollout }}
         run: |
           {
-            echo "## OTA published — PARTIAL rollout"
-            echo
-            echo "This update is live for **${ROLLOUT}%** of production users."
-            echo "Everyone else stays on the previous update until it is promoted."
+            echo "## OTA published to everyone on runtime 2.0.0"
             echo
             if [ -n "$GROUP" ]; then
               echo "Update group: \`${GROUP}\`"
               echo
-              echo "* Watch it: Actions -> **OTA watch** (launches, crashes, users)"
-              echo "* Send it to everyone: Actions -> **OTA promote**"
-              echo "* Undo it: Actions -> **OTA rollback** (only while it is the newest update)"
+              echo "* Check on it: Actions -> **OTA watch** (launches, crashes, users)"
+              echo "* Undo it: Actions -> **OTA rollback** — only while it is the"
+              echo "  newest update on the branch, so before the next merge publishes."
             else
               echo "The update group id could not be read from the publish output."
-              echo "Find it with \`eas update:list --branch production\` before promoting."
+              echo "Find it with \`eas update:list --branch production\` before rolling back."
             fi
           } >> "$GITHUB_STEP_SUMMARY"

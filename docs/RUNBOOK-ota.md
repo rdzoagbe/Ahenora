@@ -9,18 +9,41 @@ Everything below exists because recovery that day was improvised.
 
 ## What happens on a merge to main
 
-`frontend-ci-eas-update.yml` publishes to the `production` branch at a
-**percentage**, not to everybody. The default is 20%, set by the repository
-variable `OTA_ROLLOUT_PERCENTAGE`.
+`frontend-ci-eas-update.yml` publishes to the `production` branch, on both
+platforms, **to everyone on runtime 2.0.0**.
 
-The important part is what the other 80% get: from `eas update --help`, *"users
-not in the rollout will be served the previous latest update on the branch"*.
-They are not on something new and untested — they stay exactly where they
-already were. That is the property that makes a partial publish safe rather
-than merely smaller.
+The job summary prints the **update group id**. Rollback and watch both take
+it. Copy it — hunting for it in the Expo dashboard while trying to undo a bad
+release is exactly the wrong moment.
 
-The job summary prints the **update group id**. Promote and rollback both take
-it. Copy it.
+### Why this is not staged, and what it would take
+
+A `--rollout-percentage` was added here on 2026-09-07 and removed the same day.
+It worked exactly once. The next merge could not publish at all:
+
+> Cannot publish a new update with this runtime version while a rollout is in
+> progress for the same runtime version. Before publishing a new update, the
+> latest rollout percentage must be set to 100% or the rollout update deleted.
+
+**EAS permits one rollout in progress per runtime version.** Nothing
+auto-promoted, so every merge after the first jammed until a person promoted by
+hand. On a repository that merges several times a day, that is not a safety
+feature — it stops fixes reaching anybody, urgent ones included.
+
+Staging is still the right idea. Bringing it back needs an answer to one
+question first: **what happens to the previous canary when a new update is
+published?**
+
+* **Promote it to 100%** — simple, but a bad canary reaches everyone the moment
+  somebody merges anything, possibly minutes later.
+* **Delete it** — nobody is ever left on unblessed code, but a fix can sit at
+  20% forever while each merge replaces the canary, which is the silent
+  non-delivery this repository keeps rediscovering.
+* **Refuse and require a human** — what was shipped, and what jammed.
+
+Whichever is chosen has to be designed against that constraint rather than
+found by breaking production. `tests/test_workflow_publish_steps.py` fails if
+the flag comes back without that work.
 
 ## Watching it
 
@@ -35,14 +58,11 @@ rollout is partial. Roll back; do not promote.
 
 ## Sending it to everyone
 
-**Actions → OTA promote**, group id, percentage 100.
+Not needed while publishing is unstaged — an update already reaches everyone.
 
-Nothing promotes itself. Reaching every household is a decision a person makes
-after looking.
-
-The cost of that choice is real: a fix can sit at 20% while its author believes
-it shipped. The publish summary says so loudly, and the six-hourly stability
-check flags a rollout left partial.
+**Actions → OTA promote** remains, and is what unjams things if a rollout is
+ever left partial (by a manual `eas update` with a percentage, or by staging
+being switched back on). Group id, percentage 100.
 
 ## Taking it back
 
