@@ -128,16 +128,19 @@ class PublishSteps(unittest.TestCase):
             "production ships to devices preview never reaches: "
             f"production={sorted(production)} preview={sorted(preview)}")
 
-    def test_production_is_never_wider_than_the_binaries_allow(self):
-        """A guard on the pin itself, so it is a decision rather than a
-        leftover. Production is android-only ONLY while iOS is in App Review —
-        an update on that channel can change the app under a reviewer. When
-        iOS is approved this flips to `all`, and this test is the reminder:
-        it fails if production names a platform that is neither.
+    def test_production_reaches_both_stores(self):
+        """iOS went live on 2026-09-07, so there is no longer a reason to pin.
+
+        This used to accept "android" too, because build 6 was in App Review and
+        an update on the production channel can change the app underneath a
+        reviewer. That window is closed. Pinning again would mean every OTA
+        reaches half the users while the workflow stays green — a fix that looks
+        shipped and is not — so it now takes a deliberate edit here, with a
+        reason, rather than passing quietly.
         """
         found = {wf: re.search(r"--platform\s+(\S+)", run).group(1)
                  for wf, _, run in publish_steps()}
-        self.assertIn(found["frontend-ci-eas-update.yml"], ("android", "all"))
+        self.assertEqual(found["frontend-ci-eas-update.yml"], "all")
 
     def test_a_narrowed_platform_says_why_and_when_it_goes_back(self):
         # `all` is the steady state. Anything narrower is a temporary measure,
