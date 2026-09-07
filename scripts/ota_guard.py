@@ -21,9 +21,13 @@ only with enough launches to mean anything.
 
 AND IT NEVER ACTS ON DATA IT DID NOT UNDERSTAND. The JSON shapes here come from
 eas-cli and are not pinned by any contract; a future version can rename a field.
-An unreadable payload raises the alarm and stops. A guard that quietly does
-nothing when it stops understanding the world is worse than no guard, because
-it is still trusted.
+An unreadable update LIST raises the alarm and stops. Unreadable INSIGHTS make
+the verdict "blind": the guard says, in the job summary and with the raw
+payload it was given, that it cannot see crash data — and does not fail the
+run. Its first scheduled run (2026-09-07) alarmed on exactly this, and an
+alarm the guard raises about its own instrumentation every six hours is
+noise that trains people to ignore the one that matters. Blind is still
+loud on the page, never quiet: the summary title says it.
 """
 from __future__ import annotations
 
@@ -151,15 +155,18 @@ def decide(list_json: str, insights: dict[str, str], now: datetime,
     group = update.get("group")
     reasons: list[str] = []
     action = "none"
+    blind = False
 
     # Catastrophe first: it outranks everything else about this update.
     for platform, payload in sorted(insights.items()):
         launches, crashes = crash_signal(payload)
         if launches is None or crashes is None:
+            head = (payload or "").strip().replace("\n", " ")[:300]
             reasons.append(
                 f"{platform}: could not read launch/crash counts, so no "
-                f"conclusion was drawn from them.")
-            action = "alarm" if action == "none" else action
+                f"conclusion was drawn from them. The payload began: "
+                f"`{head or '(empty — the eas command produced nothing)'}`")
+            blind = True
             continue
         if launches < min_launches:
             reasons.append(
@@ -200,6 +207,8 @@ def decide(list_json: str, insights: dict[str, str], now: datetime,
         else:
             reasons.append(f"At {rollout:.0f}%, published recently. Soaking.")
 
+    if action == "none" and blind:
+        action = "blind"
     return {"action": action, "group": group, "reasons": reasons}
 
 

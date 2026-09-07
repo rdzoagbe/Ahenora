@@ -88,7 +88,7 @@ jobs:
           if [ -n "$GROUP" ]; then
             for p in android ios; do
               npx eas-cli@latest update:insights "$GROUP" --platform "$p" \
-                --days 1 --json --non-interactive > "insights-$p.json" 2>/dev/null || true
+                --days 1 --json --non-interactive > "insights-$p.json" 2> "insights-$p.err" || true
             done
           fi
 
@@ -140,6 +140,7 @@ jobs:
                     "Nothing was changed.")
               raise SystemExit(0)
           titles = {"none": "OTA guard — nothing to do",
+                    "blind": "OTA guard — cannot see crash data",
                     "alarm": "OTA guard — needs a person",
                     "rollback": "OTA guard — the app is not starting"}
           print(f"## {titles.get(v['action'], v['action'])}\n")
@@ -147,6 +148,16 @@ jobs:
               print(f"Update group: `{v['group']}`\n")
           for r in v["reasons"]:
               print(f"* {r}")
+          if v["action"] == "blind":
+              print("\nThe stale-rollout check still ran. To give the guard eyes, "
+                    "teach scripts/ota_guard.py the payload shape shown above. "
+                    "What eas-cli said on stderr:\n")
+              for p in ("android", "ios"):
+                  try:
+                      err = open(f"insights-{p}.err").read().strip()[:600]
+                  except Exception:
+                      err = ""
+                  print(f"* {p}: `{err or '(nothing)'}`")
           if v["action"] == "rollback" and os.environ.get("ARMED") != "on":
               print("\n**Automatic rollback is not armed.** Run the OTA rollback "
                     "workflow by hand, then set the OTA_AUTO_ROLLBACK repository "

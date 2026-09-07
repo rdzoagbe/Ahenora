@@ -84,11 +84,24 @@ class ItRefusesToActOnWhatItCannotRead(unittest.TestCase):
 
     def test_unreadable_insights_never_become_a_rollback(self):
         v = ota_guard.decide(updates(), {"android": "not json"}, NOW)
-        self.assertEqual(v["action"], "alarm")
+        self.assertEqual(v["action"], "blind")
         self.assertIn("could not read", " ".join(v["reasons"]).lower())
 
-    def test_insights_missing_the_counts_alarm_rather_than_pass(self):
+    def test_insights_missing_the_counts_say_so_and_show_the_payload(self):
+        # Blind, not alarm: the first scheduled run alarmed on this and would
+        # have every six hours until someone changed the parser — which they
+        # can only do from the payload, so the verdict carries it.
         v = ota_guard.decide(updates(), {"android": json.dumps({"size": 12})}, NOW)
+        self.assertEqual(v["action"], "blind")
+        self.assertIn('{"size": 12}', " ".join(v["reasons"]))
+
+    def test_an_empty_insights_file_is_named_as_such(self):
+        v = ota_guard.decide(updates(), {"ios": ""}, NOW)
+        self.assertEqual(v["action"], "blind")
+        self.assertIn("produced nothing", " ".join(v["reasons"]))
+
+    def test_blind_does_not_hide_a_stale_rollout(self):
+        v = ota_guard.decide(updates(rollout=20, hours_ago=30), {"android": ""}, NOW)
         self.assertEqual(v["action"], "alarm")
 
     def test_no_insights_at_all_is_not_a_verdict_on_health(self):
