@@ -40,6 +40,38 @@ def insights(launches, crashes):
     return json.dumps({"metrics": {"launches": launches, "crashes": crashes}})
 
 
+def eas_insights(platform, installs, crash_rate_percent, failed=0):
+    """The shape eas-cli actually returns (2026-09-07)."""
+    return json.dumps({
+        "groupId": "g1", "timespan": {"daysBack": 1},
+        "platforms": [{"platform": platform, "updateId": "u1",
+                       "totals": {"uniqueUsers": installs, "installs": installs,
+                                  "failedInstalls": failed,
+                                  "crashRatePercent": crash_rate_percent},
+                       "payload": {"launchAssetCount": 0},
+                       "daily": [{"date": "2026-09-07T00:00:00.000Z",
+                                  "installs": installs, "failedInstalls": failed}]}]})
+
+
+class ItReadsWhatEasActuallyReturns(unittest.TestCase):
+    def test_zero_installs_is_too_few_not_blind(self):
+        v = ota_guard.decide(updates(rollout=None), {"android": eas_insights("android", 0, 0)}, NOW)
+        self.assertEqual(v["action"], "none")
+        self.assertIn("too few", " ".join(v["reasons"]))
+
+    def test_a_crash_rate_over_the_line_is_a_rollback(self):
+        v = ota_guard.decide(updates(rollout=None),
+                             {"android": eas_insights("android", 40, 80)}, NOW)
+        self.assertEqual(v["action"], "rollback")
+        self.assertIn("32 crashes in 40", " ".join(v["reasons"]))
+
+    def test_a_healthy_rate_is_nothing_to_do(self):
+        v = ota_guard.decide(updates(rollout=None),
+                             {"ios": eas_insights("ios", 60, 1.5)}, NOW)
+        self.assertEqual(v["action"], "none")
+        self.assertIn("(2%)", " ".join(v["reasons"]))
+
+
 class ItActsOnAnOutage(unittest.TestCase):
     def test_almost_every_launch_failing_is_a_rollback(self):
         """The 2026-09-03 signature: the app does not start."""
