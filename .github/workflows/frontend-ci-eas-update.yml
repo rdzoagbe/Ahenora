@@ -107,6 +107,11 @@ jobs:
       EXPO_PUBLIC_BACKEND_URL: ${{ secrets.EXPO_PUBLIC_BACKEND_URL || vars.EXPO_PUBLIC_BACKEND_URL }}
       EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: ${{ secrets.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || vars.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID }}
       EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: ${{ secrets.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || vars.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID }}
+      # Never set before 2026-09-07 because no OTA had reached an iPhone. The
+      # app carries a committed fallback for it now (src/googleClientIds.ts), so
+      # this is an override rather than a requirement — which is why it is not
+      # in the preflight below.
+      EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: ${{ secrets.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || vars.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID }}
       # Stamp the deployed web bundle with the commit it was built from, so
       # Settings shows which build is live — the web has no OTA update id, so
       # this is the only per-deploy signal there.
@@ -173,6 +178,11 @@ jobs:
       EXPO_PUBLIC_BACKEND_URL: ${{ secrets.EXPO_PUBLIC_BACKEND_URL || vars.EXPO_PUBLIC_BACKEND_URL }}
       EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: ${{ secrets.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || vars.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID }}
       EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: ${{ secrets.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || vars.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID }}
+      # Never set before 2026-09-07 because no OTA had reached an iPhone. The
+      # app carries a committed fallback for it now (src/googleClientIds.ts), so
+      # this is an override rather than a requirement — which is why it is not
+      # in the preflight below.
+      EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: ${{ secrets.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || vars.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID }}
       EXPO_NO_TELEMETRY: 1
     steps:
       - name: Check Expo publish configuration

@@ -19,6 +19,7 @@ import { ValueTour } from '../src/components/ValueTour';
 import { useStore } from '../src/store';
 import { logger } from '../src/logger';
 import { extractInviteToken, rememberInvite, readStoredInvite, clearStoredInvite, signInWithPendingInvite } from '../src/invite';
+import { googleClientIds } from '../src/googleClientIds';
 import { getLoginHint, clearLoginHint, maskEmail, LoginHint } from '../src/loginHint';
 
 WebBrowser.maybeCompleteAuthSession();
@@ -88,34 +89,20 @@ export default function Landing() {
     });
   };
 
-  const FALLBACK_WEB = '243255248169-cei972lc7kmfig6tmjb6l2nlmgqkjf22.apps.googleusercontent.com';
-  const FALLBACK_ANDROID = '243255248169-n4l7es5ecr3j85v00dia2icp9kjo7umh.apps.googleusercontent.com';
-
-  const webClientId =
-    (typeof process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID === 'string' && process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID.trim())
-    || FALLBACK_WEB;
-  const androidClientId =
-    (typeof process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID === 'string' && process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID.trim())
-    || FALLBACK_ANDROID;
-  // A Google OAuth client is bound to ONE platform: an Android client is tied to
-  // the package name and signing fingerprint and is rejected outright when a
-  // request comes from iOS. This was passed as the generic `clientId`, so on iOS
-  // the Google button would have opened a sheet that failed every time — and a
-  // sign-in door that cannot open is an App Review rejection, not a papercut.
-  // No fallback constant on purpose: an empty value must HIDE the button, not
-  // quietly reuse a client that belongs to another platform.
-  const iosClientId =
-    (typeof process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID === 'string' && process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID.trim())
-    || '';
-  // Every other platform keeps working exactly as before.
-  const googleAvailable = Platform.OS !== 'ios' || Boolean(iosClientId);
+  // A Google OAuth client is bound to ONE platform: an Android client is tied
+  // to the package name and signing fingerprint and is rejected outright when a
+  // request comes from iOS. Every id therefore comes from src/googleClientIds,
+  // which hands each platform its own client and never an empty value — an
+  // empty one made expo-auth-session throw inside render the first day an OTA
+  // reached an iPhone. `googleAvailable` still hides the button if that module
+  // ever has nothing for iOS; a door that cannot open is an App Review
+  // rejection, not a papercut.
+  const { webClientId, iosClientId } = googleClientIds();
+  const googleAvailable = Boolean(iosClientId);
   const webRedirectUri = Platform.OS !== 'android' ? AuthSession.makeRedirectUri({ scheme: 'householdcoo', path: 'oauthredirect' }) : undefined;
 
   const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
-    clientId: Platform.OS === 'ios' ? (iosClientId || androidClientId) : androidClientId,
-    webClientId,
-    androidClientId,
-    ...(iosClientId ? { iosClientId } : {}),
+    ...googleClientIds(),
     redirectUri: webRedirectUri,
   });
 

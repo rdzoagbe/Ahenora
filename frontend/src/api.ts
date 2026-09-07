@@ -209,6 +209,27 @@ export function setUnauthorizedHandler(fn: (() => void) | null) {
 // a family device is visible to the admin without a screenshot relay. Plain
 // fetch — going through request() could recurse; throttled; never throws.
 let errorReportTimes: number[] = [];
+
+/**
+ * A render crash, reported to the same place failed requests already go.
+ *
+ * The root error boundary catches a throw and shows a person "Something went
+ * wrong" — and until now that was the END of the information. componentDidCatch
+ * wrote to the console, which nobody on the other end of a phone can read. The
+ * first real one (the calendar throwing on iOS, 2026-09-07) had to be diagnosed
+ * from source alone, with the message that would have named the cause in one
+ * line deliberately withheld from the screen and accidentally withheld from
+ * the admin panel too.
+ *
+ * Same throttle and same never-throw guarantee as request failures: a crash
+ * report must not become a second crash.
+ */
+export function reportCrash(message: string, componentStack?: string | null) {
+  const where = (componentStack || '').split('\n').map((l) => l.trim()).filter(Boolean)[0] || '';
+  reportClientError('render', 'CRASH', undefined,
+    `${String(message || 'unknown').slice(0, 200)}${where ? ` @ ${where.slice(0, 90)}` : ''}`);
+}
+
 function reportClientError(path: string, method: string, status: number | undefined, message: string) {
   try {
     if (path.startsWith('/telemetry')) return;
@@ -963,6 +984,12 @@ export interface InviteBreakdown {
     never_signed_up: number;
     joined_while_invite_still_pending: number;
   };
+  /** For every accepted invite in the window: did the inviter hear it landed? */
+  inviter_told?: {
+    reached: number;
+    unreachable: number;
+    not_recorded: number;
+  };
 }
 
 /** /api/health/push — admin only. Answers the question a silent morning
@@ -1144,6 +1171,35 @@ export interface Subscriber {
   last_active: string | null;
   created_at: string | null;
   subscribed_at: string | null;
+}
+
+/** /api/admin/support-tickets — admin only. The support form's inbox. */
+export interface SupportTicket {
+  ticket_id: string;
+  family_id: string | null;
+  user_id: string | null;
+  user_email: string;
+  user_name: string;
+  subject: string;
+  message: string;
+  status: 'open' | 'closed' | string;
+  created_at: string | null;
+  closed_at: string | null;
+  /** null: sent before delivery was tracked — nobody was ever told. */
+  emailed: boolean | null;
+  email_error?: string | null;
+  pushed_devices: number;
+}
+
+export interface SupportInbox {
+  generated_at: string | null;
+  window_days: number;
+  open: number;
+  total: number;
+  email_configured: boolean;
+  inbox: string;
+  never_delivered: number;
+  tickets: SupportTicket[];
 }
 
 export interface SubscriberList {
@@ -1665,6 +1721,12 @@ export const api = {
     request<PlanAdoption>('/admin/plan-adoption'),
   getSubscribers: () =>
     request<SubscriberList>('/admin/subscribers'),
+  /** Every message sent through the in-app support form, open first. */
+  getSupportTickets: (days = 365) =>
+    request<SupportInbox>(`/admin/support-tickets?days=${days}`),
+  closeSupportTicket: (ticketId: string) =>
+    request<{ ok: boolean; ticket_id: string; status: string }>(
+      `/admin/support-tickets/${encodeURIComponent(ticketId)}/close`, { method: 'POST' }),
   getBillingEvents: (limit = 40) =>
     request<BillingEventLog>(`/admin/billing-events?limit=${limit}`),
   listInvites: () => request<FamilyInvite[]>('/family/invites'),
@@ -1997,7 +2059,7 @@ export const api = {
   /** What this build should compare itself against. Unauthenticated: a client
    *  too old to be updated may also be too old to sign in cleanly. */
   appVersionInfo: () =>
-    request<{ min_runtime: string; store_version: string; android_store_url?: string }>('/app/version-info'),
+    request<{ min_runtime: string; store_version: string; android_store_url?: string; ios_store_url?: string }>('/app/version-info'),
   /** The three counts the sharing panel states, from one source. */
   sharingSummary: () =>
     request<{ shared_out: number; shared_in: number; private: number }>('/cards/sharing-summary'),

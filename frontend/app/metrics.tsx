@@ -9,7 +9,7 @@ import { AmbientBackground } from '../src/components/AmbientBackground';
 import { useUI, UIColors } from '../src/components/Kit';
 import { useStore } from '../src/store';
 import { api, MetricRow, VersionAdoption, PlanAdoption, FunnelSummary, PushHealth,
-  RetentionSummary, InviteBreakdown, AiHealth, SubscriberList,
+  RetentionSummary, InviteBreakdown, AiHealth, SubscriberList, SupportInbox,
   BillingEventLog } from '../src/api';
 import { logger } from '../src/logger';
 
@@ -62,6 +62,8 @@ export default function MetricsScreen() {
   const [adoption, setAdoption] = useState<VersionAdoption | null>(null);
   const [plans, setPlans] = useState<PlanAdoption | null>(null);
   const [subs, setSubs] = useState<SubscriberList | null>(null);
+  const [support, setSupport] = useState<SupportInbox | null>(null);
+  const [showClosedTickets, setShowClosedTickets] = useState(false);
   const [showAllSubs, setShowAllSubs] = useState(false);
   const [billing, setBilling] = useState<BillingEventLog | null>(null);
   const [funnel, setFunnel] = useState<FunnelSummary | null>(null);
@@ -91,6 +93,7 @@ export default function MetricsScreen() {
     api.getPlanAdoption().then(setPlans).catch((e) => logger.warn('plan adoption load failed', e?.message || e));
     // The per-household list behind those totals — who is on what, with a contact.
     api.getSubscribers().then(setSubs).catch((e) => logger.warn('subscribers load failed', e?.message || e));
+    api.getSupportTickets().then(setSupport).catch((e) => logger.warn('support inbox load failed', e?.message || e));
     // What the payment providers have actually told us. A sale that never
     // showed up here is the difference between "nobody bought" and "the money
     // arrived and we dropped it" — and those need opposite fixes.
@@ -272,6 +275,25 @@ export default function MetricsScreen() {
                     </View>
                   ))}
               </View>
+
+              {/* Whether the inviter heard that it landed. "Could not be told"
+                  is the one to act on: the join worked and the inviter had no
+                  phone or browser registered to receive the push. */}
+              {invites.inviter_told ? (
+                <View style={styles.card}>
+                  {([
+                    ['Inviter told it landed', invites.inviter_told.reached],
+                    ['Inviter could not be told', invites.inviter_told.unreachable],
+                    ['Accepted before this was tracked', invites.inviter_told.not_recorded],
+                  ] as [string, number][])
+                    .map(([label, n], i) => (
+                      <View key={label} style={[styles.eventRow, i === 0 && { borderTopWidth: 0 }]}>
+                        <Text style={styles.eventLabel}>{label}</Text>
+                        <Text style={[styles.eventCount, label === 'Inviter could not be told' && n > 0 && { color: ui.danger }]}>{n}</Text>
+                      </View>
+                    ))}
+                </View>
+              ) : null}
               <Text style={styles.hint}>
                 {'\u201C'}Never signed up{'\u201D'} means the link or the email never reached them, or
                 did not persuade them — that is wording and delivery.
@@ -663,6 +685,93 @@ export default function MetricsScreen() {
           ) : null}
 
 
+          {/* Support inbox — every message from the in-app form. For months
+              the form stored these and told nobody; the older ones here are
+              the messages that were never answered. */}
+          <Text style={styles.sectionTitle}>Support inbox</Text>
+          {support ? (
+            <>
+              {!support.email_configured ? (
+                <View style={[styles.card, styles.warnCard]}>
+                  <Text style={styles.warnText}>
+                    Support email is not configured on the server (RESEND_API_KEY / INVITE_FROM_EMAIL),
+                    so new messages reach this list and your phone, but not {support.inbox}.
+                  </Text>
+                </View>
+              ) : null}
+              {support.never_delivered > 0 ? (
+                <View style={[styles.card, styles.warnCard]}>
+                  <Text style={styles.warnText}>
+                    {support.never_delivered} message{support.never_delivered === 1 ? '' : 's'} below{' '}
+                    {support.never_delivered === 1 ? 'was' : 'were'} sent before delivery worked. Nobody
+                    was told. Reply to each by email.
+                  </Text>
+                </View>
+              ) : null}
+              <Text style={styles.hint}>
+                {support.open} open of {support.total}. New messages go to {support.inbox} and to your phone.
+              </Text>
+              {support.tickets.length ? (
+                <View style={styles.card}>
+                  {support.tickets
+                    .filter((tk) => showClosedTickets || tk.status === 'open')
+                    .map((tk, i) => (
+                      <View key={tk.ticket_id} style={[styles.ticketRow, i === 0 && { borderTopWidth: 0 }]}>
+                        <View style={styles.ticketHead}>
+                          <View style={styles.subLeft}>
+                            <Text style={styles.subName} numberOfLines={1}>{tk.subject || '(no subject)'}</Text>
+                            <Text style={styles.subEmail} numberOfLines={1}>
+                              {tk.user_name || '(no name)'} · {tk.user_email || '—'}
+                            </Text>
+                          </View>
+                          <Text style={styles.subMeta}>{lastSeenLabel(tk.created_at)}</Text>
+                        </View>
+                        <Text style={styles.ticketBody}>{tk.message}</Text>
+                        <View style={styles.ticketFoot}>
+                          <Text style={[styles.subMeta, tk.emailed === null && { color: ui.danger }]}>
+                            {tk.emailed === null
+                              ? 'Never delivered'
+                              : tk.emailed
+                                ? `Emailed${tk.pushed_devices ? ' · pushed' : ''}`
+                                : `Email failed${tk.email_error ? ': ' + tk.email_error : ''}${tk.pushed_devices ? ' · pushed' : ''}`}
+                          </Text>
+                          {tk.status === 'open' ? (
+                            <PressScale
+                              onPress={() => {
+                                api.closeSupportTicket(tk.ticket_id)
+                                  .then(() => setSupport((cur) => cur ? {
+                                    ...cur,
+                                    open: Math.max(0, cur.open - 1),
+                                    tickets: cur.tickets.map((x) => x.ticket_id === tk.ticket_id ? { ...x, status: 'closed' } : x),
+                                  } : cur))
+                                  .catch((e) => logger.warn('close ticket failed', e?.message || e));
+                              }}
+                              style={styles.ticketBtn}
+                            >
+                              <Text style={styles.subMoreText}>Mark handled</Text>
+                            </PressScale>
+                          ) : (
+                            <Text style={styles.subMeta}>Handled</Text>
+                          )}
+                        </View>
+                      </View>
+                    ))}
+                  {support.tickets.some((tk) => tk.status !== 'open') ? (
+                    <PressScale onPress={() => setShowClosedTickets((v) => !v)} style={styles.subMoreBtn}>
+                      <Text style={styles.subMoreText}>
+                        {showClosedTickets ? 'Hide handled' : 'Show handled'}
+                      </Text>
+                    </PressScale>
+                  ) : null}
+                </View>
+              ) : (
+                <Text style={styles.muted}>No messages yet.</Text>
+              )}
+            </>
+          ) : (
+            <Text style={styles.muted}>Loading…</Text>
+          )}
+
           {/* Billing events — did the money actually reach us */}
           <Text style={styles.sectionTitle}>Billing events</Text>
           {billing ? (
@@ -814,6 +923,11 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   subTagFree: { backgroundColor: ui.soft },
   subTagText: { fontFamily: 'Inter_800ExtraBold', fontSize: 11, letterSpacing: 0.3 },
   subMeta: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 11 },
+  ticketRow: { paddingVertical: 12, borderTopWidth: 1, borderTopColor: ui.line, gap: 8 },
+  ticketHead: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 },
+  ticketBody: { color: ui.text, fontFamily: 'Inter_400Regular', fontSize: 14, lineHeight: 20 },
+  ticketFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  ticketBtn: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 999, backgroundColor: ui.soft },
   subMoreBtn: { paddingVertical: 14, borderTopWidth: 1, borderTopColor: ui.line, alignItems: 'center' },
   subMoreText: { color: ui.orangeText, fontFamily: 'Inter_700Bold', fontSize: 13 },
 });
