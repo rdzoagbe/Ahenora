@@ -708,8 +708,15 @@ export default function MetricsScreen() {
                         <Text style={styles.subName} numberOfLines={1}>
                           {e.event_type || '(no type)'}
                         </Text>
-                        <Text style={styles.subEmail} numberOfLines={1}>
-                          {e.detail || e.product_id || e.app_user_id || '—'}
+                        {/* An unmatched row is the one somebody has to ACT on,
+                            and acting means knowing which purchase. Show the
+                            store id and the account id it named — the detail
+                            string alone ("no account carries this app_user_id")
+                            says what happened and not to whom. */}
+                        <Text style={styles.subEmail} numberOfLines={e.matched ? 1 : 2}>
+                          {e.matched
+                            ? (e.detail || e.product_id || e.app_user_id || '—')
+                            : [e.product_id, e.app_user_id].filter(Boolean).join(' · ') || e.detail || '—'}
                         </Text>
                       </View>
                       <View style={styles.subRight}>
