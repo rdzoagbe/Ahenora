@@ -130,14 +130,53 @@ def rollout_of(row: dict) -> Optional[float]:
 
 
 def crash_signal(insights_json: str) -> tuple[Optional[float], Optional[float]]:
-    """(launches, crashes). Either None when the payload does not say."""
+    """(launches, crashes). Either None when the payload does not say.
+
+    The real shape, seen on 2026-09-07 from `eas update:insights --json`:
+
+        {"groupId": ..., "timespan": {...},
+         "platforms": [{"platform": "android", "updateId": ...,
+                        "totals": {"uniqueUsers": 0, "installs": 0,
+                                   "failedInstalls": 0, "crashRatePercent": 0},
+                        "payload": {...}, "daily": [...]}]}
+
+    Expo counts installs of the update and a crash rate, not launches and
+    crashes. An install is a device that took the update and ran it, which
+    is the launch this guard cares about; the crash count is derived from
+    the rate. The older, guessed names are still accepted so a future rename
+    towards them keeps working.
+    """
     try:
         blob = json.loads(insights_json)
     except (ValueError, TypeError):
         return None, None
-    launches = _find_number(blob, ("launches", "launchcount", "totallaunches"))
-    crashes = _find_number(blob, ("crashes", "crashcount", "totalcrashes"))
+    totals = _find_dict(blob, "totals") or blob
+    launches = _find_number(totals, ("installs", "uniqueusers", "launches",
+                                     "launchcount", "totallaunches"))
+    crashes = _find_number(totals, ("crashes", "crashcount", "totalcrashes"))
+    if crashes is None and launches is not None:
+        rate = _find_number(totals, ("crashratepercent", "crashrate"))
+        if rate is not None:
+            crashes = launches * rate / 100.0
     return launches, crashes
+
+
+def _find_dict(blob: Any, name: str) -> Optional[dict]:
+    """The first dict stored under `name`, anywhere in the structure."""
+    if isinstance(blob, dict):
+        for key, val in blob.items():
+            if key.lower() == name and isinstance(val, dict):
+                return val
+        for val in blob.values():
+            found = _find_dict(val, name)
+            if found is not None:
+                return found
+    elif isinstance(blob, list):
+        for item in blob:
+            found = _find_dict(item, name)
+            if found is not None:
+                return found
+    return None
 
 
 def decide(list_json: str, insights: dict[str, str], now: datetime,
@@ -161,7 +200,9 @@ def decide(list_json: str, insights: dict[str, str], now: datetime,
     for platform, payload in sorted(insights.items()):
         launches, crashes = crash_signal(payload)
         if launches is None or crashes is None:
-            head = (payload or "").strip().replace("\n", " ")[:300]
+            # Whole payload, whitespace collapsed: it is counts and ids, and it
+            # is the only way the next parser gets written from evidence.
+            head = " ".join((payload or "").split())[:2000]
             reasons.append(
                 f"{platform}: could not read launch/crash counts, so no "
                 f"conclusion was drawn from them. The payload began: "
