@@ -2221,7 +2221,16 @@ export const api = {
       body: { endpoint },
     }),
   testNotification: () =>
-    request<{ ok: boolean; tokens: number; result: unknown }>('/notifications/test', {
+    request<{
+      ok: boolean;
+      /** Expo push tokens — phones. Zero on the web app, which is normal. */
+      tokens: number;
+      /** Subscribed browsers. The rail the first version of this forgot. */
+      browsers: number;
+      devices: number;
+      reminders_enabled: boolean;
+      result: unknown;
+    }>('/notifications/test', {
       method: 'POST',
     }),
   // Subscription

@@ -2224,29 +2224,33 @@ STAR_MILESTONE = 50
 
 
 async def send_star_milestone_alert(family_id: str, member_name: str, old_total: int, new_total: int):
-    """Notify the family's devices when a child crosses a 50-star milestone."""
+    """Notify the household when a child crosses a 50-star milestone.
+
+    Over the household's ACCOUNTS, through send_push_to_user — the same route
+    every other alert takes. It used to read Expo token rows directly, which is
+    the bug new-card alerts were already fixed for and this one was missed:
+    a token row is a PHONE, so a parent who uses the web app, or an iPhone
+    running it from Safari, was never even a candidate. They heard nothing.
+
+    Going through send_push_to_user also means the Settings toggle finally
+    applies. This was the one alert in the app that could not be turned off.
+    """
     try:
         if new_total // STAR_MILESTONE <= old_total // STAR_MILESTONE:
             return
         milestone = (new_total // STAR_MILESTONE) * STAR_MILESTONE
         database = get_db()
-        messages = []
-        docs = [d async for d in database["notification_tokens"].find(
-            {"family_id": family_id, "active": True}, {"_id": 0})]
-        for token_doc in _latest_token_per_user(docs):
-            token = token_doc.get("token")
-            if not token or not token.startswith("ExponentPushToken"):
+        for account in await _family_accounts(database, family_id):
+            uid = account.get("user_id")
+            if not uid:
                 continue
-            messages.append({
-                "to": token,
-                "sound": "default",
-                "title": f"{member_name} reached {milestone} stars!",
-                "body": "Amazing work — time to celebrate with a reward?",
-                "data": {"type": "star_milestone", "family_id": family_id},
-                "channelId": "household-alerts", "priority": "high",
-            })
-        if messages:
-            await send_expo_push_messages(messages, database)
+            await send_push_to_user(
+                database, uid,
+                f"{member_name} reached {milestone} stars!",
+                "Amazing work — time to celebrate with a reward?",
+                {"type": "star_milestone", "family_id": family_id},
+                pref_key="new_card_alerts",
+            )
     except Exception as e:
         log.warning("star milestone alert failed: %s", e)
 
@@ -7745,6 +7749,19 @@ async def web_push_unsubscribe(payload: dict = Body(default=None), user=Depends(
 
 @app.post("/api/notifications/test")
 async def test_notification(user=Depends(require_user)):
+    """Prove delivery to THIS person, on every rail they actually use.
+
+    It used to build Expo messages only, and answer with that count. So the
+    one person this is most useful to — somebody on the web app, or an iPhone
+    running Ahenora from Safari, where there is no Expo token at all — was told
+    zero devices and would reasonably conclude notifications were broken. The
+    diagnostic reported the absence of the rail it forgot to look at.
+
+    Deliberately NOT gated on the notification preference. Every other send
+    respects the toggle; this one is the person asking "does the plumbing
+    work", and silently declining to answer would defeat the point. The reply
+    says whether reminders are switched off, so the app can say so plainly.
+    """
     database = get_db()
     messages = []
     docs = [d async for d in database["notification_tokens"].find(
@@ -7765,7 +7782,26 @@ async def test_notification(user=Depends(require_user)):
             )
 
     result = await send_expo_push_messages(messages, database)
-    return {"ok": True, "tokens": len(messages), "result": result}
+
+    browsers = await database["web_push_subscriptions"].count_documents(
+        {"user_id": user["user_id"], "active": True})
+    if browsers:
+        await send_web_push_to_user(
+            database, user["user_id"],
+            "Ahenora notifications are active",
+            "You will receive card alerts and reminder notifications.",
+            {"type": "notification_test"})
+
+    prefs = await database["notification_settings"].find_one(
+        {"user_id": user["user_id"]}, {"_id": 0})
+    return {
+        "ok": True,
+        "tokens": len(messages),
+        "browsers": browsers,
+        "devices": len(messages) + browsers,
+        "reminders_enabled": alerts_enabled(prefs, "card_reminders"),
+        "result": result,
+    }
 
 
 

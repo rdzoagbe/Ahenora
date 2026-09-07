@@ -350,8 +350,13 @@ export default function Settings() {
     setNotificationStatus(t('set_notif_test_sending'));
     try {
       const res = await api.testNotification();
+      // `devices`, not `tokens`: on the web app there is no Expo token by
+      // design, and reading the phone count alone told a browser user they had
+      // no device registered while their subscription was working perfectly.
       setNotificationStatus(
-        res.tokens > 0 ? t('set_notif_test_sent') : t('set_notif_test_no_device'));
+        res.devices === 0 ? t('set_notif_test_no_device')
+          : !res.reminders_enabled ? t('set_notif_test_muted')
+          : t('set_notif_test_sent'));
     } catch (e: unknown) {
       logger.warn('test notification failed', e);
       setNotificationStatus(apiErrorText(e, t, 'set_notif_test_failed'));
