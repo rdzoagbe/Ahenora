@@ -10308,17 +10308,85 @@ RC_DOWNGRADE_EVENTS = {"EXPIRATION"}
 BILLING_EVENT_KEEP = int(os.environ.get("BILLING_EVENT_KEEP", "500"))
 
 
-def rc_plan_from_product(product: Optional[str]) -> tuple[str, str]:
+# Where a term stops being monthly and starts being annual. Six months sits
+# comfortably above every monthly and quarterly plan and below every yearly one,
+# so a few days of clock drift or a store's proration cannot move a term across
+# it.
+YEARLY_TERM_DAYS = 180
+
+
+def rc_cycle_from_term(term_days: Optional[float]) -> Optional[str]:
+    """How long the customer actually bought for. None when we cannot tell."""
+    if term_days is None:
+        return None
+    return "yearly" if term_days >= YEARLY_TERM_DAYS else "monthly"
+
+
+def _term_days(start: Any, end: Any) -> Optional[float]:
+    """Length of one billing period, in days, from whatever the store gave us."""
+    try:
+        a = ensure_aware_utc(parse_dt(str(start))) if start is not None else None
+        b = ensure_aware_utc(parse_dt(str(end))) if end is not None else None
+    except Exception:
+        return None
+    if not a or not b or b <= a:
+        return None
+    return (b - a).total_seconds() / 86400.0
+
+
+def rc_term_days_from_ms(purchased_at_ms: Any, expiration_at_ms: Any) -> Optional[float]:
+    """A webhook's own numbers. Both are epoch milliseconds when present."""
+    try:
+        a = int(purchased_at_ms)
+        b = int(expiration_at_ms)
+    except (TypeError, ValueError):
+        return None
+    return (b - a) / 86400000.0 if b > a else None
+
+
+def rc_term_days_for_product(subscriber: dict, product: Optional[str]) -> Optional[float]:
+    """The CURRENT period's length, read from the subscriptions block.
+
+    Deliberately not the entitlement's dates. An entitlement's `purchase_date`
+    is the ORIGINAL purchase, so a monthly subscription running seven months
+    would measure as a 240-day term and be called yearly. The subscriptions
+    block carries the latest renewal instead, which is one period by
+    construction.
+    """
+    subs = (subscriber or {}).get("subscriptions") or {}
+    row = subs.get(product) if product else None
+    if not isinstance(row, dict):
+        return None
+    return _term_days(row.get("purchase_date"), row.get("expires_date"))
+
+
+def rc_plan_from_product(product: Optional[str],
+                         term_days: Optional[float] = None) -> tuple[str, str]:
     """Which plan and cycle a store product grants.
 
     The same three lines had been written out at each of the three places that
     needed them — the webhook, the reconcile endpoint, and now the sweep — so a
     new product naming convention would have had to be remembered in three
     places or silently disagree in one.
+
+    THE CYCLE COMES FROM THE TERM, not from the name. It used to be a substring
+    search for "year" in the product id, which is only ever as true as the
+    person who named the product. Ahenora's annual plan is a `yearly` base plan
+    under a Google Play subscription called `premium_monthly`, and RevenueCat's
+    entitlement reports `product_identifier` as the subscription id alone — so
+    the string handed to this function was literally "premium_monthly" for a
+    customer who had paid for a year. Every annual subscriber was recorded as
+    monthly, and the revenue view said so.
+
+    The name is still the fallback, for the one case where nothing tells us the
+    term: a lifetime entitlement, or a store that answered without dates.
     """
     pid = (product or "").lower()
-    return ("household" if "household" in pid else "executive",
-            "yearly" if ("year" in pid or "annual" in pid) else "monthly")
+    plan = "household" if "household" in pid else "executive"
+    cycle = rc_cycle_from_term(term_days)
+    if cycle is None:
+        cycle = "yearly" if ("year" in pid or "annual" in pid) else "monthly"
+    return plan, cycle
 
 
 async def record_billing_event(
@@ -10458,7 +10526,9 @@ async def revenuecat_webhook(payload: dict, authorization: Optional[str] = Heade
         )
         return {"ok": True, "matched": False}
 
-    granted_plan, cycle = rc_plan_from_product(event.get("product_id"))
+    granted_plan, cycle = rc_plan_from_product(
+        event.get("product_id"),
+        rc_term_days_from_ms(event.get("purchased_at_ms"), event.get("expiration_at_ms")))
     changes = {
         "rc_last_event": event_type,
         "rc_product_id": event.get("product_id"),
@@ -10552,12 +10622,14 @@ async def reconcile_billing(user: dict = Depends(require_user)):
 
     database = get_db()
     data = await _fetch_rc_subscriber(user["user_id"], secret)
-    active, product = rc_entitlement_state((data or {}).get("subscriber") or {}, utcnow())
+    subscriber = (data or {}).get("subscriber") or {}
+    active, product = rc_entitlement_state(subscriber, utcnow())
 
     family = await get_family_doc(user["family_id"])
     changes = {"rc_reconciled_at": utcnow(), "updated_at": utcnow()}
     if active:
-        changes["plan"], changes["billing_cycle"] = rc_plan_from_product(product)
+        changes["plan"], changes["billing_cycle"] = rc_plan_from_product(
+            product, rc_term_days_for_product(subscriber, product))
         changes["rc_product_id"] = product
     elif family.get("plan") in ("executive", "household") and family.get("rc_last_event"):
         changes["plan"] = "village"
@@ -10667,12 +10739,14 @@ async def sweep_billing_once(database: Any, budget: int = 0, secret: str = "") -
 
         checked += 1
         await database["users"].update_one({"user_id": uid}, {"$set": {"rc_swept_at": now}})
-        active, product = rc_entitlement_state((data or {}).get("subscriber") or {}, now)
+        subscriber = (data or {}).get("subscriber") or {}
+        active, product = rc_entitlement_state(subscriber, now)
         if not active:
             continue
 
         fid = cand["family_id"]
-        plan, cycle = rc_plan_from_product(product)
+        plan, cycle = rc_plan_from_product(
+            product, rc_term_days_for_product(subscriber, product))
         await database["families"].update_one({"family_id": fid}, {"$set": {
             "plan": plan,
             "billing_cycle": cycle,
@@ -10695,6 +10769,78 @@ async def sweep_billing_once(database: Any, budget: int = 0, secret: str = "") -
     return {"checked": checked, "corrected": corrected, "candidates": len(candidates)}
 
 
+async def replay_unmatched_billing(database: Any, secret: str = "") -> dict:
+    """Retry the purchases that arrived for an account we did not know.
+
+    A webhook naming an app_user_id with no matching user is answered 200 —
+    correctly, because RevenueCat must stop retrying — and that is the end of
+    it. The store considers the money delivered and will never send it again.
+    One such row is sitting in this database right now.
+
+    It is not always unrecoverable. The common cause is a race, not a mystery:
+    the purchase completes and the webhook lands before the account row is
+    readable, so the id was real and simply not there yet. Asking again later
+    resolves those, and costs one indexed lookup per unresolved row.
+
+    Never downgrades, never guesses: it applies a plan only when the id names a
+    real user AND RevenueCat still says that subscriber is entitled. A row that
+    stays unresolved keeps its app_user_id on the admin screen, where a person
+    can act on it — which is the whole reason the id is recorded.
+    """
+    secret = secret or os.environ.get("REVENUECAT_SECRET_KEY", "")
+    now = utcnow()
+    resolved = attempted = 0
+    async for ev in database["billing_events"].find(
+            {"matched": False}, {"_id": 0}):
+        if ev.get("resolved_at"):
+            continue
+        uid = ev.get("app_user_id")
+        if not uid:
+            continue
+        attempted += 1
+        user = await database["users"].find_one({"user_id": uid}, {"_id": 0})
+        if not user or not user.get("family_id"):
+            continue
+        # The account exists now. Confirm with RevenueCat rather than trusting a
+        # webhook we have already stored — the subscription may have lapsed in
+        # the meantime, and granting a plan off a stale event would be worse
+        # than the miss it is repairing.
+        if not secret:
+            continue
+        try:
+            data = await _fetch_rc_subscriber(uid, secret)
+        except HTTPException as e:
+            log.info("billing replay: no answer for one id (status %s)", e.status_code)
+            continue
+        subscriber = (data or {}).get("subscriber") or {}
+        active, product = rc_entitlement_state(subscriber, now)
+        if not active:
+            continue
+        plan, cycle = rc_plan_from_product(
+            product, rc_term_days_for_product(subscriber, product))
+        fid = user["family_id"]
+        await database["families"].update_one({"family_id": fid}, {"$set": {
+            "plan": plan,
+            "billing_cycle": cycle,
+            "rc_product_id": product,
+            "rc_last_event": ev.get("event_type") or "REPLAYED",
+            "rc_event_at": now,
+            "rc_reconciled_at": now,
+            "updated_at": now,
+        }})
+        await database["billing_events"].update_one(
+            {"event_id": ev.get("event_id")},
+            {"$set": {"resolved_at": now, "family_id": fid}})
+        resolved += 1
+        log.warning("billing replay recovered a household to %s (event had reached nobody)", plan)
+        await record_billing_event(
+            database, source="replay", event_type="RECOVERED", matched=True,
+            family_id=fid, app_user_id=uid, product_id=product, plan=plan,
+            detail="a purchase that had reached nobody now matches an account",
+        )
+    return {"attempted": attempted, "resolved": resolved}
+
+
 async def _billing_sweep_loop():
     # The key and the budget are both deliberately absent from this scope. The
     # pass fetches its own, so nothing here — not the counts it returns, not an
@@ -10712,6 +10858,11 @@ async def _billing_sweep_loop():
             # return value counted as somebody's financial details. Two
             # integers. Removing the duplicate beats arguing with the name.
             await sweep_billing_once(get_db())
+            # And the rows the sweep structurally cannot reach: a purchase for
+            # an app_user_id we did not know is not in any household, so no
+            # household reads free on its behalf and no candidate list contains
+            # it. Retried here, on the same cadence.
+            await replay_unmatched_billing(get_db())
         except Exception as e:  # a pass must never kill the loop
             log.warning("billing sweep pass failed: %s", type(e).__name__)
 
