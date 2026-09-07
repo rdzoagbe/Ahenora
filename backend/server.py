@@ -2368,6 +2368,8 @@ PUSH_I18N = {
         "invited_body": "Open Ahenora and sign in through the invite link to join.",
         "accepted_title": "{name} accepted your invitation",
         "accepted_body": "They have joined your household.",
+        "santa_title": "Your Secret Santa match is ready",
+        "santa_body": "{title}: open Ahenora to reveal who you're giving to.",
         "assigned_title": "{name} handed you something",
         "assigned_body": "{title}",
         "assigned_body_due": "{title} — due {due}",
@@ -2407,6 +2409,8 @@ PUSH_I18N = {
         "invited_body": "Ouvrez Ahenora et connectez-vous via le lien d'invitation pour le rejoindre.",
         "accepted_title": "{name} a accepté votre invitation",
         "accepted_body": "Cette personne a rejoint votre foyer.",
+        "santa_title": "Votre Père Noël secret est tiré",
+        "santa_body": "{title} : ouvrez Ahenora pour découvrir à qui vous offrez.",
         "assigned_title": "{name} vous a confié quelque chose",
         "assigned_body": "{title}",
         "assigned_body_due": "{title} — pour le {due}",
@@ -2445,6 +2449,8 @@ PUSH_I18N = {
         "invited_body": "Abre Ahenora e inicia sesión con el enlace de invitación para unirte.",
         "accepted_title": "{name} aceptó tu invitación",
         "accepted_body": "Ya forma parte de tu hogar.",
+        "santa_title": "Tu amigo invisible está listo",
+        "santa_body": "{title}: abre Ahenora para descubrir a quién le regalas.",
         "assigned_title": "{name} te ha encargado algo",
         "assigned_body": "{title}",
         "assigned_body_due": "{title} — para el {due}",
@@ -2483,6 +2489,8 @@ PUSH_I18N = {
         "invited_body": "Öffne Ahenora und melde dich über den Einladungslink an, um beizutreten.",
         "accepted_title": "{name} hat deine Einladung angenommen",
         "accepted_body": "Die Person ist deinem Haushalt beigetreten.",
+        "santa_title": "Dein Wichtel-Los steht fest",
+        "santa_body": "{title}: öffne Ahenora, um zu sehen, wen du beschenkst.",
         "assigned_title": "{name} hat dir etwas übergeben",
         "assigned_body": "{title}",
         "assigned_body_due": "{title} — fällig am {due}",
@@ -7048,8 +7056,15 @@ def dm_thread(a: str, b: str) -> str:
 async def _family_accounts(database, family_id: str) -> list:
     """Everyone in the household who can hold a conversation — a member row with
     a login. A young child has none; they are reached through a kid: thread."""
+    members = [m async for m in database["family_members"].find({"family_id": family_id}, {"_id": 0})]
+    # A founder whose row predates user_id linkage has a login too. Skipping
+    # rows without user_id made the household OWNER a non-participant of every
+    # conversation in their own family: no chat push ever reached them, while
+    # the co-parent whose row was linked got everything. "Chat notifications
+    # work on iOS but not on Android" was this, not the platform.
+    members = await _link_members_to_accounts(database, family_id, members)
     out = []
-    async for m in database["family_members"].find({"family_id": family_id}, {"_id": 0}):
+    for m in members:
         uid = m.get("user_id")
         if not uid:
             continue
@@ -11064,12 +11079,22 @@ async def replay_unmatched_billing(database: Any, secret: str = "") -> dict:
     return {"attempted": attempted, "resolved": resolved}
 
 
+# A heartbeat for the only loop that handles money. Without it, "is the
+# sweep running?" could not be answered from inside the app, and the loop
+# used to sleep a full interval (six hours) BEFORE its first pass — so a
+# service that restarted more often than that never swept at all, silently.
+_billing_sweep_state: dict = {"booted_at": None, "last_tick_at": None, "ticks": 0, "last_error": None}
+
+
 async def _billing_sweep_loop():
     # The key and the budget are both deliberately absent from this scope. The
     # pass fetches its own, so nothing here — not the counts it returns, not an
     # exception escaping it — can carry either into a log line.
+    _billing_sweep_state["booted_at"] = utcnow()
+    first = True
     while True:
-        await asyncio.sleep(BILLING_SWEEP_INTERVAL)
+        await asyncio.sleep(90 if first else BILLING_SWEEP_INTERVAL)
+        first = False
         try:
             # Nothing the pass returns is logged, and nothing is lost by that.
             # Every correction already writes a billing_events row tagged
@@ -11086,8 +11111,12 @@ async def _billing_sweep_loop():
             # household reads free on its behalf and no candidate list contains
             # it. Retried here, on the same cadence.
             await replay_unmatched_billing(get_db())
+            _billing_sweep_state["last_error"] = None
         except Exception as e:  # a pass must never kill the loop
             log.warning("billing sweep pass failed: %s", type(e).__name__)
+            _billing_sweep_state["last_error"] = type(e).__name__
+        _billing_sweep_state["last_tick_at"] = utcnow()
+        _billing_sweep_state["ticks"] += 1
 
 
 @app.on_event("startup")
@@ -11158,6 +11187,10 @@ async def admin_billing_events(user=Depends(require_user), limit: int = Query(de
         "revenuecat_configured": bool(os.environ.get("RC_WEBHOOK_SECRET")),
         "stripe_configured": bool(os.environ.get("STRIPE_WEBHOOK_SECRET")),
         "sweep_enabled": BILLING_SWEEP_ENABLED and bool(os.environ.get("REVENUECAT_SECRET_KEY")),
+        "sweep_booted_at": iso(_billing_sweep_state["booted_at"]),
+        "sweep_last_tick_at": iso(_billing_sweep_state["last_tick_at"]),
+        "sweep_ticks": _billing_sweep_state["ticks"],
+        "sweep_last_error": _billing_sweep_state["last_error"],
         "ever_received": bool(rows),
         "last_event_at": iso(_coerce_dt(newest.get("received_at"))) if newest else None,
         "total": len(rows),
@@ -13747,7 +13780,30 @@ async def send_santa_draw(draw_id: str, user=Depends(require_full_member)):
     draw["participants"] = participants
     draw["status"] = "sent"
     draw["sent_at"] = utcnow()
-    return public_santa_draw(draw, user["user_id"])
+    # "Send everyone their match" has to send something. Household members
+    # get a push saying their match is ready to reveal in the app (the
+    # assignment itself never travels — it is revealed on their own screen).
+    # Outsiders have only a link, which the organiser hands over from the
+    # per-person Email/Text buttons; the screen says so.
+    told = 0
+    for p in participants:
+        uid = p.get("user_id")
+        if not uid or uid == user["user_id"]:
+            continue
+        try:
+            who = await database["users"].find_one({"user_id": uid}, {"_id": 0, "language": 1})
+            L = PUSH_I18N.get((who or {}).get("language") or "en", PUSH_I18N["en"])
+            got = await asyncio.wait_for(send_push_to_user(
+                database, uid, L["santa_title"],
+                L["santa_body"].format(title=draw.get("title") or "Secret Santa"),
+                {"type": "santa_draw", "draw_id": draw_id}), timeout=5.0)
+            if isinstance(got, dict) and (got.get("devices") or got.get("web")):
+                told += 1
+        except Exception as exc:  # noqa: BLE001 — the draw is sent either way
+            log.warning("santa push to %s skipped: %s", uid, exc)
+    out = public_santa_draw(draw, user["user_id"])
+    out["members_notified"] = told
+    return out
 
 
 @app.get("/api/santa/{draw_id}/my-match")

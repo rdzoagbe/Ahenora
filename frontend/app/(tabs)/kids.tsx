@@ -508,7 +508,7 @@ export default function Kids() {
                   <View style={{ flex: 1, minWidth: 0 }}>
                     <View style={styles.hubNameRow}>
                       <Text style={styles.hubName} numberOfLines={1}>
-                        {m.name}{m.is_me ? ` · ${t('hub_you')}` : ''}
+                        {m.name}
                       </Text>
                       <View style={[styles.hubBadge, { backgroundColor: notJoined ? ui.soft : isParent ? ui.orangeSoft : ui.soft }]}>
                         <Text

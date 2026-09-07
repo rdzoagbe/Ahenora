@@ -724,13 +724,14 @@ export default function Settings() {
           <PressScale testID="open-pricing" onPress={() => router.push('/pricing')} style={{ marginTop: 14 }}>
             <Card style={styles.planCard}>
               <View style={styles.planCol}>
-                <Text style={styles.planTitle}>{user?.is_admin ? t('set_admin_tester') : `${planLabel} ${t('set_plan')}`}</Text>
+                <Text style={styles.planTitle}>{user?.is_admin ? t('set_admin_tester') : t('set_plan_named', { plan: planLabel })}</Text>
                 <Text style={styles.planSub}>{memberLimit ? `${memberSlotsUsed}/${memberLimit} ${t('set_slots')}` : t('set_tap_view_plans')}</Text>
               </View>
               <View style={styles.planDivider} />
               <View style={styles.planCol}>
-                <Text style={styles.planTitle}>{memberSlotsUsed} member{memberSlotsUsed === 1 ? '' : 's'}</Text>
-                <Text style={styles.planSub}>{adultCount} adult{adultCount === 1 ? '' : 's'}, {childMembers.length} young{childMembers.length === 1 ? '' : ''} {childMembers.length === 1 ? 'person' : 'people'}</Text>
+                {/* Was hard-coded English — the one card on Settings a French household read in the wrong language. */}
+                <Text style={styles.planTitle}>{t(memberSlotsUsed === 1 ? 'set_members_count_one' : 'set_members_count', { count: memberSlotsUsed })}</Text>
+                <Text style={styles.planSub}>{t(adultCount === 1 ? 'set_adults_count_one' : 'set_adults_count', { count: adultCount })}, {t(childMembers.length === 1 ? 'set_young_count_one' : 'set_young_count', { count: childMembers.length })}</Text>
               </View>
               <ChevronRight color={ui.muted} size={20} />
             </Card>
@@ -772,7 +773,7 @@ export default function Settings() {
           {groupHead('subscription',
             <IconTile bg={ui.orangeSoft}><Crown color={ui.orange} size={18} /></IconTile>,
             t('subscription'),
-            user?.is_admin ? t('set_admin_tester') : `${planLabel} ${t('set_plan')}`,
+            user?.is_admin ? t('set_admin_tester') : t('set_plan_named', { plan: planLabel }),
             GK.subscription)}
           {groupOpen('subscription', GK.subscription) ? (
           <Card style={styles.cardPad}>

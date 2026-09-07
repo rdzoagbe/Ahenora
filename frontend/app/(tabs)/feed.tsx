@@ -28,7 +28,6 @@ import {
   MapPin,
   Megaphone,
   MessageSquare,
-  Mic,
   Pencil,
   Plus,
   Star,
@@ -137,9 +136,11 @@ function formatDayLine(date: string | null | undefined, t: TFunc) {
   return `${due.toLocaleDateString([], { month: 'short', day: 'numeric' })} · ${time}`;
 }
 
-function feedDateLine(now: Date | null) {
+function feedDateLine(now: Date | null, lang: string) {
   if (!now) return '';
-  return now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+  // The app's language, not the browser's: a French household on the web
+  // read "Monday, September 7" above "Bonsoir".
+  return now.toLocaleDateString(localeFor(lang), { weekday: 'long', month: 'long', day: 'numeric' });
 }
 
 // The ISO week and its parity, beside the date. For a separated co-parent the
@@ -1119,7 +1120,7 @@ export default function Feed() {
             <Text style={styles.brand}>Ahenora</Text>
             <View style={styles.topMetaRow}>
               <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={styles.dateText}>{feedDateLine(now)} <Text style={styles.sun}>{timeEmoji(now)}</Text></Text>
+                <Text style={styles.dateText}>{feedDateLine(now, lang)} <Text style={styles.sun}>{timeEmoji(now)}</Text></Text>
                 <Text style={styles.weekLine} testID="feed-week">{feedWeekLine(now, t, subscription?.custody)}</Text>
               </View>
               <View style={styles.topActions}>

@@ -985,9 +985,15 @@ export default function Kitchen() {
   }, [restoreEntry, restoreSel, showToast]);
 
   const deleteShopTrip = useCallback(async (id: string) => {
-    setShopHistory((prev) => prev.filter((h) => h.history_id !== id));
-    try { await api.deleteShoppingHistory(id); } catch { /* best effort */ }
-  }, []);
+    let previous: typeof shopHistory = [];
+    setShopHistory((prev) => { previous = prev; return prev.filter((h) => h.history_id !== id); });
+    try { await api.deleteShoppingHistory(id); } catch {
+      // Put it back and say so: a delete that quietly failed reappeared on
+      // the next load and read as "the app forgot".
+      setShopHistory(previous);
+      showToast(t('vault_could_not_delete_restored'), 'error');
+    }
+  }, [showToast, t]);
 
   // "Never show me old lists again." Plain function: manual memo would
   // block the React Compiler on this screen.
@@ -1022,9 +1028,9 @@ export default function Kitchen() {
     setShowMealHistory(true);
     setHistLoading(true);
     try { setSavedPlans(await api.listSavedPlans()); }
-    catch { /* keep */ }
+    catch { showToast(t('load_failed_pull'), 'error'); }
     finally { setHistLoading(false); }
-  }, []);
+  }, [showToast, t]);
 
   const savingPlanRef = useRef(false);
   const saveCurrentPlan = useCallback(async () => {
@@ -1052,9 +1058,13 @@ export default function Kitchen() {
   }, [showToast]);
 
   const deletePlan = useCallback(async (id: string) => {
-    setSavedPlans((prev) => prev.filter((p) => p.plan_id !== id));
-    try { await api.deleteSavedPlan(id); } catch { /* best effort */ }
-  }, []);
+    let previous: typeof savedPlans = [];
+    setSavedPlans((prev) => { previous = prev; return prev.filter((p) => p.plan_id !== id); });
+    try { await api.deleteSavedPlan(id); } catch {
+      setSavedPlans(previous);
+      showToast(t('vault_could_not_delete_restored'), 'error');
+    }
+  }, [showToast, t]);
 
   const histDate = (iso: string) => {
     const d = new Date(iso);

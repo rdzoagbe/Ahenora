@@ -8,7 +8,7 @@ import React, {
   useState,
 } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { AppState, useColorScheme } from 'react-native';
+import { AppState, Platform, useColorScheme } from 'react-native';
 import { api, User, tokenStore, Subscription, resetOfflineState, setUnauthorizedHandler, warmupBackend, isTeenModeError } from './api';
 import { clearSnapshots } from './offline';
 import { Lang, SUPPORTED_LANGS, translate, detectDeviceLang } from './i18n';
@@ -81,7 +81,17 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   // only understand light/dark/null, so normalize the new value to null (which
   // they already treat as "no preference").
   const rawScheme = useColorScheme();
-  const systemScheme = rawScheme === 'light' || rawScheme === 'dark' ? rawScheme : null;
+  // On the web the first client render must match the static export, which
+  // was rendered light. If the OS is dark, useColorScheme() says so from the
+  // very first render, React hydrates a light DOM against a dark tree, and
+  // React does not repair mismatched class names — so every element that
+  // never re-rendered afterwards stayed light while everything that did went
+  // dark: white task titles on white cards, for anyone on a dark phone
+  // opening ahenora.com. Reading the scheme only after mount makes the first
+  // render agree with the export and the second one paint the whole tree.
+  const [schemeReady, setSchemeReady] = useState(Platform.OS !== 'web');
+  useEffect(() => { setSchemeReady(true); }, []);
+  const systemScheme = schemeReady && (rawScheme === 'light' || rawScheme === 'dark') ? rawScheme : null;
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   // On the web, quietly re-subscribe this browser to push once a user is signed

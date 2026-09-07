@@ -23,6 +23,11 @@ const EVENT_LABELS: Record<string, string> = {
   vault_added: 'Documents saved',
   vault_shared: 'Documents shared',
   onboarding_done: 'Onboardings finished',
+  // Counted since launch but never shown — the custody one is the wedge the
+  // app is positioned on, and the number sat in Mongo unread.
+  onboarding_custody_set: 'Onboardings that set custody',
+  onboarding_skipped: 'Onboardings skipped',
+  calendar_import_cancelled: 'Calendar imports cancelled',
 };
 const EVENT_ORDER = Object.keys(EVENT_LABELS);
 
