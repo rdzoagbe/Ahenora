@@ -16,21 +16,28 @@ with the binary swapped for echo instead of searching its text.
 
 And preview must cover at least what production ships to. The danger is
 shipping to a device nobody previewed on — so production's platforms have to be
-a SUBSET of preview's. The reverse is fine and is the situation today:
-production is pinned to android while App Review runs a build on that channel,
-and preview publishes to `all` so the iPhone tester receives fixes at all.
+a SUBSET of preview's. That began as an equality check, which is a different
+claim and a wrong one: it broke the moment production was deliberately pinned
+to android for App Review, and nothing noticed, because backend CI only watched
+its own workflow file rather than the two files this test reads. Both halves are
+fixed — the assertion says what it means, and the path filter covers every
+workflow. Since 2026-09-07 iOS is live and both publish `all`.
 
-This started as an equality check, which is a different claim and a wrong one.
-It broke the moment that deliberate, documented split was made — and nothing
-noticed, because backend CI only watched its own workflow file, not the two
-files this test actually reads. Both halves are fixed: the assertion says what
-it means, and the path filter now covers every workflow.
+The third thing held here is newer and matters most. Production publishes to a
+PERCENTAGE. On 2026-09-03 an update reached every Android install at once and
+the app stopped starting; the same update today would reach both stores. Users
+outside a rollout are served the previous latest update on the branch, so a
+partial publish leaves everyone else exactly where they were rather than
+somewhere new. A hardcoded 100 would be the flag present and doing nothing,
+which is the shape of guard that reads as protection and is not — so that is
+asserted separately.
 
 Run with:  python3 -m unittest discover -s tests -v
 """
 import os
 import re
 import subprocess
+import tempfile
 import unittest
 
 try:
@@ -97,18 +104,30 @@ class PublishSteps(unittest.TestCase):
             # GitHub substitutes ${{ ... }} before the shell ever sees it.
             script = re.sub(r"\$\{\{.*?\}\}", "x", run, flags=re.S)
             script = script.replace("npx eas-cli@latest update", "echo ARGS:")
-            proc = subprocess.run(["bash"], input=script, text=True,
-                                  capture_output=True,
-                                  env={**os.environ, "GITHUB_SHA": "sha"})
-            self.assertEqual(proc.returncode, 0,
-                             f"{wf} / {name} does not run:\n{proc.stderr}")
-            args = proc.stdout.strip()
-            self.assertTrue(args.startswith("ARGS:"),
-                            f"{wf} / {name} produced no argument line: {args!r}")
-            for flag in ("--platform", "--branch", "--non-interactive"):
-                self.assertIn(flag, args,
-                              f"{wf} / {name}: {flag} never reaches the command. "
-                              f"It got: {args!r}")
+            # A runner sets these, and a step that records its output writes to
+            # them. Without them the redirect fails and the step looks broken
+            # for a reason that has nothing to do with its flags. Run in a
+            # temporary directory too: the step writes files, and a test that
+            # litters the repository is its own small bug.
+            with tempfile.TemporaryDirectory() as tmp:
+                proc = subprocess.run(
+                    ["bash"], input=script, text=True, capture_output=True,
+                    cwd=tmp,
+                    env={**os.environ, "GITHUB_SHA": "sha",
+                         "GITHUB_OUTPUT": os.path.join(tmp, "output"),
+                         "GITHUB_STEP_SUMMARY": os.path.join(tmp, "summary")})
+                self.assertEqual(proc.returncode, 0,
+                                 f"{wf} / {name} does not run:\n{proc.stderr}")
+                # The line the command was actually handed. Later steps in the
+                # same script print too, so find it rather than assume it is
+                # first.
+                args = next((ln for ln in proc.stdout.splitlines()
+                             if ln.startswith("ARGS:")), "")
+                self.assertTrue(args, f"{wf} / {name} produced no argument line")
+                for flag in ("--platform", "--branch", "--non-interactive"):
+                    self.assertIn(flag, args,
+                                  f"{wf} / {name}: {flag} never reaches the command. "
+                                  f"It got: {args!r}")
 
     def test_preview_covers_everything_production_ships_to(self):
         """Never ship to a device nobody previewed on."""
@@ -127,6 +146,33 @@ class PublishSteps(unittest.TestCase):
             production <= preview,
             "production ships to devices preview never reaches: "
             f"production={sorted(production)} preview={sorted(preview)}")
+
+    def test_production_publishes_to_a_percentage_not_everybody(self):
+        """The containment that did not exist on 2026-09-03.
+
+        An update reached every Android install at once and the app stopped
+        starting. It would now reach both stores. Users outside a rollout are
+        served the previous latest update on the branch — so the ones not in it
+        stay exactly where they already were, which is what makes a partial
+        publish safe rather than merely smaller.
+        """
+        run = dict((wf, r) for wf, _, r in publish_steps())["frontend-ci-eas-update.yml"]
+        self.assertIn("--rollout-percentage", run,
+                      "production publishes to 100% of both stores at once")
+
+    def test_the_rollout_percentage_is_never_hardcoded_to_everyone(self):
+        """A literal 100 here would be the flag present and doing nothing —
+        the shape of guard that reads as protection and is not."""
+        run = dict((wf, r) for wf, _, r in publish_steps())["frontend-ci-eas-update.yml"]
+        match = re.search(r"--rollout-percentage\s+(\S+)", run)
+        self.assertIsNotNone(match)
+        self.assertNotIn("100", match.group(1))
+
+    def test_preview_is_not_staged(self):
+        """Testers are the people who are supposed to get it first. Staging the
+        preview channel would mean some of them silently testing the old build."""
+        run = dict((wf, r) for wf, _, r in publish_steps())["preview-update.yml"]
+        self.assertNotIn("--rollout-percentage", run)
 
     def test_production_reaches_both_stores(self):
         """iOS went live on 2026-09-07, so there is no longer a reason to pin.

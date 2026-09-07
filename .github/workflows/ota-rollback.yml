@@ -1,0 +1,109 @@
+name: OTA rollback
+
+# Undo a production update.
+#
+# `eas update:rollback` republishes the update group published BEFORE the one
+# you name, and if there is none it rolls back to the update embedded in the
+# store binary. Either way people stop running the bad JS on their next launch.
+#
+# ONE CONSTRAINT, AND IT DECIDES EVERYTHING: from `eas update:rollback --help`,
+# the group "must be the latest update for its branch and runtime version". So
+# a rollback has to happen BEFORE anything else publishes to production. If a
+# merge to main lands first it takes that position and this stops being
+# available — at which point the way back is to revert the offending commit and
+# let the pipeline publish the fix forward.
+#
+# Which is why this is a workflow and not a paragraph in a document. On
+# 2026-09-03 the app would not start and recovery was improvised.
+on:
+  workflow_dispatch:
+    inputs:
+      group:
+        description: 'Update group id to roll back (must be the newest on the production branch)'
+        required: true
+        type: string
+      reason:
+        description: 'Why — this becomes the rollback message in Expo'
+        required: true
+        type: string
+      confirm:
+        description: 'Type ROLLBACK to confirm this reaches real users'
+        required: true
+        type: string
+
+concurrency:
+  group: ota-rollout-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  rollback:
+    name: Roll back a production update
+    runs-on: ubuntu-latest
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      EXPO_NO_TELEMETRY: 1
+    steps:
+      # A typed word, because the dispatch form is three fields and a button,
+      # and this one reaches every phone.
+      - name: Confirm
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          if [ "$CONFIRM" != "ROLLBACK" ]; then
+            echo "Confirmation not given. Type ROLLBACK in the confirm field to proceed."
+            exit 1
+          fi
+
+      - name: Verify EXPO_TOKEN is set
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "EXPO_TOKEN is not set. Add it under Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 20
+
+      # Printed before acting, so the log shows what the branch looked like at
+      # the moment of the rollback. If the named group is not at the top, the
+      # command below will refuse and this listing is what explains why.
+      - name: Show the production branch as it stands
+        working-directory: frontend
+        run: npx eas-cli@latest update:list --branch production --non-interactive || true
+
+      - name: Roll back
+        working-directory: frontend
+        env:
+          GROUP: ${{ inputs.group }}
+          REASON: ${{ inputs.reason }}
+        run: |
+          npx eas-cli@latest update:rollback "$GROUP" \
+            --platform all \
+            --message "Rollback: $REASON" \
+            --non-interactive
+
+      - name: Say what happened
+        if: ${{ always() }}
+        env:
+          GROUP: ${{ inputs.group }}
+          REASON: ${{ inputs.reason }}
+        run: |
+          {
+            echo "## OTA rollback"
+            echo
+            echo "Group rolled back: \`${GROUP}\`"
+            echo "Reason: ${REASON}"
+            echo
+            echo "Devices pick this up on their next launch."
+            echo
+            echo "**The bad commit is still on main.** Revert it, or the next"
+            echo "merge republishes the same problem."
+          } >> "$GITHUB_STEP_SUMMARY"
