@@ -69,6 +69,10 @@ jobs:
         with:
           node-version: 20
 
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm install --no-audit --no-fund
+
       - name: Set the rollout percentage
         working-directory: frontend
         env:

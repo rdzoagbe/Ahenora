@@ -72,6 +72,10 @@ jobs:
         with:
           node-version: 20
 
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm install --no-audit --no-fund
+
       # Printed before acting, so the log shows what the branch looked like at
       # the moment of the rollback. If the named group is not at the top, the
       # command below will refuse and this listing is what explains why.
