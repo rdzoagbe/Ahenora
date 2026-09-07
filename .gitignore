@@ -165,3 +165,6 @@ play-service-account.json
 # rule above swallowed them, so they were never committed and ahenora.com
 # 404'd every font, falling back to system faces. Un-exclude that one directory.
 !docs/app/assets/node_modules/
+
+# Written by the OTA publish step to read back the update group id.
+update.json
