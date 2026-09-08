@@ -24,8 +24,15 @@ import { getLoginHint, clearLoginHint, maskEmail, LoginHint } from '../src/login
 
 WebBrowser.maybeCompleteAuthSession();
 
-const BG_URL =
-  'https://static.prod-images.emergentagent.com/jobs/096ff1e5-0337-4e7f-a0c1-6a43a75126d3/images/6b243a1cf4a6ac9e40857ce24db4ef57d5831d303169f63507bb73111fe11fac.png';
+// Bundled, not fetched. This is the first screen anybody sees, and it used
+// to pull its background from a third-party image host on somebody else's
+// domain: a dependency on a stranger's uptime for the app's first
+// impression, and a request to an outside party before the person has even
+// signed in. Now it ships inside the app — no network, no wait, nothing to
+// go missing. Re-encoded from the original PNG (1.2 MB of a smooth gradient,
+// which is the one thing PNG is worst at) to 70 KB with no visible change:
+// mean difference 1.3/255, worst pixel 7.
+const BG_SOURCE = require('../assets/images/signin-bg.jpg');
 
 function authErrorMessage(error: unknown, params?: Record<string, string>, fallback?: string) {
   const candidate = error as { description?: string; code?: string; name?: string } | null | undefined;
@@ -376,7 +383,7 @@ export default function Landing() {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.bg }]}>
-      <ImageBackground source={{ uri: BG_URL }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+      <ImageBackground source={BG_SOURCE} style={StyleSheet.absoluteFill} resizeMode="cover" />
       <View
         style={[
           styles.overlay,

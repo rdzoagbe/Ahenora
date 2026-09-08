@@ -45,6 +45,7 @@ import { BUILD_TAG } from '../../src/buildInfo';
 import { requestWebPush } from '../../src/webpush';
 import { logger } from '../../src/logger';
 import { apiErrorText } from '../../src/apiError';
+import { SundayBriefModal } from '../../src/components/SundayBriefModal';
 
 function formatBytes(bytes?: number | null) {
   const value = bytes || 0;
@@ -272,6 +273,11 @@ export default function Settings() {
     : subscription?.plan === 'executive' ? t('plan_executive')
     : t('plan_village');
   const weeklyBrief = Boolean(entitlements?.weekly_brief || subscription?.limits?.weekly_brief);
+  // The brief had a backend, an API method and a finished 230-line screen,
+  // and nothing anywhere imported it — so the stat below told a paying
+  // household "Weekly brief: On" about something they could not open. This
+  // is the door, put where the claim is made.
+  const [showSundayBrief, setShowSundayBrief] = useState(false);
   const initial = (user?.name?.[0] || 'C').toUpperCase();
 
 
@@ -1143,6 +1149,17 @@ export default function Settings() {
                 <StatBox label={t('set_stat_ai_scans')} value={aiScansStat} />
                 <StatBox label={t('set_stat_vault')} value={formatBytes(entitlements?.vault_bytes_used ?? subscription?.vault_bytes_used)} />
                 <StatBox label={t('set_stat_weekly_brief')} value={weeklyBrief ? t('set_on') : t('set_locked')} />
+                {weeklyBrief ? (
+                  <View style={styles.testRow}>
+                    <PressScale
+                      testID="open-sunday-brief"
+                      onPress={() => setShowSundayBrief(true)}
+                      style={styles.ghostBtnWide}
+                    >
+                      <Text style={styles.ghostBtnText}>{t('sunday_brief')}</Text>
+                    </PressScale>
+                  </View>
+                ) : null}
                 <View style={styles.testRow}>
                   <PressScale onPress={testReminderNotification} style={styles.ghostBtnWide}><Text style={styles.ghostBtnText}>{t('set_test_reminder')}</Text></PressScale>
                   <PressScale onPress={testNewCardAlert} style={styles.ghostBtnWide}><Text style={styles.ghostBtnText}>{t('set_test_alert')}</Text></PressScale>
@@ -1348,6 +1365,8 @@ export default function Settings() {
           </PressScale>
         </View>
       </KeyboardAwareBottomSheet>
+
+      <SundayBriefModal visible={showSundayBrief} onClose={() => setShowSundayBrief(false)} />
 
       <AppToast visible={Boolean(toast)} message={toast?.message || null} tone={toast?.tone || 'info'} />
     </SwipeableTabView>
