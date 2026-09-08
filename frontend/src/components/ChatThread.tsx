@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, FlatList, Keyboard, Platform,
+  ActivityIndicator, Alert, AppState, FlatList, Keyboard, Platform,
   StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -13,7 +13,9 @@ import { ChatMessage } from '../api';
 import { logger } from '../logger';
 
 interface Props {
-  load: () => Promise<{ messages: ChatMessage[] }>;
+  /** `since` asks only for what arrived after that moment. Callers that
+   *  ignore it still work — the merge below is keyed on message id. */
+  load: (since?: string) => Promise<{ messages: ChatMessage[] }>;
   send: (text: string) => Promise<{ message: ChatMessage }>;
   markRead?: () => Promise<unknown>;
   emptyHint: string;
@@ -34,6 +36,13 @@ export function ChatThread({ load, send, markRead, emptyHint }: Props) {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const listRef = useRef<FlatList<ChatMessage>>(null);
+  // The newest moment already on screen. Everything after it is what a poll
+  // asks for, so a quiet thread costs an empty answer rather than its whole
+  // history.
+  const since = useRef<string | undefined>(undefined);
+  // Whether the reader is at the live end. Someone scrolled up reading last
+  // week's messages must not be yanked to the bottom because a new one landed.
+  const atBottom = useRef(true);
   const insets = useSafeAreaInsets();
 
   // Measure the keyboard instead of asking KeyboardAvoidingView to guess. Under
@@ -91,19 +100,69 @@ export function ChatThread({ load, send, markRead, emptyHint }: Props) {
     }
   }, [keyboard]);
 
-  const refresh = useCallback(async () => {
+  const absorb = useCallback((incoming: ChatMessage[]) => {
+    if (!incoming.length) return false;
+    let added = false;
+    setMessages((prev) => {
+      const byId = new Map(prev.map((m) => [m.message_id, m]));
+      for (const m of incoming) {
+        if (!byId.has(m.message_id)) added = true;
+        byId.set(m.message_id, m);       // an edited message replaces its old self
+      }
+      return [...byId.values()].sort((a, b) =>
+        (a.created_at || '').localeCompare(b.created_at || ''));
+    });
+    for (const m of incoming) {
+      if (!since.current || (m.created_at || '') > since.current) since.current = m.created_at;
+    }
+    return added;
+  }, []);
+
+  const refresh = useCallback(async (delta = false) => {
     try {
-      const res = await load();
-      setMessages(res.messages);
-      markRead?.().catch(() => undefined);
+      const res = await load(delta ? since.current : undefined);
+      if (!delta) since.current = undefined;
+      const added = absorb(res.messages);
+      if (!delta || added) markRead?.().catch(() => undefined);
     } catch (e) {
-      logger.warn('chat load failed', e);
+      // A poll that fails is not worth telling anybody about: the next one is
+      // a few seconds away. Only the first load decides what the screen shows.
+      if (!delta) logger.warn('chat load failed', e);
     } finally {
       setLoading(false);
     }
-  }, [load, markRead]);
+  }, [load, markRead, absorb]);
 
   useEffect(() => { refresh(); }, [refresh]);
+
+  // Messages arrive while you are looking at them.
+  //
+  // Until 2026-09-08 this screen loaded once and never again: a conversation
+  // left open showed nothing new until you navigated away and back, so the
+  // only way to read a reply was to tap its notification. Polling rather than
+  // a socket because a household is two to five people — a few seconds of
+  // latency is imperceptible, and there is no reconnection logic to get wrong
+  // on a phone moving between networks.
+  //
+  // Paused while the app is in the background, where a timer would burn
+  // battery to fetch a screen nobody is looking at, and resumed with an
+  // immediate catch-up so returning to the app never shows a stale thread.
+  useEffect(() => {
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const start = () => {
+      if (timer) return;
+      timer = setInterval(() => { refresh(true); }, 4000);
+    };
+    const stop = () => {
+      if (timer) clearInterval(timer);
+      timer = null;
+    };
+    start();
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') { refresh(true); start(); } else { stop(); }
+    });
+    return () => { stop(); sub.remove(); };
+  }, [refresh]);
 
   const onSend = useCallback(async () => {
     const body = text.trim();
@@ -112,7 +171,10 @@ export function ChatThread({ load, send, markRead, emptyHint }: Props) {
     try {
       const res = await send(body);
       setText('');
-      setMessages((prev) => [...prev, res.message]);
+      // Through the same merge, so the next poll returning this message
+      // cannot show it twice.
+      absorb([res.message]);
+      atBottom.current = true;
       requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
     } catch (e: any) {
       // A dropped message in a coordination app is worse than a visible error.
@@ -123,7 +185,7 @@ export function ChatThread({ load, send, markRead, emptyHint }: Props) {
     } finally {
       setSending(false);
     }
-  }, [text, sending, send, t]);
+  }, [text, sending, send, t, absorb]);
 
   if (loading) {
     return <View style={styles.center}><ActivityIndicator color={ui.orange} /></View>;
@@ -136,7 +198,15 @@ export function ChatThread({ load, send, markRead, emptyHint }: Props) {
         data={messages}
         keyExtractor={(m) => m.message_id}
         contentContainerStyle={styles.listContent}
-        onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
+        onScroll={(e) => {
+          const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
+          atBottom.current =
+            layoutMeasurement.height + contentOffset.y >= contentSize.height - 40;
+        }}
+        scrollEventThrottle={80}
+        onContentSizeChange={() => {
+          if (atBottom.current) listRef.current?.scrollToEnd({ animated: false });
+        }}
         ListEmptyComponent={<Text style={styles.empty}>{emptyHint}</Text>}
         renderItem={({ item }) => (
           <View style={[styles.bubbleRow, item.mine ? styles.rowMine : styles.rowTheirs]}>

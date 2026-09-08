@@ -2176,7 +2176,11 @@ export const api = {
   // Family chat. Parents reach the adults thread + one per teen; a teen reaches
   // only their own thread (the server forces it).
   chatThreads: () => request<{ threads: ChatThreadSummary[] }>('/family/chat/threads'),
-  chatGet: (thread: string) => request<{ messages: ChatMessage[] }>(`/family/chat/${encodeURIComponent(thread)}`),
+  /** `since` fetches only what has arrived after that moment, so a screen can
+   *  poll a quiet thread for nothing. Omit it for the whole recent history. */
+  chatGet: (thread: string, since?: string) =>
+    request<{ messages: ChatMessage[] }>(
+      `/family/chat/${encodeURIComponent(thread)}${since ? `?since=${encodeURIComponent(since)}` : ''}`),
   chatSend: (thread: string, text: string) =>
     request<{ ok: boolean; message: ChatMessage }>(`/family/chat/${encodeURIComponent(thread)}`, {
       method: 'POST', body: { text },
@@ -2184,7 +2188,9 @@ export const api = {
   signOutEverywhere: () => request<{ ok: boolean; ended: number }>('/auth/sign-out-everywhere', { method: 'POST' }),
   chatRead: (thread: string) =>
     request<{ ok: boolean }>(`/family/chat/${encodeURIComponent(thread)}/read`, { method: 'POST' }),
-  teenChatGet: () => request<{ messages: ChatMessage[] }>('/teen/chat'),
+  teenChatGet: (since?: string) =>
+    request<{ messages: ChatMessage[] }>(
+      `/teen/chat${since ? `?since=${encodeURIComponent(since)}` : ''}`),
   teenChatSend: (text: string) =>
     request<{ ok: boolean; message: ChatMessage }>('/teen/chat', { method: 'POST', body: { text } }),
   teenChatRead: () => request<{ ok: boolean }>('/teen/chat/read', { method: 'POST' }),

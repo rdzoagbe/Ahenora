@@ -7479,12 +7479,35 @@ async def _chat_insert(database, family_id: str, thread: str, sender_user_id: st
     return msg
 
 
-async def _chat_thread_messages(database, family_id: str, thread: str, viewer_id: str) -> list:
+# A thread's history, per read. Unbounded until 2026-09-08: every open of a
+# conversation fetched every message ever sent in it, sorted them in Python,
+# and shipped the lot. A household that chats daily for a year would have been
+# downloading thousands of messages to look at the last three — and the moment
+# the screen started polling for live updates, doing so every few seconds.
+CHAT_PAGE = 200
+
+
+async def _chat_thread_messages(database, family_id: str, thread: str, viewer_id: str,
+                                since: Optional[str] = None) -> list:
+    """The newest messages in a thread, oldest first.
+
+    `since` returns only what has arrived after that moment, which is what
+    makes polling cheap: a quiet thread answers with an empty list.
+
+    Compared against updated_at where a message has one, so an edited message
+    is re-sent to a screen that already has it. Nothing sets updated_at yet;
+    doing the comparison now means editing does not need a second cursor.
+    """
     rows = []
     async for m in database["messages"].find(
-            {"family_id": family_id, "thread": thread}, {"_id": 0}):
+            {"family_id": family_id, "thread": thread},
+            {"_id": 0}).sort("created_at", -1).limit(CHAT_PAGE):
         rows.append(m)
-    rows.sort(key=lambda r: r.get("created_at") or utcnow())
+    rows.reverse()
+    cutoff = _coerce_dt(since) if since else None
+    if cutoff:
+        rows = [m for m in rows
+                if (_coerce_dt(m.get("updated_at") or m.get("created_at")) or cutoff) > cutoff]
     return [public_chat_message(m, viewer_id) for m in rows]
 
 
@@ -7640,12 +7663,17 @@ async def _canonical_thread(database, family_id: str, thread: str) -> str:
 
 
 @app.get("/api/family/chat/{thread}")
-async def family_chat_get(thread: str, user=Depends(require_chat_account)):
+async def family_chat_get(thread: str, since: Optional[str] = None,
+                          user=Depends(require_chat_account)):
     database = get_db()
     thread = await _canonical_thread(database, user["family_id"], thread)
     await _require_thread_member(database, user["family_id"], thread, user["user_id"])
-    msgs = await _chat_thread_messages(database, user["family_id"], thread, user["user_id"])
-    await _mark_read(database, user["family_id"], thread, user["user_id"])
+    msgs = await _chat_thread_messages(database, user["family_id"], thread,
+                                       user["user_id"], since)
+    # Only when something came back. A screen polling a quiet thread should
+    # not write to the database every few seconds to mark nothing as read.
+    if msgs:
+        await _mark_read(database, user["family_id"], thread, user["user_id"])
     return {"messages": msgs}
 
 
@@ -7671,13 +7699,14 @@ async def family_chat_read(thread: str, user=Depends(require_chat_account)):
 
 
 @app.get("/api/teen/chat")
-async def teen_chat_get(teen=Depends(require_teen)):
+async def teen_chat_get(since: Optional[str] = None, teen=Depends(require_teen)):
     """A teen's own thread, kept for the teen screen. The key is forced to their
     user id, so it can only ever be theirs."""
     database = get_db()
     tuid = teen["user"]["user_id"]
-    msgs = await _chat_thread_messages(database, teen["family_id"], tuid, tuid)
-    await _mark_read(database, teen["family_id"], tuid, tuid)
+    msgs = await _chat_thread_messages(database, teen["family_id"], tuid, tuid, since)
+    if msgs:
+        await _mark_read(database, teen["family_id"], tuid, tuid)
     return {"messages": msgs}
 
 
