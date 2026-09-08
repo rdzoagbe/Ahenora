@@ -2908,40 +2908,100 @@ async def send_coparent_alert(family_id: str, title: str, body: str, data_type: 
         )
 
 
-async def notify_shopping_added(database, user: dict, names: list[str]) -> int:
-    """Tell the other adults that something was put on the shopping list.
+# How long to wait for someone to stop adding before telling anyone. The
+# Kitchen screen adds a recipe's missing ingredients with one request PER
+# INGREDIENT, in parallel — so the first version of this, which pushed on
+# every add, would have buzzed the co-parent nine times for one recipe. That
+# is not a notification, it is a reason to turn notifications off.
+SHOPPING_QUIET_SECONDS = 90
+# A burst longer than this is a paste of a whole list; the push says how many
+# rather than trying to name them.
+SHOPPING_NAME_LIMIT = 3
 
-    The list is shared by design — anyone in the household can add to it —
-    and until 2026-09-08 nobody was told when they did. A parent doing the
-    shop found out about the extra items by opening the app in the aisle, or
-    not at all. One push per addition, naming up to three items, to every
-    other account with a login; the author hears nothing about their own
-    action. Best effort, never raises, never delays the add.
+
+async def queue_shopping_notification(database, user: dict, names: list[str]) -> int:
+    """Record that someone put things on the shared list. Sends nothing yet.
+
+    The list is shared by design — anyone in the household can add to it — and
+    until 2026-09-08 nobody was told when they did: a parent doing the shop
+    found out about the extra items by opening the app in the aisle, or not at
+    all.
+
+    Queued rather than sent because the adds arrive in bursts, sometimes
+    concurrently, and one push per item would be its own kind of harm. The
+    scheduler drains this a minute and a half after the last one, so a burst
+    of any size becomes a single "Roland added to the shopping list".
+
+    Accumulating with $addToSet rather than reading-then-writing is what makes
+    concurrent adds safe: there is no read to race.
     """
     clean = [n.strip() for n in names if n and n.strip()]
     if not clean:
         return 0
-    shown = ", ".join(clean[:3]) + (f" +{len(clean) - 3}" if len(clean) > 3 else "")
-    who = user.get("name") or "Someone"
-    told = 0
+    key = {"family_id": user["family_id"], "actor_id": user.get("user_id")}
+    now = utcnow()
     try:
-        for account in await _family_accounts(database, user["family_id"]):
-            uid = account.get("user_id")
-            if not uid or uid == user.get("user_id"):
-                continue
-            target = await database["users"].find_one({"user_id": uid}, {"_id": 0, "language": 1})
-            L = PUSH_I18N.get((target or {}).get("language") or "en", PUSH_I18N["en"])
-            got = await asyncio.wait_for(send_push_to_user(
-                database, uid,
-                L["shopping_title"].format(name=who),
-                L["shopping_body"].format(items=shown),
-                {"type": "shopping_added", "family_id": user["family_id"]},
-                pref_key="new_card_alerts"), timeout=5.0)
-            if isinstance(got, dict) and (got.get("devices") or got.get("web")):
-                told += 1
-    except Exception as exc:  # noqa: BLE001 — a push must never fail the add
-        log.warning("shopping push skipped: %s", exc)
-    return told
+        for name in clean:
+            await database["shopping_pending"].update_one(
+                key,
+                {"$set": {**key, "actor_name": user.get("name") or "", "last_at": now},
+                 "$addToSet": {"names": name[:60]}},
+                upsert=True)
+    except Exception as exc:  # noqa: BLE001 — a note to self must never fail the add
+        log.warning("shopping notification not queued: %s", exc)
+        return 0
+    return len(clean)
+
+
+async def flush_shopping_notifications(database, now: Optional[datetime] = None) -> int:
+    """Send one push per person who has stopped adding. Returns pushes sent.
+
+    Runs on the reminder scheduler's tick, so it costs a single query on the
+    ticks where nobody has been shopping — which is almost all of them.
+    """
+    now = now or utcnow()
+    cutoff = now - timedelta(seconds=SHOPPING_QUIET_SECONDS)
+    sent = 0
+    rows = [r async for r in database["shopping_pending"].find({}, {"_id": 0})]
+    for row in rows:
+        last = _coerce_dt(row.get("last_at"))
+        if last and last > cutoff:
+            continue                      # still adding; leave it to settle
+        names = [n for n in (row.get("names") or []) if n]
+        family_id = row.get("family_id")
+        actor_id = row.get("actor_id")
+        # Removed first: a push that fails must not leave the row behind to be
+        # retried on every tick for ever.
+        try:
+            await database["shopping_pending"].delete_one(
+                {"family_id": family_id, "actor_id": actor_id})
+        except Exception as exc:  # noqa: BLE001
+            log.warning("shopping queue row not cleared: %s", exc)
+        if not names or not family_id:
+            continue
+        shown = ", ".join(names[:SHOPPING_NAME_LIMIT])
+        if len(names) > SHOPPING_NAME_LIMIT:
+            shown += f" +{len(names) - SHOPPING_NAME_LIMIT}"
+        who = row.get("actor_name") or "Someone"
+        try:
+            for account in await _family_accounts(database, family_id):
+                uid = account.get("user_id")
+                if not uid or uid == actor_id:
+                    continue
+                target = await database["users"].find_one(
+                    {"user_id": uid}, {"_id": 0, "language": 1})
+                L = PUSH_I18N.get((target or {}).get("language") or "en", PUSH_I18N["en"])
+                got = await asyncio.wait_for(send_push_to_user(
+                    database, uid,
+                    L["shopping_title"].format(name=who),
+                    L["shopping_body"].format(items=shown),
+                    {"type": "shopping_added", "family_id": family_id},
+                    pref_key="new_card_alerts"), timeout=5.0)
+                if isinstance(got, dict) and (got.get("devices") or got.get("web")):
+                    sent += 1
+        except Exception as exc:  # noqa: BLE001 — one household must not stop the rest
+            log.warning("shopping push skipped: %s", exc)
+    return sent
 
 
 # -----------------------------------------------------------------------------
@@ -3460,6 +3520,11 @@ async def _reminder_scheduler_loop():
             await check_push_receipts(get_db())
         except Exception as e:  # noqa: BLE001
             log.warning("push receipt check failed: %s", type(e).__name__)
+        try:
+            # A shopping burst that has gone quiet becomes one push.
+            await flush_shopping_notifications(get_db())
+        except Exception as e:  # noqa: BLE001
+            log.warning("shopping flush failed: %s", type(e).__name__)
         # Stamped at the END of the pass: a tick that starts and hangs has not
         # done its job, and reporting it as alive would be the same lie as a
         # green test that skipped.
@@ -12200,7 +12265,7 @@ async def add_shopping_item(payload: ShoppingItemIn, user=Depends(require_user))
         "created_at": utcnow(),
     }
     await database["shopping_list"].insert_one(doc)
-    await notify_shopping_added(database, user, [doc["name"]])
+    await queue_shopping_notification(database, user, [doc["name"]])
     return public_shopping_item(doc)
 
 
@@ -12674,7 +12739,7 @@ async def bulk_add_shopping(body: BulkShoppingIn, user=Depends(require_user)):
         added += 1
         added_names.append(name)
     if added_names:
-        await notify_shopping_added(database, user, added_names)
+        await queue_shopping_notification(database, user, added_names)
     return {"ok": True, "added": added}
 
 
