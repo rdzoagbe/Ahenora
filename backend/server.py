@@ -7343,8 +7343,16 @@ MAX_CHAT_LEN = 2000
 ADULTS_THREAD = "adults"
 
 
+# How much of a quoted message is kept alongside the reply. Enough to
+# recognise which message is meant; not a second copy of the conversation.
+REPLY_QUOTE_LEN = 140
+
+
 class ChatMessageIn(BaseModel):
     text: str
+    # The message this one answers. Optional, and validated against the thread
+    # it is being sent to — see _chat_insert.
+    reply_to: Optional[str] = None
 
 
 def _chat_changed_at(m: dict):
@@ -7391,6 +7399,10 @@ def public_chat_message(m: dict, viewer_id: str, others: Optional[set] = None) -
         "mine": sender == viewer_id,
         "read": (sender == viewer_id) or (viewer_id in read_by),
     }
+    if m.get("reply_to"):
+        out["reply_to"] = m["reply_to"]
+        out["reply_to_name"] = m.get("reply_to_name") or ""
+        out["reply_to_text"] = m.get("reply_to_text") or ""
     if others is not None:
         audience = set(others) - {sender}
         seen_by = len(read_by & audience)
@@ -7501,7 +7513,8 @@ async def _require_thread_member(database, family_id: str, thread: str, user_id:
 
 
 async def _chat_insert(database, family_id: str, thread: str, sender_user_id: str,
-                       sender_kind: str, sender_name: str, text: str) -> dict:
+                       sender_kind: str, sender_name: str, text: str,
+                       reply_to: Optional[str] = None) -> dict:
     clean = sanitize_message_text(text or "", MAX_CHAT_LEN)
     if not clean:
         raise HTTPException(status_code=400, detail="Message can\'t be empty.")
@@ -7516,6 +7529,23 @@ async def _chat_insert(database, family_id: str, thread: str, sender_user_id: st
         "read_by": [sender_user_id],  # the sender has, of course, "read" it
         "created_at": utcnow(),
     }
+    if reply_to:
+        # Looked up with the family AND the thread in the query, not just the
+        # id. Without the thread clause, quoting a message id from a
+        # conversation you are not in would render its text back to you inside
+        # your own reply — the access model bypassed by a field, which is how
+        # this kind of leak normally happens.
+        parent = await database["messages"].find_one(
+            {"message_id": reply_to, "family_id": family_id, "thread": thread}, {"_id": 0})
+        if not parent:
+            raise HTTPException(status_code=404, detail="That message is no longer here.")
+        msg["reply_to"] = reply_to
+        # A snapshot rather than a live join: the quote then renders without a
+        # second read, still renders when the quoted message has scrolled off
+        # the page being fetched, and keeps showing what was actually being
+        # answered.
+        msg["reply_to_name"] = parent.get("sender_name") or ""
+        msg["reply_to_text"] = (parent.get("text") or "")[:REPLY_QUOTE_LEN]
     await database["messages"].insert_one(msg)
     return msg
 
@@ -7778,7 +7808,8 @@ async def family_chat_send(thread: str, payload: ChatMessageIn, user=Depends(req
         database, user["family_id"], thread, user["user_id"])
     name = user.get("name") or "Someone"
     msg = await _chat_insert(database, user["family_id"], thread, user["user_id"],
-                             _sender_kind(user), name, payload.text)
+                             _sender_kind(user), name, payload.text,
+                             reply_to=payload.reply_to)
     await _chat_notify(database, user["family_id"], thread, user["user_id"], name, msg["text"])
     audience = await _chat_audience(database, user["family_id"], thread, participants)
     return {"ok": True, "message": public_chat_message(msg, user["user_id"], audience)}
@@ -7811,7 +7842,8 @@ async def teen_chat_send(payload: ChatMessageIn, teen=Depends(require_teen)):
     database = get_db()
     tuid = teen["user"]["user_id"]
     name = teen["user"].get("name") or "Teen"
-    msg = await _chat_insert(database, teen["family_id"], tuid, tuid, "teen", name, payload.text)
+    msg = await _chat_insert(database, teen["family_id"], tuid, tuid, "teen", name,
+                             payload.text, reply_to=payload.reply_to)
     await _chat_notify(database, teen["family_id"], tuid, tuid, name, msg["text"])
     others = await _thread_participants(database, teen["family_id"], tuid)
     return {"ok": True, "message": public_chat_message(msg, tuid, others)}

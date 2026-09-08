@@ -38,9 +38,15 @@ if HAVE:
     from fake_mongo import FakeDatabase
 
 
-class Msg:
-    def __init__(self, text):
-        self.text = text
+def Msg(text, **kw):
+    """The real request model, not a stand-in.
+
+    A hand-written stub with just a `.text` broke silently the day the endpoint
+    started reading a second field off the payload: eleven tests failed at once
+    on a change that was correct. Building the actual model means these tests
+    cannot drift from the shape the endpoint is given.
+    """
+    return server.ChatMessageIn(text=text, **kw)
 
 
 @unittest.skipUnless(HAVE, "backend deps not installed")

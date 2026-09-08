@@ -146,7 +146,7 @@ async def main():
         except Exception:  # noqa: BLE001
             fails.append("a reply never appeared in the sender's open conversation")
 
-        # --- 4. nothing is shown twice --------------------------------------
+        # --- 4. nothing is shown twice (before any quoting muddies counting) -
         # The sent message is added locally AND comes back from the next poll.
         # Appending rather than merging shows every message you send twice,
         # which is the obvious way to build this and is wrong.
@@ -156,7 +156,40 @@ async def main():
             if count != 1:
                 fails.append(f"{who}'s own message is on screen {count} times, not once")
 
-        # --- 5. a conversation left open does not re-download itself --------
+        # --- 5. answering a particular message ------------------------------
+        # Long-pressed, the way a person actually does it — not by posting the
+        # reply through the API and checking it renders. Whether the gesture
+        # is reachable at all is half of what can be wrong here.
+        target = keigh.get_by_text(first, exact=False).first
+        box = await target.bounding_box()
+        if not box:
+            fails.append("could not find the message to reply to")
+        else:
+            await keigh.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+            await keigh.mouse.down()
+            await keigh.wait_for_timeout(900)          # past the long-press delay
+            await keigh.mouse.up()
+            await keigh.wait_for_timeout(600)
+            if await keigh.get_by_test_id("chat-replying-to").count() == 0:
+                fails.append("holding a message did not offer to reply to it")
+            else:
+                answer = f"Friday works {uuid.uuid4().hex[:5]}"
+                await say(keigh, answer)
+                # The quote must reach the OTHER person's screen, live, with
+                # the line it answers attached.
+                try:
+                    await roland.get_by_text(answer, exact=False).first.wait_for(
+                        timeout=LIVE_WAIT)
+                    quoted = roland.get_by_text(first, exact=False)
+                    if await quoted.count() < 2:
+                        fails.append("the reply arrived without the message it answers")
+                except Exception:  # noqa: BLE001
+                    fails.append("a reply never reached the other screen")
+                if await keigh.get_by_test_id("chat-replying-to").count():
+                    fails.append("sending a reply left the composer still quoting it — "
+                                 "every later message would quote the same old line")
+
+        # --- 6. a conversation left open does not re-download itself --------
         # Only reachable with a cursor that can move past a read; without one
         # every poll ships the whole page again, forever, on a phone.
         polls = []
@@ -181,7 +214,7 @@ async def main():
         for f in fails:
             print(f"  - {f}")
         return 1
-    print("PASS  messages arrive live, both ways, once each, and the sender is told they landed")
+    print("PASS  messages arrive live both ways, once each; the sender is told they landed; and a held message can be answered by name")
     return 0
 
 

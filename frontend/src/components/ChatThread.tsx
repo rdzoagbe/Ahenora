@@ -4,7 +4,7 @@ import {
   StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Send } from 'lucide-react-native';
+import { Send, X } from 'lucide-react-native';
 
 import { PressScale } from './PressScale';
 import { useUI, UIColors } from './Kit';
@@ -16,7 +16,8 @@ interface Props {
   /** `since` asks only for what arrived after that moment. Callers that
    *  ignore it still work — the merge below is keyed on message id. */
   load: (since?: string) => Promise<{ messages: ChatMessage[] }>;
-  send: (text: string) => Promise<{ message: ChatMessage }>;
+  /** `replyTo` is the id of the message being answered, when there is one. */
+  send: (text: string, replyTo?: string) => Promise<{ message: ChatMessage }>;
   markRead?: () => Promise<unknown>;
   emptyHint: string;
 }
@@ -35,6 +36,9 @@ export function ChatThread({ load, send, markRead, emptyHint }: Props) {
   const [loading, setLoading] = useState(true);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
+  // The message being answered, if any. Held as the whole message rather than
+  // its id so the quote above the composer needs no lookup.
+  const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
   const listRef = useRef<FlatList<ChatMessage>>(null);
   // The newest moment already on screen. Everything after it is what a poll
   // asks for, so a quiet thread costs an empty answer rather than its whole
@@ -173,8 +177,9 @@ export function ChatThread({ load, send, markRead, emptyHint }: Props) {
     if (!body || sending) return;
     setSending(true);
     try {
-      const res = await send(body);
+      const res = await send(body, replyTo?.message_id);
       setText('');
+      setReplyTo(null);
       // Through the same merge, so the next poll returning this message
       // cannot show it twice.
       absorb([res.message]);
@@ -189,7 +194,7 @@ export function ChatThread({ load, send, markRead, emptyHint }: Props) {
     } finally {
       setSending(false);
     }
-  }, [text, sending, send, t, absorb]);
+  }, [text, sending, send, t, absorb, replyTo]);
 
   // Only the newest thing you sent carries a receipt. A column of "Seen"
   // under every bubble is noise; the one that answers "did that land?" is the
@@ -238,10 +243,35 @@ export function ChatThread({ load, send, markRead, emptyHint }: Props) {
         renderItem={({ item }) => (
           <View>
             <View style={[styles.bubbleRow, item.mine ? styles.rowMine : styles.rowTheirs]}>
-              <View style={[styles.bubble, item.mine ? styles.bubbleMine : styles.bubbleTheirs]}>
+              <PressScale
+                testID={`chat-msg-${item.message_id}`}
+                // Long-press, not tap: the convention every messenger already
+                // taught people, and a tap-to-reply would fire by accident
+                // every time a thumb catches a bubble while scrolling.
+                onLongPress={() => setReplyTo(item)}
+                accessibilityLabel={item.text}
+                accessibilityHint={t('chat_reply_hint')}
+                style={[styles.bubble, item.mine ? styles.bubbleMine : styles.bubbleTheirs]}
+              >
                 {!item.mine ? <Text style={styles.sender}>{item.sender_name}</Text> : null}
+                {item.reply_to ? (
+                  <View style={[styles.quote, item.mine && styles.quoteMine]}>
+                    <Text
+                      numberOfLines={1}
+                      style={[styles.quoteName, item.mine && styles.quoteTextMine]}
+                    >
+                      {item.reply_to_name}
+                    </Text>
+                    <Text
+                      numberOfLines={2}
+                      style={[styles.quoteText, item.mine && styles.quoteTextMine]}
+                    >
+                      {item.reply_to_text}
+                    </Text>
+                  </View>
+                ) : null}
                 <Text style={[styles.msgText, item.mine && styles.msgTextMine]}>{item.text}</Text>
-              </View>
+              </PressScale>
             </View>
             {item.mine && item.message_id === lastMineId && receipt(item) ? (
               <Text testID="chat-receipt" style={styles.receipt}>{receipt(item)}</Text>
@@ -249,6 +279,24 @@ export function ChatThread({ load, send, markRead, emptyHint }: Props) {
           </View>
         )}
       />
+      {replyTo ? (
+        <View testID="chat-replying-to" style={styles.replyBar}>
+          <View style={styles.replyBarText}>
+            <Text numberOfLines={1} style={styles.quoteName}>
+              {t('chat_replying_to', { name: replyTo.sender_name })}
+            </Text>
+            <Text numberOfLines={1} style={styles.quoteText}>{replyTo.text}</Text>
+          </View>
+          <PressScale
+            testID="chat-reply-cancel"
+            onPress={() => setReplyTo(null)}
+            accessibilityLabel={t('chat_reply_cancel')}
+            style={styles.replyCancel}
+          >
+            <X color={ui.muted} size={18} />
+          </PressScale>
+        </View>
+      ) : null}
       <View ref={composerRef} style={styles.composer} collapsable={false}>
         <TextInput
           testID="chat-input"
@@ -292,6 +340,22 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     alignSelf: 'flex-end', marginTop: 2, marginRight: 4,
     fontFamily: 'Inter_500Medium', fontSize: 11, color: ui.muted,
   },
+  quote: {
+    borderLeftWidth: 3, borderLeftColor: ui.orange, paddingLeft: 8,
+    marginBottom: 6, opacity: 0.9,
+  },
+  quoteMine: { borderLeftColor: '#fff' },
+  quoteName: { fontFamily: 'Inter_700Bold', fontSize: 11, color: ui.orangeText },
+  quoteText: { fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 16, color: ui.muted },
+  quoteTextMine: { color: '#fff' },
+  replyBar: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 14, paddingTop: 8, backgroundColor: ui.bg,
+  },
+  // minWidth 0: without it the quoted line refuses to shrink below its own
+  // text and pushes the cancel button off the side of a narrow phone.
+  replyBarText: { flex: 1, minWidth: 0 },
+  replyCancel: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   composer: {
     flexDirection: 'row', alignItems: 'flex-end', gap: 10, paddingHorizontal: 14,
     paddingVertical: 10, borderTopWidth: 1, borderTopColor: ui.line, backgroundColor: ui.bg,

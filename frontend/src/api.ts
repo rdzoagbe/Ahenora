@@ -842,6 +842,13 @@ export interface ChatMessage {
   audience?: number;
   /** Everyone else has read it. Absent on threads the server did not price. */
   seen?: boolean;
+  /** The message this one answers, if any. */
+  reply_to?: string;
+  /** Who wrote the quoted message, and enough of it to recognise which one.
+   *  A snapshot taken when the reply was sent, not a live join — so the quote
+   *  still renders when the original has scrolled off the page. */
+  reply_to_name?: string;
+  reply_to_text?: string;
 }
 
 export interface ChatThreadSummary {
@@ -2192,9 +2199,9 @@ export const api = {
   chatGet: (thread: string, since?: string) =>
     request<{ messages: ChatMessage[] }>(
       `/family/chat/${encodeURIComponent(thread)}${since ? `?since=${encodeURIComponent(since)}` : ''}`),
-  chatSend: (thread: string, text: string) =>
+  chatSend: (thread: string, text: string, replyTo?: string) =>
     request<{ ok: boolean; message: ChatMessage }>(`/family/chat/${encodeURIComponent(thread)}`, {
-      method: 'POST', body: { text },
+      method: 'POST', body: { text, reply_to: replyTo },
     }),
   signOutEverywhere: () => request<{ ok: boolean; ended: number }>('/auth/sign-out-everywhere', { method: 'POST' }),
   chatRead: (thread: string) =>
@@ -2202,8 +2209,9 @@ export const api = {
   teenChatGet: (since?: string) =>
     request<{ messages: ChatMessage[] }>(
       `/teen/chat${since ? `?since=${encodeURIComponent(since)}` : ''}`),
-  teenChatSend: (text: string) =>
-    request<{ ok: boolean; message: ChatMessage }>('/teen/chat', { method: 'POST', body: { text } }),
+  teenChatSend: (text: string, replyTo?: string) =>
+    request<{ ok: boolean; message: ChatMessage }>(
+      '/teen/chat', { method: 'POST', body: { text, reply_to: replyTo } }),
   teenChatRead: () => request<{ ok: boolean }>('/teen/chat/read', { method: 'POST' }),
 
   kidHome: () => request<KidHome>('/kid/home'),
