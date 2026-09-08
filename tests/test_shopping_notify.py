@@ -170,6 +170,94 @@ class ShoppingNotify(unittest.TestCase):
 
 
 @unittest.skipUnless(HAVE, "backend deps not installed")
+class ATeenAsksForSomething(unittest.TestCase):
+    """A teen has their own phone and their own account, so what they need
+    does not have to travel through a parent's memory to reach the list.
+
+    The person who has to buy it is the one who needs telling. A sibling does
+    not, and telling them is how a useful notification becomes noise."""
+
+    def setUp(self):
+        self.db = FakeDatabase()
+        self._get_db = server.get_db
+        server.get_db = lambda: self.db
+        self.expo = []
+
+        async def to_expo(messages, database=None):
+            self.expo.extend(messages)
+            return {"sent": len(messages)}
+
+        async def to_web(database, user_id, title, body, data):
+            return 0
+
+        self._expo, server.send_expo_push_messages = server.send_expo_push_messages, to_expo
+        self._web, server.send_web_push_to_user = server.send_web_push_to_user, to_web
+
+        run = asyncio.run
+        people = (
+            ("u_roland", "Roland", "m_r", "parent"),
+            ("u_keigh", "Keigh", "m_k", "co-parent"),
+            ("u_teen", "Ama", "m_t", "teen"),
+            ("u_teen2", "Kofi", "m_t2", "teen"),
+        )
+        for uid, name, member, role in people:
+            run(self.db["users"].insert_one(
+                {"user_id": uid, "family_id": "fam", "name": name,
+                 "language": "en", "is_teen": role == "teen"}))
+            run(self.db["family_members"].insert_one(
+                {"member_id": member, "family_id": "fam", "name": name,
+                 "role": role, "user_id": uid}))
+            run(self.db["notification_tokens"].insert_one(
+                {"user_id": uid, "token": f"ExponentPushToken[{uid}]", "active": True,
+                 "platform": "android", "updated_at": server.utcnow()}))
+        self.teen = {"user_id": "u_teen", "family_id": "fam", "name": "Ama"}
+
+    def tearDown(self):
+        server.get_db = self._get_db
+        server.send_expo_push_messages = self._expo
+        server.send_web_push_to_user = self._web
+
+    def test_a_teen_can_put_something_on_the_list(self):
+        item = asyncio.run(server.add_shopping_item(Item("Shampoo"), user=self.teen))
+        self.assertEqual(item["name"], "Shampoo")
+        rows = asyncio.run(self.db["shopping_list"].find({}, {"_id": 0}).to_list(10))
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["added_by"], "Ama")
+
+    def test_both_parents_are_told_and_the_sibling_is_not(self):
+        asyncio.run(server.add_shopping_item(Item("Shampoo"), user=self.teen))
+        asyncio.run(server.flush_shopping_notifications(
+            self.db, now=server.utcnow() + timedelta(seconds=server.SHOPPING_QUIET_SECONDS + 1)))
+        reached = sorted(m["to"] for m in self.expo)
+        self.assertEqual(reached, ["ExponentPushToken[u_keigh]", "ExponentPushToken[u_roland]"])
+        self.assertIn("Ama", self.expo[0]["title"])
+
+    def test_a_parent_adding_does_not_notify_the_teens_either(self):
+        roland = {"user_id": "u_roland", "family_id": "fam", "name": "Roland"}
+        asyncio.run(server.add_shopping_item(Item("Rice"), user=roland))
+        asyncio.run(server.flush_shopping_notifications(
+            self.db, now=server.utcnow() + timedelta(seconds=server.SHOPPING_QUIET_SECONDS + 1)))
+        self.assertEqual([m["to"] for m in self.expo], ["ExponentPushToken[u_keigh]"])
+
+
+@unittest.skipUnless(HAVE, "backend deps not installed")
+class TheTeenScreenCanReachIt(unittest.TestCase):
+    """A backend a teen can call and a screen with no way to call it is the
+    same as not having the feature."""
+
+    def test_the_teen_screen_adds_to_the_shopping_list(self):
+        path = os.path.join(os.path.dirname(__file__), "..",
+                            "frontend", "app", "teen.tsx")
+        with open(path, encoding="utf-8") as fh:
+            source = fh.read()
+        self.assertIn("api.addShoppingItem", source)
+        self.assertIn("teen-shop-input", source)
+        self.assertIn("teen-shop-add", source)
+        # A failure must say so, the way finishing a task already does.
+        self.assertIn("teen_shop_failed", source)
+
+
+@unittest.skipUnless(HAVE, "backend deps not installed")
 class TheSchedulerDrainsIt(unittest.TestCase):
     def test_the_tick_flushes_the_queue(self):
         import inspect
