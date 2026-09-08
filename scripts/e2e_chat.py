@@ -59,6 +59,10 @@ def seed():
     return a["session_token"], b["session_token"]
 
 
+def say_via_api(token, text):
+    api("POST", "/family/chat/adults", {"text": text}, token)
+
+
 async def persona(browser, token):
     ctx = await browser.new_context(viewport={"width": 390, "height": 844})
     page = await ctx.new_page()
@@ -172,10 +176,34 @@ async def main():
             await page.wait_for_timeout(600)
             return await page.get_by_test_id("chat-actions").count() > 0
 
+        # Dragging the message to the right must arm the same reply. Done as
+        # a real drag: the whole question is whether the gesture is reachable,
+        # and whether it steals the scroll.
+        drag_box = await keigh.get_by_text(first, exact=False).first.bounding_box()
+        if drag_box:
+            y = drag_box["y"] + drag_box["height"] / 2
+            await keigh.mouse.move(drag_box["x"] + 8, y)
+            await keigh.mouse.down()
+            for step in range(1, 7):
+                await keigh.mouse.move(drag_box["x"] + 8 + step * 24, y)
+                await keigh.wait_for_timeout(30)
+            await keigh.mouse.up()
+            await keigh.wait_for_timeout(700)
+            if await keigh.get_by_test_id("chat-replying-to").count() == 0:
+                fails.append("dragging a message to the right did not offer to reply to it")
+            else:
+                await keigh.get_by_test_id("chat-reply-cancel").first.click()
+                await keigh.wait_for_timeout(400)
+
         answer = f"Friday works {uuid.uuid4().hex[:5]}"
         if not await hold(keigh, first):
             fails.append("holding a message offered nothing to do with it")
         else:
+            sheet = await keigh.get_by_test_id("chat-actions").first.inner_text()
+            low = (sheet or "").lower()
+            if "react" not in low and "message" not in low:
+                fails.append("the hold menu offers emoji and Reply with nothing "
+                             f"saying which is which (showed {sheet!r})")
             await keigh.get_by_test_id("chat-action-reply").first.click()
             await keigh.wait_for_timeout(600)
             if await keigh.get_by_test_id("chat-replying-to").count() == 0:
@@ -245,8 +273,17 @@ async def main():
                 fails.append("sending the correction left the composer still in edit mode")
 
         # --- 8. a conversation left open does not re-download itself --------
-        # Only reachable with a cursor that can move past a read; without one
-        # every poll ships the whole page again, forever, on a phone.
+        # Only reachable with a cursor that can move past a read, an edit and a
+        # reaction; without one, every poll ships the whole page again, forever,
+        # on somebody's phone.
+        #
+        # The thread is allowed to SETTLE first. The steps above just edited a
+        # message, and the poll that carries that edit is the feature working —
+        # recording from the instant of the last action measured the tail of
+        # the previous test and called it a bug. What has to be true is that
+        # the thread goes quiet and STAYS quiet, so the settling window is
+        # excluded and every poll after it must be empty.
+        await roland.wait_for_timeout(9000)       # let the last change land
         polls = []
 
         async def watch(res):
@@ -257,8 +294,43 @@ async def main():
                     pass
         roland.on("response", lambda r: asyncio.ensure_future(watch(r)))
         await roland.wait_for_timeout(13000)      # three polls of a quiet thread
-        if polls and sum(polls) > 0:
+        if not polls:
+            fails.append("the open conversation stopped polling altogether")
+        elif sum(polls) > 0:
             fails.append(f"a quiet conversation kept re-sending its history: {polls}")
+
+        # --- 9. an unread message is visible without the notification -------
+        # The gap Roland reported: "the notification doesn't appear on the
+        # notification bell". If you miss the push, nothing anywhere in the app
+        # said anybody had written to you.
+        #
+        # Keigh leaves the conversation FIRST — that is the whole point. While
+        # the thread is open it polls, and polling marks everything read, so a
+        # test that left her sitting in the chat could never produce an unread
+        # message to look for.
+        await keigh.goto(f"{WEB}/feed", wait_until="domcontentloaded")
+        await keigh.wait_for_timeout(2500)
+        unread = f"Are you free Sunday {uuid.uuid4().hex[:5]}"
+        say_via_api(tok_a, unread)
+        await keigh.goto(f"{WEB}/feed", wait_until="domcontentloaded")
+        await keigh.wait_for_timeout(3500)
+
+        bell = keigh.get_by_test_id("feed-bell")
+        if await bell.count() == 0:
+            fails.append("no bell on the feed to carry an unread message")
+        else:
+            await bell.first.click()
+            await keigh.wait_for_timeout(1500)
+            if await keigh.get_by_test_id("feed-alerts-messages").count() == 0:
+                fails.append("an unread message never reached the feed's bell")
+            elif await keigh.get_by_text(unread, exact=False).count() == 0:
+                fails.append("the bell listed conversations but not the unread message")
+            else:
+                await keigh.get_by_test_id("feed-alerts-messages").locator(
+                    "[data-testid^='feed-alert-chat-']").first.click()
+                await keigh.wait_for_timeout(3000)
+                if await keigh.get_by_test_id("chat-input").count() == 0:
+                    fails.append("tapping the unread conversation did not open it")
 
         await ctx_a.close()
         await ctx_b.close()
@@ -270,7 +342,8 @@ async def main():
             print(f"  - {f}")
         return 1
     print("PASS  messages arrive live both ways, once each; the sender is told they "
-          "landed; and a held message can be answered, reacted to or corrected")
+          "landed; a held or dragged message can be answered, reacted to or "
+          "corrected; and an unread one is findable on the feed")
     return 0
 
 

@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, AppState, FlatList, Keyboard, Modal, Platform,
+  ActivityIndicator, Alert, Animated, AppState, FlatList, Keyboard, Modal, Platform,
   Pressable, StyleSheet, Text, TextInput, View,
 } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Send, X } from 'lucide-react-native';
+import { Reply, Send, X } from 'lucide-react-native';
 
 import { PressScale } from './PressScale';
 import { useUI, UIColors } from './Kit';
@@ -26,6 +27,129 @@ interface Props {
   edit?: (messageId: string, text: string) => Promise<{ message: ChatMessage }>;
   emptyHint: string;
 }
+
+interface RowProps {
+  item: ChatMessage;
+  styles: ReturnType<typeof createStyles>;
+  ui: UIColors;
+  t: (key: string, params?: Record<string, string | number>) => string;
+  onHold: (m: ChatMessage) => void;
+  onSwipeReply: (m: ChatMessage) => void;
+  receipt: string | null;
+}
+
+/** How far a message has to travel before letting go answers it. */
+const SWIPE_REPLY_THRESHOLD = 52;
+const SWIPE_REPLY_MAX = 76;
+
+/**
+ * One message.
+ *
+ * Its own component because each row owns an Animated.Value for the
+ * swipe-to-reply gesture, and a hook cannot live inside a renderItem closure.
+ *
+ * Two ways to answer, deliberately: dragging the message to the right, which
+ * is the gesture WhatsApp taught everybody and the one Roland asked for, and
+ * holding it, which is discoverable, works for somebody who cannot make a
+ * precise drag, and is the only way to reach the other actions.
+ */
+function MessageRow({ item, styles, ui, t, onHold, onSwipeReply, receipt }: RowProps) {
+  const dx = useRef(new Animated.Value(0)).current;
+  const armed = useRef(false);
+
+  const spring = useCallback(() => {
+    Animated.spring(dx, { toValue: 0, useNativeDriver: true, speed: 30, bounciness: 6 }).start();
+  }, [dx]);
+
+  // Right only: dragging left is how a list is dismissed elsewhere on both
+  // platforms, and the vertical guards keep an ordinary scroll a scroll.
+  const pan = Gesture.Pan()
+    .activeOffsetX([-1000, 12])
+    .failOffsetY([-8, 8])
+    .onUpdate((e) => {
+      if (e.translationX <= 0) { dx.setValue(0); armed.current = false; return; }
+      const travel = Math.min(e.translationX * 0.55, SWIPE_REPLY_MAX);
+      dx.setValue(travel);
+      armed.current = travel >= SWIPE_REPLY_THRESHOLD;
+    })
+    .onEnd(() => {
+      if (armed.current) onSwipeReply(item);
+      armed.current = false;
+      spring();
+    })
+    .onFinalize(spring);
+
+  return (
+    <View>
+      {/* Sits behind the bubble and is uncovered by the drag, so the gesture
+          explains itself the first time somebody does it by accident. */}
+      <View pointerEvents="none" style={styles.swipeHint}>
+        <Reply color={ui.muted} size={16} />
+      </View>
+      <GestureDetector gesture={pan}>
+        <Animated.View style={{ transform: [{ translateX: dx }] }}>
+          <View style={[styles.bubbleRow, item.mine ? styles.rowMine : styles.rowTheirs]}>
+            <PressScale
+              testID={`chat-msg-${item.message_id}`}
+              // Long-press, not tap: the convention every messenger already
+              // taught people, and a tap-to-reply would fire by accident
+              // every time a thumb catches a bubble while scrolling.
+              onLongPress={() => onHold(item)}
+              accessibilityLabel={item.text}
+              accessibilityHint={t('chat_reply_hint')}
+              style={[styles.bubble, item.mine ? styles.bubbleMine : styles.bubbleTheirs]}
+            >
+              {!item.mine ? <Text style={styles.sender}>{item.sender_name}</Text> : null}
+              {item.reply_to ? (
+                <View style={[styles.quote, item.mine && styles.quoteMine]}>
+                  <Text
+                    numberOfLines={1}
+                    style={[styles.quoteName, item.mine && styles.quoteTextMine]}
+                  >
+                    {item.reply_to_name}
+                  </Text>
+                  <Text
+                    numberOfLines={2}
+                    style={[styles.quoteText, item.mine && styles.quoteTextMine]}
+                  >
+                    {item.reply_to_text}
+                  </Text>
+                </View>
+              ) : null}
+              <Text style={[styles.msgText, item.mine && styles.msgTextMine]}>{item.text}</Text>
+              {item.edited ? (
+                <Text
+                  testID="chat-edited"
+                  style={[styles.editedMark, item.mine && styles.editedMarkMine]}
+                >
+                  {t('chat_edited')}
+                </Text>
+              ) : null}
+            </PressScale>
+          </View>
+          {item.reactions?.length ? (
+            <View style={[styles.reactionRow, item.mine ? styles.rowMine : styles.rowTheirs]}>
+              {item.reactions.map((r) => (
+                <View
+                  key={r.emoji}
+                  testID={`chat-reaction-${r.emoji}`}
+                  style={[styles.reaction, r.mine && styles.reactionMine]}
+                >
+                  <Text style={styles.reactionEmoji}>{r.emoji}</Text>
+                  {r.count > 1 ? <Text style={styles.reactionCount}>{r.count}</Text> : null}
+                </View>
+              ))}
+            </View>
+          ) : null}
+          {receipt ? (
+            <Text testID="chat-receipt" style={styles.receipt}>{receipt}</Text>
+          ) : null}
+        </Animated.View>
+      </GestureDetector>
+    </View>
+  );
+}
+
 
 /**
  * A conversation: the message list plus a composer. Reused by the parent chat
@@ -271,64 +395,15 @@ export function ChatThread({ load, send, markRead, react, edit, emptyHint }: Pro
         }}
         ListEmptyComponent={<Text style={styles.empty}>{emptyHint}</Text>}
         renderItem={({ item }) => (
-          <View>
-            <View style={[styles.bubbleRow, item.mine ? styles.rowMine : styles.rowTheirs]}>
-              <PressScale
-                testID={`chat-msg-${item.message_id}`}
-                // Long-press, not tap: the convention every messenger already
-                // taught people, and a tap-to-reply would fire by accident
-                // every time a thumb catches a bubble while scrolling.
-                onLongPress={() => setActing(item)}
-                accessibilityLabel={item.text}
-                accessibilityHint={t('chat_reply_hint')}
-                style={[styles.bubble, item.mine ? styles.bubbleMine : styles.bubbleTheirs]}
-              >
-                {!item.mine ? <Text style={styles.sender}>{item.sender_name}</Text> : null}
-                {item.reply_to ? (
-                  <View style={[styles.quote, item.mine && styles.quoteMine]}>
-                    <Text
-                      numberOfLines={1}
-                      style={[styles.quoteName, item.mine && styles.quoteTextMine]}
-                    >
-                      {item.reply_to_name}
-                    </Text>
-                    <Text
-                      numberOfLines={2}
-                      style={[styles.quoteText, item.mine && styles.quoteTextMine]}
-                    >
-                      {item.reply_to_text}
-                    </Text>
-                  </View>
-                ) : null}
-                <Text style={[styles.msgText, item.mine && styles.msgTextMine]}>{item.text}</Text>
-                {item.edited ? (
-                  <Text
-                    testID="chat-edited"
-                    style={[styles.editedMark, item.mine && styles.editedMarkMine]}
-                  >
-                    {t('chat_edited')}
-                  </Text>
-                ) : null}
-              </PressScale>
-            </View>
-            {item.reactions?.length ? (
-              <View style={[styles.reactionRow, item.mine ? styles.rowMine : styles.rowTheirs]}>
-                {item.reactions.map((r) => (
-                  <View
-                    key={r.emoji}
-                    testID={`chat-reaction-${r.emoji}`}
-                    style={[styles.reaction, r.mine && styles.reactionMine]}
-                  >
-                    <Text style={styles.reactionEmoji}>{r.emoji}</Text>
-                    {r.count > 1 ? <Text style={styles.reactionCount}>{r.count}</Text> : null}
-                  </View>
-                ))}
-              </View>
-            ) : null}
-            {item.mine && item.message_id === lastMineId && receipt(item) ? (
-              <Text testID="chat-receipt" style={styles.receipt}>{receipt(item)}</Text>
-            ) : null}
-          </View>
+          <MessageRow
+            item={item}
+            styles={styles}
+            ui={ui}
+            t={t}
+            onHold={setActing}
+            onSwipeReply={(m) => { setReplyTo(m); setEditing(null); }}
+            receipt={item.mine && item.message_id === lastMineId ? receipt(item) : null}
+          />
         )}
       />
       <Modal
@@ -344,6 +419,13 @@ export function ChatThread({ load, send, markRead, react, edit, emptyHint }: Pro
         >
           <View testID="chat-actions" style={styles.sheet}>
             {react ? (
+              <>
+                {/* Labelled, because six emoji sitting above a Reply button
+                    read as "reply with this emoji" rather than "react". */}
+                <Text style={styles.sheetLabel}>{t('chat_react_label')}</Text>
+              </>
+            ) : null}
+            {react ? (
               <View style={styles.sheetEmoji}>
                 {CHAT_REACTIONS.map((emoji) => (
                   <PressScale
@@ -358,6 +440,8 @@ export function ChatThread({ load, send, markRead, react, edit, emptyHint }: Pro
                 ))}
               </View>
             ) : null}
+            {react ? <View style={styles.sheetRule} /> : null}
+            <Text style={styles.sheetLabel}>{t('chat_actions_label')}</Text>
             <PressScale
               testID="chat-action-reply"
               onPress={() => { setReplyTo(acting); setEditing(null); setActing(null); }}
@@ -445,26 +529,41 @@ export function ChatThread({ load, send, markRead, react, edit, emptyHint }: Pro
 const createStyles = (ui: UIColors) => StyleSheet.create({
   root: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  listContent: { padding: 16, gap: 8, flexGrow: 1 },
+  listContent: { padding: 16, gap: 10, flexGrow: 1 },
   empty: { flex: 1, textAlign: 'center', color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 14, marginTop: 40 },
   bubbleRow: { flexDirection: 'row' },
   rowMine: { justifyContent: 'flex-end' },
   rowTheirs: { justifyContent: 'flex-start' },
-  bubble: { maxWidth: '80%', borderRadius: 18, paddingHorizontal: 14, paddingVertical: 9 },
+  bubble: { maxWidth: '82%', borderRadius: 18, paddingHorizontal: 15, paddingVertical: 10 },
   bubbleMine: { backgroundColor: ui.orange, borderBottomRightRadius: 4 },
   bubbleTheirs: { backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, borderBottomLeftRadius: 4 },
-  sender: { fontFamily: 'Inter_700Bold', fontSize: 11, color: ui.orangeText, marginBottom: 2 },
-  msgText: { fontFamily: 'Inter_400Regular', fontSize: 15, lineHeight: 21, color: ui.text },
+  sender: { fontFamily: 'Inter_700Bold', fontSize: 12, color: ui.orangeText, marginBottom: 3 },
+  // 16/23 rather than 15/21. A chat is read at arm's length, often one-handed
+  // and often by somebody older than the person who built it; the old size was
+  // legible in a screenshot and tiring on a phone. Font scaling from the OS
+  // still applies on top of this.
+  msgText: { fontFamily: 'Inter_400Regular', fontSize: 16, lineHeight: 23, color: ui.text },
   msgTextMine: { color: '#fff' },
   receipt: {
-    alignSelf: 'flex-end', marginTop: 2, marginRight: 4,
-    fontFamily: 'Inter_500Medium', fontSize: 11, color: ui.muted,
+    alignSelf: 'flex-end', marginTop: 3, marginRight: 4,
+    fontFamily: 'Inter_500Medium', fontSize: 12, color: ui.muted,
   },
   editedMark: {
     fontFamily: 'Inter_400Regular', fontSize: 10, color: ui.muted,
     marginTop: 2, alignSelf: 'flex-end',
   },
   editedMarkMine: { color: 'rgba(255,255,255,0.8)' },
+  // Behind the bubble, revealed by dragging it right.
+  swipeHint: {
+    position: 'absolute', left: 10, top: 0, bottom: 0,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  sheetLabel: {
+    fontFamily: 'Inter_700Bold', fontSize: 11, letterSpacing: 0.6,
+    textTransform: 'uppercase', color: ui.muted,
+    paddingHorizontal: 16, paddingTop: 4,
+  },
+  sheetRule: { height: 1, backgroundColor: ui.line, marginVertical: 4 },
   reactionRow: { flexDirection: 'row', gap: 4, marginTop: -2, paddingHorizontal: 4 },
   reaction: {
     flexDirection: 'row', alignItems: 'center', gap: 3,
@@ -495,7 +594,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   quoteMine: { borderLeftColor: '#fff' },
   quoteName: { fontFamily: 'Inter_700Bold', fontSize: 11, color: ui.orangeText },
-  quoteText: { fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 16, color: ui.muted },
+  quoteText: { fontFamily: 'Inter_400Regular', fontSize: 13, lineHeight: 18, color: ui.muted },
   quoteTextMine: { color: '#fff' },
   replyBar: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
