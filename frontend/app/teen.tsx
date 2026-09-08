@@ -314,12 +314,19 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   shopHint: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 19, paddingTop: 14 },
   shopRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 14 },
   shopInput: {
-    flex: 1, minHeight: 44, borderRadius: 12, backgroundColor: ui.soft,
+    // minWidth 0 is load-bearing. A flex child defaults to min-width:auto,
+    // which refuses to shrink below its own content — so the field held its
+    // natural width, the row grew past the card, and the Add button was cut
+    // off by the right edge of the screen. Measured at 390px: the button
+    // ended at 401. Found by photographing the teen screen, which nothing
+    // had ever done.
+    flex: 1, minWidth: 0, minHeight: 44, borderRadius: 12, backgroundColor: ui.soft,
     borderWidth: 1, borderColor: ui.line, paddingHorizontal: 14,
     fontFamily: 'Inter_400Regular', fontSize: 15, color: ui.text,
   },
   shopBtn: {
-    minWidth: 84, height: 44, borderRadius: 12, backgroundColor: ui.orange,
+    // And the button must never be the thing that gives way.
+    minWidth: 84, flexShrink: 0, height: 44, borderRadius: 12, backgroundColor: ui.orange,
     alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14,
   },
   shopBtnOff: { opacity: 0.45 },

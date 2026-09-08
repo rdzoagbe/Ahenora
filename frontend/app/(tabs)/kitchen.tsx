@@ -1152,7 +1152,7 @@ export default function Kitchen() {
             <View style={styles.secHead}>
               <View style={styles.secLeft}>
                 <ShoppingCart color={ui.orange} size={20} />
-                <Text style={styles.secTitle}>{t('vault_shopping_list')}</Text>
+                <Text style={styles.secTitle} numberOfLines={1}>{t('vault_shopping_list')}</Text>
               </View>
               <View style={styles.secRight}>
                 {/* Matches the "Clear done" pill beside it rather than sitting
@@ -1389,7 +1389,7 @@ export default function Kitchen() {
             <View style={styles.secHead}>
               <View style={styles.secLeft}>
                 <UtensilsCrossed color={ui.lavenderText} size={20} />
-                <Text style={styles.secTitle}>{t('vault_meal_planner')}</Text>
+                <Text style={styles.secTitle} numberOfLines={1}>{t('vault_meal_planner')}</Text>
               </View>
               {mealLocked ? <LockBadge onPress={() => promptUpgrade('meal_planner')} /> : null}
             </View>
@@ -2469,7 +2469,9 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
 
 
   secHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 22, marginBottom: 12 },
-  secRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  // flexShrink 0: the pill and the count are the actionable half, and they
+  // are already as small as they go. The title gives way instead.
+  secRight: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 0 },
   // A soft-filled quiet button, not an outlined box. As a card-coloured
   // outline it read as a stray dark blob among the labelled colour buttons in
   // the row (a lone circle in dark mode). Soft fill, same pill radius and row
@@ -2502,8 +2504,11 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   selAllText: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 12.5 },
   checkbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 1.5, borderColor: ui.line, alignItems: 'center', justifyContent: 'center' },
   checkboxOn: { backgroundColor: ui.orangeDeep, borderColor: ui.orange },
-  secLeft: { flexDirection: 'row', alignItems: 'center', gap: 9 },
-  secTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 19, letterSpacing: -0.3 },
+  // minWidth 0 alongside flexShrink: a flex child defaults to min-width:auto
+  // and refuses to shrink below its own text, which is how "3 items" ended up
+  // 9px past the right edge of a 320px screen — measured, by e2e_overflow.py.
+  secLeft: { flexDirection: 'row', alignItems: 'center', gap: 9, flexShrink: 1, minWidth: 0 },
+  secTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 19, letterSpacing: -0.3, flexShrink: 1 },
   secCount: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
 
   clearBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 99, backgroundColor: ui.mint },
