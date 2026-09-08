@@ -22,6 +22,7 @@ import { toLocalDateInput, toLocalTimeInput } from '../utils/date';
 import { useStore } from '../store';
 import { detectDateTime } from '../dateParse';
 import { Card, api, CardType, FamilyMember, Recurrence } from '../api';
+import { apiErrorText } from '../apiError';
 import { logger } from '../logger';
 
 interface VoiceDraft {
@@ -287,7 +288,21 @@ export function AddCardModal({
     } catch (e: any) {
       // The card wasn't created — safe to let the user retry.
       logger.warn('create card error', e);
-      Alert.alert(t('addcard_save_failed_title'), e?.message || t('addcard_save_failed_message'));
+      // Not `e?.message`. That is `403: {"detail":"..."}` — the status and the
+      // raw response body, which is what Roland was shown when he tried to
+      // edit one of Keigh's tasks.
+      //
+      // The only 403 this sheet can produce is the sharing rule, so it gets
+      // its own sentence rather than a generic refusal: what cannot change,
+      // that the rest of the edit is not lost, and what to do about it. A
+      // dialog that says "save failed" and nothing else leaves someone
+      // guessing which of the six fields they touched was the problem.
+      if ((e as { status?: number })?.status === 403) {
+        Alert.alert(t('addcard_sharing_locked_title'), t('addcard_sharing_locked_msg'));
+      } else {
+        Alert.alert(t('addcard_save_failed_title'),
+                    apiErrorText(e, t, 'addcard_save_failed_message'));
+      }
       setSaving(false);
       return;
     }

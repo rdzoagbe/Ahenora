@@ -9577,10 +9577,22 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
     if payload.location is not None:
         changes["location"] = payload.location.strip()[:200]
 
-    if payload.shared is not None:
+    if payload.shared is not None and bool(payload.shared) != bool(card.get("shared")):
         # Only the person who added a private item may change its sharing here
         # (making it private again). Sharing-with-notification goes through the
         # dedicated /share endpoint. Legacy items (no owner) are family-wide.
+        #
+        # Note the second half of the condition, added 2026-09-08. The edit
+        # sheet sends every field it holds, including `shared`, whether or not
+        # the person touched it — so editing the TITLE of a card your co-parent
+        # added was refused with "Only the person who added this can change its
+        # sharing", about a sharing value that was not being changed. Roland hit
+        # this on a task of Keigh's. A co-parent could not correct a typo on
+        # anything the other one had written.
+        #
+        # A no-op is not a change. The rule it protects is unaffected: actually
+        # flipping someone else's card between shared and private is still
+        # refused.
         owner = card.get("created_by_user_id")
         if owner and owner != user["user_id"]:
             raise HTTPException(status_code=403, detail="Only the person who added this can change its sharing")
