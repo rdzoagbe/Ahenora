@@ -230,6 +230,18 @@ export function reportCrash(message: string, componentStack?: string | null) {
     `${String(message || 'unknown').slice(0, 200)}${where ? ` @ ${where.slice(0, 90)}` : ''}`);
 }
 
+/**
+ * A phone that could not get a push token says why, to the admin panel.
+ *
+ * On 2026-09-08 every Android install had been failing this call since
+ * launch (no Firebase config in the build) and the only trace was a
+ * logger.warn on the phone. Reported under a path of its own so it stands
+ * out from API errors.
+ */
+export function reportPushFailure(message: string) {
+  reportClientError('/push-register', 'PUSH', undefined, String(message || 'unknown').slice(0, 240));
+}
+
 function reportClientError(path: string, method: string, status: number | undefined, message: string) {
   try {
     if (path.startsWith('/telemetry')) return;
@@ -1009,6 +1021,8 @@ export interface PushHealth {
     people_reachable: number;
     active_phone_tokens: number;
     active_web_subscriptions: number;
+    /** Active phone tokens per platform, e.g. { android: 0, ios: 1 }. */
+    by_platform?: Record<string, number>;
   };
   jobs: {
     key: string;
@@ -1017,6 +1031,16 @@ export interface PushHealth {
     served_today: number;
     waiting_now: number;
   }[];
+  /** What Google and Apple said about sent pushes, from Expo's receipts. */
+  delivery?: {
+    receipts_last_checked_at: string | null;
+    receipts_checked: number;
+    tickets_pending: number;
+    recent_errors: {
+      at: string | null; stage: string; platform: string;
+      error: string; message: string; token_tail: string;
+    }[];
+  };
   you: {
     reachable: boolean;
     timezone: string | null;

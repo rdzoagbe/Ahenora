@@ -2313,17 +2313,135 @@ async def send_expo_push_messages(messages: list[dict], database=None) -> dict:
         try:
             tickets = (result.get("response") or {}).get("data") or []
             dead = []
+            kept = []
             for msg, ticket in zip(messages, tickets):
-                if isinstance(ticket, dict) and ticket.get("status") == "error" \
-                        and (ticket.get("details") or {}).get("error") == "DeviceNotRegistered":
-                    if msg.get("to"):
+                if not isinstance(ticket, dict):
+                    continue
+                if ticket.get("status") == "error":
+                    if (ticket.get("details") or {}).get("error") == "DeviceNotRegistered" \
+                            and msg.get("to"):
                         dead.append(msg["to"])
+                    await _record_push_error(database, msg.get("to"), ticket, stage="ticket")
+                elif ticket.get("id"):
+                    # A ticket only says Expo accepted the message. Whether
+                    # Google or Apple delivered it comes later, in a receipt,
+                    # and that is where a broken Android setup actually shows
+                    # (InvalidCredentials). Kept so the receipt can be read.
+                    kept.append({"ticket_id": ticket["id"], "token": msg.get("to"),
+                                 "sent_at": utcnow(), "checked": False})
             if dead:
                 await _deactivate_dead_tokens(database, dead)
+            if kept:
+                await database["push_tickets"].insert_many(kept)
         except Exception:
             pass
 
     return result
+
+
+PUSH_RECEIPT_DELAY_MINUTES = 15
+PUSH_ERROR_KEEP = 200
+_push_receipt_state: dict = {"last_check_at": None, "checked": 0, "errors": 0}
+
+
+async def _token_platform(database, token: Optional[str]) -> str:
+    if not token:
+        return "unknown"
+    row = await database["notification_tokens"].find_one({"token": token}, {"_id": 0, "platform": 1})
+    return (row or {}).get("platform") or "unknown"
+
+
+async def _record_push_error(database, token: Optional[str], payload: dict, stage: str) -> None:
+    """One row per delivery failure Expo reported, kept short and recent.
+
+    The message is what a person needs to fix it: `InvalidCredentials` on
+    Android means the FCM key is missing on EAS; `DeviceNotRegistered` means
+    the token is stale (and it is retired). The token itself is not stored —
+    only its tail, enough to match a device without being usable."""
+    try:
+        details = payload.get("details") or {}
+        await database["push_delivery_errors"].insert_one({
+            "at": utcnow(),
+            "stage": stage,
+            "platform": await _token_platform(database, token),
+            "token_tail": (token or "")[-8:],
+            "error": details.get("error") or "unknown",
+            "message": str(payload.get("message") or "")[:200],
+        })
+        # Cap the table: a broken setup would otherwise write a row per push
+        # forever. Oldest go first.
+        count = await database["push_delivery_errors"].count_documents({})
+        if count > PUSH_ERROR_KEEP:
+            oldest = [r async for r in database["push_delivery_errors"].find(
+                {}, {"_id": 0, "at": 1}).sort("at", 1).limit(count - PUSH_ERROR_KEEP)]
+            if oldest:
+                cutoff = oldest[-1]["at"]
+                await database["push_delivery_errors"].delete_many({"at": {"$lte": cutoff}})
+    except Exception as exc:  # noqa: BLE001 — a diagnostic must never break a send
+        log.warning("push error not recorded: %s", exc)
+
+
+async def fetch_expo_push_receipts(ids: list[str]) -> dict:
+    """POST to Expo's receipts endpoint. Returns {"data": {id: receipt}} or {"error": ...}."""
+    def _post():
+        req = urllib.request.Request(
+            "https://exp.host/--/api/v2/push/getReceipts",
+            data=json.dumps({"ids": ids}).encode("utf-8"),
+            headers={"Content-Type": "application/json", "Accept": "application/json"},
+            method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=12) as response:
+                raw = response.read().decode("utf-8")
+                return json.loads(raw) if raw else {}
+        except urllib.error.HTTPError as e:
+            return {"error": f"Expo receipts HTTP {e.code}: {e.read().decode('utf-8', errors='replace')[:200]}"}
+        except Exception as e:  # noqa: BLE001
+            return {"error": str(e)}
+    return await asyncio.to_thread(_post)
+
+
+async def check_push_receipts(database, now: Optional[datetime] = None) -> dict:
+    """Read the receipts for pushes sent a while ago, and record what failed.
+
+    A ticket is Expo saying "got it". The receipt, minutes later, is Google or
+    Apple saying whether the phone was reached. Nothing read receipts before,
+    so an Android setup that had never worked produced a clean send log and
+    a silent phone. Runs on the reminder scheduler's tick; cheap when there is
+    nothing to check."""
+    now = now or utcnow()
+    cutoff = now - timedelta(minutes=PUSH_RECEIPT_DELAY_MINUTES)
+    due = [t async for t in database["push_tickets"].find(
+        {"checked": False}, {"_id": 0}).limit(300)]
+    due = [t for t in due if (_coerce_dt(t.get("sent_at")) or now) <= cutoff]
+    summary = {"checked": 0, "errors": 0}
+    if not due:
+        return summary
+    ids = [t["ticket_id"] for t in due]
+    res = await fetch_expo_push_receipts(ids)
+    if res.get("error"):
+        log.warning("push receipts not read: %s", res["error"])
+        return summary
+    receipts = res.get("data") or {}
+    dead = []
+    for t in due:
+        r = receipts.get(t["ticket_id"])
+        if isinstance(r, dict) and r.get("status") == "error":
+            await _record_push_error(database, t.get("token"), r, stage="receipt")
+            summary["errors"] += 1
+            if (r.get("details") or {}).get("error") == "DeviceNotRegistered" and t.get("token"):
+                dead.append(t["token"])
+        summary["checked"] += 1
+    if dead:
+        await _deactivate_dead_tokens(database, dead)
+    for t in due:
+        await database["push_tickets"].update_one(
+            {"ticket_id": t["ticket_id"]}, {"$set": {"checked": True, "checked_at": now}})
+    # Tickets older than two days are never looked at again.
+    await database["push_tickets"].delete_many({"sent_at": {"$lt": now - timedelta(days=2)}})
+    _push_receipt_state["last_check_at"] = now
+    _push_receipt_state["checked"] += summary["checked"]
+    _push_receipt_state["errors"] += summary["errors"]
+    return summary
 
 
 STAR_MILESTONE = 50
@@ -2368,6 +2486,8 @@ PUSH_I18N = {
         "invited_body": "Open Ahenora and sign in through the invite link to join.",
         "accepted_title": "{name} accepted your invitation",
         "accepted_body": "They have joined your household.",
+        "shopping_title": "{name} added to the shopping list",
+        "shopping_body": "{items}",
         "santa_title": "Your Secret Santa match is ready",
         "santa_body": "{title}: open Ahenora to reveal who you're giving to.",
         "assigned_title": "{name} handed you something",
@@ -2409,6 +2529,8 @@ PUSH_I18N = {
         "invited_body": "Ouvrez Ahenora et connectez-vous via le lien d'invitation pour le rejoindre.",
         "accepted_title": "{name} a accepté votre invitation",
         "accepted_body": "Cette personne a rejoint votre foyer.",
+        "shopping_title": "{name} a ajouté à la liste de courses",
+        "shopping_body": "{items}",
         "santa_title": "Votre Père Noël secret est tiré",
         "santa_body": "{title} : ouvrez Ahenora pour découvrir à qui vous offrez.",
         "assigned_title": "{name} vous a confié quelque chose",
@@ -2449,6 +2571,8 @@ PUSH_I18N = {
         "invited_body": "Abre Ahenora e inicia sesión con el enlace de invitación para unirte.",
         "accepted_title": "{name} aceptó tu invitación",
         "accepted_body": "Ya forma parte de tu hogar.",
+        "shopping_title": "{name} añadió a la lista de la compra",
+        "shopping_body": "{items}",
         "santa_title": "Tu amigo invisible está listo",
         "santa_body": "{title}: abre Ahenora para descubrir a quién le regalas.",
         "assigned_title": "{name} te ha encargado algo",
@@ -2489,6 +2613,8 @@ PUSH_I18N = {
         "invited_body": "Öffne Ahenora und melde dich über den Einladungslink an, um beizutreten.",
         "accepted_title": "{name} hat deine Einladung angenommen",
         "accepted_body": "Die Person ist deinem Haushalt beigetreten.",
+        "shopping_title": "{name} hat die Einkaufsliste ergänzt",
+        "shopping_body": "{items}",
         "santa_title": "Dein Wichtel-Los steht fest",
         "santa_body": "{title}: öffne Ahenora, um zu sehen, wen du beschenkst.",
         "assigned_title": "{name} hat dir etwas übergeben",
@@ -2780,6 +2906,42 @@ async def send_coparent_alert(family_id: str, title: str, body: str, data_type: 
             {"type": data_type, "family_id": family_id},
             pref_key="new_card_alerts",
         )
+
+
+async def notify_shopping_added(database, user: dict, names: list[str]) -> int:
+    """Tell the other adults that something was put on the shopping list.
+
+    The list is shared by design — anyone in the household can add to it —
+    and until 2026-09-08 nobody was told when they did. A parent doing the
+    shop found out about the extra items by opening the app in the aisle, or
+    not at all. One push per addition, naming up to three items, to every
+    other account with a login; the author hears nothing about their own
+    action. Best effort, never raises, never delays the add.
+    """
+    clean = [n.strip() for n in names if n and n.strip()]
+    if not clean:
+        return 0
+    shown = ", ".join(clean[:3]) + (f" +{len(clean) - 3}" if len(clean) > 3 else "")
+    who = user.get("name") or "Someone"
+    told = 0
+    try:
+        for account in await _family_accounts(database, user["family_id"]):
+            uid = account.get("user_id")
+            if not uid or uid == user.get("user_id"):
+                continue
+            target = await database["users"].find_one({"user_id": uid}, {"_id": 0, "language": 1})
+            L = PUSH_I18N.get((target or {}).get("language") or "en", PUSH_I18N["en"])
+            got = await asyncio.wait_for(send_push_to_user(
+                database, uid,
+                L["shopping_title"].format(name=who),
+                L["shopping_body"].format(items=shown),
+                {"type": "shopping_added", "family_id": user["family_id"]},
+                pref_key="new_card_alerts"), timeout=5.0)
+            if isinstance(got, dict) and (got.get("devices") or got.get("web")):
+                told += 1
+    except Exception as exc:  # noqa: BLE001 — a push must never fail the add
+        log.warning("shopping push skipped: %s", exc)
+    return told
 
 
 # -----------------------------------------------------------------------------
@@ -3294,6 +3456,10 @@ async def _reminder_scheduler_loop():
         except Exception as e:
             log.warning("daily push tick failed: %s", e)
             _scheduler_state["last_error"] = f"{type(e).__name__}: {e}"[:200]
+        try:
+            await check_push_receipts(get_db())
+        except Exception as e:  # noqa: BLE001
+            log.warning("push receipt check failed: %s", type(e).__name__)
         # Stamped at the END of the pass: a tick that starts and hangs has not
         # done its job, and reporting it as alive would be the same lie as a
         # green test that skipped.
@@ -4405,6 +4571,15 @@ async def health_push(user=Depends(require_user), database=Depends(get_db)):
     zones = await _push_zones(database)
     phones = await database["notification_tokens"].count_documents({"active": True})
     browsers = await database["web_push_subscriptions"].count_documents({"active": True})
+    # Per platform, because "phones: 1" hid that the one phone was an iPhone
+    # and that no Android device had ever registered.
+    by_platform: dict = {}
+    async for row in database["notification_tokens"].find({"active": True}, {"_id": 0, "platform": 1}):
+        key = (row.get("platform") or "unknown").lower()
+        by_platform[key] = by_platform.get(key, 0) + 1
+    recent_errors = [r async for r in database["push_delivery_errors"].find(
+        {}, {"_id": 0}).sort("at", -1).limit(10)]
+    pending = await database["push_tickets"].count_documents({"checked": False})
 
     jobs = []
     for job in DAILY_PUSH_JOBS:
@@ -4449,6 +4624,20 @@ async def health_push(user=Depends(require_user), database=Depends(get_db)):
             "people_reachable": len(zones),
             "active_phone_tokens": phones,
             "active_web_subscriptions": browsers,
+            "by_platform": by_platform,
+        },
+        # What Google and Apple said about the pushes sent, read from Expo's
+        # receipts. Empty is good; `InvalidCredentials` on android means the
+        # FCM key is not on EAS (docs/ANDROID_PUSH.md).
+        "delivery": {
+            "receipts_last_checked_at": iso(_push_receipt_state.get("last_check_at")),
+            "receipts_checked": _push_receipt_state.get("checked", 0),
+            "tickets_pending": pending,
+            "recent_errors": [{
+                "at": iso(r.get("at")), "stage": r.get("stage"),
+                "platform": r.get("platform"), "error": r.get("error"),
+                "message": r.get("message"), "token_tail": r.get("token_tail"),
+            } for r in recent_errors],
         },
         "jobs": jobs,
         "you": {
@@ -12011,6 +12200,7 @@ async def add_shopping_item(payload: ShoppingItemIn, user=Depends(require_user))
         "created_at": utcnow(),
     }
     await database["shopping_list"].insert_one(doc)
+    await notify_shopping_added(database, user, [doc["name"]])
     return public_shopping_item(doc)
 
 
@@ -12465,6 +12655,7 @@ async def bulk_add_shopping(body: BulkShoppingIn, user=Depends(require_user)):
     ).to_list(500)
     have = {(e.get("name") or "").strip().lower() for e in existing}
     added = 0
+    added_names: list[str] = []
     for index, raw in enumerate(body.names):
         name = (raw or "").strip()
         if not name or name.lower() in have:
@@ -12481,6 +12672,9 @@ async def bulk_add_shopping(body: BulkShoppingIn, user=Depends(require_user)):
             "created_at": utcnow(),
         })
         added += 1
+        added_names.append(name)
+    if added_names:
+        await notify_shopping_added(database, user, added_names)
     return {"ok": True, "added": added}
 
 

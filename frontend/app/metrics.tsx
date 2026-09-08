@@ -439,6 +439,17 @@ export default function MetricsScreen() {
                         : '—'}
                     </Text>
                   </View>
+                  {/* Per platform: "1 phone" hid that it was an iPhone and
+                      that no Android device had ever registered. */}
+                  <View style={styles.eventRow}>
+                    <Text style={styles.eventLabel}>Phones by platform</Text>
+                    <Text style={[styles.eventCount,
+                      pushHealth && !(pushHealth.reach.by_platform?.android) && { color: ui.danger }]}>
+                      {pushHealth
+                        ? `Android ${pushHealth.reach.by_platform?.android ?? 0} · iOS ${pushHealth.reach.by_platform?.ios ?? 0}`
+                        : '—'}
+                    </Text>
+                  </View>
                   <View style={styles.eventRow}>
                     <Text style={styles.eventLabel}>You</Text>
                     <Text style={[styles.eventCount,
@@ -451,6 +462,27 @@ export default function MetricsScreen() {
                   </View>
                 </View>
 
+                {pushHealth && !(pushHealth.reach.by_platform?.android) ? (
+                  <View style={[styles.card, styles.warnCard]}>
+                    <Text style={styles.warnText}>
+                      No Android phone has a push token. Android push needs Firebase in the
+                      build and the FCM key on EAS — see docs/ANDROID_PUSH.md. Until a store
+                      build carries it, Android receives no notifications at all.
+                    </Text>
+                  </View>
+                ) : null}
+                {pushHealth?.delivery?.recent_errors?.length ? (
+                  <View style={[styles.card, styles.warnCard]}>
+                    <Text style={styles.warnText}>
+                      Delivery errors reported by Google or Apple (newest first):
+                    </Text>
+                    {pushHealth.delivery.recent_errors.slice(0, 5).map((e, i) => (
+                      <Text key={i} style={styles.hint}>
+                        {lastSeenLabel(e.at)} · {e.platform} · {e.error}{e.message ? ` — ${e.message}` : ''}
+                      </Text>
+                    ))}
+                  </View>
+                ) : null}
                 {pushHealth ? (
                   <View style={styles.card}>
                     {pushHealth.jobs.map((job, i) => (

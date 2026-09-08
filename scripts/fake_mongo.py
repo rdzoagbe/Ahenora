@@ -192,6 +192,11 @@ class FakeCollection:
         self.rows.append(_bsonify(dict(doc)))
         return _Result(1)
 
+    async def insert_many(self, docs):
+        for doc in docs:
+            self.rows.append(_bsonify(dict(doc)))
+        return _Result(len(docs))
+
     def _apply(self, row, update):
         for key, value in (update.get("$set") or {}).items():
             row[key] = _bsonify(value)
