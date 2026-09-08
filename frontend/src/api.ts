@@ -829,8 +829,19 @@ export interface ChatMessage {
   sender_name: string;
   text: string;
   created_at: string;
+  /** The last moment anything about this message changed — sent, read, or
+   *  edited. What `since` is advanced to; created_at cannot serve, because a
+   *  message that has just been read has changed without becoming newer. */
+  changed_at?: string;
   mine: boolean;
+  /** The VIEWER has read this one. Drives the unread badge. */
   read: boolean;
+  /** How many of the other people in this conversation have opened it. */
+  seen_by?: number;
+  /** How many other people are in this conversation at all. */
+  audience?: number;
+  /** Everyone else has read it. Absent on threads the server did not price. */
+  seen?: boolean;
 }
 
 export interface ChatThreadSummary {

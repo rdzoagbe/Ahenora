@@ -15,6 +15,11 @@ Two things had to be true before a screen could poll:
   A read had to be able to return NOTHING. Without a cursor, every poll ships
   the whole history again and the client diffs it.
 
+The cursor is `changed_at`, not `created_at`: since 2026-09-08 a message also
+changes when someone READS it (that is how a "Seen" tick reaches the sender
+without reopening the screen), and a cursor pinned to send time could never
+move past such a change — every poll would re-ship the same row forever.
+
 Run with:  python3 -m pytest tests/test_chat_live.py -q
 """
 import asyncio
@@ -86,13 +91,13 @@ class TheThreadRead(unittest.TestCase):
         self._say(self.a, "Can you get the kids?")
         msgs = self._read(self.b)
         self.assertEqual(len(msgs), 1)
-        cursor = msgs[-1]["created_at"]
+        cursor = msgs[-1]["changed_at"]
         self.assertEqual(self._read(self.b, since=cursor), [],
                          "a poll with nothing new must be an empty answer, not the history")
 
     def test_a_poll_returns_only_what_arrived_after_the_cursor(self):
         self._say(self.a, "first")
-        cursor = self._read(self.b)[-1]["created_at"]
+        cursor = self._read(self.b)[-1]["changed_at"]
         self._say(self.a, "second")
         self._say(self.a, "third")
         fresh = self._read(self.b, since=cursor)
@@ -131,7 +136,7 @@ class TheThreadRead(unittest.TestCase):
 
     def test_an_empty_poll_writes_nothing(self):
         self._say(self.a, "hello")
-        cursor = self._read(self.b)[-1]["created_at"]
+        cursor = self._read(self.b)[-1]["changed_at"]
         calls = []
         real = server._mark_read
 

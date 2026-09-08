@@ -7347,17 +7347,58 @@ class ChatMessageIn(BaseModel):
     text: str
 
 
-def public_chat_message(m: dict, viewer_id: str) -> dict:
-    return {
+def _chat_changed_at(m: dict):
+    """The last moment anything about this message changed.
+
+    Not just when it was sent: a message that has been edited, or that someone
+    has just read, is news to a screen that already has an older copy of it.
+    The poll cursor is compared against this, so all three kinds of change
+    travel on one cursor and there is no way for two of them to disagree.
+    """
+    stamps = [_coerce_dt(m.get(k)) for k in ("created_at", "updated_at", "read_at")]
+    stamps = [s for s in stamps if s]
+    return max(stamps) if stamps else None
+
+
+def public_chat_message(m: dict, viewer_id: str, others: Optional[set] = None) -> dict:
+    """One message as the viewer is allowed to see it.
+
+    `read` has always meant "the VIEWER has read this". That is what an unread
+    badge needs and it says nothing about the person you are talking to, so a
+    sender could never tell whether their message had landed. `seen_by` /
+    `seen` answer the other half: of the other people in this conversation,
+    how many have opened it since it arrived.
+
+    Counted from the same `read_by` the badge already uses — no new bookkeeping
+    and therefore nothing new that can disagree with itself. `others` is the
+    thread's participants minus the sender; without it (a caller that does not
+    know the roster) the counts are simply absent rather than guessed at.
+    """
+    sender = m.get("sender_user_id")
+    read_by = set(m.get("read_by") or [])
+    out = {
         "message_id": m["message_id"],
         "thread": m["thread"],
         "sender_kind": m.get("sender_kind"),
         "sender_name": m.get("sender_name") or "",
         "text": m.get("text") or "",
         "created_at": iso(m.get("created_at")),
-        "mine": m.get("sender_user_id") == viewer_id,
-        "read": (m.get("sender_user_id") == viewer_id) or (viewer_id in (m.get("read_by") or [])),
+        # The cursor the client polls with. Not created_at: a message that has
+        # been read (or, later, edited) has changed without being newer, and a
+        # cursor that could not move past that change would ask for the same
+        # rows on every poll forever.
+        "changed_at": iso(_chat_changed_at(m) or m.get("created_at")),
+        "mine": sender == viewer_id,
+        "read": (sender == viewer_id) or (viewer_id in read_by),
     }
+    if others is not None:
+        audience = set(others) - {sender}
+        seen_by = len(read_by & audience)
+        out["seen_by"] = seen_by
+        out["audience"] = len(audience)
+        # An empty conversation cannot have been seen by everyone in it.
+        out["seen"] = bool(audience) and seen_by == len(audience)
+    return out
 
 
 HOUSEHOLD_THREAD = "household"
@@ -7487,16 +7528,37 @@ async def _chat_insert(database, family_id: str, thread: str, sender_user_id: st
 CHAT_PAGE = 200
 
 
+def _kid_viewer_id(member_id: str) -> str:
+    """How a managed child is recorded as having read something. They have no
+    login, so their member id stands in for a user id — and only here."""
+    return f"member:{member_id}"
+
+
+async def _chat_audience(database, family_id: str, thread: str, participants: set) -> set:
+    """Who a "seen" tick counts, which is not the same set as who may read.
+
+    `_thread_participants` is the access model and stays exactly that — a set
+    of accounts. A managed child has no account, so a parent writing to their
+    eight-year-old would otherwise be told "seen" the moment the OTHER parent
+    opened the thread, which is a claim about the wrong person. The child's
+    own marker is added here, where it affects a tick and nothing else.
+    """
+    if thread.startswith(KID_PREFIX):
+        member_id = thread[len(KID_PREFIX):]
+        child = await database["family_members"].find_one(
+            {"member_id": member_id, "family_id": family_id}, {"_id": 0})
+        if child and not child.get("user_id"):
+            return set(participants) | {_kid_viewer_id(member_id)}
+    return set(participants)
+
+
 async def _chat_thread_messages(database, family_id: str, thread: str, viewer_id: str,
-                                since: Optional[str] = None) -> list:
+                                since: Optional[str] = None,
+                                others: Optional[set] = None) -> list:
     """The newest messages in a thread, oldest first.
 
-    `since` returns only what has arrived after that moment, which is what
+    `since` returns only what has CHANGED after that moment, which is what
     makes polling cheap: a quiet thread answers with an empty list.
-
-    Compared against updated_at where a message has one, so an edited message
-    is re-sent to a screen that already has it. Nothing sets updated_at yet;
-    doing the comparison now means editing does not need a second cursor.
     """
     rows = []
     async for m in database["messages"].find(
@@ -7506,17 +7568,48 @@ async def _chat_thread_messages(database, family_id: str, thread: str, viewer_id
     rows.reverse()
     cutoff = _coerce_dt(since) if since else None
     if cutoff:
-        rows = [m for m in rows
-                if (_coerce_dt(m.get("updated_at") or m.get("created_at")) or cutoff) > cutoff]
-    return [public_chat_message(m, viewer_id) for m in rows]
+        rows = [m for m in rows if (_chat_changed_at(m) or cutoff) > cutoff]
+    return [public_chat_message(m, viewer_id, others) for m in rows]
 
 
 async def _mark_read(database, family_id: str, thread: str, viewer_id: str) -> None:
-    # Everything in the thread the viewer didn't send is now read by them.
+    """Everything in the thread the viewer didn't send is now read by them.
+
+    `read_at` is stamped as well, and it is not decoration: the sender's screen
+    polls with a cursor, so a message whose only change is "she has now seen
+    it" has to move in that ordering or the tick would never arrive without
+    reopening the screen — the exact bug this whole sequence started from.
+
+    The query only matches rows not already read by this viewer, so the stamp
+    changes at most once per reader and a screen polling a thread it has
+    already read writes nothing.
+    """
     await database["messages"].update_many(
         {"family_id": family_id, "thread": thread,
          "sender_user_id": {"$ne": viewer_id}, "read_by": {"$ne": viewer_id}},
-        {"$addToSet": {"read_by": viewer_id}})
+        {"$addToSet": {"read_by": viewer_id}, "$set": {"read_at": utcnow()}})
+
+
+async def _mark_read_if_needed(database, family_id: str, thread: str, viewer_id: str) -> bool:
+    """Mark the thread read, but only when there is in fact something unread.
+
+    Called BEFORE the messages are fetched, which is not a detail. Marking
+    afterwards stamps `read_at` on rows that have already been serialised, so
+    the `changed_at` the reader stores as its cursor is older than the change
+    its own read just made — and every subsequent poll is handed the whole
+    page again, forever. Found by the live-chat tests the moment "seen" gave
+    a read something to change.
+
+    The look-before-write keeps the other promise: a screen polling a thread
+    it has already read must not write to the database every four seconds.
+    """
+    pending = await database["messages"].find_one(
+        {"family_id": family_id, "thread": thread,
+         "sender_user_id": {"$ne": viewer_id}, "read_by": {"$ne": viewer_id}}, {"_id": 0})
+    if not pending:
+        return False
+    await _mark_read(database, family_id, thread, viewer_id)
+    return True
 
 
 async def _chat_notify(database, family_id: str, thread: str, sender_user_id: str,
@@ -7667,13 +7760,13 @@ async def family_chat_get(thread: str, since: Optional[str] = None,
                           user=Depends(require_chat_account)):
     database = get_db()
     thread = await _canonical_thread(database, user["family_id"], thread)
-    await _require_thread_member(database, user["family_id"], thread, user["user_id"])
+    participants = await _require_thread_member(
+        database, user["family_id"], thread, user["user_id"])
+    audience = await _chat_audience(database, user["family_id"], thread, participants)
+    # Before the fetch, so the rows carry the read this very call performed.
+    await _mark_read_if_needed(database, user["family_id"], thread, user["user_id"])
     msgs = await _chat_thread_messages(database, user["family_id"], thread,
-                                       user["user_id"], since)
-    # Only when something came back. A screen polling a quiet thread should
-    # not write to the database every few seconds to mark nothing as read.
-    if msgs:
-        await _mark_read(database, user["family_id"], thread, user["user_id"])
+                                       user["user_id"], since, others=audience)
     return {"messages": msgs}
 
 
@@ -7681,12 +7774,14 @@ async def family_chat_get(thread: str, since: Optional[str] = None,
 async def family_chat_send(thread: str, payload: ChatMessageIn, user=Depends(require_chat_account)):
     database = get_db()
     thread = await _canonical_thread(database, user["family_id"], thread)
-    await _require_thread_member(database, user["family_id"], thread, user["user_id"])
+    participants = await _require_thread_member(
+        database, user["family_id"], thread, user["user_id"])
     name = user.get("name") or "Someone"
     msg = await _chat_insert(database, user["family_id"], thread, user["user_id"],
                              _sender_kind(user), name, payload.text)
     await _chat_notify(database, user["family_id"], thread, user["user_id"], name, msg["text"])
-    return {"ok": True, "message": public_chat_message(msg, user["user_id"])}
+    audience = await _chat_audience(database, user["family_id"], thread, participants)
+    return {"ok": True, "message": public_chat_message(msg, user["user_id"], audience)}
 
 
 @app.post("/api/family/chat/{thread}/read")
@@ -7704,9 +7799,10 @@ async def teen_chat_get(since: Optional[str] = None, teen=Depends(require_teen))
     user id, so it can only ever be theirs."""
     database = get_db()
     tuid = teen["user"]["user_id"]
-    msgs = await _chat_thread_messages(database, teen["family_id"], tuid, tuid, since)
-    if msgs:
-        await _mark_read(database, teen["family_id"], tuid, tuid)
+    others = await _thread_participants(database, teen["family_id"], tuid)
+    await _mark_read_if_needed(database, teen["family_id"], tuid, tuid)
+    msgs = await _chat_thread_messages(database, teen["family_id"], tuid, tuid, since,
+                                       others=others)
     return {"messages": msgs}
 
 
@@ -7717,7 +7813,8 @@ async def teen_chat_send(payload: ChatMessageIn, teen=Depends(require_teen)):
     name = teen["user"].get("name") or "Teen"
     msg = await _chat_insert(database, teen["family_id"], tuid, tuid, "teen", name, payload.text)
     await _chat_notify(database, teen["family_id"], tuid, tuid, name, msg["text"])
-    return {"ok": True, "message": public_chat_message(msg, tuid)}
+    others = await _thread_participants(database, teen["family_id"], tuid)
+    return {"ok": True, "message": public_chat_message(msg, tuid, others)}
 
 
 @app.post("/api/teen/chat/read")
@@ -7744,9 +7841,9 @@ async def kid_notes(child=Depends(require_child)):
     member = child["member"]
     thread = KID_PREFIX + member["member_id"]
     # The child is not a user, so "read" is tracked against their member id.
-    viewer = f"member:{member['member_id']}"
+    viewer = _kid_viewer_id(member["member_id"])
+    await _mark_read_if_needed(database, child["family_id"], thread, viewer)
     msgs = await _chat_thread_messages(database, child["family_id"], thread, viewer)
-    await _mark_read(database, child["family_id"], thread, viewer)
     return {"messages": msgs}
 
 

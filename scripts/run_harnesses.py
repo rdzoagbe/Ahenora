@@ -71,6 +71,10 @@ HARNESSES = [
     # "Add" button ending at 401px on a 390px phone, and immediately found a
     # second one — the Kitchen item count, 9px off the edge at 320.
     "e2e_overflow.py",
+    # Two browsers, one conversation. Everything a chat is for — a message
+    # landing while you look at the screen, and being told yours was read —
+    # needs two people in the room, and every earlier test had one.
+    "e2e_chat.py",
     "e2e_offline.py",
     "e2e_calendar.py",
     "e2e_invite.py",

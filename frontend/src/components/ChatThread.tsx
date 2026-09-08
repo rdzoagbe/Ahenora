@@ -112,8 +112,12 @@ export function ChatThread({ load, send, markRead, emptyHint }: Props) {
       return [...byId.values()].sort((a, b) =>
         (a.created_at || '').localeCompare(b.created_at || ''));
     });
+    // Advanced on changed_at, not created_at. A message that has just been
+    // READ has changed without becoming newer; a cursor pinned to send time
+    // could never move past it and every poll would ship it again forever.
     for (const m of incoming) {
-      if (!since.current || (m.created_at || '') > since.current) since.current = m.created_at;
+      const at = m.changed_at || m.created_at || '';
+      if (at && (!since.current || at > since.current)) since.current = at;
     }
     return added;
   }, []);
@@ -187,6 +191,29 @@ export function ChatThread({ load, send, markRead, emptyHint }: Props) {
     }
   }, [text, sending, send, t, absorb]);
 
+  // Only the newest thing you sent carries a receipt. A column of "Seen"
+  // under every bubble is noise; the one that answers "did that land?" is the
+  // last one. Found by id rather than index so it survives the merge re-sort.
+  const lastMineId = (() => {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      if (messages[i].mine) return messages[i].message_id;
+    }
+    return null;
+  })();
+
+  const receipt = (m: ChatMessage): string | null => {
+    // A thread the server did not price (it does not know the roster) says
+    // nothing at all, rather than claiming "Sent" about a message that may
+    // well have been read.
+    if (typeof m.audience !== 'number') return null;
+    if (m.audience === 0) return null;              // nobody else is in here yet
+    if (m.seen) return t('chat_seen');
+    if (!m.seen_by) return t('chat_sent');
+    // Three people in a household chat: "who exactly" matters less than
+    // "not everyone yet".
+    return t('chat_seen_partial', { count: m.seen_by, total: m.audience });
+  };
+
   if (loading) {
     return <View style={styles.center}><ActivityIndicator color={ui.orange} /></View>;
   }
@@ -209,11 +236,16 @@ export function ChatThread({ load, send, markRead, emptyHint }: Props) {
         }}
         ListEmptyComponent={<Text style={styles.empty}>{emptyHint}</Text>}
         renderItem={({ item }) => (
-          <View style={[styles.bubbleRow, item.mine ? styles.rowMine : styles.rowTheirs]}>
-            <View style={[styles.bubble, item.mine ? styles.bubbleMine : styles.bubbleTheirs]}>
-              {!item.mine ? <Text style={styles.sender}>{item.sender_name}</Text> : null}
-              <Text style={[styles.msgText, item.mine && styles.msgTextMine]}>{item.text}</Text>
+          <View>
+            <View style={[styles.bubbleRow, item.mine ? styles.rowMine : styles.rowTheirs]}>
+              <View style={[styles.bubble, item.mine ? styles.bubbleMine : styles.bubbleTheirs]}>
+                {!item.mine ? <Text style={styles.sender}>{item.sender_name}</Text> : null}
+                <Text style={[styles.msgText, item.mine && styles.msgTextMine]}>{item.text}</Text>
+              </View>
             </View>
+            {item.mine && item.message_id === lastMineId && receipt(item) ? (
+              <Text testID="chat-receipt" style={styles.receipt}>{receipt(item)}</Text>
+            ) : null}
           </View>
         )}
       />
@@ -256,6 +288,10 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   sender: { fontFamily: 'Inter_700Bold', fontSize: 11, color: ui.orangeText, marginBottom: 2 },
   msgText: { fontFamily: 'Inter_400Regular', fontSize: 15, lineHeight: 21, color: ui.text },
   msgTextMine: { color: '#fff' },
+  receipt: {
+    alignSelf: 'flex-end', marginTop: 2, marginRight: 4,
+    fontFamily: 'Inter_500Medium', fontSize: 11, color: ui.muted,
+  },
   composer: {
     flexDirection: 'row', alignItems: 'flex-end', gap: 10, paddingHorizontal: 14,
     paddingVertical: 10, borderTopWidth: 1, borderTopColor: ui.line, backgroundColor: ui.bg,
