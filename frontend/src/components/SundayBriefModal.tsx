@@ -51,7 +51,16 @@ export function SundayBriefModal({ visible, onClose }: Props) {
 
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
-      <ImageBackground source={{ uri: BG_URL }} style={StyleSheet.absoluteFill} resizeMode="cover">
+      {/* The image is fetched from a third-party host. If it ever stops
+          answering, an ImageBackground renders nothing — and this modal is
+          transparent, so the brief would appear to float over whatever was
+          behind it. The theme ground underneath means a missing image costs
+          the photograph, not the screen. */}
+      <ImageBackground
+        source={{ uri: BG_URL }}
+        style={[StyleSheet.absoluteFill, { backgroundColor: theme.colors.bg }]}
+        resizeMode="cover"
+      >
         <BlurView intensity={light ? 72 : 60} tint={light ? 'light' : 'dark'} style={StyleSheet.absoluteFill} />
         <View style={[styles.overlay, { backgroundColor: light ? 'rgba(255,255,255,0.78)' : 'rgba(8,9,16,0.72)' }]} />
       </ImageBackground>

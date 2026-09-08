@@ -1004,6 +1004,21 @@ export interface InviteBreakdown {
   };
 }
 
+/** /api/metrics/timings — admin only. What the app FELT like, per timing.
+ *  Buckets, not averages: an average hides the launches that felt broken. */
+export interface TimingsReport {
+  days: number;
+  timings: {
+    name: string;
+    samples: number;
+    mean_ms: number | null;
+    median_bucket: string | null;
+    labels: string[];
+    buckets: number[];
+    pct_in_slowest: number | null;
+  }[];
+}
+
 /** /api/health/push — admin only. Answers the question a silent morning
  *  raises: was there nothing to say, or is the sender broken? */
 export interface PushHealth {
@@ -1672,8 +1687,12 @@ export const api = {
   me: () => request<User>('/auth/me'),
   changePassword: (data: { current_password: string; new_password: string }) =>
     request<{ ok: boolean }>('/auth/change-password', { method: 'POST', body: data }),
+  /** `email_configured` is a fact about the SERVER, not the account, so it
+   *  gives nothing away — and it is the difference between "check your inbox"
+   *  and waiting for a code that was never going to arrive. */
   requestPasswordReset: (email: string) =>
-    request<{ ok: boolean }>('/auth/request-password-reset', { method: 'POST', body: { email } }),
+    request<{ ok: boolean; email_configured?: boolean }>(
+      '/auth/request-password-reset', { method: 'POST', body: { email } }),
   resetPassword: (data: { email: string; code: string; new_password: string }) =>
     request<{ user: User; session_token: string }>('/auth/reset-password', { method: 'POST', body: data }),
   logout: () => {
@@ -1745,6 +1764,8 @@ export const api = {
     request<VersionAdoption>('/admin/version-adoption'),
   getPlanAdoption: () =>
     request<PlanAdoption>('/admin/plan-adoption'),
+  getTimings: (days = 14) =>
+    request<TimingsReport>(`/metrics/timings?days=${days}`),
   getSubscribers: () =>
     request<SubscriberList>('/admin/subscribers'),
   /** Every message sent through the in-app support form, open first. */

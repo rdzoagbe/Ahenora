@@ -4348,6 +4348,41 @@ async def send_account_deleted_email(to_email: str, name: str) -> dict:
         return {"sent": False}
 
 
+EMAIL_ERROR_KEEP = 100
+
+
+async def record_email_failure(kind: str, result: dict) -> None:
+    """Note that an outbound email did not go, so it can be seen from inside.
+
+    Password reset answers {"ok": true} whichever way it goes — deliberately,
+    so the endpoint never becomes an oracle for which addresses are
+    registered. The cost of that silence is that a broken mail configuration
+    looks exactly like a working one, and the only symptom is a person who
+    cannot get back into their account and never says so.
+
+    The address is NOT stored: what an admin needs is that sending is failing
+    and why, not who asked. Capped, newest kept.
+    """
+    if not isinstance(result, dict) or result.get("sent"):
+        return
+    try:
+        database = get_db()
+        await database["email_delivery_errors"].insert_one({
+            "at": utcnow(),
+            "kind": kind,
+            "error": str(result.get("error") or "not configured")[:200],
+        })
+        count = await database["email_delivery_errors"].count_documents({})
+        if count > EMAIL_ERROR_KEEP:
+            oldest = [r async for r in database["email_delivery_errors"].find(
+                {}, {"_id": 0, "at": 1}).sort("at", 1).limit(count - EMAIL_ERROR_KEEP)]
+            if oldest:
+                await database["email_delivery_errors"].delete_many(
+                    {"at": {"$lte": oldest[-1]["at"]}})
+    except Exception as exc:  # noqa: BLE001 — a diagnostic must never break a send
+        log.warning("email failure not recorded: %s", exc)
+
+
 async def send_password_reset_email(to_email: str, name: str, code: str) -> dict:
     """The one-time code that lets someone who has forgotten their password
     prove they own the inbox. Sent best-effort; a delivery failure must not tell
@@ -4726,6 +4761,13 @@ async def health_config(user=Depends(require_user)):
         "db_configured": bool(MONGO_URL),
         "backend_version": "pricing_gating_v1",
         "email_configured": bool(RESEND_API_KEY and INVITE_FROM_EMAIL),
+        # The last few outbound emails that did not go. Empty is good; a run of
+        # password_reset rows means people are locked out in silence.
+        "email_failures": [
+            {"at": iso(r.get("at")), "kind": r.get("kind"), "error": r.get("error")}
+            for r in [row async for row in get_db()["email_delivery_errors"]
+                      .find({}, {"_id": 0}).sort("at", -1).limit(5)]
+        ],
         "admin_access_enabled": bool(ADMIN_EMAILS),
         "voice_configured": bool(GOOGLE_API_KEY and genai),
         "google_web_configured": bool(GOOGLE_WEB_CLIENT_ID),
@@ -5435,8 +5477,12 @@ async def request_password_reset(payload: RequestPasswordResetIn):
             }},
             upsert=True,
         )
-        await send_password_reset_email(email, user.get("name") or "there", code)
-    return {"ok": True}
+        result = await send_password_reset_email(email, user.get("name") or "there", code)
+        await record_email_failure("password_reset", result)
+    # Whether this SERVER can send mail at all is not account-specific, so
+    # saying it leaks nothing — and it is the difference between "check your
+    # inbox" and a person waiting for a code that was never going to arrive.
+    return {"ok": True, "email_configured": bool(RESEND_API_KEY and INVITE_FROM_EMAIL)}
 
 
 class ResetPasswordIn(BaseModel):
