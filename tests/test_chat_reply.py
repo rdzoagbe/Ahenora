@@ -163,10 +163,13 @@ class TheScreen(unittest.TestCase):
         with open(path, encoding="utf-8") as fh:
             self.source = fh.read()
 
-    def test_replying_is_a_long_press_not_a_tap(self):
+    def test_a_message_is_acted_on_by_holding_it_not_tapping_it(self):
         # A tap would fire every time a thumb catches a bubble while scrolling.
-        self.assertIn("onLongPress={() => setReplyTo(item)}", self.source)
-        self.assertNotIn("onPress={() => setReplyTo(item)}", self.source)
+        # The hold opens the actions; Reply is a choice inside them, alongside
+        # the emoji row.
+        self.assertIn("onLongPress={() => setActing(item)}", self.source)
+        self.assertNotIn("onPress={() => setActing(item)}", self.source)
+        self.assertIn("chat-action-reply", self.source)
 
     def test_you_can_change_your_mind(self):
         self.assertIn("chat-reply-cancel", self.source)

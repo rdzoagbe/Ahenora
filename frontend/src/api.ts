@@ -849,7 +849,13 @@ export interface ChatMessage {
    *  still renders when the original has scrolled off the page. */
   reply_to_name?: string;
   reply_to_text?: string;
+  /** Tallied per emoji, in palette order so the row does not reshuffle. */
+  reactions?: { emoji: string; count: number; mine: boolean }[];
 }
+
+/** What you may react with. Must match CHAT_REACTIONS in backend/server.py —
+ *  the server refuses anything else, and a test holds the two lists together. */
+export const CHAT_REACTIONS = ['❤️', '👍', '😂', '😮', '😢', '🙏'];
 
 export interface ChatThreadSummary {
   thread: string;
@@ -2209,6 +2215,10 @@ export const api = {
   teenChatGet: (since?: string) =>
     request<{ messages: ChatMessage[] }>(
       `/teen/chat${since ? `?since=${encodeURIComponent(since)}` : ''}`),
+  chatReact: (thread: string, messageId: string, emoji: string) =>
+    request<{ ok: boolean; message: ChatMessage }>(
+      `/family/chat/${encodeURIComponent(thread)}/${encodeURIComponent(messageId)}/react`,
+      { method: 'POST', body: { emoji } }),
   teenChatSend: (text: string, replyTo?: string) =>
     request<{ ok: boolean; message: ChatMessage }>(
       '/teen/chat', { method: 'POST', body: { text, reply_to: replyTo } }),

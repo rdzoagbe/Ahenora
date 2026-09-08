@@ -7343,6 +7343,18 @@ MAX_CHAT_LEN = 2000
 ADULTS_THREAD = "adults"
 
 
+# What you may react with. A fixed palette rather than any character the
+# client cares to send: a free-form field is stored and then rendered to
+# everyone in the household, which is a place to put things that are not
+# emoji at all. Six is also as many as fits under a bubble on a phone.
+CHAT_REACTIONS = ("\u2764\ufe0f", "\U0001f44d", "\U0001f602", "\U0001f62e",
+                  "\U0001f622", "\U0001f64f")
+
+
+class ChatReactionIn(BaseModel):
+    emoji: str
+
+
 # How much of a quoted message is kept alongside the reply. Enough to
 # recognise which message is meant; not a second copy of the conversation.
 REPLY_QUOTE_LEN = 140
@@ -7363,7 +7375,8 @@ def _chat_changed_at(m: dict):
     The poll cursor is compared against this, so all three kinds of change
     travel on one cursor and there is no way for two of them to disagree.
     """
-    stamps = [_coerce_dt(m.get(k)) for k in ("created_at", "updated_at", "read_at")]
+    stamps = [_coerce_dt(m.get(k))
+              for k in ("created_at", "updated_at", "read_at", "reacted_at")]
     stamps = [s for s in stamps if s]
     return max(stamps) if stamps else None
 
@@ -7399,6 +7412,21 @@ def public_chat_message(m: dict, viewer_id: str, others: Optional[set] = None) -
         "mine": sender == viewer_id,
         "read": (sender == viewer_id) or (viewer_id in read_by),
     }
+    reactions = [r for r in (m.get("reactions") or []) if isinstance(r, dict)]
+    if reactions:
+        tally: dict = {}
+        for r in reactions:
+            emoji = r.get("emoji")
+            if not emoji:
+                continue
+            row = tally.setdefault(emoji, {"emoji": emoji, "count": 0, "mine": False})
+            row["count"] += 1
+            if r.get("user_id") == viewer_id:
+                row["mine"] = True
+        # Ordered by the palette, not by who happened to tap first, so the row
+        # under a message does not reshuffle itself as people react.
+        out["reactions"] = [tally[e] for e in CHAT_REACTIONS if e in tally]
+
     if m.get("reply_to"):
         out["reply_to"] = m["reply_to"]
         out["reply_to_name"] = m.get("reply_to_name") or ""
@@ -7822,6 +7850,56 @@ async def family_chat_read(thread: str, user=Depends(require_chat_account)):
     await _require_thread_member(database, user["family_id"], thread, user["user_id"])
     await _mark_read(database, user["family_id"], thread, user["user_id"])
     return {"ok": True}
+
+
+@app.post("/api/family/chat/{thread}/{message_id}/react")
+async def family_chat_react(thread: str, message_id: str, payload: ChatReactionIn,
+                            user=Depends(require_chat_account)):
+    """Add, change or take back one reaction.
+
+    One per person per message: reacting again with the same emoji takes it
+    back, reacting with a different one replaces it. A row of six taps from
+    the same person under one message is clutter, and a household chat is
+    small enough that "who felt what" is more useful than "how many taps".
+    """
+    database = get_db()
+    thread = await _canonical_thread(database, user["family_id"], thread)
+    participants = await _require_thread_member(
+        database, user["family_id"], thread, user["user_id"])
+    emoji = (payload.emoji or "").strip()
+    if emoji not in CHAT_REACTIONS:
+        raise HTTPException(status_code=400, detail="That reaction isn\'t available.")
+
+    # Thread in the query, not just the id — the same door a reply has to go
+    # through, for the same reason: otherwise a message id is enough to touch
+    # a conversation you are not in.
+    msg = await database["messages"].find_one(
+        {"message_id": message_id, "family_id": user["family_id"], "thread": thread},
+        {"_id": 0})
+    if not msg:
+        raise HTTPException(status_code=404, detail="That message is no longer here.")
+
+    had = next((r for r in (msg.get("reactions") or [])
+                if isinstance(r, dict) and r.get("user_id") == user["user_id"]), None)
+    # Whatever they had before comes off first, so "one per person" holds even
+    # if an older row somehow carried two.
+    await database["messages"].update_one(
+        {"message_id": message_id, "family_id": user["family_id"]},
+        {"$pull": {"reactions": {"user_id": user["user_id"]}}})
+    if not (had and had.get("emoji") == emoji):
+        await database["messages"].update_one(
+            {"message_id": message_id, "family_id": user["family_id"]},
+            {"$push": {"reactions": {"user_id": user["user_id"], "emoji": emoji}}})
+    # Stamped so the change travels on the same cursor everything else does —
+    # a reaction nobody sees until they reopen the screen is not a reaction.
+    await database["messages"].update_one(
+        {"message_id": message_id, "family_id": user["family_id"]},
+        {"$set": {"reacted_at": utcnow()}})
+
+    fresh = await database["messages"].find_one(
+        {"message_id": message_id, "family_id": user["family_id"]}, {"_id": 0})
+    audience = await _chat_audience(database, user["family_id"], thread, participants)
+    return {"ok": True, "message": public_chat_message(fresh, user["user_id"], audience)}
 
 
 @app.get("/api/teen/chat")

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, AppState, FlatList, Keyboard, Platform,
-  StyleSheet, Text, TextInput, View,
+  ActivityIndicator, Alert, AppState, FlatList, Keyboard, Modal, Platform,
+  Pressable, StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Send, X } from 'lucide-react-native';
@@ -9,7 +9,7 @@ import { Send, X } from 'lucide-react-native';
 import { PressScale } from './PressScale';
 import { useUI, UIColors } from './Kit';
 import { useStore } from '../store';
-import { ChatMessage } from '../api';
+import { ChatMessage, CHAT_REACTIONS } from '../api';
 import { logger } from '../logger';
 
 interface Props {
@@ -19,6 +19,9 @@ interface Props {
   /** `replyTo` is the id of the message being answered, when there is one. */
   send: (text: string, replyTo?: string) => Promise<{ message: ChatMessage }>;
   markRead?: () => Promise<unknown>;
+  /** Absent where reactions do not apply (the teen thread has no endpoint of
+   *  its own yet); the emoji row is then simply not offered. */
+  react?: (messageId: string, emoji: string) => Promise<{ message: ChatMessage }>;
   emptyHint: string;
 }
 
@@ -28,7 +31,7 @@ interface Props {
  * the load/send functions, so the same UI serves both sides with the server
  * enforcing who can see what.
  */
-export function ChatThread({ load, send, markRead, emptyHint }: Props) {
+export function ChatThread({ load, send, markRead, react, emptyHint }: Props) {
   const ui = useUI();
   const { t } = useStore();
   const styles = createStyles(ui);
@@ -39,6 +42,8 @@ export function ChatThread({ load, send, markRead, emptyHint }: Props) {
   // The message being answered, if any. Held as the whole message rather than
   // its id so the quote above the composer needs no lookup.
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
+  // The message a long press opened the actions for, if any.
+  const [acting, setActing] = useState<ChatMessage | null>(null);
   const listRef = useRef<FlatList<ChatMessage>>(null);
   // The newest moment already on screen. Everything after it is what a poll
   // asks for, so a quiet thread costs an empty answer rather than its whole
@@ -219,6 +224,19 @@ export function ChatThread({ load, send, markRead, emptyHint }: Props) {
     return t('chat_seen_partial', { count: m.seen_by, total: m.audience });
   };
 
+  const onReact = async (emoji: string) => {
+    const target = acting;
+    setActing(null);
+    if (!target || !react) return;
+    try {
+      // Through the same merge as everything else, so the row appears at once
+      // and the next poll cannot duplicate it.
+      absorb([(await react(target.message_id, emoji)).message]);
+    } catch (e) {
+      logger.warn('chat react failed', e);
+    }
+  };
+
   if (loading) {
     return <View style={styles.center}><ActivityIndicator color={ui.orange} /></View>;
   }
@@ -248,7 +266,7 @@ export function ChatThread({ load, send, markRead, emptyHint }: Props) {
                 // Long-press, not tap: the convention every messenger already
                 // taught people, and a tap-to-reply would fire by accident
                 // every time a thumb catches a bubble while scrolling.
-                onLongPress={() => setReplyTo(item)}
+                onLongPress={() => setActing(item)}
                 accessibilityLabel={item.text}
                 accessibilityHint={t('chat_reply_hint')}
                 style={[styles.bubble, item.mine ? styles.bubbleMine : styles.bubbleTheirs]}
@@ -273,12 +291,63 @@ export function ChatThread({ load, send, markRead, emptyHint }: Props) {
                 <Text style={[styles.msgText, item.mine && styles.msgTextMine]}>{item.text}</Text>
               </PressScale>
             </View>
+            {item.reactions?.length ? (
+              <View style={[styles.reactionRow, item.mine ? styles.rowMine : styles.rowTheirs]}>
+                {item.reactions.map((r) => (
+                  <View
+                    key={r.emoji}
+                    testID={`chat-reaction-${r.emoji}`}
+                    style={[styles.reaction, r.mine && styles.reactionMine]}
+                  >
+                    <Text style={styles.reactionEmoji}>{r.emoji}</Text>
+                    {r.count > 1 ? <Text style={styles.reactionCount}>{r.count}</Text> : null}
+                  </View>
+                ))}
+              </View>
+            ) : null}
             {item.mine && item.message_id === lastMineId && receipt(item) ? (
               <Text testID="chat-receipt" style={styles.receipt}>{receipt(item)}</Text>
             ) : null}
           </View>
         )}
       />
+      <Modal
+        visible={!!acting}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setActing(null)}
+      >
+        <Pressable
+          testID="chat-actions-dismiss"
+          style={styles.sheetBackdrop}
+          onPress={() => setActing(null)}
+        >
+          <View testID="chat-actions" style={styles.sheet}>
+            {react ? (
+              <View style={styles.sheetEmoji}>
+                {CHAT_REACTIONS.map((emoji) => (
+                  <PressScale
+                    key={emoji}
+                    testID={`chat-react-${emoji}`}
+                    onPress={() => onReact(emoji)}
+                    accessibilityLabel={emoji}
+                    style={styles.sheetEmojiBtn}
+                  >
+                    <Text style={styles.sheetEmojiText}>{emoji}</Text>
+                  </PressScale>
+                ))}
+              </View>
+            ) : null}
+            <PressScale
+              testID="chat-action-reply"
+              onPress={() => { setReplyTo(acting); setActing(null); }}
+              style={styles.sheetAction}
+            >
+              <Text style={styles.sheetActionText}>{t('chat_reply')}</Text>
+            </PressScale>
+          </View>
+        </Pressable>
+      </Modal>
       {replyTo ? (
         <View testID="chat-replying-to" style={styles.replyBar}>
           <View style={styles.replyBarText}>
@@ -340,6 +409,30 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     alignSelf: 'flex-end', marginTop: 2, marginRight: 4,
     fontFamily: 'Inter_500Medium', fontSize: 11, color: ui.muted,
   },
+  reactionRow: { flexDirection: 'row', gap: 4, marginTop: -2, paddingHorizontal: 4 },
+  reaction: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line,
+    borderRadius: 11, paddingHorizontal: 6, paddingVertical: 2,
+  },
+  reactionMine: { borderColor: ui.orange },
+  reactionEmoji: { fontSize: 12 },
+  reactionCount: { fontFamily: 'Inter_500Medium', fontSize: 11, color: ui.muted },
+  sheetBackdrop: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.35)',
+    alignItems: 'center', justifyContent: 'center', padding: 24,
+  },
+  sheet: {
+    backgroundColor: ui.bg, borderRadius: 20, borderWidth: 1, borderColor: ui.line,
+    paddingVertical: 10, paddingHorizontal: 8, gap: 6, maxWidth: '100%',
+  },
+  // Wraps rather than overflowing: six emoji plus padding is wider than a
+  // 320px phone once the sheet's own margins are paid.
+  sheetEmoji: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center' },
+  sheetEmojiBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  sheetEmojiText: { fontSize: 24 },
+  sheetAction: { paddingVertical: 12, paddingHorizontal: 16, alignItems: 'center' },
+  sheetActionText: { fontFamily: 'Inter_600SemiBold', fontSize: 15, color: ui.text },
   quote: {
     borderLeftWidth: 3, borderLeftColor: ui.orange, paddingLeft: 8,
     marginBottom: 6, opacity: 0.9,

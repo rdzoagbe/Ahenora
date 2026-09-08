@@ -35,6 +35,8 @@ export default function Conversation() {
   const load = useCallback((since?: string) => api.chatGet(thread, since), [thread]);
   const send = useCallback(
     (text: string, replyTo?: string) => api.chatSend(thread, text, replyTo), [thread]);
+  const react = useCallback(
+    (messageId: string, emoji: string) => api.chatReact(thread, messageId, emoji), [thread]);
   const markRead = useCallback(async () => {
     await api.chatRead(thread);
     refreshUnreadChats(); // reading is what clears the Family tab's badge
@@ -63,6 +65,7 @@ export default function Conversation() {
         load={load}
         send={send}
         markRead={markRead}
+        react={react}
         emptyHint={isAdults ? t('chat_empty_adults') : t('chat_empty_teen')}
       />
     </SafeAreaView>
