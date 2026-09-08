@@ -167,9 +167,12 @@ class TheScreen(unittest.TestCase):
         # A tap would fire every time a thumb catches a bubble while scrolling.
         # The hold opens the actions; Reply is a choice inside them, alongside
         # the emoji row.
-        self.assertIn("onLongPress={() => setActing(item)}", self.source)
-        self.assertNotIn("onPress={() => setActing(item)}", self.source)
+        self.assertIn("onLongPress={() => onHold(item)}", self.source)
+        self.assertNotIn("onPress={() => onHold(item)}", self.source)
         self.assertIn("chat-action-reply", self.source)
+        # And since 2026-09-08 a drag to the right does it too, which is the
+        # gesture people already have in their thumbs.
+        self.assertIn("onSwipeReply", self.source)
 
     def test_you_can_change_your_mind(self):
         self.assertIn("chat-reply-cancel", self.source)

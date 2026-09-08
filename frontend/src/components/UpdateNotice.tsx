@@ -172,7 +172,16 @@ export function UpdateNotice() {
   if (!shown || dismissed || !muteLoaded) return null;
 
   const copy = {
-    store: { title: t('update_store_title'), body: t('update_store_body'), cta: t('update_store_cta'), Icon: Store },
+    // The right store by NAME as well as by link. The URL was made
+    // platform-aware when an iPhone was being sent to Google Play; the
+    // sentence next to it still said "Play Store" in all four languages,
+    // which is the same bug wearing the other half of the costume.
+    store: {
+      title: t('update_store_title'),
+      body: t(Platform.OS === 'ios' ? 'update_store_body_ios' : 'update_store_body'),
+      cta: t('update_store_cta'),
+      Icon: Store,
+    },
     relaunch: { title: t('update_relaunch_title'), body: t('update_relaunch_body'), cta: t('update_relaunch_cta'), Icon: RefreshCw },
     whatsNew: { title: t('update_whats_new_title', { version }), body: '', cta: t('update_whats_new_cta'), Icon: Sparkles },
   }[shown];

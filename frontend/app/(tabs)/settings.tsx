@@ -167,6 +167,42 @@ export default function Settings() {
   }, []);
 
   /**
+   * Why the update banner is (or is not) showing.
+   *
+   * Roland reported the app asking him to update on every launch when there
+   * was nothing to update to, and the three banners are three different
+   * branches — a stranded runtime, a staged bundle, or release notes. From
+   * outside the phone they look identical, and I cannot see production, so
+   * guessing which one fires meant guessing which bug to fix.
+   *
+   * This states the four facts that decide it, in one line you can read out or
+   * screenshot: what runtime this build is, what the server currently demands,
+   * whether a bundle is staged, and whether this is the shipped bundle or an
+   * over-the-air one.
+   */
+  const [minRuntime, setMinRuntime] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    api.appVersionInfo()
+      .then((info) => { if (!cancelled) setMinRuntime(info.min_runtime || null); })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, []);
+
+  const updateDiagnostics = useMemo(() => {
+    const runtime = Updates.runtimeVersion || '—';
+    const channel = (Updates as { channel?: string }).channel || '—';
+    return [
+      `runtime ${runtime}`,
+      `server needs ${minRuntime || '—'}`,
+      `channel ${channel}`,
+      `staged ${isUpdatePending ? 'yes' : 'no'}`,
+      Updates.isEmbeddedLaunch ? 'shipped bundle' : 'over-the-air bundle',
+      Updates.isEnabled ? 'updates on' : 'updates off',
+    ].join(' · ');
+  }, [minRuntime, isUpdatePending]);
+
+  /**
    * Fetch the newest published build and restart into it.
    *
    * Updates otherwise arrive silently and apply on the NEXT launch, which from
@@ -1196,6 +1232,15 @@ export default function Settings() {
               </PressScale>
             </View>
             {updateNote ? <Text style={styles.updateNote}>{updateNote}</Text> : null}
+            {/* Selectable so it can be copied into a message rather than
+                retyped from a photograph. */}
+            <Text
+              testID="update-diagnostics"
+              selectable
+              style={styles.updateDiagnostics}
+            >
+              {updateDiagnostics}
+            </Text>
           </Card>
 
           </>) : null}
@@ -1458,6 +1503,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   updateBtn: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 999, borderWidth: 1, borderColor: ui.orange, minWidth: 104, alignItems: 'center' },
   updateBtnText: { color: ui.orangeText, fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
   updateNote: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, lineHeight: 18, marginTop: 10 },
+  updateDiagnostics: { color: ui.muted, fontFamily: 'Inter_400Regular', fontSize: 11, lineHeight: 16, marginTop: 8, opacity: 0.85 },
   signOutAllBtn: {
     marginTop: 22, flexDirection: 'row', alignItems: 'center', gap: 11,
     paddingVertical: 13, paddingHorizontal: 15, borderRadius: 16,

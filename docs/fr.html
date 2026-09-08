@@ -335,20 +335,39 @@
     var primary = document.getElementById('cta-primary');
     var secondary = document.getElementById('cta-secondary');
     if (!primary || !secondary) return;
-    // iPhone/iPad/desktop: lead with the web app, since there is no iOS app yet.
-    primary.setAttribute('href', '/app/');
-    primary.textContent = 'Ouvrir Ahenora dans votre navigateur';
-    secondary.setAttribute('href', 'https://play.google.com/store/apps/details?id=com.householdcoo.app');
-    secondary.textContent = 'Sur Android\u00a0? Installer depuis Google Play';
+    // iPhone/iPad : mettre l'App Store en avant. Cette branche envoyait les
+    // appareils Apple vers le navigateur, au motif que la version iPhone
+    // n'existait pas — vrai à l'écriture, faux depuis la sortie iOS.
+    var isApple = /iPhone|iPad|iPod/i.test(ua)
+      || (/Macintosh/i.test(ua) && typeof navigator.maxTouchPoints === 'number'
+          && navigator.maxTouchPoints > 1);
+    if (isApple) {
+      primary.setAttribute('href', 'https://apps.apple.com/app/id6806811163');
+      primary.textContent = 'Télécharger sur l\u2019App Store';
+      secondary.setAttribute('href', 'https://play.google.com/store/apps/details?id=com.householdcoo.app');
+      secondary.textContent = 'Sur Android\u00a0? Installer depuis Google Play';
+    } else {
+      primary.setAttribute('href', '/app/');
+      primary.textContent = 'Ouvrir Ahenora dans votre navigateur';
+      secondary.setAttribute('href', 'https://apps.apple.com/app/id6806811163');
+      secondary.textContent = 'Télécharger sur l\u2019App Store';
+    }
 
     // The closing call to action was hardcoded to Google Play, so an iPhone
     // visitor who read the whole page arrived at a store they cannot install
     // from. Same for the header button.
-    ['cta-final', 'cta-header'].forEach(function (id) {
-      var el = document.getElementById(id);
+    ['cta-final', 'cta-header'].forEach(function (el_id) {
+      var el = document.getElementById(el_id);
       if (!el) return;
-      el.setAttribute('href', '/app/');
-      el.textContent = el.id === 'cta-header' ? 'Ouvrir l\u2019app' : 'Ouvrir Ahenora dans votre navigateur';
+      if (isApple) {
+        el.setAttribute('href', 'https://apps.apple.com/app/id6806811163');
+        el.textContent = el.id === 'cta-header'
+          ? 'Télécharger l\u2019app' : 'Télécharger sur l\u2019App Store';
+      } else {
+        el.setAttribute('href', '/app/');
+        el.textContent = el.id === 'cta-header'
+          ? 'Ouvrir l\u2019app' : 'Ouvrir Ahenora dans votre navigateur';
+      }
     });
   });
 
@@ -404,7 +423,7 @@
   <div class="wrap hero">
     <div class="hero-grid">
       <div>
-        <span class="eyebrow"><span class="dot"></span> Sur Google Play &middot; gratuit au départ</span>
+        <span class="eyebrow"><span class="dot"></span> Sur l&rsquo;App Store et Google Play &middot; gratuit au départ</span>
         <h1>La maison tourne grâce à la mémoire de quelqu'un. Et si elle tournait plus sereinement&nbsp;?</h1>
         <p class="lede">
           Ahenora réunit les tâches, l'agenda familial, les corvées des enfants, les repas
@@ -414,7 +433,8 @@
         </p>
         <div class="cta-row">
           <a class="btn" id="cta-primary" href="https://play.google.com/store/apps/details?id=com.householdcoo.app">Télécharger sur Google Play</a>
-          <a class="btn ghost" id="cta-secondary" href="/app/">Utiliser sur le web</a>
+          <a class="btn" id="cta-secondary" href="https://apps.apple.com/app/id6806811163">Télécharger sur l’App Store</a>
+          <a class="btn ghost" id="cta-web" href="/app/">Utiliser sur le web</a>
           <a class="btn ghost" href="https://youtu.be/DPPmZJIrYPQ">Voir la démo de 30 secondes</a>
         </div>
         <p class="cta-note"><strong>Gratuit au départ</strong> &middot; Sans publicité &middot; Les données de votre famille ne sont jamais vendues</p>
@@ -580,15 +600,13 @@
         Ajoutez une seule chose que vous auriez dû retenir. C'est tout le premier pas.
       </p>
       <a class="btn" id="cta-final" href="https://play.google.com/store/apps/details?id=com.householdcoo.app">Télécharger sur Google Play</a>
-      <!-- Said plainly rather than left to be discovered. There is no iPhone
-           app, and an iPhone owner should learn that here and not after
-           searching the App Store for a name that is not in it. What they get
-           instead is the same app in the browser — the identical codebase,
-           with notifications and card payment — so this is a route, not an
-           apology. -->
+      <!-- Ahenora est maintenant sur les deux stores. Ce paragraphe disait
+           qu'il n'y avait pas d'app iPhone — vrai le jour où il a été écrit,
+           faux depuis la sortie iOS. -->
       <p class="cta-note" style="margin-top: 16px;">
-        Pas encore d'app iPhone &mdash; sur iOS, Ahenora fonctionne dans votre navigateur sur
-        <a href="/app/">ahenora.com/app</a>, avec les notifications et le paiement par carte.
+        Sur <a href="https://apps.apple.com/app/id6806811163">iPhone</a> et <a href="https://play.google.com/store/apps/details?id=com.householdcoo.app">Android</a> &mdash; ou dans votre
+        navigateur sur <a href="/app/">ahenora.com/app</a>, avec les notifications et le
+        paiement par carte.
       </p>
     </div>
   </section>
@@ -600,11 +618,11 @@
     <div class="social">
       <a href="https://www.instagram.com/ahenoraapp/" target="_blank" rel="noopener" aria-label="Suivre Ahenora sur Instagram">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5.5"></rect><circle cx="12" cy="12" r="4.2"></circle><circle cx="17.6" cy="6.4" r="1.1" fill="currentColor" stroke="none"></circle></svg>
-        Follow on Instagram
+        Suivre sur Instagram
       </a>
-      <a href="https://www.tiktok.com/@thehouseholdcoo" target="_blank" rel="noopener" aria-label="Suivre Ahenora sur TikTok">
+      <a href="https://www.tiktok.com/@ahenoraapp" target="_blank" rel="noopener" aria-label="Suivre Ahenora sur TikTok">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M16.5 3h-2.9v12.1a2.3 2.3 0 1 1-2.3-2.3c.24 0 .47.04.69.1v-3a5.3 5.3 0 1 0 4.6 5.25V9.02a6.5 6.5 0 0 0 3.9 1.3V7.4a3.6 3.6 0 0 1-2.36-.9A3.6 3.6 0 0 1 16.5 3Z"></path></svg>
-        Follow on TikTok
+        Suivre sur TikTok
       </a>
     </div>
     <div class="foot-links">
@@ -612,6 +630,7 @@
       <a href="terms.html">Conditions &amp; assistance</a>
       <a href="delete-account.html">Supprimer votre compte</a>
       <a href="https://play.google.com/store/apps/details?id=com.householdcoo.app">Google Play</a>
+      <a href="https://apps.apple.com/app/id6806811163">App Store</a>
       <a href="https://youtu.be/DPPmZJIrYPQ">Vidéo de présentation</a>
       <a href="mailto:support@ahenora.com">Assistance</a>
     </div>
