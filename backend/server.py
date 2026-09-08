@@ -2988,6 +2988,12 @@ async def flush_shopping_notifications(database, now: Optional[datetime] = None)
                 uid = account.get("user_id")
                 if not uid or uid == actor_id:
                     continue
+                # Parents only. A teen with their own phone can put something
+                # on the list, and the person who has to buy it is the one who
+                # needs to know — their sibling does not, and telling them is
+                # how a useful notification becomes noise to be muted.
+                if not _is_parent_role(account.get("role")):
+                    continue
                 target = await database["users"].find_one(
                     {"user_id": uid}, {"_id": 0, "language": 1})
                 L = PUSH_I18N.get((target or {}).get("language") or "en", PUSH_I18N["en"])
