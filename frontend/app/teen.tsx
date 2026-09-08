@@ -122,6 +122,8 @@ export default function TeenScreen() {
           load={api.teenChatGet}
           send={api.teenChatSend}
           markRead={api.teenChatRead}
+          react={api.teenChatReact}
+          edit={api.teenChatEdit}
           emptyHint={t('teen_chat_empty')}
         />
       </SafeAreaView>

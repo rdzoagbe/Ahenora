@@ -851,6 +851,22 @@ export interface ChatMessage {
   reply_to_text?: string;
   /** Tallied per emoji, in palette order so the row does not reshuffle. */
   reactions?: { emoji: string; count: number; mine: boolean }[];
+  /** Corrected after sending. Permanent — nothing ever clears it. */
+  edited?: boolean;
+}
+
+/** How long you may correct what you sent. Must match CHAT_EDIT_WINDOW_MINUTES
+ *  in backend/server.py — the server enforces it and a test holds the two
+ *  together, so the app cannot offer an Edit button the server will refuse. */
+export const CHAT_EDIT_WINDOW_MINUTES = 15;
+
+/** Whether this message can still be corrected. The server decides for real;
+ *  this is only so the app does not offer a button that would be refused. */
+export function chatCanEdit(m: ChatMessage, now: number = Date.now()): boolean {
+  if (!m.mine || !m.created_at) return false;
+  const sent = Date.parse(m.created_at);
+  if (Number.isNaN(sent)) return false;
+  return now - sent <= CHAT_EDIT_WINDOW_MINUTES * 60 * 1000;
 }
 
 /** What you may react with. Must match CHAT_REACTIONS in backend/server.py —
@@ -2219,6 +2235,16 @@ export const api = {
     request<{ ok: boolean; message: ChatMessage }>(
       `/family/chat/${encodeURIComponent(thread)}/${encodeURIComponent(messageId)}/react`,
       { method: 'POST', body: { emoji } }),
+  chatEdit: (thread: string, messageId: string, text: string) =>
+    request<{ ok: boolean; message: ChatMessage }>(
+      `/family/chat/${encodeURIComponent(thread)}/${encodeURIComponent(messageId)}`,
+      { method: 'PATCH', body: { text } }),
+  teenChatReact: (messageId: string, emoji: string) =>
+    request<{ ok: boolean; message: ChatMessage }>(
+      `/teen/chat/${encodeURIComponent(messageId)}/react`, { method: 'POST', body: { emoji } }),
+  teenChatEdit: (messageId: string, text: string) =>
+    request<{ ok: boolean; message: ChatMessage }>(
+      `/teen/chat/${encodeURIComponent(messageId)}`, { method: 'PATCH', body: { text } }),
   teenChatSend: (text: string, replyTo?: string) =>
     request<{ ok: boolean; message: ChatMessage }>(
       '/teen/chat', { method: 'POST', body: { text, reply_to: replyTo } }),
