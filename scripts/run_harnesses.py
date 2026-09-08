@@ -65,6 +65,12 @@ HARNESSES = [
     # Narrow phones: every other harness runs at 390 or wider, so the end of the
     # range where layouts actually break went unchecked.
     "e2e_smallscreen.py",
+    # Anything painting past the edge of the screen. A screenshot only shows
+    # the bug if somebody looks at the right screen; this measures the laid-out
+    # page and names the element. Written after the teen screen shipped an
+    # "Add" button ending at 401px on a 390px phone, and immediately found a
+    # second one — the Kitchen item count, 9px off the edge at 320.
+    "e2e_overflow.py",
     "e2e_offline.py",
     "e2e_calendar.py",
     "e2e_invite.py",

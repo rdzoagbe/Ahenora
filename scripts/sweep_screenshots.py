@@ -1,8 +1,22 @@
-"""Screenshot every screen of the web build, seeded, in three looks.
+"""Photograph every screen of the web build, seeded, for a person to look at.
 
-Not a pass/fail harness: a set of images for a person to look at. The app
-renders the same components on Android, iOS and the web, so a wrong name,
-a clipped line or an untranslated string seen here is seen everywhere.
+Not a pass/fail harness: a set of images to review. The app renders the same
+components on Android, iOS and the web, so a wrong name, a clipped line or an
+untranslated string seen here is seen everywhere.
+
+Three things the first version could not see, each of which hid real bugs:
+
+  BELOW THE FOLD. The web layout pins the app to the viewport
+  (`body > div:first-child { position: fixed }`), so Playwright's full_page
+  screenshot captures the visible window and nothing more — every shot
+  stopped at the tab bar. A tall viewport makes the app itself render taller,
+  which is the only way to see the bottom of a screen without stitching.
+
+  WHAT IS BEHIND A TAP. Sheets and modals are where most of the app's typing
+  happens, and none of them were ever photographed.
+
+  THE OTHER TWO APPS. Kid mode and the teen screen are separate surfaces with
+  their own layouts, and neither had ever been looked at.
 
 Usage:  python3 scripts/sweep_screenshots.py <web-port> <api-port> <out-dir>
 Requires serve_web.py on <web-port> and e2e_backend.py on <api-port>.
@@ -23,12 +37,37 @@ WEB = f"http://127.0.0.1:{sys.argv[1]}/app"
 API = f"http://127.0.0.1:{sys.argv[2]}/api"
 OUT = sys.argv[3]
 
+# A phone's width, and enough height that a long screen fits in one frame.
+PHONE_W = 390
+TALL_H = 2400
+
 ROUTES = [
     "feed", "calendar", "kids", "kitchen", "vault", "settings", "account",
     "chat", "search", "expenses", "gift-pot", "santa", "pricing", "metrics",
-    "terms", "privacy", "delete-account", "teen", "onboarding",
+    "terms", "privacy", "delete-account", "onboarding",
 ]
 LOGGED_OUT = ["", "auth"]
+
+# Everything a tap opens. (route, testID to press, name for the file).
+# Skipped rather than failed when a control is not on screen: this is a
+# camera, not a gate, and one missing button must not cost the other forty
+# pictures.
+MODALS = [
+    ("feed", "feed-open-add", "add-card"),
+    ("feed", "feed-household-open", "household"),
+    ("kids", "kids-add-child", "add-child"),
+    ("kids", "kids-add-chore", "add-chore"),
+    ("kids", "kids-add-reward", "add-reward"),
+    ("kids", "kids-add-routine", "add-routine"),
+    ("kids", "kids-assign-task", "assign-task"),
+    ("calendar", "calendar-add-event", "add-event"),
+    ("calendar", "calendar-sync-card-button", "calendar-sync"),
+    ("expenses", "exp-add-open", "add-expense"),
+    ("settings", "invite-coparent", "invite-coparent"),
+    ("settings", "invite-helper", "invite-helper"),
+    ("settings", "open-sunday-brief", "sunday-brief"),
+    ("santa", "santa-add-name", "santa-name"),
+]
 
 
 def api(method, path, body=None, token=None):
@@ -40,12 +79,25 @@ def api(method, path, body=None, token=None):
         return json.loads(res.read().decode() or "{}")
 
 
+def try_(method, path, body=None, token=None, label=""):
+    """Seeding is best effort: one screen's content must not stop the sweep
+    from photographing the others."""
+    try:
+        return api(method, path, body, token)
+    except Exception as exc:  # noqa: BLE001
+        print(f"seed skipped {label or path}: {exc}")
+        return None
+
+
 def seed():
+    """A household with two parents, three children, a teen, and enough
+    content that no screen is photographed empty."""
     run = uuid.uuid4().hex[:6]
     a = api("POST", "/auth/register", {"name": "Roland Sweep", "email": "e2e-admin@sim.test",
                                        "password": "password123"})
     tok = a["session_token"]
     api("POST", "/auth/complete-onboarding", {}, tok)
+
     inv = api("POST", "/family/invite", {"email": f"keigh-{run}@sim.test",
                                          "relationship": "Co-parent"}, tok)
     b = api("POST", "/auth/register", {"name": "Keigh Sweep", "email": f"keigh-{run}@sim.test",
@@ -54,31 +106,51 @@ def seed():
     tok_b = b["session_token"]
     api("POST", "/auth/complete-onboarding", {}, tok_b)
     api("PATCH", "/auth/language", {"language": "fr"}, tok_b)
-    def try_(method, path, body, token):
-        # Seeding is best effort: one screen's content must not stop the
-        # sweep from photographing the others.
-        try:
-            api(method, path, body, token)
-        except Exception as exc:  # noqa: BLE001
-            print(f"seed skipped {path}: {exc}")
 
     for kid in ("Arielle", "Jonael", "Isaiah"):
-        try_("POST", "/family/members", {"name": kid, "role": "Child", "age": 8}, tok)
-    try_("POST", "/shopping/bulk", {"names": ["Rice", "Beans", "Milk", "Bread"]}, tok)
-    try_("POST", "/cards", {"type": "TASK", "title": "Book the dentist", "shared": True}, tok)
+        try_("POST", "/family/members", {"name": kid, "role": "Child", "age": 8}, tok, "child")
+    try_("POST", "/shopping/bulk", {"names": ["Rice", "Beans", "Milk", "Bread"]}, tok, "shopping")
+    try_("POST", "/cards", {"type": "TASK", "title": "Book the dentist", "shared": True}, tok, "card")
     try_("POST", "/cards", {"type": "EVENT", "title": "Swimming lesson", "shared": True,
-                            "due_date": "2026-09-09T16:00:00Z"}, tok)
+                            "due_date": "2026-09-09T16:00:00Z"}, tok, "event")
     try_("POST", "/cards", {"type": "TASK", "title": "Private: passport renewal",
-                            "shared": False}, tok)
-    try_("POST", "/handoff-notes", {"text": "Isaiah has a cold, keep him warm."}, tok)
-    try_("POST", "/chat/adults/messages", {"text": "Can you pick up the kids Friday?"}, tok_b)
-    return tok, tok_b
+                            "shared": False}, tok, "private card")
+    try_("POST", "/handoff-notes", {"text": "Isaiah has a cold, keep him warm."}, tok, "handoff")
+    try_("POST", "/family/chat/adults", {"text": "Can you pick up the kids Friday?"}, tok_b, "chat")
+
+    # --- the teen's own app ------------------------------------------------
+    teen_tok = None
+    t_inv = try_("POST", "/family/invite",
+                 {"email": f"teen-{run}@sim.test", "is_teen": True, "age": 15}, tok, "teen invite")
+    if t_inv and t_inv.get("invite", {}).get("token"):
+        teen = try_("POST", "/auth/register",
+                    {"name": "Ama Sweep", "email": f"teen-{run}@sim.test",
+                     "password": "password123",
+                     "invite_token": t_inv["invite"]["token"]}, label="teen register")
+        if teen:
+            teen_tok = teen["session_token"]
+
+    # --- kid mode ----------------------------------------------------------
+    # Needs a PIN on a grown-up and on the child, then a swap into their view.
+    kid_tok = None
+    members = try_("GET", "/family/members", token=tok, label="members") or []
+    parent = next((m for m in members if m.get("is_me")), None)
+    child = next((m for m in members if (m.get("role") or "").lower() == "child"), None)
+    if parent and child:
+        try_("PUT", f"/family/members/{parent['member_id']}/pin", {"pin": "1234"}, tok, "parent pin")
+        try_("PUT", f"/family/members/{child['member_id']}/pin", {"pin": "4321"}, tok, "child pin")
+        kid = try_("POST", "/kid/session",
+                   {"member_id": child["member_id"], "pin": "4321"}, tok, "kid session")
+        if kid:
+            kid_tok = kid["session_token"]
+
+    return tok, tok_b, teen_tok, kid_tok
 
 
-async def shoot(browser, token, look, routes, extra_init=""):
-    scheme = "dark" if look.endswith("dark") else "light"
-    ctx = await browser.new_context(viewport={"width": 390, "height": 844},
-                                    color_scheme=scheme, device_scale_factor=2)
+async def _context(browser, token, scheme, extra_init=""):
+    ctx = await browser.new_context(
+        viewport={"width": PHONE_W, "height": TALL_H},
+        color_scheme=scheme, device_scale_factor=2)
     page = await ctx.new_page()
 
     async def route(ro):
@@ -92,38 +164,81 @@ async def shoot(browser, token, look, routes, extra_init=""):
                          body=await resp.body())
 
     await page.route("**/api/**", route)
-    init = extra_init
-    if token:
-        init += f"localStorage.setItem('coo_session_token','{token}');"
+    init = extra_init + (f"localStorage.setItem('coo_session_token','{token}');" if token else "")
     if init:
         await page.add_init_script(init)
-    errors = {}
+    return ctx, page
+
+
+async def shoot(browser, token, look, routes, scheme="light", extra_init="", modals=()):
+    ctx, page = await _context(browser, token, scheme, extra_init)
+    errors, skipped = {}, []
     for r in routes:
         errs = []
         page.on("pageerror", lambda e, s=errs: s.append(str(e)[:200]))
         await page.goto(f"{WEB}/{r}", wait_until="domcontentloaded")
-        await page.wait_for_timeout(3000)
+        await page.wait_for_timeout(2500)
         name = (r or "index").replace("/", "_")
-        await page.screenshot(path=os.path.join(OUT, f"{look}__{name}.png"), full_page=True)
+        await page.screenshot(path=os.path.join(OUT, f"{look}__{name}.png"))
         if errs:
             errors[f"{look}/{name}"] = errs
+
+    for route_name, test_id, label in modals:
+        try:
+            await page.goto(f"{WEB}/{route_name}", wait_until="domcontentloaded")
+            await page.wait_for_timeout(2000)
+            target = page.get_by_test_id(test_id)
+            if await target.count() == 0:
+                skipped.append(f"{label} (no {test_id} on {route_name})")
+                continue
+            await target.first.click(timeout=4000)
+            await page.wait_for_timeout(1500)
+            await page.screenshot(path=os.path.join(OUT, f"{look}__modal-{label}.png"))
+        except Exception as exc:  # noqa: BLE001
+            skipped.append(f"{label}: {type(exc).__name__}")
     await ctx.close()
-    return errors
+    return errors, skipped
 
 
 async def main():
     os.makedirs(OUT, exist_ok=True)
-    tok, tok_b = seed()
-    errors = {}
+    tok, tok_b, teen_tok, kid_tok = seed()
+    errors, skipped = {}, []
+
     async with async_playwright() as pw:
         browser = await launch_chromium(pw)
-        errors.update(await shoot(browser, None, "out-light", LOGGED_OUT))
-        errors.update(await shoot(browser, tok, "en-light", ROUTES))
-        errors.update(await shoot(browser, tok, "en-dark", ROUTES,
-                                  "localStorage.setItem('coo_appearance_mode_minimal_light_v5','dark');"))
-        errors.update(await shoot(browser, tok_b, "fr-light", ROUTES))
+
+        passes = [
+            ("out-light", None, LOGGED_OUT, "light", "", ()),
+            ("en-light", tok, ROUTES, "light", "", MODALS),
+            ("en-dark", tok, ROUTES, "dark",
+             "localStorage.setItem('coo_appearance_mode_minimal_light_v5','dark');", MODALS),
+            ("fr-light", tok_b, ROUTES, "light", "", MODALS),
+        ]
+        if teen_tok:
+            passes.append(("teen", teen_tok, ["teen"], "light", "", ()))
+            passes.append(("teen-dark", teen_tok, ["teen"], "dark",
+                           "localStorage.setItem('coo_appearance_mode_minimal_light_v5','dark');", ()))
+        else:
+            skipped.append("teen screens (no teen account)")
+        if kid_tok:
+            passes.append(("kid", kid_tok, ["kid"], "light", "", ()))
+            passes.append(("kid-dark", kid_tok, ["kid"], "dark",
+                           "localStorage.setItem('coo_appearance_mode_minimal_light_v5','dark');", ()))
+        else:
+            skipped.append("kid mode (no child session)")
+
+        for look, token, routes, scheme, init, modals in passes:
+            errs, skips = await shoot(browser, token, look, routes, scheme, init, modals)
+            errors.update(errs)
+            skipped.extend(skips)
         await browser.close()
-    print(json.dumps({"shots": len(os.listdir(OUT)), "pageerrors": errors}, indent=1))
+
+    print(json.dumps({
+        "shots": len(os.listdir(OUT)),
+        "pageerrors": errors,
+        "skipped": skipped,
+    }, indent=1))
 
 
 if __name__ == "__main__":
