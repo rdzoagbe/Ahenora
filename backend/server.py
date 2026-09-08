@@ -4190,6 +4190,21 @@ async def health_ai(probe: int = 0, user=Depends(require_user)):
     return status
 
 
+def _scheduler_verdict(now: Optional[datetime] = None) -> str:
+    """alive | stalled | never_ran | disabled — the reminder loop's own word.
+
+    A loop that ticks every 60s and has not ticked in five minutes is not
+    slow, it is gone.
+    """
+    if not REMINDER_SCHEDULER_ENABLED:
+        return "disabled"
+    last_tick = _scheduler_state.get("last_tick_at")
+    if last_tick is None:
+        return "never_ran"
+    since = ((now or utcnow()) - last_tick).total_seconds()
+    return "stalled" if since > max(300, REMINDER_SCAN_INTERVAL * 5) else "alive"
+
+
 @app.api_route("/api/health", methods=["GET", "HEAD"])
 async def health():
     """Liveness + real database check for uptime monitoring.
@@ -4210,7 +4225,17 @@ async def health():
         # invite_flow is a deploy marker: proves which invite generation this
         # running process carries when a user-side failure needs diagnosing.
         return {"status": "ok", "database": "ok", "db_latency_ms": elapsed_ms,
-                "invite_flow": "v4"}
+                "invite_flow": "v4",
+                # The reminder loop, in one word. It is the single most
+                # consequential thing that can die quietly: every reminder,
+                # every daily digest, the push receipts and the shopping
+                # flush all ride its tick, and when it stops nothing errors —
+                # the app simply goes silent, which is indistinguishable from
+                # a quiet week. A verdict rather than a timestamp, because a
+                # timestamp needs arithmetic before it means anything, and
+                # here so the twice-daily smoke test can see it without an
+                # admin session.
+                "scheduler": _scheduler_verdict()}
     except (asyncio.TimeoutError, Exception) as exc:  # noqa: B014 - report any failure
         log.warning("Health check database ping failed: %s", exc)
         return JSONResponse(status_code=503, content={"status": "error", "database": "unreachable"})
@@ -4662,17 +4687,9 @@ async def health_push(user=Depends(require_user), database=Depends(get_db)):
     now = utcnow()
 
     last_tick = _scheduler_state.get("last_tick_at")
-    # A loop that ticks every 60s and has not ticked in 5 minutes is not slow,
-    # it is gone. Said as a verdict rather than a raw timestamp, because a
-    # timestamp needs arithmetic before it means anything.
-    if not REMINDER_SCHEDULER_ENABLED:
-        verdict = "disabled"
-    elif last_tick is None:
-        verdict = "never_ran"
-    elif (now - last_tick).total_seconds() > max(300, REMINDER_SCAN_INTERVAL * 5):
-        verdict = "stalled"
-    else:
-        verdict = "alive"
+    # One definition, shared with /api/health, so the public word and the
+    # admin word can never disagree about whether the loop is alive.
+    verdict = _scheduler_verdict(now)
 
     zones = await _push_zones(database)
     phones = await database["notification_tokens"].count_documents({"active": True})
