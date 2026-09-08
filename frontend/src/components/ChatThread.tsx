@@ -9,7 +9,7 @@ import { Send, X } from 'lucide-react-native';
 import { PressScale } from './PressScale';
 import { useUI, UIColors } from './Kit';
 import { useStore } from '../store';
-import { ChatMessage, CHAT_REACTIONS } from '../api';
+import { ChatMessage, CHAT_REACTIONS, chatCanEdit } from '../api';
 import { logger } from '../logger';
 
 interface Props {
@@ -22,6 +22,8 @@ interface Props {
   /** Absent where reactions do not apply (the teen thread has no endpoint of
    *  its own yet); the emoji row is then simply not offered. */
   react?: (messageId: string, emoji: string) => Promise<{ message: ChatMessage }>;
+  /** Correct a message you sent, within the window the server enforces. */
+  edit?: (messageId: string, text: string) => Promise<{ message: ChatMessage }>;
   emptyHint: string;
 }
 
@@ -31,7 +33,7 @@ interface Props {
  * the load/send functions, so the same UI serves both sides with the server
  * enforcing who can see what.
  */
-export function ChatThread({ load, send, markRead, react, emptyHint }: Props) {
+export function ChatThread({ load, send, markRead, react, edit, emptyHint }: Props) {
   const ui = useUI();
   const { t } = useStore();
   const styles = createStyles(ui);
@@ -44,6 +46,12 @@ export function ChatThread({ load, send, markRead, react, emptyHint }: Props) {
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
   // The message a long press opened the actions for, if any.
   const [acting, setActing] = useState<ChatMessage | null>(null);
+  // The message being corrected, if any. Mutually exclusive with replyTo:
+  // you are either writing something new or fixing something old.
+  const [editing, setEditing] = useState<ChatMessage | null>(null);
+  // Whatever was half-typed when the edit box took over the composer, so
+  // changing your mind about an edit does not throw away a real message.
+  const draftBeforeEdit = useRef('');
   const listRef = useRef<FlatList<ChatMessage>>(null);
   // The newest moment already on screen. Everything after it is what a poll
   // asks for, so a quiet thread costs an empty answer rather than its whole
@@ -182,9 +190,13 @@ export function ChatThread({ load, send, markRead, react, emptyHint }: Props) {
     if (!body || sending) return;
     setSending(true);
     try {
-      const res = await send(body, replyTo?.message_id);
+      const res = editing && edit
+        ? await edit(editing.message_id, body)
+        : await send(body, replyTo?.message_id);
       setText('');
       setReplyTo(null);
+      setEditing(null);
+      draftBeforeEdit.current = '';
       // Through the same merge, so the next poll returning this message
       // cannot show it twice.
       absorb([res.message]);
@@ -199,7 +211,7 @@ export function ChatThread({ load, send, markRead, react, emptyHint }: Props) {
     } finally {
       setSending(false);
     }
-  }, [text, sending, send, t, absorb, replyTo]);
+  }, [text, sending, send, edit, t, absorb, replyTo, editing]);
 
   // Only the newest thing you sent carries a receipt. A column of "Seen"
   // under every bubble is noise; the one that answers "did that land?" is the
@@ -289,6 +301,14 @@ export function ChatThread({ load, send, markRead, react, emptyHint }: Props) {
                   </View>
                 ) : null}
                 <Text style={[styles.msgText, item.mine && styles.msgTextMine]}>{item.text}</Text>
+                {item.edited ? (
+                  <Text
+                    testID="chat-edited"
+                    style={[styles.editedMark, item.mine && styles.editedMarkMine]}
+                  >
+                    {t('chat_edited')}
+                  </Text>
+                ) : null}
               </PressScale>
             </View>
             {item.reactions?.length ? (
@@ -340,14 +360,45 @@ export function ChatThread({ load, send, markRead, react, emptyHint }: Props) {
             ) : null}
             <PressScale
               testID="chat-action-reply"
-              onPress={() => { setReplyTo(acting); setActing(null); }}
+              onPress={() => { setReplyTo(acting); setEditing(null); setActing(null); }}
               style={styles.sheetAction}
             >
               <Text style={styles.sheetActionText}>{t('chat_reply')}</Text>
             </PressScale>
+            {edit && acting && chatCanEdit(acting) ? (
+              <PressScale
+                testID="chat-action-edit"
+                onPress={() => {
+                  draftBeforeEdit.current = text;
+                  setEditing(acting);
+                  setReplyTo(null);
+                  setText(acting.text);
+                  setActing(null);
+                }}
+                style={styles.sheetAction}
+              >
+                <Text style={styles.sheetActionText}>{t('chat_edit')}</Text>
+              </PressScale>
+            ) : null}
           </View>
         </Pressable>
       </Modal>
+      {editing ? (
+        <View testID="chat-editing" style={styles.replyBar}>
+          <View style={styles.replyBarText}>
+            <Text numberOfLines={1} style={styles.quoteName}>{t('chat_editing')}</Text>
+            <Text numberOfLines={1} style={styles.quoteText}>{editing.text}</Text>
+          </View>
+          <PressScale
+            testID="chat-edit-cancel"
+            onPress={() => { setEditing(null); setText(draftBeforeEdit.current); }}
+            accessibilityLabel={t('chat_edit_cancel')}
+            style={styles.replyCancel}
+          >
+            <X color={ui.muted} size={18} />
+          </PressScale>
+        </View>
+      ) : null}
       {replyTo ? (
         <View testID="chat-replying-to" style={styles.replyBar}>
           <View style={styles.replyBarText}>
@@ -409,6 +460,11 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     alignSelf: 'flex-end', marginTop: 2, marginRight: 4,
     fontFamily: 'Inter_500Medium', fontSize: 11, color: ui.muted,
   },
+  editedMark: {
+    fontFamily: 'Inter_400Regular', fontSize: 10, color: ui.muted,
+    marginTop: 2, alignSelf: 'flex-end',
+  },
+  editedMarkMine: { color: 'rgba(255,255,255,0.8)' },
   reactionRow: { flexDirection: 'row', gap: 4, marginTop: -2, paddingHorizontal: 4 },
   reaction: {
     flexDirection: 'row', alignItems: 'center', gap: 3,

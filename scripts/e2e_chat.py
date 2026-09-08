@@ -211,7 +211,40 @@ async def main():
             except Exception:  # noqa: BLE001
                 fails.append("a reaction never reached the other person's open screen")
 
-        # --- 7. a conversation left open does not re-download itself --------
+        # --- 7. correcting what you sent ------------------------------------
+        # Roland's own message, held, then Edit. The correction has to reach
+        # Keigh's open screen carrying its permanent marker — an edit she only
+        # sees after reopening would be a silent rewrite of what she read.
+        # A fresh message, deliberately: the reply in step 5 quotes `first`,
+        # and that quote keeps the ORIGINAL wording on purpose — so counting
+        # occurrences of `first` after an edit would be asking the wrong
+        # question.
+        typo = f"Dentist on Thurdsay {uuid.uuid4().hex[:5]}"
+        fixed = typo.replace("Thurdsay", "Thursday")
+        await say(roland, typo)
+        await roland.wait_for_timeout(500)
+        if not await hold(roland, typo):
+            fails.append("could not reopen the actions on your own message")
+        elif await roland.get_by_test_id("chat-action-edit").count() == 0:
+            fails.append("a message you just sent offered no way to correct it")
+        else:
+            await roland.get_by_test_id("chat-action-edit").first.click()
+            await roland.wait_for_timeout(600)
+            if await roland.get_by_test_id("chat-editing").count() == 0:
+                fails.append("choosing Edit did not show what was being corrected")
+            await say(roland, fixed)
+            try:
+                await keigh.get_by_text(fixed, exact=False).first.wait_for(timeout=LIVE_WAIT)
+            except Exception:  # noqa: BLE001
+                fails.append("a correction never reached the other person's open screen")
+            if await keigh.get_by_test_id("chat-edited").count() == 0:
+                fails.append("the correction arrived with nothing saying it had been edited")
+            if await keigh.get_by_text(typo, exact=False).count():
+                fails.append("the old wording is still on screen after the correction")
+            if await roland.get_by_test_id("chat-editing").count():
+                fails.append("sending the correction left the composer still in edit mode")
+
+        # --- 8. a conversation left open does not re-download itself --------
         # Only reachable with a cursor that can move past a read; without one
         # every poll ships the whole page again, forever, on a phone.
         polls = []
@@ -237,7 +270,7 @@ async def main():
             print(f"  - {f}")
         return 1
     print("PASS  messages arrive live both ways, once each; the sender is told they "
-          "landed; and a held message can be answered or reacted to")
+          "landed; and a held message can be answered, reacted to or corrected")
     return 0
 
 

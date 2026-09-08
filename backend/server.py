@@ -7359,6 +7359,16 @@ class ChatReactionIn(BaseModel):
 # recognise which message is meant; not a second copy of the conversation.
 REPLY_QUOTE_LEN = 140
 
+# How long you may correct what you sent. Short on purpose: in a household
+# where a message can be the record of what was agreed, "Thursday" must not
+# become "Friday" a week later next to somebody's memory of reading it. Long
+# enough to catch the typo you noticed as you hit send.
+CHAT_EDIT_WINDOW_MINUTES = 15
+
+
+class ChatEditIn(BaseModel):
+    text: str
+
 
 class ChatMessageIn(BaseModel):
     text: str
@@ -7412,6 +7422,11 @@ def public_chat_message(m: dict, viewer_id: str, others: Optional[set] = None) -
         "mine": sender == viewer_id,
         "read": (sender == viewer_id) or (viewer_id in read_by),
     }
+    if m.get("edited"):
+        # Permanent. An edit that leaves no trace is a rewrite of the record,
+        # which is the thing this app must never quietly do.
+        out["edited"] = True
+
     reactions = [r for r in (m.get("reactions") or []) if isinstance(r, dict)]
     if reactions:
         tally: dict = {}
@@ -7852,9 +7867,24 @@ async def family_chat_read(thread: str, user=Depends(require_chat_account)):
     return {"ok": True}
 
 
-@app.post("/api/family/chat/{thread}/{message_id}/react")
-async def family_chat_react(thread: str, message_id: str, payload: ChatReactionIn,
-                            user=Depends(require_chat_account)):
+async def _chat_message_in_thread(database, family_id: str, thread: str, message_id: str) -> dict:
+    """One message, addressed by id but fetched through the door.
+
+    Thread and family in the query, never the id alone. A message id is a
+    guessable-looking handle that clients send us; looked up on its own it
+    would let anyone in the household touch — or read back — a message in a
+    conversation they are not in, which is the access model bypassed by a
+    field instead of by the door.
+    """
+    msg = await database["messages"].find_one(
+        {"message_id": message_id, "family_id": family_id, "thread": thread}, {"_id": 0})
+    if not msg:
+        raise HTTPException(status_code=404, detail="That message is no longer here.")
+    return msg
+
+
+async def _chat_react(database, family_id: str, thread: str, message_id: str,
+                      user_id: str, emoji: str) -> dict:
     """Add, change or take back one reaction.
 
     One per person per message: reacting again with the same emoji takes it
@@ -7862,42 +7892,101 @@ async def family_chat_react(thread: str, message_id: str, payload: ChatReactionI
     the same person under one message is clutter, and a household chat is
     small enough that "who felt what" is more useful than "how many taps".
     """
+    emoji = (emoji or "").strip()
+    if emoji not in CHAT_REACTIONS:
+        raise HTTPException(status_code=400, detail="That reaction isn\'t available.")
+    msg = await _chat_message_in_thread(database, family_id, thread, message_id)
+
+    had = next((r for r in (msg.get("reactions") or [])
+                if isinstance(r, dict) and r.get("user_id") == user_id), None)
+    # Whatever they had before comes off first, so "one per person" holds even
+    # if an older row somehow carried two.
+    await database["messages"].update_one(
+        {"message_id": message_id, "family_id": family_id},
+        {"$pull": {"reactions": {"user_id": user_id}}})
+    if not (had and had.get("emoji") == emoji):
+        await database["messages"].update_one(
+            {"message_id": message_id, "family_id": family_id},
+            {"$push": {"reactions": {"user_id": user_id, "emoji": emoji}}})
+    # Stamped so the change travels on the same cursor everything else does —
+    # a reaction nobody sees until they reopen the screen is not a reaction.
+    await database["messages"].update_one(
+        {"message_id": message_id, "family_id": family_id},
+        {"$set": {"reacted_at": utcnow()}})
+    return await database["messages"].find_one(
+        {"message_id": message_id, "family_id": family_id}, {"_id": 0})
+
+
+async def _chat_edit(database, family_id: str, thread: str, message_id: str,
+                     user_id: str, text: str, now=None) -> dict:
+    """Correct what you sent, for a short while, and never invisibly.
+
+    Three rules, and each of them is the interesting part rather than the
+    edit itself:
+
+      Only the person who wrote it. Anything else is putting words in
+      somebody's mouth inside the app they use to agree things.
+
+      Only for CHAT_EDIT_WINDOW_MINUTES. The window exists because the other
+      person may already have read it: "Thursday" must not be able to become
+      "Friday" a week later, next to their memory of reading it.
+
+      The marker never comes off. An edit that leaves no trace is a rewrite of
+      the record. `edited` is set once and nothing clears it.
+    """
+    msg = await _chat_message_in_thread(database, family_id, thread, message_id)
+    if msg.get("sender_user_id") != user_id:
+        # 403 rather than 404: they can see the message, so pretending it is
+        # missing would only be confusing.
+        raise HTTPException(status_code=403, detail="You can only edit your own messages.")
+
+    now = now or utcnow()
+    sent = _coerce_dt(msg.get("created_at"))
+    if not sent or (now - sent) > timedelta(minutes=CHAT_EDIT_WINDOW_MINUTES):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Messages can only be edited for {CHAT_EDIT_WINDOW_MINUTES} minutes.")
+
+    clean = sanitize_message_text(text or "", MAX_CHAT_LEN)
+    if not clean:
+        # Deliberately not a delete. Emptying a message is a different decision
+        # with different consequences, and it should not arrive by accident
+        # through the edit box.
+        raise HTTPException(status_code=400, detail="Message can\'t be empty.")
+    if clean == (msg.get("text") or ""):
+        # Nothing changed, so nothing is marked. Opening the edit box and
+        # closing it again must not brand a message as edited.
+        return msg
+
+    await database["messages"].update_one(
+        {"message_id": message_id, "family_id": family_id},
+        {"$set": {"text": clean, "edited": True, "updated_at": now}})
+    return await database["messages"].find_one(
+        {"message_id": message_id, "family_id": family_id}, {"_id": 0})
+
+
+@app.post("/api/family/chat/{thread}/{message_id}/react")
+async def family_chat_react(thread: str, message_id: str, payload: ChatReactionIn,
+                            user=Depends(require_chat_account)):
     database = get_db()
     thread = await _canonical_thread(database, user["family_id"], thread)
     participants = await _require_thread_member(
         database, user["family_id"], thread, user["user_id"])
-    emoji = (payload.emoji or "").strip()
-    if emoji not in CHAT_REACTIONS:
-        raise HTTPException(status_code=400, detail="That reaction isn\'t available.")
+    fresh = await _chat_react(database, user["family_id"], thread, message_id,
+                              user["user_id"], payload.emoji)
+    audience = await _chat_audience(database, user["family_id"], thread, participants)
+    return {"ok": True, "message": public_chat_message(fresh, user["user_id"], audience)}
 
-    # Thread in the query, not just the id — the same door a reply has to go
-    # through, for the same reason: otherwise a message id is enough to touch
-    # a conversation you are not in.
-    msg = await database["messages"].find_one(
-        {"message_id": message_id, "family_id": user["family_id"], "thread": thread},
-        {"_id": 0})
-    if not msg:
-        raise HTTPException(status_code=404, detail="That message is no longer here.")
 
-    had = next((r for r in (msg.get("reactions") or [])
-                if isinstance(r, dict) and r.get("user_id") == user["user_id"]), None)
-    # Whatever they had before comes off first, so "one per person" holds even
-    # if an older row somehow carried two.
-    await database["messages"].update_one(
-        {"message_id": message_id, "family_id": user["family_id"]},
-        {"$pull": {"reactions": {"user_id": user["user_id"]}}})
-    if not (had and had.get("emoji") == emoji):
-        await database["messages"].update_one(
-            {"message_id": message_id, "family_id": user["family_id"]},
-            {"$push": {"reactions": {"user_id": user["user_id"], "emoji": emoji}}})
-    # Stamped so the change travels on the same cursor everything else does —
-    # a reaction nobody sees until they reopen the screen is not a reaction.
-    await database["messages"].update_one(
-        {"message_id": message_id, "family_id": user["family_id"]},
-        {"$set": {"reacted_at": utcnow()}})
-
-    fresh = await database["messages"].find_one(
-        {"message_id": message_id, "family_id": user["family_id"]}, {"_id": 0})
+@app.patch("/api/family/chat/{thread}/{message_id}")
+async def family_chat_edit(thread: str, message_id: str, payload: ChatEditIn,
+                           user=Depends(require_chat_account)):
+    database = get_db()
+    thread = await _canonical_thread(database, user["family_id"], thread)
+    participants = await _require_thread_member(
+        database, user["family_id"], thread, user["user_id"])
+    fresh = await _chat_edit(database, user["family_id"], thread, message_id,
+                             user["user_id"], payload.text)
     audience = await _chat_audience(database, user["family_id"], thread, participants)
     return {"ok": True, "message": public_chat_message(fresh, user["user_id"], audience)}
 
@@ -7925,6 +8014,30 @@ async def teen_chat_send(payload: ChatMessageIn, teen=Depends(require_teen)):
     await _chat_notify(database, teen["family_id"], tuid, tuid, name, msg["text"])
     others = await _thread_participants(database, teen["family_id"], tuid)
     return {"ok": True, "message": public_chat_message(msg, tuid, others)}
+
+
+@app.post("/api/teen/chat/{message_id}/react")
+async def teen_chat_react(message_id: str, payload: ChatReactionIn, teen=Depends(require_teen)):
+    """The teen's own thread gets the same conversation as everyone else.
+
+    The thread key is forced to their own user id, so a teen can only ever
+    reach into their own conversation whatever id they send.
+    """
+    database = get_db()
+    tuid = teen["user"]["user_id"]
+    fresh = await _chat_react(database, teen["family_id"], tuid, message_id, tuid,
+                              payload.emoji)
+    others = await _thread_participants(database, teen["family_id"], tuid)
+    return {"ok": True, "message": public_chat_message(fresh, tuid, others)}
+
+
+@app.patch("/api/teen/chat/{message_id}")
+async def teen_chat_edit(message_id: str, payload: ChatEditIn, teen=Depends(require_teen)):
+    database = get_db()
+    tuid = teen["user"]["user_id"]
+    fresh = await _chat_edit(database, teen["family_id"], tuid, message_id, tuid, payload.text)
+    others = await _thread_participants(database, teen["family_id"], tuid)
+    return {"ok": True, "message": public_chat_message(fresh, tuid, others)}
 
 
 @app.post("/api/teen/chat/read")
