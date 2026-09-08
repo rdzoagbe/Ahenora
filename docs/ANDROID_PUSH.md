@@ -28,12 +28,17 @@ notifications as the app; it never goes in the repo or in a chat.
 
 ## 3. A new Android binary
 
-Push capability is native. Over-the-air updates cannot add it. After 1 and 2:
+Push capability is native. Over-the-air updates cannot add it. After 1 and 2,
+build it from the repository — **Actions → "EAS Build (Android)" → Run
+workflow**, profile `production`.
 
-    eas build -p android --profile production
-    eas submit -p android --profile production
+Do NOT run `eas build` on a laptop. It uploads the folder you run it in, not
+the code on `main`, and a downloaded ZIP silently ships whatever it happened
+to contain. That is how build 56 reached Google Play with no Firebase in it.
+The build server now refuses such an upload; see `docs/RELEASING.md`.
 
-Every Android phone needs this store version before it can register a token.
+Every Android phone needs the resulting store version before it can register
+a token.
 
 ## How to see whether it worked
 
