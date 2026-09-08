@@ -829,9 +829,33 @@ export interface ChatMessage {
   sender_name: string;
   text: string;
   created_at: string;
+  /** The last moment anything about this message changed — sent, read, or
+   *  edited. What `since` is advanced to; created_at cannot serve, because a
+   *  message that has just been read has changed without becoming newer. */
+  changed_at?: string;
   mine: boolean;
+  /** The VIEWER has read this one. Drives the unread badge. */
   read: boolean;
+  /** How many of the other people in this conversation have opened it. */
+  seen_by?: number;
+  /** How many other people are in this conversation at all. */
+  audience?: number;
+  /** Everyone else has read it. Absent on threads the server did not price. */
+  seen?: boolean;
+  /** The message this one answers, if any. */
+  reply_to?: string;
+  /** Who wrote the quoted message, and enough of it to recognise which one.
+   *  A snapshot taken when the reply was sent, not a live join — so the quote
+   *  still renders when the original has scrolled off the page. */
+  reply_to_name?: string;
+  reply_to_text?: string;
+  /** Tallied per emoji, in palette order so the row does not reshuffle. */
+  reactions?: { emoji: string; count: number; mine: boolean }[];
 }
+
+/** What you may react with. Must match CHAT_REACTIONS in backend/server.py —
+ *  the server refuses anything else, and a test holds the two lists together. */
+export const CHAT_REACTIONS = ['❤️', '👍', '😂', '😮', '😢', '🙏'];
 
 export interface ChatThreadSummary {
   thread: string;
@@ -2176,17 +2200,28 @@ export const api = {
   // Family chat. Parents reach the adults thread + one per teen; a teen reaches
   // only their own thread (the server forces it).
   chatThreads: () => request<{ threads: ChatThreadSummary[] }>('/family/chat/threads'),
-  chatGet: (thread: string) => request<{ messages: ChatMessage[] }>(`/family/chat/${encodeURIComponent(thread)}`),
-  chatSend: (thread: string, text: string) =>
+  /** `since` fetches only what has arrived after that moment, so a screen can
+   *  poll a quiet thread for nothing. Omit it for the whole recent history. */
+  chatGet: (thread: string, since?: string) =>
+    request<{ messages: ChatMessage[] }>(
+      `/family/chat/${encodeURIComponent(thread)}${since ? `?since=${encodeURIComponent(since)}` : ''}`),
+  chatSend: (thread: string, text: string, replyTo?: string) =>
     request<{ ok: boolean; message: ChatMessage }>(`/family/chat/${encodeURIComponent(thread)}`, {
-      method: 'POST', body: { text },
+      method: 'POST', body: { text, reply_to: replyTo },
     }),
   signOutEverywhere: () => request<{ ok: boolean; ended: number }>('/auth/sign-out-everywhere', { method: 'POST' }),
   chatRead: (thread: string) =>
     request<{ ok: boolean }>(`/family/chat/${encodeURIComponent(thread)}/read`, { method: 'POST' }),
-  teenChatGet: () => request<{ messages: ChatMessage[] }>('/teen/chat'),
-  teenChatSend: (text: string) =>
-    request<{ ok: boolean; message: ChatMessage }>('/teen/chat', { method: 'POST', body: { text } }),
+  teenChatGet: (since?: string) =>
+    request<{ messages: ChatMessage[] }>(
+      `/teen/chat${since ? `?since=${encodeURIComponent(since)}` : ''}`),
+  chatReact: (thread: string, messageId: string, emoji: string) =>
+    request<{ ok: boolean; message: ChatMessage }>(
+      `/family/chat/${encodeURIComponent(thread)}/${encodeURIComponent(messageId)}/react`,
+      { method: 'POST', body: { emoji } }),
+  teenChatSend: (text: string, replyTo?: string) =>
+    request<{ ok: boolean; message: ChatMessage }>(
+      '/teen/chat', { method: 'POST', body: { text, reply_to: replyTo } }),
   teenChatRead: () => request<{ ok: boolean }>('/teen/chat/read', { method: 'POST' }),
 
   kidHome: () => request<KidHome>('/kid/home'),

@@ -1,21 +1,27 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, FlatList, Keyboard, Platform,
-  StyleSheet, Text, TextInput, View,
+  ActivityIndicator, Alert, AppState, FlatList, Keyboard, Modal, Platform,
+  Pressable, StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Send } from 'lucide-react-native';
+import { Send, X } from 'lucide-react-native';
 
 import { PressScale } from './PressScale';
 import { useUI, UIColors } from './Kit';
 import { useStore } from '../store';
-import { ChatMessage } from '../api';
+import { ChatMessage, CHAT_REACTIONS } from '../api';
 import { logger } from '../logger';
 
 interface Props {
-  load: () => Promise<{ messages: ChatMessage[] }>;
-  send: (text: string) => Promise<{ message: ChatMessage }>;
+  /** `since` asks only for what arrived after that moment. Callers that
+   *  ignore it still work — the merge below is keyed on message id. */
+  load: (since?: string) => Promise<{ messages: ChatMessage[] }>;
+  /** `replyTo` is the id of the message being answered, when there is one. */
+  send: (text: string, replyTo?: string) => Promise<{ message: ChatMessage }>;
   markRead?: () => Promise<unknown>;
+  /** Absent where reactions do not apply (the teen thread has no endpoint of
+   *  its own yet); the emoji row is then simply not offered. */
+  react?: (messageId: string, emoji: string) => Promise<{ message: ChatMessage }>;
   emptyHint: string;
 }
 
@@ -25,7 +31,7 @@ interface Props {
  * the load/send functions, so the same UI serves both sides with the server
  * enforcing who can see what.
  */
-export function ChatThread({ load, send, markRead, emptyHint }: Props) {
+export function ChatThread({ load, send, markRead, react, emptyHint }: Props) {
   const ui = useUI();
   const { t } = useStore();
   const styles = createStyles(ui);
@@ -33,7 +39,19 @@ export function ChatThread({ load, send, markRead, emptyHint }: Props) {
   const [loading, setLoading] = useState(true);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
+  // The message being answered, if any. Held as the whole message rather than
+  // its id so the quote above the composer needs no lookup.
+  const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
+  // The message a long press opened the actions for, if any.
+  const [acting, setActing] = useState<ChatMessage | null>(null);
   const listRef = useRef<FlatList<ChatMessage>>(null);
+  // The newest moment already on screen. Everything after it is what a poll
+  // asks for, so a quiet thread costs an empty answer rather than its whole
+  // history.
+  const since = useRef<string | undefined>(undefined);
+  // Whether the reader is at the live end. Someone scrolled up reading last
+  // week's messages must not be yanked to the bottom because a new one landed.
+  const atBottom = useRef(true);
   const insets = useSafeAreaInsets();
 
   // Measure the keyboard instead of asking KeyboardAvoidingView to guess. Under
@@ -91,28 +109,86 @@ export function ChatThread({ load, send, markRead, emptyHint }: Props) {
     }
   }, [keyboard]);
 
-  const refresh = useCallback(async () => {
+  const absorb = useCallback((incoming: ChatMessage[]) => {
+    if (!incoming.length) return false;
+    let added = false;
+    setMessages((prev) => {
+      const byId = new Map(prev.map((m) => [m.message_id, m]));
+      for (const m of incoming) {
+        if (!byId.has(m.message_id)) added = true;
+        byId.set(m.message_id, m);       // an edited message replaces its old self
+      }
+      return [...byId.values()].sort((a, b) =>
+        (a.created_at || '').localeCompare(b.created_at || ''));
+    });
+    // Advanced on changed_at, not created_at. A message that has just been
+    // READ has changed without becoming newer; a cursor pinned to send time
+    // could never move past it and every poll would ship it again forever.
+    for (const m of incoming) {
+      const at = m.changed_at || m.created_at || '';
+      if (at && (!since.current || at > since.current)) since.current = at;
+    }
+    return added;
+  }, []);
+
+  const refresh = useCallback(async (delta = false) => {
     try {
-      const res = await load();
-      setMessages(res.messages);
-      markRead?.().catch(() => undefined);
+      const res = await load(delta ? since.current : undefined);
+      if (!delta) since.current = undefined;
+      const added = absorb(res.messages);
+      if (!delta || added) markRead?.().catch(() => undefined);
     } catch (e) {
-      logger.warn('chat load failed', e);
+      // A poll that fails is not worth telling anybody about: the next one is
+      // a few seconds away. Only the first load decides what the screen shows.
+      if (!delta) logger.warn('chat load failed', e);
     } finally {
       setLoading(false);
     }
-  }, [load, markRead]);
+  }, [load, markRead, absorb]);
 
   useEffect(() => { refresh(); }, [refresh]);
+
+  // Messages arrive while you are looking at them.
+  //
+  // Until 2026-09-08 this screen loaded once and never again: a conversation
+  // left open showed nothing new until you navigated away and back, so the
+  // only way to read a reply was to tap its notification. Polling rather than
+  // a socket because a household is two to five people — a few seconds of
+  // latency is imperceptible, and there is no reconnection logic to get wrong
+  // on a phone moving between networks.
+  //
+  // Paused while the app is in the background, where a timer would burn
+  // battery to fetch a screen nobody is looking at, and resumed with an
+  // immediate catch-up so returning to the app never shows a stale thread.
+  useEffect(() => {
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const start = () => {
+      if (timer) return;
+      timer = setInterval(() => { refresh(true); }, 4000);
+    };
+    const stop = () => {
+      if (timer) clearInterval(timer);
+      timer = null;
+    };
+    start();
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') { refresh(true); start(); } else { stop(); }
+    });
+    return () => { stop(); sub.remove(); };
+  }, [refresh]);
 
   const onSend = useCallback(async () => {
     const body = text.trim();
     if (!body || sending) return;
     setSending(true);
     try {
-      const res = await send(body);
+      const res = await send(body, replyTo?.message_id);
       setText('');
-      setMessages((prev) => [...prev, res.message]);
+      setReplyTo(null);
+      // Through the same merge, so the next poll returning this message
+      // cannot show it twice.
+      absorb([res.message]);
+      atBottom.current = true;
       requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
     } catch (e: any) {
       // A dropped message in a coordination app is worse than a visible error.
@@ -123,7 +199,43 @@ export function ChatThread({ load, send, markRead, emptyHint }: Props) {
     } finally {
       setSending(false);
     }
-  }, [text, sending, send, t]);
+  }, [text, sending, send, t, absorb, replyTo]);
+
+  // Only the newest thing you sent carries a receipt. A column of "Seen"
+  // under every bubble is noise; the one that answers "did that land?" is the
+  // last one. Found by id rather than index so it survives the merge re-sort.
+  const lastMineId = (() => {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      if (messages[i].mine) return messages[i].message_id;
+    }
+    return null;
+  })();
+
+  const receipt = (m: ChatMessage): string | null => {
+    // A thread the server did not price (it does not know the roster) says
+    // nothing at all, rather than claiming "Sent" about a message that may
+    // well have been read.
+    if (typeof m.audience !== 'number') return null;
+    if (m.audience === 0) return null;              // nobody else is in here yet
+    if (m.seen) return t('chat_seen');
+    if (!m.seen_by) return t('chat_sent');
+    // Three people in a household chat: "who exactly" matters less than
+    // "not everyone yet".
+    return t('chat_seen_partial', { count: m.seen_by, total: m.audience });
+  };
+
+  const onReact = async (emoji: string) => {
+    const target = acting;
+    setActing(null);
+    if (!target || !react) return;
+    try {
+      // Through the same merge as everything else, so the row appears at once
+      // and the next poll cannot duplicate it.
+      absorb([(await react(target.message_id, emoji)).message]);
+    } catch (e) {
+      logger.warn('chat react failed', e);
+    }
+  };
 
   if (loading) {
     return <View style={styles.center}><ActivityIndicator color={ui.orange} /></View>;
@@ -136,17 +248,124 @@ export function ChatThread({ load, send, markRead, emptyHint }: Props) {
         data={messages}
         keyExtractor={(m) => m.message_id}
         contentContainerStyle={styles.listContent}
-        onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
+        onScroll={(e) => {
+          const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
+          atBottom.current =
+            layoutMeasurement.height + contentOffset.y >= contentSize.height - 40;
+        }}
+        scrollEventThrottle={80}
+        onContentSizeChange={() => {
+          if (atBottom.current) listRef.current?.scrollToEnd({ animated: false });
+        }}
         ListEmptyComponent={<Text style={styles.empty}>{emptyHint}</Text>}
         renderItem={({ item }) => (
-          <View style={[styles.bubbleRow, item.mine ? styles.rowMine : styles.rowTheirs]}>
-            <View style={[styles.bubble, item.mine ? styles.bubbleMine : styles.bubbleTheirs]}>
-              {!item.mine ? <Text style={styles.sender}>{item.sender_name}</Text> : null}
-              <Text style={[styles.msgText, item.mine && styles.msgTextMine]}>{item.text}</Text>
+          <View>
+            <View style={[styles.bubbleRow, item.mine ? styles.rowMine : styles.rowTheirs]}>
+              <PressScale
+                testID={`chat-msg-${item.message_id}`}
+                // Long-press, not tap: the convention every messenger already
+                // taught people, and a tap-to-reply would fire by accident
+                // every time a thumb catches a bubble while scrolling.
+                onLongPress={() => setActing(item)}
+                accessibilityLabel={item.text}
+                accessibilityHint={t('chat_reply_hint')}
+                style={[styles.bubble, item.mine ? styles.bubbleMine : styles.bubbleTheirs]}
+              >
+                {!item.mine ? <Text style={styles.sender}>{item.sender_name}</Text> : null}
+                {item.reply_to ? (
+                  <View style={[styles.quote, item.mine && styles.quoteMine]}>
+                    <Text
+                      numberOfLines={1}
+                      style={[styles.quoteName, item.mine && styles.quoteTextMine]}
+                    >
+                      {item.reply_to_name}
+                    </Text>
+                    <Text
+                      numberOfLines={2}
+                      style={[styles.quoteText, item.mine && styles.quoteTextMine]}
+                    >
+                      {item.reply_to_text}
+                    </Text>
+                  </View>
+                ) : null}
+                <Text style={[styles.msgText, item.mine && styles.msgTextMine]}>{item.text}</Text>
+              </PressScale>
             </View>
+            {item.reactions?.length ? (
+              <View style={[styles.reactionRow, item.mine ? styles.rowMine : styles.rowTheirs]}>
+                {item.reactions.map((r) => (
+                  <View
+                    key={r.emoji}
+                    testID={`chat-reaction-${r.emoji}`}
+                    style={[styles.reaction, r.mine && styles.reactionMine]}
+                  >
+                    <Text style={styles.reactionEmoji}>{r.emoji}</Text>
+                    {r.count > 1 ? <Text style={styles.reactionCount}>{r.count}</Text> : null}
+                  </View>
+                ))}
+              </View>
+            ) : null}
+            {item.mine && item.message_id === lastMineId && receipt(item) ? (
+              <Text testID="chat-receipt" style={styles.receipt}>{receipt(item)}</Text>
+            ) : null}
           </View>
         )}
       />
+      <Modal
+        visible={!!acting}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setActing(null)}
+      >
+        <Pressable
+          testID="chat-actions-dismiss"
+          style={styles.sheetBackdrop}
+          onPress={() => setActing(null)}
+        >
+          <View testID="chat-actions" style={styles.sheet}>
+            {react ? (
+              <View style={styles.sheetEmoji}>
+                {CHAT_REACTIONS.map((emoji) => (
+                  <PressScale
+                    key={emoji}
+                    testID={`chat-react-${emoji}`}
+                    onPress={() => onReact(emoji)}
+                    accessibilityLabel={emoji}
+                    style={styles.sheetEmojiBtn}
+                  >
+                    <Text style={styles.sheetEmojiText}>{emoji}</Text>
+                  </PressScale>
+                ))}
+              </View>
+            ) : null}
+            <PressScale
+              testID="chat-action-reply"
+              onPress={() => { setReplyTo(acting); setActing(null); }}
+              style={styles.sheetAction}
+            >
+              <Text style={styles.sheetActionText}>{t('chat_reply')}</Text>
+            </PressScale>
+          </View>
+        </Pressable>
+      </Modal>
+      {replyTo ? (
+        <View testID="chat-replying-to" style={styles.replyBar}>
+          <View style={styles.replyBarText}>
+            <Text numberOfLines={1} style={styles.quoteName}>
+              {t('chat_replying_to', { name: replyTo.sender_name })}
+            </Text>
+            <Text numberOfLines={1} style={styles.quoteText}>{replyTo.text}</Text>
+          </View>
+          <PressScale
+            testID="chat-reply-cancel"
+            onPress={() => setReplyTo(null)}
+            accessibilityLabel={t('chat_reply_cancel')}
+            style={styles.replyCancel}
+          >
+            <X color={ui.muted} size={18} />
+          </PressScale>
+        </View>
+      ) : null}
       <View ref={composerRef} style={styles.composer} collapsable={false}>
         <TextInput
           testID="chat-input"
@@ -186,6 +405,50 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   sender: { fontFamily: 'Inter_700Bold', fontSize: 11, color: ui.orangeText, marginBottom: 2 },
   msgText: { fontFamily: 'Inter_400Regular', fontSize: 15, lineHeight: 21, color: ui.text },
   msgTextMine: { color: '#fff' },
+  receipt: {
+    alignSelf: 'flex-end', marginTop: 2, marginRight: 4,
+    fontFamily: 'Inter_500Medium', fontSize: 11, color: ui.muted,
+  },
+  reactionRow: { flexDirection: 'row', gap: 4, marginTop: -2, paddingHorizontal: 4 },
+  reaction: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line,
+    borderRadius: 11, paddingHorizontal: 6, paddingVertical: 2,
+  },
+  reactionMine: { borderColor: ui.orange },
+  reactionEmoji: { fontSize: 12 },
+  reactionCount: { fontFamily: 'Inter_500Medium', fontSize: 11, color: ui.muted },
+  sheetBackdrop: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.35)',
+    alignItems: 'center', justifyContent: 'center', padding: 24,
+  },
+  sheet: {
+    backgroundColor: ui.bg, borderRadius: 20, borderWidth: 1, borderColor: ui.line,
+    paddingVertical: 10, paddingHorizontal: 8, gap: 6, maxWidth: '100%',
+  },
+  // Wraps rather than overflowing: six emoji plus padding is wider than a
+  // 320px phone once the sheet's own margins are paid.
+  sheetEmoji: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center' },
+  sheetEmojiBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  sheetEmojiText: { fontSize: 24 },
+  sheetAction: { paddingVertical: 12, paddingHorizontal: 16, alignItems: 'center' },
+  sheetActionText: { fontFamily: 'Inter_600SemiBold', fontSize: 15, color: ui.text },
+  quote: {
+    borderLeftWidth: 3, borderLeftColor: ui.orange, paddingLeft: 8,
+    marginBottom: 6, opacity: 0.9,
+  },
+  quoteMine: { borderLeftColor: '#fff' },
+  quoteName: { fontFamily: 'Inter_700Bold', fontSize: 11, color: ui.orangeText },
+  quoteText: { fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 16, color: ui.muted },
+  quoteTextMine: { color: '#fff' },
+  replyBar: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 14, paddingTop: 8, backgroundColor: ui.bg,
+  },
+  // minWidth 0: without it the quoted line refuses to shrink below its own
+  // text and pushes the cancel button off the side of a narrow phone.
+  replyBarText: { flex: 1, minWidth: 0 },
+  replyCancel: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   composer: {
     flexDirection: 'row', alignItems: 'flex-end', gap: 10, paddingHorizontal: 14,
     paddingVertical: 10, borderTopWidth: 1, borderTopColor: ui.line, backgroundColor: ui.bg,
