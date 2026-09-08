@@ -38,7 +38,7 @@ import { PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { Card, Chevron, Divider, IconTile, MiniRow, NavRow, ScreenHeader, StatBox, ToggleRow, useUI, UIColors } from '../../src/components/Kit';
 import { useStore } from '../../src/store';
 import { openReview } from '../../src/reviewPrompt';
-import { api, Card as CardType, Entitlements, FamilyInvite, FamilyMember, NotificationSettings } from '../../src/api';
+import { api, reportPushFailure, Card as CardType, Entitlements, FamilyInvite, FamilyMember, NotificationSettings } from '../../src/api';
 import { LANG_NAMES } from '../../src/i18n';
 import { appVersionInfo, ensureNotificationPermissions, registerForPushNotificationsAsync, sendLocalNotification, sendTestScheduledReminderNotification, syncCardReminderNotifications } from '../../src/notifications';
 import { BUILD_TAG } from '../../src/buildInfo';
@@ -424,7 +424,7 @@ export default function Settings() {
           const { appVersion, runtimeVersion } = await appVersionInfo();
           await api.registerNotificationToken(expoPushToken, Platform.OS, appVersion, runtimeVersion);
         }
-        else if (pushError) warning = String(pushError);
+        else if (pushError) { warning = String(pushError); reportPushFailure(String(pushError)); }
       }
 
       const saved = await api.updateNotificationSettings(nextPrefs).catch(() => nextPrefs as NotificationSettings);
