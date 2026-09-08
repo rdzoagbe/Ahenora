@@ -160,6 +160,21 @@ def main():
                 continue
             if not EXPECTED_MARKER or marker == EXPECTED_MARKER:
                 ok("health", f"db {health.get('db_latency_ms')}ms, invite_flow {marker or 'n/a'}")
+                # The reminder loop. It carries every reminder, both daily
+                # digests, the push receipts and the shopping flush — and
+                # when it dies nothing errors anywhere, the app simply goes
+                # quiet, which reads exactly like a quiet week. An older
+                # production that predates this field says nothing rather
+                # than failing, so the check can be deployed before the
+                # backend carrying it.
+                verdict = health.get("scheduler")
+                if verdict is None:
+                    ok("scheduler", "not reported (production predates this check)")
+                elif verdict != "alive":
+                    fail("scheduler", f"reminder loop is {verdict!r} — reminders, digests and "
+                                      f"push receipts are not running")
+                else:
+                    ok("scheduler", "reminder loop alive")
                 # Which build is actually serving. The deploy marker above only
                 # moves when somebody bumps it by hand, so it cannot tell a
                 # current deploy from a nine-day-old one — and "is the backend
@@ -208,8 +223,14 @@ def main():
     ok("invitee registered", invitee_email)
 
     # 4. Send the invitation (email delivery to .smoke will fail; irrelevant).
+    # "Co-parent" rather than an arbitrary label: it is a typed relationship,
+    # so it still proves the wording carries through to the member row, AND
+    # it is parent-level — which is what makes the adults thread, and every
+    # parent-only notification, reachable in step 9. A label like "Smoke
+    # test" produces a member who is deliberately NOT a parent, and the
+    # journey would then verify a household nobody actually has.
     status, res = call("POST", "/family/invite",
-                       {"email": invitee_email, "relationship": "Smoke test"}, token=token_a)
+                       {"email": invitee_email, "relationship": "Co-parent"}, token=token_a)
     if status != 200 or not res.get("invite", {}).get("token"):
         fail("send invite", f"{status}: {res}")
     invite_token = res["invite"]["token"]
@@ -239,11 +260,47 @@ def main():
     match = [m for m in res if m.get("name") == "Smoke Invitee"]
     if not match:
         fail("member list", "invitee missing from the inviter's family")
-    if match[0].get("role") != "Smoke test":
+    if match[0].get("role") != "Co-parent":
         fail("member list", f"role should be the typed relationship, got {match[0].get('role')!r}")
     ok("membership + relationship verified")
 
-    # 8. Leave no residue.
+    # 8. Both adults are LINKED to their accounts.
+    #
+    # On 2026-09-08 the household owner received no chat, no new-card and no
+    # co-parent notification for months. Every recipient list is built from
+    # member rows that carry a user_id, and the founder's row predated that
+    # field — so the owner was in no conversation and on no list, while the
+    # co-parent got everything. It looked like an Android problem for weeks.
+    # A row that is not linked is invisible to every push in the app.
+    # Every row in this household is an adult with a login — no children are
+    # created here — so any unlinked row at all is the fault. Matching on the
+    # role string would miss it the moment a role is spelled differently.
+    unlinked = [m.get("name") for m in res if m.get("has_account") is False]
+    if unlinked:
+        fail("account linkage", f"adult member rows with no account: {unlinked} — "
+                                f"these people would receive no notifications at all")
+    ok("both adults linked to accounts")
+
+    # 9. A message reaches the other parent.
+    #
+    # Reading a thread and being notified about it are decided by the SAME
+    # participant set, so a round trip here exercises the routing that
+    # silently dropped the owner. Delivery to a handset needs a handset;
+    # this proves everything up to the handover.
+    note = f"smoke {uuid.uuid4().hex[:6]}"
+    status, res = call("POST", "/family/chat/adults", {"text": note}, token=token_a)
+    if status != 200:
+        fail("send message", f"{status}: {res}")
+    status, res = call("GET", "/family/chat/adults", token=token_b)
+    if status != 200:
+        fail("read message", f"{status}: {res}")
+    texts = [m.get("text") for m in res.get("messages", [])]
+    if note not in texts:
+        fail("read message", "the co-parent cannot see a message sent to the adults thread — "
+                             "they are not a participant, so they would not be notified either")
+    ok("message reached the co-parent")
+
+    # 10. Leave no residue.
     status, res = call("POST", "/auth/smoke-cleanup", {"family_ids": [family_b]}, token=token_b,
                        retry_safe=True)
     if status != 200:
