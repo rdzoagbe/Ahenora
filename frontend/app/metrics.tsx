@@ -10,6 +10,7 @@ import { useUI, UIColors } from '../src/components/Kit';
 import { useStore } from '../src/store';
 import { api, MetricRow, VersionAdoption, PlanAdoption, FunnelSummary, PushHealth,
   RetentionSummary, InviteBreakdown, AiHealth, SubscriberList, SupportInbox,
+  TimingsReport,
   BillingEventLog } from '../src/api';
 import { logger } from '../src/logger';
 
@@ -76,6 +77,7 @@ export default function MetricsScreen() {
   const [invites, setInvites] = useState<InviteBreakdown | null>(null);
   const [aiHealth, setAiHealth] = useState<AiHealth | null>(null);
   const [pushHealth, setPushHealth] = useState<PushHealth | null>(null);
+  const [timings, setTimings] = useState<TimingsReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -116,6 +118,7 @@ export default function MetricsScreen() {
     // A silent morning has two very different causes and they look identical
     // from a phone. This separates them.
     api.getPushHealth().then(setPushHealth).catch((e) => logger.warn('push health load failed', e?.message || e));
+    api.getTimings().then(setTimings).catch((e) => logger.warn('timings load failed', e?.message || e));
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -807,6 +810,51 @@ export default function MetricsScreen() {
             </>
           ) : (
             <Text style={styles.muted}>Loading…</Text>
+          )}
+
+          {/* How the app felt. Every cold start has been measured since
+              launch and shown nowhere, so "is it slow?" was answerable only
+              by opening it and forming an impression. Buckets rather than an
+              average: the number that matters is the share of launches that
+              felt broken, and an average hides exactly those. */}
+          <Text style={styles.sectionTitle}>How it feels</Text>
+          {timings?.timings?.length ? (
+            <>
+              <Text style={styles.hint}>
+                Measured on real devices over the last {timings.days} days.
+              </Text>
+              {timings.timings.map((row) => (
+                <View key={row.name} style={styles.card}>
+                  <View style={[styles.eventRow, { borderTopWidth: 0 }]}>
+                    <Text style={styles.eventLabel}>{row.name.replace(/_/g, ' ')}</Text>
+                    <Text style={styles.eventCount}>
+                      {row.samples} · median {row.median_bucket || '—'}
+                    </Text>
+                  </View>
+                  {row.labels.map((label, i) => {
+                    const n = row.buckets[i] || 0;
+                    const share = row.samples ? Math.round((100 * n) / row.samples) : 0;
+                    const slowest = i === row.labels.length - 1;
+                    return (
+                      <View key={label} style={styles.eventRow}>
+                        <Text style={styles.eventLabel}>{label}</Text>
+                        <Text style={[styles.eventCount,
+                          slowest && n > 0 && { color: ui.danger }]}>
+                          {n} · {share}%
+                        </Text>
+                      </View>
+                    );
+                  })}
+                  {row.pct_in_slowest != null && row.pct_in_slowest > 5 ? (
+                    <Text style={styles.hint}>
+                      {row.pct_in_slowest}% of these felt broken. Worth a look.
+                    </Text>
+                  ) : null}
+                </View>
+              ))}
+            </>
+          ) : (
+            <Text style={styles.muted}>No timings recorded yet.</Text>
           )}
 
           {/* Billing events — did the money actually reach us */}
