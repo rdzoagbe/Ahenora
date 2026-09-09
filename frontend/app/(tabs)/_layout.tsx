@@ -2,11 +2,11 @@ import React, { useEffect, useRef } from 'react';
 import { Tabs, usePathname, useRouter } from 'expo-router';
 import { View, StyleSheet, Text, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Home, Calendar as CalendarIcon, LayoutGrid, Lock, Settings as SettingsIcon, UtensilsCrossed, Users } from 'lucide-react-native';
+import { Home, Calendar as CalendarIcon, Lock, Settings as SettingsIcon, User as UserIcon, UtensilsCrossed, Users } from 'lucide-react-native';
 import { useStore } from '../../src/store';
 import { markStart, markEnd } from '../../src/perf';
 import { useBreakpoint } from '../../src/responsive';
-import { MoreSheet } from '../../src/components/MoreSheet';
+import { BAR_INSET, LABEL_FONT_SIZE, LABEL_MIN_SCALE, PILL_PADDING, SEAT_MIN_WIDTH, SEAT_PADDING } from '../../src/navGeometry';
 import { GlobalCapture } from '../../src/components/GlobalCapture';
 
 // ─── Phone: floating pill tab bar ────────────────────────────────────────────
@@ -15,8 +15,12 @@ import { GlobalCapture } from '../../src/components/GlobalCapture';
  * One tab. Every tab spells its name under the icon — a bar you have to tap
  * to learn is a bar doing half its job. The active one gets the accent pill
  * and ink; the rest sit quiet in muted text, so five small labels read as a
- * legend rather than noise. (Only four seats in the pill, so there is room
- * for all of them.)
+ * legend rather than noise.
+ *
+ * Five seats fit only because More gave up its button: the pill now spans
+ * the whole 350pt between the bar's insets rather than the 278pt it had
+ * beside a 62pt button and a gap. src/navGeometry.ts holds the arithmetic
+ * and the reasons it is written down rather than eyeballed.
  */
 function TabIcon({ focused, Icon, label, badge = 0 }: { focused: boolean; Icon: any; label: string; badge?: number }) {
   const { theme } = useStore();
@@ -49,7 +53,7 @@ function TabIcon({ focused, Icon, label, badge = 0 }: { focused: boolean; Icon: 
       </View>
       <Text
         style={[styles.tabLabel, { color: labelColor, fontFamily: focused ? 'Inter_800ExtraBold' : 'Inter_600SemiBold' }]}
-        numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}
+        numberOfLines={1} adjustsFontSizeToFit minimumFontScale={LABEL_MIN_SCALE}
       >
         {label}
       </Text>
@@ -57,19 +61,43 @@ function TabIcon({ focused, Icon, label, badge = 0 }: { focused: boolean; Icon: 
   );
 }
 
-// ─── Tablet / Desktop: left sidebar ──────────────────────────────────────────
+// ─── The five places ─────────────────────────────────────────────────────────
 
+/**
+ * The five places, in the order they sit in the bar and in the sidebar.
+ *
+ * Vault is a seat rather than a drawer row because the drawer was the reason
+ * nobody found it: a document you need is needed *now*, and "somewhere behind
+ * More" is not where a passport renewal reminder should live.
+ *
+ * It fits, measured rather than assumed — src/navGeometry.ts carries the
+ * arithmetic, and the nav harness measures the real rendered boxes in a
+ * browser on every run, because the paper version of this sum has been wrong
+ * twice.
+ *
+ * A helper never sees the vault — the documents are the household's private
+ * papers, and every /api/vault route is behind require_full_member, so a seat
+ * we showed them would lead to a screen of 403s. Their bar has four seats.
+ */
 const NAV_ITEMS = [
-  { name: 'feed',     Icon: Home,          labelKey: 'feed' },
-  { name: 'calendar', Icon: CalendarIcon,  labelKey: 'calendar' },
-  { name: 'kids',     Icon: Users,         labelKey: 'family_tab' },
+  { name: 'feed',     Icon: Home,            labelKey: 'feed' },
+  { name: 'calendar', Icon: CalendarIcon,    labelKey: 'calendar' },
+  { name: 'kids',     Icon: Users,           labelKey: 'family_tab' },
   { name: 'kitchen',  Icon: UtensilsCrossed, labelKey: 'kitchen' },
-  { name: 'vault',    Icon: Lock,          labelKey: 'vault' },
-  { name: 'settings', Icon: SettingsIcon,  labelKey: 'settings' },
+  { name: 'vault',    Icon: Lock,            labelKey: 'vault', fullMemberOnly: true },
 ] as const;
 
+export function navSeats(isHelper: boolean | undefined) {
+  // 'fullMemberOnly' in it — the array is `as const`, so only the vault entry
+  // carries the key and TypeScript narrows on the check rather than on a flag
+  // every other entry would have to spell out as false.
+  return NAV_ITEMS.filter((it) => !(isHelper && 'fullMemberOnly' in it && it.fullMemberOnly));
+}
+
+// ─── Tablet / Desktop: left sidebar ──────────────────────────────────────────
+
 function SidebarNav({ width }: { width: number }) {
-  const { theme, t, unreadChats, openHouseholdMenu } = useStore();
+  const { theme, t, unreadChats, user } = useStore();
   const { isDesktop } = useBreakpoint();
   const router = useRouter();
   const pathname = usePathname();
@@ -106,7 +134,7 @@ function SidebarNav({ width }: { width: number }) {
         </View>
       )}
 
-      {NAV_ITEMS.map(({ name, Icon, labelKey }) => {
+      {navSeats(user?.is_helper).map(({ name, Icon, labelKey }) => {
         const active = pathname === `/${name}` || pathname.endsWith(name);
         const iconColor = light
           ? active ? theme.colors.accentInk : theme.colors.textSoft
@@ -157,19 +185,21 @@ function SidebarNav({ width }: { width: number }) {
         );
       })}
 
-      {/* The phone bar grew a More button; the sidebar needs the same door or
-          hand-off and Your account become unreachable on a wide screen. */}
+      {/* The wide screen gets the same door the phone gets: the person who is
+          signed in. Settings and the hand-over live behind it, so there is one
+          place to look for "things about me" on either form factor rather than
+          a grid icon on one and a portrait on the other. */}
       <TouchableOpacity
-        testID="sidebar-more"
-        onPress={openHouseholdMenu}
+        testID="sidebar-account"
+        onPress={() => router.navigate('/(tabs)/account' as any)}
         style={[styles.sidebarItem, isDesktop ? styles.sidebarItemWide : styles.sidebarItemCompact]}
         activeOpacity={0.75}
         accessibilityRole="button"
-        accessibilityLabel={t('nav_more')}
+        accessibilityLabel={t('nav_more_account')}
       >
-        <LayoutGrid color={theme.colors.textSoft} size={20} strokeWidth={2.0} />
+        <UserIcon color={theme.colors.textSoft} size={20} strokeWidth={2.0} />
         {isDesktop && (
-          <Text style={[styles.sidebarLabel, { color: theme.colors.textMuted }]}>{t('nav_more')}</Text>
+          <Text style={[styles.sidebarLabel, { color: theme.colors.textMuted }]}>{t('nav_more_account')}</Text>
         )}
       </TouchableOpacity>
     </View>
@@ -179,77 +209,59 @@ function SidebarNav({ width }: { width: number }) {
 // ─── Phone: the bar itself ───────────────────────────────────────────────────
 
 /**
- * The phone bar: four daily destinations in one pill, and More beside it.
- * Rendering it ourselves (rather than styling the default bar) is what lets
- * More open a sheet instead of navigating — on web the built-in tab buttons
- * are anchors, which always navigate. The less-daily places (Vault, Settings,
- * Account, Hand-off) live in the More sheet it opens.
+ * The phone bar: the five places, in one pill that spans the bar.
+ *
+ * More used to sit beside the pill as a second object, on the reasoning that a
+ * drawer is not a destination and should not wear a seat. That was right about
+ * More and wrong about what was inside it: the vault was a place, filed behind
+ * a button whose label told you nothing about what it held. So More is gone
+ * rather than promoted — the vault takes a seat, and the three things left in
+ * the drawer (Settings, the hand-over, Your account) are all about *you*, so
+ * they live behind the portrait in the Feed header, which already went to your
+ * account and now goes to all three.
+ *
+ * Rendering the bar ourselves (rather than styling the default one) is still
+ * what keeps the seats plain buttons: on web the built-in tab buttons are
+ * anchors, and an anchor cannot be conditionally hidden per member type
+ * without a full route swap.
  */
-function PhoneTabBar({ state, navigation, style, onMore }: {
+function PhoneTabBar({ state, navigation, style }: {
   state: { index: number; routes: { key: string; name: string }[] };
   navigation: any;
   style: object;
-  onMore: () => void;
 }) {
-  const { t, theme, unreadChats } = useStore();
-  const c = theme.colors;
+  const { t, theme, unreadChats, user } = useStore();
   const current = state.routes[state.index]?.name;
   const insets = useSafeAreaInsets();
 
-  const tab = (name: string, Icon: any, labelKey: string, badge = 0) => {
-    const focused = current === name;
-    return (
-      <TouchableOpacity
-        key={name}
-        testID={`tab-${name}`}
-        accessibilityRole="tab"
-        accessibilityState={{ selected: focused }}
-        accessibilityLabel={t(labelKey)}
-        activeOpacity={0.75}
-        style={styles.barSlot}
-        onPress={() => { if (!focused) navigation.navigate(name); }}
-      >
-        <TabIcon focused={focused} Icon={Icon} label={t(labelKey)} badge={badge} />
-      </TouchableOpacity>
-    );
-  };
-
-  // Two objects, not five seats.
-  //
-  // The four destinations are the same kind of thing — places you go — so they
-  // share one pill. More is not a destination, it is the drawer holding
-  // everything that is not a place, so it gets its own button beside the pill
-  // rather than a seat in the row. The bar already floated with a 30px radius
-  // and 20px insets; this stops pretending the drawer is a fifth tab.
-  //
-  // The raised ＋ is gone. On the Feed the capture bar carries it, with the
-  // composer, camera and microphone beside it; the other three tabs now carry
-  // their own ＋ in their header, so the gesture exists everywhere it did — it
-  // is just no longer a button overlapping the content above the bar.
   return (
     <View style={[styles.barWrap, { bottom: Math.max(insets.bottom, 14) }]} pointerEvents="box-none">
       <View style={[style, styles.bar]}>
-        {tab('feed', Home, 'feed')}
-        {tab('calendar', CalendarIcon, 'calendar')}
-        {tab('kids', Users, 'family_tab', unreadChats)}
-        {tab('kitchen', UtensilsCrossed, 'kitchen')}
+        {navSeats(user?.is_helper).map(({ name, Icon, labelKey }) => {
+          const focused = current === name;
+          return (
+            <TouchableOpacity
+              key={name}
+              testID={`tab-${name}`}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: focused }}
+              accessibilityLabel={t(labelKey)}
+              activeOpacity={0.75}
+              style={styles.barSlot}
+              onPress={() => { if (!focused) navigation.navigate(name); }}
+            >
+              {/* Messaging lives inside Family, so that seat carries the only
+                  thing that tells a parent a message arrived. */}
+              <TabIcon
+                focused={focused}
+                Icon={Icon}
+                label={t(labelKey)}
+                badge={name === 'kids' ? unreadChats : 0}
+              />
+            </TouchableOpacity>
+          );
+        })}
       </View>
-      <TouchableOpacity
-        testID="tab-more"
-        accessibilityRole="button"
-        accessibilityLabel={t('nav_more')}
-        activeOpacity={0.85}
-        onPress={onMore}
-        style={[
-          styles.moreBtn,
-          { backgroundColor: c.tabBar, borderColor: c.tabBorder, shadowColor: '#202323' },
-        ]}
-      >
-        <LayoutGrid color={c.textMuted} size={20} />
-        <Text style={[styles.moreLabel, { color: c.textMuted }]} numberOfLines={1}>
-          {t('nav_more')}
-        </Text>
-      </TouchableOpacity>
     </View>
   );
 }
@@ -263,7 +275,7 @@ function PhoneTabBar({ state, navigation, style, onMore }: {
 let onboardingRedirectedFor: string | null = null;
 
 export default function TabLayout() {
-  const { t, theme, user, loading, householdMenuOpen, openHouseholdMenu, closeHouseholdMenu, quickAddOpen, closeQuickAdd } = useStore();
+  const { theme, user, loading, quickAddOpen, closeQuickAdd } = useStore();
   const { isWide, sidebarW } = useBreakpoint();
   const router = useRouter();
 
@@ -288,8 +300,8 @@ export default function TabLayout() {
     }
   }, [loading, user, router]);
 
-  // The pill holds the four destinations only; More is laid out next to it by
-  // barWrap, so the pill no longer stretches to the right edge.
+  // The pill is the whole bar now — nothing sits beside it — which is where
+  // the width for a fifth seat came from.
   const floatingTabStyle = {
     flex: 1,
     height: 74,
@@ -303,7 +315,7 @@ export default function TabLayout() {
     shadowOpacity: theme.mode === 'light' ? 0.16 : 0.28,
     shadowRadius: 22,
     shadowOffset: { width: 0, height: 12 },
-    paddingHorizontal: 6,
+    paddingHorizontal: PILL_PADDING,
   };
 
   return (
@@ -319,7 +331,6 @@ export default function TabLayout() {
               state={props.state}
               navigation={props.navigation}
               style={floatingTabStyle}
-              onMore={openHouseholdMenu}
             />
           )
         }
@@ -332,9 +343,12 @@ export default function TabLayout() {
             them — so the standalone Messages inbox is no longer a bar seat.
             Kept routable (href:null) so any deep link still resolves. */}
         <Tabs.Screen name="chat" options={{ href: null }} />
-        {/* Routable, but not seats in the bar — reached from the Household menu
-            in the Feed header. */}
-        <Tabs.Screen name="vault"    options={{ href: null }} />
+        {/* A seat for everyone who is allowed one. A helper is not: every
+            /api/vault route is behind require_full_member, so their bar would
+            carry a door onto a screen of 403s. */}
+        <Tabs.Screen name="vault" options={{ href: user?.is_helper ? null : undefined }} />
+        {/* Routable, but not seats — reached from your portrait in the Feed
+            header (phone) or the account row in the sidebar (wide). */}
         <Tabs.Screen name="settings" options={{ href: null }} />
         <Tabs.Screen name="account"  options={{ href: null }} />
         {/* Reached from the feed header, never a tab. */}
@@ -343,7 +357,6 @@ export default function TabLayout() {
 
       {isWide && <SidebarNav width={sidebarW} />}
       <GlobalCapture visible={quickAddOpen} onClose={closeQuickAdd} />
-      <MoreSheet visible={householdMenuOpen} onClose={closeHouseholdMenu} />
     </>
   );
 }
@@ -358,36 +371,29 @@ const styles = StyleSheet.create({
     justifyContent: 'space-around',
   },
   barSlot: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  // Positions the two objects the bar is now made of. box-none on the wrapper
-  // so the gap between them does not swallow taps meant for the screen.
+  // box-none so the strip either side of the pill does not swallow taps meant
+  // for the screen behind it.
   barWrap: {
     position: 'absolute',
-    left: 20,
-    right: 20,
+    left: BAR_INSET,
+    right: BAR_INSET,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
   },
-  moreBtn: {
-    width: 62,
-    height: 74,
-    borderRadius: 26,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    elevation: 10,
-    shadowOpacity: 0.16,
-    shadowRadius: 22,
-    shadowOffset: { width: 0, height: 12 },
-  },
-  moreLabel: { fontFamily: 'Inter_700Bold', fontSize: 10, letterSpacing: -0.1 },
+  // Five seats share 338pt of pill on a 390pt phone — 67.6pt each — and only
+  // 268pt on a 320pt one, 53.6pt each. maxWidth is the load-bearing line: the
+  // seat sizes to its contents and nothing in the bar clips, so without it a
+  // label (or a padding) too big for its share does not shrink or ellipsise,
+  // it silently draws over the seat beside it. Measured, in the nav harness:
+  // with the padding at 22pt the five accent pills overlapped by 12pt each
+  // while every other check still reported the bar fine.
   tabItem: {
     alignItems: 'center',
     justifyContent: 'center',
     gap: 3,
-    minWidth: 62,
-    paddingHorizontal: 12,
+    minWidth: SEAT_MIN_WIDTH,
+    maxWidth: '100%',
+    paddingHorizontal: SEAT_PADDING,
     height: 54,
     borderRadius: 9999,
   },
@@ -397,7 +403,7 @@ const styles = StyleSheet.create({
   },
   tabBadgeText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 10 },
   tabLabel: {
-    fontSize: 11,
+    fontSize: LABEL_FONT_SIZE,
     fontFamily: 'Inter_800ExtraBold',
     letterSpacing: -0.1,
   },
