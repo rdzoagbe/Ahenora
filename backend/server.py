@@ -2012,6 +2012,33 @@ def _is_parent_role(role: Optional[str]) -> bool:
     return str(role or "").strip().lower() in ("parent", "co-parent")
 
 
+# The standings a household row can hold, and the ONE place that decides which.
+#
+# It is sent to the client rather than derived there because the client got it
+# wrong: the account screen showed a hard-coded "OWNER" to every signed-in
+# person, so a grandmother invited as a carer opened her own profile and was
+# told she owned the household. The rule that separates a parent from a
+# grandmother is `_is_parent_role` above, and it lives here — a second copy in
+# TypeScript would be a second copy to get out of step.
+MEMBER_STANDINGS = ("owner", "parent", "helper", "teen", "child", "member")
+
+
+def member_standing(member: dict, is_founder: bool) -> str:
+    """What this member IS to the household, in one word."""
+    role = str(member.get("role") or "").strip().lower()
+    if is_founder:
+        return "owner"
+    if _is_parent_role(role):
+        return "parent"
+    if role in ("helper", "teen", "child"):
+        return role
+    # An adult invited with a relationship — "Grandma", "Uncle", "Nanny". A
+    # full member of the household without being one of its parents. We have no
+    # better word for them than the one the family used, so the client shows
+    # their role rather than a label we invented.
+    return "member"
+
+
 async def _member_for_user(database: Any, family_id: str, user: dict) -> dict:
     """The signed-in user's own member row, resolved resiliently.
 
@@ -5709,6 +5736,7 @@ async def family_members(user=Depends(require_user)):
             or (bool(my_email) and str(item.get("email") or "").strip().lower() == my_email)
         )
         row["is_founder"] = item.get("member_id") == founder_id
+        row["standing"] = member_standing(item, row["is_founder"])
         rows.append(row)
     return rows
 

@@ -191,6 +191,23 @@ export default function AccountScreen() {
 
   // Secret Santa is seasonal and currently hidden — see src/features.ts. The
   // row is dropped from the list, never merely styled away.
+  // Written out per standing rather than looked up by a built key: a
+  // t(`acc_standing_${x}`) reads fine and is invisible to the audit that
+  // checks every key we ship is actually used, and to the one that checks
+  // every key used actually exists.
+  const STANDING_LABEL: Record<string, string> = {
+    owner: t('acc_standing_owner'),
+    parent: t('acc_standing_parent'),
+    helper: t('acc_standing_helper'),
+    teen: t('acc_standing_teen'),
+    child: t('acc_standing_child'),
+  };
+  // 'member' is an adult invited by relationship — a grandmother, an uncle.
+  // The family already chose a word for them; ours would be worse.
+  const standing = me
+    ? (STANDING_LABEL[me.standing ?? ''] ?? ((me.role || '').toUpperCase() || null))
+    : null;
+
   const householdRows = [
     { key: 'settings', icon: <SettingsIcon color={ui.orange} size={18} />, soft: ui.orangeSoft,
       title: t('settings'), sub: t('nav_more_settings_sub'),
@@ -227,10 +244,21 @@ export default function AccountScreen() {
             )}
             <Text style={styles.name} numberOfLines={1}>{name}</Text>
             <Text style={styles.email} numberOfLines={1}>{email}</Text>
-            <View style={styles.badgeRow}>
-              <Badge label={t('acc_badge_owner')} bg={ui.soft} color={ui.muted} />
-              <Badge label={t('acc_badge_verified')} bg={ui.mint} color={ui.mintText} />
-            </View>
+            {/* One badge, and only when we know what to put in it.
+                There were two, both hard-coded: "OWNER" under every signed-in
+                person's name — a carer opening her own profile was told she
+                owned the household — and "VERIFIED", which nothing in the app
+                ever verifies (an email/password account has confirmed no
+                address at all). The badge is the only place the app tells you
+                your standing, and the real permission model turns on exactly
+                that distinction, so saying it wrong is worse than saying
+                nothing. Now it says what the server says, or nothing until the
+                server has said it. */}
+            {standing ? (
+              <View style={styles.badgeRow}>
+                <Badge label={standing} bg={ui.soft} color={ui.muted} />
+              </View>
+            ) : null}
           </Card>
 
           {me ? (

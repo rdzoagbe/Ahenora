@@ -228,6 +228,13 @@ async def main():
         r["no_account_row_truncated"] = not clipped_rows
         if clipped_rows:
             print(f"truncated account rows: {clipped_rows}")
+
+        # The badge under your name has to be true. It used to be the word
+        # OWNER, hard-coded, under everyone's — see tests/test_who_am_i_badge.py
+        # and the helper's side of this further down.
+        acct = await p.inner_text("body")
+        r["founder_is_told_they_are_the_owner"] = "OWNER" in acct
+        r["nothing_claims_an_unverified_account_is_verified"] = "VERIFIED" not in acct
         await p.screenshot(path="nav_account.png")
 
         await p.click('[data-testid="account-settings"]')
@@ -310,6 +317,10 @@ async def main():
         await hp.wait_for_timeout(2500)
         r["helper_reaches_settings"] = await hp.locator('[data-testid="account-settings"]').count() == 1
         r["helper_is_not_offered_hand_over"] = await hp.locator('[data-testid="account-hand-over"]').count() == 0
+        # The whole point of the badge fix, seen by the person it was wrong for.
+        hacct = await hp.inner_text("body")
+        r["helper_is_not_told_they_own_the_household"] = "OWNER" not in hacct
+        r["helper_is_told_they_are_a_carer"] = "CARER" in hacct
         await hp.screenshot(path="nav_helper.png")
         r["no_js_errors_for_the_helper"] = not herrs
         await hctx.close()
