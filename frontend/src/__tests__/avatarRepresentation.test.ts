@@ -18,7 +18,8 @@
  */
 import {
   AVATAR_KINDS, LEGACY_KINDS, SKIN_TONES, HAIR_COLOURS,
-  DEFAULT_TONE, DEFAULT_HAIR, avatarValue, parseAvatar, hasHairColour,
+  DEFAULT_TONE, DEFAULT_HAIR, avatarValue, parseAvatar, hasHairColour, illustrationXml,
+  HEAD_CROP,
 } from '../avatarValue';
 import { AVATAR_ART, SKIN_TOKEN, HAIR_TOKEN } from '../avatarArt';
 
@@ -133,5 +134,54 @@ describe('a stored value survives a round trip', () => {
         });
       }
     }
+  });
+});
+
+describe('the colours that reach the drawing are colours', () => {
+  it('never doubles the hash', () => {
+    // The bug: the art carries `fill="#__SKIN__"` — the hash belongs to the
+    // drawing — and the component joined the replacement with a hash of its
+    // own, giving `fill="##edb98a"`. Not a colour. Every tone and every hair
+    // colour had been an invalid string since tones were added, and no test
+    // caught it, because a test that renders the same wrong string matches
+    // itself. It was found by photographing the picker.
+    for (const kind of AVATAR_KINDS) {
+      const xml = illustrationXml(kind, 1, 2)!;
+      expect(xml).not.toContain('##');
+    }
+  });
+
+  it('puts the chosen tone and hair colour in, exactly once each', () => {
+    const xml = illustrationXml('coils', 4, 0)!;
+    expect(xml).toContain(`fill="#${SKIN_TONES[4]}"`);
+    expect(xml).toContain(`fill="#${HAIR_COLOURS[0]}"`);
+    expect(xml).not.toContain('__SKIN__');
+    expect(xml).not.toContain('__HAIR__');
+  });
+
+  it('every combination the picker can produce is a valid colour', () => {
+    for (const kind of AVATAR_KINDS) {
+      for (let t = 0; t < SKIN_TONES.length; t += 1) {
+        for (let h = 0; h < HAIR_COLOURS.length; h += 1) {
+          const xml = illustrationXml(kind, t, h)!;
+          for (const fill of xml.match(/fill="[^"]*"/g) || []) {
+            // Anything with a hash must be exactly #rgb, #rrggbb or #rrggbbaa.
+            if (fill.includes('#')) {
+              expect(fill).toMatch(/^fill="#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})"$/);
+            }
+          }
+        }
+      }
+    }
+  });
+
+  it('crops to the head, because a bust at 30pt is a blob', () => {
+    const xml = illustrationXml('coils', 1, 2)!;
+    expect(xml).toContain(`viewBox="${HEAD_CROP}"`);
+    expect(xml).not.toContain('viewBox="0 0 280 280"');
+  });
+
+  it('returns nothing for a drawing that does not exist', () => {
+    expect(illustrationXml('nonesuch' as never, 1, 2)).toBeNull();
   });
 });
