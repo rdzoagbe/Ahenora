@@ -1,4 +1,4 @@
-import { AVATAR_ART, HAIR_TOKEN } from './avatarArt';
+import { AVATAR_ART, SKIN_TOKEN, HAIR_TOKEN } from './avatarArt';
 
 /**
  * What a person's picture IS, as a value — separate from the component that
@@ -105,4 +105,33 @@ export function avatarKind(value?: string | null): AvatarKind | null {
  */
 export function hasHairColour(kind: AvatarKind): boolean {
   return AVATAR_ART[kind]?.includes(HAIR_TOKEN) ?? false;
+}
+
+/**
+ * The drawings are busts — head AND shoulders — in a 280×280 box, so at the
+ * sizes they are shown at (30pt in a list, 52 in the picker) the head was
+ * about a third of the circle and every style collapsed into the same dark
+ * blob. Cropped to the head, the way a profile picture is framed.
+ */
+export const HEAD_CROP = '30 5 220 220';
+
+/**
+ * The finished SVG for one person: the drawing with its colours filled in and
+ * its frame cropped to the head.
+ *
+ * Pure, and out here rather than inside the component, because of what it got
+ * wrong. The art carries `fill="#__SKIN__"` — the hash is part of the drawing
+ * — and the component used to join the replacement with a hash of its own,
+ * producing `fill="##edb98a"`, which is not a colour. Every skin tone and hair
+ * colour had been an invalid string since tones were added. No test caught it:
+ * a test that renders the same wrong string matches itself. It was found by
+ * photographing the picker.
+ */
+export function illustrationXml(kind: AvatarKind, tone: number, hair: number): string | null {
+  const art = AVATAR_ART[kind];
+  if (!art) return null;
+  return art
+    .split(SKIN_TOKEN).join(SKIN_TONES[tone])
+    .split(HAIR_TOKEN).join(HAIR_COLOURS[hair])
+    .replace('viewBox="0 0 280 280"', `viewBox="${HEAD_CROP}"`);
 }

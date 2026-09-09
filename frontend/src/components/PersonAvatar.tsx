@@ -5,14 +5,15 @@ import { useStore } from '../store';
 import { AVATAR_ART, SKIN_TOKEN, HAIR_TOKEN } from '../avatarArt';
 import {
   AVATAR_KINDS, LEGACY_KINDS, SKIN_TONES, HAIR_COLOURS, DEFAULT_TONE, DEFAULT_HAIR,
-  ILLUS_PREFIX, avatarValue, parseAvatar, avatarKind, hasHairColour, type AvatarKind,
+  ILLUS_PREFIX, avatarValue, parseAvatar, avatarKind, hasHairColour, illustrationXml,
+  type AvatarKind,
 } from '../avatarValue';
 
 // Re-exported so every existing caller keeps importing from where it always
 // did; the definitions moved, the surface did not.
 export {
   AVATAR_KINDS, LEGACY_KINDS, SKIN_TONES, HAIR_COLOURS, DEFAULT_TONE, DEFAULT_HAIR,
-  ILLUS_PREFIX, avatarValue, parseAvatar, avatarKind, hasHairColour,
+  ILLUS_PREFIX, avatarValue, parseAvatar, avatarKind, hasHairColour, illustrationXml,
 };
 export type { AvatarKind };
 
@@ -28,17 +29,21 @@ export type { AvatarKind };
  * picture of their eight-year-old to make the app look finished, and there is
  * no upload to store, moderate or delete.
  */
+/**
+ * A light ground behind the drawing, in both themes.
+ *
+ * Dark hair on the app's dark card was a silhouette against its own colour:
+ * the afro and the bun read as bald. This is the frame of a photograph rather
+ * than a patch of the page — deliberately one colour in light and dark mode,
+ * because the drawing itself has no dark variant.
+ */
+const ILLUSTRATION_GROUND = '#F3EFE9';
+
 function Illustration(
   { kind, tone, hair, size }: { kind: AvatarKind; tone: number; hair: number; size: number },
 ) {
-  const art = AVATAR_ART[kind];
-  if (!art) return null;
-  // The whole reason the art carries tokens instead of colours: one drawing
-  // serves every combination, so eight styles across six tones and six hair
-  // colours cost eight pictures rather than two hundred and eighty-eight.
-  const xml = art
-    .split(SKIN_TOKEN).join(`#${SKIN_TONES[tone]}`)
-    .split(HAIR_TOKEN).join(`#${HAIR_COLOURS[hair]}`);
+  const xml = illustrationXml(kind, tone, hair);
+  if (!xml) return null;
   return <SvgXml xml={xml} width={size} height={size} />;
 }
 
@@ -65,7 +70,10 @@ export function PersonAvatar({
 
   if (illus) {
     return (
-      <View style={box}>
+      // The light ground goes HERE and not on the shared `box`, because a
+      // photo and an initial both belong on the page's own colours; only the
+      // drawing needs a frame of its own to be seen against.
+      <View style={[box, { backgroundColor: ILLUSTRATION_GROUND }]}>
         <Illustration kind={illus.kind} tone={illus.tone} hair={illus.hair} size={size} />
       </View>
     );
@@ -146,7 +154,7 @@ export function AvatarPicker({
         <PersonAvatar
           name={name}
           avatar={kind ? avatarValue(kind, tone, hair) : null}
-          size={40}
+          size={52}
           ring={false}
         />
       </TouchableOpacity>
@@ -224,7 +232,9 @@ const styles = StyleSheet.create({
 const pickerStyles = StyleSheet.create({
   wrap: { gap: 12 },
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'center' },
-  option: { width: 46, height: 46, borderRadius: 23, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  // 58, not 46. Eight hair styles cannot be told apart in a 46pt circle —
+  // Roland's screenshot of the picker was eight identical dark discs.
+  option: { width: 58, height: 58, borderRadius: 29, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   optionOn: { borderWidth: 2.5 },
   swatch: { width: 30, height: 30, borderRadius: 15, borderWidth: 1.5 },
   label: { fontFamily: 'Inter_600SemiBold', fontSize: 12.5, marginRight: 2 },
