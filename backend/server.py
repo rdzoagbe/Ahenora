@@ -9269,6 +9269,24 @@ async def admin_subscribers(user=Depends(require_user)):
         except ValueError:
             return None
 
+    # Who is on the admin list, resolved once for the whole sweep. A household
+    # containing an admin account receives the TOP tier at runtime whatever its
+    # stored plan says — so it uses premium without paying and does not appear
+    # as `unpaid_premium`, which is decided from the stored plan. Without this
+    # the list answered a narrower question than the one being asked of it.
+    admin_families = set()
+    if ADMIN_EMAILS:
+        async for u in database["users"].find({}, {"_id": 0, "email": 1, "family_id": 1}):
+            if is_admin_email(u.get("email", "")) and u.get("family_id"):
+                admin_families.add(u["family_id"])
+
+    # And the global switch. While no paid rail is configured, EVERY household
+    # gets the top tier — that is the launch preview working as designed, and
+    # it means a "you are using premium without paying" list would name every
+    # family in the database. Reported alongside so nobody acts on the list
+    # without knowing which of the two worlds they are in.
+    live = billing_is_live()
+
     rows = []
     paying = 0
     async for fam in database["families"].find({}, {"_id": 0}):
@@ -9292,6 +9310,21 @@ async def admin_subscribers(user=Depends(require_user)):
             # "3 paying households" sat next to RevenueCat's 2 and neither
             # number looked wrong.
             "unpaid_premium": bool(is_paying and source is None),
+            # WHY they are not paying, which is the part that makes the flag
+            # safe to act on. A tester and an early adopter you thanked are not
+            # freeloaders, and a reminder sent to either is a mistake you
+            # cannot take back.
+            "unpaid_reason": (
+                "preview" if not live
+                else "admin_or_tester" if fid in admin_families
+                else "grandfathered" if fam.get("grandfathered")
+                else "paid_plan_no_receipt" if (is_paying and source is None)
+                else None),
+            # True whenever this household is GETTING premium without paying,
+            # by any route — not only when its stored plan says so.
+            "premium_without_paying": bool(
+                (not live) or (fid in admin_families) or fam.get("grandfathered")
+                or (is_paying and source is None)),
             "billing_cycle": fam.get("billing_cycle"),
             "owner_name": contact.get("name", ""),
             "owner_email": contact.get("email", ""),
@@ -9320,6 +9353,14 @@ async def admin_subscribers(user=Depends(require_user)):
         # numbers being different is the interesting fact, so it is reported
         # rather than left to be spotted by counting rows.
         "paying_verified": sum(1 for r in rows if r["paying"] and not r["unpaid_premium"]),
+        # The two facts you need before acting on any of this.
+        #
+        # `billing_live` false means no paid rail is configured at all, so every
+        # household in the list is on the launch preview by design — and a
+        # "start paying or lose access" message would be going to all of them,
+        # wrongly. It is the first thing to check and the easiest to forget.
+        "billing_live": live,
+        "premium_without_paying": sum(1 for r in rows if r["premium_without_paying"]),
         "subscribers": rows,
     }
 
