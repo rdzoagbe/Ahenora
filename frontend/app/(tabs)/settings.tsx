@@ -1008,13 +1008,12 @@ export default function Settings() {
           </>) : null}
 
           {/* Preferences — language */}
+          {/* One row, no heading over it.
+              This was a "Preferences · English" section label with the globe
+              icon, above a single "Language · English" row with the same globe
+              icon — the same word and the same value, twice, one under the
+              other. A group of one is not a group. */}
           {groupVisible(GK.preferences) ? (<>
-          {groupHead('preferences',
-            <IconTile bg={ui.soft}><Globe color={ui.text} size={18} /></IconTile>,
-            t('set_preferences'),
-            LANG_NAMES[lang],
-            GK.preferences)}
-          {groupOpen('preferences', GK.preferences) ? (
           <Card style={styles.cardPad}>
             <NavRow
               testID="settings-lang"
@@ -1025,16 +1024,20 @@ export default function Settings() {
               divider={false}
             />
           </Card>
-
-          ) : null}
           </>) : null}
 
           {/* More — history, plans, usage, updates */}
           {groupVisible(GK.more) ? (<>
           {groupHead('more',
             <IconTile bg={ui.soft}><BarChart3 color={ui.text} size={18} /></IconTile>,
-            t('set_more'),
-            versionLabel,
+            // "More · 1.1.0" — the least descriptive label in the app, on the
+            // group holding Usage analytics, which is where the billing screen
+            // lives. It also collided with the More in the tab bar: same word,
+            // a different destination, one nested inside the other. A version
+            // number as a subtitle says nothing about what is behind the row,
+            // and the version is shown properly on the App version row inside.
+            t('set_tools'),
+            t('set_tools_sub'),
             GK.more)}
           {groupOpen('more', GK.more) ? (<>
           <Card style={styles.cardPad}>
