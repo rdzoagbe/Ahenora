@@ -2,7 +2,19 @@ import React from 'react';
 import { View, Text, Image, StyleSheet, TouchableOpacity } from 'react-native';
 import { SvgXml } from 'react-native-svg';
 import { useStore } from '../store';
-import { AVATAR_ART, SKIN_TOKEN } from '../avatarArt';
+import { AVATAR_ART, SKIN_TOKEN, HAIR_TOKEN } from '../avatarArt';
+import {
+  AVATAR_KINDS, LEGACY_KINDS, SKIN_TONES, HAIR_COLOURS, DEFAULT_TONE, DEFAULT_HAIR,
+  ILLUS_PREFIX, avatarValue, parseAvatar, avatarKind, hasHairColour, type AvatarKind,
+} from '../avatarValue';
+
+// Re-exported so every existing caller keeps importing from where it always
+// did; the definitions moved, the surface did not.
+export {
+  AVATAR_KINDS, LEGACY_KINDS, SKIN_TONES, HAIR_COLOURS, DEFAULT_TONE, DEFAULT_HAIR,
+  ILLUS_PREFIX, avatarValue, parseAvatar, avatarKind, hasHairColour,
+};
+export type { AvatarKind };
 
 /**
  * The holder for a person's picture.
@@ -16,50 +28,17 @@ import { AVATAR_ART, SKIN_TOKEN } from '../avatarArt';
  * picture of their eight-year-old to make the app look finished, and there is
  * no upload to store, moderate or delete.
  */
-export const AVATAR_KINDS = ['man', 'woman', 'boy', 'girl'] as const;
-export type AvatarKind = typeof AVATAR_KINDS[number];
-
-/**
- * Five tones rather than the two that were asked for. It costs one hex each —
- * the drawing is identical and the tone is a string replace — and two tones
- * makes a household pick the nearer of two, which is worse than not offering
- * the choice at all.
- */
-export const SKIN_TONES = ['ffdbb4', 'edb98a', 'd08b5b', 'ae5d29', '614335'] as const;
-export const DEFAULT_TONE = 1;
-
-/** Stored as `illus:<kind>` or `illus:<kind>:<tone>`, so a photo URL still reads as a URL. */
-export const ILLUS_PREFIX = 'illus:';
-
-export function avatarValue(kind: AvatarKind, tone: number): string {
-  return `${ILLUS_PREFIX}${kind}:${tone}`;
-}
-
-/** Parses a stored value. Tone is optional: rows written before tones existed
- *  carry only a kind, and must keep rendering rather than fall back to a letter. */
-export function parseAvatar(value?: string | null): { kind: AvatarKind; tone: number } | null {
-  if (!value || !value.startsWith(ILLUS_PREFIX)) return null;
-  const [kind, rawTone] = value.slice(ILLUS_PREFIX.length).split(':');
-  if (!(AVATAR_KINDS as readonly string[]).includes(kind)) return null;
-  const tone = Number(rawTone);
-  return {
-    kind: kind as AvatarKind,
-    tone: Number.isInteger(tone) && tone >= 0 && tone < SKIN_TONES.length ? tone : DEFAULT_TONE,
-  };
-}
-
-/** Back-compat name for callers that only need to know an illustration is set. */
-export function avatarKind(value?: string | null): AvatarKind | null {
-  return parseAvatar(value)?.kind ?? null;
-}
-
-function Illustration({ kind, tone, size }: { kind: AvatarKind; tone: number; size: number }) {
+function Illustration(
+  { kind, tone, hair, size }: { kind: AvatarKind; tone: number; hair: number; size: number },
+) {
   const art = AVATAR_ART[kind];
   if (!art) return null;
-  // The whole reason the art carries a token instead of a colour: one drawing
-  // serves every tone, so five tones cost five hex values rather than five
-  // copies of the same 5KB picture.
-  const xml = art.split(SKIN_TOKEN).join(`#${SKIN_TONES[tone]}`);
+  // The whole reason the art carries tokens instead of colours: one drawing
+  // serves every combination, so eight styles across six tones and six hair
+  // colours cost eight pictures rather than two hundred and eighty-eight.
+  const xml = art
+    .split(SKIN_TOKEN).join(`#${SKIN_TONES[tone]}`)
+    .split(HAIR_TOKEN).join(`#${HAIR_COLOURS[hair]}`);
   return <SvgXml xml={xml} width={size} height={size} />;
 }
 
@@ -87,7 +66,7 @@ export function PersonAvatar({
   if (illus) {
     return (
       <View style={box}>
-        <Illustration kind={illus.kind} tone={illus.tone} size={size} />
+        <Illustration kind={illus.kind} tone={illus.tone} hair={illus.hair} size={size} />
       </View>
     );
   }
@@ -132,6 +111,7 @@ export function AvatarPicker({
   const ui = theme.colors;
   const current = parseAvatar(value);
   const tone = current?.tone ?? DEFAULT_TONE;
+  const hair = current?.hair ?? DEFAULT_HAIR;
 
   const person = (kind: AvatarKind | null) => {
     const selected = kind === (current?.kind ?? null);
@@ -154,7 +134,7 @@ export function AvatarPicker({
         accessibilityLabel={t(kind ? `avatar_${kind}` : 'avatar_none')}
         disabled={busy}
         activeOpacity={0.8}
-        onPress={() => onPick(kind ? avatarValue(kind, tone) : null)}
+        onPress={() => onPick(kind ? avatarValue(kind, tone, hair) : null)}
         style={[
           pickerStyles.option,
           { borderColor: selected ? ui.accent : ui.cardBorder, opacity: busy ? 0.6 : 1 },
@@ -165,7 +145,7 @@ export function AvatarPicker({
             two concentric rings on a 46pt target reads as a target, not a face. */}
         <PersonAvatar
           name={name}
-          avatar={kind ? avatarValue(kind, tone) : null}
+          avatar={kind ? avatarValue(kind, tone, hair) : null}
           size={40}
           ring={false}
         />
@@ -195,11 +175,38 @@ export function AvatarPicker({
               accessibilityLabel={t('avatar_skin_n', { n: i + 1 })}
               disabled={busy}
               activeOpacity={0.8}
-              onPress={() => onPick(avatarValue(current.kind, i))}
+              onPress={() => onPick(avatarValue(current.kind, i, hair))}
               style={[
                 pickerStyles.swatch,
                 { backgroundColor: `#${hex}`, borderColor: i === tone ? ui.accent : ui.cardBorder },
                 i === tone ? pickerStyles.optionOn : null,
+              ]}
+            />
+          ))}
+        </View>
+      ) : null}
+
+      {/* Hair colour, which is the half of this that was missing. Skin alone
+          gave a household their own tone under somebody else's hair. Hidden
+          for a drawing that has no hair to colour. */}
+      {current && hasHairColour(current.kind) ? (
+        <View style={pickerStyles.row} accessibilityRole="radiogroup" accessibilityLabel={t('avatar_hair')}>
+          <Text style={[pickerStyles.label, { color: ui.textMuted }]}>{t('avatar_hair')}</Text>
+          {HAIR_COLOURS.map((hex, i) => (
+            <TouchableOpacity
+              key={hex}
+              testID={`avatar-hair-${i}`}
+              accessibilityRole="radio"
+              accessibilityState={{ checked: i === hair }}
+              aria-checked={i === hair}
+              accessibilityLabel={t('avatar_hair_n', { n: i + 1 })}
+              disabled={busy}
+              activeOpacity={0.8}
+              onPress={() => onPick(avatarValue(current.kind, tone, i))}
+              style={[
+                pickerStyles.swatch,
+                { backgroundColor: `#${hex}`, borderColor: i === hair ? ui.accent : ui.cardBorder },
+                i === hair ? pickerStyles.optionOn : null,
               ]}
             />
           ))}
