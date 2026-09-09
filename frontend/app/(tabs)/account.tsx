@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -24,7 +24,10 @@ import { PasswordInput } from '../../src/components/PasswordInput';
 import { Badge, Card, IconTile, SectionTitle, useUI, UIColors } from '../../src/components/Kit';
 import { useStore } from '../../src/store';
 import { AuthDiagnosticResult, runAuthDiagnostics } from '../../src/authDiagnostics';
-import { api } from '../../src/api';
+import { api, FamilyMember } from '../../src/api';
+import { PersonAvatar, AvatarPicker } from '../../src/components/PersonAvatar';
+import { logger } from '../../src/logger';
+import { apiErrorText } from '../../src/apiError';
 
 function ListRow({
   tile,
@@ -65,6 +68,43 @@ export default function AccountScreen() {
   const { theme } = useStore();
   const ui = useUI();
   const styles = createStyles(ui);
+  /**
+   * Your own picture, on your own profile.
+   *
+   * The picker existed, on /member, reachable only through the Family tab —
+   * so the screen you land on by tapping your own portrait showed a grey
+   * circle with your initial in it and no way to change anything. Keigh could
+   * not set hers; there was no route from herself to her own picture.
+   */
+  const [me, setMe] = useState<FamilyMember | null>(null);
+  const [savingAvatar, setSavingAvatar] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.familyMembers()
+      .then((rows) => {
+        if (!cancelled) setMe(rows.find((m) => m.is_me) || null);
+      })
+      .catch((e) => logger.warn('account members load failed', e));
+    return () => { cancelled = true; };
+  }, []);
+
+  const saveMyAvatar = useCallback(async (next: string | null) => {
+    if (!me) return;
+    setSavingAvatar(true);
+    const before = me.avatar;
+    setMe({ ...me, avatar: next ?? '' });        // answer the tap immediately
+    try {
+      await api.updateFamilyMember(me.member_id, { avatar: next ?? '' });
+    } catch (e) {
+      logger.warn('avatar save failed', e);
+      setMe((cur) => (cur ? { ...cur, avatar: before } : cur));
+      Alert.alert(t('hub_picture'), apiErrorText(e, t, 'exp_save_failed'));
+    } finally {
+      setSavingAvatar(false);
+    }
+  }, [me, t]);
+
   const [diagnostics, setDiagnostics] = useState<AuthDiagnosticResult | null>(null);
   const [checking, setChecking] = useState(false);
   const [supportOpen, setSupportOpen] = useState(false);
@@ -158,9 +198,13 @@ export default function AccountScreen() {
 
           {/* Profile */}
           <Card style={styles.profileCard}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{initial}</Text>
-            </View>
+            {me ? (
+              <PersonAvatar name={name} avatar={me.avatar} size={66} />
+            ) : (
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>{initial}</Text>
+              </View>
+            )}
             <Text style={styles.name} numberOfLines={1}>{name}</Text>
             <Text style={styles.email} numberOfLines={1}>{email}</Text>
             <View style={styles.badgeRow}>
@@ -168,6 +212,20 @@ export default function AccountScreen() {
               <Badge label={t('acc_badge_verified')} bg={ui.mint} color={ui.mintText} />
             </View>
           </Card>
+
+          {me ? (
+            <Card style={styles.cardPad}>
+              <View testID="account-picture" />
+              <SectionTitle>{t('hub_picture')}</SectionTitle>
+              <Text style={styles.pictureSub}>{t('hub_picture_sub')}</Text>
+              <AvatarPicker
+                name={name}
+                value={me.avatar}
+                onPick={saveMyAvatar}
+                busy={savingAvatar}
+              />
+            </Card>
+          ) : null}
 
           {/* Sign-in & connections */}
           <SectionTitle style={styles.sectionGap}>{t('acc_section_signin')}</SectionTitle>
@@ -404,6 +462,7 @@ const createStyles = (ui: UIColors) =>
   profileCard: { alignItems: 'center', paddingVertical: 22, paddingHorizontal: 18, marginBottom: 18 },
   avatar: { width: 66, height: 66, borderRadius: 99, backgroundColor: ui.orangeDeep, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
   avatarText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 26 },
+  pictureSub: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 18, marginBottom: 10 },
   name: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 19, lineHeight: 24 },
   email: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 14, marginTop: 3 },
   badgeRow: { flexDirection: 'row', gap: 8, marginTop: 12 },

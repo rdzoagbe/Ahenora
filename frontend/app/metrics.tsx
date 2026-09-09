@@ -1,7 +1,7 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, RefreshControl, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { ArrowLeft, Users, TrendingUp } from 'lucide-react-native';
 
 import { PressScale } from '../src/components/PressScale';
@@ -69,6 +69,14 @@ export default function MetricsScreen() {
   const [plans, setPlans] = useState<PlanAdoption | null>(null);
   const [subs, setSubs] = useState<SubscriberList | null>(null);
   const [support, setSupport] = useState<SupportInbox | null>(null);
+  // Opened straight from the "someone wrote to support" notification, which
+  // used to land on the Feed and leave the reader hunting. The inbox is far
+  // down a long page of charts, so arriving at the top of it is not the same
+  // as arriving at it.
+  const params = useLocalSearchParams<{ support?: string }>();
+  const scrollRef = useRef<ScrollView>(null);
+  const supportY = useRef(0);
+  const jumped = useRef(false);
   const [showClosedTickets, setShowClosedTickets] = useState(false);
   const [showAllSubs, setShowAllSubs] = useState(false);
   const [billing, setBilling] = useState<BillingEventLog | null>(null);
@@ -189,6 +197,7 @@ export default function MetricsScreen() {
         </View>
 
         <ScrollView
+          ref={scrollRef}
           contentContainerStyle={styles.scroll}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={ui.muted} />}
         >
@@ -728,7 +737,19 @@ export default function MetricsScreen() {
           {/* Support inbox — every message from the in-app form. For months
               the form stored these and told nobody; the older ones here are
               the messages that were never answered. */}
-          <Text style={styles.sectionTitle}>Support inbox</Text>
+          <View
+            testID="metrics-support"
+            onLayout={(e) => {
+              supportY.current = e.nativeEvent.layout.y;
+              if (params?.support && !jumped.current) {
+                jumped.current = true;
+                requestAnimationFrame(() =>
+                  scrollRef.current?.scrollTo({ y: supportY.current, animated: true }));
+              }
+            }}
+          >
+            <Text style={styles.sectionTitle}>Support inbox</Text>
+          </View>
           {support ? (
             <>
               {!support.email_configured ? (

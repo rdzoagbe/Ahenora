@@ -52,16 +52,42 @@ class BothStores(unittest.TestCase):
                 self.assertNotIn(phrase, body,
                                  f"{page} still tells visitors the iPhone app does not exist")
 
-    def test_an_iphone_visitor_is_sent_to_the_app_store(self):
-        # The user-agent branch used to point iPhones at /app/. A store link
-        # further down the page is not the same as the button they press.
+    def test_both_store_buttons_exist_in_the_markup(self):
+        # Not built by script: present in the HTML that ships, so a visitor
+        # with JavaScript off still sees both places to install from.
         for page in PAGES:
             body = read(page)
-            self.assertIn("isApple", body, f"{page} does not detect an Apple device")
-            apple_branch = body[body.index("var isApple"):]
-            head = apple_branch[:900]
-            self.assertIn(IOS, head,
-                          f"{page} detects an iPhone but does not send it to the App Store")
+            self.assertIn('id="cta-primary"', body)
+            self.assertIn('id="cta-secondary"', body)
+            self.assertIn('id="cta-web"', body)
+
+    def test_no_device_is_shown_a_page_missing_a_store(self):
+        """The bug Roland photographed.
+
+        The per-device script used to REPLACE the buttons' hrefs and text. On a
+        desktop that overwrote Google Play with the web app, leaving "Open
+        Ahenora in your browser" beside "Use it on the web" — the same offer
+        twice, and one of the two stores simply gone from the page.
+
+        The script may reorder and re-emphasise. It may not reassign what a
+        store button points at.
+        """
+        for page in PAGES:
+            body = read(page)
+            script = body[body.index("var isAndroid"):body.index("// Monthly / yearly")]
+            for forbidden in ("play.setAttribute('href'", "apple.setAttribute('href'",
+                              "play.textContent", "apple.textContent"):
+                self.assertNotIn(forbidden, script,
+                                 f"{page} rewrites a store button instead of ordering it")
+
+    def test_the_device_that_can_install_is_offered_first(self):
+        for page in PAGES:
+            body = read(page)
+            self.assertIn("isApple ? [apple, play, web]", body)
+            self.assertIn("isAndroid ? [play, apple, web]", body)
+            # Desktop can install from neither, so the browser leads — and both
+            # stores still follow it.
+            self.assertIn("[web, apple, play]", body)
 
 
 class TheSocialLinks(unittest.TestCase):

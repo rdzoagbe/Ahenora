@@ -272,6 +272,32 @@ async def main():
             if await roland.get_by_test_id("chat-editing").count():
                 fails.append("sending the correction left the composer still in edit mode")
 
+        # --- 7b. a short message is not squeezed into a column ---------------
+        # Roland photographed a real conversation in which "Hi baby" wrapped
+        # onto two lines and "okay" rendered as "ok / ay". Long messages were
+        # fine, short ones collapsed — a width constraint the layout could not
+        # resolve, invisible to every test in the suite and obvious to anyone
+        # who opened the chat. Measured here, because that is the only kind of
+        # check that would have caught it.
+        for short in ("ok", "ha ha", "Hi baby"):
+            say_via_api(tok_b, short)
+        await roland.wait_for_timeout(6000)
+        squeezed = await roland.evaluate("""(words) => {
+          const bad = [];
+          for (const el of document.querySelectorAll('*')) {
+            const own = Array.from(el.childNodes).filter((n) => n.nodeType === 3)
+              .map((n) => n.textContent.trim()).join(' ').trim();
+            if (!words.includes(own)) continue;
+            const r = el.getBoundingClientRect();
+            const lh = parseFloat(getComputedStyle(el).lineHeight) || 20;
+            const lines = Math.round(r.height / lh);
+            if (lines > 1) bad.push(own + ' on ' + lines + ' lines');
+          }
+          return bad;
+        }""", ["ok", "ha ha", "Hi baby"])
+        for line in squeezed:
+            fails.append(f"a short message was squeezed into a column: {line}")
+
         # --- 8. a conversation left open does not re-download itself --------
         # Only reachable with a cursor that can move past a read, an edit and a
         # reaction; without one, every poll ships the whole page again, forever,

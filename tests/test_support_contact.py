@@ -87,9 +87,10 @@ class TheForm(unittest.TestCase):
     def test_the_message_is_emailed_to_the_support_inbox_with_reply_to_the_user(self):
         res = self._submit()
         self.assertTrue(res["ok"])
-        self.assertEqual(len(self.mails), 1)
-        mail = self.mails[0]
-        self.assertEqual(mail["to"], ["support@ahenora.test"])
+        # Picked out by recipient, not by being the only mail sent. Since
+        # 2026-09-09 the person who wrote in gets a receipt as well, and
+        # counting messages would fail on a change that added one.
+        mail = next(m for m in self.mails if m["to"] == ["support@ahenora.test"])
         self.assertEqual(mail["reply_to"], "k@x.test")
         self.assertIn("App crashes", mail["subject"])
         self.assertIn("Calendar shows an error", mail["text"])
