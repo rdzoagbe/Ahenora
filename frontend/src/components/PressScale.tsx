@@ -3,6 +3,7 @@ import {
   AccessibilityRole,
   Animated,
   Insets,
+  Platform,
   Pressable,
   ViewStyle,
   StyleProp,
@@ -50,9 +51,35 @@ interface Props {
   hitSlop?: number | Insets;
 }
 
+/**
+ * `hitSlop` on the web.
+ *
+ * react-native-web implements hitSlop only in its legacy Touchable mixin, not
+ * in Pressable — which is what this component is built on. So every hitSlop in
+ * the app works on iOS and Android and does nothing at all on ahenora.com/app,
+ * where a 20pt dismiss cross stays a 20pt dismiss cross. Measuring the laid-out
+ * page found 28 controls under 44x44 on the web that are comfortably above it
+ * on a phone.
+ *
+ * Restored the way hitSlop works natively: an invisible child stretched BEYOND
+ * the parent's box by the slop. It is inside the Pressable, so a press on it
+ * is a press on the control, and being absolutely positioned it changes no
+ * layout — which is the whole reason hitSlop exists rather than padding.
+ */
+function slopInsets(hitSlop?: number | Insets) {
+  if (hitSlop == null) return null;
+  const n = (v?: number) => -(v ?? 0);
+  if (typeof hitSlop === 'number') {
+    return { top: -hitSlop, bottom: -hitSlop, left: -hitSlop, right: -hitSlop };
+  }
+  return { top: n(hitSlop.top), bottom: n(hitSlop.bottom),
+           left: n(hitSlop.left), right: n(hitSlop.right) };
+}
+
 export function PressScale({ onPress, onLongPress, children, style, testID, disabled, accessibilityLabel, accessibilityRole, accessibilityHint, hitSlop }: Props) {
   const scale = useRef(new Animated.Value(1)).current;
   const { layout, visual } = splitStyles(style);
+  const webSlop = Platform.OS === 'web' ? slopInsets(hitSlop) : null;
 
   const onIn = () => {
     Animated.spring(scale, { toValue: 0.96, useNativeDriver: true, speed: 40, bounciness: 0 }).start();
@@ -75,6 +102,17 @@ export function PressScale({ onPress, onLongPress, children, style, testID, disa
       accessibilityRole={accessibilityRole}
       accessibilityHint={accessibilityHint}
     >
+      {webSlop ? (
+        // A direct child of the Pressable, NOT of the styled view below. The
+        // styled view carries the control's own `overflow`, and a rounded
+        // button with `overflow: hidden` clips anything reaching past its
+        // edge — which is what silently swallowed the first attempt at this.
+        <Animated.View
+          aria-hidden
+          pointerEvents="auto"
+          style={[{ position: 'absolute' }, webSlop]}
+        />
+      ) : null}
       <Animated.View style={[{ transform: [{ scale }] }, visual]}>{children}</Animated.View>
     </Pressable>
   );

@@ -1236,6 +1236,14 @@ export interface Subscriber {
   /** Paid plan with no rail behind it — a testing-window leftover or an
    *  admin grant, not a subscriber. */
   unpaid_premium?: boolean;
+  /** Getting premium without paying by ANY route, including the two that
+   *  `unpaid_premium` cannot see: a household containing an admin/tester
+   *  account, and the launch preview while no paid rail is configured. */
+  premium_without_paying?: boolean;
+  /** Why — 'preview' | 'admin_or_tester' | 'grandfathered' |
+   *  'paid_plan_no_receipt'. A tester and a thanked early adopter are not
+   *  freeloaders, and this is what tells them apart. */
+  unpaid_reason?: string | null;
   billing_cycle: string | null;
   owner_name: string;
   owner_email: string;
@@ -1287,6 +1295,12 @@ export interface SubscriberList {
   /** Of `paying`, how many have a real payment rail behind them. A gap between
    *  the two means somebody is on a paid plan nobody charged for. */
   paying_verified: number;
+  /** False means NO paid rail is configured, so every household is on the
+   *  launch preview by design. Check this before reading anything below as a
+   *  list of people to chase. */
+  billing_live?: boolean;
+  /** How many households get premium without paying, by any route. */
+  premium_without_paying?: number;
   subscribers: Subscriber[];
 }
 

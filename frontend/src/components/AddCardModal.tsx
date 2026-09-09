@@ -18,7 +18,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PressScale } from './PressScale';
 import DateTimePickerSheet from './DateTimePickerSheet';
 import { useUI } from './Kit';
-import { toLocalDateInput, toLocalTimeInput } from '../utils/date';
+import { formatCompactDue, toLocalDateInput, toLocalTimeInput } from '../utils/date';
 import { useStore } from '../store';
 import { detectDateTime } from '../dateParse';
 import { Card, api, CardType, FamilyMember, Recurrence } from '../api';
@@ -585,7 +585,11 @@ export function AddCardModal({
                   style={[styles.pill, { borderColor: theme.colors.cardBorder, backgroundColor: dueDate ? theme.colors.primary : theme.colors.bgSoft }]}
                 >
                   <Text style={[styles.pillText, { color: dueDate ? theme.colors.primaryText : theme.colors.textMuted }]}>
-                    {dueDate ? `${toLocalDateInput(dueDate)} · ${toLocalTimeInput(dueDate)}` : t('no_due')}
+                    {/* "Today · 18:00", not "2026-09-09 · 18:00". toLocalDateInput exists to
+                        fill a date INPUT and returns the machine form — right there, wrong
+                        the moment a person reads it. ReviewImportSheet hit this and fixed
+                        it locally; the two sheets people actually use kept the raw form. */}
+                    {dueDate ? formatCompactDue(dueDate, lang) : t('no_due')}
                   </Text>
                 </PressScale>
                 {dueDate ? (

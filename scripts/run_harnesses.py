@@ -75,6 +75,9 @@ HARNESSES = [
     # landing while you look at the screen, and being told yours was read —
     # needs two people in the room, and every earlier test had one.
     "e2e_chat.py",
+    # Controls a thumb can hit, and whether hitSlop actually reaches past them
+    # on the web build — where react-native-web's Pressable ignores it.
+    "e2e_targets.py",
     "e2e_offline.py",
     "e2e_calendar.py",
     "e2e_invite.py",
