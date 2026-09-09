@@ -919,6 +919,13 @@ export interface FamilyMember {
    *  whether they are the household founder (the only parent nobody can remove). */
   is_me?: boolean;
   is_founder?: boolean;
+  /** What this member IS to the household, in one word, decided server-side:
+   *  'owner' | 'parent' | 'helper' | 'teen' | 'child' | 'member'. The rule that
+   *  separates a parent from a grandmother lives in the backend beside the
+   *  permission checks that depend on it; a copy here would be a copy to get
+   *  out of step. 'member' means an adult invited by relationship — show their
+   *  `role` ("Grandma"), which is the family's own word for them. */
+  standing?: string;
   /** A teen's own user_id — the key of their private chat thread. Null for a
    *  managed child (no account). Lets the app open the right thread by id. */
   user_id?: string | null;
