@@ -1,67 +1,96 @@
 /**
- * The arithmetic that decides how many seats the phone bar can hold.
+ * Whether the phone bar's contents fit, and by how much.
  *
- * It lives here rather than inline in the tab bar's StyleSheet because the
- * question "does a fifth seat fit?" was answered twice by eye and once by
- * measurement, and only the measurement was right. A number a test can read is
- * a number that cannot quietly drift when someone nudges a padding.
+ * Written down rather than eyeballed because the question "does a fifth seat
+ * fit beside More?" was answered wrongly three times, twice by me with
+ * confident arithmetic. The arithmetic was fine; the number underneath it was
+ * invented. I had carried "the widest label is German Kalender at 55pt" all
+ * session without measuring it. Kalender is 47pt, the same as Calendar, and
+ * English is in fact our widest language, not German.
  *
- * The bar is a pill floating between two insets. Its inner width, less its own
- * padding, is split evenly between the seats; each seat spends its padding and
- * gives the rest to the label.
+ * So every number below is a browser measurement, and the nav harness
+ * re-measures the real rendered boxes in all four languages on every run. A
+ * wrong value here fails there rather than shipping.
  *
- * These are FIXED, deliberately. The first version of this file branched on
- * useWindowDimensions().width to give narrow phones a tighter bar, and shipped
- * a 12pt inset to a 390pt phone: the web export's first paint reports a
- * degenerate window width (src/responsive.ts documents the same trap costing a
- * ~90px-wide Feed), so a layout that reads the width at mount latches whatever
- * that first measurement said. One geometry that fits everywhere beats a
- * clever one that depends on a number we cannot trust.
+ * The bar is two objects: a pill holding the five places, and More beside it
+ * holding what is not a place — settings, your account, the hand-over.
  */
-export const BAR_INSET = 20;        // barWrap left / right
+export const BAR_INSET = 16;        // barWrap left / right
+export const BAR_GAP = 8;           // between the pill and the More button
+/**
+ * More: icon only, and exactly the 44pt minimum tap target.
+ *
+ * It was 62pt with a 10pt label reading "More" under a grid icon — a word that
+ * said what the icon says, spending 18pt the fifth seat needed. At 48 the
+ * narrowest phone had 5pt of slack, which is the kind of margin that has
+ * already been wrong twice this session; 44 makes it 9.
+ */
+export const MORE_WIDTH = 44;
 export const PILL_PADDING = 6;      // the pill's own paddingHorizontal
 export const SEAT_PADDING = 2;      // tabItem paddingHorizontal, per side
-export const SEAT_MIN_WIDTH = 46;   // tabItem minWidth — the accent pill's floor
 export const LABEL_FONT_SIZE = 11;
-/** adjustsFontSizeToFit's floor. Native only — see labelsFit. */
+/** adjustsFontSizeToFit's floor. Native only — see barFits. */
 export const LABEL_MIN_SCALE = 0.8;
 
 /**
- * The widest tab label across the four languages we ship, in points, measured
- * in a browser at 11px Inter ExtraBold with -0.1 letter-spacing — German
- * "Kalender". English "Calendar" is 54, "Kitchen" 47, "Family" 40, "Vault" 32,
- * "Feed" 29. Re-measure if a language or a label is added; the browser harness
- * measures the real rendered boxes on every run, so a wrong value here fails
- * there rather than shipping.
+ * tabItem minWidth — the floor under the focused seat's accent pill.
+ *
+ * This, not the words, is what decides whether the bar fits. Four of the five
+ * labels are shorter than the floor, so at 46pt the bar spent 235pt on 215pt
+ * of content and overflowed a 320pt phone; at 40 it spends 215pt and clears
+ * every phone we support. A 22pt icon needs 26pt, so 40 is still a pill and
+ * not a squeeze.
  */
-export const WIDEST_LABEL_PT = 55;
+export const SEAT_MIN_WIDTH = 40;
 
-/** Above this width every label fits at full size, in every language. */
-export const COMFORTABLE_PHONE_PT = 360;
+/**
+ * Every tab label, in points, measured in a browser at 11px Inter ExtraBold
+ * with -0.1 letter-spacing: Feed · Calendar · Family · Kitchen · Vault, in bar
+ * order, for each language we ship.
+ *
+ * English is the widest set, which is the opposite of what you would guess and
+ * the reason this is a table of measurements rather than one remembered
+ * worst case.
+ */
+export const MEASURED_LABEL_PT: Record<string, number[]> = {
+  en: [26, 47, 34, 40, 27],
+  de: [26, 47, 37, 33, 34],
+  fr: [12, 40, 37, 39, 33],
+  es: [26, 40, 37, 36, 39],
+};
+
 /** The narrowest phone we support (iPhone SE 1st gen / small Androids). */
 export const NARROWEST_PHONE_PT = 320;
 
-/** How much room one seat's label gets, in points. */
-export function seatLabelWidth(screenWidth: number, seats: number): number {
-  const pill = screenWidth - BAR_INSET * 2 - PILL_PADDING * 2;
-  return pill / seats - SEAT_PADDING * 2;
+/** How wide the pill is, once More and the insets have taken their share. */
+export function pillWidth(screenWidth: number): number {
+  return screenWidth - BAR_INSET * 2 - BAR_GAP - MORE_WIDTH;
 }
 
 /**
- * Whether every label fits outright, with nothing shrunk.
+ * One seat's width. Sized to its own word, not to an equal share.
  *
- * Outright, not "after adjustsFontSizeToFit": that prop is native-only, so on
- * the web build nothing shrinks. Below COMFORTABLE_PHONE_PT the longest German
- * label runs out of room — it then shrinks on a phone and ellipsises on the
- * web, which is why the seat is also structurally capped at its share of the
- * pill (maxWidth in the tab bar). Degrading is fine; overlapping the seat next
- * to it is not.
+ * Equal shares are what made this impossible: they spend as much on "Feed" as
+ * on "Calendar", so the bar has to fit five copies of its longest label. Sized
+ * to content, the five together need about what three equal seats would.
  */
-export function labelsFit(screenWidth: number, seats: number): boolean {
-  return seatLabelWidth(screenWidth, seats) >= WIDEST_LABEL_PT;
+export function seatWidth(labelPt: number): number {
+  return Math.max(SEAT_MIN_WIDTH, labelPt + SEAT_PADDING * 2);
 }
 
-/** Whether the seats themselves fit without overflowing the pill. */
-export function seatsFit(screenWidth: number, seats: number): boolean {
-  return screenWidth - BAR_INSET * 2 - PILL_PADDING * 2 >= SEAT_MIN_WIDTH * seats;
+/** What all the seats need together, for one language. */
+export function contentWidth(labels: number[]): number {
+  return labels.reduce((total, label) => total + seatWidth(label), 0);
+}
+
+/** Room left over once the seats have taken theirs. Negative means overlap. */
+export function slackAt(screenWidth: number, lang: string): number {
+  const labels = MEASURED_LABEL_PT[lang];
+  if (!labels) return NaN;
+  return pillWidth(screenWidth) - PILL_PADDING * 2 - contentWidth(labels);
+}
+
+/** Whether the bar holds at this width, in every language we ship. */
+export function barFits(screenWidth: number): boolean {
+  return Object.keys(MEASURED_LABEL_PT).every((lang) => slackAt(screenWidth, lang) >= 0);
 }

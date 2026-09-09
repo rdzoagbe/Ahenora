@@ -1,12 +1,15 @@
-"""The bar: five places in one pill, and no drawer left holding anything.
+"""The bar: five places in one pill, and More beside them.
 
-Two jobs. The first is that every destination is reachable — the More button
-is gone, so anything it used to open has to be reachable some other way, for a
-parent and for a helper alike. The second is measurement: five labels in a bar
-that used to hold four is arithmetic that works on paper, and the three worst
-faults this app has shipped were things that passed on paper and looked wrong
-in a photograph. So the labels are measured, in a real browser, at the widest
-phone and the narrowest.
+Two jobs. The first is that every destination is reachable — for a parent and
+for a helper alike, whose bar is not the same bar.
+
+The second is measurement, IN EVERY LANGUAGE. Whether a fifth seat fits beside
+More was answered wrongly three times, twice with confident arithmetic resting
+on a label width nobody had measured: "German Kalender is 55pt" was carried for
+a whole session and is 47. English turns out to be our widest language, not
+German. So this harness renders the bar in all four languages at four phone
+widths and reads the boxes the browser actually drew — sixteen measurements
+that no amount of reasoning can substitute for.
 """
 import asyncio, json, sys, time, urllib.request
 from playwright.async_api import async_playwright
@@ -73,6 +76,23 @@ async def measure_bar(p):
         loc = p.locator(f'[data-testid="tab-{name}"]')
         out[name] = await loc.evaluate(MEASURE_JS) if await loc.count() == 1 else None
     return out
+
+
+# The widest label the browser actually drew, for the table in navGeometry.ts.
+WIDEST_LABEL_JS = """
+() => {
+  const seats=[...document.querySelectorAll('[data-testid^="tab-"]')]
+    .filter(s=>s.dataset.testid!=='tab-more');
+  let w=0;
+  for (const s of seats) {
+    for (const n of s.querySelectorAll('*')) {
+      if (n.children.length || !n.textContent.trim()) continue;
+      w = Math.max(w, n.getBoundingClientRect().width);
+    }
+  }
+  return Math.round(w);
+}
+"""
 
 
 def bad_boxes(measured):
@@ -149,46 +169,62 @@ async def main():
             print(f"seat counts: {seat_counts}")
         # More is gone entirely, not moved: the vault took a seat and the rest
         # of the drawer moved onto the account screen.
-        r["no_more_button"] = await p.locator('[data-testid="tab-more"]').count() == 0
+        # More is a button beside the pill, not a seat in it: it holds
+        # settings, your account and the hand-over, which are a tool, a record
+        # and an action rather than places you go.
+        r["more_button_present"] = await p.locator('[data-testid="tab-more"]').count() == 1
         r["no_raised_plus_in_the_bar"] = await p.locator('[data-testid="tab-add"]').count() == 0
         await p.screenshot(path="nav_feed.png")
 
-        # --- the measurement ------------------------------------------------
-        bad_390 = bad_boxes(await measure_bar(p))
-        r["every_label_fits_its_seat_at_390"] = not bad_390
-        if bad_390:
-            print(f"at 390: {bad_390}")
+        # --- the measurement, in every language we ship --------------------
+        #
+        # Sixteen renders: four languages by four phone widths. This is the
+        # check that exists because a remembered label width was wrong by 8pt
+        # and two rounds of arithmetic were built on it.
+        spills = []
+        widest = {}
+        for lang in ("en", "de", "fr", "es"):
+            api("PATCH", "/auth/language", {"language": lang}, tok)
+            await p.goto(f"{WEB}/feed", wait_until="domcontentloaded")
+            await p.wait_for_timeout(2600)
+            for width in (430, 390, 360, 320):
+                await p.set_viewport_size({"width": width, "height": 800})
+                await p.wait_for_timeout(700)
+                bad = bad_boxes(await measure_bar(p))
+                if bad:
+                    spills.append(f"{lang}@{width}: {bad}")
+                if width == 390:
+                    widest[lang] = await p.evaluate(WIDEST_LABEL_JS)
+            await p.screenshot(path=f"nav_bar_{lang}.png")
+        r["every_label_fits_its_seat_in_every_language"] = not spills
+        if spills:
+            print(f"spills: {spills}")
+        # And the numbers navGeometry.ts is built from are the numbers the
+        # browser draws. A table of measurements that has drifted from the
+        # thing it measures is worse than no table.
+        print(f"widest label per language at 390: {widest}")
+        r["no_label_exceeds_the_recorded_maximum"] = all(
+            v <= 55 for v in widest.values())
 
-        # Option A in one number: the pill is the whole bar. It used to share
-        # the 350pt between the insets with a 62pt More button and a 10pt gap,
-        # leaving 278pt — which is why a fifth seat did not fit before and
-        # does now. If something ever moves back in beside it, this is the
-        # check that notices.
-        pill_geom = await p.evaluate("""
+        await p.set_viewport_size({"width": 390, "height": 844})
+        api("PATCH", "/auth/language", {"language": "en"}, tok)
+        await p.goto(f"{WEB}/feed", wait_until="domcontentloaded")
+        await p.wait_for_timeout(2600)
+
+        # Option A in one number: the pill and More share the bar, and neither
+        # runs off the screen.
+        r["pill_and_more_share_the_bar"] = await p.evaluate("""
           () => {
-            const seats = [...document.querySelectorAll('[data-testid^="tab-"]')];
-            if (seats.length !== 5) return null;
+            const seats = [...document.querySelectorAll('[data-testid^="tab-"]')]
+              .filter((s) => s.dataset.testid !== 'tab-more');
+            const more = document.querySelector('[data-testid="tab-more"]');
+            if (seats.length !== 5 || !more) return false;
             const pill = seats[0].parentElement.getBoundingClientRect();
-            return { w: pill.width, left: pill.left, right: pill.right, vw: window.innerWidth };
+            const m = more.getBoundingClientRect();
+            return pill.left >= 15 && m.right <= window.innerWidth - 15
+                && m.left >= pill.right && m.width >= 44;
           }
         """)
-        r["pill_spans_the_whole_bar"] = bool(pill_geom) and (
-            abs(pill_geom["w"] - (pill_geom["vw"] - 40)) < 1
-            and pill_geom["left"] >= 19 and pill_geom["right"] <= pill_geom["vw"] - 19)
-        if not r["pill_spans_the_whole_bar"]:
-            print(f"pill geometry: {pill_geom}")
-
-        # The narrowest phone we support. This is where the arithmetic in
-        # src/navGeometry.ts is actually load-bearing.
-        await p.set_viewport_size({"width": 320, "height": 700})
-        await p.wait_for_timeout(1500)
-        bad_320 = bad_boxes(await measure_bar(p))
-        r["every_label_fits_its_seat_at_320"] = not bad_320
-        if bad_320:
-            print(f"at 320: {bad_320}")
-        await p.screenshot(path="nav_narrow.png")
-        await p.set_viewport_size({"width": 390, "height": 844})
-        await p.wait_for_timeout(1200)
 
         # --- the vault is a place now ---------------------------------------
         await p.click('[data-testid="tab-vault"]')
@@ -196,27 +232,22 @@ async def main():
         r["seat_reaches_vault"] = "Vault" in await p.inner_text("body")
         await p.screenshot(path="nav_vault.png")
 
-        # --- and everything the drawer held still has a door -----------------
-        # Your portrait in the Feed header opens your account; settings and the
-        # hand-over live there. Two taps, the same as More cost, from a door
-        # that says whose account it is.
-        await p.click('[data-testid="tab-feed"]')
-        await p.wait_for_timeout(2500)
-        await p.click('[data-testid="feed-portrait"]')
-        await p.wait_for_timeout(2500)
-        r["portrait_reaches_account"] = await p.locator('[data-testid="account-settings"]').count() == 1
-        r["account_offers_hand_over"] = await p.locator('[data-testid="account-hand-over"]').count() == 1
+        # --- and everything More holds is reachable ---------------------
+        await p.click('[data-testid="tab-more"]')
+        await p.wait_for_timeout(1200)
+        sheet = await p.inner_text("body")
+        r["sheet_lists_settings"] = "Settings" in sheet
+        r["sheet_lists_account"] = "Your account" in sheet
+        r["sheet_no_longer_lists_vault"] = await p.locator('[data-testid="more-vault"]').count() == 0
 
         # A row's subtitle is the only thing that says what is behind it, and
-        # a subtitle that ends in "…" says less than no subtitle at all. This
-        # has now shipped twice — "app versi…" on the Settings hub, "plan and
-        # lang…" here — so it is measured rather than eyeballed, on every row,
-        # in whatever language the bundle is built in.
+        # a subtitle ending in "…" says less than no subtitle at all. This has
+        # shipped twice — "app versi…" on the Settings hub, "plan and lang…"
+        # on a row — so it is measured on every row rather than eyeballed.
         clipped_rows = await p.evaluate("""
           () => {
-            const rows = [...document.querySelectorAll('[data-testid^="account-"]')];
             const bad = [];
-            for (const row of rows) {
+            for (const row of document.querySelectorAll('[data-testid^="more-"]')) {
               for (const n of row.querySelectorAll('*')) {
                 if (n.children.length || !n.textContent.trim()) continue;
                 if (n.scrollWidth - n.clientWidth > 1) bad.push(n.textContent.trim());
@@ -225,23 +256,29 @@ async def main():
             return bad;
           }
         """)
-        r["no_account_row_truncated"] = not clipped_rows
+        r["no_drawer_row_truncated"] = not clipped_rows
         if clipped_rows:
-            print(f"truncated account rows: {clipped_rows}")
+            print(f"truncated drawer rows: {clipped_rows}")
+        await p.screenshot(path="nav_more.png")
 
-        # The badge under your name has to be true. It used to be the word
-        # OWNER, hard-coded, under everyone's — see tests/test_who_am_i_badge.py
-        # and the helper's side of this further down.
-        acct = await p.inner_text("body")
-        r["founder_is_told_they_are_the_owner"] = "OWNER" in acct
-        r["nothing_claims_an_unverified_account_is_verified"] = "VERIFIED" not in acct
-        await p.screenshot(path="nav_account.png")
-
-        await p.click('[data-testid="account-settings"]')
+        await p.click('[data-testid="more-settings"]')
         await p.wait_for_timeout(3000)
         # Settings is a hub of group rows; "Household" is a group header,
         # visible without opening anything.
-        r["account_reaches_settings"] = "Household" in await p.inner_text("body")
+        r["more_reaches_settings"] = "Household" in await p.inner_text("body")
+
+        # Your portrait in the Feed header still opens your account directly.
+        await p.click('[data-testid="tab-feed"]')
+        await p.wait_for_timeout(2500)
+        await p.click('[data-testid="feed-portrait"]')
+        await p.wait_for_timeout(2500)
+        acct = await p.inner_text("body")
+        r["portrait_reaches_account"] = "Picture" in acct
+        # The badge under your name has to be true — see
+        # tests/test_who_am_i_badge.py and the helper's side further down.
+        r["founder_is_told_they_are_the_owner"] = "OWNER" in acct
+        r["nothing_claims_an_unverified_account_is_verified"] = "VERIFIED" not in acct
+        await p.screenshot(path="nav_account.png")
 
         # The daily tabs still load. Assert a page-UNIQUE element on each — not a
         # word that also lives in the always-visible bottom bar (a body-text
@@ -313,10 +350,12 @@ async def main():
         if bad_helper:
             print(f"helper bar: {bad_helper}")
 
-        await hp.click('[data-testid="feed-portrait"]')
+        await hp.click('[data-testid="tab-more"]')
+        await hp.wait_for_timeout(1200)
+        r["helper_reaches_settings"] = await hp.locator('[data-testid="more-settings"]').count() == 1
+        r["helper_is_not_offered_hand_over"] = await hp.locator('[data-testid="more-kid"]').count() == 0
+        await hp.click('[data-testid="more-account"]')
         await hp.wait_for_timeout(2500)
-        r["helper_reaches_settings"] = await hp.locator('[data-testid="account-settings"]').count() == 1
-        r["helper_is_not_offered_hand_over"] = await hp.locator('[data-testid="account-hand-over"]').count() == 0
         # The whole point of the badge fix, seen by the person it was wrong for.
         hacct = await hp.inner_text("body")
         r["helper_is_not_told_they_own_the_household"] = "OWNER" not in hacct

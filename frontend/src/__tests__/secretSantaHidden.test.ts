@@ -12,15 +12,14 @@
  * Source-level, because what matters is that no entry point exists that bypasses
  * the flag — a property of the files, which survives refactors of the components.
  */
-import { existsSync, readFileSync } from 'fs';
+import { readFileSync } from 'fs';
 import { join } from 'path';
 
 const SRC = join(__dirname, '..');
 const read = (p: string) => readFileSync(join(SRC, p), 'utf8');
 
 const FEATURES = read('features.ts');
-// The More drawer is gone; its rows moved onto the account screen.
-const ACCOUNT = readFileSync(join(SRC, '..', 'app', '(tabs)', 'account.tsx'), 'utf8');
+const MORE_SHEET = read('components/MoreSheet.tsx');
 const GIFTING = read('components/GiftingStrip.tsx');
 
 describe('Secret Santa visibility', () => {
@@ -36,16 +35,18 @@ describe('Secret Santa visibility', () => {
     expect(decl).not.toMatch(/Date|getMonth|now\(\)/);
   });
 
-  it('gates the account-screen row', () => {
-    expect(ACCOUNT).toContain('SECRET_SANTA_ENABLED');
+  it('gates the More menu row', () => {
+    expect(MORE_SHEET).toContain('SECRET_SANTA_ENABLED');
     // The row is dropped from the list, not merely styled away.
-    expect(ACCOUNT).toMatch(/\.\.\.\(SECRET_SANTA_ENABLED \?/);
+    expect(MORE_SHEET).toMatch(/\.\.\.\(SECRET_SANTA_ENABLED \?/);
   });
 
-  it('has no other entry point left behind', () => {
-    // The drawer that used to hold it is deleted, so a stale copy of the row
-    // in a component nobody renders would be invisible to the tests above.
-    expect(existsSync(join(SRC, 'components', 'MoreSheet.tsx'))).toBe(false);
+  it('has no second entry point on the account screen', () => {
+    // It briefly had one, when the drawer was deleted and its rows moved
+    // there. The drawer is back, and a stale copy would be a row the flag
+    // above does not govern.
+    const account = readFileSync(join(SRC, '..', 'app', '(tabs)', 'account.tsx'), 'utf8');
+    expect(account).not.toContain('ss_more_title');
   });
 
   it('gates the Feed gifting card', () => {
