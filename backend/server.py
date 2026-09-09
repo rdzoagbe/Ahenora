@@ -11906,6 +11906,19 @@ async def admin_billing_events(user=Depends(require_user), limit: int = Query(de
             "received_at": iso(_coerce_dt(r.get("received_at"))),
         }
 
+    # Unmatched first, then everything else newest-first.
+    #
+    # The list was purely chronological and capped, so the one row that needs
+    # a person to DO something — a purchase that reached no household, real
+    # money the store considers delivered and will never resend — sank below
+    # the fold as ordinary events piled on top of it. Roland's screenshot showed
+    # exactly that: the banner said one event reached nobody, and not one of the
+    # twelve rows under it was that event.
+    #
+    # The count was honest and useless. Now the row you have to act on is the
+    # row at the top.
+    shown = unmatched + [r for r in rows if r.get("matched")]
+
     newest = rows[0] if rows else None
     return {
         # The two switches that decide whether events can arrive at all.
@@ -11921,7 +11934,7 @@ async def admin_billing_events(user=Depends(require_user), limit: int = Query(de
         "total": len(rows),
         "unmatched": len(unmatched),
         "by_source": by_source,
-        "events": [_row(r) for r in rows[:limit]],
+        "events": [_row(r) for r in shown[:limit]],
     }
 
 
