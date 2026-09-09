@@ -71,6 +71,11 @@ function lastSeenLabel(iso: string | null): string {
  * unrecoverable ones and gets treated like them.
  */
 function replayVerdict(e: BillingEvent): string {
+  // A store checking we are reachable, not a purchase. It has no buyer to
+  // find and never will, so none of the wording below applies to it.
+  if (e.is_test) {
+    return 'A test event from the RevenueCat dashboard — proof this endpoint is reachable. Not a purchase, nothing owed.';
+  }
   const tried = e.replay_attempts
     ? `Retried ${e.replay_attempts}×${e.last_replay_at ? `, last ${e.last_replay_at.slice(5, 16).replace('T', ' ')}` : ''}. `
     : '';
@@ -914,6 +919,11 @@ export default function MetricsScreen() {
           <Text style={styles.sectionTitle}>Billing events</Text>
           {billing ? (
             <>
+              {/* Three states, not two. "Nothing has ever arrived" is an
+                  outage; "money reached nobody" is a person to find; and "the
+                  only thing that ever arrived was a test" is neither — it is
+                  the endpoint working with nothing sold yet, which used to
+                  raise the money alarm and could never clear. */}
               {!billing.ever_received ? (
                 <View style={[styles.card, styles.warnCard]}>
                   <Text style={styles.warnText}>
@@ -928,6 +938,14 @@ export default function MetricsScreen() {
                     {billing.unmatched} event{billing.unmatched === 1 ? '' : 's'} arrived that we
                     could not match to a household. That is real money landing nowhere — the store
                     got a 200 back and will not send it again.
+                  </Text>
+                </View>
+              ) : billing.last_test_at ? (
+                <View style={styles.card}>
+                  <Text style={styles.hint}>
+                    No purchase has gone missing. The store last reached this endpoint with a
+                    test event on {billing.last_test_at.slice(0, 10)} — the webhook is wired up
+                    and nothing has been lost.
                   </Text>
                 </View>
               ) : null}
@@ -977,9 +995,15 @@ export default function MetricsScreen() {
                         ) : null}
                       </View>
                       <View style={styles.subRight}>
+                        {/* "reached nobody" is true of a test ping and
+                            misleading about it: the tag is what gets read at a
+                            glance, and in red beside real purchases it says
+                            somebody lost money. */}
                         <View style={[styles.subTag, e.matched ? styles.subTagPaid : styles.subTagFree]}>
-                          <Text style={[styles.subTagText, { color: e.matched ? ui.orangeText : ui.danger }]}>
-                            {e.matched ? (e.plan || 'applied') : 'reached nobody'}
+                          <Text style={[styles.subTagText, {
+                            color: e.matched ? ui.orangeText : e.is_test ? ui.muted : ui.danger,
+                          }]}>
+                            {e.matched ? (e.plan || 'applied') : e.is_test ? 'store test' : 'reached nobody'}
                           </Text>
                         </View>
                         <Text style={styles.subMeta} numberOfLines={1}>
