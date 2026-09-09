@@ -11760,6 +11760,39 @@ async def sweep_billing_once(database: Any, budget: int = 0, secret: str = "") -
     return {"checked": checked, "corrected": corrected, "candidates": len(candidates)}
 
 
+# Why a purchase that reached nobody is STILL reaching nobody.
+#
+# The replay below runs twice a day and gives up down five different paths,
+# every one of them silently. So the admin screen showed the same row, with the
+# same first-day wording, whether we had never tried it or tried it forty times
+# — and the one question a person needs answered before they can act ("is this
+# recoverable at all?") had no answer anywhere in the app.
+#
+# The distinction that matters: NO_ACCOUNT is real money waiting for a human to
+# match a store receipt to a person. NOT_ENTITLED is a subscription that has
+# since lapsed or been refunded, where there is nothing left to recover and the
+# row can be let go. NO_KEY is our own configuration, and nobody's purchase.
+# Reading them the same way is how a recoverable payment sits next to five
+# unrecoverable ones and gets treated like them.
+REPLAY_STATES = ("no_id", "no_account", "no_key", "no_answer", "not_entitled")
+
+
+async def _note_replay_attempt(database: Any, ev: dict, state: str) -> None:
+    """Record that we tried, and what stopped us. Bookkeeping only.
+
+    Deliberately writes nothing a plan is ever decided from: the replay's
+    promise is that it never downgrades and never guesses, and a counter that
+    could change who is entitled would be a way to break that quietly.
+    """
+    event_id = ev.get("event_id")
+    if not event_id:
+        return
+    await database["billing_events"].update_one(
+        {"event_id": event_id},
+        {"$set": {"replay_state": state, "last_replay_at": utcnow()},
+         "$inc": {"replay_attempts": 1}})
+
+
 async def replay_unmatched_billing(database: Any, secret: str = "") -> dict:
     """Retry the purchases that arrived for an account we did not know.
 
@@ -11787,25 +11820,32 @@ async def replay_unmatched_billing(database: Any, secret: str = "") -> dict:
             continue
         uid = ev.get("app_user_id")
         if not uid:
+            # Nothing to look up, ever. Recorded so the screen can say so
+            # rather than showing a row that looks pending forever.
+            await _note_replay_attempt(database, ev, "no_id")
             continue
         attempted += 1
         user = await database["users"].find_one({"user_id": uid}, {"_id": 0})
         if not user or not user.get("family_id"):
+            await _note_replay_attempt(database, ev, "no_account")
             continue
         # The account exists now. Confirm with RevenueCat rather than trusting a
         # webhook we have already stored — the subscription may have lapsed in
         # the meantime, and granting a plan off a stale event would be worse
         # than the miss it is repairing.
         if not secret:
+            await _note_replay_attempt(database, ev, "no_key")
             continue
         try:
             data = await _fetch_rc_subscriber(uid, secret)
         except HTTPException as e:
             log.info("billing replay: no answer for one id (status %s)", e.status_code)
+            await _note_replay_attempt(database, ev, "no_answer")
             continue
         subscriber = (data or {}).get("subscriber") or {}
         active, product = rc_entitlement_state(subscriber, now)
         if not active:
+            await _note_replay_attempt(database, ev, "not_entitled")
             continue
         plan, cycle = rc_plan_from_product(
             product, rc_term_days_for_product(subscriber, product))
@@ -11932,6 +11972,11 @@ async def admin_billing_events(user=Depends(require_user), limit: int = Query(de
             "plan": r.get("plan"),
             "detail": r.get("detail"),
             "received_at": iso(_coerce_dt(r.get("received_at"))),
+            # What the twice-daily replay found last time it tried this row.
+            # Absent until it has run once — which itself tells you something.
+            "replay_state": r.get("replay_state"),
+            "replay_attempts": int(r.get("replay_attempts") or 0),
+            "last_replay_at": iso(_coerce_dt(r.get("last_replay_at"))),
         }
 
     # Unmatched first, then everything else newest-first.
