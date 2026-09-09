@@ -149,6 +149,9 @@ class AWebhookForAYearGrantsAYear(unittest.TestCase):
         return asyncio.run(server.revenuecat_webhook(
             {"event": base}, authorization="Bearer s3cret"))
 
+    def event(self, event_id="bev_1"):
+        return asyncio.run(self.db["billing_events"].find_one({"event_id": event_id}))
+
     def family(self):
         return asyncio.run(self.db["families"].find_one({"family_id": "fam1"}, {"_id": 0}))
 
@@ -208,6 +211,9 @@ class APurchaseThatReachedNobody(unittest.TestCase):
     def replay(self):
         return asyncio.run(server.replay_unmatched_billing(self.db, secret="k"))
 
+    def event(self, event_id="bev_1"):
+        return asyncio.run(self.db["billing_events"].find_one({"event_id": event_id}))
+
     def family(self):
         return asyncio.run(self.db["families"].find_one({"family_id": "famX"}, {"_id": 0}))
 
@@ -244,6 +250,83 @@ class APurchaseThatReachedNobody(unittest.TestCase):
         self.arrive()
         self.assertEqual(self.replay()["resolved"], 1)
         self.assertEqual(self.replay()["resolved"], 0)
+
+    # --- why it did not resolve, when it did not ------------------------
+    #
+    # The replay gives up down five paths and used to take every one of them
+    # silently, so the admin screen showed the same row with the same
+    # first-day wording whether we had never tried it or tried it forty
+    # times. The one question a person has to answer before they can act —
+    # is this recoverable at all? — had no answer anywhere in the app.
+
+    def test_a_missing_account_is_recorded_as_a_missing_account(self):
+        # The state that means real money is waiting for a human: someone
+        # paid, and no account in this database carries the id they paid with.
+        self.replay()
+        row = self.event()
+        self.assertEqual(row.get("replay_state"), "no_account")
+        self.assertEqual(row.get("replay_attempts"), 1)
+        self.assertIsNotNone(row.get("last_replay_at"))
+
+    def test_the_attempts_add_up_across_passes(self):
+        # A row tried forty times and a row tried once look identical without
+        # this, and they are not the same situation.
+        for _ in range(3):
+            self.replay()
+        self.assertEqual(self.event().get("replay_attempts"), 3)
+
+    def test_a_lapsed_subscription_is_recorded_as_nothing_to_recover(self):
+        # Distinct from no_account on purpose: there is no money to chase
+        # here, so this row can be let go rather than investigated.
+        self.arrive()
+        self.entitled = False
+        self.replay()
+        self.assertEqual(self.event().get("replay_state"), "not_entitled")
+
+    def test_our_own_missing_key_is_not_blamed_on_the_buyer(self):
+        # The account is there; we simply cannot ask the store. That is our
+        # configuration, and reading it as "this buyer does not exist" would
+        # send someone hunting a person who is sitting in the database.
+        self.arrive()
+        os.environ.pop("REVENUECAT_SECRET_KEY", None)
+        asyncio.run(server.replay_unmatched_billing(self.db, secret=""))
+        self.assertEqual(self.event().get("replay_state"), "no_key")
+
+    def test_an_event_naming_nobody_says_so_instead_of_looking_pending(self):
+        asyncio.run(self.db["billing_events"].insert_one({
+            "event_id": "bev_2", "source": "stripe", "event_type": "checkout",
+            "matched": False, "family_id": None, "app_user_id": None,
+            "received_at": self.now}))
+        self.replay()
+        row = asyncio.run(self.db["billing_events"].find_one({"event_id": "bev_2"}))
+        self.assertEqual(row.get("replay_state"), "no_id")
+
+    def test_every_state_is_one_the_screen_knows(self):
+        # The screen turns each state into a sentence; a state it has never
+        # heard of would render as nothing next to a real payment.
+        for state in ("no_id", "no_account", "no_key", "not_entitled"):
+            self.assertIn(state, server.REPLAY_STATES)
+
+    def test_recording_the_attempt_never_decides_who_is_entitled(self):
+        # The replay's promise is that it never downgrades and never guesses.
+        # Bookkeeping that could change a plan would be a way to break that
+        # quietly, so the failing passes must leave the household alone.
+        self.arrive()
+        for _ in range(3):
+            self.entitled = False
+            self.replay()
+        self.assertEqual(self.family()["plan"], "village")
+        # And a later pass, once the store agrees, still recovers them.
+        self.entitled = True
+        self.assertEqual(self.replay()["resolved"], 1)
+        self.assertEqual(self.family()["plan"], "executive")
+
+    def test_a_resolved_row_stops_being_counted_as_attempted(self):
+        self.arrive()
+        self.replay()
+        before = self.event().get("replay_attempts")
+        self.replay()
+        self.assertEqual(self.event().get("replay_attempts"), before)
 
     def test_recovery_leaves_a_trail(self):
         self.arrive()

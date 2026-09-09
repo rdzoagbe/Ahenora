@@ -1170,6 +1170,15 @@ export interface BillingEvent {
   plan: string | null;
   detail: string | null;
   received_at: string | null;
+  /** What the twice-daily replay found last time it tried an unmatched row.
+   *  Null until it has run once — which itself tells you something.
+   *  'no_account' is the one that means real money is waiting for a person to
+   *  match a store receipt to a buyer; 'not_entitled' means the subscription
+   *  has since lapsed and there is nothing left to recover. Decided
+   *  server-side (REPLAY_STATES) so the words below stay the only copy. */
+  replay_state: string | null;
+  replay_attempts: number;
+  last_replay_at: string | null;
 }
 
 export interface BillingEventLog {
