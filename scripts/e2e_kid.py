@@ -81,10 +81,13 @@ async def main():
         # --- handing the device over ---------------------------------------
         await p.goto(f"{WEB}/feed", wait_until="domcontentloaded")
         await p.wait_for_timeout(3500)
-        await p.click('[data-testid="tab-more"]')
-        await p.wait_for_timeout(1200)
-        r["more_offers_hand_over"] = await p.locator('[data-testid="more-kid"]').count() == 1
-        await p.click('[data-testid="more-kid"]')
+        # The More drawer is gone: handing the phone over is a thing about
+        # *you*, so it sits on your account screen, behind the portrait in the
+        # Feed header. Same two taps, from a door that names itself.
+        await p.click('[data-testid="feed-portrait"]')
+        await p.wait_for_timeout(2500)
+        r["account_offers_hand_over"] = await p.locator('[data-testid="account-hand-over"]').count() == 1
+        await p.click('[data-testid="account-hand-over"]')
         await p.wait_for_timeout(1800)
 
         # --- the way out has to exist before the way in ----------------------
