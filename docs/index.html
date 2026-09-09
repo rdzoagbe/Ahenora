@@ -327,47 +327,58 @@
   // Make the hero's primary button fit the visitor's device: Android phones
   // get the Play Store (the native app), iPhone/desktop get the web app. The
   // page still ships BOTH links, so nothing is hidden — we only reorder which
-  // one is the bold primary. Default (Android) already matches the markup.
+  // one is the bold primary.
+  //
+  // Rewritten 2026-09-09. The previous version REPLACED the buttons' hrefs and
+  // text per device, which on a desktop overwrote Google Play with the web app
+  // and left the page saying "Open Ahenora in your browser" beside "Use it on
+  // the web" — the same offer twice, and one of the two stores simply gone.
+  // Roland photographed it.
+  //
+  // Both stores are in the markup and STAY in the markup. This only decides
+  // which one is bold and which comes first, so no device is ever shown a page
+  // that fails to mention where it can install the app.
   document.addEventListener('DOMContentLoaded', function () {
     var ua = navigator.userAgent || '';
     var isAndroid = /Android/i.test(ua) && !/CrOS/i.test(ua);
-    if (isAndroid) return; // markup default already leads with Play — leave it.
-    var primary = document.getElementById('cta-primary');
-    var secondary = document.getElementById('cta-secondary');
-    if (!primary || !secondary) return;
-    // iPhone/iPad: lead with the App Store. This branch used to send Apple
-    // devices to the browser instead, on the grounds that the iPhone build did
-    // not exist — true when it was written, false from the day iOS shipped, so
-    // every iPhone visitor was routed away from the store the app is in.
     var isApple = /iPhone|iPad|iPod/i.test(ua)
       || (/Macintosh/i.test(ua) && typeof navigator.maxTouchPoints === 'number'
           && navigator.maxTouchPoints > 1);
-    if (isApple) {
-      primary.setAttribute('href', 'https://apps.apple.com/app/id6806811163');
-      primary.textContent = 'Download on the App Store';
-      secondary.setAttribute('href', 'https://play.google.com/store/apps/details?id=com.householdcoo.app');
-      secondary.textContent = 'On Android? Get it on Google Play';
-    } else {
-      // Desktop: neither store can install here, so the browser is the one
-      // thing that works on the machine they are actually sitting at. Both
-      // stores stay one click away below.
-      primary.setAttribute('href', '/app/');
-      primary.textContent = 'Open Ahenora in your browser';
-      secondary.setAttribute('href', 'https://apps.apple.com/app/id6806811163');
-      secondary.textContent = 'Download on the App Store';
-    }
 
-    ['cta-final', 'cta-header'].forEach(function (el_id) {
-      var el = document.getElementById(el_id);
-      if (!el) return;
-      if (isApple) {
-        el.setAttribute('href', 'https://apps.apple.com/app/id6806811163');
-        el.textContent = el.id === 'cta-header' ? 'Get the app' : 'Download on the App Store';
-      } else {
-        el.setAttribute('href', '/app/');
-        el.textContent = el.id === 'cta-header' ? 'Open the app' : 'Open Ahenora in your browser';
-      }
-    });
+    var play = document.getElementById('cta-primary');
+    var apple = document.getElementById('cta-secondary');
+    var web = document.getElementById('cta-web');
+    var tour = document.getElementById('cta-tour');
+    if (!play || !apple || !web) return;
+
+    // The thing this device can actually do, first. A desktop can install from
+    // neither store, so the browser leads there and both stores stay beside it.
+    var order = isApple ? [apple, play, web]
+      : isAndroid ? [play, apple, web]
+      : [web, apple, play];
+    var row = play.parentNode;
+    order.forEach(function (el) { row.appendChild(el); });
+    if (tour) row.appendChild(tour);
+
+    [play, apple, web].forEach(function (el) { el.className = 'btn ghost'; });
+    order[0].className = 'btn';
+
+    // The header and closing buttons are single, so they point at whichever
+    // one this device can use. Both stores are named in the paragraph beneath.
+    var target = isApple ? apple.getAttribute('href')
+      : isAndroid ? play.getAttribute('href') : '/app/';
+    var header = document.getElementById('cta-header');
+    if (header) {
+      header.setAttribute('href', target);
+      header.textContent = isApple ? 'Get the app'
+        : isAndroid ? 'Get the app' : 'Open the app';
+    }
+    var final = document.getElementById('cta-final');
+    if (final) {
+      final.setAttribute('href', target);
+      final.textContent = isApple ? 'Download on the App Store'
+        : isAndroid ? 'Get it on Google Play' : 'Open Ahenora in your browser';
+    }
   });
 
   // Monthly / yearly. Prices live on the element as data attributes so the
@@ -434,7 +445,7 @@
           <a class="btn" id="cta-primary" href="https://play.google.com/store/apps/details?id=com.householdcoo.app">Get it on Google Play</a>
           <a class="btn" id="cta-secondary" href="https://apps.apple.com/app/id6806811163">Download on the App Store</a>
           <a class="btn ghost" id="cta-web" href="/app/">Use it on the web</a>
-          <a class="btn ghost" href="https://youtu.be/DPPmZJIrYPQ">Watch the 30-second tour</a>
+          <a class="btn ghost" id="cta-tour" href="https://youtu.be/DPPmZJIrYPQ">Watch the 30-second tour</a>
         </div>
         <p class="cta-note"><strong>Free to start</strong> &middot; No ads &middot; Your family's data is never sold</p>
       </div>

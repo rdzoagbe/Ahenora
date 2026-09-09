@@ -33,6 +33,7 @@ interface RowProps {
   styles: ReturnType<typeof createStyles>;
   ui: UIColors;
   t: (key: string, params?: Record<string, string | number>) => string;
+  showSender: boolean;
   onHold: (m: ChatMessage) => void;
   onSwipeReply: (m: ChatMessage) => void;
   receipt: string | null;
@@ -53,7 +54,7 @@ const SWIPE_REPLY_MAX = 76;
  * holding it, which is discoverable, works for somebody who cannot make a
  * precise drag, and is the only way to reach the other actions.
  */
-function MessageRow({ item, styles, ui, t, onHold, onSwipeReply, receipt }: RowProps) {
+function MessageRow({ item, styles, ui, t, showSender, onHold, onSwipeReply, receipt }: RowProps) {
   const dx = useRef(new Animated.Value(0)).current;
   const armed = useRef(false);
 
@@ -81,14 +82,34 @@ function MessageRow({ item, styles, ui, t, onHold, onSwipeReply, receipt }: RowP
 
   return (
     <View>
-      {/* Sits behind the bubble and is uncovered by the drag, so the gesture
-          explains itself the first time somebody does it by accident. */}
-      <View pointerEvents="none" style={styles.swipeHint}>
-        <Reply color={ui.muted} size={16} />
-      </View>
+      {/* Sits behind the bubble and is uncovered BY the drag. Its opacity is
+          driven by the drag itself: parked at full strength it put a reply
+          arrow beside every message in the thread, which reads as an unread
+          marker or a send failure rather than a hint. */}
+      <Animated.View
+        pointerEvents="none"
+        style={[styles.swipeHint, {
+          opacity: dx.interpolate({
+            inputRange: [0, SWIPE_REPLY_THRESHOLD],
+            outputRange: [0, 1],
+            extrapolate: 'clamp',
+          }),
+        }]}
+      >
+        <Reply color={ui.orangeText} size={16} />
+      </Animated.View>
       <GestureDetector gesture={pan}>
         <Animated.View style={{ transform: [{ translateX: dx }] }}>
           <View style={[styles.bubbleRow, item.mine ? styles.rowMine : styles.rowTheirs]}>
+            {/* The width cap lives HERE, on a plain View, and not on the
+                PressScale below. PressScale splits a style into layout and
+                visual halves and gives the layout half to BOTH the outer
+                Pressable and the inner animated view — so `maxWidth: '82%'`
+                was applied twice: 82% of a box whose own width came from its
+                child. Yoga answers a circular constraint like that by
+                collapsing, which is why "Hi baby" wrapped onto two lines and a
+                sender's name broke as "Kei / gh". */}
+            <View style={styles.bubbleCap}>
             <PressScale
               testID={`chat-msg-${item.message_id}`}
               // Long-press, not tap: the convention every messenger already
@@ -99,7 +120,8 @@ function MessageRow({ item, styles, ui, t, onHold, onSwipeReply, receipt }: RowP
               accessibilityHint={t('chat_reply_hint')}
               style={[styles.bubble, item.mine ? styles.bubbleMine : styles.bubbleTheirs]}
             >
-              {!item.mine ? <Text style={styles.sender}>{item.sender_name}</Text> : null}
+              {!item.mine && showSender
+                ? <Text style={styles.sender}>{item.sender_name}</Text> : null}
               {item.reply_to ? (
                 <View style={[styles.quote, item.mine && styles.quoteMine]}>
                   <Text
@@ -126,6 +148,7 @@ function MessageRow({ item, styles, ui, t, onHold, onSwipeReply, receipt }: RowP
                 </Text>
               ) : null}
             </PressScale>
+            </View>
           </View>
           {item.reactions?.length ? (
             <View style={[styles.reactionRow, item.mine ? styles.rowMine : styles.rowTheirs]}>
@@ -394,9 +417,13 @@ export function ChatThread({ load, send, markRead, react, edit, emptyHint }: Pro
           if (atBottom.current) listRef.current?.scrollToEnd({ animated: false });
         }}
         ListEmptyComponent={<Text style={styles.empty}>{emptyHint}</Text>}
-        renderItem={({ item }) => (
+        renderItem={({ item, index }) => (
           <MessageRow
             item={item}
+            // A name above every line makes six replies in a row read as six
+            // separate announcements. Shown only when the speaker changes,
+            // which is what every messenger does and what the eye expects.
+            showSender={index === 0 || messages[index - 1]?.sender_name !== item.sender_name}
             styles={styles}
             ui={ui}
             t={t}
@@ -504,6 +531,15 @@ export function ChatThread({ load, send, markRead, react, edit, emptyHint }: Pro
       <View ref={composerRef} style={styles.composer} collapsable={false}>
         <TextInput
           testID="chat-input"
+          // Starting to type takes you to the newest message. The keyboard
+          // effect below only fires when the OS reports a height, which does
+          // not happen with a hardware keyboard, when the keyboard is already
+          // open from another field, or on the web — so tapping the box left
+          // you looking at wherever you had scrolled to.
+          onFocus={() => {
+            atBottom.current = true;
+            requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
+          }}
           style={styles.input}
           value={text}
           onChangeText={setText}
@@ -534,7 +570,8 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   bubbleRow: { flexDirection: 'row' },
   rowMine: { justifyContent: 'flex-end' },
   rowTheirs: { justifyContent: 'flex-start' },
-  bubble: { maxWidth: '82%', borderRadius: 18, paddingHorizontal: 15, paddingVertical: 10 },
+  bubbleCap: { maxWidth: '82%' },
+  bubble: { borderRadius: 18, paddingHorizontal: 15, paddingVertical: 10 },
   bubbleMine: { backgroundColor: ui.orange, borderBottomRightRadius: 4 },
   bubbleTheirs: { backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, borderBottomLeftRadius: 4 },
   sender: { fontFamily: 'Inter_700Bold', fontSize: 12, color: ui.orangeText, marginBottom: 3 },

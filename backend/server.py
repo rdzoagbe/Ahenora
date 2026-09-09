@@ -16639,6 +16639,68 @@ async def send_support_ticket_email(ticket: dict) -> dict:
         return {"sent": False, "error": f"{type(exc).__name__}: {exc}"[:160]}
 
 
+async def send_support_ack_email(ticket: dict) -> dict:
+    """The receipt, to the person who wrote in.
+
+    Until now the only acknowledgement was a toast on the screen they were
+    already looking at: it vanished when they closed the sheet and left nothing
+    behind. Somebody who writes to support and hears nothing reasonably assumes
+    the message went nowhere — which is precisely what used to happen, and the
+    reason not to leave any doubt about it now.
+
+    It carries their own words back. A copy of what you sent is the difference
+    between "we got something from you" and a receipt you can check against.
+
+    Best effort and never raises: the ticket is stored, the support inbox has
+    been emailed, and this is a courtesy on top of both.
+    """
+    to = (ticket.get("user_email") or "").strip()
+    if not RESEND_API_KEY or not INVITE_FROM_EMAIL or not to:
+        return {"sent": False, "error": "email not configured"}
+    name = (ticket.get("user_name") or "").split(" ")[0] or "there"
+    subject = f"We\'ve got your message — {APP_NAME} support"
+    text = (
+        f"Hi {name},\n\n"
+        "Thanks for writing in. Your message has reached us and a real person "
+        "will get back to you by email.\n\n"
+        f"What you sent:\n{ticket.get('subject') or ''}\n\n"
+        f"{ticket.get('message') or ''}\n\n"
+        f"Reference: {ticket.get('ticket_id')}\n"
+        "You can reply to this email to add anything."
+    )
+    html_body = (
+        "<div style=\"font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;"
+        "font-size:15px;line-height:1.55;color:#202323\">"
+        f"<p>Hi {html.escape(name)},</p>"
+        "<p>Thanks for writing in. Your message has reached us and a real person "
+        "will get back to you by email.</p>"
+        "<p style=\"color:#6b7280;font-size:13px;margin-bottom:4px\">What you sent</p>"
+        f"<blockquote style=\"margin:0;padding:10px 14px;border-left:3px solid #f26a1b;"
+        f"background:#faf7f4\"><strong>{html.escape(ticket.get('subject') or '')}</strong>"
+        f"<br><span style=\"white-space:pre-wrap\">{html.escape(ticket.get('message') or '')}"
+        "</span></blockquote>"
+        f"<p style=\"color:#6b7280;font-size:13px\">Reference "
+        f"{html.escape(str(ticket.get('ticket_id') or ''))} · you can reply to this email "
+        "to add anything.</p></div>"
+    )
+    payload = {
+        "from": sender_as_app(INVITE_FROM_EMAIL),
+        "to": [to],
+        "subject": subject,
+        "text": text,
+        "html": html_body,
+    }
+    if SUPPORT_INBOX_EMAIL:
+        # A reply from them lands where somebody is looking, not in a no-reply
+        # void.
+        payload["reply_to"] = SUPPORT_INBOX_EMAIL
+    try:
+        return await _resend_send(payload)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("support ack email failed: %s", exc)
+        return {"sent": False, "error": f"{type(exc).__name__}: {exc}"[:160]}
+
+
 async def notify_admins_of_support_ticket(database, ticket: dict) -> dict:
     """A push to every admin account, so a message from a user is heard on
     the phone the founder actually carries. Returns what it reached."""
@@ -16703,6 +16765,10 @@ async def submit_support_contact(
         notified["email"] = await asyncio.wait_for(send_support_ticket_email(ticket), timeout=20.0)
     except Exception as exc:  # noqa: BLE001
         notified["email"] = {"sent": False, "error": f"{type(exc).__name__}: {exc}"[:160]}
+    try:
+        notified["ack"] = await asyncio.wait_for(send_support_ack_email(ticket), timeout=20.0)
+    except Exception as exc:  # noqa: BLE001
+        notified["ack"] = {"sent": False, "error": f"{type(exc).__name__}: {exc}"[:160]}
     try:
         notified["push"] = await asyncio.wait_for(
             notify_admins_of_support_ticket(database, ticket), timeout=10.0)
