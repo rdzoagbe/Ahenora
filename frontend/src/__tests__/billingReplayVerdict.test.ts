@@ -56,6 +56,32 @@ describe('the verdict on an unmatched payment', () => {
     expect(account).not.toEqual(lapsed);
   });
 
+  it('does not call a store test ping a lost payment', () => {
+    // RevenueCat's dashboard "Send test event" button posts a real webhook
+    // with a synthetic id belonging to nobody. It was filed as a purchase
+    // that reached no household, so the red money banner stood for weeks
+    // because somebody checked the endpoint was wired up — and a REAL lost
+    // payment would have looked exactly the same, right next to it.
+    const verdict = METRICS.slice(METRICS.indexOf('function replayVerdict'),
+                                  METRICS.indexOf('export default function MetricsScreen'));
+    // Checked before the retry wording, which is about finding a buyer.
+    expect(verdict.indexOf('e.is_test')).toBeLessThan(verdict.indexOf('replay_attempts'));
+    expect(verdict).toMatch(/Not a purchase, nothing owed/);
+    // And the tag read at a glance is not the red one.
+    expect(METRICS).toMatch(/e\.is_test \? 'store test' : 'reached nobody'/);
+    expect(METRICS).toMatch(/e\.is_test \? ui\.muted : ui\.danger/);
+  });
+
+  it('tells the three billing states apart', () => {
+    // Nothing ever arrived (an outage) · money reached nobody (a person to
+    // find) · the only thing that arrived was a test (the endpoint working,
+    // nothing sold). The third used to raise the second's alarm, and could
+    // never clear, because the id is not a person.
+    expect(METRICS).toContain('!billing.ever_received ?');
+    expect(METRICS).toContain('billing.unmatched > 0 ?');
+    expect(METRICS).toContain('billing.last_test_at ?');
+  });
+
   it('shows the verdict only where somebody has to act', () => {
     // A matched event is a receipt, not a task. Putting a retry line under
     // every row buries the one row that needs a person.

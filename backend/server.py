@@ -11793,6 +11793,32 @@ async def _note_replay_attempt(database: Any, ev: dict, state: str) -> None:
          "$inc": {"replay_attempts": 1}})
 
 
+# RevenueCat's dashboard has a "Send test event" button. It posts a real
+# webhook carrying event_type TEST, product "test_product" and a synthetic
+# app_user_id that belongs to nobody — which is the whole point of it.
+#
+# We filed it as a purchase that reached no household. So the admin screen's
+# loudest alarm — a red banner reading "That is real money landing nowhere,
+# the store got a 200 back and will not send it again" — has been on since
+# 31 August because somebody pressed a button to check the endpoint was
+# wired up. It could never clear: the id is not a person, so the twice-daily
+# replay will never resolve it, and it was burning a RevenueCat lookup a
+# pass forever trying.
+#
+# Worse than the noise is what the noise hides. A real unmatched purchase
+# would raise exactly the same banner and read exactly the same, next to
+# this one, and be indistinguishable from the false alarm that had been
+# standing for weeks.
+#
+# Classified on READ rather than stored, so the row already sitting in
+# production is reclassified the moment this ships, with no migration.
+def is_test_billing_event(row: Optional[dict]) -> bool:
+    """A store's "is this endpoint alive?" ping. Never money."""
+    r = row or {}
+    return (str(r.get("source") or "").strip().lower() == "revenuecat"
+            and str(r.get("event_type") or "").strip().upper() == "TEST")
+
+
 async def replay_unmatched_billing(database: Any, secret: str = "") -> dict:
     """Retry the purchases that arrived for an account we did not know.
 
@@ -11817,6 +11843,11 @@ async def replay_unmatched_billing(database: Any, secret: str = "") -> dict:
     async for ev in database["billing_events"].find(
             {"matched": False}, {"_id": 0}):
         if ev.get("resolved_at"):
+            continue
+        if is_test_billing_event(ev):
+            # Nothing to recover and nobody to find. Skipped rather than
+            # noted: a retry count on a test ping is a number that invites
+            # somebody to investigate it.
             continue
         uid = ev.get("app_user_id")
         if not uid:
@@ -11956,7 +11987,12 @@ async def admin_billing_events(user=Depends(require_user), limit: int = Query(de
     rows = [r async for r in database["billing_events"].find({}, {"_id": 0})]
     rows.sort(key=lambda r: _coerce_dt(r.get("received_at")) or utcnow(), reverse=True)
 
-    unmatched = [r for r in rows if not r.get("matched")]
+    # A test ping matched no household, truthfully — and is not a lost
+    # payment, so it does not belong in the number that means "someone paid
+    # and got nothing". It stays in the list, where it is useful: it is
+    # positive evidence this endpoint is reachable from the store.
+    unmatched = [r for r in rows if not r.get("matched") and not is_test_billing_event(r)]
+    test_pings = [r for r in rows if is_test_billing_event(r)]
     by_source: dict = {}
     for r in rows:
         by_source[r.get("source") or "?"] = by_source.get(r.get("source") or "?", 0) + 1
@@ -11977,6 +12013,7 @@ async def admin_billing_events(user=Depends(require_user), limit: int = Query(de
             "replay_state": r.get("replay_state"),
             "replay_attempts": int(r.get("replay_attempts") or 0),
             "last_replay_at": iso(_coerce_dt(r.get("last_replay_at"))),
+            "is_test": is_test_billing_event(r),
         }
 
     # Unmatched first, then everything else newest-first.
@@ -11990,7 +12027,7 @@ async def admin_billing_events(user=Depends(require_user), limit: int = Query(de
     #
     # The count was honest and useless. Now the row you have to act on is the
     # row at the top.
-    shown = unmatched + [r for r in rows if r.get("matched")]
+    shown = unmatched + [r for r in rows if r.get("matched") or is_test_billing_event(r)]
 
     newest = rows[0] if rows else None
     return {
@@ -12006,6 +12043,11 @@ async def admin_billing_events(user=Depends(require_user), limit: int = Query(de
         "last_event_at": iso(_coerce_dt(newest.get("received_at"))) if newest else None,
         "total": len(rows),
         "unmatched": len(unmatched),
+        # The store reaching us on purpose. Worth its own line: "no event has
+        # ever arrived" and "the only event that ever arrived was a test" are
+        # different situations, and the second one means the endpoint is
+        # correctly wired and simply has not sold anything yet.
+        "last_test_at": iso(_coerce_dt(test_pings[0].get("received_at"))) if test_pings else None,
         "by_source": by_source,
         "events": [_row(r) for r in shown[:limit]],
     }

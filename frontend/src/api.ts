@@ -1179,6 +1179,11 @@ export interface BillingEvent {
   replay_state: string | null;
   replay_attempts: number;
   last_replay_at: string | null;
+  /** A store's "is this endpoint alive?" ping — RevenueCat's dashboard test
+   *  button. It matches no household, truthfully, and is not a lost payment.
+   *  Decided server-side (is_test_billing_event) and computed on read, so the
+   *  row already in production reclassifies itself. */
+  is_test: boolean;
 }
 
 export interface BillingEventLog {
@@ -1188,7 +1193,12 @@ export interface BillingEventLog {
   /** False means nothing has EVER arrived — the webhook is not pointed at us. */
   ever_received: boolean;
   last_event_at: string | null;
+  /** When the store last reached us on purpose. "Nothing has ever arrived"
+   *  and "the only thing that arrived was a test" are different situations:
+   *  the second means the endpoint is wired and has simply sold nothing yet. */
+  last_test_at: string | null;
   total: number;
+  /** Purchases that reached no household. Excludes test pings — see is_test. */
   unmatched: number;
   by_source: Record<string, number>;
   events: BillingEvent[];
