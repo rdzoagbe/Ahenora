@@ -747,7 +747,13 @@ const en: Dict = {
   capture_reading: "Reading your recipe…",
   capture_failed: "We could not read a recipe in that photo.",
   capture_note: "Read by AI from your photo — check it against the original.",
-  currency_symbol: '$',
+  // Euro, like the other three languages and like the price the stores
+  // actually charge. English was the only locale saying '$', so an English
+  // household saw "$0.00" of expenses on one screen and "62 €" owed to their
+  // co-parent on the next — two currencies and two placements inside one
+  // feature. (What this really wants is a currency chosen by the household
+  // rather than inferred from its language; that is a setting, not a fix.)
+  currency_symbol: '€',
   // ---- House expenses (receipt tracking) ----
   exp_title: 'House expenses',
   addcard_edit_title: 'Edit',

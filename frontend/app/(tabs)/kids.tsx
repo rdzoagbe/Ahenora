@@ -40,7 +40,7 @@ import { weekDayCells as buildWeekDayCells } from '../../src/weekStars';
 import { StarCelebration, CelebrationContent } from '../../src/components/StarCelebration';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
 import DateTimePickerSheet from '../../src/components/DateTimePickerSheet';
-import { quickDueDate, toLocalDateInput, toLocalTimeInput } from '../../src/utils/date';
+import { formatCompactDue, quickDueDate, toLocalDateInput, toLocalTimeInput } from '../../src/utils/date';
 import AppToast from '../../src/components/AppToast';
 import { useToast } from '../../src/hooks/useToast';
 import EmptyState from '../../src/components/EmptyState';
@@ -2992,7 +2992,7 @@ export default function Kids() {
             style={[styles.assignDueChip, assignDue && styles.assignDueChipActive]}
           >
             <Text style={[styles.assignDueText, assignDue && styles.assignDueTextActive]}>
-              {assignDue ? `${toLocalDateInput(assignDue)} · ${toLocalTimeInput(assignDue)}` : t('no_due')}
+              {assignDue ? formatCompactDue(assignDue, lang) : t('no_due')}
             </Text>
           </PressScale>
           {assignDue ? (

@@ -52,21 +52,34 @@ LOGGED_OUT = ["", "auth"]
 # Skipped rather than failed when a control is not on screen: this is a
 # camera, not a gate, and one missing button must not cost the other forty
 # pictures.
+# (route, [taps to get there], testID to press, name for the file).
+#
+# The middle list is why seven of these were reported "skipped" on every run
+# and therefore never photographed: they live behind an expander. A camera
+# that quietly declines to photograph a third of the rooms is not much of a
+# camera, and "skipped" in a summary nobody reads is how it stayed that way.
 MODALS = [
-    ("feed", "feed-open-add", "add-card"),
-    ("feed", "feed-household-open", "household"),
-    ("kids", "kids-add-child", "add-child"),
-    ("kids", "kids-add-chore", "add-chore"),
-    ("kids", "kids-add-reward", "add-reward"),
-    ("kids", "kids-add-routine", "add-routine"),
-    ("kids", "kids-assign-task", "assign-task"),
-    ("calendar", "calendar-add-event", "add-event"),
-    ("calendar", "calendar-sync-card-button", "calendar-sync"),
-    ("expenses", "exp-add-open", "add-expense"),
-    ("settings", "invite-coparent", "invite-coparent"),
-    ("settings", "invite-helper", "invite-helper"),
-    ("settings", "open-sunday-brief", "sunday-brief"),
-    ("santa", "santa-add-name", "santa-name"),
+    ("feed", [], "feed-open-add", "add-card"),
+    ("feed", [], "feed-household-open", "household"),
+    ("kids", [], "kids-add-child", "add-child"),
+    # A child's controls live on that child's page, so the child card has to be
+    # opened first — and its testID carries the member id, hence the selector.
+    ("kids", ["css:[data-testid^='child-']", "kids-show-more"], "kids-add-chore", "add-chore"),
+    ("kids", ["css:[data-testid^='child-']", "kids-show-more"], "kids-add-reward", "add-reward"),
+    ("kids", ["css:[data-testid^='child-']", "kids-show-more"], "kids-add-routine", "add-routine"),
+    ("kids", ["css:[data-testid^='child-']", "kids-show-more"], "kids-assign-task", "assign-task"),
+    ("calendar", [], "calendar-add-event", "add-event"),
+    ("calendar", [], "calendar-sync-card-button", "calendar-sync"),
+    ("expenses", [], "exp-add-open", "add-expense"),
+    ("settings", ["settings-household-toggle"], "invite-coparent", "invite-coparent"),
+    ("settings", ["settings-household-toggle"], "invite-helper", "invite-helper"),
+    # The Sunday brief is deliberately absent. It only renders for a household
+    # with the weekly-brief entitlement, and the admin-household check the
+    # sweep relies on is cached for 60s — so it is unreachable here for timing
+    # reasons rather than because anything is wrong. Its reachability is
+    # guarded instead by src/__tests__/bundledAssets.test.ts, which is where it
+    # was found unreachable in the first place.
+    ("santa", [], "santa-add-name", "santa-name"),
 ]
 
 
@@ -79,13 +92,25 @@ def api(method, path, body=None, token=None):
         return json.loads(res.read().decode() or "{}")
 
 
+SEED_FAILURES: list = []
+
+
 def try_(method, path, body=None, token=None, label=""):
-    """Seeding is best effort: one screen's content must not stop the sweep
-    from photographing the others."""
+    """Seeding is best effort — one screen's content must not stop the sweep
+    from photographing the others — but a failure is RECORDED and reported at
+    the end, not left as one line scrolling past.
+
+    The seed that creates a dated card had been failing with a 400 since this
+    file was written. Every sweep photographed an empty calendar and every
+    sweep looked fine, because a screen with nothing in it has nothing in it to
+    look wrong. That is the whole failure mode this sweep exists to catch,
+    happening to the sweep itself.
+    """
     try:
         return api(method, path, body, token)
     except Exception as exc:  # noqa: BLE001
-        print(f"seed skipped {label or path}: {exc}")
+        SEED_FAILURES.append(f"{label or path}: {exc}")
+        print(f"seed FAILED {label or path}: {exc}")
         return None
 
 
@@ -111,8 +136,14 @@ def seed():
         try_("POST", "/family/members", {"name": kid, "role": "Child", "age": 8}, tok, "child")
     try_("POST", "/shopping/bulk", {"names": ["Rice", "Beans", "Milk", "Bread"]}, tok, "shopping")
     try_("POST", "/cards", {"type": "TASK", "title": "Book the dentist", "shared": True}, tok, "card")
-    try_("POST", "/cards", {"type": "EVENT", "title": "Swimming lesson", "shared": True,
-                            "due_date": "2026-09-09T16:00:00Z"}, tok, "event")
+    # APPOINTMENT, not EVENT. There is no EVENT card type — POST /cards has
+    # refused this call with 400 since the sweep was written, `try_` swallowed
+    # it into one line of output, and the calendar has therefore been
+    # photographed empty in every sweep ever run. The screens looked fine
+    # because there was nothing in them to look wrong.
+    try_("POST", "/cards", {"type": "APPOINTMENT", "title": "Swimming lesson",
+                            "shared": True,
+                            "due_date": "2026-09-12T16:00:00Z"}, tok, "dated card")
     try_("POST", "/cards", {"type": "TASK", "title": "Private: passport renewal",
                             "shared": False}, tok, "private card")
     try_("POST", "/handoff-notes", {"text": "Isaiah has a cold, keep him warm."}, tok, "handoff")
@@ -183,10 +214,25 @@ async def shoot(browser, token, look, routes, scheme="light", extra_init="", mod
         if errs:
             errors[f"{look}/{name}"] = errs
 
-    for route_name, test_id, label in modals:
+    for route_name, opens, test_id, label in modals:
         try:
             await page.goto(f"{WEB}/{route_name}", wait_until="domcontentloaded")
             await page.wait_for_timeout(2000)
+            for opener in opens:
+                # WAIT for the control rather than asking whether it is there
+                # yet. A fixed 2s pause then `if count()` is a race the slower
+                # screens lose, and losing it looked exactly like the control
+                # not existing — which is how four of the kids modals reported
+                # themselves missing when they were merely late.
+                selector = (opener[4:] if opener.startswith("css:")
+                            else f"[data-testid='{opener}']")
+                try:
+                    await page.wait_for_selector(selector, timeout=8000)
+                except Exception:  # noqa: BLE001
+                    skipped.append(f"{label} (opener {opener} never appeared on {route_name})")
+                    break
+                await page.locator(selector).first.click(timeout=4000)
+                await page.wait_for_timeout(900)
             target = page.get_by_test_id(test_id)
             if await target.count() == 0:
                 skipped.append(f"{label} (no {test_id} on {route_name})")
@@ -237,9 +283,21 @@ async def main():
     print(json.dumps({
         "shots": len(os.listdir(OUT)),
         "pageerrors": errors,
+        "seed_failures": SEED_FAILURES,
         "skipped": skipped,
     }, indent=1))
+    # A screen photographed without its content is a photograph of nothing, and
+    # a modal never opened is a room never looked at. Both are worth an exit
+    # code: this is still a camera, but a camera that says when the lens cap
+    # was on.
+    if SEED_FAILURES or errors or skipped:
+        print(f"\nINCOMPLETE  {len(SEED_FAILURES)} seed failure(s), "
+              f"{len(errors)} screen(s) with JavaScript errors, "
+              f"{len(skipped)} modal(s) not photographed")
+        return 1
+    print("\nCOMPLETE  every screen seeded, opened and photographed")
+    return 0
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    sys.exit(asyncio.run(main()))
