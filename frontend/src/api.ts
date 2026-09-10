@@ -209,6 +209,39 @@ export function setUnauthorizedHandler(fn: (() => void) | null) {
 // a family device is visible to the admin without a screenshot relay. Plain
 // fetch — going through request() could recurse; throttled; never throws.
 let errorReportTimes: number[] = [];
+
+/**
+ * A render crash, reported to the same place failed requests already go.
+ *
+ * The root error boundary catches a throw and shows a person "Something went
+ * wrong" — and until now that was the END of the information. componentDidCatch
+ * wrote to the console, which nobody on the other end of a phone can read. The
+ * first real one (the calendar throwing on iOS, 2026-09-07) had to be diagnosed
+ * from source alone, with the message that would have named the cause in one
+ * line deliberately withheld from the screen and accidentally withheld from
+ * the admin panel too.
+ *
+ * Same throttle and same never-throw guarantee as request failures: a crash
+ * report must not become a second crash.
+ */
+export function reportCrash(message: string, componentStack?: string | null) {
+  const where = (componentStack || '').split('\n').map((l) => l.trim()).filter(Boolean)[0] || '';
+  reportClientError('render', 'CRASH', undefined,
+    `${String(message || 'unknown').slice(0, 200)}${where ? ` @ ${where.slice(0, 90)}` : ''}`);
+}
+
+/**
+ * A phone that could not get a push token says why, to the admin panel.
+ *
+ * On 2026-09-08 every Android install had been failing this call since
+ * launch (no Firebase config in the build) and the only trace was a
+ * logger.warn on the phone. Reported under a path of its own so it stands
+ * out from API errors.
+ */
+export function reportPushFailure(message: string) {
+  reportClientError('/push-register', 'PUSH', undefined, String(message || 'unknown').slice(0, 240));
+}
+
 function reportClientError(path: string, method: string, status: number | undefined, message: string) {
   try {
     if (path.startsWith('/telemetry')) return;
@@ -796,9 +829,49 @@ export interface ChatMessage {
   sender_name: string;
   text: string;
   created_at: string;
+  /** The last moment anything about this message changed — sent, read, or
+   *  edited. What `since` is advanced to; created_at cannot serve, because a
+   *  message that has just been read has changed without becoming newer. */
+  changed_at?: string;
   mine: boolean;
+  /** The VIEWER has read this one. Drives the unread badge. */
   read: boolean;
+  /** How many of the other people in this conversation have opened it. */
+  seen_by?: number;
+  /** How many other people are in this conversation at all. */
+  audience?: number;
+  /** Everyone else has read it. Absent on threads the server did not price. */
+  seen?: boolean;
+  /** The message this one answers, if any. */
+  reply_to?: string;
+  /** Who wrote the quoted message, and enough of it to recognise which one.
+   *  A snapshot taken when the reply was sent, not a live join — so the quote
+   *  still renders when the original has scrolled off the page. */
+  reply_to_name?: string;
+  reply_to_text?: string;
+  /** Tallied per emoji, in palette order so the row does not reshuffle. */
+  reactions?: { emoji: string; count: number; mine: boolean }[];
+  /** Corrected after sending. Permanent — nothing ever clears it. */
+  edited?: boolean;
 }
+
+/** How long you may correct what you sent. Must match CHAT_EDIT_WINDOW_MINUTES
+ *  in backend/server.py — the server enforces it and a test holds the two
+ *  together, so the app cannot offer an Edit button the server will refuse. */
+export const CHAT_EDIT_WINDOW_MINUTES = 15;
+
+/** Whether this message can still be corrected. The server decides for real;
+ *  this is only so the app does not offer a button that would be refused. */
+export function chatCanEdit(m: ChatMessage, now: number = Date.now()): boolean {
+  if (!m.mine || !m.created_at) return false;
+  const sent = Date.parse(m.created_at);
+  if (Number.isNaN(sent)) return false;
+  return now - sent <= CHAT_EDIT_WINDOW_MINUTES * 60 * 1000;
+}
+
+/** What you may react with. Must match CHAT_REACTIONS in backend/server.py —
+ *  the server refuses anything else, and a test holds the two lists together. */
+export const CHAT_REACTIONS = ['❤️', '👍', '😂', '😮', '😢', '🙏'];
 
 export interface ChatThreadSummary {
   thread: string;
@@ -846,6 +919,13 @@ export interface FamilyMember {
    *  whether they are the household founder (the only parent nobody can remove). */
   is_me?: boolean;
   is_founder?: boolean;
+  /** What this member IS to the household, in one word, decided server-side:
+   *  'owner' | 'parent' | 'helper' | 'teen' | 'child' | 'member'. The rule that
+   *  separates a parent from a grandmother lives in the backend beside the
+   *  permission checks that depend on it; a copy here would be a copy to get
+   *  out of step. 'member' means an adult invited by relationship — show their
+   *  `role` ("Grandma"), which is the family's own word for them. */
+  standing?: string;
   /** A teen's own user_id — the key of their private chat thread. Null for a
    *  managed child (no account). Lets the app open the right thread by id. */
   user_id?: string | null;
@@ -963,6 +1043,27 @@ export interface InviteBreakdown {
     never_signed_up: number;
     joined_while_invite_still_pending: number;
   };
+  /** For every accepted invite in the window: did the inviter hear it landed? */
+  inviter_told?: {
+    reached: number;
+    unreachable: number;
+    not_recorded: number;
+  };
+}
+
+/** /api/metrics/timings — admin only. What the app FELT like, per timing.
+ *  Buckets, not averages: an average hides the launches that felt broken. */
+export interface TimingsReport {
+  days: number;
+  timings: {
+    name: string;
+    samples: number;
+    mean_ms: number | null;
+    median_bucket: string | null;
+    labels: string[];
+    buckets: number[];
+    pct_in_slowest: number | null;
+  }[];
 }
 
 /** /api/health/push — admin only. Answers the question a silent morning
@@ -982,6 +1083,8 @@ export interface PushHealth {
     people_reachable: number;
     active_phone_tokens: number;
     active_web_subscriptions: number;
+    /** Active phone tokens per platform, e.g. { android: 0, ios: 1 }. */
+    by_platform?: Record<string, number>;
   };
   jobs: {
     key: string;
@@ -990,6 +1093,16 @@ export interface PushHealth {
     served_today: number;
     waiting_now: number;
   }[];
+  /** What Google and Apple said about sent pushes, from Expo's receipts. */
+  delivery?: {
+    receipts_last_checked_at: string | null;
+    receipts_checked: number;
+    tickets_pending: number;
+    recent_errors: {
+      at: string | null; stage: string; platform: string;
+      error: string; message: string; token_tail: string;
+    }[];
+  };
   you: {
     reachable: boolean;
     timezone: string | null;
@@ -1057,6 +1170,20 @@ export interface BillingEvent {
   plan: string | null;
   detail: string | null;
   received_at: string | null;
+  /** What the twice-daily replay found last time it tried an unmatched row.
+   *  Null until it has run once — which itself tells you something.
+   *  'no_account' is the one that means real money is waiting for a person to
+   *  match a store receipt to a buyer; 'not_entitled' means the subscription
+   *  has since lapsed and there is nothing left to recover. Decided
+   *  server-side (REPLAY_STATES) so the words below stay the only copy. */
+  replay_state: string | null;
+  replay_attempts: number;
+  last_replay_at: string | null;
+  /** A store's "is this endpoint alive?" ping — RevenueCat's dashboard test
+   *  button. It matches no household, truthfully, and is not a lost payment.
+   *  Decided server-side (is_test_billing_event) and computed on read, so the
+   *  row already in production reclassifies itself. */
+  is_test: boolean;
 }
 
 export interface BillingEventLog {
@@ -1066,7 +1193,12 @@ export interface BillingEventLog {
   /** False means nothing has EVER arrived — the webhook is not pointed at us. */
   ever_received: boolean;
   last_event_at: string | null;
+  /** When the store last reached us on purpose. "Nothing has ever arrived"
+   *  and "the only thing that arrived was a test" are different situations:
+   *  the second means the endpoint is wired and has simply sold nothing yet. */
+  last_test_at: string | null;
   total: number;
+  /** Purchases that reached no household. Excludes test pings — see is_test. */
   unmatched: number;
   by_source: Record<string, number>;
   events: BillingEvent[];
@@ -1127,6 +1259,17 @@ export interface Subscriber {
   plan: string;
   paying: boolean;
   billing_source: 'stripe' | 'google_play' | null;
+  /** Paid plan with no rail behind it — a testing-window leftover or an
+   *  admin grant, not a subscriber. */
+  unpaid_premium?: boolean;
+  /** Getting premium without paying by ANY route, including the two that
+   *  `unpaid_premium` cannot see: a household containing an admin/tester
+   *  account, and the launch preview while no paid rail is configured. */
+  premium_without_paying?: boolean;
+  /** Why — 'preview' | 'admin_or_tester' | 'grandfathered' |
+   *  'paid_plan_no_receipt'. A tester and a thanked early adopter are not
+   *  freeloaders, and this is what tells them apart. */
+  unpaid_reason?: string | null;
   billing_cycle: string | null;
   owner_name: string;
   owner_email: string;
@@ -1143,9 +1286,47 @@ export interface Subscriber {
   subscribed_at: string | null;
 }
 
+/** /api/admin/support-tickets — admin only. The support form's inbox. */
+export interface SupportTicket {
+  ticket_id: string;
+  family_id: string | null;
+  user_id: string | null;
+  user_email: string;
+  user_name: string;
+  subject: string;
+  message: string;
+  status: 'open' | 'closed' | string;
+  created_at: string | null;
+  closed_at: string | null;
+  /** null: sent before delivery was tracked — nobody was ever told. */
+  emailed: boolean | null;
+  email_error?: string | null;
+  pushed_devices: number;
+}
+
+export interface SupportInbox {
+  generated_at: string | null;
+  window_days: number;
+  open: number;
+  total: number;
+  email_configured: boolean;
+  inbox: string;
+  never_delivered: number;
+  tickets: SupportTicket[];
+}
+
 export interface SubscriberList {
   total: number;
   paying: number;
+  /** Of `paying`, how many have a real payment rail behind them. A gap between
+   *  the two means somebody is on a paid plan nobody charged for. */
+  paying_verified: number;
+  /** False means NO paid rail is configured, so every household is on the
+   *  launch preview by design. Check this before reading anything below as a
+   *  list of people to chase. */
+  billing_live?: boolean;
+  /** How many households get premium without paying, by any route. */
+  premium_without_paying?: number;
   subscribers: Subscriber[];
 }
 
@@ -1450,6 +1631,8 @@ export interface SantaParticipant {
 
 export interface SantaDraw {
   draw_id: string;
+  /** Set on the response to send: household members pushed. */
+  members_notified?: number;
   family_id: string;
   title: string;
   budget: number | null;
@@ -1584,8 +1767,12 @@ export const api = {
   me: () => request<User>('/auth/me'),
   changePassword: (data: { current_password: string; new_password: string }) =>
     request<{ ok: boolean }>('/auth/change-password', { method: 'POST', body: data }),
+  /** `email_configured` is a fact about the SERVER, not the account, so it
+   *  gives nothing away — and it is the difference between "check your inbox"
+   *  and waiting for a code that was never going to arrive. */
   requestPasswordReset: (email: string) =>
-    request<{ ok: boolean }>('/auth/request-password-reset', { method: 'POST', body: { email } }),
+    request<{ ok: boolean; email_configured?: boolean }>(
+      '/auth/request-password-reset', { method: 'POST', body: { email } }),
   resetPassword: (data: { email: string; code: string; new_password: string }) =>
     request<{ user: User; session_token: string }>('/auth/reset-password', { method: 'POST', body: data }),
   logout: () => {
@@ -1657,8 +1844,16 @@ export const api = {
     request<VersionAdoption>('/admin/version-adoption'),
   getPlanAdoption: () =>
     request<PlanAdoption>('/admin/plan-adoption'),
+  getTimings: (days = 14) =>
+    request<TimingsReport>(`/metrics/timings?days=${days}`),
   getSubscribers: () =>
     request<SubscriberList>('/admin/subscribers'),
+  /** Every message sent through the in-app support form, open first. */
+  getSupportTickets: (days = 365) =>
+    request<SupportInbox>(`/admin/support-tickets?days=${days}`),
+  closeSupportTicket: (ticketId: string) =>
+    request<{ ok: boolean; ticket_id: string; status: string }>(
+      `/admin/support-tickets/${encodeURIComponent(ticketId)}/close`, { method: 'POST' }),
   getBillingEvents: (limit = 40) =>
     request<BillingEventLog>(`/admin/billing-events?limit=${limit}`),
   listInvites: () => request<FamilyInvite[]>('/family/invites'),
@@ -1991,7 +2186,7 @@ export const api = {
   /** What this build should compare itself against. Unauthenticated: a client
    *  too old to be updated may also be too old to sign in cleanly. */
   appVersionInfo: () =>
-    request<{ min_runtime: string; store_version: string; android_store_url?: string }>('/app/version-info'),
+    request<{ min_runtime: string; store_version: string; android_store_url?: string; ios_store_url?: string }>('/app/version-info'),
   /** The three counts the sharing panel states, from one source. */
   sharingSummary: () =>
     request<{ shared_out: number; shared_in: number; private: number }>('/cards/sharing-summary'),
@@ -2061,17 +2256,38 @@ export const api = {
   // Family chat. Parents reach the adults thread + one per teen; a teen reaches
   // only their own thread (the server forces it).
   chatThreads: () => request<{ threads: ChatThreadSummary[] }>('/family/chat/threads'),
-  chatGet: (thread: string) => request<{ messages: ChatMessage[] }>(`/family/chat/${encodeURIComponent(thread)}`),
-  chatSend: (thread: string, text: string) =>
+  /** `since` fetches only what has arrived after that moment, so a screen can
+   *  poll a quiet thread for nothing. Omit it for the whole recent history. */
+  chatGet: (thread: string, since?: string) =>
+    request<{ messages: ChatMessage[] }>(
+      `/family/chat/${encodeURIComponent(thread)}${since ? `?since=${encodeURIComponent(since)}` : ''}`),
+  chatSend: (thread: string, text: string, replyTo?: string) =>
     request<{ ok: boolean; message: ChatMessage }>(`/family/chat/${encodeURIComponent(thread)}`, {
-      method: 'POST', body: { text },
+      method: 'POST', body: { text, reply_to: replyTo },
     }),
   signOutEverywhere: () => request<{ ok: boolean; ended: number }>('/auth/sign-out-everywhere', { method: 'POST' }),
   chatRead: (thread: string) =>
     request<{ ok: boolean }>(`/family/chat/${encodeURIComponent(thread)}/read`, { method: 'POST' }),
-  teenChatGet: () => request<{ messages: ChatMessage[] }>('/teen/chat'),
-  teenChatSend: (text: string) =>
-    request<{ ok: boolean; message: ChatMessage }>('/teen/chat', { method: 'POST', body: { text } }),
+  teenChatGet: (since?: string) =>
+    request<{ messages: ChatMessage[] }>(
+      `/teen/chat${since ? `?since=${encodeURIComponent(since)}` : ''}`),
+  chatReact: (thread: string, messageId: string, emoji: string) =>
+    request<{ ok: boolean; message: ChatMessage }>(
+      `/family/chat/${encodeURIComponent(thread)}/${encodeURIComponent(messageId)}/react`,
+      { method: 'POST', body: { emoji } }),
+  chatEdit: (thread: string, messageId: string, text: string) =>
+    request<{ ok: boolean; message: ChatMessage }>(
+      `/family/chat/${encodeURIComponent(thread)}/${encodeURIComponent(messageId)}`,
+      { method: 'PATCH', body: { text } }),
+  teenChatReact: (messageId: string, emoji: string) =>
+    request<{ ok: boolean; message: ChatMessage }>(
+      `/teen/chat/${encodeURIComponent(messageId)}/react`, { method: 'POST', body: { emoji } }),
+  teenChatEdit: (messageId: string, text: string) =>
+    request<{ ok: boolean; message: ChatMessage }>(
+      `/teen/chat/${encodeURIComponent(messageId)}`, { method: 'PATCH', body: { text } }),
+  teenChatSend: (text: string, replyTo?: string) =>
+    request<{ ok: boolean; message: ChatMessage }>(
+      '/teen/chat', { method: 'POST', body: { text, reply_to: replyTo } }),
   teenChatRead: () => request<{ ok: boolean }>('/teen/chat/read', { method: 'POST' }),
 
   kidHome: () => request<KidHome>('/kid/home'),
@@ -2287,66 +2503,6 @@ export const api = {
     });
   },
   // Voice transcribe
-  voiceTranscribe: async (
-    audio:
-      | Blob
-      | {
-          uri: string;
-          name?: string;
-          type?: string;
-        }
-  ): Promise<{
-    transcript: string;
-    type: CardType;
-    title: string;
-    description: string;
-    assignee: string;
-    due_date?: string | null;
-  }> => {
-    const token = await tokenStore.get();
-    const form = new FormData();
-
-    if (typeof Blob !== 'undefined' && audio instanceof Blob) {
-      const fileName = audio.type?.includes('ogg') ? 'voice.ogg' : 'voice.webm';
-
-      if (typeof File !== 'undefined') {
-        form.append('audio', new File([audio], fileName, { type: audio.type || 'audio/ogg' }));
-      } else {
-        form.append('audio', audio as any);
-      }
-    } else {
-      const nativeFile = audio as { uri: string; name?: string; type?: string };
-
-      form.append('audio', {
-        uri: nativeFile.uri,
-        name: nativeFile.name || 'voice.m4a',
-        type: nativeFile.type || 'audio/aac',
-      } as any);
-    }
-
-    const headers: Record<string, string> = {};
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-    let res: Response;
-    try {
-      res = await fetch(`${BASE}/api/voice/transcribe`, {
-        method: 'POST',
-        headers,
-        body: form,
-        signal: controller.signal,
-      });
-    } finally {
-      clearTimeout(timeoutId);
-    }
-
-    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
-
-    return res.json();
-  },
-
-  // Handoff Notes
   listHandoffNotes: () => request<HandoffNote[]>('/handoff-notes'),
   createHandoffNote: (data: { member_id?: string; text: string }) =>
     request<HandoffNote>('/handoff-notes', { method: 'POST', body: data }),

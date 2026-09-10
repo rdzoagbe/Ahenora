@@ -16,21 +16,27 @@ with the binary swapped for echo instead of searching its text.
 
 And preview must cover at least what production ships to. The danger is
 shipping to a device nobody previewed on — so production's platforms have to be
-a SUBSET of preview's. The reverse is fine and is the situation today:
-production is pinned to android while App Review runs a build on that channel,
-and preview publishes to `all` so the iPhone tester receives fixes at all.
+a SUBSET of preview's. That began as an equality check, which is a different
+claim and a wrong one: it broke the moment production was deliberately pinned
+to android for App Review, and nothing noticed, because backend CI only watched
+its own workflow file rather than the two files this test reads. Both halves are
+fixed — the assertion says what it means, and the path filter covers every
+workflow. Since 2026-09-07 iOS is live and both publish `all`.
 
-This started as an equality check, which is a different claim and a wrong one.
-It broke the moment that deliberate, documented split was made — and nothing
-noticed, because backend CI only watched its own workflow file, not the two
-files this test actually reads. Both halves are fixed: the assertion says what
-it means, and the path filter now covers every workflow.
+The third thing held here is newer, and it is the opposite of what it was for
+one afternoon. NEITHER workflow may stage its rollout. Staging was added on
+2026-09-07 to contain a bad update and jammed publishing on the very next
+merge, because EAS permits only one rollout in progress per runtime version and
+nothing promoted the previous one. A pipeline that refuses to ship until
+somebody clicks is its own kind of outage. The flag stays out until the
+"what happens to the previous canary" question has an answer.
 
 Run with:  python3 -m unittest discover -s tests -v
 """
 import os
 import re
 import subprocess
+import tempfile
 import unittest
 
 try:
@@ -97,18 +103,30 @@ class PublishSteps(unittest.TestCase):
             # GitHub substitutes ${{ ... }} before the shell ever sees it.
             script = re.sub(r"\$\{\{.*?\}\}", "x", run, flags=re.S)
             script = script.replace("npx eas-cli@latest update", "echo ARGS:")
-            proc = subprocess.run(["bash"], input=script, text=True,
-                                  capture_output=True,
-                                  env={**os.environ, "GITHUB_SHA": "sha"})
-            self.assertEqual(proc.returncode, 0,
-                             f"{wf} / {name} does not run:\n{proc.stderr}")
-            args = proc.stdout.strip()
-            self.assertTrue(args.startswith("ARGS:"),
-                            f"{wf} / {name} produced no argument line: {args!r}")
-            for flag in ("--platform", "--branch", "--non-interactive"):
-                self.assertIn(flag, args,
-                              f"{wf} / {name}: {flag} never reaches the command. "
-                              f"It got: {args!r}")
+            # A runner sets these, and a step that records its output writes to
+            # them. Without them the redirect fails and the step looks broken
+            # for a reason that has nothing to do with its flags. Run in a
+            # temporary directory too: the step writes files, and a test that
+            # litters the repository is its own small bug.
+            with tempfile.TemporaryDirectory() as tmp:
+                proc = subprocess.run(
+                    ["bash"], input=script, text=True, capture_output=True,
+                    cwd=tmp,
+                    env={**os.environ, "GITHUB_SHA": "sha",
+                         "GITHUB_OUTPUT": os.path.join(tmp, "output"),
+                         "GITHUB_STEP_SUMMARY": os.path.join(tmp, "summary")})
+                self.assertEqual(proc.returncode, 0,
+                                 f"{wf} / {name} does not run:\n{proc.stderr}")
+                # The line the command was actually handed. Later steps in the
+                # same script print too, so find it rather than assume it is
+                # first.
+                args = next((ln for ln in proc.stdout.splitlines()
+                             if ln.startswith("ARGS:")), "")
+                self.assertTrue(args, f"{wf} / {name} produced no argument line")
+                for flag in ("--platform", "--branch", "--non-interactive"):
+                    self.assertIn(flag, args,
+                                  f"{wf} / {name}: {flag} never reaches the command. "
+                                  f"It got: {args!r}")
 
     def test_preview_covers_everything_production_ships_to(self):
         """Never ship to a device nobody previewed on."""
@@ -128,16 +146,49 @@ class PublishSteps(unittest.TestCase):
             "production ships to devices preview never reaches: "
             f"production={sorted(production)} preview={sorted(preview)}")
 
-    def test_production_is_never_wider_than_the_binaries_allow(self):
-        """A guard on the pin itself, so it is a decision rather than a
-        leftover. Production is android-only ONLY while iOS is in App Review —
-        an update on that channel can change the app under a reviewer. When
-        iOS is approved this flips to `all`, and this test is the reminder:
-        it fails if production names a platform that is neither.
+    def test_neither_workflow_stages_its_rollout(self):
+        """EAS permits ONE rollout in progress per runtime version.
+
+        A --rollout-percentage was added to the production publish on
+        2026-09-07 to contain a bad update. It shipped, and the very next merge
+        could not publish at all:
+
+            Cannot publish a new update with this runtime version while a
+            rollout is in progress for the same runtime version. Before
+            publishing a new update, the latest rollout percentage must be set
+            to 100% or the rollout update deleted.
+
+        Nothing auto-promoted, so every merge after the first jammed the
+        pipeline until somebody promoted by hand. On a repository that merges
+        several times a day that is not a safety feature — it stops fixes
+        reaching anybody, including urgent ones.
+
+        Staging is still the right idea. Before it comes back it needs an
+        answer to "what happens to the previous canary when a new update is
+        published" — promote it, delete it, or refuse — designed against the
+        constraint rather than discovered by breaking production. This test is
+        here so the flag cannot be re-added without reading that.
+        """
+        for wf, name, run in publish_steps():
+            self.assertNotIn(
+                "--rollout-percentage", run,
+                f"{wf} / {name} stages its rollout. EAS allows one rollout at a "
+                f"time per runtime version, so the next publish will fail until "
+                f"somebody promotes by hand. See this test's docstring.")
+
+    def test_production_reaches_both_stores(self):
+        """iOS went live on 2026-09-07, so there is no longer a reason to pin.
+
+        This used to accept "android" too, because build 6 was in App Review and
+        an update on the production channel can change the app underneath a
+        reviewer. That window is closed. Pinning again would mean every OTA
+        reaches half the users while the workflow stays green — a fix that looks
+        shipped and is not — so it now takes a deliberate edit here, with a
+        reason, rather than passing quietly.
         """
         found = {wf: re.search(r"--platform\s+(\S+)", run).group(1)
                  for wf, _, run in publish_steps()}
-        self.assertIn(found["frontend-ci-eas-update.yml"], ("android", "all"))
+        self.assertEqual(found["frontend-ci-eas-update.yml"], "all")
 
     def test_a_narrowed_platform_says_why_and_when_it_goes_back(self):
         # `all` is the steady state. Anything narrower is a temporary measure,

@@ -1,8 +1,8 @@
 import React, { useCallback, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { Check, CalendarDays, ChevronLeft, LogOut, ListChecks, Lock, MessageCircle, RefreshCw, Star } from 'lucide-react-native';
+import { Check, CalendarDays, ChevronLeft, LogOut, ListChecks, Lock, MessageCircle, RefreshCw, ShoppingCart, Star } from 'lucide-react-native';
 
 import { PressScale } from '../src/components/PressScale';
 import { ChatThread } from '../src/components/ChatThread';
@@ -38,6 +38,12 @@ export default function TeenScreen() {
   // approves, and the teen should see that it's on its way.
   const [pending, setPending] = useState<string[]>([]);
   const [showChat, setShowChat] = useState(false);
+  // Asking for something from the shop. A teen has their own phone and their
+  // own account, so the thing they need does not have to travel through a
+  // parent's memory to reach the list.
+  const [shopItem, setShopItem] = useState('');
+  const [shopBusy, setShopBusy] = useState(false);
+  const [shopNote, setShopNote] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -74,6 +80,24 @@ export default function TeenScreen() {
     }
   }, [t]);
 
+  const askForItem = useCallback(async () => {
+    const name = shopItem.trim();
+    if (!name || shopBusy) return;
+    setShopBusy(true);
+    setShopNote(null);
+    try {
+      await api.addShoppingItem({ name });
+      setShopItem('');
+      setShopNote(t('teen_shop_added'));
+    } catch (e) {
+      // Same rule as finishing a task: a tap that did nothing must say so.
+      logger.warn('teen shopping add failed', e);
+      setShopNote(t('teen_shop_failed'));
+    } finally {
+      setShopBusy(false);
+    }
+  }, [shopItem, shopBusy, t]);
+
   const signOut = useCallback(async () => {
     await logout();
     router.replace('/');
@@ -98,6 +122,8 @@ export default function TeenScreen() {
           load={api.teenChatGet}
           send={api.teenChatSend}
           markRead={api.teenChatRead}
+          react={api.teenChatReact}
+          edit={api.teenChatEdit}
           emptyHint={t('teen_chat_empty')}
         />
       </SafeAreaView>
@@ -203,6 +229,40 @@ export default function TeenScreen() {
             <Text style={styles.empty}>{t('teen_no_events')}</Text>
           )}
 
+          {/* Need something from the shop */}
+          <View style={[styles.sectionHead, { marginTop: 26 }]}>
+            <ShoppingCart color={ui.orangeText} size={18} />
+            <Text style={styles.sectionTitle}>{t('teen_shop_title')}</Text>
+          </View>
+          <View style={styles.card}>
+            <Text style={styles.shopHint}>{t('teen_shop_hint')}</Text>
+            <View style={styles.shopRow}>
+              <TextInput
+                testID="teen-shop-input"
+                style={styles.shopInput}
+                value={shopItem}
+                onChangeText={(v) => { setShopItem(v); setShopNote(null); }}
+                placeholder={t('teen_shop_placeholder')}
+                placeholderTextColor={ui.muted}
+                maxLength={60}
+                returnKeyType="done"
+                onSubmitEditing={askForItem}
+              />
+              <PressScale
+                testID="teen-shop-add"
+                onPress={askForItem}
+                disabled={!shopItem.trim() || shopBusy}
+                style={[styles.shopBtn, (!shopItem.trim() || shopBusy) && styles.shopBtnOff]}
+                accessibilityLabel={t('teen_shop_add')}
+              >
+                {shopBusy
+                  ? <ActivityIndicator color="#fff" size="small" />
+                  : <Text style={styles.shopBtnText}>{t('teen_shop_add')}</Text>}
+              </PressScale>
+            </View>
+            {shopNote ? <Text style={styles.shopNote}>{shopNote}</Text> : null}
+          </View>
+
           {/* What stays private — the same honesty the kid screen shows */}
           <View style={styles.privacy}>
             <Lock color={ui.muted} size={14} />
@@ -253,6 +313,27 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   waitingMeta: { fontFamily: 'Inter_700Bold', fontSize: 12, color: ui.orangeText, marginTop: 2 },
   evRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, borderTopWidth: 1, borderTopColor: '#F1EFEA', minHeight: 48 },
   dot: { width: 9, height: 9, borderRadius: 99, backgroundColor: ui.orange, marginLeft: 9 },
+  shopHint: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 19, paddingTop: 14 },
+  shopRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 14 },
+  shopInput: {
+    // minWidth 0 is load-bearing. A flex child defaults to min-width:auto,
+    // which refuses to shrink below its own content — so the field held its
+    // natural width, the row grew past the card, and the Add button was cut
+    // off by the right edge of the screen. Measured at 390px: the button
+    // ended at 401. Found by photographing the teen screen, which nothing
+    // had ever done.
+    flex: 1, minWidth: 0, minHeight: 44, borderRadius: 12, backgroundColor: ui.soft,
+    borderWidth: 1, borderColor: ui.line, paddingHorizontal: 14,
+    fontFamily: 'Inter_400Regular', fontSize: 15, color: ui.text,
+  },
+  shopBtn: {
+    // And the button must never be the thing that gives way.
+    minWidth: 84, flexShrink: 0, height: 44, borderRadius: 12, backgroundColor: ui.orange,
+    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14,
+  },
+  shopBtnOff: { opacity: 0.45 },
+  shopBtnText: { color: '#fff', fontFamily: 'Inter_700Bold', fontSize: 15 },
+  shopNote: { color: ui.mintText, fontFamily: 'Inter_600SemiBold', fontSize: 13, paddingBottom: 14 },
   empty: { fontFamily: 'Inter_500Medium', fontSize: 14, color: ui.muted, paddingVertical: 4 },
   privacy: { flexDirection: 'row', alignItems: 'center', gap: 9, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, borderRadius: 14, padding: 12, marginTop: 28 },
   privacyText: { flex: 1, fontFamily: 'Inter_500Medium', fontSize: 12, lineHeight: 17, color: ui.muted },

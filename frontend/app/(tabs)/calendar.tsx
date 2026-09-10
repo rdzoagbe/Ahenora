@@ -5,6 +5,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import * as Google from 'expo-auth-session/providers/google';
 import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
+import { googleClientIds } from '../../src/googleClientIds';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { CalendarDays, Car, CheckCircle2, ChevronLeft, ChevronRight, Clock, ExternalLink, Eye, Gift, Lock, MapPin, Plus, RefreshCw, Trash2, User, Users, Video, X, Pencil } from 'lucide-react-native';
 
@@ -236,12 +237,6 @@ export default function Calendar() {
   const [addDraft, setAddDraft] = useState<{ transcript: string; type: Card['type']; title: string; description: string; assignee: string; due_date: string } | null>(null);
   const handledCalendarResponseRef = useRef(false);
 
-  const webClientId =
-    process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID?.trim() ||
-    '243255248169-cei972lc7kmfig6tmjb6l2nlmgqkjf22.apps.googleusercontent.com';
-  const androidClientId =
-    process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID?.trim() ||
-    '243255248169-n4l7es5ecr3j85v00dia2icp9kjo7umh.apps.googleusercontent.com';
 
   // On the web, Google checks the redirect_uri against the console's allow-list.
   // Without one set here, expo-auth-session generated a default (the bare
@@ -255,16 +250,24 @@ export default function Calendar() {
       : undefined),
     [],
   );
-  // Same platform-bound rule as sign-in: an Android OAuth client is refused when
-  // the request comes from iOS. Without an iOS client this request had no usable
-  // client id at all on iOS, so "Connect Google Calendar" was a button that could
-  // only fail. Absent, the entry point is hidden rather than offered.
-  const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID?.trim() || '';
+  // Every platform's own client id, always present. This used to pass only the
+  // web and Android ids and add the iOS one when the environment had it — and
+  // the environment that builds over-the-air updates never did, because until
+  // 2026-09-07 no OTA had ever reached an iPhone. That day one did, and this
+  // hook was called on iOS with no `iosClientId` and no `clientId`, so
+  // expo-auth-session's invariant threw INSIDE RENDER. Every iOS user who
+  // opened the calendar got the error boundary instead of the calendar.
+  //
+  // The ids live in one module now, each platform's own, with the environment
+  // still winning when set. See src/googleClientIds.ts.
+  // The two ids the rest of this file still names directly (sync, token
+  // exchange, the settings row) — same source, so they cannot disagree.
+  const { webClientId, androidClientId, iosClientId } = googleClientIds();
+  // Availability is a pre-flight check for the sheet, never a reason to skip
+  // the hook above: the hook must run with a full config on every render.
   const googleCalendarAvailable = Platform.OS !== 'ios' || Boolean(iosClientId);
   const [calendarRequest, calendarResponse, promptCalendarAsync] = Google.useAuthRequest({
-    androidClientId,
-    webClientId,
-    ...(iosClientId ? { iosClientId } : {}),
+    ...googleClientIds(),
     scopes: ['openid', 'profile', 'email', GOOGLE_CALENDAR_SCOPE],
     redirectUri: webCalendarRedirect,
   });

@@ -43,7 +43,14 @@ export function apiErrorText(e: unknown, t: Translate, fallbackKey: string): str
   // A different 402: a feature this plan does not include at all, rather than
   // an allowance that will come back next month.
   if (err?.status === 402) return t('err_plan_feature');
-  if (err?.status === 401 || err?.status === 403) return t('err_signed_out');
+  if (err?.status === 401) return t('err_signed_out');
+  // 403 is NOT "you have been signed out". A revoked session is a 401; a 403
+  // is the server saying this particular person may not do this particular
+  // thing — a co-parent trying to change who can see a card somebody else
+  // added, a teen reaching an adults-only screen. Telling them they are signed
+  // out sends them to check their login over a rule that has nothing to do
+  // with it.
+  if (err?.status === 403) return t('err_not_allowed');
   if (err?.status === 413) return t('err_too_large');
   if (err?.status && err.status >= 500) return t('err_server');
   // status 0 / undefined with a message is what fetch gives on a dead network.

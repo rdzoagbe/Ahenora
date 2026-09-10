@@ -78,7 +78,7 @@ class ForgotPasswordReset(unittest.TestCase):
     def test_request_emails_a_code_and_stores_its_hash(self):
         db = self._db()
         out = self._request("u1@x.com")
-        self.assertEqual(out, {"ok": True})
+        self.assertTrue(out["ok"])
         self.assertEqual(len(self.sent), 1)
         code = self.sent[0]["code"]
         self.assertEqual(len(code), 6)
@@ -91,16 +91,36 @@ class ForgotPasswordReset(unittest.TestCase):
     def test_request_for_unknown_email_is_silent(self):
         db = self._db()
         out = self._request("nobody@x.com")
-        self.assertEqual(out, {"ok": True})
+        self.assertTrue(out["ok"])
         self.assertEqual(self.sent, [])
         self.assertEqual(self._count(db, "password_resets"), 0)
 
     def test_request_for_a_google_account_is_silent(self):
         db = self._db(google=True)
         out = self._request("u1@x.com")
-        self.assertEqual(out, {"ok": True})
+        self.assertTrue(out["ok"])
         self.assertEqual(self.sent, [])
         self.assertEqual(self._count(db, "password_resets"), 0)
+
+    def test_the_answer_gives_nothing_away(self):
+        """The property those three exist to protect, said directly.
+
+        They used to assert the literal {"ok": True}, which pinned the shape
+        rather than the rule — so adding a field that is IDENTICAL in every
+        case broke them while the rule itself held. What must never differ is
+        one reply from another; compare them to each other and the test
+        cannot be passed by a response that leaks.
+        """
+        self._db()
+        real = self._request("u1@x.com")
+        self.sent.clear()
+        self._db()
+        unknown = self._request("nobody@x.com")
+        self.sent.clear()
+        self._db(google=True)
+        google = self._request("u1@x.com")
+        self.assertEqual(real, unknown)
+        self.assertEqual(real, google)
 
     # ---- reset: right code sets password and drops old sessions -------------
 

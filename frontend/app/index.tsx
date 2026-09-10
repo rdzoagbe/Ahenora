@@ -19,12 +19,20 @@ import { ValueTour } from '../src/components/ValueTour';
 import { useStore } from '../src/store';
 import { logger } from '../src/logger';
 import { extractInviteToken, rememberInvite, readStoredInvite, clearStoredInvite, signInWithPendingInvite } from '../src/invite';
+import { googleClientIds } from '../src/googleClientIds';
 import { getLoginHint, clearLoginHint, maskEmail, LoginHint } from '../src/loginHint';
 
 WebBrowser.maybeCompleteAuthSession();
 
-const BG_URL =
-  'https://static.prod-images.emergentagent.com/jobs/096ff1e5-0337-4e7f-a0c1-6a43a75126d3/images/6b243a1cf4a6ac9e40857ce24db4ef57d5831d303169f63507bb73111fe11fac.png';
+// Bundled, not fetched. This is the first screen anybody sees, and it used
+// to pull its background from a third-party image host on somebody else's
+// domain: a dependency on a stranger's uptime for the app's first
+// impression, and a request to an outside party before the person has even
+// signed in. Now it ships inside the app — no network, no wait, nothing to
+// go missing. Re-encoded from the original PNG (1.2 MB of a smooth gradient,
+// which is the one thing PNG is worst at) to 70 KB with no visible change:
+// mean difference 1.3/255, worst pixel 7.
+const BG_SOURCE = require('../assets/images/signin-bg.jpg');
 
 function authErrorMessage(error: unknown, params?: Record<string, string>, fallback?: string) {
   const candidate = error as { description?: string; code?: string; name?: string } | null | undefined;
@@ -88,34 +96,20 @@ export default function Landing() {
     });
   };
 
-  const FALLBACK_WEB = '243255248169-cei972lc7kmfig6tmjb6l2nlmgqkjf22.apps.googleusercontent.com';
-  const FALLBACK_ANDROID = '243255248169-n4l7es5ecr3j85v00dia2icp9kjo7umh.apps.googleusercontent.com';
-
-  const webClientId =
-    (typeof process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID === 'string' && process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID.trim())
-    || FALLBACK_WEB;
-  const androidClientId =
-    (typeof process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID === 'string' && process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID.trim())
-    || FALLBACK_ANDROID;
-  // A Google OAuth client is bound to ONE platform: an Android client is tied to
-  // the package name and signing fingerprint and is rejected outright when a
-  // request comes from iOS. This was passed as the generic `clientId`, so on iOS
-  // the Google button would have opened a sheet that failed every time — and a
-  // sign-in door that cannot open is an App Review rejection, not a papercut.
-  // No fallback constant on purpose: an empty value must HIDE the button, not
-  // quietly reuse a client that belongs to another platform.
-  const iosClientId =
-    (typeof process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID === 'string' && process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID.trim())
-    || '';
-  // Every other platform keeps working exactly as before.
-  const googleAvailable = Platform.OS !== 'ios' || Boolean(iosClientId);
+  // A Google OAuth client is bound to ONE platform: an Android client is tied
+  // to the package name and signing fingerprint and is rejected outright when a
+  // request comes from iOS. Every id therefore comes from src/googleClientIds,
+  // which hands each platform its own client and never an empty value — an
+  // empty one made expo-auth-session throw inside render the first day an OTA
+  // reached an iPhone. `googleAvailable` still hides the button if that module
+  // ever has nothing for iOS; a door that cannot open is an App Review
+  // rejection, not a papercut.
+  const { webClientId, iosClientId } = googleClientIds();
+  const googleAvailable = Boolean(iosClientId);
   const webRedirectUri = Platform.OS !== 'android' ? AuthSession.makeRedirectUri({ scheme: 'householdcoo', path: 'oauthredirect' }) : undefined;
 
   const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
-    clientId: Platform.OS === 'ios' ? (iosClientId || androidClientId) : androidClientId,
-    webClientId,
-    androidClientId,
-    ...(iosClientId ? { iosClientId } : {}),
+    ...googleClientIds(),
     redirectUri: webRedirectUri,
   });
 
@@ -389,7 +383,7 @@ export default function Landing() {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.bg }]}>
-      <ImageBackground source={{ uri: BG_URL }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+      <ImageBackground source={BG_SOURCE} style={StyleSheet.absoluteFill} resizeMode="cover" />
       <View
         style={[
           styles.overlay,

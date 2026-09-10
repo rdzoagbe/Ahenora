@@ -8,7 +8,7 @@ import React, {
   useState,
 } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { AppState, useColorScheme } from 'react-native';
+import { AppState, Platform, useColorScheme } from 'react-native';
 import { api, User, tokenStore, Subscription, resetOfflineState, setUnauthorizedHandler, warmupBackend, isTeenModeError } from './api';
 import { clearSnapshots } from './offline';
 import { Lang, SUPPORTED_LANGS, translate, detectDeviceLang } from './i18n';
@@ -41,12 +41,12 @@ interface StoreState {
   logout: () => Promise<void>;
   deleteAccount: (data: { password?: string; confirm?: boolean }) => Promise<void>;
   setUserFromAuth: (user: User, token: string, method?: 'google' | 'email' | 'apple') => Promise<void>;
-  upgradePrompt: { feature: string; message: string } | null;
-  showUpgradePrompt: (feature: string, message: string) => void;
-  dismissUpgradePrompt: () => void;
   householdMenuOpen: boolean;
   openHouseholdMenu: () => void;
   closeHouseholdMenu: () => void;
+  upgradePrompt: { feature: string; message: string } | null;
+  showUpgradePrompt: (feature: string, message: string) => void;
+  dismissUpgradePrompt: () => void;
   quickAddOpen: boolean;
   openQuickAdd: () => void;
   closeQuickAdd: () => void;
@@ -81,7 +81,17 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   // only understand light/dark/null, so normalize the new value to null (which
   // they already treat as "no preference").
   const rawScheme = useColorScheme();
-  const systemScheme = rawScheme === 'light' || rawScheme === 'dark' ? rawScheme : null;
+  // On the web the first client render must match the static export, which
+  // was rendered light. If the OS is dark, useColorScheme() says so from the
+  // very first render, React hydrates a light DOM against a dark tree, and
+  // React does not repair mismatched class names — so every element that
+  // never re-rendered afterwards stayed light while everything that did went
+  // dark: white task titles on white cards, for anyone on a dark phone
+  // opening ahenora.com. Reading the scheme only after mount makes the first
+  // render agree with the export and the second one paint the whole tree.
+  const [schemeReady, setSchemeReady] = useState(Platform.OS !== 'web');
+  useEffect(() => { setSchemeReady(true); }, []);
+  const systemScheme = schemeReady && (rawScheme === 'light' || rawScheme === 'dark') ? rawScheme : null;
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   // On the web, quietly re-subscribe this browser to push once a user is signed
@@ -126,14 +136,16 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     feature: string;
     message: string;
   } | null>(null);
-  // The household menu (Settings, Vault, Account, Hand-off) is opened from every
-  // screen's header, so its open state lives here rather than on the Feed alone.
+  // The More drawer holds what is not a place — settings, your account, the
+  // hand-over. It is opened from the bar on a phone and from the sidebar on a
+  // wide screen, so its open state lives here rather than in either of them.
   const [householdMenuOpen, setHouseholdMenuOpen] = useState(false);
   const openHouseholdMenu = useCallback(() => setHouseholdMenuOpen(true), []);
   const closeHouseholdMenu = useCallback(() => setHouseholdMenuOpen(false), []);
   // The quick-add picker used to hang off a raised ＋ in the tab bar. The bar
-  // now holds four destinations and More, so the ＋ moved into each screen's
-  // own header — but it is still one sheet, mounted once, opened from here.
+  // holds the five destinations and nothing else, so the ＋ moved into each
+  // screen's own header — but it is still one sheet, mounted once, opened
+  // from here.
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const openQuickAdd = useCallback(() => setQuickAddOpen(true), []);
   const closeQuickAdd = useCallback(() => setQuickAddOpen(false), []);
@@ -414,12 +426,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         logout,
         deleteAccount,
         setUserFromAuth,
-        upgradePrompt,
-        showUpgradePrompt,
-        dismissUpgradePrompt,
         householdMenuOpen,
         openHouseholdMenu,
         closeHouseholdMenu,
+        upgradePrompt,
+        showUpgradePrompt,
+        dismissUpgradePrompt,
         quickAddOpen,
         openQuickAdd,
         closeQuickAdd,

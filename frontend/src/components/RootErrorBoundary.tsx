@@ -50,6 +50,18 @@ class RootErrorBoundaryInner extends Component<Props & { dark: boolean }, State>
   componentDidCatch(error: Error, info: ErrorInfo) {
     // logger is a plain module, not a hook, so it is safe here.
     logger.warn('app-level crash', error?.message, info?.componentStack);
+    // And the admin panel hears about it. The message is withheld from the
+    // SCREEN on purpose; withholding it from the person who has to fix it was
+    // an accident, and cost a diagnosis-by-source the first time it mattered.
+    // Required lazily, not imported: this boundary is the outermost thing in
+    // the tree, and a static import would make its own module load depend on
+    // api.ts (and through it AsyncStorage). If THAT ever failed to load there
+    // would be no boundary left to catch anything.
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { reportCrash } = require('../api') as typeof import('../api');
+      reportCrash(error?.message, info?.componentStack);
+    } catch { /* never a second crash */ }
   }
 
   private reset = () => {

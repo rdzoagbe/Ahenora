@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
-import { api, Card } from './api';
+import { api, reportPushFailure, Card } from './api';
 import { logger } from './logger';
 import { targetForNotification } from './notificationRouting';
 export { targetForNotification } from './notificationRouting';
@@ -362,7 +362,7 @@ export async function requestAndRegisterPush(isTeen = false): Promise<boolean> {
   try {
     const reg = await registerForPushNotificationsAsync();
     if (!reg.expoPushToken) {
-      if (reg.error) logger.warn('push permission not usable', reg.error);
+      if (reg.error) { logger.warn('push permission not usable', reg.error); reportPushFailure(reg.error); }
       return false;
     }
     const { appVersion, runtimeVersion } = await appVersionInfo();
@@ -397,7 +397,7 @@ export async function ensurePushRegistered(isTeen = false): Promise<void> {
     if (perm.status !== 'granted') return;
     const reg = await registerForPushNotificationsAsync();
     if (!reg.expoPushToken) {
-      if (reg.error) logger.warn('push token unavailable', reg.error);
+      if (reg.error) { logger.warn('push token unavailable', reg.error); reportPushFailure(reg.error); }
       return;
     }
     const { appVersion, runtimeVersion } = await appVersionInfo();

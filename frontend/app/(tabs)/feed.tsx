@@ -28,7 +28,6 @@ import {
   MapPin,
   Megaphone,
   MessageSquare,
-  Mic,
   Pencil,
   Plus,
   Star,
@@ -60,7 +59,7 @@ import { WindowedList } from '../../src/components/WindowedList';
 import { useStore } from '../../src/store';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { useUI, UIColors } from '../../src/components/Kit';
-import { api, logEvent, ActivityEntry, Announcement, Card, CardType, CustodyConfig, FamilyMember, GiftPot, SantaDraw, HandoffNote, Template, WeeklyReport } from '../../src/api';
+import { api, logEvent, ActivityEntry, Announcement, Card, CardType, ChatThreadSummary, CustodyConfig, FamilyMember, GiftPot, SantaDraw, HandoffNote, Template, WeeklyReport } from '../../src/api';
 import { syncCardReminderNotifications, syncMorningDigest, syncDinnerReminder, syncSundayRecap, ensureAskedNotificationPermissionOnce } from '../../src/notifications';
 import { logger } from '../../src/logger';
 import { isoWeek, localeFor } from '../../src/utils/date';
@@ -137,9 +136,11 @@ function formatDayLine(date: string | null | undefined, t: TFunc) {
   return `${due.toLocaleDateString([], { month: 'short', day: 'numeric' })} · ${time}`;
 }
 
-function feedDateLine(now: Date | null) {
+function feedDateLine(now: Date | null, lang: string) {
   if (!now) return '';
-  return now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+  // The app's language, not the browser's: a French household on the web
+  // read "Monday, September 7" above "Bonsoir".
+  return now.toLocaleDateString(localeFor(lang), { weekday: 'long', month: 'long', day: 'numeric' });
 }
 
 // The ISO week and its parity, beside the date. For a separated co-parent the
@@ -388,6 +389,7 @@ export default function Feed() {
   // add/edit sheet the Calendar uses, in edit mode.
   const [editing, setEditing] = useState<Card | null>(null);
   const [showAlerts, setShowAlerts] = useState(false);
+  const [chatThreads, setChatThreads] = useState<ChatThreadSummary[]>([]);
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [rewardCount, setRewardCount] = useState(0);
   const [vaultCount, setVaultCount] = useState(0);
@@ -434,7 +436,7 @@ export default function Feed() {
     logEvent('feed_open');
     ensureAskedNotificationPermissionOnce().catch(() => undefined);
     try {
-      const [cardsResult, membersResult, rewardsResult, vaultResult, notesResult, templatesResult, annResult, potsResult, santaResult] = await Promise.allSettled([
+      const [cardsResult, membersResult, rewardsResult, vaultResult, notesResult, templatesResult, annResult, potsResult, santaResult, threadsResult] = await Promise.allSettled([
         api.listCards(),
         api.familyMembers(),
         api.listRewards(),
@@ -444,6 +446,11 @@ export default function Feed() {
         api.listAnnouncements(),
         api.listGiftPots().catch(() => [] as GiftPot[]),
         api.listSantaDraws().catch(() => [] as SantaDraw[]),
+        // Unread conversations. The bell was fed only by cards, so a message —
+        // the most time-sensitive thing in the app — could never appear in it:
+        // if you missed the push, nothing on any screen said anybody had
+        // written to you.
+        api.chatThreads().then((r) => r.threads).catch(() => [] as ChatThreadSummary[]),
       ]);
       if (potsResult.status === 'fulfilled') {
         const map: Record<string, GiftPot> = {};
@@ -451,6 +458,7 @@ export default function Feed() {
         setGiftPotByCard(map);
       }
       if (santaResult.status === 'fulfilled') setSantaDraws(santaResult.value);
+      if (threadsResult.status === 'fulfilled') setChatThreads(threadsResult.value);
 
       let loadedCards: Card[] = [];
       if (cardsResult.status === 'fulfilled') {
@@ -891,7 +899,16 @@ export default function Feed() {
   // Ids of alerts already seen are remembered on the device; the badge returns
   // only when something genuinely new shows up.
   const [seenAlertIds, setSeenAlertIds] = useState<string[]>([]);
-  const unseenAlertCount = dashboard.priority.filter((c) => !seenAlertIds.includes(c.card_id)).length;
+  // Conversations with something in them you have not read. Deliberately NOT
+  // given the "seen ids" treatment the cards get: unread is the server's
+  // answer and it clears itself the moment you open the thread, so remembering
+  // a dismissal on the device could only ever make it lie.
+  const unreadThreads = useMemo(
+    () => chatThreads.filter((th) => (th.unread || 0) > 0),
+    [chatThreads]);
+  const unreadMessages = unreadThreads.reduce((n, th) => n + (th.unread || 0), 0);
+  const unseenAlertCount =
+    dashboard.priority.filter((c) => !seenAlertIds.includes(c.card_id)).length + unreadMessages;
 
   useEffect(() => {
     AsyncStorage.getItem(SEEN_ALERTS_KEY)
@@ -1119,7 +1136,7 @@ export default function Feed() {
             <Text style={styles.brand}>Ahenora</Text>
             <View style={styles.topMetaRow}>
               <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={styles.dateText}>{feedDateLine(now)} <Text style={styles.sun}>{timeEmoji(now)}</Text></Text>
+                <Text style={styles.dateText}>{feedDateLine(now, lang)} <Text style={styles.sun}>{timeEmoji(now)}</Text></Text>
                 <Text style={styles.weekLine} testID="feed-week">{feedWeekLine(now, t, subscription?.custody)}</Text>
               </View>
               <View style={styles.topActions}>
@@ -1824,7 +1841,36 @@ export default function Feed() {
             <X color={ui.text} size={20} />
           </PressScale>
         </View>
-        {dashboard.priority.length === 0 ? (
+        {unreadThreads.length ? (
+          <View testID="feed-alerts-messages">
+            {unreadThreads.map((th) => (
+              <PressScale
+                key={th.thread}
+                testID={`feed-alert-chat-${th.thread}`}
+                onPress={() => {
+                  setShowAlerts(false);
+                  router.navigate({
+                    pathname: '/conversation',
+                    params: { thread: th.thread, title: th.title || '' },
+                  } as never);
+                }}
+                style={styles.alertRow}
+              >
+                <View style={[styles.alertDot, styles.alertDotChat]} />
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.alertRowTitle} numberOfLines={1}>
+                    {th.title || t('chat_title')}
+                  </Text>
+                  <Text style={styles.alertRowMeta} numberOfLines={1}>{th.last_text}</Text>
+                </View>
+                <View style={styles.alertCount}>
+                  <Text style={styles.alertCountText}>{Math.min(th.unread, 9)}</Text>
+                </View>
+              </PressScale>
+            ))}
+          </View>
+        ) : null}
+        {dashboard.priority.length === 0 && !unreadThreads.length ? (
           <View style={styles.alertsEmpty}>
             <CheckCircle2 color={ui.mintText} size={30} />
             <Text style={styles.alertsEmptyText}>{t('feed_all_caught_up')}</Text>
@@ -1835,7 +1881,8 @@ export default function Feed() {
               key={card.card_id}
               testID={`feed-alert-${card.card_id}`}
               onPress={() => { setShowAlerts(false); setSelectedCard(card); }}
-              style={[styles.alertRow, index === 0 && { borderTopWidth: 0 }]}
+              style={[styles.alertRow,
+                index === 0 && !unreadThreads.length && { borderTopWidth: 0 }]}
             >
               <View style={styles.alertDot} />
               <View style={{ flex: 1, minWidth: 0 }}>
@@ -1865,6 +1912,12 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     paddingVertical: 10,
     marginTop: 10,
   },
+  alertDotChat: { backgroundColor: '#4C8DFF' },
+  alertCount: {
+    minWidth: 22, height: 22, borderRadius: 11, paddingHorizontal: 6,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: '#4C8DFF',
+  },
+  alertCountText: { color: '#fff', fontFamily: 'Inter_800ExtraBold', fontSize: 12 },
   pastBannerText: { flex: 1, fontFamily: 'Inter_600SemiBold', fontSize: 12.5, lineHeight: 17 },
   pastBtn: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 9999 },
   pastBtnText: { fontFamily: 'Inter_700Bold', fontSize: 12.5 },

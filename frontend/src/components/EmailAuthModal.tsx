@@ -149,9 +149,14 @@ export function EmailAuthModal({ visible, onClose, onSuccess, inviteToken, initi
     setForgotBusy(true);
     try {
       const { api } = await import('../api');
-      await api.requestPasswordReset(trimmedEmail);
+      const res = await api.requestPasswordReset(trimmedEmail);
       setForgotStage('verify');
-      setForgotNote(t('forgot_code_sent'));
+      // Whether this server can send mail at all is not account-specific, so
+      // saying so reveals nothing — and telling someone to check an inbox
+      // nothing will ever reach is how a person quietly loses their account.
+      setForgotNote(res?.email_configured === false
+        ? t('forgot_email_unavailable')
+        : t('forgot_code_sent'));
     } catch (e: any) {
       logger.warn('reset request failed', e?.message || e);
       // Even on error, keep the flow moving — a failed send must not reveal

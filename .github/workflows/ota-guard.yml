@@ -1,0 +1,173 @@
+name: OTA guard
+
+# Watch the update people are actually running.
+#
+# Two halves, and only one of them is live today.
+#
+# THE CRASH CHECK IS LIVE. It reads launches and crashes for the newest update
+# and raises the alarm on the shape of the 2026-09-03 outage — almost every
+# launch failing.
+#
+# THE STALE-ROLLOUT CHECK IS DORMANT, because production no longer stages: a
+# --rollout-percentage jammed publishing on the merge after it shipped (EAS
+# permits one rollout in progress per runtime version) and was removed the same
+# day. The check costs nothing while every update is at 100%, and is waiting
+# for staging to come back — see docs/RUNBOOK-ota.md.
+#
+# So this looks, hourly, and speaks only when there is something to do. A green
+# run means nothing needed saying. A FAILED run is the alarm — it surfaces in
+# the Actions list and in the notification you already get for a failing
+# workflow, rather than in a summary nobody opens.
+#
+# It lives here and not in the six-hourly stability routine for a plain reason:
+# that routine's sessions carry no EXPO_TOKEN, so every eas command in them
+# would fail authentication. A guard that cannot run is worse than none,
+# because it is still trusted.
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: ota-rollout-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    name: Look at the newest production update
+    runs-on: ubuntu-latest
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      EXPO_NO_TELEMETRY: 1
+    steps:
+      - name: Skip quietly when Expo is not configured
+        id: cfg
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "EXPO_TOKEN is not set; nothing to watch."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout repository
+        if: steps.cfg.outputs.run == 'true'
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        if: steps.cfg.outputs.run == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version: 20
+
+      # eas-cli reads the Expo app config, which resolves config plugins from
+      # node_modules. Without this it fails with "Failed to resolve plugin for
+      # module expo-router" before it reaches the network.
+      - name: Install dependencies
+        if: steps.cfg.outputs.run == 'true'
+        working-directory: frontend
+        run: npm install --no-audit --no-fund
+
+      - name: Gather
+        id: gather
+        if: steps.cfg.outputs.run == 'true'
+        working-directory: frontend
+        run: |
+          # `|| true` throughout: a network blip must not read as an outage.
+          # An empty file is unparseable, which the guard treats as "say so and
+          # change nothing" rather than as a verdict.
+          npx eas-cli@latest update:list --branch production --limit 5 --json \
+            --non-interactive > list.json 2>/dev/null || true
+
+          GROUP=$(python3 ../scripts/ota_guard.py --list-json list.json --group-only)
+          echo "group=$GROUP" >> "$GITHUB_OUTPUT"
+
+          if [ -n "$GROUP" ]; then
+            for p in android ios; do
+              npx eas-cli@latest update:insights "$GROUP" --platform "$p" \
+                --days 1 --json --non-interactive > "insights-$p.json" 2> "insights-$p.err" || true
+            done
+          fi
+
+      - name: Decide
+        id: decide
+        if: steps.cfg.outputs.run == 'true'
+        working-directory: frontend
+        run: |
+          python3 ../scripts/ota_guard.py \
+            --list-json list.json \
+            --android-insights insights-android.json \
+            --ios-insights insights-ios.json > verdict.json
+          cat verdict.json
+          {
+            echo "action=$(python3 -c "import json;print(json.load(open('verdict.json'))['action'])")"
+            echo "group=$(python3 -c "import json;print(json.load(open('verdict.json'))['group'] or '')")"
+          } >> "$GITHUB_OUTPUT"
+
+      # Armed by a repository variable, and OFF until one real payload has been
+      # seen. The JSON shapes above are not pinned by any contract and could not
+      # be verified from the environment this was written in; arming a rollback
+      # against a guess is the kind of confidence that caused the outage. Set
+      # OTA_AUTO_ROLLBACK=on once a run has printed a verdict that reads
+      # correctly.
+      - name: Roll back a catastrophic update
+        if: steps.decide.outputs.action == 'rollback' && vars.OTA_AUTO_ROLLBACK == 'on'
+        working-directory: frontend
+        env:
+          GROUP: ${{ steps.decide.outputs.group }}
+        run: |
+          npx eas-cli@latest update:rollback "$GROUP" \
+            --platform all \
+            --message "Automatic rollback: launches were crashing" \
+            --non-interactive
+
+      - name: Say what it found
+        if: ${{ always() && steps.cfg.outputs.run == 'true' }}
+        working-directory: frontend
+        env:
+          ARMED: ${{ vars.OTA_AUTO_ROLLBACK }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json, os
+          try:
+              v = json.load(open("verdict.json"))
+          except Exception:
+              print("## OTA guard could not reach a verdict\n")
+              print("Neither the update list nor the insights could be read. "
+                    "Nothing was changed.")
+              raise SystemExit(0)
+          titles = {"none": "OTA guard — nothing to do",
+                    "blind": "OTA guard — cannot see crash data",
+                    "alarm": "OTA guard — needs a person",
+                    "rollback": "OTA guard — the app is not starting"}
+          print(f"## {titles.get(v['action'], v['action'])}\n")
+          if v.get("group"):
+              print(f"Update group: `{v['group']}`\n")
+          for r in v["reasons"]:
+              print(f"* {r}")
+          if v["action"] == "blind":
+              print("\nThe stale-rollout check still ran. To give the guard eyes, "
+                    "teach scripts/ota_guard.py the payload shape shown above. "
+                    "What eas-cli said on stderr:\n")
+              for p in ("android", "ios"):
+                  try:
+                      err = open(f"insights-{p}.err").read().strip()[:600]
+                  except Exception:
+                      err = ""
+                  print(f"* {p}: `{err or '(nothing)'}`")
+          if v["action"] == "rollback" and os.environ.get("ARMED") != "on":
+              print("\n**Automatic rollback is not armed.** Run the OTA rollback "
+                    "workflow by hand, then set the OTA_AUTO_ROLLBACK repository "
+                    "variable to `on` if this verdict was right.")
+          PY
+
+      # The alarm. A failing scheduled workflow is the notification that already
+      # reaches you; a summary is a page somebody has to think to open.
+      - name: Fail if a person is needed
+        if: steps.decide.outputs.action == 'alarm' || steps.decide.outputs.action == 'rollback'
+        run: |
+          echo "OTA guard verdict: ${{ steps.decide.outputs.action }} — see the job summary."
+          exit 1

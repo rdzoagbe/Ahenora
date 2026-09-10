@@ -200,3 +200,9 @@ dependencies {
         implementation jscFlavor
     }
 }
+
+// Reads app/google-services.json at build time and fails the build if it is
+// missing — on purpose. See android/NATIVE_CONFIG.md, incident 6, and
+// docs/ANDROID_PUSH.md. A build without it installs fine and never receives
+// a single push, which is worse than a build that refuses.
+apply plugin: "com.google.gms.google-services"

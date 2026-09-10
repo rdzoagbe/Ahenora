@@ -107,6 +107,13 @@ jobs:
       EXPO_PUBLIC_BACKEND_URL: ${{ secrets.EXPO_PUBLIC_BACKEND_URL || vars.EXPO_PUBLIC_BACKEND_URL }}
       EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: ${{ secrets.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || vars.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID }}
       EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: ${{ secrets.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || vars.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID }}
+      # Never set before 2026-09-07 because no OTA had reached an iPhone. The
+      # app carries a committed fallback for it now (src/googleClientIds.ts), so
+      # this is an override rather than a requirement — which is why it is not
+      # in the preflight below.
+      EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: ${{ secrets.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || vars.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID }}
+      EXPO_PUBLIC_REVENUECAT_ANDROID_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY || vars.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY }}
+      EXPO_PUBLIC_REVENUECAT_IOS_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_IOS_KEY || vars.EXPO_PUBLIC_REVENUECAT_IOS_KEY }}
       # Stamp the deployed web bundle with the commit it was built from, so
       # Settings shows which build is live — the web has no OTA update id, so
       # this is the only per-deploy signal there.
@@ -173,6 +180,11 @@ jobs:
       EXPO_PUBLIC_BACKEND_URL: ${{ secrets.EXPO_PUBLIC_BACKEND_URL || vars.EXPO_PUBLIC_BACKEND_URL }}
       EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: ${{ secrets.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || vars.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID }}
       EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: ${{ secrets.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || vars.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID }}
+      # Never set before 2026-09-07 because no OTA had reached an iPhone. The
+      # app carries a committed fallback for it now (src/googleClientIds.ts), so
+      # this is an override rather than a requirement — which is why it is not
+      # in the preflight below.
+      EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: ${{ secrets.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || vars.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID }}
       EXPO_NO_TELEMETRY: 1
     steps:
       - name: Check Expo publish configuration
@@ -221,31 +233,96 @@ jobs:
         working-directory: frontend
         run: npm install --no-audit --no-fund
 
-      # Android only, deliberately and temporarily.
+      # Both platforms. One runtimeVersion serves both, so this is the steady
+      # state and the only correct value now that iOS is live.
       #
-      # One runtimeVersion serves both platforms, so `--platform all` is the
-      # correct steady state and this MUST go back to it: leaving it at android
-      # once iOS is live means every OTA silently reaches half the users, and
-      # the workflow stays green while shipping nothing to iPhone.
+      # It was pinned to android from 2026-09-03 to 2026-09-07, while build 6 of
+      # 1.1.0 sat in App Review: an update published to this channel can be
+      # picked up by the build a reviewer is running, changing the app
+      # underneath a review in progress. Apple approved on 2026-09-07 and the
+      # pin came off the same day.
       #
-      # It is android today because the first iOS build is in App Review. An
-      # update published to this channel can be picked up by the build the
-      # reviewer is running, changing the app underneath a review in progress.
-      # Flip both this workflow and preview-update.yml back to `all` the day
-      # iOS is approved.
+      # Do not put it back without the same reason. Leaving it at android while
+      # iOS is live means every OTA silently reaches half the users and the
+      # workflow stays green while shipping nothing to iPhone — a fix that
+      # appears to have gone out and has not. tests/test_workflow_publish_steps.py
+      # holds the invariant: production's platforms must be a subset of
+      # preview's, so a change here is checked against where it is tested.
       #
       # The comments live ABOVE the run block, not inside it: a `#` line inside
       # a `\` continuation does not comment the flag out, it ends the command
       # early and leaves the next line to be executed as its own command. The
       # previous version of this step did exactly that and would have exited
       # 127 on the next merge to main.
+      # NOT staged, and this is the second attempt at that decision.
+      #
+      # A --rollout-percentage was added here on 2026-09-07 to contain a bad
+      # update. It shipped, and the very next merge could not publish at all:
+      #
+      #   Cannot publish a new update with this runtime version while a rollout
+      #   is in progress for the same runtime version. Before publishing a new
+      #   update, the latest rollout percentage must be set to 100% or the
+      #   rollout update deleted.
+      #
+      # EAS permits ONE rollout in progress per runtime version. Since nothing
+      # auto-promotes, every merge after the first jammed the pipeline until a
+      # person went and promoted by hand. On a repository that merges several
+      # times a day that is not a safety feature, it is an outage of a
+      # different kind: fixes stop reaching anybody, including urgent ones.
+      #
+      # Staging is still the right idea and the promote / watch / rollback
+      # workflows remain. What it needs first is an answer to "what happens to
+      # the previous canary when a new update is published" — promote it,
+      # delete it, or refuse — and that answer has to be designed against the
+      # constraint above rather than discovered by breaking production. See
+      # docs/RUNBOOK-ota.md.
       - name: Publish update to the Expo production branch
+        id: publish
         if: steps.expo_config.outputs.publish == 'true'
         working-directory: frontend
         run: |
+          set -o pipefail
           npx eas-cli@latest update \
-            --platform android \
+            --platform all \
             --branch production \
             --environment production \
             --message "GitHub $GITHUB_SHA" \
-            --non-interactive
+            --json \
+            --non-interactive | tee update.json
+
+          # The group id is what promote and rollback both take. Reading it here
+          # means neither is a hunt through the Expo dashboard at the moment
+          # somebody is trying to undo a bad release.
+          GROUP=$(node -e '
+            const fs = require("fs");
+            let raw = fs.readFileSync("update.json", "utf8").trim();
+            let data;
+            try { data = JSON.parse(raw); } catch { process.exit(0); }
+            const list = Array.isArray(data) ? data : [data];
+            const id = list.map((u) => u && u.group).find(Boolean);
+            if (id) process.stdout.write(id);
+          ')
+          echo "group=$GROUP" >> "$GITHUB_OUTPUT"
+
+      # The group id is still worth printing even without a rollout: it is what
+      # OTA rollback and OTA watch both take, and hunting for it in the Expo
+      # dashboard while trying to undo a bad release is exactly the wrong time.
+      - name: Say what was published, and how to undo it
+        if: steps.expo_config.outputs.publish == 'true'
+        env:
+          GROUP: ${{ steps.publish.outputs.group }}
+        run: |
+          {
+            echo "## OTA published to everyone on runtime 2.0.0"
+            echo
+            if [ -n "$GROUP" ]; then
+              echo "Update group: \`${GROUP}\`"
+              echo
+              echo "* Check on it: Actions -> **OTA watch** (launches, crashes, users)"
+              echo "* Undo it: Actions -> **OTA rollback** — only while it is the"
+              echo "  newest update on the branch, so before the next merge publishes."
+            else
+              echo "The update group id could not be read from the publish output."
+              echo "Find it with \`eas update:list --branch production\` before rolling back."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

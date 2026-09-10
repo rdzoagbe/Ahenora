@@ -1,7 +1,7 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, RefreshControl, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { ArrowLeft, Users, TrendingUp } from 'lucide-react-native';
 
 import { PressScale } from '../src/components/PressScale';
@@ -9,7 +9,9 @@ import { AmbientBackground } from '../src/components/AmbientBackground';
 import { useUI, UIColors } from '../src/components/Kit';
 import { useStore } from '../src/store';
 import { api, MetricRow, VersionAdoption, PlanAdoption, FunnelSummary, PushHealth,
-  RetentionSummary, InviteBreakdown, AiHealth, SubscriberList,
+  RetentionSummary, InviteBreakdown, AiHealth, SubscriberList, SupportInbox,
+  TimingsReport,
+  BillingEvent,
   BillingEventLog } from '../src/api';
 import { logger } from '../src/logger';
 
@@ -20,9 +22,15 @@ const EVENT_LABELS: Record<string, string> = {
   calendar_open: 'Calendar opens',
   scan_used: 'Document scans',
   card_created: 'Tasks created',
+  vault_open: 'Vault opens',
   vault_added: 'Documents saved',
   vault_shared: 'Documents shared',
   onboarding_done: 'Onboardings finished',
+  // Counted since launch but never shown — the custody one is the wedge the
+  // app is positioned on, and the number sat in Mongo unread.
+  onboarding_custody_set: 'Onboardings that set custody',
+  onboarding_skipped: 'Onboardings skipped',
+  calendar_import_cancelled: 'Calendar imports cancelled',
 };
 const EVENT_ORDER = Object.keys(EVENT_LABELS);
 
@@ -52,6 +60,42 @@ function lastSeenLabel(iso: string | null): string {
   return `${Math.floor(days / 30)} months ago`;
 }
 
+/**
+ * What to DO about a purchase that reached nobody.
+ *
+ * The states come from the server (REPLAY_STATES in backend/server.py), beside
+ * the replay that decides them; these are only the words for them. The
+ * distinction that earns its place on the screen is the first two: a missing
+ * account is real money waiting for someone to match a store receipt to a
+ * buyer, while a lapsed subscription is a row that can simply be let go.
+ * Reading them the same way is how a recoverable payment sits in a list of
+ * unrecoverable ones and gets treated like them.
+ */
+function replayVerdict(e: BillingEvent): string {
+  // A store checking we are reachable, not a purchase. It has no buyer to
+  // find and never will, so none of the wording below applies to it.
+  if (e.is_test) {
+    return 'A test event from the RevenueCat dashboard — proof this endpoint is reachable. Not a purchase, nothing owed.';
+  }
+  const tried = e.replay_attempts
+    ? `Retried ${e.replay_attempts}×${e.last_replay_at ? `, last ${e.last_replay_at.slice(5, 16).replace('T', ' ')}` : ''}. `
+    : '';
+  switch (e.replay_state) {
+    case 'no_account':
+      return `${tried}No account carries this id — look it up in RevenueCat, find the buyer, match them by hand.`;
+    case 'not_entitled':
+      return `${tried}The store says this subscriber is no longer entitled — lapsed or refunded. Nothing to recover.`;
+    case 'no_key':
+      return `${tried}We could not ask the store: REVENUECAT_SECRET_KEY is unset here. Ours to fix, not the buyer's.`;
+    case 'no_answer':
+      return `${tried}RevenueCat did not answer. It will be tried again on the next pass.`;
+    case 'no_id':
+      return `${tried}This event names no account at all, so there is nothing to look up.`;
+    default:
+      return 'Not retried yet — the replay runs twice a day.';
+  }
+}
+
 export default function MetricsScreen() {
   const router = useRouter();
   const { t, user } = useStore();
@@ -62,6 +106,16 @@ export default function MetricsScreen() {
   const [adoption, setAdoption] = useState<VersionAdoption | null>(null);
   const [plans, setPlans] = useState<PlanAdoption | null>(null);
   const [subs, setSubs] = useState<SubscriberList | null>(null);
+  const [support, setSupport] = useState<SupportInbox | null>(null);
+  // Opened straight from the "someone wrote to support" notification, which
+  // used to land on the Feed and leave the reader hunting. The inbox is far
+  // down a long page of charts, so arriving at the top of it is not the same
+  // as arriving at it.
+  const params = useLocalSearchParams<{ support?: string }>();
+  const scrollRef = useRef<ScrollView>(null);
+  const supportY = useRef(0);
+  const jumped = useRef(false);
+  const [showClosedTickets, setShowClosedTickets] = useState(false);
   const [showAllSubs, setShowAllSubs] = useState(false);
   const [billing, setBilling] = useState<BillingEventLog | null>(null);
   const [funnel, setFunnel] = useState<FunnelSummary | null>(null);
@@ -69,6 +123,7 @@ export default function MetricsScreen() {
   const [invites, setInvites] = useState<InviteBreakdown | null>(null);
   const [aiHealth, setAiHealth] = useState<AiHealth | null>(null);
   const [pushHealth, setPushHealth] = useState<PushHealth | null>(null);
+  const [timings, setTimings] = useState<TimingsReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -91,6 +146,7 @@ export default function MetricsScreen() {
     api.getPlanAdoption().then(setPlans).catch((e) => logger.warn('plan adoption load failed', e?.message || e));
     // The per-household list behind those totals — who is on what, with a contact.
     api.getSubscribers().then(setSubs).catch((e) => logger.warn('subscribers load failed', e?.message || e));
+    api.getSupportTickets().then(setSupport).catch((e) => logger.warn('support inbox load failed', e?.message || e));
     // What the payment providers have actually told us. A sale that never
     // showed up here is the difference between "nobody bought" and "the money
     // arrived and we dropped it" — and those need opposite fixes.
@@ -108,6 +164,7 @@ export default function MetricsScreen() {
     // A silent morning has two very different causes and they look identical
     // from a phone. This separates them.
     api.getPushHealth().then(setPushHealth).catch((e) => logger.warn('push health load failed', e?.message || e));
+    api.getTimings().then(setTimings).catch((e) => logger.warn('timings load failed', e?.message || e));
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -178,6 +235,7 @@ export default function MetricsScreen() {
         </View>
 
         <ScrollView
+          ref={scrollRef}
           contentContainerStyle={styles.scroll}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={ui.muted} />}
         >
@@ -272,6 +330,25 @@ export default function MetricsScreen() {
                     </View>
                   ))}
               </View>
+
+              {/* Whether the inviter heard that it landed. "Could not be told"
+                  is the one to act on: the join worked and the inviter had no
+                  phone or browser registered to receive the push. */}
+              {invites.inviter_told ? (
+                <View style={styles.card}>
+                  {([
+                    ['Inviter told it landed', invites.inviter_told.reached],
+                    ['Inviter could not be told', invites.inviter_told.unreachable],
+                    ['Accepted before this was tracked', invites.inviter_told.not_recorded],
+                  ] as [string, number][])
+                    .map(([label, n], i) => (
+                      <View key={label} style={[styles.eventRow, i === 0 && { borderTopWidth: 0 }]}>
+                        <Text style={styles.eventLabel}>{label}</Text>
+                        <Text style={[styles.eventCount, label === 'Inviter could not be told' && n > 0 && { color: ui.danger }]}>{n}</Text>
+                      </View>
+                    ))}
+                </View>
+              ) : null}
               <Text style={styles.hint}>
                 {'\u201C'}Never signed up{'\u201D'} means the link or the email never reached them, or
                 did not persuade them — that is wording and delivery.
@@ -412,6 +489,17 @@ export default function MetricsScreen() {
                         : '—'}
                     </Text>
                   </View>
+                  {/* Per platform: "1 phone" hid that it was an iPhone and
+                      that no Android device had ever registered. */}
+                  <View style={styles.eventRow}>
+                    <Text style={styles.eventLabel}>Phones by platform</Text>
+                    <Text style={[styles.eventCount,
+                      pushHealth && !(pushHealth.reach.by_platform?.android) && { color: ui.danger }]}>
+                      {pushHealth
+                        ? `Android ${pushHealth.reach.by_platform?.android ?? 0} · iOS ${pushHealth.reach.by_platform?.ios ?? 0}`
+                        : '—'}
+                    </Text>
+                  </View>
                   <View style={styles.eventRow}>
                     <Text style={styles.eventLabel}>You</Text>
                     <Text style={[styles.eventCount,
@@ -424,6 +512,27 @@ export default function MetricsScreen() {
                   </View>
                 </View>
 
+                {pushHealth && !(pushHealth.reach.by_platform?.android) ? (
+                  <View style={[styles.card, styles.warnCard]}>
+                    <Text style={styles.warnText}>
+                      No Android phone has a push token. Android push needs Firebase in the
+                      build and the FCM key on EAS — see docs/ANDROID_PUSH.md. Until a store
+                      build carries it, Android receives no notifications at all.
+                    </Text>
+                  </View>
+                ) : null}
+                {pushHealth?.delivery?.recent_errors?.length ? (
+                  <View style={[styles.card, styles.warnCard]}>
+                    <Text style={styles.warnText}>
+                      Delivery errors reported by Google or Apple (newest first):
+                    </Text>
+                    {pushHealth.delivery.recent_errors.slice(0, 5).map((e, i) => (
+                      <Text key={i} style={styles.hint}>
+                        {lastSeenLabel(e.at)} · {e.platform} · {e.error}{e.message ? ` — ${e.message}` : ''}
+                      </Text>
+                    ))}
+                  </View>
+                ) : null}
                 {pushHealth ? (
                   <View style={styles.card}>
                     {pushHealth.jobs.map((job, i) => (
@@ -602,6 +711,17 @@ export default function MetricsScreen() {
           {subs && subs.subscribers.length ? (
             <>
               <Text style={styles.sectionTitle}>Subscribers</Text>
+              {subs.paying_verified < subs.paying ? (
+                <View style={[styles.card, styles.warnCard]}>
+                  <Text style={styles.warnText}>
+                    {subs.paying} household{subs.paying === 1 ? ' is' : 's are'} on a paid plan
+                    but only {subs.paying_verified}{' '}
+                    {subs.paying_verified === 1 ? 'has' : 'have'} a payment behind{' '}
+                    {subs.paying_verified === 1 ? 'it' : 'them'}. The rest came from the testing
+                    window or an admin grant — real revenue is the verified number.
+                  </Text>
+                </View>
+              ) : null}
               <Text style={styles.hint}>
                 {subs.paying} paying of {subs.total} households. Paying first. Contact is the household&apos;s creator.
               </Text>
@@ -624,10 +744,17 @@ export default function MetricsScreen() {
                             : 'Free'}
                         </Text>
                       </View>
-                      <Text style={styles.subMeta} numberOfLines={1}>
+                      {/* A dash used to stand where the rail goes, and read as
+                          "unknown". It is not unknown: nobody paid. Saying so
+                          is the difference between three subscribers and one. */}
+                      <Text
+                        style={[styles.subMeta, s.unpaid_premium && { color: ui.danger }]}
+                        numberOfLines={1}
+                      >
                         {s.paying
                           ? (s.billing_source === 'stripe' ? 'Card (Stripe)'
-                             : s.billing_source === 'google_play' ? 'Google Play' : '—')
+                             : s.billing_source === 'google_play' ? 'Google Play'
+                             : 'no payment on record')
                           : lastSeenLabel(s.last_active)}
                       </Text>
                     </View>
@@ -645,10 +772,159 @@ export default function MetricsScreen() {
           ) : null}
 
 
+          {/* Support inbox — every message from the in-app form. For months
+              the form stored these and told nobody; the older ones here are
+              the messages that were never answered. */}
+          <View
+            testID="metrics-support"
+            onLayout={(e) => {
+              supportY.current = e.nativeEvent.layout.y;
+              if (params?.support && !jumped.current) {
+                jumped.current = true;
+                requestAnimationFrame(() =>
+                  scrollRef.current?.scrollTo({ y: supportY.current, animated: true }));
+              }
+            }}
+          >
+            <Text style={styles.sectionTitle}>Support inbox</Text>
+          </View>
+          {support ? (
+            <>
+              {!support.email_configured ? (
+                <View style={[styles.card, styles.warnCard]}>
+                  <Text style={styles.warnText}>
+                    Support email is not configured on the server (RESEND_API_KEY / INVITE_FROM_EMAIL),
+                    so new messages reach this list and your phone, but not {support.inbox}.
+                  </Text>
+                </View>
+              ) : null}
+              {support.never_delivered > 0 ? (
+                <View style={[styles.card, styles.warnCard]}>
+                  <Text style={styles.warnText}>
+                    {support.never_delivered} message{support.never_delivered === 1 ? '' : 's'} below{' '}
+                    {support.never_delivered === 1 ? 'was' : 'were'} sent before delivery worked. Nobody
+                    was told. Reply to each by email.
+                  </Text>
+                </View>
+              ) : null}
+              <Text style={styles.hint}>
+                {support.open} open of {support.total}. New messages go to {support.inbox} and to your phone.
+              </Text>
+              {support.tickets.length ? (
+                <View style={styles.card}>
+                  {support.tickets
+                    .filter((tk) => showClosedTickets || tk.status === 'open')
+                    .map((tk, i) => (
+                      <View key={tk.ticket_id} style={[styles.ticketRow, i === 0 && { borderTopWidth: 0 }]}>
+                        <View style={styles.ticketHead}>
+                          <View style={styles.subLeft}>
+                            <Text style={styles.subName} numberOfLines={1}>{tk.subject || '(no subject)'}</Text>
+                            <Text style={styles.subEmail} numberOfLines={1}>
+                              {tk.user_name || '(no name)'} · {tk.user_email || '—'}
+                            </Text>
+                          </View>
+                          <Text style={styles.subMeta}>{lastSeenLabel(tk.created_at)}</Text>
+                        </View>
+                        <Text style={styles.ticketBody}>{tk.message}</Text>
+                        <View style={styles.ticketFoot}>
+                          <Text style={[styles.subMeta, tk.emailed === null && { color: ui.danger }]}>
+                            {tk.emailed === null
+                              ? 'Never delivered'
+                              : tk.emailed
+                                ? `Emailed${tk.pushed_devices ? ' · pushed' : ''}`
+                                : `Email failed${tk.email_error ? ': ' + tk.email_error : ''}${tk.pushed_devices ? ' · pushed' : ''}`}
+                          </Text>
+                          {tk.status === 'open' ? (
+                            <PressScale
+                              onPress={() => {
+                                api.closeSupportTicket(tk.ticket_id)
+                                  .then(() => setSupport((cur) => cur ? {
+                                    ...cur,
+                                    open: Math.max(0, cur.open - 1),
+                                    tickets: cur.tickets.map((x) => x.ticket_id === tk.ticket_id ? { ...x, status: 'closed' } : x),
+                                  } : cur))
+                                  .catch((e) => logger.warn('close ticket failed', e?.message || e));
+                              }}
+                              style={styles.ticketBtn}
+                            >
+                              <Text style={styles.subMoreText}>Mark handled</Text>
+                            </PressScale>
+                          ) : (
+                            <Text style={styles.subMeta}>Handled</Text>
+                          )}
+                        </View>
+                      </View>
+                    ))}
+                  {support.tickets.some((tk) => tk.status !== 'open') ? (
+                    <PressScale onPress={() => setShowClosedTickets((v) => !v)} style={styles.subMoreBtn}>
+                      <Text style={styles.subMoreText}>
+                        {showClosedTickets ? 'Hide handled' : 'Show handled'}
+                      </Text>
+                    </PressScale>
+                  ) : null}
+                </View>
+              ) : (
+                <Text style={styles.muted}>No messages yet.</Text>
+              )}
+            </>
+          ) : (
+            <Text style={styles.muted}>Loading…</Text>
+          )}
+
+          {/* How the app felt. Every cold start has been measured since
+              launch and shown nowhere, so "is it slow?" was answerable only
+              by opening it and forming an impression. Buckets rather than an
+              average: the number that matters is the share of launches that
+              felt broken, and an average hides exactly those. */}
+          <Text style={styles.sectionTitle}>How it feels</Text>
+          {timings?.timings?.length ? (
+            <>
+              <Text style={styles.hint}>
+                Measured on real devices over the last {timings.days} days.
+              </Text>
+              {timings.timings.map((row) => (
+                <View key={row.name} style={styles.card}>
+                  <View style={[styles.eventRow, { borderTopWidth: 0 }]}>
+                    <Text style={styles.eventLabel}>{row.name.replace(/_/g, ' ')}</Text>
+                    <Text style={styles.eventCount}>
+                      {row.samples} · median {row.median_bucket || '—'}
+                    </Text>
+                  </View>
+                  {row.labels.map((label, i) => {
+                    const n = row.buckets[i] || 0;
+                    const share = row.samples ? Math.round((100 * n) / row.samples) : 0;
+                    const slowest = i === row.labels.length - 1;
+                    return (
+                      <View key={label} style={styles.eventRow}>
+                        <Text style={styles.eventLabel}>{label}</Text>
+                        <Text style={[styles.eventCount,
+                          slowest && n > 0 && { color: ui.danger }]}>
+                          {n} · {share}%
+                        </Text>
+                      </View>
+                    );
+                  })}
+                  {row.pct_in_slowest != null && row.pct_in_slowest > 5 ? (
+                    <Text style={styles.hint}>
+                      {row.pct_in_slowest}% of these felt broken. Worth a look.
+                    </Text>
+                  ) : null}
+                </View>
+              ))}
+            </>
+          ) : (
+            <Text style={styles.muted}>No timings recorded yet.</Text>
+          )}
+
           {/* Billing events — did the money actually reach us */}
           <Text style={styles.sectionTitle}>Billing events</Text>
           {billing ? (
             <>
+              {/* Three states, not two. "Nothing has ever arrived" is an
+                  outage; "money reached nobody" is a person to find; and "the
+                  only thing that ever arrived was a test" is neither — it is
+                  the endpoint working with nothing sold yet, which used to
+                  raise the money alarm and could never clear. */}
               {!billing.ever_received ? (
                 <View style={[styles.card, styles.warnCard]}>
                   <Text style={styles.warnText}>
@@ -663,6 +939,14 @@ export default function MetricsScreen() {
                     {billing.unmatched} event{billing.unmatched === 1 ? '' : 's'} arrived that we
                     could not match to a household. That is real money landing nowhere — the store
                     got a 200 back and will not send it again.
+                  </Text>
+                </View>
+              ) : billing.last_test_at ? (
+                <View style={styles.card}>
+                  <Text style={styles.hint}>
+                    No purchase has gone missing. The store last reached this endpoint with a
+                    test event on {billing.last_test_at.slice(0, 10)} — the webhook is wired up
+                    and nothing has been lost.
                   </Text>
                 </View>
               ) : null}
@@ -690,14 +974,37 @@ export default function MetricsScreen() {
                         <Text style={styles.subName} numberOfLines={1}>
                           {e.event_type || '(no type)'}
                         </Text>
-                        <Text style={styles.subEmail} numberOfLines={1}>
-                          {e.detail || e.product_id || e.app_user_id || '—'}
+                        {/* An unmatched row is the one somebody has to ACT on,
+                            and acting means knowing which purchase. Show the
+                            store id and the account id it named — the detail
+                            string alone ("no account carries this app_user_id")
+                            says what happened and not to whom. */}
+                        <Text style={styles.subEmail} numberOfLines={e.matched ? 1 : 2}>
+                          {e.matched
+                            ? (e.detail || e.product_id || e.app_user_id || '—')
+                            : [e.product_id, e.app_user_id].filter(Boolean).join(' · ') || e.detail || '—'}
                         </Text>
+                        {/* And whether anything can still be done about it.
+                            The replay runs twice a day and gives up down five
+                            paths; without this the row looks the same on day
+                            one and on day forty, and the only question worth
+                            asking — is this recoverable? — has no answer. */}
+                        {!e.matched ? (
+                          <Text style={styles.subEmail} numberOfLines={2}>
+                            {replayVerdict(e)}
+                          </Text>
+                        ) : null}
                       </View>
                       <View style={styles.subRight}>
+                        {/* "reached nobody" is true of a test ping and
+                            misleading about it: the tag is what gets read at a
+                            glance, and in red beside real purchases it says
+                            somebody lost money. */}
                         <View style={[styles.subTag, e.matched ? styles.subTagPaid : styles.subTagFree]}>
-                          <Text style={[styles.subTagText, { color: e.matched ? ui.orangeText : ui.danger }]}>
-                            {e.matched ? (e.plan || 'applied') : 'reached nobody'}
+                          <Text style={[styles.subTagText, {
+                            color: e.matched ? ui.orangeText : e.is_test ? ui.muted : ui.danger,
+                          }]}>
+                            {e.matched ? (e.plan || 'applied') : e.is_test ? 'store test' : 'reached nobody'}
                           </Text>
                         </View>
                         <Text style={styles.subMeta} numberOfLines={1}>
@@ -789,6 +1096,11 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   subTagFree: { backgroundColor: ui.soft },
   subTagText: { fontFamily: 'Inter_800ExtraBold', fontSize: 11, letterSpacing: 0.3 },
   subMeta: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 11 },
+  ticketRow: { paddingVertical: 12, borderTopWidth: 1, borderTopColor: ui.line, gap: 8 },
+  ticketHead: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 },
+  ticketBody: { color: ui.text, fontFamily: 'Inter_400Regular', fontSize: 14, lineHeight: 20 },
+  ticketFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  ticketBtn: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 999, backgroundColor: ui.soft },
   subMoreBtn: { paddingVertical: 14, borderTopWidth: 1, borderTopColor: ui.line, alignItems: 'center' },
   subMoreText: { color: ui.orangeText, fontFamily: 'Inter_700Bold', fontSize: 13 },
 });

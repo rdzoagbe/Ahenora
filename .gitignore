@@ -138,8 +138,11 @@ frontend/.env
 frontend/.metro-cache/
 frontend/.expo/
 
-# Local Google/Firebase Android config
-frontend/android/app/google-services.json
+# The Android Firebase config is COMMITTED on purpose: it ships inside every
+# APK (public by nature, like the Google client ids) and the CI build needs
+# it to produce a phone that can receive push. It used to be ignored here,
+# which is why no Android build ever had it. docs/ANDROID_PUSH.md.
+!frontend/android/app/google-services.json
 
 # Accidentally-committed unrelated project — kept out of the repo
 Downloads/
@@ -156,6 +159,7 @@ serve*.log
 # Credentials — never commit; these come from env vars / CI secrets at build time.
 # The *.example templates stay tracked (different filenames), so these are safe.
 google-services.json
+!frontend/android/app/google-services.json
 play-service-account.json
 *service-account*.json
 *.p12
@@ -165,3 +169,6 @@ play-service-account.json
 # rule above swallowed them, so they were never committed and ahenora.com
 # 404'd every font, falling back to system faces. Un-exclude that one directory.
 !docs/app/assets/node_modules/
+
+# Written by the OTA publish step to read back the update group id.
+update.json

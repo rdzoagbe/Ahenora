@@ -5,6 +5,8 @@ import { useLocalSearchParams } from 'expo-router';
 import { Gift, Check } from 'lucide-react-native';
 
 import { PressScale } from '../../src/components/PressScale';
+import AppToast from '../../src/components/AppToast';
+import { useToast } from '../../src/hooks/useToast';
 import { useUI, UIColors } from '../../src/components/Kit';
 import { KeyboardAwareScrollView } from '../../src/components/KeyboardAwareScrollView';
 import { useStore } from '../../src/store';
@@ -23,6 +25,7 @@ const METHODS: GiftMethod[] = ['cash', 'transfer', 'gift', 'other'];
 export default function PublicPotRoute() {
   const ui = useUI();
   const { t } = useStore();
+  const { toast, showToast } = useToast();
   const styles = useMemo(() => createStyles(ui), [ui]);
   const { token } = useLocalSearchParams<{ token?: string }>();
   const tok = String(token || '');
@@ -67,6 +70,7 @@ export default function PublicPotRoute() {
       setJoined(true);
     } catch (e) {
       logger.warn('join pot failed', e);
+      showToast(t('vault_could_not_update'), 'error');
     } finally {
       setBusy(false);
     }
@@ -165,6 +169,7 @@ export default function PublicPotRoute() {
           </>
         )}
       </KeyboardAwareScrollView>
+      <AppToast visible={Boolean(toast)} message={toast?.message || null} tone={toast?.tone || 'info'} />
     </SafeAreaView>
   );
 }

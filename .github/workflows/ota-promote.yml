@@ -1,0 +1,98 @@
+name: OTA promote
+
+# Send a partially-rolled-out production update to everyone.
+#
+# Production publishes at a percentage (see frontend-ci-eas-update.yml), so
+# reaching the whole audience is a separate, deliberate act by a person who has
+# looked at the update first. That is the entire point of the split: nothing
+# gets to everybody because a merge happened.
+#
+# Look before you run this. Actions -> "OTA watch" reports launches, crashes and
+# unique users for the group.
+on:
+  workflow_dispatch:
+    inputs:
+      group:
+        description: 'Update group id (from the publish summary, or `eas update:list --branch production`)'
+        required: true
+        type: string
+      percentage:
+        description: 'Rollout percentage to move to (1-100)'
+        required: true
+        default: '100'
+        type: string
+
+concurrency:
+  # Never two rollout edits at once on the same channel.
+  group: ota-rollout-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  promote:
+    name: Promote a production update
+    runs-on: ubuntu-latest
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      EXPO_NO_TELEMETRY: 1
+    steps:
+      - name: Verify EXPO_TOKEN is set
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "EXPO_TOKEN is not set. Add it under Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+
+      # An integer between 1 and 100, checked here rather than discovered as a
+      # confusing CLI error. "0" is not a way to disable an update — that is
+      # what OTA rollback is for.
+      - name: Check the percentage
+        env:
+          PCT: ${{ inputs.percentage }}
+        run: |
+          case "$PCT" in
+            ''|*[!0-9]*) echo "Not a whole number: '$PCT'"; exit 1 ;;
+          esac
+          if [ "$PCT" -lt 1 ] || [ "$PCT" -gt 100 ]; then
+            echo "Rollout percentage must be between 1 and 100 (got $PCT)."
+            echo "To stop an update reaching anybody, use the OTA rollback workflow."
+            exit 1
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm install --no-audit --no-fund
+
+      - name: Set the rollout percentage
+        working-directory: frontend
+        env:
+          GROUP: ${{ inputs.group }}
+          PCT: ${{ inputs.percentage }}
+        run: |
+          npx eas-cli@latest update:edit "$GROUP" \
+            --rollout-percentage "$PCT" \
+            --non-interactive
+
+      - name: Say what changed
+        if: ${{ always() }}
+        env:
+          GROUP: ${{ inputs.group }}
+          PCT: ${{ inputs.percentage }}
+        run: |
+          {
+            echo "## OTA rollout set to ${PCT}%"
+            echo
+            echo "Update group: \`${GROUP}\`"
+            echo
+            echo "At 100% every production install on this runtime receives it."
+          } >> "$GITHUB_STEP_SUMMARY"
