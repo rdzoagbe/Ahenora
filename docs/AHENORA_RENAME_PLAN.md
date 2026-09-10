@@ -68,7 +68,11 @@ Replace "Household COO" in the 4 permission descriptions (NSCamera, NSPhotoLibra
 ### H. Store listing (Play Console — done in the console, not code)
 - **App title** → "Ahenora"
 - **Short + full description** → rewrite around Ahenora + new tagline
-- Update the source-of-truth docs: `docs/PLAY_STORE_LISTING.md`, `docs/aso-listing.md`
+- Source-of-truth doc: `docs/PLAY_STORE_LISTING.md`. There is only one now —
+  `docs/aso-listing.md` was an earlier Play listing this one superseded, it
+  never got renamed, and it sat here offering ready-to-paste copy that put
+  "Household COO" in the app title. Deleted; `tests/test_play_store_listing.py`
+  now fails if any listing doc names a retired brand.
 - Note: title change goes through Play review (managed publishing holds it).
 
 ### I. Store visual assets — regenerate with "Ahenora"
