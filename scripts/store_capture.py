@@ -182,7 +182,7 @@ async def main():
         await shot("calendar", "05-quickadd", before=open_quickadd)
 
         async def open_household():
-            await p.click('[data-testid="feed-portrait"]')
+            await p.click('[data-testid="tab-more"]')
         await shot("feed", "06-household", before=open_household)
 
         await br.close()

@@ -13,10 +13,7 @@ import {
   LifeBuoy,
   LogOut,
   Mail,
-  Settings as SettingsIcon,
   ShieldCheck,
-  Smile,
-  Gift,
   Trash2,
   X,
   Send,
@@ -31,8 +28,6 @@ import { api, FamilyMember } from '../../src/api';
 import { PersonAvatar, AvatarPicker } from '../../src/components/PersonAvatar';
 import { logger } from '../../src/logger';
 import { apiErrorText } from '../../src/apiError';
-import { HandOverSheet } from '../../src/components/HandOverSheet';
-import { SECRET_SANTA_ENABLED } from '../../src/features';
 
 function ListRow({
   tile,
@@ -69,7 +64,6 @@ function ListRow({
 
 export default function AccountScreen() {
   const router = useRouter();
-  const [handOver, setHandOver] = useState(false);
   const { user, logout, refreshUser, t } = useStore();
   const { theme } = useStore();
   const ui = useUI();
@@ -189,8 +183,6 @@ export default function AccountScreen() {
     }
   };
 
-  // Secret Santa is seasonal and currently hidden — see src/features.ts. The
-  // row is dropped from the list, never merely styled away.
   // Written out per standing rather than looked up by a built key: a
   // t(`acc_standing_${x}`) reads fine and is invisible to the audit that
   // checks every key we ship is actually used, and to the one that checks
@@ -207,18 +199,6 @@ export default function AccountScreen() {
   const standing = me
     ? (STANDING_LABEL[me.standing ?? ''] ?? ((me.role || '').toUpperCase() || null))
     : null;
-
-  const householdRows = [
-    { key: 'settings', icon: <SettingsIcon color={ui.orange} size={18} />, soft: ui.orangeSoft,
-      title: t('settings'), sub: t('nav_more_settings_sub'),
-      onPress: () => router.navigate('/(tabs)/settings') },
-    ...(user?.is_helper ? [] : [{ key: 'hand-over', icon: <Smile color={ui.mintText} size={18} />, soft: ui.mint,
-      title: t('kid_hand_over'), sub: t('kid_hand_over_sub'),
-      onPress: () => setHandOver(true) }]),
-    ...(SECRET_SANTA_ENABLED ? [{ key: 'santa', icon: <Gift color={ui.orangeText} size={18} />, soft: ui.orangeSoft,
-      title: t('ss_more_title'), sub: t('ss_more_sub'),
-      onPress: () => router.navigate('/santa') }] : []),
-  ];
 
   return (
     <View style={styles.container}>
@@ -274,30 +254,6 @@ export default function AccountScreen() {
               />
             </Card>
           ) : null}
-
-          {/* Where the More drawer went.
-              These are the things the bottom bar used to hide behind a button
-              labelled More: your settings, handing the phone to a child, and
-              (in season) the gift draw. They are all about the person signed
-              in, which is exactly what this screen is, and the portrait that
-              opens it sits in the Feed header — the same two taps More cost,
-              from a door that says whose account it is.
-              A helper cannot hand the device over: leaving kid mode needs a
-              parent's PIN they do not hold. */}
-          <SectionTitle style={styles.sectionGap}>{t('acc_section_household')}</SectionTitle>
-          <Card style={styles.cardPad}>
-            {householdRows.map((row, i) => (
-              <ListRow
-                key={row.key}
-                testID={`account-${row.key}`}
-                tile={<IconTile bg={row.soft}>{row.icon}</IconTile>}
-                title={row.title}
-                subtitle={row.sub}
-                onPress={row.onPress}
-                divider={i < householdRows.length - 1}
-              />
-            ))}
-          </Card>
 
           {/* Sign-in & connections */}
           <SectionTitle style={styles.sectionGap}>{t('acc_section_signin')}</SectionTitle>
@@ -509,10 +465,6 @@ export default function AccountScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* The hand-over is a sheet, not a destination: it sits above this
-          screen rather than replacing it, so cancelling leaves you where you
-          were instead of on a screen you did not ask for. */}
-      <HandOverSheet visible={handOver} onClose={() => setHandOver(false)} />
     </View>
   );
 }

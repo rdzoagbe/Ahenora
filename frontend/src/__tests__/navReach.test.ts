@@ -20,26 +20,36 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 
 import {
-  COMFORTABLE_PHONE_PT, NARROWEST_PHONE_PT, WIDEST_LABEL_PT,
-  labelsFit, seatLabelWidth, seatsFit,
+  MEASURED_LABEL_PT, NARROWEST_PHONE_PT, PILL_PADDING, SEAT_MIN_WIDTH,
+  barFits, contentWidth, pillWidth, seatWidth, slackAt,
 } from '../navGeometry';
 
 const APP = join(__dirname, '..', '..', 'app');
 const read = (...p: string[]) => readFileSync(join(APP, ...p), 'utf8');
 
 const LAYOUT = read('(tabs)', '_layout.tsx');
-const ACCOUNT = read('(tabs)', 'account.tsx');
+const MORE_SHEET = readFileSync(join(APP, '..', 'src', 'components', 'MoreSheet.tsx'), 'utf8');
 const FEED = read('(tabs)', 'feed.tsx');
 
-describe('the bar holds the five places', () => {
+describe('the bar holds the five places, and More holds the rest', () => {
   it('seats exactly Feed, Calendar, Family, Kitchen and Vault, in that order', () => {
     const names = [...LAYOUT.matchAll(/\{ name: '(\w+)',\s+Icon:/g)].map((m) => m[1]);
     expect(names).toEqual(['feed', 'calendar', 'kids', 'kitchen', 'vault']);
   });
 
-  it('has no More button left in it', () => {
-    expect(LAYOUT).not.toContain('tab-more');
-    expect(LAYOUT).not.toContain('MoreSheet');
+  it('keeps More beside the pill, as a button and not a seat', () => {
+    // It is not a destination — it holds settings, your account and the
+    // hand-over, which are a tool, a record and an action.
+    expect(LAYOUT).toContain('testID="tab-more"');
+    expect(LAYOUT).toContain('MoreSheet');
+  });
+
+  it('gives More no label, because that is where the fifth seat came from', () => {
+    // A 10pt word reading "More" under a grid icon said what the icon says
+    // and cost 14pt of width. If it comes back, the bar stops fitting.
+    const more = LAYOUT.slice(LAYOUT.indexOf('testID="tab-more"'),
+                              LAYOUT.indexOf('</TouchableOpacity>', LAYOUT.indexOf('testID="tab-more"')));
+    expect(more).not.toMatch(/<Text/);
   });
 
   it('withholds the vault seat from a helper, whose vault calls are all 403s', () => {
@@ -50,61 +60,91 @@ describe('the bar holds the five places', () => {
   });
 });
 
-describe('everything the More drawer held still has a door', () => {
-  it('reaches your account from the Feed portrait and the sidebar', () => {
-    expect(FEED).toContain("router.navigate('/(tabs)/account'");
-    expect(LAYOUT).toContain("router.navigate('/(tabs)/account'");
+describe('everything More holds still has a door', () => {
+  it('opens the same drawer from the phone bar and the sidebar', () => {
+    expect(LAYOUT).toContain('testID="sidebar-more"');
+    expect((LAYOUT.match(/openHouseholdMenu/g) ?? []).length).toBeGreaterThanOrEqual(3);
   });
 
-  it('reaches settings and the hand-over from the account screen', () => {
-    expect(ACCOUNT).toContain("router.navigate('/(tabs)/settings')");
-    expect(ACCOUNT).toContain('HandOverSheet');
+  it('no longer lists the vault, which is a seat now', () => {
+    // A place in the bar AND in the drawer is the duplication this sheet's
+    // own comments argue against — two taps either way, one list longer.
+    expect(MORE_SHEET).not.toMatch(/key: 'vault'/);
+    expect(MORE_SHEET).toMatch(/key: 'settings'/);
+    expect(MORE_SHEET).toMatch(/key: 'account'/);
+    expect(MORE_SHEET).toMatch(/key: 'kid'/);
   });
 
   it('offers a helper settings but not the hand-over', () => {
     // A helper cannot leave kid mode: that needs a parent's PIN they do not
     // hold, so the row would be a door onto a dead end.
-    const rows = ACCOUNT.slice(ACCOUNT.indexOf('const householdRows'), ACCOUNT.indexOf('];', ACCOUNT.indexOf('const householdRows')));
-    expect(rows).toMatch(/key: 'settings'/);
-    expect(rows).toMatch(/user\?\.is_helper \? \[\] : \[\{ key: 'hand-over'/);
+    expect(MORE_SHEET).toMatch(/user\?\.is_helper && it\.key === 'kid'/);
+  });
+
+  it('still reaches your account from the Feed portrait', () => {
+    expect(FEED).toContain("router.navigate('/(tabs)/account'");
   });
 });
 
-describe('five seats fit', () => {
+describe('five seats and More fit together', () => {
   const WIDTHS = [NARROWEST_PHONE_PT, 360, 375, 390, 412, 430];
+  const LANGS = Object.keys(MEASURED_LABEL_PT);
 
-  it('never overflows the pill on any phone we support', () => {
+  it('holds on every phone we support, in every language we ship', () => {
     for (const width of WIDTHS) {
-      expect({ width, seats: seatsFit(width, 5) }).toEqual({ width, seats: true });
+      expect({ width, fits: barFits(width) }).toEqual({ width, fits: true });
     }
   });
 
-  it('fits every label at full size on a normal phone, with room to spare', () => {
-    // Outright, not "after adjustsFontSizeToFit": that prop is native-only, so
-    // on the web build nothing shrinks. And with slack, because "it fits at
-    // exactly zero" is one font-metric revision away from being wrong.
-    for (const width of WIDTHS.filter((w) => w >= COMFORTABLE_PHONE_PT)) {
-      expect({ width, labels: labelsFit(width, 5) }).toEqual({ width, labels: true });
-      expect(seatLabelWidth(width, 5) - WIDEST_LABEL_PT).toBeGreaterThan(1);
+  it('keeps real room to spare even at its tightest', () => {
+    // "It fits at exactly zero" is one font-metric revision from being wrong,
+    // and the numbers here are browser measurements that can move.
+    for (const lang of LANGS) {
+      expect({ lang, slack: slackAt(NARROWEST_PHONE_PT, lang) >= 8 })
+        .toEqual({ lang, slack: true });
     }
   });
 
-  it('degrades rather than overlaps on the narrowest phone', () => {
-    // 320pt is the one width where the longest German label runs out of room.
-    // It then shrinks (native) or ellipsises (web) — both fine. What is not
-    // fine is a seat drawing over its neighbour, which nothing in the bar
-    // clips, so the cap has to be structural.
-    expect(labelsFit(NARROWEST_PHONE_PT, 5)).toBe(false);
-    expect(LAYOUT).toMatch(/maxWidth: '100%'/);
-    expect(LAYOUT).toContain('adjustsFontSizeToFit');
+  it('would not hold with equal-width seats', () => {
+    // The reason the seats size to their words. Equal shares spend as much on
+    // "Feed" as on "Calendar", so the bar has to fit five copies of its
+    // longest label. In English and German — the two widest, and therefore
+    // the two that decide whether the bar fits at all — that overflows the
+    // narrowest phone. French and Spanish would squeak in, which is not a
+    // reason to ship a bar that breaks in half the languages.
+    const overflows = (lang: string) => {
+      const widest = Math.max(...MEASURED_LABEL_PT[lang]);
+      return seatWidth(widest) * 5 > pillWidth(NARROWEST_PHONE_PT) - PILL_PADDING * 2;
+    };
+    expect({ en: overflows('en'), de: overflows('de') }).toEqual({ en: true, de: true });
   });
 
-  it('would not fit a sixth seat on the phone most people hold', () => {
-    // Guards the arithmetic itself: if this ever passes, the formula has
-    // stopped describing the bar and the checks above prove nothing. Five is
-    // not a comfortable number of seats, it is the last one that works on a
-    // 390pt phone — a 430pt one would take six, which is not a reason to add
-    // one, because the bar has to hold on the small phone too.
-    expect(labelsFit(390, 6)).toBe(false);
+  it('buys back real width in every language by sizing to content', () => {
+    for (const lang of LANGS) {
+      const widest = Math.max(...MEASURED_LABEL_PT[lang]);
+      const saved = seatWidth(widest) * 5 - contentWidth(MEASURED_LABEL_PT[lang]);
+      expect({ lang, saved: saved > 5 }).toEqual({ lang, saved: true });
+    }
+  });
+
+  it('is held back by the seat floor, not by the words', () => {
+    // Four of the five labels are shorter than the floor, so minWidth decides
+    // the total. Raising it back to 46 overflowed a 320pt phone while every
+    // label still fitted its own box — which is why the floor is a measured
+    // number and not a taste.
+    const en = MEASURED_LABEL_PT.en;
+    expect(en.filter((l) => l + 4 < SEAT_MIN_WIDTH).length).toBeGreaterThanOrEqual(3);
+    const atFortySix = en.reduce((t, l) => t + Math.max(46, l + 4), 0);
+    expect(atFortySix).toBeGreaterThan(pillWidth(NARROWEST_PHONE_PT) - PILL_PADDING * 2);
+  });
+
+  it('English is the widest set, not German', () => {
+    // Pinned because the opposite was assumed all session, and two rounds of
+    // arithmetic were built on it. If a label changes and this flips, the
+    // table above needs re-measuring, not the assumption re-asserting.
+    const totals = Object.fromEntries(
+      LANGS.map((l) => [l, contentWidth(MEASURED_LABEL_PT[l])]));
+    expect(Math.max(...Object.values(totals))).toEqual(totals.en);
+    expect(totals.en).toBeGreaterThan(totals.de);
   });
 });
