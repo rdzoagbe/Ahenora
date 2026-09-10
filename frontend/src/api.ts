@@ -830,6 +830,9 @@ export interface TeenHome {
   name: string;
   tasks: TeenCard[];
   agenda: TeenCard[];
+  /** Handovers with this teen's name on them, and only those — the server
+   *  scopes it, so the device is never sent one it would have to filter out. */
+  notes: HandoffNote[];
   stars: number;
   week_earned: number;
 }
@@ -2262,6 +2265,10 @@ export const api = {
   // Teen mode — the only endpoints a teen account can reach.
   teenMe: () => request<{ user_id: string; name: string; email?: string; family_id: string; language: string; is_teen: true }>('/teen/me'),
   teenHome: () => request<TeenHome>('/teen/home'),
+  /** A teen taking on a handover, through their own gate. Same rule as the
+   *  parent route, and the same push back to whoever wrote it. */
+  teenAckHandoffNote: (noteId: string) =>
+    request<HandoffNote>(`/teen/handoff-notes/${noteId}/ack`, { method: 'POST' }),
   teenFinishTask: (cardId: string) =>
     request<{ ok: boolean }>(`/teen/tasks/${cardId}/done`, { method: 'POST' }),
 

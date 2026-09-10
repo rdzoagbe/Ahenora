@@ -65,13 +65,21 @@ describe('a handover waiting on you', () => {
 
 describe('who can be given one', () => {
   it('offers only people who could pick one up', () => {
-    // A child has no account; a teen lives behind their own screen and
-    // require_user refuses their token. Neither could ever acknowledge.
+    // An account is the whole test. A young child's profile is a row a parent
+    // manages, with nobody behind it, so a note could only ever be ABOUT them.
     const picker = FEED.slice(FEED.indexOf('const noteRecipients'),
-                              FEED.indexOf('const noteRecipients') + 320);
+                              FEED.indexOf('const noteRecipients') + 420);
     expect(picker).toMatch(/m\.has_account/);
     expect(picker).toMatch(/!m\.is_me/);
-    expect(picker).toMatch(/!== 'teen'/);
+  });
+
+  it('offers teens, who read it on their own screen', () => {
+    // They were left out at first because require_user rejects a teen's token
+    // — but that gate is about the parent app, not about them.
+    const picker = FEED.slice(FEED.indexOf('const noteRecipients'),
+                              FEED.indexOf('const noteRecipients') + 420);
+    expect(picker).not.toMatch(/'teen'/);
+    expect(SERVER).toContain('async def teen_ack_handoff_note');
   });
 
   it('is refused server-side too, by name', () => {
@@ -79,7 +87,6 @@ describe('who can be given one', () => {
     // person would otherwise create a note nobody can ever take on, and the
     // sender would read "not yet" forever.
     expect(SERVER).toContain('async def _note_recipient');
-    expect(SERVER).toMatch(/teen view and cannot pick up a note/);
     expect(SERVER).toMatch(/has no account, so nobody could pick this up/);
   });
 
@@ -89,5 +96,50 @@ describe('who can be given one', () => {
     expect(FEED).toMatch(/useState<string \| null>\(null\)/);
     expect(FEED).toMatch(/\.\.\.\(noteFor \? \{ member_id: noteFor \} : \{\}\)/);
     expect(SERVER).toMatch(/elif not for_user_id:\s*\n\s*await send_coparent_alert/);
+  });
+});
+
+describe('a teen handed the same handover', () => {
+  const TEEN = readFileSync(join(ROOT, 'app', 'teen.tsx'), 'utf8');
+
+  it('reads it above their own day, like a parent does', () => {
+    // Same failure mode as the Feed's: a strip nobody sees is not a strip.
+    // Their screen opens on a greeting, then stars, then tasks — so anything
+    // below the stars card is already below the thing they came for.
+    expect(TEEN.indexOf('notesForMe.map'))
+      .toBeLessThan(TEEN.indexOf('styles.starsCard'));
+  });
+
+  it('shows only what is theirs and not yet taken on', () => {
+    expect(TEEN).toMatch(/n\.for_me && !n\.acked_at/);
+  });
+
+  it('is scoped by the server, not filtered on the device', () => {
+    // A teen is walled off for a reason; the wall belongs on the server, so
+    // their device is never sent a note it would have to hide.
+    expect(SERVER).toMatch(/\{"family_id": user\["family_id"\], "for_user_id": uid\}/);
+  });
+
+  it('goes through their own gate', () => {
+    expect(TEEN).toContain('api.teenAckHandoffNote');
+    expect(SERVER).toContain('teen=Depends(require_teen)');
+  });
+
+  it('means the same thing on both surfaces', () => {
+    // One implementation behind two gates. If either route stopped calling it,
+    // "I have this" could quietly come to mean something different depending
+    // on whose screen you said it from.
+    expect(SERVER).toContain('async def _take_on_note');
+    const parentRoute = SERVER.slice(SERVER.indexOf('async def ack_handoff_note'),
+                                     SERVER.indexOf('async def ack_handoff_note') + 200);
+    const teenRoute = SERVER.slice(SERVER.indexOf('async def teen_ack_handoff_note'),
+                                   SERVER.indexOf('async def teen_ack_handoff_note') + 500);
+    expect(parentRoute).toContain('_take_on_note');
+    expect(teenRoute).toContain('_take_on_note');
+  });
+
+  it('gives them the same full-size commitment', () => {
+    const btn = TEEN.slice(TEEN.indexOf('noteAckBtn: {'), TEEN.indexOf('noteAckBtn: {') + 260);
+    expect(btn).toMatch(/height: 44/);
   });
 });

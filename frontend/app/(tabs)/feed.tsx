@@ -942,12 +942,13 @@ export default function Feed() {
   // is one, otherwise the photo Google handed us at sign-in, otherwise your
   // initial. The member row is checked first because it is the one you chose.
   // Who a note can be addressed to: everyone in the household who could
-  // actually pick one up. A child has no account and a teen lives behind their
-  // own screen, so neither can acknowledge — the server refuses both by name,
-  // and this keeps them out of the picker so nobody meets that refusal.
+  // actually pick one up. That means an account — a young child's profile is a
+  // row a parent manages, with nobody behind it, so a note could only ever be
+  // ABOUT them. Teens are in: they read it on their own screen and take it on
+  // through their own route. The server refuses the rest by name, and this
+  // keeps them out of the picker so nobody meets that refusal.
   const noteRecipients = useMemo(
-    () => members.filter((m) => m.has_account && !m.is_me
-      && String(m.role || '').toLowerCase() !== 'teen'),
+    () => members.filter((m) => m.has_account && !m.is_me),
     [members]);
 
   // The handovers waiting on ME. Unacknowledged and addressed here — the strip
