@@ -7251,7 +7251,19 @@ async def teen_home(teen=Depends(require_teen)):
     tasks.sort(key=lambda c: (c["due_date"] is None, c["due_date"] or ""))
     agenda.sort(key=lambda c: (c["due_date"] is None, c["due_date"] or ""))
 
+    # Handovers with their name on them, and only those. A teen is walled off
+    # from the household's other notes for the same reason they are walled off
+    # from everything else — the wall is the feature, not an obstacle to work
+    # around. Scoped by for_user_id here so the device is never sent one it
+    # would have to filter out.
+    notes = []
+    async for note in database["handoff_notes"].find(
+        {"family_id": user["family_id"], "for_user_id": uid}, {"_id": 0},
+    ).sort("created_at", -1).limit(20):
+        notes.append(public_handoff_note(note, uid))
+
     return {"name": user.get("name") or "", "tasks": tasks, "agenda": agenda,
+            "notes": notes,
             "stars": int(member.get("stars") or 0),
             "week_earned": max(0, int(member.get("week_earned") or 0))}
 
@@ -12805,17 +12817,15 @@ async def _note_recipient(database: Any, family_id: str, member_id: str) -> tupl
 
     Refusing is the point. A note whose recipient can never open it looks
     identical to one waiting to be picked up: the sender is told it is "not
-    yet" taken on, forever, and no amount of waiting changes that. Two people
-    in a household are in exactly that position —
+    yet" taken on, forever, and no amount of waiting changes that.
 
-      * a young child, who has no account at all (their profile is a row a
-        parent manages), so a note can only ever be ABOUT them; and
-      * a teen, who is deliberately walled off behind their own screen —
-        require_user refuses a teen's token, so they could not acknowledge one
-        if they wanted to.
+    A young child is still in that position: their profile is a row a parent
+    manages, with no account behind it, so a note can only ever be ABOUT them.
 
-    Both are people a parent would reasonably pick from a list, which is why
-    this says no here rather than trusting the picker to have left them out.
+    A teen no longer is. They were refused here at first because require_user
+    rejects a teen's token by design — but that gate is about the PARENT app,
+    not about them, and they have their own screen and their own routes. They
+    now get the note there, and their own way to take it on.
     """
     member = await database["family_members"].find_one(
         {"family_id": family_id, "member_id": member_id},
@@ -12823,11 +12833,6 @@ async def _note_recipient(database: Any, family_id: str, member_id: str) -> tupl
     )
     if not member:
         raise HTTPException(status_code=404, detail="No such family member")
-    role = str(member.get("role") or "").strip().lower()
-    if role == "teen":
-        raise HTTPException(
-            status_code=400,
-            detail=f"{member['name']} uses the teen view and cannot pick up a note yet.")
     if not member.get("user_id"):
         raise HTTPException(
             status_code=400,
@@ -12879,8 +12884,7 @@ async def create_handoff_note(payload: HandoffNoteIn, user=Depends(require_user)
     return public_handoff_note(doc, user["user_id"])
 
 
-@app.post("/api/handoff-notes/{note_id}/ack")
-async def ack_handoff_note(note_id: str, user=Depends(require_user)):
+async def _take_on_note(database: Any, note_id: str, user: dict) -> dict:
     """"I have this." Not the same as having read it.
 
     Chat already says Seen, and Seen is a fact about someone's eyes. This is a
@@ -12891,8 +12895,12 @@ async def ack_handoff_note(note_id: str, user=Depends(require_user)):
     handover was taken on by someone who is not doing it. Acknowledging twice
     is silent: a second tap, a retried request or a stale screen must not push
     the author again.
+
+    One implementation, two doors. A parent reaches it through require_user
+    and a teen through require_teen, because the two gates never overlap by
+    design — but what the word means, and who is allowed to say it, must not
+    depend on which door you came through.
     """
-    database = get_db()
     note = await database["handoff_notes"].find_one(
         {"note_id": note_id, "family_id": user["family_id"]}, {"_id": 0})
     if not note:
@@ -12922,6 +12930,21 @@ async def ack_handoff_note(note_id: str, user=Depends(require_user)):
         except Exception as e:
             log.warning("handoff note ack alert failed: %s", e)
     return public_handoff_note(note, user["user_id"])
+
+
+@app.post("/api/handoff-notes/{note_id}/ack")
+async def ack_handoff_note(note_id: str, user=Depends(require_user)):
+    return await _take_on_note(get_db(), note_id, user)
+
+
+@app.post("/api/teen/handoff-notes/{note_id}/ack")
+async def teen_ack_handoff_note(note_id: str, teen=Depends(require_teen)):
+    """A teen taking on a handover, through their own gate.
+
+    Same rule, same push back to whoever wrote it: being thirteen does not
+    make "I have this" mean something different.
+    """
+    return await _take_on_note(get_db(), note_id, teen["user"])
 
 
 @app.delete("/api/handoff-notes/{note_id}")

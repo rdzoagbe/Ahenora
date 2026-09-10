@@ -11,7 +11,7 @@ Also held here: the states nobody photographs. A note nobody has picked up
 reads "not yet" rather than silence, and it is NOT nagged; and the strip is
 absent for the household member it was not addressed to.
 """
-import asyncio, json, sys, urllib.request
+import asyncio, json, sys, urllib.error, urllib.request
 from playwright.async_api import async_playwright
 
 from e2e_browser import launch_chromium
@@ -23,8 +23,14 @@ API = f"http://127.0.0.1:{sys.argv[2]}/api"
 def api(m, p, b=None, t=None):
     r = urllib.request.Request(f"{API}{p}", data=json.dumps(b).encode() if b is not None else None,
         headers={"Content-Type": "application/json", **({"Authorization": f"Bearer {t}"} if t else {})}, method=m)
-    with urllib.request.urlopen(r, timeout=20) as res:
-        return json.loads(res.read().decode() or "{}")
+    try:
+        with urllib.request.urlopen(r, timeout=20) as res:
+            return json.loads(res.read().decode() or "{}")
+    except urllib.error.HTTPError as e:
+        # The status alone sends you looking in the wrong place: a 400 from
+        # the invite route could be a plan limit, a bad address or a rule you
+        # forgot. The server says which.
+        raise RuntimeError(f"{m} {p} -> {e.code}: {e.read().decode()[:300]}") from None
 
 
 async def open_feed(ctx, token):
@@ -181,6 +187,102 @@ async def run(r):
         r["the_author_no_longer_sees_not_yet"] = "not yet" not in body_a2
         await page_a.screenshot(path="notes_author_after.png")
 
+        # --- and the same handover, to a teen ------------------------------
+        #
+        # A teen never touches /api/handoff-notes: require_user refuses their
+        # token by design and require_teen refuses everyone else's. So this is
+        # the same loop through a different door, and what is being checked is
+        # that none of it MEANS anything different on the other side.
+        #
+        # Its own household, deliberately. A free plan has a member-slot limit,
+        # and the pair above have already spent them — elevating this one to
+        # get a third seat would drag a 60-second billing cache into a test
+        # about notes.
+        t_tag = uuid.uuid4().hex[:6]
+        parent2 = api("POST", "/auth/register", {"name": "Esi Sim", "email": f"note-p2-{t_tag}@sim.test",
+                                                 "password": "password123"})
+        tok_p2 = parent2["session_token"]
+        api("POST", "/auth/complete-onboarding", {}, tok_p2)
+
+        teen_email = f"note-t-{t_tag}@sim.test"
+        t_inv = api("POST", "/family/invite", {"email": teen_email, "is_teen": True, "age": 15}, tok_p2)
+        teen = api("POST", "/auth/register",
+                   {"name": "Kojo Sim", "email": teen_email, "password": "password123",
+                    "invite_token": t_inv["invite"]["token"]})
+        tok_t = teen["session_token"]
+        # /auth/me 403s a teen — require_user refuses their token by design, and
+        # that refusal IS the reason this whole second surface exists. Their own
+        # gate is the one that answers.
+        r["the_invited_teen_is_a_teen"] = bool(
+            api("GET", "/teen/me", None, tok_t))
+
+        teen_member = next((m for m in api("GET", "/family/members", None, tok_p2)
+                            if m.get("name") == "Kojo Sim"), None)
+        if not teen_member:
+            raise RuntimeError("the invited teen has no member row")
+
+        ctx_p2 = await b.new_context(viewport={"width": 390, "height": 844})
+        page_p2, errs_p2 = await open_feed(ctx_p2, tok_p2)
+        await page_p2.click('[data-testid="feed-household-open"]')
+        await page_p2.wait_for_timeout(1200)
+        r["the_picker_offers_the_teen"] = await page_p2.locator(
+            f'[data-testid="note-for-{teen_member["member_id"]}"]').count() == 1
+
+        # One for the household, one for the teen — so "they see only theirs"
+        # is a real claim and not the absence of anything to confuse it with.
+        await page_p2.fill('[data-testid="feed-note-input"]', "Recycling goes out tonight")
+        await page_p2.click('[data-testid="feed-note-send"]')
+        await page_p2.wait_for_timeout(1800)
+        await page_p2.click(f'[data-testid="note-for-{teen_member["member_id"]}"]')
+        await page_p2.fill('[data-testid="feed-note-input"]', "Take your kit to school")
+        await page_p2.click('[data-testid="feed-note-send"]')
+        await page_p2.wait_for_timeout(2500)
+
+        teen_note = next((n for n in api("GET", "/handoff-notes", None, tok_p2)
+                          if n.get("member_name") == "Kojo Sim"), None)
+        r["the_teen_note_has_an_owner"] = bool(teen_note and teen_note.get("for_user_id"))
+        teen_note_id = (teen_note or {}).get("note_id", "")
+
+        # Their own screen, through their own gate.
+        ctx_t = await b.new_context(viewport={"width": 390, "height": 844})
+        page_t = await ctx_t.new_page()
+        errs_t = []
+        page_t.on("pageerror", lambda e: errs_t.append(str(e)))
+
+        async def route_t(ro):
+            path = ro.request.url.split("/api/", 1)[1]
+            resp = await ctx_t.request.fetch(f"{API}/{path}", method=ro.request.method,
+                headers={k: v for k, v in ro.request.headers.items()
+                         if k.lower() not in ("host", "content-length", "origin", "referer")},
+                data=ro.request.post_data)
+            await ro.fulfill(status=resp.status, content_type="application/json", body=await resp.body())
+        await page_t.route("**/api/**", route_t)
+        await page_t.add_init_script(f"localStorage.setItem('coo_session_token','{tok_t}');")
+        await page_t.goto(f"{WEB}/teen", wait_until="domcontentloaded")
+        await page_t.wait_for_timeout(3500)
+        await page_t.screenshot(path="notes_teen.png")
+
+        r["it_is_waiting_on_the_teens_screen"] = await page_t.locator(
+            f'[data-testid="teen-note-{teen_note_id}"]').count() == 1
+        body_t = await page_t.inner_text("body")
+        r["the_teen_is_told_who_left_it"] = "Esi Sim left you a note" in body_t
+        # The wall is the feature: the household's other note is not theirs.
+        r["the_teen_sees_no_other_handover"] = "Recycling goes out tonight" not in body_t
+
+        await page_t.click(f'[data-testid="teen-note-ack-{teen_note_id}"]')
+        await page_t.wait_for_timeout(2500)
+        r["the_teens_strip_goes_once_they_have_it"] = await page_t.locator(
+            f'[data-testid="teen-note-{teen_note_id}"]').count() == 0
+        await page_t.screenshot(path="notes_teen_acked.png")
+
+        await page_p2.reload(wait_until="domcontentloaded")
+        await page_p2.wait_for_timeout(3500)
+        await page_p2.click('[data-testid="feed-household-open"]')
+        await page_p2.wait_for_timeout(1200)
+        r["the_author_sees_the_teen_took_it_on"] = "Noted by Kojo Sim" in await page_p2.inner_text("body")
+
+        r["no_js_errors_for_the_teen"] = not errs_t
+        r["no_js_errors_for_the_teens_parent"] = not errs_p2
         r["no_js_errors_for_the_author"] = not errs_a
         r["no_js_errors_for_the_recipient"] = not errs_b
         await b.close()

@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -8,7 +8,7 @@ import { PressScale } from '../src/components/PressScale';
 import { ChatThread } from '../src/components/ChatThread';
 import { useUI, UIColors } from '../src/components/Kit';
 import { useStore } from '../src/store';
-import { api, TeenHome } from '../src/api';
+import { api, HandoffNote, TeenHome } from '../src/api';
 import { logger } from '../src/logger';
 import { localeFor } from '../src/utils/date';
 
@@ -44,6 +44,7 @@ export default function TeenScreen() {
   const [shopItem, setShopItem] = useState('');
   const [shopBusy, setShopBusy] = useState(false);
   const [shopNote, setShopNote] = useState<string | null>(null);
+  const [ackingNote, setAckingNote] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -65,6 +66,27 @@ export default function TeenScreen() {
   // Reload on every focus (not just mount) so the star count and the "waiting"
   // rows actually resolve once a parent approves from their device.
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  // A handover with their name on it. Same word as on a parent's Feed and the
+  // same push back to whoever wrote it — being thirteen does not make "I have
+  // this" mean something different.
+  const notesForMe = useMemo(
+    () => (home?.notes ?? []).filter((n: HandoffNote) => n.for_me && !n.acked_at),
+    [home]);
+
+  const ackNote = useCallback(async (noteId: string) => {
+    setAckingNote(noteId);
+    try {
+      const updated = await api.teenAckHandoffNote(noteId);
+      setHome((prev) => (prev
+        ? { ...prev, notes: prev.notes.map((n) => (n.note_id === noteId ? updated : n)) }
+        : prev));
+    } catch (e) {
+      logger.warn('teen note ack failed', e);
+    } finally {
+      setAckingNote(null);
+    }
+  }, []);
 
   const finish = useCallback(async (cardId: string) => {
     setBusy(cardId);
@@ -160,6 +182,35 @@ export default function TeenScreen() {
       ) : (
         <ScrollView contentContainerStyle={styles.scroll}>
           <Text style={styles.hello}>{firstName ? t('teen_greeting_name', { name: firstName }) : t('teen_greeting')}</Text>
+
+          {/* A handover waiting on them, above their own day.
+              Same strip, same lavender, same 44pt commitment as a parent's
+              Feed. It sits first for the same reason it does there: it is the
+              one thing on this screen that says somebody is waiting on you. */}
+          {notesForMe.map((note) => (
+            <View key={note.note_id} testID={`teen-note-${note.note_id}`} style={styles.noteStrip}>
+              <Text style={styles.noteStripWho} numberOfLines={1}>
+                {t('feed_note_left_you', { name: note.author_name })}
+              </Text>
+              <Text style={styles.noteStripText}>{note.text}</Text>
+              <View style={styles.noteStripFoot}>
+                <PressScale
+                  testID={`teen-note-ack-${note.note_id}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('feed_note_ack')}
+                  onPress={() => ackNote(note.note_id)}
+                  disabled={ackingNote === note.note_id}
+                  style={[styles.noteAckBtn, ackingNote === note.note_id && { opacity: 0.5 }]}
+                >
+                  <Check color="#FFFFFF" size={17} strokeWidth={3} />
+                  <Text style={styles.noteAckText}>{t('feed_note_ack')}</Text>
+                </PressScale>
+                <Text style={styles.noteStripHint} numberOfLines={2}>
+                  {t('feed_note_ack_hint', { name: note.author_name })}
+                </Text>
+              </View>
+            </View>
+          ))}
 
           {/* Stars — earned when a parent approves a finished task */}
           <View style={styles.starsCard}>
@@ -301,6 +352,19 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   starsIcon: { width: 42, height: 42, borderRadius: 12, backgroundColor: '#FEF6E6', alignItems: 'center', justifyContent: 'center' },
   starsCount: { fontFamily: 'Inter_800ExtraBold', fontSize: 18, color: ui.text },
   starsSub: { fontFamily: 'Inter_500Medium', fontSize: 12.5, color: ui.muted, marginTop: 2 },
+  noteStrip: {
+    borderRadius: 22, borderWidth: 1, borderColor: 'rgba(90,72,232,0.30)',
+    backgroundColor: ui.lavender, padding: 14, gap: 10, marginBottom: 20,
+  },
+  noteStripWho: { color: ui.lavenderText, fontFamily: 'Inter_800ExtraBold', fontSize: 13.5 },
+  noteStripText: { color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 15, lineHeight: 21 },
+  noteStripFoot: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  noteAckBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
+    height: 44, paddingHorizontal: 18, borderRadius: 9999, backgroundColor: ui.mintText,
+  },
+  noteAckText: { color: '#FFFFFF', fontFamily: 'Inter_700Bold', fontSize: 14.5 },
+  noteStripHint: { flex: 1, color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12, lineHeight: 16 },
   sectionHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
   sectionTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 18, letterSpacing: -0.2, color: ui.text },
   card: { backgroundColor: ui.card, borderRadius: 20, borderWidth: 1, borderColor: ui.line, paddingHorizontal: 16 },

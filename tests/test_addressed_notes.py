@@ -129,20 +129,19 @@ class AddressedNotes(unittest.TestCase):
         self.assertEqual(caught.exception.status_code, 400)
         self.assertIn("Ama", caught.exception.detail)
 
-    def test_a_teen_cannot_be_given_one_either(self):
-        # They have an account, and require_user refuses it by design — so the
-        # note would look deliverable and never be.
-        with self.assertRaises(HTTPException) as caught:
-            self.write(member_id="m_t")
-        self.assertEqual(caught.exception.status_code, 400)
-        self.assertIn("teen view", caught.exception.detail)
+    def test_a_teen_can_be_given_one(self):
+        # They were refused at first because require_user rejects a teen token
+        # — but that gate is about the parent app, not about them. They have
+        # their own screen, and now their own way to take a note on.
+        note = self.write(member_id="m_t")
+        self.assertEqual(note["member_name"], "Kojo")
+        self.assertEqual(note["for_user_id"], "u_t")
+        self.assertEqual([p["to"] for p in self.pushes], ["u_t"])
 
     def test_a_refused_note_is_not_written_at_all(self):
         # A half-created note nobody can act on is worse than an error.
-        for bad in ("m_c", "m_t"):
-            with self.subTest(member=bad):
-                with self.assertRaises(HTTPException):
-                    self.write(member_id=bad)
+        with self.assertRaises(HTTPException):
+            self.write(member_id="m_c")
         self.assertEqual(self.notes_for(ROLAND), [])
 
     def test_a_member_from_another_household_is_not_found(self):
@@ -238,3 +237,94 @@ class AddressedNotes(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
+class ATeenTakesOneOn(AddressedNotes):
+    """The same handover, through the other door.
+
+    A teen never touches /api/handoff-notes: require_user refuses their token
+    by design, and require_teen refuses everyone else's. So a note addressed to
+    a teen reaches them through their own screen and is taken on through their
+    own route — and the thing that must NOT differ is what any of it means.
+
+    Inherits the parent-side setUp: same household, same fakes, same teen.
+    """
+
+    def teen(self):
+        return {"user": dict(self.db_user("u_t")), "member": {}, "family_id": "fam1"}
+
+    def db_user(self, uid):
+        return asyncio.run(self.db["users"].find_one({"user_id": uid})) or {
+            "user_id": uid, "family_id": "fam1", "name": "Kojo", "is_teen": True}
+
+    def teen_home(self):
+        return asyncio.run(server.teen_home(teen=self.teen()))
+
+    def teen_ack(self, note_id):
+        return asyncio.run(server.teen_ack_handoff_note(note_id, teen=self.teen()))
+
+    def setUp(self):
+        super().setUp()
+        asyncio.run(self.db["users"].insert_one({
+            "user_id": "u_t", "family_id": "fam1", "name": "Kojo",
+            "email": "t@x.com", "language": "en", "is_teen": True}))
+
+    def test_it_reaches_their_own_screen(self):
+        note = self.write(member_id="m_t")
+        home = self.teen_home()
+        self.assertEqual([n["note_id"] for n in home["notes"]], [note["note_id"]])
+        self.assertTrue(home["notes"][0]["for_me"])
+
+    def test_they_are_not_shown_the_households_other_notes(self):
+        # The wall is the feature. A teen sees handovers with their name on
+        # them and nothing else — not the co-parents' notes to each other, not
+        # one addressed to the nanny.
+        self.write()                       # for everyone
+        self.write(member_id="m_e")        # for the nanny
+        mine = self.write(member_id="m_t")
+        self.assertEqual([n["note_id"] for n in self.teen_home()["notes"]],
+                         [mine["note_id"]])
+
+    def test_they_can_say_they_have_it(self):
+        note = self.write(member_id="m_t")
+        out = self.teen_ack(note["note_id"])
+        self.assertIsNotNone(out["acked_at"])
+        self.assertEqual(out["acked_by_name"], "Kojo")
+
+    def test_the_person_who_wrote_it_is_told(self):
+        note = self.write(member_id="m_t")
+        self.pushes.clear()
+        self.teen_ack(note["note_id"])
+        self.assertEqual([p["to"] for p in self.pushes], ["u_r"])
+        self.assertIn("Kojo noted your handover", self.pushes[0]["title"])
+
+    def test_a_parent_sees_it_was_taken_on(self):
+        note = self.write(member_id="m_t")
+        self.teen_ack(note["note_id"])
+        self.assertEqual(self.notes_for(ROLAND)[0]["acked_by_name"], "Kojo")
+
+    def test_a_teen_cannot_take_on_somebody_elses(self):
+        # Being thirteen does not make "I have this" mean something different,
+        # and it does not let them answer for the nanny.
+        note = self.write(member_id="m_e")
+        with self.assertRaises(HTTPException) as caught:
+            self.teen_ack(note["note_id"])
+        self.assertEqual(caught.exception.status_code, 403)
+
+    def test_saying_it_twice_does_not_tell_them_twice(self):
+        note = self.write(member_id="m_t")
+        first = self.teen_ack(note["note_id"])
+        self.pushes.clear()
+        again = self.teen_ack(note["note_id"])
+        self.assertEqual(self.pushes, [])
+        self.assertEqual(again["acked_at"], first["acked_at"])
+
+    def test_both_doors_are_the_same_rule(self):
+        # The parent route and the teen route run one implementation, so a
+        # difference here would mean the word had drifted between surfaces.
+        import inspect
+        parent = inspect.getsource(server.ack_handoff_note)
+        teen = inspect.getsource(server.teen_ack_handoff_note)
+        self.assertIn("_take_on_note", parent)
+        self.assertIn("_take_on_note", teen)
