@@ -1,5 +1,17 @@
-"""The new bar: four tabs + More, and More really reaches what it hides."""
-import asyncio, json, sys, urllib.request
+"""The bar: five places in one pill, and More beside them.
+
+Two jobs. The first is that every destination is reachable — for a parent and
+for a helper alike, whose bar is not the same bar.
+
+The second is measurement, IN EVERY LANGUAGE. Whether a fifth seat fits beside
+More was answered wrongly three times, twice with confident arithmetic resting
+on a label width nobody had measured: "German Kalender is 55pt" was carried for
+a whole session and is 47. English turns out to be our widest language, not
+German. So this harness renders the bar in all four languages at four phone
+widths and reads the boxes the browser actually drew — sixteen measurements
+that no amount of reasoning can substitute for.
+"""
+import asyncio, json, sys, time, urllib.request
 from playwright.async_api import async_playwright
 
 from e2e_browser import launch_chromium
@@ -7,10 +19,96 @@ from e2e_browser import launch_chromium
 WEB = f"http://127.0.0.1:{sys.argv[1]}/app"
 API = f"http://127.0.0.1:{sys.argv[2]}/api"
 
+SEATS = ["feed", "calendar", "kids", "kitchen", "vault"]
+LABELS = ["Feed", "Calendar", "Family", "Kitchen", "Vault"]
+
 def api(m, p, b=None, t=None):
     r = urllib.request.Request(f"{API}{p}", data=json.dumps(b).encode() if b is not None else None,
         headers={"Content-Type": "application/json", **({"Authorization": f"Bearer {t}"} if t else {})}, method=m)
     with urllib.request.urlopen(r, timeout=20) as res: return json.loads(res.read().decode() or "{}")
+
+
+# Does every seat's contents actually sit inside the seat?
+#
+# This took three tries, and the two wrong ones are worth writing down.
+#
+#   1. Checking the label for TRUNCATION (scrollWidth > clientWidth) catches
+#      nothing: nothing in the bar sets a width on the label, so it grows to
+#      fit its text and is never cut off.
+#   2. Checking the SEAT's box against the pill catches nothing either: the
+#      seat is flex:1, so it always measures exactly its share of the pill,
+#      whatever is inside it.
+#
+# What actually breaks is the box BETWEEN them — the tabItem, which carries
+# the focused seat's accent pill and the seat's padding. It sizes to its
+# contents and nothing clips it, so when a label or a padding grows too large
+# it silently spills over its neighbours: with the padding cranked to 22pt the
+# five accent pills overlapped by 12pt each and both checks above still
+# reported everything fine.
+#
+# So: measure the tabItem against its seat, and the labels too, which is the
+# same test written for a longer word rather than a fatter padding.
+MEASURE_JS = """
+(el) => {
+  const seat = el.getBoundingClientRect();
+  const boxes = [];
+  const inner = el.firstElementChild;
+  if (inner) boxes.push({ what: 'seat contents', node: inner });
+  for (const n of el.querySelectorAll('*')) {
+    if (n.children.length || !n.textContent.trim()) continue;
+    boxes.push({ what: n.textContent.trim(), node: n });
+  }
+  return boxes.map(({ what, node }) => {
+    const b = node.getBoundingClientRect();
+    return {
+      what,
+      cut: node.scrollWidth - node.clientWidth,
+      spill: Math.max(seat.left - b.left, b.right - seat.right),
+    };
+  });
+}
+"""
+
+async def measure_bar(p):
+    """Every seat's boxes, with how far each is cut off or spilling out."""
+    out = {}
+    for name in SEATS:
+        loc = p.locator(f'[data-testid="tab-{name}"]')
+        out[name] = await loc.evaluate(MEASURE_JS) if await loc.count() == 1 else None
+    return out
+
+
+# The widest label the browser actually drew, for the table in navGeometry.ts.
+WIDEST_LABEL_JS = """
+() => {
+  const seats=[...document.querySelectorAll('[data-testid^="tab-"]')]
+    .filter(s=>s.dataset.testid!=='tab-more');
+  let w=0;
+  for (const s of seats) {
+    for (const n of s.querySelectorAll('*')) {
+      if (n.children.length || !n.textContent.trim()) continue;
+      w = Math.max(w, n.getBoundingClientRect().width);
+    }
+  }
+  return Math.round(w);
+}
+"""
+
+
+def bad_boxes(measured):
+    """Whatever the browser could not fit inside its seat, either way."""
+    bad = []
+    for seat, nodes in measured.items():
+        if nodes is None:
+            bad.append(f"{seat}: no such seat")
+            continue
+        for n in nodes:
+            if n["cut"] > 1:
+                bad.append(f"{seat}: \"{n['what']}\" cut off by {n['cut']:.0f}pt")
+            elif n["spill"] > 1:
+                bad.append(f"{seat}: \"{n['what']}\" spills {n['spill']:.0f}pt out of its seat")
+    return bad
+
 
 async def main():
     import uuid
@@ -19,6 +117,24 @@ async def main():
                                        "password": "password123"})
     tok = u["session_token"]
     api("POST", "/auth/complete-onboarding", {}, tok)
+
+    # A carer in the same household, invited and accepted through the real
+    # endpoints rather than by writing is_helper into a document — the flag has
+    # to arrive the way a real grandparent's does.
+    #
+    # Helper accounts are a paid feature and this fixture runs with billing
+    # live, so the household is elevated the way the journey harness does it:
+    # a fixed admin identity joins. The elevation is cached for 60 seconds and
+    # the cache was already populated by the invite above, so the wait is
+    # unavoidable — but it is spent running the parent's checks rather than
+    # sleeping, and only the remainder is slept for below.
+    admin_inv = api("POST", "/family/invite",
+                    {"email": "e2e-admin@sim.test", "relationship": "Admin"}, tok)
+    api("POST", "/auth/register",
+        {"name": "Admin Sim", "email": "e2e-admin@sim.test", "password": "password123",
+         "invite_token": admin_inv["invite"]["token"]})
+    elevated_at = time.monotonic()
+
 
     async with async_playwright() as pw:
         b = await launch_chromium(pw)
@@ -40,43 +156,129 @@ async def main():
         await p.goto(f"{WEB}/feed", wait_until="domcontentloaded")
         await p.wait_for_timeout(3000)
         bar = await p.inner_text("body")
+
         # Every tab spells its name under the icon — a bar you have to tap to
-        # learn is doing half its job. The daily bar is Feed · Calendar ·
-        # Family · Kitchen in one pill, with More on its own button beside it.
-        # Messaging moved into the Family Hub (open a member to chat), so the
-        # Messages inbox is no longer a bar seat; Kitchen took it.
+        # learn is doing half its job. The five places are Feed · Calendar ·
+        # Family · Kitchen · Vault, in one pill. Messaging moved into the
+        # Family Hub (open a member to chat), so there is no Messages seat.
         r["active_tab_named"] = "Feed" in bar
-        r["all_tabs_named"] = all(w in bar for w in ("Feed", "Calendar", "Family", "Kitchen"))
-        # More is a button beside the pill, not a fifth seat inside it — and it
-        # is reachable from every tab, not just the Feed.
+        r["all_five_tabs_named"] = all(w in bar for w in LABELS)
+        seat_counts = {n: await p.locator(f'[data-testid="tab-{n}"]').count() for n in SEATS}
+        r["every_seat_present"] = all(c == 1 for c in seat_counts.values())
+        if not r["every_seat_present"]:
+            print(f"seat counts: {seat_counts}")
+        # More is gone entirely, not moved: the vault took a seat and the rest
+        # of the drawer moved onto the account screen.
+        # More is a button beside the pill, not a seat in it: it holds
+        # settings, your account and the hand-over, which are a tool, a record
+        # and an action rather than places you go.
         r["more_button_present"] = await p.locator('[data-testid="tab-more"]').count() == 1
         r["no_raised_plus_in_the_bar"] = await p.locator('[data-testid="tab-add"]').count() == 0
         await p.screenshot(path="nav_feed.png")
 
-        # The More button opens a sheet with the hidden destinations
+        # --- the measurement, in every language we ship --------------------
+        #
+        # Sixteen renders: four languages by four phone widths. This is the
+        # check that exists because a remembered label width was wrong by 8pt
+        # and two rounds of arithmetic were built on it.
+        spills = []
+        widest = {}
+        for lang in ("en", "de", "fr", "es"):
+            api("PATCH", "/auth/language", {"language": lang}, tok)
+            await p.goto(f"{WEB}/feed", wait_until="domcontentloaded")
+            await p.wait_for_timeout(2600)
+            for width in (430, 390, 360, 320):
+                await p.set_viewport_size({"width": width, "height": 800})
+                await p.wait_for_timeout(700)
+                bad = bad_boxes(await measure_bar(p))
+                if bad:
+                    spills.append(f"{lang}@{width}: {bad}")
+                if width == 390:
+                    widest[lang] = await p.evaluate(WIDEST_LABEL_JS)
+            await p.screenshot(path=f"nav_bar_{lang}.png")
+        r["every_label_fits_its_seat_in_every_language"] = not spills
+        if spills:
+            print(f"spills: {spills}")
+        # And the numbers navGeometry.ts is built from are the numbers the
+        # browser draws. A table of measurements that has drifted from the
+        # thing it measures is worse than no table.
+        print(f"widest label per language at 390: {widest}")
+        r["no_label_exceeds_the_recorded_maximum"] = all(
+            v <= 55 for v in widest.values())
+
+        await p.set_viewport_size({"width": 390, "height": 844})
+        api("PATCH", "/auth/language", {"language": "en"}, tok)
+        await p.goto(f"{WEB}/feed", wait_until="domcontentloaded")
+        await p.wait_for_timeout(2600)
+
+        # Option A in one number: the pill and More share the bar, and neither
+        # runs off the screen.
+        r["pill_and_more_share_the_bar"] = await p.evaluate("""
+          () => {
+            const seats = [...document.querySelectorAll('[data-testid^="tab-"]')]
+              .filter((s) => s.dataset.testid !== 'tab-more');
+            const more = document.querySelector('[data-testid="tab-more"]');
+            if (seats.length !== 5 || !more) return false;
+            const pill = seats[0].parentElement.getBoundingClientRect();
+            const m = more.getBoundingClientRect();
+            return pill.left >= 15 && m.right <= window.innerWidth - 15
+                && m.left >= pill.right && m.width >= 44;
+          }
+        """)
+
+        # --- the vault is a place now ---------------------------------------
+        await p.click('[data-testid="tab-vault"]')
+        await p.wait_for_timeout(3000)
+        r["seat_reaches_vault"] = "Vault" in await p.inner_text("body")
+        await p.screenshot(path="nav_vault.png")
+
+        # --- and everything More holds is reachable ---------------------
         await p.click('[data-testid="tab-more"]')
         await p.wait_for_timeout(1200)
         sheet = await p.inner_text("body")
-        r["sheet_lists_vault"] = "Vault" in sheet
         r["sheet_lists_settings"] = "Settings" in sheet
         r["sheet_lists_account"] = "Your account" in sheet
+        r["sheet_no_longer_lists_vault"] = await p.locator('[data-testid="more-vault"]').count() == 0
+
+        # A row's subtitle is the only thing that says what is behind it, and
+        # a subtitle ending in "…" says less than no subtitle at all. This has
+        # shipped twice — "app versi…" on the Settings hub, "plan and lang…"
+        # on a row — so it is measured on every row rather than eyeballed.
+        clipped_rows = await p.evaluate("""
+          () => {
+            const bad = [];
+            for (const row of document.querySelectorAll('[data-testid^="more-"]')) {
+              for (const n of row.querySelectorAll('*')) {
+                if (n.children.length || !n.textContent.trim()) continue;
+                if (n.scrollWidth - n.clientWidth > 1) bad.push(n.textContent.trim());
+              }
+            }
+            return bad;
+          }
+        """)
+        r["no_drawer_row_truncated"] = not clipped_rows
+        if clipped_rows:
+            print(f"truncated drawer rows: {clipped_rows}")
         await p.screenshot(path="nav_more.png")
 
-        # ...and actually navigates
-        await p.click('[data-testid="more-vault"]')
-        await p.wait_for_timeout(3000)
-        r["more_reaches_vault"] = "Vault" in await p.inner_text("body")
-        await p.screenshot(path="nav_vault.png")
-
-        # More rides the tab bar, so it is reachable from wherever we landed —
-        # no trip back to the Feed to find it.
-        await p.click('[data-testid="tab-more"]')
-        await p.wait_for_timeout(1000)
         await p.click('[data-testid="more-settings"]')
         await p.wait_for_timeout(3000)
-        # Settings is a hub of group rows now; "Household" is a group header,
-        # visible without opening anything. (Manage members lives inside it.)
+        # Settings is a hub of group rows; "Household" is a group header,
+        # visible without opening anything.
         r["more_reaches_settings"] = "Household" in await p.inner_text("body")
+
+        # Your portrait in the Feed header still opens your account directly.
+        await p.click('[data-testid="tab-feed"]')
+        await p.wait_for_timeout(2500)
+        await p.click('[data-testid="feed-portrait"]')
+        await p.wait_for_timeout(2500)
+        acct = await p.inner_text("body")
+        r["portrait_reaches_account"] = "Picture" in acct
+        # The badge under your name has to be true — see
+        # tests/test_who_am_i_badge.py and the helper's side further down.
+        r["founder_is_told_they_are_the_owner"] = "OWNER" in acct
+        r["nothing_claims_an_unverified_account_is_verified"] = "VERIFIED" not in acct
+        await p.screenshot(path="nav_account.png")
 
         # The daily tabs still load. Assert a page-UNIQUE element on each — not a
         # word that also lives in the always-visible bottom bar (a body-text
@@ -98,6 +300,69 @@ async def main():
             await p.locator('[data-testid="kitchen-tab-meal"]').count() >= 1,
             await p.locator('[data-testid="kitchen-tab-spend"]').count() >= 1,
         ])
+
+        # --- and the same bar, seen by a helper -------------------------------
+        # A grandparent or a nanny is a full member of the household in every
+        # way except the private papers: /api/vault is behind
+        # require_full_member, so a vault seat in their bar would be a door
+        # onto a screen of 403s. They get four seats, and an account screen
+        # that offers Settings but not the hand-over (leaving kid mode needs a
+        # parent PIN they do not hold). This is the half of the change that
+        # nothing else looks at — the app is fine for a parent and quietly
+        # broken for a carer, which is exactly the shape of bug that ships.
+        await asyncio.sleep(max(0, 62 - (time.monotonic() - elevated_at)))
+        helper_email = f"gran-{uuid.uuid4().hex[:6]}@sim.test"
+        inv = api("POST", "/family/invite", {"email": helper_email, "relationship": "Grandma",
+                                             "is_helper": True}, tok)
+        h = api("POST", "/auth/register",
+                {"name": "Gran", "email": helper_email, "password": "password123",
+                 "invite_token": inv["invite"]["token"]})
+        helper_tok = h["session_token"]
+        api("POST", "/auth/complete-onboarding", {}, helper_tok)
+        # The flag has to arrive the way a real grandparent's does. If it did
+        # not, every check below would pass for the wrong reason.
+        r["invited_carer_is_a_helper"] = bool(api("GET", "/auth/me", None, helper_tok).get("is_helper"))
+
+        hctx = await ctx.browser.new_context(viewport={"width": 390, "height": 844})
+        hp = await hctx.new_page()
+        herrs = []
+        hp.on("pageerror", lambda e: herrs.append(str(e)))
+
+        async def hroute(ro):
+            path = ro.request.url.split("/api/", 1)[1]
+            resp = await hctx.request.fetch(f"{API}/{path}", method=ro.request.method,
+                headers={k: v for k, v in ro.request.headers.items()
+                         if k.lower() not in ("host", "content-length", "origin", "referer")},
+                data=ro.request.post_data)
+            await ro.fulfill(status=resp.status, content_type="application/json", body=await resp.body())
+        await hp.route("**/api/**", hroute)
+        await hp.add_init_script(f"localStorage.setItem('coo_session_token','{helper_tok}');")
+
+        await hp.goto(f"{WEB}/feed", wait_until="domcontentloaded")
+        await hp.wait_for_timeout(3500)
+        r["helper_has_no_vault_seat"] = await hp.locator('[data-testid="tab-vault"]').count() == 0
+        r["helper_keeps_the_other_four"] = all(
+            [await hp.locator(f'[data-testid="tab-{n}"]').count() == 1
+             for n in SEATS if n != "vault"])
+        bad_helper = bad_boxes({n: await hp.locator(f'[data-testid="tab-{n}"]').evaluate(MEASURE_JS)
+                                for n in SEATS if n != "vault"})
+        r["helper_labels_fit_too"] = not bad_helper
+        if bad_helper:
+            print(f"helper bar: {bad_helper}")
+
+        await hp.click('[data-testid="tab-more"]')
+        await hp.wait_for_timeout(1200)
+        r["helper_reaches_settings"] = await hp.locator('[data-testid="more-settings"]').count() == 1
+        r["helper_is_not_offered_hand_over"] = await hp.locator('[data-testid="more-kid"]').count() == 0
+        await hp.click('[data-testid="more-account"]')
+        await hp.wait_for_timeout(2500)
+        # The whole point of the badge fix, seen by the person it was wrong for.
+        hacct = await hp.inner_text("body")
+        r["helper_is_not_told_they_own_the_household"] = "OWNER" not in hacct
+        r["helper_is_told_they_are_a_carer"] = "CARER" in hacct
+        await hp.screenshot(path="nav_helper.png")
+        r["no_js_errors_for_the_helper"] = not herrs
+        await hctx.close()
 
         r["no_js_errors"] = not errs
         await b.close()

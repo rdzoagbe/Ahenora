@@ -919,6 +919,13 @@ export interface FamilyMember {
    *  whether they are the household founder (the only parent nobody can remove). */
   is_me?: boolean;
   is_founder?: boolean;
+  /** What this member IS to the household, in one word, decided server-side:
+   *  'owner' | 'parent' | 'helper' | 'teen' | 'child' | 'member'. The rule that
+   *  separates a parent from a grandmother lives in the backend beside the
+   *  permission checks that depend on it; a copy here would be a copy to get
+   *  out of step. 'member' means an adult invited by relationship — show their
+   *  `role` ("Grandma"), which is the family's own word for them. */
+  standing?: string;
   /** A teen's own user_id — the key of their private chat thread. Null for a
    *  managed child (no account). Lets the app open the right thread by id. */
   user_id?: string | null;
@@ -1163,6 +1170,20 @@ export interface BillingEvent {
   plan: string | null;
   detail: string | null;
   received_at: string | null;
+  /** What the twice-daily replay found last time it tried an unmatched row.
+   *  Null until it has run once — which itself tells you something.
+   *  'no_account' is the one that means real money is waiting for a person to
+   *  match a store receipt to a buyer; 'not_entitled' means the subscription
+   *  has since lapsed and there is nothing left to recover. Decided
+   *  server-side (REPLAY_STATES) so the words below stay the only copy. */
+  replay_state: string | null;
+  replay_attempts: number;
+  last_replay_at: string | null;
+  /** A store's "is this endpoint alive?" ping — RevenueCat's dashboard test
+   *  button. It matches no household, truthfully, and is not a lost payment.
+   *  Decided server-side (is_test_billing_event) and computed on read, so the
+   *  row already in production reclassifies itself. */
+  is_test: boolean;
 }
 
 export interface BillingEventLog {
@@ -1172,7 +1193,12 @@ export interface BillingEventLog {
   /** False means nothing has EVER arrived — the webhook is not pointed at us. */
   ever_received: boolean;
   last_event_at: string | null;
+  /** When the store last reached us on purpose. "Nothing has ever arrived"
+   *  and "the only thing that arrived was a test" are different situations:
+   *  the second means the endpoint is wired and has simply sold nothing yet. */
+  last_test_at: string | null;
   total: number;
+  /** Purchases that reached no household. Excludes test pings — see is_test. */
   unmatched: number;
   by_source: Record<string, number>;
   events: BillingEvent[];

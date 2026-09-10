@@ -41,12 +41,12 @@ interface StoreState {
   logout: () => Promise<void>;
   deleteAccount: (data: { password?: string; confirm?: boolean }) => Promise<void>;
   setUserFromAuth: (user: User, token: string, method?: 'google' | 'email' | 'apple') => Promise<void>;
-  upgradePrompt: { feature: string; message: string } | null;
-  showUpgradePrompt: (feature: string, message: string) => void;
-  dismissUpgradePrompt: () => void;
   householdMenuOpen: boolean;
   openHouseholdMenu: () => void;
   closeHouseholdMenu: () => void;
+  upgradePrompt: { feature: string; message: string } | null;
+  showUpgradePrompt: (feature: string, message: string) => void;
+  dismissUpgradePrompt: () => void;
   quickAddOpen: boolean;
   openQuickAdd: () => void;
   closeQuickAdd: () => void;
@@ -136,14 +136,16 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     feature: string;
     message: string;
   } | null>(null);
-  // The household menu (Settings, Vault, Account, Hand-off) is opened from every
-  // screen's header, so its open state lives here rather than on the Feed alone.
+  // The More drawer holds what is not a place — settings, your account, the
+  // hand-over. It is opened from the bar on a phone and from the sidebar on a
+  // wide screen, so its open state lives here rather than in either of them.
   const [householdMenuOpen, setHouseholdMenuOpen] = useState(false);
   const openHouseholdMenu = useCallback(() => setHouseholdMenuOpen(true), []);
   const closeHouseholdMenu = useCallback(() => setHouseholdMenuOpen(false), []);
   // The quick-add picker used to hang off a raised ＋ in the tab bar. The bar
-  // now holds four destinations and More, so the ＋ moved into each screen's
-  // own header — but it is still one sheet, mounted once, opened from here.
+  // holds the five destinations and nothing else, so the ＋ moved into each
+  // screen's own header — but it is still one sheet, mounted once, opened
+  // from here.
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const openQuickAdd = useCallback(() => setQuickAddOpen(true), []);
   const closeQuickAdd = useCallback(() => setQuickAddOpen(false), []);
@@ -424,12 +426,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         logout,
         deleteAccount,
         setUserFromAuth,
-        upgradePrompt,
-        showUpgradePrompt,
-        dismissUpgradePrompt,
         householdMenuOpen,
         openHouseholdMenu,
         closeHouseholdMenu,
+        upgradePrompt,
+        showUpgradePrompt,
+        dismissUpgradePrompt,
         quickAddOpen,
         openQuickAdd,
         closeQuickAdd,

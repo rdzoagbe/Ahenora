@@ -2012,6 +2012,33 @@ def _is_parent_role(role: Optional[str]) -> bool:
     return str(role or "").strip().lower() in ("parent", "co-parent")
 
 
+# The standings a household row can hold, and the ONE place that decides which.
+#
+# It is sent to the client rather than derived there because the client got it
+# wrong: the account screen showed a hard-coded "OWNER" to every signed-in
+# person, so a grandmother invited as a carer opened her own profile and was
+# told she owned the household. The rule that separates a parent from a
+# grandmother is `_is_parent_role` above, and it lives here — a second copy in
+# TypeScript would be a second copy to get out of step.
+MEMBER_STANDINGS = ("owner", "parent", "helper", "teen", "child", "member")
+
+
+def member_standing(member: dict, is_founder: bool) -> str:
+    """What this member IS to the household, in one word."""
+    role = str(member.get("role") or "").strip().lower()
+    if is_founder:
+        return "owner"
+    if _is_parent_role(role):
+        return "parent"
+    if role in ("helper", "teen", "child"):
+        return role
+    # An adult invited with a relationship — "Grandma", "Uncle", "Nanny". A
+    # full member of the household without being one of its parents. We have no
+    # better word for them than the one the family used, so the client shows
+    # their role rather than a label we invented.
+    return "member"
+
+
 async def _member_for_user(database: Any, family_id: str, user: dict) -> dict:
     """The signed-in user's own member row, resolved resiliently.
 
@@ -5709,6 +5736,7 @@ async def family_members(user=Depends(require_user)):
             or (bool(my_email) and str(item.get("email") or "").strip().lower() == my_email)
         )
         row["is_founder"] = item.get("member_id") == founder_id
+        row["standing"] = member_standing(item, row["is_founder"])
         rows.append(row)
     return rows
 
@@ -11732,6 +11760,65 @@ async def sweep_billing_once(database: Any, budget: int = 0, secret: str = "") -
     return {"checked": checked, "corrected": corrected, "candidates": len(candidates)}
 
 
+# Why a purchase that reached nobody is STILL reaching nobody.
+#
+# The replay below runs twice a day and gives up down five different paths,
+# every one of them silently. So the admin screen showed the same row, with the
+# same first-day wording, whether we had never tried it or tried it forty times
+# — and the one question a person needs answered before they can act ("is this
+# recoverable at all?") had no answer anywhere in the app.
+#
+# The distinction that matters: NO_ACCOUNT is real money waiting for a human to
+# match a store receipt to a person. NOT_ENTITLED is a subscription that has
+# since lapsed or been refunded, where there is nothing left to recover and the
+# row can be let go. NO_KEY is our own configuration, and nobody's purchase.
+# Reading them the same way is how a recoverable payment sits next to five
+# unrecoverable ones and gets treated like them.
+REPLAY_STATES = ("no_id", "no_account", "no_key", "no_answer", "not_entitled")
+
+
+async def _note_replay_attempt(database: Any, ev: dict, state: str) -> None:
+    """Record that we tried, and what stopped us. Bookkeeping only.
+
+    Deliberately writes nothing a plan is ever decided from: the replay's
+    promise is that it never downgrades and never guesses, and a counter that
+    could change who is entitled would be a way to break that quietly.
+    """
+    event_id = ev.get("event_id")
+    if not event_id:
+        return
+    await database["billing_events"].update_one(
+        {"event_id": event_id},
+        {"$set": {"replay_state": state, "last_replay_at": utcnow()},
+         "$inc": {"replay_attempts": 1}})
+
+
+# RevenueCat's dashboard has a "Send test event" button. It posts a real
+# webhook carrying event_type TEST, product "test_product" and a synthetic
+# app_user_id that belongs to nobody — which is the whole point of it.
+#
+# We filed it as a purchase that reached no household. So the admin screen's
+# loudest alarm — a red banner reading "That is real money landing nowhere,
+# the store got a 200 back and will not send it again" — has been on since
+# 31 August because somebody pressed a button to check the endpoint was
+# wired up. It could never clear: the id is not a person, so the twice-daily
+# replay will never resolve it, and it was burning a RevenueCat lookup a
+# pass forever trying.
+#
+# Worse than the noise is what the noise hides. A real unmatched purchase
+# would raise exactly the same banner and read exactly the same, next to
+# this one, and be indistinguishable from the false alarm that had been
+# standing for weeks.
+#
+# Classified on READ rather than stored, so the row already sitting in
+# production is reclassified the moment this ships, with no migration.
+def is_test_billing_event(row: Optional[dict]) -> bool:
+    """A store's "is this endpoint alive?" ping. Never money."""
+    r = row or {}
+    return (str(r.get("source") or "").strip().lower() == "revenuecat"
+            and str(r.get("event_type") or "").strip().upper() == "TEST")
+
+
 async def replay_unmatched_billing(database: Any, secret: str = "") -> dict:
     """Retry the purchases that arrived for an account we did not know.
 
@@ -11757,27 +11844,39 @@ async def replay_unmatched_billing(database: Any, secret: str = "") -> dict:
             {"matched": False}, {"_id": 0}):
         if ev.get("resolved_at"):
             continue
+        if is_test_billing_event(ev):
+            # Nothing to recover and nobody to find. Skipped rather than
+            # noted: a retry count on a test ping is a number that invites
+            # somebody to investigate it.
+            continue
         uid = ev.get("app_user_id")
         if not uid:
+            # Nothing to look up, ever. Recorded so the screen can say so
+            # rather than showing a row that looks pending forever.
+            await _note_replay_attempt(database, ev, "no_id")
             continue
         attempted += 1
         user = await database["users"].find_one({"user_id": uid}, {"_id": 0})
         if not user or not user.get("family_id"):
+            await _note_replay_attempt(database, ev, "no_account")
             continue
         # The account exists now. Confirm with RevenueCat rather than trusting a
         # webhook we have already stored — the subscription may have lapsed in
         # the meantime, and granting a plan off a stale event would be worse
         # than the miss it is repairing.
         if not secret:
+            await _note_replay_attempt(database, ev, "no_key")
             continue
         try:
             data = await _fetch_rc_subscriber(uid, secret)
         except HTTPException as e:
             log.info("billing replay: no answer for one id (status %s)", e.status_code)
+            await _note_replay_attempt(database, ev, "no_answer")
             continue
         subscriber = (data or {}).get("subscriber") or {}
         active, product = rc_entitlement_state(subscriber, now)
         if not active:
+            await _note_replay_attempt(database, ev, "not_entitled")
             continue
         plan, cycle = rc_plan_from_product(
             product, rc_term_days_for_product(subscriber, product))
@@ -11888,7 +11987,12 @@ async def admin_billing_events(user=Depends(require_user), limit: int = Query(de
     rows = [r async for r in database["billing_events"].find({}, {"_id": 0})]
     rows.sort(key=lambda r: _coerce_dt(r.get("received_at")) or utcnow(), reverse=True)
 
-    unmatched = [r for r in rows if not r.get("matched")]
+    # A test ping matched no household, truthfully — and is not a lost
+    # payment, so it does not belong in the number that means "someone paid
+    # and got nothing". It stays in the list, where it is useful: it is
+    # positive evidence this endpoint is reachable from the store.
+    unmatched = [r for r in rows if not r.get("matched") and not is_test_billing_event(r)]
+    test_pings = [r for r in rows if is_test_billing_event(r)]
     by_source: dict = {}
     for r in rows:
         by_source[r.get("source") or "?"] = by_source.get(r.get("source") or "?", 0) + 1
@@ -11904,6 +12008,12 @@ async def admin_billing_events(user=Depends(require_user), limit: int = Query(de
             "plan": r.get("plan"),
             "detail": r.get("detail"),
             "received_at": iso(_coerce_dt(r.get("received_at"))),
+            # What the twice-daily replay found last time it tried this row.
+            # Absent until it has run once — which itself tells you something.
+            "replay_state": r.get("replay_state"),
+            "replay_attempts": int(r.get("replay_attempts") or 0),
+            "last_replay_at": iso(_coerce_dt(r.get("last_replay_at"))),
+            "is_test": is_test_billing_event(r),
         }
 
     # Unmatched first, then everything else newest-first.
@@ -11917,7 +12027,7 @@ async def admin_billing_events(user=Depends(require_user), limit: int = Query(de
     #
     # The count was honest and useless. Now the row you have to act on is the
     # row at the top.
-    shown = unmatched + [r for r in rows if r.get("matched")]
+    shown = unmatched + [r for r in rows if r.get("matched") or is_test_billing_event(r)]
 
     newest = rows[0] if rows else None
     return {
@@ -11933,6 +12043,11 @@ async def admin_billing_events(user=Depends(require_user), limit: int = Query(de
         "last_event_at": iso(_coerce_dt(newest.get("received_at"))) if newest else None,
         "total": len(rows),
         "unmatched": len(unmatched),
+        # The store reaching us on purpose. Worth its own line: "no event has
+        # ever arrived" and "the only event that ever arrived was a test" are
+        # different situations, and the second one means the endpoint is
+        # correctly wired and simply has not sold anything yet.
+        "last_test_at": iso(_coerce_dt(test_pings[0].get("received_at"))) if test_pings else None,
         "by_source": by_source,
         "events": [_row(r) for r in shown[:limit]],
     }
@@ -16123,9 +16238,24 @@ class SupportContactIn(BaseModel):
 ALLOWED_EVENTS = {
     "feed_open", "scan_used", "card_created", "vault_added", "vault_shared",
     "kids_open", "calendar_open", "onboarding_done", "onboarding_skipped",
+    # Visits to the vault, as opposed to saves into it. Every other tab counted
+    # its opens and this one did not, so the only question anybody actually
+    # asked about the vault — does anyone find it? — had no answer, and got
+    # argued from instead. An unlisted name here is answered 200 and dropped,
+    # so a client that logs an event this set has not heard of is silent
+    # rather than broken; tests/test_metrics_events.py holds the two ends
+    # together.
     # How many households say they share custody at setup. The wedge the app is
     # positioned on, and until now nothing counted whether anyone answered yes.
     "onboarding_custody_set",
+    # Visits to the vault, as opposed to saves into it. Every other tab counted
+    # its opens and this one did not, so the only question anybody actually
+    # asked about the vault — does anyone find it? — had no answer, and got
+    # argued from instead. An unlisted name here is answered 200 and dropped,
+    # so a client logging an event this set has not heard of is silent rather
+    # than broken; frontend/src/__tests__/metricsEvents.test.ts holds the two
+    # ends together.
+    "vault_open",
     "calendar_import_cancelled",
     # AI reliability: bumped server-side from the central Gemini path so the
     # Metrics screen can show a real success rate, not just a live probe.

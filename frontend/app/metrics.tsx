@@ -11,6 +11,7 @@ import { useStore } from '../src/store';
 import { api, MetricRow, VersionAdoption, PlanAdoption, FunnelSummary, PushHealth,
   RetentionSummary, InviteBreakdown, AiHealth, SubscriberList, SupportInbox,
   TimingsReport,
+  BillingEvent,
   BillingEventLog } from '../src/api';
 import { logger } from '../src/logger';
 
@@ -21,6 +22,7 @@ const EVENT_LABELS: Record<string, string> = {
   calendar_open: 'Calendar opens',
   scan_used: 'Document scans',
   card_created: 'Tasks created',
+  vault_open: 'Vault opens',
   vault_added: 'Documents saved',
   vault_shared: 'Documents shared',
   onboarding_done: 'Onboardings finished',
@@ -56,6 +58,42 @@ function lastSeenLabel(iso: string | null): string {
   if (days < 14) return 'Last week';
   if (days < 60) return `${Math.floor(days / 7)} weeks ago`;
   return `${Math.floor(days / 30)} months ago`;
+}
+
+/**
+ * What to DO about a purchase that reached nobody.
+ *
+ * The states come from the server (REPLAY_STATES in backend/server.py), beside
+ * the replay that decides them; these are only the words for them. The
+ * distinction that earns its place on the screen is the first two: a missing
+ * account is real money waiting for someone to match a store receipt to a
+ * buyer, while a lapsed subscription is a row that can simply be let go.
+ * Reading them the same way is how a recoverable payment sits in a list of
+ * unrecoverable ones and gets treated like them.
+ */
+function replayVerdict(e: BillingEvent): string {
+  // A store checking we are reachable, not a purchase. It has no buyer to
+  // find and never will, so none of the wording below applies to it.
+  if (e.is_test) {
+    return 'A test event from the RevenueCat dashboard — proof this endpoint is reachable. Not a purchase, nothing owed.';
+  }
+  const tried = e.replay_attempts
+    ? `Retried ${e.replay_attempts}×${e.last_replay_at ? `, last ${e.last_replay_at.slice(5, 16).replace('T', ' ')}` : ''}. `
+    : '';
+  switch (e.replay_state) {
+    case 'no_account':
+      return `${tried}No account carries this id — look it up in RevenueCat, find the buyer, match them by hand.`;
+    case 'not_entitled':
+      return `${tried}The store says this subscriber is no longer entitled — lapsed or refunded. Nothing to recover.`;
+    case 'no_key':
+      return `${tried}We could not ask the store: REVENUECAT_SECRET_KEY is unset here. Ours to fix, not the buyer's.`;
+    case 'no_answer':
+      return `${tried}RevenueCat did not answer. It will be tried again on the next pass.`;
+    case 'no_id':
+      return `${tried}This event names no account at all, so there is nothing to look up.`;
+    default:
+      return 'Not retried yet — the replay runs twice a day.';
+  }
 }
 
 export default function MetricsScreen() {
@@ -882,6 +920,11 @@ export default function MetricsScreen() {
           <Text style={styles.sectionTitle}>Billing events</Text>
           {billing ? (
             <>
+              {/* Three states, not two. "Nothing has ever arrived" is an
+                  outage; "money reached nobody" is a person to find; and "the
+                  only thing that ever arrived was a test" is neither — it is
+                  the endpoint working with nothing sold yet, which used to
+                  raise the money alarm and could never clear. */}
               {!billing.ever_received ? (
                 <View style={[styles.card, styles.warnCard]}>
                   <Text style={styles.warnText}>
@@ -896,6 +939,14 @@ export default function MetricsScreen() {
                     {billing.unmatched} event{billing.unmatched === 1 ? '' : 's'} arrived that we
                     could not match to a household. That is real money landing nowhere — the store
                     got a 200 back and will not send it again.
+                  </Text>
+                </View>
+              ) : billing.last_test_at ? (
+                <View style={styles.card}>
+                  <Text style={styles.hint}>
+                    No purchase has gone missing. The store last reached this endpoint with a
+                    test event on {billing.last_test_at.slice(0, 10)} — the webhook is wired up
+                    and nothing has been lost.
                   </Text>
                 </View>
               ) : null}
@@ -933,11 +984,27 @@ export default function MetricsScreen() {
                             ? (e.detail || e.product_id || e.app_user_id || '—')
                             : [e.product_id, e.app_user_id].filter(Boolean).join(' · ') || e.detail || '—'}
                         </Text>
+                        {/* And whether anything can still be done about it.
+                            The replay runs twice a day and gives up down five
+                            paths; without this the row looks the same on day
+                            one and on day forty, and the only question worth
+                            asking — is this recoverable? — has no answer. */}
+                        {!e.matched ? (
+                          <Text style={styles.subEmail} numberOfLines={2}>
+                            {replayVerdict(e)}
+                          </Text>
+                        ) : null}
                       </View>
                       <View style={styles.subRight}>
+                        {/* "reached nobody" is true of a test ping and
+                            misleading about it: the tag is what gets read at a
+                            glance, and in red beside real purchases it says
+                            somebody lost money. */}
                         <View style={[styles.subTag, e.matched ? styles.subTagPaid : styles.subTagFree]}>
-                          <Text style={[styles.subTagText, { color: e.matched ? ui.orangeText : ui.danger }]}>
-                            {e.matched ? (e.plan || 'applied') : 'reached nobody'}
+                          <Text style={[styles.subTagText, {
+                            color: e.matched ? ui.orangeText : e.is_test ? ui.muted : ui.danger,
+                          }]}>
+                            {e.matched ? (e.plan || 'applied') : e.is_test ? 'store test' : 'reached nobody'}
                           </Text>
                         </View>
                         <Text style={styles.subMeta} numberOfLines={1}>

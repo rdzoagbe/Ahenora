@@ -41,6 +41,14 @@ describe('Secret Santa visibility', () => {
     expect(MORE_SHEET).toMatch(/\.\.\.\(SECRET_SANTA_ENABLED \?/);
   });
 
+  it('has no second entry point on the account screen', () => {
+    // It briefly had one, when the drawer was deleted and its rows moved
+    // there. The drawer is back, and a stale copy would be a row the flag
+    // above does not govern.
+    const account = readFileSync(join(SRC, '..', 'app', '(tabs)', 'account.tsx'), 'utf8');
+    expect(account).not.toContain('ss_more_title');
+  });
+
   it('gates the Feed gifting card', () => {
     expect(GIFTING).toContain('SECRET_SANTA_ENABLED');
   });

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { ChevronRight, Gift, Lock, Settings as SettingsIcon, Smile, User, X } from 'lucide-react-native';
+import { ChevronRight, Gift, Settings as SettingsIcon, Smile, User, X } from 'lucide-react-native';
 
 import { SECRET_SANTA_ENABLED } from '../features';
 import { PressScale } from './PressScale';
@@ -11,10 +11,15 @@ import { useStore } from '../store';
 import { HandOverSheet } from './HandOverSheet';
 
 /**
- * What the four-seat phone bar can't hold. A household opens the vault
- * occasionally and settings rarely; putting them here buys back the width the
- * four daily tabs were starving for — and gives everything we add next
- * (carpool, roles) somewhere to land that isn't another 10px label.
+ * What the phone bar can't hold. A household opens settings rarely, and the
+ * hand-over is a thing you do, not a place you go — putting them here buys
+ * back the width the daily tabs were starving for, and gives everything we
+ * add next (carpool, roles) somewhere to land that isn't another 10px label.
+ *
+ * The vault used to be here and is now a seat in the bar. It was the one item
+ * in this list that was a PLACE — somewhere a parent goes when a passport is
+ * expiring — and a place filed behind a button labelled More is a place with
+ * no sign on it. Everything left is a tool or an account.
  *
  * The bar calls this button More, so the sheet is headed More. It used to say
  * Household, which meant the one thing a parent had to read to know they had
@@ -48,17 +53,14 @@ export function MoreSheet({ visible, onClose }: { visible: boolean; onClose: () 
     ...(SECRET_SANTA_ENABLED ? [{ key: 'santa', icon: Gift, tone: ui.orangeText,
       soft: ui.orangeSoft, title: t('ss_more_title'), sub: t('ss_more_sub'),
       path: '/santa' }] : []),
-    { key: 'vault', icon: Lock, tone: ui.lavenderText, soft: ui.lavender,
-      title: t('vault'), sub: t('nav_more_vault_sub'), path: '/(tabs)/vault' },
     { key: 'settings', icon: SettingsIcon, tone: ui.orange, soft: ui.orangeSoft,
       title: t('settings'), sub: t('nav_more_settings_sub'), path: '/(tabs)/settings' },
     { key: 'account', icon: User, tone: ui.blueText, soft: ui.blue,
       title: t('nav_more_account'), sub: t('nav_more_account_sub'), path: '/(tabs)/account' },
-  ].filter((it) => !(user?.is_helper && (it.key === 'vault' || it.key === 'kid')));
-  // A helper never sees the private document vault, and can't hand the device
-  // to a child (exiting kid mode needs a parent's PIN they don't hold). The
-  // deeper surfaces (billing, member management, expenses) are refused
-  // server-side by require_full_member.
+  ].filter((it) => !(user?.is_helper && it.key === 'kid'));
+  // A helper can't hand the device to a child — exiting kid mode needs a
+  // parent's PIN they don't hold. The deeper surfaces (billing, member
+  // management, expenses) are refused server-side by require_full_member.
 
   return (
     <>
