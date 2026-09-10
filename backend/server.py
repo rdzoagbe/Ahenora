@@ -1739,7 +1739,15 @@ def public_calendar_contact(contact: dict) -> dict:
     }
 
 
-def public_handoff_note(note: dict) -> dict:
+def public_handoff_note(note: dict, viewer_id: Optional[str] = None) -> dict:
+    """One note, as the person reading it should see it.
+
+    `for_me` is computed here rather than left to the client because it decides
+    who gets the strip at the top of their Feed and who gets the acknowledge
+    button — and a client that works that out from a name would put the button
+    in front of the wrong person the moment two people in a household share one.
+    """
+    for_user_id = note.get("for_user_id")
     return {
         "note_id": note["note_id"],
         "family_id": note["family_id"],
@@ -1747,7 +1755,15 @@ def public_handoff_note(note: dict) -> dict:
         "member_name": note.get("member_name"),
         "text": note["text"],
         "author_name": note.get("author_name", ""),
+        "author_user_id": note.get("author_user_id"),
         "created_at": iso(note["created_at"]),
+        # Addressed to one person, or left for the household.
+        "for_user_id": for_user_id,
+        "for_me": bool(viewer_id and for_user_id and viewer_id == for_user_id),
+        "i_wrote_it": bool(viewer_id and note.get("author_user_id") == viewer_id),
+        # Taken on. Not the same as read: see ack_handoff_note.
+        "acked_at": iso(note["acked_at"]) if note.get("acked_at") else None,
+        "acked_by_name": note.get("acked_by_name"),
     }
 
 
@@ -12780,41 +12796,132 @@ async def list_handoff_notes(user=Depends(require_user)):
         {"family_id": user["family_id"]},
         {"_id": 0},
     ).sort("created_at", -1).limit(50):
-        rows.append(public_handoff_note(note))
+        rows.append(public_handoff_note(note, user["user_id"]))
     return rows
+
+
+async def _note_recipient(database: Any, family_id: str, member_id: str) -> tuple:
+    """Who a note addressed to `member_id` actually reaches, or a 400 saying why.
+
+    Refusing is the point. A note whose recipient can never open it looks
+    identical to one waiting to be picked up: the sender is told it is "not
+    yet" taken on, forever, and no amount of waiting changes that. Two people
+    in a household are in exactly that position —
+
+      * a young child, who has no account at all (their profile is a row a
+        parent manages), so a note can only ever be ABOUT them; and
+      * a teen, who is deliberately walled off behind their own screen —
+        require_user refuses a teen's token, so they could not acknowledge one
+        if they wanted to.
+
+    Both are people a parent would reasonably pick from a list, which is why
+    this says no here rather than trusting the picker to have left them out.
+    """
+    member = await database["family_members"].find_one(
+        {"family_id": family_id, "member_id": member_id},
+        {"_id": 0, "name": 1, "role": 1, "user_id": 1},
+    )
+    if not member:
+        raise HTTPException(status_code=404, detail="No such family member")
+    role = str(member.get("role") or "").strip().lower()
+    if role == "teen":
+        raise HTTPException(
+            status_code=400,
+            detail=f"{member['name']} uses the teen view and cannot pick up a note yet.")
+    if not member.get("user_id"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"{member['name']} has no account, so nobody could pick this up.")
+    return member["name"], member["user_id"]
 
 
 @app.post("/api/handoff-notes")
 async def create_handoff_note(payload: HandoffNoteIn, user=Depends(require_user)):
     database = get_db()
     member_name = None
+    for_user_id = None
     if payload.member_id:
-        member = await database["family_members"].find_one(
-            {"family_id": user["family_id"], "member_id": payload.member_id},
-            {"_id": 0, "name": 1},
-        )
-        if member:
-            member_name = member["name"]
+        member_name, for_user_id = await _note_recipient(
+            database, user["family_id"], payload.member_id)
     doc = {
         "note_id": new_id("note"),
         "family_id": user["family_id"],
         "member_id": payload.member_id,
         "member_name": member_name,
+        "for_user_id": for_user_id,
         "text": payload.text.strip(),
         "author_name": user.get("name", ""),
         "author_user_id": user["user_id"],
         "created_at": utcnow(),
+        "acked_at": None,
+        "acked_by_user_id": None,
+        "acked_by_name": None,
     }
     await database["handoff_notes"].insert_one(doc)
+    who = user.get("name") or "A co-parent"
     try:
-        who = user.get("name") or "A co-parent"
-        await send_coparent_alert(
-            user["family_id"], f"{who} left a note", doc["text"], "handoff_note",
-            created_by_user_id=user["user_id"],
-        )
+        if for_user_id and for_user_id != user["user_id"]:
+            # One note, one owner. The household-wide shout is what made a note
+            # everybody's and therefore nobody's; an addressed note goes to the
+            # person who has to act on it and to nobody else.
+            await send_push_to_user(
+                database, for_user_id,
+                f"{who} left you a note", doc["text"],
+                {"type": "handoff_note", "note_id": doc["note_id"]},
+            )
+        elif not for_user_id:
+            await send_coparent_alert(
+                user["family_id"], f"{who} left a note", doc["text"], "handoff_note",
+                created_by_user_id=user["user_id"],
+            )
     except Exception as e:
         log.warning("handoff note alert failed: %s", e)
-    return public_handoff_note(doc)
+    return public_handoff_note(doc, user["user_id"])
+
+
+@app.post("/api/handoff-notes/{note_id}/ack")
+async def ack_handoff_note(note_id: str, user=Depends(require_user)):
+    """"I have this." Not the same as having read it.
+
+    Chat already says Seen, and Seen is a fact about someone's eyes. This is a
+    fact about their intentions, which is the thing a household actually wants
+    to know and the only thing that lets the note leave the top of the screen.
+
+    Only the person it names can do it — otherwise the sender is told their
+    handover was taken on by someone who is not doing it. Acknowledging twice
+    is silent: a second tap, a retried request or a stale screen must not push
+    the author again.
+    """
+    database = get_db()
+    note = await database["handoff_notes"].find_one(
+        {"note_id": note_id, "family_id": user["family_id"]}, {"_id": 0})
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+    if note.get("for_user_id") != user["user_id"]:
+        raise HTTPException(status_code=403, detail="This note is not addressed to you")
+    if note.get("acked_at"):
+        return public_handoff_note(note, user["user_id"])
+
+    now = utcnow()
+    who = user.get("name") or "They"
+    await database["handoff_notes"].update_one(
+        {"note_id": note_id, "family_id": user["family_id"]},
+        {"$set": {"acked_at": now, "acked_by_user_id": user["user_id"],
+                  "acked_by_name": who}})
+    note.update({"acked_at": now, "acked_by_user_id": user["user_id"],
+                 "acked_by_name": who})
+
+    author_id = note.get("author_user_id")
+    if author_id and author_id != user["user_id"]:
+        try:
+            await send_push_to_user(
+                database, author_id,
+                f"{who} noted your handover", note.get("text") or "",
+                {"type": "handoff_note", "note_id": note_id},
+            )
+        except Exception as e:
+            log.warning("handoff note ack alert failed: %s", e)
+    return public_handoff_note(note, user["user_id"])
 
 
 @app.delete("/api/handoff-notes/{note_id}")

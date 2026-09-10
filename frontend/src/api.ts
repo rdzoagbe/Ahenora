@@ -549,7 +549,19 @@ export interface HandoffNote {
   member_name?: string;
   text: string;
   author_name: string;
+  author_user_id?: string;
   created_at: string;
+  /** Whose handover this is. Null means it was left for the household, which
+   *  is how every note behaved before addressing existed. */
+  for_user_id?: string | null;
+  /** Whether it is addressed to the person reading it — decided server-side,
+   *  because a client matching on names puts the acknowledge button in front
+   *  of the wrong person the moment a household has two Amas. */
+  for_me?: boolean;
+  i_wrote_it?: boolean;
+  /** When someone said they had it. Not the same as having read it. */
+  acked_at?: string | null;
+  acked_by_name?: string | null;
 }
 
 export interface ShoppingItem {
@@ -2508,6 +2520,10 @@ export const api = {
     request<HandoffNote>('/handoff-notes', { method: 'POST', body: data }),
   deleteHandoffNote: (noteId: string) =>
     request<{ ok: boolean }>(`/handoff-notes/${noteId}`, { method: 'DELETE' }),
+  /** "I have this." Only the person the note names may call it; the server
+   *  refuses anyone else, and a second call is a silent no-op. */
+  ackHandoffNote: (noteId: string) =>
+    request<HandoffNote>(`/handoff-notes/${noteId}/ack`, { method: 'POST' }),
 
   // Shopping List
   listShopping: () => request<ShoppingItem[]>('/shopping'),

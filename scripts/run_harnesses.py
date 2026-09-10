@@ -60,6 +60,7 @@ HARNESSES = [
     "e2e_search.py",
     "e2e_handoff.py",
     "e2e_kid.py",
+    "e2e_notes.py",
     "e2e_week.py",
     "e2e_contrast.py",
     # Narrow phones: every other harness runs at 390 or wider, so the end of the
