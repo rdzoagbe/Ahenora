@@ -22,6 +22,7 @@ const EVENT_LABELS: Record<string, string> = {
   calendar_open: 'Calendar opens',
   scan_used: 'Document scans',
   card_created: 'Tasks created',
+  vault_open: 'Vault opens',
   vault_added: 'Documents saved',
   vault_shared: 'Documents shared',
   onboarding_done: 'Onboardings finished',

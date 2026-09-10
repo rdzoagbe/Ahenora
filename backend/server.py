@@ -16238,9 +16238,24 @@ class SupportContactIn(BaseModel):
 ALLOWED_EVENTS = {
     "feed_open", "scan_used", "card_created", "vault_added", "vault_shared",
     "kids_open", "calendar_open", "onboarding_done", "onboarding_skipped",
+    # Visits to the vault, as opposed to saves into it. Every other tab counted
+    # its opens and this one did not, so the only question anybody actually
+    # asked about the vault — does anyone find it? — had no answer, and got
+    # argued from instead. An unlisted name here is answered 200 and dropped,
+    # so a client that logs an event this set has not heard of is silent
+    # rather than broken; tests/test_metrics_events.py holds the two ends
+    # together.
     # How many households say they share custody at setup. The wedge the app is
     # positioned on, and until now nothing counted whether anyone answered yes.
     "onboarding_custody_set",
+    # Visits to the vault, as opposed to saves into it. Every other tab counted
+    # its opens and this one did not, so the only question anybody actually
+    # asked about the vault — does anyone find it? — had no answer, and got
+    # argued from instead. An unlisted name here is answered 200 and dropped,
+    # so a client logging an event this set has not heard of is silent rather
+    # than broken; frontend/src/__tests__/metricsEvents.test.ts holds the two
+    # ends together.
+    "vault_open",
     "calendar_import_cancelled",
     # AI reliability: bumped server-side from the central Gemini path so the
     # Metrics screen can show a real success rate, not just a live probe.
