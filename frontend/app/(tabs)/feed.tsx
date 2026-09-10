@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -19,6 +20,7 @@ import {
   UserCheck,
   CalendarDays,
   Camera,
+  Check,
   CheckCircle2,
   ChevronRight,
   Clock,
@@ -62,6 +64,7 @@ import { useUI, UIColors } from '../../src/components/Kit';
 import { api, logEvent, ActivityEntry, Announcement, Card, CardType, ChatThreadSummary, CustodyConfig, FamilyMember, GiftPot, SantaDraw, HandoffNote, Template, WeeklyReport } from '../../src/api';
 import { syncCardReminderNotifications, syncMorningDigest, syncDinnerReminder, syncSundayRecap, ensureAskedNotificationPermissionOnce } from '../../src/notifications';
 import { logger } from '../../src/logger';
+import { apiErrorText } from '../../src/apiError';
 import { isoWeek, localeFor } from '../../src/utils/date';
 import { recordWin } from '../../src/reviewPrompt';
 import AppToast from '../../src/components/AppToast';
@@ -404,7 +407,11 @@ export default function Feed() {
   const [notes, setNotes] = useState<HandoffNote[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [noteText, setNoteText] = useState('');
+  // Who the next note is for. null is Everyone — the way every note behaved
+  // before addressing existed, and still the default.
+  const [noteFor, setNoteFor] = useState<string | null>(null);
   const [savingNote, setSavingNote] = useState(false);
+  const [ackingNote, setAckingNote] = useState<string | null>(null);
   const [expandNotes, setExpandNotes] = useState(true);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [annText, setAnnText] = useState('');
@@ -934,6 +941,22 @@ export default function Feed() {
   // Your own picture: the illustration you picked on your member page if there
   // is one, otherwise the photo Google handed us at sign-in, otherwise your
   // initial. The member row is checked first because it is the one you chose.
+  // Who a note can be addressed to: everyone in the household who could
+  // actually pick one up. A child has no account and a teen lives behind their
+  // own screen, so neither can acknowledge — the server refuses both by name,
+  // and this keeps them out of the picker so nobody meets that refusal.
+  const noteRecipients = useMemo(
+    () => members.filter((m) => m.has_account && !m.is_me
+      && String(m.role || '').toLowerCase() !== 'teen'),
+    [members]);
+
+  // The handovers waiting on ME. Unacknowledged and addressed here — the strip
+  // is the only thing in the app that says a person owes somebody an answer,
+  // so it sits above the day's work rather than inside a section.
+  const notesForMe = useMemo(
+    () => notes.filter((n) => n.for_me && !n.acked_at),
+    [notes]);
+
   const myAvatar = members.find((m) => m.is_me)?.avatar || user?.picture || null;
 
   const openManual = () => {
@@ -1027,15 +1050,35 @@ export default function Feed() {
     if (!noteText.trim()) return;
     setSavingNote(true);
     try {
-      const created = await api.createHandoffNote({ text: noteText.trim() });
+      const created = await api.createHandoffNote({
+        text: noteText.trim(),
+        ...(noteFor ? { member_id: noteFor } : {}),
+      });
       setNotes((prev) => [created, ...prev]);
       setNoteText('');
-    } catch {
-      Alert.alert(t('feed_error'), t('feed_could_not_save_note'));
+      setNoteFor(null);
+    } catch (e) {
+      // The server refuses a recipient who could never pick it up — a child
+      // with no account, a teen behind their own screen. It says which and
+      // why, and that is more useful than our generic line.
+      Alert.alert(t('feed_error'), apiErrorText(e, t, 'feed_could_not_save_note'));
     } finally {
       setSavingNote(false);
     }
-  }, [noteText]);
+  }, [noteText, noteFor]);
+
+  const ackNote = useCallback(async (noteId: string) => {
+    setAckingNote(noteId);
+    try {
+      const updated = await api.ackHandoffNote(noteId);
+      setNotes((prev) => prev.map((n) => (n.note_id === noteId ? updated : n)));
+    } catch (e) {
+      logger.warn('note ack failed', e);
+      Alert.alert(t('feed_error'), apiErrorText(e, t, 'feed_could_not_save_note'));
+    } finally {
+      setAckingNote(null);
+    }
+  }, [t]);
 
   const removeNote = useCallback(async (noteId: string) => {
     setNotes((prev) => prev.filter((n) => n.note_id !== noteId));
@@ -1210,6 +1253,51 @@ export default function Feed() {
                 right. The tab bar carries no ＋ at all now, so this is the
                 Feed's single, unambiguous "add" gesture (was a full
                 Add/Photo card up top). */}
+            {/* A handover with your name on it, above the day's work.
+                Lavender rather than orange on purpose: orange is how this app
+                says urgent — overdue cards, the alert banner. A handover is not
+                urgent, it just needs an owner, and lavender is already the
+                notes colour. A strip rather than a dialog: unmissable without
+                standing in the way of the thing you opened the app to do.
+
+                And top-level, deliberately. The first build of this put it
+                inside the Household section, which is collapsed by default —
+                so a note addressed to you was visible only if you went looking
+                for it, which is the one thing it must never require. Writing a
+                note stays two taps down; being handed one does not. */}
+            {notesForMe.map((note) => (
+              <View key={note.note_id} testID={`note-for-me-${note.note_id}`} style={styles.noteStrip}>
+                <View style={styles.noteStripHead}>
+                  <PersonAvatar name={note.author_name} size={32} />
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={styles.noteStripWho} numberOfLines={1}>
+                      {t('feed_note_left_you', { name: note.author_name })}
+                    </Text>
+                    <Text style={styles.noteStripWhen} numberOfLines={1}>
+                      {new Date(note.created_at).toLocaleString([], { hour: '2-digit', minute: '2-digit' })}
+                    </Text>
+                  </View>
+                </View>
+                <Text style={styles.noteStripText}>{note.text}</Text>
+                <View style={styles.noteStripFoot}>
+                  <PressScale
+                    testID={`note-ack-${note.note_id}`}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('feed_note_ack')}
+                    onPress={() => ackNote(note.note_id)}
+                    disabled={ackingNote === note.note_id}
+                    style={[styles.noteAckBtn, ackingNote === note.note_id && { opacity: 0.5 }]}
+                  >
+                    <Check color="#FFFFFF" size={17} strokeWidth={3} />
+                    <Text style={styles.noteAckText}>{t('feed_note_ack')}</Text>
+                  </PressScale>
+                  <Text style={styles.noteStripHint} numberOfLines={2}>
+                    {t('feed_note_ack_hint', { name: note.author_name })}
+                  </Text>
+                </View>
+              </View>
+            ))}
+
             <View style={styles.addBar}>
               {/* Typeable, not a button that opens a composer.
                   It was a button, and every line it produced was a card —
@@ -1491,6 +1579,7 @@ export default function Feed() {
               <View style={styles.notesCard}>
                 <View style={styles.noteInputRow}>
                   <TextInput
+                    testID="feed-note-input"
                     value={noteText}
                     onChangeText={setNoteText}
                     placeholder={t('feed_note_placeholder')}
@@ -1501,16 +1590,77 @@ export default function Feed() {
                     multiline={false}
                   />
                   <PressScale
+                  testID="feed-note-send"
                   accessibilityRole="button"
                   accessibilityLabel={t('a11y_add')} onPress={addNote} disabled={savingNote || !noteText.trim()} style={[styles.noteSendBtn, (!noteText.trim() || savingNote) && { opacity: 0.4 }]}>
                     <Plus color="#FFFFFF" size={18} />
                   </PressScale>
                 </View>
+                {/* Who the next note is for. Everyone stays the default and
+                    stays first, so a household that never touches this keeps
+                    the notes it already had. Only people who could actually
+                    pick one up are offered — the server refuses the rest by
+                    name, and meeting that refusal is a worse way to learn it. */}
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  keyboardShouldPersistTaps="handled"
+                  contentContainerStyle={styles.noteForRow}
+                >
+                  <Text style={styles.noteForLabel}>{t('feed_note_for')}</Text>
+                  <PressScale
+                    testID="note-for-everyone"
+                    accessibilityRole="button"
+                    onPress={() => setNoteFor(null)}
+                    style={[styles.noteChip, noteFor === null && styles.noteChipOn]}
+                  >
+                    <Text style={[styles.noteChipText, noteFor === null && styles.noteChipTextOn]}>
+                      {t('feed_note_everyone')}
+                    </Text>
+                  </PressScale>
+                  {noteRecipients.map((m) => {
+                    const on = noteFor === m.member_id;
+                    return (
+                      <PressScale
+                        key={m.member_id}
+                        testID={`note-for-${m.member_id}`}
+                        accessibilityRole="button"
+                        onPress={() => setNoteFor(on ? null : m.member_id)}
+                        style={[styles.noteChip, on && styles.noteChipOn]}
+                      >
+                        <PersonAvatar name={m.name} avatar={m.avatar} size={22} />
+                        <Text style={[styles.noteChipText, on && styles.noteChipTextOn]} numberOfLines={1}>
+                          {m.name}
+                        </Text>
+                      </PressScale>
+                    );
+                  })}
+                </ScrollView>
+
                 {notes.slice(0, 5).map((note) => (
                   <View key={note.note_id} style={styles.noteRow}>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.noteText}>{note.text}</Text>
-                      <Text style={styles.noteMeta}>{note.author_name} · {new Date(note.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}</Text>
+                      {/* Addressed notes carry their state where the byline
+                          was: who it is for, and whether they have it. An
+                          unaddressed note reads exactly as it always did. */}
+                      <View style={styles.noteMetaRow}>
+                        {note.acked_at ? (
+                          <View style={[styles.notePill, { backgroundColor: ui.mint }]}>
+                            <Check color={ui.mintText} size={11} strokeWidth={3.5} />
+                            <Text style={[styles.notePillText, { color: ui.mintText }]} numberOfLines={1}>
+                              {t('feed_note_acked_by', { name: note.acked_by_name || '' })}
+                            </Text>
+                          </View>
+                        ) : note.member_name ? (
+                          <View style={[styles.notePill, { backgroundColor: ui.lavender }]}>
+                            <Text style={[styles.notePillText, { color: ui.lavenderText }]} numberOfLines={1}>
+                              {t('feed_note_for_name', { name: note.member_name })} · {t('feed_note_not_yet')}
+                            </Text>
+                          </View>
+                        ) : null}
+                        <Text style={styles.noteMeta}>{note.author_name} · {new Date(note.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}</Text>
+                      </View>
                     </View>
                     <PressScale
                   accessibilityRole="button"
@@ -2476,6 +2626,37 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  // --- addressed notes -------------------------------------------------
+  noteForRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingRight: 4 },
+  noteForLabel: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 12.5, marginRight: 2 },
+  // 36 tall inside a scroller, so the row stays a row. The strip's own button
+  // is the 44 one, because that is the tap that commits to something.
+  noteChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, height: 36,
+    paddingHorizontal: 12, borderRadius: 9999,
+    backgroundColor: ui.soft, borderWidth: 1, borderColor: ui.line,
+  },
+  noteChipOn: { backgroundColor: ui.orangeSoft, borderColor: ui.orange, borderWidth: 1.5 },
+  noteChipText: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 13, maxWidth: 110 },
+  noteChipTextOn: { color: ui.orangeText, fontFamily: 'Inter_700Bold' },
+  noteMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'wrap' },
+  notePill: { flexDirection: 'row', alignItems: 'center', gap: 4, height: 22, paddingHorizontal: 8, borderRadius: 9999 },
+  notePillText: { fontFamily: 'Inter_700Bold', fontSize: 11, maxWidth: 190 },
+  noteStrip: {
+    borderRadius: 22, borderWidth: 1, borderColor: 'rgba(90,72,232,0.30)',
+    backgroundColor: ui.lavender, padding: 14, gap: 12, marginBottom: 14,
+  },
+  noteStripHead: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  noteStripWho: { color: ui.lavenderText, fontFamily: 'Inter_800ExtraBold', fontSize: 13.5 },
+  noteStripWhen: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 1 },
+  noteStripText: { color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 15, lineHeight: 21 },
+  noteStripFoot: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  noteAckBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
+    height: 44, paddingHorizontal: 18, borderRadius: 9999, backgroundColor: ui.mintText,
+  },
+  noteAckText: { color: '#FFFFFF', fontFamily: 'Inter_700Bold', fontSize: 14.5 },
+  noteStripHint: { flex: 1, color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12, lineHeight: 16 },
   noteRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
