@@ -118,6 +118,12 @@ export default function Vault() {
   const [entitlements, setEntitlements] = useState<Entitlements | null>(null);
 
   const load = useCallback(async () => {
+    // Visits, not just saves. vault_added and vault_shared count what people
+    // DO here, so "nobody opens the vault" and "people open it and add
+    // nothing" were indistinguishable — and a claim about the first was used
+    // to argue for promoting it out of the More drawer and into the bar. There
+    // was no number to check that against. Now there is.
+    logEvent('vault_open');
     try {
       const [vaultRes, expiryRes, entRes] = await Promise.allSettled([api.listVault(), api.vaultExpiryAlerts(), api.getEntitlements()]);
       if (vaultRes.status === 'fulfilled') setDocs(vaultRes.value);
