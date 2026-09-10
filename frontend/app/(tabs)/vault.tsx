@@ -423,10 +423,27 @@ export default function Vault() {
           <ScreenHeader
             eyebrow={t('vault_secure_storage')}
             title={t('vault')}
+            // showAdd off, or this corner carries TWO plus buttons side by side,
+            // both announcing themselves as "Add": the header's generic
+            // quick-add picker and the one below it that adds a document. The
+            // FAB was moved up here precisely to stop it reading as a duplicate
+            // of the bar's own ＋, and it landed next to a different one.
+            //
+            // On this screen Add means one thing — put a document in the vault
+            // — so that is the only Add here. The quick-add picker is on the
+            // four other tabs, which is where you are when you want it.
+            showAdd={false}
             right={
-              // Add lives in the header now — a floating FAB down by the tab bar
-              // read as a second, duplicate "+" beside the nav bar's own.
-              <PressScale testID="vault-add" onPress={openAdd} accessibilityRole="button" accessibilityLabel={t('a11y_add')} style={styles.headerAddBtn}>
+              <PressScale
+                testID="vault-add"
+                onPress={openAdd}
+                accessibilityRole="button"
+                // Not the generic "Add": a screen reader announced this and the
+                // control beside it with the identical word, so the two were
+                // indistinguishable by the people who most need them not to be.
+                accessibilityLabel={t('add_document')}
+                style={styles.headerAddBtn}
+              >
                 <Plus color="#FFFFFF" size={20} />
               </PressScale>
             }
