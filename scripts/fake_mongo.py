@@ -7,7 +7,7 @@ find_one / insert_one / update_one / update_many / delete_one / delete_many /
 count_documents / find().sort().limit() (async iteration + to_list), query
 operators $exists $gt $gte $lt $lte $in $nin $ne $or $regex(+$options i)
 (equality operators match array membership, as Mongo does), update operators
-$set $inc $addToSet, and db.command("ping").
+$set $inc $addToSet $push $pull, and db.command("ping").
 """
 
 import re
@@ -192,6 +192,11 @@ class FakeCollection:
         self.rows.append(_bsonify(dict(doc)))
         return _Result(1)
 
+    async def insert_many(self, docs):
+        for doc in docs:
+            self.rows.append(_bsonify(dict(doc)))
+        return _Result(len(docs))
+
     def _apply(self, row, update):
         for key, value in (update.get("$set") or {}).items():
             row[key] = _bsonify(value)
@@ -204,6 +209,23 @@ class FakeCollection:
             if not any(_eq(v, value) for v in arr):
                 arr = arr + [_bsonify(value)]
             row[key] = arr
+        for key, value in (update.get("$push") or {}).items():
+            arr = row.get(key)
+            row[key] = (arr if isinstance(arr, list) else []) + [_bsonify(value)]
+        for key, cond in (update.get("$pull") or {}).items():
+            # Mongo removes every element of the array MATCHING the condition,
+            # which for a sub-document is a partial match rather than equality
+            # — {"user_id": u} pulls that person's entry whatever else it
+            # carries. Reproduced here, because the difference is exactly what
+            # a "one reaction per person" toggle depends on.
+            arr = row.get(key)
+            if not isinstance(arr, list):
+                continue
+            if isinstance(cond, dict) and not any(str(k).startswith("$") for k in cond):
+                row[key] = [v for v in arr
+                            if not (isinstance(v, dict) and _matches(v, cond))]
+            else:
+                row[key] = [v for v in arr if not _match_condition(v, cond)]
 
     async def update_one(self, query, update, upsert=False):
         for row in self.rows:

@@ -81,6 +81,8 @@ async def main():
         # --- handing the device over ---------------------------------------
         await p.goto(f"{WEB}/feed", wait_until="domcontentloaded")
         await p.wait_for_timeout(3500)
+        # Handing the phone over is a thing you DO, not a place you go, so it
+        # lives in the More drawer beside the bar rather than wearing a seat.
         await p.click('[data-testid="tab-more"]')
         await p.wait_for_timeout(1200)
         r["more_offers_hand_over"] = await p.locator('[data-testid="more-kid"]').count() == 1

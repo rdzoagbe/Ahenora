@@ -15,6 +15,13 @@ export function targetForNotification(data: unknown): { pathname: string; params
       return d.thread
         ? { pathname: '/conversation', params: { thread: String(d.thread), title: String(d.title || '') } }
         : { pathname: '/(tabs)/feed' };
+    // Somebody wrote to support. This fell through to the default and landed
+    // on the Feed — the screen the app already opens on — so the notification
+    // said a request had arrived and gave no way to find it. The inbox lives
+    // on the admin screen; `support` tells it to open there rather than at
+    // the top of a page of charts.
+    case 'support_ticket':
+      return { pathname: '/metrics', params: { support: '1' } };
     case 'gift_pot':
       return d.pot_id
         ? { pathname: '/gift-pot', params: { potId: String(d.pot_id) } }

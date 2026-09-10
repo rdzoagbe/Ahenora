@@ -54,6 +54,30 @@ const SEEN_VERSION_KEY = 'coo_seen_app_version';
  */
 const DISMISSED_UPDATE_KEY = 'coo_dismissed_update_id';
 
+/**
+ * How many separate updates have piled up without this app being relaunched.
+ *
+ * Muting by update id was right and not enough. Every merge to main publishes
+ * a new update, so on a day with six merges the id differed on every launch
+ * and the id-mute never matched: Roland was asked to relaunch almost every
+ * time he opened the app — about six real updates — and reported it as "it
+ * says I should update even if there's no update". His diagnostics showed a
+ * healthy install with nothing staged. The banner had been telling the truth,
+ * and being right is not the same as being worth saying.
+ *
+ * A staged update applies ITSELF on the next cold start, so one update waiting
+ * is never worth interrupting anybody: it will land on its own. Several
+ * waiting means this install has been running the same old bundle across a
+ * string of releases, which is when a relaunch is actually worth asking for.
+ *
+ * Stored against the RUNNING bundle's id, so the count clears itself the
+ * moment the app does relaunch — no separate bookkeeping to get out of step.
+ */
+const STAGED_SEEN_KEY = 'coo_staged_updates_seen';
+const UPDATES_BEFORE_PROMPT = 3;
+
+interface StagedSeen { running: string; ids: string[] }
+
 type Notice = 'store' | 'relaunch' | 'whatsNew' | null;
 
 /** "2.0.0" < "10.0.0" — compared as numbers, not strings. */
@@ -96,7 +120,8 @@ export function UpdateNotice() {
           const info = await api.appVersionInfo().catch(() => null);
           const runtime = Updates.runtimeVersion || '';
           if (!cancelled && info?.min_runtime && runtime && isBelow(runtime, info.min_runtime)) {
-            setStoreUrl(info.android_store_url || null);
+            // Each platform's own store: an iPhone was being sent to Google Play.
+            setStoreUrl((Platform.OS === 'ios' ? info.ios_store_url : info.android_store_url) || null);
             setNotice('store');
             return;
           }
@@ -122,21 +147,50 @@ export function UpdateNotice() {
   // it loads, which is why the banner waits for it below rather than flashing
   // up and disappearing.
   const [muteLoaded, setMuteLoaded] = useState(false);
+  const [stagedCount, setStagedCount] = useState(0);
+  const runningId = Updates.updateId || 'embedded';
+
   useEffect(() => {
     let cancelled = false;
-    AsyncStorage.getItem(DISMISSED_UPDATE_KEY)
-      .then((value) => { if (!cancelled) setMutedUpdateId(value); })
-      .catch(() => undefined)
-      .finally(() => { if (!cancelled) setMuteLoaded(true); });
+    (async () => {
+      const muted = await AsyncStorage.getItem(DISMISSED_UPDATE_KEY).catch(() => null);
+      if (!cancelled) setMutedUpdateId(muted);
+
+      let seen: StagedSeen = { running: runningId, ids: [] };
+      try {
+        const raw = await AsyncStorage.getItem(STAGED_SEEN_KEY);
+        const parsed = raw ? (JSON.parse(raw) as StagedSeen) : null;
+        // A different running id means the app HAS relaunched since these were
+        // counted, so whatever had piled up has been applied.
+        if (parsed && parsed.running === runningId && Array.isArray(parsed.ids)) {
+          seen = { running: runningId, ids: parsed.ids.filter((x) => typeof x === 'string') };
+        }
+      } catch {
+        // A corrupt counter must not cost anybody the banner forever.
+      }
+      if (pendingUpdateId && !seen.ids.includes(pendingUpdateId)) {
+        seen.ids = [...seen.ids, pendingUpdateId].slice(-20);
+        await AsyncStorage.setItem(STAGED_SEEN_KEY, JSON.stringify(seen)).catch(() => undefined);
+      }
+      if (!cancelled) {
+        setStagedCount(seen.ids.length);
+        setMuteLoaded(true);
+      }
+    })().catch(() => { if (!cancelled) setMuteLoaded(true); });
     return () => { cancelled = true; };
-  }, []);
+  }, [pendingUpdateId, runningId]);
 
   // A staged update outranks "what's new" — applying it is the useful action,
   // and the notes it would show are for the version about to be replaced.
   // A staged update the person has already waved away is not news the second
   // time. Anything without an id (a rollback directive) can still speak, since
   // there is nothing to remember it by.
-  const relaunchMuted = !!pendingUpdateId && pendingUpdateId === mutedUpdateId;
+  // Worth asking about only once several releases have gone by unapplied. One
+  // update waiting lands by itself on the next cold start; saying so is noise.
+  // The store notice is exempt — a stranded build cannot fix itself by waiting.
+  const enoughPiledUp = stagedCount >= UPDATES_BEFORE_PROMPT;
+  const relaunchMuted =
+    !enoughPiledUp || (!!pendingUpdateId && pendingUpdateId === mutedUpdateId);
   const shown: Notice = notice === 'store'
     ? 'store'
     : (isUpdatePending && !relaunchMuted ? 'relaunch' : notice);
@@ -171,7 +225,16 @@ export function UpdateNotice() {
   if (!shown || dismissed || !muteLoaded) return null;
 
   const copy = {
-    store: { title: t('update_store_title'), body: t('update_store_body'), cta: t('update_store_cta'), Icon: Store },
+    // The right store by NAME as well as by link. The URL was made
+    // platform-aware when an iPhone was being sent to Google Play; the
+    // sentence next to it still said "Play Store" in all four languages,
+    // which is the same bug wearing the other half of the costume.
+    store: {
+      title: t('update_store_title'),
+      body: t(Platform.OS === 'ios' ? 'update_store_body_ios' : 'update_store_body'),
+      cta: t('update_store_cta'),
+      Icon: Store,
+    },
     relaunch: { title: t('update_relaunch_title'), body: t('update_relaunch_body'), cta: t('update_relaunch_cta'), Icon: RefreshCw },
     whatsNew: { title: t('update_whats_new_title', { version }), body: '', cta: t('update_whats_new_cta'), Icon: Sparkles },
   }[shown];

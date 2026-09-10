@@ -1,0 +1,75 @@
+name: OTA watch
+
+# Is the update people are running actually working?
+#
+# `eas update:insights` reports launches, crashes and unique users for one
+# update group. That is the number a staged rollout exists to let you read: a
+# crash count climbing at 20% is a rollback, the same count at 100% is an
+# outage.
+#
+# Read-only. It publishes nothing and changes nothing.
+on:
+  workflow_dispatch:
+    inputs:
+      group:
+        description: 'Update group id (from the publish summary)'
+        required: true
+        type: string
+      days:
+        description: 'How many days of history'
+        required: false
+        default: '1'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  watch:
+    name: Insights for an update group
+    runs-on: ubuntu-latest
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      EXPO_NO_TELEMETRY: 1
+    steps:
+      - name: Verify EXPO_TOKEN is set
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "EXPO_TOKEN is not set. Add it under Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm install --no-audit --no-fund
+
+      # Both platforms separately: iOS and Android fail in different ways, and
+      # a combined number hides one store behind the other.
+      - name: Insights
+        working-directory: frontend
+        env:
+          GROUP: ${{ inputs.group }}
+          DAYS: ${{ inputs.days }}
+        run: |
+          {
+            echo "## Update group \`${GROUP}\` — last ${DAYS} day(s)"
+            for p in android ios; do
+              echo
+              echo "### ${p}"
+              echo '```'
+              npx eas-cli@latest update:insights "$GROUP" \
+                --platform "$p" --days "$DAYS" --non-interactive 2>&1 || true
+              echo '```'
+            done
+            echo
+            echo "Crashes climbing while the rollout is partial is the moment to"
+            echo "run **OTA rollback** rather than promote."
+          } >> "$GITHUB_STEP_SUMMARY"

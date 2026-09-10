@@ -4,6 +4,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Check, X, MapPin, CalendarDays } from 'lucide-react-native';
 
 import { PressScale } from './PressScale';
+import AppToast from './AppToast';
+import { useToast } from '../hooks/useToast';
 import { useUI, UIColors } from './Kit';
 import { useStore } from '../store';
 import { api, EventCandidate, FamilyMember } from '../api';
@@ -36,6 +38,7 @@ export function ReviewImportSheet({
 }) {
   const ui = useUI();
   const { t, user, lang } = useStore();
+  const { toast, showToast } = useToast();
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => createStyles(ui), [ui]);
 
@@ -106,6 +109,7 @@ export function ReviewImportSheet({
       onClose();
     } catch (e) {
       logger.warn('candidate decision failed', e);
+      showToast(t('vault_could_not_update'), 'error');
     } finally {
       setBusy(false);
     }
@@ -269,6 +273,7 @@ export function ReviewImportSheet({
           </View>
         </View>
       </View>
+      <AppToast visible={Boolean(toast)} message={toast?.message || null} tone={toast?.tone || 'info'} />
     </Modal>
   );
 }

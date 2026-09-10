@@ -122,6 +122,14 @@ INVITE_BASE_URL = os.environ.get(
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
 INVITE_FROM_EMAIL = os.environ.get("INVITE_FROM_EMAIL", "")
 INVITE_REPLY_TO = os.environ.get("INVITE_REPLY_TO", "")
+# Where the in-app "Contact support" form is delivered. Falls back to the
+# invite reply-to and then the published support address, so the form is
+# never a black hole just because one variable was not set.
+SUPPORT_INBOX_EMAIL = (
+    os.environ.get("SUPPORT_INBOX_EMAIL", "").strip()
+    or INVITE_REPLY_TO.strip()
+    or "support@ahenora.com"
+)
 APP_NAME = os.environ.get("APP_NAME", "Ahenora")
 MAX_VOICE_AUDIO_BYTES = int(os.environ.get("MAX_VOICE_AUDIO_BYTES", str(12 * 1024 * 1024)))
 ADMIN_EMAILS_RAW = os.environ.get("ADMIN_EMAILS", "")
@@ -204,6 +212,54 @@ app.add_middleware(
 )
 
 
+def billing_marker(family: Optional[dict]) -> Optional[str]:
+    """Which rail paid for this household's plan, or None if nothing did.
+
+    THE one place that question is answered. It used to be answered in two,
+    with two different rules, and they disagreed on a value neither author had
+    in mind: the empty string.
+
+      * the launch cleanup asked `{"rc_last_event": {"$exists": False}}`
+      * the admin screen asked `fam.get("rc_last_event")` — truthiness
+
+    A webhook whose payload carries no `type` stores `rc_last_event: ""`
+    (event.get("type", "")). That value EXISTS, so the cleanup skips the
+    household forever; it is FALSY, so the screen prints no rail. The result is
+    a household that looks like a testing-window leftover, is counted as a
+    paying subscriber in every total, and is structurally immune to the code
+    written to catch exactly it.
+
+    A blank marker is no marker. Both callers now ask here, so they cannot
+    drift apart again.
+
+    AND rc_product_id COUNTS. This nearly cost a real subscriber her plan. The
+    sweep and the per-user reconcile exist to repair a webhook that never
+    arrived: they ask RevenueCat directly, and on a "yes, they are entitled"
+    they write plan, billing_cycle, rc_product_id and rc_reconciled_at — but
+    NOT rc_last_event, because no event ever came. So the household most
+    certainly paying, verified against the store moments ago, carried none of
+    the markers this function used to look for.
+
+    That household then read as a testing-window leftover, and the launch
+    cleanup reset it to free on the next restart — after which the sweep
+    corrected it again six hours later, and the next deploy undid that too. The
+    billing log shows the loop: RECONCILED, twice a day, on people who had
+    already paid.
+
+    rc_product_id is only ever written from something the store told us — a
+    webhook, or RevenueCat answering that this subscriber is entitled. It is
+    evidence of billing, so it is treated as such.
+    """
+    fam = family or {}
+    if (fam.get("stripe_last_event") or "").strip():
+        return "stripe"
+    if (fam.get("rc_last_event") or "").strip():
+        return "google_play"
+    if (fam.get("rc_product_id") or "").strip():
+        return "google_play"
+    return None
+
+
 @app.on_event("startup")
 async def reset_testing_window_plans():
     # Cleanup for when real billing goes live: a paid plan stored without ANY
@@ -212,15 +268,27 @@ async def reset_testing_window_plans():
     # carries a marker: rc_last_event (Google Play) OR stripe_last_event (card).
     # Both must be excluded — keying the reset to RevenueCat alone would wipe a
     # legitimate Stripe subscriber's plan back to free on every restart.
+    #
+    # Filtered in Python rather than in the query, so it asks billing_marker the
+    # same question the admin screen asks. The query form is what let the two
+    # disagree; see billing_marker above.
     if db is None or not billing_is_live():
         return
     try:
-        result = await db["families"].update_many(
-            {"plan": {"$ne": "village"},
-             "rc_last_event": {"$exists": False},
-             "stripe_last_event": {"$exists": False}},
-            {"$set": {"plan": "village", "updated_at": datetime.now(timezone.utc)}},
-        )
+        stale = []
+        async for fam in db["families"].find(
+                {"plan": {"$ne": "village"}}, {"_id": 0, "family_id": 1,
+                                               "rc_last_event": 1,
+                                               "rc_product_id": 1,
+                                               "stripe_last_event": 1}):
+            if not billing_marker(fam) and fam.get("family_id"):
+                stale.append(fam["family_id"])
+        for fid in stale:
+            await db["families"].update_one(
+                {"family_id": fid},
+                {"$set": {"plan": "village", "updated_at": datetime.now(timezone.utc)}},
+            )
+        result = type("R", (), {"modified_count": len(stale)})()
         if result.modified_count:
             log.info("Reset %d testing-window plan(s) to village", result.modified_count)
     except Exception as exc:  # pragma: no cover - startup must never crash the app
@@ -576,7 +644,11 @@ def apply_admin_subscription(subscription: dict) -> dict:
     # Admin/tester accounts keep their own family data, but plan limits are bypassed
     # so the founder can test every feature without changing customer billing rules.
     admin_sub = dict(subscription)
-    admin_sub["plan"] = "family_office"
+    # The TOP tier's real id. This used to be "family_office", a retired tier
+    # that plan_catalog_for() still resolves — so limits were right, but every
+    # member of an admin household saw "Family Office Plan" in Settings and an
+    # "Upgrade" button on a plan they were already above.
+    admin_sub["plan"] = "household"
     admin_sub["billing_cycle"] = admin_sub.get("billing_cycle", "yearly")
     admin_sub["grandfathered"] = True
     admin_sub["admin_unlocked"] = True
@@ -1103,7 +1175,7 @@ async def build_subscription(family_id: str):
         # middle tier's.
         limits = PLAN_CATALOG["household"]["limits"]
     return {
-        "plan": "family_office" if admin_household else family["plan"],
+        "plan": "household" if admin_household else family["plan"],
         # Lets the app show "you're previewing Premium free" notices so launch
         # gating never feels like a surprise takeaway.
         "testing_window": testing_window,
@@ -1470,6 +1542,30 @@ def public_vault_doc(doc: dict) -> dict:
 # being invited is how they come to install it.
 INVITE_FALLBACK_URL = "https://ahenora.com/app/"
 
+# The two stores, in one place. The App Store id is the App Store Connect id
+# from eas.json. The invite email used to name Google Play alone and tell an
+# iPhone "open it in your browser instead" — while the iOS app was live.
+ANDROID_STORE_URL = "https://play.google.com/store/apps/details?id=com.householdcoo.app"
+IOS_STORE_URL = os.environ.get("IOS_STORE_URL", "").strip() or "https://apps.apple.com/app/id6806811163"
+
+
+def sender_as_app(from_value: str) -> str:
+    """The From header with the app's name as the display name.
+
+    The mail address is configured (INVITE_FROM_EMAIL) and can carry any
+    display name — on 2026-09-07 it still said "Household COO", the product's
+    name from before the rename, and every invite reached a co-parent from a
+    sender they had never heard of. The address is kept; the name is the app's.
+    """
+    raw = (from_value or "").strip()
+    if not raw:
+        return raw
+    m = re.match(r"^(?:\"?([^\"<]*)\"?\s*)?<([^>]+)>$", raw)
+    addr = (m.group(2) if m else raw).strip()
+    if not addr or "@" not in addr:
+        return raw
+    return f"{APP_NAME} <{addr}>"
+
 
 def build_invite_url(token: str) -> str:
     base = INVITE_BASE_URL.strip() or INVITE_FALLBACK_URL
@@ -1479,13 +1575,9 @@ def build_invite_url(token: str) -> str:
     return f"{base}{joiner}invite={token}"
 
 
-async def send_invite_email(to_email: str, invite_url: str, inviter_name: str, inviter_email: str = "", relationship: str = "") -> dict:
-    if not RESEND_API_KEY or not INVITE_FROM_EMAIL:
-        return {
-            "sent": False,
-            "error": "Email delivery is not configured. Set RESEND_API_KEY and INVITE_FROM_EMAIL in Railway.",
-        }
-
+def build_invite_email(to_email: str, invite_url: str, inviter_name: str, inviter_email: str = "", relationship: str = "") -> dict:
+    """The Resend payload for an invitation — built apart from the sending so
+    the words a co-parent reads can be tested without a network."""
     safe_app_name = html.escape(APP_NAME)
     safe_inviter = html.escape(inviter_name or "A family member")
     safe_invite_url = html.escape(invite_url)
@@ -1516,10 +1608,11 @@ async def send_invite_email(to_email: str, invite_url: str, inviter_name: str, i
         f"{text_lead} — "
         "one shared place for schedules, tasks, the kids' stuff and important documents, so it "
         "doesn't all sit in one person's head.\n\n"
-        "Get the app on Google Play, then sign in with this email — your invitation will be "
+        "Get the app, then sign in with this email — your invitation will be "
         "waiting for you inside:\n"
-        "https://play.google.com/store/apps/details?id=com.householdcoo.app\n\n"
-        f"On an iPhone or a computer, open it in your browser instead:\n{invite_url}\n\n"
+        f"iPhone: {IOS_STORE_URL}\n"
+        f"Android: {ANDROID_STORE_URL}\n\n"
+        f"On a computer, open it in your browser instead:\n{invite_url}\n\n"
         "If you were not expecting this invitation, you can ignore this email."
     )
 
@@ -1532,15 +1625,18 @@ async def send_invite_email(to_email: str, invite_url: str, inviter_name: str, i
       one shared place for schedules, tasks, the kids' stuff and important documents, so it
       doesn't all sit in one person's head. Join in and share the load.
     </p>
-    <a href="https://play.google.com/store/apps/details?id=com.householdcoo.app" style="display:inline-block; background:#f26a1b; color:#ffffff; text-decoration:none; font-weight:700; padding:12px 22px; border-radius:10px; font-size:15px;">
-      Get the app on Google Play
+    <a href="{html.escape(IOS_STORE_URL)}" style="display:inline-block; background:#f26a1b; color:#ffffff; text-decoration:none; font-weight:700; padding:12px 22px; border-radius:10px; font-size:15px; margin:0 8px 8px 0;">
+      Get it on the App Store
+    </a>
+    <a href="{html.escape(ANDROID_STORE_URL)}" style="display:inline-block; background:#f26a1b; color:#ffffff; text-decoration:none; font-weight:700; padding:12px 22px; border-radius:10px; font-size:15px; margin:0 0 8px 0;">
+      Get it on Google Play
     </a>
     <p style="color:#4a4f50; font-size:14px; line-height:1.55; margin:18px 0 0;">
       Download the app and sign in with <strong>{safe_to}</strong> — your invitation
       will be waiting for you inside. Just accept it to join.
     </p>
     <p style="color:#747b7c; font-size:13px; line-height:1.5; margin:14px 0 0;">
-      On an iPhone or a computer? <a href="{safe_invite_url}" style="color:#b8410a;">Open {safe_app_name} in your browser</a> instead.
+      On a computer? <a href="{safe_invite_url}" style="color:#b8410a;">Open {safe_app_name} in your browser</a> instead.
     </p>
     <p style="color:#a0a6a7; font-size:12px; line-height:1.5; margin:20px 0 0;">
       If you weren't expecting this, you can safely ignore this email.
@@ -1550,7 +1646,7 @@ async def send_invite_email(to_email: str, invite_url: str, inviter_name: str, i
 """.strip()
 
     payload = {
-        "from": INVITE_FROM_EMAIL,
+        "from": sender_as_app(INVITE_FROM_EMAIL),
         "to": [to_email],
         "subject": subject,
         "text": text,
@@ -1566,6 +1662,16 @@ async def send_invite_email(to_email: str, invite_url: str, inviter_name: str, i
             "List-Unsubscribe": f"<mailto:{reply_to}?subject=unsubscribe>",
             "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
         }
+    return payload
+
+
+async def send_invite_email(to_email: str, invite_url: str, inviter_name: str, inviter_email: str = "", relationship: str = "") -> dict:
+    if not RESEND_API_KEY or not INVITE_FROM_EMAIL:
+        return {
+            "sent": False,
+            "error": "Email delivery is not configured. Set RESEND_API_KEY and INVITE_FROM_EMAIL in Railway.",
+        }
+    payload = build_invite_email(to_email, invite_url, inviter_name, inviter_email, relationship)
 
     def _send():
         req = urllib.request.Request(
@@ -1906,6 +2012,33 @@ def _is_parent_role(role: Optional[str]) -> bool:
     return str(role or "").strip().lower() in ("parent", "co-parent")
 
 
+# The standings a household row can hold, and the ONE place that decides which.
+#
+# It is sent to the client rather than derived there because the client got it
+# wrong: the account screen showed a hard-coded "OWNER" to every signed-in
+# person, so a grandmother invited as a carer opened her own profile and was
+# told she owned the household. The rule that separates a parent from a
+# grandmother is `_is_parent_role` above, and it lives here — a second copy in
+# TypeScript would be a second copy to get out of step.
+MEMBER_STANDINGS = ("owner", "parent", "helper", "teen", "child", "member")
+
+
+def member_standing(member: dict, is_founder: bool) -> str:
+    """What this member IS to the household, in one word."""
+    role = str(member.get("role") or "").strip().lower()
+    if is_founder:
+        return "owner"
+    if _is_parent_role(role):
+        return "parent"
+    if role in ("helper", "teen", "child"):
+        return role
+    # An adult invited with a relationship — "Grandma", "Uncle", "Nanny". A
+    # full member of the household without being one of its parents. We have no
+    # better word for them than the one the family used, so the client shows
+    # their role rather than a label we invented.
+    return "member"
+
+
 async def _member_for_user(database: Any, family_id: str, user: dict) -> dict:
     """The signed-in user's own member row, resolved resiliently.
 
@@ -2207,17 +2340,135 @@ async def send_expo_push_messages(messages: list[dict], database=None) -> dict:
         try:
             tickets = (result.get("response") or {}).get("data") or []
             dead = []
+            kept = []
             for msg, ticket in zip(messages, tickets):
-                if isinstance(ticket, dict) and ticket.get("status") == "error" \
-                        and (ticket.get("details") or {}).get("error") == "DeviceNotRegistered":
-                    if msg.get("to"):
+                if not isinstance(ticket, dict):
+                    continue
+                if ticket.get("status") == "error":
+                    if (ticket.get("details") or {}).get("error") == "DeviceNotRegistered" \
+                            and msg.get("to"):
                         dead.append(msg["to"])
+                    await _record_push_error(database, msg.get("to"), ticket, stage="ticket")
+                elif ticket.get("id"):
+                    # A ticket only says Expo accepted the message. Whether
+                    # Google or Apple delivered it comes later, in a receipt,
+                    # and that is where a broken Android setup actually shows
+                    # (InvalidCredentials). Kept so the receipt can be read.
+                    kept.append({"ticket_id": ticket["id"], "token": msg.get("to"),
+                                 "sent_at": utcnow(), "checked": False})
             if dead:
                 await _deactivate_dead_tokens(database, dead)
+            if kept:
+                await database["push_tickets"].insert_many(kept)
         except Exception:
             pass
 
     return result
+
+
+PUSH_RECEIPT_DELAY_MINUTES = 15
+PUSH_ERROR_KEEP = 200
+_push_receipt_state: dict = {"last_check_at": None, "checked": 0, "errors": 0}
+
+
+async def _token_platform(database, token: Optional[str]) -> str:
+    if not token:
+        return "unknown"
+    row = await database["notification_tokens"].find_one({"token": token}, {"_id": 0, "platform": 1})
+    return (row or {}).get("platform") or "unknown"
+
+
+async def _record_push_error(database, token: Optional[str], payload: dict, stage: str) -> None:
+    """One row per delivery failure Expo reported, kept short and recent.
+
+    The message is what a person needs to fix it: `InvalidCredentials` on
+    Android means the FCM key is missing on EAS; `DeviceNotRegistered` means
+    the token is stale (and it is retired). The token itself is not stored —
+    only its tail, enough to match a device without being usable."""
+    try:
+        details = payload.get("details") or {}
+        await database["push_delivery_errors"].insert_one({
+            "at": utcnow(),
+            "stage": stage,
+            "platform": await _token_platform(database, token),
+            "token_tail": (token or "")[-8:],
+            "error": details.get("error") or "unknown",
+            "message": str(payload.get("message") or "")[:200],
+        })
+        # Cap the table: a broken setup would otherwise write a row per push
+        # forever. Oldest go first.
+        count = await database["push_delivery_errors"].count_documents({})
+        if count > PUSH_ERROR_KEEP:
+            oldest = [r async for r in database["push_delivery_errors"].find(
+                {}, {"_id": 0, "at": 1}).sort("at", 1).limit(count - PUSH_ERROR_KEEP)]
+            if oldest:
+                cutoff = oldest[-1]["at"]
+                await database["push_delivery_errors"].delete_many({"at": {"$lte": cutoff}})
+    except Exception as exc:  # noqa: BLE001 — a diagnostic must never break a send
+        log.warning("push error not recorded: %s", exc)
+
+
+async def fetch_expo_push_receipts(ids: list[str]) -> dict:
+    """POST to Expo's receipts endpoint. Returns {"data": {id: receipt}} or {"error": ...}."""
+    def _post():
+        req = urllib.request.Request(
+            "https://exp.host/--/api/v2/push/getReceipts",
+            data=json.dumps({"ids": ids}).encode("utf-8"),
+            headers={"Content-Type": "application/json", "Accept": "application/json"},
+            method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=12) as response:
+                raw = response.read().decode("utf-8")
+                return json.loads(raw) if raw else {}
+        except urllib.error.HTTPError as e:
+            return {"error": f"Expo receipts HTTP {e.code}: {e.read().decode('utf-8', errors='replace')[:200]}"}
+        except Exception as e:  # noqa: BLE001
+            return {"error": str(e)}
+    return await asyncio.to_thread(_post)
+
+
+async def check_push_receipts(database, now: Optional[datetime] = None) -> dict:
+    """Read the receipts for pushes sent a while ago, and record what failed.
+
+    A ticket is Expo saying "got it". The receipt, minutes later, is Google or
+    Apple saying whether the phone was reached. Nothing read receipts before,
+    so an Android setup that had never worked produced a clean send log and
+    a silent phone. Runs on the reminder scheduler's tick; cheap when there is
+    nothing to check."""
+    now = now or utcnow()
+    cutoff = now - timedelta(minutes=PUSH_RECEIPT_DELAY_MINUTES)
+    due = [t async for t in database["push_tickets"].find(
+        {"checked": False}, {"_id": 0}).limit(300)]
+    due = [t for t in due if (_coerce_dt(t.get("sent_at")) or now) <= cutoff]
+    summary = {"checked": 0, "errors": 0}
+    if not due:
+        return summary
+    ids = [t["ticket_id"] for t in due]
+    res = await fetch_expo_push_receipts(ids)
+    if res.get("error"):
+        log.warning("push receipts not read: %s", res["error"])
+        return summary
+    receipts = res.get("data") or {}
+    dead = []
+    for t in due:
+        r = receipts.get(t["ticket_id"])
+        if isinstance(r, dict) and r.get("status") == "error":
+            await _record_push_error(database, t.get("token"), r, stage="receipt")
+            summary["errors"] += 1
+            if (r.get("details") or {}).get("error") == "DeviceNotRegistered" and t.get("token"):
+                dead.append(t["token"])
+        summary["checked"] += 1
+    if dead:
+        await _deactivate_dead_tokens(database, dead)
+    for t in due:
+        await database["push_tickets"].update_one(
+            {"ticket_id": t["ticket_id"]}, {"$set": {"checked": True, "checked_at": now}})
+    # Tickets older than two days are never looked at again.
+    await database["push_tickets"].delete_many({"sent_at": {"$lt": now - timedelta(days=2)}})
+    _push_receipt_state["last_check_at"] = now
+    _push_receipt_state["checked"] += summary["checked"]
+    _push_receipt_state["errors"] += summary["errors"]
+    return summary
 
 
 STAR_MILESTONE = 50
@@ -2262,6 +2513,10 @@ PUSH_I18N = {
         "invited_body": "Open Ahenora and sign in through the invite link to join.",
         "accepted_title": "{name} accepted your invitation",
         "accepted_body": "They have joined your household.",
+        "shopping_title": "{name} added to the shopping list",
+        "shopping_body": "{items}",
+        "santa_title": "Your Secret Santa match is ready",
+        "santa_body": "{title}: open Ahenora to reveal who you're giving to.",
         "assigned_title": "{name} handed you something",
         "assigned_body": "{title}",
         "assigned_body_due": "{title} — due {due}",
@@ -2301,6 +2556,10 @@ PUSH_I18N = {
         "invited_body": "Ouvrez Ahenora et connectez-vous via le lien d'invitation pour le rejoindre.",
         "accepted_title": "{name} a accepté votre invitation",
         "accepted_body": "Cette personne a rejoint votre foyer.",
+        "shopping_title": "{name} a ajouté à la liste de courses",
+        "shopping_body": "{items}",
+        "santa_title": "Votre Père Noël secret est tiré",
+        "santa_body": "{title} : ouvrez Ahenora pour découvrir à qui vous offrez.",
         "assigned_title": "{name} vous a confié quelque chose",
         "assigned_body": "{title}",
         "assigned_body_due": "{title} — pour le {due}",
@@ -2339,6 +2598,10 @@ PUSH_I18N = {
         "invited_body": "Abre Ahenora e inicia sesión con el enlace de invitación para unirte.",
         "accepted_title": "{name} aceptó tu invitación",
         "accepted_body": "Ya forma parte de tu hogar.",
+        "shopping_title": "{name} añadió a la lista de la compra",
+        "shopping_body": "{items}",
+        "santa_title": "Tu amigo invisible está listo",
+        "santa_body": "{title}: abre Ahenora para descubrir a quién le regalas.",
         "assigned_title": "{name} te ha encargado algo",
         "assigned_body": "{title}",
         "assigned_body_due": "{title} — para el {due}",
@@ -2377,6 +2640,10 @@ PUSH_I18N = {
         "invited_body": "Öffne Ahenora und melde dich über den Einladungslink an, um beizutreten.",
         "accepted_title": "{name} hat deine Einladung angenommen",
         "accepted_body": "Die Person ist deinem Haushalt beigetreten.",
+        "shopping_title": "{name} hat die Einkaufsliste ergänzt",
+        "shopping_body": "{items}",
+        "santa_title": "Dein Wichtel-Los steht fest",
+        "santa_body": "{title}: öffne Ahenora, um zu sehen, wen du beschenkst.",
         "assigned_title": "{name} hat dir etwas übergeben",
         "assigned_body": "{title}",
         "assigned_body_due": "{title} — fällig am {due}",
@@ -2414,17 +2681,25 @@ PUSH_I18N = {
 
 
 async def send_push_to_user(database, user_id: str, title: str, body: str, data: dict,
-                            channel: str = "household-alerts", pref_key: Optional[str] = None):
+                            channel: str = "household-alerts", pref_key: Optional[str] = None) -> dict:
     """Push to one specific person's devices. Best effort, never raises.
 
     `channel` picks the Android notification channel (so a reminder can land on
     'card-reminders' and a person who muted just that category is respected).
     `pref_key`, when given, gates the send on that person's opt-out preference —
     so turning an alert off in Settings actually silences it.
+
+    Returns what it reached — `{"devices": n, "web": m}` plus `"muted"`,
+    `"error"` or `"expo"` (the sender's answer) when relevant. Callers that
+    care whether a person was actually told, rather than whether a send was
+    attempted, read this instead of guessing. It used to return nothing, and
+    "the inviter never got the push" was undiagnosable from the outside.
     """
+    reached = {"devices": 0, "web": 0}
     try:
         if pref_key and not await _wants_alert(database, user_id, pref_key):
-            return
+            reached["muted"] = True
+            return reached
         docs = [d async for d in database["notification_tokens"].find(
             {"user_id": user_id, "active": True}, {"_id": 0})]
         messages = []
@@ -2442,12 +2717,21 @@ async def send_push_to_user(database, user_id: str, title: str, body: str, data:
                     "channelId": channel, "priority": "high",
                 })
         if messages:
-            await send_expo_push_messages(messages, database)
+            expo = await send_expo_push_messages(messages, database)
+            if isinstance(expo, dict) and expo.get("error"):
+                # Counted as reaching nobody: Expo refused the batch.
+                reached["expo"] = str(expo.get("error"))[:160]
+            else:
+                reached["devices"] = len(messages)
         # The same notification, delivered to any browsers this person subscribed
         # (web/iPhone-Safari), so a lock-screen-less web user still gets it.
-        await send_web_push_to_user(database, user_id, title, body, data)
+        web = await send_web_push_to_user(database, user_id, title, body, data)
+        reached["web"] = int(web or 0)
     except Exception as e:
         log.warning("user push failed: %s", e)
+        reached["devices"] = reached["web"] = 0
+        reached["error"] = f"{type(e).__name__}: {e}"[:160]
+    return reached
 
 
 def webpush_configured() -> bool:
@@ -2457,12 +2741,13 @@ def webpush_configured() -> bool:
     return bool(os.environ.get("VAPID_PUBLIC_KEY") and os.environ.get("VAPID_PRIVATE_KEY"))
 
 
-async def send_web_push_to_user(database, user_id: str, title: str, body: str, data: dict):
+async def send_web_push_to_user(database, user_id: str, title: str, body: str, data: dict) -> int:
     """Deliver one notification to every browser this person has subscribed.
     Best effort, never raises. A push service that reports the subscription is
-    gone (404/410) gets that subscription pruned so we stop trying it."""
+    gone (404/410) gets that subscription pruned so we stop trying it.
+    Returns the number of browsers the push service accepted it for."""
     if not webpush_configured():
-        return
+        return 0
     priv = os.environ["VAPID_PRIVATE_KEY"]
     pub = os.environ["VAPID_PUBLIC_KEY"]
     subject = os.environ.get("VAPID_SUBJECT") or "mailto:support@ahenora.com"
@@ -2470,6 +2755,7 @@ async def send_web_push_to_user(database, user_id: str, title: str, body: str, d
 
     subs = [d async for d in database["web_push_subscriptions"].find(
         {"user_id": user_id, "active": True}, {"_id": 0})]
+    delivered = 0
     for sub in subs:
         try:
             url, headers, enc = webpush_lib.webpush_request(
@@ -2484,8 +2770,11 @@ async def send_web_push_to_user(database, user_id: str, title: str, body: str, d
                     {"endpoint": sub["endpoint"]}, {"$set": {"active": False}})
             elif resp.status_code >= 400:
                 log.warning("web push %s for %s: %s", resp.status_code, user_id, resp.text[:160])
+            else:
+                delivered += 1
         except Exception as e:  # pragma: no cover - network/format guard
             log.warning("web push send failed: %s", e)
+    return delivered
 
 
 @app.get("/api/notifications/web-config")
@@ -2495,20 +2784,47 @@ async def web_push_config():
     return {"enabled": webpush_configured(), "vapid_public_key": os.environ.get("VAPID_PUBLIC_KEY", "")}
 
 
-async def notify_invite_accepted(database, invite: dict, acceptor_name: str):
-    """Close the loop: the person who sent an invite hears when it lands."""
+async def notify_invite_accepted(database, invite: dict, acceptor_name: str) -> dict:
+    """Close the loop: the person who sent an invite hears when it lands.
+
+    Field report, 2026-09-07: the inviter said the invitee "got the invite on
+    the app, but I did not get the notification when she joined". The send
+    here was fire-and-forget, so nothing recorded whether it reached a device,
+    found none registered, or was never attempted — and the only way to answer
+    was to guess. Now the outcome is written onto the invite itself as
+    `accepted_notify`, which the admin Invites panel reads, so the next such
+    report is a lookup and not an investigation.
+    """
     inviter_id = invite.get("created_by_user_id")
+    trail: dict = {"at": utcnow(), "inviter_id": inviter_id, "devices": 0, "web": 0}
     if not inviter_id:
-        return
-    inviter = await database["users"].find_one({"user_id": inviter_id}, {"_id": 0})
-    lang = (inviter or {}).get("language") or "en"
-    L = PUSH_I18N.get(lang, PUSH_I18N["en"])
-    await send_push_to_user(
-        database, inviter_id,
-        L["accepted_title"].format(name=acceptor_name),
-        L["accepted_body"],
-        {"type": "invite_accepted", "invite_id": invite.get("invite_id")},
-    )
+        trail["skipped"] = "no inviter on the invite"
+    else:
+        inviter = await database["users"].find_one({"user_id": inviter_id}, {"_id": 0})
+        lang = (inviter or {}).get("language") or "en"
+        L = PUSH_I18N.get(lang, PUSH_I18N["en"])
+        reached = await send_push_to_user(
+            database, inviter_id,
+            L["accepted_title"].format(name=acceptor_name),
+            L["accepted_body"],
+            {"type": "invite_accepted", "invite_id": invite.get("invite_id")},
+        )
+        if isinstance(reached, dict):
+            trail.update(reached)
+        if not trail.get("devices") and not trail.get("web"):
+            trail["skipped"] = (trail.get("error") or trail.get("expo")
+                                or "inviter has no registered device or browser")
+            log.warning("invite %s accepted but inviter %s could not be told: %s",
+                        invite.get("invite_id"), inviter_id, trail["skipped"])
+        else:
+            log.info("invite %s accepted; inviter %s told on %d device(s), %d browser(s)",
+                     invite.get("invite_id"), inviter_id, trail["devices"], trail["web"])
+    try:
+        await database["family_invites"].update_one(
+            {"invite_id": invite.get("invite_id")}, {"$set": {"accepted_notify": trail}})
+    except Exception as exc:  # noqa: BLE001 — the trail must never fail a join
+        log.warning("invite acceptance trail not written: %s", exc)
+    return trail
 
 
 async def resolve_member_user_id(database, family_id: str, name: str) -> Optional[str]:
@@ -2617,6 +2933,108 @@ async def send_coparent_alert(family_id: str, title: str, body: str, data_type: 
             {"type": data_type, "family_id": family_id},
             pref_key="new_card_alerts",
         )
+
+
+# How long to wait for someone to stop adding before telling anyone. The
+# Kitchen screen adds a recipe's missing ingredients with one request PER
+# INGREDIENT, in parallel — so the first version of this, which pushed on
+# every add, would have buzzed the co-parent nine times for one recipe. That
+# is not a notification, it is a reason to turn notifications off.
+SHOPPING_QUIET_SECONDS = 90
+# A burst longer than this is a paste of a whole list; the push says how many
+# rather than trying to name them.
+SHOPPING_NAME_LIMIT = 3
+
+
+async def queue_shopping_notification(database, user: dict, names: list[str]) -> int:
+    """Record that someone put things on the shared list. Sends nothing yet.
+
+    The list is shared by design — anyone in the household can add to it — and
+    until 2026-09-08 nobody was told when they did: a parent doing the shop
+    found out about the extra items by opening the app in the aisle, or not at
+    all.
+
+    Queued rather than sent because the adds arrive in bursts, sometimes
+    concurrently, and one push per item would be its own kind of harm. The
+    scheduler drains this a minute and a half after the last one, so a burst
+    of any size becomes a single "Roland added to the shopping list".
+
+    Accumulating with $addToSet rather than reading-then-writing is what makes
+    concurrent adds safe: there is no read to race.
+    """
+    clean = [n.strip() for n in names if n and n.strip()]
+    if not clean:
+        return 0
+    key = {"family_id": user["family_id"], "actor_id": user.get("user_id")}
+    now = utcnow()
+    try:
+        for name in clean:
+            await database["shopping_pending"].update_one(
+                key,
+                {"$set": {**key, "actor_name": user.get("name") or "", "last_at": now},
+                 "$addToSet": {"names": name[:60]}},
+                upsert=True)
+    except Exception as exc:  # noqa: BLE001 — a note to self must never fail the add
+        log.warning("shopping notification not queued: %s", exc)
+        return 0
+    return len(clean)
+
+
+async def flush_shopping_notifications(database, now: Optional[datetime] = None) -> int:
+    """Send one push per person who has stopped adding. Returns pushes sent.
+
+    Runs on the reminder scheduler's tick, so it costs a single query on the
+    ticks where nobody has been shopping — which is almost all of them.
+    """
+    now = now or utcnow()
+    cutoff = now - timedelta(seconds=SHOPPING_QUIET_SECONDS)
+    sent = 0
+    rows = [r async for r in database["shopping_pending"].find({}, {"_id": 0})]
+    for row in rows:
+        last = _coerce_dt(row.get("last_at"))
+        if last and last > cutoff:
+            continue                      # still adding; leave it to settle
+        names = [n for n in (row.get("names") or []) if n]
+        family_id = row.get("family_id")
+        actor_id = row.get("actor_id")
+        # Removed first: a push that fails must not leave the row behind to be
+        # retried on every tick for ever.
+        try:
+            await database["shopping_pending"].delete_one(
+                {"family_id": family_id, "actor_id": actor_id})
+        except Exception as exc:  # noqa: BLE001
+            log.warning("shopping queue row not cleared: %s", exc)
+        if not names or not family_id:
+            continue
+        shown = ", ".join(names[:SHOPPING_NAME_LIMIT])
+        if len(names) > SHOPPING_NAME_LIMIT:
+            shown += f" +{len(names) - SHOPPING_NAME_LIMIT}"
+        who = row.get("actor_name") or "Someone"
+        try:
+            for account in await _family_accounts(database, family_id):
+                uid = account.get("user_id")
+                if not uid or uid == actor_id:
+                    continue
+                # Parents only. A teen with their own phone can put something
+                # on the list, and the person who has to buy it is the one who
+                # needs to know — their sibling does not, and telling them is
+                # how a useful notification becomes noise to be muted.
+                if not _is_parent_role(account.get("role")):
+                    continue
+                target = await database["users"].find_one(
+                    {"user_id": uid}, {"_id": 0, "language": 1})
+                L = PUSH_I18N.get((target or {}).get("language") or "en", PUSH_I18N["en"])
+                got = await asyncio.wait_for(send_push_to_user(
+                    database, uid,
+                    L["shopping_title"].format(name=who),
+                    L["shopping_body"].format(items=shown),
+                    {"type": "shopping_added", "family_id": family_id},
+                    pref_key="new_card_alerts"), timeout=5.0)
+                if isinstance(got, dict) and (got.get("devices") or got.get("web")):
+                    sent += 1
+        except Exception as exc:  # noqa: BLE001 — one household must not stop the rest
+            log.warning("shopping push skipped: %s", exc)
+    return sent
 
 
 # -----------------------------------------------------------------------------
@@ -3131,6 +3549,15 @@ async def _reminder_scheduler_loop():
         except Exception as e:
             log.warning("daily push tick failed: %s", e)
             _scheduler_state["last_error"] = f"{type(e).__name__}: {e}"[:200]
+        try:
+            await check_push_receipts(get_db())
+        except Exception as e:  # noqa: BLE001
+            log.warning("push receipt check failed: %s", type(e).__name__)
+        try:
+            # A shopping burst that has gone quiet becomes one push.
+            await flush_shopping_notifications(get_db())
+        except Exception as e:  # noqa: BLE001
+            log.warning("shopping flush failed: %s", type(e).__name__)
         # Stamped at the END of the pass: a tick that starts and hangs has not
         # done its job, and reporting it as alive would be the same lie as a
         # green test that skipped.
@@ -3790,6 +4217,21 @@ async def health_ai(probe: int = 0, user=Depends(require_user)):
     return status
 
 
+def _scheduler_verdict(now: Optional[datetime] = None) -> str:
+    """alive | stalled | never_ran | disabled — the reminder loop's own word.
+
+    A loop that ticks every 60s and has not ticked in five minutes is not
+    slow, it is gone.
+    """
+    if not REMINDER_SCHEDULER_ENABLED:
+        return "disabled"
+    last_tick = _scheduler_state.get("last_tick_at")
+    if last_tick is None:
+        return "never_ran"
+    since = ((now or utcnow()) - last_tick).total_seconds()
+    return "stalled" if since > max(300, REMINDER_SCAN_INTERVAL * 5) else "alive"
+
+
 @app.api_route("/api/health", methods=["GET", "HEAD"])
 async def health():
     """Liveness + real database check for uptime monitoring.
@@ -3810,7 +4252,17 @@ async def health():
         # invite_flow is a deploy marker: proves which invite generation this
         # running process carries when a user-side failure needs diagnosing.
         return {"status": "ok", "database": "ok", "db_latency_ms": elapsed_ms,
-                "invite_flow": "v4"}
+                "invite_flow": "v4",
+                # The reminder loop, in one word. It is the single most
+                # consequential thing that can die quietly: every reminder,
+                # every daily digest, the push receipts and the shopping
+                # flush all ride its tick, and when it stops nothing errors —
+                # the app simply goes silent, which is indistinguishable from
+                # a quiet week. A verdict rather than a timestamp, because a
+                # timestamp needs arithmetic before it means anything, and
+                # here so the twice-daily smoke test can see it without an
+                # admin session.
+                "scheduler": _scheduler_verdict()}
     except (asyncio.TimeoutError, Exception) as exc:  # noqa: B014 - report any failure
         log.warning("Health check database ping failed: %s", exc)
         return JSONResponse(status_code=503, content={"status": "error", "database": "unreachable"})
@@ -3947,11 +4399,46 @@ async def send_account_deleted_email(to_email: str, name: str) -> dict:
   </div>
 </div>""".strip()
     try:
-        return await _resend_send({"from": INVITE_FROM_EMAIL, "to": [to_email],
+        return await _resend_send({"from": sender_as_app(INVITE_FROM_EMAIL), "to": [to_email],
                                    "subject": subject, "text": text, "html": html_body})
     except Exception as exc:  # noqa: BLE001 — a receipt must never fail a delete
         log.warning("account-deleted email skipped: %s", exc)
         return {"sent": False}
+
+
+EMAIL_ERROR_KEEP = 100
+
+
+async def record_email_failure(kind: str, result: dict) -> None:
+    """Note that an outbound email did not go, so it can be seen from inside.
+
+    Password reset answers {"ok": true} whichever way it goes — deliberately,
+    so the endpoint never becomes an oracle for which addresses are
+    registered. The cost of that silence is that a broken mail configuration
+    looks exactly like a working one, and the only symptom is a person who
+    cannot get back into their account and never says so.
+
+    The address is NOT stored: what an admin needs is that sending is failing
+    and why, not who asked. Capped, newest kept.
+    """
+    if not isinstance(result, dict) or result.get("sent"):
+        return
+    try:
+        database = get_db()
+        await database["email_delivery_errors"].insert_one({
+            "at": utcnow(),
+            "kind": kind,
+            "error": str(result.get("error") or "not configured")[:200],
+        })
+        count = await database["email_delivery_errors"].count_documents({})
+        if count > EMAIL_ERROR_KEEP:
+            oldest = [r async for r in database["email_delivery_errors"].find(
+                {}, {"_id": 0, "at": 1}).sort("at", 1).limit(count - EMAIL_ERROR_KEEP)]
+            if oldest:
+                await database["email_delivery_errors"].delete_many(
+                    {"at": {"$lte": oldest[-1]["at"]}})
+    except Exception as exc:  # noqa: BLE001 — a diagnostic must never break a send
+        log.warning("email failure not recorded: %s", exc)
 
 
 async def send_password_reset_email(to_email: str, name: str, code: str) -> dict:
@@ -3990,7 +4477,7 @@ async def send_password_reset_email(to_email: str, name: str, code: str) -> dict
   </div>
 </div>""".strip()
     try:
-        return await _resend_send({"from": INVITE_FROM_EMAIL, "to": [to_email],
+        return await _resend_send({"from": sender_as_app(INVITE_FROM_EMAIL), "to": [to_email],
                                    "subject": subject, "text": text, "html": html_body})
     except Exception as exc:  # noqa: BLE001 — never reveal delivery outcome to caller
         log.warning("password-reset email skipped: %s", exc)
@@ -4227,21 +4714,22 @@ async def health_push(user=Depends(require_user), database=Depends(get_db)):
     now = utcnow()
 
     last_tick = _scheduler_state.get("last_tick_at")
-    # A loop that ticks every 60s and has not ticked in 5 minutes is not slow,
-    # it is gone. Said as a verdict rather than a raw timestamp, because a
-    # timestamp needs arithmetic before it means anything.
-    if not REMINDER_SCHEDULER_ENABLED:
-        verdict = "disabled"
-    elif last_tick is None:
-        verdict = "never_ran"
-    elif (now - last_tick).total_seconds() > max(300, REMINDER_SCAN_INTERVAL * 5):
-        verdict = "stalled"
-    else:
-        verdict = "alive"
+    # One definition, shared with /api/health, so the public word and the
+    # admin word can never disagree about whether the loop is alive.
+    verdict = _scheduler_verdict(now)
 
     zones = await _push_zones(database)
     phones = await database["notification_tokens"].count_documents({"active": True})
     browsers = await database["web_push_subscriptions"].count_documents({"active": True})
+    # Per platform, because "phones: 1" hid that the one phone was an iPhone
+    # and that no Android device had ever registered.
+    by_platform: dict = {}
+    async for row in database["notification_tokens"].find({"active": True}, {"_id": 0, "platform": 1}):
+        key = (row.get("platform") or "unknown").lower()
+        by_platform[key] = by_platform.get(key, 0) + 1
+    recent_errors = [r async for r in database["push_delivery_errors"].find(
+        {}, {"_id": 0}).sort("at", -1).limit(10)]
+    pending = await database["push_tickets"].count_documents({"checked": False})
 
     jobs = []
     for job in DAILY_PUSH_JOBS:
@@ -4286,6 +4774,20 @@ async def health_push(user=Depends(require_user), database=Depends(get_db)):
             "people_reachable": len(zones),
             "active_phone_tokens": phones,
             "active_web_subscriptions": browsers,
+            "by_platform": by_platform,
+        },
+        # What Google and Apple said about the pushes sent, read from Expo's
+        # receipts. Empty is good; `InvalidCredentials` on android means the
+        # FCM key is not on EAS (docs/ANDROID_PUSH.md).
+        "delivery": {
+            "receipts_last_checked_at": iso(_push_receipt_state.get("last_check_at")),
+            "receipts_checked": _push_receipt_state.get("checked", 0),
+            "tickets_pending": pending,
+            "recent_errors": [{
+                "at": iso(r.get("at")), "stage": r.get("stage"),
+                "platform": r.get("platform"), "error": r.get("error"),
+                "message": r.get("message"), "token_tail": r.get("token_tail"),
+            } for r in recent_errors],
         },
         "jobs": jobs,
         "you": {
@@ -4309,6 +4811,13 @@ async def health_config(user=Depends(require_user)):
         "db_configured": bool(MONGO_URL),
         "backend_version": "pricing_gating_v1",
         "email_configured": bool(RESEND_API_KEY and INVITE_FROM_EMAIL),
+        # The last few outbound emails that did not go. Empty is good; a run of
+        # password_reset rows means people are locked out in silence.
+        "email_failures": [
+            {"at": iso(r.get("at")), "kind": r.get("kind"), "error": r.get("error")}
+            for r in [row async for row in get_db()["email_delivery_errors"]
+                      .find({}, {"_id": 0}).sort("at", -1).limit(5)]
+        ],
         "admin_access_enabled": bool(ADMIN_EMAILS),
         "voice_configured": bool(GOOGLE_API_KEY and genai),
         "google_web_configured": bool(GOOGLE_WEB_CLIENT_ID),
@@ -5018,8 +5527,12 @@ async def request_password_reset(payload: RequestPasswordResetIn):
             }},
             upsert=True,
         )
-        await send_password_reset_email(email, user.get("name") or "there", code)
-    return {"ok": True}
+        result = await send_password_reset_email(email, user.get("name") or "there", code)
+        await record_email_failure("password_reset", result)
+    # Whether this SERVER can send mail at all is not account-specific, so
+    # saying it leaks nothing — and it is the difference between "check your
+    # inbox" and a person waiting for a code that was never going to arrive.
+    return {"ok": True, "email_configured": bool(RESEND_API_KEY and INVITE_FROM_EMAIL)}
 
 
 class ResetPasswordIn(BaseModel):
@@ -5146,6 +5659,52 @@ async def set_language(payload: LanguageIn, user=Depends(require_user)):
 # -----------------------------------------------------------------------------
 # Family
 # -----------------------------------------------------------------------------
+async def _link_members_to_accounts(database: Any, family_id: str, members: list) -> list:
+    """Attach user_id to adult rows that predate the day rows carried one.
+
+    has_account is read straight off the row, so a founder whose row was
+    created before user_id linkage existed showed as INVITED — "Hasn't joined
+    yet" — in their own household, on every device, including their own. The
+    account is matched by the row's email, else by name (only when exactly one
+    account in the family has it), and the link is written back so this is
+    done once, not on every read.
+    """
+    unlinked = [m for m in members
+                if not m.get("user_id") and _is_adult_role(m.get("role"))]
+    if not unlinked:
+        return members
+    accounts = [u async for u in database["users"].find(
+        {"family_id": family_id}, {"_id": 0, "user_id": 1, "email": 1, "name": 1})]
+    taken = {m.get("user_id") for m in members if m.get("user_id")}
+    free = [u for u in accounts if u.get("user_id") and u["user_id"] not in taken]
+    by_email = {str(u.get("email") or "").strip().lower(): u for u in free if u.get("email")}
+    by_name: dict = {}
+    for u in free:
+        by_name.setdefault(str(u.get("name") or "").strip().lower(), []).append(u)
+    for m in unlinked:
+        email = str(m.get("email") or "").strip().lower()
+        name = str(m.get("name") or "").strip().lower()
+        match = by_email.get(email) if email else None
+        if not match and name and len(by_name.get(name, [])) == 1:
+            match = by_name[name][0]
+        if not match:
+            continue
+        m["user_id"] = match["user_id"]
+        free = [u for u in free if u["user_id"] != match["user_id"]]
+        by_email.pop(str(match.get("email") or "").strip().lower(), None)
+        by_name.pop(str(match.get("name") or "").strip().lower(), None)
+        try:
+            await database["family_members"].update_one(
+                {"member_id": m["member_id"]}, {"$set": {"user_id": match["user_id"]}})
+        except Exception as exc:  # noqa: BLE001 — a read must never fail on a backfill
+            log.warning("member %s not linked to account: %s", m.get("member_id"), exc)
+    return members
+
+
+def _is_adult_role(role) -> bool:
+    return str(role or "").strip().lower() in ("parent", "co-parent", "helper")
+
+
 @app.get("/api/family/members")
 async def family_members(user=Depends(require_user)):
     database = get_db()
@@ -5163,6 +5722,7 @@ async def family_members(user=Depends(require_user)):
     me = await _member_for_user(database, user["family_id"], user)
     my_member_id = me.get("member_id")
     my_email = str(user.get("email") or "").strip().lower()
+    raw = await _link_members_to_accounts(database, user["family_id"], raw)
     rows = []
     for item in raw:
         # Roll a child's weekly meter over on read, so the Kids screen always
@@ -5176,6 +5736,7 @@ async def family_members(user=Depends(require_user)):
             or (bool(my_email) and str(item.get("email") or "").strip().lower() == my_email)
         )
         row["is_founder"] = item.get("member_id") == founder_id
+        row["standing"] = member_standing(item, row["is_founder"])
         rows.append(row)
     return rows
 
@@ -6810,21 +7371,117 @@ MAX_CHAT_LEN = 2000
 ADULTS_THREAD = "adults"
 
 
-class ChatMessageIn(BaseModel):
+# What you may react with. A fixed palette rather than any character the
+# client cares to send: a free-form field is stored and then rendered to
+# everyone in the household, which is a place to put things that are not
+# emoji at all. Six is also as many as fits under a bubble on a phone.
+CHAT_REACTIONS = ("\u2764\ufe0f", "\U0001f44d", "\U0001f602", "\U0001f62e",
+                  "\U0001f622", "\U0001f64f")
+
+
+class ChatReactionIn(BaseModel):
+    emoji: str
+
+
+# How much of a quoted message is kept alongside the reply. Enough to
+# recognise which message is meant; not a second copy of the conversation.
+REPLY_QUOTE_LEN = 140
+
+# How long you may correct what you sent. Short on purpose: in a household
+# where a message can be the record of what was agreed, "Thursday" must not
+# become "Friday" a week later next to somebody's memory of reading it. Long
+# enough to catch the typo you noticed as you hit send.
+CHAT_EDIT_WINDOW_MINUTES = 15
+
+
+class ChatEditIn(BaseModel):
     text: str
 
 
-def public_chat_message(m: dict, viewer_id: str) -> dict:
-    return {
+class ChatMessageIn(BaseModel):
+    text: str
+    # The message this one answers. Optional, and validated against the thread
+    # it is being sent to — see _chat_insert.
+    reply_to: Optional[str] = None
+
+
+def _chat_changed_at(m: dict):
+    """The last moment anything about this message changed.
+
+    Not just when it was sent: a message that has been edited, or that someone
+    has just read, is news to a screen that already has an older copy of it.
+    The poll cursor is compared against this, so all three kinds of change
+    travel on one cursor and there is no way for two of them to disagree.
+    """
+    stamps = [_coerce_dt(m.get(k))
+              for k in ("created_at", "updated_at", "read_at", "reacted_at")]
+    stamps = [s for s in stamps if s]
+    return max(stamps) if stamps else None
+
+
+def public_chat_message(m: dict, viewer_id: str, others: Optional[set] = None) -> dict:
+    """One message as the viewer is allowed to see it.
+
+    `read` has always meant "the VIEWER has read this". That is what an unread
+    badge needs and it says nothing about the person you are talking to, so a
+    sender could never tell whether their message had landed. `seen_by` /
+    `seen` answer the other half: of the other people in this conversation,
+    how many have opened it since it arrived.
+
+    Counted from the same `read_by` the badge already uses — no new bookkeeping
+    and therefore nothing new that can disagree with itself. `others` is the
+    thread's participants minus the sender; without it (a caller that does not
+    know the roster) the counts are simply absent rather than guessed at.
+    """
+    sender = m.get("sender_user_id")
+    read_by = set(m.get("read_by") or [])
+    out = {
         "message_id": m["message_id"],
         "thread": m["thread"],
         "sender_kind": m.get("sender_kind"),
         "sender_name": m.get("sender_name") or "",
         "text": m.get("text") or "",
         "created_at": iso(m.get("created_at")),
-        "mine": m.get("sender_user_id") == viewer_id,
-        "read": (m.get("sender_user_id") == viewer_id) or (viewer_id in (m.get("read_by") or [])),
+        # The cursor the client polls with. Not created_at: a message that has
+        # been read (or, later, edited) has changed without being newer, and a
+        # cursor that could not move past that change would ask for the same
+        # rows on every poll forever.
+        "changed_at": iso(_chat_changed_at(m) or m.get("created_at")),
+        "mine": sender == viewer_id,
+        "read": (sender == viewer_id) or (viewer_id in read_by),
     }
+    if m.get("edited"):
+        # Permanent. An edit that leaves no trace is a rewrite of the record,
+        # which is the thing this app must never quietly do.
+        out["edited"] = True
+
+    reactions = [r for r in (m.get("reactions") or []) if isinstance(r, dict)]
+    if reactions:
+        tally: dict = {}
+        for r in reactions:
+            emoji = r.get("emoji")
+            if not emoji:
+                continue
+            row = tally.setdefault(emoji, {"emoji": emoji, "count": 0, "mine": False})
+            row["count"] += 1
+            if r.get("user_id") == viewer_id:
+                row["mine"] = True
+        # Ordered by the palette, not by who happened to tap first, so the row
+        # under a message does not reshuffle itself as people react.
+        out["reactions"] = [tally[e] for e in CHAT_REACTIONS if e in tally]
+
+    if m.get("reply_to"):
+        out["reply_to"] = m["reply_to"]
+        out["reply_to_name"] = m.get("reply_to_name") or ""
+        out["reply_to_text"] = m.get("reply_to_text") or ""
+    if others is not None:
+        audience = set(others) - {sender}
+        seen_by = len(read_by & audience)
+        out["seen_by"] = seen_by
+        out["audience"] = len(audience)
+        # An empty conversation cannot have been seen by everyone in it.
+        out["seen"] = bool(audience) and seen_by == len(audience)
+    return out
 
 
 HOUSEHOLD_THREAD = "household"
@@ -6846,8 +7503,15 @@ def dm_thread(a: str, b: str) -> str:
 async def _family_accounts(database, family_id: str) -> list:
     """Everyone in the household who can hold a conversation — a member row with
     a login. A young child has none; they are reached through a kid: thread."""
+    members = [m async for m in database["family_members"].find({"family_id": family_id}, {"_id": 0})]
+    # A founder whose row predates user_id linkage has a login too. Skipping
+    # rows without user_id made the household OWNER a non-participant of every
+    # conversation in their own family: no chat push ever reached them, while
+    # the co-parent whose row was linked got everything. "Chat notifications
+    # work on iOS but not on Android" was this, not the platform.
+    members = await _link_members_to_accounts(database, family_id, members)
     out = []
-    async for m in database["family_members"].find({"family_id": family_id}, {"_id": 0}):
+    for m in members:
         uid = m.get("user_id")
         if not uid:
             continue
@@ -6920,7 +7584,8 @@ async def _require_thread_member(database, family_id: str, thread: str, user_id:
 
 
 async def _chat_insert(database, family_id: str, thread: str, sender_user_id: str,
-                       sender_kind: str, sender_name: str, text: str) -> dict:
+                       sender_kind: str, sender_name: str, text: str,
+                       reply_to: Optional[str] = None) -> dict:
     clean = sanitize_message_text(text or "", MAX_CHAT_LEN)
     if not clean:
         raise HTTPException(status_code=400, detail="Message can\'t be empty.")
@@ -6935,25 +7600,117 @@ async def _chat_insert(database, family_id: str, thread: str, sender_user_id: st
         "read_by": [sender_user_id],  # the sender has, of course, "read" it
         "created_at": utcnow(),
     }
+    if reply_to:
+        # Looked up with the family AND the thread in the query, not just the
+        # id. Without the thread clause, quoting a message id from a
+        # conversation you are not in would render its text back to you inside
+        # your own reply — the access model bypassed by a field, which is how
+        # this kind of leak normally happens.
+        parent = await database["messages"].find_one(
+            {"message_id": reply_to, "family_id": family_id, "thread": thread}, {"_id": 0})
+        if not parent:
+            raise HTTPException(status_code=404, detail="That message is no longer here.")
+        msg["reply_to"] = reply_to
+        # A snapshot rather than a live join: the quote then renders without a
+        # second read, still renders when the quoted message has scrolled off
+        # the page being fetched, and keeps showing what was actually being
+        # answered.
+        msg["reply_to_name"] = parent.get("sender_name") or ""
+        msg["reply_to_text"] = (parent.get("text") or "")[:REPLY_QUOTE_LEN]
     await database["messages"].insert_one(msg)
     return msg
 
 
-async def _chat_thread_messages(database, family_id: str, thread: str, viewer_id: str) -> list:
+# A thread's history, per read. Unbounded until 2026-09-08: every open of a
+# conversation fetched every message ever sent in it, sorted them in Python,
+# and shipped the lot. A household that chats daily for a year would have been
+# downloading thousands of messages to look at the last three — and the moment
+# the screen started polling for live updates, doing so every few seconds.
+CHAT_PAGE = 200
+
+
+def _kid_viewer_id(member_id: str) -> str:
+    """How a managed child is recorded as having read something. They have no
+    login, so their member id stands in for a user id — and only here."""
+    return f"member:{member_id}"
+
+
+async def _chat_audience(database, family_id: str, thread: str, participants: set) -> set:
+    """Who a "seen" tick counts, which is not the same set as who may read.
+
+    `_thread_participants` is the access model and stays exactly that — a set
+    of accounts. A managed child has no account, so a parent writing to their
+    eight-year-old would otherwise be told "seen" the moment the OTHER parent
+    opened the thread, which is a claim about the wrong person. The child's
+    own marker is added here, where it affects a tick and nothing else.
+    """
+    if thread.startswith(KID_PREFIX):
+        member_id = thread[len(KID_PREFIX):]
+        child = await database["family_members"].find_one(
+            {"member_id": member_id, "family_id": family_id}, {"_id": 0})
+        if child and not child.get("user_id"):
+            return set(participants) | {_kid_viewer_id(member_id)}
+    return set(participants)
+
+
+async def _chat_thread_messages(database, family_id: str, thread: str, viewer_id: str,
+                                since: Optional[str] = None,
+                                others: Optional[set] = None) -> list:
+    """The newest messages in a thread, oldest first.
+
+    `since` returns only what has CHANGED after that moment, which is what
+    makes polling cheap: a quiet thread answers with an empty list.
+    """
     rows = []
     async for m in database["messages"].find(
-            {"family_id": family_id, "thread": thread}, {"_id": 0}):
+            {"family_id": family_id, "thread": thread},
+            {"_id": 0}).sort("created_at", -1).limit(CHAT_PAGE):
         rows.append(m)
-    rows.sort(key=lambda r: r.get("created_at") or utcnow())
-    return [public_chat_message(m, viewer_id) for m in rows]
+    rows.reverse()
+    cutoff = _coerce_dt(since) if since else None
+    if cutoff:
+        rows = [m for m in rows if (_chat_changed_at(m) or cutoff) > cutoff]
+    return [public_chat_message(m, viewer_id, others) for m in rows]
 
 
 async def _mark_read(database, family_id: str, thread: str, viewer_id: str) -> None:
-    # Everything in the thread the viewer didn't send is now read by them.
+    """Everything in the thread the viewer didn't send is now read by them.
+
+    `read_at` is stamped as well, and it is not decoration: the sender's screen
+    polls with a cursor, so a message whose only change is "she has now seen
+    it" has to move in that ordering or the tick would never arrive without
+    reopening the screen — the exact bug this whole sequence started from.
+
+    The query only matches rows not already read by this viewer, so the stamp
+    changes at most once per reader and a screen polling a thread it has
+    already read writes nothing.
+    """
     await database["messages"].update_many(
         {"family_id": family_id, "thread": thread,
          "sender_user_id": {"$ne": viewer_id}, "read_by": {"$ne": viewer_id}},
-        {"$addToSet": {"read_by": viewer_id}})
+        {"$addToSet": {"read_by": viewer_id}, "$set": {"read_at": utcnow()}})
+
+
+async def _mark_read_if_needed(database, family_id: str, thread: str, viewer_id: str) -> bool:
+    """Mark the thread read, but only when there is in fact something unread.
+
+    Called BEFORE the messages are fetched, which is not a detail. Marking
+    afterwards stamps `read_at` on rows that have already been serialised, so
+    the `changed_at` the reader stores as its cursor is older than the change
+    its own read just made — and every subsequent poll is handed the whole
+    page again, forever. Found by the live-chat tests the moment "seen" gave
+    a read something to change.
+
+    The look-before-write keeps the other promise: a screen polling a thread
+    it has already read must not write to the database every four seconds.
+    """
+    pending = await database["messages"].find_one(
+        {"family_id": family_id, "thread": thread,
+         "sender_user_id": {"$ne": viewer_id}, "read_by": {"$ne": viewer_id}}, {"_id": 0})
+    if not pending:
+        return False
+    await _mark_read(database, family_id, thread, viewer_id)
+    return True
 
 
 async def _chat_notify(database, family_id: str, thread: str, sender_user_id: str,
@@ -7100,12 +7857,17 @@ async def _canonical_thread(database, family_id: str, thread: str) -> str:
 
 
 @app.get("/api/family/chat/{thread}")
-async def family_chat_get(thread: str, user=Depends(require_chat_account)):
+async def family_chat_get(thread: str, since: Optional[str] = None,
+                          user=Depends(require_chat_account)):
     database = get_db()
     thread = await _canonical_thread(database, user["family_id"], thread)
-    await _require_thread_member(database, user["family_id"], thread, user["user_id"])
-    msgs = await _chat_thread_messages(database, user["family_id"], thread, user["user_id"])
-    await _mark_read(database, user["family_id"], thread, user["user_id"])
+    participants = await _require_thread_member(
+        database, user["family_id"], thread, user["user_id"])
+    audience = await _chat_audience(database, user["family_id"], thread, participants)
+    # Before the fetch, so the rows carry the read this very call performed.
+    await _mark_read_if_needed(database, user["family_id"], thread, user["user_id"])
+    msgs = await _chat_thread_messages(database, user["family_id"], thread,
+                                       user["user_id"], since, others=audience)
     return {"messages": msgs}
 
 
@@ -7113,12 +7875,15 @@ async def family_chat_get(thread: str, user=Depends(require_chat_account)):
 async def family_chat_send(thread: str, payload: ChatMessageIn, user=Depends(require_chat_account)):
     database = get_db()
     thread = await _canonical_thread(database, user["family_id"], thread)
-    await _require_thread_member(database, user["family_id"], thread, user["user_id"])
+    participants = await _require_thread_member(
+        database, user["family_id"], thread, user["user_id"])
     name = user.get("name") or "Someone"
     msg = await _chat_insert(database, user["family_id"], thread, user["user_id"],
-                             _sender_kind(user), name, payload.text)
+                             _sender_kind(user), name, payload.text,
+                             reply_to=payload.reply_to)
     await _chat_notify(database, user["family_id"], thread, user["user_id"], name, msg["text"])
-    return {"ok": True, "message": public_chat_message(msg, user["user_id"])}
+    audience = await _chat_audience(database, user["family_id"], thread, participants)
+    return {"ok": True, "message": public_chat_message(msg, user["user_id"], audience)}
 
 
 @app.post("/api/family/chat/{thread}/read")
@@ -7130,14 +7895,140 @@ async def family_chat_read(thread: str, user=Depends(require_chat_account)):
     return {"ok": True}
 
 
+async def _chat_message_in_thread(database, family_id: str, thread: str, message_id: str) -> dict:
+    """One message, addressed by id but fetched through the door.
+
+    Thread and family in the query, never the id alone. A message id is a
+    guessable-looking handle that clients send us; looked up on its own it
+    would let anyone in the household touch — or read back — a message in a
+    conversation they are not in, which is the access model bypassed by a
+    field instead of by the door.
+    """
+    msg = await database["messages"].find_one(
+        {"message_id": message_id, "family_id": family_id, "thread": thread}, {"_id": 0})
+    if not msg:
+        raise HTTPException(status_code=404, detail="That message is no longer here.")
+    return msg
+
+
+async def _chat_react(database, family_id: str, thread: str, message_id: str,
+                      user_id: str, emoji: str) -> dict:
+    """Add, change or take back one reaction.
+
+    One per person per message: reacting again with the same emoji takes it
+    back, reacting with a different one replaces it. A row of six taps from
+    the same person under one message is clutter, and a household chat is
+    small enough that "who felt what" is more useful than "how many taps".
+    """
+    emoji = (emoji or "").strip()
+    if emoji not in CHAT_REACTIONS:
+        raise HTTPException(status_code=400, detail="That reaction isn\'t available.")
+    msg = await _chat_message_in_thread(database, family_id, thread, message_id)
+
+    had = next((r for r in (msg.get("reactions") or [])
+                if isinstance(r, dict) and r.get("user_id") == user_id), None)
+    # Whatever they had before comes off first, so "one per person" holds even
+    # if an older row somehow carried two.
+    await database["messages"].update_one(
+        {"message_id": message_id, "family_id": family_id},
+        {"$pull": {"reactions": {"user_id": user_id}}})
+    if not (had and had.get("emoji") == emoji):
+        await database["messages"].update_one(
+            {"message_id": message_id, "family_id": family_id},
+            {"$push": {"reactions": {"user_id": user_id, "emoji": emoji}}})
+    # Stamped so the change travels on the same cursor everything else does —
+    # a reaction nobody sees until they reopen the screen is not a reaction.
+    await database["messages"].update_one(
+        {"message_id": message_id, "family_id": family_id},
+        {"$set": {"reacted_at": utcnow()}})
+    return await database["messages"].find_one(
+        {"message_id": message_id, "family_id": family_id}, {"_id": 0})
+
+
+async def _chat_edit(database, family_id: str, thread: str, message_id: str,
+                     user_id: str, text: str, now=None) -> dict:
+    """Correct what you sent, for a short while, and never invisibly.
+
+    Three rules, and each of them is the interesting part rather than the
+    edit itself:
+
+      Only the person who wrote it. Anything else is putting words in
+      somebody's mouth inside the app they use to agree things.
+
+      Only for CHAT_EDIT_WINDOW_MINUTES. The window exists because the other
+      person may already have read it: "Thursday" must not be able to become
+      "Friday" a week later, next to their memory of reading it.
+
+      The marker never comes off. An edit that leaves no trace is a rewrite of
+      the record. `edited` is set once and nothing clears it.
+    """
+    msg = await _chat_message_in_thread(database, family_id, thread, message_id)
+    if msg.get("sender_user_id") != user_id:
+        # 403 rather than 404: they can see the message, so pretending it is
+        # missing would only be confusing.
+        raise HTTPException(status_code=403, detail="You can only edit your own messages.")
+
+    now = now or utcnow()
+    sent = _coerce_dt(msg.get("created_at"))
+    if not sent or (now - sent) > timedelta(minutes=CHAT_EDIT_WINDOW_MINUTES):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Messages can only be edited for {CHAT_EDIT_WINDOW_MINUTES} minutes.")
+
+    clean = sanitize_message_text(text or "", MAX_CHAT_LEN)
+    if not clean:
+        # Deliberately not a delete. Emptying a message is a different decision
+        # with different consequences, and it should not arrive by accident
+        # through the edit box.
+        raise HTTPException(status_code=400, detail="Message can\'t be empty.")
+    if clean == (msg.get("text") or ""):
+        # Nothing changed, so nothing is marked. Opening the edit box and
+        # closing it again must not brand a message as edited.
+        return msg
+
+    await database["messages"].update_one(
+        {"message_id": message_id, "family_id": family_id},
+        {"$set": {"text": clean, "edited": True, "updated_at": now}})
+    return await database["messages"].find_one(
+        {"message_id": message_id, "family_id": family_id}, {"_id": 0})
+
+
+@app.post("/api/family/chat/{thread}/{message_id}/react")
+async def family_chat_react(thread: str, message_id: str, payload: ChatReactionIn,
+                            user=Depends(require_chat_account)):
+    database = get_db()
+    thread = await _canonical_thread(database, user["family_id"], thread)
+    participants = await _require_thread_member(
+        database, user["family_id"], thread, user["user_id"])
+    fresh = await _chat_react(database, user["family_id"], thread, message_id,
+                              user["user_id"], payload.emoji)
+    audience = await _chat_audience(database, user["family_id"], thread, participants)
+    return {"ok": True, "message": public_chat_message(fresh, user["user_id"], audience)}
+
+
+@app.patch("/api/family/chat/{thread}/{message_id}")
+async def family_chat_edit(thread: str, message_id: str, payload: ChatEditIn,
+                           user=Depends(require_chat_account)):
+    database = get_db()
+    thread = await _canonical_thread(database, user["family_id"], thread)
+    participants = await _require_thread_member(
+        database, user["family_id"], thread, user["user_id"])
+    fresh = await _chat_edit(database, user["family_id"], thread, message_id,
+                             user["user_id"], payload.text)
+    audience = await _chat_audience(database, user["family_id"], thread, participants)
+    return {"ok": True, "message": public_chat_message(fresh, user["user_id"], audience)}
+
+
 @app.get("/api/teen/chat")
-async def teen_chat_get(teen=Depends(require_teen)):
+async def teen_chat_get(since: Optional[str] = None, teen=Depends(require_teen)):
     """A teen's own thread, kept for the teen screen. The key is forced to their
     user id, so it can only ever be theirs."""
     database = get_db()
     tuid = teen["user"]["user_id"]
-    msgs = await _chat_thread_messages(database, teen["family_id"], tuid, tuid)
-    await _mark_read(database, teen["family_id"], tuid, tuid)
+    others = await _thread_participants(database, teen["family_id"], tuid)
+    await _mark_read_if_needed(database, teen["family_id"], tuid, tuid)
+    msgs = await _chat_thread_messages(database, teen["family_id"], tuid, tuid, since,
+                                       others=others)
     return {"messages": msgs}
 
 
@@ -7146,9 +8037,35 @@ async def teen_chat_send(payload: ChatMessageIn, teen=Depends(require_teen)):
     database = get_db()
     tuid = teen["user"]["user_id"]
     name = teen["user"].get("name") or "Teen"
-    msg = await _chat_insert(database, teen["family_id"], tuid, tuid, "teen", name, payload.text)
+    msg = await _chat_insert(database, teen["family_id"], tuid, tuid, "teen", name,
+                             payload.text, reply_to=payload.reply_to)
     await _chat_notify(database, teen["family_id"], tuid, tuid, name, msg["text"])
-    return {"ok": True, "message": public_chat_message(msg, tuid)}
+    others = await _thread_participants(database, teen["family_id"], tuid)
+    return {"ok": True, "message": public_chat_message(msg, tuid, others)}
+
+
+@app.post("/api/teen/chat/{message_id}/react")
+async def teen_chat_react(message_id: str, payload: ChatReactionIn, teen=Depends(require_teen)):
+    """The teen's own thread gets the same conversation as everyone else.
+
+    The thread key is forced to their own user id, so a teen can only ever
+    reach into their own conversation whatever id they send.
+    """
+    database = get_db()
+    tuid = teen["user"]["user_id"]
+    fresh = await _chat_react(database, teen["family_id"], tuid, message_id, tuid,
+                              payload.emoji)
+    others = await _thread_participants(database, teen["family_id"], tuid)
+    return {"ok": True, "message": public_chat_message(fresh, tuid, others)}
+
+
+@app.patch("/api/teen/chat/{message_id}")
+async def teen_chat_edit(message_id: str, payload: ChatEditIn, teen=Depends(require_teen)):
+    database = get_db()
+    tuid = teen["user"]["user_id"]
+    fresh = await _chat_edit(database, teen["family_id"], tuid, message_id, tuid, payload.text)
+    others = await _thread_participants(database, teen["family_id"], tuid)
+    return {"ok": True, "message": public_chat_message(fresh, tuid, others)}
 
 
 @app.post("/api/teen/chat/read")
@@ -7175,9 +8092,9 @@ async def kid_notes(child=Depends(require_child)):
     member = child["member"]
     thread = KID_PREFIX + member["member_id"]
     # The child is not a user, so "read" is tracked against their member id.
-    viewer = f"member:{member['member_id']}"
+    viewer = _kid_viewer_id(member["member_id"])
+    await _mark_read_if_needed(database, child["family_id"], thread, viewer)
     msgs = await _chat_thread_messages(database, child["family_id"], thread, viewer)
-    await _mark_read(database, child["family_id"], thread, viewer)
     return {"messages": msgs}
 
 
@@ -7975,7 +8892,8 @@ async def app_version_info():
     return {
         "min_runtime": MIN_SUPPORTED_RUNTIME,
         "store_version": CURRENT_STORE_VERSION,
-        "android_store_url": "https://play.google.com/store/apps/details?id=com.householdcoo.app",
+        "android_store_url": ANDROID_STORE_URL,
+        "ios_store_url": IOS_STORE_URL,
         "backend_commit": commit,
     }
 
@@ -8379,6 +9297,24 @@ async def admin_subscribers(user=Depends(require_user)):
         except ValueError:
             return None
 
+    # Who is on the admin list, resolved once for the whole sweep. A household
+    # containing an admin account receives the TOP tier at runtime whatever its
+    # stored plan says — so it uses premium without paying and does not appear
+    # as `unpaid_premium`, which is decided from the stored plan. Without this
+    # the list answered a narrower question than the one being asked of it.
+    admin_families = set()
+    if ADMIN_EMAILS:
+        async for u in database["users"].find({}, {"_id": 0, "email": 1, "family_id": 1}):
+            if is_admin_email(u.get("email", "")) and u.get("family_id"):
+                admin_families.add(u["family_id"])
+
+    # And the global switch. While no paid rail is configured, EVERY household
+    # gets the top tier — that is the launch preview working as designed, and
+    # it means a "you are using premium without paying" list would name every
+    # family in the database. Reported alongside so nobody acts on the list
+    # without knowing which of the two worlds they are in.
+    live = billing_is_live()
+
     rows = []
     paying = 0
     async for fam in database["families"].find({}, {"_id": 0}):
@@ -8387,8 +9323,7 @@ async def admin_subscribers(user=Depends(require_user)):
         is_paying = plan != "village"
         if is_paying:
             paying += 1
-        source = ("stripe" if fam.get("stripe_last_event")
-                  else "google_play" if fam.get("rc_last_event") else None)
+        source = billing_marker(fam)
         members = by_family.get(fid, [])
         # The creator: earliest-created user in the family.
         contact = min(members, key=lambda m: _epoch(m.get("created_at"))) if members else {}
@@ -8397,6 +9332,27 @@ async def admin_subscribers(user=Depends(require_user)):
             "plan": plan,
             "paying": is_paying,
             "billing_source": source,
+            # A paid plan with no rail behind it is not a subscriber. It is a
+            # testing-window leftover or an admin grant, and it had been
+            # rendering identically to somebody who actually pays — which is how
+            # "3 paying households" sat next to RevenueCat's 2 and neither
+            # number looked wrong.
+            "unpaid_premium": bool(is_paying and source is None),
+            # WHY they are not paying, which is the part that makes the flag
+            # safe to act on. A tester and an early adopter you thanked are not
+            # freeloaders, and a reminder sent to either is a mistake you
+            # cannot take back.
+            "unpaid_reason": (
+                "preview" if not live
+                else "admin_or_tester" if fid in admin_families
+                else "grandfathered" if fam.get("grandfathered")
+                else "paid_plan_no_receipt" if (is_paying and source is None)
+                else None),
+            # True whenever this household is GETTING premium without paying,
+            # by any route — not only when its stored plan says so.
+            "premium_without_paying": bool(
+                (not live) or (fid in admin_families) or fam.get("grandfathered")
+                or (is_paying and source is None)),
             "billing_cycle": fam.get("billing_cycle"),
             "owner_name": contact.get("name", ""),
             "owner_email": contact.get("email", ""),
@@ -8421,6 +9377,18 @@ async def admin_subscribers(user=Depends(require_user)):
     return {
         "total": len(rows),
         "paying": paying,
+        # How many of those actually have a payment rail behind them. The two
+        # numbers being different is the interesting fact, so it is reported
+        # rather than left to be spotted by counting rows.
+        "paying_verified": sum(1 for r in rows if r["paying"] and not r["unpaid_premium"]),
+        # The two facts you need before acting on any of this.
+        #
+        # `billing_live` false means no paid rail is configured at all, so every
+        # household in the list is on the launch preview by design — and a
+        # "start paying or lose access" message would be going to all of them,
+        # wrongly. It is the first thing to check and the easiest to forget.
+        "billing_live": live,
+        "premium_without_paying": sum(1 for r in rows if r["premium_without_paying"]),
         "subscribers": rows,
     }
 
@@ -8678,10 +9646,22 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
     if payload.location is not None:
         changes["location"] = payload.location.strip()[:200]
 
-    if payload.shared is not None:
+    if payload.shared is not None and bool(payload.shared) != bool(card.get("shared")):
         # Only the person who added a private item may change its sharing here
         # (making it private again). Sharing-with-notification goes through the
         # dedicated /share endpoint. Legacy items (no owner) are family-wide.
+        #
+        # Note the second half of the condition, added 2026-09-08. The edit
+        # sheet sends every field it holds, including `shared`, whether or not
+        # the person touched it — so editing the TITLE of a card your co-parent
+        # added was refused with "Only the person who added this can change its
+        # sharing", about a sharing value that was not being changed. Roland hit
+        # this on a task of Keigh's. A co-parent could not correct a typo on
+        # anything the other one had written.
+        #
+        # A no-op is not a change. The rule it protects is unaffected: actually
+        # flipping someone else's card between shared and private is still
+        # refused.
         owner = card.get("created_by_user_id")
         if owner and owner != user["user_id"]:
             raise HTTPException(status_code=403, detail="Only the person who added this can change its sharing")
@@ -10308,17 +11288,85 @@ RC_DOWNGRADE_EVENTS = {"EXPIRATION"}
 BILLING_EVENT_KEEP = int(os.environ.get("BILLING_EVENT_KEEP", "500"))
 
 
-def rc_plan_from_product(product: Optional[str]) -> tuple[str, str]:
+# Where a term stops being monthly and starts being annual. Six months sits
+# comfortably above every monthly and quarterly plan and below every yearly one,
+# so a few days of clock drift or a store's proration cannot move a term across
+# it.
+YEARLY_TERM_DAYS = 180
+
+
+def rc_cycle_from_term(term_days: Optional[float]) -> Optional[str]:
+    """How long the customer actually bought for. None when we cannot tell."""
+    if term_days is None:
+        return None
+    return "yearly" if term_days >= YEARLY_TERM_DAYS else "monthly"
+
+
+def _term_days(start: Any, end: Any) -> Optional[float]:
+    """Length of one billing period, in days, from whatever the store gave us."""
+    try:
+        a = ensure_aware_utc(parse_dt(str(start))) if start is not None else None
+        b = ensure_aware_utc(parse_dt(str(end))) if end is not None else None
+    except Exception:
+        return None
+    if not a or not b or b <= a:
+        return None
+    return (b - a).total_seconds() / 86400.0
+
+
+def rc_term_days_from_ms(purchased_at_ms: Any, expiration_at_ms: Any) -> Optional[float]:
+    """A webhook's own numbers. Both are epoch milliseconds when present."""
+    try:
+        a = int(purchased_at_ms)
+        b = int(expiration_at_ms)
+    except (TypeError, ValueError):
+        return None
+    return (b - a) / 86400000.0 if b > a else None
+
+
+def rc_term_days_for_product(subscriber: dict, product: Optional[str]) -> Optional[float]:
+    """The CURRENT period's length, read from the subscriptions block.
+
+    Deliberately not the entitlement's dates. An entitlement's `purchase_date`
+    is the ORIGINAL purchase, so a monthly subscription running seven months
+    would measure as a 240-day term and be called yearly. The subscriptions
+    block carries the latest renewal instead, which is one period by
+    construction.
+    """
+    subs = (subscriber or {}).get("subscriptions") or {}
+    row = subs.get(product) if product else None
+    if not isinstance(row, dict):
+        return None
+    return _term_days(row.get("purchase_date"), row.get("expires_date"))
+
+
+def rc_plan_from_product(product: Optional[str],
+                         term_days: Optional[float] = None) -> tuple[str, str]:
     """Which plan and cycle a store product grants.
 
     The same three lines had been written out at each of the three places that
     needed them — the webhook, the reconcile endpoint, and now the sweep — so a
     new product naming convention would have had to be remembered in three
     places or silently disagree in one.
+
+    THE CYCLE COMES FROM THE TERM, not from the name. It used to be a substring
+    search for "year" in the product id, which is only ever as true as the
+    person who named the product. Ahenora's annual plan is a `yearly` base plan
+    under a Google Play subscription called `premium_monthly`, and RevenueCat's
+    entitlement reports `product_identifier` as the subscription id alone — so
+    the string handed to this function was literally "premium_monthly" for a
+    customer who had paid for a year. Every annual subscriber was recorded as
+    monthly, and the revenue view said so.
+
+    The name is still the fallback, for the one case where nothing tells us the
+    term: a lifetime entitlement, or a store that answered without dates.
     """
     pid = (product or "").lower()
-    return ("household" if "household" in pid else "executive",
-            "yearly" if ("year" in pid or "annual" in pid) else "monthly")
+    plan = "household" if "household" in pid else "executive"
+    cycle = rc_cycle_from_term(term_days)
+    if cycle is None:
+        cycle = "yearly" if ("year" in pid or "annual" in pid) else "monthly"
+    return plan, cycle
 
 
 async def record_billing_event(
@@ -10458,7 +11506,9 @@ async def revenuecat_webhook(payload: dict, authorization: Optional[str] = Heade
         )
         return {"ok": True, "matched": False}
 
-    granted_plan, cycle = rc_plan_from_product(event.get("product_id"))
+    granted_plan, cycle = rc_plan_from_product(
+        event.get("product_id"),
+        rc_term_days_from_ms(event.get("purchased_at_ms"), event.get("expiration_at_ms")))
     changes = {
         "rc_last_event": event_type,
         "rc_product_id": event.get("product_id"),
@@ -10552,13 +11602,19 @@ async def reconcile_billing(user: dict = Depends(require_user)):
 
     database = get_db()
     data = await _fetch_rc_subscriber(user["user_id"], secret)
-    active, product = rc_entitlement_state((data or {}).get("subscriber") or {}, utcnow())
+    subscriber = (data or {}).get("subscriber") or {}
+    active, product = rc_entitlement_state(subscriber, utcnow())
 
     family = await get_family_doc(user["family_id"])
     changes = {"rc_reconciled_at": utcnow(), "updated_at": utcnow()}
     if active:
-        changes["plan"], changes["billing_cycle"] = rc_plan_from_product(product)
+        changes["plan"], changes["billing_cycle"] = rc_plan_from_product(
+            product, rc_term_days_for_product(subscriber, product))
         changes["rc_product_id"] = product
+        # Same reason as the sweep: a household verified against the store is a
+        # paying household, and must not read as one that never paid.
+        changes["rc_last_event"] = "RECONCILE_VERIFIED"
+        changes["rc_event_at"] = utcnow()
     elif family.get("plan") in ("executive", "household") and family.get("rc_last_event"):
         changes["plan"] = "village"
 
@@ -10667,16 +11723,25 @@ async def sweep_billing_once(database: Any, budget: int = 0, secret: str = "") -
 
         checked += 1
         await database["users"].update_one({"user_id": uid}, {"$set": {"rc_swept_at": now}})
-        active, product = rc_entitlement_state((data or {}).get("subscriber") or {}, now)
+        subscriber = (data or {}).get("subscriber") or {}
+        active, product = rc_entitlement_state(subscriber, now)
         if not active:
             continue
 
         fid = cand["family_id"]
-        plan, cycle = rc_plan_from_product(product)
+        plan, cycle = rc_plan_from_product(
+            product, rc_term_days_for_product(subscriber, product))
         await database["families"].update_one({"family_id": fid}, {"$set": {
             "plan": plan,
             "billing_cycle": cycle,
             "rc_product_id": product,
+            # An explicit marker, not just the product id. A repaired household
+            # is a paying household and every later reader — the admin screen,
+            # the launch cleanup — has to be able to see that without inferring
+            # it. Leaving this unset is what made the cleanup wipe real
+            # subscribers on every restart.
+            "rc_last_event": "SWEEP_VERIFIED",
+            "rc_event_at": now,
             "rc_reconciled_at": now,
             "updated_at": now,
         }})
@@ -10695,12 +11760,165 @@ async def sweep_billing_once(database: Any, budget: int = 0, secret: str = "") -
     return {"checked": checked, "corrected": corrected, "candidates": len(candidates)}
 
 
+# Why a purchase that reached nobody is STILL reaching nobody.
+#
+# The replay below runs twice a day and gives up down five different paths,
+# every one of them silently. So the admin screen showed the same row, with the
+# same first-day wording, whether we had never tried it or tried it forty times
+# — and the one question a person needs answered before they can act ("is this
+# recoverable at all?") had no answer anywhere in the app.
+#
+# The distinction that matters: NO_ACCOUNT is real money waiting for a human to
+# match a store receipt to a person. NOT_ENTITLED is a subscription that has
+# since lapsed or been refunded, where there is nothing left to recover and the
+# row can be let go. NO_KEY is our own configuration, and nobody's purchase.
+# Reading them the same way is how a recoverable payment sits next to five
+# unrecoverable ones and gets treated like them.
+REPLAY_STATES = ("no_id", "no_account", "no_key", "no_answer", "not_entitled")
+
+
+async def _note_replay_attempt(database: Any, ev: dict, state: str) -> None:
+    """Record that we tried, and what stopped us. Bookkeeping only.
+
+    Deliberately writes nothing a plan is ever decided from: the replay's
+    promise is that it never downgrades and never guesses, and a counter that
+    could change who is entitled would be a way to break that quietly.
+    """
+    event_id = ev.get("event_id")
+    if not event_id:
+        return
+    await database["billing_events"].update_one(
+        {"event_id": event_id},
+        {"$set": {"replay_state": state, "last_replay_at": utcnow()},
+         "$inc": {"replay_attempts": 1}})
+
+
+# RevenueCat's dashboard has a "Send test event" button. It posts a real
+# webhook carrying event_type TEST, product "test_product" and a synthetic
+# app_user_id that belongs to nobody — which is the whole point of it.
+#
+# We filed it as a purchase that reached no household. So the admin screen's
+# loudest alarm — a red banner reading "That is real money landing nowhere,
+# the store got a 200 back and will not send it again" — has been on since
+# 31 August because somebody pressed a button to check the endpoint was
+# wired up. It could never clear: the id is not a person, so the twice-daily
+# replay will never resolve it, and it was burning a RevenueCat lookup a
+# pass forever trying.
+#
+# Worse than the noise is what the noise hides. A real unmatched purchase
+# would raise exactly the same banner and read exactly the same, next to
+# this one, and be indistinguishable from the false alarm that had been
+# standing for weeks.
+#
+# Classified on READ rather than stored, so the row already sitting in
+# production is reclassified the moment this ships, with no migration.
+def is_test_billing_event(row: Optional[dict]) -> bool:
+    """A store's "is this endpoint alive?" ping. Never money."""
+    r = row or {}
+    return (str(r.get("source") or "").strip().lower() == "revenuecat"
+            and str(r.get("event_type") or "").strip().upper() == "TEST")
+
+
+async def replay_unmatched_billing(database: Any, secret: str = "") -> dict:
+    """Retry the purchases that arrived for an account we did not know.
+
+    A webhook naming an app_user_id with no matching user is answered 200 —
+    correctly, because RevenueCat must stop retrying — and that is the end of
+    it. The store considers the money delivered and will never send it again.
+    One such row is sitting in this database right now.
+
+    It is not always unrecoverable. The common cause is a race, not a mystery:
+    the purchase completes and the webhook lands before the account row is
+    readable, so the id was real and simply not there yet. Asking again later
+    resolves those, and costs one indexed lookup per unresolved row.
+
+    Never downgrades, never guesses: it applies a plan only when the id names a
+    real user AND RevenueCat still says that subscriber is entitled. A row that
+    stays unresolved keeps its app_user_id on the admin screen, where a person
+    can act on it — which is the whole reason the id is recorded.
+    """
+    secret = secret or os.environ.get("REVENUECAT_SECRET_KEY", "")
+    now = utcnow()
+    resolved = attempted = 0
+    async for ev in database["billing_events"].find(
+            {"matched": False}, {"_id": 0}):
+        if ev.get("resolved_at"):
+            continue
+        if is_test_billing_event(ev):
+            # Nothing to recover and nobody to find. Skipped rather than
+            # noted: a retry count on a test ping is a number that invites
+            # somebody to investigate it.
+            continue
+        uid = ev.get("app_user_id")
+        if not uid:
+            # Nothing to look up, ever. Recorded so the screen can say so
+            # rather than showing a row that looks pending forever.
+            await _note_replay_attempt(database, ev, "no_id")
+            continue
+        attempted += 1
+        user = await database["users"].find_one({"user_id": uid}, {"_id": 0})
+        if not user or not user.get("family_id"):
+            await _note_replay_attempt(database, ev, "no_account")
+            continue
+        # The account exists now. Confirm with RevenueCat rather than trusting a
+        # webhook we have already stored — the subscription may have lapsed in
+        # the meantime, and granting a plan off a stale event would be worse
+        # than the miss it is repairing.
+        if not secret:
+            await _note_replay_attempt(database, ev, "no_key")
+            continue
+        try:
+            data = await _fetch_rc_subscriber(uid, secret)
+        except HTTPException as e:
+            log.info("billing replay: no answer for one id (status %s)", e.status_code)
+            await _note_replay_attempt(database, ev, "no_answer")
+            continue
+        subscriber = (data or {}).get("subscriber") or {}
+        active, product = rc_entitlement_state(subscriber, now)
+        if not active:
+            await _note_replay_attempt(database, ev, "not_entitled")
+            continue
+        plan, cycle = rc_plan_from_product(
+            product, rc_term_days_for_product(subscriber, product))
+        fid = user["family_id"]
+        await database["families"].update_one({"family_id": fid}, {"$set": {
+            "plan": plan,
+            "billing_cycle": cycle,
+            "rc_product_id": product,
+            "rc_last_event": ev.get("event_type") or "REPLAYED",
+            "rc_event_at": now,
+            "rc_reconciled_at": now,
+            "updated_at": now,
+        }})
+        await database["billing_events"].update_one(
+            {"event_id": ev.get("event_id")},
+            {"$set": {"resolved_at": now, "family_id": fid}})
+        resolved += 1
+        log.warning("billing replay recovered a household to %s (event had reached nobody)", plan)
+        await record_billing_event(
+            database, source="replay", event_type="RECOVERED", matched=True,
+            family_id=fid, app_user_id=uid, product_id=product, plan=plan,
+            detail="a purchase that had reached nobody now matches an account",
+        )
+    return {"attempted": attempted, "resolved": resolved}
+
+
+# A heartbeat for the only loop that handles money. Without it, "is the
+# sweep running?" could not be answered from inside the app, and the loop
+# used to sleep a full interval (six hours) BEFORE its first pass — so a
+# service that restarted more often than that never swept at all, silently.
+_billing_sweep_state: dict = {"booted_at": None, "last_tick_at": None, "ticks": 0, "last_error": None}
+
+
 async def _billing_sweep_loop():
     # The key and the budget are both deliberately absent from this scope. The
     # pass fetches its own, so nothing here — not the counts it returns, not an
     # exception escaping it — can carry either into a log line.
+    _billing_sweep_state["booted_at"] = utcnow()
+    first = True
     while True:
-        await asyncio.sleep(BILLING_SWEEP_INTERVAL)
+        await asyncio.sleep(90 if first else BILLING_SWEEP_INTERVAL)
+        first = False
         try:
             # Nothing the pass returns is logged, and nothing is lost by that.
             # Every correction already writes a billing_events row tagged
@@ -10712,8 +11930,17 @@ async def _billing_sweep_loop():
             # return value counted as somebody's financial details. Two
             # integers. Removing the duplicate beats arguing with the name.
             await sweep_billing_once(get_db())
+            # And the rows the sweep structurally cannot reach: a purchase for
+            # an app_user_id we did not know is not in any household, so no
+            # household reads free on its behalf and no candidate list contains
+            # it. Retried here, on the same cadence.
+            await replay_unmatched_billing(get_db())
+            _billing_sweep_state["last_error"] = None
         except Exception as e:  # a pass must never kill the loop
             log.warning("billing sweep pass failed: %s", type(e).__name__)
+            _billing_sweep_state["last_error"] = type(e).__name__
+        _billing_sweep_state["last_tick_at"] = utcnow()
+        _billing_sweep_state["ticks"] += 1
 
 
 @app.on_event("startup")
@@ -10760,7 +11987,12 @@ async def admin_billing_events(user=Depends(require_user), limit: int = Query(de
     rows = [r async for r in database["billing_events"].find({}, {"_id": 0})]
     rows.sort(key=lambda r: _coerce_dt(r.get("received_at")) or utcnow(), reverse=True)
 
-    unmatched = [r for r in rows if not r.get("matched")]
+    # A test ping matched no household, truthfully — and is not a lost
+    # payment, so it does not belong in the number that means "someone paid
+    # and got nothing". It stays in the list, where it is useful: it is
+    # positive evidence this endpoint is reachable from the store.
+    unmatched = [r for r in rows if not r.get("matched") and not is_test_billing_event(r)]
+    test_pings = [r for r in rows if is_test_billing_event(r)]
     by_source: dict = {}
     for r in rows:
         by_source[r.get("source") or "?"] = by_source.get(r.get("source") or "?", 0) + 1
@@ -10776,7 +12008,26 @@ async def admin_billing_events(user=Depends(require_user), limit: int = Query(de
             "plan": r.get("plan"),
             "detail": r.get("detail"),
             "received_at": iso(_coerce_dt(r.get("received_at"))),
+            # What the twice-daily replay found last time it tried this row.
+            # Absent until it has run once — which itself tells you something.
+            "replay_state": r.get("replay_state"),
+            "replay_attempts": int(r.get("replay_attempts") or 0),
+            "last_replay_at": iso(_coerce_dt(r.get("last_replay_at"))),
+            "is_test": is_test_billing_event(r),
         }
+
+    # Unmatched first, then everything else newest-first.
+    #
+    # The list was purely chronological and capped, so the one row that needs
+    # a person to DO something — a purchase that reached no household, real
+    # money the store considers delivered and will never resend — sank below
+    # the fold as ordinary events piled on top of it. Roland's screenshot showed
+    # exactly that: the banner said one event reached nobody, and not one of the
+    # twelve rows under it was that event.
+    #
+    # The count was honest and useless. Now the row you have to act on is the
+    # row at the top.
+    shown = unmatched + [r for r in rows if r.get("matched") or is_test_billing_event(r)]
 
     newest = rows[0] if rows else None
     return {
@@ -10784,12 +12035,21 @@ async def admin_billing_events(user=Depends(require_user), limit: int = Query(de
         "revenuecat_configured": bool(os.environ.get("RC_WEBHOOK_SECRET")),
         "stripe_configured": bool(os.environ.get("STRIPE_WEBHOOK_SECRET")),
         "sweep_enabled": BILLING_SWEEP_ENABLED and bool(os.environ.get("REVENUECAT_SECRET_KEY")),
+        "sweep_booted_at": iso(_billing_sweep_state["booted_at"]),
+        "sweep_last_tick_at": iso(_billing_sweep_state["last_tick_at"]),
+        "sweep_ticks": _billing_sweep_state["ticks"],
+        "sweep_last_error": _billing_sweep_state["last_error"],
         "ever_received": bool(rows),
         "last_event_at": iso(_coerce_dt(newest.get("received_at"))) if newest else None,
         "total": len(rows),
         "unmatched": len(unmatched),
+        # The store reaching us on purpose. Worth its own line: "no event has
+        # ever arrived" and "the only event that ever arrived was a test" are
+        # different situations, and the second one means the endpoint is
+        # correctly wired and simply has not sold anything yet.
+        "last_test_at": iso(_coerce_dt(test_pings[0].get("received_at"))) if test_pings else None,
         "by_source": by_source,
-        "events": [_row(r) for r in rows[:limit]],
+        "events": [_row(r) for r in shown[:limit]],
     }
 
 
@@ -11604,6 +12864,7 @@ async def add_shopping_item(payload: ShoppingItemIn, user=Depends(require_user))
         "created_at": utcnow(),
     }
     await database["shopping_list"].insert_one(doc)
+    await queue_shopping_notification(database, user, [doc["name"]])
     return public_shopping_item(doc)
 
 
@@ -12058,6 +13319,7 @@ async def bulk_add_shopping(body: BulkShoppingIn, user=Depends(require_user)):
     ).to_list(500)
     have = {(e.get("name") or "").strip().lower() for e in existing}
     added = 0
+    added_names: list[str] = []
     for index, raw in enumerate(body.names):
         name = (raw or "").strip()
         if not name or name.lower() in have:
@@ -12074,6 +13336,9 @@ async def bulk_add_shopping(body: BulkShoppingIn, user=Depends(require_user)):
             "created_at": utcnow(),
         })
         added += 1
+        added_names.append(name)
+    if added_names:
+        await queue_shopping_notification(database, user, added_names)
     return {"ok": True, "added": added}
 
 
@@ -13373,7 +14638,30 @@ async def send_santa_draw(draw_id: str, user=Depends(require_full_member)):
     draw["participants"] = participants
     draw["status"] = "sent"
     draw["sent_at"] = utcnow()
-    return public_santa_draw(draw, user["user_id"])
+    # "Send everyone their match" has to send something. Household members
+    # get a push saying their match is ready to reveal in the app (the
+    # assignment itself never travels — it is revealed on their own screen).
+    # Outsiders have only a link, which the organiser hands over from the
+    # per-person Email/Text buttons; the screen says so.
+    told = 0
+    for p in participants:
+        uid = p.get("user_id")
+        if not uid or uid == user["user_id"]:
+            continue
+        try:
+            who = await database["users"].find_one({"user_id": uid}, {"_id": 0, "language": 1})
+            L = PUSH_I18N.get((who or {}).get("language") or "en", PUSH_I18N["en"])
+            got = await asyncio.wait_for(send_push_to_user(
+                database, uid, L["santa_title"],
+                L["santa_body"].format(title=draw.get("title") or "Secret Santa"),
+                {"type": "santa_draw", "draw_id": draw_id}), timeout=5.0)
+            if isinstance(got, dict) and (got.get("devices") or got.get("web")):
+                told += 1
+        except Exception as exc:  # noqa: BLE001 — the draw is sent either way
+            log.warning("santa push to %s skipped: %s", uid, exc)
+    out = public_santa_draw(draw, user["user_id"])
+    out["members_notified"] = told
+    return out
 
 
 @app.get("/api/santa/{draw_id}/my-match")
@@ -14950,9 +16238,24 @@ class SupportContactIn(BaseModel):
 ALLOWED_EVENTS = {
     "feed_open", "scan_used", "card_created", "vault_added", "vault_shared",
     "kids_open", "calendar_open", "onboarding_done", "onboarding_skipped",
+    # Visits to the vault, as opposed to saves into it. Every other tab counted
+    # its opens and this one did not, so the only question anybody actually
+    # asked about the vault — does anyone find it? — had no answer, and got
+    # argued from instead. An unlisted name here is answered 200 and dropped,
+    # so a client that logs an event this set has not heard of is silent
+    # rather than broken; tests/test_metrics_events.py holds the two ends
+    # together.
     # How many households say they share custody at setup. The wedge the app is
     # positioned on, and until now nothing counted whether anyone answered yes.
     "onboarding_custody_set",
+    # Visits to the vault, as opposed to saves into it. Every other tab counted
+    # its opens and this one did not, so the only question anybody actually
+    # asked about the vault — does anyone find it? — had no answer, and got
+    # argued from instead. An unlisted name here is answered 200 and dropped,
+    # so a client logging an event this set has not heard of is silent rather
+    # than broken; frontend/src/__tests__/metricsEvents.test.ts holds the two
+    # ends together.
+    "vault_open",
     "calendar_import_cancelled",
     # AI reliability: bumped server-side from the central Gemini path so the
     # Metrics screen can show a real success rate, not just a live probe.
@@ -15412,6 +16715,7 @@ async def metrics_invites(days: int = 30, user=Depends(require_user), database=D
     sent = len(invites)
     accepted = pending = expired = 0
     joined = elsewhere = never = lagging = 0
+    told = unreachable = unrecorded = 0
     oldest_pending_days = None
 
     for inv in invites:
@@ -15421,6 +16725,15 @@ async def metrics_invites(days: int = 30, user=Depends(require_user), database=D
 
         if (inv.get("status") or "") == "accepted":
             accepted += 1
+            # Did the person who sent it hear that it landed? Written by
+            # notify_invite_accepted; absent on invites accepted before it was.
+            trail = inv.get("accepted_notify")
+            if not isinstance(trail, dict):
+                unrecorded += 1
+            elif (trail.get("devices") or 0) + (trail.get("web") or 0) > 0:
+                told += 1
+            else:
+                unreachable += 1
         elif _expired(inv.get("expires_at")):
             expired += 1
         else:
@@ -15458,7 +16771,143 @@ async def metrics_invites(days: int = 30, user=Depends(require_user), database=D
             "never_signed_up": never,
             "joined_while_invite_still_pending": lagging,
         },
+        # Whether the inviter was told, for every accepted invite in the
+        # window. "unreachable" is the one to act on: the join worked and
+        # nobody registered a device or browser to hear about it.
+        "inviter_told": {
+            "reached": told,
+            "unreachable": unreachable,
+            "not_recorded": unrecorded,
+        },
     }
+
+
+async def send_support_ticket_email(ticket: dict) -> dict:
+    """The support form, delivered to the person who answers it.
+
+    Reply-to is the user, so answering is one tap in a mail client. Best
+    effort, never raises: the ticket is already stored and visible in the
+    admin panel, and this is the second copy.
+    """
+    if not RESEND_API_KEY or not INVITE_FROM_EMAIL or not SUPPORT_INBOX_EMAIL:
+        return {"sent": False, "error": "email not configured"}
+    who = ticket.get("user_name") or ticket.get("user_email") or "A user"
+    subject = f"[{APP_NAME} support] {ticket.get('subject') or '(no subject)'}"
+    text = (
+        f"From: {who} <{ticket.get('user_email') or 'no email'}>\n"
+        f"Household: {ticket.get('family_id')}\n"
+        f"Ticket: {ticket.get('ticket_id')}\n\n"
+        f"{ticket.get('message') or ''}\n\n"
+        "Reply to this email to answer them directly."
+    )
+    html_body = (
+        "<div style=\"font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;font-size:15px;line-height:1.5;color:#202323\">"
+        f"<p><strong>{html.escape(who)}</strong> &lt;{html.escape(ticket.get('user_email') or 'no email')}&gt;<br>"
+        f"Household {html.escape(str(ticket.get('family_id') or ''))} · ticket {html.escape(str(ticket.get('ticket_id') or ''))}</p>"
+        f"<p style=\"white-space:pre-wrap\">{html.escape(ticket.get('message') or '')}</p>"
+        "<p style=\"color:#6b7280;font-size:13px\">Reply to this email to answer them directly.</p></div>"
+    )
+    payload = {
+        "from": sender_as_app(INVITE_FROM_EMAIL),
+        "to": [SUPPORT_INBOX_EMAIL],
+        "subject": subject,
+        "text": text,
+        "html": html_body,
+    }
+    if ticket.get("user_email"):
+        payload["reply_to"] = ticket["user_email"]
+    try:
+        return await _resend_send(payload)
+    except Exception as exc:  # noqa: BLE001 — never fail the form on mail
+        log.warning("support ticket email failed: %s", exc)
+        return {"sent": False, "error": f"{type(exc).__name__}: {exc}"[:160]}
+
+
+async def send_support_ack_email(ticket: dict) -> dict:
+    """The receipt, to the person who wrote in.
+
+    Until now the only acknowledgement was a toast on the screen they were
+    already looking at: it vanished when they closed the sheet and left nothing
+    behind. Somebody who writes to support and hears nothing reasonably assumes
+    the message went nowhere — which is precisely what used to happen, and the
+    reason not to leave any doubt about it now.
+
+    It carries their own words back. A copy of what you sent is the difference
+    between "we got something from you" and a receipt you can check against.
+
+    Best effort and never raises: the ticket is stored, the support inbox has
+    been emailed, and this is a courtesy on top of both.
+    """
+    to = (ticket.get("user_email") or "").strip()
+    if not RESEND_API_KEY or not INVITE_FROM_EMAIL or not to:
+        return {"sent": False, "error": "email not configured"}
+    name = (ticket.get("user_name") or "").split(" ")[0] or "there"
+    subject = f"We\'ve got your message — {APP_NAME} support"
+    text = (
+        f"Hi {name},\n\n"
+        "Thanks for writing in. Your message has reached us and a real person "
+        "will get back to you by email.\n\n"
+        f"What you sent:\n{ticket.get('subject') or ''}\n\n"
+        f"{ticket.get('message') or ''}\n\n"
+        f"Reference: {ticket.get('ticket_id')}\n"
+        "You can reply to this email to add anything."
+    )
+    html_body = (
+        "<div style=\"font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;"
+        "font-size:15px;line-height:1.55;color:#202323\">"
+        f"<p>Hi {html.escape(name)},</p>"
+        "<p>Thanks for writing in. Your message has reached us and a real person "
+        "will get back to you by email.</p>"
+        "<p style=\"color:#6b7280;font-size:13px;margin-bottom:4px\">What you sent</p>"
+        f"<blockquote style=\"margin:0;padding:10px 14px;border-left:3px solid #f26a1b;"
+        f"background:#faf7f4\"><strong>{html.escape(ticket.get('subject') or '')}</strong>"
+        f"<br><span style=\"white-space:pre-wrap\">{html.escape(ticket.get('message') or '')}"
+        "</span></blockquote>"
+        f"<p style=\"color:#6b7280;font-size:13px\">Reference "
+        f"{html.escape(str(ticket.get('ticket_id') or ''))} · you can reply to this email "
+        "to add anything.</p></div>"
+    )
+    payload = {
+        "from": sender_as_app(INVITE_FROM_EMAIL),
+        "to": [to],
+        "subject": subject,
+        "text": text,
+        "html": html_body,
+    }
+    if SUPPORT_INBOX_EMAIL:
+        # A reply from them lands where somebody is looking, not in a no-reply
+        # void.
+        payload["reply_to"] = SUPPORT_INBOX_EMAIL
+    try:
+        return await _resend_send(payload)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("support ack email failed: %s", exc)
+        return {"sent": False, "error": f"{type(exc).__name__}: {exc}"[:160]}
+
+
+async def notify_admins_of_support_ticket(database, ticket: dict) -> dict:
+    """A push to every admin account, so a message from a user is heard on
+    the phone the founder actually carries. Returns what it reached."""
+    reached = {"admins": 0, "devices": 0, "web": 0}
+    if not ADMIN_EMAILS:
+        return reached
+    admins = [a async for a in database["users"].find(
+        {"email": {"$in": sorted(ADMIN_EMAILS)}}, {"_id": 0, "user_id": 1})]
+    who = ticket.get("user_name") or ticket.get("user_email") or "A user"
+    for admin in admins:
+        if not admin.get("user_id"):
+            continue
+        reached["admins"] += 1
+        got = await send_push_to_user(
+            database, admin["user_id"],
+            f"Support: {who}",
+            (ticket.get("subject") or "")[:120],
+            {"type": "support_ticket", "ticket_id": ticket.get("ticket_id")},
+        )
+        if isinstance(got, dict):
+            reached["devices"] += int(got.get("devices") or 0)
+            reached["web"] += int(got.get("web") or 0)
+    return reached
 
 
 @app.post("/api/support/contact")
@@ -15467,6 +16916,16 @@ async def submit_support_contact(
     user: dict = Depends(require_user),
     database=Depends(get_db),
 ):
+    """The in-app "Contact support" form.
+
+    For months this stored the ticket and did nothing else — no email, no
+    push, no screen that listed them. The app told the user "Your message has
+    been received. We'll get back to you soon." and nobody ever could, because
+    nobody was told. Now: stored (still first, so nothing is lost), emailed to
+    the support inbox with reply-to set to the user, pushed to every admin,
+    listed in the admin panel — and what each of those reached is written on
+    the ticket, so a missing reply is a lookup rather than a mystery.
+    """
     subject = body.subject.strip()[:200]
     message = body.message.strip()[:5000]
     if not subject or not message:
@@ -15483,7 +16942,102 @@ async def submit_support_contact(
         "created_at": utcnow(),
     }
     await database["support_tickets"].insert_one(ticket)
+    # Everything past this line is delivery of a message already safely
+    # stored. None of it may turn the user's "Sent!" into an error.
+    notified: dict = {"at": utcnow()}
+    try:
+        notified["email"] = await asyncio.wait_for(send_support_ticket_email(ticket), timeout=20.0)
+    except Exception as exc:  # noqa: BLE001
+        notified["email"] = {"sent": False, "error": f"{type(exc).__name__}: {exc}"[:160]}
+    try:
+        notified["ack"] = await asyncio.wait_for(send_support_ack_email(ticket), timeout=20.0)
+    except Exception as exc:  # noqa: BLE001
+        notified["ack"] = {"sent": False, "error": f"{type(exc).__name__}: {exc}"[:160]}
+    try:
+        notified["push"] = await asyncio.wait_for(
+            notify_admins_of_support_ticket(database, ticket), timeout=10.0)
+    except Exception as exc:  # noqa: BLE001
+        notified["push"] = {"admins": 0, "devices": 0, "web": 0,
+                            "error": f"{type(exc).__name__}: {exc}"[:160]}
+    if not (notified["email"] or {}).get("sent") and not (
+            (notified["push"] or {}).get("devices") or (notified["push"] or {}).get("web")):
+        log.warning("support ticket %s stored but nobody was told: %s",
+                    ticket["ticket_id"], notified)
+    try:
+        await database["support_tickets"].update_one(
+            {"ticket_id": ticket["ticket_id"]}, {"$set": {"notified": notified}})
+    except Exception as exc:  # noqa: BLE001
+        log.warning("support ticket delivery trail not written: %s", exc)
     return {"ok": True, "ticket_id": ticket["ticket_id"]}
+
+
+def public_support_ticket(ticket: dict) -> dict:
+    notified = ticket.get("notified") if isinstance(ticket.get("notified"), dict) else {}
+    email = notified.get("email") if isinstance(notified.get("email"), dict) else None
+    push = notified.get("push") if isinstance(notified.get("push"), dict) else None
+    return {
+        "ticket_id": ticket.get("ticket_id"),
+        "family_id": ticket.get("family_id"),
+        "user_id": ticket.get("user_id"),
+        "user_email": ticket.get("user_email") or "",
+        "user_name": ticket.get("user_name") or "",
+        "subject": ticket.get("subject") or "",
+        "message": ticket.get("message") or "",
+        "status": ticket.get("status") or "open",
+        "created_at": iso(ticket.get("created_at")),
+        "closed_at": iso(ticket.get("closed_at")),
+        # None: the ticket predates delivery tracking — it was never sent
+        # anywhere, and the admin panel says so.
+        "emailed": (bool(email.get("sent")) if email else None),
+        "email_error": (email or {}).get("error"),
+        "pushed_devices": ((push or {}).get("devices") or 0) + ((push or {}).get("web") or 0),
+    }
+
+
+@app.get("/api/admin/support-tickets")
+async def admin_support_tickets(days: int = 365, user=Depends(require_user)):
+    """Every message sent through the in-app support form: open ones first,
+    newest first. Also the way to recover the tickets that were stored during
+    the months the form delivered nowhere. Admin-only."""
+    if not is_admin_user(user):
+        raise HTTPException(status_code=403, detail="Admins only")
+    database = get_db()
+    days = max(1, min(days, 3650))
+    cutoff = utcnow() - timedelta(days=days)
+    rows = []
+    async for t in database["support_tickets"].find({}, {"_id": 0}):
+        made = _coerce_dt(t.get("created_at"))
+        if made and made < cutoff:
+            continue
+        rows.append(public_support_ticket(t))
+    rows.sort(key=lambda t: ((t["status"] != "open"), t["created_at"] or ""), reverse=False)
+    open_rows = [t for t in rows if t["status"] == "open"]
+    open_rows.sort(key=lambda t: t["created_at"] or "", reverse=True)
+    closed_rows = [t for t in rows if t["status"] != "open"]
+    closed_rows.sort(key=lambda t: t["created_at"] or "", reverse=True)
+    return {
+        "generated_at": iso(utcnow()),
+        "window_days": days,
+        "open": len(open_rows),
+        "total": len(rows),
+        "email_configured": bool(RESEND_API_KEY and INVITE_FROM_EMAIL),
+        "inbox": SUPPORT_INBOX_EMAIL,
+        "never_delivered": sum(1 for t in rows if t["emailed"] is None and not t["pushed_devices"]),
+        "tickets": open_rows + closed_rows,
+    }
+
+
+@app.post("/api/admin/support-tickets/{ticket_id}/close")
+async def admin_close_support_ticket(ticket_id: str, user=Depends(require_user)):
+    if not is_admin_user(user):
+        raise HTTPException(status_code=403, detail="Admins only")
+    database = get_db()
+    res = await database["support_tickets"].update_one(
+        {"ticket_id": ticket_id},
+        {"$set": {"status": "closed", "closed_at": utcnow(), "closed_by": user["user_id"]}})
+    if not getattr(res, "matched_count", 1):
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    return {"ok": True, "ticket_id": ticket_id, "status": "closed"}
 
 
 # -----------------------------------------------------------------------------

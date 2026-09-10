@@ -38,13 +38,14 @@ import { PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { Card, Chevron, Divider, IconTile, MiniRow, NavRow, ScreenHeader, StatBox, ToggleRow, useUI, UIColors } from '../../src/components/Kit';
 import { useStore } from '../../src/store';
 import { openReview } from '../../src/reviewPrompt';
-import { api, Card as CardType, Entitlements, FamilyInvite, FamilyMember, NotificationSettings } from '../../src/api';
+import { api, reportPushFailure, Card as CardType, Entitlements, FamilyInvite, FamilyMember, NotificationSettings } from '../../src/api';
 import { LANG_NAMES } from '../../src/i18n';
 import { appVersionInfo, ensureNotificationPermissions, registerForPushNotificationsAsync, sendLocalNotification, sendTestScheduledReminderNotification, syncCardReminderNotifications } from '../../src/notifications';
 import { BUILD_TAG } from '../../src/buildInfo';
 import { requestWebPush } from '../../src/webpush';
 import { logger } from '../../src/logger';
 import { apiErrorText } from '../../src/apiError';
+import { SundayBriefModal } from '../../src/components/SundayBriefModal';
 
 function formatBytes(bytes?: number | null) {
   const value = bytes || 0;
@@ -166,6 +167,42 @@ export default function Settings() {
   }, []);
 
   /**
+   * Why the update banner is (or is not) showing.
+   *
+   * Roland reported the app asking him to update on every launch when there
+   * was nothing to update to, and the three banners are three different
+   * branches — a stranded runtime, a staged bundle, or release notes. From
+   * outside the phone they look identical, and I cannot see production, so
+   * guessing which one fires meant guessing which bug to fix.
+   *
+   * This states the four facts that decide it, in one line you can read out or
+   * screenshot: what runtime this build is, what the server currently demands,
+   * whether a bundle is staged, and whether this is the shipped bundle or an
+   * over-the-air one.
+   */
+  const [minRuntime, setMinRuntime] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    api.appVersionInfo()
+      .then((info) => { if (!cancelled) setMinRuntime(info.min_runtime || null); })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, []);
+
+  const updateDiagnostics = useMemo(() => {
+    const runtime = Updates.runtimeVersion || '—';
+    const channel = (Updates as { channel?: string }).channel || '—';
+    return [
+      `runtime ${runtime}`,
+      `server needs ${minRuntime || '—'}`,
+      `channel ${channel}`,
+      `staged ${isUpdatePending ? 'yes' : 'no'}`,
+      Updates.isEmbeddedLaunch ? 'shipped bundle' : 'over-the-air bundle',
+      Updates.isEnabled ? 'updates on' : 'updates off',
+    ].join(' · ');
+  }, [minRuntime, isUpdatePending]);
+
+  /**
    * Fetch the newest published build and restart into it.
    *
    * Updates otherwise arrive silently and apply on the NEXT launch, which from
@@ -262,8 +299,21 @@ export default function Settings() {
     if (pending) parts.push(n('set_invites_pending_count', pending));
     return parts.join(' · ');
   }, [adultCount, childMembers.length, invites, t]);
-  const planLabel = subscription?.plan === 'family_office' ? 'Family Office' : subscription?.plan === 'executive' ? 'Executive Family' : 'Village';
+  // The same names the plans screen uses, so Settings and "View all plans"
+  // can never disagree. This used to hard-code "Executive Family" for the
+  // middle tier (the plans screen says "Family"), had no case at all for the
+  // top tier (a paying Household customer read "Village"), and showed the
+  // retired "Family Office" to every member of an admin household.
+  const planLabel =
+    subscription?.plan === 'household' || subscription?.plan === 'family_office' ? t('plan_household')
+    : subscription?.plan === 'executive' ? t('plan_executive')
+    : t('plan_village');
   const weeklyBrief = Boolean(entitlements?.weekly_brief || subscription?.limits?.weekly_brief);
+  // The brief had a backend, an API method and a finished 230-line screen,
+  // and nothing anywhere imported it — so the stat below told a paying
+  // household "Weekly brief: On" about something they could not open. This
+  // is the door, put where the claim is made.
+  const [showSundayBrief, setShowSundayBrief] = useState(false);
   const initial = (user?.name?.[0] || 'C').toUpperCase();
 
 
@@ -416,7 +466,7 @@ export default function Settings() {
           const { appVersion, runtimeVersion } = await appVersionInfo();
           await api.registerNotificationToken(expoPushToken, Platform.OS, appVersion, runtimeVersion);
         }
-        else if (pushError) warning = String(pushError);
+        else if (pushError) { warning = String(pushError); reportPushFailure(String(pushError)); }
       }
 
       const saved = await api.updateNotificationSettings(nextPrefs).catch(() => nextPrefs as NotificationSettings);
@@ -716,13 +766,14 @@ export default function Settings() {
           <PressScale testID="open-pricing" onPress={() => router.push('/pricing')} style={{ marginTop: 14 }}>
             <Card style={styles.planCard}>
               <View style={styles.planCol}>
-                <Text style={styles.planTitle}>{user?.is_admin ? t('set_admin_tester') : `${planLabel} ${t('set_plan')}`}</Text>
+                <Text style={styles.planTitle}>{user?.is_admin ? t('set_admin_tester') : t('set_plan_named', { plan: planLabel })}</Text>
                 <Text style={styles.planSub}>{memberLimit ? `${memberSlotsUsed}/${memberLimit} ${t('set_slots')}` : t('set_tap_view_plans')}</Text>
               </View>
               <View style={styles.planDivider} />
               <View style={styles.planCol}>
-                <Text style={styles.planTitle}>{memberSlotsUsed} member{memberSlotsUsed === 1 ? '' : 's'}</Text>
-                <Text style={styles.planSub}>{adultCount} adult{adultCount === 1 ? '' : 's'}, {childMembers.length} young{childMembers.length === 1 ? '' : ''} {childMembers.length === 1 ? 'person' : 'people'}</Text>
+                {/* Was hard-coded English — the one card on Settings a French household read in the wrong language. */}
+                <Text style={styles.planTitle}>{t(memberSlotsUsed === 1 ? 'set_members_count_one' : 'set_members_count', { count: memberSlotsUsed })}</Text>
+                <Text style={styles.planSub}>{t(adultCount === 1 ? 'set_adults_count_one' : 'set_adults_count', { count: adultCount })}, {t(childMembers.length === 1 ? 'set_young_count_one' : 'set_young_count', { count: childMembers.length })}</Text>
               </View>
               <ChevronRight color={ui.muted} size={20} />
             </Card>
@@ -764,7 +815,7 @@ export default function Settings() {
           {groupHead('subscription',
             <IconTile bg={ui.orangeSoft}><Crown color={ui.orange} size={18} /></IconTile>,
             t('subscription'),
-            user?.is_admin ? t('set_admin_tester') : `${planLabel} ${t('set_plan')}`,
+            user?.is_admin ? t('set_admin_tester') : t('set_plan_named', { plan: planLabel }),
             GK.subscription)}
           {groupOpen('subscription', GK.subscription) ? (
           <Card style={styles.cardPad}>
@@ -957,13 +1008,12 @@ export default function Settings() {
           </>) : null}
 
           {/* Preferences — language */}
+          {/* One row, no heading over it.
+              This was a "Preferences · English" section label with the globe
+              icon, above a single "Language · English" row with the same globe
+              icon — the same word and the same value, twice, one under the
+              other. A group of one is not a group. */}
           {groupVisible(GK.preferences) ? (<>
-          {groupHead('preferences',
-            <IconTile bg={ui.soft}><Globe color={ui.text} size={18} /></IconTile>,
-            t('set_preferences'),
-            LANG_NAMES[lang],
-            GK.preferences)}
-          {groupOpen('preferences', GK.preferences) ? (
           <Card style={styles.cardPad}>
             <NavRow
               testID="settings-lang"
@@ -974,16 +1024,20 @@ export default function Settings() {
               divider={false}
             />
           </Card>
-
-          ) : null}
           </>) : null}
 
           {/* More — history, plans, usage, updates */}
           {groupVisible(GK.more) ? (<>
           {groupHead('more',
             <IconTile bg={ui.soft}><BarChart3 color={ui.text} size={18} /></IconTile>,
-            t('set_more'),
-            versionLabel,
+            // "More · 1.1.0" — the least descriptive label in the app, on the
+            // group holding Usage analytics, which is where the billing screen
+            // lives. It also collided with the More in the tab bar: same word,
+            // a different destination, one nested inside the other. A version
+            // number as a subtitle says nothing about what is behind the row,
+            // and the version is shown properly on the App version row inside.
+            t('set_tools'),
+            t('set_tools_sub'),
             GK.more)}
           {groupOpen('more', GK.more) ? (<>
           <Card style={styles.cardPad}>
@@ -1134,6 +1188,17 @@ export default function Settings() {
                 <StatBox label={t('set_stat_ai_scans')} value={aiScansStat} />
                 <StatBox label={t('set_stat_vault')} value={formatBytes(entitlements?.vault_bytes_used ?? subscription?.vault_bytes_used)} />
                 <StatBox label={t('set_stat_weekly_brief')} value={weeklyBrief ? t('set_on') : t('set_locked')} />
+                {weeklyBrief ? (
+                  <View style={styles.testRow}>
+                    <PressScale
+                      testID="open-sunday-brief"
+                      onPress={() => setShowSundayBrief(true)}
+                      style={styles.ghostBtnWide}
+                    >
+                      <Text style={styles.ghostBtnText}>{t('sunday_brief')}</Text>
+                    </PressScale>
+                  </View>
+                ) : null}
                 <View style={styles.testRow}>
                   <PressScale onPress={testReminderNotification} style={styles.ghostBtnWide}><Text style={styles.ghostBtnText}>{t('set_test_reminder')}</Text></PressScale>
                   <PressScale onPress={testNewCardAlert} style={styles.ghostBtnWide}><Text style={styles.ghostBtnText}>{t('set_test_alert')}</Text></PressScale>
@@ -1170,6 +1235,15 @@ export default function Settings() {
               </PressScale>
             </View>
             {updateNote ? <Text style={styles.updateNote}>{updateNote}</Text> : null}
+            {/* Selectable so it can be copied into a message rather than
+                retyped from a photograph. */}
+            <Text
+              testID="update-diagnostics"
+              selectable
+              style={styles.updateDiagnostics}
+            >
+              {updateDiagnostics}
+            </Text>
           </Card>
 
           </>) : null}
@@ -1340,6 +1414,8 @@ export default function Settings() {
         </View>
       </KeyboardAwareBottomSheet>
 
+      <SundayBriefModal visible={showSundayBrief} onClose={() => setShowSundayBrief(false)} />
+
       <AppToast visible={Boolean(toast)} message={toast?.message || null} tone={toast?.tone || 'info'} />
     </SwipeableTabView>
   );
@@ -1430,6 +1506,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   updateBtn: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 999, borderWidth: 1, borderColor: ui.orange, minWidth: 104, alignItems: 'center' },
   updateBtnText: { color: ui.orangeText, fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
   updateNote: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, lineHeight: 18, marginTop: 10 },
+  updateDiagnostics: { color: ui.muted, fontFamily: 'Inter_400Regular', fontSize: 11, lineHeight: 16, marginTop: 8, opacity: 0.85 },
   signOutAllBtn: {
     marginTop: 22, flexDirection: 'row', alignItems: 'center', gap: 11,
     paddingVertical: 13, paddingHorizontal: 15, borderRadius: 16,

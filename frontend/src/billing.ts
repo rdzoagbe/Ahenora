@@ -39,11 +39,35 @@ const ENTITLEMENT_ID = 'premium';
 // forks/testing; the fallback keeps OTA bundles working even when the update
 // pipeline doesn't inject env vars.
 const FALLBACK_ANDROID_KEY = 'goog_wiMoDbBhcLrvPdUSRbZqXDhKkQi';
-// The iOS public key is added when the App Store app exists in RevenueCat.
-// Empty until then, which makes every iOS billing entry point return
-// `available: false` rather than misconfigure itself — the same graceful
-// degradation the Android side already has for builds without the native module.
-const IOS_KEY = process.env.EXPO_PUBLIC_REVENUECAT_IOS_KEY?.trim() || '';
+
+/**
+ * The iOS public key, committed — and this is the whole point of the change.
+ *
+ * It used to be `process.env... || ''`, on the reasoning that an empty key
+ * degrades gracefully to "billing unavailable" rather than misconfiguring
+ * itself. That was correct while there was no iOS app. It stopped being
+ * correct on 2026-09-07, and nothing said so.
+ *
+ * Here is the failure. `EXPO_PUBLIC_*` values are inlined into the bundle when
+ * it is built. NEITHER over-the-air workflow passes the RevenueCat keys, so
+ * every OTA bundle carries an empty one. Android survives that on the fallback
+ * above. iOS had no fallback, so on every iPhone running an over-the-air
+ * update — which is every iPhone, within a launch of any merge to main —
+ * `getPurchases()` returned null, every purchase path reported
+ * `available: false`, and the app answered "not right now". iPhone owners have
+ * been unable to subscribe since the App Store launch, silently, while the
+ * store build itself (which does get the key, from eas.json) worked fine.
+ *
+ * This is the second time this exact shape has bitten: the Google iOS client
+ * id did the same thing on the same day and was fixed with a committed
+ * fallback in src/googleClientIds.ts. That fix was not carried across to here.
+ *
+ * The key is public by nature — it ships inside the binary and is already
+ * committed in eas.json. The environment still wins when set, so rotating it
+ * needs no code change.
+ */
+const FALLBACK_IOS_KEY = 'appl_HVpQCCAyxumGBOVqRGoDqJmxqop';
+const IOS_KEY = process.env.EXPO_PUBLIC_REVENUECAT_IOS_KEY?.trim() || FALLBACK_IOS_KEY;
 
 let configuredFor: string | null = null;
 

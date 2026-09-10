@@ -40,7 +40,7 @@ import { weekDayCells as buildWeekDayCells } from '../../src/weekStars';
 import { StarCelebration, CelebrationContent } from '../../src/components/StarCelebration';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
 import DateTimePickerSheet from '../../src/components/DateTimePickerSheet';
-import { quickDueDate, toLocalDateInput, toLocalTimeInput } from '../../src/utils/date';
+import { formatCompactDue, quickDueDate, toLocalDateInput, toLocalTimeInput } from '../../src/utils/date';
 import AppToast from '../../src/components/AppToast';
 import { useToast } from '../../src/hooks/useToast';
 import EmptyState from '../../src/components/EmptyState';
@@ -468,7 +468,8 @@ export default function Kids() {
               // `=== false` rather than `!m.has_account`: an older server that
               // omits the field must read as "don't know", never as "absent".
               // Adults only — a young child has no login by design.
-              const notJoined = (isParent || isHelper) && m.has_account === false;
+              // Never on your own row: you are, by definition, here.
+              const notJoined = (isParent || isHelper) && m.has_account === false && !m.is_me;
               const badgeLabel = notJoined
                 ? t('hub_role_invited')
                 : isParent
@@ -507,7 +508,7 @@ export default function Kids() {
                   <View style={{ flex: 1, minWidth: 0 }}>
                     <View style={styles.hubNameRow}>
                       <Text style={styles.hubName} numberOfLines={1}>
-                        {m.name}{m.is_me ? ` · ${t('hub_you')}` : ''}
+                        {m.name}
                       </Text>
                       <View style={[styles.hubBadge, { backgroundColor: notJoined ? ui.soft : isParent ? ui.orangeSoft : ui.soft }]}>
                         <Text
@@ -2991,7 +2992,7 @@ export default function Kids() {
             style={[styles.assignDueChip, assignDue && styles.assignDueChipActive]}
           >
             <Text style={[styles.assignDueText, assignDue && styles.assignDueTextActive]}>
-              {assignDue ? `${toLocalDateInput(assignDue)} · ${toLocalTimeInput(assignDue)}` : t('no_due')}
+              {assignDue ? formatCompactDue(assignDue, lang) : t('no_due')}
             </Text>
           </PressScale>
           {assignDue ? (

@@ -34,6 +34,17 @@ has one consequence that has already caused **five production incidents**:
    arrives nowhere. Three separate bug fixes were shipped, hand-tested, and
    reported broken over those nine days, because the phone was still running a
    bundle from July. Now guarded by `scripts/check-runtime-version.js`.
+6. **Android never received a single remote push (2026-09-08):** the co-parent
+   on iOS got every notification with the app closed; the owner on Android got
+   none. Expo push on Android rides Firebase Cloud Messaging, which needs
+   `app/google-services.json` in the build and the `com.google.gms.google-services`
+   Gradle plugin. Neither was ever there: the file was gitignored (so CI builds
+   never had it) and the plugin was never applied. `getExpoPushTokenAsync` threw
+   on every Android phone, no token was registered, and the server had nobody
+   to push to. Local reminders (scheduled on the device) still fired, which
+   made it look like notifications "sometimes" worked. Fixed by committing the
+   file, applying the plugin (the build now refuses without the file), and
+   uploading the FCM V1 service account to EAS. See `docs/ANDROID_PUSH.md`.
 5. **The store showed the wrong version:** `app.json` said `1.0.2`; every
    uploaded bundle reported `1.0.0`, because Play reads `versionName` from
    `app/build.gradle`. Same guard covers it.

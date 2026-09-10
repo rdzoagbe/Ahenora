@@ -13,7 +13,9 @@ interface Props {
   onClose: () => void;
 }
 
-const BG_URL = 'https://static.prod-images.emergentagent.com/jobs/096ff1e5-0337-4e7f-a0c1-6a43a75126d3/images/c54dfb594feff59886f35731ad1a1d593ce3d04827e4d753eab304e381593173.png';
+// Bundled rather than fetched, for the same reason as the sign-in screen:
+// this was reaching a third-party host every time the brief opened.
+const BG_SOURCE = require('../../assets/images/sunday-brief-bg.jpg');
 
 export function SundayBriefModal({ visible, onClose }: Props) {
   const { t, showUpgradePrompt, theme } = useStore();
@@ -51,7 +53,16 @@ export function SundayBriefModal({ visible, onClose }: Props) {
 
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
-      <ImageBackground source={{ uri: BG_URL }} style={StyleSheet.absoluteFill} resizeMode="cover">
+      {/* The image is fetched from a third-party host. If it ever stops
+          answering, an ImageBackground renders nothing — and this modal is
+          transparent, so the brief would appear to float over whatever was
+          behind it. The theme ground underneath means a missing image costs
+          the photograph, not the screen. */}
+      <ImageBackground
+        source={BG_SOURCE}
+        style={[StyleSheet.absoluteFill, { backgroundColor: theme.colors.bg }]}
+        resizeMode="cover"
+      >
         <BlurView intensity={light ? 72 : 60} tint={light ? 'light' : 'dark'} style={StyleSheet.absoluteFill} />
         <View style={[styles.overlay, { backgroundColor: light ? 'rgba(255,255,255,0.78)' : 'rgba(8,9,16,0.72)' }]} />
       </ImageBackground>

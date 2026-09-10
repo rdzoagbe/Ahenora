@@ -51,6 +51,10 @@ export function CoParentBalance() {
   const owed = info.balance > 0.005;
   const owing = info.balance < -0.005;
   const amount = Math.abs(info.balance).toFixed(2);
+  // The symbol in front, from the one place that knows it — the same shape
+  // SpendingView uses. This read "62 €" while the spending screen beside it
+  // read "$0.00": one feature, two currencies, two placements.
+  const money = (n: string) => `${t('currency_symbol')}${n}`;
   const name = info.other_name || '';
 
   return (
@@ -66,9 +70,9 @@ export function CoParentBalance() {
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text style={styles.title} numberOfLines={2}>
           {owed
-            ? t('exp_settle_owes_you', { name, amount: `${amount} €` })
+            ? t('exp_settle_owes_you', { name, amount: money(amount) })
             : owing
-              ? t('exp_settle_you_owe', { name, amount: `${amount} €` })
+              ? t('exp_settle_you_owe', { name, amount: money(amount) })
               : t('exp_settle_square', { name })}
         </Text>
         <Text style={styles.sub} numberOfLines={1}>

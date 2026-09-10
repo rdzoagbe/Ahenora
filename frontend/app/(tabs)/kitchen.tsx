@@ -985,9 +985,15 @@ export default function Kitchen() {
   }, [restoreEntry, restoreSel, showToast]);
 
   const deleteShopTrip = useCallback(async (id: string) => {
-    setShopHistory((prev) => prev.filter((h) => h.history_id !== id));
-    try { await api.deleteShoppingHistory(id); } catch { /* best effort */ }
-  }, []);
+    let previous: typeof shopHistory = [];
+    setShopHistory((prev) => { previous = prev; return prev.filter((h) => h.history_id !== id); });
+    try { await api.deleteShoppingHistory(id); } catch {
+      // Put it back and say so: a delete that quietly failed reappeared on
+      // the next load and read as "the app forgot".
+      setShopHistory(previous);
+      showToast(t('vault_could_not_delete_restored'), 'error');
+    }
+  }, [showToast, t]);
 
   // "Never show me old lists again." Plain function: manual memo would
   // block the React Compiler on this screen.
@@ -1022,9 +1028,9 @@ export default function Kitchen() {
     setShowMealHistory(true);
     setHistLoading(true);
     try { setSavedPlans(await api.listSavedPlans()); }
-    catch { /* keep */ }
+    catch { showToast(t('load_failed_pull'), 'error'); }
     finally { setHistLoading(false); }
-  }, []);
+  }, [showToast, t]);
 
   const savingPlanRef = useRef(false);
   const saveCurrentPlan = useCallback(async () => {
@@ -1052,9 +1058,13 @@ export default function Kitchen() {
   }, [showToast]);
 
   const deletePlan = useCallback(async (id: string) => {
-    setSavedPlans((prev) => prev.filter((p) => p.plan_id !== id));
-    try { await api.deleteSavedPlan(id); } catch { /* best effort */ }
-  }, []);
+    let previous: typeof savedPlans = [];
+    setSavedPlans((prev) => { previous = prev; return prev.filter((p) => p.plan_id !== id); });
+    try { await api.deleteSavedPlan(id); } catch {
+      setSavedPlans(previous);
+      showToast(t('vault_could_not_delete_restored'), 'error');
+    }
+  }, [showToast, t]);
 
   const histDate = (iso: string) => {
     const d = new Date(iso);
@@ -1142,7 +1152,7 @@ export default function Kitchen() {
             <View style={styles.secHead}>
               <View style={styles.secLeft}>
                 <ShoppingCart color={ui.orange} size={20} />
-                <Text style={styles.secTitle}>{t('vault_shopping_list')}</Text>
+                <Text style={styles.secTitle} numberOfLines={1}>{t('vault_shopping_list')}</Text>
               </View>
               <View style={styles.secRight}>
                 {/* Matches the "Clear done" pill beside it rather than sitting
@@ -1379,7 +1389,7 @@ export default function Kitchen() {
             <View style={styles.secHead}>
               <View style={styles.secLeft}>
                 <UtensilsCrossed color={ui.lavenderText} size={20} />
-                <Text style={styles.secTitle}>{t('vault_meal_planner')}</Text>
+                <Text style={styles.secTitle} numberOfLines={1}>{t('vault_meal_planner')}</Text>
               </View>
               {mealLocked ? <LockBadge onPress={() => promptUpgrade('meal_planner')} /> : null}
             </View>
@@ -2459,7 +2469,9 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
 
 
   secHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 22, marginBottom: 12 },
-  secRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  // flexShrink 0: the pill and the count are the actionable half, and they
+  // are already as small as they go. The title gives way instead.
+  secRight: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 0 },
   // A soft-filled quiet button, not an outlined box. As a card-coloured
   // outline it read as a stray dark blob among the labelled colour buttons in
   // the row (a lone circle in dark mode). Soft fill, same pill radius and row
@@ -2492,8 +2504,11 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   selAllText: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 12.5 },
   checkbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 1.5, borderColor: ui.line, alignItems: 'center', justifyContent: 'center' },
   checkboxOn: { backgroundColor: ui.orangeDeep, borderColor: ui.orange },
-  secLeft: { flexDirection: 'row', alignItems: 'center', gap: 9 },
-  secTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 19, letterSpacing: -0.3 },
+  // minWidth 0 alongside flexShrink: a flex child defaults to min-width:auto
+  // and refuses to shrink below its own text, which is how "3 items" ended up
+  // 9px past the right edge of a 320px screen — measured, by e2e_overflow.py.
+  secLeft: { flexDirection: 'row', alignItems: 'center', gap: 9, flexShrink: 1, minWidth: 0 },
+  secTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 19, letterSpacing: -0.3, flexShrink: 1 },
   secCount: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
 
   clearBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 99, backgroundColor: ui.mint },

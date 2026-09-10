@@ -55,7 +55,7 @@ class HouseholdPlan(unittest.TestCase):
     def test_everyone_in_an_admin_household_shares_the_top_plan(self):
         self._seed("fam1", ["admin@x.com", "wife@x.com"])
         sub = asyncio.run(server.build_subscription("fam1"))
-        self.assertEqual(sub["plan"], "family_office")
+        self.assertEqual(sub["plan"], "household")
         self.assertEqual(sub["limits"], server.PLAN_CATALOG["household"]["limits"])
 
     def test_a_household_without_an_admin_keeps_its_real_plan(self):
