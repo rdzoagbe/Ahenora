@@ -61,6 +61,28 @@ function lastSeenLabel(iso: string | null): string {
 }
 
 /**
+ * Events where a paying household is slipping away and something can still be
+ * done about it.
+ *
+ * Twelve rows of RENEWAL scroll past identically, and the one that matters is
+ * shaped exactly like them — bold event type, plan tag, timestamp. That is
+ * fine for a receipt and wrong for a warning: BILLING_ISSUE means a card has
+ * just failed and access is about to go, and CANCELLATION means somebody has
+ * turned off auto-renew and has not left yet.
+ *
+ * EXPIRATION is deliberately NOT here. By then the plan has already dropped to
+ * village and there is nothing to do — it is a record, not a task, and tinting
+ * it would put the same weight on the one you can still act on and the one you
+ * cannot.
+ */
+const AT_RISK_EVENTS = new Set(['BILLING_ISSUE', 'CANCELLATION']);
+
+function isAtRisk(e: BillingEvent): boolean {
+  // A test ping can carry any event type; it is never somebody's money.
+  return !e.is_test && e.matched && AT_RISK_EVENTS.has((e.event_type || '').toUpperCase());
+}
+
+/**
  * What to DO about a purchase that reached nobody.
  *
  * The states come from the server (REPLAY_STATES in backend/server.py), beside
@@ -969,7 +991,12 @@ export default function MetricsScreen() {
               {billing.events.length ? (
                 <View style={styles.card}>
                   {billing.events.slice(0, 12).map((e, i) => (
-                    <View key={`${e.received_at}-${i}`} style={[styles.subRow, i === 0 && { borderTopWidth: 0 }]}>
+                    <View
+                      key={`${e.received_at}-${i}`}
+                      testID={isAtRisk(e) ? 'billing-at-risk' : undefined}
+                      style={[styles.subRow, i === 0 && { borderTopWidth: 0 },
+                              isAtRisk(e) && styles.subRowAtRisk]}
+                    >
                       <View style={styles.subLeft}>
                         <Text style={styles.subName} numberOfLines={1}>
                           {e.event_type || '(no type)'}
@@ -1096,6 +1123,21 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   eventLabel: { color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 15 },
   eventCount: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 17 },
   subRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, paddingVertical: 12, borderTopWidth: 1, borderTopColor: ui.line },
+  // Tinted and striped, so the row that needs a person cannot be scrolled past
+  // in a column of identical receipts. Both tokens are theme-aware — a
+  // translucent wash in dark, solid gold in light — so this reads on either
+  // ground rather than only on the one it was designed against.
+  subRowAtRisk: {
+    backgroundColor: ui.gold,
+    borderLeftWidth: 3,
+    borderLeftColor: ui.goldText,
+    // Bleed to the card's edges (it pads 16) so the tint reads as a band
+    // across the row rather than a floating box, and pad back so the text
+    // still lines up with every other row despite the 3px stripe.
+    marginHorizontal: -16,
+    paddingLeft: 13,
+    paddingRight: 16,
+  },
   subLeft: { flex: 1, minWidth: 0, gap: 2 },
   subName: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 14 },
   subEmail: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12 },

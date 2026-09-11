@@ -140,3 +140,71 @@ describe('the tag on a matched event', () => {
     expect(block).toMatch(/Other events \([^)]*\) just record state/);
   });
 });
+
+/**
+ * The row that needs a person, in a column of rows that do not.
+ *
+ * Twelve RENEWALs scroll past identically and the one that matters is shaped
+ * exactly like them. That is fine for a receipt and wrong for a warning.
+ */
+describe('an at-risk billing row', () => {
+  const atRisk = METRICS.slice(METRICS.indexOf('const AT_RISK_EVENTS'),
+                               METRICS.indexOf('function replayVerdict'));
+
+  it('flags a failed payment and a cancellation', () => {
+    // BILLING_ISSUE: the card has failed and access is about to go.
+    // CANCELLATION: auto-renew is off and they have not left yet.
+    expect(atRisk).toContain('BILLING_ISSUE');
+    expect(atRisk).toContain('CANCELLATION');
+  });
+
+  it('does not flag an expiration, which is already done', () => {
+    // By then the plan has dropped to village. Tinting it would put the same
+    // weight on the one you can act on and the one you cannot.
+    expect(atRisk).not.toContain('EXPIRATION');
+    // And the server agrees about what EXPIRATION does: it is the downgrade.
+    expect(SERVER).toContain('RC_DOWNGRADE_EVENTS = {"EXPIRATION"}');
+  });
+
+  it('never flags a store test, whatever event type it carries', () => {
+    // The dashboard's test button can post any type. It is never money.
+    expect(atRisk).toContain('!e.is_test');
+  });
+
+  it('never flags a row that reached nobody', () => {
+    // Those already have their own red tag and a verdict line; tinting them
+    // amber as well would say two different things about one row.
+    expect(atRisk).toContain('e.matched');
+  });
+
+  it('tints the row itself, not just the tag', () => {
+    // The point is that it cannot be scrolled past.
+    expect(METRICS).toContain('isAtRisk(e) && styles.subRowAtRisk');
+    expect(METRICS).toContain('subRowAtRisk:');
+  });
+
+  it('uses theme-aware tokens so it reads on either ground', () => {
+    // A literal gold would be invisible on the dark card, which is the theme
+    // this screen is actually read in.
+    const style = METRICS.slice(METRICS.indexOf('subRowAtRisk:'),
+                                METRICS.indexOf('subLeft:'));
+    expect(style).toContain('ui.gold');
+    expect(style).toContain('ui.goldText');
+    expect(style).not.toMatch(/#[0-9A-Fa-f]{6}/);
+  });
+
+  it('lines the text up with every other row despite the stripe', () => {
+    // The card pads 16; the row bleeds to its edges and pads back, so a
+    // tinted row does not sit indented from the untinted ones above it.
+    const style = METRICS.slice(METRICS.indexOf('subRowAtRisk:'),
+                                METRICS.indexOf('subLeft:'));
+    const bleed = Number(style.match(/marginHorizontal:\s*(-?\d+)/)?.[1]);
+    const stripe = Number(style.match(/borderLeftWidth:\s*(\d+)/)?.[1]);
+    const padLeft = Number(style.match(/paddingLeft:\s*(\d+)/)?.[1]);
+    const cardPad = Number(METRICS.match(/card: \{[^}]*paddingHorizontal: (\d+)/)?.[1]);
+    expect(cardPad).toBeGreaterThan(0);
+    expect(bleed).toBe(-cardPad);
+    // stripe + padding must add back up to the card's own padding
+    expect(stripe + padLeft).toBe(cardPad);
+  });
+});
