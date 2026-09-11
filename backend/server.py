@@ -6427,6 +6427,35 @@ async def claim_weekly_treat(member_id: str, payload: WeeklyClaimIn, user=Depend
     return {"ok": True, "redemption": public_redemption(redemption)}
 
 
+@app.get("/api/family/allergies")
+async def family_allergies(user=Depends(require_user)):
+    """Who in this household cannot eat what.
+
+    The meal planner has always said "check every dish against any allergies in
+    your family" — an app telling you it knows allergies matter and does not
+    know yours. Now it does, so it can name them instead of handing the job
+    back.
+
+    require_user, not require_full_member: the person cooking is often not the
+    parent who planned the week, and a carer told to check against allergies
+    they cannot see has been told nothing. This returns the allergy line and
+    the name it belongs to — no other part of the record, so the one care fact
+    a kitchen needs travels without the rest of a child's health information
+    following it there.
+    """
+    database = get_db()
+    out = []
+    async for member in database["family_members"].find(
+            {"family_id": user["family_id"]}, {"_id": 0}):
+        allergies = ((member.get("record") or {}).get("allergies") or "").strip()
+        if allergies:
+            out.append({"member_id": member["member_id"],
+                        "name": member.get("name") or "",
+                        "allergies": allergies})
+    out.sort(key=lambda row: row["name"].lower())
+    return out
+
+
 @app.get("/api/family/members/{member_id}/record")
 async def get_member_record(member_id: str, user=Depends(require_user)):
     """A child's key facts, filtered to what this reader may see.

@@ -22,7 +22,7 @@ import { ScreenHeader, useUI, UIColors } from '../../src/components/Kit';
 
 import { useStore } from '../../src/store';
 import { api, MealPlan, ShoppingItem, ShoppingHistoryEntry, SavedMealPlan, Diet, AiRecipe,
-  FrequentItem, PriceCompare } from '../../src/api';
+  FamilyAllergy, FrequentItem, PriceCompare } from '../../src/api';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { logger } from '../../src/logger';
 import { suggestWeek, MealSuggestion, SuggestLang, localizedMealTitle, localizedMealIngredients, resolveRecipeId, recipeIngredients, searchRecipes } from '../../src/mealSuggestions';
@@ -127,6 +127,43 @@ export default function Kitchen() {
   const [suggestVariant, setSuggestVariant] = useState(0);
   const [suggestions, setSuggestions] = useState<MealSuggestion[]>([]);
   const [addedSuggest, setAddedSuggest] = useState<Set<string>>(new Set());
+
+  /**
+   * Who in this household cannot eat what.
+   *
+   * Every allergen warning on this screen used to hand the question back —
+   * "check every dish against any allergies in your family" — which is an app
+   * saying it knows allergies matter and does not know yours. It does now, so
+   * it names them. Loaded here rather than per-warning: the same line appears
+   * in three places (the suggestions sheet, a recipe, a captured recipe) and
+   * the person reading it may be the carer at the stove rather than the parent
+   * who planned the week.
+   */
+  const [allergies, setAllergies] = useState<FamilyAllergy[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    api.familyAllergies()
+      .then((rows) => { if (!cancelled) setAllergies(rows); })
+      .catch((e) => logger.warn('allergies load failed', e));
+    return () => { cancelled = true; };
+  }, []);
+
+  /**
+   * The warning, in the words this household needs.
+   *
+   * Three states, deliberately. Named when we know them. A nudge when we know
+   * we do not, because "no allergies recorded" and "nobody has allergies" look
+   * the same on a screen and must not read the same. And while the answer is
+   * still loading, the original warning — never a reassuring silence.
+   */
+  const allergenNote = useCallback((prefix?: string) => {
+    const head = prefix ? `${prefix} ` : '';
+    if (allergies === null) return `${head}${t('cook_allergen_note')}`;
+    if (allergies.length === 0) return `${head}${t('allergens_none')}`;
+    const list = allergies.map((a) => `${a.name}: ${a.allergies}`).join(' · ');
+    return `${head}${t('allergens_named', { list })}`;
+  }, [allergies, t]);
+
 
 
   const load = useCallback(async () => {
@@ -1394,6 +1431,21 @@ export default function Kitchen() {
               {mealLocked ? <LockBadge onPress={() => promptUpgrade('meal_planner')} /> : null}
             </View>
 
+            {/* Named here, on the planner itself, not only inside the sheets.
+                Whoever plans the week or cooks from it should not have to open
+                anything to be told what a child cannot eat.
+
+                Only when there ARE some. The three-state note stays inside the
+                sheets and recipes, where a decision is being made and "none
+                recorded" is worth saying; a permanent nudge on a main tab is
+                just noise for a household that has none to record. */}
+            {allergies && allergies.length > 0 ? (
+              <View style={styles.plannerAllergen} testID="planner-allergens">
+                <AlertTriangle color={ui.orangeText} size={14} />
+                <Text style={styles.plannerAllergenText}>{allergenNote()}</Text>
+              </View>
+            ) : null}
+
             {/* Free peek: locked families can still OPEN the suggestions sheet —
                 seeing 7 concrete dinners sells Premium far better than a lock
                 icon. Adding to the planner is what prompts the upgrade. */}
@@ -2066,7 +2118,7 @@ export default function Kitchen() {
                     <View style={styles.cookAllergen}>
                       <AlertTriangle color={ui.muted} size={14} />
                       <Text style={styles.cookAllergenText}>
-                        {isGenerated ? `${t('cook_ai_note')} ${t('cook_allergen_note')}` : t('cook_allergen_note')}
+                        {allergenNote(isGenerated ? t('cook_ai_note') : undefined)}
                       </Text>
                     </View>
                   </KeyboardAwareScrollView>
@@ -2327,7 +2379,7 @@ export default function Kitchen() {
             <View style={styles.cookAllergen}>
               <AlertTriangle color={ui.muted} size={14} />
               <Text style={styles.cookAllergenText}>
-                {`${t('capture_note')} ${t('cook_allergen_note')}`}
+                {allergenNote(t('capture_note'))}
               </Text>
             </View>
           </>
@@ -2418,7 +2470,7 @@ export default function Kitchen() {
         {!suggestLoading && suggestions.length > 0 ? (
           <View style={styles.suggestAllergen}>
             <AlertTriangle color={ui.muted} size={13} />
-            <Text style={styles.suggestAllergenText}>{t('suggest_allergen_note')}</Text>
+            <Text style={styles.suggestAllergenText} testID="suggest-allergens">{allergenNote()}</Text>
           </View>
         ) : null}
 
@@ -2692,6 +2744,13 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   cookStepNumText: { color: ui.orangeText, fontFamily: 'Inter_700Bold', fontSize: 14 },
   cookStepText: { flex: 1, color: ui.text, fontFamily: 'Inter_500Medium', fontSize: 16, lineHeight: 25 },
   cookAllergen: { flexDirection: 'row', gap: 8, alignItems: 'flex-start', marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: ui.line },
+  plannerAllergen: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 8,
+    backgroundColor: ui.orangeSoft, borderRadius: 14, padding: 11, marginBottom: 12,
+  },
+  plannerAllergenText: {
+    flex: 1, fontFamily: 'Inter_600SemiBold', fontSize: 12.5, lineHeight: 17, color: ui.orangeText,
+  },
   suggestAllergen: { flexDirection: 'row', gap: 8, alignItems: 'flex-start', marginTop: 4, marginBottom: 12 },
   suggestAllergenText: { flex: 1, color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, lineHeight: 17 },
   cookAllergenText: { flex: 1, color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 18 },

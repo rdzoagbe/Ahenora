@@ -148,6 +148,34 @@ async def run(r):
         r["the_members_list_carries_none_of_it"] = (
             ALLERGY not in members and HEALTH_NO not in members and "record" not in members)
 
+        # --- and the kitchen says it back ------------------------------------
+        #
+        # The payoff, and the reason the record is not just a form. Every
+        # allergen warning in the kitchen used to hand the question back —
+        # "check every dish against any allergies in your family" — which is an
+        # app saying it knows allergies matter and does not know yours.
+        api("PATCH", f"/family/members/{member_id}/record", {"allergies": ALLERGY}, tok_p)
+        listed = api("GET", "/family/allergies", None, tok_p)
+        r["the_kitchen_can_reach_the_allergy"] = bool(
+            listed and listed[0].get("allergies") == ALLERGY)
+        r["and_nothing_else_from_the_record_travels"] = (
+            HEALTH_NO not in json.dumps(listed)
+            and sorted(listed[0]) == ["allergies", "member_id", "name"])
+        # The carer at the stove is often not the parent who planned the week.
+        r["the_carer_can_reach_it_too"] = bool(
+            api("GET", "/family/allergies", None, tok_n))
+
+        page_k, errs_k = await open_as(b, tok_p, "/kitchen")
+        await page_k.click('[data-testid="kitchen-tab-meal"]')
+        await page_k.wait_for_timeout(2500)
+        await page_k.screenshot(path="record_kitchen.png")
+        kitchen_text = await page_k.inner_text("body")
+        r["the_planner_names_the_child"] = "Ama Sim" in kitchen_text
+        r["the_planner_names_the_allergy"] = "Peanuts" in kitchen_text
+        r["it_stopped_handing_the_question_back"] = (
+            "any allergies in your family" not in kitchen_text)
+        r["no_js_errors_in_the_kitchen"] = not errs_k
+
         r["no_js_errors_for_the_parent"] = not errs_p
         r["no_js_errors_for_the_carer"] = not errs_n
         await b.close()

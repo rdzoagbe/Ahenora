@@ -959,6 +959,14 @@ export interface FamilyMember {
  * ABSENT for a helper — `private_hidden` says so, because silence would send
  * them asking a parent for a number that is already recorded.
  */
+/** One line per person who cannot eat something, and nothing else from their
+ *  record — the meal planner has no business holding a health number. */
+export interface FamilyAllergy {
+  member_id: string;
+  name: string;
+  allergies: string;
+}
+
 export interface MemberRecord {
   allergies: string;
   conditions: string;
@@ -2554,6 +2562,9 @@ export const api = {
     });
   },
   // Voice transcribe
+  /** Who in the household cannot eat what. Readable by a carer, because the
+   *  person cooking is often not the parent who planned the week. */
+  familyAllergies: () => request<FamilyAllergy[]>('/family/allergies'),
   getMemberRecord: (memberId: string) =>
     request<MemberRecord>(`/family/members/${memberId}/record`),
   /** Only the fields sent are changed, so two parents editing different halves
