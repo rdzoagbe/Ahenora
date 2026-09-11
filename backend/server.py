@@ -3923,6 +3923,92 @@ CARE_FIELDS = (
 )
 PRIVATE_FIELDS = ("medical_number", "insurance_policy")
 RECORD_FIELDS = CARE_FIELDS + PRIVATE_FIELDS
+
+# Vaccinations are the one part of a child's record that is a LIST, not a fact.
+# "Tetanus, 2024-03-11" is not a sentence you keep re-typing into a free-text
+# box — a parent asked for it at a clinic desk needs the date, and a parent
+# asked "is she due?" needs the next one. A text field can hold the first badly
+# and cannot answer the second at all, which is why this is stored as rows.
+#
+# Care tier, deliberately. A nanny taking a child to an appointment is exactly
+# the person who needs to answer "when was the last one?", and the same
+# reasoning that lets a helper read an allergy applies unchanged here.
+#
+# Written per ENTRY rather than by replacing the array: two parents adding two
+# different shots from two phones must not overwrite each other, which is
+# precisely what a whole-list PATCH would do to whichever one saved second.
+VACCINATION_MAX = 60
+VAX_NAME_MAX = 120
+VAX_NOTE_MAX = 200
+
+
+def _clean_date(value: Optional[str], field: str) -> str:
+    """An ISO day, or nothing. Never a half-parsed guess.
+
+    Dates arrive from a date picker on the app and from a typed string on the
+    web, so this is the one place both are held to the same shape. A string
+    that is not a real day is REFUSED rather than stored: a vaccination record
+    carrying "2024-13-45" is worse than one carrying nothing, because it reads
+    as an answer.
+    """
+    raw = (value or "").strip()
+    if not raw:
+        return ""
+    try:
+        datetime.strptime(raw, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=400,
+                            detail=f"{field} must be a date like 2024-03-11")
+    return raw
+
+
+class VaccinationIn(BaseModel):
+    """One shot. Only the name is required — a parent who remembers the
+    vaccine but not the day should still be able to write it down."""
+
+    name: str = Field(min_length=1, max_length=VAX_NAME_MAX)
+    given_on: Optional[str] = Field(default=None, max_length=10)
+    next_due: Optional[str] = Field(default=None, max_length=10)
+    note: Optional[str] = Field(default=None, max_length=VAX_NOTE_MAX)
+
+
+class VaccinationPatchIn(BaseModel):
+    """Every field optional: a PATCH changes only what it names, and an empty
+    string clears a date that was entered wrongly."""
+
+    name: Optional[str] = Field(default=None, min_length=1, max_length=VAX_NAME_MAX)
+    given_on: Optional[str] = Field(default=None, max_length=10)
+    next_due: Optional[str] = Field(default=None, max_length=10)
+    note: Optional[str] = Field(default=None, max_length=VAX_NOTE_MAX)
+
+
+def public_vaccinations(member: dict) -> list:
+    """A child's shots, newest first, undated last.
+
+    Sorted here rather than on the screen so the app and the web app cannot
+    disagree about the order. Undated entries sort to the bottom instead of the
+    top: an empty string would otherwise sort before every real date and put
+    the least informative row at the head of the list.
+    """
+    rows = ((member or {}).get("record") or {}).get("vaccinations") or []
+    out = []
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        out.append({
+            "vax_id": r.get("vax_id") or "",
+            "name": r.get("name") or "",
+            "given_on": r.get("given_on") or "",
+            "next_due": r.get("next_due") or "",
+            "note": r.get("note") or "",
+        })
+    # Undated last (the `== ""` flag sorts False before True), and within the
+    # dated ones, newest first — which is the order the question "when was the
+    # last one?" is actually asked in.
+    out.sort(key=lambda r: r["name"].lower())
+    out.sort(key=lambda r: r["given_on"], reverse=True)
+    out.sort(key=lambda r: r["given_on"] == "")
+    return out
 # Room for "Peanuts, tree nuts — carries an EpiPen in the blue bag" without
 # room for somebody to store a novel in a child's allergy field.
 RECORD_MAX_LEN = 400
@@ -3965,6 +4051,7 @@ def public_member_record(member: dict, full_member: bool) -> dict:
     out = {f: (record.get(f) or "") for f in CARE_FIELDS}
     if full_member:
         out.update({f: (record.get(f) or "") for f in PRIVATE_FIELDS})
+    out["vaccinations"] = public_vaccinations(member)
     out["private_hidden"] = not full_member
     out["can_edit"] = full_member
     return out
@@ -6501,6 +6588,96 @@ async def update_member_record(member_id: str, payload: MemberRecordIn,
     # health information. public_member is an explicit allowlist and does not
     # carry `record`, so it stays out of /family/members and out of every AI
     # path that reads cards.
+    return public_member_record(member, full_member=True)
+
+
+async def _load_member_for_record(database: Any, user: dict, member_id: str) -> dict:
+    member = await database["family_members"].find_one(
+        {"family_id": user["family_id"], "member_id": member_id}, {"_id": 0})
+    if not member:
+        raise HTTPException(status_code=404, detail="No such family member")
+    return member
+
+
+@app.post("/api/family/members/{member_id}/vaccinations")
+async def add_member_vaccination(member_id: str, payload: VaccinationIn,
+                                 user=Depends(require_full_member)):
+    """Add one shot to a child's record. Full members only, like every other
+    write to the record — a helper reads a date, they do not set one."""
+    database = get_db()
+    member = await _load_member_for_record(database, user, member_id)
+    existing = ((member.get("record") or {}).get("vaccinations")) or []
+    if len(existing) >= VACCINATION_MAX:
+        raise HTTPException(
+            status_code=400,
+            detail=f"A record holds at most {VACCINATION_MAX} vaccinations")
+    row = {
+        "vax_id": new_id("vax"),
+        "name": payload.name.strip(),
+        "given_on": _clean_date(payload.given_on, "given_on"),
+        "next_due": _clean_date(payload.next_due, "next_due"),
+        "note": (payload.note or "").strip(),
+    }
+    # $push rather than rewriting the array: the other parent's row, added
+    # between our read and our write, survives.
+    await database["family_members"].update_one(
+        {"family_id": user["family_id"], "member_id": member_id},
+        {"$push": {"record.vaccinations": row}, "$set": {"updated_at": utcnow()}})
+    member.setdefault("record", {}).setdefault("vaccinations", []).append(row)
+    return public_member_record(member, full_member=True)
+
+
+@app.patch("/api/family/members/{member_id}/vaccinations/{vax_id}")
+async def update_member_vaccination(member_id: str, vax_id: str,
+                                    payload: VaccinationPatchIn,
+                                    user=Depends(require_full_member)):
+    """Correct one shot. Only the fields sent are touched, and an empty date
+    clears it — a date entered wrongly must be removable, not just editable."""
+    database = get_db()
+    member = await _load_member_for_record(database, user, member_id)
+    rows = ((member.get("record") or {}).get("vaccinations")) or []
+    hit = next((r for r in rows if isinstance(r, dict) and r.get("vax_id") == vax_id), None)
+    if hit is None:
+        raise HTTPException(status_code=404, detail="No such vaccination")
+
+    sent = payload.model_dump(exclude_unset=True)
+    if "name" in sent:
+        name = (sent["name"] or "").strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="A vaccination needs a name")
+        hit["name"] = name
+    if "given_on" in sent:
+        hit["given_on"] = _clean_date(sent["given_on"], "given_on")
+    if "next_due" in sent:
+        hit["next_due"] = _clean_date(sent["next_due"], "next_due")
+    if "note" in sent:
+        hit["note"] = (sent["note"] or "").strip()
+
+    # Addressed by vax_id rather than by array index: an index computed from
+    # our read points at somebody else's row if they added one meanwhile.
+    await database["family_members"].update_one(
+        {"family_id": user["family_id"], "member_id": member_id,
+         "record.vaccinations.vax_id": vax_id},
+        {"$set": {"record.vaccinations.$": hit, "updated_at": utcnow()}})
+    return public_member_record(member, full_member=True)
+
+
+@app.delete("/api/family/members/{member_id}/vaccinations/{vax_id}")
+async def delete_member_vaccination(member_id: str, vax_id: str,
+                                    user=Depends(require_full_member)):
+    """Remove one shot — a row entered against the wrong child has to be
+    removable, and a wrong vaccination date is worse than an absent one."""
+    database = get_db()
+    member = await _load_member_for_record(database, user, member_id)
+    rows = ((member.get("record") or {}).get("vaccinations")) or []
+    if not any(isinstance(r, dict) and r.get("vax_id") == vax_id for r in rows):
+        raise HTTPException(status_code=404, detail="No such vaccination")
+    await database["family_members"].update_one(
+        {"family_id": user["family_id"], "member_id": member_id},
+        {"$pull": {"record.vaccinations": {"vax_id": vax_id}},
+         "$set": {"updated_at": utcnow()}})
+    member.setdefault("record", {})["vaccinations"] = [
+        r for r in rows if not (isinstance(r, dict) and r.get("vax_id") == vax_id)]
     return public_member_record(member, full_member=True)
 
 
