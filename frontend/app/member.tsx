@@ -655,7 +655,11 @@ export default function MemberProfile() {
                                 : state === 'soon' ? t('rec_vax_soon')
                                 : t('rec_vax_due_on', { date: v.next_due })}
                             </Text>
-                            {state !== 'none' ? (
+                            {/* The date beside the chip, but only for a
+                                reader: an editor already has it in the field
+                                directly above, and printing it twice makes the
+                                row look like it holds two different dates. */}
+                            {state !== 'none' && !record.can_edit ? (
                               <Text style={styles.vaxWhen}>{v.next_due}</Text>
                             ) : null}
                           </View>
