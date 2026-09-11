@@ -255,3 +255,66 @@ class TheTestDoubleTellsTheTruth(unittest.TestCase):
         asyncio.run(self.db["t"].insert_one({"id": 1}))
         asyncio.run(self.db["t"].update_one({"id": 1}, {"$set": {"plain": 1}}))
         self.assertEqual(asyncio.run(self.db["t"].find_one({"id": 1}))["plain"], 1)
+
+
+@unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
+class WhoCannotEatWhat(ChildRecord):
+    """The allergy line, where a kitchen can reach it.
+
+    The meal planner has always said "check every dish against any allergies in
+    your family" — an app telling you it knows allergies matter and does not
+    know yours. This is the one care fact that has to travel to a different
+    screen, and it travels ALONE: the rest of a child's health information has
+    no business in a recipe.
+    """
+
+    def allergies(self, who=PARENT):
+        return asyncio.run(server.family_allergies(user=dict(who)))
+
+    def test_it_names_who_cannot_eat_what(self):
+        self.write(allergies="Peanuts")
+        self.assertEqual(self.allergies(), [
+            {"member_id": "m_ama", "name": "Ama", "allergies": "Peanuts"}])
+
+    def test_a_child_with_none_recorded_is_not_listed(self):
+        # A row saying "Ama: nothing" is worse than no row: it reads as a
+        # cleared allergy rather than an unasked question.
+        self.assertEqual(self.allergies(), [])
+        self.write(conditions="Asthma")
+        self.assertEqual(self.allergies(), [])
+
+    def test_whitespace_is_not_an_allergy(self):
+        self.write(allergies="   ")
+        self.assertEqual(self.allergies(), [])
+
+    def test_the_carer_cooking_can_see_them(self):
+        # The person at the stove is often not the parent who planned the week,
+        # and a carer told to check against allergies they cannot see has been
+        # told nothing.
+        self.write(allergies="Peanuts")
+        self.assertEqual(self.allergies(who=NANNY)[0]["allergies"], "Peanuts")
+
+    def test_nothing_else_from_the_record_travels_with_it(self):
+        # A recipe screen has no business holding a health-service number.
+        self.write(allergies="Peanuts", medical_number="NHS 123",
+                   doctor_name="Dr Owusu", medications="Blue inhaler")
+        rows = self.allergies()
+        self.assertEqual(sorted(rows[0]), ["allergies", "member_id", "name"])
+        blob = repr(rows)
+        for leak in ("NHS 123", "Dr Owusu", "Blue inhaler"):
+            with self.subTest(leak=leak):
+                self.assertNotIn(leak, blob)
+
+    def test_another_household_is_not_included(self):
+        asyncio.run(self.db["family_members"].update_one(
+            {"member_id": "m_other"}, {"$set": {"record.allergies": "Shellfish"}}))
+        self.write(allergies="Peanuts")
+        self.assertEqual([r["name"] for r in self.allergies()], ["Ama"])
+
+    def test_several_children_come_back_in_a_stable_order(self):
+        asyncio.run(self.db["family_members"].insert_one({
+            "member_id": "m_kojo", "family_id": "fam1", "name": "Kojo",
+            "role": "child", "stars": 0}))
+        self.write(allergies="Peanuts")
+        self.write(member="m_kojo", allergies="Dairy")
+        self.assertEqual([r["name"] for r in self.allergies()], ["Ama", "Kojo"])
