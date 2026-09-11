@@ -3,14 +3,14 @@ import { ActivityIndicator, Alert, StyleSheet, Text, TextInput, View } from 'rea
 import { KeyboardAwareScrollView } from '../src/components/KeyboardAwareScrollView';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { ChevronLeft, ChevronRight, KeyRound, MessageCircle, Pencil, Shield, Star, Trash2 } from 'lucide-react-native';
+import { ChevronLeft, ChevronRight, Eye, KeyRound, MessageCircle, Pencil, Shield, Star, Trash2 } from 'lucide-react-native';
 
 import { PressScale } from '../src/components/PressScale';
 import { PersonAvatar, AvatarPicker } from '../src/components/PersonAvatar';
 import { PinPadModal } from '../src/components/PinPadModal';
 import { useUI, UIColors } from '../src/components/Kit';
 import { useStore } from '../src/store';
-import { api, FamilyMember, StarTransaction } from '../src/api';
+import { api, FamilyMember, MemberRecord, StarTransaction } from '../src/api';
 import { localeFor } from '../src/utils/date';
 import { logger } from '../src/logger';
 
@@ -36,6 +36,100 @@ function kindOf(role: string): Kind {
  * The Hub passes the chat `thread` key (the adults thread for parents, the
  * teen's own thread for a teen); an empty key means "no conversation here".
  */
+/**
+ * The record, in the order a person would be asked for it.
+ *
+ * A table rather than markup so the screen and the server cannot drift on what
+ * a record contains: every care field the backend defines appears here exactly
+ * once, and childRecord.test.ts fails if one is added there and forgotten here.
+ * The identifiers are deliberately NOT in this table — they are rendered apart,
+ * because they are the half a helper does not get.
+ */
+/** The text fields only — never `private_hidden` or `can_edit`, which say who
+ *  may read the record rather than forming part of it. */
+type RecordTextField = Exclude<keyof MemberRecord, 'private_hidden' | 'can_edit'>;
+
+const RECORD_GROUPS: {
+  key: string;
+  title: string;
+  fields: [RecordTextField, string, string?][];
+}[] = [
+  {
+    key: 'care',
+    title: 'rec_care',
+    fields: [
+      ['allergies', 'rec_allergies', 'rec_ph_allergies'],
+      ['conditions', 'rec_conditions'],
+      ['medications', 'rec_medications'],
+      ['blood_group', 'rec_blood'],
+      ['doctor_name', 'rec_doctor'],
+      ['doctor_phone', 'rec_doctor_phone'],
+      ['dentist_name', 'rec_dentist'],
+      ['dentist_phone', 'rec_dentist_phone'],
+      ['emergency_name', 'rec_emergency'],
+      ['emergency_phone', 'rec_emergency_phone'],
+    ],
+  },
+  {
+    key: 'school',
+    title: 'rec_school',
+    fields: [['school_name', 'rec_school_name'], ['teacher_name', 'rec_teacher']],
+  },
+  {
+    key: 'sizes',
+    title: 'rec_sizes',
+    fields: [['clothes_size', 'rec_clothes'], ['shoe_size', 'rec_shoe']],
+  },
+];
+
+/**
+ * One fact. Saved when the field loses focus, not on every keystroke — an
+ * allergy typed a letter at a time would otherwise be written sixteen times,
+ * and half of those writes would be a half-typed allergy.
+ */
+function RecordField({ testID, label, value, placeholder, editable, saving, onSave }: {
+  testID: string;
+  label: string;
+  value: string;
+  placeholder?: string;
+  editable: boolean;
+  saving: boolean;
+  onSave: (next: string) => void;
+}) {
+  const ui = useUI();
+  const { t } = useStore();
+  const styles = createStyles(ui);
+  const [draft, setDraft] = useState(value);
+  // Follow the server when it answers, unless this field is the one being
+  // edited — otherwise a save elsewhere would yank the text from under them.
+  const [focused, setFocused] = useState(false);
+  useEffect(() => { if (!focused) setDraft(value); }, [value, focused]);
+
+  return (
+    <View style={styles.recField}>
+      <Text style={styles.recLabel}>{label}</Text>
+      {editable ? (
+        <TextInput
+          testID={testID}
+          value={draft}
+          onChangeText={setDraft}
+          onFocus={() => setFocused(true)}
+          onBlur={() => { setFocused(false); onSave(draft.trim()); }}
+          placeholder={placeholder}
+          placeholderTextColor={ui.muted}
+          style={styles.recInput}
+          maxLength={400}
+        />
+      ) : (
+        <Text testID={testID} style={[styles.recValue, !value && { color: ui.muted }]}>
+          {value || t('rec_empty')}
+        </Text>
+      )}
+      {saving ? <ActivityIndicator color={ui.muted} size="small" style={styles.recSpin} /> : null}
+    </View>
+  );
+}
+
 export default function MemberProfile() {
   const ui = useUI();
   const router = useRouter();
@@ -98,6 +192,52 @@ export default function MemberProfile() {
   // The picture is one PATCH away and there are five choices, so it saves on
   // tap rather than behind a Save button. Optimistic: the row you just tapped
   // has to look chosen immediately or the tap reads as ignored.
+  /**
+   * The child record — what a carer, a co-parent or a school would ask for.
+   *
+   * Loaded on its own rather than folded into /family/members, because that
+   * list is fetched by every screen and by helpers, and a child's health
+   * information has no business riding along with it. Who may see which half
+   * is decided on the server; this screen renders what it is given.
+   */
+  const [record, setRecord] = useState<MemberRecord | null>(null);
+  const [savingField, setSavingField] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    api.getMemberRecord(id)
+      .then((r) => { if (!cancelled) setRecord(r); })
+      .catch((e) => logger.warn('member record load failed', e));
+    return () => { cancelled = true; };
+  }, [id]);
+
+  // Saved on blur, one field at a time — the PATCH carries only what changed,
+  // so two parents editing different halves from two phones do not overwrite
+  // each other. An unchanged field is not sent at all.
+  const saveField = useCallback(async (field: RecordTextField, next: string) => {
+    if (!record || (record[field] ?? '') === next) return;
+    setRecord((prev) => (prev ? { ...prev, [field]: next } : prev));
+    setSavingField(field);
+    try {
+      setRecord(await api.updateMemberRecord(id, { [field]: next }));
+    } catch (e) {
+      logger.warn('member record save failed', e);
+      setRecord((prev) => (prev ? { ...prev, [field]: record[field] ?? '' } : prev));
+      Alert.alert(t('rec_title'), t('rec_save_failed'));
+    } finally {
+      setSavingField(null);
+    }
+  }, [id, record, t]);
+
+  // What this reader actually gets rows for. An editor gets every field,
+  // because a blank is how a parent knows there is something to fill in.
+  const visibleGroups = useMemo(() => {
+    if (!record) return [];
+    if (record.can_edit) return RECORD_GROUPS;
+    return RECORD_GROUPS
+      .map((g) => ({ ...g, fields: g.fields.filter(([f]) => (record[f] ?? '').trim()) }))
+      .filter((g) => g.fields.length > 0);
+  }, [record]);
+
   const [avatar, setAvatar] = useState<string | null>(null);
   const [savingAvatar, setSavingAvatar] = useState(false);
   useEffect(() => { setAvatar(member?.avatar ?? null); }, [member?.avatar]);
@@ -309,6 +449,85 @@ export default function MemberProfile() {
         {showsStars ? renderStars() : null}
         {kind === 'helper' || kind === 'member' ? renderInfo() : null}
 
+        {/* Key facts — what a family IS, as opposed to what it is doing.
+            Above Manage, because this is the half a parent comes back for. */}
+        {record ? (
+          <>
+            <Text style={styles.sec}>{t('rec_title')}</Text>
+            <Text style={styles.recSub}>{t('rec_sub')}</Text>
+
+            {!record.can_edit ? (
+              <View style={styles.recNote}>
+                <Eye color={ui.muted} size={15} />
+                <Text style={styles.recNoteText}>{t('rec_helper_note')}</Text>
+              </View>
+            ) : null}
+
+            {/* A reader sees what is filled in; an editor sees the blanks.
+                A carer opening this wants the allergy, and ten rows of
+                "Nothing recorded yet" is where the one line that matters goes
+                to hide. A parent needs the blanks — they are the invitation to
+                fill them. */}
+            {visibleGroups.length === 0 ? (
+              <View style={styles.recCard}>
+                <Text style={styles.recEmptyAll}>{t('rec_empty')}</Text>
+              </View>
+            ) : visibleGroups.map((group) => (
+              <View key={group.key} style={styles.recCard}>
+                <Text style={styles.recGroup}>{t(group.title)}</Text>
+                {group.fields.map(([field, label, placeholder]) => (
+                  <RecordField
+                    key={field}
+                    testID={`record-${field}`}
+                    label={t(label)}
+                    placeholder={placeholder ? t(placeholder) : ''}
+                    value={record[field] ?? ''}
+                    editable={record.can_edit}
+                    saving={savingField === field}
+                    onSave={(next) => saveField(field, next)}
+                  />
+                ))}
+              </View>
+            ))}
+
+            {/* The identifiers, and the fact of them.
+                A helper is told the drawer exists and is not theirs, rather
+                than shown nothing — silence would send them asking a parent
+                for a number that is already recorded here. */}
+            <View style={styles.recCard}>
+              <View style={styles.recGroupRow}>
+                <Text style={styles.recGroup}>{t('rec_ids')}</Text>
+                {record.private_hidden ? (
+                  <View style={styles.recLock}>
+                    <Shield color={ui.muted} size={12} />
+                    <Text style={styles.recLockText}>{t('rec_hidden')}</Text>
+                  </View>
+                ) : null}
+              </View>
+              {record.private_hidden ? null : (
+                <>
+                  <RecordField
+                    testID="record-medical_number"
+                    label={t('rec_medical_number')}
+                    value={record.medical_number ?? ''}
+                    editable={record.can_edit}
+                    saving={savingField === 'medical_number'}
+                    onSave={(next) => saveField('medical_number', next)}
+                  />
+                  <RecordField
+                    testID="record-insurance_policy"
+                    label={t('rec_policy')}
+                    value={record.insurance_policy ?? ''}
+                    editable={record.can_edit}
+                    saving={savingField === 'insurance_policy'}
+                    onSave={(next) => saveField('insurance_policy', next)}
+                  />
+                </>
+              )}
+            </View>
+          </>
+        ) : null}
+
         {/* Manage — the reason Settings no longer needs a members section. */}
         <Text style={styles.sec}>{t('hub_manage')}</Text>
 
@@ -459,6 +678,29 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   // flex so a long label (German's 'Aus dem Haushalt entfernen') wraps inside
   // the row instead of pushing the row wider than the screen.
   actText: { flex: 1, fontFamily: 'Inter_600SemiBold', fontSize: 14.5, color: ui.text },
+  recSub: { fontFamily: 'Inter_400Regular', fontSize: 12.5, color: ui.muted, marginTop: -6, marginBottom: 10 },
+  recNote: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 8, backgroundColor: ui.soft,
+    borderRadius: 14, padding: 11, marginBottom: 10,
+  },
+  recNoteText: { flex: 1, fontFamily: 'Inter_500Medium', fontSize: 12.5, lineHeight: 17, color: ui.muted },
+  recCard: {
+    backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line,
+    borderRadius: 16, paddingHorizontal: 14, paddingVertical: 6, marginBottom: 10,
+  },
+  recGroup: { fontFamily: 'Inter_800ExtraBold', fontSize: 12, letterSpacing: 0.4, textTransform: 'uppercase', color: ui.muted, marginTop: 10, marginBottom: 4 },
+  recGroupRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  recLock: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  recLockText: { fontFamily: 'Inter_600SemiBold', fontSize: 11, color: ui.muted },
+  recField: { paddingVertical: 8, borderTopWidth: 1, borderTopColor: ui.line },
+  recLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 12, color: ui.muted, marginBottom: 3 },
+  recInput: {
+    fontFamily: 'Inter_500Medium', fontSize: 15, color: ui.text,
+    paddingVertical: 6, minHeight: 34,
+  },
+  recValue: { fontFamily: 'Inter_500Medium', fontSize: 15, color: ui.text, paddingVertical: 6, minHeight: 34 },
+  recSpin: { position: 'absolute', right: 0, top: 12 },
+  recEmptyAll: { fontFamily: 'Inter_500Medium', fontSize: 14, color: ui.muted, paddingVertical: 14 },
   pictureBox: {
     backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line,
     borderRadius: 16, padding: 14, gap: 12, marginBottom: 10,

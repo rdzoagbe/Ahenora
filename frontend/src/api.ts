@@ -949,6 +949,38 @@ export interface FamilyMember {
   age?: number | null;
 }
 
+/**
+ * A child's key facts — what a family IS, as opposed to what it is doing.
+ *
+ * Two tiers, decided server-side. Care facts (allergies, medicines, the
+ * doctor, the school) reach every adult trusted with the child, because a
+ * nanny who cannot see the allergy cannot do the job. The identifiers
+ * (`medical_number`, `insurance_policy`) are full members only and are simply
+ * ABSENT for a helper — `private_hidden` says so, because silence would send
+ * them asking a parent for a number that is already recorded.
+ */
+export interface MemberRecord {
+  allergies: string;
+  conditions: string;
+  medications: string;
+  blood_group: string;
+  doctor_name: string;
+  doctor_phone: string;
+  dentist_name: string;
+  dentist_phone: string;
+  emergency_name: string;
+  emergency_phone: string;
+  school_name: string;
+  teacher_name: string;
+  clothes_size: string;
+  shoe_size: string;
+  /** Full members only — absent, not empty, for a helper. */
+  medical_number?: string;
+  insurance_policy?: string;
+  private_hidden: boolean;
+  can_edit: boolean;
+}
+
 export interface Reward {
   reward_id: string;
   family_id: string;
@@ -2522,6 +2554,13 @@ export const api = {
     });
   },
   // Voice transcribe
+  getMemberRecord: (memberId: string) =>
+    request<MemberRecord>(`/family/members/${memberId}/record`),
+  /** Only the fields sent are changed, so two parents editing different halves
+   *  from two phones do not overwrite each other. '' clears a field. */
+  updateMemberRecord: (memberId: string, data: Partial<MemberRecord>) =>
+    request<MemberRecord>(`/family/members/${memberId}/record`,
+      { method: 'PATCH', body: data }),
   listHandoffNotes: () => request<HandoffNote[]>('/handoff-notes'),
   createHandoffNote: (data: { member_id?: string; text: string }) =>
     request<HandoffNote>('/handoff-notes', { method: 'POST', body: data }),
