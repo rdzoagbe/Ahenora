@@ -3889,6 +3889,87 @@ class ChildIn(BaseModel):
     pin: Optional[str] = None
 
 
+# ─── The child record ────────────────────────────────────────────────────────
+#
+# What a family IS, as opposed to what it is doing this week.
+#
+# The app could say what was on today and nothing about the child it was on
+# for: a member row held a name, a picture, an age, a star target and a PIN.
+# Everything a parent is actually asked for in a hurry — and usually asked for
+# BY SOMEBODY ELSE — had nowhere to live. The meal planner made the gap plain
+# in its own words: "check every dish against any allergies in your family",
+# an app telling you it knows allergies matter and does not know yours.
+#
+# Two tiers, because "who may read this" is not one answer.
+#
+# CARE facts are for anyone trusted with the child. A nanny who cannot see the
+# allergy is a nanny who cannot do the job, and the point of helper accounts is
+# that the person doing the caring has what caring needs. Every adult in the
+# household reads these.
+#
+# PRIVATE identifiers are the opposite: a health-service or insurance number
+# identifies a person for life, is useless in an emergency, and is exactly the
+# kind of thing that should not spread one account further than it must. Full
+# members only — the same gate the vault and billing already sit behind.
+#
+# Both tiers are written by full members only. A helper reads an allergy; they
+# do not get to change one.
+CARE_FIELDS = (
+    "allergies", "conditions", "medications", "blood_group",
+    "doctor_name", "doctor_phone", "dentist_name", "dentist_phone",
+    "emergency_name", "emergency_phone",
+    "school_name", "teacher_name",
+    "clothes_size", "shoe_size",
+)
+PRIVATE_FIELDS = ("medical_number", "insurance_policy")
+RECORD_FIELDS = CARE_FIELDS + PRIVATE_FIELDS
+# Room for "Peanuts, tree nuts — carries an EpiPen in the blue bag" without
+# room for somebody to store a novel in a child's allergy field.
+RECORD_MAX_LEN = 400
+
+
+class MemberRecordIn(BaseModel):
+    """Every field optional: a PATCH changes only what it names.
+
+    Empty string clears a field — a record that could be filled and never
+    emptied would be worse than none, because the wrong allergy is more
+    dangerous than no allergy.
+    """
+
+    allergies: Optional[str] = Field(default=None, max_length=RECORD_MAX_LEN)
+    conditions: Optional[str] = Field(default=None, max_length=RECORD_MAX_LEN)
+    medications: Optional[str] = Field(default=None, max_length=RECORD_MAX_LEN)
+    blood_group: Optional[str] = Field(default=None, max_length=RECORD_MAX_LEN)
+    doctor_name: Optional[str] = Field(default=None, max_length=RECORD_MAX_LEN)
+    doctor_phone: Optional[str] = Field(default=None, max_length=RECORD_MAX_LEN)
+    dentist_name: Optional[str] = Field(default=None, max_length=RECORD_MAX_LEN)
+    dentist_phone: Optional[str] = Field(default=None, max_length=RECORD_MAX_LEN)
+    emergency_name: Optional[str] = Field(default=None, max_length=RECORD_MAX_LEN)
+    emergency_phone: Optional[str] = Field(default=None, max_length=RECORD_MAX_LEN)
+    school_name: Optional[str] = Field(default=None, max_length=RECORD_MAX_LEN)
+    teacher_name: Optional[str] = Field(default=None, max_length=RECORD_MAX_LEN)
+    clothes_size: Optional[str] = Field(default=None, max_length=RECORD_MAX_LEN)
+    shoe_size: Optional[str] = Field(default=None, max_length=RECORD_MAX_LEN)
+    medical_number: Optional[str] = Field(default=None, max_length=RECORD_MAX_LEN)
+    insurance_policy: Optional[str] = Field(default=None, max_length=RECORD_MAX_LEN)
+
+
+def public_member_record(member: dict, full_member: bool) -> dict:
+    """One child's record, as this reader is allowed to see it.
+
+    `private_hidden` rather than silence: a helper who sees nothing cannot tell
+    a record that is empty from one they are not shown, and would go asking a
+    parent for a number that is already there.
+    """
+    record = (member or {}).get("record") or {}
+    out = {f: (record.get(f) or "") for f in CARE_FIELDS}
+    if full_member:
+        out.update({f: (record.get(f) or "") for f in PRIVATE_FIELDS})
+    out["private_hidden"] = not full_member
+    out["can_edit"] = full_member
+    return out
+
+
 class MemberPatchIn(BaseModel):
     """Only what a parent can safely correct in place.
 
@@ -6344,6 +6425,54 @@ async def claim_weekly_treat(member_id: str, payload: WeeklyClaimIn, user=Depend
     await database["redemptions"].insert_one(redemption)
 
     return {"ok": True, "redemption": public_redemption(redemption)}
+
+
+@app.get("/api/family/members/{member_id}/record")
+async def get_member_record(member_id: str, user=Depends(require_user)):
+    """A child's key facts, filtered to what this reader may see.
+
+    require_user, not require_full_member: a helper who cannot read the allergy
+    is a helper who cannot do the job. The private identifiers are stripped for
+    them by public_member_record, which is the one place that decision lives.
+    """
+    database = get_db()
+    member = await database["family_members"].find_one(
+        {"family_id": user["family_id"], "member_id": member_id}, {"_id": 0})
+    if not member:
+        raise HTTPException(status_code=404, detail="No such family member")
+    return public_member_record(member, full_member=not user.get("is_helper"))
+
+
+@app.patch("/api/family/members/{member_id}/record")
+async def update_member_record(member_id: str, payload: MemberRecordIn,
+                               user=Depends(require_full_member)):
+    """Correct a child's record. Full members only — a helper reads an allergy,
+    they do not get to change one.
+
+    Only the fields SENT are touched, so two parents editing different halves
+    from two phones do not overwrite each other's work; and an empty string
+    clears a field, because a record that can be filled and never emptied ends
+    up holding a stale allergy, which is more dangerous than an absent one.
+    """
+    database = get_db()
+    member = await database["family_members"].find_one(
+        {"family_id": user["family_id"], "member_id": member_id}, {"_id": 0})
+    if not member:
+        raise HTTPException(status_code=404, detail="No such family member")
+
+    sent = payload.model_dump(exclude_unset=True)
+    changes = {f"record.{k}": (v or "").strip() for k, v in sent.items() if k in RECORD_FIELDS}
+    if changes:
+        changes["updated_at"] = utcnow()
+        await database["family_members"].update_one(
+            {"family_id": user["family_id"], "member_id": member_id}, {"$set": changes})
+        member.setdefault("record", {}).update(
+            {k: (v or "").strip() for k, v in sent.items() if k in RECORD_FIELDS})
+    # Never logged, never summarised, never sent anywhere: this is a child's
+    # health information. public_member is an explicit allowlist and does not
+    # carry `record`, so it stays out of /family/members and out of every AI
+    # path that reads cards.
+    return public_member_record(member, full_member=True)
 
 
 @app.get("/api/family/members/{member_id}/star-history")

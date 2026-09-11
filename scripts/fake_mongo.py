@@ -14,6 +14,27 @@ import re
 from datetime import datetime
 
 
+def _set_path(row: dict, key: str, value):
+    """Write `key` into `row`, honouring Mongo's dotted paths.
+
+    Mongo reads "record.allergies" as a nested write and creates the parent as
+    it goes; this double used to store a literal field with a dot in its name.
+    Nothing noticed because nothing used a dotted $set until the child record
+    did — and then the write appeared to succeed and the read came back empty,
+    which is the worst way for a test double to be wrong: quietly, and only for
+    the one thing you were trying to prove.
+    """
+    if "." not in key:
+        row[key] = _bsonify(value)
+        return
+    head, rest = key.split(".", 1)
+    child = row.get(head)
+    if not isinstance(child, dict):
+        child = {}
+        row[head] = child
+    _set_path(child, rest, value)
+
+
 def _bsonify(value):
     """Store a value the way MongoDB would hand it back.
 
@@ -199,7 +220,7 @@ class FakeCollection:
 
     def _apply(self, row, update):
         for key, value in (update.get("$set") or {}).items():
-            row[key] = _bsonify(value)
+            _set_path(row, key, value)
         for key, value in (update.get("$inc") or {}).items():
             row[key] = (row.get(key) or 0) + value
         for key, value in (update.get("$addToSet") or {}).items():
