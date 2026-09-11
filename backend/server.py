@@ -2566,6 +2566,11 @@ PUSH_I18N = {
         "allowance_title": "Allowance due tomorrow 💶",
         "allowance_body": "{name}'s pocket money is due tomorrow.",
         "allowance_body_many": "{n} allowances are due tomorrow.",
+        "due_title": "Coming up",
+        "due_one_soon": "{item} is due soon.",
+        "due_one_now": "{item} is due now.",
+        "due_many_soon": "{item} and {n} more are due soon.",
+        "due_many_now": "{item} and {n} more need attention.",
     },
     "fr": {
         "invited_title": "{name} vous invite dans son foyer",
@@ -2608,6 +2613,11 @@ PUSH_I18N = {
         "allowance_title": "Argent de poche demain 💶",
         "allowance_body": "L'argent de poche de {name} est dû demain.",
         "allowance_body_many": "{n} versements d'argent de poche sont dus demain.",
+        "due_title": "À prévoir",
+        "due_one_soon": "{item} arrive bientôt à échéance.",
+        "due_one_now": "{item} est à échéance.",
+        "due_many_soon": "{item} et {n} autres arrivent bientôt à échéance.",
+        "due_many_now": "{item} et {n} autres demandent votre attention.",
     },
     "es": {
         "invited_title": "{name} te invitó a su hogar",
@@ -2650,6 +2660,11 @@ PUSH_I18N = {
         "allowance_title": "Paga pendiente mañana 💶",
         "allowance_body": "La paga de {name} vence mañana.",
         "allowance_body_many": "{n} pagas vencen mañana.",
+        "due_title": "Próximamente",
+        "due_one_soon": "{item} vence pronto.",
+        "due_one_now": "{item} ya vence.",
+        "due_many_soon": "{item} y {n} más vencen pronto.",
+        "due_many_now": "{item} y {n} más necesitan atención.",
     },
     "de": {
         "invited_title": "{name} hat dich in den Haushalt eingeladen",
@@ -2692,6 +2707,11 @@ PUSH_I18N = {
         "allowance_title": "Taschengeld morgen fällig 💶",
         "allowance_body": "Das Taschengeld von {name} ist morgen fällig.",
         "allowance_body_many": "{n} Taschengelder sind morgen fällig.",
+        "due_title": "Steht an",
+        "due_one_soon": "{item} wird bald fällig.",
+        "due_one_now": "{item} ist jetzt fällig.",
+        "due_many_soon": "{item} und {n} weitere werden bald fällig.",
+        "due_many_now": "{item} und {n} weitere brauchen Aufmerksamkeit.",
     },
 }
 
@@ -3374,6 +3394,181 @@ async def _build_sunday_recap(database, user, local, L):
     return (L["recap_title"], L["recap_body"].format(tasks=tasks, stars=stars))
 
 
+# Things with a date that need you BEFORE they arrive.
+#
+# Two of these already shipped and neither could reach anybody:
+#
+#   * /api/vault/expiry-alerts has computed "your passport expires in 10 days"
+#     since it was written, and the ONLY caller is the Vault screen. So the
+#     reminder fired exactly when a parent went looking — and the Vault is the
+#     least-opened screen in the app, which is why vault_open is counted at
+#     all. A reminder you have to go and find is not a reminder.
+#   * A vaccination's next_due renders as a "Due" chip on the child's page,
+#     which has the same problem: it is an alarm clock with no alarm.
+#
+# One job, because they are one question: what is coming that I have to do
+# something about? Two halves, because they are not one AUDIENCE — see
+# _due_recipient_may_see below.
+#
+# TOLD ONCE, NOT DAILY. The day-claim in run_daily_local_push stops a job
+# firing twice in a day; it does nothing about firing every day for a month,
+# which is exactly the nagging DIGEST_OVERDUE_DAYS exists to prevent. So each
+# item carries its own mark, and the mark is keyed to the DATE it was about: a
+# renewed passport with a new expiry has a new date, so it does not match the
+# stored mark and the family is told afresh. Two stages only — a heads-up and
+# an it-is-here — so an item can never produce more than two notifications per
+# date it carries.
+DUE_SOON_DAYS = 30
+
+# Written on the item itself rather than in a side collection, so deleting the
+# document or the vaccination takes its mark with it and nothing is orphaned.
+DUE_MARK_DATE = "due_notified_for"
+DUE_MARK_STAGE = "due_notified_stage"
+
+
+def due_stage(target: Optional[datetime], now: datetime) -> Optional[str]:
+    """Which of the two things there is to say about a date, if either.
+
+    Returns 'due' on or after the day itself, 'soon' inside the window, and
+    None when it is far enough away to be nobody's problem yet.
+    """
+    if not target:
+        return None
+    days = (target.date() - now.date()).days
+    if days <= 0:
+        return "due"
+    return "soon" if days <= DUE_SOON_DAYS else None
+
+
+def due_already_told(item: dict, date_key: str, stage: str) -> bool:
+    """Have we already said this, about this date?
+
+    Keyed to the date so a CHANGED date is a new conversation, and ordered so
+    that an item which has had its heads-up still gets its it-is-here: 'soon'
+    is satisfied by a mark of either stage, 'due' only by 'due'.
+    """
+    if (item or {}).get(DUE_MARK_DATE) != date_key:
+        return False
+    told = (item or {}).get(DUE_MARK_STAGE)
+    if stage == "due":
+        return told == "due"
+    return told in ("soon", "due")
+
+
+def _due_recipient_may_see_vault(user: dict) -> bool:
+    """The document half is not for everybody the vaccination half is for.
+
+    list_vault is require_full_member, so a helper cannot open the Vault at
+    all. Telling them a passport is about to expire would name a document they
+    are not allowed to see — the exact leak public_member_record exists to
+    prevent, arriving by push instead.
+
+    Vaccinations are the other way round: they are care-tier, and a nanny at a
+    clinic desk is precisely who needs to know one is due.
+    """
+    return not user.get("is_helper")
+
+
+async def _due_vaccinations(database, user):
+    """(member_id, vax row, the child's name, the date it is about)."""
+    out = []
+    async for member in database["family_members"].find(
+            {"family_id": user.get("family_id")}, {"_id": 0}):
+        for row in ((member.get("record") or {}).get("vaccinations") or []):
+            if not isinstance(row, dict):
+                continue
+            raw = (row.get("next_due") or "").strip()
+            if not raw:
+                continue
+            try:
+                target = datetime.strptime(raw, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            except ValueError:
+                # A date the server would refuse today, stored before it did.
+                # Skipped rather than guessed at: a reminder on a date nobody
+                # can read is worse than none.
+                continue
+            out.append((member.get("member_id"), row, (member.get("name") or "").strip(), raw, target))
+    return out
+
+
+async def _due_vault_docs(database, user):
+    if not _due_recipient_may_see_vault(user):
+        return []
+    out = []
+    async for doc in database["vault"].find(
+            {"family_id": user.get("family_id")}, {"_id": 0}):
+        if not _may_see_vault_doc(doc, user):
+            continue
+        target = ensure_aware_utc(doc.get("expiry_date"))
+        if not target:
+            continue
+        out.append((doc.get("doc_id"), doc, (doc.get("title") or "").strip(), iso(target)[:10], target))
+    return out
+
+
+async def _build_due_dates(database, user, local, L):
+    """One line about what is coming, and a mark so it is not said again.
+
+    Marks are written here rather than after the send, which is the same
+    trade-off run_daily_local_push already documents for its day-claim: a
+    failure between the two costs one notification rather than producing a
+    duplicate. The two stages soften it — an item whose heads-up is lost still
+    gets its it-is-here.
+    """
+    # `local`, never utcnow(): "is this due today" is a question about the day
+    # where the FAMILY is. Comparing against the server's date puts a household
+    # thirteen hours ahead a day behind its own passport.
+    hits = []  # (label, stage, writer)
+
+    for member_id, row, child, date_key, target in await _due_vaccinations(database, user):
+        stage = due_stage(target, local)
+        if not stage or due_already_told(row, date_key, stage):
+            continue
+        name = (row.get("name") or "").strip()
+        label = f"{child} — {name}".strip(" —") if child else name
+        if not label:
+            continue
+
+        async def mark_vax(_m=member_id, _v=row.get("vax_id"), _d=date_key, _s=stage):
+            await database["family_members"].update_one(
+                {"family_id": user.get("family_id"), "member_id": _m,
+                 "record.vaccinations.vax_id": _v},
+                {"$set": {f"record.vaccinations.$.{DUE_MARK_DATE}": _d,
+                          f"record.vaccinations.$.{DUE_MARK_STAGE}": _s}})
+
+        hits.append((label, stage, mark_vax))
+
+    for doc_id, doc, title, date_key, target in await _due_vault_docs(database, user):
+        stage = due_stage(target, local)
+        if not stage or due_already_told(doc, date_key, stage) or not title:
+            continue
+
+        async def mark_doc(_i=doc_id, _d=date_key, _s=stage):
+            await database["vault"].update_one(
+                {"family_id": user.get("family_id"), "doc_id": _i},
+                {"$set": {DUE_MARK_DATE: _d, DUE_MARK_STAGE: _s}})
+
+        hits.append((title, stage, mark_doc))
+
+    if not hits:
+        return None
+
+    # Everything that has arrived comes before everything that is merely
+    # coming: the overdue ones are the ones with nothing left to plan around.
+    hits.sort(key=lambda h: (h[1] != "due", h[0].lower()))
+    for _, _, write in hits:
+        await write()
+
+    overdue = [h for h in hits if h[1] == "due"]
+    head = hits[0][0]
+    if len(hits) == 1:
+        body = (L["due_one_now"] if overdue else L["due_one_soon"]).format(item=head)
+    else:
+        key = "due_many_now" if overdue else "due_many_soon"
+        body = L[key].format(item=head, n=len(hits) - 1)
+    return (L["due_title"], body)
+
+
 async def _build_allowance_reminder(database, user, local, L):
     """Pocket money falling due tomorrow, so a parent has a day to get cash out."""
     start, end = _local_day_bounds(local, 1)
@@ -3423,6 +3618,15 @@ DAILY_PUSH_JOBS = [
      "grace": DIGEST_GRACE_MINUTES, "claim": "allowance_sent_for",
      "pref": "card_reminders", "channel": "card-reminders",
      "build": _build_allowance_reminder},
+    # Passports and vaccinations. Deliberately NOT at 07:30 beside the morning
+    # digest: this is a "book an appointment" errand, not part of today's list,
+    # and two notifications in the same minute is how both get swiped away.
+    # adults_only because a teen cannot renew a passport, and helpers are not
+    # teens — the vault half filters them separately, inside the builder.
+    {"key": "due_dates", "hour": 10, "minute": 0, "adults_only": True,
+     "grace": DIGEST_GRACE_MINUTES, "claim": "due_dates_sent_for",
+     "pref": "card_reminders", "channel": "card-reminders",
+     "build": _build_due_dates},
 ]
 
 
