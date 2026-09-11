@@ -999,12 +999,21 @@ export default function MetricsScreen() {
                         {/* "reached nobody" is true of a test ping and
                             misleading about it: the tag is what gets read at a
                             glance, and in red beside real purchases it says
-                            somebody lost money. */}
+                            somebody lost money.
+
+                            The tag holds the PLAN, and some events carry none:
+                            CANCELLATION, BILLING_ISSUE, TRANSFER and TEST
+                            record state and change nobody's plan. That read
+                            "applied", which on a BILLING_ISSUE — the one row
+                            that means a paying family's payment just failed —
+                            sounds like something was resolved. It says what
+                            the server's own log says of the same event:
+                            unchanged. */}
                         <View style={[styles.subTag, e.matched ? styles.subTagPaid : styles.subTagFree]}>
                           <Text style={[styles.subTagText, {
                             color: e.matched ? ui.orangeText : e.is_test ? ui.muted : ui.danger,
                           }]}>
-                            {e.matched ? (e.plan || 'applied') : e.is_test ? 'store test' : 'reached nobody'}
+                            {e.matched ? (e.plan || 'plan unchanged') : e.is_test ? 'store test' : 'reached nobody'}
                           </Text>
                         </View>
                         <Text style={styles.subMeta} numberOfLines={1}>

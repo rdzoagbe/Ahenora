@@ -88,3 +88,51 @@ describe('the verdict on an unmatched payment', () => {
     expect(METRICS).toMatch(/\{!e\.matched \? \(\s*\n\s*<Text[^>]*>\s*\n\s*\{replayVerdict\(e\)\}/);
   });
 });
+
+/**
+ * The tag on a MATCHED event — the plan it moved the household to.
+ *
+ * Not every event moves one. CANCELLATION, BILLING_ISSUE, TRANSFER and TEST
+ * record state and change nobody's plan, so the tag falls back to a word of
+ * its own. That word used to be "applied", which on a BILLING_ISSUE — the one
+ * row meaning a paying family's payment has just failed — reads as though
+ * something was resolved.
+ */
+describe('the tag on a matched event', () => {
+  /** The event types the server explicitly says change no plan. */
+  const NO_PLAN_EVENTS = ['CANCELLATION', 'BILLING_ISSUE', 'TRANSFER', 'TEST'];
+
+  it('still names the plan when the event set one', () => {
+    expect(METRICS).toContain('e.plan ||');
+  });
+
+  it('does not claim anything was applied when no plan changed', () => {
+    // The specific regression: a payment failure tagged "applied".
+    const tag = METRICS.slice(METRICS.indexOf('e.matched ? (e.plan ||'),
+                              METRICS.indexOf('e.matched ? (e.plan ||') + 160);
+    expect(tag).not.toContain("'applied'");
+  });
+
+  it('says what the server says of the same event', () => {
+    // The server logs `changes.get("plan", "unchanged")` for exactly these
+    // events. Two names for one fact is how a screen and a log stop agreeing.
+    expect(METRICS).toContain("'plan unchanged'");
+    expect(SERVER).toContain('changes.get("plan", "unchanged")');
+  });
+
+  it('is reached by the events that carry no plan', () => {
+    // Read off the server: these are the ones its own comment excludes from
+    // both the premium and the downgrade lists, so `changes` gets no "plan"
+    // key and the event stores None. If one of them starts setting a plan the
+    // fallback stops applying to it, and this should be revisited.
+    const block = SERVER.slice(SERVER.indexOf('if event_type in RC_PREMIUM_EVENTS'),
+                               SERVER.indexOf('await database["families"].update_one',
+                                              SERVER.indexOf('if event_type in RC_PREMIUM_EVENTS')));
+    for (const ev of NO_PLAN_EVENTS) {
+      expect(block).toContain(ev);
+    }
+    // and they are named in the comment that says they just record state,
+    // not in a branch that assigns changes["plan"].
+    expect(block).toMatch(/Other events \([^)]*\) just record state/);
+  });
+});
