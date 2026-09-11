@@ -42,17 +42,69 @@ Ahenora: Family Organizer
 
 #### Subtitle
 ```
-Chores, calendar & meals
+Chores, calendar, meals, tasks
 ```
 
 #### Keywords
 ```
-coparenting,custody,planner,household,kid,chart,routine,shopping,grocery,list,reminder,shared,school
+coparenting,custody,planner,kid,chart,shopping,grocery,list,reminder,school,teen,nanny,allowance
 ```
 
 The subtitle previously read "The family home base". Warm, and it ranked for
 nothing — the subtitle is indexed as heavily as the name, so those characters
 were doing no work.
+
+### Why these terms (September 2026)
+
+Four days of iOS data said the funnel is fine and the top of it is empty: **34
+impressions to 13 page views (38%) to 5 downloads (38%)**. People who find the
+listing install it. Almost nobody finds it. That makes the keyword field the
+only lever worth pulling — screenshots and copy cannot fix a listing that is
+never shown.
+
+Nothing here was mechanical waste. The field was already 100/100 with no
+duplicates and no multi-word entries, so every addition had to buy its place.
+
+**The new subtitle term is free.** The subtitle had six unused characters and
+`&` was doing a word's worth of work. Filling it to 30 adds an indexed term
+without touching the keyword budget.
+
+**Three terms were dropped**, each paying for breadth this app cannot win:
+
+- `household` — parents search "family organizer", not "household organizer",
+  and the name already spends both of those words.
+- `routine` — real, but it puts us against every habit tracker on the store.
+- `shared` — mostly buys "shared calendar", where a new listing places behind
+  Google Calendar and Cozi regardless of what it says.
+
+**Three were added**, each naming something the app actually does that had *no
+term anywhere* in the name, subtitle or keyword field:
+
+- `teen` — the gated 13-17 account is a genuine differentiator and was
+  completely unsearchable.
+- `nanny` — helper accounts exist and are a paid feature.
+- `allowance` — stars and pocket money are a whole feature with no term.
+
+**`chart` was kept deliberately.** It earns nothing alone; it earns its place
+combined with the subtitle, and "chore chart" is a category people search by
+name. A narrow phrase a new app can actually place for beats a broad one it
+cannot.
+
+Four characters are left unused. That is deliberate — a weak term costs more
+than an empty character.
+
+**What is NOT claimed here.** None of this is backed by search-volume data.
+There is no ASO data source in this repo, and the reasoning above is about
+coverage and competition, not measured demand. The honest way to settle it is
+the next 30 days of impressions: this is one change to one field, so if
+impressions move, it moved them.
+
+**These fields do not change on their own.** Name, Subtitle and Keywords can
+only be edited as part of a **new version submission** — they ride the next
+release. Promotional Text is the only field editable without review.
+
+The alternative considered was keeping `shared` and dropping `chart` (97/100).
+If "chore chart" turns out not to place, that is the swap to try next.
 
 ---
 
