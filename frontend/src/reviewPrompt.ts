@@ -44,14 +44,43 @@ async function getStoreReview(): Promise<any | null> {
 }
 
 /**
+ * Asked once per install, and that has to survive the request going wrong.
+ *
+ * Reported from a real phone: every task she ticked off brought up "a survey".
+ * The one-time flag was written AFTER the request — so a request that rejected
+ * (the Play in-app review flow rejects for its own reasons) left the flag
+ * unwritten while the win count was already past the threshold, and every
+ * completed task asked again. The code read as "ask once"; what it did was
+ * "ask once if nothing goes wrong, and forever if anything does".
+ *
+ * Two guards now, because the flag itself is a write that can fail:
+ *   - askedThisSession stops it dead for the rest of the app session, whatever
+ *     storage does;
+ *   - the stored flag is written BEFORE the request, so one attempt is one
+ *     attempt across sessions too.
+ *
+ * The hasAction() check stays ahead of both: when the OS says it will not show
+ * a sheet, nothing was asked and the one chance is not spent.
+ */
+let askedThisSession = false;
+
+/**
  * Record a positive moment (chore completed, task done, calendar synced).
  * Once enough have accumulated, asks the OS to show its review sheet.
  *
  * Safe to call from anywhere: never throws, never blocks the UI, and silently
  * does nothing on builds without the native module.
+ *
+ * `getReview` is injectable ONLY so this can be tested. The real one reaches
+ * the native module through a dynamic import, which jest cannot intercept —
+ * so without this seam the whole decision below was untestable, which is how
+ * it came to ship asking on every tick.
  */
-export async function recordWin(): Promise<void> {
+export async function recordWin(
+  getReview: () => Promise<any | null> = getStoreReview,
+): Promise<void> {
   try {
+    if (askedThisSession) return;
     const asked = await AsyncStorage.getItem(ASKED_KEY);
     if (asked) return; // already asked once — never nag again
 
@@ -60,7 +89,7 @@ export async function recordWin(): Promise<void> {
     await AsyncStorage.setItem(WINS_KEY, String(wins));
     if (wins < WINS_BEFORE_ASK) return;
 
-    const StoreReview = await getStoreReview();
+    const StoreReview = await getReview();
     if (!StoreReview) return;
 
     // hasAction() is false when the OS won't show a sheet (quota reached,
@@ -68,11 +97,25 @@ export async function recordWin(): Promise<void> {
     const available = await StoreReview.hasAction?.();
     if (available === false) return;
 
+    // Before the request, not after. Whatever requestReview does — resolve,
+    // reject, hang — this parent has now been asked.
+    //
+    // The flag write swallows its own failure rather than sharing the outer
+    // catch: writing it first is what stops the nagging, but letting a failed
+    // write skip the request would mean a parent with full storage is never
+    // asked at all. askedThisSession covers that case instead.
+    askedThisSession = true;
+    await AsyncStorage.setItem(ASKED_KEY, new Date().toISOString())
+      .catch((e) => logger.warn('could not record that we asked', e));
     await StoreReview.requestReview();
-    await AsyncStorage.setItem(ASKED_KEY, new Date().toISOString());
   } catch (e) {
     logger.warn('review prompt skipped', e);
   }
+}
+
+/** Test seam: forget that this session already asked. */
+export function resetReviewPromptForTests(): void {
+  askedThisSession = false;
 }
 
 /**

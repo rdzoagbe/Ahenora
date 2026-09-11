@@ -129,6 +129,65 @@ async def main():
         r["and_does_not_reach_the_menu"] = not any(
             "marc" in (m.get("title") or "").lower() for m in meals2)
 
+        # --- and ticking one off makes it stay gone -------------------------
+        #
+        # Reported from a real phone: a task marked done came back. The Feed
+        # removes it optimistically and then reloads the whole list, so the
+        # question is what the RELOAD does — nothing in the harnesses ticked a
+        # task off, which meant the most common action in the app had no cover
+        # at all.
+        #
+        # Three separate ways it could come back, so three checks: the server
+        # must record it DONE, the reload must not put it back on the screen,
+        # and a plain task must not spawn a successor the way a recurring
+        # chore deliberately does.
+        await page.reload(wait_until="domcontentloaded")
+        await page.wait_for_timeout(3000)
+        # Whichever task the Feed is actually showing. Picking one by title
+        # assumed it was on screen; the Feed shows a handful and offers the
+        # rest behind "see all", so the first attempt waited 30 seconds for a
+        # row that was real but folded away.
+        picked = await page.evaluate("""
+          () => {
+            const el = document.querySelector('[data-testid^="feed-card-complete-"]');
+            return el ? el.dataset.testid.replace('feed-card-complete-', '') : null;
+          }
+        """)
+        cards_before = len(api("GET", "/cards", None, tok))
+        r["there_is_a_task_on_the_feed_to_tick"] = bool(picked)
+        if picked:
+            title = next((c.get("title") or "" for c in api("GET", "/cards", None, tok)
+                          if c["card_id"] == picked), "")
+            await page.click(f'[data-testid="feed-card-complete-{picked}"]')
+            await page.wait_for_timeout(2000)
+            r["it_leaves_the_screen_at_once"] = await page.locator(
+                f'[data-testid="feed-card-{picked}"]').count() == 0
+
+            done = next((c for c in api("GET", "/cards", None, tok)
+                         if c["card_id"] == picked), None)
+            r["the_server_recorded_it_done"] = bool(done) and done.get("status") == "DONE"
+
+            # The reload is the moment it would come back.
+            await page.reload(wait_until="domcontentloaded")
+            await page.wait_for_timeout(3200)
+            r["it_is_still_gone_after_a_reload"] = await page.locator(
+                f'[data-testid="feed-card-{picked}"]').count() == 0
+            # Scoped to the task rows, not the whole page. The first version
+            # searched the body and failed on "Roland finished Dinner with
+            # Marc" — the activity log, which is a record of what happened and
+            # is SUPPOSED to say so. A completed task leaving a trace there is
+            # the feature; it is only a bug if the task itself comes back.
+            r["and_no_task_row_carries_it_any_more"] = await page.evaluate("""
+              (title) => [...document.querySelectorAll('[data-testid^="feed-card-"]')]
+                .filter((el) => !el.dataset.testid.includes('complete'))
+                .every((el) => !el.textContent.toLowerCase().includes(title.toLowerCase()))
+            """, title or "")
+
+            # A recurring chore SHOULD spawn its next occurrence. A plain task
+            # must not — that would look exactly like the tick failing.
+            r["no_successor_was_spawned"] = len(api("GET", "/cards", None, tok)) == cards_before
+        await page.screenshot(path="capture_done.png")
+
         await page.screenshot(path="capture_bar.png")
         await br.close()
 
