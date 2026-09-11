@@ -967,6 +967,17 @@ export interface FamilyAllergy {
   allergies: string;
 }
 
+/** One shot. `given_on` and `next_due` are ISO days ("2024-03-11") or '' —
+ *  never a half-parsed guess, because a date that reads as an answer and is
+ *  wrong is worse than an absent one. The server refuses anything else. */
+export interface Vaccination {
+  vax_id: string;
+  name: string;
+  given_on: string;
+  next_due: string;
+  note: string;
+}
+
 export interface MemberRecord {
   allergies: string;
   conditions: string;
@@ -985,6 +996,9 @@ export interface MemberRecord {
   /** Full members only — absent, not empty, for a helper. */
   medical_number?: string;
   insurance_policy?: string;
+  /** Newest first, undated last — the order "when was the last one?" is
+   *  asked in. Sorted by the server so the app and the web app agree. */
+  vaccinations: Vaccination[];
   private_hidden: boolean;
   can_edit: boolean;
 }
@@ -2572,6 +2586,20 @@ export const api = {
   updateMemberRecord: (memberId: string, data: Partial<MemberRecord>) =>
     request<MemberRecord>(`/family/members/${memberId}/record`,
       { method: 'PATCH', body: data }),
+  /** Per ENTRY, never by replacing the list: two parents adding two different
+   *  shots from two phones must both survive. Each returns the whole record
+   *  back, so the screen redraws from the server rather than from a guess. */
+  addVaccination: (memberId: string,
+                   data: { name: string; given_on?: string; next_due?: string; note?: string }) =>
+    request<MemberRecord>(`/family/members/${memberId}/vaccinations`,
+      { method: 'POST', body: data }),
+  updateVaccination: (memberId: string, vaxId: string,
+                      data: Partial<Omit<Vaccination, 'vax_id'>>) =>
+    request<MemberRecord>(`/family/members/${memberId}/vaccinations/${vaxId}`,
+      { method: 'PATCH', body: data }),
+  deleteVaccination: (memberId: string, vaxId: string) =>
+    request<MemberRecord>(`/family/members/${memberId}/vaccinations/${vaxId}`,
+      { method: 'DELETE' }),
   listHandoffNotes: () => request<HandoffNote[]>('/handoff-notes'),
   createHandoffNote: (data: { member_id?: string; text: string }) =>
     request<HandoffNote>('/handoff-notes', { method: 'POST', body: data }),

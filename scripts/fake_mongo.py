@@ -7,7 +7,8 @@ find_one / insert_one / update_one / update_many / delete_one / delete_many /
 count_documents / find().sort().limit() (async iteration + to_list), query
 operators $exists $gt $gte $lt $lte $in $nin $ne $or $regex(+$options i)
 (equality operators match array membership, as Mongo does), update operators
-$set $inc $addToSet $push $pull, and db.command("ping").
+$set (including dotted paths and the positional `$`) $inc $addToSet
+$push $pull (both dotted-path aware), and db.command("ping").
 """
 
 import re
@@ -33,6 +34,66 @@ def _set_path(row: dict, key: str, value):
         child = {}
         row[head] = child
     _set_path(child, rest, value)
+
+
+def _get_path(doc, key):
+    """Read `key` out of `doc`, honouring Mongo's dotted paths.
+
+    Mongo also reaches THROUGH an array: "vaccinations.vax_id" against a list
+    yields the vax_id of every element, and a query matches if any of them
+    matches. That is what makes {"record.vaccinations.vax_id": x} select the
+    parent document, which is how the positional operator below is addressed.
+
+    Reading flat here was the same class of bug _set_path fixes on the write
+    side: the query simply never matched, so an update silently did nothing.
+    """
+    if not isinstance(key, str) or "." not in key:
+        return doc.get(key) if isinstance(doc, dict) else None
+    head, rest = key.split(".", 1)
+    if isinstance(doc, list):
+        return [v for v in (_get_path(item, key) for item in doc) if v is not None]
+    if not isinstance(doc, dict):
+        return None
+    child = doc.get(head)
+    if isinstance(child, list):
+        got = [v for v in (_get_path(item, rest) for item in child) if v is not None]
+        return got or None
+    return _get_path(child, rest)
+
+
+def _set_positional(row, key, value, query):
+    """Mongo's positional `$`: write the ONE array element the query matched.
+
+    `{"record.vaccinations.$": row}` with a query naming
+    `record.vaccinations.vax_id` updates that element and no other. The index
+    is not in the update — it comes from the query, which is exactly why this
+    is safe under concurrency: an element that moved because somebody else
+    pushed a row is still found by its id rather than by a stale position.
+
+    Reproduced here because the alternative in server.py is rewriting the whole
+    array, and a test double that quietly made the positional write a no-op
+    would have made the unsafe version look equally correct.
+    """
+    prefix, _, rest = key.partition(".$")
+    rest = rest.lstrip(".")
+    arr = _get_path(row, prefix)
+    if not isinstance(arr, list):
+        return
+    # Every query condition addressing INSIDE this array tells us which
+    # element was meant; an element must satisfy all of them, as in Mongo.
+    inner = {k[len(prefix) + 1:]: cond for k, cond in (query or {}).items()
+             if isinstance(k, str) and k.startswith(prefix + ".")}
+    if not inner:
+        return
+    for i, item in enumerate(arr):
+        if not isinstance(item, dict):
+            continue
+        if all(_match_condition(_get_path(item, f), c) for f, c in inner.items()):
+            if rest:
+                _set_path(item, rest, value)
+            else:
+                arr[i] = _bsonify(value)
+            return
 
 
 def _bsonify(value):
@@ -151,19 +212,31 @@ def _matches(doc, query):
             if not any(_matches(doc, sub) for sub in cond):
                 return False
         else:
-            if not _match_condition(doc.get(key), cond):
+            if not _match_condition(_get_path(doc, key), cond):
                 return False
     return True
 
 
 def _project(doc, projection):
+    """A read hands back a document of its OWN, never the stored one.
+
+    Real Mongo decodes fresh BSON on every read, so a handler that mutates
+    what find_one gave it changes nothing until it writes. This double used to
+    return a SHALLOW copy: the top level was safe, but a nested dict or list —
+    `record`, and the vaccinations inside it — was the very object in the
+    store. Handler code that appended to it mutated the database without a
+    write, which made an unwritten change look persisted, and a written one
+    look applied twice.
+
+    Deep-copied on the way out, so the double is no kinder than the wire.
+    """
     if not projection:
-        return dict(doc)
+        return _bsonify(dict(doc))
     include = {k for k, v in projection.items() if v and k != "_id"}
     if include:
-        return {k: v for k, v in doc.items() if k in include}
+        return _bsonify({k: v for k, v in doc.items() if k in include})
     exclude = {k for k, v in projection.items() if not v}
-    return {k: v for k, v in doc.items() if k not in exclude}
+    return _bsonify({k: v for k, v in doc.items() if k not in exclude})
 
 
 class _Result:
@@ -218,9 +291,12 @@ class FakeCollection:
             self.rows.append(_bsonify(dict(doc)))
         return _Result(len(docs))
 
-    def _apply(self, row, update):
+    def _apply(self, row, update, query=None):
         for key, value in (update.get("$set") or {}).items():
-            _set_path(row, key, value)
+            if ".$" in key:
+                _set_positional(row, key, value, query or {})
+            else:
+                _set_path(row, key, value)
         for key, value in (update.get("$inc") or {}).items():
             row[key] = (row.get(key) or 0) + value
         for key, value in (update.get("$addToSet") or {}).items():
@@ -231,31 +307,33 @@ class FakeCollection:
                 arr = arr + [_bsonify(value)]
             row[key] = arr
         for key, value in (update.get("$push") or {}).items():
-            arr = row.get(key)
-            row[key] = (arr if isinstance(arr, list) else []) + [_bsonify(value)]
+            arr = _get_path(row, key)
+            _set_path(row, key,
+                      (arr if isinstance(arr, list) else []) + [_bsonify(value)])
         for key, cond in (update.get("$pull") or {}).items():
             # Mongo removes every element of the array MATCHING the condition,
             # which for a sub-document is a partial match rather than equality
             # — {"user_id": u} pulls that person's entry whatever else it
             # carries. Reproduced here, because the difference is exactly what
             # a "one reaction per person" toggle depends on.
-            arr = row.get(key)
+            arr = _get_path(row, key)
             if not isinstance(arr, list):
                 continue
             if isinstance(cond, dict) and not any(str(k).startswith("$") for k in cond):
-                row[key] = [v for v in arr
-                            if not (isinstance(v, dict) and _matches(v, cond))]
+                kept = [v for v in arr
+                        if not (isinstance(v, dict) and _matches(v, cond))]
             else:
-                row[key] = [v for v in arr if not _match_condition(v, cond)]
+                kept = [v for v in arr if not _match_condition(v, cond)]
+            _set_path(row, key, kept)
 
     async def update_one(self, query, update, upsert=False):
         for row in self.rows:
             if _matches(row, query):
-                self._apply(row, update)
+                self._apply(row, update, query)
                 return _Result(1)
         if upsert:
             merged = {k: v for k, v in (query or {}).items() if not isinstance(v, dict)}
-            self._apply(merged, update)
+            self._apply(merged, update, query)
             self.rows.append(merged)
             return _Result(1)
         return _Result(0)
@@ -264,7 +342,7 @@ class FakeCollection:
         n = 0
         for row in self.rows:
             if _matches(row, query):
-                self._apply(row, update)
+                self._apply(row, update, query)
                 n += 1
         return _Result(n)
 

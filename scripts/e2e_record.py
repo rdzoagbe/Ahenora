@@ -176,6 +176,80 @@ async def run(r):
             "any allergies in your family" not in kitchen_text)
         r["no_js_errors_in_the_kitchen"] = not errs_k
 
+        # --- vaccinations, in a real browser ---------------------------------
+        #
+        # The list is the one part of the record a text field could not hold.
+        # What is proved here is the part unit tests cannot: that a parent can
+        # actually type one in on the page, that the due chip renders, and that
+        # a carer is shown the dates and not the controls.
+        from datetime import date, timedelta
+        soon = (date.today() + timedelta(days=10)).isoformat()
+        past = (date.today() - timedelta(days=400)).isoformat()
+
+        page_v, errs_v = await open_as(b, tok_p, f"/member?id={member_id}&name=Ama%20Sim&role=child")
+        r["the_parent_is_offered_the_vaccination_form"] = await page_v.locator(
+            '[data-testid="vax-new-name"]').count() == 1
+
+        await page_v.fill('[data-testid="vax-new-name"]', "Tetanus")
+        await page_v.fill('[data-testid="vax-new-given"]', "2024-03-11")
+        await page_v.fill('[data-testid="vax-new-due"]', soon)
+        await page_v.click('[data-testid="vax-add"]')
+        await page_v.wait_for_timeout(2500)
+
+        stored = api("GET", f"/family/members/{member_id}/record", None, tok_p)
+        vax = stored.get("vaccinations") or []
+        r["typing_one_in_reaches_the_server"] = any(
+            v.get("name") == "Tetanus" and v.get("given_on") == "2024-03-11" for v in vax)
+
+        body_v = await page_v.inner_text("body")
+        r["the_row_is_on_the_screen"] = "Tetanus" in body_v
+        # The whole reason this is a list: a date that needs doing says so.
+        r["a_date_coming_up_is_flagged"] = "Due soon" in body_v
+
+        # A second one, already overdue, must read differently from the first.
+        await page_v.fill('[data-testid="vax-new-name"]', "Polio")
+        await page_v.fill('[data-testid="vax-new-due"]', past)
+        await page_v.click('[data-testid="vax-add"]')
+        await page_v.wait_for_timeout(2500)
+        body_v2 = await page_v.inner_text("body")
+        r["an_overdue_one_reads_as_due"] = "Due" in body_v2 and "Polio" in body_v2
+
+        # A refused date must say so and must not be stored. This is the check
+        # that a bad day never becomes a row that reads as an answer.
+        before = len((api("GET", f"/family/members/{member_id}/record", None, tok_p)
+                      or {}).get("vaccinations") or [])
+        await page_v.fill('[data-testid="vax-new-name"]', "Nonsense")
+        await page_v.fill('[data-testid="vax-new-given"]', "2024-13-45")
+        await page_v.click('[data-testid="vax-add"]')
+        await page_v.wait_for_timeout(2000)
+        after = (api("GET", f"/family/members/{member_id}/record", None, tok_p)
+                 or {}).get("vaccinations") or []
+        r["a_nonsense_date_is_not_stored"] = len(after) == before and not any(
+            v.get("name") == "Nonsense" for v in after)
+
+        await page_v.screenshot(path="record_vaccinations.png")
+        r["no_js_errors_on_the_vaccination_form"] = not errs_v
+
+        # --- and what the carer gets -----------------------------------------
+        page_vn, errs_vn = await open_as(b, tok_n, f"/member?id={member_id}&name=Ama%20Sim&role=child")
+        body_vn = await page_vn.inner_text("body")
+        # A nanny at a clinic desk is exactly who is asked "when was the last
+        # one?" — the same reasoning that lets them read the allergy.
+        r["the_carer_reads_the_dates"] = "Tetanus" in body_vn and "2024-03-11" in body_vn
+        # The carer has no editable field, so the chip carries the date for
+        # them — otherwise "Due soon" would be a warning with no day attached.
+        r["the_carer_is_told_which_day"] = soon in body_vn
+        # But they do not get the controls.
+        r["the_carer_is_offered_no_vaccination_form"] = await page_vn.locator(
+            '[data-testid="vax-new-name"]').count() == 0
+        r["the_carer_cannot_remove_a_row"] = await page_vn.locator(
+            '[data-testid^="vax-remove-"]').count() == 0
+        r["no_js_errors_for_the_carer_here"] = not errs_vn
+
+        # And still nowhere near the members list every screen fetches.
+        members_v = json.dumps(api("GET", "/family/members", None, tok_n))
+        r["the_dates_do_not_ride_the_members_list"] = "Tetanus" not in members_v
+
         r["no_js_errors_for_the_parent"] = not errs_p
         r["no_js_errors_for_the_carer"] = not errs_n
         await b.close()
