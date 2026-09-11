@@ -113,11 +113,15 @@ describe('the tag on a matched event', () => {
     expect(tag).not.toContain("'applied'");
   });
 
-  it('says what the server says of the same event', () => {
+  it('says what the server says of the same event, on both payment paths', () => {
     // The server logs `changes.get("plan", "unchanged")` for exactly these
     // events. Two names for one fact is how a screen and a log stop agreeing.
     expect(METRICS).toContain("'plan unchanged'");
-    expect(SERVER).toContain('changes.get("plan", "unchanged")');
+    // BOTH stores, not just whichever one is checked first: RevenueCat and
+    // Stripe each log this line, and a `toContain` would be satisfied by one
+    // of them while the other had quietly drifted.
+    const logged = SERVER.match(/changes\.get\("plan", "unchanged"\)/g) || [];
+    expect(logged.length).toBe(2);
   });
 
   it('is reached by the events that carry no plan', () => {
