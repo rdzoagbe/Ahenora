@@ -305,7 +305,16 @@ async def main():
             # week actually landed, not just that no dialog showed.
             r[f"{name}_premium_week_added"] = "Sync to list" in body
         await iphone.goto(f"{WEB}/settings", wait_until="domcontentloaded")
-        await iphone.wait_for_timeout(2500)
+        # Wait for the plan card itself rather than sleeping a fixed 2.5s and
+        # hoping. That sleep was enough on an idle machine and not enough on a
+        # busy one, so this assertion failed once under load and passed alone
+        # — which reads as a flake and is really a harness that measures the
+        # clock instead of the screen.
+        try:
+            await iphone.wait_for_selector('[data-testid="open-pricing"]', timeout=20000)
+        except Exception:
+            pass  # fall through: the assertion below still reports it honestly
+        await iphone.wait_for_timeout(500)
         # The top tier by its real name. "Family Office" was a retired id the
         # admin-household path still reported, and it read as a plan nobody
         # could buy; Household is what the plans screen sells.
