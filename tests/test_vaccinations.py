@@ -114,9 +114,47 @@ class Vaccinations(unittest.TestCase):
 
     # --- concurrency, which is the reason for per-entry writes -------------
 
-    def test_two_parents_adding_at_once_both_survive(self):
-        # The whole point of $push over rewriting the array. If this fails,
-        # whichever parent saved second has silently erased the other.
+    def racing(self, fn):
+        """Run `fn` with another parent writing BETWEEN our read and our write.
+
+        Two adds one after the other prove nothing: the second one re-reads and
+        sees the first, so even a whole-array rewrite looks correct. The bug
+        only appears when a write is built from a STALE read, which is what an
+        interleave reproduces and a sequence does not.
+        """
+        original = server._load_member_for_record
+        fired = []
+
+        async def interleaved(database, user, member_id):
+            member = await original(database, user, member_id)
+            if not fired:
+                fired.append(True)
+                # The other parent's write, landing in the gap. Pushed straight
+                # at the store because we are already inside the handler's
+                # event loop — the shape that matters is that it is IN the
+                # database and NOT in the `member` we just read.
+                await database["family_members"].update_one(
+                    {"family_id": "fam1", "member_id": member_id},
+                    {"$push": {"record.vaccinations": {
+                        "vax_id": "vax_other", "name": "MMR",
+                        "given_on": "2023-01-09", "next_due": "", "note": ""}}})
+            return member
+
+        server._load_member_for_record = interleaved
+        try:
+            fn()
+        finally:
+            server._load_member_for_record = original
+        self.assertTrue(fired, "the interleave never ran — the test proves nothing")
+
+    def test_a_parent_adding_during_our_add_is_not_erased(self):
+        # If this fails, whichever parent saved second has silently erased the
+        # other, and the vaccination they entered is simply gone.
+        self.racing(lambda: self.add(who=PARENT, name="Tetanus",
+                                     given_on="2024-03-11"))
+        self.assertEqual(sorted(self.names()), ["MMR", "Tetanus"])
+
+    def test_two_parents_adding_in_turn_both_survive(self):
         self.add(who=PARENT, name="Tetanus", given_on="2024-03-11")
         self.add(who=OTHER_PARENT, name="MMR", given_on="2023-01-09")
         self.assertEqual(sorted(self.names()), ["MMR", "Tetanus"])
@@ -225,6 +263,40 @@ class Vaccinations(unittest.TestCase):
                         self.remove(vax_id, who=gated)
                 self.assertEqual(caught.exception.status_code, 403)
         self.assertEqual(self.names(), ["Tetanus"])
+
+    def test_every_write_route_actually_declares_the_gate(self):
+        """The wiring, not just the guard.
+
+        Every other "a helper cannot write this" test in the suite — including
+        the one above — calls require_full_member itself and passes the result
+        in. That proves the GUARD refuses a helper. It cannot notice somebody
+        changing a route's Depends() to require_user, which is the change that
+        would actually open the record up, and it would ship green.
+
+        So this reads the dependency the app really declares.
+        """
+        want = {
+            ("POST", "/api/family/members/{member_id}/vaccinations"):
+                "require_full_member",
+            ("PATCH", "/api/family/members/{member_id}/vaccinations/{vax_id}"):
+                "require_full_member",
+            ("DELETE", "/api/family/members/{member_id}/vaccinations/{vax_id}"):
+                "require_full_member",
+            # The read is deliberately the wider gate: a helper who cannot see
+            # the date cannot answer "when was the last one?" at the desk.
+            ("GET", "/api/family/members/{member_id}/record"): "require_user",
+        }
+        seen = {}
+        for route in server.app.routes:
+            path = getattr(route, "path", "")
+            for method in getattr(route, "methods", ()) or ():
+                if (method, path) in want:
+                    seen[(method, path)] = [
+                        d.call.__name__ for d in route.dependant.dependencies]
+        for key, gate in want.items():
+            with self.subTest(route=f"{key[0]} {key[1]}"):
+                self.assertIn(key, seen, "route is not registered at all")
+                self.assertIn(gate, seen[key])
 
     def test_another_household_cannot_touch_this_child(self):
         self.add(name="Tetanus")
