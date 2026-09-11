@@ -3,15 +3,16 @@ import { ActivityIndicator, Alert, StyleSheet, Text, TextInput, View } from 'rea
 import { KeyboardAwareScrollView } from '../src/components/KeyboardAwareScrollView';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { ChevronLeft, ChevronRight, Eye, KeyRound, MessageCircle, Pencil, Shield, Star, Trash2 } from 'lucide-react-native';
+import { ChevronLeft, ChevronRight, Eye, KeyRound, MessageCircle, Pencil, Plus, Shield, Star, Syringe, Trash2 } from 'lucide-react-native';
 
 import { PressScale } from '../src/components/PressScale';
 import { PersonAvatar, AvatarPicker } from '../src/components/PersonAvatar';
 import { PinPadModal } from '../src/components/PinPadModal';
 import { useUI, UIColors } from '../src/components/Kit';
 import { useStore } from '../src/store';
-import { api, FamilyMember, MemberRecord, StarTransaction } from '../src/api';
+import { api, FamilyMember, MemberRecord, StarTransaction, Vaccination } from '../src/api';
 import { localeFor } from '../src/utils/date';
+import { dueState } from '../src/vaccinations';
 import { logger } from '../src/logger';
 
 type Kind = 'parent' | 'teen' | 'kid' | 'helper' | 'member';
@@ -46,8 +47,12 @@ function kindOf(role: string): Kind {
  * because they are the half a helper does not get.
  */
 /** The text fields only — never `private_hidden` or `can_edit`, which say who
- *  may read the record rather than forming part of it. */
-type RecordTextField = Exclude<keyof MemberRecord, 'private_hidden' | 'can_edit'>;
+ *  may read the record rather than forming part of it, and never
+ *  `vaccinations`, which is a list with its own section below. Excluded by
+ *  NAME rather than by type so that adding another list to the record is a
+ *  compile error here, not a row that renders as "[object Object]". */
+type RecordTextField =
+  Exclude<keyof MemberRecord, 'private_hidden' | 'can_edit' | 'vaccinations'>;
 
 const RECORD_GROUPS: {
   key: string;
@@ -87,7 +92,7 @@ const RECORD_GROUPS: {
  * allergy typed a letter at a time would otherwise be written sixteen times,
  * and half of those writes would be a half-typed allergy.
  */
-function RecordField({ testID, label, value, placeholder, editable, saving, onSave }: {
+function RecordField({ testID, label, value, placeholder, editable, saving, onSave, bare }: {
   testID: string;
   label: string;
   value: string;
@@ -95,6 +100,10 @@ function RecordField({ testID, label, value, placeholder, editable, saving, onSa
   editable: boolean;
   saving: boolean;
   onSave: (next: string) => void;
+  /** Inside a row that already has its own heading and divider — drop the
+   *  label line and the top rule, which would otherwise draw a border across
+   *  the middle of the row and leave an empty line where the label was. */
+  bare?: boolean;
 }) {
   const ui = useUI();
   const { t } = useStore();
@@ -106,8 +115,8 @@ function RecordField({ testID, label, value, placeholder, editable, saving, onSa
   useEffect(() => { if (!focused) setDraft(value); }, [value, focused]);
 
   return (
-    <View style={styles.recField}>
-      <Text style={styles.recLabel}>{label}</Text>
+    <View style={bare ? styles.recFieldBare : styles.recField}>
+      {label ? <Text style={styles.recLabel}>{label}</Text> : null}
       {editable ? (
         <TextInput
           testID={testID}
@@ -237,6 +246,82 @@ export default function MemberProfile() {
       .map((g) => ({ ...g, fields: g.fields.filter(([f]) => (record[f] ?? '').trim()) }))
       .filter((g) => g.fields.length > 0);
   }, [record]);
+
+  // --- vaccinations ------------------------------------------------------
+  // Written per ENTRY, never by sending the whole list back: two parents
+  // adding two different shots from two phones must both survive. Each call
+  // returns the whole record, so the list redraws from the server rather than
+  // from a guess about what the server did.
+  const [vaxBusy, setVaxBusy] = useState<string | null>(null);
+  const [newVax, setNewVax] = useState({ name: '', given_on: '', next_due: '' });
+
+  const vaccinations = record?.vaccinations ?? [];
+
+  const vaxError = useCallback((e: any) => {
+    // The server refuses a date it cannot read rather than storing a date that
+    // reads as an answer and is wrong. Say which of the two happened.
+    const detail = String(e?.detail || e?.message || '');
+    if (/date like/i.test(detail)) return t('rec_vax_bad_date');
+    if (/at most/i.test(detail)) return t('rec_vax_full');
+    return t('rec_save_failed');
+  }, [t]);
+
+  // Plain function, not a useCallback: the manual memo blocks React Compiler
+  // on this screen (the same reason handleRefresh in the vault is one), and it
+  // is only ever handed to an onPress, where memoising buys nothing.
+  const addVaccination = async () => {
+    const name = newVax.name.trim();
+    if (!name || vaxBusy) return;
+    setVaxBusy('new');
+    try {
+      setRecord(await api.addVaccination(id, {
+        name,
+        given_on: newVax.given_on.trim(),
+        next_due: newVax.next_due.trim(),
+      }));
+      setNewVax({ name: '', given_on: '', next_due: '' });
+    } catch (e) {
+      logger.warn('vaccination add failed', e);
+      Alert.alert(t('rec_vax'), vaxError(e));
+    } finally {
+      setVaxBusy(null);
+    }
+  };
+
+  const saveVaccination = useCallback(async (
+    vaxId: string, patch: Partial<Omit<Vaccination, 'vax_id'>>,
+  ) => {
+    setVaxBusy(vaxId);
+    try {
+      setRecord(await api.updateVaccination(id, vaxId, patch));
+    } catch (e) {
+      logger.warn('vaccination save failed', e);
+      Alert.alert(t('rec_vax'), vaxError(e));
+      // Put the server's version back: a field left showing what we failed to
+      // save is a date the parent believes is recorded and is not.
+      api.getMemberRecord(id).then(setRecord).catch(() => {});
+    } finally {
+      setVaxBusy(null);
+    }
+  }, [id, t, vaxError]);
+
+  const removeVaccination = useCallback((vaxId: string) => {
+    const go = async () => {
+      setVaxBusy(vaxId);
+      try {
+        setRecord(await api.deleteVaccination(id, vaxId));
+      } catch (e) {
+        logger.warn('vaccination delete failed', e);
+        Alert.alert(t('rec_vax'), t('rec_save_failed'));
+      } finally {
+        setVaxBusy(null);
+      }
+    };
+    Alert.alert(t('rec_vax_remove_q'), '', [
+      { text: t('cancel'), style: 'cancel' },
+      { text: t('rec_vax_remove'), style: 'destructive', onPress: () => { go(); } },
+    ]);
+  }, [id, t]);
 
   const [avatar, setAvatar] = useState<string | null>(null);
   const [savingAvatar, setSavingAvatar] = useState(false);
@@ -490,6 +575,165 @@ export default function MemberProfile() {
               </View>
             ))}
 
+            {/* Vaccinations — the one part of the record that is a LIST.
+                Care tier, like the allergy above it: a nanny at a clinic desk
+                is exactly who is asked "when was the last one?".
+                Hidden entirely from a reader when empty, for the same reason
+                the blank text fields are: a carer opening this wants the one
+                line that matters, not a section inviting them to fill it. */}
+            {record.can_edit || vaccinations.length > 0 ? (
+              <View style={styles.recCard} testID="record-vaccinations">
+                <View style={styles.recGroupRow}>
+                  <Text style={styles.recGroup}>{t('rec_vax')}</Text>
+                  <Syringe color={ui.muted} size={14} />
+                </View>
+
+                {vaccinations.length === 0 ? (
+                  <Text style={styles.recEmptyAll}>{t('rec_vax_empty')}</Text>
+                ) : vaccinations.map((v) => {
+                  const state = dueState(v.next_due);
+                  return (
+                    <View key={v.vax_id} style={styles.vaxRow} testID={`vax-${v.vax_id}`}>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={styles.vaxName} numberOfLines={2}>{v.name}</Text>
+                        {/* The dates stay editable in place. A date typed
+                            wrongly has to be correctable without deleting the
+                            row, because deleting it takes the note with it. */}
+                        {record.can_edit ? (
+                          <View style={styles.vaxDates}>
+                            <View style={styles.vaxDateBox}>
+                              <Text style={styles.vaxMini}>{t('rec_vax_given')}</Text>
+                              <RecordField
+                                testID={`vax-given-${v.vax_id}`}
+                                label=""
+                                value={v.given_on}
+                                placeholder={t('rec_vax_ph_date')}
+                                editable
+                                bare
+                                saving={false}
+                                onSave={(next) => {
+                                  if (next !== v.given_on) {
+                                    saveVaccination(v.vax_id, { given_on: next });
+                                  }
+                                }}
+                              />
+                            </View>
+                            <View style={styles.vaxDateBox}>
+                              <Text style={styles.vaxMini}>{t('rec_vax_due')}</Text>
+                              <RecordField
+                                testID={`vax-due-edit-${v.vax_id}`}
+                                label=""
+                                value={v.next_due}
+                                placeholder={t('rec_vax_ph_date')}
+                                editable
+                                bare
+                                saving={false}
+                                onSave={(next) => {
+                                  if (next !== v.next_due) {
+                                    saveVaccination(v.vax_id, { next_due: next });
+                                  }
+                                }}
+                              />
+                            </View>
+                          </View>
+                        ) : (
+                          <Text style={styles.vaxWhen}>
+                            {v.given_on || t('rec_vax_undated')}
+                          </Text>
+                        )}
+                        {v.next_due ? (
+                          <View style={styles.vaxDueRow}>
+                            <Text
+                              testID={`vax-due-${v.vax_id}`}
+                              style={[
+                                styles.vaxDue,
+                                state === 'due' && styles.vaxDueNow,
+                                state === 'soon' && styles.vaxDueSoon,
+                              ]}
+                            >
+                              {state === 'due' ? t('rec_vax_overdue')
+                                : state === 'soon' ? t('rec_vax_soon')
+                                : t('rec_vax_due_on', { date: v.next_due })}
+                            </Text>
+                            {state !== 'none' ? (
+                              <Text style={styles.vaxWhen}>{v.next_due}</Text>
+                            ) : null}
+                          </View>
+                        ) : null}
+                        {v.note ? <Text style={styles.vaxNote}>{v.note}</Text> : null}
+                      </View>
+                      {vaxBusy === v.vax_id ? (
+                        <ActivityIndicator color={ui.muted} size="small" />
+                      ) : record.can_edit ? (
+                        <PressScale
+                          testID={`vax-remove-${v.vax_id}`}
+                          onPress={() => removeVaccination(v.vax_id)}
+                          style={styles.vaxRemove}
+                          accessibilityLabel={t('rec_vax_remove')}
+                        >
+                          <Trash2 color={ui.muted} size={16} />
+                        </PressScale>
+                      ) : null}
+                    </View>
+                  );
+                })}
+
+                {record.can_edit ? (
+                  <View style={styles.vaxAdd}>
+                    <TextInput
+                      testID="vax-new-name"
+                      value={newVax.name}
+                      onChangeText={(x) => setNewVax((p) => ({ ...p, name: x }))}
+                      placeholder={t('rec_vax_ph_name')}
+                      placeholderTextColor={ui.muted}
+                      style={[styles.recInput, styles.vaxInputName]}
+                      maxLength={120}
+                    />
+                    <View style={styles.vaxDates}>
+                      <View style={styles.vaxDateBox}>
+                        <Text style={styles.vaxMini}>{t('rec_vax_given')}</Text>
+                        <TextInput
+                          testID="vax-new-given"
+                          value={newVax.given_on}
+                          onChangeText={(x) => setNewVax((p) => ({ ...p, given_on: x }))}
+                          placeholder={t('rec_vax_ph_date')}
+                          placeholderTextColor={ui.muted}
+                          style={styles.recInput}
+                          autoCapitalize="none"
+                          maxLength={10}
+                        />
+                      </View>
+                      <View style={styles.vaxDateBox}>
+                        <Text style={styles.vaxMini}>{t('rec_vax_due')}</Text>
+                        <TextInput
+                          testID="vax-new-due"
+                          value={newVax.next_due}
+                          onChangeText={(x) => setNewVax((p) => ({ ...p, next_due: x }))}
+                          placeholder={t('rec_vax_ph_date')}
+                          placeholderTextColor={ui.muted}
+                          style={styles.recInput}
+                          autoCapitalize="none"
+                          maxLength={10}
+                        />
+                      </View>
+                    </View>
+                    <PressScale
+                      testID="vax-add"
+                      onPress={addVaccination}
+                      disabled={!newVax.name.trim() || vaxBusy === 'new'}
+                      style={[styles.vaxAddBtn,
+                        (!newVax.name.trim() || vaxBusy === 'new') && styles.vaxAddOff]}
+                    >
+                      {vaxBusy === 'new'
+                        ? <ActivityIndicator color={'#FFFFFF'} size="small" />
+                        : <Plus color={'#FFFFFF'} size={16} />}
+                      <Text style={styles.vaxAddText}>{t('rec_vax_add')}</Text>
+                    </PressScale>
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
+
             {/* The identifiers, and the fact of them.
                 A helper is told the drawer exists and is not theirs, rather
                 than shown nothing — silence would send them asking a parent
@@ -693,6 +937,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   recLock: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   recLockText: { fontFamily: 'Inter_600SemiBold', fontSize: 11, color: ui.muted },
   recField: { paddingVertical: 8, borderTopWidth: 1, borderTopColor: ui.line },
+  recFieldBare: { paddingVertical: 0 },
   recLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 12, color: ui.muted, marginBottom: 3 },
   recInput: {
     fontFamily: 'Inter_500Medium', fontSize: 15, color: ui.text,
@@ -701,6 +946,42 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   recValue: { fontFamily: 'Inter_500Medium', fontSize: 15, color: ui.text, paddingVertical: 6, minHeight: 34 },
   recSpin: { position: 'absolute', right: 0, top: 12 },
   recEmptyAll: { fontFamily: 'Inter_500Medium', fontSize: 14, color: ui.muted, paddingVertical: 14 },
+  vaxRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingVertical: 10, borderTopWidth: 1, borderTopColor: ui.line,
+  },
+  vaxName: { fontFamily: 'Inter_600SemiBold', fontSize: 15, color: ui.text },
+  vaxWhen: { fontFamily: 'Inter_500Medium', fontSize: 12.5, color: ui.muted, marginTop: 2 },
+  vaxNote: { fontFamily: 'Inter_500Medium', fontSize: 12.5, color: ui.muted, marginTop: 3 },
+  vaxDueRow: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 5, flexWrap: 'wrap' },
+  // A plain future date is just information; the two that need a parent to DO
+  // something get a fill, so the list can be scanned rather than read.
+  vaxDue: { fontFamily: 'Inter_600SemiBold', fontSize: 12, color: ui.muted },
+  vaxDueNow: {
+    color: ui.danger, backgroundColor: ui.dangerSoft,
+    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, overflow: 'hidden',
+  },
+  vaxDueSoon: {
+    color: ui.goldText, backgroundColor: ui.gold,
+    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, overflow: 'hidden',
+  },
+  vaxRemove: { padding: 6 },
+  vaxAdd: { borderTopWidth: 1, borderTopColor: ui.line, paddingTop: 10, paddingBottom: 12, gap: 8 },
+  vaxInputName: {
+    borderWidth: 1, borderColor: ui.line, borderRadius: 12,
+    paddingHorizontal: 10, backgroundColor: ui.soft,
+  },
+  // Two date boxes side by side, wrapping to one column when the labels
+  // ("Date der Impfung") are long enough to need it.
+  vaxDates: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  vaxDateBox: { flex: 1, minWidth: 130 },
+  vaxMini: { fontFamily: 'Inter_600SemiBold', fontSize: 11, color: ui.muted },
+  vaxAddBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
+    backgroundColor: ui.orangeDeep, borderRadius: 12, paddingVertical: 11, minHeight: 44,
+  },
+  vaxAddOff: { opacity: 0.45 },
+  vaxAddText: { fontFamily: 'Inter_700Bold', fontSize: 14, color: '#FFFFFF' },
   pictureBox: {
     backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line,
     borderRadius: 16, padding: 14, gap: 12, marginBottom: 10,
