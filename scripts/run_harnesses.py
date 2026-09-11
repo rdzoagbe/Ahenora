@@ -62,6 +62,11 @@ HARNESSES = [
     "e2e_kid.py",
     "e2e_notes.py",
     "e2e_record.py",
+    # The money screen — the one place in the app where being misread costs
+    # money rather than time, and the only one that had no browser coverage at
+    # all. Drives a real RevenueCat webhook through the real endpoint and reads
+    # the row the founder reads.
+    "e2e_billing_screen.py",
     "e2e_week.py",
     "e2e_contrast.py",
     # Narrow phones: every other harness runs at 390 or wider, so the end of the

@@ -993,7 +993,7 @@ export default function MetricsScreen() {
                   {billing.events.slice(0, 12).map((e, i) => (
                     <View
                       key={`${e.received_at}-${i}`}
-                      testID={isAtRisk(e) ? 'billing-at-risk' : undefined}
+                      testID={isAtRisk(e) ? 'billing-at-risk' : 'billing-row'}
                       style={[styles.subRow, i === 0 && { borderTopWidth: 0 },
                               isAtRisk(e) && styles.subRowAtRisk]}
                     >
