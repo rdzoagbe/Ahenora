@@ -112,6 +112,28 @@ export async function registerForPushNotificationsAsync(): Promise<{
   expoPushToken?: string;
   error?: string;
 }> {
+  // Web has its own path, and this one cannot work there.
+  //
+  // getExpoPushTokenAsync is native-only: on web it throws a raw developer
+  // error about app.json's `notification.vapidPublicKey`. The app does not
+  // need that key — browser push is a Web Push subscription handled by
+  // src/webpush.ts, which fetches the VAPID key from the server.
+  //
+  // This was already fixed ONCE, at the Settings toggle, which guards
+  // `Platform.OS !== 'web'` for exactly this reason. But two callers in this
+  // file did not, and both hand the message to reportPushFailure — so every
+  // web session has been writing that developer error into the device-error
+  // log, where it is indistinguishable from a real push failure and buries
+  // one. Guarding HERE covers those two, the Settings toggle, and whatever
+  // calls this next.
+  //
+  // `granted: true` with no token: nothing is wrong on web, and there is no
+  // Expo token to hand back. Callers already treat a missing token as "not
+  // registered by this path", which is exactly right.
+  if (Platform.OS === 'web') {
+    return { granted: true };
+  }
+
   if (isExpoGoAndroid()) {
     return { granted: false, error: EXPO_GO_ANDROID_MESSAGE };
   }
