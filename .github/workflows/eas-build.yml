@@ -121,10 +121,52 @@ jobs:
             --latest \
             --non-interactive
 
+      # "Submitted" is not "released", and reading it as one cost four days.
+      #
+      # eas.json sets releaseStatus: draft on the production track, on purpose:
+      # a build should not reach families the moment a workflow finishes. But
+      # this job used to end on "Submitted to the production track." and "All
+      # done!", which reads as shipped. Version 57 — carrying the fix that gave
+      # Android push back — sat as an unreleased draft from 8 to 12 September
+      # while three paying households got no notifications at all, and every
+      # check on every run was green for the whole of it.
+      #
+      # So the job now reads the releaseStatus out of eas.json and says plainly
+      # which of the two happened. A draft is announced as a warning, because a
+      # warning is what shows on the run page without opening it.
       - name: Confirm what landed where
         if: ${{ steps.submit_cfg.outputs.submit == 'true' }}
+        working-directory: frontend
+        env:
+          TRACK: ${{ github.event.inputs.track }}
         run: |
-          echo "Submitted to the ${{ github.event.inputs.track }} track." >> "$GITHUB_STEP_SUMMARY"
+          status=$(node -e "
+            const p=require('./eas.json').submit?.[process.env.TRACK]?.android||{};
+            process.stdout.write(p.releaseStatus||'completed');
+          ")
+          echo "Release status for the '$TRACK' track: $status"
+          if [ "$status" = "draft" ]; then
+            echo "::warning title=Built and submitted, but NOT released::The $TRACK track release is a DRAFT. Nobody receives it until you roll it out in Play Console."
+            {
+              echo "### ⚠️ Submitted as a DRAFT — nobody has it yet"
+              echo ""
+              echo "The build reached Google Play on the **$TRACK** track and stopped there."
+              echo "It reaches no device until it is rolled out by hand:"
+              echo ""
+              echo "**Play Console → Production → review the draft → Roll out**"
+              echo ""
+              echo "This is deliberate (\`releaseStatus: draft\` in eas.json), but it is"
+              echo "also how version 57 sat unreleased for four days while Android push"
+              echo "stayed broken for paying households."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "### Released to the **$TRACK** track"
+              echo ""
+              echo "Release status \`$status\` — this goes out to devices without"
+              echo "anything further to do."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Clean up service account key
         if: ${{ always() }}
