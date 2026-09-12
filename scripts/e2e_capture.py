@@ -75,10 +75,19 @@ async def main():
             '[data-testid="tab-add"]').count() == 0
         r["and_no_picker_is_open"] = await page.locator(
             '[data-testid="quickadd-primary"]').count() == 0
-        # The long-hand composer stays one tap away for anything the bar should
-        # not be guessing at.
+        # The long-hand composer and the camera stay one tap away — inside the
+        # ＋, which is the bar's only button now. It used to be an inert orange
+        # square with the two real controls beside it as small grey icons.
+        r["the_plus_is_a_button_not_a_decoration"] = await page.locator(
+            '[data-testid="feed-capture-plus"]').count() == 1
+        await page.click('[data-testid="feed-capture-plus"]')
+        await page.wait_for_timeout(900)
         r["the_long_hand_composer_is_one_tap_away"] = await page.locator(
-            '[data-testid="feed-open-add"]').count() == 1
+            '[data-testid="capture-menu-manual"]').count() == 1
+        r["and_so_is_the_camera"] = await page.locator(
+            '[data-testid="capture-menu-photo"]').count() == 1
+        await page.click('[data-testid="capture-menu-close"]')
+        await page.wait_for_timeout(700)
 
         # --- the shopping list -------------------------------------------
         await type_line("add milk and bread to the list")

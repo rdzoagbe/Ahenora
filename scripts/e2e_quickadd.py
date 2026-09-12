@@ -119,8 +119,10 @@ async def main():
         # picker. And nothing offers a microphone anywhere: a control that only
         # ever says "coming soon" is worse than no control, and the last attempt
         # to make it real took the app down.
+        await page.click('[data-testid="feed-capture-plus"]')
+        await page.wait_for_timeout(900)
         r["feed_keeps_the_long_hand_composer"] = (
-            await page.locator('[data-testid="feed-open-add"]').count() == 1)
+            await page.locator('[data-testid="capture-menu-manual"]').count() == 1)
         r["nothing_offers_a_microphone"] = await page.locator(
             '[data-testid="quickadd-voice"]').count() == 0
 
