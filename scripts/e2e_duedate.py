@@ -82,7 +82,10 @@ async def run(r):
         await page.goto(f"{WEB}/feed", wait_until="domcontentloaded")
         await page.wait_for_timeout(4000)
 
-        await page.click('[data-testid="feed-open-add"]')
+        # The long-hand composer lives inside the capture bar's ＋ now.
+        await page.click('[data-testid="feed-capture-plus"]')
+        await page.wait_for_timeout(700)
+        await page.click('[data-testid="capture-menu-manual"]')
         await page.wait_for_timeout(1200)
         # The due row is below the fold on a phone; the composer scrolls.
         await page.evaluate("""

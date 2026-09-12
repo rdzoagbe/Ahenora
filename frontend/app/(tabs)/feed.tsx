@@ -26,7 +26,6 @@ import {
   Clock,
   ExternalLink,
   History,
-  ListPlus,
   MapPin,
   Megaphone,
   MessageSquare,
@@ -53,6 +52,7 @@ import { TabScreen } from '../../src/components/TabScreen';
 import { GettingStarted } from '../../src/components/GettingStarted';
 import { UpgradeBanner } from '../../src/components/UpgradeBanner';
 import { CoParentNudge } from '../../src/components/CoParentNudge';
+import { CaptureMenuSheet } from '../../src/components/CaptureMenuSheet';
 import { NotificationsNudge } from '../../src/components/NotificationsNudge';
 import { GiftingStrip } from '../../src/components/GiftingStrip';
 import { CoParentBalance } from '../../src/components/CoParentBalance';
@@ -393,6 +393,7 @@ export default function Feed() {
   // add/edit sheet the Calendar uses, in edit mode.
   const [editing, setEditing] = useState<Card | null>(null);
   const [showAlerts, setShowAlerts] = useState(false);
+  const [showCaptureMenu, setShowCaptureMenu] = useState(false);
   const [chatThreads, setChatThreads] = useState<ChatThreadSummary[]>([]);
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [rewardCount, setRewardCount] = useState(0);
@@ -1307,7 +1308,21 @@ export default function Feed() {
                   lait à la liste" became a task about milk, while the shopping
                   list and the meal planner sat two taps further in. The most
                   capable parts of the app were the hardest to reach. */}
-              <View style={styles.addBarPlus}><Plus color="#FFFFFF" size={18} /></View>
+              {/* The ＋ is the button now. It was an orange square the exact
+                  size and colour of every primary action in the app, and it
+                  did nothing — while the two things it looked like it did sat
+                  at the far end of the bar as small grey icons. Three controls,
+                  one job, and the loudest one inert. */}
+              <PressScale
+                testID="feed-capture-plus"
+                accessibilityRole="button"
+                accessibilityLabel={t('feed_capture_more')}
+                onPress={() => setShowCaptureMenu(true)}
+                hitSlop={10}
+                style={styles.addBarPlus}
+              >
+                <Plus color="#FFFFFF" size={18} />
+              </PressScale>
               <TextInput
                 ref={captureRef}
                 testID="feed-capture-input"
@@ -1325,17 +1340,16 @@ export default function Feed() {
                   <ArrowUp color="#FFFFFF" size={17} />
                 </PressScale>
               ) : null}
-              {/* The long-hand composer is still one tap away, for anything the
-                  bar should not be guessing at. */}
-              {!captureText.trim() ? (
-                <PressScale onPress={openManual} style={styles.addBarIcon} testID="feed-open-add" accessibilityRole="button" accessibilityLabel={t('feed_add_placeholder')}>
-                  <ListPlus color={ui.muted} size={19} />
-                </PressScale>
-              ) : null}
-              <PressScale onPress={() => setShowCamera(true)} style={styles.addBarIcon} accessibilityRole="button" accessibilityLabel={t('feed_photo')}>
-                <Camera color={ui.muted} size={19} />
-              </PressScale>
             </View>
+
+            {/* The long-hand composer and the camera are still one tap away —
+                inside the ＋ — for anything the bar should not be guessing at. */}
+            <CaptureMenuSheet
+              visible={showCaptureMenu}
+              onClose={() => setShowCaptureMenu(false)}
+              onManual={() => { setShowCaptureMenu(false); openManual(); }}
+              onPhoto={() => { setShowCaptureMenu(false); setShowCamera(true); }}
+            />
 
             {/* Quick templates — one tap to run a saved routine. Sits by the
                 add bar since it's another way to add. */}
@@ -2292,11 +2306,15 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     borderWidth: 1,
     borderColor: ui.line,
     borderRadius: 14,
+    paddingLeft: 12,
     paddingRight: 4,
     marginBottom: 12,
   },
   addBarMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, paddingLeft: 12 },
-  addBarPlus: { width: 26, height: 26, borderRadius: 8, marginLeft: 12, backgroundColor: ui.orange, alignItems: 'center', justifyContent: 'center' },
+  // No marginLeft here: PressScale copies layout keys onto its inner
+  // Animated.View as well as the Pressable, so a margin on it is applied
+  // twice. The bar carries the inset instead.
+  addBarPlus: { width: 30, height: 30, borderRadius: 9, backgroundColor: ui.orange, alignItems: 'center', justifyContent: 'center' },
   addBarText: { flex: 1, color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 14 },
   // The bar is a field now. Same height and rhythm as the button it replaced,
   // so the Feed does not shift under anyone who knew where it was.
@@ -2311,7 +2329,6 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     width: 32, height: 32, borderRadius: 999, marginRight: 6,
     backgroundColor: ui.orange, alignItems: 'center', justifyContent: 'center',
   },
-  addBarIcon: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   captureCard: {
     borderRadius: 22,
     backgroundColor: ui.card,

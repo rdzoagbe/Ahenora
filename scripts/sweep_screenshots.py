@@ -59,7 +59,7 @@ LOGGED_OUT = ["", "auth"]
 # that quietly declines to photograph a third of the rooms is not much of a
 # camera, and "skipped" in a summary nobody reads is how it stayed that way.
 MODALS = [
-    ("feed", [], "feed-open-add", "add-card"),
+    ("feed", ["feed-capture-plus"], "capture-menu-manual", "add-card"),
     ("feed", [], "feed-household-open", "household"),
     ("kids", [], "kids-add-child", "add-child"),
     # A child's controls live on that child's page, so the child card has to be
