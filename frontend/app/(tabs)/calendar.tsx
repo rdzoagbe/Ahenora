@@ -191,6 +191,10 @@ export default function Calendar() {
     setCalendarSyncStatus(null);
     logEvent('calendar_import_cancelled');
   }, []);
+  // Guards the prerender — see the comment above the early return below.
+  const [mounted, setMounted] = useState(Platform.OS !== 'web');
+  useEffect(() => { setMounted(true); }, []);
+
   const [activeMonth, setActiveMonth] = useState(() => new Date());
   const [selectedDay, setSelectedDay] = useState<string | null>(dateKey(new Date()));
   // Publish the selection so the tab-bar "+" can prefill the day being looked
@@ -888,6 +892,25 @@ export default function Calendar() {
 
   const syncDisabled = syncing || (Platform.OS === 'web' && !calendarRequest);
   const totalSelectedEvents = groups.reduce((sum, g) => sum + g.items.length, 0);
+
+  // The web build PRERENDERS this route, and this screen is made of today:
+  // the month grid, the week strip, which cell is highlighted. All of it is
+  // seeded from new Date() at first render — so the HTML carries the day the
+  // bundle was BUILT, and every visitor after that day hydrates against a
+  // different date. React finds the text does not match, throws #418 and
+  // discards the tree.
+  //
+  // That is not a test problem. ahenora.com serves this HTML, so it happened
+  // to every web visitor on every day after a deploy: a flash of the wrong
+  // date, an error in the console, and the whole calendar re-rendered from
+  // scratch. It surfaced because five harnesses went red at midnight on a
+  // backend-only change.
+  //
+  // Same fix as member.tsx uses for its query string: render the shell both
+  // sides agree on, and read the clock on the next tick. React already
+  // re-rendered this tree client-side — it just did it by way of an error.
+  // Native mounts immediately, so this costs nothing there.
+  if (!mounted) return <SwipeableTabView style={styles.container}><View /></SwipeableTabView>;
 
   return (
     <SwipeableTabView style={styles.container}>
