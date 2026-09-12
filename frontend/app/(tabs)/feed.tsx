@@ -58,6 +58,7 @@ import { GiftingStrip } from '../../src/components/GiftingStrip';
 import { CoParentBalance } from '../../src/components/CoParentBalance';
 import { StreakChip } from '../../src/components/StreakChip';
 import { WindowedList } from '../../src/components/WindowedList';
+import { isSoloHousehold } from '../../src/household';
 import { useStore } from '../../src/store';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { useUI, UIColors } from '../../src/components/Kit';
@@ -1501,7 +1502,11 @@ export default function Feed() {
 
             {/* Solo household → bring in the co-parent. Vanishes once someone joins. */}
             <CoParentNudge
-              visible={members.length <= 1}
+              // Adults, not member rows. This read `members.length <= 1`,
+              // and that list carries children — so adding a child, which the
+              // Getting Started card's first step asks for, switched off the
+              // one prompt that asks for the other parent. Permanently.
+              visible={isSoloHousehold(members)}
               onInvite={() => { requestInvite(); router.navigate('/(tabs)/settings' as never); }}
               stranded={stranded}
               onResend={async (email) => {
