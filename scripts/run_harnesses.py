@@ -53,6 +53,11 @@ HARNESSES = [
     "e2e_pages.py",
     "e2e_nav.py",
     "e2e_quickadd.py",
+    # Choosing WHEN. The due date was typed for the life of the app until a
+    # parent said so; this holds the calendar that replaced it, and measures
+    # the selected day's painted width — the bug it shipped with was a cell
+    # collapsed to a sliver, which every presence check happily passed.
+    "e2e_duedate.py",
     # The capture bar routes a typed line to the list, the menu or a card. Its
     # whole risk is a wrong guess, so the harness leans on what must NOT move.
     "e2e_capture.py",

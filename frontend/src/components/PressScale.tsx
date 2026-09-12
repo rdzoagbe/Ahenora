@@ -44,6 +44,10 @@ interface Props {
   accessibilityLabel?: string;
   accessibilityRole?: AccessibilityRole;
   accessibilityHint?: string;
+  /** So a selected chip, day or toggle announces itself as selected. Without
+   *  it a screen reader reads a row of dates and never says which one is
+   *  chosen, which makes a picker unusable rather than merely unlabelled. */
+  accessibilityState?: { selected?: boolean; disabled?: boolean; checked?: boolean };
   /**
    * Expands the touchable area beyond the visual bounds without affecting
    * layout — used to bring small icon buttons up to a comfortable target size.
@@ -76,7 +80,7 @@ function slopInsets(hitSlop?: number | Insets) {
            left: n(hitSlop.left), right: n(hitSlop.right) };
 }
 
-export function PressScale({ onPress, onLongPress, children, style, testID, disabled, accessibilityLabel, accessibilityRole, accessibilityHint, hitSlop }: Props) {
+export function PressScale({ onPress, onLongPress, children, style, testID, disabled, accessibilityLabel, accessibilityRole, accessibilityHint, accessibilityState, hitSlop }: Props) {
   const scale = useRef(new Animated.Value(1)).current;
   const { layout, visual } = splitStyles(style);
   const webSlop = Platform.OS === 'web' ? slopInsets(hitSlop) : null;
@@ -101,6 +105,7 @@ export function PressScale({ onPress, onLongPress, children, style, testID, disa
       accessibilityLabel={accessibilityLabel}
       accessibilityRole={accessibilityRole}
       accessibilityHint={accessibilityHint}
+      accessibilityState={accessibilityState}
     >
       {webSlop ? (
         // A direct child of the Pressable, NOT of the styled view below. The
