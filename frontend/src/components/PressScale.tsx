@@ -11,6 +11,8 @@ import {
   GestureResponderEvent,
 } from 'react-native';
 
+import { noteInteraction } from '../interaction';
+
 const LAYOUT_KEYS: Set<string> = new Set([
   'flex', 'flexGrow', 'flexShrink', 'flexBasis',
   'width', 'height', 'minWidth', 'minHeight', 'maxWidth', 'maxHeight',
@@ -86,6 +88,9 @@ export function PressScale({ onPress, onLongPress, children, style, testID, disa
   const webSlop = Platform.OS === 'web' ? slopInsets(hitSlop) : null;
 
   const onIn = () => {
+    // Somebody is here and doing something. Read only by the silent-update
+    // check, which will not relaunch the app under an active pair of hands.
+    noteInteraction();
     Animated.spring(scale, { toValue: 0.96, useNativeDriver: true, speed: 40, bounciness: 0 }).start();
   };
   const onOut = () => {

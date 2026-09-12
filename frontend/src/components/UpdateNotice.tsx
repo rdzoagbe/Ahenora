@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { Linking, Platform, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState, AppStateStatus, Keyboard, Linking, Platform, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
@@ -12,6 +12,8 @@ import { useStore } from '../store';
 import { api } from '../api';
 import { WHATS_NEW } from '../whatsNew';
 import { logger } from '../logger';
+import { foregroundStartedAt, lastInteractionAt, markForegroundStart } from '../interaction';
+import { isFreshStart, shouldAutoApplyUpdate } from '../autoApplyUpdate';
 
 /**
  * Telling people an update happened.
@@ -107,6 +109,55 @@ export function UpdateNotice() {
   const [busy, setBusy] = useState(false);
 
   const version = Constants.expoConfig?.version || '';
+
+  /**
+   * Applying a staged update while the launch is still settling.
+   *
+   * Without this, an update published overnight reaches somebody on their
+   * SECOND cold start — expo-updates runs the cached bundle and downloads the
+   * new one behind it. A person told "there's an update" who opens the app and
+   * sees yesterday's screen has been told something untrue.
+   *
+   * The guards live in `shouldAutoApplyUpdate`, which is pure and tested. This
+   * effect only feeds it the live values and does what it says.
+   */
+  const backgroundedAt = useRef(0);
+  const reloading = useRef(false);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
+      if (next === 'active') {
+        // Only a return from long enough away restarts the window. Flipping
+        // out to the camera and back is the middle of a task, not the start.
+        if (isFreshStart(backgroundedAt.current, Date.now())) {
+          markForegroundStart();
+        }
+        backgroundedAt.current = 0;
+      } else if (next === 'background' && !backgroundedAt.current) {
+        backgroundedAt.current = Date.now();
+      }
+    });
+    return () => sub.remove();
+  }, []);
+
+  useEffect(() => {
+    if (reloading.current) return;
+    if (!shouldAutoApplyUpdate({
+      enabled: Platform.OS !== 'web' && Updates.isEnabled,
+      pending: isUpdatePending,
+      foregroundAt: foregroundStartedAt(),
+      now: Date.now(),
+      lastInteractionAt: lastInteractionAt(),
+      keyboardVisible: Keyboard.isVisible(),
+    })) return;
+    reloading.current = true;
+    Updates.reloadAsync().catch((e) => {
+      // A reload that will not happen must not leave the app believing it is
+      // about to: the banner is the fallback, and it needs this flag clear.
+      reloading.current = false;
+      logger.warn('silent update apply failed', e);
+    });
+  }, [isUpdatePending]);
 
   // Which of the three, decided once on mount. The store check needs the
   // server's opinion; the "what's new" check needs what this device saw last.
