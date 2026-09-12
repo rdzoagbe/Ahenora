@@ -11936,6 +11936,102 @@ def rc_plan_from_product(product: Optional[str],
     return plan, cycle
 
 
+# Money leaving, and the only person who can do anything about it.
+#
+# The admin screen tints these rows now, which helps exactly as much as opening
+# the admin screen does. A card that fails on a Tuesday is a household that
+# loses access on a Friday, and the window to fix it is the days in between —
+# so it has to arrive on the phone, not wait on a screen.
+#
+# The same three the screen already singles out, for the same reasons:
+#
+#   BILLING_ISSUE   a card has failed. Recoverable, and only while somebody
+#                   knows. This is the one with a clock on it.
+#   CANCELLATION    auto-renew is off and they have not gone yet.
+#   unmatched       real money that reached no household at all. The loudest
+#                   of the three: nobody is even asking for it back.
+#
+# EXPIRATION is deliberately absent, as it is from the tint: by then the plan
+# has already dropped and there is nothing left to do. A push that tells you
+# about something you cannot act on is the one that teaches you to ignore the
+# next push.
+BILLING_ALERT_EVENTS = {"BILLING_ISSUE", "CANCELLATION"}
+
+# A failing card can produce a run of identical webhooks. Three customers makes
+# that unlikely and a notification storm intolerable, so an alert of the same
+# shape for the same household inside this window is swallowed.
+BILLING_ALERT_QUIET_HOURS = 12
+
+
+def billing_alert_kind(row: dict) -> Optional[str]:
+    """What, if anything, this event is worth waking somebody for."""
+    r = row or {}
+    if is_test_billing_event(r):
+        # A dashboard ping is never money. This is the classification that
+        # stopped the admin screen crying wolf; it must not start crying here.
+        return None
+    if not r.get("matched"):
+        return "unmatched"
+    if str(r.get("event_type") or "").strip().upper() in BILLING_ALERT_EVENTS:
+        return str(r.get("event_type")).strip().upper()
+    return None
+
+
+async def _billing_alert_is_repeat(database, row: dict, kind: str) -> bool:
+    """Have we already said this about this household, recently?
+
+    Matched on the household for a matched event and on the store id for an
+    unmatched one, because an unmatched event has no household by definition —
+    that is what makes it unmatched.
+    """
+    since = utcnow() - timedelta(hours=BILLING_ALERT_QUIET_HOURS)
+    query: dict = {"event_id": {"$ne": row.get("event_id")}}
+    if kind == "unmatched":
+        query["matched"] = False
+        query["app_user_id"] = row.get("app_user_id")
+    else:
+        query["family_id"] = row.get("family_id")
+        query["event_type"] = row.get("event_type")
+    async for other in database["billing_events"].find(query, {"_id": 0}):
+        when = _coerce_dt(other.get("received_at"))
+        if when and ensure_aware_utc(when) >= since:
+            return True
+    return False
+
+
+async def alert_admins_of_billing_event(database, row: dict) -> dict:
+    """Tell the people who can act. Never raises — see the caller."""
+    reached = {"kind": None, "admins": 0}
+    kind = billing_alert_kind(row)
+    if not kind or not ADMIN_EMAILS:
+        return reached
+    if await _billing_alert_is_repeat(database, row, kind):
+        return reached
+    reached["kind"] = kind
+
+    if kind == "unmatched":
+        title = "Money reached nobody"
+        body = ("A purchase arrived for an account we do not know. "
+                f"Store id: {row.get('app_user_id') or 'none given'}")
+    elif kind == "BILLING_ISSUE":
+        title = "A payment failed"
+        body = "A paying household's card was declined. They lose access when the term ends."
+    else:
+        title = "A household cancelled"
+        body = "Auto-renew is off. They keep access until the term ends."
+
+    async for admin in database["users"].find(
+            {"email": {"$in": sorted(ADMIN_EMAILS)}}, {"_id": 0, "user_id": 1}):
+        if not admin.get("user_id"):
+            continue
+        reached["admins"] += 1
+        await send_push_to_user(
+            database, admin["user_id"], title, body,
+            {"type": "billing_alert", "kind": kind,
+             "event_id": row.get("event_id")})
+    return reached
+
+
 async def record_billing_event(
     database: Any,
     *,
@@ -11966,19 +12062,20 @@ async def record_billing_event(
     So every event is recorded, matched or not. An unmatched row is the loud
     one: it means money arrived and we could not say whose it was.
     """
+    row = {
+        "event_id": new_id("bev"),
+        "source": source,
+        "event_type": event_type or "",
+        "matched": bool(matched),
+        "family_id": family_id,
+        "app_user_id": app_user_id,
+        "product_id": product_id,
+        "plan": plan,
+        "detail": detail,
+        "received_at": utcnow(),
+    }
     try:
-        await database["billing_events"].insert_one({
-            "event_id": new_id("bev"),
-            "source": source,
-            "event_type": event_type or "",
-            "matched": bool(matched),
-            "family_id": family_id,
-            "app_user_id": app_user_id,
-            "product_id": product_id,
-            "plan": plan,
-            "detail": detail,
-            "received_at": utcnow(),
-        })
+        await database["billing_events"].insert_one(row)
         # Trim to the newest N. Bounded work, and only when it is actually
         # needed — a log that grows forever is its own small outage later.
         total = await database["billing_events"].count_documents({})
@@ -11995,6 +12092,22 @@ async def record_billing_event(
         # that had the family's data in hand. The source and the failure's type
         # are enough to tell "the log is broken" from "nothing is arriving".
         log.warning("could not record a %s billing event: %s", source, type(e).__name__)
+
+    # Telling somebody is a SEPARATE try, deliberately.
+    #
+    # A push that fails must not fail the webhook. A 500 back to RevenueCat is
+    # a retry, and a retried purchase event is a plan granted twice — so the
+    # thing meant to protect the money would be the thing corrupting it. The
+    # store gets its 200 whatever happens here, and a lost alert is recoverable
+    # because the row is already written and the admin screen still shows it.
+    #
+    # After the insert, never before: an alert about an event we failed to
+    # record would point at a row that does not exist.
+    try:
+        await alert_admins_of_billing_event(database, row)
+    except Exception as e:  # noqa: BLE001
+        log.warning("could not alert on a %s billing event: %s",
+                    source, type(e).__name__)
 
 
 @app.post("/api/billing/revenuecat-webhook")
