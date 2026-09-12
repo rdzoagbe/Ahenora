@@ -37,7 +37,40 @@ def workflow():
         return fh.read()
 
 
+def runnable():
+    """The workflow with its comments stripped.
+
+    Every check below used to read the whole file, and the file carries a long
+    comment explaining this very incident — so asserting that "eas.json" and
+    "releaseStatus" appear passed on the strength of that prose while the code
+    beneath it hard-coded the answer. A mutation proved it: replacing the
+    lookup with `status=draft` left all eight tests green.
+
+    Comments are where intent is written down; they are not where behaviour
+    lives, and a test that cannot tell them apart is measuring the wrong file.
+    """
+    lines = []
+    for line in workflow().splitlines():
+        stripped = line.lstrip()
+        if stripped.startswith("#"):
+            continue
+        lines.append(line)
+    return "\n".join(lines)
+
+
 class ADraftIsNotARelease(unittest.TestCase):
+    def test_the_comment_stripper_actually_strips(self):
+        """Otherwise runnable() is workflow() and this all reverts to prose."""
+        self.assertIn("# ", workflow(), "the file has no comments to strip")
+        self.assertLess(len(runnable()), len(workflow()))
+        # A phrase that lives ONLY in the comment. "four days" was the first
+        # choice and was wrong: the step's own summary text says it too, so the
+        # assertion failed against a working stripper — a reminder that a
+        # fixture has to be checked, not assumed, the same as anything else.
+        only_prose = "was green for the whole of it"
+        self.assertIn(only_prose, workflow())
+        self.assertNotIn(only_prose, runnable())
+
     def test_the_workflow_is_there_at_all(self):
         """A renamed file would make every check below pass by reading nothing."""
         self.assertTrue(os.path.exists(WORKFLOW))
@@ -56,25 +89,27 @@ class ADraftIsNotARelease(unittest.TestCase):
     def test_the_job_reads_the_release_status_rather_than_assuming(self):
         # Hard-coding "draft" in the workflow would be a second source of truth
         # that drifts the moment eas.json changes.
-        text = workflow()
-        self.assertIn("releaseStatus", text,
+        code = runnable()
+        self.assertIn("releaseStatus", code,
                       "the job never looks up what it actually submitted as")
-        self.assertIn("eas.json", text)
+        self.assertIn("require('./eas.json')", code,
+                      "the status is not read from eas.json, so it is a second "
+                      "source of truth that drifts the moment the config changes")
 
     def test_a_draft_is_announced_as_a_warning(self):
         # A line in the step summary is only seen by someone who opens the run.
         # ::warning puts it on the run page and in the Actions list.
-        text = workflow()
+        code = runnable()
         self.assertRegex(
-            text, r"::warning[^\n]*NOT released",
+            code, r"::warning[^\n]*NOT released",
             "a draft finishes quietly — which is exactly how one sat for four days")
 
     def test_it_says_what_to_do_about_it(self):
         # "Draft" on its own is a status. The thing a person needs is the step
         # that turns it into a release.
-        text = workflow()
-        self.assertIn("Play Console", text)
-        self.assertRegex(text, r"Roll out", )
+        code = runnable()
+        self.assertIn("Play Console", code)
+        self.assertRegex(code, r"Roll out")
 
     def test_it_no_longer_ends_on_a_bare_submitted(self):
         """The exact sentence that misled.
@@ -82,23 +117,23 @@ class ADraftIsNotARelease(unittest.TestCase):
         "Submitted to the production track." as the last word of a successful
         run is true and reads as shipped.
         """
-        text = workflow()
-        self.assertNotIn('echo "Submitted to the ${{ github.event.inputs.track }} track."', text)
+        code = runnable()
+        self.assertNotIn('echo "Submitted to the ${{ github.event.inputs.track }} track."', code)
 
     def test_a_completed_release_says_so_too(self):
         # The other half: if the status is ever `completed`, the run must say
         # plainly that it went out, or the next person cannot tell either.
-        text = workflow()
-        self.assertRegex(text, r"Released to the")
+        code = runnable()
+        self.assertRegex(code, r"Released to the")
 
     def test_the_two_outcomes_are_distinguishable(self):
         """Both branches exist and say different things.
 
         A warning that fires on every run is a warning nobody reads.
         """
-        text = workflow()
-        draft_at = text.find("DRAFT")
-        released_at = text.find("Released to the")
+        code = runnable()
+        draft_at = code.find("DRAFT")
+        released_at = code.find("Released to the")
         self.assertGreater(draft_at, 0)
         self.assertGreater(released_at, 0)
         self.assertNotEqual(draft_at, released_at)
