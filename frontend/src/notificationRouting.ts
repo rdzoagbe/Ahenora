@@ -58,6 +58,30 @@ export function targetForNotification(data: unknown): { pathname: string; params
       return { pathname: '/(tabs)/calendar' };
     case 'allowance_reminder':
       return { pathname: '/(tabs)/kids' };
+    // Money leaving, and the only person who can act on it. This fell through
+    // to the default and opened the Feed — reported within hours of shipping:
+    // "I received a notification that payment fails but when I clicked it
+    // didn't open to show me." Exactly what the support_ticket comment above
+    // already describes, which is the embarrassing part: the trap was written
+    // down and two new types were added without reading it.
+    case 'billing_alert':
+      return { pathname: '/metrics', params: { billing: '1' } };
+    // '/(tabs)/kids', not '/(tabs)/family': the tab READS "Family" and the
+    // route is kids. Written as /family first, and tsc said nothing because
+    // these paths are plain strings — it would have shipped as a second tap
+    // going nowhere, inside the fix for the first one.
+    //
+    // A vaccination lives on a child's record; a document lives in the vault.
+    // The server types the push by which it found, so the tap can land on the
+    // screen that actually holds the thing.
+    case 'due_vaccinations':
+      return { pathname: '/(tabs)/kids' };
+    case 'due_documents':
+      return { pathname: '/(tabs)/vault' };
+    // Both at once. Neither screen is right, so send them where the whole
+    // household is rather than guessing and being wrong half the time.
+    case 'due_dates':
+      return { pathname: '/(tabs)/kids' };
     case 'family_invite':
     case 'family_joined':
     case 'invite_accepted':

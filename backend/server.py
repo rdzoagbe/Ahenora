@@ -3518,7 +3518,7 @@ async def _build_due_dates(database, user, local, L):
     # `local`, never utcnow(): "is this due today" is a question about the day
     # where the FAMILY is. Comparing against the server's date puts a household
     # thirteen hours ahead a day behind its own passport.
-    hits = []  # (label, stage, writer)
+    hits = []  # (label, stage, writer, kind)
 
     for member_id, row, child, date_key, target in await _due_vaccinations(database, user):
         stage = due_stage(target, local)
@@ -3536,7 +3536,7 @@ async def _build_due_dates(database, user, local, L):
                 {"$set": {f"record.vaccinations.$.{DUE_MARK_DATE}": _d,
                           f"record.vaccinations.$.{DUE_MARK_STAGE}": _s}})
 
-        hits.append((label, stage, mark_vax))
+        hits.append((label, stage, mark_vax, "vax"))
 
     for doc_id, doc, title, date_key, target in await _due_vault_docs(database, user):
         stage = due_stage(target, local)
@@ -3548,7 +3548,7 @@ async def _build_due_dates(database, user, local, L):
                 {"family_id": user.get("family_id"), "doc_id": _i},
                 {"$set": {DUE_MARK_DATE: _d, DUE_MARK_STAGE: _s}})
 
-        hits.append((title, stage, mark_doc))
+        hits.append((title, stage, mark_doc, "doc"))
 
     if not hits:
         return None
@@ -3556,7 +3556,7 @@ async def _build_due_dates(database, user, local, L):
     # Everything that has arrived comes before everything that is merely
     # coming: the overdue ones are the ones with nothing left to plan around.
     hits.sort(key=lambda h: (h[1] != "due", h[0].lower()))
-    for _, _, write in hits:
+    for _, _, write, _kind in hits:
         await write()
 
     overdue = [h for h in hits if h[1] == "due"]
@@ -3566,7 +3566,17 @@ async def _build_due_dates(database, user, local, L):
     else:
         key = "due_many_now" if overdue else "due_many_soon"
         body = L[key].format(item=head, n=len(hits) - 1)
-    return (L["due_title"], body)
+
+    # Say WHICH kind, so tapping the push lands on the screen that holds the
+    # thing. A vaccination lives on a child's record and a document lives in
+    # the vault; a reminder that opens the Feed for either is the failure the
+    # notification routing table already documents for support tickets — it
+    # tells you something and then hides it.
+    kinds = {h[3] for h in hits}
+    push_type = ("due_vaccinations" if kinds == {"vax"}
+                 else "due_documents" if kinds == {"doc"}
+                 else "due_dates")
+    return (L["due_title"], body, "card-reminders", push_type)
 
 
 async def _build_allowance_reminder(database, user, local, L):
