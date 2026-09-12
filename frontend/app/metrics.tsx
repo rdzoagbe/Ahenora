@@ -133,10 +133,12 @@ export default function MetricsScreen() {
   // used to land on the Feed and leave the reader hunting. The inbox is far
   // down a long page of charts, so arriving at the top of it is not the same
   // as arriving at it.
-  const params = useLocalSearchParams<{ support?: string }>();
+  const params = useLocalSearchParams<{ support?: string; billing?: string }>();
   const scrollRef = useRef<ScrollView>(null);
   const supportY = useRef(0);
+  const billingY = useRef(0);
   const jumped = useRef(false);
+  const jumpedBilling = useRef(false);
   const [showClosedTickets, setShowClosedTickets] = useState(false);
   const [showAllSubs, setShowAllSubs] = useState(false);
   const [billing, setBilling] = useState<BillingEventLog | null>(null);
@@ -938,8 +940,25 @@ export default function MetricsScreen() {
             <Text style={styles.muted}>No timings recorded yet.</Text>
           )}
 
-          {/* Billing events — did the money actually reach us */}
-          <Text style={styles.sectionTitle}>Billing events</Text>
+          {/* Billing events — did the money actually reach us.
+              A jump target, for the same reason the support inbox is one: the
+              billing alert push says a card has failed, and until this existed
+              tapping it opened the Feed. A notification that reports something
+              and then hides it is worse than none — it spends the one moment
+              you had somebody's attention. */}
+          <View
+            testID="metrics-billing"
+            onLayout={(e) => {
+              billingY.current = e.nativeEvent.layout.y;
+              if (params?.billing && !jumpedBilling.current) {
+                jumpedBilling.current = true;
+                requestAnimationFrame(() =>
+                  scrollRef.current?.scrollTo({ y: billingY.current, animated: true }));
+              }
+            }}
+          >
+            <Text style={styles.sectionTitle}>Billing events</Text>
+          </View>
           {billing ? (
             <>
               {/* Three states, not two. "Nothing has ever arrived" is an

@@ -88,6 +88,16 @@ class DueDates(unittest.TestCase):
         L = server.PUSH_I18N["en"]
         return run(server._build_due_dates(self.db, dict(who), self.now, L))
 
+    def said(self, who=PARENT):
+        """(title, body) — the builder also returns the channel and the push
+        type, which only the runner and the tap routing care about."""
+        built = self.build(who)
+        return (built[0], built[1]) if built else None
+
+    def push_type(self, who=PARENT):
+        built = self.build(who)
+        return built[3] if built and len(built) > 3 else None
+
     # --- the thing itself -------------------------------------------------
 
     def test_nothing_to_say_is_silence(self):
@@ -100,7 +110,7 @@ class DueDates(unittest.TestCase):
 
     def test_a_vaccination_coming_up_is_named(self):
         self.add_vax(name="Tetanus", due_in=10)
-        title, body = self.build()
+        title, body = self.said()
         self.assertEqual(title, server.PUSH_I18N["en"]["due_title"])
         self.assertIn("Tetanus", body)
         # The child, not just the vaccine: a household with three children
@@ -109,15 +119,15 @@ class DueDates(unittest.TestCase):
 
     def test_a_document_expiring_is_named(self):
         self.add_doc(title="Ama's passport", expires_in=10)
-        _, body = self.build()
+        _, body = self.said()
         self.assertIn("passport", body)
 
     def test_an_overdue_item_reads_differently_from_an_upcoming_one(self):
         self.add_vax(due_in=-5)
-        _, overdue = self.build()
+        _, overdue = self.said()
         self.setUp()
         self.add_vax(due_in=10)
-        _, upcoming = self.build()
+        _, upcoming = self.said()
         self.assertNotEqual(overdue, upcoming)
 
     # --- told once, which is the whole point ------------------------------
@@ -166,12 +176,38 @@ class DueDates(unittest.TestCase):
             {"$set": {"expiry_date": self.now + timedelta(days=20)}}))
         self.assertIsNotNone(self.build())
 
+    # --- the tap has to land somewhere useful -----------------------------
+
+    def test_a_vaccination_reminder_says_it_is_about_vaccinations(self):
+        # So the tap opens the child's record rather than the Feed. A push that
+        # reports something and then hides it spends the one moment it had.
+        self.add_vax(due_in=10)
+        self.assertEqual(self.push_type(), "due_vaccinations")
+
+    def test_a_document_reminder_says_it_is_about_documents(self):
+        self.add_doc(expires_in=10)
+        self.assertEqual(self.push_type(), "due_documents")
+
+    def test_a_mixed_reminder_does_not_claim_to_be_either(self):
+        # One push covering both cannot open both screens, and guessing wrong
+        # is worse than landing somewhere honest.
+        self.add_vax(due_in=10)
+        self.add_doc(expires_in=10)
+        self.assertEqual(self.push_type(), "due_dates")
+
+    def test_the_helper_reads_a_vaccination_reminder_as_vaccinations_only(self):
+        # A helper cannot see documents, so a mixed household still sends them
+        # a vaccination-only push — and it must be typed as such.
+        self.add_vax(due_in=10)
+        self.add_doc(expires_in=10)
+        self.assertEqual(self.push_type(NANNY), "due_vaccinations")
+
     # --- who hears which half ---------------------------------------------
 
     def test_a_helper_hears_about_a_vaccination(self):
         # Care tier: a nanny at a clinic desk is exactly who needs this.
         self.add_vax(due_in=10)
-        _, body = self.build(NANNY)
+        _, body = self.said(NANNY)
         self.assertIn("Tetanus", body)
 
     def test_a_helper_never_hears_about_a_document(self):
@@ -188,7 +224,7 @@ class DueDates(unittest.TestCase):
     def test_a_private_document_reaches_its_own_owner(self):
         self.add_doc(title="Roland's will", expires_in=10,
                      visibility="private", owner="u_p")
-        _, body = self.build()
+        _, body = self.said()
         self.assertIn("will", body)
 
     # --- bad data does not produce a bad reminder -------------------------
