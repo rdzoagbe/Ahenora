@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   Modal,
+  useWindowDimensions,
   View,
   Text,
   TextInput,
@@ -93,6 +94,20 @@ export function AddCardModal({
   const { t, theme, lang } = useStore();
   const ui = useUI();
   const insets = useSafeAreaInsets();
+  // A 360x640 Android phone gets 300px of form for 827px of content: the
+  // DESCRIPTION label is cut in half by the footer and five of the eight
+  // sections are below the fold. Reported by a user, reproduced at that size.
+  //
+  // The footer is what eats it — Save and Cancel stacked are ~126px, and they
+  // cannot go side by side: the comment on the footer records that flex-pair
+  // rows failed to paint their labels on some Android renderers.
+  //
+  // So on a short screen the Cancel button goes instead. It is the redundant
+  // one — the header already carries an X that does the same thing — and
+  // removing a control cannot reintroduce a rendering bug the way adding a row
+  // would. The sheet also gets closer to the top and loses some padding.
+  const { height: windowHeight } = useWindowDimensions();
+  const shortScreen = windowHeight < 700;
   const [type, setType] = useState<CardType>('TASK');
   const [title, setTitle] = useState('');
   const [desc, setDesc] = useState('');
@@ -369,7 +384,7 @@ export function AddCardModal({
             that blocks the native scroller — the form froze once it grew
             taller than the screen. Underlay tap + drag-to-dismiss instead. */}
         <Pressable style={StyleSheet.absoluteFill} onPress={Keyboard.dismiss} accessible={false} />
-        <View style={[styles.sheet, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder, shadowColor: theme.colors.shadow, paddingBottom: 16 + Math.max(insets.bottom, 14) }]}> 
+        <View style={[styles.sheet, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder, shadowColor: theme.colors.shadow, paddingBottom: 16 + Math.max(insets.bottom, 14) }, shortScreen && styles.sheetShort]}> 
             <View style={styles.header}>
               <Text style={[styles.heading, { color: theme.colors.text }]}>{editCard ? t('addcard_edit_title') : t('add_card')}</Text>
               <PressScale
@@ -677,9 +692,11 @@ export function AddCardModal({
                 <Check color="#FFFFFF" size={18} />
                 <Text style={styles.saveText}>{saving ? '...' : t('save')}</Text>
               </PressScale>
-              <PressScale testID="cancel-add-card" onPress={onClose} style={[styles.cancelBtn, { borderColor: theme.colors.cardBorder }]}>
-                <Text style={[styles.cancelText, { color: theme.colors.textMuted }]}>{t('cancel')}</Text>
-              </PressScale>
+              {shortScreen ? null : (
+                <PressScale testID="cancel-add-card" onPress={onClose} style={[styles.cancelBtn, { borderColor: theme.colors.cardBorder }]}>
+                  <Text style={[styles.cancelText, { color: theme.colors.textMuted }]}>{t('cancel')}</Text>
+                </PressScale>
+              )}
             </View>
         </View>
       </KeyboardAvoidingView>
@@ -709,6 +726,12 @@ const styles = StyleSheet.create({
     shadowRadius: 24,
     shadowOffset: { width: 0, height: -10 },
     elevation: 16,
+  },
+  // Short screens trade chrome for form: see the note beside shortScreen.
+  sheetShort: {
+    maxHeight: '95%',
+    paddingHorizontal: 16,
+    paddingTop: 16,
   },
   header: {
     flexDirection: 'row',
