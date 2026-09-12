@@ -38,11 +38,22 @@ PARIS = "Europe/Paris"
 
 @unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
 class TheJobTable(unittest.TestCase):
-    def test_every_reminder_that_left_the_phone_is_here(self):
+    def test_the_job_table_is_exactly_what_we_think_it_is(self):
+        """An inventory, held by equality on purpose.
+
+        Four of these were moved off the phone (see the module docstring).
+        `due_dates` never lived there — it is the passport-and-vaccination
+        reminder, and it exists because /api/vault/expiry-alerts could only
+        ever reach somebody who went looking for it.
+
+        Equality rather than a subset check so that ADDING a reminder is a
+        deliberate act: a new push that arrives on a family's phone should
+        never be something a diff could slip past a reviewer.
+        """
         self.assertEqual(
             [j["key"] for j in server.DAILY_PUSH_JOBS],
             ["morning_digest", "dinner_reminder", "sunday_recap",
-             "calendar_nightly", "allowance_reminder"])
+             "calendar_nightly", "allowance_reminder", "due_dates"])
 
     def test_each_job_claims_its_own_day(self):
         """A quiet dinner must not silence tomorrow's digest, so no two jobs may
