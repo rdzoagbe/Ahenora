@@ -349,11 +349,33 @@ export default function Calendar() {
     }
   }, [showToast, t]);
 
+  /**
+   * Pulling down has to refresh everything opening the tab would.
+   *
+   * It used to call `load()` alone, while the focus effect called `load()` AND
+   * `refreshPending()` — so the "events waiting for review" count was updated
+   * by switching tabs and not by the gesture that exists to update things. The
+   * custody shading was worse: it comes off the subscription, which nothing
+   * here refreshed at all, so a co-parent changing the alternating-week
+   * schedule left the other parent's month grid wrong until the app was
+   * restarted.
+   *
+   * A spinner that runs, finishes, and leaves the screen saying the same thing
+   * is worse than no spinner: it is an answer, and the answer is wrong.
+   *
+   * allSettled, not all: the review count and the subscription are both
+   * best-effort, and neither failing should leave the spinner turning or stop
+   * the cards — the calendar's actual content — from arriving.
+   */
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    await load();
+    await Promise.allSettled([
+      load(),
+      Promise.resolve(refreshPending()),
+      Promise.resolve(refreshSubscription?.()),
+    ]);
     setRefreshing(false);
-  }, [load]);
+  }, [load, refreshPending, refreshSubscription]);
 
   /**
    * Pull a shared item back to private, from the reassurance view itself.
@@ -383,9 +405,12 @@ export default function Calendar() {
 
   useFocusEffect(useCallback(() => { load(); refreshPending(); }, [load, refreshPending]));
 
-  // Reload in place after a capture from the global "+".
+  // Reload in place after a capture from the global "+". A scan lands as a
+  // CANDIDATE rather than a card, so the review count has to come with it —
+  // otherwise the one capture whose result lives entirely in that count is the
+  // one capture that leaves the screen unchanged.
   useEffect(() => {
-    if (dataVersion) load();
+    if (dataVersion) { load(); refreshPending(); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dataVersion]);
 
