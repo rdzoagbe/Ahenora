@@ -14,7 +14,7 @@ import {
 import { BlurView } from 'expo-blur';
 import { useFocusEffect } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { Plus, X, Trash2, Shield, Folder, ChevronRight, FileText, AlertTriangle, Share2, Image as ImageIcon, Lock, Users } from 'lucide-react-native';
+import { Plus, X, Trash2, Shield, Folder, ChevronRight, FileText, AlertTriangle, CalendarClock, Share2, Image as ImageIcon, Lock, Users } from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { PressScale } from '../../src/components/PressScale';
@@ -24,6 +24,7 @@ import { useToast } from '../../src/hooks/useToast';
 import LoadingOverlay from '../../src/components/LoadingOverlay';
 import { TabScreen } from '../../src/components/TabScreen';
 import { PdfViewer } from '../../src/components/PdfViewer';
+import DatePickerSheet from '../../src/components/DatePickerSheet';
 import FirstRunTip from '../../src/components/FirstRunTip';
 import { HtmlDocViewer } from '../../src/components/HtmlDocViewer';
 import { Badge, Card, IconTile, ProgressBar, ScreenHeader, UI, useUI, UIColors } from '../../src/components/Kit';
@@ -33,6 +34,8 @@ import { useStore } from '../../src/store';
 
 import { api, logEvent, Entitlements, ExpiryAlert, VaultDoc, VaultVisibility } from '../../src/api';
 import { logger } from '../../src/logger';
+import { parseDisplayDate } from '../../src/dateDisplay';
+import { localeFor } from '../../src/utils/date';
 
 // The drawers now live in one module shared with the scan router, so the
 // list the model is offered and the list the screen renders cannot drift.
@@ -62,7 +65,7 @@ function updatedLine(iso: string, t: (k: string) => string) {
 
 
 export default function Vault() {
-  const { t } = useStore();
+  const { t, lang } = useStore();
   const ui = useUI();
   const styles = useMemo(() => createStyles(ui), [ui]);
 
@@ -104,6 +107,43 @@ export default function Vault() {
       const detail = String(e?.message || '').match(/\{.*"detail"\s*:\s*"([^"]+)"/)?.[1];
       showToast(detail || t('vault_could_not_save'), 'error');
     }
+  };
+
+  // --- When a document runs out -------------------------------------------
+  //
+  // Expiry dates arrive from a camera scan reading a passport, and a scan can
+  // be wrong in two directions: the wrong date, or a date on a document that
+  // has none at all. Until now nothing could correct either, so a misread put
+  // a permanent alert on this screen and a recurring push behind it.
+  const [expiryFor, setExpiryFor] = useState<VaultDoc | null>(null);
+
+  const saveExpiry = async (doc: VaultDoc, chosen: string | null) => {
+    // The picker speaks the display string it shows; the server wants a date.
+    const parsed = chosen ? parseDisplayDate(chosen, localeFor(lang)) : null;
+    if (chosen && !parsed) { showToast(t('vault_could_not_save'), 'error'); return; }
+    const iso = parsed ? parsed.toISOString() : null;
+    setExpiryFor(null);
+    try {
+      await api.setVaultExpiry(doc.doc_id, iso);
+      const patch = (d: VaultDoc) => ({ ...d, expiry_date: iso });
+      setDocs((prev) => prev.map((d) => (d.doc_id === doc.doc_id ? patch(d) : d)));
+      setPreview((p) => (p && p.doc_id === doc.doc_id ? patch(p) : p));
+      // The alert list is derived server-side, so it has to be re-read rather
+      // than patched — clearing a date must take its alert away with it.
+      setExpiryAlerts(await api.vaultExpiryAlerts().catch(() => []));
+      showToast(iso ? t('vault_expiry_saved') : t('vault_expiry_cleared'), 'success');
+    } catch (e: any) {
+      logger.warn('set expiry failed', e);
+      showToast(t('vault_could_not_save'), 'error');
+    }
+  };
+
+  const expiryLabel = (doc: VaultDoc | null) => {
+    if (!doc?.expiry_date) return t('vault_no_expiry');
+    const when = new Date(doc.expiry_date);
+    if (Number.isNaN(when.getTime())) return t('vault_no_expiry');
+    return when.toLocaleDateString(localeFor(lang),
+      { day: 'numeric', month: 'short', year: 'numeric' });
   };
 
   const [title, setTitle] = useState('');
@@ -548,8 +588,21 @@ export default function Vault() {
                     ? t(n === 1 ? 'vault_day_ago' : 'vault_days_ago')
                     : t(n === 1 ? 'vault_day_left' : 'vault_days_left');
                   const when = expired ? `${t('vault_expired')} ${n} ${unit}` : `${n} ${unit}`;
+                  // The alert is where a wrong date is NOTICED, so it is also
+                  // where it has to be correctable. These were inert rows: you
+                  // could read "expired 40 days ago" on a document that does
+                  // not expire and do nothing about it from here.
+                  const doc = docs.find((d) => d.doc_id === alert.doc_id) || null;
                   return (
-                    <View key={alert.doc_id} style={styles.shopRow}>
+                    <PressScale
+                      key={alert.doc_id}
+                      testID={`vault-alert-${alert.doc_id}`}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${alert.title} — ${t('vault_set_expiry')}`}
+                      disabled={!doc}
+                      onPress={() => doc && setExpiryFor(doc)}
+                      style={styles.shopRow}
+                    >
                       <View style={[styles.expiryDot, { backgroundColor: alert.status === 'expired' ? '#DC2626' : alert.status === 'urgent' ? '#F59E0B' : ui.mintText }]} />
                       <View style={{ flex: 1 }}>
                         <Text style={styles.shopItemText}>{alert.title}</Text>
@@ -557,7 +610,8 @@ export default function Vault() {
                           {when} · {alert.category}
                         </Text>
                       </View>
-                    </View>
+                      {doc ? <ChevronRight color={ui.muted} size={16} /> : null}
+                    </PressScale>
                   );
                 })}
               </View>
@@ -699,6 +753,29 @@ export default function Vault() {
                 </Text>
               </PressScale>
             </View>
+            {/* When it runs out. Shown on every document, not only ones that
+                already carry a date — a passport with no expiry recorded is
+                the case the alerts exist for, and there was no way to add
+                one. */}
+            <View style={styles.expiryBlock}>
+              <View style={styles.expiryState}>
+                <CalendarClock color="#FFFFFF" size={16} />
+                <Text style={styles.expiryStateText}>
+                  {t('vault_expires')}: {expiryLabel(preview)}
+                </Text>
+              </View>
+              <PressScale
+                testID="preview-expiry"
+                accessibilityRole="button"
+                accessibilityLabel={t('vault_set_expiry')}
+                onPress={() => setExpiryFor(preview)}
+                style={styles.expiryBtn}
+              >
+                <Text style={styles.expiryBtnText}>
+                  {preview.expiry_date ? t('vault_change_expiry') : t('vault_set_expiry')}
+                </Text>
+              </PressScale>
+            </View>
             {isImageDoc(preview) ? (
               <Image source={{ uri: preview.image_base64 }} style={styles.previewImg} />
             ) : isPdfDoc(preview) && !pdfFailed ? (
@@ -734,6 +811,18 @@ export default function Vault() {
           </View>
         ) : null}
       </Modal>
+
+      {/* Its own clear button is what removes a wrong date — see saveExpiry. */}
+      <DatePickerSheet
+        visible={!!expiryFor}
+        value={expiryFor?.expiry_date
+          ? new Date(expiryFor.expiry_date).toLocaleDateString(localeFor(lang),
+              { day: 'numeric', month: 'short', year: 'numeric' })
+          : null}
+        title={t('vault_set_expiry')}
+        onChange={(value) => { if (expiryFor) saveExpiry(expiryFor, value); }}
+        onClose={() => setExpiryFor(null)}
+      />
 
       <LoadingOverlay visible={loading} label={t('vault_loading')} />
       <AppToast visible={Boolean(toast)} message={toast?.message || null} tone={toast?.tone || 'info'} />
@@ -811,6 +900,11 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   visChipActive: { backgroundColor: ui.text, borderColor: ui.text },
   visChipText: { fontFamily: 'Inter_700Bold', fontSize: 13 },
+  expiryBlock: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 10 },
+  expiryState: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1 },
+  expiryStateText: { color: '#FFFFFF', fontFamily: 'Inter_600SemiBold', fontSize: 13.5, flexShrink: 1 },
+  expiryBtn: { paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.92)' },
+  expiryBtnText: { color: '#111827', fontFamily: 'Inter_700Bold', fontSize: 13 },
   visibilityBlock: { alignSelf: 'stretch', alignItems: 'center', gap: 10, marginTop: 12, marginBottom: 4 },
   visibilityState: {
     flexDirection: 'row', alignItems: 'center', gap: 8,

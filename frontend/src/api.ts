@@ -1520,6 +1520,9 @@ export interface VaultDoc {
   visibility?: VaultVisibility;
   owner_user_id?: string | null;
   owner_name?: string | null;
+  /** When it runs out, or null. The server has always sent this; the type
+   *  never declared it, so no screen could show or correct one. */
+  expiry_date?: string | null;
   created_at: string;
 }
 
@@ -2790,8 +2793,12 @@ export const api = {
 
   // Document Expiry
   vaultExpiryAlerts: () => request<ExpiryAlert[]>('/vault/expiry-alerts'),
-  setVaultExpiry: (docId: string, expiryDate: string) =>
-    request<{ ok: boolean }>(`/vault/${docId}/expiry?expiry_date=${encodeURIComponent(expiryDate)}`, { method: 'PATCH' }),
+  /** `null` clears the expiry — a scan can read a date that is wrong, or read
+   *  one on a document that has none at all. */
+  setVaultExpiry: (docId: string, expiryDate: string | null) =>
+    request<{ ok: boolean; expiry_date: string | null }>(
+      `/vault/${docId}/expiry?expiry_date=${encodeURIComponent(expiryDate || '')}`,
+      { method: 'PATCH' }),
 
   // Weekly Report
   weeklyReport: () => request<WeeklyReport>('/report/weekly'),

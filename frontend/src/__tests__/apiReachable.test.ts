@@ -40,7 +40,6 @@ const NO_SCREEN_YET: Record<string, string> = {
   listCalendarContacts: 'Built for a share-with picker that the calendar does not have.',
   reportLite: 'A lighter weekly report the app never asks for.',
   reuseShoppingHistory: 'History rows are re-added item by item instead.',
-  setVaultExpiry: 'Document expiry: scans propose one, nothing edits it afterwards.',
   setWeekendGoal: 'Retired when the week became one target for everyone.',
   sharedWithCoparent: 'Server-side filter with no screen behind it.',
   verifyMemberPin: 'Kid mode verifies through exitKidSession instead — the feature works, this method is redundant.',
