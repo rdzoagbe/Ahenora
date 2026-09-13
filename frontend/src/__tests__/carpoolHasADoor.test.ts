@@ -98,6 +98,19 @@ describe('the sheet looks like the feature it belongs to', () => {
     expect(CALENDAR).toMatch(/cpSaveBtn: \{[^}]*backgroundColor: ui\.orange/);
   });
 
+  it('keeps the driver hint short enough to read in every language', () => {
+    // It was a sentence ("Leave blank until somebody offers"), which clipped
+    // mid-word in French and read as truncated rather than as optional.
+    // A placeholder is a hint, not an instruction.
+    const hints = I18N.split('\n')
+      .filter((l) => /^\s*["']?cal_carpool_who_drives_hint["']?:/.test(l));
+    expect(hints).toHaveLength(4);
+    for (const line of hints) {
+      const value = /:\s*["'](.+)["'],?\s*$/.exec(line.trim())?.[1] ?? '';
+      expect(value.length).toBeLessThanOrEqual(20);
+    }
+  });
+
   it('fits all seven days on one row', () => {
     // Sized by padding, the widest day pushed Sunday onto a line of its own,
     // which reads as a row that failed to fit rather than as a week.
