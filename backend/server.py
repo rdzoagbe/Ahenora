@@ -1890,20 +1890,6 @@ def public_expense(exp: dict) -> dict:
     }
 
 
-def public_template(tmpl: dict) -> dict:
-    return {
-        "template_id": tmpl["template_id"],
-        "family_id": tmpl["family_id"],
-        "title": tmpl["title"],
-        "description": tmpl.get("description"),
-        "recurrence": tmpl.get("recurrence", "daily"),
-        "time_of_day": tmpl.get("time_of_day"),
-        "assignee": tmpl.get("assignee"),
-        "enabled": tmpl.get("enabled", True),
-        "created_at": iso(tmpl["created_at"]),
-    }
-
-
 def public_routine(r: dict) -> dict:
     return {
         "routine_id": r["routine_id"],
@@ -4507,14 +4493,6 @@ class ExpenseIn(BaseModel):
 
 
 
-class TemplateIn(BaseModel):
-    title: str
-    description: Optional[str] = None
-    recurrence: str = "daily"
-    time_of_day: Optional[str] = None
-    assignee: Optional[str] = None
-
-
 class RoutineIn(BaseModel):
     name: str
     steps: list  # [{"label": str, "duration_seconds": int}]
@@ -4543,6 +4521,30 @@ class MealPlanIn(BaseModel):
     # plan created in French still reads correctly after switching to English.
     # Absent for meals the user typed themselves — those keep `title` verbatim.
     recipe_id: Optional[str] = None
+
+
+CARPOOL_DAYS = ("monday", "tuesday", "wednesday", "thursday", "friday",
+                "saturday", "sunday")
+
+
+def normalise_clock_time(raw: str) -> Optional[str]:
+    """"8:5" and "08:05" are the same school run; "25:00" is not a time.
+
+    Returned zero-padded so the schedule sorts and reads the same however it
+    was typed. None means it is not a time at all, which the caller refuses
+    rather than storing — a carpool whose time reads "whenever" is a row that
+    tells a parent nothing at the moment they are looking for a pickup.
+    """
+    text = (raw or "").strip()
+    if ":" not in text:
+        return None
+    hh, _, mm = text.partition(":")
+    if not (hh.isdigit() and mm.isdigit()):
+        return None
+    hour, minute = int(hh), int(mm)
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        return None
+    return f"{hour:02d}:{minute:02d}"
 
 
 class CarpoolIn(BaseModel):
@@ -4950,6 +4952,11 @@ _FAMILY_SCOPED_COLLECTIONS = (
     "cards", "carpools", "chore_logs", "chores", "expenses", "family_invites",
     "family_members", "handoff_notes", "meal_plans_saved", "meals", "redemptions",
     "rewards", "routine_logs", "routines", "shopping_history", "shopping_list",
+    # "templates" has no feature behind it any more — the recurring-template
+    # endpoints were removed once it was found that nothing could ever create
+    # one. The COLLECTION stays listed: rows written before it went are still
+    # somebody's data, and a deletion that skips them is the exact failure
+    # this list exists to prevent. Erring long is free.
     "star_transactions", "templates", "vault", "expense_settlements", "gift_pots",
     "santa_draws",
     # Added after a review found them missing from BOTH deletion paths. Every
@@ -15682,107 +15689,6 @@ async def public_santa_match(token: str):
 
 
 # -----------------------------------------------------------------------------
-# Recurring Templates
-# -----------------------------------------------------------------------------
-
-@app.get("/api/templates")
-async def list_templates(user=Depends(require_user)):
-    database = get_db()
-    rows = []
-    async for tmpl in database["templates"].find(
-        {"family_id": user["family_id"]},
-        {"_id": 0},
-    ).sort("created_at", -1):
-        rows.append(public_template(tmpl))
-    return rows
-
-
-@app.post("/api/templates")
-async def create_template(payload: TemplateIn, user=Depends(require_user)):
-    database = get_db()
-    doc = {
-        "template_id": new_id("tmpl"),
-        "family_id": user["family_id"],
-        "title": payload.title.strip(),
-        "description": (payload.description or "").strip() or None,
-        "recurrence": payload.recurrence if payload.recurrence in ("daily", "weekly", "monthly") else "daily",
-        "time_of_day": payload.time_of_day,
-        "assignee": payload.assignee,
-        "enabled": True,
-        "created_at": utcnow(),
-    }
-    await database["templates"].insert_one(doc)
-    return public_template(doc)
-
-
-@app.patch("/api/templates/{template_id}")
-async def update_template(template_id: str, user=Depends(require_user)):
-    database = get_db()
-    tmpl = await database["templates"].find_one(
-        {"template_id": template_id, "family_id": user["family_id"]},
-        {"_id": 0},
-    )
-    if not tmpl:
-        raise HTTPException(404, "Template not found")
-    new_enabled = not tmpl.get("enabled", True)
-    await database["templates"].update_one(
-        {"template_id": template_id},
-        {"$set": {"enabled": new_enabled}},
-    )
-    tmpl["enabled"] = new_enabled
-    return public_template(tmpl)
-
-
-@app.delete("/api/templates/{template_id}")
-async def delete_template(template_id: str, user=Depends(require_user)):
-    database = get_db()
-    result = await database["templates"].delete_one(
-        {"template_id": template_id, "family_id": user["family_id"]}
-    )
-    if result.deleted_count == 0:
-        raise HTTPException(404, "Template not found")
-    return {"ok": True}
-
-
-@app.post("/api/templates/{template_id}/generate")
-async def generate_from_template(template_id: str, user=Depends(require_user)):
-    database = get_db()
-    tmpl = await database["templates"].find_one(
-        {"template_id": template_id, "family_id": user["family_id"]},
-        {"_id": 0},
-    )
-    if not tmpl:
-        raise HTTPException(404, "Template not found")
-    due = utcnow()
-    if tmpl.get("time_of_day"):
-        try:
-            parts = tmpl["time_of_day"].split(":")
-            due = due.replace(hour=int(parts[0]), minute=int(parts[1]) if len(parts) > 1 else 0, second=0, microsecond=0)
-        except (ValueError, IndexError):
-            pass
-    card = {
-        "card_id": new_id("card"),
-        "family_id": user["family_id"],
-        "type": "TASK",
-        "title": tmpl["title"],
-        "description": tmpl.get("description"),
-        "assignee": tmpl.get("assignee"),
-        "due_date": due,
-        "status": "OPEN",
-        "source": "MANUAL",
-        "image_base64": None,
-        "recurrence": tmpl.get("recurrence", "none"),
-        "reminder_minutes": 60,
-        "created_at": utcnow(),
-        "completed_at": None,
-        "created_by_user_id": user["user_id"],
-        "shared": False,
-    }
-    await database["cards"].insert_one(card)
-    return public_card(card)
-
-
-# -----------------------------------------------------------------------------
 # Morning Routines
 # -----------------------------------------------------------------------------
 @app.get("/api/routines")
@@ -16681,16 +16587,34 @@ async def list_carpools(user: dict = Depends(require_user), database=Depends(get
 
 @app.post("/api/carpools")
 async def create_carpool(body: CarpoolIn, user: dict = Depends(require_user), database=Depends(get_db)):
+    """Add a run to the schedule.
+
+    Refuses rather than stores a day or a time it cannot read. The screen
+    sends a day off a row of seven chips and a zero-padded time, so the only
+    way to reach these is around the screen — and a row reading "friday-ish
+    at half eight" is worse than no row, because the parent reading the
+    schedule at 8am believes it.
+    """
     await require_feature(user, "carpool")
+    title = (body.title or "").strip()
+    if not title:
+        raise HTTPException(400, "A carpool needs a name.")
+    day = (body.day_of_week or "").strip().lower()
+    if day not in CARPOOL_DAYS:
+        raise HTTPException(400, "Pick a day of the week.")
+    when = normalise_clock_time(body.time)
+    if not when:
+        raise HTTPException(400, "Give the pickup time as HH:mm.")
+    kids = [str(k).strip() for k in (body.pickup_kids or []) if str(k).strip()]
     carpool = {
         "carpool_id": new_id("cpool"),
         "family_id": user["family_id"],
-        "title": body.title,
-        "day_of_week": body.day_of_week.lower(),
-        "time": body.time,
-        "driver_name": body.driver_name,
-        "pickup_kids": body.pickup_kids,
-        "notes": body.notes,
+        "title": title[:80],
+        "day_of_week": day,
+        "time": when,
+        "driver_name": (body.driver_name or "").strip()[:60],
+        "pickup_kids": kids[:12],
+        "notes": ((body.notes or "").strip() or None),
         "created_at": utcnow(),
     }
     await database["carpools"].insert_one(carpool)

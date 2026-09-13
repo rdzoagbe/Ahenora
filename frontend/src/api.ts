@@ -655,18 +655,6 @@ export interface ExpenseSummary {
   days: number;
 }
 
-export interface Template {
-  template_id: string;
-  family_id: string;
-  title: string;
-  description?: string;
-  recurrence: string;
-  time_of_day?: string;
-  assignee?: string;
-  enabled: boolean;
-  created_at: string;
-}
-
 export interface RoutineStep {
   label: string;
   duration_seconds: number;
@@ -2699,16 +2687,6 @@ export const api = {
   getSettlement: () => request<SettlementInfo>('/expenses/settlement'),
   settleUp: () => request<SettlementInfo>('/expenses/settlement/settle', { method: 'POST' }),
 
-  // Templates
-  listTemplates: () => request<Template[]>('/templates'),
-  createTemplate: (data: { title: string; description?: string; recurrence?: string; time_of_day?: string; assignee?: string }) =>
-    request<Template>('/templates', { method: 'POST', body: data }),
-  toggleTemplate: (templateId: string) =>
-    request<Template>(`/templates/${templateId}`, { method: 'PATCH' }),
-  deleteTemplate: (templateId: string) =>
-    request<{ ok: boolean }>(`/templates/${templateId}`, { method: 'DELETE' }),
-  generateFromTemplate: (templateId: string) =>
-    request<Card>(`/templates/${templateId}/generate`, { method: 'POST' }),
 
   // Morning Routines
   listRoutines: () => request<Routine[]>('/routines'),

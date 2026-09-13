@@ -11,6 +11,8 @@ import { CalendarDays, Car, CheckCircle2, ChevronLeft, ChevronRight, Clock, Exte
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
+import { CARPOOL_DAYS, carpoolReady, normaliseCarpoolTime, sortCarpools } from '../../src/carpool';
+import { webConfirm } from '../../src/confirm';
 import { PressScale } from '../../src/components/PressScale';
 import { logger } from '../../src/logger';
 import { TabScreen } from '../../src/components/TabScreen';
@@ -221,7 +223,18 @@ export default function Calendar() {
   const [editing, setEditing] = useState<Card | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [carpools, setCarpools] = useState<Carpool[]>([]);
+  const [carpoolOpen, setCarpoolOpen] = useState(false);
+  const [cpTitle, setCpTitle] = useState('');
+  const [cpDay, setCpDay] = useState<string>('monday');
+  const [cpTime, setCpTime] = useState('08:00');
+  const [cpDriver, setCpDriver] = useState('');
+  const [cpKids, setCpKids] = useState<string[]>([]);
+  const [cpNotes, setCpNotes] = useState('');
+  const [cpSaving, setCpSaving] = useState(false);
   const [childNames, setChildNames] = useState<Set<string>>(new Set());
+  // The set above is lowercased for matching. The carpool sheet offers the
+  // children as chips, and a chip has to read the way the name was typed.
+  const [kidNames, setKidNames] = useState<string[]>([]);
   const [importPickerOpen, setImportPickerOpen] = useState(false);
   const [shareCounts, setShareCounts] = useState<{ shared_out: number; shared_in: number; private: number } | null>(null);
   // Collapsed by default. The panel is above the calendar now, and a family
@@ -329,11 +342,9 @@ export default function Calendar() {
       if (cardsRes.status === 'fulfilled') setCards(cardsRes.value.filter((card) => card.status === 'OPEN' && card.due_date));
       if (carpoolRes.status === 'fulfilled') setCarpools(carpoolRes.value);
       if (membersRes.status === 'fulfilled') {
-        setChildNames(new Set(
-          membersRes.value
-            .filter((m) => /^child$/i.test(m.role) && m.name)
-            .map((m) => m.name.trim().toLowerCase()),
-        ));
+        const children = membersRes.value.filter((m) => /^child$/i.test(m.role) && m.name);
+        setChildNames(new Set(children.map((m) => m.name.trim().toLowerCase())));
+        setKidNames(children.map((m) => m.name.trim()).filter(Boolean));
       }
       // The events (cards) are the calendar's core — if that call fails, "No
       // events" is a lie even when the other three succeed. Flag it on the cards
@@ -618,6 +629,79 @@ export default function Calendar() {
     base.setHours(12, 0, 0, 0);
     setAddDraft({ transcript: '', type: 'APPOINTMENT', title: '', description: '', assignee: '', due_date: base.toISOString() });
     setAddOpen(true);
+  };
+
+  /**
+   * Open the sheet for a new run, from a clean draft.
+   *
+   * Defaults to Monday at 08:00 because the overwhelming case is the school
+   * run, and a sheet that opens already half-filled is one a tired parent
+   * will actually finish.
+   */
+  const openCarpool = () => {
+    setCpTitle('');
+    setCpDay('monday');
+    setCpTime('08:00');
+    setCpDriver('');
+    setCpKids([]);
+    setCpNotes('');
+    setCarpoolOpen(true);
+  };
+
+  const toggleCarpoolKid = (name: string) => {
+    setCpKids((prev) => (prev.includes(name)
+      ? prev.filter((n) => n !== name)
+      : [...prev, name]));
+  };
+
+  const saveCarpool = async () => {
+    const when = normaliseCarpoolTime(cpTime);
+    if (!carpoolReady(cpTitle, cpDay, cpTime) || !when) {
+      showToast(t('cal_carpool_needs_time'), 'error');
+      return;
+    }
+    setCpSaving(true);
+    try {
+      const created = await api.createCarpool({
+        title: cpTitle.trim(),
+        day_of_week: cpDay,
+        time: when,
+        driver_name: cpDriver.trim(),
+        pickup_kids: cpKids,
+        notes: cpNotes.trim() || undefined,
+      });
+      setCarpools((prev) => [...prev, created]);
+      setCarpoolOpen(false);
+      showToast(t('cal_carpool_added'), 'success');
+    } catch (e: any) {
+      logger.warn('create carpool failed', e);
+      showToast(e?.message || t('set_error'), 'error');
+    } finally {
+      setCpSaving(false);
+    }
+  };
+
+  /**
+   * Remove a run, having asked.
+   *
+   * The prompt used to be a bare `Alert.alert`, which renders nothing at all
+   * on React Native Web — so on ahenora.com the delete button did nothing,
+   * silently, and the row stayed.
+   */
+  const confirmDeleteCarpool = (cp: Carpool) => {
+    const remove = async () => {
+      setCarpools((prev) => prev.filter((c) => c.carpool_id !== cp.carpool_id));
+      try { await api.deleteCarpool(cp.carpool_id); }
+      catch { load(); showToast(t('set_error'), 'error'); }
+    };
+    if (Platform.OS === 'web') {
+      if (webConfirm(t('cal_carpool_delete_msg'))) remove();
+      return;
+    }
+    Alert.alert(t('cal_carpool_delete_title'), t('cal_carpool_delete_msg'), [
+      { text: t('cancel'), style: 'cancel' },
+      { text: t('set_delete'), style: 'destructive', onPress: () => remove() },
+    ]);
   };
 
   const openAddEvent = () => {
@@ -1397,37 +1481,57 @@ export default function Calendar() {
                 </PressScale>
               </KitCard>
             </View>
-          ) : carpools.length > 0 ? (
+          ) : (
+            /* Unlocked. The section renders whether or not there is anything
+               in it: it used to be `carpools.length > 0 ? … : null`, and
+               nothing could create the first row, so a household that had
+               just PAID for Carpool Coordinator arrived at the place it was
+               sold and found no trace of it. */
             <View style={styles.carpoolSection}>
               <View style={styles.carpoolHeader}>
                 <Car color={ui.orange} size={18} />
                 <Text style={styles.carpoolTitle}>{t('cal_carpool_schedule')}</Text>
+                <View style={{ flex: 1 }} />
+                <PressScale
+                  testID="carpool-add"
+                  accessibilityRole="button"
+                  accessibilityLabel={t('cal_carpool_add')}
+                  onPress={openCarpool}
+                  hitSlop={10}
+                  style={styles.carpoolAddBtn}
+                >
+                  <Plus color={ui.orangeText} size={15} />
+                  <Text style={styles.carpoolAddText}>{t('cal_carpool_add')}</Text>
+                </PressScale>
               </View>
               <KitCard style={{ paddingHorizontal: 14 }}>
-                {carpools.map((cp) => (
+                {carpools.length === 0 ? (
+                  <Text style={styles.carpoolEmpty}>{t('cal_carpool_empty')}</Text>
+                ) : sortCarpools(carpools).map((cp) => (
                   <View key={cp.carpool_id} style={styles.carpoolRow}>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.carpoolName}>{cp.title}</Text>
-                      <Text style={styles.carpoolSub}>{cp.day_of_week} · {cp.time} · {cp.driver_name}{cp.pickup_kids.length > 0 ? ` · ${cp.pickup_kids.join(', ')}` : ''}</Text>
+                      <Text style={styles.carpoolSub}>
+                        {t(`day_${cp.day_of_week}`)} · {cp.time}
+                        {cp.driver_name ? ` · ${cp.driver_name}` : ''}
+                        {cp.pickup_kids.length > 0 ? ` · ${cp.pickup_kids.join(', ')}` : ''}
+                      </Text>
                     </View>
                     <PressScale
-                  accessibilityRole="button"
-                  accessibilityLabel={t('a11y_delete')} onPress={() => {
-                      Alert.alert(t('cal_carpool_delete_title'), t('cal_carpool_delete_msg'), [
-                        { text: t('cancel'), style: 'cancel' },
-                        { text: t('set_delete'), style: 'destructive', onPress: async () => {
-                          setCarpools((prev) => prev.filter((c) => c.carpool_id !== cp.carpool_id));
-                          try { await api.deleteCarpool(cp.carpool_id); } catch { load(); showToast(t('set_error'), 'error'); }
-                        } },
-                      ]);
-                    }} hitSlop={12} style={{ padding: 4 }}>
+                      testID={`carpool-delete-${cp.carpool_id}`}
+                      accessibilityRole="button"
+                      accessibilityLabel={t('a11y_delete')}
+                      onPress={() => confirmDeleteCarpool(cp)}
+                      hitSlop={12}
+                      style={{ padding: 4 }}
+                    >
                       <Trash2 color={ui.muted} size={15} />
                     </PressScale>
                   </View>
                 ))}
               </KitCard>
             </View>
-          ) : null}
+          )}
 
           <View style={{ height: 120 }} />
       </TabScreen>
@@ -1697,6 +1801,120 @@ export default function Calendar() {
         </PressScale>
       </KeyboardAwareBottomSheet>
 
+      <KeyboardAwareBottomSheet visible={carpoolOpen} onClose={() => setCarpoolOpen(false)} contentStyle={styles.detailSheet}>
+        <View style={styles.detailHeader}>
+          <Text style={styles.detailTitle}>{t('cal_carpool_add')}</Text>
+          <PressScale testID="carpool-close" accessibilityRole="button" accessibilityLabel={t('close')} onPress={() => setCarpoolOpen(false)} style={styles.closeBtn}>
+            <X color={ui.text} size={20} />
+          </PressScale>
+        </View>
+
+        <Text style={styles.custodyFieldLabel}>{t('cal_carpool_what')}</Text>
+        <TextInput
+          testID="carpool-title"
+          value={cpTitle}
+          onChangeText={setCpTitle}
+          placeholder={t('cal_carpool_what_hint')}
+          placeholderTextColor={ui.muted}
+          maxLength={80}
+          style={styles.custodyInput}
+        />
+
+        <Text style={styles.custodyFieldLabel}>{t('cal_carpool_which_day')}</Text>
+        <View style={styles.cpDayRow}>
+          {CARPOOL_DAYS.map((day) => {
+            const on = cpDay === day;
+            return (
+              <PressScale
+                key={day}
+                testID={`carpool-day-${day}`}
+                accessibilityRole="button"
+                accessibilityState={{ selected: on }}
+                accessibilityLabel={t(`day_${day}`)}
+                onPress={() => setCpDay(day)}
+                style={[styles.cpDayChip, on && styles.cpDayChipOn]}
+              >
+                <Text style={[styles.cpDayText, on && styles.cpDayTextOn]}>{t(`day_${day}`).slice(0, 3)}</Text>
+              </PressScale>
+            );
+          })}
+        </View>
+
+        <Text style={styles.custodyFieldLabel}>{t('cal_carpool_what_time')}</Text>
+        <View style={styles.cpTimeWrap}>
+          <Clock color={ui.muted} size={15} />
+          <TextInput
+            testID="carpool-time"
+            value={cpTime}
+            onChangeText={setCpTime}
+            placeholder="HH:mm"
+            placeholderTextColor={ui.muted}
+            autoCapitalize="none"
+            autoCorrect={false}
+            maxLength={5}
+            style={styles.cpTimeInput}
+          />
+        </View>
+
+        <Text style={styles.custodyFieldLabel}>{t('cal_carpool_who_drives')}</Text>
+        <TextInput
+          testID="carpool-driver"
+          value={cpDriver}
+          onChangeText={setCpDriver}
+          placeholder={t('cal_carpool_who_drives_hint')}
+          placeholderTextColor={ui.muted}
+          maxLength={60}
+          style={styles.custodyInput}
+        />
+
+        {/* Only when there is somebody to offer. An empty row of chips under
+            a heading reads as a feature that failed to load. */}
+        {kidNames.length > 0 ? (
+          <>
+            <Text style={styles.custodyFieldLabel}>{t('cal_carpool_who_rides')}</Text>
+            <View style={styles.cpKidRow}>
+              {kidNames.map((name) => {
+                const on = cpKids.includes(name);
+                return (
+                  <PressScale
+                    key={name}
+                    testID={`carpool-kid-${name}`}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: on }}
+                    accessibilityLabel={name}
+                    onPress={() => toggleCarpoolKid(name)}
+                    style={[styles.cpKidChip, on && styles.cpKidChipOn]}
+                  >
+                    <Text style={[styles.cpKidText, on && styles.cpKidTextOn]}>{name}</Text>
+                  </PressScale>
+                );
+              })}
+            </View>
+          </>
+        ) : null}
+
+        <Text style={styles.custodyFieldLabel}>{t('cal_carpool_notes')}</Text>
+        <TextInput
+          testID="carpool-notes"
+          value={cpNotes}
+          onChangeText={setCpNotes}
+          placeholder={t('cal_carpool_notes_hint')}
+          placeholderTextColor={ui.muted}
+          maxLength={200}
+          style={styles.custodyInput}
+        />
+
+        <PressScale
+          testID="carpool-save"
+          accessibilityRole="button"
+          onPress={saveCarpool}
+          disabled={cpSaving || !carpoolReady(cpTitle, cpDay, cpTime)}
+          style={[styles.cpSaveBtn, (cpSaving || !carpoolReady(cpTitle, cpDay, cpTime)) && { opacity: 0.5 }]}
+        >
+          {cpSaving ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.cpSaveText}>{t('cal_carpool_save')}</Text>}
+        </PressScale>
+      </KeyboardAwareBottomSheet>
+
       {/* One screen, two modes: the add sheet edits an existing card too, so
           there is no second copy of every field to drift out of step. */}
       {/* Mounted only while open, so each review starts from a clean slate
@@ -1784,6 +2002,28 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   custodyModalSub: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 14, lineHeight: 20, marginTop: 8, marginBottom: 18 },
   custodyToggleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   custodyToggleLabel: { flex: 1, color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 15 },
+  carpoolAddBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: ui.orangeSoft, borderRadius: 999, paddingHorizontal: 11, paddingVertical: 6 },
+  carpoolAddText: { color: ui.orangeText, fontFamily: 'Inter_700Bold', fontSize: 13 },
+  carpoolEmpty: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 13.5, lineHeight: 20, paddingVertical: 14 },
+  // All seven share the row evenly. Sized by padding, the widest day pushed
+  // Sunday onto a line of its own, which reads as a row that failed to fit
+  // rather than a week.
+  cpDayRow: { flexDirection: 'row', gap: 5 },
+  cpDayChip: { flex: 1, minWidth: 0, paddingHorizontal: 2, paddingVertical: 9, borderRadius: 12, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft, alignItems: 'center', justifyContent: 'center' },
+  cpDayChipOn: { backgroundColor: ui.orange, borderColor: ui.orange },
+  cpDayText: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 13 },
+  cpDayTextOn: { color: '#FFFFFF' },
+  cpTimeWrap: { flexDirection: 'row', alignItems: 'center', gap: 9, borderWidth: 1, borderColor: ui.line, borderRadius: 14, paddingHorizontal: 14, backgroundColor: ui.soft },
+  cpTimeInput: { flex: 1, paddingVertical: 12, fontFamily: 'Inter_600SemiBold', fontSize: 15, color: ui.text },
+  cpKidRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
+  cpKidChip: { paddingHorizontal: 13, paddingVertical: 9, borderRadius: 999, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft },
+  cpKidChipOn: { backgroundColor: ui.orangeSoft, borderColor: ui.orange },
+  cpKidText: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 13.5 },
+  cpKidTextOn: { color: ui.orangeText, fontFamily: 'Inter_700Bold' },
+  // Not custodySaveBtn: that one is lavender because custody is the lavender
+  // feature. Borrowing it put a purple primary button on an orange sheet.
+  cpSaveBtn: { marginTop: 24, height: 52, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', backgroundColor: ui.orange },
+  cpSaveText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
   custodyFieldLabel: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 14, marginTop: 20, marginBottom: 10 },
   custodyInput: { borderWidth: 1, borderColor: ui.line, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, fontFamily: 'Inter_500Medium', fontSize: 15, color: ui.text, backgroundColor: ui.soft },
   custodySaveBtn: { marginTop: 24, height: 52, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', backgroundColor: ui.lavenderText },
