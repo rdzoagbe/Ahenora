@@ -2697,6 +2697,16 @@ export const api = {
     star_reward?: number;
   }) =>
     request<Routine>('/routines', { method: 'POST', body: data }),
+  /**
+   * Correct a routine in place.
+   *
+   * The endpoint has existed all along and nothing ever called it, so a
+   * routine could be run and deleted but never fixed: a typo in its name, a
+   * step in the wrong order, the wrong child, meant deleting it and building
+   * it again — which takes its completion history with it.
+   */
+  updateRoutine: (id: string, data: Partial<Pick<Routine, 'name' | 'steps' | 'member_id' | 'star_reward'>>) =>
+    request<Routine>(`/routines/${id}`, { method: 'PATCH', body: data }),
   deleteRoutine: (id: string) => request<{ ok: boolean }>(`/routines/${id}`, { method: 'DELETE' }),
   logRoutineCompletion: (id: string) =>
     request<{ ok: boolean; stars_awarded: number; member_id?: string }>(
