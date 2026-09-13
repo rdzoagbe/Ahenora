@@ -53,15 +53,17 @@ import { GettingStarted } from '../../src/components/GettingStarted';
 import { UpgradeBanner } from '../../src/components/UpgradeBanner';
 import { CoParentNudge } from '../../src/components/CoParentNudge';
 import { CaptureMenuSheet } from '../../src/components/CaptureMenuSheet';
+import { keepRoomFilter, roomFilterWorthShowing, roomsInUse } from '../../src/rooms';
 import { NotificationsNudge } from '../../src/components/NotificationsNudge';
 import { GiftingStrip } from '../../src/components/GiftingStrip';
 import { CoParentBalance } from '../../src/components/CoParentBalance';
 import { StreakChip } from '../../src/components/StreakChip';
 import { WindowedList } from '../../src/components/WindowedList';
+import { isSoloHousehold } from '../../src/household';
 import { useStore } from '../../src/store';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { useUI, UIColors } from '../../src/components/Kit';
-import { api, logEvent, ActivityEntry, Announcement, Card, CardType, ChatThreadSummary, CustodyConfig, FamilyMember, GiftPot, SantaDraw, HandoffNote, Template, WeeklyReport } from '../../src/api';
+import { api, logEvent, ActivityEntry, Announcement, Card, CardType, ChatThreadSummary, CustodyConfig, FamilyMember, GiftPot, SantaDraw, HandoffNote, Template, WeeklyReport , Room } from '../../src/api';
 import { syncCardReminderNotifications, syncMorningDigest, syncDinnerReminder, syncSundayRecap, ensureAskedNotificationPermissionOnce } from '../../src/notifications';
 import { logger } from '../../src/logger';
 import { apiErrorText } from '../../src/apiError';
@@ -221,7 +223,11 @@ function cardMeta(card: Card, t: TFunc) {
   // task can sit on one person's phone for a week while everyone assumes it
   // was passed on.
   const privacy = card.shared === false ? t('card_private') : null;
-  const parts = [privacy, card.assignee, desc, formatDayLine(card.due_date, t)].filter(Boolean);
+  // The room reads as part of the line rather than a badge of its own: a row
+  // already carries privacy, a name, a description and a day, and a fifth
+  // floating pill on a phone-width row is how a list stops being scannable.
+  const where = card.room ? t(`room_${card.room}`) : null;
+  const parts = [privacy, card.assignee, where, desc, formatDayLine(card.due_date, t)].filter(Boolean);
   return parts.join(' · ');
 }
 
@@ -862,9 +868,33 @@ export default function Feed() {
       .sort((a, b) => (dueTime(a) ?? Number.MAX_SAFE_INTEGER) - (dueTime(b) ?? Number.MAX_SAFE_INTEGER));
   }, [activeCards, dashboard, user]);
 
+  /**
+   * Filtering today's list down to one room.
+   *
+   * The row appears only once at least TWO rooms are in play. A household that
+   * never sets a room never sees it, and a household with everything in the
+   * kitchen is not offered a filter whose only option is "kitchen" — the Feed
+   * lost its Today/Upcoming/All tabs precisely because a control that costs
+   * 50px at the top of the most-visited screen has to earn the space every
+   * time it is drawn.
+   */
+  const rooms = useMemo(() => roomsInUse(feedCards), [feedCards]);
+  const [roomFilter, setRoomFilter] = useState<Room | ''>('');
+  // Tick off the last bathroom job and the row goes back to one room, which
+  // hides it — taking the only way to clear the filter with it and leaving an
+  // empty list that looks like a bug. Drop a filter the moment it stops being
+  // offered.
+  useEffect(() => {
+    setRoomFilter((current) => keepRoomFilter(current, rooms));
+  }, [rooms]);
+
   const TASK_CAP = 5;
-  const visibleCards = showAllTasks ? feedCards : feedCards.slice(0, TASK_CAP);
-  const hiddenTaskCount = feedCards.length - visibleCards.length;
+  const roomCards = useMemo(
+    () => (roomFilter ? feedCards.filter((c) => c.room === roomFilter) : feedCards),
+    [feedCards, roomFilter],
+  );
+  const visibleCards = showAllTasks ? roomCards : roomCards.slice(0, TASK_CAP);
+  const hiddenTaskCount = roomCards.length - visibleCards.length;
   // Hand-offs lead the list; everything else follows. Split rather than
   // duplicated, so a task with your name on it appears exactly once.
   // "Keigh gave Roland the swimming kit" is not news to Roland when the task
@@ -1378,6 +1408,41 @@ export default function Feed() {
                 right there. */}
 
 
+            {roomFilterWorthShowing(rooms) ? (
+              <View style={styles.roomRow}>
+                <PressScale
+                  testID="feed-room-all"
+                  accessibilityRole="button"
+                  accessibilityLabel={t('room_all')}
+                  accessibilityState={{ selected: roomFilter === '' }}
+                  onPress={() => setRoomFilter('')}
+                  style={[styles.roomChip, roomFilter === '' && styles.roomChipOn]}
+                >
+                  <Text style={[styles.roomChipText, roomFilter === '' && styles.roomChipTextOn]}>
+                    {t('room_all')}
+                  </Text>
+                </PressScale>
+                {rooms.map((r) => {
+                  const active = roomFilter === r;
+                  return (
+                    <PressScale
+                      key={r}
+                      testID={`feed-room-${r}`}
+                      accessibilityRole="button"
+                      accessibilityLabel={t(`room_${r}`)}
+                      accessibilityState={{ selected: active }}
+                      onPress={() => setRoomFilter(active ? '' : r)}
+                      style={[styles.roomChip, active && styles.roomChipOn]}
+                    >
+                      <Text style={[styles.roomChipText, active && styles.roomChipTextOn]} numberOfLines={1}>
+                        {t(`room_${r}`)}
+                      </Text>
+                    </PressScale>
+                  );
+                })}
+              </View>
+            ) : null}
+
             <View style={styles.listCard}>
               {loading ? (
                 <ActivityIndicator color={ui.orange} style={{ paddingVertical: 32 }} />
@@ -1515,7 +1580,11 @@ export default function Feed() {
 
             {/* Solo household → bring in the co-parent. Vanishes once someone joins. */}
             <CoParentNudge
-              visible={members.length <= 1}
+              // Adults, not member rows. This read `members.length <= 1`,
+              // and that list carries children — so adding a child, which the
+              // Getting Started card's first step asks for, switched off the
+              // one prompt that asks for the other parent. Permanently.
+              visible={isSoloHousehold(members)}
               onInvite={() => { requestInvite(); router.navigate('/(tabs)/settings' as never); }}
               stranded={stranded}
               onResend={async (email) => {
@@ -2529,6 +2598,25 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     fontFamily: 'Inter_700Bold',
     fontSize: 12,
   },
+  roomRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 12,
+  },
+  roomChip: {
+    paddingHorizontal: 13,
+    paddingVertical: 8,
+    borderRadius: 99,
+    backgroundColor: ui.card,
+    borderWidth: 1,
+    borderColor: ui.line,
+  },
+  // orangeDeep, not the brand orange: this chip carries white text, and white
+  // on #F56519 reads at 3.11:1.
+  roomChipOn: { backgroundColor: ui.orangeDeep, borderColor: ui.orangeDeep },
+  roomChipText: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 13, maxWidth: 140 },
+  roomChipTextOn: { color: '#FFFFFF' },
   templateRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
