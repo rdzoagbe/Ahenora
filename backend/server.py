@@ -16837,9 +16837,20 @@ async def vault_expiry_alerts(user: dict = Depends(require_full_member), databas
 
 
 @app.patch("/api/vault/{doc_id}/expiry")
-async def set_vault_expiry(doc_id: str, expiry_date: str = Query(...), user: dict = Depends(require_full_member), database=Depends(get_db)):
-    exp_dt = parse_dt(expiry_date)
-    if not exp_dt:
+async def set_vault_expiry(doc_id: str, expiry_date: str = Query(""), user: dict = Depends(require_full_member), database=Depends(get_db)):
+    """Set, correct, or remove when a document runs out.
+
+    An empty value CLEARS it, and that half matters as much as setting one.
+    Expiry dates arrive from a camera scan reading a passport, and a scan can
+    be wrong in two directions: the wrong date, or a date on a document that
+    has none at all — a birth certificate does not expire. Without a way to
+    clear it, a misread put a permanent false alert on the Vault and a
+    recurring push behind it, and nothing the household could do would stop
+    either.
+    """
+    clearing = not (expiry_date or "").strip()
+    exp_dt = None if clearing else parse_dt(expiry_date)
+    if not clearing and not exp_dt:
         raise HTTPException(400, "Invalid date format")
     existing = await database["vault"].find_one(
         {"doc_id": doc_id, "family_id": user["family_id"]}, {"_id": 0}
@@ -16848,11 +16859,11 @@ async def set_vault_expiry(doc_id: str, expiry_date: str = Query(...), user: dic
         raise HTTPException(404, "Document not found")
     result = await database["vault"].update_one(
         {"doc_id": doc_id, "family_id": user["family_id"]},
-        {"$set": {"expiry_date": exp_dt}},
+        {"$unset": {"expiry_date": ""}} if clearing else {"$set": {"expiry_date": exp_dt}},
     )
     if result.matched_count == 0:
         raise HTTPException(404, "Document not found")
-    return {"ok": True, "doc_id": doc_id, "expiry_date": iso(exp_dt)}
+    return {"ok": True, "doc_id": doc_id, "expiry_date": None if clearing else iso(exp_dt)}
 
 
 # -----------------------------------------------------------------------------

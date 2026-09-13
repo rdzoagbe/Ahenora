@@ -8,7 +8,7 @@ count_documents / find().sort().limit() (async iteration + to_list), query
 operators $exists $gt $gte $lt $lte $in $nin $ne $or $regex(+$options i)
 (equality operators match array membership, as Mongo does), update operators
 $set (including dotted paths and the positional `$`) $inc $addToSet
-$push $pull (both dotted-path aware), and db.command("ping").
+$push $pull $unset (all dotted-path aware), and db.command("ping").
 """
 
 import re
@@ -34,6 +34,21 @@ def _set_path(row: dict, key: str, value):
         child = {}
         row[head] = child
     _set_path(child, rest, value)
+
+
+def _unset_path(row: dict, key: str):
+    """Remove `key` from `row`, honouring Mongo's dotted paths.
+
+    Removing a field that is not there is a no-op in Mongo, not an error, so
+    it is one here too.
+    """
+    if "." not in key:
+        row.pop(key, None)
+        return
+    head, _, rest = key.partition(".")
+    child = row.get(head)
+    if isinstance(child, dict):
+        _unset_path(child, rest)
 
 
 def _get_path(doc, key):
@@ -297,6 +312,13 @@ class FakeCollection:
                 _set_positional(row, key, value, query or {})
             else:
                 _set_path(row, key, value)
+        # $unset removes the field rather than setting it to None, which is
+        # the difference between "this document has no expiry" and "this
+        # document's expiry is nothing". Absent until this was added: the
+        # operator was accepted and silently did nothing, so a clear looked
+        # like it worked and the value stayed put.
+        for key in (update.get("$unset") or {}):
+            _unset_path(row, key)
         for key, value in (update.get("$inc") or {}).items():
             row[key] = (row.get(key) or 0) + value
         for key, value in (update.get("$addToSet") or {}).items():
