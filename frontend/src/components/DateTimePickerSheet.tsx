@@ -49,7 +49,17 @@ const TIME_SLOTS = [
 type DateTimePickerSheetProps = {
   visible: boolean;
   value?: string | null;
-  onChange: (value: string | null) => void;
+  /**
+   * `timeChosen` says whether the person actually touched the time — a slot
+   * chip or the typed field — rather than accepting whatever the sheet opened
+   * on. Picking only a day leaves it false.
+   *
+   * Every date here carries a clock time because a card has to sit somewhere,
+   * so "has a time" cannot tell the two apart. The clash warning needs the
+   * difference: without it, every task saved with a default time shares that
+   * time with every other one and they all look like conflicts.
+   */
+  onChange: (value: string | null, timeChosen: boolean) => void;
   onClose: () => void;
 };
 
@@ -63,6 +73,9 @@ export default function DateTimePickerSheet({
   const c = theme.colors;
   const [dateText, setDateText] = useState('');
   const [timeText, setTimeText] = useState('18:00');
+  // Reset whenever the sheet opens: a time chosen last time is not a time
+  // chosen for this card.
+  const [timeChosen, setTimeChosen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Which month the grid shows. Follows the selection when the sheet opens,
   // then moves independently as the arrows are used.
@@ -80,6 +93,7 @@ export default function DateTimePickerSheet({
     const text = toLocalDateInput(defaultValue);
     setDateText(text);
     setTimeText(toLocalTimeInput(defaultValue));
+    setTimeChosen(false);
     setMonth(dayFromText(text) || new Date());
     setTyping(false);
     setError(null);
@@ -135,7 +149,7 @@ export default function DateTimePickerSheet({
   const save = () => {
     try {
       const iso = buildLocalDateTimeIso(dateText, timeText);
-      onChange(iso);
+      onChange(iso, timeChosen);
       onClose();
     } catch (e: any) {
       setError(e?.message || 'Invalid date/time');
@@ -143,7 +157,7 @@ export default function DateTimePickerSheet({
   };
 
   const clear = () => {
-    onChange(null);
+    onChange(null, false);
     onClose();
   };
 
@@ -272,7 +286,7 @@ export default function DateTimePickerSheet({
               testID={`due-time-${slot}`}
               accessibilityRole="button"
               accessibilityState={{ selected: on }}
-              onPress={() => { setTimeText(slot); setError(null); }}
+              onPress={() => { setTimeText(slot); setTimeChosen(true); setError(null); }}
               style={[
                 styles.slot,
                 { borderColor: c.cardBorder, backgroundColor: c.bgSoft },
@@ -321,7 +335,7 @@ export default function DateTimePickerSheet({
             <TextInput
               testID="due-time-input" returnKeyType="done" onSubmitEditing={() => save()}
               value={timeText}
-              onChangeText={setTimeText}
+              onChangeText={(next) => { setTimeText(next); setTimeChosen(true); }}
               placeholder="HH:mm"
               placeholderTextColor={c.textSoft}
               autoCapitalize="none"

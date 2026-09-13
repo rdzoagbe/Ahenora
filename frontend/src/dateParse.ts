@@ -12,6 +12,16 @@
 export interface DetectedDate {
   date: Date;
   label: string;
+  /**
+   * Whether a CLOCK TIME was actually written, or only a day.
+   *
+   * "dentist at 3pm" is timed; "dentist tomorrow" is not, and gets a default
+   * 9:00 below purely so the card has somewhere to sit. The two are not the
+   * same fact, and the difference is what stops the clash warning firing on
+   * every undated task in the household — they would all sit at 09:00 and be
+   * inside each other's window.
+   */
+  timeChosen: boolean;
 }
 
 // dow index matches Date.getDay(): 0 = Sunday.
@@ -165,7 +175,7 @@ export function detectDateTime(text: string, lang: string): DetectedDate | null 
     if (result.getTime() <= now.getTime()) result = addDays(result, 1);
   }
 
-  return { date: result, label: formatLabel(result, lang) };
+  return { date: result, label: formatLabel(result, lang), timeChosen: hasTime };
 }
 
 function formatLabel(d: Date, lang: string): string {
