@@ -86,7 +86,7 @@
       "android": {
         "serviceAccountKeyPath": "./play-service-account.json",
         "track": "production",
-        "releaseStatus": "draft"
+        "releaseStatus": "completed"
       },
       "ios": {
         "appleId": "roland.dzoagbe@hotmail.com",
