@@ -93,9 +93,27 @@ function isAtRisk(e: BillingEvent): boolean {
  * Reading them the same way is how a recoverable payment sits in a list of
  * unrecoverable ones and gets treated like them.
  */
+/**
+ * The short label for an event that is not money.
+ *
+ * Two different things land here and they mean different things when you are
+ * hunting for a payment that never arrived: a dashboard ping proves the
+ * endpoint is reachable, while a sandbox event is a real purchase flow run
+ * against test money — a licence-test account, whose subscription renews daily
+ * and whose BILLING_ISSUE is not a billing issue.
+ */
+function testLabel(e: BillingEvent): string {
+  return e.environment === 'SANDBOX' ? 'test purchase' : 'store test';
+}
+
 function replayVerdict(e: BillingEvent): string {
-  // A store checking we are reachable, not a purchase. It has no buyer to
-  // find and never will, so none of the wording below applies to it.
+  // Neither of these is a purchase to chase. They have no buyer to find and
+  // never will, so none of the wording below applies to them — but they are
+  // not the same thing, and saying "a test event from the dashboard" about a
+  // licence-test renewal would be a confident answer to the wrong question.
+  if (e.is_test && e.environment === 'SANDBOX') {
+    return 'A sandbox purchase — a licence-test account, not real money. Its subscription renews daily, which is why these arrive so often. Nothing owed.';
+  }
   if (e.is_test) {
     return 'A test event from the RevenueCat dashboard — proof this endpoint is reachable. Not a purchase, nothing owed.';
   }
@@ -1059,7 +1077,7 @@ export default function MetricsScreen() {
                           <Text style={[styles.subTagText, {
                             color: e.matched ? ui.orangeText : e.is_test ? ui.muted : ui.danger,
                           }]}>
-                            {e.matched ? (e.plan || 'plan unchanged') : e.is_test ? 'store test' : 'reached nobody'}
+                            {e.matched ? (e.plan || 'plan unchanged') : e.is_test ? testLabel(e) : 'reached nobody'}
                           </Text>
                         </View>
                         <Text style={styles.subMeta} numberOfLines={1}>

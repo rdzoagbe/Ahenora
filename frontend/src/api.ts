@@ -1263,6 +1263,11 @@ export interface BillingEvent {
    *  Decided server-side (is_test_billing_event) and computed on read, so the
    *  row already in production reclassifies itself. */
   is_test: boolean;
+  /** "SANDBOX", "PRODUCTION", or "" when the store did not say. A sandbox
+   *  event is a licence-test purchase: a real flow against test money, which
+   *  is a different thing from a dashboard ping and worth telling apart when
+   *  you are hunting for why a payment never arrived. */
+  environment: string;
 }
 
 export interface BillingEventLog {
