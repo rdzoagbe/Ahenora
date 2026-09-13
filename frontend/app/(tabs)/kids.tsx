@@ -528,7 +528,7 @@ export default function Kids() {
                       onPress={() => openThread(m)}
                       hitSlop={10}
                       accessibilityLabel={t('hub_message_name', { name: m.name })}
-                      style={styles.hubMsgBtn}
+                      style={[styles.hubMsgBtn, unread > 0 && styles.hubMsgBtnUnread]}
                     >
                       <MessageCircle color={unread > 0 ? '#fff' : ui.muted} size={18} />
                       {unread > 0 ? (
@@ -1146,6 +1146,46 @@ export default function Kids() {
       showToast(t('kids_allowance_saved'), 'success');
     } catch (e: any) {
       logger.warn('Save allowance failed:', e?.message || e);
+      showToast(e?.message || t('kids_allowance_error'), 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  /**
+   * Stop the pocket money.
+   *
+   * Setting an allowance was wired end to end; stopping one never was, so a
+   * household that set it up once could change the amount forever but never
+   * get rid of it — and the nightly "allowance due tomorrow" push kept
+   * arriving for a child who had stopped getting pocket money, with no way
+   * to silence it short of turning off the whole notification group.
+   */
+  const confirmStopAllowance = () => {
+    if (!activeChild) return;
+    const message = t('kids_stop_allowance_confirm', { name: activeChild.name });
+    if (Platform.OS === 'web') {
+      if (webConfirm(message)) stopAllowance();
+      return;
+    }
+    Alert.alert(t('kids_stop_allowance'), message, [
+      { text: t('cancel'), style: 'cancel' },
+      { text: t('kids_stop_allowance'), style: 'destructive', onPress: () => stopAllowance() },
+    ]);
+  };
+
+  const stopAllowance = async () => {
+    if (!activeChild) return;
+    const memberId = activeChild.member_id;
+    setSaving(true);
+    try {
+      await api.deleteAllowance(memberId);
+      setAllowances((prev) => prev.filter((a) => a.member_id !== memberId));
+      setShowAllowanceSheet(false);
+      setAlwAmount('');
+      showToast(t('kids_allowance_stopped'), 'success');
+    } catch (e: any) {
+      logger.warn('Stop allowance failed:', e?.message || e);
       showToast(e?.message || t('kids_allowance_error'), 'error');
     } finally {
       setSaving(false);
@@ -3192,6 +3232,18 @@ export default function Kids() {
           ))}
         </View>
         <Text style={styles.pocketTip}>{t('kids_pocket_tip')}</Text>
+        {childAllowance ? (
+          <PressScale
+            testID="stop-allowance"
+            accessibilityRole="button"
+            accessibilityLabel={t('kids_stop_allowance')}
+            onPress={confirmStopAllowance}
+            disabled={saving}
+            style={[styles.stopAlwBtn, saving && { opacity: 0.5 }]}
+          >
+            <Text style={styles.stopAlwText}>{t('kids_stop_allowance')}</Text>
+          </PressScale>
+        ) : null}
         <View style={styles.sheetFooter}>
           <PressScale testID="cancel-allowance" onPress={() => setShowAllowanceSheet(false)} style={styles.cancelBtn}><Text style={styles.cancelText}>{t('cancel')}</Text></PressScale>
           <PressScale testID="save-allowance" onPress={saveAllowance} disabled={saving || !alwAmount} style={[styles.saveBtn, (!alwAmount || saving) && { opacity: 0.5 }]}><Text style={styles.saveText}>{saving ? '...' : t('save')}</Text></PressScale>
@@ -3266,7 +3318,13 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   hubBadge: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 },
   hubBadgeText: { fontFamily: 'Inter_700Bold', fontSize: 10, letterSpacing: 0.3, textTransform: 'uppercase' },
   hubSub: { fontFamily: 'Inter_400Regular', fontSize: 12.5, color: ui.muted, marginTop: 2 },
+  stopAlwBtn: { marginTop: 14, alignSelf: 'flex-start', paddingVertical: 8, paddingHorizontal: 14, borderRadius: 999, borderWidth: 1, borderColor: ui.danger + '55' },
+  stopAlwText: { color: ui.danger, fontFamily: 'Inter_700Bold', fontSize: 13.5 },
   hubMsgBtn: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: ui.soft },
+  // The white icon belongs on the orange tile. They were written apart: the
+  // icon turned white when there was something to read and the tile never
+  // did, so the button disappeared at exactly the moment it mattered.
+  hubMsgBtnUnread: { backgroundColor: ui.orange },
   hubUnread: { position: 'absolute', top: -3, right: -3, minWidth: 18, height: 18, borderRadius: 9, backgroundColor: ui.orange, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5 },
   hubUnreadText: { color: '#fff', fontFamily: 'Inter_800ExtraBold', fontSize: 11 },
   teenMsgBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: ui.orangeSoft, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 3 },

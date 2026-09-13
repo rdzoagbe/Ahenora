@@ -34,12 +34,14 @@ const API = fs.readFileSync(path.join(ROOT, 'src', 'api.ts'), 'utf8');
 const NO_SCREEN_YET: Record<string, string> = {
   changeSubscription: 'Plan changes go through the store, not the app.',
   conflicts: 'Calendar conflict detection — no screen designed yet.',
-  createCarpool: 'Carpool: backend only, never designed.',
+  // Not like the others: the Calendar sells this one. A household on a paid
+  // plan unlocks "Carpool Coordinator", and finds a list with a delete on
+  // every row and no way to make a first row. This line is the most expensive
+  // one on the list.
+  createCarpool: 'Carpool: PAID feature, listed and deletable, no way to create one.',
   createTemplate: 'Task templates: the Feed loads them, nothing manages them.',
   deleteTemplate: 'Task templates: see createTemplate.',
   toggleTemplate: 'Task templates: see createTemplate.',
-  deleteAllowance: 'Pocket money can be set and paid; stopping it has no control.',
-  deleteGiftPot: 'Gift pots are closed, not deleted, from the pot screen.',
   unshareGiftPot: 'Sharing a pot is one-way in the app today.',
   removeContribution: 'A contribution is corrected by the contributor, not removed by the owner.',
   getExpenseSummary: 'Expenses show per month; the summary endpoint is unused.',

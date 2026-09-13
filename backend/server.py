@@ -15000,12 +15000,29 @@ async def close_gift_pot(pot_id: str, user=Depends(require_full_member)):
 
 @app.delete("/api/gift-pots/{pot_id}")
 async def delete_gift_pot(pot_id: str, user=Depends(require_full_member)):
+    """Bin a pot nobody has chipped into.
+
+    A pot people have pledged against is CLOSED, not deleted — deleting it
+    throws away what everyone said they would put in, and the person who
+    pledged £20 has no record that they did. So the delete refuses once there
+    is money in it and points at the other door.
+
+    The refusal lives here rather than only in the screen that offers the
+    button: a pot can be chipped into from a share link by somebody the
+    organiser never sees, so the organiser's copy of "nobody has paid yet"
+    can be seconds out of date.
+    """
     await require_feature(user, "gift_pot")
     database = get_db()
-    result = await database["gift_pots"].delete_one(
-        {"pot_id": pot_id, "family_id": user["family_id"]})
-    if result.deleted_count == 0:
+    pot = await database["gift_pots"].find_one(
+        {"pot_id": pot_id, "family_id": user["family_id"]}, {"_id": 0})
+    if not pot:
         raise HTTPException(404, "Gift pot not found")
+    if [c for c in (pot.get("contributions") or []) if isinstance(c, dict)]:
+        raise HTTPException(
+            409, "Somebody has already chipped in — mark the pot sorted instead.")
+    await database["gift_pots"].delete_one(
+        {"pot_id": pot_id, "family_id": user["family_id"]})
     return {"ok": True}
 
 

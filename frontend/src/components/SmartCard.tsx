@@ -62,11 +62,13 @@ export function SmartCard({ card, onComplete, onDelete }: Props) {
 
   const actionLabel = useMemo(() => {
     if (isDone) return t('done');
-    if (card.type === 'SIGN_SLIP') return lang === 'fr' ? 'Marquer signé' : lang === 'es' ? 'Firmar' : 'Mark signed';
-    if (card.type === 'RSVP') return lang === 'fr' ? 'Confirmer' : lang === 'es' ? 'Confirmar' : 'Send RSVP';
+    // Through the dictionary. Written as a ladder of three languages, these
+    // two buttons stayed in English for the fourth the app ships in.
+    if (card.type === 'SIGN_SLIP') return t('card_action_sign');
+    if (card.type === 'RSVP') return t('card_action_rsvp');
 
     return t('mark_done');
-  }, [card.type, isDone, lang, t]);
+  }, [card.type, isDone, t]);
 
   const sourceLabel = useMemo(() => {
     if (card.source === 'AI') return t('source_ai');

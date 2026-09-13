@@ -36,6 +36,8 @@ interface RowProps {
   showSender: boolean;
   onHold: (m: ChatMessage) => void;
   onSwipeReply: (m: ChatMessage) => void;
+  /** Absent when the caller has no react function — then the pills are inert. */
+  onToggleReaction?: (m: ChatMessage, emoji: string) => void;
   receipt: string | null;
 }
 
@@ -54,7 +56,7 @@ const SWIPE_REPLY_MAX = 76;
  * holding it, which is discoverable, works for somebody who cannot make a
  * precise drag, and is the only way to reach the other actions.
  */
-function MessageRow({ item, styles, ui, t, showSender, onHold, onSwipeReply, receipt }: RowProps) {
+function MessageRow({ item, styles, ui, t, showSender, onHold, onSwipeReply, onToggleReaction, receipt }: RowProps) {
   const dx = useRef(new Animated.Value(0)).current;
   const armed = useRef(false);
 
@@ -152,15 +154,24 @@ function MessageRow({ item, styles, ui, t, showSender, onHold, onSwipeReply, rec
           </View>
           {item.reactions?.length ? (
             <View style={[styles.reactionRow, item.mine ? styles.rowMine : styles.rowTheirs]}>
+              {/* Tapping a reaction is how every messenger adds or takes one
+                  back, and the server has always toggled. Only the pill was
+                  inert, so somebody who tapped their own reaction to remove
+                  it got nothing and had to find the hold menu again. */}
               {item.reactions.map((r) => (
-                <View
+                <Pressable
                   key={r.emoji}
                   testID={`chat-reaction-${r.emoji}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={t(r.mine ? 'chat_reaction_remove' : 'chat_reaction_add', { emoji: r.emoji })}
+                  disabled={!onToggleReaction}
+                  hitSlop={6}
+                  onPress={() => onToggleReaction?.(item, r.emoji)}
                   style={[styles.reaction, r.mine && styles.reactionMine]}
                 >
                   <Text style={styles.reactionEmoji}>{r.emoji}</Text>
                   {r.count > 1 ? <Text style={styles.reactionCount}>{r.count}</Text> : null}
-                </View>
+                </Pressable>
               ))}
             </View>
           ) : null}
@@ -383,10 +394,8 @@ export function ChatThread({ load, send, markRead, react, edit, emptyHint }: Pro
     return t('chat_seen_partial', { count: m.seen_by, total: m.audience });
   };
 
-  const onReact = async (emoji: string) => {
-    const target = acting;
-    setActing(null);
-    if (!target || !react) return;
+  const reactTo = useCallback(async (target: ChatMessage, emoji: string) => {
+    if (!react) return;
     try {
       // Through the same merge as everything else, so the row appears at once
       // and the next poll cannot duplicate it.
@@ -394,6 +403,13 @@ export function ChatThread({ load, send, markRead, react, edit, emptyHint }: Pro
     } catch (e) {
       logger.warn('chat react failed', e);
     }
+  }, [react, absorb]);
+
+  const onReact = (emoji: string) => {
+    const target = acting;
+    setActing(null);
+    if (!target) return;
+    reactTo(target, emoji);
   };
 
   if (loading) {
@@ -429,6 +445,7 @@ export function ChatThread({ load, send, markRead, react, edit, emptyHint }: Pro
             t={t}
             onHold={setActing}
             onSwipeReply={(m) => { setReplyTo(m); setEditing(null); }}
+            onToggleReaction={react ? reactTo : undefined}
             receipt={item.mine && item.message_id === lastMineId ? receipt(item) : null}
           />
         )}
