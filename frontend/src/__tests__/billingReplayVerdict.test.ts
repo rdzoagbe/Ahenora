@@ -67,9 +67,30 @@ describe('the verdict on an unmatched payment', () => {
     // Checked before the retry wording, which is about finding a buyer.
     expect(verdict.indexOf('e.is_test')).toBeLessThan(verdict.indexOf('replay_attempts'));
     expect(verdict).toMatch(/Not a purchase, nothing owed/);
-    // And the tag read at a glance is not the red one.
-    expect(METRICS).toMatch(/e\.is_test \? 'store test' : 'reached nobody'/);
+    // And the tag read at a glance is not the red one. Asserted on the shape
+    // rather than the exact words: the label became a function when a SECOND
+    // kind of not-money arrived, and pinning the literal text made this test
+    // fail for a change that kept its meaning exactly.
+    expect(METRICS).toMatch(/e\.is_test \? testLabel\(e\) : 'reached nobody'/);
     expect(METRICS).toMatch(/e\.is_test \? ui\.muted : ui\.danger/);
+  });
+
+  it('tells a licence-test purchase apart from a dashboard ping', () => {
+    // Both are excluded from the money figures and they are not the same
+    // thing. A sandbox event is a real purchase flow run against test money —
+    // a licence-test account, whose subscription renews DAILY, which is why
+    // its BILLING_ISSUE arrived every morning. Calling that "a test event from
+    // the RevenueCat dashboard" would be a confident answer to the wrong
+    // question, asked by somebody hunting a payment that never arrived.
+    const verdict = METRICS.slice(METRICS.indexOf('function replayVerdict'),
+                                  METRICS.indexOf('export default function MetricsScreen'));
+    expect(verdict).toMatch(/SANDBOX/);
+    expect(verdict).toMatch(/renews daily/i);
+    // The short tag distinguishes them too, not only the long explanation.
+    const label = METRICS.slice(METRICS.indexOf('function testLabel'),
+                                METRICS.indexOf('function replayVerdict'));
+    expect(label).toMatch(/'test purchase'/);
+    expect(label).toMatch(/'store test'/);
   });
 
   it('tells the three billing states apart', () => {

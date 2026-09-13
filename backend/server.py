@@ -12117,6 +12117,7 @@ async def record_billing_event(
     product_id: Optional[str] = None,
     plan: Optional[str] = None,
     detail: Optional[str] = None,
+    environment: Optional[str] = None,
 ) -> None:
     """Write down that a payment provider told us something.
 
@@ -12146,6 +12147,11 @@ async def record_billing_event(
         "product_id": product_id,
         "plan": plan,
         "detail": detail,
+        # SANDBOX or PRODUCTION, as the store said. "" when it did not say —
+        # and "" is read as real money, deliberately: a missing field must
+        # never be the thing that silences an alert about a genuine failed
+        # payment. See is_test_billing_event.
+        "environment": str(environment or "").strip().upper(),
         "received_at": utcnow(),
     }
     try:
@@ -12257,6 +12263,7 @@ async def revenuecat_webhook(payload: dict, authorization: Optional[str] = Heade
             database, source="revenuecat", event_type=event_type, matched=False,
             app_user_id=app_user_id, product_id=event.get("product_id"),
             detail="no account carries this app_user_id",
+            environment=event.get("environment"),
         )
         return {"ok": True, "matched": False}
 
@@ -12291,6 +12298,10 @@ async def revenuecat_webhook(payload: dict, authorization: Optional[str] = Heade
         database, source="revenuecat", event_type=event_type, matched=True,
         family_id=user["family_id"], app_user_id=app_user_id,
         product_id=event.get("product_id"), plan=changes.get("plan"),
+        # The store says SANDBOX or PRODUCTION on every event. Reading it is
+        # the whole fix: without it a licence-test renewal is indistinguishable
+        # from income, and its daily BILLING_ISSUE from a real one.
+        environment=event.get("environment"),
     )
     return {"ok": True, "matched": True}
 
@@ -12567,8 +12578,32 @@ async def _note_replay_attempt(database: Any, ev: dict, state: str) -> None:
 # Classified on READ rather than stored, so the row already sitting in
 # production is reclassified the moment this ships, with no migration.
 def is_test_billing_event(row: Optional[dict]) -> bool:
-    """A store's "is this endpoint alive?" ping. Never money."""
+    """Not real money. Two different things are not real money.
+
+    The first is a store's "is this endpoint alive?" ping, which is what this
+    function meant when it was written.
+
+    The second arrived later and looked exactly like income: a Play LICENCE
+    TEST account. Its purchases are ordinary RENEWAL, CANCELLATION and
+    BILLING_ISSUE events carrying a real product id, and the test subscription
+    renews DAILY — so the billing alert fired every morning about a payment
+    problem that was never a payment. An alert that cries wolf daily is one
+    that stops being read, and then the real one arrives and is not seen.
+
+    The store does say which it is: RevenueCat stamps every event SANDBOX or
+    PRODUCTION. We simply never read it.
+
+    Absent means REAL. A missing field must never be the thing that silences
+    an alert about somebody's genuine failed payment, so this fails towards
+    saying something.
+
+    Note what this does NOT do: a sandbox purchase still grants its plan.
+    Nothing here touches entitlements — a licence-test account has to get
+    premium or it cannot test premium. This only decides what counts as money.
+    """
     r = row or {}
+    if str(r.get("environment") or "").strip().upper() == "SANDBOX":
+        return True
     return (str(r.get("source") or "").strip().lower() == "revenuecat"
             and str(r.get("event_type") or "").strip().upper() == "TEST")
 
@@ -12768,6 +12803,11 @@ async def admin_billing_events(user=Depends(require_user), limit: int = Query(de
             "replay_attempts": int(r.get("replay_attempts") or 0),
             "last_replay_at": iso(_coerce_dt(r.get("last_replay_at"))),
             "is_test": is_test_billing_event(r),
+            # Which KIND of not-money, so the screen can say. A dashboard ping
+            # and a licence-test purchase are both excluded from the figures
+            # and mean completely different things when you are looking for
+            # why a payment did not arrive.
+            "environment": r.get("environment") or "",
         }
 
     # Unmatched first, then everything else newest-first.
