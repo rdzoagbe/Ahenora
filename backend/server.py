@@ -108,6 +108,18 @@ SESSION_DAYS = int(os.environ.get("SESSION_DAYS", "90"))
 # revoke it, and the household can delete it. Still bounded, so an address
 # that was never going to answer does not stay claimable forever.
 INVITE_DAYS = int(os.environ.get("INVITE_DAYS", "60"))
+# How long an unanswered invitation waits before the inviter is told nothing
+# has happened.
+#
+# The recovery prompt used to speak only about invitations that had EXPIRED —
+# "give it time" for anything still in date, which was fair when the window was
+# a fortnight. The window is INVITE_DAYS now, and widening it to stop invites
+# dying of the clock quietly moved the only prompt that chases one from two
+# weeks out to two months. An invitation sits in silence for the whole of it.
+#
+# A week is long enough that "it may simply be new" has stopped being true, and
+# early enough that a nudge on the channel it was sent through still works.
+INVITE_NUDGE_DAYS = int(os.environ.get("INVITE_NUDGE_DAYS", "7"))
 # Invite links must open SOMEWHERE on every device. The old default was the
 # native custom scheme, which does nothing on a phone without the app —
 # an iPhone tapping it got silence. The web companion handles ?invite=
@@ -7343,29 +7355,51 @@ async def stranded_invites(user=Depends(require_user)):
             by_email[addr] = acct
 
     out = []
+    now = utcnow()
     for inv in invites:
         addr = (inv.get("email") or "").strip().lower()
-        if not addr:
-            continue
-        who = by_email.get(addr)
+        # An addressless invitation is a SHARED LINK, and this used to skip
+        # them outright — so the share sheet, which is what the Feed's nudge
+        # opens and therefore how people actually invite, was invisible to the
+        # one prompt built to chase an invitation. There is nobody to look up
+        # for a link, but the inviter can still be told it was never taken up,
+        # and re-sharing is the same tap it was the first time.
+        who = by_email.get(addr) if addr else None
         if who and who.get("family_id") == family_id:
             continue  # already here: it worked
+        if (inv.get("status") or "") == "accepted":
+            continue  # taken up by somebody we cannot see from here
+        age_days = None
+        made = _coerce_dt(inv.get("created_at"))
+        if made:
+            age_days = (now - made).days
         if who:
             reason = "signed_up"
         elif _expired(inv.get("expires_at")) or (inv.get("status") or "") == "expired":
             reason = "expired"
+        elif age_days is not None and age_days >= INVITE_NUDGE_DAYS:
+            # Pending, in date, and old. Previously this fell through to "give
+            # it time", which with a 60-day window meant nothing was said until
+            # the link was already dead — at which point re-sending is the only
+            # move left, rather than a nudge on the channel it went out on.
+            reason = "waiting"
         else:
-            continue  # still pending and in date — give it time
+            continue  # genuinely new — give it time
         out.append({
             "email": inv.get("email"),
+            # What the inviter called the person when they made the link, for
+            # the invitations that carry no address.
+            "label": inv.get("label") or None,
             "relationship": inv.get("relationship") or None,
             "reason": reason,
+            "days_ago": age_days,
             "invited_at": iso(_coerce_dt(inv.get("created_at"))),
         })
 
     # The ones who actually tried first — that is the invitation most worth
-    # sending again.
-    out.sort(key=lambda r: (r["reason"] != "signed_up", r["invited_at"] or ""))
+    # sending again — then the ones still waiting, then the ones already dead.
+    order = {"signed_up": 0, "waiting": 1, "expired": 2}
+    out.sort(key=lambda r: (order.get(r["reason"], 9), r["invited_at"] or ""))
     return out
 
 

@@ -345,7 +345,13 @@ export default function Feed() {
   const [assigned, setAssigned] = useState<Card[]>([]);
   // Someone this household invited who never made it in. Only the household
   // that sent an invitation can send it again, so the prompt belongs here.
-  const [stranded, setStranded] = useState<{ email: string; reason: string } | null>(null);
+  const [stranded, setStranded] = useState<{
+    /** Null for a shared link — it never carried an address. */
+    email: string | null;
+    label?: string | null;
+    reason: string;
+    days_ago?: number | null;
+  } | null>(null);
   // The web build is prerendered at BUILD time. Anything derived from "now" —
   // the date line, the greeting, the sun or moon — then disagrees with what
   // the browser computes, and React throws away the entire server render as a
@@ -513,7 +519,12 @@ export default function Feed() {
       api.listAssignedToMe().then(setAssigned).catch(() => undefined);
       // Best-effort: a nudge is never worth failing the Feed for.
       api.strandedInvites()
-        .then((rows) => setStranded(rows?.[0] ? { email: rows[0].email, reason: rows[0].reason } : null))
+        .then((rows) => setStranded(rows?.[0] ? {
+          email: rows[0].email,
+          label: rows[0].label,
+          reason: rows[0].reason,
+          days_ago: rows[0].days_ago,
+        } : null))
         .catch(() => undefined);
 
       // Safe here rather than on first paint — see the `now` state above.

@@ -28,7 +28,15 @@ interface Props {
    * the household that invited them can invite them again, so this prompt has
    * to reach the inviter — a founder cannot reach into somebody else's family.
    */
-  stranded?: { email: string; reason: string } | null;
+  stranded?: {
+    /** Null for a SHARED LINK, which never carried an address. */
+    email: string | null;
+    /** What the inviter called them when they made the link, if anything. */
+    label?: string | null;
+    /** 'signed_up' | 'expired' | 'waiting' */
+    reason: string;
+    days_ago?: number | null;
+  } | null;
   /** Sends that invitation again. Resolves false if it did not go. */
   onResend?: (email: string) => Promise<boolean>;
 }
@@ -62,7 +70,11 @@ export function CoParentNudge({ visible, onInvite, stranded, onResend }: Props) 
   // The stranded case outranks the generic ask: "Sarah signed up but never
   // joined — send it again" is strictly more useful than "invite a co-parent",
   // and both would otherwise want the same slot on a solo household's Feed.
-  const recover = stranded && onResend ? stranded : null;
+  // A link invitation has nobody to send an email TO, so it does not need
+  // onResend to be worth showing — re-sharing is the same tap it was the first
+  // time. Requiring onResend for every case is what would keep the app's main
+  // invitation route out of the prompt built to chase invitations.
+  const recover = stranded && (onResend || !stranded.email) ? stranded : null;
   if (!visible) return null;
   // Dismissing "invite a co-parent" means "I am a single parent, stop asking".
   // It cannot also mean "never tell me that the person I DID invite is stuck
@@ -74,10 +86,12 @@ export function CoParentNudge({ visible, onInvite, stranded, onResend }: Props) 
   if (recover ? recoverDismissed !== false : dismissed !== false) return null;
 
   const resend = async () => {
-    if (!recover || sending) return;
+    // Only ever reached for an invitation that carried an address; a shared
+    // link has nobody to write to and goes through shareInvite instead.
+    if (!recover || !recover.email || !onResend || sending) return;
     setSending(true);
     try {
-      if (await onResend!(recover.email)) setSent(true);
+      if (await onResend(recover.email)) setSent(true);
     } finally {
       setSending(false);
     }
@@ -134,14 +148,25 @@ export function CoParentNudge({ visible, onInvite, stranded, onResend }: Props) 
       {recover ? (
         <>
           <Text style={styles.title}>
-            {recover.reason === 'signed_up' ? t('cp_again_title_tried') : t('cp_again_title_expired')}
+            {recover.reason === 'signed_up'
+              ? t('cp_again_title_tried')
+              : recover.reason === 'waiting'
+                ? t('cp_again_title_waiting')
+                : t('cp_again_title_expired')}
           </Text>
-          <Text style={styles.body}>{t('cp_again_body', { email: recover.email })}</Text>
+          <Text style={styles.body}>
+            {recover.email
+              ? t('cp_again_body', { email: recover.email })
+              : t('cp_again_body_link', {
+                  who: recover.label || t('cp_again_someone'),
+                  days: String(recover.days_ago ?? 0),
+                })}
+          </Text>
           <PressScale
             testID="cp-nudge-resend"
             accessibilityRole="button"
             accessibilityLabel={t('cp_again_cta')}
-            onPress={resend}
+            onPress={recover.email ? resend : shareInvite}
             disabled={sending || sent}
             style={[styles.cta, (sending || sent) && styles.ctaOff]}
           >
