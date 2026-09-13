@@ -4513,6 +4513,11 @@ class RoutineIn(BaseModel):
 class RoutinePatchIn(BaseModel):
     name: Optional[str] = None
     steps: Optional[list] = None
+    # Create accepted these two and edit did not, so a routine set up for the
+    # wrong child, or worth the wrong number of stars, could not be corrected —
+    # only deleted and built again, which takes its completion history with it.
+    member_id: Optional[str] = None
+    star_reward: Optional[int] = None
 
 
 class MealPlanIn(BaseModel):
@@ -15717,6 +15722,11 @@ async def update_routine(routine_id: str, body: RoutinePatchIn, user: dict = Dep
     updates = {k: v for k, v in body.dict(exclude_unset=True).items() if v is not None}
     if not updates:
         raise HTTPException(400, "No updates provided")
+    # Clamped on the way in, exactly as create does. Two endpoints disagreeing
+    # about what a valid value is has bitten this file twice already, and the
+    # permissive one is always the one somebody reaches.
+    if "star_reward" in updates:
+        updates["star_reward"] = max(0, int(updates["star_reward"] or 0))
     await database["routines"].update_one(
         {"routine_id": routine_id, "family_id": user["family_id"]},
         {"$set": updates},

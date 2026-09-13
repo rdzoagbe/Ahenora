@@ -312,6 +312,9 @@ export default function Kids() {
   const [balances, setBalances] = useState<Record<string, number>>({});
   const [chores, setChores] = useState<Chore[]>([]);
   const [showRoutineSheet, setShowRoutineSheet] = useState(false);
+  // The routine being corrected, or null for a new one. The sheet does both:
+  // a separate edit sheet would be the same six fields twice, drifting apart.
+  const [editingRoutine, setEditingRoutine] = useState<Routine | null>(null);
   const [routineName, setRoutineName] = useState('');
   const [routineStars, setRoutineStars] = useState('2');
   const [routineSteps, setRoutineSteps] = useState<{ label: string; minutes: string }[]>([]);
@@ -1303,11 +1306,32 @@ export default function Kids() {
   // one could ever get a first.
 
   const openRoutineSheet = useCallback(() => {
+    setEditingRoutine(null);
     setRoutineName('');
     setRoutineStars('2');
     // One empty step, so the shape of the thing is visible before anything is
     // typed. An empty list reads as a broken sheet.
     setRoutineSteps([{ label: '', minutes: '5' }]);
+    setShowRoutineSheet(true);
+  }, []);
+
+  /**
+   * The same sheet, loaded from an existing routine.
+   *
+   * Every field starts from the routine as it stands, so saving without
+   * touching anything changes nothing — the rule a card edit had to learn the
+   * hard way when it silently reset a weekly chore's recurrence.
+   */
+  const openRoutineForEdit = useCallback((rtn: Routine) => {
+    setEditingRoutine(rtn);
+    setRoutineName(rtn.name || '');
+    setRoutineStars(String(rtn.star_reward ?? 0));
+    setRoutineSteps(
+      (rtn.steps || []).map((step) => ({
+        label: step.label || '',
+        minutes: String(Math.max(1, Math.round((step.duration_seconds || 60) / 60))),
+      })),
+    );
     setShowRoutineSheet(true);
   }, []);
 
@@ -1332,24 +1356,39 @@ export default function Kids() {
       .filter((step) => step.label.length > 0);
     if (steps.length === 0) { showToast(t('kids_routine_steps_required'), 'error'); return; }
 
+    const stars = Math.max(0, parseInt(routineStars || '0', 10) || 0);
+
     setSaving(true);
     try {
+      if (editingRoutine) {
+        // member_id goes too: the routine belongs to whichever child's page
+        // this sheet was opened from, so editing from another child's page
+        // moves it there rather than leaving it somewhere it is not shown.
+        const saved = await api.updateRoutine(editingRoutine.routine_id, {
+          name, steps, member_id: activeChild.member_id, star_reward: stars,
+        });
+        setRoutines((prev) => prev.map((r) => (r.routine_id === saved.routine_id ? saved : r)));
+        setShowRoutineSheet(false);
+        setEditingRoutine(null);
+        showToast(t('kids_routine_saved', { name: saved.name }), 'success');
+        return;
+      }
       const created = await api.createRoutine({
         name,
         steps,
         member_id: activeChild.member_id,
-        star_reward: Math.max(0, parseInt(routineStars || '0', 10) || 0),
+        star_reward: stars,
       });
       setRoutines((prev) => [...prev, created]);
       setShowRoutineSheet(false);
       showToast(t('kids_routine_added', { name: created.name }), 'success');
     } catch (e: any) {
-      logger.warn('Create routine failed:', e?.message || e);
+      logger.warn('Save routine failed:', e?.message || e);
       showToast(e?.message || t('kids_routine_add_error'), 'error');
     } finally {
       setSaving(false);
     }
-  }, [activeChild, routineName, routineStars, routineSteps, showToast, t]);
+  }, [activeChild, editingRoutine, routineName, routineStars, routineSteps, showToast, t]);
 
   /**
    * Open the "add a chore" sheet, with the child whose page this is already
@@ -2332,6 +2371,16 @@ export default function Kids() {
                       <Text style={styles.featureActionText}>{t('kids_done')}</Text>
                     </PressScale>
                     <PressScale
+                      testID={`routine-edit-${rtn.routine_id}`}
+                      accessibilityRole="button"
+                      accessibilityLabel={t('kids_routine_edit')}
+                      onPress={() => openRoutineForEdit(rtn)}
+                      hitSlop={8}
+                      style={{ padding: 4, marginLeft: 6 }}
+                    >
+                      <Pencil color={ui.muted} size={15} />
+                    </PressScale>
+                    <PressScale
                   accessibilityRole="button"
                   accessibilityLabel={t('a11y_delete')} onPress={() => deleteRoutine(rtn.routine_id)} style={{ padding: 4, marginLeft: 6 }}>
                       <Trash2 color={ui.muted} size={15} />
@@ -2716,7 +2765,9 @@ export default function Kids() {
       {/* Build a routine: a name, some steps, and what finishing it is worth */}
       <KeyboardAwareBottomSheet visible={showRoutineSheet} onClose={() => setShowRoutineSheet(false)} contentStyle={styles.sheet}>
         <View style={styles.sheetHeader}>
-          <Text style={styles.sheetTitle}>{t('kids_add_routine')}</Text>
+          <Text style={styles.sheetTitle}>
+            {editingRoutine ? t('kids_routine_edit') : t('kids_add_routine')}
+          </Text>
           <PressScale
             accessibilityRole="button"
             accessibilityLabel={t('close')}
