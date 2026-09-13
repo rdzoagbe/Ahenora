@@ -37,7 +37,6 @@ import {
   UserPlus,
   Users,
   X,
-  Zap,
 } from 'lucide-react-native';
 
 import { useBreakpoint } from '../../src/responsive';
@@ -63,7 +62,7 @@ import { isSoloHousehold } from '../../src/household';
 import { useStore } from '../../src/store';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { useUI, UIColors } from '../../src/components/Kit';
-import { api, logEvent, ActivityEntry, Announcement, Card, CardType, ChatThreadSummary, CustodyConfig, FamilyMember, GiftPot, SantaDraw, HandoffNote, Template, WeeklyReport , Room } from '../../src/api';
+import { api, logEvent, ActivityEntry, Announcement, Card, CardType, ChatThreadSummary, CustodyConfig, FamilyMember, GiftPot, SantaDraw, HandoffNote, WeeklyReport , Room } from '../../src/api';
 import { syncCardReminderNotifications, syncMorningDigest, syncDinnerReminder, syncSundayRecap, ensureAskedNotificationPermissionOnce } from '../../src/notifications';
 import { logger } from '../../src/logger';
 import { apiErrorText } from '../../src/apiError';
@@ -418,7 +417,6 @@ export default function Feed() {
   // shared it; the camera is the only thing that fills it now.
   const [pendingDraft, setPendingDraft] = useState<ScanDraft | null>(null);
   const [notes, setNotes] = useState<HandoffNote[]>([]);
-  const [templates, setTemplates] = useState<Template[]>([]);
   const [noteText, setNoteText] = useState('');
   // Who the next note is for. null is Everyone — the way every note behaved
   // before addressing existed, and still the default.
@@ -440,7 +438,6 @@ export default function Feed() {
   const [report, setReport] = useState<WeeklyReport | null>(null);
   const [expandReport, setExpandReport] = useState(false);
   const [loadError, setLoadError] = useState(false);
-  const [runningTemplate, setRunningTemplate] = useState<string | null>(null);
   // Calendar events whose day has fully passed. Tasks stay (overdue = still to
   // do), but a past event is history — we prompt before clearing, never silently.
   const [pastPromptDismissed, setPastPromptDismissed] = useState(false);
@@ -456,13 +453,12 @@ export default function Feed() {
     logEvent('feed_open');
     ensureAskedNotificationPermissionOnce().catch(() => undefined);
     try {
-      const [cardsResult, membersResult, rewardsResult, vaultResult, notesResult, templatesResult, annResult, potsResult, santaResult, threadsResult] = await Promise.allSettled([
+      const [cardsResult, membersResult, rewardsResult, vaultResult, notesResult, annResult, potsResult, santaResult, threadsResult] = await Promise.allSettled([
         api.listCards(),
         api.familyMembers(),
         api.listRewards(),
         api.listVault(),
         api.listHandoffNotes(),
-        api.listTemplates(),
         api.listAnnouncements(),
         api.listGiftPots().catch(() => [] as GiftPot[]),
         api.listSantaDraws().catch(() => [] as SantaDraw[]),
@@ -507,7 +503,6 @@ export default function Feed() {
       if (rewardsResult.status === 'fulfilled') setRewardCount(rewardsResult.value.length);
       if (vaultResult.status === 'fulfilled') setVaultCount(vaultResult.value.length);
       if (notesResult.status === 'fulfilled') setNotes(notesResult.value);
-      if (templatesResult.status === 'fulfilled') setTemplates(templatesResult.value);
       if (annResult.status === 'fulfilled') setAnnouncements(annResult.value);
 
       // Who did what, lately. Best effort: an empty strip is better than a
@@ -1133,21 +1128,6 @@ export default function Feed() {
     }
   }, [load]);
 
-  const runTemplate = useCallback(async (tpl: Template) => {
-    if (runningTemplate) return;
-    setRunningTemplate(tpl.template_id);
-    try {
-      await api.generateFromTemplate(tpl.template_id);
-      load();
-    } catch {
-      Alert.alert(t('feed_error'), t('feed_could_not_generate'));
-    } finally {
-      setRunningTemplate(null);
-    }
-  }, [load, runningTemplate]);
-
-  const enabledTemplates = useMemo(() => templates.filter((t) => t.enabled), [templates]);
-
   const addAnnouncement = useCallback(async () => {
     if (!annText.trim()) return;
     setSavingAnn(true);
@@ -1390,24 +1370,6 @@ export default function Feed() {
               onManual={() => { setShowCaptureMenu(false); openManual(); }}
               onPhoto={() => { setShowCaptureMenu(false); setShowCamera(true); }}
             />
-
-            {/* Quick templates — one tap to run a saved routine. Sits by the
-                add bar since it's another way to add. */}
-            {enabledTemplates.length > 0 ? (
-              <View style={styles.templateRow}>
-                {enabledTemplates.slice(0, 4).map((tpl) => (
-                  <PressScale
-                    key={tpl.template_id}
-                    onPress={() => runTemplate(tpl)}
-                    disabled={runningTemplate !== null}
-                    style={[styles.templateChip, runningTemplate !== null && { opacity: 0.5 }]}
-                  >
-                    <Zap color={ui.orange} size={14} />
-                    <Text style={styles.templateChipText} numberOfLines={1}>{tpl.title}</Text>
-                  </PressScale>
-                ))}
-              </View>
-            ) : null}
 
 
             {/* The stats strip lived here: "Due today / Sign slips / This
@@ -2628,29 +2590,6 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   roomChipOn: { backgroundColor: ui.orangeDeep, borderColor: ui.orangeDeep },
   roomChipText: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 13, maxWidth: 140 },
   roomChipTextOn: { color: '#FFFFFF' },
-  templateRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 14,
-  },
-  templateChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 13,
-    paddingVertical: 9,
-    borderRadius: 99,
-    backgroundColor: ui.orangeSoft,
-    borderWidth: 1,
-    borderColor: ui.line,
-  },
-  templateChipText: {
-    color: ui.text,
-    fontFamily: 'Inter_700Bold',
-    fontSize: 13,
-    maxWidth: 120,
-  },
   // An in-list group header, not a card: the hand-off group lives inside the
   // task list now, so it needs a label with the weight of a section marker
   // rather than the chrome of a container.
