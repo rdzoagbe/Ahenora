@@ -3,6 +3,9 @@
  * Until this existed, tapping any notification just left you wherever you were —
  * "Roland assigned you the school run" opened the app to the last screen seen.
  */
+import { readFileSync } from 'fs';
+import { join } from 'path';
+
 import { targetForNotification } from '../notificationRouting';
 
 describe('targetForNotification', () => {
@@ -132,11 +135,13 @@ describe('a notification that reports something must not then hide it', () => {
       'family_invite', 'family_joined', 'invite_accepted',
       'star_milestone', 'teen_approval', 'teen_star', 'reward_redeemed',
       'billing_alert', 'due_vaccinations', 'due_documents', 'due_dates',
+      'shopping_added',
     ];
     const withPayload: Record<string, unknown>[] = [
       ...serverSends.map((type) => ({ type })),
       { type: 'chat', thread: 'dm:~a~b' },
       { type: 'gift_pot', pot_id: 'pot_1' },
+      { type: 'santa_draw', draw_id: 'draw_1' },
     ];
     const fallback = targetForNotification({ type: 'a-type-nobody-sends' });
     const landsOnFallback = withPayload
@@ -149,5 +154,69 @@ describe('a notification that reports something must not then hide it', () => {
       'morning_digest', 'new_card', 'shared_card', 'sunday_recap',
       'task_assigned',
     ]);
+  });
+
+  it('takes a shopping alert to the shopping list', () => {
+    // It used to land on the Feed, which has no list on it. The server sends
+    // this one to PARENTS — the people who then have to go and buy the thing.
+    expect(targetForNotification({ type: 'shopping_added', family_id: 'fam1' }))
+      .toEqual({ pathname: '/(tabs)/kitchen' });
+  });
+
+  it('takes a Secret Santa alert to the draw, by the name the route reads', () => {
+    // The push carries draw_id and the route reads drawId. A case added
+    // without renaming it would navigate to a Santa screen with nothing to
+    // open — a tap that looks like it worked and does not, which is harder to
+    // notice than landing on the Feed was.
+    expect(targetForNotification({ type: 'santa_draw', draw_id: 'draw_1' }))
+      .toEqual({ pathname: '/santa', params: { drawId: 'draw_1' } });
+  });
+
+  it('sends a Santa alert with no draw on it to the Feed rather than nowhere', () => {
+    expect(targetForNotification({ type: 'santa_draw' }))
+      .toEqual({ pathname: '/(tabs)/feed' });
+  });
+
+  // ---------------------------------------------------------------------
+  // The list above is written by hand, which is how shopping_added and
+  // santa_draw came to have no case at all: both were added to the server,
+  // neither was added here, and a hand-kept list of the things to check cannot
+  // report what it was never told about.
+  //
+  // So this reads the SERVER for the types it actually sends.
+  it('handles every push type the server sends', () => {
+    const server = readFileSync(
+      join(__dirname, '..', '..', '..', 'backend', 'server.py'), 'utf8');
+    const sent = [...new Set(
+      [...server.matchAll(/"type":\s*"([a-z_]+)"/g)].map((m) => m[1]),
+    )].sort();
+
+    // A matcher that found nothing would make this pass on an empty set.
+    expect(sent.length).toBeGreaterThanOrEqual(10);
+
+    // Some types name a place only when they carry the id of the thing. Fed a
+    // bare {type} they fall back to the Feed, correctly — so a bare fixture
+    // would put them in the failure list and make this test wrong rather than
+    // the router. They get the payload the server actually sends.
+    const payload: Record<string, Record<string, unknown>> = {
+      chat: { thread: 'dm:~a~b' },
+      gift_pot: { pot_id: 'pot_1' },
+      santa_draw: { draw_id: 'draw_1' },
+    };
+    // And for some the Feed IS the destination: a notification about
+    // everything, or the test ping. Named one by one so the check cannot be
+    // satisfied by widening it.
+    const feedIsRight = [
+      'new_card', 'card_reminder', 'task_assigned', 'handoff_note',
+      'notification_test',
+    ];
+
+    const fallback = JSON.stringify(targetForNotification({ type: 'nobody-sends-this' }));
+    const stranded = sent
+      .filter((type) => !feedIsRight.includes(type))
+      .filter((type) => JSON.stringify(
+        targetForNotification({ type, ...(payload[type] || {}) })) === fallback);
+
+    expect(stranded).toEqual([]);
   });
 });

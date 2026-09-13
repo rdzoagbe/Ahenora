@@ -56,6 +56,25 @@ export function targetForNotification(data: unknown): { pathname: string; params
       return { pathname: '/(tabs)/kitchen' };
     case 'calendar_nightly':
       return { pathname: '/(tabs)/calendar' };
+    // "Keigh added milk and bread to the list" landed on the Feed, which has no
+    // shopping list on it. The server sends this one to PARENTS only — the
+    // people who then have to go and buy the thing — so the tap dropping them
+    // one tab away from the list is the whole of its usefulness lost. Kitchen
+    // opens on the shopping view, so no parameter is needed to get there.
+    case 'shopping_added':
+      return { pathname: '/(tabs)/kitchen' };
+    // "Your Secret Santa is drawn" also landed on the Feed, and this one is
+    // worse: the whole point is to find out who you are buying for, and the
+    // draw is a screen the Feed cannot show.
+    //
+    // The push carries draw_id and the route reads drawId. Adding a case
+    // without renaming it would have shipped a fix that navigated to a Santa
+    // screen with nothing to open — a tap that looks like it worked and does
+    // not, which is harder to notice than landing on the Feed was.
+    case 'santa_draw':
+      return d.draw_id
+        ? { pathname: '/santa', params: { drawId: String(d.draw_id) } }
+        : { pathname: '/(tabs)/feed' };
     case 'allowance_reminder':
       return { pathname: '/(tabs)/kids' };
     // Money leaving, and the only person who can act on it. This fell through
