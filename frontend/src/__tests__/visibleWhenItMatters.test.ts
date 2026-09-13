@@ -109,9 +109,13 @@ describe('pocket money can be stopped, not only started', () => {
   });
 
   it('asks first, on both platforms', () => {
-    expect(KIDS).toContain('confirmStopAllowance');
+    // Pinned on the WIRING, not the name. Checking that a function called
+    // confirmStopAllowance exists passes just as well when the button has
+    // been pointed straight at stopAllowance and the prompt is dead code.
+    expect(KIDS).toContain('onPress={confirmStopAllowance}');
     expect(KIDS).toContain("t('kids_stop_allowance_confirm', { name: activeChild.name })");
-    expect(KIDS).toContain('webConfirm(message)');
+    expect(KIDS).toContain('if (webConfirm(message)) stopAllowance();');
+    expect(KIDS).toMatch(/Alert\.alert\(t\('kids_stop_allowance'\), message, \[/);
   });
 
   it('has the words in every language the app ships', () => {
@@ -135,8 +139,10 @@ describe('a gift pot nobody paid into has a way out', () => {
   });
 
   it('asks first, and names the pot', () => {
+    expect(POT).toContain('onPress={confirmDeletePot}');
     expect(POT).toContain("t('gp_delete_confirm', { title: pot.title })");
-    expect(POT).toContain('webConfirm(message)');
+    expect(POT).toContain('if (webConfirm(message)) deletePot();');
+    expect(POT).toMatch(/Alert\.alert\(t\('gp_delete'\), message, \[/);
   });
 
   it('has the words in every language the app ships', () => {
