@@ -2228,6 +2228,13 @@ def public_notification_settings(settings: Optional[dict]) -> dict:
     # "off" while alerts arrive - or worse, "on" while nothing does.
     return {
         "card_reminders": alerts_enabled(settings, "card_reminders"),
+        # Its own switch, because it is not a daily nudge. Everything else
+        # card_reminders gates is about today — the digest, dinner, tomorrow's
+        # calendar. This one is a passport expiring and a vaccination falling
+        # due, which is a deadline with money and a cancelled holiday behind
+        # it. Somebody switching off chore reminders has not asked to stop
+        # hearing about that, and until now it was the same switch.
+        "deadline_alerts": alerts_enabled(settings, "deadline_alerts"),
         "new_card_alerts": alerts_enabled(settings, "new_card_alerts"),
         "chat_messages": alerts_enabled(settings, "chat_messages"),
         "updated_at": iso((settings or {}).get("updated_at")),
@@ -2246,6 +2253,7 @@ async def get_notification_settings_doc(user_id: str) -> dict:
     settings = {
         "user_id": user_id,
         "card_reminders": True,
+        "deadline_alerts": True,
         "new_card_alerts": True,
         "chat_messages": True,
         "created_at": utcnow(),
@@ -3634,9 +3642,15 @@ DAILY_PUSH_JOBS = [
     # and two notifications in the same minute is how both get swiped away.
     # adults_only because a teen cannot renew a passport, and helpers are not
     # teens — the vault half filters them separately, inside the builder.
+    #
+    # deadline_alerts, not card_reminders. Every other job in this table is
+    # about today and is a nudge; this one is a passport expiring. Sharing a
+    # switch meant that turning off chore reminders — which is what
+    # "card reminders" reads as — also switched off the only notification here
+    # whose deadline costs real money to miss, and said nothing about it.
     {"key": "due_dates", "hour": 10, "minute": 0, "adults_only": True,
      "grace": DIGEST_GRACE_MINUTES, "claim": "due_dates_sent_for",
-     "pref": "card_reminders", "channel": "card-reminders",
+     "pref": "deadline_alerts", "channel": "card-reminders",
      "build": _build_due_dates},
 ]
 
@@ -4419,6 +4433,7 @@ class NotificationTokenIn(BaseModel):
 
 class NotificationPrefsIn(BaseModel):
     card_reminders: Optional[bool] = None
+    deadline_alerts: Optional[bool] = None
     new_card_alerts: Optional[bool] = None
     chat_messages: Optional[bool] = None
 
@@ -9152,6 +9167,8 @@ async def update_notification_settings(payload: NotificationPrefsIn, user=Depend
     changes = {"updated_at": utcnow()}
     if payload.card_reminders is not None:
         changes["card_reminders"] = bool(payload.card_reminders)
+    if payload.deadline_alerts is not None:
+        changes["deadline_alerts"] = bool(payload.deadline_alerts)
     if payload.new_card_alerts is not None:
         changes["new_card_alerts"] = bool(payload.new_card_alerts)
     if payload.chat_messages is not None:

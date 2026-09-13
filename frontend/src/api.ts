@@ -1436,6 +1436,8 @@ export interface CalendarContact {
 
 export interface NotificationSettings {
   card_reminders: boolean;
+  /** Passports and vaccinations falling due. Its own switch: see the server. */
+  deadline_alerts: boolean;
   new_card_alerts: boolean;
   chat_messages: boolean;
   updated_at?: string | null;

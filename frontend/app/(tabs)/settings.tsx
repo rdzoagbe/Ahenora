@@ -25,6 +25,7 @@ import {
   Users,
   UserPlus,
   X,
+  ShieldAlert,
 } from 'lucide-react-native';
 
 import AppToast from '../../src/components/AppToast';
@@ -97,7 +98,7 @@ export default function Settings() {
   const [lastInviteUrl, setLastInviteUrl] = useState<string | null>(null);
   const [expandClientErrors, setExpandClientErrors] = useState(false);
   const [clientErrors, setClientErrors] = useState<Awaited<ReturnType<typeof api.listClientErrors>>>([]);
-  const [notificationPrefs, setNotificationPrefs] = useState<NotificationSettings>({ card_reminders: false, new_card_alerts: false, chat_messages: false });
+  const [notificationPrefs, setNotificationPrefs] = useState<NotificationSettings>({ card_reminders: false, deadline_alerts: false, new_card_alerts: false, chat_messages: false });
   const [notificationStatus, setNotificationStatus] = useState<string | null>(null);
   const [savingNotifications, setSavingNotifications] = useState(false);
   const [entitlements, setEntitlements] = useState<Entitlements | null>(null);
@@ -120,7 +121,7 @@ export default function Settings() {
       const [memberRows, inviteRows, notificationRows, entitlementRows, completedRows] = await Promise.all([
         api.familyMembers().catch(() => null),
         api.listInvites().catch(() => null),
-        api.getNotificationSettings().catch(() => ({ card_reminders: false, new_card_alerts: false, chat_messages: false })),
+        api.getNotificationSettings().catch(() => ({ card_reminders: false, deadline_alerts: false, new_card_alerts: false, chat_messages: false })),
         api.getEntitlements().catch(() => null),
         api.listCards('DONE')
           .then(async (rows) => {
@@ -848,6 +849,21 @@ export default function Settings() {
               on={notificationPrefs.card_reminders}
               disabled={savingNotifications}
               onPress={() => updateNotificationPrefs({ card_reminders: !notificationPrefs.card_reminders })}
+            />
+            {/* Its own row, because it is not a daily nudge. Everything the
+                push toggle above gates is about today; this is a passport
+                expiring and a vaccination falling due — a deadline with money
+                and a cancelled holiday behind it. Somebody switching off chore
+                reminders has not asked to stop hearing about that, and until
+                now it was the same switch. */}
+            <ToggleRow
+              testID="notif-deadlines"
+              tile={<IconTile bg={ui.gold}><ShieldAlert color={ui.goldText} size={18} /></IconTile>}
+              title={t('set_deadline_alerts')}
+              subtitle={t('set_deadline_alerts_sub')}
+              on={notificationPrefs.deadline_alerts}
+              disabled={savingNotifications}
+              onPress={() => updateNotificationPrefs({ deadline_alerts: !notificationPrefs.deadline_alerts })}
             />
             <ToggleRow
               testID="notif-sign"
