@@ -90,6 +90,22 @@ describe('deleting a run', () => {
   });
 });
 
+describe('the sheet looks like the feature it belongs to', () => {
+  it('uses its own save button rather than the custody one', () => {
+    // custodySaveBtn is lavender because custody is the lavender feature.
+    // Borrowing it put a purple primary button on an orange sheet.
+    expect(CALENDAR).toContain('styles.cpSaveBtn');
+    expect(CALENDAR).toMatch(/cpSaveBtn: \{[^}]*backgroundColor: ui\.orange/);
+  });
+
+  it('fits all seven days on one row', () => {
+    // Sized by padding, the widest day pushed Sunday onto a line of its own,
+    // which reads as a row that failed to fit rather than as a week.
+    expect(CALENDAR).toContain("cpDayRow: { flexDirection: 'row', gap: 5 }");
+    expect(CALENDAR).toMatch(/cpDayChip: \{ flex: 1, minWidth: 0/);
+  });
+});
+
 describe('the schedule reads in day order', () => {
   it('sorts rather than trusting the order they were typed in', () => {
     expect(CALENDAR).toContain('sortCarpools(carpools).map(');

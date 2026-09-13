@@ -1909,9 +1909,9 @@ export default function Calendar() {
           accessibilityRole="button"
           onPress={saveCarpool}
           disabled={cpSaving || !carpoolReady(cpTitle, cpDay, cpTime)}
-          style={[styles.custodySaveBtn, (cpSaving || !carpoolReady(cpTitle, cpDay, cpTime)) && { opacity: 0.5 }]}
+          style={[styles.cpSaveBtn, (cpSaving || !carpoolReady(cpTitle, cpDay, cpTime)) && { opacity: 0.5 }]}
         >
-          {cpSaving ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.custodySaveText}>{t('cal_carpool_save')}</Text>}
+          {cpSaving ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.cpSaveText}>{t('cal_carpool_save')}</Text>}
         </PressScale>
       </KeyboardAwareBottomSheet>
 
@@ -2005,8 +2005,11 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   carpoolAddBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: ui.orangeSoft, borderRadius: 999, paddingHorizontal: 11, paddingVertical: 6 },
   carpoolAddText: { color: ui.orangeText, fontFamily: 'Inter_700Bold', fontSize: 13 },
   carpoolEmpty: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 13.5, lineHeight: 20, paddingVertical: 14 },
-  cpDayRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
-  cpDayChip: { minWidth: 42, paddingHorizontal: 10, paddingVertical: 9, borderRadius: 12, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft, alignItems: 'center' },
+  // All seven share the row evenly. Sized by padding, the widest day pushed
+  // Sunday onto a line of its own, which reads as a row that failed to fit
+  // rather than a week.
+  cpDayRow: { flexDirection: 'row', gap: 5 },
+  cpDayChip: { flex: 1, minWidth: 0, paddingHorizontal: 2, paddingVertical: 9, borderRadius: 12, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft, alignItems: 'center', justifyContent: 'center' },
   cpDayChipOn: { backgroundColor: ui.orange, borderColor: ui.orange },
   cpDayText: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 13 },
   cpDayTextOn: { color: '#FFFFFF' },
@@ -2017,6 +2020,10 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   cpKidChipOn: { backgroundColor: ui.orangeSoft, borderColor: ui.orange },
   cpKidText: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 13.5 },
   cpKidTextOn: { color: ui.orangeText, fontFamily: 'Inter_700Bold' },
+  // Not custodySaveBtn: that one is lavender because custody is the lavender
+  // feature. Borrowing it put a purple primary button on an orange sheet.
+  cpSaveBtn: { marginTop: 24, height: 52, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', backgroundColor: ui.orange },
+  cpSaveText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
   custodyFieldLabel: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 14, marginTop: 20, marginBottom: 10 },
   custodyInput: { borderWidth: 1, borderColor: ui.line, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, fontFamily: 'Inter_500Medium', fontSize: 15, color: ui.text, backgroundColor: ui.soft },
   custodySaveBtn: { marginTop: 24, height: 52, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', backgroundColor: ui.lavenderText },
