@@ -27,6 +27,8 @@ import os
 import re
 import unittest
 
+import yaml
+
 ROOT = os.path.join(os.path.dirname(__file__), "..")
 WORKFLOW = os.path.join(ROOT, ".github", "workflows", "eas-build.yml")
 EAS_JSON = os.path.join(ROOT, "frontend", "eas.json")
@@ -76,15 +78,46 @@ class ADraftIsNotARelease(unittest.TestCase):
         self.assertTrue(os.path.exists(WORKFLOW))
         self.assertGreater(len(workflow()), 1500)
 
-    def test_the_production_track_really_is_a_draft(self):
-        """The premise. If this ever changes to `completed`, the warning below
-        stops applying and this test should be revisited rather than deleted."""
+    def test_the_production_track_releases_itself(self):
+        """Revisited, as the previous version of this test asked to be.
+
+        It used to assert `draft`, and its docstring said that if the setting
+        ever changed to `completed` this should be re-read rather than deleted.
+        It changed, on 13 September, after the draft had twice done the damage
+        it was supposed to prevent: version 57 sat unreleased for four days
+        while Android push stayed broken for paying households, and a later
+        build was superseded before anybody rolled it out.
+
+        The manual gate still exists — it just moved to where a person is
+        already making a decision. The build workflow is workflow_dispatch
+        only, and submitting is an explicit input on it, so nothing reaches
+        Play without somebody choosing to send it. The draft added a SECOND
+        gate, in a console nobody was watching, which is where a release goes
+        to be forgotten rather than reviewed.
+        """
         with open(EAS_JSON, encoding="utf-8") as fh:
             profiles = json.load(fh).get("submit", {})
         self.assertIn("production", profiles)
         self.assertEqual(
-            profiles["production"]["android"].get("releaseStatus"), "draft",
-            "eas.json no longer parks production as a draft — re-read this file")
+            profiles["production"]["android"].get("releaseStatus"), "completed",
+            "production is parked as a draft again — read this file's history "
+            "before deciding that is what you want")
+
+    def test_nothing_reaches_play_without_somebody_choosing_to_send_it(self):
+        """The gate that replaced the draft, stated so it cannot quietly go.
+
+        Auto-rollout is only safe because a human triggers the build AND opts
+        into submitting AND picks the track. If this workflow ever grew a push
+        or schedule trigger, `completed` would become "every merge ships
+        itself to production", which is a different and much worse thing.
+        """
+        doc = yaml.safe_load(workflow())
+        triggers = doc.get("on", doc.get(True))
+        self.assertEqual(list(triggers), ["workflow_dispatch"],
+                         "the build workflow fires on something other than a "
+                         "person pressing it, and production now auto-releases")
+        self.assertIn("submit", triggers["workflow_dispatch"]["inputs"])
+        self.assertIn("track", triggers["workflow_dispatch"]["inputs"])
 
     def test_the_job_reads_the_release_status_rather_than_assuming(self):
         # Hard-coding "draft" in the workflow would be a second source of truth
@@ -95,6 +128,15 @@ class ADraftIsNotARelease(unittest.TestCase):
         self.assertIn("require('./eas.json')", code,
                       "the status is not read from eas.json, so it is a second "
                       "source of truth that drifts the moment the config changes")
+
+    def test_the_release_path_says_it_needs_nothing_further(self):
+        # The draft path went quiet and that is how four days passed. The path
+        # that now actually runs must not have the same hole in it: a build
+        # that DID release should say so, or "submitted" reads the same either
+        # way and we have moved the ambiguity rather than removed it.
+        code = runnable()
+        self.assertRegex(code, r"Released to the")
+        self.assertRegex(code, r"without\n?\s*#?\s*anything further to do|anything further to do")
 
     def test_a_draft_is_announced_as_a_warning(self):
         # A line in the step summary is only seen by someone who opens the run.
