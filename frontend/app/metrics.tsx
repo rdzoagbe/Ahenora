@@ -346,6 +346,7 @@ export default function MetricsScreen() {
                   ['They are in the household', invites.outcome.in_the_household],
                   ['Signed up, never joined', invites.outcome.signed_up_but_not_joined],
                   ['Never signed up at all', invites.outcome.never_signed_up],
+                  ['Shared link, nobody yet', invites.outcome.outcome_not_known],
                 ] as [string, number][])
                   .map(([label, n], i) => (
                     <View key={label} style={[styles.eventRow, i === 0 && { borderTopWidth: 0 }]}>
@@ -378,7 +379,11 @@ export default function MetricsScreen() {
                 did not persuade them — that is wording and delivery.
                 {' '}{'\u201C'}Signed up, never joined{'\u201D'} means they tried and the join failed:
                 that is a bug, and it has happened here before when a content blocker
-                killed the accept request. Whichever number is larger is the one to work on.
+                killed the accept request. Whichever of those two is larger is the one to work on.
+                {' '}{'\u201C'}Shared link, nobody yet{'\u201D'} is neither: a link sent by WhatsApp
+                carries no address, so there is no account to look for and the outcome is
+                genuinely not known. These used to be counted as {'\u201C'}never signed up{'\u201D'},
+                which made the app{'\u2019'}s main way of inviting read as a wording failure.
                 {invites.outcome.joined_while_invite_still_pending > 0
                   ? ` ${invites.outcome.joined_while_invite_still_pending} joined while the invite still reads pending — real successes the acceptance rate counts as failures.`
                   : ''}
