@@ -1252,7 +1252,6 @@ def public_member(member: dict) -> dict:
         # is ever lost to a reset.
         "stars": member.get("stars", 0),
         "week_earned": max(0, int(member.get("week_earned", 0) or 0)),
-        "weekend_goal_reward_id": member.get("weekend_goal_reward_id"),
         # The rule the week is measured against, and whether it has already
         # been cashed in — held here so the client never keeps its own copy
         # of a number the server enforces.
@@ -6204,40 +6203,6 @@ async def family_members(user=Depends(require_user)):
     return rows
 
 
-@app.put("/api/family/members/{member_id}/weekend-goal")
-async def set_weekend_goal(member_id: str, payload: dict = Body(...), user=Depends(require_user)):
-    """Pin (or clear) the weekend treat a child is working toward this week.
-
-    Only drives the progress ring; it commits nothing and costs nothing. A
-    reward_id of null clears it. The reward must be a weekend treat in this
-    family, so the ring can never point at a saved-up reward the weekly meter
-    does not gate.
-    """
-    database = get_db()
-    member = await database["family_members"].find_one(
-        {"member_id": member_id, "family_id": user["family_id"]}, {"_id": 0})
-    if not member:
-        raise HTTPException(status_code=404, detail="Family member not found")
-
-    reward_id = payload.get("reward_id")
-    # A raw body means this could be {"$ne": null} rather than an id, which
-    # would match an arbitrary reward and then be stored as the child's goal.
-    if reward_id is not None and not isinstance(reward_id, str):
-        raise HTTPException(status_code=400, detail="Invalid reward")
-    if reward_id:
-        reward = await database["rewards"].find_one(
-            {"reward_id": reward_id, "family_id": user["family_id"]}, {"_id": 0})
-        if not reward or not reward.get("weekend"):
-            raise HTTPException(status_code=400, detail="That isn't a weekend treat.")
-
-    await database["family_members"].update_one(
-        {"member_id": member_id, "family_id": user["family_id"]},
-        {"$set": {"weekend_goal_reward_id": reward_id or None}},
-    )
-    updated = await database["family_members"].find_one({"member_id": member_id}, {"_id": 0})
-    return public_member(updated)
-
-
 @app.post("/api/family/members")
 async def create_family_member(payload: ChildIn, user=Depends(require_full_member)):
     database = get_db()
@@ -7777,7 +7742,6 @@ async def kid_home(child=Depends(require_child)):
 
     return {"name": member.get("name") or "", "stars": int(member.get("stars") or 0),
             "week_earned": max(0, int(member.get("week_earned") or 0)),
-            "weekend_goal_reward_id": member.get("weekend_goal_reward_id"),
             "chores": chores, "rewards": rewards, "owed": owed}
 
 

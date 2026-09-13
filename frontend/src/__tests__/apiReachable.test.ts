@@ -34,13 +34,10 @@ const API = fs.readFileSync(path.join(ROOT, 'src', 'api.ts'), 'utf8');
 const NO_SCREEN_YET: Record<string, string> = {
   changeSubscription: 'Plan changes go through the store, not the app.',
   conflicts: 'Calendar conflict detection — no screen designed yet.',
-  unshareGiftPot: 'Sharing a pot is one-way in the app today.',
-  removeContribution: 'A contribution is corrected by the contributor, not removed by the owner.',
   getExpenseSummary: 'Expenses show per month; the summary endpoint is unused.',
   listCalendarContacts: 'Built for a share-with picker that the calendar does not have.',
   reportLite: 'A lighter weekly report the app never asks for.',
   reuseShoppingHistory: 'History rows are re-added item by item instead.',
-  setWeekendGoal: 'Retired when the week became one target for everyone.',
   sharedWithCoparent: 'Server-side filter with no screen behind it.',
   verifyMemberPin: 'Kid mode verifies through exitKidSession instead — the feature works, this method is redundant.',
 };

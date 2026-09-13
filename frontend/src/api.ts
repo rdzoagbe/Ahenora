@@ -925,7 +925,6 @@ export interface FamilyMember {
    *  of a rule the server enforces. */
   weekly_target?: number;
   week_claimed?: boolean;
-  weekend_goal_reward_id?: string | null;
   has_pin?: boolean;
   has_account?: boolean;
   /** Set by GET /family/members: whether this row is the signed-in user, and
@@ -1470,7 +1469,6 @@ export interface KidHome {
   name: string;
   stars: number;
   week_earned?: number;
-  weekend_goal_reward_id?: string | null;
   chores: KidChore[];
   rewards: Reward[];
   owed: Redemption[];
@@ -2079,12 +2077,6 @@ export const api = {
     cache.invalidate('familyMembers');
     invalidateUsageCaches();
     return request(`/family/members/${member_id}`, { method: 'DELETE' });
-  },
-  setWeekendGoal: (member_id: string, reward_id: string | null) => {
-    cache.invalidate('familyMembers');
-    return request<FamilyMember>(`/family/members/${member_id}/weekend-goal`, {
-      method: 'PUT', body: { reward_id },
-    });
   },
   /** Claim the week's treat. Costs no stars — the week already paid for it. */
   claimWeeklyTreat: (member_id: string, title: string) => {
