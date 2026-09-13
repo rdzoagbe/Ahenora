@@ -70,9 +70,15 @@ class TheRowsAreStillDeleted(unittest.TestCase):
     """The half that must NOT be tidied away."""
 
     def test_templates_is_still_purged_when_an_account_is_deleted(self):
-        block = re.search(r"_FAMILY_SCOPED_COLLECTIONS = \((.*?)\)", SERVER, re.S)
+        block = re.search(r"_FAMILY_SCOPED_COLLECTIONS = \((.*?)\n\)", SERVER, re.S)
         self.assertIsNotNone(block, "the deletion list moved or was renamed")
-        self.assertIn('"templates"', block.group(1))
+        # Comments stripped first. The note beside the entry contains the word
+        # "templates" in quotes, so a naive search passes on the explanation
+        # after somebody has deleted the thing it explains — which a mutation
+        # caught this test doing.
+        entries = "\n".join(line for line in block.group(1).split("\n")
+                             if not line.strip().startswith("#"))
+        self.assertIn('"templates"', entries)
 
     @unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
     def test_the_loaded_module_agrees_and_not_only_the_source(self):
