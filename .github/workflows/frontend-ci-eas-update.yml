@@ -60,6 +60,20 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+        with:
+          # The generated-export check below diffs against the base branch.
+          fetch-depth: 0
+
+      # docs/app is `npx expo export` output, written by the export bot on main
+      # after every merge. A branch that writes it too conflicts with every
+      # other open pull request the moment any one of them lands — five wasted
+      # CI rounds across six PRs on 12 September, all of them in generated
+      # markup nobody reads. The harness job builds its own export from this
+      # branch's source, so leaving it out costs no coverage.
+      - name: The generated export is not a branch's to commit
+        if: github.event_name == 'pull_request'
+        working-directory: ${{ github.workspace }}
+        run: ./scripts/check_no_generated_export_in_pr.sh "origin/${{ github.base_ref }}"
 
       - name: Setup Node.js
         uses: actions/setup-node@v7

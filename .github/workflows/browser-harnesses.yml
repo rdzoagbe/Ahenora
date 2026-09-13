@@ -104,6 +104,17 @@ jobs:
           npx expo export --platform web --output-dir ../docs/app --clear
           cp ../docs/app/+not-found.html ../docs/app/404.html
 
+      # Against the export just built, not the one committed to main.
+      #
+      # This check has always run in backend CI, where it reads whatever export
+      # happens to be in the tree — so on a pull request it was grading main's
+      # artefact rather than the branch's, and a newly date-driven page would
+      # not have been caught until after it merged. Here the export is this
+      # commit's, which is the only version of the check that can catch the bug
+      # it was written for.
+      - name: The exported pages carry no build date
+        run: python3 -m unittest tests.test_prerender_has_no_dates
+
       - name: Run the harnesses
         env:
           HARNESS_WEB_PORT: 8800
