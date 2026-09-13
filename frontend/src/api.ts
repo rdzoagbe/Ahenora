@@ -1120,6 +1120,10 @@ export interface InviteBreakdown {
     in_the_household: number;
     signed_up_but_not_joined: number;
     never_signed_up: number;
+    /** A shared link nobody has accepted yet. No address was ever attached, so
+     *  there is no account to look for — deliberately NOT counted as "never
+     *  signed up", which is a claim about a person we cannot identify. */
+    outcome_not_known: number;
     joined_while_invite_still_pending: number;
   };
   /** For every accepted invite in the window: did the inviter hear it landed? */

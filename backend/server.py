@@ -17605,23 +17605,44 @@ async def metrics_invites(days: int = 30, user=Depends(require_user), database=D
         if made and made >= cutoff:
             invites.append(row)
 
-    # Index accounts by address once, so the outcome lookup is a dict hit.
+    # Index accounts by address AND by id, so the outcome lookup is a dict hit
+    # either way. By id matters: a LINK invite has no address at all.
     by_email: dict = {}
+    by_user: dict = {}
     async for acct in database["users"].find(
             {}, {"_id": 0, "user_id": 1, "family_id": 1, "email": 1}):
         addr = (acct.get("email") or "").strip().lower()
         if addr:
             by_email[addr] = acct
+        if acct.get("user_id"):
+            by_user[acct["user_id"]] = acct
 
     sent = len(invites)
     accepted = pending = expired = 0
-    joined = elsewhere = never = lagging = 0
+    joined = elsewhere = never = lagging = unknown = 0
     told = unreachable = unrecorded = 0
     oldest_pending_days = None
 
     for inv in invites:
-        addr = (inv.get("email") or "").strip().lower()
-        who = by_email.get(addr)
+        # Who this invitation reached, by the strongest evidence available.
+        #
+        # This used to be the invited EMAIL and nothing else — and a link
+        # invite has no email. The share sheet is the main way people invite
+        # (it is what the Feed's nudge opens), so every one of those landed in
+        # "never signed up at all" whatever actually happened, including the
+        # ones where somebody really did join. The number that exists to tell a
+        # delivery problem from a bug was quietly reporting the app's primary
+        # invitation route as nobody, and pointing at the wrong fix.
+        #
+        # Acceptance records who accepted. Ask that first.
+        who = by_user.get(inv.get("accepted_by_user_id") or "")
+        addr = (inv.get("accepted_by_email") or inv.get("email") or "").strip().lower()
+        if not who and addr:
+            who = by_email.get(addr)
+        # A pending link invite has neither: nobody accepted it and we never
+        # knew where it went. That outcome is not "never signed up" — it is
+        # not known, and saying otherwise invents evidence for a conclusion.
+        knowable = bool(who or addr)
         in_family = bool(who and who.get("family_id") == inv.get("family_id"))
 
         if (inv.get("status") or "") == "accepted":
@@ -17652,8 +17673,10 @@ async def metrics_invites(days: int = 30, user=Depends(require_user), database=D
                 lagging += 1
         elif who:
             elsewhere += 1
-        else:
+        elif knowable:
             never += 1
+        else:
+            unknown += 1
 
     return {
         "generated_at": iso(now),
@@ -17670,6 +17693,11 @@ async def metrics_invites(days: int = 30, user=Depends(require_user), database=D
             "in_the_household": joined,
             "signed_up_but_not_joined": elsewhere,
             "never_signed_up": never,
+            # A shared link nobody has accepted yet. We never knew the address,
+            # so there is no account to look for — counting these as "never
+            # signed up" is how the app's main invitation route came to read as
+            # a wording failure.
+            "outcome_not_known": unknown,
             "joined_while_invite_still_pending": lagging,
         },
         # Whether the inviter was told, for every accepted invite in the
