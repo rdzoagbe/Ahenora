@@ -164,13 +164,12 @@ class WeeklyStars(unittest.TestCase):
         self._award(5)
         self.assertEqual(self._member()["week_earned"], 5)
 
-    def test_weekend_goal_must_point_at_a_weekend_treat(self):
-        saved = self._reward(cost=50, weekend=False)
-        with self.assertRaises(HTTPException):
-            asyncio.run(server.set_weekend_goal("kid1", {"reward_id": saved}, user=dict(PARENT)))
-        treat = self._reward(cost=20, weekend=True)
-        out = asyncio.run(server.set_weekend_goal("kid1", {"reward_id": treat}, user=dict(PARENT)))
-        self.assertEqual(out["weekend_goal_reward_id"], treat)
+    # test_weekend_goal_must_point_at_a_weekend_treat used to sit here. The
+    # endpoint it guarded — PUT /family/members/{id}/weekend-goal — pinned the
+    # one treat a child was working toward, and was retired when the week
+    # became a single target for everybody rather than a per-child goal. It
+    # never had a caller in the app; its removal is covered by
+    # test_the_weekend_goal_is_retired.py, which also keeps the reason.
 
 
 if __name__ == "__main__":

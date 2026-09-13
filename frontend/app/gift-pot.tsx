@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Platform, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { ChevronLeft, Gift, Check, Users, Link2, Pencil, Trash2, X, MessageCircle } from 'lucide-react-native';
+import { ChevronLeft, Gift, Check, Users, Link2, Link2Off, Pencil, Trash2, X, MessageCircle } from 'lucide-react-native';
 
 import { webConfirm } from '../src/confirm';
 import { PressScale } from '../src/components/PressScale';
@@ -13,7 +13,7 @@ import KeyboardAwareBottomSheet from '../src/components/KeyboardAwareBottomSheet
 import { useUI, UIColors } from '../src/components/Kit';
 import { useStore } from '../src/store';
 import { usePremiumGate } from '../src/components/PremiumGate';
-import { api, GiftPot } from '../src/api';
+import { api, GiftContribution, GiftPot } from '../src/api';
 import { logger } from '../src/logger';
 
 /**
@@ -209,6 +209,68 @@ export default function GiftPotRoute() {
     catch (e) { logger.warn('mark paid failed', e); showToast(t('vault_could_not_update'), 'error'); }
   }, [pot]);
 
+  /**
+   * Take a pledge off the pot.
+   *
+   * The share link is public and unauthenticated: anyone holding the URL can
+   * chip in under any name. A duplicate, a typo or a joke entry was permanent,
+   * and it counted — total_pledged is the number the organiser reads to decide
+   * whether the gift is covered, so a bogus row does not just sit there, it
+   * misleads.
+   *
+   * Nobody could remove one by any route. The contributor over the link has no
+   * account and the public screen offers only "chip in", so the note in the
+   * unreachable-API ledger — "a contribution is corrected by the contributor"
+   * — described something that did not exist.
+   */
+  const confirmRemoveContribution = useCallback((c: GiftContribution) => {
+    if (!pot) return;
+    const message = t('gp_remove_confirm', { name: c.name });
+    const go = async () => {
+      try { setPot(await api.removeContribution(pot.pot_id, c.contrib_id)); }
+      catch (e) {
+        logger.warn('remove contribution failed', e);
+        showToast(t('vault_could_not_update'), 'error');
+      }
+    };
+    if (Platform.OS === 'web') {
+      if (webConfirm(message)) go();
+      return;
+    }
+    Alert.alert(t('gp_remove'), message, [
+      { text: t('gp_cancel'), style: 'cancel' },
+      { text: t('gp_remove'), style: 'destructive', onPress: () => go() },
+    ]);
+  }, [pot, t, showToast]);
+
+  /**
+   * Close the outer circle again.
+   *
+   * Sharing was one-way: once the link existed there was no way to revoke it,
+   * so a pot shared to a class group stayed open to anybody who ever saw the
+   * URL. Pledges already made stay; only the door shuts.
+   */
+  const confirmUnshare = useCallback(() => {
+    if (!pot) return;
+    const message = t('gp_stop_sharing_confirm');
+    const go = async () => {
+      setBusy(true);
+      try { setPot(await api.unshareGiftPot(pot.pot_id)); showToast(t('gp_sharing_stopped'), 'success'); }
+      catch (e) {
+        logger.warn('unshare pot failed', e);
+        showToast(t('vault_could_not_update'), 'error');
+      } finally { setBusy(false); }
+    };
+    if (Platform.OS === 'web') {
+      if (webConfirm(message)) go();
+      return;
+    }
+    Alert.alert(t('gp_stop_sharing'), message, [
+      { text: t('gp_cancel'), style: 'cancel' },
+      { text: t('gp_stop_sharing'), style: 'destructive', onPress: () => go() },
+    ]);
+  }, [pot, t, showToast]);
+
   // --- Editing the pot's details -----------------------------------------
   const [editing, setEditing] = useState(false);
   const [eTitle, setETitle] = useState('');
@@ -330,6 +392,21 @@ export default function GiftPotRoute() {
                 >
                   <Check color={c.paid ? '#fff' : ui.muted} size={14} />
                 </PressScale>
+                {/* A pledge that came in over the public link can be a
+                    duplicate, a typo or a joke, and it counts towards the
+                    total either way. */}
+                {pot.status !== 'closed' ? (
+                  <PressScale
+                    testID={`gift-pot-remove-${c.contrib_id}`}
+                    onPress={() => confirmRemoveContribution(c)}
+                    hitSlop={10}
+                    style={styles.removeContrib}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('gp_remove_who', { name: c.name })}
+                  >
+                    <X color={ui.muted} size={14} />
+                  </PressScale>
+                ) : null}
               </View>
             ))}
           </View>
@@ -342,6 +419,18 @@ export default function GiftPotRoute() {
                 {pot.shared ? <Link2 color={ui.orangeText} size={16} /> : <Users color={ui.orangeText} size={16} />}
                 <Text style={styles.inviteBtnText}>{pot.shared ? t('gp_copy_link') : t('gp_invite_others')}</Text>
               </PressScale>
+              {pot.shared ? (
+                <PressScale
+                  testID="gift-pot-unshare"
+                  onPress={confirmUnshare}
+                  disabled={busy}
+                  style={styles.textBtn}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('gp_stop_sharing')}
+                >
+                  <Link2Off color={ui.muted} size={16} />
+                </PressScale>
+              ) : null}
               <PressScale testID="gift-pot-text" onPress={textPotLink} disabled={busy} style={styles.textBtn} accessibilityLabel={t('gp_text_link')}>
                 <MessageCircle color={ui.orangeText} size={16} />
                 <Text style={styles.inviteBtnText}>{t('gp_text_link')}</Text>
@@ -510,6 +599,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   fieldMoney: { flexDirection: 'row', alignItems: 'center', backgroundColor: ui.card, borderRadius: 12, borderWidth: 1, borderColor: ui.line, paddingHorizontal: 14 },
   fieldMoneyInput: { flex: 1, color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 15, paddingVertical: 13 },
 
+  removeContrib: { width: 30, height: 30, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
   ghostBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, paddingVertical: 13, borderRadius: 14, marginBottom: 14 },
   ghostBtnText: { color: ui.orangeText, fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
   footnote: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12, textAlign: 'center', lineHeight: 18, marginTop: 4 },
