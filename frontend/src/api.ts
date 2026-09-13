@@ -1911,8 +1911,18 @@ export const api = {
     request<RetentionSummary>(`/metrics/retention?weeks=${weeks}`),
   /** People this household invited who never made it in — feeds the re-send nudge. */
   strandedInvites: () =>
-    request<{ email: string; relationship: string | null; reason: 'signed_up' | 'expired'; invited_at: string | null }[]>(
-      '/family/invites/stranded'),
+    request<{
+      /** Null for a SHARED LINK: it never carried an address. */
+      email: string | null;
+      /** What the inviter called them when they made the link, if anything. */
+      label: string | null;
+      relationship: string | null;
+      /** waiting = still pending, in date, and old enough that silence is the
+       *  answer. It used to take the full 60-day window to hear anything. */
+      reason: 'signed_up' | 'expired' | 'waiting';
+      days_ago: number | null;
+      invited_at: string | null;
+    }[]>('/family/invites/stranded'),
   getInviteBreakdown: (days = 30) =>
     request<InviteBreakdown>(`/metrics/invites?days=${days}`),
   // AI reliability probe (admin). probe=0 is free (reports configured state);
