@@ -13,7 +13,7 @@ import {
   Keyboard,
   Alert,
 } from 'react-native';
-import { CalendarClock, X, FileSignature, Mail, ListTodo, Repeat, Bell, Sparkles, Cake, School, Stethoscope, Plane, Check } from 'lucide-react-native';
+import { CalendarClock, X, FileSignature, Mail, ListTodo, Repeat, Bell, Sparkles, Cake, School, Stethoscope, Plane, Check, DoorOpen } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PressScale } from './PressScale';
@@ -22,7 +22,8 @@ import { useUI } from './Kit';
 import { formatCompactDue, toLocalDateInput, toLocalTimeInput } from '../utils/date';
 import { useStore } from '../store';
 import { detectDateTime } from '../dateParse';
-import { Card, api, CardType, FamilyMember, Recurrence } from '../api';
+import { ROOMS } from '../rooms';
+import { Card, api, CardType, FamilyMember, Recurrence, Room } from '../api';
 import { apiErrorText } from '../apiError';
 import { logger } from '../logger';
 
@@ -119,6 +120,8 @@ export function AddCardModal({
   // is announced rather than silently applied behind the toggle.
   const [sharedByAssignee, setSharedByAssignee] = useState(false);
   const [recurrence, setRecurrence] = useState<Recurrence>('none');
+  // '' is a real value here, not "unset": most cards are not in a room at all.
+  const [room, setRoom] = useState<Room | ''>('');
   const [reminderMins, setReminderMins] = useState<number>(15);
   // A task without a date is a note. The picker existed but nothing wired
   // it in — manually created cards could never appear on the calendar or
@@ -186,6 +189,10 @@ export function AddCardModal({
         // cards only.
         setRecurrence(editCard.recurrence || 'none');
         setReminderMins(editCard.reminder_minutes ?? 15);
+        // Loaded from the card like recurrence and the reminder above, and for
+        // the same reason: a field reset to its create-default on edit is a
+        // field that silently erases itself whenever somebody fixes a typo.
+        setRoom((editCard.room as Room) || '');
         setSaveToVault(false);
       } else if (initialDraft) {
         setType(initialDraft.type);
@@ -193,6 +200,7 @@ export function AddCardModal({
         setDesc(initialDraft.description || '');
         setAssignee(initialDraft.assignee || '');
         setDueDate(initialDraft.due_date || null);
+        setRoom('');
         // A scan draft that came with a vault category and image is the only
         // thing that lands in the Vault — mirror the same condition handleSave
         // used to compute inline, so nothing about the vault path changes.
@@ -207,6 +215,7 @@ export function AddCardModal({
         setTitle('');
         setDesc('');
         setAssignee('');
+        setRoom('');
         setSaveToVault(false);
       }
       if (!editCard) setShared(true);
@@ -271,6 +280,7 @@ export function AddCardModal({
           due_date: dueDate,
           recurrence,
           reminder_minutes: reminderMins,
+          room,
           shared,
         } as any);
       } else if (stagesAsEvent) {
@@ -297,6 +307,7 @@ export function AddCardModal({
           image_base64: initialDraft?.image_base64 || null,
           recurrence,
           reminder_minutes: reminderMins,
+          room,
           shared,
         } as any);
       }
@@ -635,6 +646,37 @@ export function AddCardModal({
                     >
                       <Text style={[styles.pillText, { color: active ? theme.colors.primaryText : theme.colors.textMuted }]}>
                         {t(`rec_${r}`)}
+                      </Text>
+                    </PressScale>
+                  );
+                })}
+              </View>
+
+              {/* Optional, and the only field here with no default: a dentist
+                  appointment is not in a room, and most cards are like that.
+                  Tapping the chosen room again clears it — same toggle-off the
+                  member picker uses, so there is a way back to "no room"
+                  without a "None" chip sitting at the head of the row
+                  pretending to be a place. */}
+              <View style={styles.rowHeader}>
+                <DoorOpen color={theme.colors.textMuted} size={12} />
+                <Text style={[styles.label, { color: theme.colors.textMuted }]}>{t('room')}</Text>
+              </View>
+              <View style={styles.pillRow}>
+                {ROOMS.map((r) => {
+                  const active = room === r;
+                  return (
+                    <PressScale
+                      key={r}
+                      testID={`room-${r}`}
+                      accessibilityRole="button"
+                      accessibilityLabel={t(`room_${r}`)}
+                      accessibilityState={{ selected: active }}
+                      onPress={() => setRoom(active ? '' : r)}
+                      style={[styles.pill, { borderColor: theme.colors.cardBorder, backgroundColor: active ? theme.colors.primary : theme.colors.bgSoft }]}
+                    >
+                      <Text style={[styles.pillText, { color: active ? theme.colors.primaryText : theme.colors.textMuted }]}>
+                        {t(`room_${r}`)}
                       </Text>
                     </PressScale>
                   );

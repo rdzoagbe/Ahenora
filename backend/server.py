@@ -1423,6 +1423,7 @@ def public_card(card: dict) -> dict:
         # only ever be typed into the title. Empty string, never None, so the
         # app can render it without a null check.
         "location": card.get("location") or "",
+        "room": card.get("room") or "",
         "created_at": iso(card["created_at"]),
         "completed_at": iso(card.get("completed_at")),
         "completed_by_name": card.get("completed_by_name"),
@@ -4025,6 +4026,26 @@ CARD_TYPE_VALUES = frozenset({
 # the app sent the recurrence back unchanged and the save was refused.
 RECURRENCE_VALUES = frozenset({"none", "daily", "weekly", "monthly", "yearly"})
 
+# Where in the house a task belongs.
+#
+# A closed vocabulary rather than free text, and that is the whole design.
+# Free text would mean "Kitchen", "kitchen" and "Cuisine" are three different
+# rooms in one bilingual household — which is most of ours — so the grouping
+# that is the entire point of the feature would split one room into pieces. A
+# fixed set translates into every language for free, groups reliably, and needs
+# no per-household setup screen before anybody gets any value out of it.
+#
+# The cost is a household with a cellar it cannot name. That is a smaller cost
+# than a filter that does not work, and the answer to it is to add the room
+# here — not to reopen the field.
+#
+# Unset is not a room and is deliberately not in this set: most cards in a
+# family app happen at the dentist, at school, or nowhere in particular.
+ROOM_VALUES = frozenset({
+    "kitchen", "living", "dining", "bathroom", "bedroom",
+    "kids", "utility", "hallway", "garden", "garage",
+})
+
 # Cards that are things happening at a time, as opposed to things to be done.
 # The teen home screen split on `type == "EVENT"`, a value that exists nowhere:
 # not in the client's CardType union, not in CARD_TYPE_VALUES, not on any chip.
@@ -4044,6 +4065,7 @@ class CardIn(BaseModel):
     recurrence: str = "none"
     reminder_minutes: int = 60
     location: Optional[str] = None
+    room: Optional[str] = None
     # Shared unless someone says otherwise. It was private by default, which
     # inverted the whole product: a task added with the + button was invisible
     # to the rest of the household and notified nobody, so a co-parent could
@@ -4064,6 +4086,10 @@ class CardPatchIn(BaseModel):
     recurrence: Optional[str] = None
     reminder_minutes: Optional[int] = None
     location: Optional[str] = None
+    # "" clears the room, so this cannot be applied on a plain falsy check
+    # below — None means "the client did not mention it", which is a different
+    # thing and must leave whatever is stored alone.
+    room: Optional[str] = None
     shared: Optional[bool] = None
 
 
@@ -10081,6 +10107,12 @@ async def create_card(payload: CardIn, user=Depends(require_user)):
         raise HTTPException(status_code=400, detail="Invalid card type")
     if payload.recurrence not in RECURRENCE_VALUES:
         raise HTTPException(status_code=400, detail="Invalid recurrence")
+    # Refused rather than dropped. A room the server quietly discards is a
+    # task the household files under "bathroom" and can never find again,
+    # with nothing anywhere to say why.
+    room = (payload.room or "").strip().lower()
+    if room and room not in ROOM_VALUES:
+        raise HTTPException(status_code=400, detail="Invalid room")
     assignee = (payload.assignee or "").strip() or None
     # Handing a task to SOMEONE ELSE makes it a shared task — you cannot give the
     # co-parent, a kid, a teen or a helper a job and keep it hidden from them or
@@ -10105,6 +10137,7 @@ async def create_card(payload: CardIn, user=Depends(require_user)):
         "recurrence": payload.recurrence,
         "reminder_minutes": payload.reminder_minutes,
         "location": (payload.location or "").strip()[:200],
+        "room": room,
         "created_at": utcnow(),
         "completed_at": None,
         "created_by_user_id": user["user_id"],
@@ -10222,6 +10255,15 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
 
     if payload.location is not None:
         changes["location"] = payload.location.strip()[:200]
+
+    # `is not None` rather than a truthy check: "" is how the composer says
+    # "this task is not in a room any more", and a falsy test would silently
+    # refuse to let anybody ever clear one.
+    if payload.room is not None:
+        room = payload.room.strip().lower()
+        if room and room not in ROOM_VALUES:
+            raise HTTPException(status_code=400, detail="Invalid room")
+        changes["room"] = room
 
     if payload.shared is not None and bool(payload.shared) != bool(card.get("shared")):
         # Only the person who added a private item may change its sharing here

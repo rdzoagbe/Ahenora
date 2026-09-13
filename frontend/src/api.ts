@@ -480,6 +480,14 @@ async function request<T = unknown>(
 export type CardType = 'SIGN_SLIP' | 'RSVP' | 'TASK' | 'BIRTHDAY' | 'SCHOOL' | 'APPOINTMENT' | 'VACATION';
 export type CardStatus = 'OPEN' | 'DONE';
 export type Recurrence = 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly';
+/**
+ * Where in the house a card belongs. Mirrors ROOM_VALUES on the server, and
+ * '' — not a member of this union — is how the app says "no room", which is
+ * most cards: a dentist appointment is not in the bathroom.
+ */
+export type Room =
+  | 'kitchen' | 'living' | 'dining' | 'bathroom' | 'bedroom'
+  | 'kids' | 'utility' | 'hallway' | 'garden' | 'garage';
 
 /**
  * A proposed event that has not been accepted yet. Produced by a calendar
@@ -527,6 +535,8 @@ export interface Card {
   reminder_minutes: number;
   /** Where it happens. Always a string from the server, "" when unset. */
   location?: string;
+  /** Which room, if any. Always a string from the server, "" when unset. */
+  room?: Room | '';
   created_at: string;
   completed_at?: string | null;
   completed_by_name?: string | null;
@@ -2139,7 +2149,7 @@ export const api = {
   },
   /** Completing a TASK assigned to a child returns `child_finished`. It does
    *  NOT award anything — the app offers the stars and the parent decides. */
-  updateCard: (id: string, data: Partial<Pick<Card, 'type' | 'title' | 'description' | 'assignee' | 'due_date' | 'status' | 'recurrence' | 'reminder_minutes' | 'shared'>>) => {
+  updateCard: (id: string, data: Partial<Pick<Card, 'type' | 'title' | 'description' | 'assignee' | 'due_date' | 'status' | 'recurrence' | 'reminder_minutes' | 'room' | 'shared'>>) => {
     cache.invalidatePrefix('listCards');
     return request<Card>(`/cards/${id}`, { method: 'PATCH', body: data }).then((r) => {
       cache.invalidatePrefix('listCards');
