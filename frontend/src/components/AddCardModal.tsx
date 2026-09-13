@@ -13,7 +13,7 @@ import {
   Keyboard,
   Alert,
 } from 'react-native';
-import { CalendarClock, X, FileSignature, Mail, ListTodo, Repeat, Bell, Sparkles, Cake, School, Stethoscope, Plane, Check, DoorOpen } from 'lucide-react-native';
+import { AlertTriangle, CalendarClock, X, FileSignature, Mail, ListTodo, Repeat, Bell, Sparkles, Cake, School, Stethoscope, Plane, Check, DoorOpen } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PressScale } from './PressScale';
@@ -127,6 +127,11 @@ export function AddCardModal({
   // it in — manually created cards could never appear on the calendar or
   // remind anyone.
   const [dueDate, setDueDate] = useState<string | null>(null);
+  // Whether the time on that date was PICKED, or is just where the card had to
+  // sit. Only a card with a chosen time takes part in the clash warning — a
+  // household's undated tasks all default to the same hour, so without this
+  // every one of them would look like a conflict with every other.
+  const [timeChosen, setTimeChosen] = useState(false);
   const [showDuePicker, setShowDuePicker] = useState(false);
   const [saving, setSaving] = useState(false);
   const [suggestedAssignee, setSuggestedAssignee] = useState<string>('');
@@ -134,7 +139,7 @@ export function AddCardModal({
   const [members, setMembers] = useState<FamilyMember[]>([]);
   // Smart layer (Phase 2), all additive: a typed-date → Calendar suggestion
   // and a vault/appointment "save as a note" escape.
-  const [dateSuggest, setDateSuggest] = useState<{ date: Date; label: string } | null>(null);
+  const [dateSuggest, setDateSuggest] = useState<{ date: Date; label: string; timeChosen: boolean } | null>(null);
   // The exact title text a suggestion was dismissed for — so the same chip
   // does not pop straight back up for text the user already declined.
   const [dismissedFor, setDismissedFor] = useState<string>('');
@@ -193,6 +198,10 @@ export function AddCardModal({
         // the same reason: a field reset to its create-default on edit is a
         // field that silently erases itself whenever somebody fixes a typo.
         setRoom((editCard.room as Room) || '');
+        // Same reason again: reset to the create-default, a card whose time
+        // WAS chosen would quietly stop taking part in the clash warning the
+        // first time somebody fixed its title.
+        setTimeChosen(editCard.time_set === true);
         setSaveToVault(false);
       } else if (initialDraft) {
         setType(initialDraft.type);
@@ -200,6 +209,10 @@ export function AddCardModal({
         setDesc(initialDraft.description || '');
         setAssignee(initialDraft.assignee || '');
         setDueDate(initialDraft.due_date || null);
+        // A scan proposes a date it read off a document. Whether that carried
+        // a clock time is the server's reading, not a person's choice, so it
+        // does not count as one until somebody opens the picker.
+        setTimeChosen(false);
         setRoom('');
         // A scan draft that came with a vault category and image is the only
         // thing that lands in the Vault — mirror the same condition handleSave
@@ -216,6 +229,7 @@ export function AddCardModal({
         setDesc('');
         setAssignee('');
         setRoom('');
+        setTimeChosen(false);
         setSaveToVault(false);
       }
       if (!editCard) setShared(true);
@@ -249,12 +263,41 @@ export function AddCardModal({
     if (!dateSuggest) return;
     setType('APPOINTMENT');
     setDueDate(dateSuggest.date.toISOString());
+    // "at 3pm" is a chosen time; "tomorrow" is a day with a default hour.
+    setTimeChosen(dateSuggest.timeChosen);
   };
 
   // A scanned document the model read as something happening at a time, with a
   // date to go with it. The server decides this (`is_event`) so the rule lives
   // in one place and is tested; the sheet only asks whether this is that case
   // and whether we are creating rather than editing.
+  // --- What else is already happening around then -------------------------
+  //
+  // Asked only when the time was actually chosen. Every dated card carries a
+  // clock time because it has to sit somewhere, so a window drawn around any
+  // card with a date would put "book the dentist" and "buy milk" inside each
+  // other's — and a warning that fires on ordinary tasks is worth nothing by
+  // the end of the week.
+  const [clashes, setClashes] = useState<Card[]>([]);
+
+  useEffect(() => {
+    if (!dueDate || !timeChosen) { setClashes([]); return; }
+    let cancelled = false;
+    // Debounced: the picker can emit several times while somebody settles on
+    // a time, and this is a hint, not something to hammer the server for.
+    const id = setTimeout(async () => {
+      try {
+        const found = await api.conflicts(dueDate, true, editCard?.card_id);
+        if (!cancelled) setClashes(found);
+      } catch {
+        // Silent. A hint that could not load must never stand between a
+        // parent and saving the thing they came here to save.
+        if (!cancelled) setClashes([]);
+      }
+    }, 350);
+    return () => { cancelled = true; clearTimeout(id); };
+  }, [dueDate, timeChosen, editCard?.card_id]);
+
   const stagesAsEvent = !editCard && !!initialDraft?.is_event && !!dueDate;
 
   // Where this card will land, for the one-line destination hint.
@@ -278,6 +321,7 @@ export function AddCardModal({
           description: desc.trim(),
           assignee: assignee.trim(),
           due_date: dueDate,
+          time_set: timeChosen,
           recurrence,
           reminder_minutes: reminderMins,
           room,
@@ -303,6 +347,7 @@ export function AddCardModal({
           description: desc.trim(),
           assignee: assignee.trim(),
           due_date: dueDate,
+          time_set: timeChosen,
           source: initialSource,
           image_base64: initialDraft?.image_base64 || null,
           recurrence,
@@ -621,7 +666,7 @@ export function AddCardModal({
                 {dueDate ? (
                   <PressScale
                     testID="clear-due"
-                    onPress={() => setDueDate(null)}
+                    onPress={() => { setDueDate(null); setTimeChosen(false); }}
                     accessibilityLabel={t('dt_clear')}
                     style={[styles.pill, { borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}
                   >
@@ -629,6 +674,24 @@ export function AddCardModal({
                   </PressScale>
                 ) : null}
               </View>
+
+              {clashes.length > 0 ? (
+                <View
+                  testID="due-clash"
+                  accessibilityRole="alert"
+                  style={[styles.clashRow, { backgroundColor: ui.orangeSoft, borderColor: ui.orange + '55' }]}
+                >
+                  <AlertTriangle color={ui.orangeText} size={14} />
+                  <Text style={[styles.clashText, { color: ui.orangeText }]} numberOfLines={3}>
+                    {clashes.length === 1
+                      ? t('add_clash_one', {
+                          title: clashes[0].title,
+                          when: formatCompactDue(clashes[0].due_date || '', lang),
+                        })
+                      : t('add_clash_many', { n: String(clashes.length) })}
+                  </Text>
+                </View>
+              ) : null}
 
               <View style={styles.rowHeader}>
                 <Repeat color={theme.colors.textMuted} size={12} />
@@ -745,7 +808,7 @@ export function AddCardModal({
       <DateTimePickerSheet
         visible={showDuePicker}
         value={dueDate}
-        onChange={setDueDate}
+        onChange={(value, chosen) => { setDueDate(value); setTimeChosen(chosen); }}
         onClose={() => setShowDuePicker(false)}
       />
     </Modal>
@@ -861,6 +924,8 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_800ExtraBold',
     fontSize: 12,
   },
+  clashRow: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 4 },
+  clashText: { flex: 1, fontFamily: 'Inter_600SemiBold', fontSize: 12.5, lineHeight: 17 },
   dateChip: {
     flexDirection: 'row',
     alignItems: 'center',

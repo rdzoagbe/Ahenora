@@ -33,7 +33,6 @@ const API = fs.readFileSync(path.join(ROOT, 'src', 'api.ts'), 'utf8');
  */
 const NO_SCREEN_YET: Record<string, string> = {
   changeSubscription: 'Plan changes go through the store, not the app.',
-  conflicts: 'Calendar conflict detection — no screen designed yet.',
   getExpenseSummary: 'Expenses show per month; the summary endpoint is unused.',
   listCalendarContacts: 'Built for a share-with picker that the calendar does not have.',
   reportLite: 'A lighter weekly report the app never asks for.',

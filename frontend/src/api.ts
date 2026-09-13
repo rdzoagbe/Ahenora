@@ -528,6 +528,9 @@ export interface Card {
   description?: string;
   assignee?: string;
   due_date?: string | null;
+  /** Whether that date's clock time was chosen rather than defaulted.
+   *  Only a chosen time takes part in the clash warning. */
+  time_set?: boolean;
   status: CardStatus;
   source: 'AI' | 'MANUAL' | 'VOICE' | 'CAMERA' | 'CALENDAR';
   image_base64?: string | null;
@@ -2461,9 +2464,16 @@ export const api = {
     }>(`/redemptions/${id}/cancel`, { method: 'POST' });
   },
   // Conflicts
-  conflicts: (due_date: string, exclude_id?: string) =>
+  /**
+   * What else is already happening around then.
+   *
+   * `time_set` is required to get anything back: both sides of the comparison
+   * have to be a time somebody chose, or every card sitting on a default hour
+   * looks like a clash with every other one.
+   */
+  conflicts: (due_date: string, time_set: boolean, exclude_id?: string) =>
     request<Card[]>(
-      `/cards/conflicts?due_date=${encodeURIComponent(due_date)}${
+      `/cards/conflicts?due_date=${encodeURIComponent(due_date)}&time_set=${time_set ? 'true' : 'false'}${
         exclude_id ? `&exclude_id=${exclude_id}` : ''
       }`
     ),
