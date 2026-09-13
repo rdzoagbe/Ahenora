@@ -632,8 +632,12 @@ export default function Calendar() {
     const today = startOfLocalDay(new Date());
     const diffDays = Math.round((startOfLocalDay(date).getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
     const full = date.toLocaleDateString(locale, { weekday: 'long', month: 'long', day: 'numeric' });
-    if (diffDays === 0) return `${lang === 'fr' ? "Aujourd'hui" : lang === 'es' ? 'Hoy' : 'Today'} · ${full}`;
-    if (diffDays === 1) return `${lang === 'fr' ? 'Demain' : lang === 'es' ? 'Mañana' : 'Tomorrow'} · ${full}`;
+    // Through the dictionary, not a ladder of three languages. The ladder
+    // had no German arm, so a German household read "Today · Sonntag,
+    // 13. September" — the one word the app wrote itself, in the wrong
+    // language, above a date it had translated correctly.
+    if (diffDays === 0) return `${t('feed_today')} · ${full}`;
+    if (diffDays === 1) return `${t('feed_tomorrow')} · ${full}`;
     return full;
   };
 
@@ -1288,9 +1292,9 @@ export default function Calendar() {
 
           {/* Day events */}
           <View style={styles.dayHead}>
-            <Text style={[styles.dayHeadTitle, { flex: 1 }]} numberOfLines={1}>{selectedDay ? formatDayFull(selectedDay) : t('upcoming')}</Text>
+            <Text style={[styles.dayHeadTitle, { flex: 1 }]} numberOfLines={2}>{selectedDay ? formatDayFull(selectedDay) : t('upcoming')}</Text>
             <View style={styles.dayHeadRight}>
-              {selectedDay ? <Text style={styles.dayHeadCount}>{totalSelectedEvents} {totalSelectedEvents === 1 ? t('cal_event') : t('cal_events')}</Text> : null}
+              {selectedDay && totalSelectedEvents > 0 ? <Text style={styles.dayHeadCount}>{totalSelectedEvents} {totalSelectedEvents === 1 ? t('cal_event') : t('cal_events')}</Text> : null}
               <PressScale testID="calendar-add-event" onPress={openAddEvent} style={styles.addEventBtn}>
                 <Plus color={ui.orangeText} size={15} />
                 <Text style={styles.addEventText}>{t('cal_add_event')}</Text>
@@ -1794,7 +1798,9 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   dayDot: { marginTop: 5, width: 5, height: 5, borderRadius: 99 },
   dayDotSpacer: { marginTop: 5, width: 5, height: 5 },
 
-  dayHead: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginTop: 24, marginBottom: 12 },
+  // flex-start, not baseline: a day name that wraps to two lines would drag
+  // "Add event" down to sit beside the second line.
+  dayHead: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginTop: 24, marginBottom: 12 },
   dayHeadTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 19, letterSpacing: -0.3, flex: 1 },
   dayHeadCount: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
 

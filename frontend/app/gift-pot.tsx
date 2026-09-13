@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Linking, Platform, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Platform, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { ChevronLeft, Gift, Check, Users, Link2, Pencil, X, MessageCircle } from 'lucide-react-native';
+import { ChevronLeft, Gift, Check, Users, Link2, Pencil, Trash2, X, MessageCircle } from 'lucide-react-native';
 
+import { webConfirm } from '../src/confirm';
 import { PressScale } from '../src/components/PressScale';
 import AppToast from '../src/components/AppToast';
 import { useToast } from '../src/hooks/useToast';
@@ -111,6 +112,44 @@ export default function GiftPotRoute() {
     catch (e) { logger.warn('close pot failed', e); showToast(t('vault_could_not_update'), 'error'); }
     finally { setBusy(false); }
   }, [pot]);
+
+  /**
+   * Bin a pot nobody has chipped into.
+   *
+   * "Mark sorted" only appears once there is money in the pot, so a pot
+   * created by mistake — wrong name, wrong person, changed their mind — had
+   * no exit at all and sat in the Feed and the Calendar for good. Closing is
+   * right for a pot people paid into; this is the other half.
+   */
+  const confirmDeletePot = () => {
+    if (!pot) return;
+    const message = t('gp_delete_confirm', { title: pot.title });
+    if (Platform.OS === 'web') {
+      if (webConfirm(message)) deletePot();
+      return;
+    }
+    Alert.alert(t('gp_delete'), message, [
+      { text: t('gp_cancel'), style: 'cancel' },
+      { text: t('gp_delete'), style: 'destructive', onPress: () => deletePot() },
+    ]);
+  };
+
+  const deletePot = async () => {
+    if (!pot) return;
+    setBusy(true);
+    try {
+      await api.deleteGiftPot(pot.pot_id);
+      router.back();
+    } catch (e: any) {
+      // 409 is the server saying somebody chipped in through the share link
+      // while this screen was open. Saying so is better than "could not
+      // update", because the pot genuinely should not be deleted now.
+      logger.warn('delete pot failed', e);
+      showToast(e?.message || t('vault_could_not_update'), 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const [shareMsg, setShareMsg] = useState<string | null>(null);
   const potLink = (token: string) => {
@@ -338,6 +377,21 @@ export default function GiftPotRoute() {
                 </PressScale>
               </View>
             </View>
+          ) : null}
+
+          {/* Nobody has chipped in yet — the pot can still just go. */}
+          {pot.status !== 'closed' && pot.total_pledged === 0 ? (
+            <PressScale
+              testID="gift-pot-delete"
+              accessibilityRole="button"
+              accessibilityLabel={t('gp_delete')}
+              onPress={confirmDeletePot}
+              disabled={busy}
+              style={[styles.ghostBtn, busy && { opacity: 0.5 }]}
+            >
+              <Trash2 color={ui.danger} size={16} />
+              <Text style={[styles.ghostBtnText, { color: ui.danger }]}>{t('gp_delete')}</Text>
+            </PressScale>
           ) : null}
 
           {/* Mark sorted */}
