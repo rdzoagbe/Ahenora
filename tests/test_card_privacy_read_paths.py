@@ -91,7 +91,12 @@ class ReadPathBase(unittest.TestCase):
                 "status": "OPEN", "title": SECRET, "shared": False,
                 "created_by_user_id": ROLAND["user_id"],
                 "due_date": self.now + timedelta(hours=3),
-                "created_at": self.now, "source": "app"})
+                "created_at": self.now, "source": "app",
+                # A chosen time, so these take part in the clash
+                # check at all — it now ignores cards sitting on a
+                # default hour. These suites are about WHO may see a
+                # card, not about when, so the flag just has to be on.
+                "time_set": True})
             # A task Roland assigned to Kim: shared, but SCOPED to the two of
             # them. Sam is an adult in the same family and is not on it.
             await self.db["cards"].insert_one({
@@ -101,14 +106,24 @@ class ReadPathBase(unittest.TestCase):
                 "visible_to": [ROLAND["user_id"], KIM["user_id"]],
                 "created_by_user_id": ROLAND["user_id"],
                 "due_date": self.now + timedelta(hours=3),
-                "created_at": self.now, "source": "app"})
+                "created_at": self.now, "source": "app",
+                # A chosen time, so these take part in the clash
+                # check at all — it now ignores cards sitting on a
+                # default hour. These suites are about WHO may see a
+                # card, not about when, so the flag just has to be on.
+                "time_set": True})
             # An ordinary household item everyone should see.
             await self.db["cards"].insert_one({
                 "card_id": "open", "family_id": "fam1", "type": "TASK",
                 "status": "OPEN", "title": "Bins out", "shared": True,
                 "created_by_user_id": ROLAND["user_id"],
                 "due_date": self.now + timedelta(hours=3),
-                "created_at": self.now, "source": "app"})
+                "created_at": self.now, "source": "app",
+                # A chosen time, so these take part in the clash
+                # check at all — it now ignores cards sitting on a
+                # default hour. These suites are about WHO may see a
+                # card, not about when, so the flag just has to be on.
+                "time_set": True})
         asyncio.run(seed())
 
     def tearDown(self):
@@ -145,7 +160,7 @@ class TheWeeklyBrief(ReadPathBase):
 class TheConflictCheck(ReadPathBase):
     def clashes_for(self, user):
         at = server.iso(self.now + timedelta(hours=3))
-        rows = asyncio.run(server.card_conflicts(due_date=at, user=dict(user)))
+        rows = asyncio.run(server.card_conflicts(due_date=at, time_set=True, user=dict(user)))
         return [r["title"] for r in rows]
 
     def test_a_private_card_is_not_offered_as_a_clash(self):
