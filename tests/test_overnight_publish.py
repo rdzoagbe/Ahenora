@@ -27,6 +27,7 @@ Run with:  python3 -m unittest discover -s tests -v
 import os
 import subprocess
 import tempfile
+import pathlib
 import unittest
 
 import yaml
@@ -88,7 +89,43 @@ class Repo:
 class TheSchedule(unittest.TestCase):
     def test_it_publishes_overnight(self):
         crons = [s["cron"] for s in triggers(workflow())["schedule"]]
-        self.assertEqual(crons, ["0 2 * * *"])
+        # Every attempt is in the small hours across Europe, where most
+        # households are. The hour is the point; four of them is the next test.
+        self.assertTrue(crons, "the overnight publish lost its schedule")
+        for cron in crons:
+            minute, hour, *rest = cron.split()
+            self.assertEqual(minute, "0", cron)
+            self.assertIn(int(hour), range(1, 6), cron)
+            self.assertEqual(rest, ["*", "*", "*"], cron)
+
+    def test_it_tries_more_than_once(self):
+        """GitHub's scheduled queue is best-effort.
+
+        This workflow fired ONCE in its first two days — five hours late —
+        and eight merged PRs sat on main reaching nobody, with nothing
+        anywhere saying so. One attempt a night means the only path to a
+        user's phone depends on a trigger that silently does not fire.
+
+        The retries are free when the first one worked: ota_should_publish.sh
+        refuses to publish when the app has not changed since the last
+        publish, and only moves the ota-published tag after `eas update`
+        succeeds. The first slot that runs publishes; the rest say
+        no_app_change and stop.
+        """
+        crons = [s["cron"] for s in triggers(workflow())["schedule"]]
+        self.assertGreaterEqual(len(crons), 2)
+        self.assertEqual(len(crons), len(set(crons)), "duplicate slots do not help")
+
+    def test_the_retries_cannot_publish_twice(self):
+        """The guard is what makes more than one attempt safe.
+
+        Without it, four slots would be four bundles pushed at people in one
+        night. This is the line that has to stay true for the schedule above
+        to be harmless.
+        """
+        guard = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "ota_should_publish.sh"
+        text = guard.read_text(encoding="utf-8")
+        self.assertIn("no_app_change", text)
 
     def test_a_hotfix_can_still_go_out_now(self):
         # Without this, a broken release could only be fixed by waiting until

@@ -1423,6 +1423,9 @@ def public_card(card: dict) -> dict:
         "description": card.get("description"),
         "assignee": card.get("assignee"),
         "due_date": iso(card.get("due_date")),
+        # Absent on every card written before this existed, and False is
+        # the right reading of absent: it never raises a warning.
+        "time_set": bool(card.get("time_set")),
         "status": card["status"],
         "source": card["source"],
         "image_base64": card.get("image_base64"),
@@ -4077,6 +4080,19 @@ class CardIn(BaseModel):
     reminder_minutes: int = 60
     location: Optional[str] = None
     room: Optional[str] = None
+    # Whether the clock time on due_date was CHOSEN rather than defaulted.
+    #
+    # Every card with a date carries a time, because it has to sit somewhere:
+    # a typed "dentist tomorrow" lands at 09:00 and the calendar's add button
+    # defaults to 12:00. So "has a time" cannot tell a real 3pm appointment
+    # from a task that simply needed an hour. Only a card whose time somebody
+    # picked takes part in the clash check — without this, a household's
+    # undated tasks would all share the default hour and every one of them
+    # would look like a conflict with every other.
+    #
+    # Absent means False, which is the safe direction: a card written before
+    # this existed never raises a warning, rather than raising a false one.
+    time_set: bool = False
     # Shared unless someone says otherwise. It was private by default, which
     # inverted the whole product: a task added with the + button was invisible
     # to the rest of the household and notified nobody, so a co-parent could
@@ -4102,6 +4118,9 @@ class CardPatchIn(BaseModel):
     # thing and must leave whatever is stored alone.
     room: Optional[str] = None
     shared: Optional[bool] = None
+    # None means "the client did not mention it" and leaves what is stored
+    # alone — the same rule as room above. See CardIn.time_set.
+    time_set: Optional[bool] = None
 
 
 class VaultIn(BaseModel):
@@ -10158,6 +10177,7 @@ async def create_card(payload: CardIn, user=Depends(require_user)):
         "description": payload.description,
         "assignee": assignee,
         "due_date": parse_dt(payload.due_date),
+        "time_set": bool(payload.time_set),
         "status": "OPEN",
         "source": payload.source,
         "image_base64": payload.image_base64,
@@ -10291,6 +10311,9 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
         if room and room not in ROOM_VALUES:
             raise HTTPException(status_code=400, detail="Invalid room")
         changes["room"] = room
+
+    if payload.time_set is not None:
+        changes["time_set"] = bool(payload.time_set)
 
     if payload.shared is not None and bool(payload.shared) != bool(card.get("shared")):
         # Only the person who added a private item may change its sharing here
@@ -10533,11 +10556,28 @@ async def delete_card(card_id: str, user=Depends(require_user)):
 async def card_conflicts(
     due_date: str,
     exclude_id: Optional[str] = None,
+    time_set: bool = False,
     user=Depends(require_user),
 ):
+    """What else is already happening around then.
+
+    Both sides must have a time somebody CHOSE. Every dated card carries a
+    clock time because it has to sit somewhere — a typed "dentist tomorrow"
+    lands at 09:00, the calendar's add button defaults to 12:00 — so a window
+    drawn around any card with a date would put every ordinary task inside
+    every other one's. A household would be warned about a clash between
+    "book the dentist" and "buy milk" on the day they added both, and the
+    warning would be worth nothing by the end of the week.
+
+    So an unchosen time asks nothing, and a card with an unchosen time answers
+    nothing. Cards written before time_set existed carry no flag, read as
+    False, and stay out of it — silence rather than a false alarm.
+    """
     database = get_db()
     target = parse_dt(due_date)
     if not target:
+        return []
+    if not time_set:
         return []
 
     start = target - timedelta(hours=2)
@@ -10558,6 +10598,13 @@ async def card_conflicts(
 
     rows = []
     async for item in database["cards"].find(query, {"_id": 0}):
+        # A card whose time was never chosen is sitting on a default hour and
+        # is not evidence of anything.
+        if not item.get("time_set"):
+            continue
+        # Done is done: a finished task at 4pm does not clash with anything.
+        if item.get("status") == "DONE":
+            continue
         if _card_visible_to(item, user["user_id"]):
             rows.append(public_card(item))
     return rows
