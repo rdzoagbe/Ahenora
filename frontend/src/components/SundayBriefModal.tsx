@@ -21,6 +21,10 @@ export function SundayBriefModal({ visible, onClose }: Props) {
   const { t, showUpgradePrompt, theme } = useStore();
   const [loading, setLoading] = useState(false);
   const [brief, setBrief] = useState<string | null>(null);
+  // Whether what is on screen was actually written by the model. False means
+  // the server fell back to a plain list of what is due — still useful, but
+  // it must not be shown as though the AI wrote it.
+  const [writtenByAi, setWrittenByAi] = useState(true);
   const [generatedAt, setGeneratedAt] = useState<string | null>(null);
   const [shared, setShared] = useState(false);
 
@@ -36,6 +40,10 @@ export function SundayBriefModal({ visible, onClose }: Props) {
     try {
       const res = await api.weeklyBrief();
       setBrief(res.brief);
+      // Absent on a server that predates the field: treat it as written, the
+      // same way it behaved before, rather than accusing an older backend of
+      // falling back.
+      setWrittenByAi(res.written_by_ai !== false);
       setGeneratedAt(res.generated_at);
     } catch (e: any) {
       if (handlePlanLimitError(e, showUpgradePrompt)) {
@@ -43,6 +51,7 @@ export function SundayBriefModal({ visible, onClose }: Props) {
         return;
       }
       logger.warn('brief error', e);
+      setWrittenByAi(false);
       setBrief(t('brief_unable'));
     } finally {
       setLoading(false);
@@ -104,6 +113,15 @@ export function SundayBriefModal({ visible, onClose }: Props) {
                 contentContainerStyle={styles.briefContent}
                 testID="brief-scroll"
               >
+                {/* Said ABOVE the text, not after it. Someone who reads the
+                    whole thing first and is told afterwards has already taken
+                    it as the model's read of their week. */}
+                {!writtenByAi ? (
+                  <Text testID="brief-not-ai"
+                        style={[styles.generatedAt, { color: theme.colors.textMuted, marginBottom: 8 }]}>
+                    {t('brief_fallback_note')}
+                  </Text>
+                ) : null}
                 <Text style={[styles.briefText, { color: theme.colors.text }]}>{brief}</Text>
                 {generatedAt ? (
                   <Text style={[styles.generatedAt, { color: theme.colors.textMuted }]}>
