@@ -4343,6 +4343,75 @@ def _clean_date(value: Optional[str], field: str) -> str:
     return raw
 
 
+MEDICINE_MAX = 40
+MEDICINE_NAME_MAX = 120
+MEDICINE_DOSE_MAX = 80
+MEDICINE_NOTE_MAX = 200
+# Six is a working ceiling, not a clinical one: four-hourly while awake is
+# five or six, and anything past that is a hospital regime rather than
+# something a household organiser should pretend to manage.
+MEDICINE_TIMES_MAX = 6
+
+
+def _clean_times(values: Optional[list], field: str = "times") -> list:
+    """Clock times a person chose, as "HH:MM", sorted, no duplicates.
+
+    Stored as explicit times rather than "three times a day" ON PURPOSE. A
+    frequency has to be turned into moments by somebody, and the safe place
+    for that decision is a parent looking at the label — not this code, and
+    certainly not a model reading a photograph. It also means the reminder
+    pass that comes next has nothing left to interpret.
+
+    A malformed time is REFUSED, never coerced. The same rule as _clean_date
+    and for a sharper reason: a dose shown at the wrong hour reads as an
+    instruction.
+    """
+    if values is None:
+        return []
+    if not isinstance(values, list):
+        raise HTTPException(status_code=400, detail=f"{field} must be a list of times")
+    if len(values) > MEDICINE_TIMES_MAX:
+        raise HTTPException(
+            status_code=400,
+            detail=f"At most {MEDICINE_TIMES_MAX} times a day")
+    cleaned = set()
+    for raw in values:
+        text = str(raw or "").strip()
+        if not re.match(r"^([01]\d|2[0-3]):[0-5]\d$", text):
+            raise HTTPException(
+                status_code=400, detail=f"{text or 'blank'} is not a time of day")
+        cleaned.add(text)
+    return sorted(cleaned)
+
+
+class MedicineIn(BaseModel):
+    """One medicine somebody is taking.
+
+    Only the name is required. A parent holding a box at the pharmacy counter
+    should be able to write it down before they know the rest, the same way a
+    vaccination can be recorded without its date.
+    """
+
+    name: str = Field(min_length=1, max_length=MEDICINE_NAME_MAX)
+    dose: Optional[str] = Field(default=None, max_length=MEDICINE_DOSE_MAX)
+    times: Optional[list] = None
+    starts_on: Optional[str] = Field(default=None, max_length=10)
+    ends_on: Optional[str] = Field(default=None, max_length=10)
+    note: Optional[str] = Field(default=None, max_length=MEDICINE_NOTE_MAX)
+
+
+class MedicinePatchIn(BaseModel):
+    """Every field optional: a PATCH changes only what it names, and an empty
+    value clears something entered wrongly."""
+
+    name: Optional[str] = Field(default=None, min_length=1, max_length=MEDICINE_NAME_MAX)
+    dose: Optional[str] = Field(default=None, max_length=MEDICINE_DOSE_MAX)
+    times: Optional[list] = None
+    starts_on: Optional[str] = Field(default=None, max_length=10)
+    ends_on: Optional[str] = Field(default=None, max_length=10)
+    note: Optional[str] = Field(default=None, max_length=MEDICINE_NOTE_MAX)
+
+
 class VaccinationIn(BaseModel):
     """One shot. Only the name is required — a parent who remembers the
     vaccine but not the day should still be able to write it down."""
@@ -4421,6 +4490,33 @@ class MemberRecordIn(BaseModel):
     insurance_policy: Optional[str] = Field(default=None, max_length=RECORD_MAX_LEN)
 
 
+def public_medicines(member: dict) -> list:
+    """The medicines on a record, soonest-finishing first.
+
+    A course that ends this week is the one a carer needs to see; an ongoing
+    prescription with no end date sits below it rather than above, which is
+    the opposite of how a plain alphabetical list would order them.
+    """
+    rows = ((member or {}).get("record") or {}).get("medicines") or []
+    out = []
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        out.append({
+            "med_id": r.get("med_id") or "",
+            "name": r.get("name") or "",
+            "dose": r.get("dose") or "",
+            "times": list(r.get("times") or []),
+            "starts_on": r.get("starts_on") or "",
+            "ends_on": r.get("ends_on") or "",
+            "note": r.get("note") or "",
+        })
+    # "" sorts after any real date only if we say so — an open-ended course
+    # has no end, which is not the same as ending long ago.
+    out.sort(key=lambda m: (m["ends_on"] == "", m["ends_on"], m["name"].lower()))
+    return out
+
+
 def public_member_record(member: dict, full_member: bool) -> dict:
     """One child's record, as this reader is allowed to see it.
 
@@ -4433,6 +4529,7 @@ def public_member_record(member: dict, full_member: bool) -> dict:
     if full_member:
         out.update({f: (record.get(f) or "") for f in PRIVATE_FIELDS})
     out["vaccinations"] = public_vaccinations(member)
+    out["medicines"] = public_medicines(member)
     out["private_hidden"] = not full_member
     out["can_edit"] = full_member
     return out
@@ -7075,6 +7172,110 @@ async def _load_member_for_record(database: Any, user: dict, member_id: str) -> 
     if not member:
         raise HTTPException(status_code=404, detail="No such family member")
     return member
+
+
+@app.post("/api/family/members/{member_id}/medicines")
+async def add_member_medicine(member_id: str, payload: MedicineIn,
+                              user=Depends(require_full_member)):
+    """Add one medicine to a record.
+
+    Full members only, like every other write to the record — and more firmly
+    here than anywhere else on it. A helper reads what a child takes; deciding
+    it is a parent's.
+    """
+    database = get_db()
+    member = await _load_member_for_record(database, user, member_id)
+    existing = ((member.get("record") or {}).get("medicines")) or []
+    if len(existing) >= MEDICINE_MAX:
+        raise HTTPException(
+            status_code=400,
+            detail=f"A record holds at most {MEDICINE_MAX} medicines")
+    starts_on = _clean_date(payload.starts_on, "starts_on")
+    ends_on = _clean_date(payload.ends_on, "ends_on")
+    if starts_on and ends_on and ends_on < starts_on:
+        # Backwards dates are how a course silently covers no days at all,
+        # and the reminder pass that comes next would simply never fire.
+        raise HTTPException(status_code=400, detail="A course cannot end before it starts")
+    row = {
+        "med_id": new_id("med"),
+        "name": payload.name.strip(),
+        "dose": (payload.dose or "").strip(),
+        "times": _clean_times(payload.times),
+        "starts_on": starts_on,
+        "ends_on": ends_on,
+        "note": (payload.note or "").strip(),
+    }
+    # $push rather than rewriting the array: the other parent's row, added
+    # between our read and our write, survives.
+    await database["family_members"].update_one(
+        {"family_id": user["family_id"], "member_id": member_id},
+        {"$push": {"record.medicines": row}, "$set": {"updated_at": utcnow()}})
+    member.setdefault("record", {}).setdefault("medicines", []).append(row)
+    return public_member_record(member, full_member=True)
+
+
+@app.patch("/api/family/members/{member_id}/medicines/{med_id}")
+async def update_member_medicine(member_id: str, med_id: str,
+                                 payload: MedicinePatchIn,
+                                 user=Depends(require_full_member)):
+    """Correct one medicine. Only the fields sent are touched, and an empty
+    value clears one entered wrongly — a dose nobody prescribed has to be
+    removable, not merely editable."""
+    database = get_db()
+    member = await _load_member_for_record(database, user, member_id)
+    rows = ((member.get("record") or {}).get("medicines")) or []
+    hit = next((r for r in rows if isinstance(r, dict) and r.get("med_id") == med_id), None)
+    if hit is None:
+        raise HTTPException(status_code=404, detail="No such medicine")
+
+    sent = payload.model_dump(exclude_unset=True)
+    if "name" in sent:
+        name = (sent["name"] or "").strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="A medicine needs a name")
+        hit["name"] = name
+    if "dose" in sent:
+        hit["dose"] = (sent["dose"] or "").strip()
+    if "times" in sent:
+        hit["times"] = _clean_times(sent["times"])
+    if "starts_on" in sent:
+        hit["starts_on"] = _clean_date(sent["starts_on"], "starts_on")
+    if "ends_on" in sent:
+        hit["ends_on"] = _clean_date(sent["ends_on"], "ends_on")
+    if "note" in sent:
+        hit["note"] = (sent["note"] or "").strip()
+    # Checked on the MERGED row, not on what was sent: a patch that moves only
+    # the start date can still invert a course whose end was set weeks ago.
+    if hit.get("starts_on") and hit.get("ends_on") and hit["ends_on"] < hit["starts_on"]:
+        raise HTTPException(status_code=400, detail="A course cannot end before it starts")
+
+    # Addressed by med_id rather than by array index: an index computed from
+    # our read points at somebody else's row if they added one meanwhile.
+    await database["family_members"].update_one(
+        {"family_id": user["family_id"], "member_id": member_id,
+         "record.medicines.med_id": med_id},
+        {"$set": {"record.medicines.$": hit, "updated_at": utcnow()}})
+    return public_member_record(member, full_member=True)
+
+
+@app.delete("/api/family/members/{member_id}/medicines/{med_id}")
+async def delete_member_medicine(member_id: str, med_id: str,
+                                 user=Depends(require_full_member)):
+    """Remove one medicine — a course that has finished, or a row entered
+    against the wrong person, must come off. A medicine listed for somebody
+    who is not taking it is the kind of wrong that gets acted on."""
+    database = get_db()
+    member = await _load_member_for_record(database, user, member_id)
+    rows = ((member.get("record") or {}).get("medicines")) or []
+    if not any(isinstance(r, dict) and r.get("med_id") == med_id for r in rows):
+        raise HTTPException(status_code=404, detail="No such medicine")
+    await database["family_members"].update_one(
+        {"family_id": user["family_id"], "member_id": member_id},
+        {"$pull": {"record.medicines": {"med_id": med_id}},
+         "$set": {"updated_at": utcnow()}})
+    member.setdefault("record", {})["medicines"] = [
+        r for r in rows if not (isinstance(r, dict) and r.get("med_id") == med_id)]
+    return public_member_record(member, full_member=True)
 
 
 @app.post("/api/family/members/{member_id}/vaccinations")

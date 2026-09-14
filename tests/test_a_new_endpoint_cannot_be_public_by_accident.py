@@ -301,6 +301,13 @@ class EveryRouteIsGuarded(unittest.TestCase):
             ("PUT", "/api/family/members/{member_id}/pin"),
             ("DELETE", "/api/family/members/{member_id}/pin"),
             ("POST", "/api/billing/stripe/checkout"),
+            # Medical writes. A helper reads what a child takes; deciding it
+            # is a parent's, and this is the row most likely to be acted on
+            # by somebody who did not write it.
+            ("POST", "/api/family/members/{member_id}/medicines"),
+            ("PATCH", "/api/family/members/{member_id}/medicines/{med_id}"),
+            ("DELETE", "/api/family/members/{member_id}/medicines/{med_id}"),
+            ("POST", "/api/family/members/{member_id}/vaccinations"),
         }
         live = {(m, p): s for m, p, s in routes()}
         for key in sorted(parent_only):

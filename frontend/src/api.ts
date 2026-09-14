@@ -978,6 +978,22 @@ export interface Vaccination {
   note: string;
 }
 
+/** One medicine somebody is taking.
+ *
+ *  `times` are explicit clock times ("08:00"), never a frequency. Turning
+ *  "three times a day" into moments is a decision a person makes looking at
+ *  the label; storing the result means nothing downstream has to guess. */
+export interface Medicine {
+  med_id: string;
+  name: string;
+  dose: string;
+  /** "HH:MM", sorted, at most six. */
+  times: string[];
+  starts_on: string;
+  ends_on: string;
+  note: string;
+}
+
 export interface MemberRecord {
   allergies: string;
   conditions: string;
@@ -999,6 +1015,7 @@ export interface MemberRecord {
   /** Newest first, undated last — the order "when was the last one?" is
    *  asked in. Sorted by the server so the app and the web app agree. */
   vaccinations: Vaccination[];
+  medicines: Medicine[];
   private_hidden: boolean;
   can_edit: boolean;
 }
@@ -2623,6 +2640,18 @@ export const api = {
       { method: 'PATCH', body: data }),
   deleteVaccination: (memberId: string, vaxId: string) =>
     request<MemberRecord>(`/family/members/${memberId}/vaccinations/${vaxId}`,
+      { method: 'DELETE' }),
+  addMedicine: (memberId: string,
+                data: { name: string; dose?: string; times?: string[];
+                        starts_on?: string; ends_on?: string; note?: string }) =>
+    request<MemberRecord>(`/family/members/${memberId}/medicines`,
+      { method: 'POST', body: data }),
+  updateMedicine: (memberId: string, medId: string,
+                   data: Partial<Omit<Medicine, 'med_id'>>) =>
+    request<MemberRecord>(`/family/members/${memberId}/medicines/${medId}`,
+      { method: 'PATCH', body: data }),
+  deleteMedicine: (memberId: string, medId: string) =>
+    request<MemberRecord>(`/family/members/${memberId}/medicines/${medId}`,
       { method: 'DELETE' }),
   listHandoffNotes: () => request<HandoffNote[]>('/handoff-notes'),
   createHandoffNote: (data: { member_id?: string; text: string }) =>

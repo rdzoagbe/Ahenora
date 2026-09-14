@@ -3,14 +3,14 @@ import { ActivityIndicator, Alert, StyleSheet, Text, TextInput, View } from 'rea
 import { KeyboardAwareScrollView } from '../src/components/KeyboardAwareScrollView';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { ChevronLeft, ChevronRight, Eye, KeyRound, MessageCircle, Pencil, Plus, Shield, Star, Syringe, Trash2 } from 'lucide-react-native';
+import { ChevronLeft, ChevronRight, Eye, KeyRound, MessageCircle, Pencil, Pill, Plus, Shield, Star, Syringe, Trash2 } from 'lucide-react-native';
 
 import { PressScale } from '../src/components/PressScale';
 import { PersonAvatar, AvatarPicker } from '../src/components/PersonAvatar';
 import { PinPadModal } from '../src/components/PinPadModal';
 import { useUI, UIColors } from '../src/components/Kit';
 import { useStore } from '../src/store';
-import { api, FamilyMember, MemberRecord, StarTransaction, Vaccination } from '../src/api';
+import { api, FamilyMember, Medicine, MemberRecord, StarTransaction, Vaccination } from '../src/api';
 import { localeFor } from '../src/utils/date';
 import { dueState } from '../src/vaccinations';
 import { logger } from '../src/logger';
@@ -51,8 +51,12 @@ function kindOf(role: string): Kind {
  *  `vaccinations`, which is a list with its own section below. Excluded by
  *  NAME rather than by type so that adding another list to the record is a
  *  compile error here, not a row that renders as "[object Object]". */
+// The record's plain text fields. The exclusions are every key that is NOT a
+// string — miss one and `record[field]` silently widens to include an array,
+// which typechecks as far as the first `.trim()` and then does not.
 type RecordTextField =
-  Exclude<keyof MemberRecord, 'private_hidden' | 'can_edit' | 'vaccinations'>;
+  Exclude<keyof MemberRecord,
+    'private_hidden' | 'can_edit' | 'vaccinations' | 'medicines'>;
 
 const RECORD_GROUPS: {
   key: string;
@@ -268,6 +272,102 @@ export default function MemberProfile() {
       .map((g) => ({ ...g, fields: g.fields.filter(([f]) => (record[f] ?? '').trim()) }))
       .filter((g) => g.fields.length > 0);
   }, [record]);
+
+  // --- medicines ---------------------------------------------------------
+  // Same per-entry discipline as vaccinations, and the same reason: two
+  // parents writing down two different things from two phones must both
+  // survive. Each call returns the whole record, so the list redraws from
+  // the server rather than from a guess about what it did.
+  const [medBusy, setMedBusy] = useState<string | null>(null);
+  const [newMed, setNewMed] = useState(
+    { name: '', dose: '', times: '', starts_on: '', ends_on: '' });
+
+  const medicines = record?.medicines ?? [];
+
+  /** "8:00, 14:00" -> ["8:00", "14:00"]. Split only — the SERVER decides what
+   *  is a real time, so that the app and the web agree and neither invents a
+   *  reading of "8am". Blank entries drop out; anything else goes as typed
+   *  and comes back refused if it is not a time. */
+  const splitTimes = (text: string) =>
+    text.split(',').map((t2) => t2.trim()).filter(Boolean);
+
+  const medError = useCallback((e: any) => {
+    const detail = String(e?.detail || e?.message || '');
+    if (/not a time of day/i.test(detail)) return t('rec_med_bad_time');
+    if (/times a day/i.test(detail)) return t('rec_med_too_many_times');
+    if (/end before it starts/i.test(detail)) return t('rec_med_backwards');
+    if (/date like/i.test(detail)) return t('rec_vax_bad_date');
+    if (/at most/i.test(detail)) return t('rec_med_full');
+    return t('rec_save_failed');
+  }, [t]);
+
+  const addMedicine = async () => {
+    const name = newMed.name.trim();
+    if (!name || medBusy) return;
+    setMedBusy('new');
+    try {
+      setRecord(await api.addMedicine(id, {
+        name,
+        dose: newMed.dose.trim(),
+        times: splitTimes(newMed.times),
+        starts_on: newMed.starts_on.trim(),
+        ends_on: newMed.ends_on.trim(),
+      }));
+      setRecordState('ready');
+      setNewMed({ name: '', dose: '', times: '', starts_on: '', ends_on: '' });
+    } catch (e) {
+      logger.warn('medicine add failed', e);
+      Alert.alert(t('rec_med'), medError(e));
+    } finally {
+      setMedBusy(null);
+    }
+  };
+
+  const saveMedicine = useCallback(async (
+    medId: string, patch: Partial<Omit<Medicine, 'med_id'>>,
+  ) => {
+    setMedBusy(medId);
+    try {
+      setRecord(await api.updateMedicine(id, medId, patch));
+      setRecordState('ready');
+    } catch (e) {
+      logger.warn('medicine save failed', e);
+      Alert.alert(t('rec_med'), medError(e));
+      // Put the server's version back, for the same reason the vaccination
+      // path does: a dose left on screen that we failed to save is a dose
+      // somebody believes is recorded. If even the re-read fails, say so
+      // rather than leave a number nobody stored.
+      api.getMemberRecord(id)
+        .then((r) => { setRecord(r); setRecordState('ready'); })
+        .catch((e2) => {
+          logger.warn('member record re-read failed after a failed save', e2);
+          setRecordState('failed');
+        });
+    } finally {
+      setMedBusy(null);
+    }
+  }, [id, t, medError]);
+
+  const removeMedicine = useCallback((medId: string, name: string) => {
+    const go = async () => {
+      setMedBusy(medId);
+      try {
+        setRecord(await api.deleteMedicine(id, medId));
+        setRecordState('ready');
+      } catch (e) {
+        logger.warn('medicine delete failed', e);
+        Alert.alert(t('rec_med'), t('rec_save_failed'));
+      } finally {
+        setMedBusy(null);
+      }
+    };
+    // Named in the question. "Remove this medicine?" on a list of four is a
+    // question nobody can answer correctly.
+    Alert.alert(t('rec_med_remove_q', { name }), '', [
+      { text: t('cancel'), style: 'cancel' },
+      { text: t('remove'), style: 'destructive', onPress: () => { go(); } },
+    ]);
+  }, [id, t]);
 
   // --- vaccinations ------------------------------------------------------
   // Written per ENTRY, never by sending the whole list back: two parents
@@ -633,6 +733,150 @@ export default function MemberProfile() {
                 Hidden entirely from a reader when empty, for the same reason
                 the blank text fields are: a carer opening this wants the one
                 line that matters, not a section inviting them to fill it. */}
+            {/* What somebody is taking NOW, above the vaccination history.
+                A carer opening this record is far more often checking today's
+                course than last year's booster, and the order of the page is
+                the order of the question being asked.
+
+                Hidden entirely from a reader when empty, like the blank text
+                fields: an empty section invites a parent to fill it and tells
+                a carer nothing. */}
+            {record.can_edit || medicines.length > 0 ? (
+              <View style={styles.recCard} testID="record-medicines">
+                <View style={styles.recGroupRow}>
+                  <Text style={styles.recGroup}>{t('rec_med')}</Text>
+                  <Pill color={ui.muted} size={14} />
+                </View>
+
+                {medicines.length === 0 ? (
+                  <Text style={styles.recEmptyAll}>{t('rec_med_empty')}</Text>
+                ) : medicines.map((m) => (
+                  <View key={m.med_id} style={styles.vaxRow} testID={`med-${m.med_id}`}>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={styles.vaxName} numberOfLines={2}>{m.name}</Text>
+                      {m.dose ? (
+                        <Text style={styles.vaxWhen} testID={`med-dose-${m.med_id}`}>
+                          {m.dose}
+                        </Text>
+                      ) : null}
+                      {/* The times as they were chosen, read straight out.
+                          Never rendered as "3 times a day": the whole point of
+                          storing moments is that nobody downstream has to
+                          turn a frequency back into hours. */}
+                      {m.times.length > 0 ? (
+                        <View style={styles.medTimes} testID={`med-times-${m.med_id}`}>
+                          {m.times.map((at) => (
+                            <View key={at} style={styles.medTime}>
+                              <Text style={styles.medTimeText}>{at}</Text>
+                            </View>
+                          ))}
+                        </View>
+                      ) : null}
+                      {m.ends_on ? (
+                        <Text style={styles.vaxWhen} testID={`med-until-${m.med_id}`}>
+                          {t('rec_med_until', { date: m.ends_on })}
+                        </Text>
+                      ) : null}
+                      {m.note ? <Text style={styles.vaxNote}>{m.note}</Text> : null}
+                    </View>
+                    {medBusy === m.med_id ? (
+                      <ActivityIndicator color={ui.muted} size="small" />
+                    ) : record.can_edit ? (
+                      <PressScale
+                        testID={`med-remove-${m.med_id}`}
+                        onPress={() => removeMedicine(m.med_id, m.name)}
+                        style={styles.vaxRemove}
+                        accessibilityLabel={t('rec_med_remove')}
+                      >
+                        <Trash2 color={ui.muted} size={16} />
+                      </PressScale>
+                    ) : null}
+                  </View>
+                ))}
+
+                {record.can_edit ? (
+                  <View style={styles.vaxAdd}>
+                    <TextInput
+                      testID="med-new-name"
+                      value={newMed.name}
+                      onChangeText={(x) => setNewMed((p) => ({ ...p, name: x }))}
+                      placeholder={t('rec_med_ph_name')}
+                      placeholderTextColor={ui.muted}
+                      style={[styles.recInput, styles.vaxInputName]}
+                      maxLength={120}
+                    />
+                    <View style={styles.vaxDates}>
+                      <View style={styles.vaxDateBox}>
+                        <Text style={styles.vaxMini}>{t('rec_med_dose')}</Text>
+                        <TextInput
+                          testID="med-new-dose"
+                          value={newMed.dose}
+                          onChangeText={(x) => setNewMed((p) => ({ ...p, dose: x }))}
+                          placeholder={t('rec_med_ph_dose')}
+                          placeholderTextColor={ui.muted}
+                          style={styles.recInput}
+                          maxLength={80}
+                        />
+                      </View>
+                      <View style={styles.vaxDateBox}>
+                        <Text style={styles.vaxMini}>{t('rec_med_times')}</Text>
+                        <TextInput
+                          testID="med-new-times"
+                          value={newMed.times}
+                          onChangeText={(x) => setNewMed((p) => ({ ...p, times: x }))}
+                          placeholder={t('rec_med_ph_times')}
+                          placeholderTextColor={ui.muted}
+                          style={styles.recInput}
+                          autoCapitalize="none"
+                          maxLength={40}
+                        />
+                      </View>
+                    </View>
+                    <View style={styles.vaxDates}>
+                      <View style={styles.vaxDateBox}>
+                        <Text style={styles.vaxMini}>{t('rec_med_from')}</Text>
+                        <TextInput
+                          testID="med-new-starts"
+                          value={newMed.starts_on}
+                          onChangeText={(x) => setNewMed((p) => ({ ...p, starts_on: x }))}
+                          placeholder={t('rec_vax_ph_date')}
+                          placeholderTextColor={ui.muted}
+                          style={styles.recInput}
+                          autoCapitalize="none"
+                          maxLength={10}
+                        />
+                      </View>
+                      <View style={styles.vaxDateBox}>
+                        <Text style={styles.vaxMini}>{t('rec_med_to')}</Text>
+                        <TextInput
+                          testID="med-new-ends"
+                          value={newMed.ends_on}
+                          onChangeText={(x) => setNewMed((p) => ({ ...p, ends_on: x }))}
+                          placeholder={t('rec_vax_ph_date')}
+                          placeholderTextColor={ui.muted}
+                          style={styles.recInput}
+                          autoCapitalize="none"
+                          maxLength={10}
+                        />
+                      </View>
+                    </View>
+                    <PressScale
+                      testID="med-add"
+                      onPress={addMedicine}
+                      disabled={!newMed.name.trim() || medBusy === 'new'}
+                      style={[styles.vaxAddBtn,
+                        (!newMed.name.trim() || medBusy === 'new') && styles.vaxAddOff]}
+                    >
+                      {medBusy === 'new'
+                        ? <ActivityIndicator color={'#FFFFFF'} size="small" />
+                        : <Plus color={'#FFFFFF'} size={16} />}
+                      <Text style={styles.vaxAddText}>{t('rec_med_add')}</Text>
+                    </PressScale>
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
+
             {record.can_edit || vaccinations.length > 0 ? (
               <View style={styles.recCard} testID="record-vaccinations">
                 <View style={styles.recGroupRow}>
@@ -1021,6 +1265,10 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     color: ui.goldText, backgroundColor: ui.gold,
     paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, overflow: 'hidden',
   },
+  medTimes: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 5 },
+  medTime: { paddingHorizontal: 9, paddingVertical: 3, borderRadius: 99,
+             backgroundColor: ui.bg, borderWidth: 1, borderColor: '#E7E3DC' },
+  medTimeText: { fontFamily: 'Inter_700Bold', fontSize: 12, color: ui.text },
   vaxRemove: { padding: 6 },
   vaxAdd: { borderTopWidth: 1, borderTopColor: ui.line, paddingTop: 10, paddingBottom: 12, gap: 8 },
   vaxInputName: {
