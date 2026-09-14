@@ -91,6 +91,14 @@ HARNESSES = [
     # on the web build — where react-native-web's Pressable ignores it.
     "e2e_targets.py",
     "e2e_offline.py",
+    # Scanning: the most-touched feature in the app, and it had no harness at
+    # all until a slow scan on a working connection was reported as being
+    # offline. Deliberately holds the CLIENT's side of it — the budget and the
+    # message — because the three faults behind that one sentence were all on
+    # this side of the wire. Costs ~50s of wall clock, nearly all of it the
+    # 35-second slow-scan case, which is the only way to prove a timeout
+    # budget without asserting the constant that defines it.
+    "e2e_scan.py",
     "e2e_calendar.py",
     "e2e_invite.py",
     "e2e_webupdate.py",
