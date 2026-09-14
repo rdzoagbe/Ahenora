@@ -13741,8 +13741,11 @@ async def weekly_brief(user=Depends(require_user)):
             cards.append(item)
 
     if not cards:
+        # A fixed sentence, so it is flagged like every other thing the model
+        # did not write. Nothing here is a reading of this family's week.
         brief = "You have a clear runway this week. Use the space to reset routines, confirm calendars, and get ahead on one important family task."
-        return {"brief": brief, "generated_at": iso(utcnow())}
+        return {"brief": brief, "generated_at": iso(utcnow()),
+                "written_by_ai": False}
 
     lines = []
     for c in cards[:12]:
@@ -13751,12 +13754,16 @@ async def weekly_brief(user=Depends(require_user)):
         lines.append(f"- {c['title']} | due: {due} | assignee: {assignee}")
 
     if not GOOGLE_API_KEY:
+        # No key configured at all — the most clear-cut case of the model not
+        # having written this, and the one an earlier version of this fix
+        # missed while flagging only the exception path below.
         brief = (
             "This week's household priorities are: "
             + "; ".join([c["title"] for c in cards[:5]])
             + ". Focus first on items with dates, assign open tasks clearly, and close one quick win today."
         )
-        return {"brief": brief, "generated_at": iso(utcnow())}
+        return {"brief": brief, "generated_at": iso(utcnow()),
+                "written_by_ai": False}
 
     prompt = f"""
 Write a warm, premium household chief-of-staff weekly brief in under 180 words.
@@ -13765,16 +13772,25 @@ Open items:
 {chr(10).join(lines)}
 """.strip()
 
+    # `written_by_ai` is the honest part. When the model cannot answer, this
+    # still returns something useful — a plain list of what is due — but it
+    # says so, because a template sentence presented as the week's brief is a
+    # claim nobody can check. The app already had the words for this
+    # (`brief_unable`) and could never show them: the backend reported success
+    # either way, so the honest path existed and was unreachable.
+    written_by_ai = True
     try:
         brief = await _gemini_text(prompt)
     except Exception as exc:  # noqa: BLE001 — degrade like the no-key path, never 500
         log.warning("weekly brief generation failed: %s", exc)
+        written_by_ai = False
         brief = (
             "This week's household priorities are: "
             + "; ".join([c["title"] for c in cards[:5]])
             + ". Focus first on items with dates, assign open tasks clearly, and close one quick win today."
         )
-    return {"brief": brief, "generated_at": iso(utcnow())}
+    return {"brief": brief, "generated_at": iso(utcnow()),
+            "written_by_ai": written_by_ai}
 
 
 # -----------------------------------------------------------------------------
@@ -13835,11 +13851,20 @@ async def vision_extract(payload: VisionIn, user=Depends(require_user)):
     except Exception as exc:
         log.warning("document scan failed: %s", exc)
 
-    # The scan is charged whether or not it produced something, because it
-    # cost what it cost. What must never happen is charging twice for one
-    # photograph, which is why the recipe pass below runs inside this request
-    # rather than sending the client off to /api/recipes/capture.
-    if not is_admin_user(user):
+    # Charged only when the scan actually READ something.
+    #
+    # This used to charge either way, reasoning that the request cost what it
+    # cost. True of our API bill and beside the point for the person holding
+    # the phone: when nothing was understood they get a blank card they could
+    # have made in three taps, and on the free plan that is a tenth of the
+    # month for it. Every other scan route already declines to charge for a
+    # failure — this one was the odd one out, and the inconsistency was
+    # invisible because each route counts for itself.
+    #
+    # What must never happen is charging twice for one photograph, which is
+    # why the recipe pass below runs inside this request rather than sending
+    # the client off to /api/recipes/capture.
+    if extracted is not None and not is_admin_user(user):
         # Guarded so two concurrent scans cannot both push the counter past the
         # limit: the increment only lands while the family is still under it.
         # A request that raced past the last slot did its work already — it goes

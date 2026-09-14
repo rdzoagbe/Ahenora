@@ -2566,7 +2566,14 @@ export const api = {
   },
   // Brief
   weeklyBrief: () =>
-    request<{ brief: string; generated_at: string }>('/brief/weekly', { method: 'POST' }),
+    request<{
+      brief: string;
+      generated_at: string;
+      /** False when the model could not answer and this is the plain list of
+       *  what is due instead. Shown as such rather than passed off as the
+       *  week's brief. */
+      written_by_ai?: boolean;
+    }>('/brief/weekly', { method: 'POST' }),
   // Notifications
   getNotificationSettings: () =>
     request<NotificationSettings>('/notifications/settings'),
