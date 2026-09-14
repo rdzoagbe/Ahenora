@@ -2517,7 +2517,12 @@ export default function Kitchen() {
         })}
       </KeyboardAwareBottomSheet>
 
-      <LoadingOverlay visible={loading} label={t('vault_loading')} />
+      {/* The KITCHEN's overlay, so it says so. It read "Loading Vault..."
+          — copied from vault.tsx along with the component — which is
+          user-visible nonsense on a screen that is loading a shopping list.
+          Found by a browser harness whose click on the Meals tab was
+          intercepted by an overlay it could not explain. */}
+      <LoadingOverlay visible={loading} label={t('loading')} />
       <AppToast visible={Boolean(toast)} message={toast?.message || null} tone={toast?.tone || 'info'} />
     </SwipeableTabView>
   );

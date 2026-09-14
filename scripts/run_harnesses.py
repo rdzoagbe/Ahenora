@@ -99,6 +99,16 @@ HARNESSES = [
     # 35-second slow-scan case, which is the only way to prove a timeout
     # budget without asserting the constant that defines it.
     "e2e_scan.py",
+    # The vault: the one screen where a mistake costs a passport scan rather
+    # than an afternoon. Holds that a document saved survives a reload, that
+    # the storage figure is a measurement and not decoration, that deleting
+    # names what it is about to delete, and that a failed save says so.
+    "e2e_vault.py",
+    # Expenses: the one screen where being misread costs money rather than
+    # time. Holds the amount to the cent, the month total as arithmetic, and
+    # a decimal COMMA — "12,50" is how half this app's market writes twelve
+    # fifty, and reading it as twelve loses fifty cents in silence.
+    "e2e_expenses.py",
     "e2e_calendar.py",
     "e2e_invite.py",
     "e2e_webupdate.py",
