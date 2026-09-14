@@ -242,6 +242,45 @@ export function reportPushFailure(message: string) {
   reportClientError('/push-register', 'PUSH', undefined, String(message || 'unknown').slice(0, 240));
 }
 
+/**
+ * Which build is speaking.
+ *
+ * Read here rather than through notifications.ts's appVersionInfo, which
+ * imports from this file — the cycle would be worse than the duplication.
+ * The app version is available synchronously; the runtime needs a lazy
+ * import of expo-updates (a no-op on web), so it is fetched once and kept.
+ *
+ * Without this the error log cannot tell a phone on an OLD build from a
+ * fault on current code, and the two need opposite responses. Three Android
+ * push failures on 2026-09-14 read as a live outage; the fix had shipped on
+ * 09-08 and reached the Play Store on 09-12, and all three phones were
+ * simply running an older APK.
+ */
+let cachedStamp: { app_version: string; runtime_version: string } | null = null;
+
+async function buildStamp(): Promise<{ app_version: string; runtime_version: string }> {
+  if (cachedStamp) return cachedStamp;
+  // BOTH imported lazily, expo-constants included. A static import of it at
+  // the top of this file is fine in the app and breaks the `unit` jest
+  // project, which runs under node without the React Native transforms — two
+  // suites stopped LOADING, and jest still printed "787 passed" because a
+  // suite that never loads contributes no failing tests, only a smaller
+  // total. Keeping both behind await means this file's top level stays
+  // node-safe.
+  let app_version = '';
+  let runtime_version = '';
+  try {
+    const Constants = (await import('expo-constants')).default;
+    app_version = Constants?.expoConfig?.version || '';
+  } catch { /* no config to read */ }
+  try {
+    const Updates = await import('expo-updates');
+    runtime_version = (Updates.runtimeVersion as string) || '';
+  } catch { /* web, or a build without expo-updates */ }
+  cachedStamp = { app_version, runtime_version };
+  return cachedStamp;
+}
+
 function reportClientError(path: string, method: string, status: number | undefined, message: string) {
   try {
     if (path.startsWith('/telemetry')) return;
@@ -251,8 +290,13 @@ function reportClientError(path: string, method: string, status: number | undefi
     errorReportTimes.push(now);
     tokenStore
       .get()
-      .then((token) => {
+      .then(async (token) => {
         if (!token) return;
+        // Never let the stamp cost the report: a build that cannot answer
+        // still sends the error, unversioned, which the admin list shows as
+        // an unknown build rather than as a current one.
+        let stamp = { app_version: '', runtime_version: '' };
+        try { stamp = await buildStamp(); } catch { /* report anyway */ }
         return fetch(`${BASE}/api/telemetry/client-error`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -262,6 +306,7 @@ function reportClientError(path: string, method: string, status: number | undefi
             status: status ?? null,
             message: String(message || '').slice(0, 300),
             platform: Platform.OS,
+            ...stamp,
           }),
         });
       })
@@ -1995,6 +2040,10 @@ export const api = {
       status?: number | null;
       message?: string;
       platform?: string;
+      /** Which build reported it. "" for a row written before this existed,
+       *  or an install too old to send it — which is itself the answer. */
+      app_version?: string;
+      runtime_version?: string;
       created_at?: string | null;
     }[]>('/telemetry/client-errors'),
   // Deliberately bland URL: one family device blocks every path containing

@@ -4958,6 +4958,11 @@ class ClientErrorIn(BaseModel):
     status: Optional[int] = None
     message: Optional[str] = None
     platform: Optional[str] = None
+    # WHICH BUILD said this. Optional, because an install that predates the
+    # field cannot send it — and that absence is itself the answer, so it is
+    # recorded as "unknown" rather than quietly blanked.
+    app_version: Optional[str] = None
+    runtime_version: Optional[str] = None
 
 
 @app.get("/api/telemetry/invite-routes")
@@ -4988,6 +4993,15 @@ async def report_client_error(payload: ClientErrorIn, user=Depends(require_user)
     by screenshot; this records the same facts automatically. Clients only
     send network-level failures and 5xx — semantic 4xx already surface in
     their own UI.
+
+    The row carries the app version, because without it this log cannot tell
+    a phone on an OLD build from a fault happening on current code — and they
+    need completely different responses. On 2026-09-14 three Android push
+    failures read as a live outage; the config had been correct since 09-08,
+    the fixed binary had been on the Play Store since 09-12, and every one of
+    those phones was simply running an APK from before it. One of them was
+    stamped 08:03 on the very morning the fix shipped at 08:40. The version
+    would have said so in a glance instead of an afternoon.
     """
     database = get_db()
     await database["client_errors"].insert_one({
@@ -5000,6 +5014,8 @@ async def report_client_error(payload: ClientErrorIn, user=Depends(require_user)
         "status": payload.status,
         "message": (payload.message or "")[:300],
         "platform": (payload.platform or "")[:20],
+        "app_version": (payload.app_version or "")[:32],
+        "runtime_version": (payload.runtime_version or "")[:32],
         "created_at": utcnow(),
     })
     # Bounded retention: two weeks is plenty for diagnosis.
@@ -5018,6 +5034,11 @@ async def list_client_errors(user=Depends(require_user)):
     cursor = database["client_errors"].find({}, {"_id": 0}).sort("created_at", -1).limit(50)
     async for item in cursor:
         item["created_at"] = iso(item.get("created_at"))
+        # Rows written before the field existed have no version. Served as ""
+        # so the reader shows "unknown build" rather than an empty column that
+        # looks like a current one.
+        item["app_version"] = item.get("app_version") or ""
+        item["runtime_version"] = item.get("runtime_version") or ""
         rows.append(item)
     return rows
 
