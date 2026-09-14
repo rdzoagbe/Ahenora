@@ -36,7 +36,24 @@ describe('the three states are told apart', () => {
   it('marks a failed load as failed instead of only logging it', () => {
     // The whole bug: the catch wrote to the log and left the UI identical to
     // a household that simply has nothing recorded.
-    expect(MEMBER).toMatch(/catch[\s\S]{0,160}setRecordState\('failed'\)/);
+    //
+    // Pinned per CALL SITE, not once for the file. A first version asserted
+    // that *some* catch set the failed state, and a mutation that stripped it
+    // from the initial-mount path survived — because the other two sites kept
+    // the regex satisfied. The mount is where the original bug lived, so an
+    // assertion that any one of three places still does it proves nothing.
+    const onMount = MEMBER.match(
+      /let cancelled = false;[\s\S]*?return \(\) => \{ cancelled = true; \};/);
+    expect(onMount).not.toBeNull();
+    expect(onMount![0]).toContain("setRecordState('failed')");
+    expect(onMount![0]).toContain('if (!cancelled)');
+  });
+
+  it('also marks it on the explicit retry, not just on mount', () => {
+    const retry = MEMBER.match(/const loadRecord = useCallback[\s\S]*?\}, \[id\]\);/);
+    expect(retry).not.toBeNull();
+    expect(retry![0]).toContain("setRecordState('failed')");
+    expect(retry![0]).toContain("setRecordState('ready')");
   });
 
   it('says so on screen, in a panel that offers a way out', () => {
