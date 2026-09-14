@@ -5445,6 +5445,56 @@ async def ops_error_budget(authorization: Optional[str] = Header(default=None),
     return {"window_minutes": minutes, "groups": groups, "occurrences": occurrences}
 
 
+def mongo_posture(url: str = "") -> dict:
+    """What the connection to the database actually looks like, safely.
+
+    "Why is your database readable by the internet" is a question about the
+    Atlas IP access list, which no code running INSIDE the app can see — a
+    process that connects successfully learns nothing about who else could.
+    So this reports the half that IS visible from here, and reports it from
+    the RUNNING process rather than from whatever a dashboard says today:
+    scheme, transport encryption, and what kind of host is on the other end.
+
+    Deliberately returns no host, no cluster name, no username and no
+    password — only classifications. An admin endpoint is still a place a
+    connection string must never appear.
+    """
+    url = url or MONGO_URL or ""
+    if not url:
+        return {"configured": False}
+
+    scheme = url.split("://", 1)[0].lower() if "://" in url else ""
+    rest = url.split("://", 1)[1] if "://" in url else ""
+    host_part = rest.split("@", 1)[-1].split("/", 1)[0].split("?", 1)[0].lower()
+    options = url.split("?", 1)[1].lower() if "?" in url else ""
+
+    # mongodb+srv implies TLS; a plain mongodb:// URL only has it if asked.
+    srv = scheme == "mongodb+srv"
+    tls = srv or "tls=true" in options or "ssl=true" in options
+    if "tls=false" in options or "ssl=false" in options:
+        tls = False
+
+    if "mongodb.net" in host_part:
+        where = "atlas"
+    elif "railway.internal" in host_part or host_part.endswith(".internal"):
+        where = "private-network"
+    elif host_part.startswith(("localhost", "127.0.0.1")):
+        where = "localhost"
+    else:
+        where = "other"
+
+    return {
+        "configured": True,
+        "srv": srv,
+        "tls": tls,
+        "host_kind": where,
+        # A password in the URL is normal for Atlas, but worth surfacing: it
+        # means the connection string IS the credential, so anywhere it is
+        # copied is somewhere the database is reachable from.
+        "credentials_in_url": "@" in rest,
+    }
+
+
 @app.get("/api/health/config")
 async def health_config(user=Depends(require_user)):
     """Admin-only configuration inventory (was previously public on `/`)."""
@@ -5453,6 +5503,8 @@ async def health_config(user=Depends(require_user)):
     return {
         "api_configured": bool(GOOGLE_API_KEY),
         "db_configured": bool(MONGO_URL),
+        # How this process is actually talking to the database.
+        "db_connection": mongo_posture(),
         "backend_version": "pricing_gating_v1",
         "email_configured": bool(RESEND_API_KEY and INVITE_FROM_EMAIL),
         # The last few outbound emails that did not go. Empty is good; a run of

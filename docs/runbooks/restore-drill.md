@@ -15,26 +15,38 @@ you explicitly override it.
 
 **1. Is anything actually being backed up?**
 
-Open the database provider's console (Atlas, or Railway's Mongo plugin) and
-find the backup/snapshot settings. Write down here what you found:
+Per `docs/ROADMAP.md`, yes: **MongoDB Atlas M10 dedicated, backups Active** —
+a deliberate upgrade from the free M0 tier, made for exactly this reason. So
+this drill is not asking whether backups exist. It is asking the question
+that upgrade did NOT answer: whether what they produce comes back.
 
-- Provider: `____________`
-- Automatic backups: on / off
-- Frequency: `____________`
+Confirm it is still true — a plan downgrade silently turns snapshots off:
+
+- Atlas → Backup → snapshot schedule still enabled: yes / no
 - Retention: `____________`
-
-If automatic backups are **off**, that is the finding — turn them on before
-doing anything else. The rest of this drill still works (it takes its own
-archive), but a drill you have to remember to run is not a backup strategy.
+- Most recent snapshot: `____________`
 
 **2. Is the database reachable from the internet?**
 
-Atlas → Network Access. Anything that reads `0.0.0.0/0` means the database
-accepts connections from anywhere, and only the password is between a stranger
-and every family's data. It should be a private endpoint, or an allowlist
-containing only your app's egress addresses.
+**This is the one no code can check, including everything in this repository.**
+A process that connects successfully learns nothing about who else could
+connect. `/api/health/config` reports what it CAN see from inside — scheme,
+TLS, and what kind of host is on the other end — and that is genuinely all of
+it. The access list is a person opening a browser.
+
+Atlas → Network Access → IP Access List. Anything reading `0.0.0.0/0`
+(sometimes shown as "ALLOW ACCESS FROM ANYWHERE") means the database accepts
+connections from any address on the internet, and only the password stands
+between a stranger and every family's data. On an M10 the right answers are a
+**Private Endpoint** or **VPC peering**; failing that, an allowlist holding
+only the app's egress addresses.
 
 - Network access rule: `____________`
+- Checked on: `____________`
+
+If you find `0.0.0.0/0`, do not simply delete it — the running app is using
+it. Add the correct rule first, confirm the app still serves traffic, and only
+then remove the open one.
 
 ---
 
