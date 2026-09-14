@@ -109,6 +109,11 @@ HARNESSES = [
     # a decimal COMMA — "12,50" is how half this app's market writes twelve
     # fifty, and reading it as twelve loses fifty cents in silence.
     "e2e_expenses.py",
+    # The meal planner and the claim it is sold on: "plan dinners, share the
+    # list". Buys the plan through a real RevenueCat webhook rather than
+    # granting itself entitlements, then checks the shopping list actually
+    # moves — and does not move twice when the button is pressed twice.
+    "e2e_meals.py",
     "e2e_calendar.py",
     "e2e_invite.py",
     "e2e_webupdate.py",
