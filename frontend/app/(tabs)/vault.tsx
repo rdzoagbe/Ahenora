@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -34,6 +34,7 @@ import { useStore } from '../../src/store';
 
 import { api, logEvent, Entitlements, ExpiryAlert, VaultDoc, VaultVisibility } from '../../src/api';
 import { logger } from '../../src/logger';
+import { refreshOutcome } from '../../src/refreshOutcome';
 import { parseDisplayDate } from '../../src/dateDisplay';
 import { localeFor } from '../../src/utils/date';
 
@@ -157,7 +158,8 @@ export default function Vault() {
   const [expiryAlerts, setExpiryAlerts] = useState<ExpiryAlert[]>([]);
   const [entitlements, setEntitlements] = useState<Entitlements | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (): Promise<number | null> => {
+    let loaded: number | null = null;
     // Visits, not just saves. vault_added and vault_shared count what people
     // DO here, so "nobody opens the vault" and "people open it and add
     // nothing" were indistinguishable — and a claim about the first was used
@@ -166,7 +168,13 @@ export default function Vault() {
     logEvent('vault_open');
     try {
       const [vaultRes, expiryRes, entRes] = await Promise.allSettled([api.listVault(), api.vaultExpiryAlerts(), api.getEntitlements()]);
-      if (vaultRes.status === 'fulfilled') setDocs(vaultRes.value);
+      if (vaultRes.status === 'fulfilled') {
+        setDocs(vaultRes.value);
+        // Reported, not read back off state: a caller in the same tick sees
+        // the OLD count, which is how a refresh says nothing arrived when
+        // something did.
+        loaded = vaultRes.value.length;
+      }
       if (expiryRes.status === 'fulfilled') setExpiryAlerts(expiryRes.value);
       if (entRes.status === 'fulfilled') setEntitlements(entRes.value);
       if (vaultRes.status === 'rejected') {
@@ -179,13 +187,25 @@ export default function Vault() {
     } finally {
       setLoading(false);
     }
+    return loaded;
   }, [showToast]);
 
   // Plain function: the manual memo here blocked React Compiler on this screen.
+  // Keeps the "before" count without putting docs in a dependency list, which
+  // would hand the RefreshControl a new function mid-pull.
+  const docsRef = useRef<VaultDoc[]>([]);
+  useEffect(() => { docsRef.current = docs; }, [docs]);
+
   const handleRefresh = async () => {
     setRefreshing(true);
-    await load();
+    const before = { items: docsRef.current.length };
+    const loaded = await load();
     setRefreshing(false);
+    // And then say so. A spinner that turns and stops is not an answer: on a
+    // day when nothing changed it is indistinguishable from a gesture that
+    // never fired, which is exactly how this was reported on the Calendar.
+    const said = refreshOutcome(before, { items: loaded ?? before.items });
+    showToast(t(said.key, said.params), said.key === 'refresh_up_to_date' ? 'info' : 'success');
   };
 
   useFocusEffect(useCallback(() => { load(); }, [load]));

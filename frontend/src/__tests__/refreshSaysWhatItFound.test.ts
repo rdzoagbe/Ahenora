@@ -73,6 +73,49 @@ describe('what a refresh says', () => {
   });
 });
 
+describe('every tab says it, not just the one that was reported', () => {
+  const TABS = ['feed.tsx', 'calendar.tsx', 'kids.tsx', 'kitchen.tsx', 'vault.tsx'];
+  const tab = (name: string) => readFileSync(
+    join(__dirname, '..', '..', 'app', '(tabs)', name), 'utf8');
+
+  it('speaks the outcome on all five', () => {
+    // The Calendar was the one Roland reported, but the silence was never a
+    // Calendar bug — it is what happens on any screen whose refresh reloads
+    // and says nothing. Fixing only the reported one leaves the same
+    // confusion waiting on four other tabs.
+    for (const name of TABS) {
+      expect(tab(name)).toContain('refreshOutcome(before,');
+      expect(tab(name)).toContain('showToast(t(said.key, said.params)');
+    }
+  });
+
+  it('counts from what the loader returned, not from state', () => {
+    // Read back in the same tick, state still holds the OLD count — which is
+    // how a refresh comes to report that nothing arrived when something did.
+    for (const name of TABS) {
+      expect(tab(name)).toMatch(/const load = useCallback\(async \(\): Promise<number \| null>/);
+      expect(tab(name)).toContain('let loaded: number | null = null;');
+      expect(tab(name)).toContain('return loaded;');
+    }
+  });
+
+  it('keeps the before-count when a loader could not answer', () => {
+    // `?? before.items` rather than `?? 0`: a load that failed must not be
+    // announced as an empty list.
+    for (const name of TABS.filter((n) => n !== 'calendar.tsx')) {
+      expect(tab(name)).toContain('items: loaded ?? before.items');
+    }
+  });
+
+  it('holds the before-count in a ref rather than a dependency', () => {
+    // In the dependency list, the handler is rebuilt on every load and the
+    // RefreshControl is handed a new function mid-pull.
+    for (const name of TABS) {
+      expect(tab(name)).toMatch(/Ref = useRef<[A-Za-z]+\[\]>\(\[\]\)/);
+    }
+  });
+});
+
 describe('the Calendar actually says it', () => {
   it('takes a before snapshot and speaks afterwards', () => {
     expect(CALENDAR).toContain('const before = { items: cardsRef.current.length, waiting: pendingRef.current };');

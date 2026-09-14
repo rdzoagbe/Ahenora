@@ -56,6 +56,7 @@ import { api, logEvent, AllowanceConfig, AllowanceTxn, ChatThreadSummary, Chore,
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { logger } from '../../src/logger';
+import { refreshOutcome } from '../../src/refreshOutcome';
 
 // The teen-accounts hint is a one-time announcement, so what it needs is a
 // memory, not a timer. Scoped to the device, not the household: the key has no
@@ -573,7 +574,8 @@ export default function Kids() {
     }
   }, []);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (): Promise<number | null> => {
+    let loaded: number | null = null;
     logEvent('kids_open');
     try {
       setErrorMessage(null);
@@ -581,6 +583,11 @@ export default function Kids() {
       // page no longer needs the rewards catalogue at all.
       const m = await api.familyMembers();
       setMembers(m);
+      // Who is in the household is what this tab is about, and somebody
+      // accepting an invitation is the thing a refresh here should announce.
+      // Reported rather than read back off state, which in the same tick
+      // still holds the old count.
+      loaded = m.length;
       api.getTeenApprovals().then((r) => setTeenApprovals(r.approvals)).catch(() => setTeenApprovals([]));
       api.chatThreads().then((r) => setThreads(r.threads)).catch(() => setThreads([]));
 
@@ -625,13 +632,26 @@ export default function Kids() {
     } finally {
       setLoading(false);
     }
+    return loaded;
   }, [refreshHistory, selectedChild]);
+
+  // The "before" count, in a ref so the handler is not rebuilt whenever the
+  // member list changes — the RefreshControl would be handed a new function
+  // mid-pull.
+  const membersRef = useRef<FamilyMember[]>([]);
+  useEffect(() => { membersRef.current = members; }, [members]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    await load();
+    const before = { items: membersRef.current.length };
+    const loaded = await load();
     setRefreshing(false);
-  }, [load]);
+    // And then say so. Deliberately counting MEMBERS, not the teen approvals
+    // also loaded here: those arrive through a fire-and-forget call, and a
+    // number this speaks aloud has to be one the refresh actually waited for.
+    const said = refreshOutcome(before, { items: loaded ?? before.items });
+    showToast(t(said.key, said.params), said.key === 'refresh_up_to_date' ? 'info' : 'success');
+  }, [load, showToast, t]);
 
   // Call the latest load without making it a dependency: load's identity changes
   // when it sets selectedChild, and depending on it here re-fired the whole focus

@@ -25,6 +25,7 @@ import { api, MealPlan, ShoppingItem, ShoppingHistoryEntry, SavedMealPlan, Diet,
   FamilyAllergy, FrequentItem, PriceCompare } from '../../src/api';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { logger } from '../../src/logger';
+import { refreshOutcome } from '../../src/refreshOutcome';
 import { suggestWeek, MealSuggestion, SuggestLang, localizedMealTitle, localizedMealIngredients, resolveRecipeId, recipeIngredients, searchRecipes } from '../../src/mealSuggestions';
 import { quantityFor, shoppingNameFor, formatAiQuantity, AiIngredient } from '../../src/recipeQuantities';
 import { categoriseShoppingItem } from '../../src/shoppingCategories';
@@ -166,13 +167,20 @@ export default function Kitchen() {
 
 
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (): Promise<number | null> => {
+    let loaded: number | null = null;
     try {
       const [shopRes, mealRes, histRes, dietRes, freqRes] = await Promise.allSettled([
         api.listShopping(), api.listMeals(), api.listShoppingHistory(), api.getMealDiet(),
         api.listFrequentShopping(),
       ]);
-      if (shopRes.status === 'fulfilled') setShopItems(shopRes.value);
+      if (shopRes.status === 'fulfilled') {
+        setShopItems(shopRes.value);
+        // The shopping list is what this tab is FOR — the number a refresh
+        // should speak about. Reported rather than read back off state, which
+        // in the same tick still holds the old count.
+        loaded = shopRes.value.length;
+      }
       if (mealRes.status === 'fulfilled') setMeals(mealRes.value);
       if (histRes.status === 'fulfilled') setShopHistory(histRes.value);
       if (dietRes.status === 'fulfilled') setHouseholdDiet(dietRes.value.diet);
@@ -188,13 +196,23 @@ export default function Kitchen() {
     } finally {
       setLoading(false);
     }
+    return loaded;
   }, [showToast, t]);
+
+  // The "before" count, without putting shopItems in a dependency list — that
+  // would rebuild the handler on every load and hand the RefreshControl a new
+  // function mid-pull.
+  const shopRef = useRef<ShoppingItem[]>([]);
+  useEffect(() => { shopRef.current = shopItems; }, [shopItems]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    await load();
+    const before = { items: shopRef.current.length };
+    const loaded = await load();
     setRefreshing(false);
-  }, [load]);
+    const said = refreshOutcome(before, { items: loaded ?? before.items });
+    showToast(t(said.key, said.params), said.key === 'refresh_up_to_date' ? 'info' : 'success');
+  }, [load, showToast, t]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
