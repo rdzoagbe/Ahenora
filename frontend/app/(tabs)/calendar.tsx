@@ -12,6 +12,7 @@ import { CalendarDays, Car, CheckCircle2, ChevronLeft, ChevronRight, Clock, Exte
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
 import { CARPOOL_DAYS, carpoolReady, normaliseCarpoolTime, sortCarpools } from '../../src/carpool';
+import { refreshOutcome } from '../../src/refreshOutcome';
 import { webConfirm } from '../../src/confirm';
 import { PressScale } from '../../src/components/PressScale';
 import { logger } from '../../src/logger';
@@ -207,12 +208,28 @@ export default function Calendar() {
     return () => setSelectedCalendarDay(null);
   }, [selectedDay]);
 
-  const refreshPending = useCallback(() => {
-    api.listEventCandidates()
-      .then((out) => setPendingCount(out.count))
+  // Read by handleRefresh for its "before" snapshot. Refs rather than deps:
+  // putting cards in the callback's dependency list would rebuild the handler
+  // on every load, and the RefreshControl would take a new function mid-pull.
+  const cardsRef = useRef<Card[]>([]);
+  const pendingRef = useRef(0);
+
+  const refreshPending = useCallback(async (): Promise<number | null> => {
+    try {
+      const out = await api.listEventCandidates();
+      setPendingCount(out.count);
+      return out.count;
+    } catch {
       // Best effort: a count that fails to load must never break the calendar.
-      .catch(() => setPendingCount(0));
+      setPendingCount(0);
+      // null, not 0: "we could not ask" is not "there is nothing waiting", and
+      // reporting it as nothing would announce that a queue had emptied.
+      return null;
+    }
   }, []);
+  useEffect(() => { cardsRef.current = cards; }, [cards]);
+  useEffect(() => { pendingRef.current = pendingCount; }, [pendingCount]);
+
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
   // Gift pots keyed by the birthday card they belong to, so a BIRTHDAY row can
   // show its pot's progress inline without a per-row fetch.
@@ -319,8 +336,9 @@ export default function Calendar() {
     return `${parts.join(' · ')}.`;
   }, [t]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (): Promise<number | null> => {
     logEvent('calendar_open');
+    let loaded: number | null = null;
     try {
       const [cardsRes, carpoolRes, membersRes, sharedRes, potsRes] = await Promise.allSettled([
         api.listCards(), api.listCarpools(), api.familyMembers(),
@@ -339,7 +357,14 @@ export default function Calendar() {
         for (const p of potsRes.value) if (p.card_id) map[p.card_id] = p;
         setGiftPotByCard(map);
       }
-      if (cardsRes.status === 'fulfilled') setCards(cardsRes.value.filter((card) => card.status === 'OPEN' && card.due_date));
+      if (cardsRes.status === 'fulfilled') {
+        const open = cardsRes.value.filter((card) => card.status === 'OPEN' && card.due_date);
+        setCards(open);
+        // Reported rather than read back off state: a caller in the same tick
+        // would see the OLD count, which is how a refresh comes to claim
+        // nothing arrived when something did.
+        loaded = open.length;
+      }
       if (carpoolRes.status === 'fulfilled') setCarpools(carpoolRes.value);
       if (membersRes.status === 'fulfilled') {
         const children = membersRes.value.filter((m) => /^child$/i.test(m.role) && m.name);
@@ -358,6 +383,7 @@ export default function Calendar() {
     } finally {
       setLoading(false);
     }
+    return loaded;
   }, [showToast, t]);
 
   /**
@@ -380,13 +406,25 @@ export default function Calendar() {
    */
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.allSettled([
+    const before = { items: cardsRef.current.length, waiting: pendingRef.current };
+    const [cardsOut, pendingOut] = await Promise.allSettled([
       load(),
-      Promise.resolve(refreshPending()),
+      refreshPending(),
       Promise.resolve(refreshSubscription?.()),
     ]);
     setRefreshing(false);
-  }, [load, refreshPending, refreshSubscription]);
+
+    // And then SAY so. The spinner turning and stopping is not an answer:
+    // on a day when nothing has changed it is indistinguishable from a
+    // gesture that never fired, which is exactly how this was reported —
+    // "I pull down and get no popup, that's why I think it's not working."
+    const items = cardsOut.status === 'fulfilled' && cardsOut.value !== null
+      ? cardsOut.value : before.items;
+    const waiting = pendingOut.status === 'fulfilled' && pendingOut.value !== null
+      ? pendingOut.value : before.waiting;
+    const said = refreshOutcome(before, { items, waiting });
+    showToast(t(said.key, said.params), said.key === 'refresh_up_to_date' ? 'info' : 'success');
+  }, [load, refreshPending, refreshSubscription, showToast, t]);
 
   /**
    * Pull a shared item back to private, from the reassurance view itself.

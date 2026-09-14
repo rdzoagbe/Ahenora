@@ -167,6 +167,18 @@ describe('the waiting count is visible', () => {
   });
 
   it('a failed count never breaks the calendar', () => {
-    expect(CALENDAR).toContain('.catch(() => setPendingCount(0));');
+    // Pinned on the BEHAVIOUR rather than the spelling. This read
+    // `.catch(() => setPendingCount(0));` until refreshPending had to start
+    // returning its count, and a test that fails on a .then becoming an await
+    // is testing the syntax somebody happened to use.
+    expect(CALENDAR).toMatch(/catch \{[\s\S]{0,400}setPendingCount\(0\);/);
+  });
+
+  it('does not report a count it could not ask for as zero', () => {
+    // The other half, which the old assertion could not see: the screen shows
+    // 0 (there is nothing better to show), but the refresh must not treat
+    // that as "the queue emptied" and announce it.
+    expect(CALENDAR).toContain('      // null, not 0:');
+    expect(CALENDAR).toMatch(/catch \{[\s\S]{0,400}return null;/);
   });
 });
