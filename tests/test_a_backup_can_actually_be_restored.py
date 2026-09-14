@@ -251,19 +251,34 @@ class ACorruptArchiveIsRefusedBeforeAnythingIsWritten(unittest.TestCase):
         with self.assertRaises(SystemExit):
             run(mongo_backup.restore(FakeDatabase(), self.archive))
 
-    def test_nothing_is_written_when_an_archive_is_bad(self):
-        """The point of checking every file before touching the database."""
-        path = os.path.join(self.archive, "cards.json.gz")
+    def test_nothing_is_written_when_a_later_file_turns_out_bad(self):
+        """The point of checking EVERY file before touching the database.
+
+        The corrupted collection has to sort LAST, or this test cannot tell a
+        safe implementation from a dangerous one. A first version corrupted
+        `cards` and asserted `families` survived — but cards sorts first, so it
+        failed before anything was wiped no matter how the restore was written.
+        A mutation that moved the delete inside the read loop passed it. The
+        collections are restored in sorted order, so the only arrangement that
+        discriminates is: break the last one, check the first one survived.
+        """
+        collections = sorted(mongo_backup.read_manifest(self.archive)["collections"])
+        self.assertEqual(collections[-1], "family_members")   # the ordering this relies on
+
+        path = os.path.join(self.archive, "family_members.json.gz")
         with gzip.open(path, "wt", encoding="utf-8") as handle:
-            handle.write('{"card_id": "wrong"}\n')
+            handle.write('{"member_id": "wrong"}\n{"member_id": "also_wrong"}\n')
 
         target = FakeDatabase()
-        run(target["families"].insert_one({"family_id": "survivor"}))
+        run(target["cards"].insert_one({"card_id": "survivor", "family_id": "fam_1"}))
         with self.assertRaises(SystemExit):
             run(mongo_backup.restore(target, self.archive))
-        # families was alphabetically after cards, so a naive implementation
-        # would already have wiped it before noticing.
-        self.assertEqual(run(target["families"].count_documents({})), 1)
+
+        # `cards` is restored FIRST. An implementation that deletes as it reads
+        # would have emptied it before ever reaching the bad file.
+        self.assertEqual(run(target["cards"].count_documents({})), 1)
+        self.assertEqual(
+            run(target["cards"].find_one({}))["card_id"], "survivor")
 
 
 class TheBackupCoversEveryCollectionTheAppDeletes(unittest.TestCase):
