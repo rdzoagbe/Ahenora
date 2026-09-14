@@ -56,7 +56,7 @@ import { api, logEvent, AllowanceConfig, AllowanceTxn, ChatThreadSummary, Chore,
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { logger } from '../../src/logger';
-import { refreshOutcome } from '../../src/refreshOutcome';
+import { refreshOutcome, onlyWhatIsOnScreen, type RefreshSnapshot } from '../../src/refreshOutcome';
 
 // The teen-accounts hint is a one-time announcement, so what it needs is a
 // memory, not a timer. Scoped to the device, not the household: the key has no
@@ -574,21 +574,36 @@ export default function Kids() {
     }
   }, []);
 
-  const load = useCallback(async (): Promise<number | null> => {
-    let loaded: number | null = null;
+  const load = useCallback(async (): Promise<RefreshSnapshot | null> => {
+    let loaded: RefreshSnapshot | null = null;
     logEvent('kids_open');
     try {
       setErrorMessage(null);
       // One request fewer per visit: the priced-reward list is gone, so the
       // page no longer needs the rewards catalogue at all.
-      const m = await api.familyMembers();
+      //
+      // The approvals leave at the SAME time as the members rather than after
+      // them. They used to be fired once the members had come back and then
+      // never waited for, so the number existed on screen but nothing could
+      // honestly speak it — a refresh cannot announce a count it did not wait
+      // for. Started side by side, the roster still renders on the members
+      // alone, and awaiting the approvals at the end of this function costs
+      // nothing beyond the slower of two requests already in flight. It is
+      // strictly sooner than before, when the second request could not even
+      // begin until the first had landed.
+      const membersPromise = api.familyMembers();
+      const approvalsPromise = api.getTeenApprovals()
+        .then((r) => { setTeenApprovals(r.approvals); return r.approvals.length; })
+        // null, not 0: a request that failed is not a queue that emptied.
+        .catch(() => { setTeenApprovals([]); return null; });
+      const m = await membersPromise;
       setMembers(m);
       // Who is in the household is what this tab is about, and somebody
       // accepting an invitation is the thing a refresh here should announce.
       // Reported rather than read back off state, which in the same tick
-      // still holds the old count.
-      loaded = m.length;
-      api.getTeenApprovals().then((r) => setTeenApprovals(r.approvals)).catch(() => setTeenApprovals([]));
+      // still holds the old count. Set here rather than only at the end so
+      // that anything failing below still reports the roster it did load.
+      loaded = { items: m.length };
       api.chatThreads().then((r) => setThreads(r.threads)).catch(() => setThreads([]));
 
       const currentChildStillExists = selectedChild && m.some((x) => x.member_id === selectedChild);
@@ -626,6 +641,13 @@ export default function Kids() {
           setBalances(bals);
         })
         .catch(() => undefined);
+      // Awaited last, so nothing above it waits on this: it has been in flight
+      // since the top. A parent deciding stars is the thing this tab exists
+      // for, and it is the one count here worth putting ahead of the roster.
+      const waiting = await approvalsPromise;
+      // undefined when the call failed, so the caller keeps its before-count
+      // rather than announcing that a queue cleared itself.
+      loaded = { items: m.length, waiting: waiting ?? undefined };
     } catch (e: any) {
       logger.warn('Kids page load failed:', e?.message || e);
       setErrorMessage(e?.message || t('kids_load_error'));
@@ -640,16 +662,33 @@ export default function Kids() {
   // mid-pull.
   const membersRef = useRef<FamilyMember[]>([]);
   useEffect(() => { membersRef.current = members; }, [members]);
+  const waitingRef = useRef(0);
+  useEffect(() => { waitingRef.current = teenApprovals.length; }, [teenApprovals]);
+  // Whether a child's profile is open, held the same way and for the same
+  // reason as the counts above.
+  const focusedRef = useRef(false);
+  useEffect(() => { focusedRef.current = isFocused; }, [isFocused]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    const before = { items: membersRef.current.length };
+    // The approvals card sits behind a !isFocused gate, so with one child's
+    // profile open it is not on screen. Its count is then not this screen's
+    // news to give: pointing someone at a decision they cannot see from where
+    // they are standing is worse than telling them the roster is up to date.
+    // On the roster, where the card IS visible, the approvals outrank it —
+    // somebody waiting on a star is the thing this tab is for, and a new
+    // household member is only information.
+    const speaks = !focusedRef.current;
+    const seen = { items: membersRef.current.length, waiting: waitingRef.current };
+    const before = onlyWhatIsOnScreen(seen, speaks);
     const loaded = await load();
     setRefreshing(false);
-    // And then say so. Deliberately counting MEMBERS, not the teen approvals
-    // also loaded here: those arrive through a fire-and-forget call, and a
-    // number this speaks aloud has to be one the refresh actually waited for.
-    const said = refreshOutcome(before, { items: loaded ?? before.items });
+    const said = refreshOutcome(before, onlyWhatIsOnScreen({
+      // `?? seen.*` and never `?? 0`: a load that could not answer must not be
+      // announced as an empty roster or a queue that cleared itself.
+      items: loaded?.items ?? seen.items,
+      waiting: loaded?.waiting ?? seen.waiting,
+    }, speaks));
     showToast(t(said.key, said.params), said.key === 'refresh_up_to_date' ? 'info' : 'success');
   }, [load, showToast, t]);
 

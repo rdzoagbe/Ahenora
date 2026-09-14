@@ -92,9 +92,12 @@ describe('every tab says it, not just the one that was reported', () => {
   it('counts from what the loader returned, not from state', () => {
     // Read back in the same tick, state still holds the OLD count — which is
     // how a refresh comes to report that nothing arrived when something did.
+    // Kids returns a whole snapshot rather than a bare number, because it has
+    // a second count worth speaking; the rule being pinned is the same one.
     for (const name of TABS) {
-      expect(tab(name)).toMatch(/const load = useCallback\(async \(\): Promise<number \| null>/);
-      expect(tab(name)).toContain('let loaded: number | null = null;');
+      expect(tab(name)).toMatch(
+        /const load = useCallback\(async \(\): Promise<(number|RefreshSnapshot) \| null>/);
+      expect(tab(name)).toMatch(/let loaded: (number|RefreshSnapshot) \| null = null;/);
       expect(tab(name)).toContain('return loaded;');
     }
   });
@@ -103,7 +106,15 @@ describe('every tab says it, not just the one that was reported', () => {
     // `?? before.items` rather than `?? 0`: a load that failed must not be
     // announced as an empty list.
     for (const name of TABS.filter((n) => n !== 'calendar.tsx')) {
-      expect(tab(name)).toContain('items: loaded ?? before.items');
+      expect(tab(name)).toMatch(/items: loaded(\?\.items)? \?\? (before|seen)\.items/);
+    }
+  });
+
+  it('never falls back to zero on any tab', () => {
+    // The mutation this is here to catch: `?? 0` reads as "the list is empty"
+    // when the truth is "nobody managed to ask".
+    for (const name of TABS) {
+      expect(tab(name)).not.toMatch(/(items|waiting): [A-Za-z.?]*loaded[A-Za-z.?]* \?\? 0/);
     }
   });
 
