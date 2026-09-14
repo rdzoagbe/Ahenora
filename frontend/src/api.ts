@@ -124,6 +124,10 @@ export const kidMode = {
 };
 
 const REQUEST_TIMEOUT_MS = 30_000;
+// Every call that uploads a PHOTOGRAPH and then waits for a model to read it.
+// The default budget is for fetching a list; applied to these it turned an
+// ordinary slow scan into an abort, which the app reported as being offline.
+const VISION_TIMEOUT_MS = 90_000;
 
 const RETRY_MAX = 3;
 const RETRY_BASE_MS = 1_000;
@@ -349,7 +353,13 @@ function drainQueue(): void {
 
 async function request<T = unknown>(
   path: string,
-  opts: { method?: string; body?: unknown; headers?: Record<string, string> } = {}
+  opts: {
+    method?: string; body?: unknown; headers?: Record<string, string>;
+    /** Override the default budget. A call that uploads a photograph AND
+     *  waits for a model to read it is not the same shape of request as
+     *  fetching a list, and 30s was being applied to both. */
+    timeoutMs?: number;
+  } = {}
 ): Promise<T> {
   const token = await tokenStore.get();
   const headers: Record<string, string> = {
@@ -370,7 +380,8 @@ async function request<T = unknown>(
     }
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const timeoutId = setTimeout(() => controller.abort(),
+                                 opts.timeoutMs ?? REQUEST_TIMEOUT_MS);
 
     let res: Response;
     try {
@@ -2546,7 +2557,12 @@ export const api = {
   // Vision
   visionExtract: (image_base64: string) => {
     invalidateUsageCaches();
-    return request<ScanResult>('/vision/extract', { method: 'POST', body: { image_base64 } });
+    // The budget that started this: thirty seconds was being applied to a
+    // call that uploads a photograph over mobile data and then waits for a
+    // model to read it. An ordinary slow scan aborted, and the app reported
+    // the abort as being offline — on wifi AND 4G.
+    return request<ScanResult>('/vision/extract',
+      { method: 'POST', body: { image_base64 }, timeoutMs: VISION_TIMEOUT_MS });
   },
   // Brief
   weeklyBrief: () =>
@@ -2726,6 +2742,7 @@ export const api = {
     request<{ items: { name: string; unsure: boolean }[] }>('/shopping/scan', {
       method: 'POST',
       body: { image_base64: imageBase64 },
+      timeoutMs: VISION_TIMEOUT_MS,
     }),
   bulkAddShopping: (names: string[], categories?: (string | undefined)[]) =>
     request<{ ok: boolean; added: number }>('/shopping/bulk', {
@@ -2750,6 +2767,7 @@ export const api = {
     request<ScannedReceipt>('/expenses/scan-receipt', {
       method: 'POST',
       body: { image_base64: imageBase64 },
+      timeoutMs: VISION_TIMEOUT_MS,
     }),
   getPriceCompare: () => request<PriceCompare>('/expenses/price-compare'),
   listExpenses: (days = 30) => request<Expense[]>(`/expenses?days=${days}`),
@@ -2834,7 +2852,8 @@ export const api = {
         ingredients: { name: string; qty: number | null; unit: string }[];
         steps: string[];
       };
-    }>('/recipes/capture', { method: 'POST', body: { image_base64: imageBase64 } }),
+    }>('/recipes/capture',
+      { method: 'POST', body: { image_base64: imageBase64 }, timeoutMs: VISION_TIMEOUT_MS }),
   addMealFromCapture: (day: string, recipe: object, lang: string) =>
     request<MealPlan>(`/meals/from-capture?lang=${encodeURIComponent(lang)}`, {
       method: 'POST',

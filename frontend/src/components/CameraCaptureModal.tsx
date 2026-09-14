@@ -92,18 +92,28 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
         }
       }
 
+      // allowsEditing: the system crop step, before anything is uploaded.
+      //
+      // A phone shoots 12MP; at quality 0.55 that is still megabytes, and
+      // base64 adds a third on top — so the scan was pushing 3-5 MB up
+      // before the model had seen anything. That is the slowness, and it is
+      // also why extraction was mediocre: the model was reading a photo of a
+      // TABLE with a letter on it.
+      //
+      // Cropping to the document fixes both at once, and it is the nearest
+      // thing to the automatic framing a document scanner does that can ship
+      // over the air. Real edge detection needs a native module, which an OTA
+      // cannot add.
+      const shot = {
+        base64: true,
+        quality: 0.55,
+        allowsEditing: true,
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      } as const;
       const res =
         source === 'camera'
-          ? await ImagePicker.launchCameraAsync({
-              base64: true,
-              quality: 0.55,
-              mediaTypes: ImagePicker.MediaTypeOptions.Images,
-            })
-          : await ImagePicker.launchImageLibraryAsync({
-              base64: true,
-              quality: 0.55,
-              mediaTypes: ImagePicker.MediaTypeOptions.Images,
-            });
+          ? await ImagePicker.launchCameraAsync(shot)
+          : await ImagePicker.launchImageLibraryAsync(shot);
 
       if (res.canceled || !res.assets?.[0]) return;
 

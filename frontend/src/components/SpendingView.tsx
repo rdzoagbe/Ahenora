@@ -161,8 +161,11 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
         }
       }
       const res = source === 'camera'
-        ? await ImagePicker.launchCameraAsync({ base64: true, quality: 0.55, mediaTypes: ImagePicker.MediaTypeOptions.Images })
-        : await ImagePicker.launchImageLibraryAsync({ base64: true, quality: 0.55, mediaTypes: ImagePicker.MediaTypeOptions.Images });
+        // allowsEditing for the same reason as the document scanner: a
+        // receipt cropped to the receipt is a fraction of the bytes and a
+        // far easier read than a photo of a whole worktop.
+        ? await ImagePicker.launchCameraAsync({ base64: true, quality: 0.55, allowsEditing: true, mediaTypes: ImagePicker.MediaTypeOptions.Images })
+        : await ImagePicker.launchImageLibraryAsync({ base64: true, quality: 0.55, allowsEditing: true, mediaTypes: ImagePicker.MediaTypeOptions.Images });
       if (res.canceled || !res.assets?.[0]) return;
       const asset = res.assets[0];
       // Native hands back base64; web hands back a data URL instead.

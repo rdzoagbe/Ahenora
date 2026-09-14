@@ -53,6 +53,17 @@ export function apiErrorText(e: unknown, t: Translate, fallbackKey: string): str
   if (err?.status === 403) return t('err_not_allowed');
   if (err?.status === 413) return t('err_too_large');
   if (err?.status && err.status >= 500) return t('err_server');
+  // A TIMEOUT IS NOT A DEAD NETWORK, and until now it was told as one.
+  //
+  // An aborted request carries no HTTP status, so it fell into the branch
+  // below and was reported as "No connection. It'll go through when you're
+  // back online." Roland hit that scanning a document on wifi AND 4G: the
+  // upload plus the model's reading simply took longer than the budget.
+  //
+  // The name is checked directly rather than with `instanceof DOMException`,
+  // which is not a defined global on Hermes — the same reason request() does
+  // it that way.
+  if ((err as { name?: string })?.name === 'AbortError') return t('err_timeout');
   // status 0 / undefined with a message is what fetch gives on a dead network.
   if (!err?.status) return t('err_offline');
 
