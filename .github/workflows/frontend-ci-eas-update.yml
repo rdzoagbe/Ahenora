@@ -30,8 +30,25 @@ on:
   # day with six merges that is six updates pushed at people while they are
   # using the app, and no window at all between "it looked fine in CI" and
   # "it is on every phone".
+  #
+  # FOUR attempts, not one. GitHub runs scheduled workflows on a best-effort
+  # queue: they are routinely delayed and, under load, dropped entirely. This
+  # one fired ONCE in its first two days — five hours late — and eight merged
+  # PRs sat on main reaching nobody, with nothing anywhere saying so. A
+  # schedule that silently does not fire is the same shape as every other bug
+  # this codebase keeps finding: nothing breaks, nothing alerts, the thing
+  # just never happens.
+  #
+  # The later slots cost nothing when 02:00 worked. ota_should_publish.sh
+  # refuses to publish when the app has not changed since the last publish,
+  # and only moves the ota-published tag after `eas update` succeeds — so the
+  # first slot that runs publishes, and the rest report "no_app_change" and
+  # stop. All four are still the middle of the night in Europe.
   schedule:
     - cron: '0 2 * * *'
+    - cron: '0 3 * * *'
+    - cron: '0 4 * * *'
+    - cron: '0 5 * * *'
   workflow_dispatch:
     inputs:
       publish_now:
