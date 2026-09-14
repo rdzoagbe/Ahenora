@@ -44,7 +44,13 @@ jobs:
       - name: Ask production whether anything has thrown
         env:
           OPS_ALERT_TOKEN: ${{ secrets.OPS_ALERT_TOKEN }}
-          API_BASE: ${{ vars.API_BASE || 'https://api.ahenora.com' }}
+          # The same production host scripts/prod_smoke.py has always used.
+          # A first version of this file invented "api.ahenora.com", which does
+          # not exist — the alert would have failed every hour with "could not
+          # reach", which is precisely the cry-wolf failure the skip-when-unset
+          # branch below exists to avoid. Overridable, but the default is the
+          # one already proven by the smoke test.
+          API_BASE: ${{ vars.API_BASE || secrets.SMOKE_BASE_URL || 'https://household-coo-production.up.railway.app' }}
           MINUTES: ${{ github.event.inputs.minutes || '60' }}
         run: |
           set -uo pipefail
