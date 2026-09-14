@@ -63,6 +63,87 @@
 }
 </script>
 
+<!-- FAQPage, generated from the section below and checked against it by a
+     test. Worth being clear about what this does and does not do: Google
+     restricted FAQ rich results in 2023 to government and health sites, so
+     this will NOT put questions under the search result for an app. It is
+     here because it states, in a form a machine reads, what the page
+     answers — which is what AI answers and other engines consume. The
+     questions earn their place on the page regardless; the markup is the
+     cheap part. -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Is Ahenora free?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. The free plan is built for a parent on their own or two parents together, with up to two children — the shared calendar, tasks, chores and stars, the shopping list, family chat and a 25 MB document vault, plus ten camera scans a month. Family (€6.99 a month) raises that to five children with unlimited scans and adds meal planning, pocket money and the carpool schedule. Nothing expires and there is no trial to forget to cancel."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does it work for co-parents in two homes?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "That is what it was built for. Set an alternating-week custody schedule and the calendar shades whose week it is, so both parents read the same month the same way. Hand-off notes carry the things that do not fit in a calendar entry — who has the football kit, that one of them is getting over a cold — and either parent can pick up a task the other started."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can my co-parent see everything I add?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. Anything you add is shared with the household by default, because a task nobody else can see helps nobody — but you can make any item private in one tap, and a private item is invisible to everyone else including the other parent. There is a screen that shows plainly what you share with them and what they share with you, so it is never a guess."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Do my children need their own phone or account?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. Kid mode runs on your phone: hand it over and it shows only that child’s chores and stars, with a PIN to get back out. Nothing else in the household is reachable from it. Teenagers between 13 and 17 can have their own sign-in if you want them to, with their own tasks and a private thread to you. That is your choice to switch on, not the default."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "I am a single parent. Is this still for me?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. Nothing requires a second adult. The calendar, the chores, the shopping list and the document vault all work for one parent, and the app does not nag you to invite somebody. Grandparents, a childminder or a nanny can be added as helpers on the Household plan, with access to the schedule and the tasks but not to your documents, money or family chat."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does it work without a signal?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "The lists a family actually needs in hand — tasks, the shopping list, meals and who is in the household — are kept on the phone, so a supermarket aisle or a basement car park shows the last known copy instead of an error. Ticking something off with no signal is remembered and sent when the connection comes back."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Where is our data, and who can read it?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Ahenora is run from France and answers to the CNIL, the French data protection authority. Nobody at Ahenora reads your household’s content, it is not sold, and it is not used to train anything. Our providers may process data outside your country under the safeguards set out in the privacy policy . A photo you scan is read to pull out the date and the details, and it is kept with the task or the document it created so you can check it later. Delete that item and the image goes with it."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can I get our data out, or delete it?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes, and without asking anyone. Deleting your account removes the household’s content — tasks, calendar, chat, documents, everything — from Settings in the app, or from this page if you no longer have the app installed."
+      }
+    }
+  ]
+}
+</script>
+
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@600;700;800&display=swap" rel="stylesheet">
@@ -252,6 +333,24 @@
   .plan li.lead { color: var(--muted); font-weight: 600; padding-left: 0; }
 
   /* ---------- final cta ---------- */
+  /* ---------- faq ---------- */
+  /* <details> rather than JavaScript: a crawler and a screen reader both read
+     the answer whether or not it is open, and it works with scripting off. */
+  /* The header is sticky, so an anchor landing on #faq would put the
+     heading underneath it. */
+  #faq { scroll-margin-top: 84px; }
+  .faq { max-width: 760px; margin: 0 auto; }
+  .faq details { border: 1px solid var(--line); border-radius: 16px; background: var(--card); margin-bottom: 12px; box-shadow: var(--shadow-sm); }
+  .faq summary { cursor: pointer; padding: 18px 22px; font-weight: 700; font-size: 16.5px; list-style: none; display: flex; align-items: center; gap: 12px; }
+  .faq summary::-webkit-details-marker { display: none; }
+  .faq summary::after { content: "+"; margin-left: auto; color: var(--orange-ink); font-size: 22px; font-weight: 600; line-height: 1; }
+  .faq details[open] summary::after { content: "\2013"; }
+  .faq summary:hover { color: var(--orange-ink); }
+  .faq summary:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; border-radius: 16px; }
+  .faq .answer { padding: 0 22px 20px; color: var(--muted); }
+  .faq .answer p { margin: 0; }
+  .faq .answer p + p { margin-top: 12px; }
+
   .final { text-align: center; }
   .final .lede { margin: 0 auto 28px; }
 
@@ -545,7 +644,7 @@
       <div class="section-head">
         <span class="kicker">Pricing</span>
         <h2>Simple plans</h2>
-        <p>Every parent is always free. We only ever meter on household size — never on the features that keep your family coordinated.</p>
+        <p>Every parent is always free, and so is everything that keeps a family coordinated — the calendar, tasks, chores and the shared lists. The paid plans add room for more children and the extras below.</p>
       </div>
       <!-- Monthly / yearly, the same choice the app offers. The saving is shown
            PER CARD because it is not the same on both: a year of Premium saves
@@ -577,7 +676,7 @@
           <p class="saving" hidden>Saves &euro;33.89 a year &mdash; 40% off monthly</p>
           <ul>
             <li class="lead">Everything in Free, plus:</li>
-            <li>Up to 5 children and caregivers</li>
+            <li>Up to 5 children</li>
             <li>Meal planner, saved plans and recipe AI</li>
             <li>Pocket money and the weekly report</li>
             <li>Carpool and a larger document vault</li>
@@ -599,7 +698,59 @@
           </ul>
         </div>
       </div>
-      <p class="cta-note" style="text-align:center; margin-top: 22px;">Prices in euros. Subscribe by card on the web &mdash; including on iPhone &mdash; or through Google Play in the Android app. Cancel any time, either way.</p>
+      <p class="cta-note" style="text-align:center; margin-top: 22px;">Prices in euros. Subscribe inside the app &mdash; through the App Store on iPhone, or Google Play on Android &mdash; or by card in your browser. Cancel any time, wherever you subscribed.</p>
+    </div>
+  </section>
+
+  <!-- The questions people actually ask before installing a family organiser:
+       what it costs, whether it works across two homes, what the other parent
+       can see, and what happens to the data. Written for a visitor first —
+       these are the things that stop somebody downloading — and marked up as
+       FAQPage second.
+       <details> rather than JavaScript so the answers are in the HTML whether
+       or not anything runs, which is what a crawler and a screen reader both
+       need. Any change here has to change the JSON-LD in the head to match:
+       markup that disagrees with the page is worse than no markup. A test
+       holds the two together. -->
+  <section class="plans" id="faq">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>Questions people ask</h2>
+      </div>
+      <div class="faq">
+        <details>
+          <summary>Is Ahenora free?</summary>
+          <div class="answer"><p>Yes. The free plan is built for a parent on their own or two parents together, with up to two children &mdash; the shared calendar, tasks, chores and stars, the shopping list, family chat and a 25&nbsp;MB document vault, plus ten camera scans a month.</p><p>Family (&euro;6.99 a month) raises that to five children with unlimited scans and adds meal planning, pocket money and the carpool schedule. Nothing expires and there is no trial to forget to cancel.</p></div>
+        </details>
+        <details>
+          <summary>Does it work for co-parents in two homes?</summary>
+          <div class="answer"><p>That is what it was built for. Set an alternating-week custody schedule and the calendar shades whose week it is, so both parents read the same month the same way.</p><p>Hand-off notes carry the things that do not fit in a calendar entry &mdash; who has the football kit, that one of them is getting over a cold &mdash; and either parent can pick up a task the other started.</p></div>
+        </details>
+        <details>
+          <summary>Can my co-parent see everything I add?</summary>
+          <div class="answer"><p>No. Anything you add is shared with the household by default, because a task nobody else can see helps nobody &mdash; but you can make any item private in one tap, and a private item is invisible to everyone else including the other parent.</p><p>There is a screen that shows plainly what you share with them and what they share with you, so it is never a guess.</p></div>
+        </details>
+        <details>
+          <summary>Do my children need their own phone or account?</summary>
+          <div class="answer"><p>No. Kid mode runs on your phone: hand it over and it shows only that child&rsquo;s chores and stars, with a PIN to get back out. Nothing else in the household is reachable from it.</p><p>Teenagers between 13 and 17 can have their own sign-in if you want them to, with their own tasks and a private thread to you. That is your choice to switch on, not the default.</p></div>
+        </details>
+        <details>
+          <summary>I am a single parent. Is this still for me?</summary>
+          <div class="answer"><p>Yes. Nothing requires a second adult. The calendar, the chores, the shopping list and the document vault all work for one parent, and the app does not nag you to invite somebody.</p><p>Grandparents, a childminder or a nanny can be added as helpers on the Household plan, with access to the schedule and the tasks but not to your documents, money or family chat.</p></div>
+        </details>
+        <details>
+          <summary>Does it work without a signal?</summary>
+          <div class="answer"><p>The lists a family actually needs in hand &mdash; tasks, the shopping list, meals and who is in the household &mdash; are kept on the phone, so a supermarket aisle or a basement car park shows the last known copy instead of an error.</p><p>Ticking something off with no signal is remembered and sent when the connection comes back.</p></div>
+        </details>
+        <details>
+          <summary>Where is our data, and who can read it?</summary>
+          <div class="answer"><p>Ahenora is run from France and answers to the CNIL, the French data protection authority. Nobody at Ahenora reads your household&rsquo;s content, it is not sold, and it is not used to train anything. Our providers may process data outside your country under the safeguards set out in the <a href="/privacy.html">privacy policy</a>.</p><p>A photo you scan is read to pull out the date and the details, and it is kept with the task or the document it created so you can check it later. Delete that item and the image goes with it.</p></div>
+        </details>
+        <details>
+          <summary>Can I get our data out, or delete it?</summary>
+          <div class="answer"><p>Yes, and without asking anyone. Deleting your account removes the household&rsquo;s content &mdash; tasks, calendar, chat, documents, everything &mdash; from Settings in the app, or from <a href="/delete-account.html">this page</a> if you no longer have the app installed.</p></div>
+        </details>
+      </div>
     </div>
   </section>
 

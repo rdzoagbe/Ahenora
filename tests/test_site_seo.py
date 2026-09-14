@@ -10,6 +10,7 @@ Silent failure is the reason these are tests and not a checklist.
 
 Run with:  python3 -m unittest discover -s tests -v
 """
+import html as html_mod
 import json
 import os
 import re
@@ -145,21 +146,40 @@ class Robots(unittest.TestCase):
         self.assertIn("Allow: /", body)
 
 
+def ld_blocks(page="index.html"):
+    """Every JSON-LD block on a page, parsed."""
+    return [json.loads(b) for b in re.findall(
+        r'<script type="application/ld\+json">(.*?)</script>', read(page), re.S)]
+
+
+def ld_of(kind, page="index.html"):
+    found = [b for b in ld_blocks(page) if b.get("@type") == kind]
+    assert len(found) == 1, f"{page}: expected one {kind}, found {len(found)}"
+    return found[0]
+
+
 class StructuredData(unittest.TestCase):
     def blocks(self):
         html = read("index.html")
         return re.findall(
             r'<script type="application/ld\+json">(.*?)</script>', html, re.S)
 
-    def test_there_is_exactly_one_and_it_parses(self):
+    def test_every_block_parses(self):
         # Invalid JSON-LD is discarded silently by every crawler, so "we added
         # structured data" is not a claim anyone should make untested.
         blocks = self.blocks()
-        self.assertEqual(len(blocks), 1)
-        json.loads(blocks[0])
+        self.assertTrue(blocks)
+        for block in blocks:
+            json.loads(block)
+
+    def test_each_kind_appears_once(self):
+        # Two blocks of the same @type is how a page ends up describing itself
+        # twice and disagreeing with itself.
+        kinds = [json.loads(b).get("@type") for b in self.blocks()]
+        self.assertEqual(sorted(kinds), sorted(set(kinds)))
 
     def test_it_describes_an_application(self):
-        data = json.loads(self.blocks()[0])
+        data = ld_of("MobileApplication")
         self.assertEqual(data["@type"], "MobileApplication")
         self.assertEqual(data["name"], "Ahenora")
         self.assertTrue(data["featureList"])
@@ -167,7 +187,7 @@ class StructuredData(unittest.TestCase):
     def test_its_install_link_matches_the_one_on_the_page(self):
         # Markup that contradicts the page is a trust signal in the wrong
         # direction, and the bundle id has changed once already.
-        data = json.loads(self.blocks()[0])
+        data = ld_of("MobileApplication")
         self.assertIn(data["installUrl"], read("index.html"))
 
     def test_the_page_declares_a_canonical(self):
@@ -289,3 +309,102 @@ class FrenchPage(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheFaq(unittest.TestCase):
+    """The questions people ask before installing, and the markup for them.
+
+    Two separate things, and the second is worth less than it sounds. Google
+    restricted FAQ rich results in 2023 to government and health sites, so
+    this markup will NOT put questions under the search result for an app.
+
+    The CONTENT is the point. These are the things that stop somebody
+    downloading — what it costs, whether it works across two homes, what the
+    other parent can see, what happens to the data — and they are also, in
+    that order, what a person types into a search box or asks an assistant.
+    A page that answers them is more findable than one that does not, with or
+    without the schema.
+
+    What these tests actually guard is the failure the file already warns
+    about one class up: "markup that contradicts the page is a trust signal in
+    the wrong direction". The JSON-LD is generated from the visible section,
+    so the two can only drift if somebody edits one by hand.
+    """
+
+    def questions_on(self, page):
+        block = read(page)
+        block = block[block.index('id="faq"'):block.index('<section class="final">')]
+        return re.findall(r"<summary>(.*?)</summary>", block, re.S)
+
+    def strip(self, markup):
+        return re.sub(r"\s+", " ", html_mod.unescape(
+            re.sub(r"<[^>]+>", " ", markup))).strip()
+
+    def test_both_pages_have_one(self):
+        for page in ("index.html", "fr.html"):
+            self.assertGreaterEqual(len(self.questions_on(page)), 6, page)
+
+    def test_the_schema_says_exactly_what_the_page_says(self):
+        for page in ("index.html", "fr.html"):
+            faq = ld_of("FAQPage", page)
+            asked = [self.strip(q) for q in self.questions_on(page)]
+            marked = [q["name"] for q in faq["mainEntity"]]
+            self.assertEqual(marked, asked, page)
+
+    def test_every_question_has_a_real_answer(self):
+        for page in ("index.html", "fr.html"):
+            for entry in ld_of("FAQPage", page)["mainEntity"]:
+                answer = entry["acceptedAnswer"]["text"]
+                self.assertEqual(entry["acceptedAnswer"]["@type"], "Answer")
+                # A one-line answer is the shape of a page written for a
+                # crawler rather than for a person.
+                self.assertGreater(len(answer), 120, entry["name"])
+
+    def test_the_answers_are_in_the_html_without_javascript(self):
+        # <details> keeps the answer in the markup whether or not it is open.
+        # Behind a click handler it would be invisible to a crawler and to
+        # anyone reading with scripting off.
+        for page in ("index.html", "fr.html"):
+            self.assertIn("<details>", read(page))
+            self.assertNotIn("faq-toggle", read(page))
+
+    def test_the_french_questions_are_actually_french(self):
+        # The sibling test for the marketing copy exists because an English
+        # string survived a translation pass once already.
+        english = self.questions_on("index.html")
+        french = self.questions_on("fr.html")
+        self.assertEqual(len(english), len(french))
+        self.assertFalse(set(english) & set(french))
+
+    def test_it_does_not_sell_the_member_safety_cap_as_the_offer(self):
+        """max_members is a ceiling, not a feature.
+
+        The first version of this FAQ said the free plan "covers a household
+        of up to ten people with two children", read straight off
+        PLAN_CATALOG. But the catalogue's own comment says max_members "stays
+        as a generous total safety cap" — the metered thing is max_children,
+        and helper accounts are off on free, so nobody reaches ten.
+
+        Advertising the backstop misdescribes the offer AND sets up a
+        disappointment: somebody plans a ten-person household, then meets the
+        real limit at the second child and concludes the page lied. Roland
+        caught it; this keeps it caught.
+        """
+        for page in ("index.html", "fr.html"):
+            free = ld_of("FAQPage", page)["mainEntity"][0]["acceptedAnswer"]["text"]
+            for ceiling in ("ten people", "10 people", "dix personnes", "10 personnes"):
+                self.assertNotIn(ceiling, free, page)
+
+    def test_the_free_plan_answer_names_the_limit_that_actually_bites(self):
+        # Two children is the number a household meets. If the copy stops
+        # saying so, the answer has stopped answering the question.
+        for page, phrase in (("index.html", "two children"),
+                             ("fr.html", "deux enfants")):
+            free = ld_of("FAQPage", page)["mainEntity"][0]["acceptedAnswer"]["text"]
+            self.assertIn(phrase, free, page)
+
+    def test_it_does_not_promise_a_rich_result_it_will_not_get(self):
+        # The comment above the block has to keep saying this. Somebody
+        # measuring this change by looking for questions under the search
+        # result will conclude it failed, and remove it.
+        self.assertIn("restricted FAQ rich results", read("index.html"))
