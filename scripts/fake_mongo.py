@@ -395,6 +395,15 @@ class FakeDatabase:
     def __getitem__(self, name):
         return self._collections.setdefault(name, FakeCollection())
 
+    async def list_collection_names(self):
+        """Every collection that has been touched.
+
+        Added for the backup drill: a dump has to be able to ASK what exists
+        rather than be handed a list, because the failure being rehearsed is a
+        collection nobody remembered.
+        """
+        return sorted(self._collections)
+
     async def command(self, name):
         if name == "ping":
             return {"ok": 1}
