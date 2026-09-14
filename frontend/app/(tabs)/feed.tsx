@@ -65,6 +65,7 @@ import { useUI, UIColors } from '../../src/components/Kit';
 import { api, logEvent, ActivityEntry, Announcement, Card, CardType, ChatThreadSummary, CustodyConfig, FamilyMember, GiftPot, SantaDraw, HandoffNote, WeeklyReport , Room } from '../../src/api';
 import { syncCardReminderNotifications, syncMorningDigest, syncDinnerReminder, syncSundayRecap, ensureAskedNotificationPermissionOnce } from '../../src/notifications';
 import { logger } from '../../src/logger';
+import { refreshOutcome } from '../../src/refreshOutcome';
 import { apiErrorText } from '../../src/apiError';
 import { isoWeek, localeFor } from '../../src/utils/date';
 import { recordWin } from '../../src/reviewPrompt';
@@ -449,7 +450,8 @@ export default function Feed() {
   // does not grow with how much there is to do.
   const [showAllTasks, setShowAllTasks] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (): Promise<number | null> => {
+    let loaded: number | null = null;
     logEvent('feed_open');
     ensureAskedNotificationPermissionOnce().catch(() => undefined);
     try {
@@ -490,6 +492,9 @@ export default function Feed() {
           return false;
         });
         setCards(loadedCards);
+        // What a refresh speaks about. Reported rather than read back off
+        // state, which in the same tick still holds the old count.
+        loaded = loadedCards.length;
         setLoadError(false);
       } else {
         // Distinguish a real load failure (offline / backend down) from a
@@ -599,6 +604,7 @@ export default function Feed() {
       setLoading(false);
       setRefreshing(false);
     }
+    return loaded;
   }, [t, subscription, reportLocked]);
 
   useFocusEffect(
@@ -1079,10 +1085,22 @@ export default function Feed() {
     );
   };
 
-  const handleRefresh = useCallback(() => {
+  // The "before" count, held in a ref so the handler is not rebuilt on every
+  // load — the RefreshControl would otherwise be handed a new function
+  // mid-pull.
+  const cardsRef = useRef<Card[]>([]);
+  useEffect(() => { cardsRef.current = cards; }, [cards]);
+
+  const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    load();
-  }, [load]);
+    const before = { items: cardsRef.current.length };
+    // load() clears `refreshing` itself in its finally, so nothing does it here.
+    const loaded = await load();
+    // And then say so. A spinner that turns and stops is not an answer: on a
+    // day when nothing changed it reads as a gesture that never fired.
+    const said = refreshOutcome(before, { items: loaded ?? before.items });
+    showToast(t(said.key, said.params), said.key === 'refresh_up_to_date' ? 'info' : 'success');
+  }, [load, showToast, t]);
 
   const addNote = useCallback(async () => {
     if (!noteText.trim()) return;
