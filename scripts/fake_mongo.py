@@ -306,7 +306,14 @@ class FakeCollection:
             self.rows.append(_bsonify(dict(doc)))
         return _Result(len(docs))
 
-    def _apply(self, row, update, query=None):
+    def _apply(self, row, update, query=None, inserting=False):
+        # $setOnInsert writes ONLY when the upsert actually creates the row.
+        # Applying it on every update would quietly turn "remember when this
+        # was first seen" into "overwrite it every time", which is the exact
+        # field nobody checks until they need it.
+        if inserting:
+            for key, value in (update.get("$setOnInsert") or {}).items():
+                _set_path(row, key, value)
         for key, value in (update.get("$set") or {}).items():
             if ".$" in key:
                 _set_positional(row, key, value, query or {})
@@ -355,7 +362,7 @@ class FakeCollection:
                 return _Result(1)
         if upsert:
             merged = {k: v for k, v in (query or {}).items() if not isinstance(v, dict)}
-            self._apply(merged, update, query)
+            self._apply(merged, update, query, inserting=True)
             self.rows.append(merged)
             return _Result(1)
         return _Result(0)
@@ -394,6 +401,15 @@ class FakeDatabase:
 
     def __getitem__(self, name):
         return self._collections.setdefault(name, FakeCollection())
+
+    async def list_collection_names(self):
+        """Every collection that has been touched.
+
+        Added for the backup drill: a dump has to be able to ASK what exists
+        rather than be handed a list, because the failure being rehearsed is a
+        collection nobody remembered.
+        """
+        return sorted(self._collections)
 
     async def command(self, name):
         if name == "ping":

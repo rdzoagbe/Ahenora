@@ -64,3 +64,26 @@ export function refreshOutcome(
   }
   return { key: 'refresh_up_to_date' };
 }
+
+/**
+ * Drop a waiting-count the screen is not currently showing.
+ *
+ * A screen can load more than it displays. The Family tab loads the teen
+ * approvals whether or not the approvals card is on screen — open one child's
+ * profile and the card is gone, because it sits behind the same gate as the
+ * roster it belongs to.
+ *
+ * A refresh there must not announce "2 waiting for you to decide". The count
+ * is true, but it points at a card the person cannot see from where they are
+ * standing, and a prompt to decide something invisible is worse than no
+ * prompt: it reads as a bug, which is exactly the complaint this whole
+ * feature exists to answer.
+ *
+ * Only the waiting-count is dropped. Items are what the screen is a list of,
+ * so they are always its own news.
+ */
+export function onlyWhatIsOnScreen(
+  snapshot: RefreshSnapshot, showsWaiting: boolean,
+): RefreshSnapshot {
+  return showsWaiting ? snapshot : { items: snapshot.items };
+}

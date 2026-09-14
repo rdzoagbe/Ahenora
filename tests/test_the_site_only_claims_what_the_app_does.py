@@ -61,10 +61,45 @@ def plan_card(name, heading):
     """
     s = re.sub(r"<script.*?</script>|<style.*?</style>|<!--.*?-->", "", page(name), flags=re.S)
     cards = re.split(r"<h3>", s)
+    # The heading must match EXACTLY, closing tag and all. A prefix match
+    # looks equivalent and is not: the moment the middle tier was renamed
+    # "Family", startswith("Family") began matching the "Family messages"
+    # FEATURE card higher up the page, and the price assertion then searched a
+    # block of copy about chat for "6.99". A green prefix match would have
+    # been worse than the failure that caught it — the price would simply
+    # never have been checked.
+
     for card in cards[1:]:
-        if card.startswith(heading):
+        if card.startswith(f"{heading}</h3>"):
             return re.sub(r"\s+", " ", html_mod.unescape(re.sub(r"<[^>]+>", " ", card)))
     raise AssertionError(f"{name}: no plan card headed {heading!r}")
+
+
+def app_plan_name(key, lang):
+    """What the APP calls a plan, read out of the strings it ships.
+
+    Hardcoding the name here is exactly what let a mismatch live for weeks:
+    the first version of this file pinned "Premium" on both pages, so when the
+    middle tier was relabelled "Family" in the app the test went on ENFORCING
+    the stale website name instead of catching the drift. A reader met
+    "Premium" on ahenora.com, opened the app to buy it, and it was not there.
+
+    Read from i18n and the two can only move together.
+    """
+    src = open(os.path.join(ROOT, "frontend", "src", "i18n.ts"), encoding="utf-8").read()
+    block = re.search(rf"^const {lang}: Dict = \{{(.*?)^\}};", src, re.S | re.M)
+    if not block:
+        raise AssertionError(f"i18n.ts has no {lang!r} block")
+    found = re.search(rf"""^\s*{key}:\s*['"](.+?)['"],""", block.group(1), re.M)
+    if not found:
+        raise AssertionError(f"i18n.ts {lang!r} has no {key!r}")
+    return found.group(1)
+
+
+# The tiers, and the page each one's card lives on. The names deliberately
+# are NOT written down here — see app_plan_name.
+TIERS = (("executive", "plan_executive"), ("household", "plan_household"))
+PAGE_LANG = (("index.html", "en"), ("fr.html", "fr"))
 
 
 def money(value, lang):
@@ -92,13 +127,32 @@ class ThePricesAndLimits(unittest.TestCase):
     def plan(self, key):
         return server.PLAN_CATALOG[key]
 
+    def test_the_site_calls_each_plan_what_the_app_calls_it(self):
+        """The mismatch this file failed to catch the first time.
+
+        The app relabelled its middle tier "Family" (the stored id stays
+        "executive" so RevenueCat and existing subscribers keep working) and
+        the website went on saying "Premium" — in both languages, and in the
+        Household card's "Everything in Premium, plus". Same 6.99 product,
+        two names, and the one a buyer reads first was the one that did not
+        exist when they opened the app.
+        """
+        for key, string_key in TIERS:
+            for name, lang in PAGE_LANG:
+                # Raises with the heading it wanted if the card is missing.
+                plan_card(name, app_plan_name(string_key, lang))
+
+    def test_no_page_still_advertises_the_retired_name(self):
+        # Including the cross-reference on the Household card, which is where
+        # a rename is most easily missed.
+        for name, _ in PAGE_LANG:
+            self.assertNotIn("Premium", visible(name), name)
+
     def test_the_advertised_prices_are_the_charged_prices(self):
-        for key, heading_en, heading_fr in (("executive", "Premium", "Premium"),
-                                            ("household", "Household", "Foyer")):
+        for key, string_key in TIERS:
             charged = self.plan(key)["price_monthly"]
-            for name, heading, lang in (("index.html", heading_en, "en"),
-                                        ("fr.html", heading_fr, "fr")):
-                card = plan_card(name, heading)
+            for name, lang in PAGE_LANG:
+                card = plan_card(name, app_plan_name(string_key, lang))
                 self.assertIn(money(charged, lang), card, (key, name))
 
     def test_the_advertised_yearly_saving_is_arithmetic(self):
@@ -135,7 +189,7 @@ class ThePricesAndLimits(unittest.TestCase):
 class WhatEachTierActuallyBuys(unittest.TestCase):
     """The features a paid card promises, against the flags that gate them."""
 
-    def test_premium_does_not_promise_helper_accounts(self):
+    def test_the_middle_tier_does_not_promise_helper_accounts(self):
         """The middle card said "Up to 5 children and caregivers".
 
         require_feature("helper_accounts") is Household-only — the server's own
@@ -143,16 +197,17 @@ class WhatEachTierActuallyBuys(unittest.TestCase):
         plan". Somebody paid 6.99 for a nanny account they could not create.
         """
         self.assertFalse(server.PLAN_CATALOG["executive"]["limits"]["helper_accounts"])
-        for name, word in (("index.html", "caregivers"), ("fr.html", "aidants")):
-            self.assertNotIn(word, plan_card(name, "Premium"), name)
+        for (name, lang), word in zip(PAGE_LANG, ("caregivers", "aidants")):
+            self.assertNotIn(
+                word, plan_card(name, app_plan_name("plan_executive", lang)), name)
 
     def test_the_household_card_may_still_offer_them(self):
         # The same word on the Household card is a true claim, and a guard
         # that banned it everywhere would have forced it off the one tier
         # that has the feature.
         self.assertTrue(server.PLAN_CATALOG["household"]["limits"]["helper_accounts"])
-        self.assertIn("Helper", plan_card("index.html", "Household"))
-        self.assertIn("aidants", plan_card("fr.html", "Foyer"))
+        self.assertIn("Helper", plan_card("index.html", app_plan_name("plan_household", "en")))
+        self.assertIn("aidants", plan_card("fr.html", app_plan_name("plan_household", "fr")))
 
     def test_helpers_are_described_as_the_household_plan_in_the_faq(self):
         self.assertTrue(server.PLAN_CATALOG["household"]["limits"]["helper_accounts"])
