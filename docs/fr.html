@@ -63,6 +63,80 @@
 }
 </script>
 
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "inLanguage": "fr",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Ahenora est-il gratuit ?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Oui. La formule gratuite est pensée pour un parent seul ou deux parents ensemble, avec jusqu’à deux enfants : l’agenda partagé, les tâches, les corvées et les étoiles, la liste de courses, la messagerie familiale et un coffre de 25 Mo, plus dix scans par mois. La formule Famille (6,99 € par mois) passe à cinq enfants avec des scans illimités et ajoute les menus, l’argent de poche et le planning des trajets. Rien n’expire et il n’y a pas d’essai à penser à résilier."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Cela fonctionne-t-il pour une garde alternée ?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "C’est précisément ce pour quoi l’application a été conçue. Définissez une semaine sur deux et l’agenda colore la semaine de chacun : les deux parents lisent le même mois de la même manière. Les notes de passage transmettent ce qui ne tient pas dans un événement — qui a les affaires de foot, lequel sort d’un rhume — et chaque parent peut reprendre une tâche commencée par l’autre."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "L’autre parent voit-il tout ce que j’ajoute ?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Non. Ce que vous ajoutez est partagé avec le foyer par défaut, parce qu’une tâche que personne d’autre ne voit n’aide personne — mais vous pouvez rendre n’importe quel élément privé d’un geste, et un élément privé reste invisible pour tous les autres, l’autre parent compris. Un écran montre clairement ce que vous partagez avec lui et ce qu’il partage avec vous : ce n’est jamais une devinette."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Mes enfants ont-ils besoin d’un téléphone ou d’un compte ?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Non. Le mode enfant s’utilise sur votre téléphone : vous le tendez et il n’affiche que les corvées et les étoiles de cet enfant, avec un code pour en sortir. Rien d’autre du foyer n’est accessible depuis là. Les adolescents de 13 à 17 ans peuvent avoir leur propre accès si vous le souhaitez, avec leurs tâches et une conversation privée avec vous. C’est votre choix, pas le réglage par défaut."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Je suis parent solo. Est-ce fait pour moi ?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Oui. Rien n’exige un deuxième adulte. L’agenda, les corvées, la liste de courses et le coffre fonctionnent pour un seul parent, et l’application ne vous harcèle pas pour inviter quelqu’un. Les grands-parents, une nounou ou une assistante maternelle peuvent être ajoutés comme proches sur la formule Foyer, avec l’accès au planning et aux tâches mais pas à vos documents, à l’argent ni à la messagerie familiale."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Cela fonctionne-t-il sans réseau ?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Les listes dont une famille a besoin sous la main — tâches, liste de courses, menus et membres du foyer — sont conservées sur le téléphone : un rayon de supermarché ou un parking en sous-sol affiche la dernière version connue plutôt qu’une erreur. Cocher quelque chose sans réseau est mémorisé puis envoyé au retour de la connexion."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Où sont nos données, et qui peut les lire ?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Ahenora est exploité depuis la France et relève de la CNIL. Personne chez Ahenora ne lit le contenu de votre foyer, il n’est pas vendu et il ne sert à entraîner aucun modèle. Nos prestataires peuvent traiter des données hors de votre pays, avec les garanties décrites dans la politique de confidentialité . Une photo que vous scannez est lue pour en extraire la date et les détails, puis conservée avec la tâche ou le document qu’elle a créé afin que vous puissiez la reconsulter. Supprimez cet élément et l’image disparaît avec lui."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Puis-je récupérer ou supprimer nos données ?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Oui, et sans avoir à le demander à qui que ce soit. Supprimer votre compte efface le contenu du foyer — tâches, agenda, messages, documents, tout — depuis les Réglages de l’application, ou depuis cette page si vous ne l’avez plus installée."
+      }
+    }
+  ]
+}
+</script>
+
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@600;700;800&display=swap" rel="stylesheet">
@@ -252,6 +326,22 @@
   .plan li.lead { color: var(--muted); font-weight: 600; padding-left: 0; }
 
   /* ---------- final cta ---------- */
+  /* ---------- faq ---------- */
+  /* The header is sticky, so an anchor landing on #faq would put the
+     heading underneath it. */
+  #faq { scroll-margin-top: 84px; }
+  .faq { max-width: 760px; margin: 0 auto; }
+  .faq details { border: 1px solid var(--line); border-radius: 16px; background: var(--card); margin-bottom: 12px; box-shadow: var(--shadow-sm); }
+  .faq summary { cursor: pointer; padding: 18px 22px; font-weight: 700; font-size: 16.5px; list-style: none; display: flex; align-items: center; gap: 12px; }
+  .faq summary::-webkit-details-marker { display: none; }
+  .faq summary::after { content: "+"; margin-left: auto; color: var(--orange-ink); font-size: 22px; font-weight: 600; line-height: 1; }
+  .faq details[open] summary::after { content: "\2013"; }
+  .faq summary:hover { color: var(--orange-ink); }
+  .faq summary:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; border-radius: 16px; }
+  .faq .answer { padding: 0 22px 20px; color: var(--muted); }
+  .faq .answer p { margin: 0; }
+  .faq .answer p + p { margin-top: 12px; }
+
   .final { text-align: center; }
   .final .lede { margin: 0 auto 28px; }
 
@@ -545,7 +635,7 @@
       <div class="section-head">
         <span class="kicker">Tarifs</span>
         <h2>Des formules simples</h2>
-        <p>Chaque parent est toujours gratuit. Nous ne comptons que la taille du foyer — jamais les fonctionnalités qui gardent votre famille coordonnée.</p>
+        <p>Chaque parent est toujours gratuit, tout comme ce qui garde une famille coordonnée : l'agenda, les tâches, les corvées et les listes partagées. Les formules payantes ajoutent de la place pour plus d'enfants et les options ci-dessous.</p>
       </div>
       <!-- Monthly / yearly, the same choice the app offers. The saving is shown
            PER CARD because it is not the same on both: a year of Premium saves
@@ -577,7 +667,7 @@
           <p class="saving" hidden>Économisez 33,89&nbsp;&euro; par an &mdash; 40&nbsp;% de moins qu'au mois</p>
           <ul>
             <li class="lead">Tout du plan Gratuit, plus&nbsp;:</li>
-            <li>Jusqu'à 5 enfants et aidants</li>
+            <li>Jusqu'à 5 enfants</li>
             <li>Planificateur de repas, plans enregistrés et IA recettes</li>
             <li>Argent de poche et rapport hebdomadaire</li>
             <li>Covoiturage et un coffre plus grand</li>
@@ -599,7 +689,49 @@
           </ul>
         </div>
       </div>
-      <p class="cta-note" style="text-align:center; margin-top: 22px;">Prix en euros. Abonnez-vous par carte sur le web &mdash; y compris sur iPhone &mdash; ou via Google Play dans l'app Android. Résiliable à tout moment, dans les deux cas.</p>
+      <p class="cta-note" style="text-align:center; margin-top: 22px;">Prix en euros. Abonnez-vous depuis l'application &mdash; via l'App Store sur iPhone, ou Google Play sur Android &mdash; ou par carte dans votre navigateur. Résiliable à tout moment, là où vous vous êtes abonné.</p>
+    </div>
+  </section>
+
+  <section class="plans" id="faq">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>Questions fr&eacute;quentes</h2>
+      </div>
+      <div class="faq">
+        <details>
+          <summary>Ahenora est-il gratuit&nbsp;?</summary>
+          <div class="answer"><p>Oui. La formule gratuite est pens&eacute;e pour un parent seul ou deux parents ensemble, avec jusqu&rsquo;&agrave; deux enfants&nbsp;: l&rsquo;agenda partag&eacute;, les t&acirc;ches, les corv&eacute;es et les &eacute;toiles, la liste de courses, la messagerie familiale et un coffre de 25&nbsp;Mo, plus dix scans par mois.</p><p>La formule Famille (6,99&nbsp;&euro; par mois) passe &agrave; cinq enfants avec des scans illimit&eacute;s et ajoute les menus, l&rsquo;argent de poche et le planning des trajets. Rien n&rsquo;expire et il n&rsquo;y a pas d&rsquo;essai &agrave; penser &agrave; r&eacute;silier.</p></div>
+        </details>
+        <details>
+          <summary>Cela fonctionne-t-il pour une garde altern&eacute;e&nbsp;?</summary>
+          <div class="answer"><p>C&rsquo;est pr&eacute;cis&eacute;ment ce pour quoi l&rsquo;application a &eacute;t&eacute; con&ccedil;ue. D&eacute;finissez une semaine sur deux et l&rsquo;agenda colore la semaine de chacun&nbsp;: les deux parents lisent le m&ecirc;me mois de la m&ecirc;me mani&egrave;re.</p><p>Les notes de passage transmettent ce qui ne tient pas dans un &eacute;v&eacute;nement &mdash; qui a les affaires de foot, lequel sort d&rsquo;un rhume &mdash; et chaque parent peut reprendre une t&acirc;che commenc&eacute;e par l&rsquo;autre.</p></div>
+        </details>
+        <details>
+          <summary>L&rsquo;autre parent voit-il tout ce que j&rsquo;ajoute&nbsp;?</summary>
+          <div class="answer"><p>Non. Ce que vous ajoutez est partag&eacute; avec le foyer par d&eacute;faut, parce qu&rsquo;une t&acirc;che que personne d&rsquo;autre ne voit n&rsquo;aide personne &mdash; mais vous pouvez rendre n&rsquo;importe quel &eacute;l&eacute;ment priv&eacute; d&rsquo;un geste, et un &eacute;l&eacute;ment priv&eacute; reste invisible pour tous les autres, l&rsquo;autre parent compris.</p><p>Un &eacute;cran montre clairement ce que vous partagez avec lui et ce qu&rsquo;il partage avec vous&nbsp;: ce n&rsquo;est jamais une devinette.</p></div>
+        </details>
+        <details>
+          <summary>Mes enfants ont-ils besoin d&rsquo;un t&eacute;l&eacute;phone ou d&rsquo;un compte&nbsp;?</summary>
+          <div class="answer"><p>Non. Le mode enfant s&rsquo;utilise sur votre t&eacute;l&eacute;phone&nbsp;: vous le tendez et il n&rsquo;affiche que les corv&eacute;es et les &eacute;toiles de cet enfant, avec un code pour en sortir. Rien d&rsquo;autre du foyer n&rsquo;est accessible depuis l&agrave;.</p><p>Les adolescents de 13 &agrave; 17 ans peuvent avoir leur propre acc&egrave;s si vous le souhaitez, avec leurs t&acirc;ches et une conversation priv&eacute;e avec vous. C&rsquo;est votre choix, pas le r&eacute;glage par d&eacute;faut.</p></div>
+        </details>
+        <details>
+          <summary>Je suis parent solo. Est-ce fait pour moi&nbsp;?</summary>
+          <div class="answer"><p>Oui. Rien n&rsquo;exige un deuxi&egrave;me adulte. L&rsquo;agenda, les corv&eacute;es, la liste de courses et le coffre fonctionnent pour un seul parent, et l&rsquo;application ne vous harc&egrave;le pas pour inviter quelqu&rsquo;un.</p><p>Les grands-parents, une nounou ou une assistante maternelle peuvent &ecirc;tre ajout&eacute;s comme proches sur la formule Foyer, avec l&rsquo;acc&egrave;s au planning et aux t&acirc;ches mais pas &agrave; vos documents, &agrave; l&rsquo;argent ni &agrave; la messagerie familiale.</p></div>
+        </details>
+        <details>
+          <summary>Cela fonctionne-t-il sans r&eacute;seau&nbsp;?</summary>
+          <div class="answer"><p>Les listes dont une famille a besoin sous la main &mdash; t&acirc;ches, liste de courses, menus et membres du foyer &mdash; sont conserv&eacute;es sur le t&eacute;l&eacute;phone&nbsp;: un rayon de supermarch&eacute; ou un parking en sous-sol affiche la derni&egrave;re version connue plut&ocirc;t qu&rsquo;une erreur.</p><p>Cocher quelque chose sans r&eacute;seau est m&eacute;moris&eacute; puis envoy&eacute; au retour de la connexion.</p></div>
+        </details>
+        <details>
+          <summary>O&ugrave; sont nos donn&eacute;es, et qui peut les lire&nbsp;?</summary>
+          <div class="answer"><p>Ahenora est exploit&eacute; depuis la France et rel&egrave;ve de la CNIL. Personne chez Ahenora ne lit le contenu de votre foyer, il n&rsquo;est pas vendu et il ne sert &agrave; entra&icirc;ner aucun mod&egrave;le. Nos prestataires peuvent traiter des donn&eacute;es hors de votre pays, avec les garanties d&eacute;crites dans la <a href="/privacy.html">politique de confidentialit&eacute;</a>.</p><p>Une photo que vous scannez est lue pour en extraire la date et les d&eacute;tails, puis conserv&eacute;e avec la t&acirc;che ou le document qu&rsquo;elle a cr&eacute;&eacute; afin que vous puissiez la reconsulter. Supprimez cet &eacute;l&eacute;ment et l&rsquo;image dispara&icirc;t avec lui.</p></div>
+        </details>
+        <details>
+          <summary>Puis-je r&eacute;cup&eacute;rer ou supprimer nos donn&eacute;es&nbsp;?</summary>
+          <div class="answer"><p>Oui, et sans avoir &agrave; le demander &agrave; qui que ce soit. Supprimer votre compte efface le contenu du foyer &mdash; t&acirc;ches, agenda, messages, documents, tout &mdash; depuis les R&eacute;glages de l&rsquo;application, ou depuis <a href="/delete-account.html">cette page</a> si vous ne l&rsquo;avez plus install&eacute;e.</p></div>
+        </details>
+      </div>
     </div>
   </section>
 
