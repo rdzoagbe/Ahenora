@@ -57,7 +57,13 @@ AUTH_DEPENDENCIES = (
 # `@app.<attr>` forms that declare a route, and the ones that do not. Anything
 # outside both sets fails the build rather than being quietly ignored.
 ROUTE_DECORATORS = ("get", "post", "put", "patch", "delete", "api_route")
-NON_ROUTE_DECORATORS = ("on_event",)
+NON_ROUTE_DECORATORS = (
+    "on_event",
+    # Registers a handler for exceptions raised by other routes. It serves no
+    # URL of its own, so there is nothing here to authenticate — but it had to
+    # be classified, which is the point of the unknown-decorator check.
+    "exception_handler",
+)
 
 # One route per decorator form that must always be found. If a canary goes
 # missing, the parser has stopped understanding that form — which is the
@@ -116,6 +122,14 @@ PUBLIC_ROUTES = {
         "A gift pot shared with someone outside the household.",
     ("POST", "/api/pot/{token}/join"):
         "Contributing to that pot without joining the household.",
+    ("GET", "/api/ops/error-budget"):
+        "Polled hourly by the error-watch workflow, which has no account to "
+        "sign in with. Constant-time compare against OPS_ALERT_TOKEN, the same "
+        "shape as the billing webhooks, and 503s when that is unset. Returns "
+        "two integers — how many error groups and occurrences in the window — "
+        "so a stranger who guessed both the URL and the token learns only "
+        "whether something is broken, not what or where.",
+
     ("GET", "/api/santa/match/{token}"):
         "A Secret Santa match, sent to one person. Deliberately reachable "
         "without an account so a guest can see who they drew.",

@@ -7,6 +7,7 @@ import base64
 import random
 import asyncio
 import hashlib
+import traceback
 import hmac
 import secrets
 import tempfile
@@ -443,6 +444,116 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
 
 app.add_middleware(RateLimitMiddleware)
+
+
+# -----------------------------------------------------------------------------
+# Unhandled errors: grouped, counted, and kept where something can look
+# -----------------------------------------------------------------------------
+#
+# Until this existed, an unhandled exception returned a bare 500 and left a
+# stack trace in the platform's stdout, which ages out and cannot be searched.
+# Nothing counted them, so "is the app broken right now" had no answer short of
+# a user emailing to say so.
+#
+# What is deliberately NOT recorded: request bodies, query strings, headers,
+# cookies, user ids and the concrete path. This app holds children's names,
+# medical records and documents, and an error store is the classic place they
+# leak — it is the one collection nobody thinks of as containing personal data,
+# so it is the one nobody protects. The route TEMPLATE ("/api/cards/{card_id}")
+# is kept rather than the path, which groups better anyway.
+ERROR_LOG = "error_events"
+ERROR_SAMPLE_FRAMES = 6
+# "Our code" is the repository, not just backend/ — a traceback can pass
+# through scripts/ on its way out, and a frame there is still ours to fix.
+# Third-party frames are excluded because they are identical across unrelated
+# bugs: fingerprinting on them would merge two different faults into one row.
+_OUR_CODE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _is_our_frame(filename: str) -> bool:
+    path = os.path.abspath(filename)
+    if "site-packages" in path or "dist-packages" in path:
+        return False
+    return path.startswith(_OUR_CODE)
+
+
+def error_fingerprint(exc: BaseException, route: str) -> str:
+    """A stable id for "this bug", so a thousand occurrences are one row.
+
+    Built from the exception type, the route template, and the last frame
+    inside OUR code — not the deepest frame, which is usually somewhere in a
+    library and identical for unrelated bugs.
+    """
+    culprit = ""
+    for frame in reversed(traceback.extract_tb(exc.__traceback__) or []):
+        if _is_our_frame(frame.filename):
+            culprit = f"{os.path.basename(frame.filename)}:{frame.lineno}"
+            break
+    raw = f"{type(exc).__name__}|{route}|{culprit}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+
+
+def error_sample(exc: BaseException) -> list:
+    """The tail of the traceback, our frames only, without their locals."""
+    frames = [f for f in (traceback.extract_tb(exc.__traceback__) or [])
+              if _is_our_frame(f.filename)]
+    return [f"{os.path.basename(f.filename)}:{f.lineno} in {f.name}"
+            for f in frames[-ERROR_SAMPLE_FRAMES:]]
+
+
+def route_template(request) -> str:
+    """The matched route, so ids never reach the error store.
+
+    Falls back to the literal path only when nothing matched — a 404 on a
+    made-up URL, where there is no id of ours to leak.
+    """
+    route = request.scope.get("route")
+    return getattr(route, "path", None) or request.url.path
+
+
+async def record_error(exc: BaseException, request) -> str:
+    """Upsert one error group. Never raises: an error store that can break the
+    error path turns a 500 into a hang."""
+    fingerprint = error_fingerprint(exc, route_template(request))
+    try:
+        database = get_db()
+        await database[ERROR_LOG].update_one(
+            {"_id": fingerprint},
+            {
+                "$inc": {"count": 1},
+                "$set": {"last_seen": utcnow()},
+                "$setOnInsert": {
+                    "first_seen": utcnow(),
+                    "kind": type(exc).__name__,
+                    "route": route_template(request),
+                    "method": request.method,
+                    "where": error_sample(exc),
+                },
+            },
+            upsert=True,
+        )
+    except Exception:
+        log.warning("could not record an error event (%s)", type(exc).__name__)
+    return fingerprint
+
+
+@app.exception_handler(Exception)
+async def unhandled_error(request: Request, exc: Exception):
+    """Every exception nobody planned for.
+
+    HTTPException is NOT routed here — FastAPI handles it first, and it is a
+    deliberate answer rather than a fault. Recording 404s and 403s as errors is
+    how an error tracker becomes noise and then becomes ignored.
+    """
+    fingerprint = await record_error(exc, request)
+    log.exception("unhandled error [%s] %s %s",
+                  fingerprint, request.method, route_template(request))
+    # The fingerprint goes to the caller so a bug report can name it without
+    # anybody pasting a stack trace containing their own household's data.
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Something went wrong on our side.", "ref": fingerprint},
+    )
 
 
 # -----------------------------------------------------------------------------
@@ -5280,6 +5391,58 @@ async def health_push(user=Depends(require_user), database=Depends(get_db)):
                        for job in DAILY_PUSH_JOBS},
         },
     }
+
+
+@app.get("/api/admin/errors")
+async def admin_errors(user=Depends(require_user), minutes: int = Query(default=1440, ge=1, le=43200)):
+    """Every unhandled error group seen in a window, worst first (admin only).
+
+    Grouped, so one bug hit a thousand times is one row with a count rather
+    than a thousand lines nobody reads.
+    """
+    if not is_admin_user(user):
+        raise HTTPException(status_code=403, detail="Admins only")
+    since = utcnow() - timedelta(minutes=minutes)
+    rows = []
+    async for row in get_db()[ERROR_LOG].find({"last_seen": {"$gte": since}}):
+        rows.append({
+            "ref": row["_id"],
+            "kind": row.get("kind", ""),
+            "route": row.get("route", ""),
+            "method": row.get("method", ""),
+            "count": int(row.get("count", 0)),
+            "where": row.get("where", []),
+            "first_seen": iso(row.get("first_seen")),
+            "last_seen": iso(row.get("last_seen")),
+        })
+    rows.sort(key=lambda r: r["count"], reverse=True)
+    return {"since_minutes": minutes, "groups": rows,
+            "total": sum(r["count"] for r in rows)}
+
+
+@app.get("/api/ops/error-budget")
+async def ops_error_budget(authorization: Optional[str] = Header(default=None),
+                           minutes: int = Query(default=60, ge=1, le=1440)):
+    """The one thing an alert needs to ask: has anything broken recently?
+
+    Token-authenticated rather than session-authenticated because the caller is
+    a scheduled job with no account, the same shape as the billing webhooks —
+    a shared secret compared in constant time. Returns counts only: no route
+    names, no stack frames, nothing that would describe the app's internals to
+    somebody who guessed the URL.
+    """
+    secret = os.environ.get("OPS_ALERT_TOKEN", "").strip()
+    if not secret:
+        raise HTTPException(status_code=503, detail="Alerting not configured")
+    if not secrets.compare_digest((authorization or "").strip(), secret):
+        raise HTTPException(status_code=403, detail="Bad ops token")
+
+    since = utcnow() - timedelta(minutes=minutes)
+    groups = occurrences = 0
+    async for row in get_db()[ERROR_LOG].find({"last_seen": {"$gte": since}}):
+        groups += 1
+        occurrences += int(row.get("count", 0))
+    return {"window_minutes": minutes, "groups": groups, "occurrences": occurrences}
 
 
 @app.get("/api/health/config")

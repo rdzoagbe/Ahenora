@@ -1,0 +1,79 @@
+name: Error watch
+
+# The one alert.
+#
+# Until this existed, an unhandled exception in production returned a bare 500
+# and left a stack trace in stdout that ages out. The way anybody found out the
+# app was broken was a user writing in — which means the quiet failures, the
+# ones nobody bothers to report, were never found at all.
+#
+# This asks the backend once an hour whether anything has thrown recently. If
+# something has, the job fails, and GitHub emails the repository owner. That is
+# the entire mechanism: no new service, no account to sign up for, and it uses
+# the notification channel that is already wired to a human.
+#
+# Setup (once):
+#   1. Pick a long random string.
+#   2. Railway  → Variables       → OPS_ALERT_TOKEN = <that string>
+#   3. GitHub   → Secrets         → OPS_ALERT_TOKEN = <the same string>
+#   4. GitHub   → Settings → Notifications → make sure failed Actions email you.
+#
+# Until both are set the job SKIPS rather than fails, so a half-finished setup
+# does not cry wolf every hour until somebody mutes it — which is how a real
+# alert gets ignored on the day it matters.
+
+on:
+  schedule:
+    - cron: "7 * * * *"
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: "How far back to look"
+        required: false
+        default: "60"
+
+concurrency:
+  group: error-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ask production whether anything has thrown
+        env:
+          OPS_ALERT_TOKEN: ${{ secrets.OPS_ALERT_TOKEN }}
+          API_BASE: ${{ vars.API_BASE || 'https://api.ahenora.com' }}
+          MINUTES: ${{ github.event.inputs.minutes || '60' }}
+        run: |
+          set -uo pipefail
+
+          if [ -z "${OPS_ALERT_TOKEN}" ]; then
+            echo "OPS_ALERT_TOKEN is not set — skipping."
+            echo "Set it in BOTH Railway and GitHub secrets to turn this alert on."
+            exit 0
+          fi
+
+          # --fail-with-body so a non-2xx still prints what the server said.
+          body=$(curl -sS --max-time 30 --fail-with-body \
+                   -H "Authorization: ${OPS_ALERT_TOKEN}" \
+                   "${API_BASE}/api/ops/error-budget?minutes=${MINUTES}") || {
+            echo "::error::Could not reach ${API_BASE}/api/ops/error-budget"
+            echo "$body"
+            # Unreachable is itself worth waking up for: either the app is down
+            # or the alert is broken, and both need a person.
+            exit 1
+          }
+
+          echo "$body"
+          groups=$(echo "$body"      | python3 -c "import json,sys;print(json.load(sys.stdin)['groups'])")
+          occurrences=$(echo "$body" | python3 -c "import json,sys;print(json.load(sys.stdin)['occurrences'])")
+
+          if [ "$groups" -gt 0 ]; then
+            echo "::error::${occurrences} unhandled error(s) in ${groups} group(s) in the last ${MINUTES} minutes."
+            echo "Open /api/admin/errors signed in as an admin to see what and where."
+            exit 1
+          fi
+
+          echo "No unhandled errors in the last ${MINUTES} minutes."
