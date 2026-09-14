@@ -118,9 +118,19 @@ describe('the vaccination list on the screen', () => {
   it('keeps the dates out of the text-field table', () => {
     // RECORD_GROUPS renders strings; a list routed through it would render as
     // "[object Object]".
+    //
+    // Checked by membership of the Exclude, not by the literal
+    // "'vaccinations'>" the first version matched — that only passed while
+    // vaccinations happened to be LAST in the list, and broke the day
+    // medicines were added after it. The property is that the key is
+    // excluded, not where in the line it sits.
     const groups = MEMBER.slice(MEMBER.indexOf('const RECORD_GROUPS'),
                                 MEMBER.indexOf('function RecordField'));
     expect(groups).not.toContain('vaccinations');
-    expect(MEMBER).toContain("'vaccinations'>");
+    const exclude = MEMBER.slice(MEMBER.indexOf('type RecordTextField'),
+                                 MEMBER.indexOf('const RECORD_GROUPS'));
+    expect(exclude).toContain("'vaccinations'");
+    // Every non-string key on the record belongs here for the same reason.
+    expect(exclude).toContain("'medicines'");
   });
 });

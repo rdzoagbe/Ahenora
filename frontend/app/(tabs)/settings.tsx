@@ -1177,8 +1177,15 @@ export default function Settings() {
                       <Text style={styles.emptyText}>No device errors recorded.</Text>
                     ) : clientErrors.map((e) => (
                       <View key={e.error_id} style={{ paddingVertical: 6 }}>
+                        {/* The build is on the FIRST line, beside the
+                            platform, because it is what decides whether a row
+                            needs acting on at all. An error from an old APK
+                            and a fault on current code look identical without
+                            it — which is how three Android push failures read
+                            as a live outage on 2026-09-14, six days after the
+                            fix had shipped. */}
                         <Text style={styles.ghostBtnText}>
-                          {`${e.name || '?'} · ${e.platform || '?'} · ${e.method || ''} ${e.endpoint}${e.status ? ` · ${e.status}` : ''}`}
+                          {`${e.name || '?'} · ${e.platform || '?'} · ${e.app_version || 'unknown build'} · ${e.method || ''} ${e.endpoint}${e.status ? ` · ${e.status}` : ''}`}
                         </Text>
                         <Text style={[styles.emptyText, { marginTop: 2 }]} numberOfLines={2}>
                           {`${(e.created_at || '').replace('T', ' ').slice(0, 16)} — ${e.message || ''}`}

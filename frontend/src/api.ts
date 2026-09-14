@@ -124,6 +124,10 @@ export const kidMode = {
 };
 
 const REQUEST_TIMEOUT_MS = 30_000;
+// Every call that uploads a PHOTOGRAPH and then waits for a model to read it.
+// The default budget is for fetching a list; applied to these it turned an
+// ordinary slow scan into an abort, which the app reported as being offline.
+const VISION_TIMEOUT_MS = 90_000;
 
 const RETRY_MAX = 3;
 const RETRY_BASE_MS = 1_000;
@@ -242,6 +246,45 @@ export function reportPushFailure(message: string) {
   reportClientError('/push-register', 'PUSH', undefined, String(message || 'unknown').slice(0, 240));
 }
 
+/**
+ * Which build is speaking.
+ *
+ * Read here rather than through notifications.ts's appVersionInfo, which
+ * imports from this file — the cycle would be worse than the duplication.
+ * The app version is available synchronously; the runtime needs a lazy
+ * import of expo-updates (a no-op on web), so it is fetched once and kept.
+ *
+ * Without this the error log cannot tell a phone on an OLD build from a
+ * fault on current code, and the two need opposite responses. Three Android
+ * push failures on 2026-09-14 read as a live outage; the fix had shipped on
+ * 09-08 and reached the Play Store on 09-12, and all three phones were
+ * simply running an older APK.
+ */
+let cachedStamp: { app_version: string; runtime_version: string } | null = null;
+
+async function buildStamp(): Promise<{ app_version: string; runtime_version: string }> {
+  if (cachedStamp) return cachedStamp;
+  // BOTH imported lazily, expo-constants included. A static import of it at
+  // the top of this file is fine in the app and breaks the `unit` jest
+  // project, which runs under node without the React Native transforms — two
+  // suites stopped LOADING, and jest still printed "787 passed" because a
+  // suite that never loads contributes no failing tests, only a smaller
+  // total. Keeping both behind await means this file's top level stays
+  // node-safe.
+  let app_version = '';
+  let runtime_version = '';
+  try {
+    const Constants = (await import('expo-constants')).default;
+    app_version = Constants?.expoConfig?.version || '';
+  } catch { /* no config to read */ }
+  try {
+    const Updates = await import('expo-updates');
+    runtime_version = (Updates.runtimeVersion as string) || '';
+  } catch { /* web, or a build without expo-updates */ }
+  cachedStamp = { app_version, runtime_version };
+  return cachedStamp;
+}
+
 function reportClientError(path: string, method: string, status: number | undefined, message: string) {
   try {
     if (path.startsWith('/telemetry')) return;
@@ -251,8 +294,13 @@ function reportClientError(path: string, method: string, status: number | undefi
     errorReportTimes.push(now);
     tokenStore
       .get()
-      .then((token) => {
+      .then(async (token) => {
         if (!token) return;
+        // Never let the stamp cost the report: a build that cannot answer
+        // still sends the error, unversioned, which the admin list shows as
+        // an unknown build rather than as a current one.
+        let stamp = { app_version: '', runtime_version: '' };
+        try { stamp = await buildStamp(); } catch { /* report anyway */ }
         return fetch(`${BASE}/api/telemetry/client-error`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -262,6 +310,7 @@ function reportClientError(path: string, method: string, status: number | undefi
             status: status ?? null,
             message: String(message || '').slice(0, 300),
             platform: Platform.OS,
+            ...stamp,
           }),
         });
       })
@@ -304,7 +353,13 @@ function drainQueue(): void {
 
 async function request<T = unknown>(
   path: string,
-  opts: { method?: string; body?: unknown; headers?: Record<string, string> } = {}
+  opts: {
+    method?: string; body?: unknown; headers?: Record<string, string>;
+    /** Override the default budget. A call that uploads a photograph AND
+     *  waits for a model to read it is not the same shape of request as
+     *  fetching a list, and 30s was being applied to both. */
+    timeoutMs?: number;
+  } = {}
 ): Promise<T> {
   const token = await tokenStore.get();
   const headers: Record<string, string> = {
@@ -325,7 +380,8 @@ async function request<T = unknown>(
     }
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const timeoutId = setTimeout(() => controller.abort(),
+                                 opts.timeoutMs ?? REQUEST_TIMEOUT_MS);
 
     let res: Response;
     try {
@@ -978,6 +1034,22 @@ export interface Vaccination {
   note: string;
 }
 
+/** One medicine somebody is taking.
+ *
+ *  `times` are explicit clock times ("08:00"), never a frequency. Turning
+ *  "three times a day" into moments is a decision a person makes looking at
+ *  the label; storing the result means nothing downstream has to guess. */
+export interface Medicine {
+  med_id: string;
+  name: string;
+  dose: string;
+  /** "HH:MM", sorted, at most six. */
+  times: string[];
+  starts_on: string;
+  ends_on: string;
+  note: string;
+}
+
 export interface MemberRecord {
   allergies: string;
   conditions: string;
@@ -999,6 +1071,7 @@ export interface MemberRecord {
   /** Newest first, undated last — the order "when was the last one?" is
    *  asked in. Sorted by the server so the app and the web app agree. */
   vaccinations: Vaccination[];
+  medicines: Medicine[];
   private_hidden: boolean;
   can_edit: boolean;
 }
@@ -1978,6 +2051,10 @@ export const api = {
       status?: number | null;
       message?: string;
       platform?: string;
+      /** Which build reported it. "" for a row written before this existed,
+       *  or an install too old to send it — which is itself the answer. */
+      app_version?: string;
+      runtime_version?: string;
       created_at?: string | null;
     }[]>('/telemetry/client-errors'),
   // Deliberately bland URL: one family device blocks every path containing
@@ -2480,7 +2557,12 @@ export const api = {
   // Vision
   visionExtract: (image_base64: string) => {
     invalidateUsageCaches();
-    return request<ScanResult>('/vision/extract', { method: 'POST', body: { image_base64 } });
+    // The budget that started this: thirty seconds was being applied to a
+    // call that uploads a photograph over mobile data and then waits for a
+    // model to read it. An ordinary slow scan aborted, and the app reported
+    // the abort as being offline — on wifi AND 4G.
+    return request<ScanResult>('/vision/extract',
+      { method: 'POST', body: { image_base64 }, timeoutMs: VISION_TIMEOUT_MS });
   },
   // Brief
   weeklyBrief: () =>
@@ -2624,6 +2706,18 @@ export const api = {
   deleteVaccination: (memberId: string, vaxId: string) =>
     request<MemberRecord>(`/family/members/${memberId}/vaccinations/${vaxId}`,
       { method: 'DELETE' }),
+  addMedicine: (memberId: string,
+                data: { name: string; dose?: string; times?: string[];
+                        starts_on?: string; ends_on?: string; note?: string }) =>
+    request<MemberRecord>(`/family/members/${memberId}/medicines`,
+      { method: 'POST', body: data }),
+  updateMedicine: (memberId: string, medId: string,
+                   data: Partial<Omit<Medicine, 'med_id'>>) =>
+    request<MemberRecord>(`/family/members/${memberId}/medicines/${medId}`,
+      { method: 'PATCH', body: data }),
+  deleteMedicine: (memberId: string, medId: string) =>
+    request<MemberRecord>(`/family/members/${memberId}/medicines/${medId}`,
+      { method: 'DELETE' }),
   listHandoffNotes: () => request<HandoffNote[]>('/handoff-notes'),
   createHandoffNote: (data: { member_id?: string; text: string }) =>
     request<HandoffNote>('/handoff-notes', { method: 'POST', body: data }),
@@ -2648,6 +2742,7 @@ export const api = {
     request<{ items: { name: string; unsure: boolean }[] }>('/shopping/scan', {
       method: 'POST',
       body: { image_base64: imageBase64 },
+      timeoutMs: VISION_TIMEOUT_MS,
     }),
   bulkAddShopping: (names: string[], categories?: (string | undefined)[]) =>
     request<{ ok: boolean; added: number }>('/shopping/bulk', {
@@ -2672,6 +2767,7 @@ export const api = {
     request<ScannedReceipt>('/expenses/scan-receipt', {
       method: 'POST',
       body: { image_base64: imageBase64 },
+      timeoutMs: VISION_TIMEOUT_MS,
     }),
   getPriceCompare: () => request<PriceCompare>('/expenses/price-compare'),
   listExpenses: (days = 30) => request<Expense[]>(`/expenses?days=${days}`),
@@ -2756,7 +2852,8 @@ export const api = {
         ingredients: { name: string; qty: number | null; unit: string }[];
         steps: string[];
       };
-    }>('/recipes/capture', { method: 'POST', body: { image_base64: imageBase64 } }),
+    }>('/recipes/capture',
+      { method: 'POST', body: { image_base64: imageBase64 }, timeoutMs: VISION_TIMEOUT_MS }),
   addMealFromCapture: (day: string, recipe: object, lang: string) =>
     request<MealPlan>(`/meals/from-capture?lang=${encodeURIComponent(lang)}`, {
       method: 'POST',
