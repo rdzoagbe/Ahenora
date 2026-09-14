@@ -211,11 +211,33 @@ export default function MemberProfile() {
    */
   const [record, setRecord] = useState<MemberRecord | null>(null);
   const [savingField, setSavingField] = useState<string | null>(null);
+  // Three states, not two. "Still loading", "failed to load" and "loaded and
+  // empty" all rendered as the same nothing — the section simply was not
+  // there. On a page holding a child's allergies that is the worst of the
+  // three to get wrong: a carer who opens this to check cannot tell "no
+  // allergy recorded" from "the request did not come back".
+  const [recordState, setRecordState] = useState<'loading' | 'ready' | 'failed'>('loading');
+
+  const loadRecord = useCallback(async () => {
+    setRecordState('loading');
+    try {
+      setRecord(await api.getMemberRecord(id));
+      setRecordState('ready');
+    } catch (e) {
+      logger.warn('member record load failed', e);
+      setRecordState('failed');
+    }
+  }, [id]);
+
   useEffect(() => {
     let cancelled = false;
+    setRecordState('loading');
     api.getMemberRecord(id)
-      .then((r) => { if (!cancelled) setRecord(r); })
-      .catch((e) => logger.warn('member record load failed', e));
+      .then((r) => { if (!cancelled) { setRecord(r); setRecordState('ready'); } })
+      .catch((e) => {
+        logger.warn('member record load failed', e);
+        if (!cancelled) setRecordState('failed');
+      });
     return () => { cancelled = true; };
   }, [id]);
 
@@ -299,7 +321,16 @@ export default function MemberProfile() {
       Alert.alert(t('rec_vax'), vaxError(e));
       // Put the server's version back: a field left showing what we failed to
       // save is a date the parent believes is recorded and is not.
-      api.getMemberRecord(id).then(setRecord).catch(() => {});
+      //
+      // And say so if even THAT fails, rather than swallowing it — silence
+      // here leaves exactly the harm the line above describes, with the
+      // screen showing a date nobody stored.
+      api.getMemberRecord(id)
+        .then((r) => { setRecord(r); setRecordState('ready'); })
+        .catch((e) => {
+          logger.warn('member record re-read failed after a failed save', e);
+          setRecordState('failed');
+        });
     } finally {
       setVaxBusy(null);
     }
@@ -536,7 +567,28 @@ export default function MemberProfile() {
 
         {/* Key facts — what a family IS, as opposed to what it is doing.
             Above Manage, because this is the half a parent comes back for. */}
-        {record ? (
+        {recordState === 'failed' ? (
+          /* Tappable to retry, the same shape the Feed uses for a failed load.
+             A section that is simply absent reads as "this child has no
+             record", which on an allergy is the wrong thing to believe. */
+          <>
+            <Text style={styles.sec}>{t('rec_title')}</Text>
+            <PressScale testID="record-retry" onPress={loadRecord} style={styles.recCard}>
+              <Text style={styles.recEmptyAll}>{t('rec_load_failed')}</Text>
+            </PressScale>
+          </>
+        ) : null}
+
+        {recordState === 'loading' && !record ? (
+          <>
+            <Text style={styles.sec}>{t('rec_title')}</Text>
+            <View style={styles.recCard}>
+              <ActivityIndicator color={ui.muted} size="small" />
+            </View>
+          </>
+        ) : null}
+
+        {record && recordState !== 'failed' ? (
           <>
             <Text style={styles.sec}>{t('rec_title')}</Text>
             <Text style={styles.recSub}>{t('rec_sub')}</Text>

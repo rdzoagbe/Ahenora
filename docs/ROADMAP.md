@@ -41,7 +41,17 @@ Last updated: 30 July 2026.
 - [x] **Play Data Safety form** — corrected and re-submitted; Google review passed.
 - [x] **Play policy rejection (Photo/Video Permissions)** — broad media permissions removed from the committed manifest (#225); CI guard added so it cannot regress (#226).
 - [ ] Watch **Play Console** crash-free rate, ANRs and reviews; fix real-user issues via OTA. *(ongoing, not a task that closes)*
-- [ ] **Remaining Dependabot PRs** (#213 #215 #216 #217 #218) — merge the safe ones now that the SDK upgrade has landed.
+- [x] **Dependabot** — the launch-era backlog (#213–#218) is long merged; grouped backend/frontend PRs now land continuously and are merged on green.
+
+### A2. Operations — what exists, and what is still a person's job
+- [x] **Backups** — Atlas M10 dedicated, snapshots Active.
+- [x] **Restore tooling** — `scripts/mongo_backup.py` (dump / restore / **verify**), guarded so a drill cannot write over production.
+- [x] **Error tracking** — unhandled exceptions are grouped and counted, with no personal data recorded; `/api/admin/errors` to browse.
+- [x] **Uptime** — UptimeRobot on `/api/health`.
+- [x] **Auth coverage** — a build failure if any endpoint ships without auth or a written reason.
+- [ ] **`OPS_ALERT_TOKEN`** — set in Railway **and** GitHub secrets, or the hourly error alert stays inert (it skips rather than crying wolf).
+- [ ] **Atlas → Network Access** — confirm the IP access list is not `0.0.0.0/0`. Nothing in this repo can check it; see `docs/runbooks/restore-drill.md`.
+- [ ] **Run the restore drill once** — ~15 minutes. Backups exist; nobody has yet proven one comes back.
 
 ### B. Small open promises (quick, mostly OTA)
 - [x] **UI/UX consistency pass** — pricing cards theme-aware (#233), accessibility labels on icon-only buttons (#234), sub-44px tap targets enlarged + theme-blind borders fixed (#235).
@@ -62,12 +72,12 @@ Last updated: 30 July 2026.
 - [ ] **Tell testers/users** about Settings → Replay setup.
 
 ### D. Feature phases (recommended order) — see detail below
-- [ ] **Phase 2 — Web version** (biggest reach: iPhone + desktop via browser, no Apple/$99).
+- [x] **Phase 2 — Web version** — **SHIPPED.** Live at `ahenora.com/app`, exported from the same codebase and rebuilt by CI on every merge to `main`.
 - [ ] **Phase 2c — Sign in with Microsoft** (small follow-on; account-linking care = post-launch).
 - [ ] **Phase 3 — Platform polish** (widget, tablet/landscape, crash-report mapping).
 - [ ] **Phase 4 — AI food & gifting** (recipe steps → AI Chef fridge scan → Gift Concierge).
 - [ ] **Phase 5 — Family Ops Suite** (Kid Health Card + Caregiver Mode flagship, then the rest).
-- [ ] **Native iOS app** — only when revenue justifies the $99/yr (no Mac; EAS builds it in the cloud).
+- [x] **Native iOS app** — **SHIPPED.** On the App Store, built by `ios-build.yml` through EAS; purchases go through Apple IAP via RevenueCat (`appl_` key), and `PricingView` refuses to steer an iOS buyer to the web under guideline 3.1.1.
 
 ### E. Parked (only if users ask) — see bottom
 
