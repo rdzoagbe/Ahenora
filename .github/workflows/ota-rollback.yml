@@ -36,7 +36,12 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: read
+  # write, not read: a rollback changes what is on people's phones, so it has
+  # to move the ota-published tag to match. A tag left pointing at the bundle
+  # that was just pulled is read by ota_should_publish.sh and ota_is_stalled.py
+  # as the truth, and on 2026-09-15 it named a commit that had crashed on a
+  # real phone while the stall check reported everything as shipped.
+  contents: write
 
 jobs:
   rollback:
@@ -66,6 +71,11 @@ jobs:
 
       - name: Checkout repository
         uses: actions/checkout@v7
+        with:
+          # The restored commit has to exist locally for the tag to be moved
+          # onto it, and it is by definition an older one.
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
@@ -79,9 +89,16 @@ jobs:
       # Printed before acting, so the log shows what the branch looked like at
       # the moment of the rollback. If the named group is not at the top, the
       # command below will refuse and this listing is what explains why.
+      # Captured BEFORE the rollback, and kept: this listing is what says
+      # which group sits below the one being pulled, and therefore which commit
+      # is about to start serving. After the rollback the branch has moved and
+      # the answer is no longer in it.
       - name: Show the production branch as it stands
         working-directory: frontend
-        run: npx eas-cli@latest update:list --branch production --non-interactive || true
+        run: |
+          npx eas-cli@latest update:list --branch production --non-interactive || true
+          npx eas-cli@latest update:list --branch production --limit 20 --json \
+            --non-interactive > list.json 2>/dev/null || true
 
       - name: Roll back
         working-directory: frontend
@@ -94,11 +111,47 @@ jobs:
             --message "Rollback: $REASON" \
             --non-interactive
 
+      # The tag means "the last commit that genuinely reached a phone", and a
+      # rollback changes that. Moving it is not bookkeeping: ota_should_publish.sh
+      # decides whether tonight ships anything from this tag, and
+      # ota_is_stalled.py decides whether the pipeline has died.
+      #
+      # When the restored commit cannot be read with confidence the tag is
+      # DELETED rather than guessed at. Both readers treat a missing tag as
+      # "publish again", which costs one extra update; only a wrong tag can
+      # produce silence, which is the failure this whole step exists to undo.
+      - name: Point ota-published at what is now serving
+        id: retag
+        # Through the environment, never interpolated into the script: a
+        # ${{ }} expansion is pasted in as text before bash sees it, so an
+        # input carrying a quote or a semicolon would be running as shell.
+        env:
+          GROUP: ${{ inputs.group }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          SHA="$(python3 scripts/ota_rolled_back_to.py \
+                   --list-json frontend/list.json \
+                   --group "$GROUP" 2>/dev/null || true)"
+
+          if [ -n "$SHA" ] && git cat-file -e "${SHA}^{commit}" 2>/dev/null; then
+            git tag -f ota-published "$SHA"
+            git push -f origin refs/tags/ota-published
+            echo "moved to $SHA"
+            echo "tag=moved to \`$SHA\`" >> "$GITHUB_OUTPUT"
+          else
+            git push origin :refs/tags/ota-published || true
+            echo "could not read the restored commit; tag deleted"
+            echo "tag=DELETED — the restored commit could not be read, so the next publish will ship again rather than trust a wrong tag" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Say what happened
         if: ${{ always() }}
         env:
           GROUP: ${{ inputs.group }}
           REASON: ${{ inputs.reason }}
+          TAG: ${{ steps.retag.outputs.tag }}
         run: |
           {
             echo "## OTA rollback"
@@ -107,6 +160,8 @@ jobs:
             echo "Reason: ${REASON}"
             echo
             echo "Devices pick this up on their next launch."
+            echo
+            echo "ota-published: ${TAG:-not reached}"
             echo
             echo "**The bad commit is still on main.** Revert it, or the next"
             echo "merge republishes the same problem."
