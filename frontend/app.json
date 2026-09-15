@@ -65,8 +65,7 @@
         }
       ],
       "expo-web-browser",
-      "expo-secure-store",
-      "react-native-document-scanner-plugin"
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true,
