@@ -58,9 +58,22 @@ from typing import Optional
 WINDOW_OPENS_HOUR = 2
 WINDOW_CLOSES_HOUR = 5
 
-# How long after the last attempt before its silence means something. The run
-# itself takes about six minutes; an hour is room for a queued or slow one.
-SETTLE_HOURS = 1
+# How long after the last attempt before its silence means something.
+#
+# Five, from measurement rather than from the guess this started as. The first
+# version said "the run takes about six minutes; an hour is room for a queued
+# or slow one" — reasonable, and wrong. On 2026-09-15 the scheduled runs were
+# not dropped at all: they fired at 08:11, 09:05 and 09:48 UTC against cron
+# slots of 02:00 to 05:00, and published correctly. A one-hour settle would
+# have raised the alarm at 06:00 that morning about a pipeline that was merely
+# late, which is precisely the false alarm this check was designed never to
+# make.
+#
+# GitHub's own documentation calls scheduled workflows best-effort and warns of
+# delays during periods of high load; the observed worst here is 4h48m past the
+# last slot. Five hours covers it and still catches a night that never happened
+# by 10:00 the same morning, sixteen hours before the next window could fix it.
+SETTLE_HOURS = 5
 
 # The paths whose contents end up in the OTA bundle. Deliberately the same set
 # scripts/ota_should_publish.sh uses: if the two ever disagree, this alarms

@@ -91,7 +91,7 @@ class ItStaysQuietWhenNothingIsWrong(unittest.TestCase):
         merged = at("2026-09-14T05:01:00+00:00")
         self.assertEqual(
             stall.verdict(TAG_SHA, HEAD_SHA, merged,
-                          at("2026-09-15T06:30:00+00:00"))["action"], "alarm")
+                          at("2026-09-15T10:30:00+00:00"))["action"], "alarm")
 
     def test_the_window_is_still_settling_at_half_past_five(self):
         """The last attempt starts at 05:00 and the run takes about six
@@ -118,41 +118,50 @@ class ItMeasuresWindowsRatherThanHours(unittest.TestCase):
     MERGED = at("2026-09-14T10:41:00+00:00")
 
     def test_the_real_missed_night_is_caught_the_same_morning(self):
+        # 10:30, not 06:03. See ADelayedNightIsNotAMissedOne below: on the day
+        # this was written the scheduled runs fired at 08:11, 09:05 and 09:48
+        # and published correctly, so 06:03 is an alarm about a late night.
         out = stall.verdict(TAG_SHA, HEAD_SHA, self.MERGED,
-                            at("2026-09-15T06:03:00+00:00"))
+                            at("2026-09-15T10:30:00+00:00"))
         self.assertEqual(out["action"], "alarm")
+        self.assertIn("10:30", f"{at('2026-09-15T10:30:00+00:00'):%H:%M}")
 
     def test_the_flat_grace_it_replaced_would_not_have(self):
-        """Pinned as the difference, not as a description of it."""
+        """Pinned as the difference, not as a description of it. The flat
+        thirty hours from 10:41 runs to 16:41, so it is still quiet at
+        10:30 when the window rule has already spoken."""
         out = stall.verdict(TAG_SHA, HEAD_SHA, self.MERGED,
-                            at("2026-09-15T06:03:00+00:00"), grace_hours=30)
+                            at("2026-09-15T10:30:00+00:00"), grace_hours=30)
         self.assertEqual(out["action"], "none")
 
     def test_the_alarm_names_the_window_that_published_nothing(self):
         said = " ".join(stall.verdict(TAG_SHA, HEAD_SHA, self.MERGED,
-                                      at("2026-09-15T06:03:00+00:00"))["reasons"])
+                                      at("2026-09-15T10:30:00+00:00"))["reasons"])
         self.assertIn("02:00-05:00", said)
         self.assertIn("2026-09-15 05:00", said)
 
     def test_a_change_merged_just_before_the_window_gets_it(self):
         # 01:00, an hour before the window opens: that night owes it an update
-        # and a miss shows up five and a half hours later, not a day.
+        # and a miss shows up the same morning, not a day later.
         merged = at("2026-09-15T01:00:00+00:00")
         self.assertEqual(
             stall.verdict(TAG_SHA, HEAD_SHA, merged,
-                          at("2026-09-15T06:30:00+00:00"))["action"], "alarm")
+                          at("2026-09-15T10:30:00+00:00"))["action"], "alarm")
 
     def test_the_deadline_is_the_close_plus_the_settle(self):
         due = stall.deadline_for(at("2026-09-14T10:41:00+00:00"))
-        self.assertEqual(due, at("2026-09-15T06:00:00+00:00"))
+        self.assertEqual(due, at("2026-09-15T05:00:00+00:00")
+                         + timedelta(hours=stall.SETTLE_HOURS))
 
     def test_a_commit_before_the_window_opens_uses_that_same_night(self):
         self.assertEqual(stall.deadline_for(at("2026-09-15T00:30:00+00:00")),
-                         at("2026-09-15T06:00:00+00:00"))
+                         at("2026-09-15T05:00:00+00:00")
+                         + timedelta(hours=stall.SETTLE_HOURS))
 
     def test_a_commit_after_it_opens_waits_for_the_next(self):
         self.assertEqual(stall.deadline_for(at("2026-09-15T02:30:00+00:00")),
-                         at("2026-09-16T06:00:00+00:00"))
+                         at("2026-09-16T05:00:00+00:00")
+                         + timedelta(hours=stall.SETTLE_HOURS))
 
     def test_a_commit_in_a_non_utc_zone_is_read_in_utc(self):
         """Commit stamps carry the committer's offset — %cI on this repository
@@ -160,7 +169,8 @@ class ItMeasuresWindowsRatherThanHours(unittest.TestCase):
         would shift every deadline by the offset."""
         paris = at("2026-09-15T03:30:00+02:00")   # 01:30 UTC, before the window
         self.assertEqual(stall.deadline_for(paris),
-                         at("2026-09-15T06:00:00+00:00"))
+                         at("2026-09-15T05:00:00+00:00")
+                         + timedelta(hours=stall.SETTLE_HOURS))
 
     def test_the_hours_match_the_workflow_that_publishes(self):
         """A check calibrated to a schedule that has since moved is worse than
@@ -317,3 +327,43 @@ class AgainstARealRepository(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ADelayedNightIsNotAMissedOne(unittest.TestCase):
+    """The calibration, from measurement rather than from a guess.
+
+    SETTLE_HOURS began at 1, reasoned as "the run takes about six minutes; an
+    hour is room for a queued or slow one". On 2026-09-15 the scheduled runs
+    were not dropped: they fired at 08:11, 09:05 and 09:48 UTC against cron
+    slots of 02:00 to 05:00, and published correctly. A one-hour settle would
+    have raised the alarm at 06:00 about a pipeline that was merely late —
+    exactly the false alarm this check exists not to make, and the kind that
+    teaches somebody to ignore the real one.
+
+    GitHub calls scheduled workflows best-effort and warns of delay under
+    load. These pin the settle against what was actually observed.
+    """
+
+    MERGED = at("2026-09-14T10:41:00+00:00")
+
+    def quiet_at(self, stamp):
+        return stall.verdict(TAG_SHA, HEAD_SHA, self.MERGED, at(stamp))["action"]
+
+    def test_quiet_while_a_late_run_could_still_arrive(self):
+        # The three real firings that day, and an hour before the first.
+        for stamp in ("2026-09-15T07:00:00+00:00", "2026-09-15T08:11:00+00:00",
+                      "2026-09-15T09:05:00+00:00", "2026-09-15T09:48:00+00:00"):
+            self.assertEqual(self.quiet_at(stamp), "none", stamp)
+
+    def test_and_speaks_once_even_the_latest_of_them_has_passed(self):
+        self.assertEqual(self.quiet_at("2026-09-15T10:30:00+00:00"), "alarm")
+
+    def test_the_settle_covers_the_worst_delay_actually_seen(self):
+        # 05:00 slot, run landed 09:48: four hours forty-eight minutes.
+        self.assertGreaterEqual(stall.SETTLE_HOURS, 5)
+
+    def test_but_not_so_wide_that_a_missed_night_waits_for_the_next_one(self):
+        """An alarm that arrives after the next window could have fixed it
+        anyway is not an alarm, it is a log entry."""
+        self.assertLess(stall.WINDOW_CLOSES_HOUR + stall.SETTLE_HOURS,
+                        24 + stall.WINDOW_OPENS_HOUR)
