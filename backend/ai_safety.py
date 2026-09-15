@@ -134,7 +134,8 @@ amounts and the steps to cook it.
 
 Rules you must follow:
 - Return JSON only, with keys "minutes" (integer), "servings" (integer),
-  "ingredients" (array) and "steps" (array of strings).
+  "ingredients" (array), "steps" (array of strings) and "serve_with" (array
+  of strings).
 - "servings" is how many people the amounts feed. Use 4 unless the dish
   clearly dictates otherwise.
 - Each ingredient is {"name": string, "qty": number, "unit": string}. The unit
@@ -143,6 +144,13 @@ Rules you must follow:
   For "to taste", set qty to 0.
 - Ingredient names are in the same language as the steps.
 - Between 3 and 8 steps. Each step is one short sentence a tired parent can follow.
+- "serve_with" is 2 to 4 things to put on the plate ALONGSIDE the dish, so the
+  cook is not left with a bare piece of fish or meat and nothing to eat it
+  with. Include a sauce, dressing or condiment where the dish wants one. Each
+  entry is a short phrase naming one accompaniment, specific enough to act on
+  ("Steamed new potatoes with parsley", "Lemon and caper butter sauce"), not a
+  category ("a vegetable"). No amounts and no method — these are suggestions,
+  not a second recipe. Do not repeat the dish itself.
 - Assume an ordinary home kitchen. No specialist equipment.
 - Food safety matters: where meat, poultry, fish, eggs or rice are involved, the
   steps must make safe cooking explicit rather than assumed.
@@ -165,7 +173,8 @@ _VEGETARIAN_CLAUSE = (
     "fish or seafood, and no meat stock or gelatine. Replace any such ingredient "
     "with a suitable vegetarian substitute — for example tofu, beans, lentils, "
     "mushrooms, chickpeas, paneer or halloumi — and adjust the amounts and the "
-    "steps to match. Keep it recognisably the same dish."
+    "steps to match. Keep it recognisably the same dish. Everything suggested "
+    "in serve_with must be vegetarian too."
 )
 
 _VARIANT_CLAUSE = (
@@ -559,6 +568,10 @@ MAX_STEP_LEN = 240
 MIN_MINUTES = 3
 MAX_MINUTES = 480
 MAX_INGREDIENT_NAME_LEN = 60
+MIN_SERVE_WITH = 2
+MAX_SERVE_WITH = 4
+MIN_SERVE_WITH_LEN = 3
+MAX_SERVE_WITH_LEN = 80
 MIN_SERVINGS = 1
 MAX_SERVINGS = 12
 DEFAULT_SERVINGS = 4
@@ -651,9 +664,26 @@ def validate_recipe(parsed: dict) -> dict:
     if parsed.get("ingredients") is not None:
         ingredients = _validate_ingredients(parsed["ingredients"])
 
+    # Newer than steps, same deal as ingredients: a recipe cached before
+    # serve_with existed has no key, and a model that drops it degrades to a
+    # recipe without suggestions rather than to no recipe. Present means it
+    # must be entirely valid.
+    serve_with = None
+    if parsed.get("serve_with") is not None:
+        serve_with = _validate_serve_with(parsed["serve_with"], steps)
+
     haystack = " ".join(steps).lower()
     if ingredients:
         haystack += " " + " ".join(i["name"] for i in ingredients).lower()
+    # The suggestions go through the SAME filter as the steps, so a sauce
+    # cannot smuggle a non-food substance past a check the method is subject
+    # to. Note what this does NOT cover: alcohol is not in _BLOCKED_TERMS and
+    # never has been — "do not build a recipe around alcohol" is a prompt
+    # instruction, holding for a white wine sauce here exactly as it holds for
+    # a step that deglazes with wine. Adding the word would take wine vinegar
+    # and a hundred ordinary recipes with it, so the rule stays where it is.
+    if serve_with:
+        haystack += " " + " ".join(serve_with).lower()
     for term in _BLOCKED_TERMS:
         if term in haystack:
             raise UnsafeRecipe("blocked content")
@@ -680,7 +710,44 @@ def validate_recipe(parsed: dict) -> dict:
             servings = DEFAULT_SERVINGS
         result["servings"] = servings
         result["ingredients"] = ingredients
+    if serve_with:
+        result["serve_with"] = serve_with
     return result
+
+
+def _validate_serve_with(raw, steps) -> list:
+    """What to put on the plate next to the dish.
+
+    Roland asked for a dorade and got the fish and nothing else — no side, no
+    sauce, which is a recipe for a fillet rather than for dinner.
+
+    Kept deliberately dumb: short phrases, no amounts, no method. The moment
+    these carry quantities they are a second recipe the shopping list does not
+    know about, and the cook is reading two things at once.
+    """
+    if not isinstance(raw, list):
+        raise UnsafeRecipe("serve_with not a list")
+
+    seen, cleaned = set(), []
+    for item in raw:
+        if not isinstance(item, str):
+            raise UnsafeRecipe("serve_with entry not a string")
+        text = re.sub(r"\s+", " ", item).strip()
+        # Models like to bullet or number their own lists; the UI does that.
+        text = re.sub(r"^\s*(?:[-*\u2022]|\d+\s*[.)\-:])\s*", "", text)
+        if not (MIN_SERVE_WITH_LEN <= len(text) <= MAX_SERVE_WITH_LEN):
+            raise UnsafeRecipe("serve_with length out of range")
+        key = text.lower()
+        if key in seen:
+            # Two entries saying the same thing reads as padding and costs a
+            # line on a phone screen.
+            continue
+        seen.add(key)
+        cleaned.append(text)
+
+    if not (MIN_SERVE_WITH <= len(cleaned) <= MAX_SERVE_WITH):
+        raise UnsafeRecipe("serve_with count out of range")
+    return cleaned
 
 
 def _validate_ingredients(raw) -> list:

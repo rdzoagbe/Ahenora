@@ -623,12 +623,39 @@ class RecipeDietGeneration(unittest.TestCase):
         self.assertIn("vegetarian", self.captured[-1]["contents"].lower())
 
     def test_a_cached_vegetarian_recipe_returns_free_without_the_model(self):
-        cached = {"minutes": 20, "steps": ["a", "b", "c"]}
+        # serve_with is what marks a cached recipe as the shape served today.
+        # Without it this is a recipe written before "Serve it with" existed,
+        # and it is deliberately refreshed rather than served — see the test
+        # below. The property here is the other one, and it still holds: a
+        # cache hit costs no model call.
+        cached = {"minutes": 20, "steps": ["a", "b", "c"],
+                  "serve_with": ["Buttered rice", "Green salad"]}
         meal = self._base_meal(ai_recipe_vegetarian={"en": cached})
         result = self._run(meal, diet="vegetarian")
         self.assertTrue(result["cached"])
         self.assertEqual(result["recipe"], cached)
         self.assertEqual(len(self.captured), 0)   # model was never called
+
+    def test_a_recipe_cached_before_serve_with_existed_is_rewritten(self):
+        """Otherwise the feature is invisible for every dish already cached —
+        which is exactly the dishes a household cooks most."""
+        stale = {"minutes": 20, "steps": ["a", "b", "c"]}
+        meal = self._base_meal(ai_recipe_vegetarian={"en": stale})
+        result = self._run(meal, diet="vegetarian")
+        self.assertFalse(result["cached"])
+        self.assertEqual(len(self.captured), 1)   # it went to the model
+
+    def test_a_captured_recipe_is_never_rewritten_over(self):
+        """A recipe photographed out of a cookbook lives in the same field as
+        a generated one and has no serve_with. Refreshing it would $set an AI
+        recipe over something that exists nowhere else."""
+        captured = {"title": "Grandma's tagine", "minutes": 40,
+                    "steps": ["a", "b", "c"]}
+        meal = self._base_meal(ai_recipe={"en": captured})
+        result = self._run(meal, diet="")
+        self.assertTrue(result["cached"])
+        self.assertEqual(result["recipe"], captured)
+        self.assertEqual(len(self.captured), 0)
 
     def test_different_recipe_skips_the_cache_and_runs_hotter(self):
         meal = self._base_meal(ai_recipe={"en": {"minutes": 20, "steps": ["a", "b", "c"]}})

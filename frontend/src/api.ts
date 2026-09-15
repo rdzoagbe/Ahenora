@@ -773,6 +773,12 @@ export interface AiRecipe {
   servings?: number;
   ingredients?: { name: string; qty: number | null; unit: string }[];
   title?: string;
+  /** What to put on the plate beside the dish — a side, a sauce, a salad.
+   *  Optional because recipes cached before this existed have none, and
+   *  because the model is occasionally asked and gives nothing back. Short
+   *  phrases, deliberately without amounts: the moment they carry quantities
+   *  they are a second recipe the shopping list knows nothing about. */
+  serve_with?: string[];
 }
 
 export type Diet = '' | 'vegetarian';

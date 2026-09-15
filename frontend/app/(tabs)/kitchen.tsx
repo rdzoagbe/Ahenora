@@ -66,7 +66,10 @@ export default function Kitchen() {
   const [browseDay, setBrowseDay] = useState('monday');
   // Generated methods held for this session, keyed by meal id. The server
   // caches them too; this just avoids a round trip while the sheet is open.
-  const [aiRecipes, setAiRecipes] = useState<Record<string, { minutes: number; steps: string[]; servings?: number; ingredients?: AiIngredient[] }>>({});
+  // AiRecipe rather than a hand-written shape: this was a structural copy of
+  // the type that drifted the moment the server grew a field, and serve_with
+  // reached the screen only because tsc named it. One definition now.
+  const [aiRecipes, setAiRecipes] = useState<Record<string, AiRecipe>>({});
   const [generatingFor, setGeneratingFor] = useState<string | null>(null);
   // The diet and variant of the recipe currently on screen, and whether a
   // rewrite/regenerate is in flight. A vegetarian rewrite really re-cooks the
@@ -2035,6 +2038,26 @@ export default function Kitchen() {
                       </View>
                     ))}
 
+                    {/* What to eat it with. Roland asked for a dorade, got the
+                        fish and nothing else, and said so: "no sauce no
+                        nothing". A fillet is not dinner.
+
+                        Only rendered when the server sent some — a recipe
+                        cached before this existed, or a captured one from a
+                        cookbook, simply has no section rather than an empty
+                        heading promising something. */}
+                    {method.serve_with && method.serve_with.length > 0 ? (
+                      <>
+                        <Text style={styles.cookSectionTitle}>{t('cook_serve_with')}</Text>
+                        {method.serve_with.map((side, i) => (
+                          <View key={i} style={styles.cookServeWith}>
+                            <Text style={styles.cookServeWithDot}>·</Text>
+                            <Text style={styles.cookServeWithText}>{side}</Text>
+                          </View>
+                        ))}
+                      </>
+                    ) : null}
+
                     {/* AI recipes can be re-cooked: vegetarian genuinely rewrites
                         the ingredients and steps, and "different recipe" asks for
                         a fresh take on the same dish. Curated library dishes are
@@ -2766,6 +2789,12 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   cookStepNum: { width: 28, height: 28, borderRadius: 14, backgroundColor: ui.orangeSoft, alignItems: 'center', justifyContent: 'center' },
   cookStepNumText: { color: ui.orangeText, fontFamily: 'Inter_700Bold', fontSize: 14 },
   cookStepText: { flex: 1, color: ui.text, fontFamily: 'Inter_500Medium', fontSize: 16, lineHeight: 25 },
+  // Suggestions, not instructions: same reading size as a step so it is legible
+  // from a counter, but no numbered badge — these are a menu to pick from, and
+  // numbering them would read as an order to follow.
+  cookServeWith: { flexDirection: 'row', gap: 12, marginBottom: 10, alignItems: 'flex-start' },
+  cookServeWithDot: { color: ui.orangeText, fontFamily: 'Inter_700Bold', fontSize: 16, lineHeight: 25 },
+  cookServeWithText: { flex: 1, color: ui.text, fontFamily: 'Inter_500Medium', fontSize: 16, lineHeight: 25 },
   cookAllergen: { flexDirection: 'row', gap: 8, alignItems: 'flex-start', marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: ui.line },
   plannerAllergen: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 8,

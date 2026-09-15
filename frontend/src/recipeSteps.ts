@@ -1531,7 +1531,12 @@ export const RECIPE_METHODS: Record<string, RecipeMethod> = {
 export function recipeMethod(
   recipeId: string | null | undefined,
   lang: SuggestLang,
-): { minutes: number; steps: string[] } | null {
+// serve_with is optional and the curated dishes in this file do not carry it:
+// they are hand-written, not generated, so there is nothing to suggest unless
+// somebody writes it. Declared anyway so a curated recipe and a generated one
+// share one shape at the call site — the screen already renders the section
+// only when there is something in it.
+): { minutes: number; steps: string[]; serve_with?: string[] } | null {
   if (!recipeId) return null;
   const method = RECIPE_METHODS[recipeId];
   if (!method) return null;

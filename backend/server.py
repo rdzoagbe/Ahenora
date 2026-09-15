@@ -16458,6 +16458,36 @@ async def store_recipe_in_library(database, key: Optional[str], recipe: dict) ->
         log.warning("could not add a recipe to the shared library")
 
 
+def recipe_is_current(recipe: Optional[dict]) -> bool:
+    """Is this cached recipe of the shape we serve today?
+
+    "Cook it" gained serve_with — what to put on the plate beside the dish —
+    after thousands of recipes had already been cached, on meal documents and
+    in the shared library both. Without this, every dish written before today
+    keeps coming back with no side and no sauce forever, and the feature looks
+    broken for exactly the dishes a household cooks most.
+
+    So a recipe with no suggestions is a cache MISS and gets written again.
+
+    serve_with_unavailable is what stops that becoming a bill. The model is
+    asked for suggestions and occasionally will not give any; the recipe is
+    still good and is still served, but it is marked as asked-and-not-answered
+    so the next open is a hit rather than another generation paying for the
+    same blank.
+    """
+    if not recipe:
+        return False
+    # A CAPTURED recipe is the family's own, photographed out of a cookbook or
+    # off a card, and it lives in the same slot as a generated one. It carries
+    # a title; a generated recipe never does. Treating it as stale would send
+    # "Cook it" off to write an AI recipe and $set it straight over the top of
+    # theirs — losing something that exists nowhere else, to add a side dish.
+    # This check is the whole reason that does not happen.
+    if recipe.get("title"):
+        return True
+    return bool(recipe.get("serve_with") or recipe.get("serve_with_unavailable"))
+
+
 def recipe_slot(diet: str) -> str:
     """Where a generated recipe caches on the meal doc.
 
@@ -16507,7 +16537,7 @@ async def generate_meal_recipe(
     cached = (meal.get(slot) or {}).get(language)
     # A "different recipe" (variant>0) is a deliberate ask for something fresh,
     # so it skips both caches; everything else serves a cached copy free.
-    if cached and not variant:
+    if cached and not variant and recipe_is_current(cached):
         return {"recipe": cached, "cached": True, "diet": diet}
 
     meal_title = sanitize_user_text(meal.get("title", ""))
@@ -16516,6 +16546,12 @@ async def generate_meal_recipe(
     # it, remember it on the meal so the next open does not even come here, and
     # charge nothing: there is no AI call to pay for.
     shared = await recipe_from_library(database, library_key)
+    if shared and not recipe_is_current(shared):
+        # Written before serve_with existed. Regenerating overwrites the shared
+        # entry under the same key, so the next household to ask for this dish
+        # gets the new shape free — the library heals itself one dish at a time
+        # instead of needing a migration.
+        shared = None
     if shared:
         await database["meals"].update_one(
             {"meal_id": meal_id},
@@ -16563,6 +16599,12 @@ async def generate_meal_recipe(
             # Still a usable recipe, but the model ignored half the prompt —
             # loud in the logs so a quiet downgrade cannot become the norm.
             log.warning("recipe for %r came back without ingredients", title)
+        if "serve_with" not in recipe:
+            log.warning("recipe for %r came back without serve_with", title)
+            # Marked rather than left absent, so recipe_is_current treats it as
+            # a hit. Otherwise a dish the model will not suggest sides for
+            # regenerates on every single open and bills for it each time.
+            recipe["serve_with_unavailable"] = True
     except UnsafeRecipe as exc:
         # The specific check that failed is useful to us and meaningless to the
         # user, so it is logged and not returned.
