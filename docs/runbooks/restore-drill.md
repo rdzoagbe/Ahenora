@@ -104,7 +104,41 @@ nobody recorded gets re-argued from memory six months later.
 
 | Date | Archive size | Restore time | Result | Notes |
 |---|---|---|---|---|
-| | | | | |
+| 2026-09-15 | 2743 docs, 37 collections | 2s | **passed** | First real run; three faults found getting there — see below. Empty: allowance_txns, allowances, password_resets, and one more the terminal truncated. |
+
+### What the first real run cost, and why that is the point
+
+This drill had never been run. Three things were wrong, and every one of them
+was invisible to 1,900 tests and a mutation suite:
+
+1. **The tools were not in the deployed image.** `backend/Dockerfile` copies
+   `backend/` and nothing else, so the instruction in this runbook — run it on
+   the service — would have failed for anyone, including during a real data
+   loss. Fixed, and `tests/test_the_recovery_tools_ship.py` now fails if they
+   stop shipping.
+
+2. **`dump` had never read a real database.** `_names` guarded its await with
+   `asyncio.iscoroutine()`; motor returns a *Future*, for which that is False.
+   A pending Future raises; a completed one yields nothing, so the dump writes
+   a manifest with zero collections and reports success. **A backup of nothing,
+   announced as a backup.** It passed every test because the test double is
+   `async def` and returns a coroutine — the double modelled the guard, not the
+   library.
+
+3. **`restore` read the whole database into memory** to promise nothing was
+   written before every file was checked. The promise was right, the price was
+   not: vault rows carry their file inline and the Household plan sells 10 GB.
+   Now a checksum pass that keeps nothing, then batched writes.
+
+A recovery procedure is not correct because it reads correctly. It is correct
+when somebody has followed it.
+
+### Reading the empty list
+
+`allowances` is a live feature, so its being empty means nobody has set one up
+— worth a glance rather than an alarm. `password_resets` is transient and
+empty is the healthy state. The check that matters is the other direction: a
+collection you *know* has data reporting `0`.
 
 ---
 

@@ -51,7 +51,10 @@ Last updated: 30 July 2026.
 - [x] **Auth coverage** — a build failure if any endpoint ships without auth or a written reason.
 - [ ] **`OPS_ALERT_TOKEN`** — set in Railway **and** GitHub secrets, or the hourly error alert stays inert (it skips rather than crying wolf).
 - [ ] **Atlas → Network Access** — confirm the IP access list is not `0.0.0.0/0`. Nothing in this repo can check it; see `docs/runbooks/restore-drill.md`.
-- [ ] **Run the restore drill once** — ~15 minutes. Backups exist; nobody has yet proven one comes back.
+- [x] **Run the restore drill once** — done 2026-09-15. 2743 documents across 37
+      collections dumped, restored and verified in 4 seconds. It found three real
+      faults on the way, including a `dump` that could have written an empty
+      archive and called it a backup. See `docs/runbooks/restore-drill.md`.
 
 ### B. Small open promises (quick, mostly OTA)
 - [x] **UI/UX consistency pass** — pricing cards theme-aware (#233), accessibility labels on icon-only buttons (#234), sub-44px tap targets enlarged + theme-blind borders fixed (#235).
