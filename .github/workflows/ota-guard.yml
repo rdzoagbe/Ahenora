@@ -36,6 +36,61 @@ permissions:
   contents: read
 
 jobs:
+  # Deliberately its own job, and deliberately NOT behind the EXPO_TOKEN gate
+  # below. This one needs no Expo credentials — it reads two git refs — and the
+  # failure it exists to catch is the pipeline going quiet, so it must not be
+  # switched off by the same missing secret that would switch the rest off.
+  stalled:
+    name: Is what people merged reaching phones?
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          # Both are load-bearing: the check compares main against the
+          # `ota-published` tag, and a shallow clone without tags can resolve
+          # neither. It says so rather than passing, but a check that reports
+          # its own checkout every hour is noise.
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Ask
+        id: ask
+        run: |
+          python3 scripts/ota_is_stalled.py --json > stall.json || true
+          cat stall.json
+          {
+            echo "action=$(python3 -c "import json;print(json.load(open('stall.json'))['action'])")"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Say what it found
+        if: always()
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          try:
+              v = json.load(open("stall.json"))
+          except Exception:
+              print("## Could not tell whether the OTA is publishing\n")
+              print("The check itself did not produce a verdict.")
+              raise SystemExit(0)
+          titles = {"none": "OTA is publishing — nothing to do",
+                    "alarm": "Merged work is not reaching phones"}
+          print(f"## {titles.get(v['action'], v['action'])}\n")
+          for r in v["reasons"]:
+              print(f"* {r}")
+          PY
+
+      # Same alarm mechanism as the guard below: a failing scheduled workflow is
+      # the notification that already reaches somebody, and a summary is a page
+      # you have to think to open — which is no use for a failure whose whole
+      # nature is that nobody thought to look.
+      - name: Fail if merged work has stopped shipping
+        if: steps.ask.outputs.action == 'alarm'
+        run: |
+          echo "See the job summary."
+          exit 1
+
   guard:
     name: Look at the newest production update
     runs-on: ubuntu-latest
