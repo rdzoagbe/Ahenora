@@ -81,6 +81,54 @@ class TheDishComesWithSomethingToEatItWith(unittest.TestCase):
         # "a vegetable" is not a suggestion anybody can act on.
         self.assertIn("not a category", flat(RECIPE_SYSTEM_PROMPT))
 
+
+class ThereIsSomethingToEatItWITH(unittest.TestCase):
+    """Roland, after the first version: "if I'm cooking steak or chicken
+    breast or thigh, I can eat with rice, bulgur wheat, potatoes or something.
+    The proposition should be accurate to the recipe cooked."
+
+    "Alongside" was too loose. A steak with a sauce and a green vegetable is
+    still not dinner — the missing thing is the BASE, and which base depends
+    entirely on the dish.
+    """
+
+    def prompt(self):
+        return flat(RECIPE_SYSTEM_PROMPT)
+
+    def test_a_protein_on_its_own_gets_a_base_first(self):
+        self.assertIn("the FIRST entry must be the base to eat it with", self.prompt())
+
+    def test_the_bases_are_named_rather_than_left_to_the_model(self):
+        # Roland named these. A prompt that says "a starch" invites "a starch".
+        for base in ("rice", "bulgur", "potatoes", "pasta", "couscous"):
+            self.assertIn(base, self.prompt())
+
+    def test_it_asks_for_alternatives_in_one_entry(self):
+        """"or something" — the cook picks what is in the cupboard. Four
+        separate entries of rice, bulgur, potatoes and pasta would spend the
+        whole list on one decision."""
+        self.assertIn("as alternatives", self.prompt())
+
+    def test_a_dish_that_already_has_a_base_does_not_get_another(self):
+        """Rice with a risotto is the model following a rule instead of
+        reading the dish, and it is what "accurate to the recipe" rules out."""
+        self.assertIn("ALREADY carries its own base", self.prompt())
+        self.assertIn("risotto", self.prompt())
+
+    def test_the_suggestions_must_match_the_dish(self):
+        self.assertIn("must suit THIS dish", self.prompt())
+
+    def test_and_the_prompt_says_what_mismatched_looks_like(self):
+        # A rule with an example is followed; a rule without one is agreed with.
+        self.assertIn("Yorkshire puddings", self.prompt())
+
+    def test_an_alternatives_entry_fits_inside_the_limit(self):
+        """The rule is useless if the validator then refuses the answer it
+        asks for — in the longest language the app ships, not just English."""
+        longest = "Reis mit Butter, Bulgurweizen oder neue Kartoffeln mit Petersilie"
+        out = validate_recipe(recipe(serve_with=[longest, "Grüner Salat"]))
+        self.assertEqual(out["serve_with"][0], longest)
+
     def test_a_vegetarian_recipe_gets_vegetarian_suggestions(self):
         """Suggesting bacon lardons beside a vegetarian main is the whole diet
         feature failing in the last line of the screen."""

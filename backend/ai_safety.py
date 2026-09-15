@@ -146,11 +146,23 @@ Rules you must follow:
 - Between 3 and 8 steps. Each step is one short sentence a tired parent can follow.
 - "serve_with" is 2 to 4 things to put on the plate ALONGSIDE the dish, so the
   cook is not left with a bare piece of fish or meat and nothing to eat it
-  with. Include a sauce, dressing or condiment where the dish wants one. Each
-  entry is a short phrase naming one accompaniment, specific enough to act on
-  ("Steamed new potatoes with parsley", "Lemon and caper butter sauce"), not a
-  category ("a vegetable"). No amounts and no method — these are suggestions,
-  not a second recipe. Do not repeat the dish itself.
+  with. Each entry is a short phrase naming one accompaniment, specific enough
+  to act on ("Steamed new potatoes with parsley", "Lemon and caper butter
+  sauce"), not a category ("a vegetable"). No amounts and no method — these are
+  suggestions, not a second recipe. Do not repeat the dish itself.
+- If the dish is a protein served on its own — a steak, a chicken breast or
+  thigh, a fillet of fish, a chop — then the FIRST entry must be the base to
+  eat it with: rice, bulgur, potatoes, pasta, couscous, bread, polenta or
+  whatever genuinely suits it. Where several would work, name them in that one
+  entry as alternatives ("Buttered rice, bulgur wheat or new potatoes") so the
+  cook picks what is in the cupboard.
+- If the dish ALREADY carries its own base — a risotto, a pasta bake, a paella,
+  a stew with dumplings, a sandwich — do not suggest another one. Suggest what
+  that dish actually wants: a sharp salad, a green vegetable, a pickle.
+- Include a sauce, dressing or condiment where the dish wants one.
+- Every suggestion must suit THIS dish — its cuisine, its richness, its sauce.
+  A tagine is not served with Yorkshire puddings, and a delicate white fish is
+  not served with a heavy chilli bean stew.
 - Assume an ordinary home kitchen. No specialist equipment.
 - Food safety matters: where meat, poultry, fish, eggs or rice are involved, the
   steps must make safe cooking explicit rather than assumed.
@@ -571,7 +583,10 @@ MAX_INGREDIENT_NAME_LEN = 60
 MIN_SERVE_WITH = 2
 MAX_SERVE_WITH = 4
 MIN_SERVE_WITH_LEN = 3
-MAX_SERVE_WITH_LEN = 80
+# Roomier than a bare side name, because one entry may offer alternatives
+# ("Buttered rice, bulgur wheat or new potatoes") and German and French say
+# the same thing in more characters than English does.
+MAX_SERVE_WITH_LEN = 110
 MIN_SERVINGS = 1
 MAX_SERVINGS = 12
 DEFAULT_SERVINGS = 4
