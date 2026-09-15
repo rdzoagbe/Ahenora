@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system';
 import {
   X, Sparkles, Camera, Image as ImageIcon, FileScan, Check, ChefHat,
 } from 'lucide-react-native';
@@ -21,6 +22,7 @@ import { ScansLeft } from './ScansLeft';
 import { localeFor } from '../utils/date';
 import { api, CardType, CapturedRecipe, ScanResult } from '../api';
 import { DOCUMENT_CATEGORIES, CATEGORY_STYLE } from '../documentCategories';
+import { scanDocument } from '../documentScanner';
 import { categoriseShoppingItem, shoppingLabel } from '../shoppingCategories';
 import { logger } from '../logger';
 
@@ -92,6 +94,29 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
         }
       }
 
+      // The OS document scanner first, when this binary has it: ML Kit on
+      // Android, VisionKit on iOS. It finds the page edges live, shoots when
+      // the frame is steady and corrects the perspective, so what goes up is
+      // the document at its true rectangle. That is the automatic framing the
+      // manual crop below only approximates.
+      //
+      // Camera only. Asking the OS scanner to scan a photo already in the
+      // gallery is not something either platform does — it drives the camera.
+      if (source === 'camera') {
+        const scan = await scanDocument();
+        if (scan.kind === 'cancelled') return;
+        if (scan.kind === 'scanned') {
+          const b64 = await FileSystem.readAsStringAsync(scan.uri, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+          await runScan(`data:image/jpeg;base64,${b64}`);
+          return;
+        }
+        // 'unavailable' falls through to the picker below. Every binary
+        // shipped before this feature lands here, and it is the behaviour
+        // they have today — not a degraded one worth mentioning to anybody.
+      }
+
       // allowsEditing: the system crop step, before anything is uploaded.
       //
       // A phone shoots 12MP; at quality 0.55 that is still megabytes, and
@@ -120,6 +145,22 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
       const asset = res.assets[0];
       const imageBase64 = asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri;
 
+      await runScan(imageBase64);
+    } catch (e: any) {
+      setErr(apiErrorText(e, t, 'cam_could_not_open_camera'));
+      setPhase('error');
+    }
+  };
+
+  /**
+   * Everything after a picture exists, whichever way it was taken.
+   *
+   * Pulled out when the OS document scanner was added: the scanner and the
+   * picker produce the same thing — a data URI — and the handling after that
+   * is identical. Two copies of it would drift, and the half that drifts is
+   * the one nobody is looking at.
+   */
+  const runScan = async (imageBase64: string) => {
       const myReq = ++scanReqRef.current;
       setPreview(imageBase64);
       setPhase('scanning');
@@ -157,10 +198,6 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
         setErr(apiErrorText(e, t, 'cam_vision_failed'));
         setPhase('error');
       }
-    } catch (e: any) {
-      setErr(apiErrorText(e, t, 'cam_could_not_open_camera'));
-      setPhase('error');
-    }
   };
 
   /** Hand the document on to the card form, with the drawer the family chose. */

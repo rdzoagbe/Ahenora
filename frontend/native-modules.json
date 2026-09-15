@@ -31,6 +31,7 @@
     "expo-system-ui",
     "expo-updates",
     "expo-web-browser",
+    "react-native-document-scanner-plugin",
     "react-native-gesture-handler",
     "react-native-purchases",
     "react-native-safe-area-context",

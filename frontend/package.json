@@ -59,6 +59,7 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.0",
+    "react-native-document-scanner-plugin": "^2.0.4",
     "react-native-dotenv": "3.4.11",
     "react-native-gesture-handler": "~2.32.0",
     "react-native-purchases": "^10.4.3",
