@@ -52,10 +52,72 @@ then remove the open one.
 
 ## The drill
 
+Run it **on the Railway backend service**, where `MONGO_URL` already lives.
+The image carries the two recovery tools and their dependencies, so there is
+nothing to install and no production connection string to paste anywhere.
+
+To get a shell on the service, either:
+
+- `railway ssh` from the Railway CLI (`npm i -g @railway/cli`, `railway login`,
+  `railway link`, then `railway ssh`), or
+- the service's own **Shell** / terminal option in the Railway dashboard.
+
+Then, from `/app` (where the shell starts):
+
+```bash
+python3 scripts/restore_drill.py
+```
+
+> The Dockerfile copies `backend/` and, deliberately, only
+> `scripts/mongo_backup.py` and `scripts/restore_drill.py` out of `scripts/`.
+> This runbook told people to run the tool on the service for weeks while the
+> image contained neither file; the drill had never been run, so nothing found
+> out. `tests/test_the_recovery_tools_ship.py` fails if they stop shipping.
+
+It dumps production, restores into a scratch database, verifies the restore is
+actually usable, tells you in plain words whether the backups are real, prints
+a row for the table below, and deletes the scratch copy.
+
+**There is nothing to create first.** The scratch database is derived from
+`MONGO_URL` — same cluster, same credentials, the database name with `_drill`
+on the end — and MongoDB creates a database on first write. It will not write
+to the live database: the derived name is checked against the live one before
+anything connects, and `mongo_backup.py restore` refuses the live database
+independently.
+
+Add `--keep` if you want to open the app against it afterwards — the one part
+no script can do for you. It then prints both the command to point a backend at
+the drill database and the command to delete it when you are done.
+
+### Then: open the app against it
+
+The last mile no script can assert, and the reason `--keep` exists. Log in as a
+real household and check: the calendar shows the right events on the right
+days, a child's star balance is right, the vault lists its documents. **Dates
+on the right days** is the one to look hardest at — it is what a timezone fault
+destroys, and it is invisible in any row count.
+
+### Then: write down what happened
+
+The script prints the row. Paste it here and commit it. A drill whose result
+nobody recorded gets re-argued from memory six months later.
+
+| Date | Archive size | Restore time | Result | Notes |
+|---|---|---|---|---|
+| | | | | |
+
+---
+
+## By hand, if you ever need the steps apart
+
+The one command above is `scripts/mongo_backup.py` run three times. If
+something fails partway, or you want to restore into a cluster somewhere else
+entirely, these are the pieces.
+
 ### 1. Take an archive
 
-From anywhere with `MONGO_URL` in the environment — a Railway one-off shell is
-fine, and needs no extra tooling since this uses `pymongo`, already installed:
+From the same shell on the Railway service (or anywhere else with `MONGO_URL`
+set and the repo to hand):
 
 ```bash
 python3 scripts/mongo_backup.py dump --out backups/$(date +%F)
@@ -99,30 +161,7 @@ It checks four things, in order of how quietly they fail:
 
 A pass prints `restore verified`. A failure names each problem and exits 1.
 
-### 4. Open the app against it
-
-The last mile that no script can assert. Point a local backend at the drill
-database and open the app:
-
-```bash
-MONGO_URL="$DRILL_MONGO_URL" uvicorn server:app --app-dir backend --port 8001
-```
-
-Log in as a real household and check: the calendar shows the right events on
-the right days, a child's star balance is right, the vault lists its
-documents. **Dates on the right days** is the one to look hardest at — it is
-what a timezone fault destroys, and it is invisible in any row count.
-
-### 5. Write down what happened
-
-Date, how long it took, what failed. A drill whose result nobody recorded gets
-re-argued from memory six months later.
-
-| Date | Archive size | Restore time | Result | Notes |
-|---|---|---|---|---|
-| | | | | |
-
-### 6. Delete the scratch database
+### 4. Delete the scratch database
 
 It holds a full copy of every family's data. It is exactly as sensitive as
 production and it has none of production's attention.
