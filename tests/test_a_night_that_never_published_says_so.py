@@ -157,13 +157,26 @@ class AgainstARealRepository(unittest.TestCase):
         subprocess.run(args, cwd=self.dir, check=True,
                        capture_output=True, text=True)
 
-    def commit(self, path, message):
+    def commit(self, path, message, when=None):
+        """Commit, optionally AT A GIVEN TIME.
+
+        The time is not decoration. Without it every commit in this class
+        lands in the same second, oldest and newest carry the same stamp, and
+        the one assertion that separates them passes whichever end the code
+        reads — which is precisely how the newest/oldest bug survived its own
+        regression test until a mutation run said so.
+        """
         full = os.path.join(self.dir, path)
         os.makedirs(os.path.dirname(full), exist_ok=True)
         with open(full, "a", encoding="utf-8") as handle:
             handle.write("x\n")
         self.git("git", "add", "-A")
-        self.git("git", "commit", "-q", "-m", message)
+        env = dict(os.environ)
+        if when:
+            env["GIT_COMMITTER_DATE"] = when
+            env["GIT_AUTHOR_DATE"] = when
+        subprocess.run(("git", "commit", "-q", "-m", message), cwd=self.dir,
+                       check=True, capture_output=True, text=True, env=env)
         return subprocess.run(("git", "rev-parse", "HEAD"), cwd=self.dir,
                               capture_output=True, text=True).stdout.strip()
 
@@ -195,16 +208,31 @@ class AgainstARealRepository(unittest.TestCase):
         keep working. The first version did exactly that, and it survived every
         unit test above because those hand the decision a date.
         """
-        base = self.commit("backend/server.py", "shipped")
-        first = self.commit("frontend/one.tsx", "first — waiting longest")
-        self.commit("backend/later.py", "backend after")
-        self.commit("frontend/two.tsx", "second")
+        base = self.commit("backend/server.py", "shipped",
+                           "2026-09-10T09:00:00+00:00")
+        self.commit("frontend/one.tsx", "first — waiting longest",
+                    "2026-09-11T09:00:00+00:00")
+        self.commit("backend/later.py", "backend after",
+                    "2026-09-12T09:00:00+00:00")
+        self.commit("frontend/two.tsx", "second",
+                    "2026-09-13T09:00:00+00:00")
         when = stall.oldest_unpublished_app_commit(self.dir, base, self.head())
         self.assertIsNotNone(when)
-        first_at = subprocess.run(("git", "log", "-1", "--format=%cI", first),
-                                  cwd=self.dir, capture_output=True,
-                                  text=True).stdout.strip()
-        self.assertEqual(when.isoformat(), first_at)
+        self.assertEqual(when, datetime(2026, 9, 11, 9, 0, tzinfo=timezone.utc))
+
+    def test_and_the_verdict_built_from_it_alarms_where_the_newest_would_not(self):
+        """The end-to-end shape of the bug: three days of stall with a fresh
+        commit on top. Read from the newest, this is quiet."""
+        base = self.commit("backend/server.py", "shipped",
+                           "2026-09-10T09:00:00+00:00")
+        self.commit("frontend/one.tsx", "waiting since the 11th",
+                    "2026-09-11T09:00:00+00:00")
+        self.commit("frontend/two.tsx", "merged an hour ago",
+                    "2026-09-14T23:00:00+00:00")
+        when = stall.oldest_unpublished_app_commit(self.dir, base, self.head())
+        out = stall.verdict(base, self.head(), when,
+                            datetime(2026, 9, 15, 0, 0, tzinfo=timezone.utc))
+        self.assertEqual(out["action"], "alarm")
 
     def test_a_backend_commit_in_the_middle_does_not_hide_the_waiting_one(self):
         base = self.commit("frontend/app.tsx", "shipped")
