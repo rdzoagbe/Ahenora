@@ -61,12 +61,28 @@ class ItReadsWhatTheRollbackRestored(unittest.TestCase):
                          "8cfb96c7646b84c29513c81f2508b382ef0153b3")
 
     def test_it_skips_a_group_with_no_commit_in_its_message(self):
-        # A hand-published update, or a rollback's own entry, names no commit.
-        # Stopping at it would return nothing when the answer is one row down.
+        """A hand-published update, or an earlier rollback's own entry, names
+        no commit. Stopping at it returns nothing when the answer is one row
+        further down.
+
+        The timestamps matter and the first version of this test got them
+        wrong: it put the commitless row ABOVE the rolled-back group, where
+        sorting lifts it clear and it is never looked at. A mutation that
+        took rows[target + 1] blindly passed. It has to sit BETWEEN the two.
+        """
         blob = listing(
             row(BAD, "35a668a9", when="2026-09-15T17:37:00.000Z"),
-            row("rollback-entry", message="Rollback: scan crashed",
-                when="2026-09-15T18:07:00.000Z"),
+            row("published-by-hand", message="hotfix, no CI",
+                when="2026-09-15T15:00:00.000Z"),
+            row(GOOD, "8cfb96c7", when="2026-09-14T23:41:00.000Z"),
+        )
+        self.assertEqual(restored_commit(blob, BAD), "8cfb96c7")
+
+    def test_it_skips_several_in_a_row(self):
+        blob = listing(
+            row(BAD, "35a668a9", when="2026-09-15T17:37:00.000Z"),
+            row("by-hand-1", message="hotfix", when="2026-09-15T15:00:00.000Z"),
+            row("by-hand-2", message="another", when="2026-09-15T14:00:00.000Z"),
             row(GOOD, "8cfb96c7", when="2026-09-14T23:41:00.000Z"),
         )
         self.assertEqual(restored_commit(blob, BAD), "8cfb96c7")
