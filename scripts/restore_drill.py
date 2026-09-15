@@ -3,8 +3,9 @@
 
     python3 scripts/restore_drill.py
 
-That is the entire thing. Run it from anywhere MONGO_URL is set — a Railway
-one-off shell is the easy one — and it dumps production, restores into a
+Run it on the Railway backend service, where MONGO_URL already lives and where
+the image carries this file (see backend/Dockerfile — only this and
+mongo_backup.py ship out of scripts/). It dumps production, restores into a
 scratch database, verifies the restore is actually usable, tells you in plain
 words whether the backups are real, and deletes the scratch copy afterwards.
 
@@ -219,9 +220,10 @@ def main(argv=None) -> int:
 
     live = os.environ.get("MONGO_URL", "")
     if not live:
-        print("MONGO_URL is not set. Run this where the app's database URL "
-              "lives — a Railway one-off shell on the backend service is the "
-              "easy one.")
+        print("MONGO_URL is not set. Run this in a shell ON THE RAILWAY "
+              "BACKEND SERVICE (railway ssh, or the service's Shell option), "
+              "where the database URL is already in the environment. See "
+              "docs/runbooks/restore-drill.md.")
         return 1
 
     archive = args.out or tempfile.mkdtemp(prefix="restore-drill-")

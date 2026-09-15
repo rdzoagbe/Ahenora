@@ -52,13 +52,27 @@ then remove the open one.
 
 ## The drill
 
+Run it **on the Railway backend service**, where `MONGO_URL` already lives.
+The image carries the two recovery tools and their dependencies, so there is
+nothing to install and no production connection string to paste anywhere.
+
+To get a shell on the service, either:
+
+- `railway ssh` from the Railway CLI (`npm i -g @railway/cli`, `railway login`,
+  `railway link`, then `railway ssh`), or
+- the service's own **Shell** / terminal option in the Railway dashboard.
+
+Then, from `/app` (where the shell starts):
+
 ```bash
 python3 scripts/restore_drill.py
 ```
 
-That is the whole thing. Run it from anywhere `MONGO_URL` is set — a Railway
-one-off shell on the backend service is the easy one, and it needs no extra
-tooling since this uses `pymongo`, already installed.
+> The Dockerfile copies `backend/` and, deliberately, only
+> `scripts/mongo_backup.py` and `scripts/restore_drill.py` out of `scripts/`.
+> This runbook told people to run the tool on the service for weeks while the
+> image contained neither file; the drill had never been run, so nothing found
+> out. `tests/test_the_recovery_tools_ship.py` fails if they stop shipping.
 
 It dumps production, restores into a scratch database, verifies the restore is
 actually usable, tells you in plain words whether the backups are real, prints
@@ -72,8 +86,8 @@ anything connects, and `mongo_backup.py restore` refuses the live database
 independently.
 
 Add `--keep` if you want to open the app against it afterwards — the one part
-no script can do for you. It then prints the command to open the app against the drill database,
-and the command to delete it afterwards.
+no script can do for you. It then prints both the command to point a backend at
+the drill database and the command to delete it when you are done.
 
 ### Then: open the app against it
 
@@ -102,8 +116,8 @@ entirely, these are the pieces.
 
 ### 1. Take an archive
 
-From anywhere with `MONGO_URL` in the environment — a Railway one-off shell is
-fine, and needs no extra tooling since this uses `pymongo`, already installed:
+From the same shell on the Railway service (or anywhere else with `MONGO_URL`
+set and the repo to hand):
 
 ```bash
 python3 scripts/mongo_backup.py dump --out backups/$(date +%F)
