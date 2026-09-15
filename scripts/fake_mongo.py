@@ -405,6 +405,15 @@ class FakeDatabase:
     async def list_collection_names(self):
         """Every collection that has been touched.
 
+        NOTE the shape. This is `async def`, so it returns a COROUTINE; motor
+        returns a FUTURE. mongo_backup guarded its await with iscoroutine(),
+        which is true here and false for motor, so the backup tool passed
+        every test and had never once dumped a real database until the drill
+        was run on production. The double modelled the guard, not the library.
+        tests/test_the_backup_works_against_real_motor.py drives the real
+        shapes directly; leaving this one as a coroutine is deliberate, so
+        both paths stay covered.
+
         Added for the backup drill: a dump has to be able to ASK what exists
         rather than be handed a list, because the failure being rehearsed is a
         collection nobody remembered.

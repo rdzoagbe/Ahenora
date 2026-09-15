@@ -35,6 +35,7 @@ import asyncio
 import gzip
 import json
 import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -42,6 +43,8 @@ from datetime import datetime, timedelta, timezone
 
 ROOT = os.path.join(os.path.dirname(__file__), "..")
 sys.path.insert(0, os.path.join(ROOT, "scripts"))
+
+from bson import json_util  # noqa: E402
 
 from fake_mongo import FakeDatabase  # noqa: E402
 import mongo_backup  # noqa: E402
@@ -303,3 +306,95 @@ class TheBackupCoversEveryCollectionTheAppDeletes(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ARestoreDoesNotReadTheWholeDatabaseIntoMemory(unittest.TestCase):
+    """The ceiling nobody had measured.
+
+    restore staged every document of every collection in a dict before writing
+    anything, to get its "nothing is written until every file is proved sound"
+    guarantee. Vault rows carry their file inline as base64 and the Household
+    plan sells 10 GB of vault, so that guarantee was being bought with an
+    amount of memory a real household can exceed — in a container, at the one
+    moment the database is at its largest and somebody is actually restoring
+    it.
+
+    The guarantee is kept. It is now bought with a checksum pass that retains
+    nothing, followed by a write pass that streams.
+    """
+
+    def setUp(self):
+        self.archive = tempfile.mkdtemp(prefix="stream-")
+        self.addCleanup(shutil.rmtree, self.archive, ignore_errors=True)
+        source = FakeDatabase()
+        for i in range(1205):        # comfortably more than two batches
+            run(source["cards"].insert_one({"card_id": f"c{i}", "family_id": "f1"}))
+        run(mongo_backup.dump(source, self.archive))
+
+    def test_every_row_still_arrives(self):
+        target = FakeDatabase()
+        written = run(mongo_backup.restore(target, self.archive))
+        self.assertEqual(written["cards"], 1205)
+        self.assertEqual(run(target["cards"].count_documents({})), 1205)
+
+    def test_it_is_written_in_batches_rather_than_one_call(self):
+        """The actual behaviour, not the constant. A single insert_many of
+        everything is the thing being fixed."""
+        target = FakeDatabase()
+        sizes = []
+        real = target["cards"].insert_many
+
+        async def counted(docs, *a, **k):
+            sizes.append(len(docs))
+            return await real(docs, *a, **k)
+
+        target["cards"].insert_many = counted
+        run(mongo_backup.restore(target, self.archive))
+        self.assertGreater(len(sizes), 1, "everything went in one insert_many")
+        self.assertLessEqual(max(sizes), mongo_backup.BATCH)
+
+    def test_the_batch_constant_is_actually_used(self):
+        # It was defined and never referenced — batching had been intended and
+        # never wired up, which is why this went unnoticed.
+        batches = list(mongo_backup.stream_collection(self.archive, "cards"))
+        self.assertEqual([len(b) for b in batches[:2]],
+                         [mongo_backup.BATCH, mongo_backup.BATCH])
+
+    def test_a_corrupt_file_is_still_refused_before_anything_is_written(self):
+        """The property the staging existed to provide. Losing it while
+        removing the memory cost would be a bad trade."""
+        path = os.path.join(self.archive, "cards.json.gz")
+        with gzip.open(path, "at", encoding="utf-8") as handle:
+            handle.write(json_util.dumps({"card_id": "smuggled"}) + "\n")
+        target = FakeDatabase()
+        with self.assertRaises(SystemExit):
+            run(mongo_backup.restore(target, self.archive))
+        self.assertEqual(run(target["cards"].count_documents({})), 0)
+
+    def test_the_checksum_pass_agrees_with_reading_the_file(self):
+        count, digest = mongo_backup.check_collection(self.archive, "cards")
+        docs, whole = mongo_backup.read_collection(self.archive, "cards")
+        self.assertEqual((count, digest), (len(docs), whole))
+
+    def test_a_manifest_that_disagrees_with_the_file_is_refused(self):
+        """The count check, which the checksum cannot stand in for.
+
+        Tampering with the DATA changes the checksum, so that case is caught
+        either way. This is the other one: the file is intact and its
+        checksum matches, but the manifest claims a different number of rows
+        — a hand-edited manifest, or a dump that miscounted. Restoring then
+        would put the archive's rows in while believing a different figure,
+        and verify's count check would compare the restored database against
+        the same wrong manifest and agree with it.
+        """
+        path = os.path.join(self.archive, "manifest.json")
+        with open(path, encoding="utf-8") as handle:
+            manifest = json.load(handle)
+        manifest["collections"]["cards"]["count"] = 1204   # one short, sha untouched
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(manifest, handle)
+
+        target = FakeDatabase()
+        with self.assertRaises(SystemExit):
+            run(mongo_backup.restore(target, self.archive))
+        self.assertEqual(run(target["cards"].count_documents({})), 0)
