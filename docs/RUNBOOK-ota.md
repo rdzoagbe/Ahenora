@@ -97,4 +97,56 @@ same problem.
   a revert.
 - **Anything needing a new binary.** A native dependency cannot ship over the
   air — that is the outage — and `frontend/scripts/check-native-deps.js` fails
-  the build rather than letting it try.
+  the build rather than letting it try. The order it has to go in is below.
+
+## Shipping a native module
+
+Twice now this has gone wrong the same way, so the order is written here
+rather than reasoned out again.
+
+**2026-09-03** — `expo-audio` was added for a voice recorder, merged, and
+published over the air. Its module loaded during the Feed's first render, so
+the home screen threw on launch and the app was dead for everyone on Android.
+
+**2026-09-15** — a document scanner for automatic framing. Same mistake, with
+a guard in front of it: the plugin was reached through a `require` inside a
+`try`, with ten tests proving the fallback held. Scan opened a grey screen and
+the app crashed on a real phone within minutes of the publish.
+
+### Why the guard could not work
+
+`TurboModuleRegistry.getEnforcing()` does not throw a catchable JavaScript
+error when the native module is missing. It goes into native code and aborts
+the process. A `try`/`catch` in JavaScript cannot survive that, so **feature
+detection is not a safety mechanism here** — it is a test that passes.
+
+`check-native-deps.js` says this in its own header, and it was read, quoted
+and satisfied on the way to making the mistake anyway. Read it as a
+constraint, not as a warning to be handled.
+
+### The order
+
+1. Add the dependency and its config plugin. Update `frontend/native-modules.json`
+   — the guard fails until you do, deliberately.
+2. **Bump `runtimeVersion` in `app.json`.** This is the step that makes it
+   safe: an OTA only reaches binaries on a matching runtime, so JavaScript
+   built for the new module can never arrive on a build that lacks it. Not
+   bumping it is what made 2026-09-15 possible.
+3. Build, and **test on a real device** — both that the new feature works and
+   that the previous store build still works. A simulator with the module
+   present proves nothing about the phones already out there.
+4. Submit to **both** stores and wait for them to be live.
+5. Only then merge the JavaScript that uses it.
+
+Between 2 and 5, existing installs receive no OTA updates at all — they are on
+the old runtime. That is the cost, it is known, and it is smaller than the
+alternative. Plan the sequence so the gap is short rather than trying to
+remove it.
+
+### What CI will and will not tell you
+
+The browser harnesses drive the scan sheet, but on web `Platform.OS`
+short-circuits before any native require, and the harness uses the photo
+library rather than the camera. **The code path that matters is not executed
+anywhere in CI.** Green means the rest of the app still works; it says nothing
+about the native module.
