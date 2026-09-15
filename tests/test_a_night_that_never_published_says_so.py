@@ -14,6 +14,7 @@ ignore is worse than no alarm and this repository has made that mistake before.
 Run with:  python3 -m unittest discover -s tests -v
 """
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -32,6 +33,10 @@ HEAD_SHA = "b" * 40
 
 def ago(hours):
     return NOW - timedelta(hours=hours)
+
+
+def at(stamp):
+    return datetime.fromisoformat(stamp)
 
 
 class ItSpeaksWhenTheAppStoppedShipping(unittest.TestCase):
@@ -73,34 +78,99 @@ class ItStaysQuietWhenNothingIsWrong(unittest.TestCase):
         out = stall.verdict(TAG_SHA, HEAD_SHA, None, NOW)
         self.assertEqual(out["action"], "none")
 
-    def test_work_merged_this_evening_is_not_late(self):
-        out = stall.verdict(TAG_SHA, HEAD_SHA, ago(7), NOW)
+    def test_work_merged_after_tonights_window_waits_for_tomorrows(self):
+        """The cry-wolf case, and the reason the deadline is not simply "a few
+        hours". Merged at 05:01, one minute after the last attempt: the next
+        window is nearly a day away and nothing is wrong in between."""
+        merged = at("2026-09-14T05:01:00+00:00")
+        self.assertEqual(
+            stall.verdict(TAG_SHA, HEAD_SHA, merged,
+                          at("2026-09-15T01:00:00+00:00"))["action"], "none")
+
+    def test_but_it_does_alarm_once_that_window_has_also_gone(self):
+        merged = at("2026-09-14T05:01:00+00:00")
+        self.assertEqual(
+            stall.verdict(TAG_SHA, HEAD_SHA, merged,
+                          at("2026-09-15T06:30:00+00:00"))["action"], "alarm")
+
+    def test_the_window_is_still_settling_at_half_past_five(self):
+        """The last attempt starts at 05:00 and the run takes about six
+        minutes. Alarming the instant the window closes would fire on every
+        night that merely ran slowly."""
+        merged = at("2026-09-14T10:41:00+00:00")
+        self.assertEqual(
+            stall.verdict(TAG_SHA, HEAD_SHA, merged,
+                          at("2026-09-15T05:30:00+00:00"))["action"], "none")
+
+
+class ItMeasuresWindowsRatherThanHours(unittest.TestCase):
+    """The flat thirty-hour grace this replaced was tuned for the worst case —
+    something merged a minute after a window closes — and so it was slack for
+    everything else.
+
+    On the night of 2026-09-15 the scheduler dropped all four attempts. The
+    oldest waiting change was #601, merged at 10:41 the previous morning; its
+    window opened at 02:00 and closed at 05:00 having published nothing. The
+    miss was certain at 05:00. A flat thirty hours would have said nothing
+    until 16:41 that evening.
+    """
+
+    MERGED = at("2026-09-14T10:41:00+00:00")
+
+    def test_the_real_missed_night_is_caught_the_same_morning(self):
+        out = stall.verdict(TAG_SHA, HEAD_SHA, self.MERGED,
+                            at("2026-09-15T06:03:00+00:00"))
+        self.assertEqual(out["action"], "alarm")
+
+    def test_the_flat_grace_it_replaced_would_not_have(self):
+        """Pinned as the difference, not as a description of it."""
+        out = stall.verdict(TAG_SHA, HEAD_SHA, self.MERGED,
+                            at("2026-09-15T06:03:00+00:00"), grace_hours=30)
         self.assertEqual(out["action"], "none")
 
-    def test_the_longest_honest_wait_is_inside_the_grace(self):
-        """Merged a minute after the window closed at 05:00: it waits until
-        02:00 the next night, and the last attempt is three hours after that.
-        Twenty-nine hours is the schedule working."""
-        self.assertEqual(stall.verdict(TAG_SHA, HEAD_SHA, ago(29), NOW)["action"],
-                         "none")
+    def test_the_alarm_names_the_window_that_published_nothing(self):
+        said = " ".join(stall.verdict(TAG_SHA, HEAD_SHA, self.MERGED,
+                                      at("2026-09-15T06:03:00+00:00"))["reasons"])
+        self.assertIn("02:00-05:00", said)
+        self.assertIn("2026-09-15 05:00", said)
 
-    def test_the_boundary_itself_does_not_alarm(self):
+    def test_a_change_merged_just_before_the_window_gets_it(self):
+        # 01:00, an hour before the window opens: that night owes it an update
+        # and a miss shows up five and a half hours later, not a day.
+        merged = at("2026-09-15T01:00:00+00:00")
         self.assertEqual(
-            stall.verdict(TAG_SHA, HEAD_SHA, ago(stall.GRACE_HOURS), NOW)["action"],
-            "none")
+            stall.verdict(TAG_SHA, HEAD_SHA, merged,
+                          at("2026-09-15T06:30:00+00:00"))["action"], "alarm")
 
-    def test_one_minute_past_it_does(self):
-        self.assertEqual(
-            stall.verdict(TAG_SHA, HEAD_SHA,
-                          ago(stall.GRACE_HOURS) - timedelta(minutes=1),
-                          NOW)["action"],
-            "alarm")
+    def test_the_deadline_is_the_close_plus_the_settle(self):
+        due = stall.deadline_for(at("2026-09-14T10:41:00+00:00"))
+        self.assertEqual(due, at("2026-09-15T06:00:00+00:00"))
 
-    def test_the_grace_covers_a_late_night_but_not_a_missed_one(self):
-        # A night entirely dropped means the next window is 45h after work
-        # merged at 05:01. The grace has to sit between the two.
-        self.assertGreater(stall.GRACE_HOURS, 29)
-        self.assertLess(stall.GRACE_HOURS, 45)
+    def test_a_commit_before_the_window_opens_uses_that_same_night(self):
+        self.assertEqual(stall.deadline_for(at("2026-09-15T00:30:00+00:00")),
+                         at("2026-09-15T06:00:00+00:00"))
+
+    def test_a_commit_after_it_opens_waits_for_the_next(self):
+        self.assertEqual(stall.deadline_for(at("2026-09-15T02:30:00+00:00")),
+                         at("2026-09-16T06:00:00+00:00"))
+
+    def test_a_commit_in_a_non_utc_zone_is_read_in_utc(self):
+        """Commit stamps carry the committer's offset — %cI on this repository
+        is routinely +02:00. Comparing a local wall clock against a UTC cron
+        would shift every deadline by the offset."""
+        paris = at("2026-09-15T03:30:00+02:00")   # 01:30 UTC, before the window
+        self.assertEqual(stall.deadline_for(paris),
+                         at("2026-09-15T06:00:00+00:00"))
+
+    def test_the_hours_match_the_workflow_that_publishes(self):
+        """A check calibrated to a schedule that has since moved is worse than
+        no check: it would report a window that no longer exists."""
+        with open(os.path.join(ROOT, ".github", "workflows",
+                               "frontend-ci-eas-update.yml"), encoding="utf-8") as handle:
+            workflow = handle.read()
+        hours = sorted(int(h) for h in re.findall(r"cron: '0 (\d+) \* \* \*'", workflow))
+        self.assertEqual(hours[0], stall.WINDOW_OPENS_HOUR)
+        self.assertEqual(hours[-1], stall.WINDOW_CLOSES_HOUR)
 
 
 class ItDoesNotFailTowardSilence(unittest.TestCase):

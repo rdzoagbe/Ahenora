@@ -25,12 +25,21 @@ take, the pipeline has stopped and somebody needs to know.
 WHY IT CANNOT CRY WOLF, which matters more than the check itself. A quiet day
 is not a fault: an old update with nothing merged behind it is CORRECT, and
 this says nothing at all about it. It speaks only when real app work is
-waiting, and only past the longest wait the schedule can honestly produce —
-something merged just after the window closes waits until the next night,
-about twenty-nine hours. The grace is thirty. Below that, saying anything
-would be an alarm about the schedule working as designed, and an alarm people
-learn to ignore is worse than no alarm, which is written down here because
-this repository has already made that mistake once.
+waiting, and only once a publish window has actually come and gone — the
+first one that OPENS after the commit is the one that owed it an update, and
+until that window has closed and settled there is nothing to report. Work
+merged a minute after a window closes is not eligible for it, so the next
+night being nearly a day away is the schedule working, not a fault. An alarm
+people learn to ignore is worse than no alarm, which is written down here
+because this repository has already made that mistake once.
+
+Measuring WINDOWS rather than hours is the second version. The first used a
+flat thirty-hour grace, tuned for that worst case and therefore slack for
+everything else. On 2026-09-15 the scheduler dropped all four attempts; the
+oldest waiting change had been merged at 10:41 the previous morning, so the
+miss was certain when the window closed at 05:00 — and thirty hours would
+have said nothing until 16:41 that evening. Half a day of an app that
+everybody believed had shipped.
 
 Usage:  python3 scripts/ota_is_stalled.py [--repo DIR] [--grace-hours N]
         --json    print the verdict as JSON
@@ -43,11 +52,15 @@ import subprocess
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-# The publish window is 02:00-05:00 UTC. Work merged a minute after it closes
-# waits until the next night: 05:01 to 02:00 is twenty-one hours, and the last
-# attempt of that night is another three. Thirty gives a night that is merely
-# late all the room it needs and still catches a night that never happened.
-GRACE_HOURS = 30
+# The nightly publish window, in UTC: four cron attempts at 02:00, 03:00, 04:00
+# and 05:00. Checked against the workflow's own cron lines by a test, because
+# a check calibrated to a schedule that has since moved is worse than no check.
+WINDOW_OPENS_HOUR = 2
+WINDOW_CLOSES_HOUR = 5
+
+# How long after the last attempt before its silence means something. The run
+# itself takes about six minutes; an hour is room for a queued or slow one.
+SETTLE_HOURS = 1
 
 # The paths whose contents end up in the OTA bundle. Deliberately the same set
 # scripts/ota_should_publish.sh uses: if the two ever disagree, this alarms
@@ -101,9 +114,36 @@ def oldest_unpublished_app_commit(repo: str, tag_sha: str,
         return None
 
 
+def deadline_for(waiting_since: datetime) -> datetime:
+    """When a change committed at `waiting_since` must have been published by.
+
+    Not a fixed number of hours, and the difference is what tonight showed.
+    Work merged at 10:41 had its chance at 02:00 the next morning and the
+    window closed at 05:00; a flat thirty-hour grace would not have said
+    anything until 16:41 that evening, half a day after the miss was certain.
+
+    So this asks the question the schedule actually answers: has a publish
+    window come and gone? The first window that OPENS at or after the commit
+    is the one that owed it an update. Once that window has closed and
+    settled, silence is a stall.
+
+    It still cannot cry wolf, which is the property worth keeping. Something
+    merged a minute after a window closes is not eligible for it — the next
+    window is nearly a day away, and nothing is said in between.
+    """
+    opens = waiting_since.astimezone(timezone.utc).replace(
+        hour=WINDOW_OPENS_HOUR, minute=0, second=0, microsecond=0)
+    if opens < waiting_since:
+        opens += timedelta(days=1)
+    closes = opens.replace(hour=WINDOW_CLOSES_HOUR)
+    return closes + timedelta(hours=SETTLE_HOURS)
+
+
 def verdict(tag_sha: Optional[str], head_sha: Optional[str],
             waiting_since: Optional[datetime], now: datetime,
-            grace_hours: int = GRACE_HOURS) -> dict:
+            grace_hours: Optional[int] = None) -> dict:
+    """grace_hours overrides the window arithmetic with a flat number of
+    hours. Only tests use it; the schedule is the honest answer."""
     """What to say, and why, from facts a caller has already gathered.
 
     Split out from the git calls so the decision can be tested at every age
@@ -133,18 +173,24 @@ def verdict(tag_sha: Optional[str], head_sha: Optional[str],
             f"{'/, '.join(OTA_PATHS)}/ — a backend or docs day ships no bundle, "
             f"so an older update is the correct one to be running."]}
 
-    waited = now - waiting_since
-    hours = waited.total_seconds() / 3600
-    if waited <= timedelta(hours=grace_hours):
+    hours = (now - waiting_since).total_seconds() / 3600
+    if grace_hours is not None:
+        due = waiting_since + timedelta(hours=grace_hours)
+    else:
+        due = deadline_for(waiting_since)
+
+    if now <= due:
         return {"action": "none", "reasons": [
-            f"The earliest unpublished app change has waited {hours:.0f}h, inside "
-            f"the {grace_hours}h "
-            f"the nightly window can honestly take. Tonight has not missed yet."]}
+            f"The earliest unpublished app change has waited {hours:.0f}h. Its "
+            f"publish window has not closed yet — due by "
+            f"{due:%Y-%m-%d %H:%M} UTC."]}
 
     return {"action": "alarm", "reasons": [
-        f"The earliest unpublished app change has been waiting {hours:.0f} hours "
-        f"— past the {grace_hours}h a nightly window can account for. The last thing that "
-        f"actually reached a phone is `{tag_sha[:12]}`; main is `{head_sha[:12]}`.",
+        f"The earliest unpublished app change has been waiting {hours:.0f} hours. "
+        f"Its nightly publish window (0{WINDOW_OPENS_HOUR}:00-0{WINDOW_CLOSES_HOUR}:00 "
+        f"UTC) closed at {due - timedelta(hours=SETTLE_HOURS):%Y-%m-%d %H:%M} UTC "
+        f"and published nothing. The last thing that actually reached a phone is "
+        f"`{tag_sha[:12]}`; main is `{head_sha[:12]}`.",
         "Nothing is broken on anyone's phone. They are simply running an older "
         "app than everyone believes shipped, and every other check is green "
         "because each of them watches an update that exists.",
@@ -159,7 +205,10 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Has the OTA pipeline stopped?")
     ap.add_argument("--repo", default=".")
     ap.add_argument("--head", default="HEAD")
-    ap.add_argument("--grace-hours", type=int, default=GRACE_HOURS)
+    ap.add_argument("--grace-hours", type=int, default=None,
+                    help="override the window arithmetic with a flat number "
+                         "of hours (diagnostics; the schedule is the honest "
+                         "answer)")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args()
 
