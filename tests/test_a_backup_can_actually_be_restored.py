@@ -375,3 +375,26 @@ class ARestoreDoesNotReadTheWholeDatabaseIntoMemory(unittest.TestCase):
         count, digest = mongo_backup.check_collection(self.archive, "cards")
         docs, whole = mongo_backup.read_collection(self.archive, "cards")
         self.assertEqual((count, digest), (len(docs), whole))
+
+    def test_a_manifest_that_disagrees_with_the_file_is_refused(self):
+        """The count check, which the checksum cannot stand in for.
+
+        Tampering with the DATA changes the checksum, so that case is caught
+        either way. This is the other one: the file is intact and its
+        checksum matches, but the manifest claims a different number of rows
+        — a hand-edited manifest, or a dump that miscounted. Restoring then
+        would put the archive's rows in while believing a different figure,
+        and verify's count check would compare the restored database against
+        the same wrong manifest and agree with it.
+        """
+        path = os.path.join(self.archive, "manifest.json")
+        with open(path, encoding="utf-8") as handle:
+            manifest = json.load(handle)
+        manifest["collections"]["cards"]["count"] = 1204   # one short, sha untouched
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(manifest, handle)
+
+        target = FakeDatabase()
+        with self.assertRaises(SystemExit):
+            run(mongo_backup.restore(target, self.archive))
+        self.assertEqual(run(target["cards"].count_documents({})), 0)
