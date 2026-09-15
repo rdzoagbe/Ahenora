@@ -35,6 +35,7 @@ import argparse
 import asyncio
 import gzip
 import hashlib
+import inspect
 import json
 import os
 import sys
@@ -105,8 +106,34 @@ async def dump(database, out_dir, collections=None):
 
 
 async def _names(database):
+    """Every collection in the database, minus MongoDB's own.
+
+    isawaitable, NOT iscoroutine, and the difference destroyed this tool.
+
+    motor's list_collection_names() returns a FUTURE. asyncio.iscoroutine() is
+    False for a Future, so the await was skipped and the list comprehension
+    iterated the Future object itself. A Future supports `yield from`, so
+    iterating one does not raise the way iterating an int would:
+
+      * pending  -> it yields ITSELF, and `n.startswith` fails with
+                    "'_asyncio.Future' object has no attribute 'startswith'";
+      * complete -> it yields NOTHING, so this returns [] and the dump writes
+                    a manifest with zero collections and reports success.
+
+    The second is the dangerous one. A backup that contains nothing and says
+    so in the language of a backup that worked is the exact failure the drill
+    exists to find, sitting inside the tool written to find it.
+
+    It survived because fake_mongo's list_collection_names is `async def` and
+    therefore returns a coroutine, so the guard was true in every test and
+    false against every real database. This code had never once dumped real
+    MongoDB until Roland ran the drill on production and it fell over.
+
+    isawaitable covers coroutines, Futures, and anything with __await__, so it
+    is right for the double AND for motor.
+    """
     names = database.list_collection_names()
-    if asyncio.iscoroutine(names):
+    if inspect.isawaitable(names):
         names = await names
     return [n for n in names if not n.startswith("system.")]
 
