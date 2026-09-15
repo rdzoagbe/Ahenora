@@ -158,6 +158,49 @@ def read_collection(archive, name):
     return docs, digest.hexdigest()
 
 
+def check_collection(archive, name):
+    """Count and checksum a file WITHOUT keeping any of it.
+
+    The pass that lets restore promise "nothing is written until every file
+    has been proved sound" without also holding the whole archive in memory
+    to make the promise.
+    """
+    path = os.path.join(archive, f"{name}.json.gz")
+    count, digest = 0, hashlib.sha256()
+    with gzip.open(path, "rt", encoding="utf-8") as handle:
+        for line in handle:
+            line = line.rstrip("\n")
+            if not line:
+                continue
+            digest.update(line.encode("utf-8"))
+            count += 1
+    return count, digest.hexdigest()
+
+
+def stream_collection(archive, name, batch=BATCH):
+    """The archive's documents, in batches, without ever holding them all.
+
+    Vault rows carry their file inline as base64 and the Household plan sells
+    10 GB of vault, so "read the collection into a list" has a ceiling that a
+    real household can reach. Reading a restore tool into memory is a bad
+    trade at the best of times; at the moment it is actually needed, the
+    database is at its largest and the container is not.
+    """
+    path = os.path.join(archive, f"{name}.json.gz")
+    docs = []
+    with gzip.open(path, "rt", encoding="utf-8") as handle:
+        for line in handle:
+            line = line.rstrip("\n")
+            if not line:
+                continue
+            docs.append(json_util.loads(line, json_options=AWARE))
+            if len(docs) >= batch:
+                yield docs
+                docs = []
+    if docs:
+        yield docs
+
+
 async def restore(database, archive, collections=None):
     """Replace each collection in `database` with the archive's copy.
 
@@ -167,23 +210,28 @@ async def restore(database, archive, collections=None):
     manifest = read_manifest(archive)
     names = collections if collections is not None else sorted(manifest["collections"])
 
-    staged = {}
+    # Pass one: prove every file is sound. Nothing is written, and nothing is
+    # kept — the previous version staged every document of every collection in
+    # memory to get this guarantee, which put a ceiling on the size of database
+    # it could restore. See stream_collection.
     for name in names:
         expected = manifest["collections"][name]
-        docs, digest = read_collection(archive, name)
+        count, digest = check_collection(archive, name)
         if digest != expected["sha256"]:
             raise SystemExit(f"{name}: archive is corrupt (checksum mismatch)")
-        if len(docs) != expected["count"]:
+        if count != expected["count"]:
             raise SystemExit(
-                f"{name}: archive has {len(docs)} rows, manifest says {expected['count']}")
-        staged[name] = docs
+                f"{name}: archive has {count} rows, manifest says {expected['count']}")
 
+    # Pass two: write, a batch at a time.
     written = {}
-    for name, docs in staged.items():
+    for name in names:
         await database[name].delete_many({})
-        if docs:
-            await database[name].insert_many(docs)
-        written[name] = len(docs)
+        rows = 0
+        for chunk in stream_collection(archive, name):
+            await database[name].insert_many(chunk)
+            rows += len(chunk)
+        written[name] = rows
     return written
 
 
