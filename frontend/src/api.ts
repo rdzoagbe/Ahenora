@@ -1667,6 +1667,15 @@ export interface ScanResult {
   save_to_vault?: boolean;
   understood?: boolean;
   /**
+   * The photograph cropped to the document, when the server was confident
+   * enough to crop it. Absent means it was left alone — the scan still
+   * worked, there was simply nothing it would commit to.
+   *
+   * Use it in place of what the camera produced, so the card and the vault
+   * keep the DOCUMENT rather than the table it was lying on.
+   */
+  cropped_image_base64?: string;
+  /**
    * The server's judgement that this belongs on the calendar: an event type
    * AND a date. Decided there rather than here so the rule is written once and
    * tested — a date alone is a deadline, and an event with no date is not

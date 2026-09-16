@@ -40,6 +40,7 @@ except ImportError:
 import PIL.Image
 
 from ai_models import model_candidates, should_try_next_model, summarize_ai_error
+from document_crop import crop_to_document
 from ai_safety import (
     MAX_INGREDIENT_LEN,
     VEGETARIAN,
@@ -13848,11 +13849,27 @@ async def vision_extract(payload: VisionIn, user=Depends(require_user)):
     if not GOOGLE_API_KEY:
         return fallback
 
+    # Crop to the document before the model sees it.
+    #
+    # Roland photographs a letter on a table and the whole table goes up:
+    # megabytes of wood grain with the page filling a third of the frame. That
+    # is the slowness, and it is why extraction was mediocre — the model was
+    # reading a photo of a TABLE. The alternative is a phone-side scanner,
+    # which needs a native module, a new build and two store reviews.
+    #
+    # crop_to_document returns the original untouched whenever it is not
+    # confident, and the caller cannot tell the difference except by the flag.
+    # A wrong crop takes the bottom off a vaccination certificate and says
+    # nothing, so every uncertain case is a no-op by design.
+    image_base64, was_cropped = crop_to_document(payload.image_base64)
+    if was_cropped:
+        log.info("scan cropped to the document before reading")
+
     extracted = None
     try:
         text = await _gemini_vision(
             "Read this household document.",
-            payload.image_base64,
+            image_base64,
             system=build_document_scan_prompt(members),
         )
         parsed = extract_json(text)
@@ -13902,7 +13919,7 @@ async def vision_extract(payload: VisionIn, user=Depends(require_user)):
         try:
             text = await _gemini_vision(
                 "Read the recipe in this photo.",
-                payload.image_base64,
+                image_base64,
                 system=RECIPE_PHOTO_SYSTEM_PROMPT,
             )
             parsed = extract_json(text)
@@ -13915,6 +13932,12 @@ async def vision_extract(payload: VisionIn, user=Depends(require_user)):
         except Exception as exc:
             log.warning("recipe pass failed: %s", exc)
             result["kind"] = "document"
+
+    # Returned so the card and the vault keep the DOCUMENT, not the table it
+    # was lying on. Only when it actually changed: sending the original back
+    # unchanged would be several megabytes of response for nothing.
+    if was_cropped:
+        result["cropped_image_base64"] = image_base64
 
     return result
 
