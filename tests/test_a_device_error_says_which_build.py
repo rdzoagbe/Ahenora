@@ -137,7 +137,17 @@ class TheFieldIsOptionalOnPurpose(unittest.TestCase):
 
 
 class TheAdminScreenShowsIt(unittest.TestCase):
-    """A field recorded and never displayed is a field nobody uses."""
+    """A field recorded and never displayed is a field nobody uses.
+
+    These asserted `e.app_version` on the row until 2026-09-16, when a real
+    screenshot showed why that was the wrong field: it reads 1.1.0 on every
+    build ever made, and it describes the OTA bundle rather than the
+    installed binary. The INTENT of each assertion below is unchanged — the
+    build belongs on the first line, a missing one must not read as current —
+    but they now name buildLabel(), which prefers the native build.
+
+    See tests/test_an_error_names_the_binary_it_came_from.py.
+    """
 
     def settings(self):
         with open(os.path.join(ROOT, "frontend", "app", "(tabs)", "settings.tsx"),
@@ -145,7 +155,7 @@ class TheAdminScreenShowsIt(unittest.TestCase):
             return handle.read()
 
     def test_the_build_is_on_the_row(self):
-        self.assertIn("e.app_version", self.settings())
+        self.assertIn("buildLabel(e)", self.settings())
 
     def test_a_missing_build_reads_as_unknown_rather_than_empty(self):
         # An empty gap between two separators is a column the eye slides over
@@ -157,7 +167,7 @@ class TheAdminScreenShowsIt(unittest.TestCase):
         where the reader is already looking, not in the message below."""
         text = self.settings()
         first_line = text[text.index("{`${e.name || '?'}"):]
-        self.assertLess(first_line.index("e.app_version"), first_line.index("</Text>"))
+        self.assertLess(first_line.index("buildLabel(e)"), first_line.index("</Text>"))
 
 
 class TheClientSendsIt(unittest.TestCase):
