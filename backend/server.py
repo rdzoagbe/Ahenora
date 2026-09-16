@@ -41,6 +41,7 @@ import PIL.Image
 
 from ai_models import model_candidates, should_try_next_model, summarize_ai_error
 from document_crop import crop_to_document
+from starlette.concurrency import run_in_threadpool
 from ai_safety import (
     MAX_INGREDIENT_LEN,
     VEGETARIAN,
@@ -13861,7 +13862,13 @@ async def vision_extract(payload: VisionIn, user=Depends(require_user)):
     # confident, and the caller cannot tell the difference except by the flag.
     # A wrong crop takes the bottom off a vaccination certificate and says
     # nothing, so every uncertain case is a no-op by design.
-    image_base64, was_cropped = crop_to_document(payload.image_base64)
+    #
+    # In a threadpool because it is per-pixel Python with no await point in
+    # it: measured at 0.58s on a 4032x3024 photo, which on the event loop is
+    # 0.58s during which this worker answers nobody — every feed poll, every
+    # chat send, every other scan waits behind one person's photograph.
+    image_base64, was_cropped = await run_in_threadpool(
+        crop_to_document, payload.image_base64)
     if was_cropped:
         log.info("scan cropped to the document before reading")
 

@@ -60,6 +60,51 @@ class ItReadsWhatTheRollbackRestored(unittest.TestCase):
         self.assertEqual(restored_commit(blob, BAD),
                          "8cfb96c7646b84c29513c81f2508b382ef0153b3")
 
+    def test_a_group_published_to_both_platforms_is_two_rows(self):
+        """The shape production actually publishes, and the one no fixture had.
+
+        `eas update --platform all` publishes ONE group as SEVERAL rows — one
+        per platform, same group id, same message, same timestamp. The walk
+        started at the row after the one it matched, which is that group's
+        own sibling, so it returned the commit that had just been rolled
+        back: the tag would have been moved onto the bad bundle, which is the
+        exact lie this tool exists to prevent.
+
+        Every fixture above uses one row per group, which is why it passed.
+        """
+        blob = listing(
+            row(BAD, "4f2ab1be34cbc8ac1a537882bb84ba3b78769d30",
+                when="2026-09-15T17:37:00.000Z"),
+            row(BAD, "4f2ab1be34cbc8ac1a537882bb84ba3b78769d30",
+                when="2026-09-15T17:37:00.000Z"),
+            row(GOOD, "90776aeb9f4a1c0e3b5d2f8a7c6e4d1b0a9f8e7d",
+                when="2026-09-14T23:41:00.000Z"),
+            row(GOOD, "90776aeb9f4a1c0e3b5d2f8a7c6e4d1b0a9f8e7d",
+                when="2026-09-14T23:41:00.000Z"),
+        )
+        self.assertEqual(restored_commit(blob, BAD),
+                         "90776aeb9f4a1c0e3b5d2f8a7c6e4d1b0a9f8e7d")
+
+    def test_three_platform_rows_are_all_skipped(self):
+        """Not two: the skip is by group, not a fixed step of one."""
+        blob = listing(
+            *[row(BAD, "4f2ab1be34cbc8ac1a537882bb84ba3b78769d30",
+                  when="2026-09-15T17:37:00.000Z") for _ in range(3)],
+            row(GOOD, "90776aeb9f4a1c0e3b5d2f8a7c6e4d1b0a9f8e7d",
+                when="2026-09-14T23:41:00.000Z"),
+        )
+        self.assertEqual(restored_commit(blob, BAD),
+                         "90776aeb9f4a1c0e3b5d2f8a7c6e4d1b0a9f8e7d")
+
+    def test_only_the_rolled_back_group_is_on_the_listing(self):
+        """Two platform rows and nothing older. There is nothing to restore
+        to, and saying so deletes the tag — one republished update, no lie."""
+        blob = listing(
+            row(BAD, "4f2ab1be34cbc8ac1a537882bb84ba3b78769d30"),
+            row(BAD, "4f2ab1be34cbc8ac1a537882bb84ba3b78769d30"),
+        )
+        self.assertIsNone(restored_commit(blob, BAD))
+
     def test_it_skips_a_group_with_no_commit_in_its_message(self):
         """A hand-published update, or an earlier rollback's own entry, names
         no commit. Stopping at it returns nothing when the answer is one row

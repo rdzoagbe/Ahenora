@@ -94,7 +94,16 @@ def restored_commit(list_json: str, rolled_back_group: str) -> Optional[str]:
         # update is not related to it at all.
         return None
 
+    # Skip every row belonging to the rolled-back group, not just the one
+    # found. `eas update --platform all` publishes ONE group as several rows
+    # — one per platform — so rows[target + 1] is normally that same group's
+    # sibling. Walking from there returned the commit that was just pulled:
+    # the tag would have been moved onto the bad bundle, which is the exact
+    # lie this tool exists to prevent. Every fixture used one row per group,
+    # so nothing caught it.
     for row in rows[target + 1:]:
+        if row.get("group") == rolled_back_group:
+            continue
         commit = commit_of(row)
         if commit:
             return commit

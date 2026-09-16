@@ -35,7 +35,7 @@ import base64
 import io
 from typing import Optional, Tuple
 
-from PIL import Image, ImageChops, ImageFilter
+from PIL import Image, ImageChops, ImageFilter, ImageOps
 
 # Work at this width when looking. The decision is about where the page sits,
 # not about detail, and a 4000px photograph costs a second to scan row by row.
@@ -168,11 +168,28 @@ def _smooth(fractions: list[float]) -> list[float]:
 
 def _band(fractions: list[float], min_peak: float,
           of_peak: float) -> Optional[Tuple[int, int]]:
-    """The longest run of rows (or columns) that are mostly page.
+    """The FULL extent of the rows (or columns) that are mostly page.
 
-    The LONGEST run rather than the first: a bright window behind the table
-    produces a second band, and taking the first one found would crop to the
-    window.
+    First qualifying index to last, gaps included — not the longest
+    contiguous run, which is what this used to take and which silently
+    destroyed documents.
+
+    A page is not uniform. A school letter has a dark masthead, a bill has a
+    black table header, an ID card has a photograph, a certificate has a
+    seal. Any of those drops a stripe of rows below the cutoff and splits the
+    page into two runs, and the longest-run rule then kept ONE of them. A
+    2000x2400 page with a banner across the middle came back as its lower
+    half: 854px of 1600 gone, every downstream guard passing, nothing logged.
+
+    Taking the full extent cannot lose part of a page. It can be too GENEROUS
+    — a bright window behind the table joins the band, which is the case the
+    longest-run rule was written for — and that is deliberately the direction
+    to err in, because the callers reject a too-generous band rather than
+    trust it: _by_brightness requires MIN_FILL of the region to be page, and
+    _by_detail requires the ink density to stay above DETAIL_MIN_INK. A band
+    stretched across the table fails both and the photograph is returned
+    untouched, which is the pre-crop behaviour. A band stretched across half
+    a medical letter failed neither.
     """
     if not fractions:
         return None
@@ -182,21 +199,16 @@ def _band(fractions: list[float], min_peak: float,
         return None
     cutoff = peak * of_peak
 
-    best: Optional[Tuple[int, int]] = None
-    start: Optional[int] = None
+    first: Optional[int] = None
+    last: Optional[int] = None
     for i, value in enumerate(fractions):
         if value >= cutoff:
-            if start is None:
-                start = i
-        elif start is not None:
-            if best is None or (i - start) > (best[1] - best[0]):
-                best = (start, i)
-            start = None
-    if start is not None:
-        end = len(fractions)
-        if best is None or (end - start) > (best[1] - best[0]):
-            best = (start, end)
-    return best
+            if first is None:
+                first = i
+            last = i
+    if first is None or last is None:
+        return None
+    return (first, last + 1)
 
 
 def find_document(image: Image.Image) -> Optional[Tuple[int, int, int, int]]:
@@ -281,10 +293,17 @@ def _by_brightness(image: Image.Image) -> Optional[Tuple[int, int, int, int]]:
     if bw <= 0 or bh <= 0:
         return None
 
-    kept = (bw * bh) / float(width * height)
-    if kept < MIN_KEPT_AREA:
+    # The guards measure the DETECTED band, not the padded box. The margin is
+    # there to avoid shaving the paper's edge; letting it count toward the
+    # area and the aspect ratio means the margin can rescue something the
+    # guard exists to refuse — a 1120x140 radiator is 8:1 and refused, but
+    # padded to 1200x238 it is 5:1 and kept.
+    dw, dh = (right - left) * inv, (bottom - top) * inv
+    if dw <= 0 or dh <= 0:
         return None
-    if max(bw, bh) / float(min(bw, bh)) > MAX_ASPECT:
+    if (dw * dh) / float(width * height) < MIN_KEPT_AREA:
+        return None
+    if max(dw, dh) / float(min(dw, dh)) > MAX_ASPECT:
         return None
     return box
 
@@ -353,10 +372,18 @@ def _by_detail(image: Image.Image) -> Optional[Tuple[int, int, int, int]]:
     if bw <= 0 or bh <= 0:
         return None
 
-    kept = (bw * bh) / float(width * height)
+    # The guards measure the DETECTED band, not the padded box. The margin is
+    # there to avoid shaving the paper's edge; letting it count toward the
+    # area and the aspect ratio means the margin can rescue something the
+    # guard exists to refuse — a 1120x140 radiator is 8:1 and refused, but
+    # padded to 1200x238 it is 5:1 and kept.
+    dw, dh = (right - left) * inv, (bottom - top) * inv
+    if dw <= 0 or dh <= 0:
+        return None
+    kept = (dw * dh) / float(width * height)
     if kept < MIN_KEPT_AREA or kept > DETAIL_MAX_KEPT:
         return None
-    if max(bw, bh) / float(min(bw, bh)) > MAX_ASPECT:
+    if max(dw, dh) / float(min(dw, dh)) > MAX_ASPECT:
         return None
     return box
 
@@ -372,6 +399,15 @@ def crop_to_document(image_base64: str) -> Tuple[str, bool]:
         raw = base64.b64decode(encoded or image_base64, validate=False)
         image = Image.open(io.BytesIO(raw))
         image.load()
+        # A phone JPEG is almost always stored in the sensor's orientation
+        # with an EXIF Orientation tag saying how to turn it. Pillow ignores
+        # that tag, so find_document analysed a sideways page — and worse,
+        # the re-encoded crop was saved WITHOUT the tag, so the viewer had
+        # nothing left to correct by and the image arrived in the vault
+        # rotated 90 degrees. Baking the rotation into the pixels here fixes
+        # both: the analysis sees the page the right way up, and the JPEG
+        # that comes out needs no tag to be displayed correctly.
+        image = ImageOps.exif_transpose(image) or image
         box = find_document(image)
         if not box:
             return image_base64, False
