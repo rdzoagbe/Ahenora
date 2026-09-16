@@ -128,6 +128,14 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
         const result = await api.visionExtract(imageBase64);
         if (scanReqRef.current !== myReq) return;   // sheet closed mid-scan
         setScan(result);
+        // Keep the CROPPED document rather than the photograph of the table.
+        //
+        // Replacing the preview after the scan, not before: the original goes
+        // up on screen the instant the shutter closes, so the sheet is never
+        // blank while the server thinks. Absent means the server was not
+        // confident enough to crop, and the original is what we keep — the
+        // same no-op it made.
+        if (result.cropped_image_base64) setPreview(result.cropped_image_base64);
         setCategory(result.vault_category || '');
         if (result.kind === 'recipe' && result.recipe) {
           setRecipe(result.recipe);
