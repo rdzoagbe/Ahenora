@@ -5467,7 +5467,7 @@ async def delete_account(payload: DeleteAccountIn, user=Depends(require_user)):
     # A password account must prove it is really them. An OAuth account has no
     # password to check; the app gates it behind a typed confirmation instead.
     if fresh.get("password_hash"):
-        if not payload.password or not verify_password(payload.password, fresh["password_hash"]):
+        if not payload.password or not await run_in_threadpool(verify_password, payload.password, fresh["password_hash"]):
             raise HTTPException(status_code=403, detail="That password is not correct.")
     elif not payload.confirm:
         raise HTTPException(status_code=400, detail="Confirm the deletion to continue.")
@@ -6279,7 +6279,7 @@ async def register_email(payload: EmailRegisterIn):
         "email": email,
         "name": name,
         "picture": None,
-        "password_hash": hash_password(password),
+        "password_hash": await run_in_threadpool(hash_password, password),
         "family_id": family_id,
         "language": payload.language if payload.language in ("en", "es", "fr", "de") else "en",
         "onboarding_completed": False,
@@ -6340,7 +6340,16 @@ async def login_email(payload: EmailLoginIn):
     # Verify against every password row for this email, not just the first: if a
     # legacy duplicate exists, the one whose password actually matches wins, so
     # the account is never a spurious 401 just for being second in the list.
-    user = next((u for u in pw_matches if verify_password(payload.password or "", u["password_hash"])), None)
+    # An explicit loop, not a generator expression: `await` inside a genexp
+    # makes it an ASYNC generator, which next() cannot consume — it raises
+    # TypeError at the first login attempt. Caught by the suite rather than by
+    # a user, but it is the reason this is spelled out longhand.
+    user = None
+    for candidate in pw_matches:
+        if await run_in_threadpool(verify_password, payload.password or "",
+                                   candidate["password_hash"]):
+            user = candidate
+            break
     if not user:
         _auth_record_fail(identity)
         raise HTTPException(status_code=401, detail="Incorrect email or password")
@@ -6395,16 +6404,16 @@ async def change_password(payload: ChangePasswordIn, user=Depends(require_user),
         raise HTTPException(
             status_code=400,
             detail="This account signs in with Google, so it has no password to change.")
-    if not verify_password(payload.current_password or "", stored):
+    if not await run_in_threadpool(verify_password, payload.current_password or "", stored):
         raise HTTPException(status_code=403, detail="Current password is incorrect")
     new_password = payload.new_password or ""
     if len(new_password) < 8:
         raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
-    if verify_password(new_password, stored):
+    if await run_in_threadpool(verify_password, new_password, stored):
         raise HTTPException(status_code=400, detail="New password must be different from the current one")
     await database["users"].update_one(
         {"user_id": user["user_id"]},
-        {"$set": {"password_hash": hash_password(new_password), "updated_at": utcnow()}})
+        {"$set": {"password_hash": await run_in_threadpool(hash_password, new_password), "updated_at": utcnow()}})
 
     # Changing your password is how a person locks out a device they no longer
     # control — a sold laptop, an ex-partner's tablet. Only the forgotten-password
@@ -6513,7 +6522,7 @@ async def reset_password(payload: ResetPasswordIn):
 
     await database["users"].update_one(
         {"user_id": user["user_id"]},
-        {"$set": {"password_hash": hash_password(new_password), "updated_at": utcnow()}})
+        {"$set": {"password_hash": await run_in_threadpool(hash_password, new_password), "updated_at": utcnow()}})
     # The code is spent, and every session opened before the reset is now stale.
     await database["password_resets"].delete_many({"user_id": user["user_id"]})
     await database["user_sessions"].delete_many({"user_id": user["user_id"]})
@@ -8269,7 +8278,7 @@ async def exit_kid_forgot_pin(payload: KidForgotPinIn, child=Depends(require_chi
         account and member
         and (member.get("role") or "").lower() != "child"
         and account.get("password_hash")
-        and verify_password(payload.password or "", account["password_hash"])
+        and await run_in_threadpool(verify_password, payload.password or "", account["password_hash"])
     )
     if not ok:
         _auth_record_fail(identity)

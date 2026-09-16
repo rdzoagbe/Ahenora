@@ -146,3 +146,77 @@ class NothingSlowRunsOnTheEventLoop(unittest.TestCase):
         """It was moved off the loop the same day; keep it there."""
         src = self.source()
         self.assertNotIn("crop_to_document(payload.image_base64)", src)
+
+
+class PasswordHashingDoesNotStopTheWorker(unittest.TestCase):
+    """200,000 rounds of PBKDF2 is 60-100ms of solid CPU, and it ran on the
+    event loop at eight call sites — login, registration, password change,
+    password reset, account deletion, the kid PIN escape.
+
+    On an event loop that is not 60ms for the person signing in. It is 60ms in
+    which the worker answers NOBODY: five people signing in at once means the
+    fifth waits a third of a second and every unrelated request queues behind
+    all five. The cost is deliberate — it is what makes a stolen hash
+    expensive — so the fix is to pay it on a thread, not to lower it.
+    """
+
+    def source(self):
+        with open(os.path.join(ROOT, "backend", "server.py"), encoding="utf-8") as handle:
+            return "\n".join(line for line in handle.read().splitlines()
+                             if not line.lstrip().startswith("#"))
+
+    def test_the_work_factor_has_not_been_quietly_lowered(self):
+        import server
+        self.assertGreaterEqual(server.PASSWORD_ITERATIONS, 200_000,
+                                "PBKDF2 rounds are the defence; moving the "
+                                "hash to a thread is not a reason to cut them")
+
+    def test_no_call_site_hashes_on_the_event_loop(self):
+        import ast
+        with open(os.path.join(ROOT, "backend", "server.py"), encoding="utf-8") as handle:
+            tree = ast.parse(handle.read())
+        bare = []
+
+        class Visit(ast.NodeVisitor):
+            def __init__(self):
+                self.stack = []
+
+            def visit_AsyncFunctionDef(self, node):
+                self.stack.append(("async", node.name))
+                self.generic_visit(node)
+                self.stack.pop()
+
+            def visit_FunctionDef(self, node):
+                self.stack.append(("sync", node.name))
+                self.generic_visit(node)
+                self.stack.pop()
+
+            def visit_Call(self, node):
+                name = node.func.id if isinstance(node.func, ast.Name) else None
+                if (name in ("hash_password", "verify_password")
+                        and self.stack and self.stack[-1][0] == "async"):
+                    bare.append(f"  server.py:{node.lineno} in {self.stack[-1][1]}")
+                self.generic_visit(node)
+
+        Visit().visit(tree)
+        self.assertEqual(bare, [], "\n\nPassword hashing on the event loop:\n"
+                         + "\n".join(bare) + "\n\nUse run_in_threadpool.\n")
+
+    def test_no_await_hides_inside_a_generator_expression(self):
+        """`await` inside a genexp makes it an ASYNC generator, which next()
+        cannot consume — it raises TypeError on the first login. That is
+        exactly what the mechanical rewrite above did to login_email, and the
+        suite is the only reason a user never saw it."""
+        import ast
+        with open(os.path.join(ROOT, "backend", "server.py"), encoding="utf-8") as handle:
+            tree = ast.parse(handle.read())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                fn = node.func
+                if isinstance(fn, ast.Name) and fn.id in ("next", "any", "all", "sorted"):
+                    for arg in node.args:
+                        if isinstance(arg, ast.GeneratorExp) and any(
+                                isinstance(x, ast.Await) for x in ast.walk(arg)):
+                            self.fail(f"server.py:{node.lineno}: await inside a "
+                                      f"generator passed to {fn.id}() — that is "
+                                      "an async generator and will raise")
