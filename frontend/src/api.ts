@@ -260,19 +260,28 @@ export function reportPushFailure(message: string) {
  * 09-08 and reached the Play Store on 09-12, and all three phones were
  * simply running an older APK.
  */
-let cachedStamp: { app_version: string; runtime_version: string } | null = null;
+export type BuildStamp = {
+  app_version: string;
+  runtime_version: string;
+  native_build: string;
+  native_version: string;
+};
 
-async function buildStamp(): Promise<{ app_version: string; runtime_version: string }> {
+let cachedStamp: BuildStamp | null = null;
+
+async function buildStamp(): Promise<BuildStamp> {
   if (cachedStamp) return cachedStamp;
-  // BOTH imported lazily, expo-constants included. A static import of it at
+  // ALL imported lazily, expo-constants included. A static import of it at
   // the top of this file is fine in the app and breaks the `unit` jest
   // project, which runs under node without the React Native transforms — two
   // suites stopped LOADING, and jest still printed "787 passed" because a
   // suite that never loads contributes no failing tests, only a smaller
-  // total. Keeping both behind await means this file's top level stays
+  // total. Keeping them behind await means this file's top level stays
   // node-safe.
   let app_version = '';
   let runtime_version = '';
+  let native_build = '';
+  let native_version = '';
   try {
     const Constants = (await import('expo-constants')).default;
     app_version = Constants?.expoConfig?.version || '';
@@ -281,7 +290,28 @@ async function buildStamp(): Promise<{ app_version: string; runtime_version: str
     const Updates = await import('expo-updates');
     runtime_version = (Updates.runtimeVersion as string) || '';
   } catch { /* web, or a build without expo-updates */ }
-  cachedStamp = { app_version, runtime_version };
+  // THE FIELDS THAT ACTUALLY IDENTIFY A BUILD, and the reason this function
+  // was rewritten a day after it was written.
+  //
+  // app_version is Constants.expoConfig.version, which is wrong here twice
+  // over. It reads 1.1.0 on every build ever made, because that string has
+  // never been bumped — so an APK from August and one from last week are
+  // indistinguishable. And expoConfig describes the OTA BUNDLE, not the
+  // installed app: after an update every phone reports the newest app.json's
+  // version whatever binary it is running.
+  //
+  // So the field said 1.1.0 while a native Firebase failure was being
+  // diagnosed, and the diagnosis it was built for — "stale build, or live
+  // breakage?" — could not be made. expo-application reads the INSTALLED
+  // app: nativeBuildVersion is the Android versionCode (EAS increments it
+  // per build, appVersionSource: remote), nativeApplicationVersion the real
+  // installed version string.
+  try {
+    const Application = await import('expo-application');
+    native_build = Application.nativeBuildVersion || '';
+    native_version = Application.nativeApplicationVersion || '';
+  } catch { /* web, or a build without expo-application */ }
+  cachedStamp = { app_version, runtime_version, native_build, native_version };
   return cachedStamp;
 }
 
@@ -299,7 +329,9 @@ function reportClientError(path: string, method: string, status: number | undefi
         // Never let the stamp cost the report: a build that cannot answer
         // still sends the error, unversioned, which the admin list shows as
         // an unknown build rather than as a current one.
-        let stamp = { app_version: '', runtime_version: '' };
+        let stamp: BuildStamp = {
+          app_version: '', runtime_version: '', native_build: '', native_version: '',
+        };
         try { stamp = await buildStamp(); } catch { /* report anyway */ }
         return fetch(`${BASE}/api/telemetry/client-error`, {
           method: 'POST',
@@ -2061,6 +2093,13 @@ export const api = {
        *  or an install too old to send it — which is itself the answer. */
       app_version?: string;
       runtime_version?: string;
+      /** The INSTALLED binary, which is what a native failure belongs to.
+       *  app_version describes the OTA bundle and reads 1.1.0 on every build
+       *  ever made; native_build is the Android versionCode, incremented per
+       *  build by EAS. Prefer it when deciding whether a row needs a user to
+       *  update or an engineer to look. */
+      native_build?: string;
+      native_version?: string;
       created_at?: string | null;
     }[]>('/telemetry/client-errors'),
   // Deliberately bland URL: one family device blocks every path containing

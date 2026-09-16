@@ -48,6 +48,30 @@ import { logger } from '../../src/logger';
 import { apiErrorText } from '../../src/apiError';
 import { SundayBriefModal } from '../../src/components/SundayBriefModal';
 
+/**
+ * Which BUILD an error came from, in the words that decide what to do about it.
+ *
+ * The row used to print app_version, which reads 1.1.0 on every build ever
+ * made and describes the OTA bundle rather than the installed app. A native
+ * failure — Firebase, a missing module — belongs to the binary, so the
+ * binary's number is what has to be on the line. native_build is the Android
+ * versionCode, which EAS increments per build.
+ *
+ * Three states, deliberately distinct. A build number is actionable. An app
+ * that reported a version but no build number is running JavaScript from
+ * before this existed, which is itself a fact about its age. And nothing at
+ * all is an install older than any stamp.
+ */
+function buildLabel(e: {
+  native_build?: string; native_version?: string; app_version?: string;
+}): string {
+  if (e.native_build) {
+    return e.native_version ? `${e.native_version} (${e.native_build})` : `build ${e.native_build}`;
+  }
+  if (e.app_version) return `${e.app_version}, build unknown`;
+  return 'unknown build';
+}
+
 function formatBytes(bytes?: number | null) {
   const value = bytes || 0;
   if (value >= 1024 * 1024 * 1024) return `${(value / 1024 / 1024 / 1024).toFixed(1)} GB`;
@@ -1185,7 +1209,7 @@ export default function Settings() {
                             as a live outage on 2026-09-14, six days after the
                             fix had shipped. */}
                         <Text style={styles.ghostBtnText}>
-                          {`${e.name || '?'} · ${e.platform || '?'} · ${e.app_version || 'unknown build'} · ${e.method || ''} ${e.endpoint}${e.status ? ` · ${e.status}` : ''}`}
+                          {`${e.name || '?'} · ${e.platform || '?'} · ${buildLabel(e)} · ${e.method || ''} ${e.endpoint}${e.status ? ` · ${e.status}` : ''}`}
                         </Text>
                         <Text style={[styles.emptyText, { marginTop: 2 }]} numberOfLines={2}>
                           {`${(e.created_at || '').replace('T', ' ').slice(0, 16)} — ${e.message || ''}`}

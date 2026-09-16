@@ -4961,8 +4961,17 @@ class ClientErrorIn(BaseModel):
     # WHICH BUILD said this. Optional, because an install that predates the
     # field cannot send it — and that absence is itself the answer, so it is
     # recorded as "unknown" rather than quietly blanked.
+    #
+    # native_build is the one that answers the question. app_version reads
+    # Constants.expoConfig.version, which describes the OTA BUNDLE and has
+    # said 1.1.0 on every build ever made; native_build is the Android
+    # versionCode of the INSTALLED binary, which EAS increments per build.
+    # A native failure — Firebase, a missing module — belongs to the binary,
+    # so the binary is what has to be named.
     app_version: Optional[str] = None
     runtime_version: Optional[str] = None
+    native_build: Optional[str] = None
+    native_version: Optional[str] = None
 
 
 @app.get("/api/telemetry/invite-routes")
@@ -5016,6 +5025,8 @@ async def report_client_error(payload: ClientErrorIn, user=Depends(require_user)
         "platform": (payload.platform or "")[:20],
         "app_version": (payload.app_version or "")[:32],
         "runtime_version": (payload.runtime_version or "")[:32],
+        "native_build": (payload.native_build or "")[:32],
+        "native_version": (payload.native_version or "")[:32],
         "created_at": utcnow(),
     })
     # Bounded retention: two weeks is plenty for diagnosis.
@@ -5039,6 +5050,8 @@ async def list_client_errors(user=Depends(require_user)):
         # looks like a current one.
         item["app_version"] = item.get("app_version") or ""
         item["runtime_version"] = item.get("runtime_version") or ""
+        item["native_build"] = item.get("native_build") or ""
+        item["native_version"] = item.get("native_version") or ""
         rows.append(item)
     return rows
 
