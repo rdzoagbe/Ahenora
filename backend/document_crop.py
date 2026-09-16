@@ -62,10 +62,18 @@ BAND_OF_PEAK = 0.6
 # photograph of a wall.
 MIN_PEAK_FRACTION = 0.15
 
-# Refuse to crop unless the result is meaningfully smaller AND still large
-# enough to be a document. Between them these rule out both "nothing to do"
-# and "something has gone wrong".
-MAX_KEPT_AREA = 0.92
+# Too small to be the page somebody photographed: a label, a sticker, a
+# reflection off a phone screen.
+#
+# There was a MAX_KEPT_AREA beside this, refusing a crop that kept almost the
+# whole frame. It is gone because it could never fire. When the page dominates
+# the frame it also dominates the MEDIAN, so the brightness threshold lands
+# above white, nothing qualifies as page, and the refusal happens several
+# steps earlier — every time, for every image that could be built. A guard
+# that cannot fire is worse than no guard: it reads as coverage that is not
+# there, which is the mistake that took the Android app down on 2026-09-15.
+# The page-fills-the-frame case is still refused and still tested; what
+# changed is honesty about which line does it.
 MIN_KEPT_AREA = 0.12
 
 # Inside a real document's box almost every pixel is page. Inside a false
@@ -191,7 +199,7 @@ def find_document(image: Image.Image) -> Optional[Tuple[int, int, int, int]]:
         return None
 
     kept = (bw * bh) / float(width * height)
-    if kept > MAX_KEPT_AREA or kept < MIN_KEPT_AREA:
+    if kept < MIN_KEPT_AREA:
         return None
     if max(bw, bh) / float(min(bw, bh)) > MAX_ASPECT:
         return None

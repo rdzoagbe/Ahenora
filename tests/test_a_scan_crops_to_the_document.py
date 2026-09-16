@@ -45,7 +45,8 @@ except ImportError:
     HAVE_PIL = False
 
 if HAVE_PIL:
-    from document_crop import MIN_FILL, crop_to_document, find_document
+    from document_crop import (
+        MIN_FILL, MIN_KEPT_AREA, crop_to_document, find_document)
 
 
 def jpeg(image):
@@ -260,3 +261,59 @@ class TheAppKeepsTheCroppedDocument(unittest.TestCase):
         # A server that declined to crop, or one that predates this, leaves
         # the photograph exactly as it was.
         self.assertIn("if (result.cropped_image_base64)", self.modal())
+
+
+@unittest.skipUnless(HAVE_PIL, "Pillow not installed")
+class EachGuardIsExercisedBySomethingOnlyItRefuses(unittest.TestCase):
+    """Two guards had no test of their own, and a mutation run said so.
+
+    Every refusal above is caught by whichever guard fires FIRST, so removing
+    the fill check or the aspect check left all of them passing. Each image
+    here is built so that every other guard is satisfied and only the one
+    named can say no. They protect against cropping away part of somebody's
+    document, so "probably fine" is not good enough.
+
+    Finding these also settled that MAX_KEPT_AREA could never fire, and it is
+    gone — see document_crop.py.
+    """
+
+    def refused(self, image):
+        return not crop_to_document(jpeg(image))[1]
+
+    def test_the_fill_guard_refuses_a_large_patterned_region(self):
+        """A bookshelf, tiles, gravel: bands form across it, it is document
+        sized and document shaped, and it is half background — which is what a
+        page never is.
+
+        Large and coarse ON PURPOSE. A small or finely dithered patch is
+        refused by the area bound or smoothed into a solid rectangle by JPEG,
+        and in both cases the fill guard is never reached. This one measures
+        fill 0.51 against a 0.19 area, so nothing else can refuse it.
+        """
+        random.seed(3)
+        block = 10
+        img = Image.new("RGB", (1200, 900), (38, 34, 30))
+        patch = Image.new("RGB", (900, 700), (42, 38, 34))
+        for by in range(0, 700, block):
+            for bx in range(0, 900, block):
+                if random.random() < 0.5:
+                    patch.paste(Image.new("RGB", (block, block), (250, 248, 245)), (bx, by))
+        img.paste(patch, (150, 100))
+        self.assertTrue(self.refused(img))
+
+    def test_the_aspect_guard_refuses_a_long_bright_band(self):
+        """A radiator, a window frame, a skirting board: big enough to clear
+        the area bound, solid enough to clear the fill guard, and eight times
+        longer than it is wide."""
+        img = Image.new("RGB", (1200, 900), (55, 48, 42))
+        img.paste(Image.new("RGB", (1120, 140), (248, 246, 242)), (40, 380))
+        self.assertGreater((1120 * 140) / float(1200 * 900), MIN_KEPT_AREA,
+                           "the area bound must not be what refuses this")
+        self.assertTrue(self.refused(img))
+
+    def test_the_area_bound_refuses_something_document_shaped_but_tiny(self):
+        """Solid, plausibly shaped, and far too small to be the page somebody
+        photographed. A label, a sticker, a reflection."""
+        img = Image.new("RGB", (1200, 900), (50, 45, 40))
+        img.paste(Image.new("RGB", (400, 210), (250, 248, 244)), (400, 340))
+        self.assertTrue(self.refused(img))
