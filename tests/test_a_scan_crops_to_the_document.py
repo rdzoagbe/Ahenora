@@ -216,8 +216,23 @@ class TheScanEndpointUsesIt(unittest.TestCase):
                          if not line.lstrip().startswith("#"))
 
     def test_the_document_pass_reads_the_cropped_image(self):
-        self.assertIn("image_base64, was_cropped = crop_to_document(payload.image_base64)",
+        self.assertIn("image_base64, was_cropped = await run_in_threadpool(",
                       self.code())
+        self.assertIn("crop_to_document, payload.image_base64)", self.code())
+
+    def test_the_crop_does_not_run_on_the_event_loop(self):
+        """0.58s of per-pixel Python, measured on a 4032x3024 photo, with no
+        await point anywhere in it. On the event loop that is 0.58s in which
+        this worker answers nobody: every feed poll, every chat send and
+        every other scan queues behind one person's photograph.
+
+        Asserted on the call site rather than by timing, because a timing
+        test on CI measures the runner.
+        """
+        src = self.code()
+        self.assertIn("from starlette.concurrency import run_in_threadpool", src)
+        self.assertNotIn("crop_to_document(payload.image_base64)", src,
+                         "the crop is still called directly on the event loop")
 
     def test_the_recipe_second_pass_reads_it_too(self):
         """Both passes, or a photographed recipe is read from the table while
@@ -422,3 +437,106 @@ class ADocumentWithTextOnIt(unittest.TestCase):
                                 (right, pr, "right"), (bottom, pb, "bottom")):
             self.assertLess(abs(got - want), 40,
                             f"{edge} edge is {abs(got - want)}px out — too much table")
+
+
+@unittest.skipUnless(HAVE_PIL, "Pillow not installed")
+class APageIsNotCutInHalfBySomethingDarkOnIt(unittest.TestCase):
+    """The third bug, and the one that actually destroyed documents.
+
+    _band took the LONGEST CONTIGUOUS RUN of page-like rows. A page is not
+    uniform: a school letter has a dark masthead, a bill has a black table
+    header, an ID card has a photograph, a certificate has a seal. Any of
+    those drops a stripe of rows below the cutoff, splitting the page into two
+    runs — and the longest of the two was kept as the whole page.
+
+    A 2000x2400 photograph of a page at (400,300)-(1600,1900) with a banner
+    across it came back as (376,1154,1623,1926): 854px of its 1600px height
+    gone, silently, with MIN_FILL, MIN_KEPT_AREA and MAX_ASPECT all passing.
+
+    This holds the shipped size, not the internals, because the internals are
+    what was wrong.
+    """
+
+    def banner_page(self, band_top, band_height):
+        frame = Image.new("RGB", (2000, 2400), (68, 54, 40))
+        frame.paste(Image.new("RGB", (1200, 1600), (245, 243, 238)), (400, 300))
+        frame.paste(Image.new("RGB", (1200, band_height), (24, 26, 40)),
+                    (400, band_top))
+        return frame
+
+    def test_the_top_of_the_page_survives_a_masthead(self):
+        box = find_document(self.banner_page(360, 150))
+        self.assertIsNotNone(box, "a page with a masthead was not found at all")
+        left, top, right, bottom = box
+        self.assertLess(top, 360,
+                        f"top is {top}: the masthead at y=360 was treated as "
+                        "the top of the page, and everything above it is gone")
+        self.assertGreater(bottom - top, 1500,
+                           f"kept only {bottom - top}px of a 1600px page")
+
+    def test_the_top_of_the_page_survives_a_band_across_the_middle(self):
+        box = find_document(self.banner_page(1050, 120))
+        self.assertIsNotNone(box)
+        left, top, right, bottom = box
+        self.assertLess(abs(top - 300), 60, f"top edge is {top}, page starts at 300")
+        self.assertLess(abs(bottom - 1900), 60,
+                        f"bottom edge is {bottom}, page ends at 1900")
+
+    def test_a_band_stretched_across_the_table_is_refused_not_trusted(self):
+        """The cost of taking the full extent, and why it is the safe cost.
+
+        A bright window behind the table joins the band — the case the
+        longest-run rule was written for. The answer is not to guess which
+        bright thing is the page: it is to refuse, which returns the
+        photograph untouched, which is what happened before the crop existed.
+        """
+        frame = Image.new("RGB", (1200, 900), (70, 55, 40))
+        frame.paste(Image.new("RGB", (400, 300), (250, 248, 244)), (80, 60))
+        frame.paste(Image.new("RGB", (400, 300), (252, 250, 248)), (700, 540))
+        out, cropped = crop_to_document(jpeg(frame))
+        if cropped:
+            width, height = size_of(out)
+            self.assertLess(width * height, 1200 * 900,
+                            "cropped to the whole frame, which is not a crop")
+
+
+@unittest.skipUnless(HAVE_PIL, "Pillow not installed")
+class APhotographComesBackTheWayUpItWasTaken(unittest.TestCase):
+    """Phones store the sensor's orientation and an EXIF tag saying how to
+    turn it. Pillow ignores the tag. The crop re-encodes as JPEG and wrote no
+    tag out, so the correction was lost with it — the page was analysed
+    sideways AND the image that went into the vault was rotated 90 degrees,
+    with no way for the viewer to put it back.
+    """
+
+    def upright_page(self):
+        # Portrait frame AND portrait page, so "which way up did it come
+        # back" has one answer and the frame's own shape cannot supply it.
+        return page_on((70, 55, 40), (520, 700), (190, 250), frame=(900, 1200))
+
+    def as_a_phone_stores_it(self, image):
+        """Rotated in the pixels, with the tag that says to turn it back."""
+        sideways = image.rotate(-90, expand=True)
+        buffer = io.BytesIO()
+        exif = Image.Exif()
+        exif[274] = 8  # Orientation: rotate 90 CCW to display
+        sideways.save(buffer, format="JPEG", quality=90, exif=exif)
+        return "data:image/jpeg;base64," + base64.b64encode(buffer.getvalue()).decode()
+
+    def test_the_tag_is_honoured_rather_than_dropped(self):
+        payload = self.as_a_phone_stores_it(self.upright_page())
+        # Proving the fixture: without the tag being applied the stored bytes
+        # are landscape. If this ever fails the test below proves nothing.
+        raw = base64.b64decode(payload.split(",", 1)[1])
+        stored_w, stored_h = Image.open(io.BytesIO(raw)).size
+        self.assertGreater(stored_w, stored_h,
+                           "fixture is not stored sideways, so applying the "
+                           "tag would be indistinguishable from ignoring it")
+
+        out, cropped = crop_to_document(payload)
+        self.assertTrue(cropped, "a page on a dark table was not found once "
+                                 "the orientation tag was applied")
+        width, height = size_of(out)
+        self.assertGreater(height, width,
+                           f"came back {width}x{height}: a portrait page "
+                           "arrived in the vault on its side")
