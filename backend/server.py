@@ -28,6 +28,18 @@ try:
     from motor.motor_asyncio import AsyncIOMotorClient
 except ImportError:
     AsyncIOMotorClient = None
+try:
+    # Only so /health can say WHICH kind of database failure it hit. Guarded
+    # the same way motor is: the tests import this module without a driver
+    # installed, and a health check that cannot be imported is worse than one
+    # that cannot tell auth from a timeout.
+    from pymongo.errors import (AutoReconnect, ConnectionFailure, NetworkTimeout,
+                                OperationFailure, ServerSelectionTimeoutError)
+except ImportError:  # pragma: no cover - driver always present in the image
+    class _NoDriverError(Exception):
+        code = None
+    AutoReconnect = ConnectionFailure = NetworkTimeout = _NoDriverError
+    OperationFailure = ServerSelectionTimeoutError = _NoDriverError
 from google.oauth2 import id_token as google_id_token
 import apple_auth
 from google.auth.transport.requests import Request as GoogleRequest
@@ -4918,6 +4930,11 @@ def _scheduler_verdict(now: Optional[datetime] = None) -> str:
     return "stalled" if since > max(300, REMINDER_SCAN_INTERVAL * 5) else "alive"
 
 
+
+def _without_credentials(text: str) -> str:
+    """Any scheme://user:password@host in a message, with the pair removed."""
+    return re.sub(r"(\w+://)[^/\s:@]+:[^/\s@]+@", r"\1***:***@", text)
+
 @app.api_route("/api/health", methods=["GET", "HEAD"])
 async def health():
     """Liveness + real database check for uptime monitoring.
@@ -4950,8 +4967,45 @@ async def health():
                 # admin session.
                 "scheduler": _scheduler_verdict()}
     except (asyncio.TimeoutError, Exception) as exc:  # noqa: B014 - report any failure
-        log.warning("Health check database ping failed: %s", exc)
-        return JSONResponse(status_code=503, content={"status": "error", "database": "unreachable"})
+        # WHY THIS SAYS WHICH, and not just "unreachable":
+        #
+        # 2026-09-16. A rotated Atlas password left this answering 503 with
+        # "unreachable" for four hours. "Unreachable" was a catch-all around
+        # every exception, so it was equally true of an authentication
+        # failure, an IP access list that no longer admits Railway, a Mongo
+        # that is simply slow, and a network that is genuinely down — four
+        # causes with four different fixes and one word between them. The
+        # afternoon went on a guess (code was reverted before the log was
+        # read; the log named it immediately). The instrument has to name the
+        # cause or it is not an instrument.
+        #
+        # The CATEGORY is safe to serve: it names a class of failure, never a
+        # host, a user or a credential. The detail stays in the log.
+        name = type(exc).__name__
+        if isinstance(exc, OperationFailure) and exc.code in (18, 13):
+            # 18 AuthenticationFailed, 13 Unauthorized. A wrong password, or a
+            # user without rights on this database — a credential problem, and
+            # nothing about the network.
+            cause = "auth"
+        elif isinstance(exc, (asyncio.TimeoutError, ServerSelectionTimeoutError,
+                              NetworkTimeout)):
+            # Nothing answered in time. Atlas is asleep, the IP access list no
+            # longer admits this container, or the cluster is genuinely slow.
+            # NOT the same as being refused, and the fix is not the same.
+            cause = "timeout"
+        elif isinstance(exc, (ConnectionFailure, AutoReconnect)):
+            cause = "unreachable"
+        else:
+            cause = "error"
+        # Railway's log is read on a screen, screenshotted and pasted. A
+        # driver message can carry the whole connection string, password
+        # included — one was exposed that way this morning — so the
+        # credentials come out before it is written anywhere.
+        log.warning("Health check database ping failed (%s/%s): %s",
+                    cause, name, _without_credentials(str(exc)))
+        return JSONResponse(status_code=503,
+                            content={"status": "error", "database": cause,
+                                     "detail": name})
 
 
 class ClientErrorIn(BaseModel):
