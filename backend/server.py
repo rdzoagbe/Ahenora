@@ -942,7 +942,13 @@ async def _gemini_generate(contents, system: str = "", temperature: float = None
     # and append those. Self-heals against Google renaming/retiring models.
     discovered = _gemini_state.get("discovered")
     if discovered is None:
-        discovered = _discover_models()
+        # In a thread: client.models.list is the SYNC client — a network
+        # round-trip to Google with no await point in it. On the event loop
+        # that is the whole worker serving nobody for as long as Google takes,
+        # and it happens on the first AI request after every restart. Worse,
+        # several scans arriving together each saw None and each ran their own
+        # blocking call, one after another.
+        discovered = await run_in_threadpool(_discover_models)
         _gemini_state["discovered"] = discovered
     for name in discovered:
         if name not in candidates:
@@ -3963,17 +3969,59 @@ async def start_reminder_scheduler():
 # outcome than a duplicate. Creating an index that is already there is a no-op,
 # so this is safe to run on every boot.
 INDEXES = {
-    "users": ["email", "user_id"],
+    "users": ["email", "user_id", "family_id"],
     "user_sessions": ["token_hash", "user_id"],
     "family_members": ["family_id", "user_id", "member_id"],
-    "family_invites": ["family_id", "email", "token"],
+    "family_invites": ["family_id", "email", "token", "invite_id"],
     "cards": ["family_id", "card_id"],
-    "notification_tokens": ["user_id"],
+    "notification_tokens": ["user_id", "token"],
     # The billing log is read newest-first and trimmed by event_id.
     "billing_events": ["received_at", "event_id"],
     # Price history is read by product across shops, and by expense when one
     # is deleted.
     "expense_items": ["family_id", "name_key", "expense_id"],
+
+    # Everything below was added on 2026-09-16, after an audit counted the
+    # query filters in this file against this dict and found 45 filtered
+    # fields with no index across 30 collections.
+    #
+    # `families` was the worst of them: looked up by family_id 28 times —
+    # effectively on every authenticated request, to read the plan, the
+    # settings and the member list — and every one of those was a COLLECTION
+    # SCAN. Nothing was broken and no test could see it, because a scan of a
+    # small collection is fast. It gets slower with every family that joins,
+    # which is the kind of degradation that arrives as "the app feels slow
+    # lately" rather than as an error.
+    #
+    # Note what is NOT here: low-cardinality booleans (notification_tokens.
+    # active, push_tickets.checked). An index over two values does not narrow
+    # a scan enough to pay for the write cost on every insert.
+    "families": ["family_id", "stripe_customer_id"],
+    "activity": ["family_id", "activity_id"],
+    "allowances": ["family_id", "allowance_id"],
+    "allowance_txns": ["family_id"],
+    "calendar_contacts": ["family_id"],
+    "chores": ["family_id", "chore_id"],
+    "event_candidates": ["family_id"],
+    "expenses": ["family_id", "expense_id"],
+    "gift_pots": ["family_id", "pot_id"],
+    "handoff_notes": ["family_id", "note_id"],
+    "meal_plans_saved": ["plan_id"],
+    "meals": ["family_id", "meal_id"],
+    "messages": ["family_id", "message_id"],
+    "metrics_daily": ["date"],
+    "notification_settings": ["user_id"],
+    "password_resets": ["user_id"],
+    "redemptions": ["redemption_id"],
+    "rewards": ["family_id", "reward_id"],
+    "routines": ["family_id", "routine_id"],
+    "santa_draws": ["draw_id"],
+    "shopping_history": ["family_id", "history_id"],
+    "shopping_list": ["family_id", "item_id"],
+    "star_transactions": ["family_id"],
+    "support_tickets": ["ticket_id"],
+    "vault": ["family_id", "doc_id"],
+    "web_push_subscriptions": ["user_id", "endpoint"],
 }
 
 
@@ -4878,7 +4926,10 @@ async def health_ai(probe: int = 0, user=Depends(require_user)):
 
     # Always show what the key can actually use — the fastest way to diagnose
     # model_not_found is to see the real list.
-    status["available_models"] = _discover_models()
+    # Threaded for the same reason as the call in _gemini_generate, and
+    # more urgently: this one is NOT cached, so every request to this
+    # endpoint blocked the worker for a round-trip to Google.
+    status["available_models"] = await run_in_threadpool(_discover_models)
 
     if probe:
         # Force a fresh discovery on an explicit probe.
@@ -5416,7 +5467,7 @@ async def delete_account(payload: DeleteAccountIn, user=Depends(require_user)):
     # A password account must prove it is really them. An OAuth account has no
     # password to check; the app gates it behind a typed confirmation instead.
     if fresh.get("password_hash"):
-        if not payload.password or not verify_password(payload.password, fresh["password_hash"]):
+        if not payload.password or not await run_in_threadpool(verify_password, payload.password, fresh["password_hash"]):
             raise HTTPException(status_code=403, detail="That password is not correct.")
     elif not payload.confirm:
         raise HTTPException(status_code=400, detail="Confirm the deletion to continue.")
@@ -6228,7 +6279,7 @@ async def register_email(payload: EmailRegisterIn):
         "email": email,
         "name": name,
         "picture": None,
-        "password_hash": hash_password(password),
+        "password_hash": await run_in_threadpool(hash_password, password),
         "family_id": family_id,
         "language": payload.language if payload.language in ("en", "es", "fr", "de") else "en",
         "onboarding_completed": False,
@@ -6289,7 +6340,16 @@ async def login_email(payload: EmailLoginIn):
     # Verify against every password row for this email, not just the first: if a
     # legacy duplicate exists, the one whose password actually matches wins, so
     # the account is never a spurious 401 just for being second in the list.
-    user = next((u for u in pw_matches if verify_password(payload.password or "", u["password_hash"])), None)
+    # An explicit loop, not a generator expression: `await` inside a genexp
+    # makes it an ASYNC generator, which next() cannot consume — it raises
+    # TypeError at the first login attempt. Caught by the suite rather than by
+    # a user, but it is the reason this is spelled out longhand.
+    user = None
+    for candidate in pw_matches:
+        if await run_in_threadpool(verify_password, payload.password or "",
+                                   candidate["password_hash"]):
+            user = candidate
+            break
     if not user:
         _auth_record_fail(identity)
         raise HTTPException(status_code=401, detail="Incorrect email or password")
@@ -6344,16 +6404,16 @@ async def change_password(payload: ChangePasswordIn, user=Depends(require_user),
         raise HTTPException(
             status_code=400,
             detail="This account signs in with Google, so it has no password to change.")
-    if not verify_password(payload.current_password or "", stored):
+    if not await run_in_threadpool(verify_password, payload.current_password or "", stored):
         raise HTTPException(status_code=403, detail="Current password is incorrect")
     new_password = payload.new_password or ""
     if len(new_password) < 8:
         raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
-    if verify_password(new_password, stored):
+    if await run_in_threadpool(verify_password, new_password, stored):
         raise HTTPException(status_code=400, detail="New password must be different from the current one")
     await database["users"].update_one(
         {"user_id": user["user_id"]},
-        {"$set": {"password_hash": hash_password(new_password), "updated_at": utcnow()}})
+        {"$set": {"password_hash": await run_in_threadpool(hash_password, new_password), "updated_at": utcnow()}})
 
     # Changing your password is how a person locks out a device they no longer
     # control — a sold laptop, an ex-partner's tablet. Only the forgotten-password
@@ -6462,7 +6522,7 @@ async def reset_password(payload: ResetPasswordIn):
 
     await database["users"].update_one(
         {"user_id": user["user_id"]},
-        {"$set": {"password_hash": hash_password(new_password), "updated_at": utcnow()}})
+        {"$set": {"password_hash": await run_in_threadpool(hash_password, new_password), "updated_at": utcnow()}})
     # The code is spent, and every session opened before the reset is now stale.
     await database["password_resets"].delete_many({"user_id": user["user_id"]})
     await database["user_sessions"].delete_many({"user_id": user["user_id"]})
@@ -8218,7 +8278,7 @@ async def exit_kid_forgot_pin(payload: KidForgotPinIn, child=Depends(require_chi
         account and member
         and (member.get("role") or "").lower() != "child"
         and account.get("password_hash")
-        and verify_password(payload.password or "", account["password_hash"])
+        and await run_in_threadpool(verify_password, payload.password or "", account["password_hash"])
     )
     if not ok:
         _auth_record_fail(identity)

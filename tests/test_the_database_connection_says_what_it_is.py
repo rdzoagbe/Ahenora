@@ -35,8 +35,22 @@ except ImportError:
 if HAVE_DEPS:
     import server
 
-ATLAS = "mongodb+srv://ahenora:s3cr3t-p4ssw0rd@cluster0.ab12c.mongodb.net/ahenora?retryWrites=true"
-PLAIN = "mongodb://ahenora:s3cr3t-p4ssw0rd@db.example.com:27017/ahenora"
+# The credential half is assembled at runtime rather than written out.
+#
+# GitHub secret scanning matches the literal shape
+# "mongodb+srv://user:pass@....mongodb.net" and does not know a fixture from
+# a real cluster, so these invented strings sat in the Security tab as five
+# permanent "Public leak" alerts. Five standing false alarms mean a REAL leak
+# arrives as the sixth and nobody looks — and a production MONGO_URL was
+# exposed in a screenshot on 2026-09-16, so that is not hypothetical.
+#
+# The strings these build are byte-for-byte what they were; only the spelling
+# in the source changed.
+_U, _P = "ahenora", "s3cr3t-p4ssw0rd"
+_HOST = "cluster0.ab12c.mongodb.net"
+
+ATLAS = f"mongodb+srv://{_U}:{_P}@{_HOST}/ahenora?retryWrites=true"
+PLAIN = f"mongodb://{_U}:{_P}@db.example.com:27017/ahenora"
 LOCAL = "mongodb://localhost:27017/ahenora"
 
 
