@@ -401,3 +401,24 @@ class ADocumentWithTextOnIt(unittest.TestCase):
                     patch.paste(Image.new("RGB", (10, 10), (250, 248, 245)), (bx, by))
         img.paste(patch, (150, 100))
         self.assertIsNone(find_document(img))
+
+    def test_brightness_runs_first_because_it_is_the_tighter_answer(self):
+        """Both detectors find the page on a dark table, but not equally well.
+
+        Brightness finds the PAPER'S OWN EDGE: within about 14px of the page.
+        The print detector finds the INK, which sits inside the margins, so it
+        pads outward and lands about 95px out — still safe, still containing
+        the whole document, and carrying a band of table with it.
+
+        Removing the whole point of the crop. So the order is asserted rather
+        than left as a comment: a mutation swapping it passed everything until
+        this existed.
+        """
+        box = find_document(printed_page((70, 58, 44), (244, 242, 238)))
+        self.assertIsNotNone(box)
+        left, top, right, bottom = box
+        pl, pt, pr, pb = self.PAGE
+        for got, want, edge in ((left, pl, "left"), (top, pt, "top"),
+                                (right, pr, "right"), (bottom, pb, "bottom")):
+            self.assertLess(abs(got - want), 40,
+                            f"{edge} edge is {abs(got - want)}px out — too much table")
