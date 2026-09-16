@@ -148,9 +148,25 @@ describe('the photo is cropped before it is uploaded', () => {
     expect(CAMERA).toContain('launchImageLibraryAsync(shot)');
   });
 
-  it('says why this is not the automatic framing that was asked for', () => {
-    // Honesty in the code about what shipped: real edge detection needs a
-    // native module, and an OTA cannot add one.
-    expect(CAMERA).toContain('cannot add');
+  it('tries the OS document scanner first, and only for the camera', () => {
+    // The automatic framing that was asked for. It is reached through the
+    // wrapper, never the plugin, and only on the camera path: neither
+    // platform's scanner works on a photo already in the gallery.
+    expect(CAMERA).toContain("from '../documentScanner'");
+    expect(CAMERA).toContain("if (source === 'camera') {");
+    expect(CAMERA.indexOf('await scanDocument()')).toBeLessThan(
+      CAMERA.indexOf('launchCameraAsync(shot)'));
+  });
+
+  it('is gated by the runtime version, not by a JavaScript guard', () => {
+    // 2026-09-15: the scanner went out over the air behind a guard with ten
+    // passing tests, and the app crashed on a real phone within minutes. A
+    // missing native module aborts the process; JavaScript cannot catch it.
+    // The thing that makes this safe is that JS built for the scanner can
+    // never reach a binary without it — which is what runtimeVersion is for.
+    const app = JSON.parse(readFileSync(join(__dirname, '..', '..', 'app.json'), 'utf8')).expo;
+    expect(app.runtimeVersion).toBe('3.0.0');
+    expect(app.plugins.some((p: unknown) =>
+      (Array.isArray(p) ? p[0] : p) === 'react-native-document-scanner-plugin')).toBe(true);
   });
 });

@@ -1,5 +1,5 @@
 {
-  "_comment": "Native packages the SHIPPED binaries were built from. Adding one here is a promise that a new binary carrying it has gone to the stores — see scripts/check-native-deps.js.",
+  "_comment": "Native packages the SHIPPED binaries were built from. Adding one here is a promise that a new binary carrying it has gone to the stores \u2014 see scripts/check-native-deps.js.",
   "nativeDependencies": [
     "@react-native-async-storage/async-storage",
     "@react-native-google-signin/google-signin",
@@ -31,6 +31,7 @@
     "expo-system-ui",
     "expo-updates",
     "expo-web-browser",
+    "react-native-document-scanner-plugin",
     "react-native-gesture-handler",
     "react-native-purchases",
     "react-native-safe-area-context",

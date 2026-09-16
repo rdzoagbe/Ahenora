@@ -59,37 +59,44 @@ class AdoptionReadout(unittest.TestCase):
         self.assertEqual(e.exception.status_code, 403)
 
     def test_coverage_is_the_share_on_the_current_runtime(self):
-        # Three users on 2.0.0 (can receive the OTA), one still on 1.0.0.
-        self._token("a", "2.0.0", "1.0.3")
-        self._token("b", "2.0.0", "1.0.3")
-        self._token("c", "2.0.0", "1.0.3")
-        self._token("d", "1.0.0", "1.0.2")
+        # Three users on the current runtime (can receive the OTA), one still
+        # on the one before it. Read from the server rather than written down:
+        # this test said "2.0.0" and would have failed on the bump to 3.0.0
+        # for a reason that had nothing to do with adoption.
+        current = server.MIN_SUPPORTED_RUNTIME
+        self._token("a", current, "1.2.0")
+        self._token("b", current, "1.2.0")
+        self._token("c", current, "1.2.0")
+        self._token("d", "2.0.0", "1.1.0")
         out = self._run()
-        self.assertEqual(out["current_runtime"], "2.0.0")
+        self.assertEqual(out["current_runtime"], current)
         self.assertEqual(out["users_on_current_runtime"], 3)
         self.assertEqual(out["total_users_with_a_device"], 4)
         self.assertEqual(out["pct_on_current_runtime"], 75.0)
-        self.assertEqual(out["by_runtime"], {"2.0.0": 3, "1.0.0": 1})
+        self.assertEqual(out["by_runtime"], {current: 3, "2.0.0": 1})
 
     def test_a_person_with_two_devices_counts_once(self):
-        self._token("a", "2.0.0", "1.0.3")
-        self._token("a", "2.0.0", "1.0.3")  # same user, second device
+        current = server.MIN_SUPPORTED_RUNTIME
+        self._token("a", current, "1.2.0")
+        self._token("a", current, "1.2.0")  # same user, second device
         out = self._run()
         self.assertEqual(out["users_on_current_runtime"], 1)
-        self.assertEqual(out["by_runtime"], {"2.0.0": 1})
+        self.assertEqual(out["by_runtime"], {current: 1})
         self.assertEqual(out["devices_seen"], 2)
 
     def test_a_legacy_token_with_no_version_reads_as_unknown(self):
-        self._token("a", "2.0.0", "1.0.3")
+        self._token("a", server.MIN_SUPPORTED_RUNTIME, "1.2.0")
         self._token("old", None, None)
         out = self._run()
-        self.assertEqual(out["by_runtime"], {"2.0.0": 1, "unknown": 1})
+        self.assertEqual(out["by_runtime"], {server.MIN_SUPPORTED_RUNTIME: 1, "unknown": 1})
         self.assertEqual(out["devices_reporting_version"], 1)
         self.assertEqual(out["devices_seen"], 2)
 
     def test_inactive_tokens_are_left_out(self):
-        self._token("a", "2.0.0", "1.0.3")
-        self._token("gone", "2.0.0", "1.0.3", active=False)
+        self._token("a", server.MIN_SUPPORTED_RUNTIME, "1.2.0")
+        # On the CURRENT runtime on purpose: left out because it is inactive,
+        # not because it is old. On the old runtime this test proved nothing.
+        self._token("gone", server.MIN_SUPPORTED_RUNTIME, "1.2.0", active=False)
         out = self._run()
         self.assertEqual(out["devices_seen"], 1)
         self.assertEqual(out["users_on_current_runtime"], 1)
@@ -97,11 +104,11 @@ class AdoptionReadout(unittest.TestCase):
     def test_an_anonymous_device_does_not_inflate_the_count(self):
         # A token with no user_id is a device, not a user — counting it would
         # push a bucket past the true user total and the percentage over 100.
-        self._token("a", "2.0.0", "1.0.3")
-        self._token(None, "2.0.0", "1.0.3")  # anonymous, same runtime
+        self._token("a", server.MIN_SUPPORTED_RUNTIME, "1.2.0")
+        self._token(None, server.MIN_SUPPORTED_RUNTIME, "1.2.0")  # anonymous, same runtime
         out = self._run()
         self.assertEqual(out["users_on_current_runtime"], 1)
-        self.assertEqual(out["by_runtime"], {"2.0.0": 1})
+        self.assertEqual(out["by_runtime"], {server.MIN_SUPPORTED_RUNTIME: 1})
         self.assertLessEqual(out["pct_on_current_runtime"], 100.0)
         self.assertEqual(out["devices_seen"], 2)
 

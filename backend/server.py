@@ -10082,8 +10082,12 @@ async def list_shared_with_coparent(direction: str = "out", user=Depends(require
 # the store version that supersedes it. Kept here rather than in the app so it
 # can be changed without shipping a release — the whole point is to speak to
 # clients that are already out of date.
-MIN_SUPPORTED_RUNTIME = "2.0.0"
-CURRENT_STORE_VERSION = "1.1.0"
+# 3.0.0 / 1.2.0 arrived with the document scanner (a native module, so a new
+# binary on both stores). From this point the nightly OTA publishes at 3.0.0
+# only: a phone still on 2.0.0 receives nothing until it updates from the
+# store, and store_version below is how it learns that.
+MIN_SUPPORTED_RUNTIME = "3.0.0"
+CURRENT_STORE_VERSION = "1.2.0"
 
 
 @app.get("/api/app/version-info")

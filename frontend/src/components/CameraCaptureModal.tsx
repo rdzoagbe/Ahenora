@@ -21,6 +21,7 @@ import { ScansLeft } from './ScansLeft';
 import { localeFor } from '../utils/date';
 import { api, CardType, CapturedRecipe, ScanResult } from '../api';
 import { DOCUMENT_CATEGORIES, CATEGORY_STYLE } from '../documentCategories';
+import { scanDocument } from '../documentScanner';
 import { categoriseShoppingItem, shoppingLabel } from '../shoppingCategories';
 import { logger } from '../logger';
 
@@ -92,18 +93,41 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
         }
       }
 
+      // The OS document scanner first, when this binary has it: ML Kit on
+      // Android, VisionKit on iOS. It finds the page edges live, shoots when
+      // the frame is steady and corrects the perspective, so what goes up is
+      // the document at its true rectangle. That is the "capture space"
+      // Roland asked for, and the manual crop below only approximates it.
+      //
+      // Camera only. Neither platform's scanner works on a photo already in
+      // the gallery — they drive the camera.
+      //
+      // runtimeVersion went 2.0.0 -> 3.0.0 with this feature, so JavaScript
+      // built for the scanner can never reach a binary without it. The
+      // 'unavailable' branch below is web and belt-and-braces, not the
+      // safety mechanism: 2026-09-15 proved a JS guard cannot be that.
+      if (source === 'camera') {
+        const scan = await scanDocument();
+        if (scan.kind === 'cancelled') return;
+        if (scan.kind === 'scanned') {
+          // /legacy on purpose: SDK 57's default expo-file-system export is
+          // the new File API; readAsStringAsync lives here, as vault.tsx does.
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
+          const FS = require('expo-file-system/legacy');
+          const b64 = await FS.readAsStringAsync(scan.uri, { encoding: FS.EncodingType.Base64 });
+          await runScan(`data:image/jpeg;base64,${b64}`);
+          return;
+        }
+      }
+
       // allowsEditing: the system crop step, before anything is uploaded.
       //
       // A phone shoots 12MP; at quality 0.55 that is still megabytes, and
       // base64 adds a third on top — so the scan was pushing 3-5 MB up
       // before the model had seen anything. That is the slowness, and it is
       // also why extraction was mediocre: the model was reading a photo of a
-      // TABLE with a letter on it.
-      //
-      // Cropping to the document fixes both at once, and it is the nearest
-      // thing to the automatic framing a document scanner does that can ship
-      // over the air. Real edge detection needs a native module, which an OTA
-      // cannot add.
+      // TABLE with a letter on it. The server crops to the document after
+      // this, so the gallery path and web still end up with the page.
       const shot = {
         base64: true,
         quality: 0.55,
@@ -120,53 +144,64 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
       const asset = res.assets[0];
       const imageBase64 = asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri;
 
-      const myReq = ++scanReqRef.current;
-      setPreview(imageBase64);
-      setPhase('scanning');
-
-      try {
-        const result = await api.visionExtract(imageBase64);
-        if (scanReqRef.current !== myReq) return;   // sheet closed mid-scan
-        setScan(result);
-        // Keep the CROPPED document rather than the photograph of the table.
-        //
-        // Replacing the preview after the scan, not before: the original goes
-        // up on screen the instant the shutter closes, so the sheet is never
-        // blank while the server thinks. Absent means the server was not
-        // confident enough to crop, and the original is what we keep — the
-        // same no-op it made.
-        if (result.cropped_image_base64) setPreview(result.cropped_image_base64);
-        setCategory(result.vault_category || '');
-        if (result.kind === 'recipe' && result.recipe) {
-          setRecipe(result.recipe);
-          setPhase('recipe');
-        } else {
-          setPhase('confirm');
-        }
-      } catch (e: any) {
-        if (scanReqRef.current !== myReq) return;   // sheet closed mid-scan
-        /**
-         * Running out of AI credit must not cost you the photograph.
-         *
-         * This used to surface as an upgrade wall, which threw away the thing
-         * the parent had just taken and asked them for money instead. The
-         * manual path was always there; the sorting is what the allowance
-         * buys. So the sheet carries on to the same confirm step with nothing
-         * pre-selected — the same number of taps, minus the ones the model
-         * was saving.
-         */
-        if (e?.status === 402) {
-          setScan(null);
-          setCategory('');
-          setPhase('confirm');
-          return;
-        }
-        logger.warn('vision extract failed', e);
-        setErr(apiErrorText(e, t, 'cam_vision_failed'));
-        setPhase('error');
-      }
+      await runScan(imageBase64);
     } catch (e: any) {
       setErr(apiErrorText(e, t, 'cam_could_not_open_camera'));
+      setPhase('error');
+    }
+  };
+
+  /**
+   * Everything after a picture exists, whichever way it was taken.
+   *
+   * The OS scanner and the picker both produce a data URI, and the handling
+   * after that is identical. Two copies of it would drift, and the half that
+   * drifts is the one nobody is looking at.
+   */
+  const runScan = async (imageBase64: string) => {
+    const myReq = ++scanReqRef.current;
+    setPreview(imageBase64);
+    setPhase('scanning');
+
+    try {
+      const result = await api.visionExtract(imageBase64);
+      if (scanReqRef.current !== myReq) return;   // sheet closed mid-scan
+      setScan(result);
+      // Keep the CROPPED document rather than the photograph of the table.
+      //
+      // Replacing the preview after the scan, not before: the original goes
+      // up on screen the instant the shutter closes, so the sheet is never
+      // blank while the server thinks. Absent means the server was not
+      // confident enough to crop, and the original is what we keep — the
+      // same no-op it made.
+      if (result.cropped_image_base64) setPreview(result.cropped_image_base64);
+      setCategory(result.vault_category || '');
+      if (result.kind === 'recipe' && result.recipe) {
+        setRecipe(result.recipe);
+        setPhase('recipe');
+      } else {
+        setPhase('confirm');
+      }
+    } catch (e: any) {
+      if (scanReqRef.current !== myReq) return;   // sheet closed mid-scan
+      /**
+       * Running out of AI credit must not cost you the photograph.
+       *
+       * This used to surface as an upgrade wall, which threw away the thing
+       * the parent had just taken and asked them for money instead. The
+       * manual path was always there; the sorting is what the allowance
+       * buys. So the sheet carries on to the same confirm step with nothing
+       * pre-selected — the same number of taps, minus the ones the model
+       * was saving.
+       */
+      if (e?.status === 402) {
+        setScan(null);
+        setCategory('');
+        setPhase('confirm');
+        return;
+      }
+      logger.warn('vision extract failed', e);
+      setErr(apiErrorText(e, t, 'cam_vision_failed'));
       setPhase('error');
     }
   };
