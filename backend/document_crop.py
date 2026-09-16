@@ -35,7 +35,7 @@ import base64
 import io
 from typing import Optional, Tuple
 
-from PIL import Image
+from PIL import Image, ImageChops, ImageFilter
 
 # Work at this width when looking. The decision is about where the page sits,
 # not about detail, and a 4000px photograph costs a second to scan row by row.
@@ -94,8 +94,80 @@ MAX_ASPECT = 6.0
 # Breathing room, so a hairline of page edge is never shaved off.
 MARGIN_FRACTION = 0.015
 
+# ── The second detector: printed detail ───────────────────────────────────
+#
+# Brightness alone fails on the case Roland actually has. He photographs onto
+# a PALE counter, where paper and worktop are within twenty levels of each
+# other, so nothing is "clearly brighter than its surroundings" and the crop
+# correctly refuses — correct, and useless. Brightness is the wrong signal
+# when both things are white.
+#
+# What a document has that a worktop does not is PRINT. Subtracting a blurred
+# copy of the image from itself leaves the text and removes flat surfaces,
+# whatever their tone, so the page is found on a white counter and on a dark
+# table alike.
+#
+# It locates the PRINTED area, which sits inside the paper — margins carry no
+# ink — so this path pads outward further than the brightness one, or it
+# would crop the page's own borders off.
+DETAIL_BLUR = 3
+DETAIL_THRESHOLD = 18
+DETAIL_BAND_OF_PEAK = 0.35
+DETAIL_MIN_PEAK = 0.06
+DETAIL_MARGIN_FRACTION = 0.055
 
-def _bright_band(fractions: list[float]) -> Optional[Tuple[int, int]]:
+# Texture — carpet, gravel, a bookshelf — is detail EVERYWHERE, so a band that
+# spans nearly the whole frame is not a document. Unlike the brightness path,
+# where a page-filled frame is refused several steps earlier by the median,
+# this bound is genuinely reachable, and there is a test that reaches it.
+DETAIL_MAX_KEPT = 0.90
+
+# How much of the detected region may be ink.
+#
+# A page is mostly blank paper with lines of print on it; texture is busy
+# everywhere. Measured rather than guessed: a printed form comes out at 0.30
+# on a pale counter and 0.32 on a dark table, and a coarse block pattern —
+# tiles, a bookshelf, gravel — at 0.72. The ceiling sits between them with
+# room on both sides.
+#
+# The floor is the other half: a band carrying almost no ink was not print,
+# it was a gradient or a shadow, and there is no document there to find.
+DETAIL_MAX_INK = 0.45
+DETAIL_MIN_INK = 0.02
+
+
+def _smooth(fractions: list[float]) -> list[float]:
+    """Average each row with its neighbours.
+
+    THE FIX FOR REAL DOCUMENTS, and the bug that made the first version
+    dangerous rather than merely useless.
+
+    Both detectors look for a contiguous run of rows that are "page". Every
+    image they were tested against was a BLANK rectangle, where that run is
+    the page. A real document has TEXT: rows carrying print are darker, so the
+    bright run breaks at every line, and the longest unbroken one turns out to
+    be the blank margin under the last paragraph. On a dark table that
+    produced a 710x430 box for a portrait page — a confident, silent, wrong
+    crop, which is exactly the failure this module is written to avoid.
+
+    Text lines are a few pixels apart; a page is hundreds. Averaging over a
+    window far wider than a line and far narrower than a page makes print
+    disappear into the page it sits on, and leaves the page/background edge
+    where it was.
+    """
+    if not fractions:
+        return fractions
+    window = max(3, int(len(fractions) * 0.04))
+    half = window // 2
+    out = []
+    for i in range(len(fractions)):
+        lo, hi = max(0, i - half), min(len(fractions), i + half + 1)
+        out.append(sum(fractions[lo:hi]) / float(hi - lo))
+    return out
+
+
+def _band(fractions: list[float], min_peak: float,
+          of_peak: float) -> Optional[Tuple[int, int]]:
     """The longest run of rows (or columns) that are mostly page.
 
     The LONGEST run rather than the first: a bright window behind the table
@@ -104,10 +176,11 @@ def _bright_band(fractions: list[float]) -> Optional[Tuple[int, int]]:
     """
     if not fractions:
         return None
+    fractions = _smooth(fractions)
     peak = max(fractions)
-    if peak < MIN_PEAK_FRACTION:
+    if peak < min_peak:
         return None
-    cutoff = peak * BAND_OF_PEAK
+    cutoff = peak * of_peak
 
     best: Optional[Tuple[int, int]] = None
     start: Optional[int] = None
@@ -129,9 +202,19 @@ def _bright_band(fractions: list[float]) -> Optional[Tuple[int, int]]:
 def find_document(image: Image.Image) -> Optional[Tuple[int, int, int, int]]:
     """Where the document is, in the ORIGINAL image's pixels, or None.
 
+    Two detectors, tried in order. Brightness first because it is the more
+    precise of the two when it applies — it finds the paper's own edge rather
+    than the ink inside it. Printed detail second, for the pale-counter case
+    where nothing is brighter than anything else.
+
     None means "not confident", and every caller treats that as "leave the
     photograph alone".
     """
+    return _by_brightness(image) or _by_detail(image)
+
+
+def _by_brightness(image: Image.Image) -> Optional[Tuple[int, int, int, int]]:
+    """The page as the bright thing on a darker surface."""
     grey = image.convert("L")
     width, height = grey.size
     if width < 80 or height < 80:
@@ -164,8 +247,8 @@ def find_document(image: Image.Image) -> Optional[Tuple[int, int, int, int]]:
         column = pixels[x::sw]
         cols.append(sum(1 for p in column if p >= threshold) / float(sh))
 
-    vertical = _bright_band(rows)
-    horizontal = _bright_band(cols)
+    vertical = _band(rows, MIN_PEAK_FRACTION, BAND_OF_PEAK)
+    horizontal = _band(cols, MIN_PEAK_FRACTION, BAND_OF_PEAK)
     if not vertical or not horizontal:
         return None
 
@@ -200,6 +283,78 @@ def find_document(image: Image.Image) -> Optional[Tuple[int, int, int, int]]:
 
     kept = (bw * bh) / float(width * height)
     if kept < MIN_KEPT_AREA:
+        return None
+    if max(bw, bh) / float(min(bw, bh)) > MAX_ASPECT:
+        return None
+    return box
+
+
+def _by_detail(image: Image.Image) -> Optional[Tuple[int, int, int, int]]:
+    """The page as the printed thing on a blank surface.
+
+    Finds where the INK is. A worktop has none; a letter, a form, a bill and a
+    prescription are covered in it.
+    """
+    grey = image.convert("L")
+    width, height = grey.size
+    if width < 80 or height < 80:
+        return None
+
+    scale = min(1.0, ANALYSIS_WIDTH / float(width))
+    small = grey.resize((max(1, int(width * scale)), max(1, int(height * scale))))
+    sw, sh = small.size
+
+    # What is left when a blurred copy is subtracted: edges and text, with
+    # every flat surface — pale or dark — reduced to nothing.
+    detail = ImageChops.difference(small, small.filter(
+        ImageFilter.GaussianBlur(DETAIL_BLUR))).tobytes()
+
+    rows = []
+    for y in range(sh):
+        row = detail[y * sw:(y + 1) * sw]
+        rows.append(sum(1 for p in row if p >= DETAIL_THRESHOLD) / float(sw))
+    cols = []
+    for x in range(sw):
+        column = detail[x::sw]
+        cols.append(sum(1 for p in column if p >= DETAIL_THRESHOLD) / float(sh))
+
+    vertical = _band(rows, DETAIL_MIN_PEAK, DETAIL_BAND_OF_PEAK)
+    horizontal = _band(cols, DETAIL_MIN_PEAK, DETAIL_BAND_OF_PEAK)
+    if not vertical or not horizontal:
+        return None
+
+    top, bottom = vertical
+    left, right = horizontal
+    if bottom <= top or right <= left:
+        return None
+
+    # Print, or texture? A page is mostly blank between the lines.
+    ink = 0
+    total = (bottom - top) * (right - left)
+    for y in range(top, bottom):
+        row = detail[y * sw + left:y * sw + right]
+        ink += sum(1 for p in row if p >= DETAIL_THRESHOLD)
+    if total <= 0:
+        return None
+    density = ink / float(total)
+    if density > DETAIL_MAX_INK or density < DETAIL_MIN_INK:
+        return None
+
+    inv = 1.0 / scale
+    mx = int(sw * DETAIL_MARGIN_FRACTION * inv)
+    my = int(sh * DETAIL_MARGIN_FRACTION * inv)
+    box = (
+        max(0, int(left * inv) - mx),
+        max(0, int(top * inv) - my),
+        min(width, int(right * inv) + mx),
+        min(height, int(bottom * inv) + my),
+    )
+    bw, bh = box[2] - box[0], box[3] - box[1]
+    if bw <= 0 or bh <= 0:
+        return None
+
+    kept = (bw * bh) / float(width * height)
+    if kept < MIN_KEPT_AREA or kept > DETAIL_MAX_KEPT:
         return None
     if max(bw, bh) / float(min(bw, bh)) > MAX_ASPECT:
         return None

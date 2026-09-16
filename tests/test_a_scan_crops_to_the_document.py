@@ -39,7 +39,7 @@ ROOT = os.path.join(os.path.dirname(__file__), "..")
 sys.path.insert(0, os.path.join(ROOT, "backend"))
 
 try:
-    from PIL import Image
+    from PIL import Image, ImageFilter
     HAVE_PIL = True
 except ImportError:
     HAVE_PIL = False
@@ -317,3 +317,108 @@ class EachGuardIsExercisedBySomethingOnlyItRefuses(unittest.TestCase):
         img = Image.new("RGB", (1200, 900), (50, 45, 40))
         img.paste(Image.new("RGB", (400, 210), (250, 248, 244)), (400, 340))
         self.assertTrue(self.refused(img))
+
+
+def printed_page(surface, paper, frame=(1000, 1300), page=(680, 940),
+                 at=(160, 180), seed=4):
+    """A document WITH PRINT ON IT, which is what people photograph.
+
+    Every image in this file until 2026-09-16 was a blank rectangle, and that
+    is why the shipped version mis-cropped: text breaks the contiguous band
+    both detectors look for, so the longest unbroken run of "page" turned out
+    to be the blank margin below the last line. On a dark table that produced
+    a 710x430 box for a portrait page — confident, silent and wrong.
+
+    Lines of ink with gaps between them, because the gaps are the problem.
+    """
+    random.seed(seed)
+    img = Image.new("RGB", frame, surface)
+    sheet = Image.new("RGB", page, paper)
+    for row in range(40, page[1] - 40, 22):
+        for x in range(40, page[0] - 40):
+            if random.random() < 0.72:
+                for dy in range(3):
+                    sheet.putpixel((x, row + dy), (60, 60, 62))
+    img.paste(sheet, at)
+    return img.filter(ImageFilter.GaussianBlur(0.6))
+
+
+@unittest.skipUnless(HAVE_PIL, "Pillow not installed")
+class ADocumentWithTextOnIt(unittest.TestCase):
+    """The realistic case, and the one that was missing entirely.
+
+    The page sits at x160..840, y180..1120 in a 1000x1300 frame. A correct box
+    is close to that; the bug produced boxes covering a fraction of it.
+    """
+
+    PAGE = (160, 180, 840, 1120)
+
+    def assertCoversThePage(self, box):
+        self.assertIsNotNone(box, "the page was not found at all")
+        left, top, right, bottom = box
+        pl, pt, pr, pb = self.PAGE
+        # Generous on the outside, strict on the inside: a box slightly larger
+        # than the page keeps the whole document, one slightly smaller loses
+        # part of it, and only the second matters.
+        self.assertLessEqual(left, pl + 40, "cuts into the left of the page")
+        self.assertLessEqual(top, pt + 40, "cuts into the top of the page")
+        self.assertGreaterEqual(right, pr - 40, "cuts into the right of the page")
+        self.assertGreaterEqual(bottom, pb - 40, "cuts into the bottom of the page")
+
+    def test_a_printed_form_on_a_dark_table(self):
+        self.assertCoversThePage(find_document(printed_page((70, 58, 44), (244, 242, 238))))
+
+    def test_a_printed_form_on_a_PALE_counter(self):
+        """Roland's case. Paper and worktop are within twenty levels of each
+        other, so brightness finds nothing — the print detector does."""
+        self.assertCoversThePage(find_document(printed_page((228, 226, 222), (246, 245, 242))))
+
+    def test_a_printed_form_on_a_white_counter(self):
+        self.assertCoversThePage(find_document(printed_page((240, 239, 236), (250, 249, 247))))
+
+    def test_it_does_not_crop_to_the_margin_below_the_last_line(self):
+        """The shipped bug, named. The box must be taller than half the page,
+        not the blank strip under the text."""
+        box = find_document(printed_page((70, 58, 44), (244, 242, 238)))
+        self.assertIsNotNone(box)
+        self.assertGreater(box[3] - box[1], (1120 - 180) * 0.75)
+
+    def test_a_blank_pale_counter_with_no_document_is_left_alone(self):
+        # The print detector must not invent a page where there is no ink.
+        out, cropped = crop_to_document(jpeg(Image.new("RGB", (1000, 1300), (230, 228, 224))))
+        self.assertFalse(cropped)
+
+    def test_texture_is_still_refused_now_that_print_is_detected(self):
+        """The regression this guard exists for: teaching the cropper to see
+        ink made it see gravel too, until ink DENSITY told them apart. A page
+        measures about 0.30; a block pattern about 0.72."""
+        random.seed(3)
+        img = Image.new("RGB", (1200, 900), (38, 34, 30))
+        patch = Image.new("RGB", (900, 700), (42, 38, 34))
+        for by in range(0, 700, 10):
+            for bx in range(0, 900, 10):
+                if random.random() < 0.5:
+                    patch.paste(Image.new("RGB", (10, 10), (250, 248, 245)), (bx, by))
+        img.paste(patch, (150, 100))
+        self.assertIsNone(find_document(img))
+
+    def test_brightness_runs_first_because_it_is_the_tighter_answer(self):
+        """Both detectors find the page on a dark table, but not equally well.
+
+        Brightness finds the PAPER'S OWN EDGE: within about 14px of the page.
+        The print detector finds the INK, which sits inside the margins, so it
+        pads outward and lands about 95px out — still safe, still containing
+        the whole document, and carrying a band of table with it.
+
+        Removing the whole point of the crop. So the order is asserted rather
+        than left as a comment: a mutation swapping it passed everything until
+        this existed.
+        """
+        box = find_document(printed_page((70, 58, 44), (244, 242, 238)))
+        self.assertIsNotNone(box)
+        left, top, right, bottom = box
+        pl, pt, pr, pb = self.PAGE
+        for got, want, edge in ((left, pl, "left"), (top, pt, "top"),
+                                (right, pr, "right"), (bottom, pb, "bottom")):
+            self.assertLess(abs(got - want), 40,
+                            f"{edge} edge is {abs(got - want)}px out — too much table")
