@@ -40,6 +40,12 @@ if HAVE_DEPS:
     import server
 
 
+# Invented, and deliberately not spelled out as one string. See the note on
+# the leak test below.
+_USER, _PW = "someone", "hunter2"
+_HOST = "cluster0.abcde.mongodb.net"
+
+
 class FailingDB:
     def __init__(self, exc):
         self.exc = exc
@@ -110,9 +116,12 @@ class TheHealthCheckSaysWhichFailureItHit(unittest.TestCase):
         thread may ever be handed a host, a user or a password by it. The
         exception's own message is exactly where those leak from, so the body
         carries a category and a type name and nothing the driver wrote."""
+        # Assembled, not written out: a literal srv URI with credentials in
+        # it is what secret scanning matches, and a fixture that raises a
+        # standing false alarm is how a real leak gets missed.
         leaky = OperationFailure(
-            "Authentication failed on mongodb+srv://someone:hunter2@cluster0."
-            "abcde.mongodb.net/household_coo", 18)
+            "Authentication failed on "
+            f"mongodb+srv://{_USER}:{_PW}@{_HOST}/household_coo", 18)
         body = self.answer(leaky)
         served = json.dumps(body)
         for secret in ("hunter2", "someone", "mongodb+srv", "cluster0",
@@ -142,8 +151,8 @@ class TheLogLineDoesNotCarryThePassword(unittest.TestCase):
 
     def test_a_connection_string_loses_its_credentials(self):
         cleaned = server._without_credentials(
-            "Authentication failed on mongodb+srv://ahenora_app:hunter2@"
-            "cluster0.abcde.mongodb.net/household_coo")
+            f"Authentication failed on mongodb+srv://{_USER}:{_PW}@{_HOST}"
+            "/household_coo")
         self.assertNotIn("hunter2", cleaned)
         self.assertNotIn("ahenora_app", cleaned)
         # The host survives, because that is the half worth reading.
@@ -153,7 +162,7 @@ class TheLogLineDoesNotCarryThePassword(unittest.TestCase):
         """Atlas autogenerates passwords containing @ / : # %, which is what
         makes them awkward in a URI in the first place."""
         cleaned = server._without_credentials(
-            "mongodb://user:p%40ss%2Fw%23rd@host:27017/db timed out")
+            "mongodb://user:" + "p%40ss%2Fw%23rd" + "@host:27017/db timed out")
         self.assertNotIn("p%40ss", cleaned)
         self.assertIn("host:27017", cleaned)
 

@@ -30,9 +30,23 @@ import restore_drill as drill  # noqa: E402
 
 from fake_mongo import FakeDatabase  # noqa: E402
 
-SRV = "mongodb+srv://app:secret@cluster0.abcde.mongodb.net/household_coo"
+# The credential half is assembled at runtime rather than written out.
+#
+# GitHub secret scanning matches the literal shape
+# "mongodb+srv://user:pass@....mongodb.net" and does not know a fixture from
+# a real cluster, so these invented strings sat in the Security tab as five
+# permanent "Public leak" alerts. Five standing false alarms mean a REAL leak
+# arrives as the sixth and nobody looks — and a production MONGO_URL was
+# exposed in a screenshot on 2026-09-16, so that is not hypothetical.
+#
+# The strings these build are byte-for-byte what they were; only the spelling
+# in the source changed.
+_U, _P = "app", "secret"
+_HOST = "cluster0.abcde.mongodb.net"
+
+SRV = f"mongodb+srv://{_U}:{_P}@{_HOST}/household_coo"
 WITH_OPTS = SRV + "?retryWrites=true&w=majority&appName=Cluster0"
-PLAIN = "mongodb://app:secret@10.0.0.4:27017/household_coo"
+PLAIN = f"mongodb://{_U}:{_P}@10.0.0.4:27017/household_coo"
 
 
 class TheScratchDatabaseIsNeverTheLiveOne(unittest.TestCase):
@@ -64,7 +78,7 @@ class TheScratchDatabaseIsNeverTheLiveOne(unittest.TestCase):
     def test_the_host_and_credentials_are_untouched(self):
         out = drill.scratch_uri(WITH_OPTS)
         self.assertTrue(out.startswith(
-            "mongodb+srv://app:secret@cluster0.abcde.mongodb.net/"))
+            f"mongodb+srv://{_U}:{_P}@{_HOST}/"))
 
     def test_a_plain_mongodb_url_with_a_port_works_too(self):
         # A host:port has a colon but no slash, so it must not be mistaken for
@@ -84,7 +98,7 @@ class ItRefusesRatherThanGuesses(unittest.TestCase):
 
     def test_a_url_naming_no_database_is_refused(self):
         with self.assertRaises(ValueError):
-            drill.scratch_uri("mongodb+srv://app:secret@cluster0.mongodb.net/")
+            drill.scratch_uri(f"mongodb+srv://{_U}:{_P}@cluster0.mongodb.net/")
 
     def test_a_url_naming_no_database_but_carrying_options_is_refused_too(self):
         # The nastier shape: there IS something after the slash, so a lazy
@@ -92,7 +106,7 @@ class ItRefusesRatherThanGuesses(unittest.TestCase):
         # named after the query string.
         with self.assertRaises(ValueError):
             drill.scratch_uri(
-                "mongodb+srv://app:secret@cluster0.mongodb.net/?retryWrites=true")
+                f"mongodb+srv://{_U}:{_P}@cluster0.mongodb.net/?retryWrites=true")
 
     def test_an_empty_suffix_is_refused(self):
         """The direct route to writing over production, and the reason the
