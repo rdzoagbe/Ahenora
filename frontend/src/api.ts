@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 import { cache } from './cache';
+import { notifyVaultChanged } from './vaultChanged';
 import { detectDeviceLang } from './i18n';
 import {
   clearSnapshots, enqueueWrite, flushQueue, isQueueablePath, isSnapshotPath, loadSnapshot,
@@ -635,6 +636,14 @@ export interface Card {
   google_ical_uid?: string | null;
   external_source?: string | null;
   shared?: boolean;
+  /** Narrower than the household: the assignee scope, the chosen people, or
+   *  both (user ids). Absent means the ordinary shared/private rule. */
+  visible_to?: string[] | null;
+  /** The people explicitly picked, kept apart from the assignee scope so an
+   *  edit can show the same chips it was saved with. */
+  chosen_visible_to?: string[] | null;
+  /** Write-only: member ids to share with. */
+  visible_to_members?: string[];
   created_by_user_id?: string | null;
   /** Who created/assigned the card — so an assigned task can say "by Roland". */
   created_by_name?: string | null;
@@ -1565,7 +1574,7 @@ export interface CalendarImportResult {
   days: number;
 }
 
-export type VaultVisibility = 'private' | 'shared';
+export type VaultVisibility = 'private' | 'shared' | 'selected';
 
 export interface FamilyProfile {
   member_id: string;
@@ -1630,6 +1639,8 @@ export interface VaultDoc {
   mime_type?: string;
   file_name?: string | null;
   visibility?: VaultVisibility;
+  /** Set when visibility is 'selected': the user ids who may see it. */
+  visible_to?: string[] | null;
   owner_user_id?: string | null;
   owner_name?: string | null;
   /** When it runs out, or null. The server has always sent this; the type
@@ -1882,6 +1893,20 @@ export interface PlanLimitError {
 // Invalidate the cached plan-usage snapshots so counters (member slots,
 // vault storage, AI scans, pending invites) refresh after a mutation that
 // changes them, instead of showing stale values for the cache TTL.
+/**
+ * After a vault write has committed. The same rule createCard already follows
+ * ("invalidate again after the write commits so a read that raced the
+ * round-trip can't leave a pre-write snapshot cached for the TTL window"),
+ * plus a signal to any vault screen already on screen, which otherwise sits
+ * on the list it loaded mid-flight until the next focus or a restart.
+ */
+function settleVault<T>(result: T): T {
+  cache.invalidate('listVault');
+  invalidateUsageCaches();
+  notifyVaultChanged();
+  return result;
+}
+
 function invalidateUsageCaches() {
   cache.invalidate('getEntitlements');
   cache.invalidate('getSubscription');
@@ -2287,7 +2312,7 @@ export const api = {
   },
   /** Completing a TASK assigned to a child returns `child_finished`. It does
    *  NOT award anything — the app offers the stars and the parent decides. */
-  updateCard: (id: string, data: Partial<Pick<Card, 'type' | 'title' | 'description' | 'assignee' | 'due_date' | 'status' | 'recurrence' | 'reminder_minutes' | 'room' | 'shared'>>) => {
+  updateCard: (id: string, data: Partial<Pick<Card, 'type' | 'title' | 'description' | 'assignee' | 'due_date' | 'status' | 'recurrence' | 'reminder_minutes' | 'room' | 'shared' | 'visible_to_members'>>) => {
     cache.invalidatePrefix('listCards');
     return request<Card>(`/cards/${id}`, { method: 'PATCH', body: data }).then((r) => {
       cache.invalidatePrefix('listCards');
@@ -2528,24 +2553,27 @@ export const api = {
       return data;
     });
   },
-  setVaultVisibility: (docId: string, visibility: VaultVisibility) => {
+  setVaultVisibility: (docId: string, visibility: VaultVisibility, visibleToMembers?: string[]) => {
     cache.invalidate('listVault');
     return request<VaultDoc>(`/vault/${docId}/visibility`, {
       method: 'PATCH',
-      body: { visibility },
-    });
+      body: { visibility, visible_to_members: visibleToMembers },
+    }).then(settleVault);
   },
-  createVaultDoc: (data: { title: string; category: string; image_base64: string; mime_type?: string; file_name?: string; visibility?: VaultVisibility; expiry_date?: string | null }) => {
+  createVaultDoc: (data: { title: string; category: string; image_base64: string; mime_type?: string; file_name?: string; visibility?: VaultVisibility; visible_to_members?: string[]; expiry_date?: string | null }) => {
     cache.invalidate('listVault');
     invalidateUsageCaches();
-    return request<VaultDoc>('/vault', { method: 'POST', body: data });
+    // And again once the write has COMMITTED — see settleVault. Invalidating
+    // only before the request is how a scanned letter showed up in the vault
+    // only after the app was restarted.
+    return request<VaultDoc>('/vault', { method: 'POST', body: data }).then(settleVault);
   },
   renderVaultDoc: (docId: string) =>
     request<{ kind: 'image' | 'pdf' | 'html' | 'unsupported'; html?: string }>(`/vault/${docId}/render`),
   deleteVaultDoc: (id: string) => {
     cache.invalidate('listVault');
     invalidateUsageCaches();
-    return request(`/vault/${id}`, { method: 'DELETE' });
+    return request(`/vault/${id}`, { method: 'DELETE' }).then(settleVault);
   },
   // Rewards
   listRewards: () => {
