@@ -14,6 +14,17 @@ on:
       - 'frontend/**'
       - 'legal/**'
       - '.github/workflows/frontend-ci-eas-update.yml'
+      # Not only frontend files. src/__tests__/notificationRouting.test.ts
+      # reads backend/server.py for the push types the server actually sends,
+      # so a BACKEND-only change can turn a FRONTEND test red - and did.
+      # #623 added the vault_doc push touching nothing but server.py and a
+      # backend test, this workflow never fired, and main sat red with the
+      # nightly OTA gated behind it (expo-update needs: frontend-ci). The
+      # suite that would have caught it simply never ran.
+      #
+      # backendFilesAreWatched.test.ts keeps this list honest: it fails when a
+      # frontend test reads a backend file that is not covered here.
+      - 'backend/server.py'
   pull_request:
     branches:
       - main
@@ -21,6 +32,17 @@ on:
       - 'frontend/**'
       - 'legal/**'
       - '.github/workflows/frontend-ci-eas-update.yml'
+      # Not only frontend files. src/__tests__/notificationRouting.test.ts
+      # reads backend/server.py for the push types the server actually sends,
+      # so a BACKEND-only change can turn a FRONTEND test red - and did.
+      # #623 added the vault_doc push touching nothing but server.py and a
+      # backend test, this workflow never fired, and main sat red with the
+      # nightly OTA gated behind it (expo-update needs: frontend-ci). The
+      # suite that would have caught it simply never ran.
+      #
+      # backendFilesAreWatched.test.ts keeps this list honest: it fails when a
+      # frontend test reads a backend file that is not covered here.
+      - 'backend/server.py'
   # The OTA is published on a schedule, not on merge. 02:00 UTC is the middle
   # of the night across Europe, where most households are, and late evening in
   # the Americas — so a bundle becomes available while nobody is mid-task, and
