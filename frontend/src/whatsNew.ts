@@ -15,6 +15,11 @@
  * A version with no entry here simply shows nothing.
  */
 export const WHATS_NEW: Record<string, string[]> = {
+  '1.2.0': [
+    'wn_120_scan',
+    'wn_120_speed',
+    'wn_120_health',
+  ],
   '1.1.0': [
     'wn_110_look',
     'wn_110_nav',

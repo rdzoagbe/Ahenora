@@ -422,8 +422,13 @@ jobs:
         env:
           GROUP: ${{ steps.publish.outputs.group }}
         run: |
+          # Read, not written down: this line said "runtime 2.0.0" as a literal
+          # and would have gone on saying it after the bump to 3.0.0 for the
+          # document scanner — a summary that names the wrong runtime is worse
+          # than one that names none, because it is believed.
+          RUNTIME=$(node -p "require('$GITHUB_WORKSPACE/frontend/app.json').expo.runtimeVersion")
           {
-            echo "## OTA published to everyone on runtime 2.0.0"
+            echo "## OTA published to everyone on runtime ${RUNTIME}"
             echo
             if [ -n "$GROUP" ]; then
               echo "Update group: \`${GROUP}\`"

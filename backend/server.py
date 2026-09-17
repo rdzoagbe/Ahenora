@@ -1580,6 +1580,10 @@ def public_card(card: dict) -> dict:
         "shared": bool(card["shared"]) if card.get("shared") is not None else card.get("created_by_user_id") is None,
         "created_by_user_id": card.get("created_by_user_id"),
         "created_by_name": card.get("created_by_name"),
+        # Who may see it when it is narrower than the household: the assignee
+        # scope, the chosen people, or both. None means the ordinary rule.
+        "visible_to": card.get("visible_to"),
+        "chosen_visible_to": card.get("chosen_visible_to"),
     }
 
 
@@ -1675,6 +1679,7 @@ def public_vault_doc(doc: dict) -> dict:
         # Legacy docs (uploaded before this existed) carry neither field and
         # stay family-visible until someone claims them — see list_vault.
         "visibility": doc.get("visibility") or "shared",
+        "visible_to": doc.get("visible_to"),
         "owner_user_id": doc.get("owner_user_id"),
         "owner_name": doc.get("owner_name"),
         "expiry_date": iso(doc.get("expiry_date")),
@@ -4253,6 +4258,10 @@ class CardIn(BaseModel):
     reminder_minutes: int = 60
     location: Optional[str] = None
     room: Optional[str] = None
+    # Share with THESE people (member ids), rather than everyone or nobody.
+    # Roland: "I need to be able to choose who I share the doc with." Resolved
+    # server-side to the accounts behind the rows; the creator is always in.
+    visible_to_members: Optional[list[str]] = None
     # Whether the clock time on due_date was CHOSEN rather than defaulted.
     #
     # Every card with a date carries a time, because it has to sit somewhere:
@@ -4291,6 +4300,8 @@ class CardPatchIn(BaseModel):
     # thing and must leave whatever is stored alone.
     room: Optional[str] = None
     shared: Optional[bool] = None
+    # See CardIn. An empty list clears an explicit choice; None leaves it alone.
+    visible_to_members: Optional[list[str]] = None
     # None means "the client did not mention it" and leaves what is stored
     # alone — the same rule as room above. See CardIn.time_set.
     time_set: Optional[bool] = None
@@ -4302,9 +4313,11 @@ class VaultIn(BaseModel):
     image_base64: str = Field(max_length=MAX_IMAGE_B64_CHARS)
     mime_type: Optional[str] = None
     file_name: Optional[str] = None
-    # "private" (default) or "shared". A co-parent joining a household must
-    # not inherit sight of documents nobody chose to share.
+    # "private" (default), "shared", or "selected" — the last with
+    # visible_to_members naming who. A co-parent joining a household must not
+    # inherit sight of documents nobody chose to share.
     visibility: Optional[str] = None
+    visible_to_members: Optional[list[str]] = None
     # When the document stops being valid. /api/vault/expiry-alerts has existed
     # for a while and could never fire: nothing wrote this field, PATCH
     # /vault/{id}/expiry was called from nowhere in the app, and the serialiser
@@ -4315,6 +4328,8 @@ class VaultIn(BaseModel):
 
 class VaultVisibilityIn(BaseModel):
     visibility: str
+    # Required, and non-empty, when visibility is "selected".
+    visible_to_members: Optional[list[str]] = None
 
 
 class RewardIn(BaseModel):
@@ -5540,7 +5555,11 @@ async def health_push(user=Depends(require_user), database=Depends(get_db)):
     """
     if not is_admin_user(user):
         raise HTTPException(status_code=403, detail="Admin only")
-    database = database or get_db()
+    # `is None`, never `or`: a real pymongo/motor Database REFUSES bool() —
+    # it raises NotImplementedError — and the test double did not, so this
+    # passed 2,000 tests and returned 500 to the first person who scanned an
+    # appointment on the new build (2026-09-17, twice, ref 4d095a010bdcd76b).
+    database = get_db() if database is None else database
     now = utcnow()
 
     last_tick = _scheduler_state.get("last_tick_at")
@@ -10082,8 +10101,12 @@ async def list_shared_with_coparent(direction: str = "out", user=Depends(require
 # the store version that supersedes it. Kept here rather than in the app so it
 # can be changed without shipping a release — the whole point is to speak to
 # clients that are already out of date.
-MIN_SUPPORTED_RUNTIME = "2.0.0"
-CURRENT_STORE_VERSION = "1.1.0"
+# 3.0.0 / 1.2.0 arrived with the document scanner (a native module, so a new
+# binary on both stores). From this point the nightly OTA publishes at 3.0.0
+# only: a phone still on 2.0.0 receives nothing until it updates from the
+# store, and store_version below is how it learns that.
+MIN_SUPPORTED_RUNTIME = "3.0.0"
+CURRENT_STORE_VERSION = "1.2.0"
 
 
 @app.get("/api/app/version-info")
@@ -10679,6 +10702,40 @@ async def list_assigned_to_me(user=Depends(require_user)):
     return rows
 
 
+def _merge_scopes(*scopes) -> Optional[list]:
+    """The union of visibility sets, or None when none applies. Union, never
+    intersection: a task handed to someone AND shared with a chosen list must
+    reach both — an assignee who cannot see their own job is the contradiction
+    the assignee toggle exists to prevent."""
+    uids = set()
+    for scope in scopes:
+        if scope:
+            uids.update(scope)
+    return sorted(uids) if uids else None
+
+
+async def _chosen_visibility(database, family_id: str, creator_uid: Optional[str],
+                             member_ids: Optional[list]) -> Optional[list]:
+    """Who may see something shared with a CHOSEN set of people: the accounts
+    behind those member rows, plus the creator. A row with no account (a young
+    child) contributes nothing — there is nobody to show it to — and an empty
+    or unresolvable choice returns None so the caller falls back to the
+    ordinary shared/private rule rather than scoping the card to its creator
+    alone by accident."""
+    if not member_ids:
+        return None
+    wanted = {str(m).strip() for m in member_ids if str(m).strip()}
+    if not wanted:
+        return None
+    accounts = await _family_accounts(database, family_id)
+    uids = {a["user_id"] for a in accounts if a.get("member_id") in wanted}
+    if not uids:
+        return None
+    if creator_uid:
+        uids.add(creator_uid)
+    return sorted(uids)
+
+
 async def _assigned_visibility(database, family_id: str, creator_uid: Optional[str],
                                assignee_name: Optional[str]):
     """Who may see a task assigned to `assignee_name`: the two parents (they run
@@ -10734,7 +10791,9 @@ async def create_card(payload: CardIn, user=Depends(require_user)):
     # stays private.
     mine = (user.get("name") or "").strip().lower()
     assigned_to_other = bool(assignee) and assignee.strip().lower() != mine
-    shared = True if assigned_to_other else bool(payload.shared)
+    chosen = await _chosen_visibility(database, user["family_id"], user["user_id"],
+                                      payload.visible_to_members)
+    shared = True if (assigned_to_other or chosen) else bool(payload.shared)
     doc = {
         "card_id": new_id("card"),
         "family_id": user["family_id"],
@@ -10763,8 +10822,13 @@ async def create_card(payload: CardIn, user=Depends(require_user)):
         # scoping only ever narrows a shared card, it must never widen a private
         # one (a self-assigned surprise stays the creator's alone). Unassigned or
         # private cards get None and follow the ordinary shared/private rule.
-        "visible_to": (await _assigned_visibility(database, user["family_id"], user["user_id"], assignee)
-                       if shared else None),
+        "visible_to": _merge_scopes(
+            (await _assigned_visibility(database, user["family_id"], user["user_id"], assignee)
+             if shared else None),
+            chosen),
+        # Remembered separately so an edit that only changes the title does
+        # not re-derive visibility from the assignee and lose the people picked.
+        "chosen_visible_to": chosen,
     }
     await database["cards"].insert_one(doc)
     # Log it either way — creating a private item is still YOUR history, kept
@@ -10908,23 +10972,42 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
     # is what fixes "my wife edited an old task, assigned it to me, and I never
     # saw it": an old private card, assigned to the other parent on edit, becomes
     # visible and fires the hand-off push (the notify below reads the shared flag).
+    # An explicit "these people" choice is a sharing change, so it follows the
+    # same rule as `shared` above: the person who added the card decides.
+    chosen_change = False
+    chosen = None
+    if payload.visible_to_members is not None:
+        owner = card.get("created_by_user_id")
+        if owner and owner != user["user_id"]:
+            raise HTTPException(status_code=403, detail="Only the person who added this can change its sharing")
+        chosen = await _chosen_visibility(database, card["family_id"], owner or user["user_id"],
+                                          payload.visible_to_members)
+        chosen_change = True
+        if chosen:
+            changes["shared"] = True
+
     final_assignee = changes["assignee"] if "assignee" in changes else card.get("assignee")
     editor = (user.get("name") or "").strip().lower()
     if final_assignee and final_assignee.strip().lower() != editor:
         changes["shared"] = True
 
-    # Re-scope when the assignee or the shared flag changes: hand it to a new
-    # person and the set of who can see it (parents + that person) moves with it;
-    # clear the assignee, or turn it private, and it stops being scoped. A private
-    # card never carries a set — scoping only narrows a shared card, never widens a
-    # private one. Keyed to the original creator, not the editor.
-    if "assignee" in changes or "shared" in changes:
+    # Re-scope when the assignee, the shared flag or the chosen people change:
+    # hand it to a new person and the set of who can see it (parents + that
+    # person) moves with it; clear the assignee, or turn it private, and it
+    # stops being scoped. A private card never carries a set — scoping only
+    # narrows a shared card, never widens a private one. Keyed to the original
+    # creator, not the editor. A chosen list that was not touched in this edit
+    # is kept: re-deriving from the assignee alone would drop the people picked.
+    if "assignee" in changes or "shared" in changes or chosen_change:
         eff_shared = changes.get("shared", card.get("shared"))
         eff_assignee = changes["assignee"] if "assignee" in changes else card.get("assignee")
-        changes["visible_to"] = (
-            await _assigned_visibility(database, card["family_id"],
-                                       card.get("created_by_user_id"), eff_assignee)
-            if eff_shared else None)
+        effective_chosen = chosen if chosen_change else card.get("chosen_visible_to")
+        changes["chosen_visible_to"] = effective_chosen if eff_shared else None
+        changes["visible_to"] = _merge_scopes(
+            (await _assigned_visibility(database, card["family_id"],
+                                        card.get("created_by_user_id"), eff_assignee)
+             if eff_shared else None),
+            effective_chosen if eff_shared else None)
 
     if not changes:
         return public_card(card)
@@ -11180,10 +11263,17 @@ async def card_conflicts(
 # Vault
 # -----------------------------------------------------------------------------
 def _may_see_vault_doc(doc: dict, user: dict) -> bool:
-    """Shared docs, your own docs, and unclaimed legacy docs (no owner)."""
+    """Shared docs, your own docs, docs shared with you by name, and unclaimed
+    legacy docs (no owner). One rule, read by the list, the render, the
+    search and the expiry alerts alike."""
+    if doc.get("owner_user_id") == user["user_id"]:
+        return True
+    vis = doc.get("visible_to")
+    if vis is not None:
+        return user["user_id"] in vis
     if (doc.get("visibility") or "shared") == "shared":
         return True
-    return doc.get("owner_user_id") in (None, user["user_id"])
+    return doc.get("owner_user_id") is None
 
 
 @app.get("/api/vault")
@@ -11205,7 +11295,6 @@ async def set_vault_visibility(doc_id: str, payload: VaultVisibilityIn, user=Dep
     documents uploaded before this feature into genuinely private ones.
     """
     database = get_db()
-    visibility = "private" if payload.visibility == "private" else "shared"
     doc = await database["vault"].find_one(
         {"doc_id": doc_id, "family_id": user["family_id"]}, {"_id": 0}
     )
@@ -11214,10 +11303,20 @@ async def set_vault_visibility(doc_id: str, payload: VaultVisibilityIn, user=Dep
     owner = doc.get("owner_user_id")
     if owner not in (None, user["user_id"]):
         raise HTTPException(status_code=403, detail="Only the owner can change this document")
+    visible_to = None
+    if payload.visibility == "selected":
+        visible_to = await _chosen_visibility(database, user["family_id"], owner or user["user_id"],
+                                              payload.visible_to_members)
+        if not visible_to:
+            raise HTTPException(status_code=400, detail="Choose at least one person who has an account")
+        visibility = "selected"
+    else:
+        visibility = "private" if payload.visibility == "private" else "shared"
     await database["vault"].update_one(
         {"doc_id": doc_id, "family_id": user["family_id"]},
         {"$set": {
             "visibility": visibility,
+            "visible_to": visible_to,
             "owner_user_id": owner or user["user_id"],
             "owner_name": doc.get("owner_name") or user.get("name"),
             "updated_at": utcnow(),
@@ -11260,6 +11359,15 @@ async def create_vault_doc(payload: VaultIn, user=Depends(require_full_member)):
         "owner_name": user.get("name"),
         "created_at": utcnow(),
     }
+    if payload.visibility == "selected":
+        # "These people": resolved to accounts, owner included. An empty or
+        # unresolvable choice does NOT quietly become shared-with-everyone —
+        # it stays private, the safe direction for a document.
+        chosen = await _chosen_visibility(database, user["family_id"], user["user_id"],
+                                          payload.visible_to_members)
+        if chosen:
+            doc["visibility"] = "selected"
+            doc["visible_to"] = chosen
     if payload.expiry_date:
         parsed_expiry = parse_dt(payload.expiry_date)
         if parsed_expiry:
@@ -11883,7 +11991,11 @@ async def stage_scanned_event(payload: ScanEventIn, user=Depends(require_user),
     happens in one place — the review list — instead of being asked twice in
     two different shapes.
     """
-    database = database or get_db()
+    # `is None`, never `or`: a real pymongo/motor Database REFUSES bool() —
+    # it raises NotImplementedError — and the test double did not, so this
+    # passed 2,000 tests and returned 500 to the first person who scanned an
+    # appointment on the new build (2026-09-17, twice, ref 4d095a010bdcd76b).
+    database = get_db() if database is None else database
     title = (payload.title or "").strip()[:200]
     if not title:
         raise HTTPException(status_code=400, detail="A title is required")
@@ -11951,7 +12063,11 @@ async def decide_event_candidates(payload: CandidateDecisionIn,
     Scoped to the caller's own candidates twice over (family AND user), so one
     parent cannot accept or discard what the other pulled in.
     """
-    database = database or get_db()
+    # `is None`, never `or`: a real pymongo/motor Database REFUSES bool() —
+    # it raises NotImplementedError — and the test double did not, so this
+    # passed 2,000 tests and returned 500 to the first person who scanned an
+    # appointment on the new build (2026-09-17, twice, ref 4d095a010bdcd76b).
+    database = get_db() if database is None else database
     keep_ids = [c for c in (payload.keep or []) if isinstance(c, str)][:200]
     drop_ids = [c for c in (payload.drop or []) if isinstance(c, str)][:200]
     overlap = set(keep_ids) & set(drop_ids)

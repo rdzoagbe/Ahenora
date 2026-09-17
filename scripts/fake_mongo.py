@@ -396,6 +396,18 @@ class FakeCollection:
 
 
 class FakeDatabase:
+    def __bool__(self):
+        """Refuse truth-testing exactly as pymongo does.
+
+        The real Database raises NotImplementedError on bool(); this double used
+        to be plainly truthy, so `database or get_db()` passed every test here
+        and threw a 500 in production. A double that is KINDER than the real
+        thing hides bugs, which is the opposite of its job.
+        """
+        raise NotImplementedError(
+            "Database objects do not implement truth value testing or bool(). "
+            "Please compare with None instead: database is not None")
+
     def __init__(self):
         self._collections = {}
 

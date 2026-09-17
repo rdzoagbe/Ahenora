@@ -2,12 +2,12 @@
   "expo": {
     "name": "Ahenora",
     "slug": "household-coo",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "householdcoo",
     "userInterfaceStyle": "automatic",
-    "runtimeVersion": "2.0.0",
+    "runtimeVersion": "3.0.0",
     "updates": {
       "url": "https://u.expo.dev/e84e02e4-5335-433f-a39c-3539c473a0dd"
     },
@@ -65,7 +65,13 @@
         }
       ],
       "expo-web-browser",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "react-native-document-scanner-plugin",
+        {
+          "cameraPermission": "Ahenora uses the camera only when you choose Scan to capture household documents, school letters, appointment cards, or bills."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

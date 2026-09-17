@@ -32,9 +32,10 @@ import { CATEGORY_STATIC } from '../../src/documentCategories';
 
 import { useStore } from '../../src/store';
 
-import { api, logEvent, Entitlements, ExpiryAlert, VaultDoc, VaultVisibility } from '../../src/api';
+import { api, logEvent, Entitlements, ExpiryAlert, FamilyMember, VaultDoc, VaultVisibility } from '../../src/api';
 import { logger } from '../../src/logger';
 import { refreshOutcome } from '../../src/refreshOutcome';
+import { onVaultChanged } from '../../src/vaultChanged';
 import { parseDisplayDate } from '../../src/dateDisplay';
 import { localeFor } from '../../src/utils/date';
 
@@ -93,6 +94,10 @@ export default function Vault() {
   };
   const [filter, setFilter] = useState<string>('All');
   const [visibility, setVisibility] = useState<VaultVisibility>('private');
+  // "These people": the member rows with an account, other than me.
+  const [members, setMembers] = useState<FamilyMember[]>([]);
+  const [chosenIds, setChosenIds] = useState<string[]>([]);
+  useEffect(() => { api.familyMembers().then(setMembers).catch(() => setMembers([])); }, []);
 
   // Flip a document between private and shared. On a legacy document (no
   // owner recorded) this also claims it, which is how documents uploaded
@@ -209,6 +214,11 @@ export default function Vault() {
   };
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+  // And when a document lands while this screen is already open. The scan
+  // sheet files its document after it closes, so this tab can be focused and
+  // rendered before that upload commits; without this, the new document
+  // appeared only after a restart.
+  useEffect(() => onVaultChanged(() => { load(); }), [load]);
 
   const usedBytes = useMemo(() => {
     // Prefer the server-computed total; fall back to estimating from loaded docs.
@@ -291,9 +301,11 @@ export default function Vault() {
     }
   };
 
+  const shareable = members.filter((m) => m.has_account && !m.is_me);
   const visibilityPicker = (
+    <View>
     <View style={styles.visRow}>
-      {(['private', 'shared'] as VaultVisibility[]).map((v) => {
+      {(['private', 'shared', 'selected'] as VaultVisibility[]).map((v) => {
         const active = visibility === v;
         return (
           <PressScale
@@ -308,11 +320,29 @@ export default function Vault() {
               <Users color={active ? ui.bg : ui.muted} size={14} />
             )}
             <Text style={[styles.visChipText, { color: active ? ui.bg : ui.muted }]}>
-              {v === 'private' ? t('vault_private') : t('vault_shared')}
+              {v === 'private' ? t('vault_private') : v === 'shared' ? t('vault_shared') : t('vault_selected')}
             </Text>
           </PressScale>
         );
       })}
+    </View>
+    {visibility === 'selected' ? (
+      <View style={[styles.visRow, { flexWrap: 'wrap', marginTop: 8 }]}>
+        {shareable.map((m) => {
+          const on = chosenIds.includes(m.member_id);
+          return (
+            <PressScale
+              key={m.member_id}
+              testID={`vault-share-with-${m.member_id}`}
+              onPress={() => setChosenIds((prev) => (on ? prev.filter((id) => id !== m.member_id) : [...prev, m.member_id]))}
+              style={[styles.visChip, on && styles.visChipActive]}
+            >
+              <Text style={[styles.visChipText, { color: on ? ui.bg : ui.muted }]}>{m.name}</Text>
+            </PressScale>
+          );
+        })}
+      </View>
+    ) : null}
     </View>
   );
 
@@ -320,7 +350,12 @@ export default function Vault() {
     if (!title.trim() || !image) return;
     setSaving(true);
     try {
-      const created = await api.createVaultDoc({ title: title.trim(), category, image_base64: image, mime_type: mimeType, file_name: fileName || undefined, visibility });
+      if (visibility === 'selected' && chosenIds.length === 0) {
+        showToast(t('vault_selected_empty'), 'error');
+        setSaving(false);
+        return;
+      }
+      const created = await api.createVaultDoc({ title: title.trim(), category, image_base64: image, mime_type: mimeType, file_name: fileName || undefined, visibility, visible_to_members: visibility === 'selected' ? chosenIds : undefined });
       setDocs((prev) => [created, ...prev]);
       setTitle('');
       setImage(null);
@@ -328,6 +363,7 @@ export default function Vault() {
       setFileName(null);
       setCategory('Medical');
       setVisibility('private');
+      setChosenIds([]);
       setShowAdd(false);
       showToast(t('vault_document_saved'), 'success');
       logEvent('vault_added');
@@ -578,6 +614,8 @@ export default function Vault() {
                         <Badge label={d.category.toUpperCase()} bg={cat.soft} color={cat.tone} />
                         {(d.visibility || 'shared') === 'private' ? (
                           <Badge label={t('vault_private')} bg={ui.soft} color={ui.muted} />
+                        ) : d.visibility === 'selected' ? (
+                          <Badge label={t('vault_selected')} bg={ui.mint} color={ui.mintText} />
                         ) : (
                           <Badge label={t('vault_shared')} bg={ui.mint} color={ui.mintText} />
                         )}

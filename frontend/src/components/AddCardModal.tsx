@@ -26,6 +26,7 @@ import { ROOMS } from '../rooms';
 import { Card, api, CardType, FamilyMember, Recurrence, Room } from '../api';
 import { apiErrorText } from '../apiError';
 import { logger } from '../logger';
+import { sharingPayload, sharingIsIncomplete, shareModeOf, ShareMode } from '../sharing';
 
 interface VoiceDraft {
   transcript: string;
@@ -119,6 +120,10 @@ export function AddCardModal({
   // Set when picking a person flips a "Just me" card to shared, so the change
   // is announced rather than silently applied behind the toggle.
   const [sharedByAssignee, setSharedByAssignee] = useState(false);
+  // 'everyone' | 'me' | 'chosen' — `shared` above stays the household flag the
+  // rest of this sheet reads; 'chosen' narrows it to the people picked.
+  const [shareMode, setShareMode] = useState<ShareMode>('everyone');
+  const [chosenIds, setChosenIds] = useState<string[]>([]);
   const [recurrence, setRecurrence] = useState<Recurrence>('none');
   // '' is a real value here, not "unset": most cards are not in a room at all.
   const [room, setRoom] = useState<Room | ''>('');
@@ -186,6 +191,7 @@ export function AddCardModal({
         setAssignee(editCard.assignee || '');
         setDueDate(editCard.due_date || null);
         setShared(editCard.shared !== false);
+        setShareMode(shareModeOf(editCard));
         // Recurrence and the reminder are part of the card too. They were being
         // reset to the create-defaults ('none' / 15 min) below, so editing only
         // a title silently stopped a weekly chore recurring and changed its
@@ -232,7 +238,7 @@ export function AddCardModal({
         setTimeChosen(false);
         setSaveToVault(false);
       }
-      if (!editCard) setShared(true);
+      if (!editCard) { setShared(true); setShareMode('everyone'); setChosenIds([]); }
       setDateSuggest(null);
       setDismissedFor('');
       // Defaults for a NEW card only — an edit already loaded these from the
@@ -298,6 +304,14 @@ export function AddCardModal({
     return () => { cancelled = true; clearTimeout(id); };
   }, [dueDate, timeChosen, editCard?.card_id]);
 
+  // An edit shows the same chips it was saved with: the card carries user
+  // ids, the chips are member rows, and the rows arrive on their own clock.
+  useEffect(() => {
+    const picked = editCard?.chosen_visible_to;
+    if (!picked || !picked.length || members.length === 0) return;
+    setChosenIds(members.filter((m) => m.user_id && picked.includes(m.user_id) && !m.is_me).map((m) => m.member_id));
+  }, [editCard, members]);
+
   const stagesAsEvent = !editCard && !!initialDraft?.is_event && !!dueDate;
 
   // Where this card will land, for the one-line destination hint.
@@ -308,6 +322,12 @@ export function AddCardModal({
 
   const handleSave = async () => {
     if (!title.trim()) return;
+    if (sharingIsIncomplete(shareMode, chosenIds)) {
+      Alert.alert(t('addcard_share_choose_title'), t('addcard_share_choose_empty'));
+      return;
+    }
+    // One decision for the card and its vault copy alike.
+    const sharing = sharingPayload(shareMode, chosenIds);
 
     setSaving(true);
 
@@ -325,7 +345,8 @@ export function AddCardModal({
           recurrence,
           reminder_minutes: reminderMins,
           room,
-          shared,
+          shared: sharing.shared,
+          visible_to_members: sharing.visible_to_members ?? [],
         } as any);
       } else if (stagesAsEvent) {
         // A scanned appointment does not become a card here. It becomes a
@@ -353,7 +374,8 @@ export function AddCardModal({
           recurrence,
           reminder_minutes: reminderMins,
           room,
-          shared,
+          shared: sharing.shared,
+          visible_to_members: sharing.visible_to_members,
         } as any);
       }
     } catch (e: any) {
@@ -400,6 +422,11 @@ export function AddCardModal({
           // an answer.
           category: initialDraft!.vault_category!,
           image_base64: initialDraft!.image_base64!,
+          // The same answer the pills gave for the card. Until now this was
+          // omitted, so every scanned document was filed private whatever
+          // "Who sees this" said — shared task, hidden paper.
+          visibility: sharing.vaultVisibility,
+          visible_to_members: sharing.visible_to_members,
           // When the document itself stops being valid — a passport, a policy.
           // /api/vault/expiry-alerts has existed for a while with nothing
           // writing this, so it could only ever report "nothing expiring".
@@ -567,7 +594,7 @@ export function AddCardModal({
                           // them is a contradiction. Rather than the server
                           // quietly overriding the choice, the toggle moves
                           // here, in front of the person making it.
-                          if (next && !shared) { setShared(true); setSharedByAssignee(true); }
+                          if (next && !shared) { setShared(true); setShareMode('everyone'); setSharedByAssignee(true); }
                           if (!next) setSharedByAssignee(false);
                         }}
                         style={[styles.pill, { borderColor: theme.colors.cardBorder, backgroundColor: active ? theme.colors.primary : theme.colors.bgSoft }]}
@@ -611,25 +638,57 @@ export function AddCardModal({
               <View style={styles.pillRow}>
                 <PressScale
                   testID="share-everyone"
-                  onPress={() => { setShared(true); setSharedByAssignee(false); }}
-                  style={[styles.pill, { borderColor: theme.colors.cardBorder, backgroundColor: shared ? theme.colors.primary : theme.colors.bgSoft }]}
+                  onPress={() => { setShared(true); setShareMode('everyone'); setSharedByAssignee(false); }}
+                  style={[styles.pill, { borderColor: theme.colors.cardBorder, backgroundColor: shareMode === 'everyone' ? theme.colors.primary : theme.colors.bgSoft }]}
                 >
-                  <Text style={[styles.pillText, { color: shared ? theme.colors.primaryText : theme.colors.textMuted }]}>
+                  <Text style={[styles.pillText, { color: shareMode === 'everyone' ? theme.colors.primaryText : theme.colors.textMuted }]}>
                     {t('addcard_share_everyone')}
                   </Text>
                 </PressScale>
                 <PressScale
                   testID="share-just-me"
-                  onPress={() => { setShared(false); setSharedByAssignee(false); }}
-                  style={[styles.pill, { borderColor: theme.colors.cardBorder, backgroundColor: !shared ? theme.colors.primary : theme.colors.bgSoft }]}
+                  onPress={() => { setShared(false); setShareMode('me'); setSharedByAssignee(false); }}
+                  style={[styles.pill, { borderColor: theme.colors.cardBorder, backgroundColor: shareMode === 'me' ? theme.colors.primary : theme.colors.bgSoft }]}
                 >
-                  <Text style={[styles.pillText, { color: !shared ? theme.colors.primaryText : theme.colors.textMuted }]}>
+                  <Text style={[styles.pillText, { color: shareMode === 'me' ? theme.colors.primaryText : theme.colors.textMuted }]}>
                     {t('addcard_share_just_me')}
                   </Text>
                 </PressScale>
+                <PressScale
+                  testID="share-chosen"
+                  onPress={() => { setShared(true); setShareMode('chosen'); setSharedByAssignee(false); }}
+                  style={[styles.pill, { borderColor: theme.colors.cardBorder, backgroundColor: shareMode === 'chosen' ? theme.colors.primary : theme.colors.bgSoft }]}
+                >
+                  <Text style={[styles.pillText, { color: shareMode === 'chosen' ? theme.colors.primaryText : theme.colors.textMuted }]}>
+                    {t('addcard_share_choose')}
+                  </Text>
+                </PressScale>
               </View>
+              {shareMode === 'chosen' ? (
+                <View style={styles.pillRow}>
+                  {members.filter((m) => m.has_account && !m.is_me).map((m) => {
+                    const on = chosenIds.includes(m.member_id);
+                    return (
+                      <PressScale
+                        key={m.member_id}
+                        testID={`share-with-${m.member_id}`}
+                        onPress={() => setChosenIds((prev) => (on ? prev.filter((id) => id !== m.member_id) : [...prev, m.member_id]))}
+                        style={[styles.pill, { borderColor: theme.colors.cardBorder, backgroundColor: on ? theme.colors.primary : theme.colors.bgSoft }]}
+                      >
+                        <Text style={[styles.pillText, { color: on ? theme.colors.primaryText : theme.colors.textMuted }]}>{m.name}</Text>
+                      </PressScale>
+                    );
+                  })}
+                </View>
+              ) : null}
               <Text style={[styles.suggestText, { color: theme.colors.textMuted, marginTop: -4, marginBottom: 4 }]}>
                 {(() => {
+                  if (shareMode === 'chosen') {
+                    const names = members.filter((m) => chosenIds.includes(m.member_id)).map((m) => m.name);
+                    return names.length
+                      ? t('addcard_share_chosen_hint').replace('{names}', names.join(', '))
+                      : t('addcard_share_choose_empty');
+                  }
                   if (!shared) return t('addcard_share_just_me_hint');
                   const who = assignee.trim();
                   if (!who) return t('addcard_share_everyone_hint');
