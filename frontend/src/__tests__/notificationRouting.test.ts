@@ -73,6 +73,13 @@ describe('targetForNotification', () => {
       .toEqual({ pathname: '/(tabs)/kids' });
   });
 
+  it('takes a shared document to the vault', () => {
+    // "Roland shared a document with you" landing on the Feed would send the
+    // other parent looking for something the Feed does not hold.
+    expect(targetForNotification({ type: 'vault_doc', doc_id: 'doc_1' }))
+      .toEqual({ pathname: '/(tabs)/vault' });
+  });
+
   it('keeps the round-ups on the Feed, which is the screen about everything', () => {
     ['morning_digest', 'daily_tip', 'sunday_recap'].forEach((type) => {
       expect(targetForNotification({ type })).toEqual({ pathname: '/(tabs)/feed' });
@@ -135,7 +142,7 @@ describe('a notification that reports something must not then hide it', () => {
       'family_invite', 'family_joined', 'invite_accepted',
       'star_milestone', 'teen_approval', 'teen_star', 'reward_redeemed',
       'billing_alert', 'due_vaccinations', 'due_documents', 'due_dates',
-      'shopping_added',
+      'shopping_added', 'vault_doc',
     ];
     const withPayload: Record<string, unknown>[] = [
       ...serverSends.map((type) => ({ type })),
