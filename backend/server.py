@@ -11379,6 +11379,47 @@ def _may_see_vault_doc(doc: dict, user: dict) -> bool:
     return doc.get("owner_user_id") is None
 
 
+async def _vault_audience(database, doc: dict) -> set:
+    """The accounts that can open this document: the household's parents who
+    pass _may_see_vault_doc. Helpers, teens and children never reach the vault
+    (require_full_member), so a "shared" document is not theirs to hear about."""
+    out = set()
+    for account in await _family_accounts(database, doc.get("family_id") or ""):
+        if account.get("role") in ("helper", "child", "teen"):
+            continue
+        if _may_see_vault_doc(doc, {"user_id": account["user_id"]}):
+            out.add(account["user_id"])
+    return out
+
+
+async def send_vault_share_alert(database, doc: dict, could_see_before: set):
+    """Tell the people a document was just shared with.
+
+    Roland scanned a letter, shared it with his co-parent, and she never
+    heard: a card fires a push the moment it is shared, and a document fired
+    nothing, on upload or on a later change of who sees it. The two things
+    are shared for the same reason — so the other parent acts on them — and
+    a share nobody is told about is a filing, not a share.
+
+    Only the people who can see it NOW and could not BEFORE are told, and
+    never the owner: narrowing a document tells nobody, widening it tells
+    exactly the newcomers, and re-saving the same visibility is silent.
+    """
+    owner = doc.get("owner_user_id")
+    newcomers = (await _vault_audience(database, doc)) - set(could_see_before or ()) - {owner}
+    for uid in sorted(newcomers):
+        try:
+            await send_push_to_user(
+                database, uid,
+                "Document shared with you",
+                f"{doc.get('owner_name') or 'Someone'} shared \u201c{doc.get('title') or 'a document'}\u201d",
+                {"type": "vault_doc", "doc_id": doc.get("doc_id"), "family_id": doc.get("family_id")},
+                pref_key="new_card_alerts",
+            )
+        except Exception as e:  # best effort: the share itself already happened
+            log.warning("vault share alert failed: %s", e)
+
+
 @app.get("/api/vault")
 async def list_vault(user=Depends(require_full_member)):
     database = get_db()
@@ -11406,6 +11447,8 @@ async def set_vault_visibility(doc_id: str, payload: VaultVisibilityIn, user=Dep
     owner = doc.get("owner_user_id")
     if owner not in (None, user["user_id"]):
         raise HTTPException(status_code=403, detail="Only the owner can change this document")
+    # Read before the change, so only the people this change ADDS are told.
+    could_see_before = await _vault_audience(database, doc)
     visible_to = None
     if payload.visibility == "selected":
         visible_to = await _chosen_visibility(database, user["family_id"], owner or user["user_id"],
@@ -11428,6 +11471,7 @@ async def set_vault_visibility(doc_id: str, payload: VaultVisibilityIn, user=Dep
     fresh = await database["vault"].find_one(
         {"doc_id": doc_id, "family_id": user["family_id"]}, {"_id": 0}
     )
+    await send_vault_share_alert(database, fresh, could_see_before)
     return public_vault_doc(fresh)
 
 
@@ -11480,6 +11524,9 @@ async def create_vault_doc(payload: VaultIn, user=Depends(require_full_member)):
         {"family_id": user["family_id"]},
         {"$inc": {"vault_bytes_used": size}, "$set": {"updated_at": utcnow()}},
     )
+    # A new document nobody could see before: everyone it is shared with is
+    # a newcomer. A private one tells nobody.
+    await send_vault_share_alert(database, doc, set())
     return public_vault_doc(doc)
 
 
