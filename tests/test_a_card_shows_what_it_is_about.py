@@ -267,6 +267,26 @@ class OnEverythingElseThatIsBorn(unittest.TestCase):
         draft = server._safe_voice_draft({"title": "Walk the dog", "type": "TASK"})
         self.assertEqual(draft["icon"], "pet")
 
+    def test_the_add_sheet_can_ask_before_saving(self):
+        """The live guess beside the title field is the same guesser as save."""
+        self.assertEqual(asyncio.run(server.guess_card_icon(
+            title="Anniversaire de Léo", type=None, user=dict(ROLAND))), {"icon": "birthday"})
+        self.assertEqual(asyncio.run(server.guess_card_icon(
+            title="", type="VACATION", user=dict(ROLAND))), {"icon": "travel"})
+        self.assertEqual(asyncio.run(server.guess_card_icon(
+            title="Something", type=None, user=dict(ROLAND))), {"icon": None})
+
+    def test_a_child_sees_the_icon_on_their_jobs(self):
+        asyncio.run(self.db["cards"].insert_one({
+            "card_id": "k1", "family_id": "fam1", "title": "Walk the dog", "assignee": "Ama",
+            "status": "OPEN", "shared": True, "icon": "pet", "due_date": None}))
+        asyncio.run(self.db["family_members"].insert_one({
+            "member_id": "m_ama", "family_id": "fam1", "name": "Ama", "role": "child", "stars": 0}))
+        home = asyncio.run(server.kid_home(child={
+            "family_id": "fam1",
+            "member": {"member_id": "m_ama", "family_id": "fam1", "name": "Ama", "role": "child", "stars": 0}}))
+        self.assertEqual([c["icon"] for c in home["chores"]], ["pet"])
+
 
 @unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
 class TheFirstMorning(unittest.TestCase):
