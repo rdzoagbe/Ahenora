@@ -5555,7 +5555,11 @@ async def health_push(user=Depends(require_user), database=Depends(get_db)):
     """
     if not is_admin_user(user):
         raise HTTPException(status_code=403, detail="Admin only")
-    database = database or get_db()
+    # `is None`, never `or`: a real pymongo/motor Database REFUSES bool() —
+    # it raises NotImplementedError — and the test double did not, so this
+    # passed 2,000 tests and returned 500 to the first person who scanned an
+    # appointment on the new build (2026-09-17, twice, ref 4d095a010bdcd76b).
+    database = get_db() if database is None else database
     now = utcnow()
 
     last_tick = _scheduler_state.get("last_tick_at")
@@ -11987,7 +11991,11 @@ async def stage_scanned_event(payload: ScanEventIn, user=Depends(require_user),
     happens in one place — the review list — instead of being asked twice in
     two different shapes.
     """
-    database = database or get_db()
+    # `is None`, never `or`: a real pymongo/motor Database REFUSES bool() —
+    # it raises NotImplementedError — and the test double did not, so this
+    # passed 2,000 tests and returned 500 to the first person who scanned an
+    # appointment on the new build (2026-09-17, twice, ref 4d095a010bdcd76b).
+    database = get_db() if database is None else database
     title = (payload.title or "").strip()[:200]
     if not title:
         raise HTTPException(status_code=400, detail="A title is required")
@@ -12055,7 +12063,11 @@ async def decide_event_candidates(payload: CandidateDecisionIn,
     Scoped to the caller's own candidates twice over (family AND user), so one
     parent cannot accept or discard what the other pulled in.
     """
-    database = database or get_db()
+    # `is None`, never `or`: a real pymongo/motor Database REFUSES bool() —
+    # it raises NotImplementedError — and the test double did not, so this
+    # passed 2,000 tests and returned 500 to the first person who scanned an
+    # appointment on the new build (2026-09-17, twice, ref 4d095a010bdcd76b).
+    database = get_db() if database is None else database
     keep_ids = [c for c in (payload.keep or []) if isinstance(c, str)][:200]
     drop_ids = [c for c in (payload.drop or []) if isinstance(c, str)][:200]
     overlap = set(keep_ids) & set(drop_ids)
