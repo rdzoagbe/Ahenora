@@ -8419,7 +8419,8 @@ async def kid_home(child=Depends(require_child)):
     ):
         if (card.get("assignee") or "").strip().lower() == name:
             chores.append({"card_id": card["card_id"], "title": card.get("title") or "",
-                           "due_date": iso(card.get("due_date"))})
+                           "due_date": iso(card.get("due_date")),
+                           "icon": card.get("icon")})
     chores.sort(key=lambda c: (c["due_date"] is None, c["due_date"] or ""))
 
     rewards = [public_reward(r) async for r in
@@ -10113,6 +10114,19 @@ def _card_visible_to(card: dict, uid: Optional[str]) -> bool:
     if card.get("created_by_user_id") is None:   # legacy, pre-privacy
         return True
     return False
+
+
+@app.get("/api/cards/icon-guess")
+async def guess_card_icon(title: str = Query(default=""), type: Optional[str] = Query(default=None),
+                          user=Depends(require_user)):
+    """What icon a title would get, before the card exists.
+
+    The add sheet shows the guess beside the title as a person types, so the
+    cake appears when they type "birthday" and they can change it before
+    saving. One source of truth: the same guesser that runs on save, rather
+    than a second keyword table on the phone that would drift from this one.
+    """
+    return {"icon": guess_icon((title or "")[:200], type)}
 
 
 @app.get("/api/cards")

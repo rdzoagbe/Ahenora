@@ -97,6 +97,11 @@ export function targetForNotification(data: unknown): { pathname: string; params
       return { pathname: '/(tabs)/kids' };
     case 'due_documents':
       return { pathname: '/(tabs)/vault' };
+    // "Roland shared a document with you" is about something in the vault,
+    // so the tap opens the vault. The server sends this to the parents a
+    // document newly reaches.
+    case 'vault_doc':
+      return { pathname: '/(tabs)/vault' };
     // Both at once. Neither screen is right, so send them where the whole
     // household is rather than guessing and being wrong half the time.
     case 'due_dates':

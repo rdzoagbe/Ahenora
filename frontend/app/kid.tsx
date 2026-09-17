@@ -10,6 +10,7 @@ import { useUI, UIColors } from '../src/components/Kit';
 import { useStore } from '../src/store';
 import { useKeyboardHeight } from '../src/hooks/useKeyboardHeight';
 import { api, kidMode, KidHome } from '../src/api';
+import { glyphFor } from '../src/cardIcons';
 import { logger } from '../src/logger';
 
 /**
@@ -191,6 +192,16 @@ export default function KidScreen() {
                 style={styles.choreRow}
               >
                 <View style={styles.tickBox}><Check color={ui.orangeText} size={20} /></View>
+                {glyphFor(c.icon) ? (
+                  <View
+                    testID={`kid-chore-icon-${c.card_id}`}
+                    accessibilityElementsHidden
+                    importantForAccessibility="no-hide-descendants"
+                    style={styles.choreIcon}
+                  >
+                    <Text style={styles.choreIconGlyph}>{glyphFor(c.icon)}</Text>
+                  </View>
+                ) : null}
                 <Text style={styles.choreTitle} numberOfLines={2}>{c.title}</Text>
               </PressScale>
             ))
@@ -366,6 +377,13 @@ const createStyles = (ui: UIColors) =>
       width: 38, height: 38, borderRadius: 12, backgroundColor: ui.orangeSoft,
       alignItems: 'center', justifyContent: 'center',
     },
+    // Bigger than anywhere else in the app: this is the picture a child who
+    // cannot read yet recognises, so it does the work the words cannot.
+    choreIcon: {
+      width: 56, height: 56, borderRadius: 18, backgroundColor: ui.soft,
+      alignItems: 'center', justifyContent: 'center',
+    },
+    choreIconGlyph: { fontSize: 32, lineHeight: 38, textAlign: 'center' },
     choreTitle: { flex: 1, color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 17 },
     owedRow: {
       flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: ui.mint,

@@ -20,6 +20,7 @@ import { PressScale } from './PressScale';
 import { Card } from '../api';
 import { useStore } from '../store';
 import { formatCompactDue, isOverdue } from '../utils/date';
+import { glyphFor } from '../cardIcons';
 
 const TYPE_COLOR: Record<string, string> = {
   SIGN_SLIP: '#F26A1B',
@@ -59,6 +60,9 @@ export function SmartCard({ card, onComplete, onDelete }: Props) {
   const overdue = !isDone && isOverdue(card.due_date);
   const dueLabel = formatCompactDue(card.due_date, lang);
   const light = theme.mode === 'light';
+  // What the card is about, beside the title. A card with nothing sure
+  // renders exactly as it did before icons existed: no tile, no gap.
+  const glyph = glyphFor(card.icon);
 
   const actionLabel = useMemo(() => {
     if (isDone) return t('done');
@@ -107,15 +111,29 @@ export function SmartCard({ card, onComplete, onDelete }: Props) {
         ) : null}
       </View>
 
-      <Text style={[styles.title, { color: isDone ? theme.colors.textSoft : theme.colors.text }, isDone && styles.titleDone]} numberOfLines={3}>
-        {card.title}
-      </Text>
+      <View style={styles.titleRow}>
+        {glyph ? (
+          <View
+            testID={`card-icon-${card.card_id}`}
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+            style={[styles.iconTile, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}
+          >
+            <Text style={styles.iconGlyph}>{glyph}</Text>
+          </View>
+        ) : null}
+        <View style={styles.titleCol}>
+          <Text style={[styles.title, { color: isDone ? theme.colors.textSoft : theme.colors.text }, isDone && styles.titleDone]} numberOfLines={3}>
+            {card.title}
+          </Text>
 
-      {card.description ? (
-        <Text style={[styles.desc, { color: theme.colors.textMuted }]} numberOfLines={3}>
-          {card.description}
-        </Text>
-      ) : null}
+          {card.description ? (
+            <Text style={[styles.desc, { color: theme.colors.textMuted }]} numberOfLines={3}>
+              {card.description}
+            </Text>
+          ) : null}
+        </View>
+      </View>
 
       <View style={styles.meta}>
         <View style={styles.metaRow}>
@@ -229,6 +247,18 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_700Bold',
     fontSize: 12,
   },
+  titleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 14 },
+  titleCol: { flex: 1, minWidth: 0 },
+  iconTile: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
+  },
+  iconGlyph: { fontSize: 28, lineHeight: 34, textAlign: 'center' },
   title: {
     fontFamily: 'Inter_800ExtraBold',
     fontSize: 20,
