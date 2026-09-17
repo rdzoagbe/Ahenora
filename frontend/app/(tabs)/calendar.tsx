@@ -27,6 +27,7 @@ import { ReviewImportSheet } from '../../src/components/ReviewImportSheet';
 import { setSelectedCalendarDay } from '../../src/calendarSelection';
 import { useToast } from '../../src/hooks/useToast';
 import { localeFor, isoWeek, custodyIsOurs, buildMonthDays } from '../../src/utils/date';
+import { glyphFor } from '../../src/cardIcons';
 import { sendLocalNotification, syncCalendarNightly } from '../../src/notifications';
 import { cleanText, openExternal, parseDescription } from '../../src/eventDescription';
 
@@ -1468,6 +1469,7 @@ export default function Calendar() {
                 const isGoogle = card.source === 'CALENDAR' || card.external_source === 'google_calendar';
                 const { time, ampm } = timeParts(card.due_date);
                 const sub = cleanText(card.description) || cleanText(card.assignee) || (isGoogle ? t('cal_google_calendar') : t('cal_family'));
+                const glyph = glyphFor(card.icon);
                 return (
                   <PressScale key={card.card_id} testID={`calendar-card-${card.card_id}`} onPress={() => setSelectedCard(card)} style={[styles.eventRow, index < arr.length - 1 && styles.eventRowBorder]}>
                     <View style={styles.timeBlock}>
@@ -1475,6 +1477,16 @@ export default function Calendar() {
                       <Text style={styles.ampmText}>{ampm}</Text>
                     </View>
                     <View style={[styles.eventBar, { backgroundColor: color }]} />
+                    {glyph ? (
+                      <View
+                        testID={`calendar-icon-${card.card_id}`}
+                        accessibilityElementsHidden
+                        importantForAccessibility="no-hide-descendants"
+                        style={styles.eventIcon}
+                      >
+                        <Text style={styles.eventIconGlyph}>{glyph}</Text>
+                      </View>
+                    ) : null}
                     <View style={{ flex: 1, minWidth: 0 }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                         {card.source === 'CALENDAR' ? <CalendarDays color={ui.muted} size={12} /> : null}
@@ -2105,6 +2117,12 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   timeText: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 15, lineHeight: 18 },
   ampmText: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 11 },
   eventBar: { width: 4, alignSelf: 'stretch', borderRadius: 99, minHeight: 34 },
+  // Time, colour, picture, words: a day scans left to right.
+  eventIcon: {
+    width: 40, height: 40, borderRadius: 12, backgroundColor: ui.soft, borderWidth: 1, borderColor: ui.line,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  eventIconGlyph: { fontSize: 22, lineHeight: 27, textAlign: 'center' },
   eventTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 15, lineHeight: 20 },
   eventSub: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, marginTop: 2 },
   potChip: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4, alignSelf: 'flex-start', backgroundColor: ui.orangeSoft, borderRadius: 99, paddingHorizontal: 8, paddingVertical: 2 },

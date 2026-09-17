@@ -27,6 +27,7 @@ import { Card, api, CardType, FamilyMember, Recurrence, Room } from '../api';
 import { apiErrorText } from '../apiError';
 import { logger } from '../logger';
 import { sharingPayload, sharingIsIncomplete, shareModeOf, ShareMode } from '../sharing';
+import { CARD_ICONS, glyphFor } from '../cardIcons';
 
 interface VoiceDraft {
   transcript: string;
@@ -44,6 +45,8 @@ interface VoiceDraft {
   expires_on?: string | null;
   /** Where it happens, when the document says so. */
   location?: string | null;
+  /** The server's icon guess for the draft's title (cardIcons.ts key). */
+  icon?: string | null;
 }
 
 interface Props {
@@ -124,6 +127,14 @@ export function AddCardModal({
   // rest of this sheet reads; 'chosen' narrows it to the people picked.
   const [shareMode, setShareMode] = useState<ShareMode>('everyone');
   const [chosenIds, setChosenIds] = useState<string[]>([]);
+  // What the card is about. `undefined` is "nobody chose, let the server
+  // guess from the title" — the common case, and the one that keeps the icon
+  // following the title on later edits. `null` is a person saying "no icon",
+  // which sticks. A key is a person's pick, which also sticks.
+  const [iconChoice, setIconChoice] = useState<string | null | undefined>(undefined);
+  // The server's live reading of the title, shown until somebody chooses.
+  const [iconGuess, setIconGuess] = useState<string | null>(null);
+  const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [recurrence, setRecurrence] = useState<Recurrence>('none');
   // '' is a real value here, not "unset": most cards are not in a room at all.
   const [room, setRoom] = useState<Room | ''>('');
@@ -209,6 +220,10 @@ export function AddCardModal({
         // first time somebody fixed its title.
         setTimeChosen(editCard.time_set === true);
         setSaveToVault(false);
+        // The icon the card has now, whether guessed or chosen. Sent back
+        // only if this edit changes it, so a guessed icon stays a guess and
+        // keeps following the title.
+        setIconGuess(editCard.icon ?? null);
       } else if (initialDraft) {
         setType(initialDraft.type);
         setTitle(initialDraft.title);
@@ -220,6 +235,8 @@ export function AddCardModal({
         // does not count as one until somebody opens the picker.
         setTimeChosen(false);
         setRoom('');
+        // A scan or voice draft arrives with the server's guess already on it.
+        setIconGuess(initialDraft.icon ?? null);
         // A scan draft that came with a vault category and image is the only
         // thing that lands in the Vault — mirror the same condition handleSave
         // used to compute inline, so nothing about the vault path changes.
@@ -237,7 +254,10 @@ export function AddCardModal({
         setRoom('');
         setTimeChosen(false);
         setSaveToVault(false);
+        setIconGuess(null);
       }
+      setIconChoice(undefined);
+      setIconPickerOpen(false);
       if (!editCard) { setShared(true); setShareMode('everyone'); setChosenIds([]); }
       setDateSuggest(null);
       setDismissedFor('');
@@ -304,6 +324,31 @@ export function AddCardModal({
     return () => { cancelled = true; clearTimeout(id); };
   }, [dueDate, timeChosen, editCard?.card_id]);
 
+  // The cake appears as somebody types "birthday". Asked of the server, not
+  // guessed here, so the icon shown before saving is the icon saved. Skipped
+  // while a person's choice stands, and on an edit whose title is unchanged,
+  // where the card's own icon (possibly chosen by somebody) is the answer.
+  const trimmedTitle = title.trim();
+  const titleUnchanged = !!editCard && trimmedTitle === (editCard.title || '').trim();
+  useEffect(() => {
+    if (!visible || iconChoice !== undefined || titleUnchanged || trimmedTitle.length < 3) return;
+    let cancelled = false;
+    const id = setTimeout(async () => {
+      try {
+        const found = await api.guessCardIcon(trimmedTitle, type);
+        if (!cancelled) setIconGuess(found.icon ?? null);
+      } catch {
+        // Silent: the server guesses again on save, and a hint that could
+        // not load must never stand between a parent and saving.
+      }
+    }, 350);
+    return () => { cancelled = true; clearTimeout(id); };
+  }, [visible, trimmedTitle, type, iconChoice, titleUnchanged]);
+
+  const liveGuess = titleUnchanged ? (editCard?.icon ?? null) : trimmedTitle.length < 3 ? null : iconGuess;
+  const shownIcon = iconChoice !== undefined ? iconChoice : liveGuess;
+  const shownGlyph = glyphFor(shownIcon);
+
   // An edit shows the same chips it was saved with: the card carries user
   // ids, the chips are member rows, and the rows arrive on their own clock.
   useEffect(() => {
@@ -347,6 +392,9 @@ export function AddCardModal({
           room,
           shared: sharing.shared,
           visible_to_members: sharing.visible_to_members ?? [],
+          // Only when this edit chose: "" is "no icon", a key is a pick, and
+          // leaving it out keeps a guessed icon following the title.
+          ...(iconChoice !== undefined ? { icon: iconChoice ?? '' } : {}),
         } as any);
       } else if (stagesAsEvent) {
         // A scanned appointment does not become a card here. It becomes a
@@ -376,6 +424,7 @@ export function AddCardModal({
           room,
           shared: sharing.shared,
           visible_to_members: sharing.visible_to_members,
+          ...(iconChoice !== undefined ? { icon: iconChoice ?? '' } : {}),
         } as any);
       }
     } catch (e: any) {
@@ -531,14 +580,66 @@ export function AddCardModal({
               </View>
 
               <Text style={[styles.label, { color: theme.colors.textMuted }]}>{t('title')}</Text>
-              <TextInput
-                testID="input-title"
-                value={title}
-                onChangeText={setTitle}
-                placeholder={t('title')}
-                placeholderTextColor={theme.colors.textSoft}
-                style={[styles.input, { color: theme.colors.text, backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}
-              />
+              <View style={styles.titleRow}>
+                <PressScale
+                  testID="icon-tile"
+                  accessibilityRole="button"
+                  accessibilityLabel={t('addcard_icon')}
+                  accessibilityHint={t('addcard_icon_hint')}
+                  onPress={() => setIconPickerOpen((open) => !open)}
+                  style={[styles.iconTile, { backgroundColor: theme.colors.bgSoft, borderColor: iconPickerOpen ? theme.colors.accent : theme.colors.cardBorder }]}
+                >
+                  {shownGlyph ? (
+                    <Text style={styles.iconTileGlyph}>{shownGlyph}</Text>
+                  ) : (
+                    <Sparkles color={theme.colors.textSoft} size={20} />
+                  )}
+                </PressScale>
+                <TextInput
+                  testID="input-title"
+                  value={title}
+                  onChangeText={setTitle}
+                  placeholder={t('title')}
+                  placeholderTextColor={theme.colors.textSoft}
+                  style={[styles.input, styles.titleInput, { color: theme.colors.text, backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}
+                />
+              </View>
+
+              {iconPickerOpen ? (
+                <View testID="icon-picker" style={styles.iconPicker}>
+                  <Text style={[styles.iconHint, { color: theme.colors.textSoft }]}>{t('addcard_icon_hint')}</Text>
+                  <View style={styles.pillRow}>
+                    <PressScale
+                      testID="icon-none"
+                      accessibilityRole="button"
+                      onPress={() => { setIconChoice(null); setIconPickerOpen(false); }}
+                      style={[styles.pill, { borderColor: theme.colors.cardBorder, backgroundColor: shownIcon === null ? theme.colors.primary : theme.colors.bgSoft }]}
+                    >
+                      <Text style={[styles.pillText, { color: shownIcon === null ? theme.colors.primaryText : theme.colors.textMuted }]}>
+                        {t('addcard_icon_none')}
+                      </Text>
+                    </PressScale>
+                    {CARD_ICONS.map((item) => {
+                      const on = shownIcon === item.key;
+                      return (
+                        <PressScale
+                          key={item.key}
+                          testID={`icon-${item.key}`}
+                          accessibilityRole="button"
+                          accessibilityLabel={t(item.labelKey)}
+                          onPress={() => { setIconChoice(item.key); setIconPickerOpen(false); }}
+                          style={[styles.pill, styles.iconPill, { borderColor: theme.colors.cardBorder, backgroundColor: on ? theme.colors.primary : theme.colors.bgSoft }]}
+                        >
+                          <Text style={styles.iconPillGlyph}>{item.glyph}</Text>
+                          <Text style={[styles.pillText, { color: on ? theme.colors.primaryText : theme.colors.textMuted }]}>
+                            {t(item.labelKey)}
+                          </Text>
+                        </PressScale>
+                      );
+                    })}
+                  </View>
+                </View>
+              ) : null}
 
               {showDateChip && dateSuggest ? (
                 <View style={[styles.dateChip, { backgroundColor: ui.mint, borderColor: ui.mintText + '55' }]}>
@@ -1008,6 +1109,21 @@ const styles = StyleSheet.create({
   noteBtn: { alignItems: 'center', paddingVertical: 6 },
   noteText: { fontFamily: 'Inter_700Bold', fontSize: 13, textDecorationLine: 'underline' },
   pillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  titleInput: { flex: 1, minWidth: 0 },
+  iconTile: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconTileGlyph: { fontSize: 24, lineHeight: 30, textAlign: 'center' },
+  iconPicker: { marginTop: 10, gap: 8 },
+  iconHint: { fontFamily: 'Inter_500Medium', fontSize: 12.5 },
+  iconPill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 7 },
+  iconPillGlyph: { fontSize: 16, lineHeight: 20 },
   pill: {
     paddingHorizontal: 14,
     paddingVertical: 9,

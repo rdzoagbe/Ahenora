@@ -597,6 +597,9 @@ export interface EventCandidate {
 
 export interface Card {
   card_id: string;
+  /** What it is about, as a key from cardIcons.ts; null when nothing was
+   *  sure. Guessed by the server from the title unless somebody chose. */
+  icon?: string | null;
   /**
    * Only ever set on the reply to completing a RECURRING card: when the next
    * occurrence was spawned, and for when. The app says so — a chore that
@@ -764,6 +767,7 @@ export interface Routine {
   routine_id: string;
   family_id: string;
   name: string;
+  icon?: string | null;
   steps: RoutineStep[];
   member_id?: string;
   /** Stars the child earns for completing it. */
@@ -895,6 +899,7 @@ export interface Chore {
   chore_id: string;
   family_id: string;
   title: string;
+  icon?: string | null;
   frequency: string;
   assigned_members: string[];
   current_assignee?: string;
@@ -1586,7 +1591,7 @@ export interface FamilyProfile {
   is_me: boolean;
 }
 
-export interface KidChore { card_id: string; title: string; due_date: string | null }
+export interface KidChore { card_id: string; title: string; due_date: string | null; icon?: string | null }
 
 export interface KidHome {
   name: string;
@@ -2301,6 +2306,11 @@ export const api = {
       return data;
     });
   },
+  /** The icon a title would get, shown beside the field as a person types.
+   *  The server's guesser, not a copy of it: one keyword table, no drift. */
+  guessCardIcon: (title: string, type?: string | null) =>
+    request<{ icon: string | null }>(
+      `/cards/icon-guess?title=${encodeURIComponent(title)}${type ? `&type=${encodeURIComponent(type)}` : ''}`),
   createCard: (data: Partial<Card>) => {
     cache.invalidatePrefix('listCards');
     // Invalidate again after the write commits so a read that raced the
@@ -2312,7 +2322,7 @@ export const api = {
   },
   /** Completing a TASK assigned to a child returns `child_finished`. It does
    *  NOT award anything — the app offers the stars and the parent decides. */
-  updateCard: (id: string, data: Partial<Pick<Card, 'type' | 'title' | 'description' | 'assignee' | 'due_date' | 'status' | 'recurrence' | 'reminder_minutes' | 'room' | 'shared' | 'visible_to_members'>>) => {
+  updateCard: (id: string, data: Partial<Pick<Card, 'type' | 'title' | 'description' | 'assignee' | 'due_date' | 'status' | 'recurrence' | 'reminder_minutes' | 'room' | 'shared' | 'visible_to_members' | 'icon'>>) => {
     cache.invalidatePrefix('listCards');
     return request<Card>(`/cards/${id}`, { method: 'PATCH', body: data }).then((r) => {
       cache.invalidatePrefix('listCards');
@@ -3003,6 +3013,7 @@ export const api = {
     /** Stars the assignee earns for finishing it. Per chore, so the bins can be
      *  worth more than feeding the cat. The server defaults it to 3. */
     star_reward?: number;
+    icon?: string;
   }) =>
     request<Chore>('/chores', { method: 'POST', body: data }),
   rotateChore: (id: string) => request<Chore>(`/chores/${id}/rotate`, { method: 'POST' }),
