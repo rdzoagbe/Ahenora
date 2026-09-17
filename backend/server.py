@@ -53,6 +53,7 @@ import PIL.Image
 
 from ai_models import model_candidates, should_try_next_model, summarize_ai_error
 from document_crop import crop_to_document
+from card_icons import guess_icon, normalize_icon, UnknownIcon
 from starlette.concurrency import run_in_threadpool
 from ai_safety import (
     MAX_INGREDIENT_LEN,
@@ -1584,6 +1585,9 @@ def public_card(card: dict) -> dict:
         # scope, the chosen people, or both. None means the ordinary rule.
         "visible_to": card.get("visible_to"),
         "chosen_visible_to": card.get("chosen_visible_to"),
+        # What it is about, as a key the app turns into a glyph (card_icons).
+        # None on a card nothing matched, which renders exactly as before.
+        "icon": card.get("icon"),
     }
 
 
@@ -2036,6 +2040,7 @@ def public_routine(r: dict) -> dict:
         "steps": r.get("steps", []),
         "member_id": r.get("member_id"),
         "star_reward": int(r.get("star_reward", 2) or 0),
+        "icon": r.get("icon"),
         "created_at": iso(r["created_at"]),
     }
 
@@ -2141,6 +2146,7 @@ def public_chore(c: dict) -> dict:
         "rotate": c.get("rotate", True),
         # Existing chores predate star rewards; default so old rows still pay.
         "star_reward": int(c.get("star_reward", 3) or 0),
+        "icon": c.get("icon"),
         "last_rotated": iso(c.get("last_rotated")),
         "created_at": iso(c["created_at"]),
     }
@@ -4047,6 +4053,72 @@ async def ensure_indexes():
                 log.warning("could not index %s.%s: %s", collection, field, e)
 
 
+def _resolve_icon(chosen, title: str, card_type: Optional[str] = None):
+    """(icon, icon_auto) for something being created.
+
+    A choice is validated and kept; nothing chosen means the title is read.
+    "" is a choice too — no icon, and no guessing — which is how somebody
+    turns the cake off a card called "birthday cake ingredients".
+    """
+    if chosen is None:
+        return guess_icon(title, card_type), True
+    try:
+        return normalize_icon(chosen), False
+    except UnknownIcon:
+        raise HTTPException(status_code=400, detail="Unknown icon")
+
+
+# Which collections carry an icon, and which field the guess reads.
+ICON_BACKFILL = (
+    ("cards", "title", "type"),
+    ("chores", "title", None),
+    ("routines", "name", None),
+)
+
+
+async def backfill_icons(database=None) -> dict:
+    """Give every card, chore and routine written before icons existed one.
+
+    Without this the feed is half icons and half plain on the first morning,
+    which reads as a bug. Idempotent: a row is visited once, marked by
+    icon_auto being present, whatever the guess came to — a None written by
+    the guess is still a row that has been looked at. Never fatal, because a
+    feed with no icons beats an app that will not boot.
+    """
+    database = db if database is None else database
+    if database is None:
+        return {}
+    counts = {}
+    for collection, text_field, type_field in ICON_BACKFILL:
+        done = 0
+        try:
+            fields = {"_id": 0, text_field: 1}
+            key = "card_id" if collection == "cards" else (
+                "chore_id" if collection == "chores" else "routine_id")
+            fields[key] = 1
+            if type_field:
+                fields[type_field] = 1
+            cursor = database[collection].find({"icon_auto": {"$exists": False}}, fields)
+            async for row in cursor:
+                icon = guess_icon(row.get(text_field) or "",
+                                  row.get(type_field) if type_field else None)
+                await database[collection].update_one(
+                    {key: row.get(key)},
+                    {"$set": {"icon": icon, "icon_auto": True}})
+                done += 1
+        except Exception as e:
+            log.warning("icon backfill of %s stopped: %s", collection, e)
+        counts[collection] = done
+    if any(counts.values()):
+        log.info("icons filled in: %s", counts)
+    return counts
+
+
+@app.on_event("startup")
+async def backfill_icons_on_boot():
+    await backfill_icons()
+
+
 async def require_user(authorization: str = Header(default=""),
                        x_client_platform: str = Header(default="")):
     database = get_db()
@@ -4283,10 +4355,18 @@ class CardIn(BaseModel):
     # back is visible and reversible in one tap, while a task that silently
     # reaches nobody is never discovered at all.
     shared: bool = True
+    # A key from card_icons.ICONS, or its glyph. Left out, the server guesses
+    # one from the title; "" means "no icon, and do not guess".
+    icon: Optional[str] = None
 
 
 class CardPatchIn(BaseModel):
     type: Optional[str] = None
+    # A key or glyph chooses; "" clears and stops guessing; None leaves it
+    # alone — except that a card still on a guessed icon is re-guessed when
+    # its title changes, so "dentist" retyped as "football" swaps the tooth
+    # for the ball without anyone opening a picker.
+    icon: Optional[str] = None
     title: Optional[str] = None
     description: Optional[str] = None
     assignee: Optional[str] = None
@@ -4801,11 +4881,14 @@ class RoutineIn(BaseModel):
     steps: list  # [{"label": str, "duration_seconds": int}]
     member_id: Optional[str] = None
     star_reward: int = 2
+    # See CardIn.icon.
+    icon: Optional[str] = None
 
 
 class RoutinePatchIn(BaseModel):
     name: Optional[str] = None
     steps: Optional[list] = None
+    icon: Optional[str] = None
     # Create accepted these two and edit did not, so a routine set up for the
     # wrong child, or worth the wrong number of stars, could not be corrected —
     # only deleted and built again, which takes its completion history with it.
@@ -4887,6 +4970,9 @@ class ChoreIn(BaseModel):
     # Stars the assignee earns for finishing it. Per-chore, so taking the bins
     # out can be worth more than feeding the cat.
     star_reward: int = 3
+    # See CardIn.icon. Chores are what a child sees most, and a broom beside
+    # "tidy your room" is what a child who cannot read yet recognises.
+    icon: Optional[str] = None
 
 
 
@@ -10794,6 +10880,7 @@ async def create_card(payload: CardIn, user=Depends(require_user)):
     chosen = await _chosen_visibility(database, user["family_id"], user["user_id"],
                                       payload.visible_to_members)
     shared = True if (assigned_to_other or chosen) else bool(payload.shared)
+    icon, icon_auto = _resolve_icon(payload.icon, payload.title, payload.type)
     doc = {
         "card_id": new_id("card"),
         "family_id": user["family_id"],
@@ -10810,6 +10897,10 @@ async def create_card(payload: CardIn, user=Depends(require_user)):
         "reminder_minutes": payload.reminder_minutes,
         "location": (payload.location or "").strip()[:200],
         "room": room,
+        "icon": icon,
+        # True while the icon is the server's guess: a title edit re-guesses.
+        # False once a person chose (or cleared) it: the choice sticks.
+        "icon_auto": icon_auto,
         "created_at": utcnow(),
         "completed_at": None,
         "created_by_user_id": user["user_id"],
@@ -10944,6 +11035,18 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
 
     if payload.time_set is not None:
         changes["time_set"] = bool(payload.time_set)
+
+    if payload.icon is not None:
+        try:
+            changes["icon"] = normalize_icon(payload.icon)
+        except UnknownIcon:
+            raise HTTPException(status_code=400, detail="Unknown icon")
+        changes["icon_auto"] = False
+    elif "title" in changes and card.get("icon_auto", True):
+        # Absent counts as auto: every card written before icons existed was
+        # filled in by a guess, and a retitled one should be guessed again.
+        changes["icon"] = guess_icon(changes["title"], changes.get("type") or card.get("type"))
+        changes["icon_auto"] = True
 
     if payload.shared is not None and bool(payload.shared) != bool(card.get("shared")):
         # Only the person who added a private item may change its sharing here
@@ -11931,6 +12034,7 @@ def public_candidate(doc: dict) -> dict:
         "location": doc.get("location") or "",
         "recurrence": doc.get("recurrence") or "none",
         "source_kind": doc.get("source_kind") or "",
+        "icon": doc.get("icon"),
         "created_at": iso(doc.get("created_at")),
     }
 
@@ -12023,6 +12127,7 @@ async def stage_scanned_event(payload: ScanEventIn, user=Depends(require_user),
         "reminder_minutes": max(0, min(payload.reminder_minutes, 60 * 24 * 7)),
         "source": "CAMERA",
         "external_source": "document_scan",
+        "icon": guess_icon(title, card_type),
     }
     candidate_id = await _stage_candidate(
         database, user, card,
@@ -12107,6 +12212,8 @@ async def decide_event_candidates(payload: CandidateDecisionIn,
             "recurrence": doc.get("recurrence") or "none",
             "reminder_minutes": doc.get("reminder_minutes", 60),
             "location": doc.get("location") or "",
+            "icon": doc.get("icon") or guess_icon(doc.get("title") or "", doc.get("type")),
+            "icon_auto": True,
             "google_event_id": doc.get("google_event_id"),
             "google_ical_uid": doc.get("google_ical_uid"),
             "external_source": doc.get("external_source"),
@@ -14075,6 +14182,7 @@ async def vision_extract(payload: VisionIn, user=Depends(require_user)):
         "amount": None,
         "save_to_vault": True,
         "understood": False,
+        "icon": None,
     }
 
     if not GOOGLE_API_KEY:
@@ -14146,6 +14254,9 @@ async def vision_extract(payload: VisionIn, user=Depends(require_user)):
         return fallback
 
     result = {**extracted, "understood": True}
+    # Guessed from the words the model read, so a scanned dentist letter
+    # arrives with the tooth already on it, the same way a typed one would.
+    result["icon"] = guess_icon(result.get("title") or "", result.get("type"))
 
     if result["kind"] == "recipe":
         # A recipe is the one kind of document where filing it is not the
@@ -14223,6 +14334,7 @@ def _safe_voice_draft(parsed: dict, fallback_transcript: str = "") -> dict:
         "description": description,
         "assignee": str(parsed.get("assignee") or "").strip(),
         "due_date": due_date,
+        "icon": guess_icon(title, card_type),
     }
 
 
@@ -16456,6 +16568,7 @@ async def create_routine(body: RoutineIn, user: dict = Depends(require_user), da
         "star_reward": max(0, int(body.star_reward or 0)),
         "created_at": utcnow(),
     }
+    routine["icon"], routine["icon_auto"] = _resolve_icon(body.icon, body.name)
     await database["routines"].insert_one(routine)
     return public_routine(routine)
 
@@ -16470,6 +16583,18 @@ async def update_routine(routine_id: str, body: RoutinePatchIn, user: dict = Dep
     # permissive one is always the one somebody reaches.
     if "star_reward" in updates:
         updates["star_reward"] = max(0, int(updates["star_reward"] or 0))
+    if "icon" in updates:
+        try:
+            updates["icon"] = normalize_icon(updates["icon"])
+        except UnknownIcon:
+            raise HTTPException(status_code=400, detail="Unknown icon")
+        updates["icon_auto"] = False
+    elif "name" in updates:
+        current = await database["routines"].find_one(
+            {"routine_id": routine_id, "family_id": user["family_id"]}, {"_id": 0, "icon_auto": 1})
+        if current is not None and current.get("icon_auto", True):
+            updates["icon"] = guess_icon(updates["name"])
+            updates["icon_auto"] = True
     await database["routines"].update_one(
         {"routine_id": routine_id, "family_id": user["family_id"]},
         {"$set": updates},
@@ -17777,6 +17902,7 @@ async def create_chore(body: ChoreIn, user: dict = Depends(require_user), databa
         "last_rotated": utcnow(),
         "created_at": utcnow(),
     }
+    chore["icon"], chore["icon_auto"] = _resolve_icon(body.icon, body.title)
     await database["chores"].insert_one(chore)
     return public_chore(chore)
 
