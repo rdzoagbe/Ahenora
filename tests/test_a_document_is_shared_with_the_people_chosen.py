@@ -216,3 +216,78 @@ class ADocumentSharedWithChosenPeople(Household):
             return {h["id"] for h in out["results"] if h["kind"] == "document"}
         self.assertIn(d["doc_id"], hits(KEIGH))
         self.assertNotIn(d["doc_id"], hits(NANA))
+
+
+class SharingADocumentTellsThePeopleItReaches(Household):
+    """Roland scanned a letter, shared it with his co-parent, and she never
+    heard. A card fires a push the moment it is shared; a document fired
+    nothing. Now it tells exactly the people it newly reaches, and nobody
+    else — not the owner, not a helper who cannot open the vault anyway."""
+
+    def setUp(self):
+        super().setUp()
+        self.told = []
+        self._push = server.send_push_to_user
+
+        async def record(database, user_id, title, body, data, channel="household-alerts", pref_key=None):
+            self.told.append((user_id, title, body, data, pref_key))
+            return {"devices": 1, "web": 0}
+        server.send_push_to_user = record
+
+    def tearDown(self):
+        server.send_push_to_user = self._push
+        super().tearDown()
+
+    def who(self):
+        return sorted(uid for uid, *_ in self.told)
+
+    def test_a_document_shared_with_a_chosen_person_tells_that_person(self):
+        d = self.doc(ROLAND, visibility="selected", visible_to_members=["m_k"])
+        self.assertEqual(self.who(), ["u_k"])
+        uid, title, body, data, pref = self.told[0]
+        self.assertEqual(title, "Document shared with you")
+        self.assertIn("Roland", body)
+        self.assertIn("Passport", body)
+        self.assertEqual(data, {"type": "vault_doc", "doc_id": d["doc_id"], "family_id": "fam1"})
+        self.assertEqual(pref, "new_card_alerts", "silenced by the same switch as other household alerts")
+
+    def test_a_document_shared_with_everyone_tells_the_other_parent_not_the_helper(self):
+        self.doc(ROLAND, visibility="shared")
+        # Nana is a helper: the vault refuses her, so telling her would be a
+        # push about something she cannot open.
+        self.assertEqual(self.who(), ["u_k"])
+
+    def test_a_private_document_tells_nobody(self):
+        self.doc(ROLAND, visibility="private")
+        self.assertEqual(self.who(), [])
+
+    def test_the_owner_is_never_told_about_their_own_document(self):
+        self.doc(ROLAND, visibility="shared")
+        self.assertNotIn("u_r", self.who())
+
+    def test_sharing_later_tells_only_the_newcomers(self):
+        d = self.doc(ROLAND, visibility="private")
+        self.assertEqual(self.who(), [])
+        asyncio.run(server.set_vault_visibility(
+            d["doc_id"], server.VaultVisibilityIn(visibility="selected", visible_to_members=["m_k"]),
+            user=dict(ROLAND)))
+        self.assertEqual(self.who(), ["u_k"])
+        # Same people again: nothing new to say.
+        asyncio.run(server.set_vault_visibility(
+            d["doc_id"], server.VaultVisibilityIn(visibility="selected", visible_to_members=["m_k"]),
+            user=dict(ROLAND)))
+        self.assertEqual(self.who(), ["u_k"])
+
+    def test_narrowing_tells_nobody(self):
+        d = self.doc(ROLAND, visibility="shared")
+        self.told.clear()
+        asyncio.run(server.set_vault_visibility(
+            d["doc_id"], server.VaultVisibilityIn(visibility="private"), user=dict(ROLAND)))
+        self.assertEqual(self.who(), [])
+
+    def test_a_failed_push_never_fails_the_share(self):
+        async def boom(*a, **k):
+            raise RuntimeError("expo down")
+        server.send_push_to_user = boom
+        d = self.doc(ROLAND, visibility="shared")
+        self.assertIn(d["doc_id"], self.doc_ids_seen_by(KEIGH))
