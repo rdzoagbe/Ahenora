@@ -105,6 +105,7 @@ nobody recorded gets re-argued from memory six months later.
 | Date | Archive size | Restore time | Result | Notes |
 |---|---|---|---|---|
 | 2026-09-15 | 2743 docs, 37 collections | 2s | **passed** | First real run; three faults found getting there — see below. Empty: allowance_txns, allowances, password_resets, and one more the terminal truncated. |
+| 2026-09-17 | 2951 docs, 42 collections | 2s | **passed** | Second run, first as `ahenora_app` (readWrite + dbAdmin on `household_coo_drill` added the same morning). Whole drill 5s. Empty: allowance_txns, allowances, chores, event_candidates, password_resets, routines, santa_draws, shopping_history, shopping_pending. |
 
 ### What the first real run cost, and why that is the point
 
