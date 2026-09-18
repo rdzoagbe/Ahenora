@@ -835,7 +835,24 @@ export default function Vault() {
               </PressScale>
             </View>
             {isImageDoc(preview) ? (
-              <Image source={{ uri: preview.image_base64 }} style={styles.previewImg} />
+              // The whole page, always. This was a fixed 3:4 box in "cover"
+              // mode: a photograph with table around the page still showed
+              // the page, and a scan cropped tightly to the page lost its top
+              // and bottom — Roland: "I can not open it to see the entire
+              // doc." Contain scales the page down to fit whatever shape it
+              // is; the link below opens it in the phone's own viewer, which
+              // is where pinch-to-zoom lives.
+              <View style={styles.previewImgWrap}>
+                <Image
+                  testID="preview-image"
+                  source={{ uri: preview.image_base64 }}
+                  resizeMode="contain"
+                  style={styles.previewImg}
+                />
+                <PressScale testID="preview-open-ext" onPress={() => openDoc(preview)} style={styles.previewExternalRow}>
+                  <Text style={styles.previewExternalText}>{t('vault_open_external')}</Text>
+                </PressScale>
+              </View>
             ) : isPdfDoc(preview) && !pdfFailed ? (
               <View style={styles.previewPdfWrap}>
                 <PdfViewer base64={preview.image_base64} onError={() => setPdfFailed(true)} />
@@ -988,7 +1005,8 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   previewNote: { color: 'rgba(255,255,255,0.6)', fontFamily: 'Inter_500Medium', fontSize: 13, textAlign: 'center', marginTop: -4 },
   previewActions: { flexDirection: 'row', gap: 8 },
   previewIconBtn: { padding: 10, borderRadius: 9999, borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)', backgroundColor: 'rgba(15,23,42,0.55)' },
-  previewImg: { width: '100%', aspectRatio: 0.75, borderRadius: 24, borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)' },
+  previewImgWrap: { flex: 1, width: '100%', minHeight: 0 },
+  previewImg: { flex: 1, width: '100%', minHeight: 200, borderRadius: 24, borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)' },
   previewFile: { alignItems: 'center', justifyContent: 'center', gap: 16, paddingVertical: 48, borderRadius: 24, borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)', backgroundColor: 'rgba(15,23,42,0.45)' },
   previewFileName: { color: '#fff', fontFamily: 'Inter_700Bold', fontSize: 17, textAlign: 'center', paddingHorizontal: 24 },
   previewOpenBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(255,255,255,0.16)', borderRadius: 99, paddingHorizontal: 20, paddingVertical: 12 },

@@ -72,4 +72,9 @@ jobs:
             echo
             echo "Crashes climbing while the rollout is partial is the moment to"
             echo "run **OTA rollback** rather than promote."
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          # `tee`, not `>>`: the summary page needs a signed-in browser, and
+          # the log does not. Written only to the summary, the numbers could
+          # be read by a person and by nothing else — the morning check ran,
+          # and the person watching over it had to be asked to open a page
+          # and paste what it said.
