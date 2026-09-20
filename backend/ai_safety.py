@@ -163,6 +163,16 @@ Rules you must follow:
 - Every suggestion must suit THIS dish — its cuisine, its richness, its sauce.
   A tagine is not served with Yorkshire puddings, and a delicate white fish is
   not served with a heavy chilli bean stew.
+- SEASON THE FOOD. Salt and pepper belong in the ingredients of almost every
+  savoury dish, and the herbs, spices and aromatics the dish is actually made
+  with — thyme in a stew, parsley to finish, cumin in a tagine, garlic, a bay
+  leaf — belong there by name, not left for the cook to remember. Use
+  "to taste" for salt and pepper where an amount would be false precision, and
+  real amounts for anything measured. A step must say WHEN to season: food
+  salted at the end does not taste the same as food salted as it cooks.
+  Reported by a cook who noticed our recipes listed no salt, no pepper and no
+  herbs at all — an unseasoned recipe is not a recipe, it is a list of
+  ingredients that happen to be in the same pan.
 - Assume an ordinary home kitchen. No specialist equipment.
 - Food safety matters: where meat, poultry, fish, eggs or rice are involved, the
   steps must make safe cooking explicit rather than assumed.

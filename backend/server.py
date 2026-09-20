@@ -3435,6 +3435,21 @@ def _visible_to(user: dict, card: dict) -> bool:
 DIGEST_OVERDUE_DAYS = 7
 
 
+def _only(ids: list) -> Optional[str]:
+    """The one id in this list, or None when there is not exactly one.
+
+    A notification that names a single thing should open that thing; one that
+    summarises several has no single right destination, and guessing which of
+    them the reader meant is worse than landing on the list.
+    """
+    # Exactly one ENTRY, not one usable id among several. A message built from
+    # three cards says "3 things today"; if two of them happened to carry no
+    # id, returning the third would open one card from a notification that
+    # named three — a tap that lands somewhere plausible and wrong, which is
+    # harder to notice than one that lands nowhere.
+    return ids[0] if len(ids) == 1 and ids[0] else None
+
+
 async def _build_morning_digest(database, user, local, L):
     """What today needs: due by end of day, and not stale enough to be nagging.
 
@@ -3447,6 +3462,8 @@ async def _build_morning_digest(database, user, local, L):
     floor = end_of_day - timedelta(days=DIGEST_OVERDUE_DAYS + 1)
     titles = []
     backlog = 0
+    today_ids: list = []
+    backlog_ids: list = []
     async for card in database["cards"].find(
             {"family_id": user.get("family_id"), "status": "OPEN"}, {"_id": 0}):
         due = ensure_aware_utc(card.get("due_date"))
@@ -3456,11 +3473,20 @@ async def _build_morning_digest(database, user, local, L):
             title = (card.get("title") or "").strip()
             if title:
                 titles.append(title)
+                today_ids.append(card.get("card_id"))
         elif due < floor:
             backlog += 1
+            backlog_ids.append(card.get("card_id"))
     body = digest_body(titles, L["digest_item_one"], L["digest_item_many"])
     if body:
-        return (L["digest_title"], body)
+        # When the day is one thing, the tap opens that thing. Reported twice
+        # as "the notification doesn't take me to where it's located", and the
+        # routing was never the fault: the digest lands on the Feed, which is
+        # the screen the app already opens on, so a tap that worked perfectly
+        # was indistinguishable from launching the app. Naming the card is
+        # what makes the difference visible. With several, there is no single
+        # right place and the Feed, which lists them, is the honest answer.
+        return (L["digest_title"], body, None, None, _only(today_ids))
 
     # Nothing due in the window, but the house is not actually clear: there is
     # open work, it is just old.
@@ -3479,7 +3505,11 @@ async def _build_morning_digest(database, user, local, L):
     if backlog:
         line = (L["digest_backlog_one"] if backlog == 1
                 else L["digest_backlog_many"].format(n=backlog))
-        return (L["digest_title"], line)
+        # "1 thing still open from earlier" is the worst case of all for a tap
+        # that goes nowhere: it names a single item and then lands on a screen
+        # showing today, where a thing from last week is not the first thing
+        # the eye finds. One backlog item means one card to open.
+        return (L["digest_title"], line, None, None, _only(backlog_ids))
     # Nothing on. The quiet-day tip used to be scheduled on the phone for 07:30
     # while the server digest fired at 07:30 too — so a BUSY day produced both,
     # from the same title, which is the duplicate this whole change exists to
@@ -3488,7 +3518,7 @@ async def _build_morning_digest(database, user, local, L):
     tips = L.get("tips") or []
     if not tips:
         return None
-    return (L["digest_title"], tips[local.day % len(tips)], "daily-tips", "daily_tip")
+    return (L["digest_title"], tips[local.day % len(tips)], "daily-tips", "daily_tip", None)
 
 
 async def _build_dinner_reminder(database, user, local, L):
@@ -3883,10 +3913,16 @@ async def run_daily_local_push(database, job: dict, now: Optional[datetime] = No
             # A builder may override the channel and the push type — the quiet
             # tip is the same job as the digest but must not buzz.
             title, body = built[0], built[1]
-            channel = built[2] if len(built) > 2 else job["channel"]
-            kind = built[3] if len(built) > 3 else job["key"]
+            channel = (len(built) > 2 and built[2]) or job["channel"]
+            kind = (len(built) > 3 and built[3]) or job["key"]
+            # A builder may also name the one card its message is about, so the
+            # tap opens that card rather than the screen it happens to live on.
+            card_id = built[4] if len(built) > 4 else None
+            data = {"type": kind}
+            if card_id:
+                data["card_id"] = card_id
             await send_push_to_user(
-                database, user_id, title, body, {"type": kind}, channel=channel)
+                database, user_id, title, body, data, channel=channel)
             sent += 1
         except Exception as e:  # one person's bad data never stops the pass
             log.warning("%s skipped for a user: %s", job["key"], type(e).__name__)

@@ -44,9 +44,24 @@ export function targetForNotification(data: unknown): { pathname: string; params
     // an announcement is addressed to the household.
     case 'handoff_note':
     case 'announcement':
-    // The digest and the weekly recap are both about "everything", which is
-    // what the Feed is.
+      return { pathname: '/(tabs)/feed' };
+    // The morning digest usually summarises the day, and the Feed is what
+    // "everything" means. But when the day is ONE thing — or when the whole
+    // message is "1 thing still open from earlier" — the server names that
+    // card, and then the tap opens it.
+    //
+    // This is the report that would not go away: "no notification takes me to
+    // where it's located". The routing was never wrong. The digest landed on
+    // the Feed, which is the screen the app opens on anyway, so a tap that
+    // worked was indistinguishable from launching the app — and a backlog item
+    // from last week is not on a Feed showing today, so the one notification
+    // that named a single thing led to a screen without it.
     case 'morning_digest':
+      return d.card_id
+        ? { pathname: '/(tabs)/feed', params: { cardId: String(d.card_id) } }
+        : { pathname: '/(tabs)/feed' };
+    // The weekly recap really is about everything, and the quiet-day tip is
+    // about nothing in particular.
     case 'daily_tip':
     case 'sunday_recap':
       return { pathname: '/(tabs)/feed' };
