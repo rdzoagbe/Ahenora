@@ -1880,6 +1880,8 @@ def public_invite(invite: dict) -> dict:
         "accepted_at": iso(invite.get("accepted_at")),
         "accepted_by_email": invite.get("accepted_by_email"),
         "created_by_name": invite.get("created_by_name"),
+        "handover_card_id": invite.get("handover_card_id"),
+        "handover_done_at": iso(invite.get("handover_done_at")),
     }
 
 
@@ -4237,6 +4239,11 @@ class EmailLoginIn(BaseModel):
 
 class InviteIn(BaseModel):
     email: str
+    # The card being handed to the person invited. The guided flow requires
+    # one; the API accepts an invitation without it so that a client which has
+    # not yet picked up the new screens can still invite somebody. See
+    # `_resolve_handover` for what is checked when one is given.
+    handover_card_id: Optional[str] = None
     # Free text from the inviter: "Grandma", "Nanny", "Brother"... Becomes
     # the member's displayed role when the invite is accepted.
     relationship: Optional[str] = None
@@ -6338,6 +6345,9 @@ async def _accept_invite_for_user(database, user: dict, invite: Optional[dict], 
                            "member_joined", user.get("name") or "")
         joined = True
         await _mark_second_adult(database, target_family_id, user["user_id"])
+        # Before the invite is marked accepted below, so the card is already
+        # theirs by the time the app opens on it.
+        await _perform_handover(database, invite, user)
     if invite and invite.get("status") != "accepted":
         await database["family_invites"].update_one(
             {"invite_id": invite["invite_id"]},
@@ -7839,7 +7849,8 @@ async def _enforce_member_slot_limit(database, user) -> None:
         )
 
 
-def _new_invite_doc(user, email=None, relationship=None, label=None, is_teen=False, age=None, is_helper=False) -> dict:
+def _new_invite_doc(user, email=None, relationship=None, label=None, is_teen=False, age=None,
+                    is_helper=False, handover_card_id=None) -> dict:
     now = utcnow()
     return {
         "invite_id": new_id("invite"),
@@ -7862,6 +7873,14 @@ def _new_invite_doc(user, email=None, relationship=None, label=None, is_teen=Fal
         "accepted_by_user_id": None,
         "accepted_by_email": None,
         "opened_at": None,
+        # The one thing the invited person is being handed. An invitation that
+        # names nothing asks somebody to come and look at an app; an invitation
+        # that hands over the Tuesday pickup asks them to take something on,
+        # and gives them something already theirs when they arrive. Two of 92
+        # households have a second adult, and "come and look at my app" is the
+        # ask that produced that number.
+        "handover_card_id": handover_card_id,
+        "handover_done_at": None,
     }
 
 
@@ -7872,6 +7891,120 @@ class InviteLinkIn(BaseModel):
     relationship: Optional[str] = None
     label: Optional[str] = None
     is_helper: Optional[bool] = False
+    # A shared link hands something over too — the person who opens it sees
+    # what is waiting for them exactly as an emailed invitation does.
+    handover_card_id: Optional[str] = None
+
+
+# How many things to offer as a handover. Long enough that a real household
+# finds something it actually wants to give away, short enough to be a choice
+# rather than a list to read.
+HANDOVER_CANDIDATE_LIMIT = 12
+
+
+async def _resolve_handover(database, user: dict, card_id: Optional[str]) -> Optional[str]:
+    """Check that `card_id` is something this person may hand to someone else.
+
+    Returns the id to store, or None when none was offered. Raises rather than
+    storing a bad id: an invitation that promises a card which does not exist
+    is worse than one that promises nothing, because the person arrives to the
+    empty app the promise was supposed to prevent.
+    """
+    card_id = (card_id or "").strip()
+    if not card_id:
+        return None
+    card = await database["cards"].find_one(
+        {"card_id": card_id, "family_id": user.get("family_id")}, {"_id": 0})
+    if not card:
+        raise HTTPException(status_code=404, detail="That task is no longer there to hand over.")
+    if card.get("status") != "OPEN":
+        raise HTTPException(status_code=400, detail="That task is already done.")
+    # Per-item privacy holds here as everywhere: you cannot hand over something
+    # you were not allowed to see, and handing a card over makes it visible to
+    # the person who takes it.
+    if not _visible_to(user, card):
+        raise HTTPException(status_code=404, detail="That task is no longer there to hand over.")
+    return card_id
+
+
+def _handover_summary(card: Optional[dict]) -> Optional[dict]:
+    """What the invited person is shown about the thing waiting for them."""
+    if not card:
+        return None
+    return {
+        "card_id": card["card_id"],
+        "title": card.get("title") or "",
+        "icon": card.get("icon") or "",
+        "type": card.get("type"),
+        "due_date": iso(card.get("due_date")),
+        "recurrence": card.get("recurrence", "none"),
+    }
+
+
+@app.get("/api/family/invite/handover-candidates")
+async def invite_handover_candidates(user=Depends(require_full_member)):
+    """The things this person could hand to somebody they invite.
+
+    Only what is theirs to give: open, visible to them, and either unassigned
+    or already on their own name. Offering a card that belongs to a child, or
+    to the co-parent who is already here, would be offering to move somebody
+    else's work without asking them.
+    """
+    database = get_db()
+    mine = (user.get("name") or "").strip().lower()
+    rows = []
+    async for card in database["cards"].find(
+            {"family_id": user.get("family_id"), "status": "OPEN"}, {"_id": 0}):
+        if not (card.get("title") or "").strip():
+            continue
+        if not _visible_to(user, card):
+            continue
+        assignee = (card.get("assignee") or "").strip().lower()
+        if assignee and assignee != mine:
+            continue
+        rows.append(card)
+    # Soonest first, and anything undated after everything dated: a handover is
+    # easier to picture when it has a day attached, so those lead.
+    def order(card):
+        due = ensure_aware_utc(card.get("due_date"))
+        return (0, due) if due else (1, ensure_aware_utc(card.get("created_at")) or utcnow())
+    rows.sort(key=order)
+    return {"candidates": [_handover_summary(c) for c in rows[:HANDOVER_CANDIDATE_LIMIT]]}
+
+
+async def _perform_handover(database, invite: Optional[dict], joined_user: dict) -> None:
+    """Give the newcomer the thing they were promised, as they walk in.
+
+    This is the first shared value the work package is built around: the point
+    of joining is that something has already moved, rather than an empty app
+    waiting to be filled in. Best effort by design — the card may have been
+    completed or deleted between the invitation and the join, and a missing
+    card must never be the thing that fails somebody's arrival.
+    """
+    if not invite or not invite.get("handover_card_id") or invite.get("handover_done_at"):
+        return
+    name = (joined_user.get("name") or "").strip()
+    if not name:
+        return
+    try:
+        card = await database["cards"].find_one(
+            {"card_id": invite["handover_card_id"], "family_id": invite.get("family_id")},
+            {"_id": 0})
+        if not card or card.get("status") != "OPEN":
+            return
+        await database["cards"].update_one(
+            {"card_id": card["card_id"]},
+            {"$set": {"assignee": name, "updated_at": utcnow()}})
+        await database["family_invites"].update_one(
+            {"invite_id": invite["invite_id"]},
+            {"$set": {"handover_done_at": utcnow()}})
+        invite["handover_done_at"] = utcnow()
+        await log_activity(database, {"family_id": invite.get("family_id"),
+                                      "user_id": joined_user.get("user_id"),
+                                      "name": name},
+                           "handover_accepted", card.get("title") or "")
+    except Exception as exc:  # an arrival must never fail on the welcome gift
+        log.warning("handover on join skipped: %s", exc)
 
 
 def _clean_invite_text(value: Optional[str], cap: int = 32) -> Optional[str]:
@@ -7896,12 +8029,15 @@ async def family_invite_link(payload: Optional[InviteLinkIn] = Body(None), user=
     if not is_helper:
         await _enforce_parent_limit(database, user["family_id"],
                                     payload.relationship if payload else None)
+    handover_card_id = await _resolve_handover(
+        database, user, payload.handover_card_id if payload else None)
     invite = _new_invite_doc(
         user,
         email=None,
         relationship=_clean_invite_text(payload.relationship if payload else None),
         label=_clean_invite_text(payload.label if payload else None, cap=48),
         is_helper=is_helper,
+        handover_card_id=handover_card_id,
     )
     await database["family_invites"].insert_one(invite)
     public = public_invite(invite)
@@ -7924,6 +8060,10 @@ async def family_invite(payload: InviteIn, user=Depends(require_full_member)):
     email = payload.email.strip().lower()
     if not email or "@" not in email:
         raise HTTPException(status_code=400, detail="Valid email is required")
+
+    # Checked before the invite is written or reused, so a bad handover cannot
+    # leave a half-made invitation behind.
+    handover_card_id = await _resolve_handover(database, user, payload.handover_card_id)
 
     # The age gate is the COPPA/Families-policy line, enforced HERE and not only
     # in the client: a restricted young-person account is for 13-17. The 13
@@ -8000,6 +8140,12 @@ async def family_invite(payload: InviteIn, user=Depends(require_full_member)):
         # helper send must carry the restriction, not silently drop it.
         if bool(invite.get("is_helper")) != bool(payload.is_helper):
             updates["is_helper"] = bool(payload.is_helper)
+        # Re-sending with a different handover replaces it, the same way the
+        # relationship above is refreshed: the last thing the inviter chose is
+        # what they meant. Re-sending without one keeps what is already
+        # promised rather than quietly withdrawing it.
+        if handover_card_id and invite.get("handover_card_id") != handover_card_id:
+            updates["handover_card_id"] = handover_card_id
         if updates:
             updates["updated_at"] = utcnow()
             await database["family_invites"].update_one(
@@ -8008,7 +8154,8 @@ async def family_invite(payload: InviteIn, user=Depends(require_full_member)):
     else:
         invite = _new_invite_doc(user, email=email, relationship=relationship,
                                  is_teen=bool(payload.is_teen), age=payload.age,
-                                 is_helper=bool(payload.is_helper))
+                                 is_helper=bool(payload.is_helper),
+                                 handover_card_id=handover_card_id)
         await database["family_invites"].insert_one(invite)
 
     public = public_invite(invite)
@@ -9845,6 +9992,17 @@ async def family_invite_lookup(token: str):
         {"_id": 0},
     )
 
+    # What is waiting on the other side of the link. An invitation that shows
+    # only who sent it asks somebody to sign up for an unknown; showing the
+    # household they would be joining, and the one thing already put aside for
+    # them, is the difference between an ask and an introduction.
+    handover = None
+    if invite.get("handover_card_id"):
+        card = await database["cards"].find_one(
+            {"card_id": invite["handover_card_id"], "family_id": invite["family_id"],
+             "status": "OPEN"}, {"_id": 0})
+        handover = _handover_summary(card)
+
     return {
         "invite_id": invite["invite_id"],
         "status": invite.get("status", "pending"),
@@ -9852,6 +10010,30 @@ async def family_invite_lookup(token: str):
         "inviter_name": (inviter or {}).get("name") or invite.get("created_by_name") or "A family member",
         "relationship": invite.get("relationship"),
         "expires_at": iso(invite.get("expires_at")),
+        "handover": handover,
+        "household": await _invited_household_summary(database, invite["family_id"]),
+    }
+
+
+async def _invited_household_summary(database, family_id: str) -> dict:
+    """A count of what is already in the household somebody is being asked to join.
+
+    Counts only — never titles. The person reading this has not joined yet and
+    may never join, so they are shown the size of the thing, not its contents.
+    """
+    now = utcnow()
+    week = now + timedelta(days=7)
+    this_week = 0
+    async for card in database["cards"].find(
+            {"family_id": family_id, "status": "OPEN"}, {"_id": 0, "due_date": 1}):
+        due = ensure_aware_utc(card.get("due_date"))
+        if due and now - timedelta(days=1) <= due <= week:
+            this_week += 1
+    return {
+        "things_this_week": this_week,
+        "children": await count_young_people(database, family_id),
+        "shopping_items": await database["shopping_list"].count_documents(
+            {"family_id": family_id, "checked": {"$ne": True}}),
     }
 
 
