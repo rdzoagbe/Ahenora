@@ -44,9 +44,24 @@ export function targetForNotification(data: unknown): { pathname: string; params
     // an announcement is addressed to the household.
     case 'handoff_note':
     case 'announcement':
-    // The digest and the weekly recap are both about "everything", which is
-    // what the Feed is.
+      return { pathname: '/(tabs)/feed' };
+    // The morning digest usually summarises the day, and the Feed is what
+    // "everything" means. But when the day is ONE thing — or when the whole
+    // message is "1 thing still open from earlier" — the server names that
+    // card, and then the tap opens it.
+    //
+    // This is the report that would not go away: "no notification takes me to
+    // where it's located". The routing was never wrong. The digest landed on
+    // the Feed, which is the screen the app opens on anyway, so a tap that
+    // worked was indistinguishable from launching the app — and a backlog item
+    // from last week is not on a Feed showing today, so the one notification
+    // that named a single thing led to a screen without it.
     case 'morning_digest':
+      return d.card_id
+        ? { pathname: '/(tabs)/feed', params: { cardId: String(d.card_id) } }
+        : { pathname: '/(tabs)/feed' };
+    // The weekly recap really is about everything, and the quiet-day tip is
+    // about nothing in particular.
     case 'daily_tip':
     case 'sunday_recap':
       return { pathname: '/(tabs)/feed' };
@@ -101,12 +116,17 @@ export function targetForNotification(data: unknown): { pathname: string; params
     // screen that actually holds the thing.
     case 'due_vaccinations':
       return { pathname: '/(tabs)/kids' };
-    case 'due_documents':
-      return { pathname: '/(tabs)/vault' };
-    // "Roland shared a document with you" is about something in the vault,
-    // so the tap opens the vault. The server sends this to the parents a
-    // document newly reaches.
+    // "Roland shared a document with you" is about ONE document, and until now
+    // the tap opened the Vault and stopped there — leaving the reader to find
+    // the thing they had just been told about, on a screen that may hold
+    // dozens. The push has always carried doc_id; nothing read it.
     case 'vault_doc':
+      return d.doc_id
+        ? { pathname: '/(tabs)/vault', params: { docId: String(d.doc_id) } }
+        : { pathname: '/(tabs)/vault' };
+    // A renewal sweep is about several documents at once, so the Vault itself
+    // is the honest destination.
+    case 'due_documents':
       return { pathname: '/(tabs)/vault' };
     // Both at once. Neither screen is right, so send them where the whole
     // household is rather than guessing and being wrong half the time.

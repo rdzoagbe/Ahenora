@@ -824,6 +824,12 @@ export interface AiRecipe {
    *  phrases, deliberately without amounts: the moment they carry quantities
    *  they are a second recipe the shopping list knows nothing about. */
   serve_with?: string[];
+  /** Spices, herbs and aromatics that would LIFT the dish beyond what it
+   *  strictly needs. Deliberately separate from `ingredients`: taste in a
+   *  household is not one person's, and somebody who cannot stand coriander
+   *  or cannot eat chilli has to be able to see what was suggested and leave
+   *  it out. Everything here is optional by construction. */
+  seasoning?: { name: string; note: string; optional?: boolean }[];
 }
 
 export type Diet = '' | 'vegetarian';

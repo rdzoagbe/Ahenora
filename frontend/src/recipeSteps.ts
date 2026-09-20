@@ -1536,7 +1536,15 @@ export function recipeMethod(
 // somebody writes it. Declared anyway so a curated recipe and a generated one
 // share one shape at the call site — the screen already renders the section
 // only when there is something in it.
-): { minutes: number; steps: string[]; serve_with?: string[] } | null {
+// `seasoning` is the same story: a curated dish is written by hand and its
+// author seasons it in the steps, so there is nothing separate to suggest.
+// Declared so both kinds of recipe share one shape at the call site.
+): {
+  minutes: number;
+  steps: string[];
+  serve_with?: string[];
+  seasoning?: { name: string; note: string; optional?: boolean }[];
+} | null {
   if (!recipeId) return null;
   const method = RECIPE_METHODS[recipeId];
   if (!method) return null;

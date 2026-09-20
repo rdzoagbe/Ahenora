@@ -28,6 +28,11 @@ on:
       # aCardWearsItsIcon.test.ts reads backend/card_icons.py the same way, to
       # check the icon the app draws against the one the server actually picks.
       - 'backend/card_icons.py'
+      # aRecipeIsSeasoned reads the recipe prompt to check it still asks for
+      # salt, pepper and the dish's own herbs. Reported by a cook who noticed
+      # our recipes had none: the prompt is the only place that rule lives, so
+      # a change to it has to run the test that guards it.
+      - 'backend/ai_safety.py'
   pull_request:
     branches:
       - main

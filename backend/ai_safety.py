@@ -134,8 +134,8 @@ amounts and the steps to cook it.
 
 Rules you must follow:
 - Return JSON only, with keys "minutes" (integer), "servings" (integer),
-  "ingredients" (array), "steps" (array of strings) and "serve_with" (array
-  of strings).
+  "ingredients" (array), "steps" (array of strings), "serve_with" (array
+  of strings) and "seasoning" (array).
 - "servings" is how many people the amounts feed. Use 4 unless the dish
   clearly dictates otherwise.
 - Each ingredient is {"name": string, "qty": number, "unit": string}. The unit
@@ -163,6 +163,30 @@ Rules you must follow:
 - Every suggestion must suit THIS dish — its cuisine, its richness, its sauce.
   A tagine is not served with Yorkshire puddings, and a delicate white fish is
   not served with a heavy chilli bean stew.
+- SEASON THE FOOD. Salt and pepper belong in the ingredients of almost every
+  savoury dish, and the herbs, spices and aromatics the dish is genuinely made
+  with — thyme in a stew, parsley to finish, cumin in a tagine, garlic, a bay
+  leaf — belong there by name, not left for the cook to remember. Use
+  "to taste" for salt and pepper where an amount would be false precision, and
+  real amounts for anything measured. A step must say WHEN to season: food
+  salted at the end does not taste the same as food salted as it cooks.
+  Reported by a cook who noticed our recipes listed no salt, no pepper and no
+  herbs at all — an unseasoned recipe is not a recipe, it is a list of
+  ingredients that happen to be in the same pan.
+- "seasoning" is 0 to 4 spices, herbs or aromatics that would LIFT this dish
+  beyond what it strictly needs — the things a good cook would reach for and a
+  plain recipe leaves out. Each entry is
+  {"name": string, "note": string, "optional": true}. "note" is one short
+  phrase saying what it does ("warmth, not heat", "brightens the sauce at the
+  end"), so the cook can judge it without having tasted it.
+  These are SEPARATE from the ingredients above and never duplicate them. What
+  the dish cannot be made without goes in "ingredients"; what merely improves
+  it goes here. That split is the whole point: taste in a household is not one
+  person's, and somebody who cannot stand coriander, or cannot eat chilli, has
+  to be able to see what was added and leave it out. Never put an optional
+  spice in "ingredients", and never hide one inside a step.
+  Suggest nothing that fights the dish or its cuisine, nothing a child would
+  refuse outright, and where something is hot say so plainly in the note.
 - Assume an ordinary home kitchen. No specialist equipment.
 - Food safety matters: where meat, poultry, fish, eggs or rice are involved, the
   steps must make safe cooking explicit rather than assumed.
@@ -687,6 +711,12 @@ def validate_recipe(parsed: dict) -> dict:
     if parsed.get("serve_with") is not None:
         serve_with = _validate_serve_with(parsed["serve_with"], steps)
 
+    # Suggested spices, same degrade-don't-fail rule: a recipe cached before
+    # this existed simply has none.
+    seasoning = None
+    if parsed.get("seasoning") is not None:
+        seasoning = _validate_seasoning(parsed["seasoning"], ingredients)
+
     haystack = " ".join(steps).lower()
     if ingredients:
         haystack += " " + " ".join(i["name"] for i in ingredients).lower()
@@ -699,6 +729,10 @@ def validate_recipe(parsed: dict) -> dict:
     # and a hundred ordinary recipes with it, so the rule stays where it is.
     if serve_with:
         haystack += " " + " ".join(serve_with).lower()
+    # Through the same filter as everything else: a suggestion is still
+    # something we are telling somebody to put in their food.
+    if seasoning:
+        haystack += " " + " ".join(sp["name"] + " " + sp["note"] for sp in seasoning).lower()
     for term in _BLOCKED_TERMS:
         if term in haystack:
             raise UnsafeRecipe("blocked content")
@@ -727,7 +761,65 @@ def validate_recipe(parsed: dict) -> dict:
         result["ingredients"] = ingredients
     if serve_with:
         result["serve_with"] = serve_with
+    if seasoning:
+        result["seasoning"] = seasoning
     return result
+
+
+# Enough to lift a dish, few enough to stay a suggestion rather than a second
+# ingredients list to read.
+MAX_SEASONING = 4
+
+
+def _validate_seasoning(raw, ingredients) -> list:
+    """Spices that would improve the dish, kept separate from what it needs.
+
+    Asked for because a plain recipe tastes plain — and bounded the way it is
+    because taste in a household is not one person's. Somebody who cannot
+    stand coriander, or cannot eat chilli, has to be able to SEE what was
+    suggested and leave it out, which is only possible while these stay out of
+    the ingredients list and out of the steps.
+
+    Anything malformed is dropped rather than fatal: a missing suggestion
+    costs a slightly duller dinner, and refusing the whole recipe over one
+    costs the dinner.
+    """
+    if not isinstance(raw, list):
+        return []
+    have = {i["name"].strip().lower() for i in (ingredients or [])}
+    out: list = []
+    seen = set()
+
+    def tidy(value, cap: int) -> str:
+        if not isinstance(value, str):
+            return ""
+        text = re.sub(r"\s+", " ", value).strip()
+        # Models like to bullet their own lists; the UI does that.
+        text = re.sub(r"^\s*(?:[-*\u2022]|\d+\s*[.)\-:])\s*", "", text)
+        return text if 0 < len(text) <= cap else ""
+
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        name = tidy(item.get("name"), MAX_INGREDIENT_NAME_LEN)
+        note = tidy(item.get("note"), MAX_STEP_LEN)
+        if not name or not note:
+            continue
+        key = name.lower()
+        # Never a duplicate of something the dish already contains: suggesting
+        # the garlic that is already in the pan reads as a mistake and makes
+        # the list of "what was added" untrue.
+        if key in have or key in seen:
+            continue
+        seen.add(key)
+        # "optional" is not taken on trust from the model. Everything in this
+        # list is optional by construction; storing it as a flag the model
+        # could set to false would let one arrive that the app then renders as
+        # required, which is the exact failure this split exists to prevent.
+        out.append({"name": name, "note": note, "optional": True})
+        if len(out) >= MAX_SEASONING:
+            break
+    return out
 
 
 def _validate_serve_with(raw, steps) -> list:

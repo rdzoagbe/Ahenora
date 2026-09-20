@@ -2058,6 +2058,27 @@ export default function Kitchen() {
                       </>
                     ) : null}
 
+                    {/* Suggested spices, and the plain statement of what they
+                        are. They are NOT in the ingredients above and never
+                        go into the steps: the household that cannot stand
+                        coriander, or cannot eat chilli, has to be able to see
+                        exactly what was added and leave it out. A suggestion
+                        the cook cannot identify is one they cannot refuse. */}
+                    {method.seasoning && method.seasoning.length > 0 ? (
+                      <>
+                        <Text style={styles.cookSectionTitle}>{t('cook_seasoning')}</Text>
+                        <Text style={styles.cookSeasoningNote} testID="seasoning-note">
+                          {t('cook_seasoning_hint')}
+                        </Text>
+                        {method.seasoning.map((spice, i) => (
+                          <View key={i} style={styles.cookSeasoningRow} testID={`seasoning-${i}`}>
+                            <Text style={styles.cookSeasoningName}>{spice.name}</Text>
+                            <Text style={styles.cookSeasoningWhy}>{spice.note}</Text>
+                          </View>
+                        ))}
+                      </>
+                    ) : null}
+
                     {/* AI recipes can be re-cooked: vegetarian genuinely rewrites
                         the ingredients and steps, and "different recipe" asks for
                         a fresh take on the same dish. Curated library dishes are
@@ -2795,6 +2816,15 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   cookServeWith: { flexDirection: 'row', gap: 12, marginBottom: 10, alignItems: 'flex-start' },
   cookServeWithDot: { color: ui.orangeText, fontFamily: 'Inter_700Bold', fontSize: 16, lineHeight: 25 },
   cookServeWithText: { flex: 1, color: ui.text, fontFamily: 'Inter_500Medium', fontSize: 16, lineHeight: 25 },
+  cookSeasoningNote: {
+    color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 13.5, lineHeight: 19, marginBottom: 8,
+  },
+  cookSeasoningRow: {
+    borderRadius: 12, backgroundColor: ui.soft, paddingHorizontal: 12, paddingVertical: 10,
+    marginBottom: 6, gap: 2,
+  },
+  cookSeasoningName: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 15, lineHeight: 20 },
+  cookSeasoningWhy: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 18 },
   cookAllergen: { flexDirection: 'row', gap: 8, alignItems: 'flex-start', marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: ui.line },
   plannerAllergen: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 8,
