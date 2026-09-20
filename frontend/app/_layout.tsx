@@ -94,7 +94,15 @@ function RootNavigator() {
   useEffect(() => {
     const held = heldTarget.current;
     if (!held) return;
-    if (routeMatchesTarget(pathname, held.target.pathname)) {
+    // `attempts > 0`, not just a matching pathname: the target must be pushed
+    // at least once before we are willing to call it reached.
+    //
+    // A tap on "Roland handed you the school run" aims at /(tabs)/feed WITH the
+    // card's id, and startup's own redirect to the Feed arrives first. That
+    // redirect satisfies the pathname and nothing else — accepting it would
+    // drop the id, and the Feed would open with no card to show. Which is the
+    // original complaint exactly: the tap appears to do nothing.
+    if (held.attempts > 0 && routeMatchesTarget(pathname, held.target.pathname)) {
       heldTarget.current = null;
       return;
     }
