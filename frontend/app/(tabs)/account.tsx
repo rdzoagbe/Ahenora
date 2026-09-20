@@ -9,6 +9,7 @@ import {
   ChevronLeft,
   ChevronRight,
   FileText,
+  Download,
   KeyRound,
   LifeBuoy,
   LogOut,
@@ -123,6 +124,39 @@ export default function AccountScreen() {
   const doLogout = async () => {
     await logout();
     router.replace('/');
+  };
+
+  // A copy of your data, on the phone and in the share sheet. The privacy
+  // policy promised a portable copy and answered it by email; deletion has been
+  // self-service from the start, so a copy is too.
+  const [exporting, setExporting] = useState(false);
+  const exportData = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const data = await api.exportMyData();
+      const text = JSON.stringify(data, null, 2);
+      const fileName = `ahenora-export-${new Date().toISOString().slice(0, 10)}.json`;
+      if (Platform.OS === 'web') {
+        const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      } else {
+        const FS = require('expo-file-system/legacy');
+        const Sharing = require('expo-sharing');
+        const fileUri = `${FS.cacheDirectory}${fileName}`;
+        await FS.writeAsStringAsync(fileUri, text);
+        await Sharing.shareAsync(fileUri, { mimeType: 'application/json', dialogTitle: t('acc_export') });
+      }
+    } catch (e: any) {
+      logger.warn('export failed', e?.message || e);
+      Alert.alert(t('acc_export'), t('acc_export_error'));
+    } finally {
+      setExporting(false);
+    }
   };
 
   const checkSession = async () => {
@@ -283,6 +317,14 @@ export default function AccountScreen() {
                 <Text style={styles.actionLink}>{checking ? '…' : t('acc_check')}</Text>
               }
               onPress={checkSession}
+            />
+            <ListRow
+              testID="export-data"
+              tile={<IconTile bg={ui.soft}><Download color={ui.text} size={18} /></IconTile>}
+              title={t('acc_export')}
+              subtitle={exporting ? t('acc_export_working') : t('acc_export_sub')}
+              right={<Text style={styles.actionLink}>{t('acc_export_cta')}</Text>}
+              onPress={exportData}
             />
             {user?.has_password ? (
               <ListRow

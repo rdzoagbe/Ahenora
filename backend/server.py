@@ -6536,6 +6536,94 @@ async def change_password(payload: ChangePasswordIn, user=Depends(require_user),
     return {"ok": True}
 
 
+@app.get("/api/auth/export")
+async def export_my_data(include_files: bool = False, user=Depends(require_user),
+                         database=Depends(get_db)):
+    """A copy of your data, as one JSON document.
+
+    The privacy policy has promised this since the start ("to receive it in a
+    portable form") and answered it by email. Deletion has been self-service
+    from day one; a copy should be too, and the grant strategy's security
+    baseline lists "account deletion/export" as one item, not two.
+
+    What comes back is what the person can already see in the app, in the
+    shapes the app already uses, so nothing here is a second reading of who
+    may see what: cards through _card_visible_to, documents through
+    _may_see_vault_doc, and a helper gets no vault because the vault refuses
+    them. Nothing secret travels: no password hash, no session, no push token.
+    Images and files are left out unless asked for, because a household's
+    scans run to megabytes and a copy of one's data should not need a good
+    connection to arrive.
+    """
+    uid = user["user_id"]
+    fid = user.get("family_id")
+    fresh = await database["users"].find_one({"user_id": uid}, {"_id": 0}) or user
+
+    def without_image(row: dict) -> dict:
+        if include_files:
+            return row
+        row = dict(row)
+        row["has_image"] = bool(row.pop("image_base64", None))
+        return row
+
+    members = [public_member(m) async for m in database["family_members"].find(
+        {"family_id": fid}, {"_id": 0})] if fid else []
+    my_member = next((m for m in members if m.get("has_account") and m.get("name") == fresh.get("name")), None)
+
+    cards = []
+    if fid:
+        async for c in database["cards"].find({"family_id": fid}, {"_id": 0}):
+            if _card_visible_to(c, uid):
+                cards.append(without_image(public_card(c)))
+
+    documents = []
+    if fid and not fresh.get("is_helper"):
+        async for d in database["vault"].find({"family_id": fid}, {"_id": 0}):
+            if _may_see_vault_doc(d, fresh):
+                documents.append(without_image(public_vault_doc(d)))
+
+    messages = []
+    if fid:
+        async for m in database["messages"].find({"family_id": fid, "sender_user_id": uid}, {"_id": 0}):
+            messages.append({"message_id": m.get("message_id"), "thread": m.get("thread"),
+                             "text": m.get("text"), "created_at": iso(m.get("created_at"))})
+
+    activity = []
+    if fid:
+        async for a in database["activity"].find({"family_id": fid, "actor_user_id": uid}, {"_id": 0}):
+            activity.append(public_activity(a))
+
+    async def household_rows(collection, shape):
+        if not fid:
+            return []
+        return [shape(r) async for r in database[collection].find({"family_id": fid}, {"_id": 0})]
+
+    settings = await database["notification_settings"].find_one({"user_id": uid}, {"_id": 0})
+    sub = await build_subscription(fid) if fid else {}
+
+    return {
+        "format": "ahenora-export/1",
+        "exported_at": iso(utcnow()),
+        "includes_files": bool(include_files),
+        "account": public_user(fresh),
+        "notification_settings": public_notification_settings(settings),
+        "household": {
+            "family_id": fid,
+            "plan": sub.get("plan"),
+            "members": members,
+            "me": my_member,
+        },
+        "cards": cards,
+        "documents": documents,
+        "messages_sent": messages,
+        "activity": activity,
+        "meals": await household_rows("meals", public_meal),
+        "shopping_list": await household_rows("shopping_list", public_shopping_item),
+        "routines": await household_rows("routines", public_routine),
+        "chores": await household_rows("chores", public_chore),
+    }
+
+
 class RequestPasswordResetIn(BaseModel):
     email: Optional[str] = None
 
@@ -18799,6 +18887,187 @@ async def notify_admins_of_support_ticket(database, ticket: dict) -> dict:
             reached["web"] += int(got.get("web") or 0)
     return reached
 
+
+
+# -----------------------------------------------------------------------------
+# Grant evidence: every KPI a funding dossier asks for, with its definition
+# -----------------------------------------------------------------------------
+# The grant strategy (20 September 2026) says: "the application should contain
+# reproducible tables with definitions and date ranges", and separately lists
+# what NOT to claim — 92 registered households are not 92 active customers,
+# three purchases are not a conversion benchmark. The funnel, retention and
+# invite read-outs above each answer one question for the founder; this
+# answers the reviewer's, which is "what exactly does this number count?".
+# Every figure travels with the sentence that defines it, so the appendix can
+# be pasted rather than retyped, and regenerated the week before filing.
+
+GRANT_KPI_DEFINITIONS = {
+    "registered_households": "Distinct households with at least one adult account, all time. Not an active-user base.",
+    "adult_accounts": "Accounts that can sign in (parents, co-parents, helpers). Child profiles have no account and are never counted.",
+    "activated_households": "Households where somebody did one useful thing: created a card, filed a document, planned a meal, or added to the shopping list. All time.",
+    "paying_households": "Households on a paid plan by their own purchase. Households granted a plan by hand (grandfathered) are excluded, as is the admin's own.",
+    "two_plus_adult_households": "Households with two or more adult accounts. The product's central claim; the strategy names this the primary KPI.",
+    "sharing_households": "Households with at least one card visible to more than its creator, all time.",
+    "signups_in_window": "Adult accounts created inside the window.",
+    "onboarding_completed_in_window": "Of those, accounts that reached the end of onboarding.",
+    "invites_sent_in_window": "Invitations created inside the window, by email or link.",
+    "invites_accepted_in_window": "Invitations whose acceptance landed inside the window, whatever day they were sent.",
+    "invites_sent_all_time": "Invitations ever created.",
+    "invites_accepted_all_time": "Invitations ever accepted.",
+    "active_accounts_1d": "Adult accounts that used the app in the last 24 hours (any authenticated request).",
+    "active_accounts_7d": "Adult accounts that used the app in the last 7 days.",
+    "active_accounts_30d": "Adult accounts that used the app in the last 30 days.",
+    "d7_cohort_size": "Adult accounts created between (window start) and 7 days ago, so each has had a full week to return.",
+    "d7_retained": "Of the D7 cohort, accounts used on or after the 7th day following signup.",
+    "d30_cohort_size": "Adult accounts created between (window start minus 30 days) and 30 days ago.",
+    "d30_retained": "Of the D30 cohort, accounts used on or after the 30th day following signup.",
+    "cards_created": "Tasks, events, appointments and reminders ever created, by any route: typed, spoken, scanned, imported.",
+    "cards_completed": "Cards marked done.",
+    "cards_shared": "Cards visible beyond their creator.",
+    "documents_filed": "Documents in the vault.",
+    "meals_planned": "Meals on the planner.",
+    "shopping_items": "Shopping list items ever added.",
+    "routines": "Recurring child routines set up.",
+    "chores": "Rotating chores set up.",
+    "messages": "Household and kid-thread messages sent.",
+    "ai_scans_used": "Document and photo scans read by the AI provider, summed across households.",
+    "weekly_signups": "Adult accounts created per ISO week (Monday-dated), most recent first, for the window.",
+}
+
+
+@app.get("/api/metrics/grant-evidence")
+async def metrics_grant_evidence(days: int = 30, format: str = "json",
+                                 user=Depends(require_user), database=Depends(get_db)):
+    """The traction appendix, regenerable. Admin only.
+
+    JSON by default; `format=csv` gives one row per figure with its definition,
+    which is the shape a dossier table wants. Every count is an honest scan in
+    Python for the same reasons the read-outs above are: small population,
+    admin only, run by hand, and a shape the test double can exercise.
+    """
+    if not is_admin_user(user):
+        raise HTTPException(status_code=403, detail="Admin only")
+    days = max(7, min(days, 365))
+    now = utcnow()
+    window_start = now - timedelta(days=days)
+    d1, d7, d30 = now - timedelta(days=1), now - timedelta(days=7), now - timedelta(days=30)
+
+    accounts = []
+    async for row in database["users"].find(
+            {}, {"_id": 0, "user_id": 1, "family_id": 1, "email": 1, "role": 1, "created_at": 1,
+                 "last_active_at": 1, "last_active_day": 1, "onboarding_completed": 1}):
+        if str(row.get("role") or "").strip().lower() in ("teen", "child"):
+            continue
+        accounts.append(row)
+
+    households: dict = {}
+    for row in accounts:
+        if row.get("family_id"):
+            households.setdefault(row["family_id"], []).append(row)
+    admin_families = {r.get("family_id") for r in accounts if is_admin_email(r.get("email", ""))}
+
+    async def families_with(col, match):
+        seen = set()
+        async for row in database[col].find(match, {"_id": 0, "family_id": 1}):
+            if row.get("family_id"):
+                seen.add(row["family_id"])
+        return seen
+
+    activated = set()
+    for col in ("cards", "vault", "meals", "shopping_list"):
+        activated |= await families_with(col, {})
+
+    paying = 0
+    ai_scans = 0
+    async for fam in database["families"].find({}, {"_id": 0, "family_id": 1, "plan": 1,
+                                                    "grandfathered": 1, "ai_scans_used": 1}):
+        ai_scans += int(fam.get("ai_scans_used") or 0)
+        plan = str(fam.get("plan") or "village").lower()
+        if plan != "village" and not fam.get("grandfathered") \
+                and fam.get("family_id") not in admin_families:
+            paying += 1
+
+    def created(row):
+        return _coerce_dt(row.get("created_at"))
+
+    def retained_after(row, offset_days):
+        born = created(row)
+        return bool(born) and account_active_since(row, born + timedelta(days=offset_days))
+
+    d7_cohort = [r for r in accounts if created(r) and window_start <= created(r) <= d7]
+    d30_cohort = [r for r in accounts
+                  if created(r) and (window_start - timedelta(days=30)) <= created(r) <= d30]
+
+    weekly: dict = {}
+    for row in accounts:
+        born = created(row)
+        if born and born >= window_start:
+            monday = (born - timedelta(days=born.weekday())).strftime("%Y-%m-%d")
+            weekly[monday] = weekly.get(monday, 0) + 1
+
+    invites = database["family_invites"]
+    figures = {
+        "registered_households": len(households),
+        "adult_accounts": len(accounts),
+        "activated_households": len(activated & set(households)),
+        "paying_households": paying,
+        "two_plus_adult_households": sum(1 for m in households.values() if len(m) > 1),
+        "sharing_households": len(await families_with("cards", {"shared": True})),
+        "signups_in_window": sum(1 for r in accounts if created(r) and created(r) >= window_start),
+        "onboarding_completed_in_window": sum(
+            1 for r in accounts if created(r) and created(r) >= window_start and r.get("onboarding_completed")),
+        "invites_sent_in_window": await invites.count_documents({"created_at": {"$gte": window_start}}),
+        "invites_accepted_in_window": await invites.count_documents(
+            {"status": "accepted", "accepted_at": {"$gte": window_start}}),
+        "invites_sent_all_time": await invites.count_documents({}),
+        "invites_accepted_all_time": await invites.count_documents({"status": "accepted"}),
+        "active_accounts_1d": sum(1 for r in accounts if account_active_since(r, d1)),
+        "active_accounts_7d": sum(1 for r in accounts if account_active_since(r, d7)),
+        "active_accounts_30d": sum(1 for r in accounts if account_active_since(r, d30)),
+        "d7_cohort_size": len(d7_cohort),
+        "d7_retained": sum(1 for r in d7_cohort if retained_after(r, 7)),
+        "d30_cohort_size": len(d30_cohort),
+        "d30_retained": sum(1 for r in d30_cohort if retained_after(r, 30)),
+        "cards_created": await database["cards"].count_documents({}),
+        "cards_completed": await database["cards"].count_documents({"status": "DONE"}),
+        "cards_shared": await database["cards"].count_documents({"shared": True}),
+        "documents_filed": await database["vault"].count_documents({}),
+        "meals_planned": await database["meals"].count_documents({}),
+        "shopping_items": await database["shopping_list"].count_documents({}),
+        "routines": await database["routines"].count_documents({}),
+        "chores": await database["chores"].count_documents({}),
+        "messages": await database["messages"].count_documents({}),
+        "ai_scans_used": ai_scans,
+        "weekly_signups": [{"week": k, "signups": v} for k, v in sorted(weekly.items(), reverse=True)],
+    }
+
+    if format == "csv":
+        lines = ["metric,value,window,definition"]
+        window_label = f"{window_start.strftime('%Y-%m-%d')} to {now.strftime('%Y-%m-%d')}"
+        for key, value in figures.items():
+            definition = GRANT_KPI_DEFINITIONS[key].replace('"', "'")
+            if key == "weekly_signups":
+                for item in value:
+                    lines.append(f'signups_week_{item["week"]},{item["signups"]},"{window_label}","{definition}"')
+                continue
+            scope = window_label if ("window" in key or key.startswith("d7") or key.startswith("d30")
+                                     or key.startswith("active_")) else "all time"
+            lines.append(f'{key},{value},"{scope}","{definition}"')
+        from starlette.responses import PlainTextResponse
+        return PlainTextResponse("\n".join(lines) + "\n", media_type="text/csv")
+
+    return {
+        "generated_at": iso(now),
+        "window_days": days,
+        "window_start": iso(window_start),
+        "definitions": GRANT_KPI_DEFINITIONS,
+        "figures": figures,
+        "caveats": [
+            "Registered households are not active customers; use activated_households as the denominator.",
+            "paying_households is a count of real purchases, not a conversion benchmark, while the sample is small.",
+            "Retention figures depend on last_active stamps that only became per-request in September 2026; earlier cohorts undercount.",
+        ],
+    }
 
 @app.post("/api/support/contact")
 async def submit_support_contact(

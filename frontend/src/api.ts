@@ -2018,6 +2018,11 @@ export const api = {
   },
   setLanguage: (language: string) =>
     request('/auth/language', { method: 'PATCH', body: { language } }),
+  /** A copy of everything this person can see, as one JSON document. Images
+   *  and files stay out unless asked for: a household's scans run to
+   *  megabytes and a copy of one's data should not need a good connection. */
+  exportMyData: (includeFiles = false) =>
+    request<Record<string, unknown>>(`/auth/export${includeFiles ? '?include_files=true' : ''}`),
   completeOnboarding: () =>
     request<User>('/auth/complete-onboarding', { method: 'POST' }),
   invite: (email: string, relationship?: string, opts?: { is_teen?: boolean; age?: number; is_helper?: boolean; member_id?: string }) => {

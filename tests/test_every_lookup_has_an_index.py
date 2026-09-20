@@ -38,6 +38,9 @@ EXEMPT = {
     ("web_push_subscriptions", "active"),
     # Always indexed by MongoDB itself.
     ("*", "_id"),
+    # Two values again, and read only by the grant-evidence appendix: an
+    # admin-only, run-by-hand count over the whole table. Nobody waits on it.
+    ("cards", "status"),
 }
 
 # Below this many uses a field is a one-off admin or migration path, where a
