@@ -116,12 +116,17 @@ export function targetForNotification(data: unknown): { pathname: string; params
     // screen that actually holds the thing.
     case 'due_vaccinations':
       return { pathname: '/(tabs)/kids' };
-    case 'due_documents':
-      return { pathname: '/(tabs)/vault' };
-    // "Roland shared a document with you" is about something in the vault,
-    // so the tap opens the vault. The server sends this to the parents a
-    // document newly reaches.
+    // "Roland shared a document with you" is about ONE document, and until now
+    // the tap opened the Vault and stopped there — leaving the reader to find
+    // the thing they had just been told about, on a screen that may hold
+    // dozens. The push has always carried doc_id; nothing read it.
     case 'vault_doc':
+      return d.doc_id
+        ? { pathname: '/(tabs)/vault', params: { docId: String(d.doc_id) } }
+        : { pathname: '/(tabs)/vault' };
+    // A renewal sweep is about several documents at once, so the Vault itself
+    // is the honest destination.
+    case 'due_documents':
       return { pathname: '/(tabs)/vault' };
     // Both at once. Neither screen is right, so send them where the whole
     // household is rather than guessing and being wrong half the time.

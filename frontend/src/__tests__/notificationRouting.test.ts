@@ -73,10 +73,17 @@ describe('targetForNotification', () => {
       .toEqual({ pathname: '/(tabs)/kids' });
   });
 
-  it('takes a shared document to the vault', () => {
+  it('takes a shared document to that document, not just to the vault', () => {
     // "Roland shared a document with you" landing on the Feed would send the
-    // other parent looking for something the Feed does not hold.
+    // other parent looking for something the Feed does not hold — and landing
+    // on the Vault alone left them looking through a screen that may hold
+    // dozens for the one thing they had just been told about. The push has
+    // carried doc_id since the day it was written; nothing read it.
     expect(targetForNotification({ type: 'vault_doc', doc_id: 'doc_1' }))
+      .toEqual({ pathname: '/(tabs)/vault', params: { docId: 'doc_1' } });
+    // An older push, or one that lost its id, still opens the Vault rather
+    // than asking it to open a document that does not exist.
+    expect(targetForNotification({ type: 'vault_doc' }))
       .toEqual({ pathname: '/(tabs)/vault' });
   });
 

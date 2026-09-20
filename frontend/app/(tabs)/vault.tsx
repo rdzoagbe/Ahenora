@@ -12,7 +12,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { Plus, X, Trash2, Shield, Folder, ChevronRight, FileText, AlertTriangle, CalendarClock, Share2, Image as ImageIcon, Lock, Users } from 'lucide-react-native';
 
@@ -76,6 +76,12 @@ export default function Vault() {
   const [showAdd, setShowAdd] = useState(false);
   const [preview, setPreview] = useState<VaultDoc | null>(null);
   const [pdfFailed, setPdfFailed] = useState(false);
+  // The document a tapped notification was about. "Roland shared a document
+  // with you" used to open the Vault and stop there, leaving the reader to
+  // find the thing the notification had just told them about — on a screen
+  // that may hold dozens. The push has always carried the id; nothing read it.
+  const { docId: notifiedDocId } = useLocalSearchParams<{ docId?: string }>();
+  const openedFromNotification = useRef<string | null>(null);
   const [docHtml, setDocHtml] = useState<string | null>(null);
   const [docRendering, setDocRendering] = useState(false);
   const openPreview = (d: VaultDoc) => {
@@ -200,6 +206,26 @@ export default function Vault() {
   // would hand the RefreshControl a new function mid-pull.
   const docsRef = useRef<VaultDoc[]>([]);
   useEffect(() => { docsRef.current = docs; }, [docs]);
+
+  // Open the document a notification was about, once the list it is in has
+  // arrived. Guarded by the id rather than a boolean so a second notification
+  // about a different document still opens, and so the preview does not
+  // reappear after the reader closes it and the list reloads.
+  //
+  // Not finding it is not an error: a document can be deleted, or its sharing
+  // narrowed, between the push and the tap. The reader is then simply left on
+  // the Vault, which is where they were going anyway.
+  useEffect(() => {
+    if (!notifiedDocId || loading) return;
+    if (openedFromNotification.current === notifiedDocId) return;
+    const found = docs.find((d) => d.doc_id === notifiedDocId);
+    if (!found) return;
+    openedFromNotification.current = notifiedDocId;
+    openPreview(found);
+    // openPreview is re-created every render and is not a dependency worth
+    // stabilising for: the id latch above is what stops this running twice.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notifiedDocId, loading, docs]);
 
   const handleRefresh = async () => {
     setRefreshing(true);

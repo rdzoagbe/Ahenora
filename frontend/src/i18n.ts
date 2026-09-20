@@ -1564,6 +1564,9 @@ const en: Dict = {
   invite_preview_children: 'children',
   invite_preview_shopping: 'on the list',
 
+  cook_seasoning: 'Spices to lift it',
+  cook_seasoning_hint: 'Suggestions, not part of the recipe. Nothing below is in the ingredients or the steps, so leave out anything your household does not like.',
+
   handover_title: 'What would you hand to them first?',
   handover_hint: 'Pick one real thing. It is waiting for them when they join, so joining does something instead of being a new empty app.',
   handover_repeats: 'repeats',
@@ -3779,6 +3782,9 @@ const es: Dict = {
   invite_preview_children: 'niños',
   invite_preview_shopping: 'en la lista',
 
+  cook_seasoning: 'Especias para realzarlo',
+  cook_seasoning_hint: 'Sugerencias, no parte de la receta. Nada de esto está en los ingredientes ni en los pasos: deja fuera lo que no guste en tu casa.',
+
   handover_title: '¿Qué le pasarías primero?',
   handover_hint: 'Elige una cosa real. Le estará esperando cuando entre, para que unirse sirva de algo en vez de abrir una aplicación vacía.',
   handover_repeats: 'se repite',
@@ -5985,6 +5991,9 @@ const fr: Dict = {
   invite_preview_children: 'enfants',
   invite_preview_shopping: 'sur la liste',
 
+  cook_seasoning: 'Épices pour relever le plat',
+  cook_seasoning_hint: 'Des suggestions, pas la recette. Rien ci-dessous n\'est dans les ingrédients ni dans les étapes : laissez de côté ce que votre foyer n\'aime pas.',
+
   handover_title: 'Que lui confiez-vous en premier ?',
   handover_hint: 'Choisissez une vraie chose. Elle l\'attend à son arrivée, pour que rejoindre serve à quelque chose au lieu d\'ouvrir une application vide.',
   handover_repeats: 'récurrent',
@@ -8190,6 +8199,9 @@ const de: Dict = {
   invite_preview_week: 'Dinge diese Woche',
   invite_preview_children: 'Kinder',
   invite_preview_shopping: 'auf der Liste',
+
+  cook_seasoning: 'Gewürze, die es heben',
+  cook_seasoning_hint: 'Vorschläge, nicht Teil des Rezepts. Nichts davon steht in den Zutaten oder Schritten: Lassen Sie weg, was Ihr Haushalt nicht mag.',
 
   handover_title: 'Was übergeben Sie zuerst?',
   handover_hint: 'Wählen Sie eine echte Sache. Sie wartet beim Beitritt auf die Person, damit der Beitritt etwas bewirkt statt eine leere App zu öffnen.',

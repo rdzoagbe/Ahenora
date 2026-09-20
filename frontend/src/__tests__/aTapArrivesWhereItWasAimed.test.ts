@@ -103,3 +103,23 @@ describe('Arrival is judged on where the router says we are', () => {
     }
   });
 });
+
+describe('A notification about one document opens that document', () => {
+  it('carries the document id the push has always sent', () => {
+    // "Roland shared a document with you" opened the Vault and stopped there,
+    // leaving the reader to find the thing they had just been told about on a
+    // screen that may hold dozens. The id was in the push all along.
+    expect(targetForNotification({ type: 'vault_doc', doc_id: 'd_1' }))
+      .toEqual({ pathname: '/(tabs)/vault', params: { docId: 'd_1' } });
+  });
+
+  it('still opens the Vault when no document was named', () => {
+    expect(targetForNotification({ type: 'vault_doc' }))
+      .toEqual({ pathname: '/(tabs)/vault' });
+  });
+
+  it('leaves a renewal sweep on the Vault, because it is about several', () => {
+    expect(targetForNotification({ type: 'due_documents', doc_id: 'd_1' }))
+      .toEqual({ pathname: '/(tabs)/vault' });
+  });
+});

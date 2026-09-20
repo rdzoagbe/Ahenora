@@ -66,3 +66,37 @@ describe('The unit list still lets seasoning through', () => {
     expect(src).toMatch(/pinch/);
   });
 });
+
+describe('Suggested spices are named so they can be refused', () => {
+  const prompt = promptNamed('RECIPE_SYSTEM_PROMPT');
+  const flat = prompt.replace(/\s+/g, ' ');
+  const kitchen = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'app', '(tabs)', 'kitchen.tsx'), 'utf8');
+  const i18n = fs.readFileSync(path.join(__dirname, '..', 'i18n.ts'), 'utf8');
+
+  it('asks for them as their own list, not mixed into the recipe', () => {
+    expect(flat).toContain('"seasoning"');
+    expect(flat).toContain('SEPARATE from the ingredients');
+  });
+
+  it('shows them in their own section on the cooking sheet', () => {
+    expect(kitchen).toContain("t('cook_seasoning')");
+    expect(kitchen).toContain('method.seasoning');
+  });
+
+  it('says plainly that they are additions the household can leave out', () => {
+    // "Some people don't like certain spices" — so the warning is not a
+    // footnote, it sits above the list and says what it is.
+    expect(kitchen).toContain("t('cook_seasoning_hint')");
+    const en = i18n.match(/\n  cook_seasoning_hint: '([^']*)'/);
+    expect(en).not.toBeNull();
+    expect(en![1].toLowerCase()).toContain('not part of the recipe');
+    expect(en![1].toLowerCase()).toContain('leave out');
+  });
+
+  it('has that warning in every language, not just English', () => {
+    const hits = i18n.match(/\n  cook_seasoning_hint: /g) || [];
+    expect(hits.length).toBe(4);
+    expect((i18n.match(/\n  cook_seasoning: /g) || []).length).toBe(4);
+  });
+});
