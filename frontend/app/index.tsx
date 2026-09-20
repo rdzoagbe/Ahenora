@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, ImageBackground, Platform, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, ImageBackground, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as AuthSession from 'expo-auth-session';
@@ -16,7 +16,9 @@ import { EmailAuthModal } from '../src/components/EmailAuthModal';
 import { LanguageModal } from '../src/components/LanguageModal';
 import { PressScale } from '../src/components/PressScale';
 import { ValueTour } from '../src/components/ValueTour';
+import { InvitePreview } from '../src/components/InvitePreview';
 import { useStore } from '../src/store';
+import type { HandoverCandidate, InvitedHousehold } from '../src/api';
 import { logger } from '../src/logger';
 import { extractInviteToken, rememberInvite, readStoredInvite, clearStoredInvite, signInWithPendingInvite } from '../src/invite';
 import { googleClientIds } from '../src/googleClientIds';
@@ -75,6 +77,11 @@ export default function Landing() {
   const [signingIn, setSigningIn] = useState(false);
   const [inviteToken, setInviteToken] = useState<string | null>(null);
   const [invitedBy, setInvitedBy] = useState<string | null>(null);
+  // What the invitation put aside, and how big the household is. Shown before
+  // anybody is asked to make an account: signing up to find out what you have
+  // agreed to is the wrong order.
+  const [inviteHandover, setInviteHandover] = useState<HandoverCandidate | null>(null);
+  const [inviteHousehold, setInviteHousehold] = useState<InvitedHousehold | null>(null);
   const [showTour, setShowTour] = useState(false);
 
   // First-launch value tour: shown once before the sign-in screen. Invited
@@ -133,6 +140,8 @@ export default function Landing() {
         const { api } = await import('../src/api');
         const invite = await api.getInvite(token);
         setInvitedBy(invite.inviter_name);
+        setInviteHandover(invite.handover || null);
+        setInviteHousehold(invite.household || null);
       } catch (e: any) {
         logger.warn('Invite lookup failed:', e?.message || e);
       }
@@ -413,7 +422,18 @@ export default function Landing() {
           </PressScale>
         </View>
 
-        <View style={styles.center}>
+        {/* Scrollable, not a fixed centred block. The invited person now sees
+            a card describing what is waiting for them, and that card plus a
+            long German heading can push the sign-in buttons off a small phone
+            — which would be an invitation that cannot be accepted. flexGrow
+            with centred content keeps the old look when everything fits and
+            only scrolls when it does not. */}
+        <ScrollView
+          style={styles.centerScroll}
+          contentContainerStyle={styles.center}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
           <View style={[styles.badge, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}> 
             <Sparkles color={theme.colors.text} size={12} />
             <Text style={[styles.badgeText, { color: theme.colors.text }]}>{t('land_badge_google_play')}</Text>
@@ -428,6 +448,16 @@ export default function Landing() {
                 <Text style={[styles.inviteStrong, { color: theme.colors.text }]}>{invitedBy}</Text>
                 {t('land_invite_suffix')}
               </Text>
+            </View>
+          ) : null}
+
+          {invitedBy ? (
+            <View style={styles.invitePreviewWrap}>
+              <InvitePreview
+                inviterName={invitedBy}
+                handover={inviteHandover}
+                household={inviteHousehold}
+              />
             </View>
           ) : null}
 
@@ -599,7 +629,7 @@ export default function Landing() {
             <Crown color="#F59E0B" size={12} />
             <Text style={[styles.adminNoteText, { color: theme.colors.textMuted }]}>{t('land_premium_note')}</Text>
           </View>
-        </View>
+        </ScrollView>
 
         <View style={styles.footer}>
           <Text style={[styles.foot, { color: theme.colors.textMuted }]}>{t('land_footer')}</Text>
@@ -640,7 +670,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   langText: { fontFamily: 'Inter_600SemiBold', fontSize: 11 },
-  center: { flex: 1, justifyContent: 'center' },
+  centerScroll: { flex: 1 },
+  center: { flexGrow: 1, justifyContent: 'center' },
   badge: {
     alignSelf: 'flex-start',
     flexDirection: 'row',
@@ -653,6 +684,7 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   badgeText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
+  invitePreviewWrap: { width: '100%', marginBottom: 14 },
   inviteBanner: {
     borderRadius: 18,
     padding: 14,
