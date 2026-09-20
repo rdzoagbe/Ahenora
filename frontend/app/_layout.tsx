@@ -1,6 +1,6 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { reportColdStart } from '../src/perf';
-import { Stack, useRouter } from 'expo-router';
+import { Stack, usePathname, useRootNavigationState, useRouter } from 'expo-router';
 import { InviteJoinPrompt } from '../src/components/InviteJoinPrompt';
 // Side effect: maps Alert.alert onto browser dialogs on web, where the RN
 // implementation is a no-op and every confirm button silently did nothing.
@@ -28,6 +28,7 @@ import { UpgradeModal } from '../src/components/UpgradeModal';
 import { WebUpdateBanner } from '../src/components/WebUpdateBanner';
 import { UpdateNotice } from '../src/components/UpdateNotice';
 import { ensurePushRegistered, attachNotificationRouting, targetForNotification } from '../src/notifications';
+import { routeMatchesTarget } from '../src/notificationRouting';
 
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
@@ -46,21 +47,66 @@ function RootNavigator() {
   // Route a tapped notification to where it belongs — the conversation for a
   // message, the Feed for a task, the Family hub for a star or a join — instead
   // of dropping the person on whatever screen they last saw.
+  //
+  // Reported as "no notification I click on takes me to the place where it's
+  // located", and a single router.push is not enough to fix it, for two
+  // reasons that both only bite at startup.
+  //
+  // READINESS. Tapping the 07:30 digest after a night with the app closed is a
+  // cold start every time. `user` hydrates from a cached session, and it can do
+  // so before the root navigator has mounted its screens — a push issued in
+  // that window is dropped on the floor. Because the cold-start response is
+  // consumed exactly once (and latched so a later refreshUser cannot re-route
+  // to it), that dropped push is the tap gone for good: the person lands on
+  // the default tab and the notification looks like it did nothing at all.
+  // Waiting for the navigation state to carry a key is what "there is a
+  // navigator to push onto" means.
+  //
+  // ARRIVAL. Startup runs redirects of its own — index.tsx sends a signed-in
+  // person to the Feed, the tabs layout can divert to onboarding — so a push
+  // that lands correctly can still be replaced a tick later by a redirect that
+  // was already in flight. Holding the target and checking where we ended up
+  // turns a stomped navigation into one that is simply re-issued.
+  const navigationState = useRootNavigationState();
+  const navigatorReady = !!navigationState?.key;
+  const pathname = usePathname();
+  // The tap waiting to be honoured, with how many times we have tried. A ref
+  // rather than state so the applier below never sets state from an effect
+  // body; `targetTick` is what actually re-runs it.
+  const heldTarget = useRef<{ target: { pathname: string; params?: Record<string, string> }; attempts: number } | null>(null);
+  const [targetTick, setTargetTick] = useState(0);
+
   useEffect(() => {
-    // Wait for the user to hydrate before reading the cold-start tap. On a cold
-    // launch `user` is null while the store awaits api.me(); if we attached now,
-    // attachNotificationRouting would consume (and latch) the cold-start
-    // response, then skip the push because user is null — and the tap would be
-    // gone forever, dropping the person on the default tab. Gating here means
-    // the cold-start target is read only once we can actually route it.
-    if (!user) return;
+    if (!user || !navigatorReady) return;
     let cleanup = () => undefined as void;
     let active = true;
     attachNotificationRouting((t) => {
-      router.push(t as never);
+      heldTarget.current = { target: t, attempts: 0 };
+      setTargetTick((n) => n + 1);
     }).then((fn) => { if (active) cleanup = fn; else fn(); });
     return () => { active = false; cleanup(); };
-  }, [user, router]);
+  }, [user, navigatorReady]);
+
+  // Push the held target, then keep checking we got there. Bounded on purpose:
+  // four attempts over about two seconds covers a startup redirect landing
+  // after us, and then it stops. A notification must never be able to fight
+  // somebody who has decided to go somewhere else.
+  useEffect(() => {
+    const held = heldTarget.current;
+    if (!held) return;
+    if (routeMatchesTarget(pathname, held.target.pathname)) {
+      heldTarget.current = null;
+      return;
+    }
+    if (held.attempts >= 4) {
+      heldTarget.current = null;
+      return;
+    }
+    held.attempts += 1;
+    router.push(held.target as never);
+    const timer = setTimeout(() => setTargetTick((n) => n + 1), 500);
+    return () => clearTimeout(timer);
+  }, [targetTick, pathname, router]);
 
   // The web twin of the tap routing above. The service worker posts the payload
   // of a tapped browser notification to the focused tab; without a listener the
@@ -73,7 +119,13 @@ function RootNavigator() {
       const payload = (event as MessageEvent<{ type?: string; data?: Record<string, unknown> }>).data;
       if (!payload || payload.type !== 'push-notification-tap') return;
       const target = targetForNotification(payload.data || {});
-      if (target) router.push(target as never);
+      // Held and verified like the native tap above, not pushed and forgotten:
+      // a browser tab that was reloaded by the click runs its own startup
+      // redirects too, and they land after this.
+      if (target) {
+        heldTarget.current = { target, attempts: 0 };
+        setTargetTick((n) => n + 1);
+      }
     };
     navigator.serviceWorker.addEventListener('message', onMessage);
     return () => navigator.serviceWorker.removeEventListener('message', onMessage);

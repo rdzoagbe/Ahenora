@@ -77,6 +77,12 @@ export function targetForNotification(data: unknown): { pathname: string; params
         : { pathname: '/(tabs)/feed' };
     case 'allowance_reminder':
       return { pathname: '/(tabs)/kids' };
+    // The "send me a test notification" button lives in Settings. Tapping what
+    // it produces fell through to the Feed — so the one notification a person
+    // sends deliberately, to check that taps work, was itself a tap that went
+    // nowhere. Back to the screen the button is on.
+    case 'notification_test':
+      return { pathname: '/(tabs)/settings' };
     // Money leaving, and the only person who can act on it. This fell through
     // to the default and opened the Feed — reported within hours of shipping:
     // "I received a notification that payment fails but when I clicked it
@@ -117,4 +123,27 @@ export function targetForNotification(data: unknown): { pathname: string; params
     default:
       return { pathname: '/(tabs)/feed' };
   }
+}
+
+/**
+ * A route path with its expo-router group segments removed, so a target can be
+ * compared with the `usePathname()` the router reports after navigating.
+ *
+ * `router.push('/(tabs)/feed')` lands on the pathname `/feed`: groups are an
+ * organisational device in the file tree and never appear in the URL. Without
+ * this the arrival check below could never match, and every tap would look
+ * like it had failed and be retried until it gave up.
+ */
+export function normalizeRoutePath(pathname: string): string {
+  const cleaned = pathname
+    .split('/')
+    .filter((seg) => seg.length > 0 && !(seg.startsWith('(') && seg.endsWith(')')))
+    .join('/');
+  return '/' + cleaned;
+}
+
+/** True when the router has actually arrived at `target`. */
+export function routeMatchesTarget(current: string | null | undefined, target: string): boolean {
+  if (!current) return false;
+  return normalizeRoutePath(current) === normalizeRoutePath(target);
 }
