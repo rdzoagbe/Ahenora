@@ -6294,6 +6294,27 @@ async def _bring_children_along(database, old_family_id: Optional[str], new_fami
             )
 
 
+async def _mark_second_adult(database, family_id: str, joined_user_id: str) -> None:
+    """Record when a household became multi-user, once.
+
+    "Household became multi-user" is the rung of the activation ladder that
+    the product's whole proposition rests on, and it was never written down:
+    it could only be inferred from counting accounts today, which says
+    nothing about WHEN. Stamped at the join that made the count two, with who
+    it was, so time-to-second-adult and multi-user retention can be measured
+    from that day.
+    """
+    adults = 0
+    async for row in database["users"].find({"family_id": family_id}, {"_id": 0, "is_teen": 1}):
+        if not row.get("is_teen"):
+            adults += 1
+    if adults < 2:
+        return
+    await database["families"].update_one(
+        {"family_id": family_id, "second_adult_at": None},
+        {"$set": {"second_adult_at": utcnow(), "second_adult_user_id": joined_user_id}})
+
+
 async def _accept_invite_for_user(database, user: dict, invite: Optional[dict], target_family_id: Optional[str]):
     """Move `user` into the inviting family and mark the invite accepted.
 
@@ -6316,6 +6337,7 @@ async def _accept_invite_for_user(database, user: dict, invite: Optional[dict], 
                                       "name": user.get("name")},
                            "member_joined", user.get("name") or "")
         joined = True
+        await _mark_second_adult(database, target_family_id, user["user_id"])
     if invite and invite.get("status") != "accepted":
         await database["family_invites"].update_one(
             {"invite_id": invite["invite_id"]},
@@ -6775,7 +6797,8 @@ async def complete_onboarding(user=Depends(require_user)):
     database = get_db()
     await database["users"].update_one(
         {"user_id": user["user_id"]},
-        {"$set": {"onboarding_completed": True, "updated_at": utcnow()}},
+        {"$set": {"onboarding_completed": True, "onboarding_completed_at": utcnow(),
+                  "updated_at": utcnow()}},
     )
     user = await database["users"].find_one({"user_id": user["user_id"]}, {"_id": 0})
     return public_user(user)
@@ -7838,6 +7861,7 @@ def _new_invite_doc(user, email=None, relationship=None, label=None, is_teen=Fal
         "accepted_at": None,
         "accepted_by_user_id": None,
         "accepted_by_email": None,
+        "opened_at": None,
     }
 
 
@@ -8195,6 +8219,8 @@ async def invites_for_me(
             continue
         if item.get("family_id") == user.get("family_id"):
             continue
+        # Seen in the app counts as opened: the join card is the invitation.
+        await _mark_invite_opened(database, item)
         inviter = await database["users"].find_one(
             {"user_id": item.get("created_by_user_id")},
             {"_id": 0},
@@ -9813,6 +9839,7 @@ async def family_invite_lookup(token: str):
     if invite.get("expires_at") and _expired(invite["expires_at"]):
         raise HTTPException(status_code=410, detail="Invite has expired")
 
+    await _mark_invite_opened(database, invite)
     inviter = await database["users"].find_one(
         {"user_id": invite.get("created_by_user_id")},
         {"_id": 0},
@@ -9826,6 +9853,25 @@ async def family_invite_lookup(token: str):
         "relationship": invite.get("relationship"),
         "expires_at": iso(invite.get("expires_at")),
     }
+
+
+async def _mark_invite_opened(database, invite: dict) -> None:
+    """The second rung of the activation ladder, stamped once.
+
+    The grant checklist asks for invitation sent → opened → accepted → joined
+    → onboarded → first action → multi-user → retained, and "opened" was the
+    one rung nothing recorded. Opened means the link was followed or the join
+    card was shown in the app: either way the person saw it, which separates
+    "never reached them" from "saw it and did not join" — two problems with
+    opposite fixes.
+    """
+    if not invite or invite.get("opened_at"):
+        return
+    now = utcnow()
+    await database["family_invites"].update_one(
+        {"invite_id": invite["invite_id"], "opened_at": None},
+        {"$set": {"opened_at": now}})
+    invite["opened_at"] = now
 
 
 class InviteAcceptIn(BaseModel):
@@ -18934,6 +18980,25 @@ GRANT_KPI_DEFINITIONS = {
     "weekly_signups": "Adult accounts created per ISO week (Monday-dated), most recent first, for the window.",
 }
 
+# The second-member activation ladder: the grant checklist's section 2, rung
+# by rung. Each rung is counted for the window; the retention rungs give a
+# household the days it needs before judging it.
+LADDER_DEFINITIONS = {
+    "invitations_sent": "Invitations created in the window, by email or link.",
+    "invitations_opened": "Of those, invitations whose link was followed or whose join card was shown in the app.",
+    "invitations_accepted": "Invitations accepted whose acceptance landed in the window.",
+    "second_adults_joined": "Households that gained their second adult account in the window (the moment is stamped at the join).",
+    "second_adults_onboarded": "Of those, the joining adult reached the end of onboarding.",
+    "second_adults_first_action": "Of those, the joining adult created at least one card, document or message.",
+    "multi_user_households": "Households with two or more adult accounts, all time.",
+    "multi_user_d7_cohort": "Households that became multi-user between the window start and 7 days ago.",
+    "multi_user_retained_d7": "Of those, any adult used the app on or after the 7th day after the household became multi-user.",
+    "multi_user_d30_cohort": "Households that became multi-user between the window start minus 30 days and 30 days ago.",
+    "multi_user_retained_d30": "Of those, any adult used the app on or after the 30th day after the household became multi-user.",
+    "median_days_to_second_adult": "Median days from the household's first adult account to its second, over households that became multi-user in the window.",
+    "note": "Households that became multi-user before the moment was stamped (September 2026) use the later adult's account creation date as an estimate.",
+}
+
 
 @app.get("/api/metrics/grant-evidence")
 async def metrics_grant_evidence(days: int = 30, format: str = "json",
@@ -18954,9 +19019,11 @@ async def metrics_grant_evidence(days: int = 30, format: str = "json",
 
     accounts = []
     async for row in database["users"].find(
-            {}, {"_id": 0, "user_id": 1, "family_id": 1, "email": 1, "role": 1, "created_at": 1,
-                 "last_active_at": 1, "last_active_day": 1, "onboarding_completed": 1}):
-        if str(row.get("role") or "").strip().lower() in ("teen", "child"):
+            {}, {"_id": 0, "user_id": 1, "family_id": 1, "email": 1, "role": 1, "is_teen": 1,
+                 "created_at": 1, "last_active_at": 1, "last_active_day": 1, "onboarding_completed": 1}):
+        # A teen is an account, not an adult: flagged is_teen at the join,
+        # or carrying the role on older rows.
+        if row.get("is_teen") or str(row.get("role") or "").strip().lower() in ("teen", "child"):
             continue
         accounts.append(row)
 
@@ -19006,6 +19073,82 @@ async def metrics_grant_evidence(days: int = 30, format: str = "json",
             weekly[monday] = weekly.get(monday, 0) + 1
 
     invites = database["family_invites"]
+
+    # -- the activation ladder ------------------------------------------------
+    fam_docs = {}
+    async for fam in database["families"].find({}, {"_id": 0, "family_id": 1, "second_adult_at": 1,
+                                                    "second_adult_user_id": 1}):
+        fam_docs[fam.get("family_id")] = fam
+
+    def became_multi(fid):
+        """(when, who) the household gained its second adult, stamped or estimated."""
+        fam = fam_docs.get(fid) or {}
+        when = _coerce_dt(fam.get("second_adult_at"))
+        if when:
+            return when, fam.get("second_adult_user_id")
+        adults = sorted((r for r in households.get(fid, []) if created(r)), key=created)
+        if len(adults) < 2:
+            return None, None
+        return created(adults[1]), adults[1].get("user_id")
+
+    async def first_action(uid):
+        for col, field in (("cards", "created_by_user_id"), ("vault", "owner_user_id"),
+                           ("messages", "sender_user_id")):
+            if await database[col].find_one({field: uid}, {"_id": 0, field: 1}):
+                return True
+        return False
+
+    by_uid = {r.get("user_id"): r for r in accounts}
+    multi = {}
+    for fid in households:
+        when, who = became_multi(fid)
+        if when:
+            multi[fid] = (when, who)
+
+    joined_in_window = {fid: v for fid, v in multi.items() if v[0] >= window_start}
+    onboarded = 0
+    acted = 0
+    days_to_second = []
+    for fid, (when, who) in joined_in_window.items():
+        joiner = by_uid.get(who) or {}
+        if joiner.get("onboarding_completed"):
+            onboarded += 1
+        if who and await first_action(who):
+            acted += 1
+        firsts = sorted(created(r) for r in households[fid] if created(r))
+        if firsts:
+            days_to_second.append(max(0.0, (when - firsts[0]).total_seconds() / 86400))
+
+    def household_active_after(fid, when):
+        return any(account_active_since(r, when) for r in households.get(fid, []))
+
+    d7_multi = {fid: when for fid, (when, _) in multi.items() if window_start <= when <= d7}
+    d30_multi = {fid: when for fid, (when, _) in multi.items()
+                 if (window_start - timedelta(days=30)) <= when <= d30}
+    days_to_second.sort()
+    median_days = (None if not days_to_second
+                   else round(days_to_second[len(days_to_second) // 2], 1))
+
+    ladder = {
+        "invitations_sent": await invites.count_documents({"created_at": {"$gte": window_start}}),
+        "invitations_opened": await invites.count_documents(
+            {"created_at": {"$gte": window_start}, "opened_at": {"$ne": None}}),
+        "invitations_accepted": await invites.count_documents(
+            {"status": "accepted", "accepted_at": {"$gte": window_start}}),
+        "second_adults_joined": len(joined_in_window),
+        "second_adults_onboarded": onboarded,
+        "second_adults_first_action": acted,
+        "multi_user_households": len(multi),
+        "multi_user_d7_cohort": len(d7_multi),
+        "multi_user_retained_d7": sum(1 for fid, when in d7_multi.items()
+                                      if household_active_after(fid, when + timedelta(days=7))),
+        "multi_user_d30_cohort": len(d30_multi),
+        "multi_user_retained_d30": sum(1 for fid, when in d30_multi.items()
+                                       if household_active_after(fid, when + timedelta(days=30))),
+        "median_days_to_second_adult": median_days,
+        "note": LADDER_DEFINITIONS["note"],
+    }
+
     figures = {
         "registered_households": len(households),
         "adult_accounts": len(accounts),
@@ -19044,6 +19187,11 @@ async def metrics_grant_evidence(days: int = 30, format: str = "json",
     if format == "csv":
         lines = ["metric,value,window,definition"]
         window_label = f"{window_start.strftime('%Y-%m-%d')} to {now.strftime('%Y-%m-%d')}"
+        for key, value in ladder.items():
+            if key == "note":
+                continue
+            definition = LADDER_DEFINITIONS[key].replace('"', "'")
+            lines.append(f'ladder_{key},{value if value is not None else ""},"{window_label}","{definition}"')
         for key, value in figures.items():
             definition = GRANT_KPI_DEFINITIONS[key].replace('"', "'")
             if key == "weekly_signups":
@@ -19062,6 +19210,8 @@ async def metrics_grant_evidence(days: int = 30, format: str = "json",
         "window_start": iso(window_start),
         "definitions": GRANT_KPI_DEFINITIONS,
         "figures": figures,
+        "activation_ladder": ladder,
+        "activation_ladder_definitions": LADDER_DEFINITIONS,
         "caveats": [
             "Registered households are not active customers; use activated_households as the denominator.",
             "paying_households is a count of real purchases, not a conversion benchmark, while the sample is small.",

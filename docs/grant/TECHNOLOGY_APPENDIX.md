@@ -67,7 +67,7 @@ These are the questions we cannot answer from the current product, phrased so th
 
 ## 6. Evidence the repository can produce on demand
 
-- `GET /api/metrics/grant-evidence` (admin): every KPI with its definition and window, as JSON or CSV.
+- `GET /api/metrics/grant-evidence` (admin): every KPI with its definition and window, as JSON or CSV, including the second-member activation ladder (sent, opened, accepted, joined, onboarded, first action, multi-user, retained at 7 and 30 days).
 - `docs/runbooks/restore-drill.md`: dated proof that backups restore.
 - GitHub Actions history: every deploy, every test run, every smoke test.
 - `docs/grant/`: this appendix, the data-flow map, the AI processing map, the security baseline and the child and teen permissions, regenerated from the code.
