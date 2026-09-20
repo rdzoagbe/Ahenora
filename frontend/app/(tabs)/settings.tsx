@@ -32,6 +32,7 @@ import AppToast from '../../src/components/AppToast';
 import { useToast } from '../../src/hooks/useToast';
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { PressScale } from '../../src/components/PressScale';
+import { HandoverPicker } from '../../src/components/HandoverPicker';
 import { LanguageModal } from '../../src/components/LanguageModal';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
 import { TabScreen } from '../../src/components/TabScreen';
@@ -115,6 +116,13 @@ export default function Settings() {
   const [inviteRole, setInviteRole] = useState('');
   const [inviteLabel, setInviteLabel] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
+  // The one thing this invitation hands over. Required before an adult
+  // invitation can be sent — see HandoverPicker for why the rule lives in the
+  // screen rather than on the wire. `handoverPossible` is false only when the
+  // household has no card to give, which a brand-new household really can be:
+  // that must not become an invitation nobody can send.
+  const [handoverCardId, setHandoverCardId] = useState<string | null>(null);
+  const [handoverPossible, setHandoverPossible] = useState(true);
   const [invitePhone, setInvitePhone] = useState('');
   const [sending, setSending] = useState(false);
   const [inviteResult, setInviteResult] = useState<string | null>(null);
@@ -601,6 +609,11 @@ export default function Settings() {
       setInviteResult(t('set_invite_valid_email'));
       return;
     }
+    if (handoverPossible && !handoverCardId) {
+      setInviteError(true);
+      setInviteResult(t('handover_required'));
+      return;
+    }
     setSending(true);
     setInviteResult(null);
     setInviteError(false);
@@ -608,7 +621,10 @@ export default function Settings() {
       const res = await api.invite(
         submitted,
         inviteMode === 'family' || inviteMode === 'helper' ? inviteRole.trim() || undefined : undefined,
-        inviteMode === 'helper' ? { is_helper: true } : undefined,
+        {
+          ...(inviteMode === 'helper' ? { is_helper: true } : {}),
+          ...(handoverCardId ? { handover_card_id: handoverCardId } : {}),
+        },
       );
       if (res.sent) {
         // Success gets out of the way: close the sheet and confirm with a
@@ -617,6 +633,7 @@ export default function Settings() {
         setInviteResult(null);
         setInviteError(false);
         setInviteEmail('');
+        setHandoverCardId(null);
         setShowInvite(false);
         showToast(`${t('set_invite_email_sent')} ${submitted}.`, 'success');
       } else {
@@ -646,6 +663,11 @@ export default function Settings() {
       setInviteResult(t('set_invite_valid_phone'));
       return;
     }
+    if (handoverPossible && !handoverCardId) {
+      setInviteError(true);
+      setInviteResult(t('handover_required'));
+      return;
+    }
     setSending(true);
     setInviteResult(null);
     setInviteError(false);
@@ -654,6 +676,7 @@ export default function Settings() {
         relationship: inviteMode === 'family' || inviteMode === 'helper' ? inviteRole.trim() || undefined : undefined,
         label: phone,
         is_helper: inviteMode === 'helper' || undefined,
+        handover_card_id: handoverCardId || undefined,
       });
       const url = res.invite_url;
       setLastInviteUrl(url);
@@ -691,6 +714,7 @@ export default function Settings() {
         relationship: inviteMode === 'family' || inviteMode === 'helper' ? inviteRole.trim() || undefined : undefined,
         label: inviteLabel.trim() || undefined,
         is_helper: inviteMode === 'helper' || undefined,
+        handover_card_id: handoverCardId || undefined,
       });
       setLastInviteUrl(res.invite_url);
       if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) {
@@ -1414,6 +1438,18 @@ export default function Settings() {
           </>
         )}
 
+        {/* The handover. An adult invitation cannot be sent without one — the
+            ask that names nothing is the ask that left 90 of 92 households
+            with a single adult. A teen invitation is not a co-parent handover,
+            so it is not offered there. */}
+        <View style={styles.handoverBlock}>
+          <HandoverPicker
+            value={handoverCardId}
+            onChange={(id) => { setHandoverCardId(id); setInviteError(false); setInviteResult(null); }}
+            onAvailability={setHandoverPossible}
+          />
+        </View>
+
         {inviteMode === 'family' ? (
           <>
             <TextInput
@@ -1564,6 +1600,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   logoutBtn: { marginTop: 26, minHeight: 54, borderRadius: 99, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, backgroundColor: ui.dangerSoft },
   logoutText: { color: ui.danger, fontFamily: 'Inter_800ExtraBold', fontSize: 16 },
 
+  handoverBlock: { marginTop: 6, marginBottom: 2 },
   sheet: { backgroundColor: ui.card, borderTopLeftRadius: 30, borderTopRightRadius: 30, borderWidth: 1, borderColor: ui.line, padding: 24, paddingBottom: 120 },
   sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
   sheetTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 24 },

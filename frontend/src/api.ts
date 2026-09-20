@@ -1547,6 +1547,26 @@ export interface FamilyInvite {
   accepted_at?: string | null;
   accepted_by_email?: string | null;
   created_by_name?: string | null;
+  /** The card promised to whoever accepts, and when they collected it. */
+  handover_card_id?: string | null;
+  handover_done_at?: string | null;
+}
+
+/** Something the inviter can hand to the person they are inviting. */
+export interface HandoverCandidate {
+  card_id: string;
+  title: string;
+  icon?: string;
+  type?: string;
+  due_date?: string | null;
+  recurrence?: string;
+}
+
+/** What somebody sees before deciding whether to join a household. */
+export interface InvitedHousehold {
+  things_this_week: number;
+  children: number;
+  shopping_items: number;
 }
 
 export interface CalendarContact {
@@ -2025,10 +2045,17 @@ export const api = {
     request<Record<string, unknown>>(`/auth/export${includeFiles ? '?include_files=true' : ''}`),
   completeOnboarding: () =>
     request<User>('/auth/complete-onboarding', { method: 'POST' }),
-  invite: (email: string, relationship?: string, opts?: { is_teen?: boolean; age?: number; is_helper?: boolean; member_id?: string }) => {
+  /** The things this household could hand to somebody it invites. */
+  getHandoverCandidates: () =>
+    request<{ candidates: HandoverCandidate[] }>('/family/invite/handover-candidates'),
+  invite: (email: string, relationship?: string, opts?: { is_teen?: boolean; age?: number; is_helper?: boolean; member_id?: string; handover_card_id?: string }) => {
     invalidateUsageCaches();
     const body: Record<string, unknown> = { email };
     if (relationship) body.relationship = relationship;
+    // The one thing being handed over. The screens require a choice before
+    // they let an adult invitation be sent; the server accepts one without,
+    // so an older build can still invite somebody.
+    if (opts?.handover_card_id) body.handover_card_id = opts.handover_card_id;
     if (opts?.is_teen) {
       body.is_teen = true;
       if (opts.age != null) body.age = opts.age;
@@ -2052,11 +2079,11 @@ export const api = {
       body,
     });
   },
-  createInviteLink: (opts?: { relationship?: string; label?: string; is_helper?: boolean }) => {
+  createInviteLink: (opts?: { relationship?: string; label?: string; is_helper?: boolean; handover_card_id?: string }) => {
     invalidateUsageCaches();
     return request<{ ok: boolean; invite: FamilyInvite; invite_url: string }>('/family/invite/link', {
       method: 'POST',
-      body: opts && (opts.relationship || opts.label || opts.is_helper) ? opts : {},
+      body: opts && (opts.relationship || opts.label || opts.is_helper || opts.handover_card_id) ? opts : {},
     });
   },
   getMetricsSummary: (days = 14) =>
@@ -2123,6 +2150,11 @@ export const api = {
       relationship?: string | null;
       email?: string;
       expires_at?: string | null;
+      /** The one thing put aside for whoever accepts. Null when none was chosen,
+       *  or when it was finished before they looked. */
+      handover?: HandoverCandidate | null;
+      /** How big the household is. Counts only — never its contents. */
+      household?: InvitedHousehold;
     }>(`/family/invite/${encodeURIComponent(token)}`),
   listClientErrors: () =>
     request<{

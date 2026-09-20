@@ -1556,6 +1556,14 @@ const en: Dict = {
   invite_join_error: "Couldn't join — check your connection and try again.",
   invite_join_retry: 'Try again',
 
+  handover_title: 'What would you hand to them first?',
+  handover_hint: 'Pick one real thing. It is waiting for them when they join, so joining does something instead of being a new empty app.',
+  handover_repeats: 'repeats',
+  handover_no_date: 'No date yet',
+  handover_empty: 'Nothing to hand over yet. Add a task first and you can give it to them as they join.',
+  handover_failed: 'Couldn\'t load your tasks. You can still send the invitation.',
+  handover_required: 'Choose something to hand over first.',
+
   set_send_invite_title: 'Send an invite',
   set_invite_role_ph: 'Their role (optional)',
   set_invite_role_hint: 'Who are they to the family? e.g. grandparent, nanny, brother or sister — they will appear with this role in your household.',
@@ -3755,6 +3763,14 @@ const es: Dict = {
   invite_join_error: 'No se pudo unir — comprueba tu conexión e inténtalo de nuevo.',
   invite_join_retry: 'Reintentar',
 
+  handover_title: '¿Qué le pasarías primero?',
+  handover_hint: 'Elige una cosa real. Le estará esperando cuando entre, para que unirse sirva de algo en vez de abrir una aplicación vacía.',
+  handover_repeats: 'se repite',
+  handover_no_date: 'Sin fecha aún',
+  handover_empty: 'Aún no hay nada que pasar. Añade una tarea primero y podrás dársela al entrar.',
+  handover_failed: 'No se pudieron cargar tus tareas. Puedes enviar la invitación igualmente.',
+  handover_required: 'Elige primero algo que pasarle.',
+
   set_send_invite_title: 'Enviar una invitación',
   set_invite_role_ph: 'Su rol (opcional)',
   set_invite_role_hint: '¿Quién es para la familia? p. ej. abuelo/a, niñera, hermano o hermana — aparecerá con este rol en tu hogar.',
@@ -5945,6 +5961,14 @@ const fr: Dict = {
   invite_join_error: "Impossible de rejoindre — vérifiez votre connexion et réessayez.",
   invite_join_retry: 'Réessayer',
 
+  handover_title: 'Que lui confiez-vous en premier ?',
+  handover_hint: 'Choisissez une vraie chose. Elle l\'attend à son arrivée, pour que rejoindre serve à quelque chose au lieu d\'ouvrir une application vide.',
+  handover_repeats: 'récurrent',
+  handover_no_date: 'Pas encore de date',
+  handover_empty: 'Rien à confier pour l\'instant. Ajoutez d\'abord une tâche et vous pourrez la lui confier à son arrivée.',
+  handover_failed: 'Impossible de charger vos tâches. Vous pouvez quand même envoyer l\'invitation.',
+  handover_required: 'Choisissez d\'abord quelque chose à confier.',
+
   set_send_invite_title: 'Envoyer une invitation',
   set_invite_role_ph: 'Son rôle (optionnel)',
   set_invite_role_hint: 'Qui est-ce pour la famille ? p. ex. grand-parent, nounou, frère ou sœur — la personne apparaîtra avec ce rôle dans votre foyer.',
@@ -8134,6 +8158,14 @@ const de: Dict = {
   invite_joined_ok: 'Du bist dem Haushalt beigetreten!',
   invite_join_error: 'Beitritt fehlgeschlagen — prüfe deine Verbindung und versuche es erneut.',
   invite_join_retry: 'Erneut versuchen',
+
+  handover_title: 'Was übergeben Sie zuerst?',
+  handover_hint: 'Wählen Sie eine echte Sache. Sie wartet beim Beitritt auf die Person, damit der Beitritt etwas bewirkt statt eine leere App zu öffnen.',
+  handover_repeats: 'wiederholt sich',
+  handover_no_date: 'Noch kein Datum',
+  handover_empty: 'Noch nichts zu übergeben. Legen Sie zuerst eine Aufgabe an, dann können Sie sie beim Beitritt übergeben.',
+  handover_failed: 'Ihre Aufgaben konnten nicht geladen werden. Sie können die Einladung trotzdem senden.',
+  handover_required: 'Wählen Sie zuerst etwas zum Übergeben.',
 
   set_send_invite_title: 'Einladung senden',
   set_invite_role_ph: 'Deine Rolle (optional)',
