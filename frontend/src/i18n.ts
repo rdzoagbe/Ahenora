@@ -1556,6 +1556,14 @@ const en: Dict = {
   invite_join_error: "Couldn't join — check your connection and try again.",
   invite_join_retry: 'Try again',
 
+  invite_preview_waiting: 'Waiting for you',
+  invite_preview_now_yours: 'Now yours',
+  invite_preview_handed: '{name} is handing this to you',
+  invite_preview_handed_done: 'Handed over by {name}',
+  invite_preview_week: 'things this week',
+  invite_preview_children: 'children',
+  invite_preview_shopping: 'on the list',
+
   handover_title: 'What would you hand to them first?',
   handover_hint: 'Pick one real thing. It is waiting for them when they join, so joining does something instead of being a new empty app.',
   handover_repeats: 'repeats',
@@ -3763,6 +3771,14 @@ const es: Dict = {
   invite_join_error: 'No se pudo unir — comprueba tu conexión e inténtalo de nuevo.',
   invite_join_retry: 'Reintentar',
 
+  invite_preview_waiting: 'Te espera',
+  invite_preview_now_yours: 'Ahora es tuyo',
+  invite_preview_handed: '{name} te pasa esto',
+  invite_preview_handed_done: 'Pasado por {name}',
+  invite_preview_week: 'cosas esta semana',
+  invite_preview_children: 'niños',
+  invite_preview_shopping: 'en la lista',
+
   handover_title: '¿Qué le pasarías primero?',
   handover_hint: 'Elige una cosa real. Le estará esperando cuando entre, para que unirse sirva de algo en vez de abrir una aplicación vacía.',
   handover_repeats: 'se repite',
@@ -5961,6 +5977,14 @@ const fr: Dict = {
   invite_join_error: "Impossible de rejoindre — vérifiez votre connexion et réessayez.",
   invite_join_retry: 'Réessayer',
 
+  invite_preview_waiting: 'Vous attend',
+  invite_preview_now_yours: 'À vous maintenant',
+  invite_preview_handed: '{name} vous confie ceci',
+  invite_preview_handed_done: 'Confié par {name}',
+  invite_preview_week: 'choses cette semaine',
+  invite_preview_children: 'enfants',
+  invite_preview_shopping: 'sur la liste',
+
   handover_title: 'Que lui confiez-vous en premier ?',
   handover_hint: 'Choisissez une vraie chose. Elle l\'attend à son arrivée, pour que rejoindre serve à quelque chose au lieu d\'ouvrir une application vide.',
   handover_repeats: 'récurrent',
@@ -8158,6 +8182,14 @@ const de: Dict = {
   invite_joined_ok: 'Du bist dem Haushalt beigetreten!',
   invite_join_error: 'Beitritt fehlgeschlagen — prüfe deine Verbindung und versuche es erneut.',
   invite_join_retry: 'Erneut versuchen',
+
+  invite_preview_waiting: 'Wartet auf Sie',
+  invite_preview_now_yours: 'Jetzt Ihre Sache',
+  invite_preview_handed: '{name} übergibt Ihnen das',
+  invite_preview_handed_done: 'Übergeben von {name}',
+  invite_preview_week: 'Dinge diese Woche',
+  invite_preview_children: 'Kinder',
+  invite_preview_shopping: 'auf der Liste',
 
   handover_title: 'Was übergeben Sie zuerst?',
   handover_hint: 'Wählen Sie eine echte Sache. Sie wartet beim Beitritt auf die Person, damit der Beitritt etwas bewirkt statt eine leere App zu öffnen.',

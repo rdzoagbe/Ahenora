@@ -4,9 +4,11 @@ import * as Linking from 'expo-linking';
 import { UserPlus } from 'lucide-react-native';
 import { useStore } from '../store';
 import { api } from '../api';
+import type { HandoverCandidate, InvitedHousehold } from '../api';
 import { extractInviteToken, readStoredInvite, rememberInvite, clearStoredInvite } from '../invite';
 import { logger } from '../logger';
 import { PressScale } from './PressScale';
+import { InvitePreview } from './InvitePreview';
 
 /**
  * Signed-in invite acceptance. Invite links open the app directly for users
@@ -20,6 +22,11 @@ export function InviteJoinPrompt() {
   const [token, setToken] = useState<string | null>(null);
   const [inviterName, setInviterName] = useState('');
   const [relationship, setRelationship] = useState('');
+  // What this invitation put aside, and how big the household is. Asking
+  // somebody to join without telling them what they are joining is the ask
+  // that left 90 of 92 households with a single adult.
+  const [handover, setHandover] = useState<HandoverCandidate | null>(null);
+  const [household, setHousehold] = useState<InvitedHousehold | null>(null);
   const [busy, setBusy] = useState(false);
   const [joined, setJoined] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,6 +48,19 @@ export function InviteJoinPrompt() {
           setInviterName(first.inviter_name);
           setRelationship(first.relationship || '');
           setToken(first.token);
+          // invitesForMe answers who and what role, not what is waiting. One
+          // more lookup so this card reads the same whichever route found the
+          // invitation — and it is best effort, because failing it would turn
+          // a join that works into a join that never appears.
+          try {
+            const full = await api.getInvite(first.token);
+            if (!cancelled) {
+              setHandover(full.handover || null);
+              setHousehold(full.household || null);
+            }
+          } catch (e: any) {
+            logger.warn('invite detail lookup failed', e?.message || e);
+          }
         }
       } catch (e: any) {
         logger.warn('invites-for-me lookup failed', e?.message || e);
@@ -62,6 +82,8 @@ export function InviteJoinPrompt() {
         if (!cancelled) {
           setInviterName(info.inviter_name);
           setRelationship(info.relationship || '');
+          setHandover(info.handover || null);
+          setHousehold(info.household || null);
           setToken(candidate);
         }
       } catch (e: any) {
@@ -109,7 +131,10 @@ export function InviteJoinPrompt() {
     setJoined(true);
     await refreshUser().catch(() => undefined);
     refreshSubscription();
-    setTimeout(() => setToken(null), 1800);
+    // Longer than it was: the card now names what moved, and 1.8 seconds is
+    // not enough to read it. Four seconds is still a confirmation rather than
+    // something to dismiss.
+    setTimeout(() => setToken(null), 4000);
   };
 
   // A 200 alone is not a join: if a fallback lands on a server that ignores
@@ -195,13 +220,24 @@ export function InviteJoinPrompt() {
             <UserPlus color={c.accent} size={22} />
           </View>
           {joined ? (
-            <Text style={[styles.title, { color: c.text }]}>{relationship ? t('invite_joined_role').split('{role}').join(relationship) : t('invite_joined_ok')}</Text>
+            <>
+              <Text style={[styles.title, { color: c.text }]}>{relationship ? t('invite_joined_role').split('{role}').join(relationship) : t('invite_joined_ok')}</Text>
+              {/* The arrival. Something has already moved — that is the whole
+                  point of the handover, and saying so is what separates this
+                  from landing in an empty app. */}
+              <View style={styles.previewWrap}>
+                <InvitePreview inviterName={inviterName} handover={handover} collected />
+              </View>
+            </>
           ) : (
             <>
               <Text style={[styles.title, { color: c.text }]}>{t('invite_join_title')}</Text>
               <Text style={[styles.question, { color: c.text }]}>
                 {(relationship ? t('invite_join_q_role').split('{role}').join(relationship) : t('invite_join_q')).split('{name}').join(inviterName)}
               </Text>
+              <View style={styles.previewWrap}>
+                <InvitePreview inviterName={inviterName} handover={handover} household={household} />
+              </View>
               <Text style={[styles.note, { color: c.textSoft }]}>{t('invite_join_note')}</Text>
               {error ? (
                 <Text style={[styles.note, { color: c.danger, marginTop: 10 }]}>{error}</Text>
@@ -244,6 +280,7 @@ export function InviteJoinPrompt() {
 }
 
 const styles = StyleSheet.create({
+  previewWrap: { width: '100%', marginTop: 12 },
   backdrop: {
     flex: 1,
     backgroundColor: 'rgba(8,9,16,0.55)',
