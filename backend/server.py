@@ -3102,7 +3102,9 @@ async def send_new_card_alert(family_id: str, card: dict, created_by_user_id: Op
         )
 
 
-async def send_coparent_alert(family_id: str, title: str, body: str, data_type: str, created_by_user_id: Optional[str] = None):
+async def send_coparent_alert(family_id: str, title: str, body: str, data_type: str,
+                              created_by_user_id: Optional[str] = None,
+                              member_id: Optional[str] = None):
     """Notify the OTHER family members when a co-parent does something worth
     seeing (a note, an announcement, …) — the two-sided pull that makes a shared
     household app worth opening daily. Respects each user's household-alert
@@ -3125,7 +3127,11 @@ async def send_coparent_alert(family_id: str, title: str, body: str, data_type: 
             database, uid,
             title,
             preview or "Open Ahenora to see it.",
-            {"type": data_type, "family_id": family_id},
+            # The person it is about, when it is about one. A teen's star
+            # waiting on approval and a reward a child redeemed both happen ON
+            # somebody, and their record is where the decision is made.
+            {"type": data_type, "family_id": family_id,
+             **({"member_id": member_id} if member_id else {})},
             pref_key="new_card_alerts",
         )
 
@@ -8938,12 +8944,21 @@ async def teen_finish_task(card_id: str, teen=Depends(require_teen)):
     try:
         who = user.get("name") or "Your teen"
         title = (card.get("title") or "").strip()
+        # Their member row, so this behaves the same whichever way the chore
+        # was ticked: from kid mode, where the row is already in hand, or from
+        # a teen's own account, where only the login is. One notification type
+        # that sometimes opens the child and sometimes does not is worse than
+        # one that never does.
+        teen_row = await database["family_members"].find_one(
+            {"family_id": user["family_id"], "user_id": user["user_id"]},
+            {"_id": 0, "member_id": 1})
         await send_coparent_alert(
             user["family_id"],
             f"{who} finished a task",
             (f"“{title}” — approve their star?" if title else "Approve their star?"),
             "teen_approval",
             created_by_user_id=user["user_id"],
+            member_id=(teen_row or {}).get("member_id"),
         )
     except Exception as e:
         log.warning("teen approval alert failed: %s", e)
@@ -9826,6 +9841,7 @@ async def kid_finish_chore(card_id: str, child=Depends(require_child)):
                 f"{who} finished a chore",
                 (f"“{title}” — approve their stars?" if title else "Approve their stars?"),
                 "teen_approval",
+                member_id=member.get("member_id"),
             )
         except Exception as e:
             log.warning("kid approval alert failed: %s", e)
@@ -9889,7 +9905,8 @@ async def kid_request_reward(reward_id: str, child=Depends(require_child)):
         await send_coparent_alert(
             child["family_id"],
             f"{member.get('name') or 'Your child'} redeemed a reward",
-            reward.get("title") or "", "reward_redeemed", created_by_user_id=None)
+            reward.get("title") or "", "reward_redeemed", created_by_user_id=None,
+            member_id=member.get("member_id"))
     except Exception as e:
         log.warning("kid reward alert failed: %s", e)
 
@@ -12210,7 +12227,8 @@ async def redeem_reward(reward_id: str, payload: RedeemIn, user=Depends(require_
         await send_coparent_alert(
             user["family_id"],
             f"{member.get('name') or 'Your child'} redeemed a reward",
-            reward.get("title") or "", "reward_redeemed", created_by_user_id=user["user_id"])
+            reward.get("title") or "", "reward_redeemed", created_by_user_id=user["user_id"],
+            member_id=member.get("member_id"))
     except Exception as e:
         log.warning("reward alert failed: %s", e)
 

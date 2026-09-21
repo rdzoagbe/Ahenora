@@ -297,3 +297,51 @@ describe('A notification about one person opens that person', () => {
       .toEqual({ pathname: '/(tabs)/kids' });
   });
 });
+
+describe('The last two: a star to approve, and a reward just taken', () => {
+  it('opens the teen whose star is waiting on a decision', () => {
+    // Their record is where the star is approved. The Family screen was one
+    // step short of the thing the message asks you to do.
+    expect(targetForNotification({ type: 'teen_approval', member_id: 'm_3' }))
+      .toEqual({ pathname: '/member', params: { id: 'm_3' } });
+  });
+
+  it('opens the child who redeemed a reward', () => {
+    expect(targetForNotification({ type: 'reward_redeemed', member_id: 'm_4' }))
+      .toEqual({ pathname: '/member', params: { id: 'm_4' } });
+  });
+
+  it('opens the teen a star was given to', () => {
+    expect(targetForNotification({ type: 'teen_star', member_id: 'm_5' }))
+      .toEqual({ pathname: '/member', params: { id: 'm_5' } });
+  });
+
+  it('falls back to the Family screen for an older push with no person', () => {
+    for (const type of ['teen_approval', 'reward_redeemed', 'teen_star']) {
+      expect(targetForNotification({ type, family_id: 'f1' }))
+        .toEqual({ pathname: '/(tabs)/kids' });
+    }
+  });
+
+  it('keeps household news on the Family screen, where it belongs', () => {
+    // Somebody joined, an invitation was accepted: these are about the
+    // household, not about one person in it.
+    for (const type of ['family_invite', 'family_joined', 'invite_accepted']) {
+      expect(targetForNotification({ type, member_id: 'm_1' }))
+        .toEqual({ pathname: '/(tabs)/kids' });
+    }
+  });
+});
+
+describe('Nothing the server can send is left on a default', () => {
+  it('routes every type, and every one of them explicitly', () => {
+    // The fall-through default lands on the Feed, which is the screen the app
+    // opens on — so a forgotten type does not fail loudly, it produces a
+    // notification whose tap appears to do nothing. That is how four separate
+    // types shipped broken before anybody noticed.
+    const src = fs.readFileSync(
+      path.join(__dirname, '..', 'notificationRouting.ts'), 'utf8');
+    const cases = (src.match(/case '[a-z_]+':/g) || []).length;
+    expect(cases).toBeGreaterThanOrEqual(25);
+  });
+});
