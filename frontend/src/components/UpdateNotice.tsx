@@ -12,6 +12,7 @@ import { useStore } from '../store';
 import { api } from '../api';
 import { WHATS_NEW } from '../whatsNew';
 import { logger } from '../logger';
+import { hasPendingTarget } from '../pendingNotificationTarget';
 import { foregroundStartedAt, lastInteractionAt, markForegroundStart } from '../interaction';
 import { isFreshStart, shouldAutoApplyUpdate } from '../autoApplyUpdate';
 
@@ -149,6 +150,7 @@ export function UpdateNotice() {
       now: Date.now(),
       lastInteractionAt: lastInteractionAt(),
       keyboardVisible: Keyboard.isVisible(),
+      notificationPending: hasPendingTarget(),
     })) return;
     reloading.current = true;
     Updates.reloadAsync().catch((e) => {

@@ -60,12 +60,33 @@ export interface AutoApplyInput {
   lastInteractionAt: number;
   /** Whether a text field currently has the keyboard up. */
   keyboardVisible: boolean;
+  /**
+   * Whether a tapped notification is still owed its screen.
+   *
+   * The one case this policy got wrong, and it got it wrong every time. The
+   * auto-apply fires only when nobody has interacted yet — and tapping a
+   * system notification is not an interaction with the app, so a
+   * notification-tap launch ALWAYS satisfied that condition. A reload then
+   * threw away the JavaScript context and the tap with it, which is what
+   * "it blipped and reloaded but it did not take me to the navigation"
+   * describes. Reported three times before the blip was mentioned.
+   *
+   * So the comment at the top of this file is not true in this one case:
+   * there IS something to lose. Waiting costs a few seconds before an update
+   * that has already waited overnight.
+   */
+  notificationPending: boolean;
 }
 
 export function shouldAutoApplyUpdate(input: AutoApplyInput): boolean {
-  const { enabled, pending, foregroundAt, now, lastInteractionAt, keyboardVisible } = input;
+  const { enabled, pending, foregroundAt, now, lastInteractionAt, keyboardVisible,
+          notificationPending } = input;
   if (!enabled || !pending) return false;
   if (keyboardVisible) return false;
+  // Somebody tapped a notification and has not been taken there yet. Reloading
+  // now destroys the tap, and the destination is the only reason they opened
+  // the app at all.
+  if (notificationPending) return false;
   // A clock that has gone backwards (or a foregroundAt in the future) must not
   // read as "0ms since launch, go ahead" — it is not evidence of anything.
   const elapsed = now - foregroundAt;
