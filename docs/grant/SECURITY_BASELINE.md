@@ -1,10 +1,10 @@
 # Security baseline
 
-_The controls in place as of 20 September 2026, each named with the code or workflow that enforces it, followed by the gaps we know about. This extends `docs/SECURITY_REVIEW.md` (pre-launch snapshot) for the grant dossier's "security baseline" item._
+_The controls in place as of 21 September 2026, each named with the code or workflow that enforces it, followed by the gaps we know about. This extends `docs/SECURITY_REVIEW.md` (pre-launch snapshot) for the grant dossier's "security baseline" item._
 
 ## Access control
 
-- **Every route authenticates by default.** A test scans the source and fails if any route lacks an auth dependency or a written reason for being public (`tests/test_a_new_endpoint_cannot_be_public_by_accident.py`): 232 guarded, 18 deliberately public (health, legal pages, invite links, webhooks, store version).
+- **Every route authenticates by default.** A test scans the source and fails if any route lacks an auth dependency or a written reason for being public (`tests/test_a_new_endpoint_cannot_be_public_by_accident.py`): 234 guarded, 18 deliberately public (health, legal pages, invite links, webhooks, store version).
 - **Authorisation is server-side and role-based**: parent, helper, teen, child. Helpers are refused the vault, billing, member management, invites and expenses (`require_full_member`). Teens see only shared cards and their own (`_teen_can_see`). A child's PIN session reaches five routes. Tested end to end with a real kid token fired at every sensitive route, expecting 403 (`scripts/e2e_kid.py`).
 - **Per-item privacy is enforced in the database read**, not the interface: cards (`_card_visible_to`), vault documents (`_may_see_vault_doc`), and only the owner may change who sees a document or delete it.
 - **Admin routes** (metrics, error inbox, support) require an allow-listed email (`ADMIN_EMAILS`).
@@ -35,7 +35,7 @@ _The controls in place as of 20 September 2026, each named with the code or work
 
 - Native dependencies are pinned and gated: a change to the native module list cannot ship over the air (`check-native-deps.js`); the runtime version guards which binaries receive an update.
 - Dependabot for dependency updates; CodeQL (Python and JavaScript) on every pull request and on a schedule.
-- Test suites: 2,148 backend tests and 884 frontend tests at the time of writing, plus browser harnesses that drive the real web build, run on every pull request. Frontend tests that read backend files run when those files change (`backendFilesAreWatched.test.ts`).
+- Test suites: 2,227 backend tests and 1,000 frontend tests at the time of writing, plus browser harnesses that drive the real web build, run on every pull request. Frontend tests that read backend files run when those files change (`backendFilesAreWatched.test.ts`).
 - Every merge deploys through CI; over-the-air updates can be rolled back in one action (`ota-rollback.yml`).
 
 ## Monitoring and incident response
