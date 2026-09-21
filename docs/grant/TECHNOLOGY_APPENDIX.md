@@ -1,6 +1,6 @@
 # Technology appendix
 
-_Architecture, the AI component, what is technically uncertain, and the development roadmap. Written from the code as of 20 September 2026 for the grant dossier._
+_Architecture, the AI component, what is technically uncertain, and the development roadmap. Written from the code as of 21 September 2026 for the grant dossier. Every figure in it is counted from the source, not estimated._
 
 ## 1. What exists
 
@@ -9,12 +9,12 @@ Ahenora is a live family-coordination platform on three surfaces from one codeba
 | Layer | Technology | Size |
 | --- | --- | --- |
 | Mobile and web app | React Native with Expo (SDK 57), TypeScript, Expo Router | 36 screens, 53 dependencies |
-| Backend | Python, FastAPI, async | 250 API routes, 540 functions in the core service |
+| Backend | Python, FastAPI, async | 252 API routes, 548 functions in the core service |
 | Database | MongoDB Atlas (M10 dedicated), 34 collections, 62 indexes | |
 | AI | Google Gemini API (2.5 Flash, 2.0 Flash fallback) behind an input gate, an output validator and a health check | 11 AI-assisted routes |
 | Native | Document scanner, secure store, push, file system, image picker, sharing | 37 pinned native modules |
 | Delivery | GitHub Actions: tests, CodeQL, browser harnesses, over-the-air updates with rollback, store builds, smoke tests, error watch | 14 workflows |
-| Quality | 2,148 backend tests, 884 frontend tests, browser harnesses on the real web build | |
+| Quality | 2,227 backend tests, 1,000 frontend tests, browser harnesses on the real web build | |
 
 Runtime gate: a native change ships only through the stores and bumps the runtime version; JavaScript changes ship over the air the same day to every phone on that runtime. A test refuses any over-the-air update that introduces a native dependency.
 

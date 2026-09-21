@@ -1,6 +1,6 @@
 # Risk register
 
-_For the grant dossier (checklist section 12). The technical, AI, privacy, platform-dependency and delivery rows are written from the code and the operating history as of 20 September 2026. The adoption, financing and execution rows are the founder's to complete; they are drafted here so the table is whole, and marked **[FOUNDER]** where a judgement or a number must come from him._
+_For the grant dossier (checklist section 12). The technical, AI, privacy, platform-dependency and delivery rows are written from the code and the operating history as of 21 September 2026. The adoption, financing and execution rows are the founder's to complete; they are drafted here so the table is whole, and marked **[FOUNDER]** where a judgement or a number must come from him._
 
 Likelihood and impact are rated Low / Medium / High. "Owner" is who acts, not who worries.
 
@@ -17,7 +17,7 @@ Likelihood and impact are rated Low / Medium / High. "Owner" is who acts, not wh
 
 | # | Risk | L | I | Mitigation in place | Planned | Owner |
 | --- | --- | --- | --- | --- | --- | --- |
-| T1 | A change breaks the live app on two stores | M | H | 2,160 backend and 884 frontend tests, browser harnesses on the real build, CodeQL, native-dependency gate, runtime-version gate, smoke test on every deploy, one-action rollback of over-the-air updates | External code review budgeted | Engineering |
+| T1 | A change breaks the live app on two stores | M | H | 2,227 backend and 1,000 frontend tests, browser harnesses on the real build, CodeQL, native-dependency gate, runtime-version gate, smoke test on every deploy, one-action rollback of over-the-air updates | External code review budgeted | Engineering |
 | T2 | Database outage or misconfiguration | L | H | Health check names the cause; hourly error watch; restore drill run and recorded (15 and 17 Sept 2026); least-privilege database user; continuous backups on a dedicated tier | Private endpoint or strict allow-list on Atlas **[FOUNDER: confirm]** | Founder |
 | T3 | Interpretation layer misroutes household inputs across four languages and messy documents | H | M | Closed output schemas, validators, human review before saving, per-route prompts | WP2: single interpretation layer measured by correction rate (the core R&D uncertainty) | Engineering |
 | T4 | Scale: unindexed queries and blocking work slow the service as households grow | L | M | 62 indexes with a guard test that fails on an unindexed query; password hashing, cropping and model discovery off the event loop; measured timings endpoint | Pool tuning before growth | Engineering |
