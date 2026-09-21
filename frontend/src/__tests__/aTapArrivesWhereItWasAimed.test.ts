@@ -121,8 +121,16 @@ describe('A notification about one document opens that document', () => {
       .toEqual({ pathname: '/(tabs)/vault' });
   });
 
-  it('leaves a renewal sweep on the Vault, because it is about several', () => {
+  it('opens the document when a renewal sweep found exactly one', () => {
+    // Written when this sweep could not name one. It can now: when a single
+    // document is due, the Vault is the right screen and the reader should
+    // not then have to find the document on it.
     expect(targetForNotification({ type: 'due_documents', doc_id: 'd_1' }))
+      .toEqual({ pathname: '/(tabs)/vault', params: { docId: 'd_1' } });
+  });
+
+  it('leaves a sweep covering several on the Vault itself', () => {
+    expect(targetForNotification({ type: 'due_documents' }))
       .toEqual({ pathname: '/(tabs)/vault' });
   });
 });
@@ -251,5 +259,41 @@ describe('Every screen a notification aims at can honour what it was sent', () =
     for (const rel of ['app/(tabs)/kitchen.tsx', 'app/(tabs)/calendar.tsx', 'app/(tabs)/vault.tsx']) {
       expect(read(rel)).toMatch(/openedFromNotification\.current = null;/);
     }
+  });
+});
+
+describe('A notification about one person opens that person', () => {
+  it('opens the child whose vaccination is due', () => {
+    // The Family screen was the right screen and the reader still had to go
+    // looking among several children. Being told is not being shown.
+    expect(targetForNotification({ type: 'due_vaccinations', member_id: 'm_1' }))
+      .toEqual({ pathname: '/member', params: { id: 'm_1' } });
+  });
+
+  it('opens the document whose renewal is due', () => {
+    expect(targetForNotification({ type: 'due_documents', doc_id: 'd_1' }))
+      .toEqual({ pathname: '/(tabs)/vault', params: { docId: 'd_1' } });
+  });
+
+  it('opens the child who reached a star milestone', () => {
+    // Their record is where the stars are and where a reward is given, which
+    // is what the message suggests doing next.
+    expect(targetForNotification({ type: 'star_milestone', member_id: 'm_2' }))
+      .toEqual({ pathname: '/member', params: { id: 'm_2' } });
+  });
+
+  it('falls back to the Family screen when no one is named', () => {
+    // A reminder covering several children, or an older push.
+    expect(targetForNotification({ type: 'due_vaccinations' }))
+      .toEqual({ pathname: '/(tabs)/kids' });
+    expect(targetForNotification({ type: 'star_milestone', family_id: 'f1' }))
+      .toEqual({ pathname: '/(tabs)/kids' });
+  });
+
+  it('leaves a mixed reminder on the Family screen', () => {
+    // One push covering a vaccination AND a document cannot open both, and
+    // guessing which half was meant is worse than showing the list.
+    expect(targetForNotification({ type: 'due_dates', member_id: 'm_1' }))
+      .toEqual({ pathname: '/(tabs)/kids' });
   });
 });
