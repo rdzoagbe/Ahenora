@@ -75,7 +75,11 @@ class WhatTheMorningDigestPointsAt(unittest.TestCase):
         return asyncio.run(server._build_morning_digest(self.db, self.user, self.local, self.L))
 
     def card_id_of(self, built):
-        return built[4] if built and len(built) > 4 else None
+        # The fifth element is a dict of what the message is about, not a bare
+        # card id: not everything these jobs talk about is a card. The dinner
+        # reminder names a meal, the nightly calendar names a day.
+        extra = built[4] if built and len(built) > 4 else None
+        return (extra or {}).get("card_id")
 
     def test_a_day_with_one_thing_names_that_thing(self):
         self.add("c_today", 0)
@@ -153,10 +157,23 @@ class TheCardRidesOnThePush(unittest.TestCase):
         return asyncio.run(go())
 
     def test_a_named_card_reaches_the_phone(self):
-        self.run_job(("Today", "1 thing still open from earlier", None, None, "c_old"))
+        self.run_job(("Today", "1 thing still open from earlier", None, None, {"card_id": "c_old"}))
         self.assertEqual(len(self.sent), 1)
         self.assertEqual(self.sent[0]["data"]["type"], "morning_digest")
         self.assertEqual(self.sent[0]["data"]["card_id"], "c_old")
+
+    def test_a_meal_or_any_other_thing_rides_the_same_way(self):
+        # The dinner reminder is about a meal, not a card. One mechanism for
+        # both, so a new daily job does not need a new field on the wire.
+        self.run_job(("Dinner tonight", "Lasagne", None, None, {"meal_id": "m_1"}))
+        self.assertEqual(self.sent[0]["data"]["meal_id"], "m_1")
+        self.assertNotIn("card_id", self.sent[0]["data"])
+
+    def test_an_empty_value_is_not_sent_at_all(self):
+        # A key with nothing behind it asks the screen to open something that
+        # does not exist — a tap that looks like it worked and does not.
+        self.run_job(("Today", "3 things today", None, None, {"card_id": None, "meal_id": ""}))
+        self.assertEqual(set(self.sent[0]["data"]), {"type"})
 
     def test_no_named_card_sends_no_empty_key(self):
         # An empty card_id would route to the Feed asking it to open a card
