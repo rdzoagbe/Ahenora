@@ -171,19 +171,20 @@ export function targetForNotification(data: unknown): { pathname: string; params
       return d.member_id
         ? { pathname: '/member', params: { id: String(d.member_id) } }
         : { pathname: '/(tabs)/kids' };
-    // These are about the household rather than one person in it: somebody
-    // joined, an invitation was accepted, a teen needs a decision. The
-    // Family screen is what they are all about.
-    //
-    // teen_approval and reward_redeemed could name their person too, but the
-    // helper that sends them carries only the household today. Left honest
-    // rather than half-done.
-    case 'family_invite':
-    case 'family_joined':
-    case 'invite_accepted':
+    // A star waiting on approval and a reward just redeemed both happen ON
+    // somebody, and their record is where the decision gets made: approve the
+    // star, see what the reward cost. The Family screen was one step short.
     case 'teen_approval':
     case 'teen_star':
     case 'reward_redeemed':
+      return d.member_id
+        ? { pathname: '/member', params: { id: String(d.member_id) } }
+        : { pathname: '/(tabs)/kids' };
+    // These really are about the household rather than one person in it:
+    // somebody joined, an invitation was accepted.
+    case 'family_invite':
+    case 'family_joined':
+    case 'invite_accepted':
       return { pathname: '/(tabs)/kids' };
     default:
       return { pathname: '/(tabs)/feed' };
