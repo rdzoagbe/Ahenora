@@ -137,8 +137,14 @@ export function targetForNotification(data: unknown): { pathname: string; params
     // A vaccination lives on a child's record; a document lives in the vault.
     // The server types the push by which it found, so the tap can land on the
     // screen that actually holds the thing.
+    // A vaccination lives on ONE child's record, among several children. The
+    // Family screen was the right screen and the reader still had to go
+    // looking — being told is not being shown. The member screen loads
+    // entirely from the id, so that is all a notification needs to carry.
     case 'due_vaccinations':
-      return { pathname: '/(tabs)/kids' };
+      return d.member_id
+        ? { pathname: '/member', params: { id: String(d.member_id) } }
+        : { pathname: '/(tabs)/kids' };
     // "Roland shared a document with you" is about ONE document, and until now
     // the tap opened the Vault and stopped there — leaving the reader to find
     // the thing they had just been told about, on a screen that may hold
@@ -149,16 +155,32 @@ export function targetForNotification(data: unknown): { pathname: string; params
         : { pathname: '/(tabs)/vault' };
     // A renewal sweep is about several documents at once, so the Vault itself
     // is the honest destination.
+    // Same for a document renewal: one document among dozens.
     case 'due_documents':
-      return { pathname: '/(tabs)/vault' };
+      return d.doc_id
+        ? { pathname: '/(tabs)/vault', params: { docId: String(d.doc_id) } }
+        : { pathname: '/(tabs)/vault' };
     // Both at once. Neither screen is right, so send them where the whole
     // household is rather than guessing and being wrong half the time.
     case 'due_dates':
       return { pathname: '/(tabs)/kids' };
+    // A star milestone is about one child, and their record is where the
+    // stars are and where a reward is given — which is exactly what the
+    // message suggests doing next.
+    case 'star_milestone':
+      return d.member_id
+        ? { pathname: '/member', params: { id: String(d.member_id) } }
+        : { pathname: '/(tabs)/kids' };
+    // These are about the household rather than one person in it: somebody
+    // joined, an invitation was accepted, a teen needs a decision. The
+    // Family screen is what they are all about.
+    //
+    // teen_approval and reward_redeemed could name their person too, but the
+    // helper that sends them carries only the household today. Left honest
+    // rather than half-done.
     case 'family_invite':
     case 'family_joined':
     case 'invite_accepted':
-    case 'star_milestone':
     case 'teen_approval':
     case 'teen_star':
     case 'reward_redeemed':

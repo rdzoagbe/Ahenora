@@ -2643,7 +2643,8 @@ async def check_push_receipts(database, now: Optional[datetime] = None) -> dict:
 STAR_MILESTONE = 50
 
 
-async def send_star_milestone_alert(family_id: str, member_name: str, old_total: int, new_total: int):
+async def send_star_milestone_alert(family_id: str, member_name: str, old_total: int,
+                                    new_total: int, member_id: Optional[str] = None):
     """Notify the household when a child crosses a 50-star milestone.
 
     Over the household's ACCOUNTS, through send_push_to_user — the same route
@@ -2668,7 +2669,12 @@ async def send_star_milestone_alert(family_id: str, member_name: str, old_total:
                 database, uid,
                 f"{member_name} reached {milestone} stars!",
                 "Amazing work — time to celebrate with a reward?",
-                {"type": "star_milestone", "family_id": family_id},
+                # The child it is about, so the tap opens THEIR record —
+                # where the stars are, and where a reward is awarded. "Ella
+                # reached 50 stars, time to celebrate with a reward?" landing
+                # on a list of children asks the reader to find Ella first.
+                {"type": "star_milestone", "family_id": family_id,
+                 **({"member_id": member_id} if member_id else {})},
                 pref_key="new_card_alerts",
             )
     except Exception as e:
@@ -3732,7 +3738,7 @@ async def _build_due_dates(database, user, local, L):
                 {"$set": {f"record.vaccinations.$.{DUE_MARK_DATE}": _d,
                           f"record.vaccinations.$.{DUE_MARK_STAGE}": _s}})
 
-        hits.append((label, stage, mark_vax, "vax"))
+        hits.append((label, stage, mark_vax, "vax", member_id))
 
     for doc_id, doc, title, date_key, target in await _due_vault_docs(database, user):
         stage = due_stage(target, local)
@@ -3744,7 +3750,7 @@ async def _build_due_dates(database, user, local, L):
                 {"family_id": user.get("family_id"), "doc_id": _i},
                 {"$set": {DUE_MARK_DATE: _d, DUE_MARK_STAGE: _s}})
 
-        hits.append((title, stage, mark_doc, "doc"))
+        hits.append((title, stage, mark_doc, "doc", doc_id))
 
     if not hits:
         return None
@@ -3752,7 +3758,7 @@ async def _build_due_dates(database, user, local, L):
     # Everything that has arrived comes before everything that is merely
     # coming: the overdue ones are the ones with nothing left to plan around.
     hits.sort(key=lambda h: (h[1] != "due", h[0].lower()))
-    for _, _, write, _kind in hits:
+    for _, _, write, _kind, _id in hits:
         await write()
 
     overdue = [h for h in hits if h[1] == "due"]
@@ -3772,7 +3778,17 @@ async def _build_due_dates(database, user, local, L):
     push_type = ("due_vaccinations" if kinds == {"vax"}
                  else "due_documents" if kinds == {"doc"}
                  else "due_dates")
-    return (L["due_title"], body, "card-reminders", push_type)
+    # And WHICH one, when it is one. The screen was the right screen and the
+    # reader still had to go looking: a vaccination lives on a child's record
+    # among several children, a document among dozens in the vault. Naming it
+    # is the difference between being told and being shown. With several
+    # there is no single right answer and the list is the honest one — the
+    # same rule the morning digest follows.
+    extra = None
+    if len(hits) == 1:
+        only = hits[0]
+        extra = {"member_id": only[4]} if only[3] == "vax" else {"doc_id": only[4]}
+    return (L["due_title"], body, "card-reminders", push_type, extra)
 
 
 async def _build_allowance_reminder(database, user, local, L):
@@ -7458,7 +7474,8 @@ async def adjust_member_stars(member_id: str, payload: StarAdjustmentIn, user=De
     new_total = int(updated.get("stars", 0)) if updated else current_stars + delta
 
     if delta > 0:
-        await send_star_milestone_alert(user["family_id"], member.get("name", "Your child"), current_stars, new_total)
+        await send_star_milestone_alert(user["family_id"], member.get("name", "Your child"),
+                                        current_stars, new_total, member.get("member_id"))
 
     return {
         "ok": True,
