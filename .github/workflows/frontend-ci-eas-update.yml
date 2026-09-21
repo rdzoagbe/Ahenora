@@ -92,7 +92,25 @@ on:
 concurrency:
   # Keyed on the head BRANCH, not the ref: a push and its pull request
   # produce different refs, so keying on ref would run everything twice.
-  group: frontend-ci-eas-update-${{ github.event.pull_request.head.ref || github.ref_name }}
+  #
+  # A DELIBERATE PUBLISH GETS A GROUP OF ITS OWN, and that suffix is the whole
+  # point of it. Every merge to main is followed seconds later by an automatic
+  # commit rebuilding the web export, and that push landed in this same group
+  # with cancel-in-progress — so a hotfix publish started after a merge was
+  # reliably killed by the repository's own housekeeping, before it reached
+  # `eas update`. It happened twice on 20 September and read both times as
+  # "Ota failed" with no cause given.
+  #
+  # That left no way to ship on demand at all: the schedule is best-effort and
+  # dropped an entire night on 20 September, and the one manual lever could be
+  # cancelled by a push nobody made on purpose. A publish a person asked for
+  # must outlive routine traffic.
+  #
+  # Still cancellable BY ANOTHER MANUAL PUBLISH, which is the one case where
+  # newer genuinely supersedes older.
+  group: >-
+    frontend-ci-eas-update-${{ github.event.pull_request.head.ref || github.ref_name
+    }}${{ github.event_name == 'workflow_dispatch' && '-manual' || '' }}
   cancel-in-progress: true
 
 permissions:
