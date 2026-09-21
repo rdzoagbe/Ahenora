@@ -376,7 +376,8 @@ export default function Feed() {
   const pendingDismissRef = useRef<Set<string>>(new Set());
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
   // Set when a tapped notification named the card it was about.
-  const { cardId: notifiedCardId } = useLocalSearchParams<{ cardId?: string }>();
+  const { cardId: notifiedCardId, noteId: notifiedNoteId } =
+    useLocalSearchParams<{ cardId?: string; noteId?: string }>();
   const openedFromNotification = useRef<string | null>(null);
   const { toast, showToast } = useToast(3200);
   const [captureText, setCaptureText] = useState('');
@@ -424,7 +425,12 @@ export default function Feed() {
   const [noteFor, setNoteFor] = useState<string | null>(null);
   const [savingNote, setSavingNote] = useState(false);
   const [ackingNote, setAckingNote] = useState<string | null>(null);
+  // Hand-off notes start expanded, but somebody who collapsed them would
+  // otherwise tap "Keigh left you a note" and land on a closed section — the
+  // notification pointing at something folded away. A note has no detail
+  // sheet to open; being on screen IS opening it.
   const [expandNotes, setExpandNotes] = useState(true);
+  const notedFromNotification = useRef<string | null>(null);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [annText, setAnnText] = useState('');
   const [savingAnn, setSavingAnn] = useState(false);
@@ -685,6 +691,18 @@ export default function Feed() {
     openedFromNotification.current = notifiedCardId;
     setSelectedCard(found);
   }, [notifiedCardId, loading, cards, assigned]);
+
+  // The note a tapped notification named. Nothing to open, only to be sure it
+  // is not folded away behind a collapsed heading.
+  useEffect(() => {
+    if (!notifiedNoteId) {
+      notedFromNotification.current = null;
+      return;
+    }
+    if (notedFromNotification.current === notifiedNoteId) return;
+    notedFromNotification.current = notifiedNoteId;
+    setExpandNotes(true);
+  }, [notifiedNoteId]);
 
   const pastEvents = useMemo(() => {
     const startToday = new Date();

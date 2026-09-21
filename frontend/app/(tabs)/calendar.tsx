@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Platform, Pressable, StyleSheet, Switch, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import * as Google from 'expo-auth-session/providers/google';
 import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
@@ -209,6 +209,7 @@ export default function Calendar() {
     return () => setSelectedCalendarDay(null);
   }, [selectedDay]);
 
+
   // Read by handleRefresh for its "before" snapshot. Refs rather than deps:
   // putting cards in the callback's dependency list would rebuild the handler
   // on every load, and the RefreshControl would take a new function mid-pull.
@@ -232,6 +233,43 @@ export default function Calendar() {
   useEffect(() => { pendingRef.current = pendingCount; }, [pendingCount]);
 
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
+  // The day, and possibly the one thing, a tapped notification was about.
+  // "Tomorrow: 3 things planned" opened on TODAY — the single day the message
+  // is not about — so the reader arrived and saw none of what they had just
+  // been told. The dateKey format here and the one the server sends are both
+  // YYYY-MM-DD in the household's own timezone.
+  const { day: notifiedDay, cardId: notifiedCardId } =
+    useLocalSearchParams<{ day?: string; cardId?: string }>();
+  const openedFromNotification = useRef<string | null>(null);
+  // Go to the day a notification named, and open the one thing on it when the
+  // message was about one thing. The day is applied before the cards arrive —
+  // it needs no data — while the card waits for the list it must be found in.
+  //
+  // Spent once honoured, latch released only when the parameter is gone: the
+  // same shape as the Vault and the Kitchen, so a second tap on the same
+  // reminder opens it again rather than silently doing nothing.
+  useEffect(() => {
+    if (!notifiedDay && !notifiedCardId) {
+      openedFromNotification.current = null;
+      return;
+    }
+    const key = notifiedDay || notifiedCardId || '';
+    if (openedFromNotification.current === key) return;
+    if (notifiedDay) setSelectedDay(notifiedDay);
+    if (!notifiedCardId) {
+      openedFromNotification.current = key;
+      router.setParams({ day: undefined });
+      return;
+    }
+    if (loading) return;
+    const found = cards.find((c) => c.card_id === notifiedCardId);
+    // Not finding it is not an error: it can be completed or deleted between
+    // the evening it was announced and the morning it is tapped.
+    if (!found) return;
+    openedFromNotification.current = key;
+    setSelectedCard(found);
+    router.setParams({ day: undefined, cardId: undefined });
+  }, [notifiedDay, notifiedCardId, loading, cards, router]);
   // Gift pots keyed by the birthday card they belong to, so a BIRTHDAY row can
   // show its pot's progress inline without a per-row fetch.
   const [giftPotByCard, setGiftPotByCard] = useState<Record<string, GiftPot>>({});

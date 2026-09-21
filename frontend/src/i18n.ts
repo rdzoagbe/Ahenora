@@ -1567,6 +1567,11 @@ const en: Dict = {
   cook_seasoning: 'Spices to lift it',
   cook_seasoning_hint: 'Suggestions, not part of the recipe. Nothing below is in the ingredients or the steps, so leave out anything your household does not like.',
 
+  addcard_repeat_reminder_title: 'This one repeats',
+  addcard_repeat_reminder_body: 'A reminder on a repeating task comes back every time it comes round. Do you want one?',
+  addcard_repeat_reminder_keep: 'Yes, remind me each time',
+  addcard_repeat_reminder_off: 'No reminder',
+
   handover_title: 'What would you hand to them first?',
   handover_hint: 'Pick one real thing. It is waiting for them when they join, so joining does something instead of being a new empty app.',
   handover_repeats: 'repeats',
@@ -3785,6 +3790,11 @@ const es: Dict = {
   cook_seasoning: 'Especias para realzarlo',
   cook_seasoning_hint: 'Sugerencias, no parte de la receta. Nada de esto está en los ingredientes ni en los pasos: deja fuera lo que no guste en tu casa.',
 
+  addcard_repeat_reminder_title: 'Esta se repite',
+  addcard_repeat_reminder_body: 'Un recordatorio en una tarea que se repite vuelve cada vez. ¿Quieres uno?',
+  addcard_repeat_reminder_keep: 'Sí, recuérdamelo cada vez',
+  addcard_repeat_reminder_off: 'Sin recordatorio',
+
   handover_title: '¿Qué le pasarías primero?',
   handover_hint: 'Elige una cosa real. Le estará esperando cuando entre, para que unirse sirva de algo en vez de abrir una aplicación vacía.',
   handover_repeats: 'se repite',
@@ -5994,6 +6004,11 @@ const fr: Dict = {
   cook_seasoning: 'Épices pour relever le plat',
   cook_seasoning_hint: 'Des suggestions, pas la recette. Rien ci-dessous n\'est dans les ingrédients ni dans les étapes : laissez de côté ce que votre foyer n\'aime pas.',
 
+  addcard_repeat_reminder_title: 'Cette tâche se répète',
+  addcard_repeat_reminder_body: 'Un rappel sur une tâche récurrente revient à chaque fois. En voulez-vous un ?',
+  addcard_repeat_reminder_keep: 'Oui, me rappeler à chaque fois',
+  addcard_repeat_reminder_off: 'Aucun rappel',
+
   handover_title: 'Que lui confiez-vous en premier ?',
   handover_hint: 'Choisissez une vraie chose. Elle l\'attend à son arrivée, pour que rejoindre serve à quelque chose au lieu d\'ouvrir une application vide.',
   handover_repeats: 'récurrent',
@@ -8202,6 +8217,11 @@ const de: Dict = {
 
   cook_seasoning: 'Gewürze, die es heben',
   cook_seasoning_hint: 'Vorschläge, nicht Teil des Rezepts. Nichts davon steht in den Zutaten oder Schritten: Lassen Sie weg, was Ihr Haushalt nicht mag.',
+
+  addcard_repeat_reminder_title: 'Das wiederholt sich',
+  addcard_repeat_reminder_body: 'Eine Erinnerung an einer wiederkehrenden Aufgabe kommt jedes Mal zurück. Möchten Sie eine?',
+  addcard_repeat_reminder_keep: 'Ja, jedes Mal erinnern',
+  addcard_repeat_reminder_off: 'Keine Erinnerung',
 
   handover_title: 'Was übergeben Sie zuerst?',
   handover_hint: 'Wählen Sie eine echte Sache. Sie wartet beim Beitritt auf die Person, damit der Beitritt etwas bewirkt statt eine leere App zu öffnen.',

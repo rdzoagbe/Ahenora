@@ -9,6 +9,9 @@
  * tap is retried until it gives up, too loose and a stomped navigation is
  * recorded as a success.
  */
+import * as fs from 'fs';
+import * as path from 'path';
+
 import { normalizeRoutePath, paramsMatchTarget, routeMatchesTarget, targetForNotification } from '../notificationRouting';
 
 describe('A route path is compared without its groups', () => {
@@ -160,5 +163,93 @@ describe('Arrival means the params landed too, not just the path', () => {
     expect(paramsMatchTarget({ thread: 't1' }, { thread: 't1', title: 'Keigh' })).toBe(false);
     expect(paramsMatchTarget({ thread: 't1', title: 'Keigh' }, { thread: 't1', title: 'Keigh' }))
       .toBe(true);
+  });
+});
+
+/**
+ * The audit, held as a test.
+ *
+ * "If I get a notification about a meal, it takes me to the meal and opens the
+ * meal with the recipe. If I get a notification about a task, it goes to the
+ * task, opens the task, and I see what is in there to check whether it's done."
+ *
+ * Landing on the right PAGE was never the standard. These pin the second half:
+ * that the thing the message named is the thing that opens.
+ */
+describe('A notification opens the thing it is about, not the page it lives on', () => {
+  it('opens the meal, with its recipe, for a dinner reminder', () => {
+    // "Dinner tonight: lasagne" opened the Kitchen with the evening still to
+    // find on it. A reminder you have to go looking through is a second errand.
+    expect(targetForNotification({ type: 'dinner_reminder', meal_id: 'm_1' }))
+      .toEqual({ pathname: '/(tabs)/kitchen', params: { mealId: 'm_1' } });
+  });
+
+  it('still opens the Kitchen when no meal was named', () => {
+    expect(targetForNotification({ type: 'dinner_reminder' }))
+      .toEqual({ pathname: '/(tabs)/kitchen' });
+  });
+
+  it('opens tomorrow, not today, for the nightly calendar', () => {
+    // It opened on TODAY — the one day the message is not about — so the
+    // reader arrived and saw none of what they had just been told.
+    expect(targetForNotification({ type: 'calendar_nightly', day: '2026-09-22' }))
+      .toEqual({ pathname: '/(tabs)/calendar', params: { day: '2026-09-22' } });
+  });
+
+  it('opens the single thing tomorrow holds, when it holds one', () => {
+    expect(targetForNotification({ type: 'calendar_nightly', day: '2026-09-22', card_id: 'c1' }))
+      .toEqual({ pathname: '/(tabs)/calendar', params: { cardId: 'c1', day: '2026-09-22' } });
+  });
+
+  it('opens the note a hand-off notification named', () => {
+    expect(targetForNotification({ type: 'handoff_note', note_id: 'n_1' }))
+      .toEqual({ pathname: '/(tabs)/feed', params: { noteId: 'n_1' } });
+  });
+
+  it('opens the task, where it can be read and ticked off', () => {
+    // Already true, and pinned here so the audit covers it: the Feed's card
+    // sheet carries the title, the day, the assignee, reschedule and Mark done.
+    for (const type of ['task_assigned', 'new_card', 'card_reminder', 'shared_card']) {
+      expect(targetForNotification({ type, card_id: 'c1' }))
+        .toEqual({ pathname: '/(tabs)/feed', params: { cardId: 'c1' } });
+    }
+  });
+
+  it('leaves an announcement on the Feed, because it carried its own message', () => {
+    expect(targetForNotification({ type: 'announcement', note_id: 'n_1' }))
+      .toEqual({ pathname: '/(tabs)/feed' });
+  });
+});
+
+describe('Every screen a notification aims at can honour what it was sent', () => {
+  const read = (rel: string) =>
+    fs.readFileSync(path.join(__dirname, '..', '..', rel), 'utf8');
+
+  it('the Kitchen opens the meal and clears the parameter after', () => {
+    const kitchen = read('app/(tabs)/kitchen.tsx');
+    expect(kitchen).toContain('mealId: notifiedMealId');
+    expect(kitchen).toContain('generateRecipe(found)');
+    expect(kitchen).toContain("router.setParams({ mealId: undefined })");
+  });
+
+  it('the Calendar moves to the day and opens the card', () => {
+    const cal = read('app/(tabs)/calendar.tsx');
+    expect(cal).toContain('setSelectedDay(notifiedDay)');
+    expect(cal).toContain('setSelectedCard(found)');
+  });
+
+  it('the Feed unfolds the notes when one is named', () => {
+    const feed = read('app/(tabs)/feed.tsx');
+    expect(feed).toContain('noteId: notifiedNoteId');
+    expect(feed).toContain('setExpandNotes(true)');
+  });
+
+  it('each of them releases its latch only when the parameter is gone', () => {
+    // Releasing inline brings back the reappear-on-every-reload problem;
+    // never releasing means a second tap on the same notification does
+    // nothing. Both were found in review on other screens.
+    for (const rel of ['app/(tabs)/kitchen.tsx', 'app/(tabs)/calendar.tsx', 'app/(tabs)/vault.tsx']) {
+      expect(read(rel)).toMatch(/openedFromNotification\.current = null;/);
+    }
   });
 });

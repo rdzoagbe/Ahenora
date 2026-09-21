@@ -3486,7 +3486,7 @@ async def _build_morning_digest(database, user, local, L):
         # was indistinguishable from launching the app. Naming the card is
         # what makes the difference visible. With several, there is no single
         # right place and the Feed, which lists them, is the honest answer.
-        return (L["digest_title"], body, None, None, _only(today_ids))
+        return (L["digest_title"], body, None, None, {"card_id": _only(today_ids)})
 
     # Nothing due in the window, but the house is not actually clear: there is
     # open work, it is just old.
@@ -3509,7 +3509,7 @@ async def _build_morning_digest(database, user, local, L):
         # that goes nowhere: it names a single item and then lands on a screen
         # showing today, where a thing from last week is not the first thing
         # the eye finds. One backlog item means one card to open.
-        return (L["digest_title"], line, None, None, _only(backlog_ids))
+        return (L["digest_title"], line, None, None, {"card_id": _only(backlog_ids)})
     # Nothing on. The quiet-day tip used to be scheduled on the phone for 07:30
     # while the server digest fired at 07:30 too — so a BUSY day produced both,
     # from the same title, which is the duplicate this whole change exists to
@@ -3539,22 +3539,35 @@ async def _build_dinner_reminder(database, user, local, L):
         if not item.get("checked"):
             to_buy += 1
     body = L["dinner_body_buy"].format(meal=title, n=to_buy) if to_buy else title
-    return (L["dinner_title"], body)
+    # Name the meal, so the tap opens THAT dish and its recipe rather than the
+    # Kitchen with the evening still to find on it. "Dinner tonight: lasagne"
+    # landing on a screen where you then look for the lasagne is not a
+    # reminder, it is a second errand.
+    return (L["dinner_title"], body, None, None, {"meal_id": meal.get("meal_id")})
 
 
 async def _build_calendar_nightly(database, user, local, L):
     """How tomorrow looks, said the evening before while it can still be changed."""
     start, end = _local_day_bounds(local, 1)
     count = 0
+    ids = []
     async for card in database["cards"].find(
             {"family_id": user.get("family_id"), "status": "OPEN"}, {"_id": 0}):
         due = ensure_aware_utc(card.get("due_date"))
         if due and start <= due < end and _visible_to(user, card):
             count += 1
+            ids.append(card.get("card_id"))
     if count == 0:
         return None
     body = L["nightly_body_one"] if count == 1 else L["nightly_body"].format(n=count)
-    return (L["nightly_title"], body)
+    # "Tomorrow" opened on today, which is the one day the message is NOT
+    # about, so the reader arrived and saw nothing they had been told about.
+    # The day it means travels with it; and when tomorrow holds exactly one
+    # thing, that thing opens, the same rule the morning digest follows.
+    return (L["nightly_title"], body, None, None, {
+        "day": start.astimezone(local.tzinfo).strftime("%Y-%m-%d") if local.tzinfo else start.strftime("%Y-%m-%d"),
+        "card_id": _only(ids),
+    })
 
 
 async def _build_sunday_recap(database, user, local, L):
@@ -3915,12 +3928,16 @@ async def run_daily_local_push(database, job: dict, now: Optional[datetime] = No
             title, body = built[0], built[1]
             channel = (len(built) > 2 and built[2]) or job["channel"]
             kind = (len(built) > 3 and built[3]) or job["key"]
-            # A builder may also name the one card its message is about, so the
-            # tap opens that card rather than the screen it happens to live on.
-            card_id = built[4] if len(built) > 4 else None
+            # A builder may also name WHAT its message is about, so the tap
+            # opens that thing rather than the screen it happens to live on.
+            # A dict rather than a card id, because not everything these jobs
+            # talk about is a card: the dinner reminder is about a meal, the
+            # nightly calendar is about a day. Each names its own thing and
+            # the routing table knows what to do with it.
+            extra = built[4] if len(built) > 4 else None
             data = {"type": kind}
-            if card_id:
-                data["card_id"] = card_id
+            if isinstance(extra, dict):
+                data.update({k: v for k, v in extra.items() if v})
             await send_push_to_user(
                 database, user_id, title, body, data, channel=channel)
             sent += 1

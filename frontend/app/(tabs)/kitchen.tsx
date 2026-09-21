@@ -3,7 +3,7 @@ import { Alert, View, Text, StyleSheet, TextInput, ScrollView, ActivityIndicator
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { Plus, X, Trash2, ShoppingCart, Check, UtensilsCrossed, ChevronLeft, History, RotateCcw, Sparkles, Sun, ChefHat, Clock, AlertTriangle, Search, Minus, Camera, Image as ImageIcon , ListChecks, Leaf, Shuffle} from 'lucide-react-native';
 
@@ -99,6 +99,13 @@ export default function Kitchen() {
 
   const [view, setView] = useState<KitchenView>('shop');
   const [loading, setLoading] = useState(true);
+  // The meal a tapped notification was about. "Dinner tonight: lasagne" used
+  // to open the Kitchen and stop there, leaving the cook to find the lasagne
+  // on it — a reminder you have to go looking through is a second errand, not
+  // a reminder. The recipe is what is actually needed at 17:30.
+  const { mealId: notifiedMealId } = useLocalSearchParams<{ mealId?: string }>();
+  const openedFromNotification = useRef<string | null>(null);
+  const router = useRouter();
   const [refreshing, setRefreshing] = useState(false);
   const { toast, showToast } = useToast();
 
@@ -927,6 +934,31 @@ export default function Kitchen() {
       setRegenBusy(false);
     }
   }, [cookingRecipe, regenBusy, recipeDiet, suggestLang, showToast, t]);
+
+  // Open the meal a notification was about, once the plan has loaded, with its
+  // recipe — which is the thing a dinner reminder is actually for.
+  //
+  // The parameter is spent once honoured and the latch released only when it
+  // is gone, the same shape the Vault uses: the latch alone stops the sheet
+  // reappearing on every reload of the plan, and clearing the parameter is
+  // what lets a SECOND tap on the same reminder open it again.
+  //
+  // A meal that is no longer planned is not an error. Somebody can change
+  // what is for dinner between 17:30 and picking the phone up, and the reader
+  // is then simply left on the Kitchen, which is where they were going.
+  useEffect(() => {
+    if (!notifiedMealId) {
+      openedFromNotification.current = null;
+      return;
+    }
+    if (loading) return;
+    if (openedFromNotification.current === notifiedMealId) return;
+    const found = meals.find((m) => m.meal_id === notifiedMealId);
+    if (!found) return;
+    openedFromNotification.current = notifiedMealId;
+    generateRecipe(found);
+    router.setParams({ mealId: undefined });
+  }, [notifiedMealId, loading, meals, generateRecipe, router]);
 
   // "Ask the AI for a recipe": generate a full recipe from a typed dish name,
   // no plan entry required, and open it in the same recipe view. Metered and

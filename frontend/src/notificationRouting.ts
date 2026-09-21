@@ -42,7 +42,16 @@ export function targetForNotification(data: unknown): { pathname: string; params
         : { pathname: '/(tabs)/feed' };
     // No single card to open: a hand-off note is a message about the day, and
     // an announcement is addressed to the household.
+    // A hand-off note is a message about the day, written to be read. It
+    // lives on the Feed among everything else, so the note it names is the
+    // one that opens rather than leaving the reader to find which of several
+    // they were just told about.
     case 'handoff_note':
+      return d.note_id
+        ? { pathname: '/(tabs)/feed', params: { noteId: String(d.note_id) } }
+        : { pathname: '/(tabs)/feed' };
+    // An announcement is addressed to the household and has no detail behind
+    // it — the notification already carried the whole message.
     case 'announcement':
       return { pathname: '/(tabs)/feed' };
     // The morning digest usually summarises the day, and the Feed is what
@@ -67,10 +76,24 @@ export function targetForNotification(data: unknown): { pathname: string; params
       return { pathname: '/(tabs)/feed' };
     // These name a specific screen, and landing anywhere else makes the tap
     // useless: a dinner nudge you have to go and find is not a nudge.
+    // "Dinner tonight: lasagne" opened the Kitchen with the evening still to
+    // find on it. A reminder you then have to go looking through is not a
+    // reminder, it is a second errand — so the meal it names opens, with its
+    // recipe, which is the thing the cook actually needs at 17:30.
     case 'dinner_reminder':
-      return { pathname: '/(tabs)/kitchen' };
+      return d.meal_id
+        ? { pathname: '/(tabs)/kitchen', params: { mealId: String(d.meal_id) } }
+        : { pathname: '/(tabs)/kitchen' };
+    // "Tomorrow" opened on TODAY — the one day the message is not about — so
+    // the reader arrived and saw nothing they had just been told about. When
+    // tomorrow holds exactly one thing, that thing opens; otherwise the day
+    // does, which is what the message described.
     case 'calendar_nightly':
-      return { pathname: '/(tabs)/calendar' };
+      return d.card_id
+        ? { pathname: '/(tabs)/calendar', params: { cardId: String(d.card_id), day: String(d.day || '') } }
+        : d.day
+          ? { pathname: '/(tabs)/calendar', params: { day: String(d.day) } }
+          : { pathname: '/(tabs)/calendar' };
     // "Keigh added milk and bread to the list" landed on the Feed, which has no
     // shopping list on it. The server sends this one to PARENTS only — the
     // people who then have to go and buy the thing — so the tap dropping them

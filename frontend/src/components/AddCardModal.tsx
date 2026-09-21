@@ -139,6 +139,13 @@ export function AddCardModal({
   // '' is a real value here, not "unset": most cards are not in a room at all.
   const [room, setRoom] = useState<Room | ''>('');
   const [reminderMins, setReminderMins] = useState<number>(15);
+  // Whether the person actually chose the reminder, as opposed to inheriting
+  // the default. A repeating task is where that difference bites: the reminder
+  // rides every occurrence for ever, and the picker sits at the bottom of a
+  // scroll nobody reaches. Reported by a household whose notification "kept
+  // coming back" — it was doing exactly what it was told, by nobody.
+  const [reminderTouched, setReminderTouched] = useState(false);
+  const [confirmRepeat, setConfirmRepeat] = useState(false);
   // A task without a date is a note. The picker existed but nothing wired
   // it in — manually created cards could never appear on the calendar or
   // remind anyone.
@@ -365,8 +372,19 @@ export function AddCardModal({
       ? 'add_dest_calendar'
       : saveToVault ? 'add_dest_vault' : 'add_dest_feed';
 
+  // A standing commitment nobody made. A one-off reminder is what people
+  // want — "I never got a heads-up" is why the default exists — but on a
+  // REPEATING task the same default means a notification every occurrence,
+  // for ever, chosen by nobody. So this asks, once, and only in that case.
+  const needsRepeatConfirmation =
+    !editCard && recurrence !== 'none' && reminderMins > 0 && !reminderTouched;
+
   const handleSave = async () => {
     if (!title.trim()) return;
+    if (needsRepeatConfirmation && !confirmRepeat) {
+      setConfirmRepeat(true);
+      return;
+    }
     if (sharingIsIncomplete(shareMode, chosenIds)) {
       Alert.alert(t('addcard_share_choose_title'), t('addcard_share_choose_empty'));
       return;
@@ -917,7 +935,7 @@ export function AddCardModal({
                     <PressScale
                       key={rem.mins}
                       testID={`rem-${rem.mins}`}
-                      onPress={() => setReminderMins(rem.mins)}
+                      onPress={() => { setReminderMins(rem.mins); setReminderTouched(true); }}
                       style={[styles.pill, { borderColor: theme.colors.cardBorder, backgroundColor: active ? theme.colors.primary : theme.colors.bgSoft }]}
                     >
                       <Text style={[styles.pillText, { color: active ? theme.colors.primaryText : theme.colors.textMuted }]}>
@@ -971,11 +989,64 @@ export function AddCardModal({
         onChange={(value, chosen) => { setDueDate(value); setTimeChosen(chosen); }}
         onClose={() => setShowDuePicker(false)}
       />
+
+      {/* Asked once, and only for a repeating task whose reminder nobody
+          chose. Both answers save — this is a question, not a wall — and the
+          wording says what will actually happen rather than asking about a
+          setting. Cancel is deliberately absent: the person already pressed
+          save, and making them press it twice to change nothing is a worse
+          interruption than the reminder was. */}
+      <Modal visible={confirmRepeat} transparent animationType="fade" onRequestClose={() => setConfirmRepeat(false)}>
+        <View style={styles.confirmBackdrop}>
+          <View style={[styles.confirmCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder }]}>
+            <Text style={[styles.confirmTitle, { color: theme.colors.text }]}>
+              {t('addcard_repeat_reminder_title')}
+            </Text>
+            <Text style={[styles.confirmBody, { color: theme.colors.textMuted }]}>
+              {t('addcard_repeat_reminder_body')}
+            </Text>
+            <PressScale
+              testID="repeat-reminder-keep"
+              accessibilityRole="button"
+              onPress={() => { setReminderTouched(true); setConfirmRepeat(false); handleSave(); }}
+              style={[styles.confirmPrimary, { backgroundColor: theme.colors.primary }]}
+            >
+              <Text style={[styles.confirmPrimaryText, { color: theme.colors.primaryText }]}>
+                {t('addcard_repeat_reminder_keep')}
+              </Text>
+            </PressScale>
+            <PressScale
+              testID="repeat-reminder-off"
+              accessibilityRole="button"
+              onPress={() => { setReminderMins(0); setReminderTouched(true); setConfirmRepeat(false); handleSave(); }}
+              style={[styles.confirmGhost, { borderColor: theme.colors.cardBorder }]}
+            >
+              <Text style={[styles.confirmGhostText, { color: theme.colors.text }]}>
+                {t('addcard_repeat_reminder_off')}
+              </Text>
+            </PressScale>
+          </View>
+        </View>
+      </Modal>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
+  confirmBackdrop: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center', justifyContent: 'center', padding: 24,
+  },
+  confirmCard: { width: '100%', maxWidth: 380, borderRadius: 22, borderWidth: 1, padding: 20, gap: 10 },
+  confirmTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 18, lineHeight: 24 },
+  confirmBody: { fontFamily: 'Inter_500Medium', fontSize: 14, lineHeight: 20, marginBottom: 4 },
+  confirmPrimary: { height: 52, borderRadius: 9999, alignItems: 'center', justifyContent: 'center' },
+  confirmPrimaryText: { fontFamily: 'Inter_700Bold', fontSize: 15.5 },
+  confirmGhost: {
+    height: 50, borderRadius: 9999, borderWidth: 1,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  confirmGhostText: { fontFamily: 'Inter_600SemiBold', fontSize: 15 },
   backdrop: { ...StyleSheet.absoluteFill },
   container: { flex: 1, justifyContent: 'flex-end' },
   sheet: {
