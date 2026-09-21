@@ -167,3 +167,29 @@ export function routeMatchesTarget(current: string | null | undefined, target: s
   if (!current) return false;
   return normalizeRoutePath(current) === normalizeRoutePath(target);
 }
+
+/**
+ * True when the params a target asked for are the ones actually on screen.
+ *
+ * The pathname alone is not arrival. A startup redirect to `/feed` lands on
+ * the same pathname as a digest tap aimed at `/(tabs)/feed?cardId=...`, so a
+ * pathname-only check calls it arrived, drops the held target, and the card
+ * never opens — the exact symptom the whole held-target mechanism exists to
+ * fix, reintroduced by the check meant to confirm it. Found in review.
+ *
+ * Only the params the target NAMED are compared: expo-router carries others
+ * of its own, and demanding an exact match would make arrival impossible.
+ */
+export function paramsMatchTarget(
+  current: Record<string, unknown> | null | undefined,
+  wanted?: Record<string, string>,
+): boolean {
+  if (!wanted) return true;
+  const have = current || {};
+  return Object.entries(wanted).every(([key, value]) => {
+    const found = have[key];
+    // A param can arrive as a string or, on a repeated key, an array.
+    const flat = Array.isArray(found) ? found[0] : found;
+    return flat !== undefined && String(flat) === value;
+  });
+}

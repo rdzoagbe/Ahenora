@@ -88,3 +88,21 @@ describe('The picker never blocks the invitation on its own failure', () => {
     expect(picker).toContain('chosen ? onChange(null, null)');
   });
 });
+
+describe('Every door out of the invite sheet obeys the same rule', () => {
+  const settings = read(SETTINGS);
+
+  it('guards email, phone AND link, not just the first two', () => {
+    // The link was the one door without the guard, so the requirement could
+    // be walked around simply by choosing Link. Found in review.
+    const guards = settings.match(/handoverPossible && !handoverCardId/g) || [];
+    expect(guards.length).toBe(3);
+  });
+
+  it('spends the choice on every path that creates an invitation', () => {
+    // Otherwise a second invitation from the same open sheet silently
+    // re-promises the same card to two people, and only the first can have it.
+    const spent = settings.match(/setHandoverCardId\(null\)/g) || [];
+    expect(spent.length).toBe(3);
+  });
+});

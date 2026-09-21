@@ -680,6 +680,9 @@ export default function Settings() {
       });
       const url = res.invite_url;
       setLastInviteUrl(url);
+      // Spent here too: the invitation exists on the server the moment the
+      // link is created, whether or not the SMS app then opens.
+      setHandoverCardId(null);
       const sep = Platform.OS === 'ios' ? '&' : '?';
       const smsUrl = `sms:${phone}${sep}body=${encodeURIComponent(inviteMessage(url))}`;
       try {
@@ -706,6 +709,14 @@ export default function Settings() {
   // clipboard; on native the share sheet opens (its own Copy included).
   // Plain function: manual useCallback trips the React Compiler here.
   const shareNewLink = async () => {
+    // The link is an adult invitation like any other, and it was the one door
+    // without this guard — so the rule could be walked around simply by
+    // choosing Link. Found in review.
+    if (handoverPossible && !handoverCardId) {
+      setInviteError(true);
+      setInviteResult(t('handover_required'));
+      return;
+    }
     setSending(true);
     setInviteResult(null);
     setInviteError(false);
@@ -717,6 +728,10 @@ export default function Settings() {
         handover_card_id: handoverCardId || undefined,
       });
       setLastInviteUrl(res.invite_url);
+      // Spent, like the email path already did. Without this a second link or
+      // text from the same open sheet silently re-promises the same card to
+      // two different people, and only the first of them can be given it.
+      setHandoverCardId(null);
       if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) {
         try {
           await navigator.clipboard.writeText(res.invite_url);
