@@ -8028,9 +8028,30 @@ async def _perform_handover(database, invite: Optional[dict], joined_user: dict)
             {"_id": 0})
         if not card or card.get("status") != "OPEN":
             return
+        # Assignee alone is not a handover. A card carries its own visibility,
+        # and an assigned one is scoped to the parents plus the assignee — so
+        # changing only the name hands somebody a card they cannot see. The
+        # newcomer is not in the old visible_to and did not create it, so
+        # _card_visible_to says no and the "now yours" card never reaches
+        # their Feed. Caught in review; the tests asserted the assignee and
+        # nothing else, so they passed while the feature did not work.
+        #
+        # Same rule the rest of the app uses: handing a task to someone else
+        # makes it shared (you cannot give a job away and keep it private),
+        # and the visible set is re-derived from the new assignee, keeping any
+        # chosen list rather than dropping the people already picked.
+        chosen = card.get("chosen_visible_to")
+        assigned = await _assigned_visibility(
+            database, card["family_id"], card.get("created_by_user_id"), name)
         await database["cards"].update_one(
             {"card_id": card["card_id"]},
-            {"$set": {"assignee": name, "updated_at": utcnow()}})
+            {"$set": {
+                "assignee": name,
+                "shared": True,
+                "chosen_visible_to": chosen,
+                "visible_to": _merge_scopes(assigned, chosen),
+                "updated_at": utcnow(),
+            }})
         await database["family_invites"].update_one(
             {"invite_id": invite["invite_id"]},
             {"$set": {"handover_done_at": utcnow()}})

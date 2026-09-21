@@ -9,7 +9,7 @@
  * tap is retried until it gives up, too loose and a stomped navigation is
  * recorded as a success.
  */
-import { normalizeRoutePath, routeMatchesTarget, targetForNotification } from '../notificationRouting';
+import { normalizeRoutePath, paramsMatchTarget, routeMatchesTarget, targetForNotification } from '../notificationRouting';
 
 describe('A route path is compared without its groups', () => {
   it('strips an expo-router group segment', () => {
@@ -121,5 +121,44 @@ describe('A notification about one document opens that document', () => {
   it('leaves a renewal sweep on the Vault, because it is about several', () => {
     expect(targetForNotification({ type: 'due_documents', doc_id: 'd_1' }))
       .toEqual({ pathname: '/(tabs)/vault' });
+  });
+});
+
+describe('Arrival means the params landed too, not just the path', () => {
+  it('accepts a target that asked for nothing', () => {
+    expect(paramsMatchTarget({}, undefined)).toBe(true);
+    expect(paramsMatchTarget(null, undefined)).toBe(true);
+  });
+
+  it('refuses when the param the target named is missing', () => {
+    // The bug this exists for: a startup redirect to /feed matches the digest
+    // tap's pathname exactly while dropping its cardId. A path-only check
+    // called that arrived, dropped the held target, and the card never
+    // opened — the original complaint, reintroduced by its own fix.
+    expect(paramsMatchTarget({}, { cardId: 'c1' })).toBe(false);
+    expect(paramsMatchTarget(null, { cardId: 'c1' })).toBe(false);
+  });
+
+  it('accepts when it is there', () => {
+    expect(paramsMatchTarget({ cardId: 'c1' }, { cardId: 'c1' })).toBe(true);
+  });
+
+  it('refuses when it is there but different', () => {
+    expect(paramsMatchTarget({ cardId: 'c2' }, { cardId: 'c1' })).toBe(false);
+  });
+
+  it('ignores extra params the router carries of its own', () => {
+    // Demanding an exact match would make arrival impossible.
+    expect(paramsMatchTarget({ cardId: 'c1', screen: 'feed' }, { cardId: 'c1' })).toBe(true);
+  });
+
+  it('copes with a param that arrives as an array', () => {
+    expect(paramsMatchTarget({ cardId: ['c1'] }, { cardId: 'c1' })).toBe(true);
+  });
+
+  it('compares every param a target named, not just the first', () => {
+    expect(paramsMatchTarget({ thread: 't1' }, { thread: 't1', title: 'Keigh' })).toBe(false);
+    expect(paramsMatchTarget({ thread: 't1', title: 'Keigh' }, { thread: 't1', title: 'Keigh' }))
+      .toBe(true);
   });
 });

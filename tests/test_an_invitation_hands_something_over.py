@@ -55,10 +55,16 @@ class HandingSomethingOver(unittest.TestCase):
                 {"member_id": "m_r", "family_id": "fam1", "user_id": "u_r",
                  "name": "Roland", "role": "parent"})
             await self.db["cards"].insert_one(
+                # Seeded the way a real self-assigned shared task looks: it
+                # carries a creator and a visible_to scoped to the people who
+                # may see it. A card with neither reads as legacy and is
+                # visible to everybody, which would make the visibility test
+                # below pass whether or not the handover works.
                 {"card_id": "c_pickup", "family_id": "fam1", "title": "Tuesday school pickup",
                  "type": "TASK", "status": "OPEN", "assignee": "Roland", "icon": "car",
                  "recurrence": "weekly", "due_date": self.now + timedelta(days=2),
-                 "created_at": self.now, "source": "MANUAL"})
+                 "created_at": self.now, "source": "MANUAL",
+                 "created_by_user_id": "u_r", "shared": True, "visible_to": ["u_r"]})
             await self.db["cards"].insert_one(
                 {"card_id": "c_done", "family_id": "fam1", "title": "Already handled",
                  "type": "TASK", "status": "DONE", "assignee": "Roland",
@@ -154,6 +160,51 @@ class HandingSomethingOver(unittest.TestCase):
         self.join(invite)
         self.assertEqual(self.card()["assignee"], "Keigh",
                          "the whole point: something has already moved when they arrive")
+
+    def test_the_newcomer_can_actually_see_what_they_were_handed(self):
+        # The assignee alone is not a handover. An assigned card is scoped to
+        # the parents plus the assignee, so changing only the name hands
+        # somebody a card that _card_visible_to refuses to show them — the
+        # feature silently doing nothing. Found in review, after tests that
+        # asserted the assignee and nothing else had passed.
+        invite = self.invite_with_handover()
+        self.join(invite)
+        card = self.card()
+        self.assertTrue(server._card_visible_to(card, "u_k"),
+                        "a card you cannot see is not a card you were given")
+        self.assertTrue(server._card_visible_to(card, "u_r"),
+                        "and the person who handed it over still sees it")
+
+    def test_handing_a_private_card_over_shares_it(self):
+        # The app's own rule everywhere else: you cannot give a job away and
+        # keep it to yourself. Without this a private card handed over stays
+        # private, which is the invisible-card bug by another route.
+        async def make_private():
+            await self.db["cards"].update_one(
+                {"card_id": "c_pickup"},
+                {"$set": {"shared": False, "visible_to": None,
+                          "created_by_user_id": "u_r"}})
+        asyncio.run(make_private())
+        invite = self.invite_with_handover()
+        self.join(invite)
+        card = self.card()
+        self.assertTrue(card["shared"])
+        self.assertTrue(server._card_visible_to(card, "u_k"))
+
+    def test_people_already_chosen_to_see_it_keep_seeing_it(self):
+        # Re-deriving visibility from the assignee alone would drop anybody
+        # the inviter had picked by hand.
+        async def choose():
+            await self.db["cards"].update_one(
+                {"card_id": "c_pickup"},
+                {"$set": {"shared": True, "chosen_visible_to": ["u_gran"],
+                          "visible_to": ["u_r", "u_gran"]}})
+        asyncio.run(choose())
+        invite = self.invite_with_handover()
+        self.join(invite)
+        card = self.card()
+        self.assertIn("u_gran", card["visible_to"])
+        self.assertTrue(server._card_visible_to(card, "u_k"))
 
     def test_the_handover_is_stamped_so_it_can_be_measured(self):
         invite = self.invite_with_handover()

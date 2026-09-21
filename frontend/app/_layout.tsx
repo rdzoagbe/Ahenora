@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { reportColdStart } from '../src/perf';
-import { Stack, usePathname, useRootNavigationState, useRouter } from 'expo-router';
+import { Stack, useGlobalSearchParams, usePathname, useRootNavigationState, useRouter } from 'expo-router';
 import { InviteJoinPrompt } from '../src/components/InviteJoinPrompt';
 // Side effect: maps Alert.alert onto browser dialogs on web, where the RN
 // implementation is a no-op and every confirm button silently did nothing.
@@ -28,7 +28,7 @@ import { UpgradeModal } from '../src/components/UpgradeModal';
 import { WebUpdateBanner } from '../src/components/WebUpdateBanner';
 import { UpdateNotice } from '../src/components/UpdateNotice';
 import { ensurePushRegistered, attachNotificationRouting, targetForNotification } from '../src/notifications';
-import { routeMatchesTarget } from '../src/notificationRouting';
+import { paramsMatchTarget, routeMatchesTarget } from '../src/notificationRouting';
 
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
@@ -70,6 +70,12 @@ function RootNavigator() {
   const navigationState = useRootNavigationState();
   const navigatorReady = !!navigationState?.key;
   const pathname = usePathname();
+  // The params actually on screen. A pathname is not arrival on its own: a
+  // startup redirect to /feed matches a digest tap aimed at the Feed WITH a
+  // card id, so checking the path alone would call it arrived and drop the
+  // card. Found in review, and it is the original complaint reintroduced by
+  // the check meant to confirm the fix.
+  const currentParams = useGlobalSearchParams();
   // The tap waiting to be honoured, with how many times we have tried. A ref
   // rather than state so the applier below never sets state from an effect
   // body; `targetTick` is what actually re-runs it.
@@ -102,7 +108,9 @@ function RootNavigator() {
     // redirect satisfies the pathname and nothing else — accepting it would
     // drop the id, and the Feed would open with no card to show. Which is the
     // original complaint exactly: the tap appears to do nothing.
-    if (held.attempts > 0 && routeMatchesTarget(pathname, held.target.pathname)) {
+    if (held.attempts > 0
+        && routeMatchesTarget(pathname, held.target.pathname)
+        && paramsMatchTarget(currentParams, held.target.params)) {
       heldTarget.current = null;
       return;
     }
@@ -114,7 +122,7 @@ function RootNavigator() {
     router.push(held.target as never);
     const timer = setTimeout(() => setTargetTick((n) => n + 1), 500);
     return () => clearTimeout(timer);
-  }, [targetTick, pathname, router]);
+  }, [targetTick, pathname, currentParams, router]);
 
   // The web twin of the tap routing above. The service worker posts the payload
   // of a tapped browser notification to the focused tab; without a listener the

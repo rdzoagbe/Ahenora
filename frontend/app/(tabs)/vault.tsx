@@ -12,7 +12,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
-import { useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { Plus, X, Trash2, Shield, Folder, ChevronRight, FileText, AlertTriangle, CalendarClock, Share2, Image as ImageIcon, Lock, Users } from 'lucide-react-native';
 
@@ -81,6 +81,7 @@ export default function Vault() {
   // find the thing the notification had just told them about — on a screen
   // that may hold dozens. The push has always carried the id; nothing read it.
   const { docId: notifiedDocId } = useLocalSearchParams<{ docId?: string }>();
+  const router = useRouter();
   const openedFromNotification = useRef<string | null>(null);
   const [docHtml, setDocHtml] = useState<string | null>(null);
   const [docRendering, setDocRendering] = useState(false);
@@ -216,16 +217,28 @@ export default function Vault() {
   // narrowed, between the push and the tap. The reader is then simply left on
   // the Vault, which is where they were going anyway.
   useEffect(() => {
-    if (!notifiedDocId || loading) return;
+    // The parameter is spent once honoured, and the latch is released only
+    // when it is actually gone. Two failures are being avoided at once: the
+    // latch alone stopped the preview reappearing on every list reload, but
+    // it also meant a SECOND tap on the same notification set the same id,
+    // matched the latch and opened nothing — a tap silently doing nothing,
+    // which is the complaint this screen was changed to answer. Releasing it
+    // inline would have brought the reload problem back. Found in review.
+    if (!notifiedDocId) {
+      openedFromNotification.current = null;
+      return;
+    }
+    if (loading) return;
     if (openedFromNotification.current === notifiedDocId) return;
     const found = docs.find((d) => d.doc_id === notifiedDocId);
     if (!found) return;
     openedFromNotification.current = notifiedDocId;
     openPreview(found);
+    router.setParams({ docId: undefined });
     // openPreview is re-created every render and is not a dependency worth
     // stabilising for: the id latch above is what stops this running twice.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [notifiedDocId, loading, docs]);
+  }, [notifiedDocId, loading, docs, router]);
 
   const handleRefresh = async () => {
     setRefreshing(true);

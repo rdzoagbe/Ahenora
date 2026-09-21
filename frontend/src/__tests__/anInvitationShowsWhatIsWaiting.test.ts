@@ -145,3 +145,20 @@ describe('The screen an invited stranger lands on cannot clip', () => {
     expect(landing).toContain('keyboardShouldPersistTaps="handled"');
   });
 });
+
+describe('A document notification can be tapped more than once', () => {
+  const vault = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'app', '(tabs)', 'vault.tsx'), 'utf8');
+
+  it('spends the parameter once it has been honoured', () => {
+    // A latch keyed on the id stops the preview reappearing on every list
+    // reload, but it also meant a second tap on the same notification set the
+    // same id, matched the latch, and opened nothing.
+    expect(vault).toContain('router.setParams({ docId: undefined })');
+  });
+
+  it('releases the latch only when the parameter is actually gone', () => {
+    // Releasing it inline would bring the reload problem straight back.
+    expect(vault).toMatch(/if \(!notifiedDocId\) \{\s*openedFromNotification\.current = null;/);
+  });
+});
