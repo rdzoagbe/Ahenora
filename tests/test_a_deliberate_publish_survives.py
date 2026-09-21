@@ -100,3 +100,61 @@ class NothingThatShipsCanBeCancelledByAccident(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheWebExportDoesNotRebuildItselfForEver(unittest.TestCase):
+    """The export records the commit it was built from, so committing it
+    guarantees the next build differs.
+
+    BUILD_TAG is 39 bytes inside the bundle and it is what Settings shows next
+    to the version. Committing the export makes a new commit, so the next build
+    records a different tag, produces a different bundle, and commits again. On
+    21 September that produced five commits in a row, each rebuilding "for" the
+    previous rebuild.
+
+    It never ran away — a docs/-only push does not retrigger the workflow — but
+    it churned main, burned a build every run, and meant main never sat still,
+    which matters because a deliberate publish has to be dispatched into a
+    quiet moment.
+    """
+
+    def setUp(self):
+        self.job = load("frontend-ci-eas-update.yml")["jobs"]["web-export"]
+        self.steps = {s.get("name"): s for s in self.job["steps"]}
+
+    def test_it_asks_whether_the_app_itself_changed(self):
+        self.assertIn("Has the web app itself changed since the last export?", self.steps)
+
+    def test_the_build_and_the_commit_both_wait_on_that_answer(self):
+        # Guarding the export but not the commit would still commit whatever
+        # happened to be on disk; guarding the commit alone would still burn
+        # the build every run.
+        for name in ("Export the web app", "Commit the rebuilt export"):
+            with self.subTest(step=name):
+                self.assertEqual(
+                    self.steps[name].get("if"),
+                    "steps.web_changed.outputs.build == 'true'")
+
+    def test_the_job_has_the_history_that_answer_needs(self):
+        # The guard finds the previous export by searching the log. A shallow
+        # clone has no log to search, so the search finds nothing, falls
+        # through to "build", and the guard becomes a comment that costs a
+        # build every run while appearing to work. This is the half that is
+        # easy to drop and impossible to notice.
+        checkout = self.job["steps"][0]
+        self.assertEqual(checkout["with"].get("fetch-depth"), 0)
+
+    def test_it_compares_the_source_tree_rather_than_a_commit_range(self):
+        # Comparing trees is what makes skipping safe: identical frontend
+        # means the new export could differ only by its build tag, so nothing
+        # a person can see is left stale.
+        run = self.steps["Has the web app itself changed since the last export?"]["run"]
+        self.assertIn("rev-parse \"$prev:frontend\"", run)
+        self.assertIn("rev-parse \"HEAD:frontend\"", run)
+
+    def test_it_builds_when_it_cannot_tell(self):
+        # No previous export found must mean build, never skip: a wrong skip
+        # leaves ahenora.com stale, a wrong build only costs a minute.
+        run = self.steps["Has the web app itself changed since the last export?"]["run"]
+        self.assertIn('if [ -z "$prev" ]', run)
+        self.assertIn("No previous export commit found", run)

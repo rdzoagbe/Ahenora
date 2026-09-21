@@ -222,6 +222,13 @@ jobs:
         with:
           # Committing back needs the real branch, not a detached merge ref.
           ref: main
+          # Load-bearing, and quietly so. The step below finds the previous
+          # export by searching the log, and the commit step rebases onto main
+          # when a human merge lands mid-run. A shallow clone has neither a log
+          # to search nor a base to rebase onto — the search would find nothing,
+          # fall through to "build", and the guard would be a comment that
+          # costs a build every run while appearing to work.
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
@@ -241,11 +248,51 @@ jobs:
       # the export, so "the web version is the same app" stays true by
       # machinery, not memory. api.ts falls back to the production backend URL
       # when the env var is absent, so a missing secret degrades safely.
+      # The export records the commit it was built from (BUILD_TAG, which is
+      # what Settings shows next to the version). Committing the export makes
+      # a new commit — so the NEXT build records a different tag, produces a
+      # different bundle, and commits again. Thirty-nine bytes, and the job
+      # re-committed on every run for ever: five in a row on 21 September,
+      # each one rebuilding "for" the previous rebuild.
+      #
+      # It never ran away, because a docs/-only push does not retrigger this
+      # workflow, so it advanced one commit per run rather than looping. But
+      # it churned main, burned a build every time, and meant main never sat
+      # still — which is its own hazard, because a deliberate publish has to
+      # wait for a quiet moment to be dispatched into.
+      #
+      # So: rebuild only when the source the export is MADE from has actually
+      # changed. Comparing the frontend tree, not a commit range, is what
+      # makes this safe — if the tree is identical the new export could only
+      # ever differ by that build tag, so skipping cannot leave the web app
+      # stale in any way a person could see. When anything in frontend/ does
+      # change, this is false and the export is rebuilt exactly as before.
+      - name: Has the web app itself changed since the last export?
+        id: web_changed
+        run: |
+          prev=$(git log -1 --format=%H --grep='^Web: rebuild ahenora.com export' -- docs/app || true)
+          if [ -z "$prev" ]; then
+            echo "No previous export commit found — building."
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          before=$(git rev-parse "$prev:frontend" 2>/dev/null || echo none)
+          now=$(git rev-parse "HEAD:frontend" 2>/dev/null || echo unknown)
+          if [ "$before" = "$now" ]; then
+            echo "frontend/ is unchanged since $prev — the export would differ only by its build tag."
+            echo "build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "frontend/ changed since $prev — rebuilding."
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Export the web app
+        if: steps.web_changed.outputs.build == 'true'
         working-directory: frontend
         run: npx expo export --platform web --output-dir ../docs/app --clear
 
       - name: Commit the rebuilt export
+        if: steps.web_changed.outputs.build == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
