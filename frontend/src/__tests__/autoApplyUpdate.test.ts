@@ -22,7 +22,25 @@ const base = {
   now: NOW,
   lastInteractionAt: 0,
   keyboardVisible: false,
+  notificationPending: false,
 };
+
+describe('a tapped notification outranks a staged update', () => {
+  it('waits while somebody is owed the screen they tapped for', () => {
+    // The case this policy got wrong, and got wrong EVERY time. It fires only
+    // when nobody has interacted yet — and tapping a system notification is
+    // not an interaction with the app, so a notification-tap launch always
+    // satisfied that condition. The reload then threw away the JavaScript
+    // context and the pending tap with it: "it blipped and reloaded but it
+    // did not take me to the navigation". Reported three times before the
+    // blip was mentioned.
+    expect(shouldAutoApplyUpdate({ ...base, notificationPending: true })).toBe(false);
+  });
+
+  it('applies as before once the tap has been honoured', () => {
+    expect(shouldAutoApplyUpdate({ ...base, notificationPending: false })).toBe(true);
+  });
+});
 
 describe('applying a staged update silently', () => {
   it('does it when the launch is fresh and nobody has touched anything', () => {

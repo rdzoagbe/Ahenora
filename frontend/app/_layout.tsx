@@ -29,6 +29,7 @@ import { WebUpdateBanner } from '../src/components/WebUpdateBanner';
 import { UpdateNotice } from '../src/components/UpdateNotice';
 import { ensurePushRegistered, attachNotificationRouting, targetForNotification } from '../src/notifications';
 import { paramsMatchTarget, routeMatchesTarget } from '../src/notificationRouting';
+import { clearTarget, rememberTarget, takeStoredTarget } from '../src/pendingNotificationTarget';
 
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
@@ -86,10 +87,29 @@ function RootNavigator() {
     if (!user || !navigatorReady) return;
     let cleanup = () => undefined as void;
     let active = true;
-    attachNotificationRouting((t) => {
+
+    const hold = (t: { pathname: string; params?: Record<string, string> }) => {
       heldTarget.current = { target: t, attempts: 0 };
+      // Written down BEFORE anything tries to navigate, so a reload that
+      // interrupts the navigation cannot take the destination with it.
+      rememberTarget(t).catch(() => undefined);
       setTargetTick((n) => n + 1);
-    }).then((fn) => { if (active) cleanup = fn; else fn(); });
+    };
+
+    // A target left behind by a previous run of this JavaScript. The app
+    // applies a downloaded update by throwing the JS context away and
+    // starting again, and it does that only when nobody has interacted yet —
+    // which a notification tap never counts as. So the launches most likely
+    // to be interrupted are exactly the ones that had somewhere to go.
+    // Reported three times as "it doesn't take me where it's located", the
+    // third time with the detail that named the cause: "it blipped and
+    // reloaded".
+    takeStoredTarget()
+      .then((t) => { if (active && t) hold(t); })
+      .catch(() => undefined);
+
+    attachNotificationRouting(hold)
+      .then((fn) => { if (active) cleanup = fn; else fn(); });
     return () => { active = false; cleanup(); };
   }, [user, navigatorReady]);
 
@@ -112,10 +132,14 @@ function RootNavigator() {
         && routeMatchesTarget(pathname, held.target.pathname)
         && paramsMatchTarget(currentParams, held.target.params)) {
       heldTarget.current = null;
+      // Honoured, so the durable copy is spent too. Leaving it would re-route
+      // on the next launch, long after the notification stopped mattering.
+      clearTarget().catch(() => undefined);
       return;
     }
     if (held.attempts >= 4) {
       heldTarget.current = null;
+      clearTarget().catch(() => undefined);
       return;
     }
     held.attempts += 1;
@@ -140,6 +164,7 @@ function RootNavigator() {
       // redirects too, and they land after this.
       if (target) {
         heldTarget.current = { target, attempts: 0 };
+        rememberTarget(target).catch(() => undefined);
         setTargetTick((n) => n + 1);
       }
     };
