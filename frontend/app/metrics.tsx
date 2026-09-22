@@ -12,7 +12,9 @@ import { api, MetricRow, VersionAdoption, PlanAdoption, FunnelSummary, PushHealt
   RetentionSummary, InviteBreakdown, AiHealth, SubscriberList, SupportInbox,
   TimingsReport,
   BillingEvent,
-  BillingEventLog } from '../src/api';
+  BillingEventLog,
+  PaywallReport,
+} from '../src/api';
 import { logger } from '../src/logger';
 
 // Admin-only screen — plain English labels are fine (only the owner sees it).
@@ -102,6 +104,21 @@ function isAtRisk(e: BillingEvent): boolean {
  * against test money — a licence-test account, whose subscription renews daily
  * and whose BILLING_ISSUE is not a billing issue.
  */
+/** What a store id is called in front of a person. An unrecognised value is
+ *  shown as it arrived rather than hidden: a store we have not met is still
+ *  information. */
+function storeLabel(store: string): string {
+  const known: Record<string, string> = {
+    APP_STORE: 'App Store (iPhone)',
+    PLAY_STORE: 'Play Store (Android)',
+    STRIPE: 'Card (Stripe)',
+    AMAZON: 'Amazon',
+    PROMOTIONAL: 'Granted (promotional)',
+    unknown: 'Unknown store',
+  };
+  return known[store] || store;
+}
+
 function testLabel(e: BillingEvent): string {
   return e.environment === 'SANDBOX' ? 'test purchase' : 'store test';
 }
@@ -161,6 +178,7 @@ export default function MetricsScreen() {
   const [showAllSubs, setShowAllSubs] = useState(false);
   const [billing, setBilling] = useState<BillingEventLog | null>(null);
   const [funnel, setFunnel] = useState<FunnelSummary | null>(null);
+  const [paywall, setPaywall] = useState<PaywallReport | null>(null);
   const [retention, setRetention] = useState<RetentionSummary | null>(null);
   const [invites, setInvites] = useState<InviteBreakdown | null>(null);
   const [aiHealth, setAiHealth] = useState<AiHealth | null>(null);
@@ -195,6 +213,10 @@ export default function MetricsScreen() {
     api.getBillingEvents(40).then(setBilling).catch((e) => logger.warn('billing events load failed', e?.message || e));
     // The activation + growth funnel — the "make the launch stick" scoreboard.
     api.getMetricsFunnel(30).then(setFunnel).catch((e) => logger.warn('funnel load failed', e?.message || e));
+    // Which upgrade walls households actually reach. Sixteen places in the
+    // backend say "upgrade to do this" and until this existed none of them
+    // left a trace, so every pricing decision was made blind.
+    api.getMetricsPaywall(30).then(setPaywall).catch((e) => logger.warn('paywall load failed', e?.message || e));
     // Retention, counted in ADULTS — the funnel's 2+-members number counts child
     // profiles, so it cannot answer whether a second grown-up actually stuck.
     api.getMetricsRetention(8).then(setRetention).catch((e) => logger.warn('retention load failed', e?.message || e));
@@ -754,6 +776,64 @@ export default function MetricsScreen() {
             <Text style={styles.muted}>No subscription data yet.</Text>
           )}
 
+          {/* Which upgrade walls households actually reach.
+
+              The app says "upgrade to do this" in sixteen places and none of
+              them used to leave a trace, so the one question that decides
+              pricing — of the walls we built, which do real families walk
+              into? — had no answer. Ranked most-hit first, because the wall
+              worth moving is the one most people reach. */}
+          <Text style={styles.sectionTitle}>Upgrade walls — which ones people hit</Text>
+          {paywall ? (
+            <>
+              {!paywall.paywall_live ? (
+                <View style={[styles.card, styles.warnCard]}>
+                  <Text style={styles.warnText}>
+                    No paid rail is configured, so no gate can fire and every household has the top tier&apos;s limits. An empty table below means the walls are OFF — not that nobody wants to pay.
+                  </Text>
+                </View>
+              ) : null}
+              <View style={styles.tileRow}>
+                <View style={styles.tile}>
+                  <Text style={styles.tileNum}>{paywall.households_hitting_any_wall}</Text>
+                  <Text style={styles.tileLabel}>Hit a wall (30d)</Text>
+                </View>
+                <View style={styles.tile}>
+                  <Text style={styles.tileNum}>{paywall.households_total}</Text>
+                  <Text style={styles.tileLabel}>Households</Text>
+                </View>
+                <View style={styles.tile}>
+                  <Text style={styles.tileNum}>{paywall.households_paying}</Text>
+                  <Text style={styles.tileLabel}>Paying</Text>
+                </View>
+              </View>
+              {paywall.walls.length ? (
+                <View style={styles.card}>
+                  {paywall.walls.map((w, i) => (
+                    <View key={w.feature} style={[styles.eventRow, i === 0 ? { borderTopWidth: 0 } : null]}>
+                      <Text style={styles.eventLabel}>
+                        {w.feature} · {w.households} household{w.households === 1 ? '' : 's'}
+                        {w.households_now_paying > 0 ? ` · ${w.households_now_paying} now paying` : ''}
+                      </Text>
+                      <Text style={styles.eventCount}>{w.hits}</Text>
+                    </View>
+                  ))}
+                </View>
+              ) : (
+                <Text style={styles.muted}>
+                  {paywall.paywall_live
+                    ? 'Nobody has hit an upgrade wall in 30 days.'
+                    : 'Nothing recorded — the walls are switched off.'}
+                </Text>
+              )}
+              <Text style={styles.hint}>
+                The number on the right is how many times the wall was hit. A wall many households reach and none pay past is a wall in the wrong place. &quot;Now paying&quot; is the household&apos;s plan today, not proof the wall caused the sale.
+              </Text>
+            </>
+          ) : (
+            <Text style={styles.muted}>No paywall data yet.</Text>
+          )}
+
           {/* Subscribers — the per-household list behind those totals */}
           {subs && subs.subscribers.length ? (
             <>
@@ -1030,6 +1110,29 @@ export default function MetricsScreen() {
                 {billing.sweep_enabled ? 'on' : 'OFF'}
                 {billing.last_event_at ? ` · last event ${billing.last_event_at.slice(0, 16).replace('T', ' ')}` : ''}
               </Text>
+              {/* Real purchases by store, test events excluded.
+
+                  Downloads on a platform and no revenue from it has two
+                  explanations that need opposite fixes — nobody has tried to
+                  buy, or everybody who tried has failed — and forty-seven
+                  recorded events could not tell them apart, because the store
+                  field RevenueCat sends was thrown away. A platform with no
+                  line here has sold nothing. */}
+              {Object.keys(billing.purchases_by_store || {}).length ? (
+                <View style={styles.card} testID="purchases-by-store">
+                  {Object.entries(billing.purchases_by_store).map(([store, n], i) => (
+                    <View key={store} style={[styles.eventRow, i === 0 ? { borderTopWidth: 0 } : null]}>
+                      <Text style={styles.eventLabel}>{storeLabel(store)}</Text>
+                      <Text style={styles.eventCount}>{n}</Text>
+                    </View>
+                  ))}
+                </View>
+              ) : (
+                <Text style={styles.muted}>No real purchase has been recorded on any store.</Text>
+              )}
+              <Text style={styles.hint}>
+                Purchases by store, test events excluded. A store missing from this list has sold nothing. &quot;Unknown&quot; is an event recorded before the store was captured, not a platform.
+              </Text>
               {billing.events.length ? (
                 <View style={styles.card}>
                   {billing.events.slice(0, 12).map((e, i) => (
@@ -1049,9 +1152,15 @@ export default function MetricsScreen() {
                             string alone ("no account carries this app_user_id")
                             says what happened and not to whom. */}
                         <Text style={styles.subEmail} numberOfLines={e.matched ? 1 : 2}>
-                          {e.matched
-                            ? (e.detail || e.product_id || e.app_user_id || '—')
-                            : [e.product_id, e.app_user_id].filter(Boolean).join(' · ') || e.detail || '—'}
+                          {/* The store leads: on a row about money that did or
+                              did not arrive, which platform sold it is the
+                              first thing worth reading and was not shown at
+                              all. */}
+                          {[e.store ? storeLabel(e.store) : null,
+                            e.matched
+                              ? (e.detail || e.product_id || e.app_user_id || '—')
+                              : [e.product_id, e.app_user_id].filter(Boolean).join(' · ') || e.detail || '—',
+                           ].filter(Boolean).join(' · ')}
                         </Text>
                         {/* And whether anything can still be done about it.
                             The replay runs twice a day and gives up down five

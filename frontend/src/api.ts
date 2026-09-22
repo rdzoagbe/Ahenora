@@ -1187,6 +1187,25 @@ export interface MetricRow {
   count: number;
 }
 
+/** One upgrade wall, and what happened to the households that reached it. */
+export interface PaywallRow {
+  feature: string;
+  hits: number;
+  households: number;
+  households_now_paying: number;
+}
+
+export interface PaywallReport {
+  days: number;
+  /** False means no gate can fire at all — an empty table then means the walls
+   *  are switched off, not that nobody wants to pay. Read this first. */
+  paywall_live: boolean;
+  walls: PaywallRow[];
+  households_hitting_any_wall: number;
+  households_total: number;
+  households_paying: number;
+}
+
 export interface FunnelSummary {
   window_days: number;
   total_users: number;
@@ -1383,6 +1402,10 @@ export interface BillingEvent {
   replay_state: string | null;
   replay_attempts: number;
   last_replay_at: string | null;
+  /** Which store the money came through — APP_STORE, PLAY_STORE, STRIPE.
+   *  Empty on rows written before it was recorded; the screen says so rather
+   *  than guessing a platform. */
+  store: string;
   /** A store's "is this endpoint alive?" ping — RevenueCat's dashboard test
    *  button. It matches no household, truthfully, and is not a lost payment.
    *  Decided server-side (is_test_billing_event) and computed on read, so the
@@ -1410,6 +1433,9 @@ export interface BillingEventLog {
   /** Purchases that reached no household. Excludes test pings — see is_test. */
   unmatched: number;
   by_source: Record<string, number>;
+  /** Real purchases by store, test events excluded. A missing APP_STORE key
+   *  means no iPhone has ever bought anything — a finding, not missing data. */
+  purchases_by_store: Record<string, number>;
   events: BillingEvent[];
 }
 
@@ -2096,6 +2122,9 @@ export const api = {
     request<{ days: number; rows: MetricRow[] }>(`/metrics/summary?days=${days}`),
   getMetricsFunnel: (days = 30) =>
     request<FunnelSummary>(`/metrics/funnel?days=${days}`),
+  /** Which upgrade walls households actually reach — the pricing read-out. */
+  getMetricsPaywall: (days = 30) =>
+    request<PaywallReport>(`/metrics/paywall?days=${days}`),
   getMetricsRetention: (weeks = 8) =>
     request<RetentionSummary>(`/metrics/retention?weeks=${weeks}`),
   /** People this household invited who never made it in — feeds the re-send nudge. */
