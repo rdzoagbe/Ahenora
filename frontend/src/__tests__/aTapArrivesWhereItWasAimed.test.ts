@@ -345,3 +345,43 @@ describe('Nothing the server can send is left on a default', () => {
     expect(cases).toBeGreaterThanOrEqual(25);
   });
 });
+
+/**
+ * The retry may not be driven by rendering.
+ *
+ * Reported after the routing finally worked: "it opens the card but then it
+ * reloads twice after the card is opened." The card arrived on the first push
+ * and the retry kept firing behind it.
+ *
+ * The cause was a dependency array. The applier listed `pathname` and
+ * `currentParams`, and useGlobalSearchParams returns a FRESH OBJECT every
+ * render. Navigating renders several times, so the effect re-entered on each
+ * one, and every entry that had not yet seen the settled params pushed again.
+ * Worse, each re-entry cleared the pending 500ms timer, so the retries fired
+ * at render speed rather than being spaced out at all.
+ *
+ * A render is not a reason to navigate. The clock is.
+ */
+describe('The retry is driven by the clock, not by rendering', () => {
+  const layout = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'app', '_layout.tsx'), 'utf8');
+
+  it('depends on the tick and the router, and nothing that changes per render', () => {
+    expect(layout).toContain('}, [targetTick, router]);');
+    expect(layout).not.toContain('}, [targetTick, pathname, currentParams, router]);');
+  });
+
+  it('reads the current route through a ref instead of depending on it', () => {
+    expect(layout).toContain('routeNow.current = { pathname, params: currentParams }');
+    expect(layout).toMatch(/const \{ pathname: arrivedAt, params: arrivedWith \} = routeNow\.current;/);
+  });
+
+  it('still schedules the next attempt on a timer', () => {
+    // The bounded retry is the point; only its trigger changed.
+    expect(layout).toMatch(/setTimeout\(\(\) => setTargetTick\(\(n\) => n \+ 1\), 500\)/);
+  });
+
+  it('still gives up rather than pushing for ever', () => {
+    expect(layout).toContain('held.attempts >= 4');
+  });
+});
