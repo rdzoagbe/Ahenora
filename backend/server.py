@@ -1114,7 +1114,86 @@ PREMIUM_FEATURE_MESSAGES = {
 }
 
 
-def plan_limit_error(feature: str, current_plan: str, message: str, limit=None, used=None):
+# Every upgrade wall the app puts in front of somebody is recorded here, one
+# row per family per feature per day.
+#
+# Sixteen places in this file tell a household "upgrade to do this", and until
+# now not one of them left a trace. That made the most important pricing
+# question unanswerable: of the walls we built, which ones do real families
+# actually walk into? Without it, moving the paid line is guesswork, and
+# guesswork about pricing is paid for by the people who trusted the app.
+#
+# Deliberately an AGGREGATE, not an event stream. A row per hit grows without
+# bound and tempts a per-person read-out nobody needs; (family, feature, day)
+# answers "which wall, how often, how many households" in one small collection
+# that a free Atlas tier can carry forever.
+PLAN_WALL_KEEP_DAYS = 400
+
+# Strong references to in-flight recordings. A task held only by the event loop
+# can be collected mid-write; losing the measurement is the one outcome that
+# makes this code pointless.
+_plan_wall_tasks: set = set()
+
+
+async def _write_plan_wall(family_id: str, feature: str, plan: str, limit, used) -> None:
+    """Swallows its own failures.
+
+    This runs detached, so an exception escaping it is an unhandled task error
+    rather than something a caller can see — noise in the logs of a process
+    that is otherwise fine, for a write nobody is waiting on. A lost data point
+    is the correct cost of a database that is not there.
+    """
+    try:
+        day = utcnow().strftime("%Y-%m-%d")
+        await get_db()["plan_walls"].update_one(
+            {"family_id": family_id, "feature": feature, "date": day},
+            {
+                "$inc": {"hits": 1},
+                "$setOnInsert": {"first_at": utcnow()},
+                "$set": {
+                    "plan": plan,
+                    "limit": limit,
+                    "used": used,
+                    "last_at": utcnow(),
+                },
+            },
+            upsert=True,
+        )
+    except Exception:
+        # Not logged with its arguments: a family_id is not log material.
+        log.debug("plan wall not recorded")
+
+
+def _record_plan_wall(family_id, feature: str, plan: str, limit, used) -> None:
+    """Record a wall without ever standing between a caller and its 402.
+
+    Measuring must never change behaviour. Everything here is inside a guard:
+    no database, no running loop, a failed write — each one costs a data point
+    and nothing else. The HTTPException is raised by the caller regardless.
+    """
+    if not family_id:
+        return
+    try:
+        # The loop is checked BEFORE the coroutine is built. Building it first
+        # and failing to schedule it leaves a coroutine nobody awaits, which
+        # Python reports as a warning on every synchronous call — a tidy
+        # measurement turning into log noise in the paths it was meant not to
+        # touch.
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    try:
+        task = asyncio.ensure_future(
+            _write_plan_wall(family_id, feature, plan, limit, used))
+        _plan_wall_tasks.add(task)
+        task.add_done_callback(_plan_wall_tasks.discard)
+    except Exception:
+        pass
+
+
+def plan_limit_error(feature: str, current_plan: str, message: str, limit=None, used=None,
+                     family_id: Optional[str] = None):
+    _record_plan_wall(family_id, feature, current_plan, limit, used)
     raise HTTPException(
         status_code=402,
         detail={
@@ -1141,6 +1220,7 @@ async def require_feature(user: dict, feature: str):
     # for everyone.
     if not sub["limits"].get(feature, False):
         plan_limit_error(
+            family_id=user["family_id"],
             feature=feature,
             current_plan=sub["plan"],
             message=PREMIUM_FEATURE_MESSAGES.get(feature, "Upgrade to use this feature."),
@@ -1233,6 +1313,7 @@ async def charge_ai_scan(user) -> None:
     )
     if result.modified_count == 0:
         plan_limit_error(
+            family_id=user["family_id"],
             feature="ai_scans",
             current_plan=sub["plan"],
             limit=limit,
@@ -4084,7 +4165,8 @@ INDEXES = {
     # Note what is NOT here: low-cardinality booleans (notification_tokens.
     # active, push_tickets.checked). An index over two values does not narrow
     # a scan enough to pay for the write cost on every insert.
-    "families": ["family_id", "stripe_customer_id"],
+    # plan: the paywall read-out asks "which households pay" on every call.
+    "families": ["family_id", "stripe_customer_id", "plan"],
     "activity": ["family_id", "activity_id"],
     "allowances": ["family_id", "allowance_id"],
     "allowance_txns": ["family_id"],
@@ -4100,6 +4182,8 @@ INDEXES = {
     "metrics_daily": ["date"],
     "notification_settings": ["user_id"],
     "password_resets": ["user_id"],
+    # date drives the read-out's window; family_id the per-household rollup.
+    "plan_walls": ["date", "family_id"],
     "redemptions": ["redemption_id"],
     "rewards": ["family_id", "reward_id"],
     "routines": ["family_id", "routine_id"],
@@ -7019,6 +7103,7 @@ async def create_family_member(payload: ChildIn, user=Depends(require_full_membe
         max_young = subscription["limits"].get("max_children", 2)
         if young_people >= max_young:
             plan_limit_error(
+                family_id=user["family_id"],
                 feature="max_children",
                 current_plan=subscription["plan"],
                 message="Upgrade to Premium to add more (kids and teens share your plan's limit).",
@@ -7917,6 +8002,7 @@ async def _enforce_member_slot_limit(database, user) -> None:
     used_with_pending = used + pending_invites_count
     if not is_admin_user(user) and used_with_pending >= limit:
         plan_limit_error(
+            family_id=user["family_id"],
             feature="family_members",
             current_plan=sub["plan"],
             limit=limit,
@@ -8201,6 +8287,7 @@ async def family_invite(payload: InviteIn, user=Depends(require_full_member)):
         young = await count_young_people(database, user["family_id"])
         if young >= max_young:
             plan_limit_error(
+                family_id=user["family_id"],
                 feature="max_children",
                 current_plan=sub["plan"],
                 message="Upgrade to add more (kids and teens share your plan's limit).",
@@ -11922,6 +12009,7 @@ async def create_vault_doc(payload: VaultIn, user=Depends(require_full_member)):
 
     if not is_admin_user(user) and family.get("vault_bytes_used", 0) + size > sub["limits"]["vault_bytes"]:
         plan_limit_error(
+            family_id=user["family_id"],
             feature="vault_storage",
             current_plan=sub["plan"],
             limit=sub["limits"]["vault_bytes"],
@@ -14563,6 +14651,7 @@ async def weekly_brief(user=Depends(require_user)):
     sub = await build_subscription(user["family_id"])
     if not is_admin_user(user) and not sub["limits"]["weekly_brief"]:
         plan_limit_error(
+            family_id=user["family_id"],
             feature="weekly_brief",
             current_plan=sub["plan"],
             message="Weekly Brief is available on Executive and Family Office plans.",
@@ -14642,6 +14731,7 @@ async def vision_extract(payload: VisionIn, user=Depends(require_user)):
 
     if not is_admin_user(user) and family.get("ai_scans_used", 0) >= sub["limits"]["ai_scans_per_month"]:
         plan_limit_error(
+            family_id=user["family_id"],
             feature="ai_scans",
             current_plan=sub["plan"],
             limit=sub["limits"]["ai_scans_per_month"],
@@ -15360,6 +15450,7 @@ async def scan_shopping_list(
     family = await get_family_doc(user["family_id"])
     if not is_admin_user(user) and family.get("ai_scans_used", 0) >= sub["limits"]["ai_scans_per_month"]:
         plan_limit_error(
+            family_id=user["family_id"],
             feature="ai_scans",
             current_plan=sub["plan"],
             limit=sub["limits"]["ai_scans_per_month"],
@@ -15542,6 +15633,7 @@ async def scan_receipt(
     family = await get_family_doc(user["family_id"])
     if not is_admin_user(user) and family.get("ai_scans_used", 0) >= sub["limits"]["ai_scans_per_month"]:
         plan_limit_error(
+            family_id=user["family_id"],
             feature="ai_scans",
             current_plan=sub["plan"],
             limit=sub["limits"]["ai_scans_per_month"],
@@ -17451,6 +17543,7 @@ async def generate_meal_recipe(
     # family has one number to understand rather than two.
     if not is_admin_user(user) and family.get("ai_scans_used", 0) >= sub["limits"]["ai_scans_per_month"]:
         plan_limit_error(
+            family_id=user["family_id"],
             feature="ai_scans",
             current_plan=sub["plan"],
             limit=sub["limits"]["ai_scans_per_month"],
@@ -17572,6 +17665,7 @@ async def ask_the_chef(
     family = await get_family_doc(user["family_id"])
     if not is_admin_user(user) and family.get("ai_scans_used", 0) >= sub["limits"]["ai_scans_per_month"]:
         plan_limit_error(
+            family_id=user["family_id"],
             feature="ai_scans",
             current_plan=sub["plan"],
             limit=sub["limits"]["ai_scans_per_month"],
@@ -17654,6 +17748,7 @@ async def generate_recipe_from_name(
     # recipes, so a family has one number to understand rather than three.
     if not is_admin_user(user) and family.get("ai_scans_used", 0) >= sub["limits"]["ai_scans_per_month"]:
         plan_limit_error(
+            family_id=user["family_id"],
             feature="ai_scans",
             current_plan=sub["plan"],
             limit=sub["limits"]["ai_scans_per_month"],
@@ -17722,6 +17817,7 @@ async def capture_recipe(
     family = await get_family_doc(user["family_id"])
     if not is_admin_user(user) and family.get("ai_scans_used", 0) >= sub["limits"]["ai_scans_per_month"]:
         plan_limit_error(
+            family_id=user["family_id"],
             feature="ai_scans",
             current_plan=sub["plan"],
             limit=sub["limits"]["ai_scans_per_month"],
@@ -17861,6 +17957,7 @@ async def suggest_meals_ai(
     family = await get_family_doc(user["family_id"])
     if not is_admin_user(user) and family.get("ai_scans_used", 0) >= sub["limits"]["ai_scans_per_month"]:
         plan_limit_error(
+            family_id=user["family_id"],
             feature="ai_scans",
             current_plan=sub["plan"],
             limit=sub["limits"]["ai_scans_per_month"],
@@ -19289,6 +19386,78 @@ LADDER_DEFINITIONS = {
     "median_days_to_second_adult": "Median days from the household's first adult account to its second, over households that became multi-user in the window.",
     "note": "Households that became multi-user before the moment was stamped (September 2026) use the later adult's account creation date as an estimate.",
 }
+
+
+PAID_PLANS = ("executive", "household")
+
+
+@app.get("/api/metrics/paywall")
+async def metrics_paywall(days: int = 30, user=Depends(require_user), database=Depends(get_db)):
+    """Which upgrade walls real households actually walk into. Admin only.
+
+    The app tells somebody "upgrade to do this" in sixteen places, and every
+    pricing decision so far has been made without knowing which of the sixteen
+    anyone reaches. This is that number.
+
+    Read `paywall_live` FIRST. While no paid rail is configured the testing
+    window hands every family the top tier's limits, so no gate can fire and an
+    empty table means "the walls are switched off", not "nobody wants to pay".
+    Those are opposite conclusions from identical data, which is exactly the
+    mistake this field exists to prevent.
+    """
+    if not is_admin_user(user):
+        raise HTTPException(status_code=403, detail="Admin only")
+    days = max(1, min(days, 365))
+    cutoff = (utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
+
+    # Which households are paying today, so a wall can be read against what
+    # happened next. Plan is a current fact, not a timeline — a family that hit
+    # a wall and subscribed the same week reads the same as one that subscribed
+    # a month later. That is enough to rank walls, and it needs no event stream.
+    paying = set()
+    async for fam in database["families"].find(
+        {"plan": {"$in": list(PAID_PLANS)}}, {"_id": 0, "family_id": 1}
+    ):
+        paying.add(fam["family_id"])
+
+    by_feature: dict = {}
+    families_any = set()
+    async for row in database["plan_walls"].find({"date": {"$gte": cutoff}}, {"_id": 0}):
+        feature = row.get("feature") or "unknown"
+        fam = row.get("family_id")
+        slot = by_feature.setdefault(feature, {
+            "feature": feature, "hits": 0, "families": set(), "paying_families": set(),
+        })
+        slot["hits"] += int(row.get("hits", 0) or 0)
+        if fam:
+            slot["families"].add(fam)
+            families_any.add(fam)
+            if fam in paying:
+                slot["paying_families"].add(fam)
+
+    rows = []
+    for slot in by_feature.values():
+        rows.append({
+            "feature": slot["feature"],
+            "hits": slot["hits"],
+            "households": len(slot["families"]),
+            # Of the households that hit THIS wall, how many pay today. A wall
+            # many hit and none pay past is a wall in the wrong place.
+            "households_now_paying": len(slot["paying_families"]),
+        })
+    # Most-hit first: the wall worth moving is the one most people reach.
+    rows.sort(key=lambda r: (-r["hits"], r["feature"]))
+
+    total_families = await database["families"].count_documents({})
+    return {
+        "days": days,
+        # The interpretation key. False means the gates never fired at all.
+        "paywall_live": billing_is_live(),
+        "walls": rows,
+        "households_hitting_any_wall": len(families_any),
+        "households_total": total_families,
+        "households_paying": len(paying),
+    }
 
 
 @app.get("/api/metrics/grant-evidence")

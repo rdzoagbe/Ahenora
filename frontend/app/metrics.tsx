@@ -12,7 +12,9 @@ import { api, MetricRow, VersionAdoption, PlanAdoption, FunnelSummary, PushHealt
   RetentionSummary, InviteBreakdown, AiHealth, SubscriberList, SupportInbox,
   TimingsReport,
   BillingEvent,
-  BillingEventLog } from '../src/api';
+  BillingEventLog,
+  PaywallReport,
+} from '../src/api';
 import { logger } from '../src/logger';
 
 // Admin-only screen — plain English labels are fine (only the owner sees it).
@@ -161,6 +163,7 @@ export default function MetricsScreen() {
   const [showAllSubs, setShowAllSubs] = useState(false);
   const [billing, setBilling] = useState<BillingEventLog | null>(null);
   const [funnel, setFunnel] = useState<FunnelSummary | null>(null);
+  const [paywall, setPaywall] = useState<PaywallReport | null>(null);
   const [retention, setRetention] = useState<RetentionSummary | null>(null);
   const [invites, setInvites] = useState<InviteBreakdown | null>(null);
   const [aiHealth, setAiHealth] = useState<AiHealth | null>(null);
@@ -195,6 +198,10 @@ export default function MetricsScreen() {
     api.getBillingEvents(40).then(setBilling).catch((e) => logger.warn('billing events load failed', e?.message || e));
     // The activation + growth funnel — the "make the launch stick" scoreboard.
     api.getMetricsFunnel(30).then(setFunnel).catch((e) => logger.warn('funnel load failed', e?.message || e));
+    // Which upgrade walls households actually reach. Sixteen places in the
+    // backend say "upgrade to do this" and until this existed none of them
+    // left a trace, so every pricing decision was made blind.
+    api.getMetricsPaywall(30).then(setPaywall).catch((e) => logger.warn('paywall load failed', e?.message || e));
     // Retention, counted in ADULTS — the funnel's 2+-members number counts child
     // profiles, so it cannot answer whether a second grown-up actually stuck.
     api.getMetricsRetention(8).then(setRetention).catch((e) => logger.warn('retention load failed', e?.message || e));
@@ -752,6 +759,64 @@ export default function MetricsScreen() {
             </>
           ) : (
             <Text style={styles.muted}>No subscription data yet.</Text>
+          )}
+
+          {/* Which upgrade walls households actually reach.
+
+              The app says "upgrade to do this" in sixteen places and none of
+              them used to leave a trace, so the one question that decides
+              pricing — of the walls we built, which do real families walk
+              into? — had no answer. Ranked most-hit first, because the wall
+              worth moving is the one most people reach. */}
+          <Text style={styles.sectionTitle}>Upgrade walls — which ones people hit</Text>
+          {paywall ? (
+            <>
+              {!paywall.paywall_live ? (
+                <View style={[styles.card, styles.warnCard]}>
+                  <Text style={styles.warnText}>
+                    No paid rail is configured, so no gate can fire and every household has the top tier&apos;s limits. An empty table below means the walls are OFF — not that nobody wants to pay.
+                  </Text>
+                </View>
+              ) : null}
+              <View style={styles.tileRow}>
+                <View style={styles.tile}>
+                  <Text style={styles.tileNum}>{paywall.households_hitting_any_wall}</Text>
+                  <Text style={styles.tileLabel}>Hit a wall (30d)</Text>
+                </View>
+                <View style={styles.tile}>
+                  <Text style={styles.tileNum}>{paywall.households_total}</Text>
+                  <Text style={styles.tileLabel}>Households</Text>
+                </View>
+                <View style={styles.tile}>
+                  <Text style={styles.tileNum}>{paywall.households_paying}</Text>
+                  <Text style={styles.tileLabel}>Paying</Text>
+                </View>
+              </View>
+              {paywall.walls.length ? (
+                <View style={styles.card}>
+                  {paywall.walls.map((w, i) => (
+                    <View key={w.feature} style={[styles.eventRow, i === 0 ? { borderTopWidth: 0 } : null]}>
+                      <Text style={styles.eventLabel}>
+                        {w.feature} · {w.households} household{w.households === 1 ? '' : 's'}
+                        {w.households_now_paying > 0 ? ` · ${w.households_now_paying} now paying` : ''}
+                      </Text>
+                      <Text style={styles.eventCount}>{w.hits}</Text>
+                    </View>
+                  ))}
+                </View>
+              ) : (
+                <Text style={styles.muted}>
+                  {paywall.paywall_live
+                    ? 'Nobody has hit an upgrade wall in 30 days.'
+                    : 'Nothing recorded — the walls are switched off.'}
+                </Text>
+              )}
+              <Text style={styles.hint}>
+                The number on the right is how many times the wall was hit. A wall many households reach and none pay past is a wall in the wrong place. &quot;Now paying&quot; is the household&apos;s plan today, not proof the wall caused the sale.
+              </Text>
+            </>
+          ) : (
+            <Text style={styles.muted}>No paywall data yet.</Text>
           )}
 
           {/* Subscribers — the per-household list behind those totals */}

@@ -1187,6 +1187,25 @@ export interface MetricRow {
   count: number;
 }
 
+/** One upgrade wall, and what happened to the households that reached it. */
+export interface PaywallRow {
+  feature: string;
+  hits: number;
+  households: number;
+  households_now_paying: number;
+}
+
+export interface PaywallReport {
+  days: number;
+  /** False means no gate can fire at all — an empty table then means the walls
+   *  are switched off, not that nobody wants to pay. Read this first. */
+  paywall_live: boolean;
+  walls: PaywallRow[];
+  households_hitting_any_wall: number;
+  households_total: number;
+  households_paying: number;
+}
+
 export interface FunnelSummary {
   window_days: number;
   total_users: number;
@@ -2096,6 +2115,9 @@ export const api = {
     request<{ days: number; rows: MetricRow[] }>(`/metrics/summary?days=${days}`),
   getMetricsFunnel: (days = 30) =>
     request<FunnelSummary>(`/metrics/funnel?days=${days}`),
+  /** Which upgrade walls households actually reach — the pricing read-out. */
+  getMetricsPaywall: (days = 30) =>
+    request<PaywallReport>(`/metrics/paywall?days=${days}`),
   getMetricsRetention: (weeks = 8) =>
     request<RetentionSummary>(`/metrics/retention?weeks=${weeks}`),
   /** People this household invited who never made it in — feeds the re-send nudge. */
