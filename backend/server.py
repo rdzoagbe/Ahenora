@@ -13396,6 +13396,37 @@ def rc_term_days_for_product(subscriber: dict, product: Optional[str]) -> Option
     return _term_days(row.get("purchase_date"), row.get("expires_date"))
 
 
+# What RevenueCat calls a store, and what we call it. Its REST API answers in
+# lower case ("app_store"); its webhooks answer in upper ("APP_STORE"). Both
+# arrive here, so both normalise to one spelling — otherwise the same iPhone
+# purchase counts as two different stores depending on which path recorded it.
+RC_STORES = {
+    "APP_STORE": "APP_STORE",
+    "MAC_APP_STORE": "APP_STORE",
+    "PLAY_STORE": "PLAY_STORE",
+    "AMAZON": "AMAZON",
+    "STRIPE": "STRIPE",
+    "PROMOTIONAL": "PROMOTIONAL",
+}
+
+
+def rc_store_for_product(subscriber: dict, product: Optional[str]) -> Optional[str]:
+    """Which store sold this subscription, read from the subscriptions block.
+
+    Only the webhook is handed a store directly. The sweep and the replay reach
+    RevenueCat's REST API instead, and a household repaired by either would
+    otherwise record a purchase with no store at all — which is precisely the
+    household whose purchase went missing, and so precisely the one worth
+    knowing the platform of.
+    """
+    subs = (subscriber or {}).get("subscriptions") or {}
+    row = subs.get(product) if product else None
+    if not isinstance(row, dict):
+        return None
+    raw = str(row.get("store") or "").strip().upper()
+    return RC_STORES.get(raw, raw or None)
+
+
 def rc_plan_from_product(product: Optional[str],
                          term_days: Optional[float] = None) -> tuple[str, str]:
     """Which plan and cycle a store product grants.
@@ -13533,6 +13564,7 @@ async def record_billing_event(
     plan: Optional[str] = None,
     detail: Optional[str] = None,
     environment: Optional[str] = None,
+    store: Optional[str] = None,
 ) -> None:
     """Write down that a payment provider told us something.
 
@@ -13567,6 +13599,19 @@ async def record_billing_event(
         # never be the thing that silences an alert about a genuine failed
         # payment. See is_test_billing_event.
         "environment": str(environment or "").strip().upper(),
+        # WHICH STORE the money came through — APP_STORE, PLAY_STORE, STRIPE.
+        #
+        # RevenueCat has sent this on every event all along and we threw it
+        # away, which made the one question a founder with iPhone downloads and
+        # no iPhone revenue actually has — "has an iPhone ever paid?" —
+        # unanswerable from inside the app. Forty-seven recorded events could
+        # not distinguish "no iPhone owner has tried" from "every iPhone
+        # purchase is failing", and those need opposite fixes.
+        #
+        # "" when the provider did not say, the same as environment: a missing
+        # field is never allowed to masquerade as a known one.
+        "store": RC_STORES.get(str(store or "").strip().upper(),
+                               str(store or "").strip().upper()),
         "received_at": utcnow(),
     }
     try:
@@ -13679,6 +13724,7 @@ async def revenuecat_webhook(payload: dict, authorization: Optional[str] = Heade
             app_user_id=app_user_id, product_id=event.get("product_id"),
             detail="no account carries this app_user_id",
             environment=event.get("environment"),
+            store=event.get("store"),
         )
         return {"ok": True, "matched": False}
 
@@ -13717,6 +13763,9 @@ async def revenuecat_webhook(payload: dict, authorization: Optional[str] = Heade
         # the whole fix: without it a licence-test renewal is indistinguishable
         # from income, and its daily BILLING_ISSUE from a real one.
         environment=event.get("environment"),
+        # APP_STORE or PLAY_STORE. Same reasoning as environment: without it,
+        # "iPhones bring downloads and no revenue" has no evidence either way.
+        store=event.get("store"),
     )
     return {"ok": True, "matched": True}
 
@@ -13934,6 +13983,7 @@ async def sweep_billing_once(database: Any, budget: int = 0, secret: str = "") -
         await record_billing_event(
             database, source="sweep", event_type="RECONCILED", matched=True,
             family_id=fid, app_user_id=uid, product_id=product, plan=plan,
+            store=rc_store_for_product(subscriber, product),
             detail="RevenueCat says paid; no webhook had reached us",
         )
 
@@ -14102,6 +14152,7 @@ async def replay_unmatched_billing(database: Any, secret: str = "") -> dict:
         await record_billing_event(
             database, source="replay", event_type="RECOVERED", matched=True,
             family_id=fid, app_user_id=uid, product_id=product, plan=plan,
+            store=rc_store_for_product(subscriber, product),
             detail="a purchase that had reached nobody now matches an account",
         )
     return {"attempted": attempted, "resolved": resolved}
@@ -14201,6 +14252,25 @@ async def admin_billing_events(user=Depends(require_user), limit: int = Query(de
     for r in rows:
         by_source[r.get("source") or "?"] = by_source.get(r.get("source") or "?", 0) + 1
 
+    # Real purchases, counted by store.
+    #
+    # The one number a founder with iPhone downloads and no iPhone revenue
+    # needs, and the screen could not produce it. Test events are excluded —
+    # a licence-test renewal is not a sale, and counting it would say iPhones
+    # are buying when no iPhone has. Rows written before the store was
+    # recorded have none and are counted as "unknown" rather than assigned a
+    # platform we do not actually know.
+    PURCHASE_EVENTS = {"INITIAL_PURCHASE", "RENEWAL", "NON_RENEWING_PURCHASE",
+                       "UNCANCELLATION", "RECONCILED", "RECOVERED"}
+    purchases_by_store: dict = {}
+    for r in rows:
+        if is_test_billing_event(r):
+            continue
+        if str(r.get("event_type") or "").strip().upper() not in PURCHASE_EVENTS:
+            continue
+        key = r.get("store") or "unknown"
+        purchases_by_store[key] = purchases_by_store.get(key, 0) + 1
+
     def _row(r):
         return {
             "source": r.get("source"),
@@ -14223,6 +14293,9 @@ async def admin_billing_events(user=Depends(require_user), limit: int = Query(de
             # and mean completely different things when you are looking for
             # why a payment did not arrive.
             "environment": r.get("environment") or "",
+            # Blank on every row written before this was recorded. The screen
+            # says so rather than guessing a store for it.
+            "store": r.get("store") or "",
         }
 
     # Unmatched first, then everything else newest-first.
@@ -14243,6 +14316,9 @@ async def admin_billing_events(user=Depends(require_user), limit: int = Query(de
         # The two switches that decide whether events can arrive at all.
         "revenuecat_configured": bool(os.environ.get("RC_WEBHOOK_SECRET")),
         "stripe_configured": bool(os.environ.get("STRIPE_WEBHOOK_SECRET")),
+        # Real purchases by store. An absent APP_STORE key means no iPhone has
+        # ever bought anything — which is a finding, not an absence of data.
+        "purchases_by_store": purchases_by_store,
         "sweep_enabled": BILLING_SWEEP_ENABLED and bool(os.environ.get("REVENUECAT_SECRET_KEY")),
         "sweep_booted_at": iso(_billing_sweep_state["booted_at"]),
         "sweep_last_tick_at": iso(_billing_sweep_state["last_tick_at"]),
@@ -14544,7 +14620,7 @@ async def stripe_webhook(request: Request):
                     event.get("type"), customer)
         await record_billing_event(
             database, source="stripe", event_type=str(event.get("type") or ""),
-            matched=False, app_user_id=customer,
+            matched=False, app_user_id=customer, store="STRIPE",
             detail="no household carries this Stripe customer",
         )
         return {"ok": True, "matched": False}
@@ -14557,7 +14633,7 @@ async def stripe_webhook(request: Request):
     await record_billing_event(
         database, source="stripe", event_type=str(event.get("type") or ""),
         matched=True, family_id=family["family_id"], app_user_id=customer,
-        plan=changes.get("plan"),
+        plan=changes.get("plan"), store="STRIPE",
     )
     return {"ok": True, "matched": True}
 

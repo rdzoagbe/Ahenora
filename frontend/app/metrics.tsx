@@ -104,6 +104,21 @@ function isAtRisk(e: BillingEvent): boolean {
  * against test money — a licence-test account, whose subscription renews daily
  * and whose BILLING_ISSUE is not a billing issue.
  */
+/** What a store id is called in front of a person. An unrecognised value is
+ *  shown as it arrived rather than hidden: a store we have not met is still
+ *  information. */
+function storeLabel(store: string): string {
+  const known: Record<string, string> = {
+    APP_STORE: 'App Store (iPhone)',
+    PLAY_STORE: 'Play Store (Android)',
+    STRIPE: 'Card (Stripe)',
+    AMAZON: 'Amazon',
+    PROMOTIONAL: 'Granted (promotional)',
+    unknown: 'Unknown store',
+  };
+  return known[store] || store;
+}
+
 function testLabel(e: BillingEvent): string {
   return e.environment === 'SANDBOX' ? 'test purchase' : 'store test';
 }
@@ -1095,6 +1110,29 @@ export default function MetricsScreen() {
                 {billing.sweep_enabled ? 'on' : 'OFF'}
                 {billing.last_event_at ? ` · last event ${billing.last_event_at.slice(0, 16).replace('T', ' ')}` : ''}
               </Text>
+              {/* Real purchases by store, test events excluded.
+
+                  Downloads on a platform and no revenue from it has two
+                  explanations that need opposite fixes — nobody has tried to
+                  buy, or everybody who tried has failed — and forty-seven
+                  recorded events could not tell them apart, because the store
+                  field RevenueCat sends was thrown away. A platform with no
+                  line here has sold nothing. */}
+              {Object.keys(billing.purchases_by_store || {}).length ? (
+                <View style={styles.card} testID="purchases-by-store">
+                  {Object.entries(billing.purchases_by_store).map(([store, n], i) => (
+                    <View key={store} style={[styles.eventRow, i === 0 ? { borderTopWidth: 0 } : null]}>
+                      <Text style={styles.eventLabel}>{storeLabel(store)}</Text>
+                      <Text style={styles.eventCount}>{n}</Text>
+                    </View>
+                  ))}
+                </View>
+              ) : (
+                <Text style={styles.muted}>No real purchase has been recorded on any store.</Text>
+              )}
+              <Text style={styles.hint}>
+                Purchases by store, test events excluded. A store missing from this list has sold nothing. &quot;Unknown&quot; is an event recorded before the store was captured, not a platform.
+              </Text>
               {billing.events.length ? (
                 <View style={styles.card}>
                   {billing.events.slice(0, 12).map((e, i) => (
@@ -1114,9 +1152,15 @@ export default function MetricsScreen() {
                             string alone ("no account carries this app_user_id")
                             says what happened and not to whom. */}
                         <Text style={styles.subEmail} numberOfLines={e.matched ? 1 : 2}>
-                          {e.matched
-                            ? (e.detail || e.product_id || e.app_user_id || '—')
-                            : [e.product_id, e.app_user_id].filter(Boolean).join(' · ') || e.detail || '—'}
+                          {/* The store leads: on a row about money that did or
+                              did not arrive, which platform sold it is the
+                              first thing worth reading and was not shown at
+                              all. */}
+                          {[e.store ? storeLabel(e.store) : null,
+                            e.matched
+                              ? (e.detail || e.product_id || e.app_user_id || '—')
+                              : [e.product_id, e.app_user_id].filter(Boolean).join(' · ') || e.detail || '—',
+                           ].filter(Boolean).join(' · ')}
                         </Text>
                         {/* And whether anything can still be done about it.
                             The replay runs twice a day and gives up down five
