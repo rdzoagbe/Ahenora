@@ -77,6 +77,24 @@ function RootNavigator() {
   // card. Found in review, and it is the original complaint reintroduced by
   // the check meant to confirm the fix.
   const currentParams = useGlobalSearchParams();
+  // Where we are right now, readable without making the applier below re-run.
+  //
+  // This ref is the fix for a regression I shipped. The applier listed
+  // `pathname` and `currentParams` as dependencies, and useGlobalSearchParams
+  // hands back a FRESH OBJECT on every render. Navigating renders several
+  // times, so the effect re-entered on each one — and every entry that had not
+  // yet seen the settled params pushed again. The 500ms timer never got to
+  // space them out either, because each re-entry cleared the pending one.
+  //
+  // Reported as "it opens the card but then it reloads twice after the card is
+  // opened", which is precisely that: the card arrives on the first push and
+  // the retry keeps firing behind it.
+  const routeNow = useRef<{ pathname: string; params: Record<string, unknown> }>({
+    pathname, params: currentParams,
+  });
+  useEffect(() => {
+    routeNow.current = { pathname, params: currentParams };
+  });
   // The tap waiting to be honoured, with how many times we have tried. A ref
   // rather than state so the applier below never sets state from an effect
   // body; `targetTick` is what actually re-runs it.
@@ -128,9 +146,12 @@ function RootNavigator() {
     // redirect satisfies the pathname and nothing else — accepting it would
     // drop the id, and the Feed would open with no card to show. Which is the
     // original complaint exactly: the tap appears to do nothing.
+    // Read, never depended on: the retry clock is the tick below and nothing
+    // else. A render is not a reason to navigate again.
+    const { pathname: arrivedAt, params: arrivedWith } = routeNow.current;
     if (held.attempts > 0
-        && routeMatchesTarget(pathname, held.target.pathname)
-        && paramsMatchTarget(currentParams, held.target.params)) {
+        && routeMatchesTarget(arrivedAt, held.target.pathname)
+        && paramsMatchTarget(arrivedWith, held.target.params)) {
       heldTarget.current = null;
       // Honoured, so the durable copy is spent too. Leaving it would re-route
       // on the next launch, long after the notification stopped mattering.
@@ -146,7 +167,7 @@ function RootNavigator() {
     router.push(held.target as never);
     const timer = setTimeout(() => setTargetTick((n) => n + 1), 500);
     return () => clearTimeout(timer);
-  }, [targetTick, pathname, currentParams, router]);
+  }, [targetTick, router]);
 
   // The web twin of the tap routing above. The service worker posts the payload
   // of a tapped browser notification to the focused tab; without a listener the
