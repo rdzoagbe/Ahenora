@@ -1370,7 +1370,18 @@ export default function Settings() {
       <LanguageModal visible={showLang} onClose={() => setShowLang(false)} />
       <KeyboardAwareBottomSheet visible={showInvite} onClose={() => setShowInvite(false)} contentStyle={styles.sheet}>
         <View style={styles.sheetHeader}>
-          <Text style={styles.sheetTitle}>{inviteMode === 'family' ? t('set_send_invite_title') : t('set_invite_coparent')}</Text>
+          <Text style={styles.sheetTitle}>
+            {/* Three modes, three titles. This had two, so a grandparent or
+                carer being invited as a helper was headed "Invite co-parent" —
+                read by the parent sending it as though they were handing over
+                a co-parent's access, which a helper account deliberately
+                does not have. */}
+            {inviteMode === 'family'
+              ? t('set_send_invite_title')
+              : inviteMode === 'helper'
+                ? t('set_invite_helper_title')
+                : t('set_invite_coparent')}
+          </Text>
           <PressScale
                   accessibilityRole="button"
                   accessibilityLabel={t('close')} testID="close-invite" onPress={() => setShowInvite(false)} style={styles.iconBtn}>

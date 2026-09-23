@@ -9,10 +9,36 @@
        most importantly ?invite= tokens from invitation emails. -->
   <script>
     (function () {
+      // Share links carry their meaning in the PATH, and this page used to
+      // throw the path away. A gift pot link (/app/pot/<code>) or a Secret
+      // Santa reveal (/app/santa-match/<code>) has no file on this host, so it
+      // lands here — and was sent to /app/, where a grandparent opening the
+      // link saw a sign-in screen instead of the pot they were asked to join.
+      //
+      // Only these two shapes are carried through, and only a code made of the
+      // characters a share token is minted from. Everything else keeps the old
+      // behaviour: a mistyped address still lands on the app's front page
+      // rather than on a "page not found".
+      //
+      // The visitor is sent to the page the export built for that screen
+      // (pot/[token].html), with the code in the query, which every browser
+      // keeps across a redirect; +html.tsx puts the real path back before the
+      // app starts. It has to be that page and not the front page: the app
+      // takes over the HTML already on screen, and taking over the front
+      // page's HTML as a gift pot is a mismatch React reports as an error on
+      // every single guest visit. Keep the pattern identical to +html.tsx.
+      var m = /^(?:\/Ahenora)?\/app\/(pot|santa-match)\/([A-Za-z0-9_-]{8,128})\/?$/.exec(window.location.pathname);
+      if (m) {
+        window.location.replace('/app/' + m[1] + '/%5Btoken%5D.html?__share=' + m[1] + '%2F' + m[2] + window.location.hash);
+        return;
+      }
       window.location.replace('/app/' + window.location.search + window.location.hash);
     })();
   </script>
-  <meta http-equiv="refresh" content="0; url=/app/" />
+  <!-- Only for browsers with scripts off. Left bare, it raced the script's
+       redirect: a share link sent to its own page could be overtaken a
+       moment later by this one, which goes to the front page. -->
+  <noscript><meta http-equiv="refresh" content="0; url=/app/" /></noscript>
 </head>
 <body>
   <p style="font-family: sans-serif; padding: 24px;">
