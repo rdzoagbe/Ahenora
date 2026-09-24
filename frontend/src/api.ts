@@ -1763,6 +1763,8 @@ export type BillingCycle = 'monthly' | 'yearly';
 export interface Subscription {
   plan: Plan;
   billing_cycle: BillingCycle;
+  /** A card subscription (Stripe) — managed and cancelled on Stripe's page. */
+  billed_by_card?: boolean;
   grandfathered: boolean;
   testing_window?: boolean;
   // Announced billing cutover date (ISO). When set and in the future, the app
@@ -2831,6 +2833,9 @@ export const api = {
       enabled: boolean; currency: string; price_monthly: number; price_yearly: number;
       tiers?: Record<string, { plan: string; price_monthly: number; price_yearly: number; buyable: boolean }>;
     }>('/billing/stripe/config'),
+  /** Stripe's hosted billing page, where a card subscriber cancels. */
+  openStripePortal: () =>
+    request<{ url: string }>('/billing/stripe/portal', { method: 'POST' }),
   createStripeCheckout: (tier: 'family' | 'household', cycle: BillingCycle) =>
     request<{ url: string; session_id?: string }>('/billing/stripe/checkout', {
       method: 'POST',

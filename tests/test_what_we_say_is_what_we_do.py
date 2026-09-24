@@ -265,6 +265,24 @@ class WhatThePolicyMustSay(unittest.TestCase):
             self.assertIn(phrase, self.POLICY, phrase)
 
 
+class OneOperatorEverywhere(unittest.TestCase):
+    """The site's footer and deletion page said Dzoagbe Labs; the privacy
+    policy and terms said Roland Dzoagbe. A controller named two ways is a
+    policy a regulator reads twice. Dzoagbe Labs is the operator."""
+
+    OPERATOR = "Dzoagbe Labs"
+
+    def test_every_legal_page_names_the_operator(self):
+        for page in ("privacy.html", "terms.html", "delete-account.html", "index.html", "fr.html"):
+            self.assertIn(self.OPERATOR, visible(page), page)
+
+    def test_nothing_names_a_different_operator(self):
+        for page in ("privacy.html", "terms.html", "delete-account.html"):
+            self.assertNotIn("operated by Roland", visible(page), page)
+        for screen in ("privacy.tsx", "terms.tsx"):
+            self.assertNotIn("operated by Roland", read("frontend", "app", screen), screen)
+
+
 class DeletionSaysWhatItDoes(unittest.TestCase):
     def test_the_button_does_not_call_itself_a_request(self):
         self.assertIn("for real and at once", SERVER)

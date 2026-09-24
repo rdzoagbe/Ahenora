@@ -12,7 +12,7 @@ export default function PrivacyScreen() {
         {
           title: 'Who is responsible for your data',
           body: [
-            'Ahenora is built and operated by Roland Dzoagbe, established in France, who is the data controller for the purposes of the EU General Data Protection Regulation. Contact: privacy@ahenora.com.',
+            'Ahenora is built and operated by Dzoagbe Labs, established in France, which is the data controller for the purposes of the EU General Data Protection Regulation. Contact: privacy@ahenora.com.',
             'There is no advertising network in Ahenora, no data broker, and no sale of personal data — not as a policy we might revise, but because the app has no mechanism to do it.',
           ],
         },

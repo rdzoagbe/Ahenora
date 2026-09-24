@@ -11,7 +11,7 @@ export default function TermsScreen() {
       sections={[
         {
           title: 'About this app',
-          body: 'Ahenora is available on the App Store, on Google Play and on the web at ahenora.com. It is built and operated by Roland Dzoagbe. We add and improve functionality continuously, so features may change between updates.',
+          body: 'Ahenora is available on the App Store, on Google Play and on the web at ahenora.com. It is built and operated by Dzoagbe Labs. We add and improve functionality continuously, so features may change between updates.',
         },
         {
           title: 'Who may use Ahenora',
@@ -40,7 +40,7 @@ export default function TermsScreen() {
         },
         {
           title: 'Subscriptions and payments',
-          body: 'The paid plans, Family and Household, are billed by the App Store on iPhone, by Google Play on Android, or by card through Stripe on the web, at the price shown before you buy. They renew automatically until cancelled. Cancel a store subscription in the App Store or Google Play, where you bought it; to cancel a card subscription, write to support@ahenora.com from your account email. Cancelling keeps the plan until the end of the paid period. Refunds for store purchases follow the App Store\'s or Google Play\'s policy; for card purchases, you keep every right your local law gives you. If a payment fails or a subscription lapses, the household returns to the free plan and its data is not deleted.',
+          body: 'The paid plans, Family and Household, are billed by the App Store on iPhone, by Google Play on Android, or by card through Stripe on the web, at the price shown before you buy. They renew automatically until cancelled. Cancel a store subscription in the App Store or Google Play, where you bought it; cancel a card subscription online from the Plans page in the web app at ahenora.com/app (Manage or cancel your card subscription), or write to support@ahenora.com from your account email. Cancelling keeps the plan until the end of the paid period. Refunds for store purchases follow the App Store\'s or Google Play\'s policy; for card purchases, you keep every right your local law gives you. If a payment fails or a subscription lapses, the household returns to the free plan and its data is not deleted.',
         },
         {
           title: 'Availability, and what we do not promise',
