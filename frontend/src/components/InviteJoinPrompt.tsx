@@ -309,18 +309,18 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   title: {
-    fontFamily: 'Inter_800ExtraBold',
+    fontFamily: 'Figtree_800ExtraBold',
     fontSize: 17,
     textAlign: 'center',
   },
   question: {
-    fontFamily: 'Inter_700Bold',
+    fontFamily: 'Figtree_700Bold',
     fontSize: 15,
     textAlign: 'center',
     marginTop: 10,
   },
   note: {
-    fontFamily: 'Inter_500Medium',
+    fontFamily: 'Figtree_500Medium',
     fontSize: 13,
     lineHeight: 18,
     textAlign: 'center',
@@ -336,7 +336,7 @@ const styles = StyleSheet.create({
   },
   busyRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   primaryBtnText: {
-    fontFamily: 'Inter_800ExtraBold',
+    fontFamily: 'Figtree_800ExtraBold',
     fontSize: 15,
   },
   ghostBtn: {
@@ -345,7 +345,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   ghostBtnText: {
-    fontFamily: 'Inter_600SemiBold',
+    fontFamily: 'Figtree_600SemiBold',
     fontSize: 13,
   },
 });

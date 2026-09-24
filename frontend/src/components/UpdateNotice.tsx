@@ -355,12 +355,12 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   // Reads at arm's length. The old 13-14px Medium in accent-on-accent was
   // technically legible and practically not, which is what "unclear to read"
   // meant: body copy goes to the normal ink, and only the heading stays accent.
-  title: { flex: 1, minWidth: 0, color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 16, lineHeight: 22 },
-  body: { color: ui.text, fontFamily: 'Inter_500Medium', fontSize: 14.5, lineHeight: 21 },
+  title: { flex: 1, minWidth: 0, color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 16, lineHeight: 22 },
+  body: { color: ui.text, fontFamily: 'Figtree_500Medium', fontSize: 14.5, lineHeight: 21 },
   list: { gap: 7 },
-  item: { color: ui.text, fontFamily: 'Inter_500Medium', fontSize: 14.5, lineHeight: 21 },
+  item: { color: ui.text, fontFamily: 'Figtree_500Medium', fontSize: 14.5, lineHeight: 21 },
   btn: { alignSelf: 'flex-start', backgroundColor: ui.orangeDeep, borderRadius: 999, paddingVertical: 11, paddingHorizontal: 18, marginTop: 4 },
-  btnText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
+  btnText: { color: '#FFFFFF', fontFamily: 'Figtree_800ExtraBold', fontSize: 14 },
   x: { padding: 4 },
-  xText: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 15 },
+  xText: { color: ui.muted, fontFamily: 'Figtree_700Bold', fontSize: 15 },
 });

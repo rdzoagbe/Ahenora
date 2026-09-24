@@ -119,11 +119,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 9999,
   },
-  badgeText: { fontFamily: 'Inter_500Medium', fontSize: 11, letterSpacing: 0.4 },
+  badgeText: { fontFamily: 'Figtree_500Medium', fontSize: 11, letterSpacing: 0.4 },
   closeBtn: { padding: 8, borderRadius: 9999, borderWidth: 1 },
   heading: {
     fontFamily: 'PlayfairDisplay_400Regular_Italic',
     fontSize: 26, marginTop: 16,
   },
-  sub: { fontFamily: 'Inter_400Regular', fontSize: 13, marginTop: 4 },
+  sub: { fontFamily: 'Figtree_400Regular', fontSize: 13, marginTop: 4 },
 });

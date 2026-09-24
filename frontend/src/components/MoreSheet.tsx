@@ -144,7 +144,7 @@ const createStyles = (ui: UIColors) =>
       backgroundColor: ui.muted, opacity: 0.5, marginBottom: 8,
     },
     header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
-    title: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 21, letterSpacing: -0.4 },
+    title: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 21, letterSpacing: -0.4 },
     iconBtn: { padding: 6, borderRadius: 999, backgroundColor: ui.soft },
     row: {
       flexDirection: 'row', alignItems: 'center', gap: 14,
@@ -152,6 +152,6 @@ const createStyles = (ui: UIColors) =>
       borderRadius: 16, paddingVertical: 15, paddingHorizontal: 14,
     },
     tile: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
-    rowTitle: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 16 },
-    rowSub: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, marginTop: 2 },
+    rowTitle: { color: ui.text, fontFamily: 'Figtree_700Bold', fontSize: 16 },
+    rowSub: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 12.5, marginTop: 2 },
   });

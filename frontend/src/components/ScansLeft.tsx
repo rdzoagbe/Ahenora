@@ -57,5 +57,5 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start',
     borderWidth: 1, borderRadius: 999, paddingVertical: 5, paddingHorizontal: 10,
   },
-  text: { fontFamily: 'Inter_600SemiBold', fontSize: 12.5 },
+  text: { fontFamily: 'Figtree_600SemiBold', fontSize: 12.5 },
 });

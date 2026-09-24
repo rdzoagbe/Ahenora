@@ -303,12 +303,12 @@ function TaskRow({ card, onOpen, onComplete, styles }: { card: Card; onOpen: () 
     <PressScale style={styles.taskRow} onPress={onOpen} testID={`feed-card-${card.card_id}`}>
       <PressScale
         onPress={onComplete}
-        style={styles.checkRing}
+        style={[styles.checkRing, card.status === 'DONE' && { backgroundColor: ui.doneFill, borderColor: ui.doneFill }]}
         accessibilityLabel={card.status === 'DONE' ? t('feed_mark_not_done') : t('feed_mark_done')}
         accessibilityRole="button"
         testID={`feed-card-complete-${card.card_id}`}
       >
-        {card.status === 'DONE' ? <CheckCircle2 size={18} color={ui.orange} /> : null}
+        {card.status === 'DONE' ? <Check size={16} strokeWidth={3} color={ui.doneTick} /> : null}
       </PressScale>
       <View style={styles.taskBody}>
         <View style={styles.taskTitleRow}>
@@ -2160,10 +2160,10 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     minWidth: 22, height: 22, borderRadius: 11, paddingHorizontal: 6,
     alignItems: 'center', justifyContent: 'center', backgroundColor: '#4C8DFF',
   },
-  alertCountText: { color: '#fff', fontFamily: 'Inter_800ExtraBold', fontSize: 12 },
-  pastBannerText: { flex: 1, fontFamily: 'Inter_600SemiBold', fontSize: 12.5, lineHeight: 17 },
+  alertCountText: { color: '#fff', fontFamily: 'Figtree_800ExtraBold', fontSize: 12 },
+  pastBannerText: { flex: 1, fontFamily: 'Figtree_600SemiBold', fontSize: 12.5, lineHeight: 17 },
   pastBtn: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 9999 },
-  pastBtnText: { fontFamily: 'Inter_700Bold', fontSize: 12.5 },
+  pastBtnText: { fontFamily: 'Figtree_700Bold', fontSize: 12.5 },
   emptyScanBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2174,33 +2174,33 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     borderRadius: 9999,
     borderWidth: 1,
   },
-  emptyScanText: { fontFamily: 'Inter_700Bold', fontSize: 13 },
+  emptyScanText: { fontFamily: 'Figtree_700Bold', fontSize: 13 },
   detailSheet: { backgroundColor: ui.card, borderTopLeftRadius: 30, borderTopRightRadius: 30, borderWidth: 1, borderColor: ui.line, padding: 24, paddingBottom: 110 },
   alertRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, borderTopWidth: 1, borderTopColor: ui.line, marginTop: 4 },
   alertDot: { width: 9, height: 9, borderRadius: 99, backgroundColor: ui.orange, flexShrink: 0 },
-  alertRowTitle: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 15.5 },
-  alertRowMeta: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 13, marginTop: 2 },
+  alertRowTitle: { color: ui.text, fontFamily: 'Figtree_700Bold', fontSize: 15.5 },
+  alertRowMeta: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 13, marginTop: 2 },
   alertsEmpty: { alignItems: 'center', gap: 12, paddingVertical: 34 },
-  alertsEmptyText: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 15 },
+  alertsEmptyText: { color: ui.muted, fontFamily: 'Figtree_600SemiBold', fontSize: 15 },
   detailHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
-  detailTitle: { flex: 1, color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 24, lineHeight: 30, letterSpacing: -0.4 },
+  detailTitle: { flex: 1, color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 24, lineHeight: 30, letterSpacing: -0.4 },
   closeBtn: { width: 42, height: 42, borderRadius: 9999, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft, alignItems: 'center', justifyContent: 'center' },
   detailMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 14 },
   whenCard: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 16, paddingHorizontal: 15, paddingVertical: 13, borderRadius: 16, backgroundColor: ui.orangeSoft, borderWidth: 1, borderColor: ui.orange + '40' },
-  whenText: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 16, letterSpacing: -0.2 },
+  whenText: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 16, letterSpacing: -0.2 },
   whenPill: { marginLeft: 'auto', backgroundColor: ui.orange + '22', borderRadius: 99, paddingHorizontal: 10, paddingVertical: 4 },
-  whenPillText: { color: ui.orangeText, fontFamily: 'Inter_700Bold', fontSize: 12.5 },
+  whenPillText: { color: ui.orangeText, fontFamily: 'Figtree_700Bold', fontSize: 12.5 },
   detailChip: { flexDirection: 'row', alignItems: 'center', gap: 11, marginTop: 10, paddingHorizontal: 15, paddingVertical: 13, borderRadius: 16, backgroundColor: ui.soft, borderWidth: 1, borderColor: ui.line },
-  detailChipText: { flex: 1, color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
-  detailMetaText: { flex: 1, color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 15, lineHeight: 21 },
+  detailChipText: { flex: 1, color: ui.text, fontFamily: 'Figtree_600SemiBold', fontSize: 14 },
+  detailMetaText: { flex: 1, color: ui.muted, fontFamily: 'Figtree_600SemiBold', fontSize: 15, lineHeight: 21 },
   detailBody: { marginTop: 16, gap: 10 },
-  detailDescription: { color: ui.text, fontFamily: 'Inter_500Medium', fontSize: 16, lineHeight: 24 },
+  detailDescription: { color: ui.text, fontFamily: 'Figtree_500Medium', fontSize: 16, lineHeight: 24 },
   completeBtn: { marginTop: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, minHeight: 54, borderRadius: 99, backgroundColor: ui.orangeDeep },
-  completeBtnText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 16 },
-  rescheduleLabel: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 12, letterSpacing: 0.4, textTransform: 'uppercase', marginTop: 22, marginBottom: 9 },
+  completeBtnText: { color: '#FFFFFF', fontFamily: 'Figtree_800ExtraBold', fontSize: 16 },
+  rescheduleLabel: { color: ui.muted, fontFamily: 'Figtree_700Bold', fontSize: 12, letterSpacing: 0.4, textTransform: 'uppercase', marginTop: 22, marginBottom: 9 },
   rescheduleRow: { flexDirection: 'row', gap: 8 },
   rescheduleChip: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 11, borderRadius: 14, backgroundColor: ui.orangeSoft, borderWidth: 1, borderColor: ui.orange + '30' },
-  rescheduleChipText: { color: ui.orangeText, fontFamily: 'Inter_700Bold', fontSize: 12.5 },
+  rescheduleChipText: { color: ui.orangeText, fontFamily: 'Figtree_700Bold', fontSize: 12.5 },
   container: {
     flex: 1,
     backgroundColor: ui.bg,
@@ -2214,7 +2214,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   brand: {
     color: ui.orangeText,
-    fontFamily: 'Inter_800ExtraBold',
+    fontFamily: 'Figtree_800ExtraBold',
     fontSize: 13,
     letterSpacing: 1.6,
     textTransform: 'uppercase',
@@ -2230,7 +2230,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   dateText: {
     color: ui.muted,
-    fontFamily: 'Inter_600SemiBold',
+    fontFamily: 'Figtree_600SemiBold',
     fontSize: 15,
     letterSpacing: 0.1,
   },
@@ -2239,7 +2239,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   weekLine: {
     color: ui.muted,
-    fontFamily: 'Inter_600SemiBold',
+    fontFamily: 'Figtree_600SemiBold',
     fontSize: 12.5,
     letterSpacing: 0.2,
     marginTop: 1,
@@ -2265,7 +2265,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   bellBadgeText: {
     color: '#FFFFFF',
-    fontFamily: 'Inter_800ExtraBold',
+    fontFamily: 'Figtree_800ExtraBold',
     fontSize: 11,
   },
   heroRow: {
@@ -2287,7 +2287,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   subtitle: {
     marginTop: 8,
     color: ui.muted,
-    fontFamily: 'Inter_600SemiBold',
+    fontFamily: 'Figtree_600SemiBold',
     fontSize: 17,
     letterSpacing: 0.2,
   },
@@ -2307,7 +2307,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   calmPillText: {
     color: ui.mintText,
-    fontFamily: 'Inter_800ExtraBold',
+    fontFamily: 'Figtree_800ExtraBold',
     fontSize: 12.5,
     letterSpacing: 0.2,
   },
@@ -2323,7 +2323,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   seeAllText: {
     color: ui.orangeText,
-    fontFamily: 'Inter_700Bold',
+    fontFamily: 'Figtree_700Bold',
     fontSize: 13.5,
   },
   householdRow: {
@@ -2348,12 +2348,12 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   householdTitle: {
     color: ui.text,
-    fontFamily: 'Inter_800ExtraBold',
+    fontFamily: 'Figtree_800ExtraBold',
     fontSize: 15.5,
   },
   householdSub: {
     color: ui.muted,
-    fontFamily: 'Inter_500Medium',
+    fontFamily: 'Figtree_500Medium',
     fontSize: 12.5,
     marginTop: 1,
   },
@@ -2368,7 +2368,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   householdCountText: {
     color: ui.orangeText,
-    fontFamily: 'Inter_800ExtraBold',
+    fontFamily: 'Figtree_800ExtraBold',
     fontSize: 12,
   },
   // Slim quick-capture bar (replaced the tall Add/Photo card).
@@ -2388,14 +2388,14 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   // Animated.View as well as the Pressable, so a margin on it is applied
   // twice. The bar carries the inset instead.
   addBarPlus: { width: 30, height: 30, borderRadius: 9, backgroundColor: ui.orange, alignItems: 'center', justifyContent: 'center' },
-  addBarText: { flex: 1, color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 14 },
+  addBarText: { flex: 1, color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 14 },
   // The bar is a field now. Same height and rhythm as the button it replaced,
   // so the Feed does not shift under anyone who knew where it was.
   addBarInput: {
     // minWidth 0 because a flex child on web defaults to min-width:auto, and
     // an <input> reports a content-based minimum. Without it the field refuses
     // to shrink on a narrow phone and shoves the mic off the right edge.
-    flex: 1, minWidth: 0, color: ui.text, fontFamily: 'Inter_500Medium', fontSize: 14,
+    flex: 1, minWidth: 0, color: ui.text, fontFamily: 'Figtree_500Medium', fontSize: 14,
     paddingVertical: 12, paddingLeft: 10, paddingRight: 4,
   },
   addBarSend: {
@@ -2433,7 +2433,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   capturePlaceholder: {
     flex: 1,
     color: ui.muted,
-    fontFamily: 'Inter_600SemiBold',
+    fontFamily: 'Figtree_600SemiBold',
     fontSize: 15,
   },
   captureActions: {
@@ -2467,12 +2467,12 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   actionPillText: {
     color: ui.text,
-    fontFamily: 'Inter_700Bold',
+    fontFamily: 'Figtree_700Bold',
     fontSize: 14,
   },
   actionPillAccentText: {
     color: '#FFFFFF',
-    fontFamily: 'Inter_800ExtraBold',
+    fontFamily: 'Figtree_800ExtraBold',
     fontSize: 14,
   },
   alertBanner: {
@@ -2498,7 +2498,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   alertText: {
     flex: 1,
     color: ui.text,
-    fontFamily: 'Inter_800ExtraBold',
+    fontFamily: 'Figtree_800ExtraBold',
     fontSize: 14,
     lineHeight: 20,
   },
@@ -2525,9 +2525,9 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   checkRing: {
     width: 26,
     height: 26,
-    borderRadius: 99,
-    borderWidth: 1.3,
-    borderColor: ui.line,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: ui.checkLine,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -2538,13 +2538,13 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   taskTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   taskTitle: {
     color: ui.text,
-    fontFamily: 'Inter_800ExtraBold',
+    fontFamily: 'Figtree_800ExtraBold',
     fontSize: 15.5,
     lineHeight: 20,
   },
   taskMeta: {
     color: ui.muted,
-    fontFamily: 'Inter_500Medium',
+    fontFamily: 'Figtree_500Medium',
     fontSize: 12.2,
     lineHeight: 17,
     marginTop: 2,
@@ -2559,7 +2559,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     marginRight: 2,
   },
   assigneeBadgeText: {
-    fontFamily: 'Inter_800ExtraBold',
+    fontFamily: 'Figtree_800ExtraBold',
     fontSize: 10.5,
     letterSpacing: 0.2,
   },
@@ -2569,7 +2569,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     paddingVertical: 5,
   },
   statusPillText: {
-    fontFamily: 'Inter_800ExtraBold',
+    fontFamily: 'Figtree_800ExtraBold',
     fontSize: 11,
     letterSpacing: 0.5,
   },
@@ -2587,13 +2587,13 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   emptyTitle: {
     color: ui.text,
-    fontFamily: 'Inter_800ExtraBold',
+    fontFamily: 'Figtree_800ExtraBold',
     fontSize: 17,
     textAlign: 'center',
   },
   emptySub: {
     color: ui.muted,
-    fontFamily: 'Inter_500Medium',
+    fontFamily: 'Figtree_500Medium',
     fontSize: 13,
     lineHeight: 19,
     textAlign: 'center',
@@ -2604,7 +2604,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   footerSnapshotText: {
     color: ui.muted,
-    fontFamily: 'Inter_700Bold',
+    fontFamily: 'Figtree_700Bold',
     fontSize: 12,
   },
   roomRow: {
@@ -2624,7 +2624,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   // orangeDeep, not the brand orange: this chip carries white text, and white
   // on #F56519 reads at 3.11:1.
   roomChipOn: { backgroundColor: ui.orangeDeep, borderColor: ui.orangeDeep },
-  roomChipText: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 13, maxWidth: 140 },
+  roomChipText: { color: ui.muted, fontFamily: 'Figtree_700Bold', fontSize: 13, maxWidth: 140 },
   roomChipTextOn: { color: '#FFFFFF' },
   // An in-list group header, not a card: the hand-off group lives inside the
   // task list now, so it needs a label with the weight of a section marker
@@ -2633,7 +2633,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   // muted rather than orange so it labels without competing with the section
   // that carries the emphasis.
   restTitle: {
-    color: ui.muted, fontFamily: 'Inter_800ExtraBold', fontSize: 11.5,
+    color: ui.muted, fontFamily: 'Figtree_800ExtraBold', fontSize: 11.5,
     letterSpacing: 0.8, textTransform: 'uppercase',
     paddingHorizontal: 14, paddingTop: 14, paddingBottom: 6,
   },
@@ -2642,11 +2642,11 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     paddingHorizontal: 14, paddingTop: 12, paddingBottom: 6,
   },
   handedTitle: {
-    flex: 1, color: ui.orangeText, fontFamily: 'Inter_800ExtraBold',
+    flex: 1, color: ui.orangeText, fontFamily: 'Figtree_800ExtraBold',
     fontSize: 11.5, letterSpacing: 0.8, textTransform: 'uppercase',
   },
   handedCount: {
-    color: ui.orangeText, fontFamily: 'Inter_800ExtraBold', fontSize: 11.5,
+    color: ui.orangeText, fontFamily: 'Figtree_800ExtraBold', fontSize: 11.5,
     backgroundColor: ui.orangeSoft, paddingHorizontal: 8, paddingVertical: 2,
     borderRadius: 999, overflow: 'hidden',
   },
@@ -2655,16 +2655,16 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     padding: 14, gap: 10, marginBottom: 12,
   },
   activityHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  activityTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 15, letterSpacing: -0.2 },
+  activityTitle: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 15, letterSpacing: -0.2 },
   activityRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 9 },
   activityDot: {
     width: 6, height: 6, borderRadius: 3, backgroundColor: ui.mintText,
     marginTop: 7, flex: 0,
   },
-  activityText: { flex: 1, color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 18 },
-  activityActor: { color: ui.text, fontFamily: 'Inter_700Bold' },
-  activityWhen: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 11, marginTop: 2 },
-  activityPrivate: { color: ui.orangeText, fontFamily: 'Inter_600SemiBold', fontSize: 11 },
+  activityText: { flex: 1, color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 13, lineHeight: 18 },
+  activityActor: { color: ui.text, fontFamily: 'Figtree_700Bold' },
+  activityWhen: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 11, marginTop: 2 },
+  activityPrivate: { color: ui.orangeText, fontFamily: 'Figtree_600SemiBold', fontSize: 11 },
   activityRemove: { padding: 4, marginLeft: 2 },
   notesHeader: {
     flexDirection: 'row',
@@ -2676,12 +2676,12 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   notesHeaderText: {
     flex: 1,
     color: ui.text,
-    fontFamily: 'Inter_800ExtraBold',
+    fontFamily: 'Figtree_800ExtraBold',
     fontSize: 16,
   },
   notesBadge: {
     color: ui.muted,
-    fontFamily: 'Inter_700Bold',
+    fontFamily: 'Figtree_700Bold',
     fontSize: 13,
   },
   notesCard: {
@@ -2705,7 +2705,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    fontFamily: 'Inter_500Medium',
+    fontFamily: 'Figtree_500Medium',
     fontSize: 14,
     color: ui.text,
     backgroundColor: ui.soft,
@@ -2720,7 +2720,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   // --- addressed notes -------------------------------------------------
   noteForRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingRight: 4 },
-  noteForLabel: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 12.5, marginRight: 2 },
+  noteForLabel: { color: ui.muted, fontFamily: 'Figtree_700Bold', fontSize: 12.5, marginRight: 2 },
   // 36 tall inside a scroller, so the row stays a row. The strip's own button
   // is the 44 one, because that is the tap that commits to something.
   noteChip: {
@@ -2729,26 +2729,26 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     backgroundColor: ui.soft, borderWidth: 1, borderColor: ui.line,
   },
   noteChipOn: { backgroundColor: ui.orangeSoft, borderColor: ui.orange, borderWidth: 1.5 },
-  noteChipText: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 13, maxWidth: 110 },
-  noteChipTextOn: { color: ui.orangeText, fontFamily: 'Inter_700Bold' },
+  noteChipText: { color: ui.muted, fontFamily: 'Figtree_600SemiBold', fontSize: 13, maxWidth: 110 },
+  noteChipTextOn: { color: ui.orangeText, fontFamily: 'Figtree_700Bold' },
   noteMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'wrap' },
   notePill: { flexDirection: 'row', alignItems: 'center', gap: 4, height: 22, paddingHorizontal: 8, borderRadius: 9999 },
-  notePillText: { fontFamily: 'Inter_700Bold', fontSize: 11, maxWidth: 190 },
+  notePillText: { fontFamily: 'Figtree_700Bold', fontSize: 11, maxWidth: 190 },
   noteStrip: {
     borderRadius: 22, borderWidth: 1, borderColor: 'rgba(90,72,232,0.30)',
     backgroundColor: ui.lavender, padding: 14, gap: 12, marginBottom: 14,
   },
   noteStripHead: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  noteStripWho: { color: ui.lavenderText, fontFamily: 'Inter_800ExtraBold', fontSize: 13.5 },
-  noteStripWhen: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 1 },
-  noteStripText: { color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 15, lineHeight: 21 },
+  noteStripWho: { color: ui.lavenderText, fontFamily: 'Figtree_800ExtraBold', fontSize: 13.5 },
+  noteStripWhen: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 12, marginTop: 1 },
+  noteStripText: { color: ui.text, fontFamily: 'Figtree_600SemiBold', fontSize: 15, lineHeight: 21 },
   noteStripFoot: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   noteAckBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
     height: 44, paddingHorizontal: 18, borderRadius: 9999, backgroundColor: ui.mintText,
   },
-  noteAckText: { color: '#FFFFFF', fontFamily: 'Inter_700Bold', fontSize: 14.5 },
-  noteStripHint: { flex: 1, color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12, lineHeight: 16 },
+  noteAckText: { color: '#FFFFFF', fontFamily: 'Figtree_700Bold', fontSize: 14.5 },
+  noteStripHint: { flex: 1, color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 12, lineHeight: 16 },
   noteRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -2759,19 +2759,19 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   noteText: {
     color: ui.text,
-    fontFamily: 'Inter_600SemiBold',
+    fontFamily: 'Figtree_600SemiBold',
     fontSize: 14,
     lineHeight: 20,
   },
   noteMeta: {
     color: ui.muted,
-    fontFamily: 'Inter_500Medium',
+    fontFamily: 'Figtree_500Medium',
     fontSize: 12,
     marginTop: 2,
   },
   noteEmpty: {
     color: ui.muted,
-    fontFamily: 'Inter_500Medium',
+    fontFamily: 'Figtree_500Medium',
     fontSize: 13,
     textAlign: 'center',
     paddingVertical: 8,
@@ -2787,7 +2787,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   sectionHeaderText: {
     flex: 1,
     color: ui.text,
-    fontFamily: 'Inter_800ExtraBold',
+    fontFamily: 'Figtree_800ExtraBold',
     fontSize: 16,
   },
   urgentBadge: {
@@ -2798,21 +2798,21 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   urgentText: {
     color: ui.danger,
-    fontFamily: 'Inter_800ExtraBold',
+    fontFamily: 'Figtree_800ExtraBold',
     fontSize: 11,
   },
   boardUnread: {
     backgroundColor: ui.orangeDeep, borderRadius: 999,
     paddingHorizontal: 9, paddingVertical: 3, minWidth: 22, alignItems: 'center',
   },
-  boardUnreadText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 11 },
+  boardUnreadText: { color: '#FFFFFF', fontFamily: 'Figtree_800ExtraBold', fontSize: 11 },
   boardRowNew: {
     marginHorizontal: -8, paddingHorizontal: 8, borderRadius: 12,
     backgroundColor: ui.orangeSoft,
   },
   boardTagRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 3 },
   boardNewTag: { backgroundColor: ui.orangeDeep, borderRadius: 999, paddingHorizontal: 7, paddingVertical: 2 },
-  boardNewTagText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 9.5, letterSpacing: 0.4, textTransform: 'uppercase' },
+  boardNewTagText: { color: '#FFFFFF', fontFamily: 'Figtree_800ExtraBold', fontSize: 9.5, letterSpacing: 0.4, textTransform: 'uppercase' },
   reportCard: {
     borderRadius: 20,
     backgroundColor: ui.card,
@@ -2831,13 +2831,13 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   reportNum: {
     color: ui.text,
-    fontFamily: 'Inter_800ExtraBold',
+    fontFamily: 'Figtree_800ExtraBold',
     fontSize: 22,
     lineHeight: 26,
   },
   reportLabel: {
     color: ui.muted,
-    fontFamily: 'Inter_600SemiBold',
+    fontFamily: 'Figtree_600SemiBold',
     fontSize: 11,
     marginTop: 2,
   },
@@ -2850,7 +2850,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   reportSpentText: {
     color: ui.orangeText,
-    fontFamily: 'Inter_700Bold',
+    fontFamily: 'Figtree_700Bold',
     fontSize: 14,
   },
   reportUpcoming: {
@@ -2861,7 +2861,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   reportUpLabel: {
     color: ui.muted,
-    fontFamily: 'Inter_800ExtraBold',
+    fontFamily: 'Figtree_800ExtraBold',
     fontSize: 12,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
@@ -2869,7 +2869,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   reportUpItem: {
     color: ui.text,
-    fontFamily: 'Inter_500Medium',
+    fontFamily: 'Figtree_500Medium',
     fontSize: 13,
     lineHeight: 20,
   },
