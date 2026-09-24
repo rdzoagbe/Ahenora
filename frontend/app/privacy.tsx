@@ -7,7 +7,7 @@ export default function PrivacyScreen() {
     <LegalPage
       title={'Privacy Policy'}
       subtitle={'How Ahenora handles account data, household content, messages, children\'s profiles, calendar imports, photos, notifications, and support requests.'}
-      updatedAt={'23 August 2026'}
+      updatedAt={'24 September 2026'}
       sections={[
         {
           title: 'Who is responsible for your data',
@@ -19,13 +19,15 @@ export default function PrivacyScreen() {
         {
           title: 'Information we collect',
           body: [
-            'Account details from sign-in — your name and email address. Email and password accounts store the password only as a salted, irreversible hash; we never hold the password itself. Google sign-in additionally stores your Google account identifier and profile photo.',
+            'Account details from sign-in — your name and email address. Email and password accounts store the password only as a salted, irreversible hash; we never hold the password itself. Google sign-in additionally stores your Google account identifier and profile photo. Sign in with Apple stores your Apple account identifier and the email address Apple gives us, which may be a private relay address.',
             'Household information — the members of your household, their roles, invitations, tasks, cards, chores, rewards, stars and PIN state, and your app preferences.',
             'Ages, when a parent records one for a child or teen. An age is used to decide whether that person may hold their own account, and for nothing else.',
+            'Health details, only if you choose to record them for a family member — allergies, conditions, medicines and when to give them, vaccinations, blood group, doctor, dentist and emergency contacts, and optionally a medical or insurance number. None of it is required. It is there so the people caring for a child have it to hand.',
+            'Money you record — household spending by shop and receipt, amounts shared between parents, and children\'s pocket money.',
             'Messages sent inside your household, including who sent each one and who has read it. Messages are visible to the people in that conversation and to nobody else.',
             'Content you add — card titles, descriptions, due dates, vault document titles, categories and images, scanned images, and any calendar entries you choose to import.',
             'Notification settings and device push tokens, when you turn reminders or alerts on.',
-            'Basic diagnostic information — app version, platform, and error reports — used to find and fix faults.',
+            'Basic diagnostic information — app version, platform and error reports — used to find and fix faults, the date you last used the app, and daily totals of how features are used across Ahenora. Totals are counts, not content.',
           ],
         },
         {
@@ -35,8 +37,9 @@ export default function PrivacyScreen() {
             'To deliver messages, invitations, reminders and service notices you have asked for — performance of the contract, or your consent where you enabled the notification.',
             'To decide who may hold an account, including refusing one to a child recorded as under 13 — compliance with our legal obligations and the protection of children.',
             'To process a scan or an AI-assisted suggestion, at the moment you ask for one — performance of the contract at your request.',
+            'To store the health details you choose to record for a family member — your explicit consent, given by recording them. You withdraw it by deleting them, from the member\'s page, at any time.',
             'To keep the service working and secure, to prevent abuse, and to fix faults — our legitimate interests in operating a reliable and safe app.',
-            'To handle billing and subscriptions through Google Play — performance of the contract and our legal obligations.',
+            'To handle paid plans bought through the App Store, Google Play or by card on the web — performance of the contract and our legal obligations.',
           ],
         },
         {
@@ -44,8 +47,9 @@ export default function PrivacyScreen() {
           body: [
             'Ahenora is for adults. It is not directed at children, and a person under 13 cannot hold an Ahenora account. Our server refuses to create one at every point an account can come into being — an invitation naming a child recorded as under 13 is rejected, an under-13 age cannot be recorded against someone who already holds an account, and joining a household refuses to turn an under-13 profile into an account holder. This is enforced by the service, not by asking politely on a form.',
             'A young child appears in Ahenora only as a profile that a parent or guardian creates and controls: a name, optionally an age, a PIN, stars and rewards, and notes a parent writes for them. That information is provided by the parent, who consents on the child\'s behalf and can see, correct or delete all of it at any time from within the app.',
+            'A child\'s health details are visible to their parents. The details someone looking after the child needs — allergies, conditions, medicines, vaccinations, and doctor and emergency contacts — are also visible to a helper the parents have added, such as a grandparent or a nanny. A medical or insurance number is visible to the parents only.',
             'Kid mode is a restricted view on a parent\'s own device. It shows a child their own chores, stars and notes. It cannot reach household data, cannot send messages, and cannot make any change that matters. A child never signs in.',
-            'A teenager aged 13 or over may be invited to hold their own account. A teen sees their own tasks and chores, the events the household has shared with everyone, and their conversation with their parents — and nothing else: not another member\'s private items, not expenses, not the vault. That boundary is enforced on the server for every request, and it is a promise we make to the teenager as much as to the parent.',
+            'A teenager aged 13 or over may be invited to hold their own account. A teen sees their own tasks and chores, the events the household has shared with everyone, and their conversation with their parents — and nothing else: not another member\'s private items, not expenses, not pocket money, not the vault. That boundary is enforced on the server for every request, and it is a promise we make to the teenager as much as to the parent.',
             'We do not knowingly collect personal information from a child directly. If you believe a child has provided us information without a parent\'s involvement, email privacy@ahenora.com and we will delete it.',
           ],
         },
@@ -58,21 +62,23 @@ export default function PrivacyScreen() {
         },
         {
           title: 'Calendar, documents and photos',
-          body: 'Calendar sync is something you start, never something we do in the background. Imported entries become Ahenora cards, and may surface contacts you can invite. Vault images and document records are stored so your household can view and manage them. You can delete any of it from inside the app.',
+          body: 'Calendar sync is something you start, never something we do in the background. We read the events you import from Google Calendar or Microsoft Outlook — their titles, times, places, notes and who is invited — at your request, and imported entries become Ahenora cards. The names and email addresses of other people invited to those events are kept so the app can suggest inviting them; Ahenora never contacts them unless you send an invitation. Vault images and document records are stored so your household can view and manage them. You can delete any of it from inside the app.',
         },
         {
           title: 'AI-assisted features',
           body: [
-            'When you ask Ahenora to read a scan or suggest a recipe, the content of that request is sent to Google\'s Gemini API, which processes it and returns the result. That is the only time your content leaves our systems for an AI provider, and it happens only at the moment you ask.',
+            'When you ask Ahenora to read something or suggest something, the content of that request is sent to Google\'s Gemini API, which processes it and returns the result. That covers reading a scanned letter, card, receipt or shopping list; writing or suggesting a recipe or a week of meals; and writing the Sunday brief from the tasks you can see. It happens only at the moment you ask, and only that request\'s content is sent.',
+            'Suggesting who a new task is for does not use an AI provider. It is worked out on our own server, from the names already in the task.',
             'AI output is a suggestion, not advice. Check anything that matters before relying on it.',
           ],
         },
         {
           title: 'Who else processes your data',
           body: [
-            'We use service providers to run the app: hosting and database, email delivery, sign-in, push notification delivery, and the AI provider named above. They process data on our instructions and for no purpose of their own.',
-            'Subscriptions are handled by Google Play. We never see your card details.',
-            'An invitation link necessarily reveals the invited email address, the inviter\'s name, and which household is being joined to whoever opens it.',
+            'We use service providers to run the app, and they process data on our instructions and for no purpose of their own: Railway (hosting), MongoDB Atlas (database), Resend (email), Google and Apple (sign-in), Expo, Apple and Google (notifications to phones, and your browser\'s own push service on the web), and Google (the AI provider named above). When you import a calendar, we read it from Google or Microsoft at your request.',
+            'Paid plans are sold by Apple through the App Store, by Google through Google Play, or by Stripe for card payments on the web. RevenueCat tells us when a store subscription is active. We never see your card details.',
+            'Links you share outside your household show some information to whoever opens them. An invitation shows the invited email address, the inviter\'s name, the household being joined, the one task the invitation hands over, and counts — how many things are on this week, how many children, how many shopping items — never what they are. A gift pot link shows the pot\'s title and note, the organiser\'s name, the target and the total pledged. A Secret Santa link shows one person their own match, the budget and the date.',
+            'Someone who joins a gift pot through its link gives the name they choose and how much and how they will give, which the household then sees. A phone number or email you type for someone outside the household in a Secret Santa draw is shown to you so you can send them their link; Ahenora never contacts them.',
             'Our providers may process data outside your country. Where data leaves the UK or the EEA, it is covered by the transfer safeguards those providers offer, such as standard contractual clauses.',
           ],
         },
@@ -98,7 +104,7 @@ export default function PrivacyScreen() {
           body: [
             'Sign out, or sign out everywhere, from Settings.',
             'Turn notification categories on or off in Settings.',
-            'Delete cards, vault documents, rewards, messages, invitations and member profiles where the app offers the control.',
+            'Delete cards, vault documents, rewards, messages, invitations, member profiles and any health detail where the app offers the control.',
             'Delete your account and your household data from the Account deletion screen, or by emailing us.',
           ],
         },

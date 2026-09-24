@@ -5,11 +5,20 @@ import { BlurView } from 'expo-blur';
 import { Sparkles, X, ArrowRight } from 'lucide-react-native';
 import { PressScale } from './PressScale';
 import { useStore } from '../store';
+import { TRANSLATIONS } from '../i18n';
 
 export function UpgradeModal() {
   const { upgradePrompt, dismissUpgradePrompt, t, theme } = useStore();
   const router = useRouter();
   const visible = !!upgradePrompt;
+  // The server's refusal is English and was shown word for word, so a French
+  // household read English — and read plan names that no longer exist
+  // ("Premium", "Executive and Family Office"). A translated line per feature
+  // wins wherever one exists; the server's text is the fallback for a feature
+  // this build has not met yet.
+  const featureKey = upgradePrompt ? `premium_${upgradePrompt.feature}` : '';
+  const message = (featureKey && TRANSLATIONS.en[featureKey] ? t(featureKey) : '')
+    || upgradePrompt?.message || t('upg_default_message');
 
   const goToPricing = () => {
     dismissUpgradePrompt();
@@ -33,7 +42,7 @@ export function UpgradeModal() {
               <X color={theme.colors.text} size={18} />
             </PressScale>
           </View>
-          <Text style={[styles.title, { color: theme.colors.text }]}>{upgradePrompt?.message || t('upg_default_message')}</Text>
+          <Text style={[styles.title, { color: theme.colors.text }]}>{message}</Text>
           <Text style={[styles.subtitle, { color: theme.colors.textMuted }]}>{t('upg_subtitle')}</Text>
           <View style={styles.actions}>
             <PressScale

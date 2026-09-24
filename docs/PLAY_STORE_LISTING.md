@@ -128,27 +128,41 @@ Answers based on how the app actually works.
 **Do you provide a way for users to request that their data be deleted?** Yes
 (in-app Account deletion screen + email request to privacy@ahenora.com).
 
-**Data types collected** (all used for App functionality / Account management,
-**not** for advertising or third-party marketing):
+**Data types collected** (all used for App functionality or Account management,
+**not** for advertising or marketing, never sold). Checked against the code on
+24 September 2026 — the earlier version of this table left out health data,
+messages, calendar events, contacts, files, money and diagnostics, all of which
+the app collects:
 
-| Category | Data type | Collected | Shared | Purpose |
-|----------|-----------|-----------|--------|---------|
-| Personal info | Name | Yes | No | App functionality, Account management |
-| Personal info | Email address | Yes | No | App functionality, Account management |
-| Personal info | User IDs (Google account id) | Yes | No | Account management |
-| Photos and videos | Photos (scanned docs, vault images) | Yes | No | App functionality |
-| App activity | Other user-generated content (tasks, notes, cards, meals, lists) | Yes | No | App functionality |
-| Device or other IDs | Device push token | Yes | No | App functionality (notifications) |
+| Category | Data type | Required? | Purpose |
+|----------|-----------|-----------|---------|
+| Personal info | Name | Required | Account management, App functionality |
+| Personal info | Email address | Required | Account management, App functionality |
+| Personal info | User IDs (Google / Apple account id) | Required | Account management |
+| Personal info | Other info (children's names and ages, school, sizes) | Optional | App functionality |
+| Health and fitness | Health info (allergies, conditions, medicines, vaccinations, blood group) | Optional | App functionality |
+| Financial info | Purchase history (subscription status) | Required for paid plans | App functionality |
+| Financial info | Other financial info (household spending, pocket money) | Optional | App functionality |
+| Messages | Other in-app messages (family chat) | Optional | App functionality |
+| Photos and videos | Photos (scans, vault images) | Optional | App functionality |
+| Files and docs | Files and docs (vault documents) | Optional | App functionality |
+| Calendar | Calendar events (imported and created) | Optional | App functionality |
+| Contacts | Contacts (people invited to imported calendar events) | Optional | App functionality |
+| App activity | Other user-generated content (tasks, notes, meals, lists) | Optional | App functionality |
+| App info and performance | Crash logs, Diagnostics (error reports, app version) | Required | Analytics (fixing faults) |
+| Device or other IDs | Device push token | Optional | App functionality (notifications) |
 
 Notes for the form:
-- **Sharing = No** for all: data is processed by service providers (hosting,
-  database, email delivery, authentication, AI processing) **on your behalf** to
-  run the app — it is not shared with third parties for their own use, and is
-  not sold.
-- If asked about **AI features**: scans/AI assist are optional and user-initiated.
-- Do **not** declare analytics or crash-reporting SDKs — the app doesn't ship any.
 
----
+- **Sharing = No** for all: data is processed by service providers (hosting,
+  database, email, sign-in, notifications, AI, payments) **on your behalf** — it
+  is not shared with third parties for their own use, and is not sold.
+- **AI features** are user-initiated: scans, recipes, meal suggestions and the
+  Sunday brief. Suggesting who a task is for runs on our own server, not an AI.
+- The app ships **no third-party** analytics or crash SDK. Error reports and
+  usage counts are first-party — they still have to be declared above.
+- **Is all data encrypted in transit?** Yes. **Can users request deletion?** Yes
+  (in-app, immediate; or by email).
 
 ## 6. Privacy Policy URL (required)
 
@@ -158,8 +172,7 @@ via GitHub Pages:
 
 1. Push this repo (already done).
 2. On GitHub: **Settings → Pages → Source: Deploy from a branch → `main` / `/docs`**.
-3. Save. Your URL becomes: `https://rdzoagbe.github.io/Ahenora/privacy.html`
-4. Paste that URL into the Play Console "Privacy Policy" field.
+3. The policy is live at **`https://ahenora.com/privacy.html`** — that is the URL for the Play Console "Privacy Policy" field.
 
 ---
 

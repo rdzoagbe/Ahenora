@@ -189,7 +189,11 @@ function formatActivityDate(value: string | null | undefined, locale: string) {
 }
 
 export default function Kids() {
-  const { t, lang, dataVersion, requestMembers } = useStore();
+  const { t, lang, dataVersion, requestMembers, user } = useStore();
+  // Helpers (a grandparent, a nanny) are promised no access to the family's
+  // money, and pocket money is money. The server refuses them; this keeps the
+  // section from offering them a control that can only fail.
+  const viewerIsHelper = !!user?.is_helper;
   const { isLocked, promptUpgrade } = usePremiumGate();
   const allowanceLocked = isLocked('allowance');
   const router = useRouter();
@@ -612,7 +616,9 @@ export default function Kids() {
       setSelectedChild(nextSelected);
       await refreshHistory(nextSelected);
 
-      Promise.allSettled([api.listRoutines(), api.listAllowances(), api.listChores(),
+      Promise.allSettled([api.listRoutines(),
+                          viewerIsHelper ? Promise.resolve([] as AllowanceConfig[]) : api.listAllowances(),
+                          api.listChores(),
                           api.listRedemptions('pending'), api.listRewards()])
         .then(async ([rtnRes, alwRes, choreRes, redRes, rewardRes]) => {
           if (rewardRes.status === 'fulfilled') setRewards(rewardRes.value);
@@ -635,7 +641,7 @@ export default function Kids() {
           }
           const kids = m.filter((x) => x.role?.toLowerCase() === 'child');
           const bals: Record<string, number> = {};
-          for (const kid of kids) {
+          for (const kid of viewerIsHelper ? [] : kids) {
             try { const b = await api.allowanceBalance(kid.member_id); bals[kid.member_id] = b.balance; } catch { /* skip */ }
           }
           setBalances(bals);
@@ -2490,8 +2496,8 @@ export default function Kids() {
             </>
           ) : null}
 
-          {/* Allowance Tracker */}
-          {isFocused && showMore && activeChild ? (
+          {/* Allowance Tracker — never for a helper (see viewerIsHelper). */}
+          {isFocused && showMore && activeChild && !viewerIsHelper ? (
             <>
               <View style={styles.featureHeader}>
                 <PiggyBank color={ui.goldText} size={18} />

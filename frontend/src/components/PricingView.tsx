@@ -169,9 +169,17 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
       return;
     }
 
-    // Downgrades are managed in the Play Store subscription screen, not here.
+    // Downgrades are managed where the subscription was bought, never here.
+    // This said "open Google Play" on every device — an iPhone owner was sent
+    // to a store they do not use to cancel a subscription it does not hold.
     if (plan === 'village') {
-      Alert.alert(t('price_downgrade_title'), t('price_downgrade_msg'));
+      if (Platform.OS === 'ios') {
+        Alert.alert(t('price_downgrade_title_ios'), t('price_downgrade_msg_ios'));
+      } else if (Platform.OS === 'web') {
+        Alert.alert(t('price_downgrade_title_web'), t('price_downgrade_msg_web'));
+      } else {
+        Alert.alert(t('price_downgrade_title'), t('price_downgrade_msg'));
+      }
       return;
     }
 
@@ -651,7 +659,6 @@ const PLAN_THEMES: Record<
       'pf_house_3',
       'pf_house_4',
       'pf_house_5',
-      'pf_house_6',
     ],
   },
   // Legacy tier kept only so an admin household (stored "family_office") still
@@ -667,7 +674,6 @@ const PLAN_THEMES: Record<
       'pf_house_3',
       'pf_house_4',
       'pf_house_5',
-      'pf_house_6',
     ],
   },
 };
