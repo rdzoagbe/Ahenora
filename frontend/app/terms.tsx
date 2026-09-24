@@ -11,7 +11,7 @@ export default function TermsScreen() {
       sections={[
         {
           title: 'About this app',
-          body: 'Ahenora is available on the App Store, on Google Play and on the web at ahenora.com. It is built and operated by Roland Dzoagbe. We add and improve functionality continuously, so features may change between updates.',
+          body: 'Ahenora is available on the App Store, on Google Play and on the web at ahenora.com. It is built and operated by Dzoagbe Labs. We add and improve functionality continuously, so features may change between updates.',
         },
         {
           title: 'Who may use Ahenora',
