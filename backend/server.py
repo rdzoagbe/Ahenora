@@ -1104,10 +1104,14 @@ def plan_catalog_for(plan: str) -> dict:
 # Features gated behind paid plans. Maps the feature flag to a user-facing
 # upgrade message used when a free-tier family hits the gate (HTTP 402).
 PREMIUM_FEATURE_MESSAGES = {
-    "meal_planner": "Meal Planner is available on Premium.",
-    "allowance": "Pocket money tracking is available on Premium.",
-    "carpool": "Carpool Coordinator is available on Premium.",
-    "weekly_report": "Weekly Report is available on Premium.",
+    # Named by the plan a buyer can actually find. "Premium" was the middle
+    # tier's old name, and the app shows this text as-is to anyone on a build
+    # that does not translate it — so it went on sending people to look for a
+    # plan the pricing screen no longer lists.
+    "meal_planner": "Meal Planner is available on the Family plan.",
+    "allowance": "Pocket money tracking is available on the Family plan.",
+    "carpool": "Carpool Coordinator is available on the Family plan.",
+    "weekly_report": "Weekly Report is available on the Family plan.",
     "helper_accounts": "Helper and carer accounts are available on the Household plan.",
     "gift_pot": "The Gift Pot is available on Family.",
     "secret_santa": "Sending a Secret Santa draw is available on Family.",
@@ -4361,8 +4365,9 @@ async def require_user(authorization: str = Header(default=""),
 
 async def require_full_member(user=Depends(require_user)):
     """Parent/co-parent only — the gate for the sensitive surfaces a helper must
-    not reach: the document vault, billing, member management, invites and
-    expenses. A helper (grandparent/carer) uses the normal app for the shared
+    not reach: the document vault, billing, member management, invites,
+    expenses and children's pocket money (ahenora.com promises helpers no
+    access to documents or money, and pocket money is money). A helper (grandparent/carer) uses the normal app for the shared
     day but is refused here, deny-by-default. (Teens never reach this: require_
     user already 403s a teen token, so this only has to stop helpers.)"""
     if user.get("is_helper"):
@@ -7106,7 +7111,7 @@ async def create_family_member(payload: ChildIn, user=Depends(require_full_membe
                 family_id=user["family_id"],
                 feature="max_children",
                 current_plan=subscription["plan"],
-                message="Upgrade to Premium to add more (kids and teens share your plan's limit).",
+                message="Upgrade to the Family plan to add more (kids and teens share your plan's limit).",
                 limit=max_young,
                 used=young_people,
             )
@@ -10559,47 +10564,48 @@ async def test_notification(user=Depends(require_user)):
 # -----------------------------------------------------------------------------
 @app.post("/api/ai/assign")
 async def ai_assign(payload: AiAssignIn, user=Depends(require_user)):
+    """Suggest who a task is for, from the names already in it.
+
+    This used to ask Google's Gemini, and it fired AUTOMATICALLY as a person
+    typed — every pause sent the draft title, its description and every
+    family member's name, children included, to an AI provider nobody had
+    asked to involve. That broke the privacy policy's promise in plain words:
+    content goes to the AI provider only at the moment you ask for a scan or a
+    suggestion. A title being typed is not a request, and a card being drafted
+    as private was sent all the same.
+
+    Now it reads the draft for a family member's name and suggests that
+    person; no name, no suggestion. It answers every build at once — the app
+    calls this route on its own, so the fix has to live here and not in the
+    client. The route name is kept for the builds already installed.
+    """
     database = get_db()
-    members = []
-    async for m in database["family_members"].find({"family_id": user["family_id"]}, {"_id": 0}):
-        members.append(m)
+    names = []
+    async for m in database["family_members"].find(
+            {"family_id": user["family_id"]}, {"_id": 0, "name": 1}):
+        name = (m.get("name") or "").strip()
+        if name:
+            names.append(name)
+    return {"assignee": suggest_assignee_by_name(
+        names, f"{payload.title or ''} {payload.description or ''}")}
 
-    if not members:
-        return {"assignee": ""}
 
-    names = [m["name"] for m in members]
+def suggest_assignee_by_name(names: List[str], text: str) -> str:
+    """The one family member the text names, or "" when it names none or several.
 
-    def local_pick():
-        parent = next((m for m in members if m["role"].lower() == "parent"), members[0])
-        return {"assignee": parent["name"]}
-
-    # Assign is fired automatically as you type a card, not asked for the way a
-    # document scan is. So when a family is out of AI scans it quietly falls
-    # back to the local pick rather than raising the upgrade wall or burning a
-    # document-scan slot on a helper. This also closes the only other unmetered
-    # paid-AI route: an over-quota family can no longer drive Gemini calls here.
-    if not GOOGLE_API_KEY or await ai_scans_remaining(user) <= 0:
-        return local_pick()
-
-    prompt = f"""
-Choose the best assignee from this list only: {", ".join(names)}.
-Task title: {payload.title}
-Task description: {payload.description}
-Return only one exact name from the list, or return an empty string.
-""".strip()
-
-    try:
-        result = await _gemini_text(
-            prompt,
-            system="You are assigning family tasks. Return only one exact name or empty string.",
-        )
-    except Exception as exc:  # noqa: BLE001 — degrade like the no-key path, never 500
-        log.warning("ai assign failed: %s", exc)
-        return local_pick()
-    result = result.strip().replace('"', "")
-    if result not in names:
-        result = ""
-    return {"assignee": result}
+    Whole words only, and any case, so "Arielle's dentist" finds Arielle and
+    "Isaiahs" does not find Isaiah by accident. Two names in one title is a
+    task for two people; guessing one of them would be worse than saying
+    nothing, because the suggestion is one tap from being accepted.
+    """
+    text = text or ""
+    found = []
+    for name in names:
+        pattern = r"(?<!\w)" + re.escape(name) + r"(?:'s|’s)?(?!\w)"
+        if re.search(pattern, text, re.IGNORECASE):
+            found.append(name)
+    unique = list(dict.fromkeys(found))
+    return unique[0] if len(unique) == 1 else ""
 
 
 # -----------------------------------------------------------------------------
@@ -14730,7 +14736,7 @@ async def weekly_brief(user=Depends(require_user)):
             family_id=user["family_id"],
             feature="weekly_brief",
             current_plan=sub["plan"],
-            message="Weekly Brief is available on Executive and Family Office plans.",
+            message="Weekly Brief is available on the Family and Household plans.",
         )
 
     # Only what this person may actually see. Unfiltered, a co-parent's PRIVATE
@@ -18207,7 +18213,7 @@ async def delete_carpool(carpool_id: str, user: dict = Depends(require_user), da
 # Allowance Tracker
 # -----------------------------------------------------------------------------
 @app.get("/api/allowances")
-async def list_allowances(user: dict = Depends(require_user), database=Depends(get_db)):
+async def list_allowances(user: dict = Depends(require_full_member), database=Depends(get_db)):
     rows = await database["allowances"].find(
         {"family_id": user["family_id"]}, {"_id": 0}
     ).to_list(50)
@@ -18215,7 +18221,7 @@ async def list_allowances(user: dict = Depends(require_user), database=Depends(g
 
 
 @app.post("/api/allowances")
-async def set_allowance(body: AllowanceIn, user: dict = Depends(require_user), database=Depends(get_db)):
+async def set_allowance(body: AllowanceIn, user: dict = Depends(require_full_member), database=Depends(get_db)):
     await require_feature(user, "allowance")
     existing = await database["allowances"].find_one(
         {"family_id": user["family_id"], "member_id": body.member_id}
@@ -18241,7 +18247,7 @@ async def set_allowance(body: AllowanceIn, user: dict = Depends(require_user), d
 
 
 @app.delete("/api/allowances/{member_id}")
-async def delete_allowance(member_id: str, user: dict = Depends(require_user), database=Depends(get_db)):
+async def delete_allowance(member_id: str, user: dict = Depends(require_full_member), database=Depends(get_db)):
     result = await database["allowances"].delete_one(
         {"family_id": user["family_id"], "member_id": member_id}
     )
@@ -18251,7 +18257,7 @@ async def delete_allowance(member_id: str, user: dict = Depends(require_user), d
 
 
 @app.get("/api/allowances/{member_id}/transactions")
-async def list_allowance_transactions(member_id: str, user: dict = Depends(require_user), database=Depends(get_db)):
+async def list_allowance_transactions(member_id: str, user: dict = Depends(require_full_member), database=Depends(get_db)):
     rows = await database["allowance_txns"].find(
         {"family_id": user["family_id"], "member_id": member_id}, {"_id": 0}
     ).sort("created_at", -1).to_list(100)
@@ -18259,7 +18265,7 @@ async def list_allowance_transactions(member_id: str, user: dict = Depends(requi
 
 
 @app.post("/api/allowances/transaction")
-async def add_allowance_transaction(body: AllowanceTxnIn, user: dict = Depends(require_user), database=Depends(get_db)):
+async def add_allowance_transaction(body: AllowanceTxnIn, user: dict = Depends(require_full_member), database=Depends(get_db)):
     await require_feature(user, "allowance")
     txn = {
         "txn_id": new_id("atxn"),
@@ -18275,7 +18281,7 @@ async def add_allowance_transaction(body: AllowanceTxnIn, user: dict = Depends(r
 
 
 @app.post("/api/allowances/{member_id}/pay")
-async def pay_allowance(member_id: str, user: dict = Depends(require_user), database=Depends(get_db)):
+async def pay_allowance(member_id: str, user: dict = Depends(require_full_member), database=Depends(get_db)):
     """Record this period's pocket money in one tap.
 
     Deliberately not automatic. An accrual on a timer would credit money that
@@ -18322,7 +18328,7 @@ async def pay_allowance(member_id: str, user: dict = Depends(require_user), data
 
 
 @app.get("/api/allowances/{member_id}/balance")
-async def get_allowance_balance(member_id: str, user: dict = Depends(require_user), database=Depends(get_db)):
+async def get_allowance_balance(member_id: str, user: dict = Depends(require_full_member), database=Depends(get_db)):
     txns = await database["allowance_txns"].find(
         {"family_id": user["family_id"], "member_id": member_id}, {"_id": 0}
     ).to_list(1000)

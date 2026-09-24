@@ -58,9 +58,17 @@ with Google, notifications permission, camera scan, and the plans screen.
 - [ ] **Screenshots** — required sizes: 6.7" (1290×2796) and 6.5" (1242×2688).
       iPad shots too if you keep `supportsTablet: true` (13" 2064×2752);
       otherwise set it to false and skip them.
-- [ ] **Privacy nutrition label** — declare what's collected: name, email,
-      user content (household data), and that it is not used for tracking.
-      Matches the existing privacy policy on ahenora.com.
+- [ ] **Privacy nutrition label** — nothing is used for tracking, nothing is
+      sold. Declare as *Data Linked to You*, purpose *App Functionality*
+      (Diagnostics: *App Functionality* too). Checked against the code on
+      24 September 2026:
+      Contact Info (Name, Email Address) · Health & Fitness (Health) ·
+      Financial Info (Other Financial Info — spending, pocket money) ·
+      Contacts (people invited to imported calendar events) ·
+      User Content (Emails or Text Messages — family chat; Photos or Videos;
+      Other User Content — tasks, notes, documents, calendar events) ·
+      Identifiers (User ID) · Purchases (Purchase History) ·
+      Diagnostics (Crash Data, Other Diagnostic Data).
 - [ ] **Age rating** — 4+ is right; there is no user-generated public content.
 - [ ] **Account deletion** — Apple requires an in-app path. Already built
       (`/delete-account`); point the review notes at it.
