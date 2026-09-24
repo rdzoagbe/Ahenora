@@ -20,6 +20,28 @@ export default function Root({ children }: PropsWithChildren) {
         <meta property="og:type" content="website" />
         <meta property="og:image" content="https://ahenora.com/app/apple-touch-icon.png" />
         <meta name="twitter:card" content="summary" />
+        {/* Put a share link's path back before the app starts.
+            docs/404.html sends /app/pot/<code> and /app/santa-match/<code> here
+            as /app/?__share=pot/<code>, because the host has no page at the
+            real address. This runs in <head>, ahead of the app's bundle, so
+            the router's first look at the address already sees the pot or the
+            Santa match. Only the two shapes 404.html sends are honoured, so the
+            parameter cannot be used to send anyone anywhere else. Keep the
+            pattern identical to the one in docs/404.html. The slash is written
+            [/] because this is a template string, where a backslash-escaped
+            slash silently becomes a bare one and ends the pattern early. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+(function () {
+  try {
+    var target = new URLSearchParams(window.location.search).get('__share');
+    if (!target || !/^(pot|santa-match)[/][A-Za-z0-9_-]{8,128}$/.test(target)) return;
+    window.history.replaceState(null, '', '/app/' + target + window.location.hash);
+  } catch (e) {}
+})();`,
+          }}
+        />
         <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
         <meta
           name="viewport"

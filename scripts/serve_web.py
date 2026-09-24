@@ -37,6 +37,25 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return resolved + ".html"
         return resolved
 
+    def send_error(self, code, message=None, explain=None):
+        # An address with no file gets docs/404.html, with a 404 status — which
+        # is what GitHub Pages does. Python's stock error page stood in for it,
+        # so nothing run here could see what the real site does with an
+        # unknown address. That is how share links (/app/pot/<code>) could send
+        # every guest to a sign-in screen with every harness still green.
+        page = os.path.join(DOCS, "404.html")
+        if code == 404 and self.command in ("GET", "HEAD") and os.path.exists(page):
+            with open(page, "rb") as fh:
+                body = fh.read()
+            self.send_response(404)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            if self.command == "GET":
+                self.wfile.write(body)
+            return
+        super().send_error(code, message, explain)
+
     def log_message(self, *a):
         pass  # a harness run would otherwise bury its own output
 
