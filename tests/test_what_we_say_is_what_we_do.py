@@ -24,6 +24,7 @@ change either one finds out here rather than from a customer.
 """
 import asyncio
 import html as html_mod
+from html.parser import HTMLParser
 import os
 import re
 import sys
@@ -50,9 +51,37 @@ def read(*parts):
         return fh.read()
 
 
+class _Text(HTMLParser):
+    """The text a reader sees: no scripts, styles or comments.
+
+    A real parser rather than a pattern. Stripping <script> with a regex misses
+    an upper-case tag or a spaced closing one, and even here, reading our own
+    pages, a helper that looks like HTML filtering should behave like it.
+    """
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.parts, self.hidden = [], 0
+
+    def handle_starttag(self, tag, attrs):
+        if tag in ("script", "style"):
+            self.hidden += 1
+        self.parts.append(" ")
+
+    def handle_endtag(self, tag):
+        if tag in ("script", "style") and self.hidden:
+            self.hidden -= 1
+        self.parts.append(" ")
+
+    def handle_data(self, data):
+        if not self.hidden:
+            self.parts.append(data)
+
+
 def visible(name):
-    s = re.sub(r"<script.*?</script>|<style.*?</style>|<!--.*?-->", "", read("docs", name), flags=re.S)
-    return re.sub(r"\s+", " ", html_mod.unescape(re.sub(r"<[^>]+>", " ", s)))
+    parser = _Text()
+    parser.feed(read("docs", name))
+    return re.sub(r"\s+", " ", "".join(parser.parts))
 
 
 def whole_page(name):
