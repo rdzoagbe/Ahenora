@@ -2278,6 +2278,7 @@ const en: Dict = {
   price_downgrade_msg_ios: "To cancel or downgrade, open Settings → your name → Subscriptions on this iPhone. You keep your plan until the period ends.",
   price_downgrade_title_web: "How to cancel",
   price_downgrade_msg_web: "If you subscribed on your phone, cancel in the App Store or Google Play. If you paid by card here, write to support@ahenora.com from your account email and we will cancel it. You keep your plan until the period ends.",
+  price_manage_card: "Manage or cancel your card subscription",
 };
 
 const es: Dict = {
@@ -4503,6 +4504,7 @@ const es: Dict = {
   price_downgrade_msg_ios: "Para cancelar o cambiar de plan, abre Ajustes → tu nombre → Suscripciones en este iPhone. Conservas tu plan hasta que termine el periodo.",
   price_downgrade_title_web: "Cómo cancelar",
   price_downgrade_msg_web: "Si te suscribiste en el teléfono, cancela en App Store o Google Play. Si pagaste con tarjeta aquí, escribe a support@ahenora.com desde el correo de tu cuenta y la cancelaremos. Conservas tu plan hasta que termine el periodo.",
+  price_manage_card: "Gestionar o cancelar tu suscripción con tarjeta",
 };
 
 const fr: Dict = {
@@ -6728,6 +6730,7 @@ const fr: Dict = {
   price_downgrade_msg_ios: "Pour résilier ou changer de formule, ouvrez Réglages → votre nom → Abonnements sur cet iPhone. Vous gardez votre formule jusqu’à la fin de la période.",
   price_downgrade_title_web: "Comment résilier",
   price_downgrade_msg_web: "Si vous vous êtes abonné sur votre téléphone, résiliez dans l’App Store ou Google Play. Si vous avez payé par carte ici, écrivez à support@ahenora.com depuis l’adresse de votre compte et nous le résilierons. Vous gardez votre formule jusqu’à la fin de la période.",
+  price_manage_card: "Gérer ou résilier votre abonnement par carte",
 };
 
 const de: Dict = {
@@ -8953,6 +8956,7 @@ const de: Dict = {
   price_downgrade_msg_ios: "Zum Kündigen oder Wechseln öffne Einstellungen → dein Name → Abonnements auf diesem iPhone. Dein Tarif bleibt bis zum Ende des Zeitraums aktiv.",
   price_downgrade_title_web: "So kündigst du",
   price_downgrade_msg_web: "Wenn du auf dem Handy abonniert hast, kündige im App Store oder bei Google Play. Wenn du hier per Karte bezahlt hast, schreib von deiner Konto-Adresse an support@ahenora.com und wir kündigen es. Dein Tarif bleibt bis zum Ende des Zeitraums aktiv.",
+  price_manage_card: "Karten-Abo verwalten oder kündigen",
 };
 
 export const TRANSLATIONS: Record<Lang, Dict> = { en, es, fr, de };

@@ -158,6 +158,22 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
     return false;
   }, [refreshSubscription]);
 
+  // Card subscribers manage and cancel on Stripe's hosted page. If it cannot
+  // be opened (the portal not switched on yet, or Stripe down), say how to
+  // cancel instead of failing silently — cancelling must always have a route.
+  const openCardPortal = useCallback(async () => {
+    try {
+      const res = await api.openStripePortal();
+      if (res.url && typeof window !== 'undefined') {
+        window.location.href = res.url;
+        return;
+      }
+    } catch {
+      // fall through to the written route
+    }
+    Alert.alert(t('price_downgrade_title_web'), t('price_downgrade_msg_web'));
+  }, [t]);
+
   const handleChoose = async (plan: Plan) => {
     if (!user) {
       onAuthRequired?.();
@@ -173,6 +189,10 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
     // This said "open Google Play" on every device — an iPhone owner was sent
     // to a store they do not use to cancel a subscription it does not hold.
     if (plan === 'village') {
+      if (onWeb && subscription?.billed_by_card) {
+        await openCardPortal();
+        return;
+      }
       if (Platform.OS === 'ios') {
         Alert.alert(t('price_downgrade_title_ios'), t('price_downgrade_msg_ios'));
       } else if (Platform.OS === 'web') {
@@ -380,6 +400,19 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
         </View>
 
         <View style={styles.legalWrap}>
+          {/* The way out for a card subscriber. The stores have their own
+              cancel screens; a card subscription had none anywhere, which the
+              law (and our own terms) do not allow for a contract made online. */}
+          {onWeb && subscription?.billed_by_card ? (
+            <PressScale
+              testID="pricing-manage-card"
+              onPress={() => { openCardPortal().catch(() => undefined); }}
+              style={styles.manageCardBtn}
+              accessibilityRole="button"
+            >
+              <Text style={styles.manageCardText}>{t('price_manage_card')}</Text>
+            </PressScale>
+          ) : null}
           <Text style={styles.legalNote}>{t('pricing_autorenew_note')}</Text>
           <View style={styles.legalLinks}>
             <PressScale
@@ -971,6 +1004,11 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     paddingHorizontal: 8,
   },
   legalLinks: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  manageCardBtn: {
+    alignSelf: 'center', marginBottom: 14, paddingVertical: 12, paddingHorizontal: 18,
+    borderRadius: 14, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.card,
+  },
+  manageCardText: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 14 },
   legalLinkHit: { paddingVertical: 6, paddingHorizontal: 6 },
   legalLinkText: {
     color: ui.text,

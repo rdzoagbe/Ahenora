@@ -1413,6 +1413,8 @@ async def build_subscription(family_id: str):
         # free-preview notice until then, the countdown only once it's set.
         "billing_starts_at": os.environ.get("BILLING_START_DATE") or None,
         "billing_cycle": family["billing_cycle"],
+        # Card subscribers manage their plan on Stripe's page, not in a store.
+        "billed_by_card": billed_by_card(family),
         "grandfathered": grandfathered,
         "updated_at": iso(family.get("updated_at")),
         "ai_scans_used": family.get("ai_scans_used", 0),
@@ -14592,6 +14594,72 @@ async def stripe_checkout(payload: dict = Body(default=None), user=Depends(requi
     if not url:
         raise HTTPException(status_code=502, detail="Stripe returned no checkout URL")
     return {"url": url, "session_id": session.get("id")}
+
+
+CARD_SUBSCRIPTION_OVER = ("canceled", "incomplete_expired")
+
+
+def billed_by_card(family: dict) -> bool:
+    """Whether this household's paid plan is a card subscription it can manage here.
+
+    The store rails manage themselves — the App Store and Google Play each have
+    a cancel screen of their own. A card subscription had none: nothing in the
+    app or on the site let a card payer cancel, while the site said "cancel any
+    time, wherever you subscribed". This is the fact the Plans page needs to
+    offer them the way out.
+    """
+    return bool(
+        (family or {}).get("stripe_customer_id")
+        and (family or {}).get("plan") in PAID_PLANS
+        and (family or {}).get("stripe_subscription_status") not in CARD_SUBSCRIPTION_OVER
+    )
+
+
+@app.post("/api/billing/stripe/portal")
+async def stripe_portal(user=Depends(require_full_member)):
+    """Open Stripe's hosted billing page, where a card subscriber cancels.
+
+    French law has required an online cancellation function for contracts
+    made online since June 2023 ("résiliation en trois clics"), and the terms
+    promise it. Stripe's customer portal is that function: cancel, change the
+    card, see invoices. Cancelling there sends the same subscription events the
+    webhook already handles, so the plan falls back to free at the end of the
+    paid period with nothing new to write here.
+
+    It needs the portal switched on once in the Stripe dashboard (Settings →
+    Billing → Customer portal). Until it is, Stripe refuses the session and the
+    app falls back to "write to support", which is also what the terms say.
+    """
+    if not os.environ.get("STRIPE_SECRET_KEY"):
+        raise HTTPException(status_code=503, detail="Card billing is not configured")
+    family = await get_family_doc(user["family_id"])
+    customer = (family or {}).get("stripe_customer_id")
+    if not customer:
+        raise HTTPException(status_code=404, detail="This household has no card subscription")
+    form = [("customer", customer), ("return_url", f"{_public_app_url()}/pricing?portal=return")]
+
+    def _create():
+        try:
+            resp = requests.post(
+                f"{STRIPE_API_BASE}/billing_portal/sessions",
+                data=form,
+                auth=(os.environ["STRIPE_SECRET_KEY"], ""),
+                timeout=20,
+            )
+        except requests.RequestException as exc:
+            log.warning("Stripe portal request failed: %s", type(exc).__name__)
+            raise HTTPException(status_code=502, detail="card_portal_unavailable")
+        if resp.status_code >= 400:
+            # Most often: the portal has not been switched on in the dashboard.
+            log.warning("Stripe portal create failed %s: %s", resp.status_code, resp.text[:300])
+            raise HTTPException(status_code=502, detail="card_portal_unavailable")
+        return resp.json()
+
+    session = await asyncio.to_thread(_create)
+    url = session.get("url")
+    if not url:
+        raise HTTPException(status_code=502, detail="card_portal_unavailable")
+    return {"url": url}
 
 
 @app.post("/api/billing/stripe/webhook")
