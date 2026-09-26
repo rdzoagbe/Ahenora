@@ -40,7 +40,15 @@ jest.mock('@react-native-async-storage/async-storage', () =>
   require('@react-native-async-storage/async-storage/jest/async-storage-mock'));
 jest.mock('expo-constants', () => ({ expoConfig: { version: '2.0.0' } }));
 jest.mock('../api', () => ({ api: { appVersionInfo: () => Promise.resolve(null) } }));
-jest.mock('../whatsNew', () => ({ WHATS_NEW: {} }));
+// Nothing to announce: this file is about applying a staged update, not the
+// release notes. Mirrors the module's shape — WHATS_NEW for store versions and
+// announcement() for what the banner actually says.
+jest.mock('../whatsNew', () => ({
+  WHATS_NEW: {},
+  announcement: (version: string) => ({ key: version, items: [], byDate: false }),
+}));
+// The feedback sheet the banner can open is not under test here.
+jest.mock('../components/FeedbackSheet', () => ({ FeedbackSheet: () => null }));
 jest.mock('../store', () => ({
   useStore: () => ({ t: (k: string) => k, theme: { colors: {} } }),
 }));

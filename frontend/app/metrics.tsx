@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, RefreshControl, Platform } from 'react-native';
+import { View, Text, TextInput, StyleSheet, ScrollView, RefreshControl, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { ArrowLeft, Users, TrendingUp } from 'lucide-react-native';
@@ -899,6 +899,11 @@ export default function MetricsScreen() {
           ) : null}
 
 
+          {/* Founding families: the top plan, free, for the families who test
+              and tell us what they think. Uses the "grandfathered" flag the
+              server already honours — and can be taken back the same way. */}
+          <FoundingFamilies styles={styles} />
+
           {/* Support inbox — every message from the in-app form. For months
               the form stored these and told nobody; the older ones here are
               the messages that were never answered. */}
@@ -945,7 +950,10 @@ export default function MetricsScreen() {
                       <View key={tk.ticket_id} style={[styles.ticketRow, i === 0 && { borderTopWidth: 0 }]}>
                         <View style={styles.ticketHead}>
                           <View style={styles.subLeft}>
-                            <Text style={styles.subName} numberOfLines={1}>{tk.subject || '(no subject)'}</Text>
+                            <Text style={styles.subName} numberOfLines={1}>
+                              {tk.kind && tk.kind !== 'support' ? (tk.kind === 'day7' ? '[Week-in answer] ' : '[Feedback] ') : ''}
+                              {tk.subject || '(no subject)'}
+                            </Text>
                             <Text style={styles.subEmail} numberOfLines={1}>
                               {tk.user_name || '(no name)'} · {tk.user_email || '—'}
                             </Text>
@@ -1306,3 +1314,58 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   subMoreBtn: { paddingVertical: 14, borderTopWidth: 1, borderTopColor: ui.line, alignItems: 'center' },
   subMoreText: { color: ui.orangeText, fontFamily: 'Figtree_700Bold', fontSize: 13 },
 });
+
+function FoundingFamilies({ styles }: { styles: Record<string, any> }) {
+  const [email, setEmail] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+
+  const set = async (grandfathered: boolean) => {
+    const target = email.trim().toLowerCase();
+    if (!target || busy) return;
+    setBusy(true);
+    setResult(null);
+    try {
+      await api.adminSetFoundingFamily(target, grandfathered);
+      setResult(grandfathered
+        ? `${target} is now a founding family: the top plan, free, until you remove it.`
+        : `${target} is back on its own plan.`);
+      if (grandfathered) setEmail('');
+    } catch (e: any) {
+      setResult(String(e?.message || e).includes('404')
+        ? `No account uses ${target}.`
+        : `Not changed: ${e?.message || e}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <Text style={styles.sectionTitle}>Founding families</Text>
+      <View style={styles.card} testID="founding-families">
+        <TextInput
+          testID="founding-email"
+          value={email}
+          onChangeText={setEmail}
+          placeholder="Their account email"
+          autoCapitalize="none"
+          keyboardType="email-address"
+          style={[styles.subEmail, { borderWidth: 1, borderColor: '#ECE4DA', borderRadius: 12, padding: 12, marginBottom: 10 }]}
+        />
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          <PressScale testID="founding-grant" onPress={() => set(true)}
+            style={{ flex: 1, backgroundColor: '#CA470A', borderRadius: 12, paddingVertical: 12, alignItems: 'center', opacity: busy ? 0.5 : 1 }}>
+            <Text style={{ color: '#FFFFFF', fontFamily: 'Figtree_700Bold' }}>Make founding family</Text>
+          </PressScale>
+          <PressScale testID="founding-remove" onPress={() => set(false)}
+            style={{ paddingHorizontal: 14, borderRadius: 12, paddingVertical: 12, alignItems: 'center', borderWidth: 1, borderColor: '#ECE4DA' }}>
+            <Text style={{ fontFamily: 'Figtree_700Bold' }}>Remove</Text>
+          </PressScale>
+        </View>
+        {result ? <Text style={[styles.hint, { marginTop: 10 }]}>{result}</Text> : null}
+      </View>
+    </>
+  );
+}
+

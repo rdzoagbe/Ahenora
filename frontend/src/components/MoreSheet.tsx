@@ -2,13 +2,14 @@ import React, { useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { ChevronRight, Gift, Settings as SettingsIcon, Smile, User, X } from 'lucide-react-native';
+import { ChevronRight, Gift, MessageSquareHeart, Settings as SettingsIcon, Smile, User, X } from 'lucide-react-native';
 
 import { SECRET_SANTA_ENABLED } from '../features';
 import { PressScale } from './PressScale';
 import { useUI, UIColors } from './Kit';
 import { useStore } from '../store';
 import { HandOverSheet } from './HandOverSheet';
+import { FeedbackSheet } from './FeedbackSheet';
 
 /**
  * What the phone bar can't hold. A household opens settings rarely, and the
@@ -33,6 +34,7 @@ import { HandOverSheet } from './HandOverSheet';
  */
 export function MoreSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const [handOver, setHandOver] = useState(false);
+  const [feedback, setFeedback] = useState(false);
   const ui = useUI();
   const { t, user } = useStore();
   const router = useRouter();
@@ -57,6 +59,10 @@ export function MoreSheet({ visible, onClose }: { visible: boolean; onClose: () 
       title: t('settings'), sub: t('nav_more_settings_sub'), path: '/(tabs)/settings' },
     { key: 'account', icon: User, tone: ui.blueText, soft: ui.blue,
       title: t('nav_more_account'), sub: t('nav_more_account_sub'), path: '/(tabs)/account' },
+    // One tap from every screen: feedback nobody can find is feedback nobody
+    // sends. Goes to the same inbox as Contact support, marked as feedback.
+    { key: 'feedback', icon: MessageSquareHeart, tone: ui.lavenderText, soft: ui.lavender,
+      title: t('fb_title'), sub: t('fb_more_sub'), path: '' },
   ].filter((it) => !(user?.is_helper && it.key === 'kid'));
   // A helper can't hand the device to a child — exiting kid mode needs a
   // parent's PIN they don't hold. The deeper surfaces (billing, member
@@ -94,6 +100,7 @@ export function MoreSheet({ visible, onClose }: { visible: boolean; onClose: () 
               onPress={() => {
                 // The hand-over is a sheet, not a destination: it has to sit
                 // above this panel rather than replace the screen behind it.
+                if (item.key === 'feedback') { onClose(); setTimeout(() => setFeedback(true), 160); return; }
                 if (!item.path) { onClose(); setTimeout(() => setHandOver(true), 160); return; }
                 go(item.path);
               }}
@@ -113,6 +120,7 @@ export function MoreSheet({ visible, onClose }: { visible: boolean; onClose: () 
       </View>
       </Modal>
       <HandOverSheet visible={handOver} onClose={() => setHandOver(false)} />
+      <FeedbackSheet visible={feedback} onClose={() => setFeedback(false)} />
     </>
   );
 }

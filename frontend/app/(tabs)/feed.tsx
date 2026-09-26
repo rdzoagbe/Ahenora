@@ -49,6 +49,7 @@ import { PersonAvatar } from '../../src/components/PersonAvatar';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
 import { TabScreen } from '../../src/components/TabScreen';
 import { GettingStarted } from '../../src/components/GettingStarted';
+import { Day7Card } from '../../src/components/Day7Card';
 import { UpgradeBanner } from '../../src/components/UpgradeBanner';
 import { CoParentNudge } from '../../src/components/CoParentNudge';
 import { CaptureMenuSheet } from '../../src/components/CaptureMenuSheet';
@@ -1570,6 +1571,10 @@ export default function Feed() {
 
             {/* A gentle nudge to Premium — free households only, self-snoozes */}
             <UpgradeBanner />
+
+            {/* The one week-in question: asked once, never again once answered
+                or dismissed on any device. */}
+            <Day7Card />
 
             {/* First-run checklist — demoted below the day; self-hides once done */}
             <GettingStarted
