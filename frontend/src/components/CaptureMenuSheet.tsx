@@ -124,7 +124,7 @@ const createStyles = (ui: UIColors) =>
     },
     header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
     eyebrow: {
-      fontFamily: 'Inter_700Bold', fontSize: 13, color: ui.muted,
+      fontFamily: 'Figtree_700Bold', fontSize: 13, color: ui.muted,
       textTransform: 'uppercase', letterSpacing: 0.6,
     },
     iconBtn: {
@@ -144,10 +144,10 @@ const createStyles = (ui: UIColors) =>
     // layout styles onto its inner Animated.View as well as the Pressable, so a
     // flex put on the row itself is applied twice.
     rowText: { flex: 1, minWidth: 0 },
-    rowTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 16, color: ui.text },
-    rowSub: { fontFamily: 'Inter_500Medium', fontSize: 13, color: ui.muted, marginTop: 2 },
+    rowTitle: { fontFamily: 'Figtree_800ExtraBold', fontSize: 16, color: ui.text },
+    rowSub: { fontFamily: 'Figtree_500Medium', fontSize: 13, color: ui.muted, marginTop: 2 },
     hint: {
-      fontFamily: 'Inter_500Medium', fontSize: 13, color: ui.muted,
+      fontFamily: 'Figtree_500Medium', fontSize: 13, color: ui.muted,
       textAlign: 'center', marginTop: 4, lineHeight: 19,
     },
   });

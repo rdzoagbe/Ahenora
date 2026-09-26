@@ -67,13 +67,15 @@ interface Props {
 }
 
 const TYPES: { key: CardType; labelKey: string; color: string; icon: any }[] = [
-  { key: 'TASK', labelKey: 'task', color: '#10B981', icon: ListTodo },
-  { key: 'SIGN_SLIP', labelKey: 'sign_slip', color: '#F97316', icon: FileSignature },
-  { key: 'RSVP', labelKey: 'rsvp', color: '#6366F1', icon: Mail },
-  { key: 'BIRTHDAY', labelKey: 'type_birthday', color: '#EAB308', icon: Cake },
-  { key: 'SCHOOL', labelKey: 'type_school', color: '#8B5CF6', icon: School },
-  { key: 'APPOINTMENT', labelKey: 'type_appointment', color: '#F97316', icon: Stethoscope },
-  { key: 'VACATION', labelKey: 'type_vacation', color: '#14B8A6', icon: Plane },
+  // The brand's tile inks (sage, brick, plum, sand, sky, orange, teal): each
+  // reads at 4.5:1 or better on white, and on its own tint (colour + '22').
+  { key: 'TASK', labelKey: 'task', color: '#2E7852', icon: ListTodo },
+  { key: 'SIGN_SLIP', labelKey: 'sign_slip', color: '#AE2F27', icon: FileSignature },
+  { key: 'RSVP', labelKey: 'rsvp', color: '#843C79', icon: Mail },
+  { key: 'BIRTHDAY', labelKey: 'type_birthday', color: '#7C5E16', icon: Cake },
+  { key: 'SCHOOL', labelKey: 'type_school', color: '#2F5A96', icon: School },
+  { key: 'APPOINTMENT', labelKey: 'type_appointment', color: '#B0450B', icon: Stethoscope },
+  { key: 'VACATION', labelKey: 'type_vacation', color: '#2A6F72', icon: Plane },
 ];
 
 // yearly was missing, so a birthday added by hand fired once and never came
@@ -1038,15 +1040,15 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', padding: 24,
   },
   confirmCard: { width: '100%', maxWidth: 380, borderRadius: 22, borderWidth: 1, padding: 20, gap: 10 },
-  confirmTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 18, lineHeight: 24 },
-  confirmBody: { fontFamily: 'Inter_500Medium', fontSize: 14, lineHeight: 20, marginBottom: 4 },
+  confirmTitle: { fontFamily: 'Figtree_800ExtraBold', fontSize: 18, lineHeight: 24 },
+  confirmBody: { fontFamily: 'Figtree_500Medium', fontSize: 14, lineHeight: 20, marginBottom: 4 },
   confirmPrimary: { height: 52, borderRadius: 9999, alignItems: 'center', justifyContent: 'center' },
-  confirmPrimaryText: { fontFamily: 'Inter_700Bold', fontSize: 15.5 },
+  confirmPrimaryText: { fontFamily: 'Figtree_700Bold', fontSize: 15.5 },
   confirmGhost: {
     height: 50, borderRadius: 9999, borderWidth: 1,
     alignItems: 'center', justifyContent: 'center',
   },
-  confirmGhostText: { fontFamily: 'Inter_600SemiBold', fontSize: 15 },
+  confirmGhostText: { fontFamily: 'Figtree_600SemiBold', fontSize: 15 },
   backdrop: { ...StyleSheet.absoluteFill },
   container: { flex: 1, justifyContent: 'flex-end' },
   sheet: {
@@ -1076,7 +1078,7 @@ const styles = StyleSheet.create({
     marginBottom: 18,
   },
   heading: {
-    fontFamily: 'Inter_800ExtraBold',
+    fontFamily: 'Figtree_800ExtraBold',
     fontSize: 26,
     letterSpacing: -0.3,
   },
@@ -1092,19 +1094,19 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   transcriptLabel: {
-    fontFamily: 'Inter_700Bold',
+    fontFamily: 'Figtree_700Bold',
     fontSize: 10,
     letterSpacing: 1,
     textTransform: 'uppercase',
     marginBottom: 4,
   },
   transcriptText: {
-    fontFamily: 'Inter_600SemiBold',
+    fontFamily: 'Figtree_600SemiBold',
     fontSize: 15,
     lineHeight: 21,
   },
   label: {
-    fontFamily: 'Inter_800ExtraBold',
+    fontFamily: 'Figtree_800ExtraBold',
     fontSize: 11,
     textTransform: 'uppercase',
     letterSpacing: 1,
@@ -1125,13 +1127,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     gap: 6,
   },
-  typeLabel: { fontFamily: 'Inter_700Bold', fontSize: 12 },
+  typeLabel: { fontFamily: 'Figtree_700Bold', fontSize: 12 },
   input: {
     borderWidth: 1,
     borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 12,
-    fontFamily: 'Inter_500Medium',
+    fontFamily: 'Figtree_500Medium',
     fontSize: 15,
   },
   suggestRow: {
@@ -1142,7 +1144,7 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   suggestText: {
-    fontFamily: 'Inter_600SemiBold',
+    fontFamily: 'Figtree_600SemiBold',
     fontSize: 12,
   },
   suggestChip: {
@@ -1152,11 +1154,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   suggestChipText: {
-    fontFamily: 'Inter_800ExtraBold',
+    fontFamily: 'Figtree_800ExtraBold',
     fontSize: 12,
   },
   clashRow: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 4 },
-  clashText: { flex: 1, fontFamily: 'Inter_600SemiBold', fontSize: 12.5, lineHeight: 17 },
+  clashText: { flex: 1, fontFamily: 'Figtree_600SemiBold', fontSize: 12.5, lineHeight: 17 },
   dateChip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1167,18 +1169,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
-  dateChipText: { flex: 1, minWidth: 0, fontFamily: 'Inter_700Bold', fontSize: 13 },
+  dateChipText: { flex: 1, minWidth: 0, fontFamily: 'Figtree_700Bold', fontSize: 13 },
   dateChipCta: {
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 9999,
   },
-  dateChipCtaText: { fontFamily: 'Inter_800ExtraBold', fontSize: 12, color: '#FFFFFF' },
+  dateChipCtaText: { fontFamily: 'Figtree_800ExtraBold', fontSize: 12, color: '#FFFFFF' },
   dateChipX: { padding: 4 },
   destRow: { alignItems: 'center', marginBottom: 2 },
-  destText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
+  destText: { fontFamily: 'Figtree_600SemiBold', fontSize: 12 },
   noteBtn: { alignItems: 'center', paddingVertical: 6 },
-  noteText: { fontFamily: 'Inter_700Bold', fontSize: 13, textDecorationLine: 'underline' },
+  noteText: { fontFamily: 'Figtree_700Bold', fontSize: 13, textDecorationLine: 'underline' },
   pillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   titleInput: { flex: 1, minWidth: 0 },
@@ -1192,7 +1194,7 @@ const styles = StyleSheet.create({
   },
   iconTileGlyph: { fontSize: 24, lineHeight: 30, textAlign: 'center' },
   iconPicker: { marginTop: 10, gap: 8 },
-  iconHint: { fontFamily: 'Inter_500Medium', fontSize: 12.5 },
+  iconHint: { fontFamily: 'Figtree_500Medium', fontSize: 12.5 },
   iconPill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 7 },
   iconPillGlyph: { fontSize: 16, lineHeight: 20 },
   pill: {
@@ -1202,7 +1204,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   pillText: {
-    fontFamily: 'Inter_700Bold',
+    fontFamily: 'Figtree_700Bold',
     fontSize: 12,
   },
   footer: {
@@ -1216,7 +1218,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  cancelText: { fontFamily: 'Inter_700Bold', fontSize: 15 },
+  cancelText: { fontFamily: 'Figtree_700Bold', fontSize: 15 },
   saveBtn: {
     minHeight: 54,
     borderRadius: 99,
@@ -1224,7 +1226,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 9,
-    backgroundColor: '#F97316',
+    backgroundColor: '#CA470A',
   },
-  saveText: { fontFamily: 'Inter_800ExtraBold', fontSize: 16, color: '#FFFFFF' },
+  saveText: { fontFamily: 'Figtree_800ExtraBold', fontSize: 16, color: '#FFFFFF' },
 });

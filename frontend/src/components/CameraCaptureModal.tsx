@@ -502,7 +502,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 9999,
   },
-  badgeText: { fontFamily: 'Inter_700Bold', fontSize: 12, letterSpacing: 0.2 },
+  badgeText: { fontFamily: 'Figtree_700Bold', fontSize: 12, letterSpacing: 0.2 },
   iconBtn: { padding: 8, borderRadius: 9999, borderWidth: 1 },
   heroIcon: {
     width: 58,
@@ -513,8 +513,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 14,
   },
-  heading: { fontFamily: 'Inter_800ExtraBold', fontSize: 30, lineHeight: 36, letterSpacing: -0.5 },
-  sub: { fontFamily: 'Inter_500Medium', fontSize: 14, lineHeight: 21, marginTop: 6, marginBottom: 18 },
+  heading: { fontFamily: 'Figtree_800ExtraBold', fontSize: 30, lineHeight: 36, letterSpacing: -0.5 },
+  sub: { fontFamily: 'Figtree_500Medium', fontSize: 14, lineHeight: 21, marginTop: 6, marginBottom: 18 },
   stage: {
     height: 210,
     borderRadius: 22,
@@ -524,16 +524,16 @@ const styles = StyleSheet.create({
   },
   preview: { width: '100%', height: '100%', resizeMode: 'cover' },
   emptyStage: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24, gap: 10 },
-  emptyStageText: { fontFamily: 'Inter_600SemiBold', fontSize: 13, textAlign: 'center', lineHeight: 19 },
+  emptyStageText: { fontFamily: 'Figtree_600SemiBold', fontSize: 13, textAlign: 'center', lineHeight: 19 },
   overlay: {
     ...StyleSheet.absoluteFill,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  overlayText: { fontFamily: 'Inter_700Bold', fontSize: 13, marginTop: 12 },
+  overlayText: { fontFamily: 'Figtree_700Bold', fontSize: 13, marginTop: 12 },
   errorBox: { borderWidth: 1, borderRadius: 18, padding: 12, marginBottom: 12 },
-  errText: { fontFamily: 'Inter_700Bold', fontSize: 13, lineHeight: 19 },
-  errHelp: { fontFamily: 'Inter_500Medium', fontSize: 12, lineHeight: 18, marginTop: 4 },
+  errText: { fontFamily: 'Figtree_700Bold', fontSize: 13, lineHeight: 19 },
+  errHelp: { fontFamily: 'Figtree_500Medium', fontSize: 12, lineHeight: 18, marginTop: 4 },
   thumb: {
     width: 76,
     height: 76,
@@ -543,7 +543,7 @@ const styles = StyleSheet.create({
     resizeMode: 'cover',
   },
   facts: { borderWidth: 1, borderRadius: 16, padding: 12, marginBottom: 14, gap: 2 },
-  factText: { fontFamily: 'Inter_700Bold', fontSize: 14 },
+  factText: { fontFamily: 'Figtree_700Bold', fontSize: 14 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 18 },
   chip: {
     flexDirection: 'row',
@@ -554,7 +554,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 9,
   },
-  chipText: { fontFamily: 'Inter_700Bold', fontSize: 13 },
+  chipText: { fontFamily: 'Figtree_700Bold', fontSize: 13 },
   list: { maxHeight: 230, marginBottom: 14 },
   listInner: { gap: 8 },
   row: {
@@ -574,7 +574,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  rowText: { flex: 1, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
+  rowText: { flex: 1, fontFamily: 'Figtree_600SemiBold', fontSize: 14 },
   controls: { gap: 10 },
   primaryBtn: {
     flexDirection: 'row',
@@ -584,7 +584,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 9999,
   },
-  primaryText: { fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
+  primaryText: { fontFamily: 'Figtree_800ExtraBold', fontSize: 15 },
   secondaryBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -594,5 +594,5 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 9999,
   },
-  secondaryText: { fontFamily: 'Inter_700Bold', fontSize: 14 },
+  secondaryText: { fontFamily: 'Figtree_700Bold', fontSize: 14 },
 });

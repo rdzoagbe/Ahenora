@@ -96,8 +96,8 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     borderWidth: 1, borderColor: ui.line, borderRadius: 16, padding: 14,
   },
   avatar: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  rowTitle: { fontFamily: 'Inter_700Bold', fontSize: 15, color: ui.text },
-  rowSub: { fontFamily: 'Inter_400Regular', fontSize: 13, color: ui.muted, marginTop: 2 },
+  rowTitle: { fontFamily: 'Figtree_700Bold', fontSize: 15, color: ui.text },
+  rowSub: { fontFamily: 'Figtree_400Regular', fontSize: 13, color: ui.muted, marginTop: 2 },
   badge: { minWidth: 22, height: 22, borderRadius: 11, backgroundColor: ui.orange, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
-  badgeText: { color: '#fff', fontFamily: 'Inter_800ExtraBold', fontSize: 12 },
+  badgeText: { color: '#fff', fontFamily: 'Figtree_800ExtraBold', fontSize: 12 },
 });

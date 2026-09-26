@@ -124,7 +124,7 @@ const createStyles = (ui: UIColors) =>
       borderColor: ui.orange + '33',
       marginBottom: 12,
     },
-    previewTitle: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 13 },
-    previewBody: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12, lineHeight: 17, marginTop: 1 },
-    previewCta: { color: ui.orangeText, fontFamily: 'Inter_800ExtraBold', fontSize: 12 },
+    previewTitle: { color: ui.text, fontFamily: 'Figtree_700Bold', fontSize: 13 },
+    previewBody: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 12, lineHeight: 17, marginTop: 1 },
+    previewCta: { color: ui.orangeText, fontFamily: 'Figtree_800ExtraBold', fontSize: 12 },
   });

@@ -10,7 +10,8 @@ import { PressScale } from './PressScale';
 import { useUI, UIColors } from './Kit';
 import { useStore } from '../store';
 import { api } from '../api';
-import { WHATS_NEW } from '../whatsNew';
+import { announcement } from '../whatsNew';
+import { FeedbackSheet } from './FeedbackSheet';
 import { logger } from '../logger';
 import { hasPendingTarget } from '../pendingNotificationTarget';
 import { foregroundStartedAt, lastInteractionAt, markForegroundStart } from '../interaction';
@@ -110,6 +111,9 @@ export function UpdateNotice() {
   const [busy, setBusy] = useState(false);
 
   const version = Constants.expoConfig?.version || '';
+  // An over-the-air release announces itself by date; a store build by version.
+  const news = announcement(version);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   /**
    * Applying a staged update while the launch is still settling.
@@ -185,16 +189,16 @@ export function UpdateNotice() {
         // A first run records the version without announcing it: "what's new"
         // to somebody who has never seen the old one is just noise.
         if (!seen) {
-          await AsyncStorage.setItem(SEEN_VERSION_KEY, version).catch(() => undefined);
+          await AsyncStorage.setItem(SEEN_VERSION_KEY, news.key).catch(() => undefined);
           return;
         }
-        if (seen !== version && WHATS_NEW[version]?.length) setNotice('whatsNew');
+        if (seen !== news.key && news.items.length) setNotice('whatsNew');
       } catch (e) {
         logger.warn('update notice check failed', e);
       }
     })();
     return () => { cancelled = true; };
-  }, [version]);
+  }, [version, news.key, news.items.length]);
 
   // Which staged update this device has already declined, read once. Null while
   // it loads, which is why the banner waits for it below rather than flashing
@@ -251,13 +255,13 @@ export function UpdateNotice() {
   const dismiss = useCallback(async () => {
     setDismissed(true);
     if (shown === 'whatsNew') {
-      await AsyncStorage.setItem(SEEN_VERSION_KEY, version).catch(() => undefined);
+      await AsyncStorage.setItem(SEEN_VERSION_KEY, news.key).catch(() => undefined);
     }
     if (shown === 'relaunch' && pendingUpdateId) {
       setMutedUpdateId(pendingUpdateId);
       await AsyncStorage.setItem(DISMISSED_UPDATE_KEY, pendingUpdateId).catch(() => undefined);
     }
-  }, [shown, version, pendingUpdateId]);
+  }, [shown, news.key, pendingUpdateId]);
 
   const act = useCallback(async () => {
     if (busy) return;
@@ -289,7 +293,7 @@ export function UpdateNotice() {
       Icon: Store,
     },
     relaunch: { title: t('update_relaunch_title'), body: t('update_relaunch_body'), cta: t('update_relaunch_cta'), Icon: RefreshCw },
-    whatsNew: { title: t('update_whats_new_title', { version }), body: '', cta: t('update_whats_new_cta'), Icon: Sparkles },
+    whatsNew: { title: news.byDate ? t('update_whats_new_title_release') : t('update_whats_new_title', { version }), body: '', cta: t('update_whats_new_cta'), Icon: Sparkles },
   }[shown];
 
   return (
@@ -317,9 +321,18 @@ export function UpdateNotice() {
           // Written for a parent, not a changelog: what changed and which tab
           // to look on. A list of fixes nobody can act on is not news.
           <View style={styles.list}>
-            {(WHATS_NEW[version] || []).map((key) => (
+            {news.items.map((key) => (
               <Text key={key} style={styles.item}>• {t(key)}</Text>
             ))}
+            {/* The way to answer back, right where the change is announced. */}
+            <PressScale
+              testID="update-notice-feedback"
+              accessibilityRole="button"
+              onPress={() => setFeedbackOpen(true)}
+              hitSlop={8}
+            >
+              <Text style={styles.feedbackLink}>{t('fb_title')} →</Text>
+            </PressScale>
           </View>
         ) : (
           <Text style={styles.body}>{copy.body}</Text>
@@ -335,6 +348,7 @@ export function UpdateNotice() {
           <Text style={styles.btnText}>{copy.cta}</Text>
         </PressScale>
       </View>
+      <FeedbackSheet visible={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
     </View>
   );
 }
@@ -355,12 +369,13 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   // Reads at arm's length. The old 13-14px Medium in accent-on-accent was
   // technically legible and practically not, which is what "unclear to read"
   // meant: body copy goes to the normal ink, and only the heading stays accent.
-  title: { flex: 1, minWidth: 0, color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 16, lineHeight: 22 },
-  body: { color: ui.text, fontFamily: 'Inter_500Medium', fontSize: 14.5, lineHeight: 21 },
+  title: { flex: 1, minWidth: 0, color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 16, lineHeight: 22 },
+  body: { color: ui.text, fontFamily: 'Figtree_500Medium', fontSize: 14.5, lineHeight: 21 },
   list: { gap: 7 },
-  item: { color: ui.text, fontFamily: 'Inter_500Medium', fontSize: 14.5, lineHeight: 21 },
+  item: { color: ui.text, fontFamily: 'Figtree_500Medium', fontSize: 14.5, lineHeight: 21 },
+  feedbackLink: { color: ui.orangeText, fontFamily: 'Figtree_700Bold', fontSize: 14, marginTop: 6 },
   btn: { alignSelf: 'flex-start', backgroundColor: ui.orangeDeep, borderRadius: 999, paddingVertical: 11, paddingHorizontal: 18, marginTop: 4 },
-  btnText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
+  btnText: { color: '#FFFFFF', fontFamily: 'Figtree_800ExtraBold', fontSize: 14 },
   x: { padding: 4 },
-  xText: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 15 },
+  xText: { color: ui.muted, fontFamily: 'Figtree_700Bold', fontSize: 15 },
 });

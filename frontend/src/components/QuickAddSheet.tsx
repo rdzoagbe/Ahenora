@@ -143,7 +143,7 @@ const createStyles = (ui: UIColors) =>
     },
     header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
     eyebrow: {
-      fontFamily: 'Inter_700Bold', fontSize: 13, color: ui.muted,
+      fontFamily: 'Figtree_700Bold', fontSize: 13, color: ui.muted,
       textTransform: 'uppercase', letterSpacing: 0.6,
     },
     iconBtn: {
@@ -156,13 +156,13 @@ const createStyles = (ui: UIColors) =>
       borderWidth: 1, borderColor: ui.line,
     },
     primaryTile: { width: 52, height: 52, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
-    primaryTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 17, color: ui.text },
-    primarySub: { fontFamily: 'Inter_500Medium', fontSize: 13, color: ui.muted, marginTop: 2 },
+    primaryTitle: { fontFamily: 'Figtree_800ExtraBold', fontSize: 17, color: ui.text },
+    primarySub: { fontFamily: 'Figtree_500Medium', fontSize: 13, color: ui.muted, marginTop: 2 },
     divider: { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 16 },
     dividerLine: { flex: 1, height: 1, backgroundColor: ui.line },
-    dividerText: { fontFamily: 'Inter_600SemiBold', fontSize: 12, color: ui.muted },
+    dividerText: { fontFamily: 'Figtree_600SemiBold', fontSize: 12, color: ui.muted },
     row: { flexDirection: 'row', gap: 10 },
     rowItem: { flex: 1, alignItems: 'center', gap: 8 },
     rowTile: { width: '100%', height: 56, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
-    rowLabel: { fontFamily: 'Inter_700Bold', fontSize: 13, color: ui.text },
+    rowLabel: { fontFamily: 'Figtree_700Bold', fontSize: 13, color: ui.text },
   });

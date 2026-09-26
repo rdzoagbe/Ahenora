@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, RefreshControl, Platform } from 'react-native';
+import { View, Text, TextInput, StyleSheet, ScrollView, RefreshControl, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { ArrowLeft, Users, TrendingUp } from 'lucide-react-native';
@@ -899,6 +899,11 @@ export default function MetricsScreen() {
           ) : null}
 
 
+          {/* Founding families: the top plan, free, for the families who test
+              and tell us what they think. Uses the "grandfathered" flag the
+              server already honours — and can be taken back the same way. */}
+          <FoundingFamilies styles={styles} />
+
           {/* Support inbox — every message from the in-app form. For months
               the form stored these and told nobody; the older ones here are
               the messages that were never answered. */}
@@ -945,7 +950,10 @@ export default function MetricsScreen() {
                       <View key={tk.ticket_id} style={[styles.ticketRow, i === 0 && { borderTopWidth: 0 }]}>
                         <View style={styles.ticketHead}>
                           <View style={styles.subLeft}>
-                            <Text style={styles.subName} numberOfLines={1}>{tk.subject || '(no subject)'}</Text>
+                            <Text style={styles.subName} numberOfLines={1}>
+                              {tk.kind && tk.kind !== 'support' ? (tk.kind === 'day7' ? '[Week-in answer] ' : '[Feedback] ') : ''}
+                              {tk.subject || '(no subject)'}
+                            </Text>
                             <Text style={styles.subEmail} numberOfLines={1}>
                               {tk.user_name || '(no name)'} · {tk.user_email || '—'}
                             </Text>
@@ -1254,25 +1262,25 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   safe: { flex: 1 },
   topBar: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 4 },
   backBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', paddingVertical: 8 },
-  backText: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 15 },
+  backText: { color: ui.text, fontFamily: 'Figtree_700Bold', fontSize: 15 },
   scroll: { paddingHorizontal: 20, paddingBottom: 60 },
-  title: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 32, letterSpacing: -0.5, marginTop: 8 },
-  subtitle: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 14, marginTop: 4, marginBottom: 22 },
-  error: { color: ui.danger, fontFamily: 'Inter_600SemiBold', fontSize: 14, marginBottom: 16 },
-  muted: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 14, marginTop: 16, lineHeight: 20 },
-  hint: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, marginTop: 10, lineHeight: 18 },
-  adminOnly: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 15, textAlign: 'center', marginTop: 40, paddingHorizontal: 24 },
+  title: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 32, letterSpacing: -0.5, marginTop: 8 },
+  subtitle: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 14, marginTop: 4, marginBottom: 22 },
+  error: { color: ui.danger, fontFamily: 'Figtree_600SemiBold', fontSize: 14, marginBottom: 16 },
+  muted: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 14, marginTop: 16, lineHeight: 20 },
+  hint: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 12.5, marginTop: 10, lineHeight: 18 },
+  adminOnly: { color: ui.muted, fontFamily: 'Figtree_600SemiBold', fontSize: 15, textAlign: 'center', marginTop: 40, paddingHorizontal: 24 },
   tileRow: { flexDirection: 'row', gap: 12 },
   tile: { flex: 1, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, borderRadius: 18, padding: 16, gap: 6 },
-  tileNum: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 30, letterSpacing: -0.5 },
-  tileLabel: { color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 12 },
-  sectionTitle: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 18, marginTop: 28, marginBottom: 12 },
+  tileNum: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 30, letterSpacing: -0.5 },
+  tileLabel: { color: ui.muted, fontFamily: 'Figtree_600SemiBold', fontSize: 12 },
+  sectionTitle: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 18, marginTop: 28, marginBottom: 12 },
   card: { backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, borderRadius: 18, paddingHorizontal: 16 },
   warnCard: { paddingVertical: 14, marginBottom: 12, borderColor: ui.danger },
-  warnText: { color: ui.danger, fontFamily: 'Inter_600SemiBold', fontSize: 13, lineHeight: 19 },
+  warnText: { color: ui.danger, fontFamily: 'Figtree_600SemiBold', fontSize: 13, lineHeight: 19 },
   eventRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14, borderTopWidth: 1, borderTopColor: ui.line },
-  eventLabel: { color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 15 },
-  eventCount: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 17 },
+  eventLabel: { color: ui.text, fontFamily: 'Figtree_600SemiBold', fontSize: 15 },
+  eventCount: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 17 },
   subRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, paddingVertical: 12, borderTopWidth: 1, borderTopColor: ui.line },
   // Tinted and striped, so the row that needs a person cannot be scrolled past
   // in a column of identical receipts. Both tokens are theme-aware — a
@@ -1290,19 +1298,74 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     paddingRight: 16,
   },
   subLeft: { flex: 1, minWidth: 0, gap: 2 },
-  subName: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 14 },
-  subEmail: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12 },
+  subName: { color: ui.text, fontFamily: 'Figtree_700Bold', fontSize: 14 },
+  subEmail: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 12 },
   subRight: { alignItems: 'flex-end', gap: 4 },
   subTag: { borderRadius: 99, paddingHorizontal: 9, paddingVertical: 4 },
   subTagPaid: { backgroundColor: ui.orangeSoft },
   subTagFree: { backgroundColor: ui.soft },
-  subTagText: { fontFamily: 'Inter_800ExtraBold', fontSize: 11, letterSpacing: 0.3 },
-  subMeta: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 11 },
+  subTagText: { fontFamily: 'Figtree_800ExtraBold', fontSize: 11, letterSpacing: 0.3 },
+  subMeta: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 11 },
   ticketRow: { paddingVertical: 12, borderTopWidth: 1, borderTopColor: ui.line, gap: 8 },
   ticketHead: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 },
-  ticketBody: { color: ui.text, fontFamily: 'Inter_400Regular', fontSize: 14, lineHeight: 20 },
+  ticketBody: { color: ui.text, fontFamily: 'Figtree_400Regular', fontSize: 14, lineHeight: 20 },
   ticketFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   ticketBtn: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 999, backgroundColor: ui.soft },
   subMoreBtn: { paddingVertical: 14, borderTopWidth: 1, borderTopColor: ui.line, alignItems: 'center' },
-  subMoreText: { color: ui.orangeText, fontFamily: 'Inter_700Bold', fontSize: 13 },
+  subMoreText: { color: ui.orangeText, fontFamily: 'Figtree_700Bold', fontSize: 13 },
 });
+
+function FoundingFamilies({ styles }: { styles: Record<string, any> }) {
+  const [email, setEmail] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+
+  const set = async (grandfathered: boolean) => {
+    const target = email.trim().toLowerCase();
+    if (!target || busy) return;
+    setBusy(true);
+    setResult(null);
+    try {
+      await api.adminSetFoundingFamily(target, grandfathered);
+      setResult(grandfathered
+        ? `${target} is now a founding family: the top plan, free, until you remove it.`
+        : `${target} is back on its own plan.`);
+      if (grandfathered) setEmail('');
+    } catch (e: any) {
+      setResult(String(e?.message || e).includes('404')
+        ? `No account uses ${target}.`
+        : `Not changed: ${e?.message || e}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <Text style={styles.sectionTitle}>Founding families</Text>
+      <View style={styles.card} testID="founding-families">
+        <TextInput
+          testID="founding-email"
+          value={email}
+          onChangeText={setEmail}
+          placeholder="Their account email"
+          autoCapitalize="none"
+          keyboardType="email-address"
+          style={[styles.subEmail, { borderWidth: 1, borderColor: '#ECE4DA', borderRadius: 12, padding: 12, marginBottom: 10 }]}
+        />
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          <PressScale testID="founding-grant" onPress={() => set(true)}
+            style={{ flex: 1, backgroundColor: '#CA470A', borderRadius: 12, paddingVertical: 12, alignItems: 'center', opacity: busy ? 0.5 : 1 }}>
+            <Text style={{ color: '#FFFFFF', fontFamily: 'Figtree_700Bold' }}>Make founding family</Text>
+          </PressScale>
+          <PressScale testID="founding-remove" onPress={() => set(false)}
+            style={{ paddingHorizontal: 14, borderRadius: 12, paddingVertical: 12, alignItems: 'center', borderWidth: 1, borderColor: '#ECE4DA' }}>
+            <Text style={{ fontFamily: 'Figtree_700Bold' }}>Remove</Text>
+          </PressScale>
+        </View>
+        {result ? <Text style={[styles.hint, { marginTop: 10 }]}>{result}</Text> : null}
+      </View>
+    </>
+  );
+}
+

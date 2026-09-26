@@ -322,20 +322,20 @@ const createStyles = (ui: UIColors) =>
       borderWidth: 1, borderColor: ui.line,
     },
     shopHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
-    shopTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 18, color: ui.text },
+    shopTitle: { fontFamily: 'Figtree_800ExtraBold', fontSize: 18, color: ui.text },
     shopRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
     shopInput: {
       flex: 1, minWidth: 0,
       borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft,
       borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12,
-      fontFamily: 'Inter_500Medium', fontSize: 15, color: ui.text,
+      fontFamily: 'Figtree_500Medium', fontSize: 15, color: ui.text,
     },
     shopAddBtn: {
       flexDirection: 'row', alignItems: 'center', gap: 7,
       backgroundColor: ui.orange, borderRadius: 14,
       paddingHorizontal: 16, minHeight: 48, justifyContent: 'center',
     },
-    shopAddText: { fontFamily: 'Inter_800ExtraBold', fontSize: 15, color: '#FFFFFF' },
+    shopAddText: { fontFamily: 'Figtree_800ExtraBold', fontSize: 15, color: '#FFFFFF' },
     toastWrap: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
     toast: {
       flexDirection: 'row', alignItems: 'center', gap: 8,
@@ -344,5 +344,5 @@ const createStyles = (ui: UIColors) =>
       shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 12, shadowOffset: { width: 0, height: 6 },
       elevation: 8,
     },
-    toastText: { fontFamily: 'Inter_800ExtraBold', fontSize: 15, color: '#FFFFFF' },
+    toastText: { fontFamily: 'Figtree_800ExtraBold', fontSize: 15, color: '#FFFFFF' },
   });

@@ -85,7 +85,7 @@ const styles = StyleSheet.create({
   },
   iconWrap: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
   body: { flex: 1, minWidth: 0, gap: 2 },
-  title: { fontFamily: 'Inter_800ExtraBold', fontSize: 14.5 },
-  sub: { fontFamily: 'Inter_500Medium', fontSize: 12.5 },
+  title: { fontFamily: 'Figtree_800ExtraBold', fontSize: 14.5 },
+  sub: { fontFamily: 'Figtree_500Medium', fontSize: 12.5 },
   dismiss: { padding: 3, marginLeft: 2 },
 });

@@ -1165,9 +1165,9 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   backBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   headMid: { flex: 1, alignItems: 'center', gap: 4 },
-  headName: { fontFamily: 'Inter_800ExtraBold', fontSize: 18, color: ui.text, maxWidth: '90%' },
+  headName: { fontFamily: 'Figtree_800ExtraBold', fontSize: 18, color: ui.text, maxWidth: '90%' },
   headBadge: { borderRadius: 999, paddingHorizontal: 9, paddingVertical: 2 },
-  headBadgeText: { fontFamily: 'Inter_700Bold', fontSize: 10.5, letterSpacing: 0.4, textTransform: 'uppercase' },
+  headBadgeText: { fontFamily: 'Figtree_700Bold', fontSize: 10.5, letterSpacing: 0.4, textTransform: 'uppercase' },
 
   segt: {
     flexDirection: 'row', gap: 4, margin: 14, padding: 3,
@@ -1175,7 +1175,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   segBtn: { flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: 9 },
   segOn: { backgroundColor: ui.card },
-  segText: { fontFamily: 'Inter_700Bold', fontSize: 13, color: ui.muted },
+  segText: { fontFamily: 'Figtree_700Bold', fontSize: 13, color: ui.muted },
   segTextOn: { color: ui.text },
 
   body: { paddingHorizontal: 20, paddingTop: 14, paddingBottom: 40 },
@@ -1185,35 +1185,35 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     borderWidth: 1, borderColor: ui.line, marginBottom: 18,
   },
   starBig: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  starBigNum: { fontFamily: 'Inter_800ExtraBold', fontSize: 40, color: ui.mintText },
-  starLbl: { fontFamily: 'Inter_600SemiBold', fontSize: 13, color: ui.mintText, marginTop: 6, opacity: 0.9 },
+  starBigNum: { fontFamily: 'Figtree_800ExtraBold', fontSize: 40, color: ui.mintText },
+  starLbl: { fontFamily: 'Figtree_600SemiBold', fontSize: 13, color: ui.mintText, marginTop: 6, opacity: 0.9 },
 
-  sec: { fontFamily: 'Inter_800ExtraBold', fontSize: 11, letterSpacing: 0.8, textTransform: 'uppercase', color: ui.muted, marginBottom: 10, marginTop: 4 },
+  sec: { fontFamily: 'Figtree_800ExtraBold', fontSize: 11, letterSpacing: 0.8, textTransform: 'uppercase', color: ui.muted, marginBottom: 10, marginTop: 4 },
   giveRow: { flexDirection: 'row', gap: 10, marginBottom: 22 },
   giveBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
     backgroundColor: ui.orange, borderRadius: 14, paddingVertical: 13,
   },
-  giveBtnText: { fontFamily: 'Inter_800ExtraBold', fontSize: 15, color: '#fff' },
+  giveBtnText: { fontFamily: 'Figtree_800ExtraBold', fontSize: 15, color: '#fff' },
 
   histRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: ui.card,
     borderWidth: 1, borderColor: ui.line, borderRadius: 12, paddingVertical: 11, paddingHorizontal: 13, marginBottom: 8,
   },
-  histReason: { fontFamily: 'Inter_600SemiBold', fontSize: 13.5, color: ui.text },
-  histDate: { fontFamily: 'Inter_400Regular', fontSize: 12, color: ui.muted, marginTop: 2 },
-  histDelta: { fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
+  histReason: { fontFamily: 'Figtree_600SemiBold', fontSize: 13.5, color: ui.text },
+  histDate: { fontFamily: 'Figtree_400Regular', fontSize: 12, color: ui.muted, marginTop: 2 },
+  histDelta: { fontFamily: 'Figtree_800ExtraBold', fontSize: 14 },
 
   infoCard: { backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, borderRadius: 18, padding: 18 },
-  infoTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 16, color: ui.text, marginBottom: 6 },
-  infoBody: { fontFamily: 'Inter_400Regular', fontSize: 14, color: ui.muted, lineHeight: 20 },
+  infoTitle: { fontFamily: 'Figtree_800ExtraBold', fontSize: 16, color: ui.text, marginBottom: 6 },
+  infoBody: { fontFamily: 'Figtree_400Regular', fontSize: 14, color: ui.muted, lineHeight: 20 },
   row: {
     flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: ui.card,
     borderWidth: 1, borderColor: ui.line, borderRadius: 16, padding: 13, marginBottom: 8,
   },
   rowIcon: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  rowTitle: { fontFamily: 'Inter_700Bold', fontSize: 15, color: ui.text },
-  rowSub: { fontFamily: 'Inter_400Regular', fontSize: 12.5, color: ui.muted, marginTop: 2 },
+  rowTitle: { fontFamily: 'Figtree_700Bold', fontSize: 15, color: ui.text },
+  rowSub: { fontFamily: 'Figtree_400Regular', fontSize: 12.5, color: ui.muted, marginTop: 2 },
   act: {
     flexDirection: 'row', alignItems: 'center', gap: 11, backgroundColor: ui.soft,
     borderWidth: 1, borderColor: ui.line, borderRadius: 12, paddingVertical: 13, paddingHorizontal: 13,
@@ -1221,42 +1221,42 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   // flex so a long label (German's 'Aus dem Haushalt entfernen') wraps inside
   // the row instead of pushing the row wider than the screen.
-  actText: { flex: 1, fontFamily: 'Inter_600SemiBold', fontSize: 14.5, color: ui.text },
-  recSub: { fontFamily: 'Inter_400Regular', fontSize: 12.5, color: ui.muted, marginTop: -6, marginBottom: 10 },
+  actText: { flex: 1, fontFamily: 'Figtree_600SemiBold', fontSize: 14.5, color: ui.text },
+  recSub: { fontFamily: 'Figtree_400Regular', fontSize: 12.5, color: ui.muted, marginTop: -6, marginBottom: 10 },
   recNote: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 8, backgroundColor: ui.soft,
     borderRadius: 14, padding: 11, marginBottom: 10,
   },
-  recNoteText: { flex: 1, fontFamily: 'Inter_500Medium', fontSize: 12.5, lineHeight: 17, color: ui.muted },
+  recNoteText: { flex: 1, fontFamily: 'Figtree_500Medium', fontSize: 12.5, lineHeight: 17, color: ui.muted },
   recCard: {
     backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line,
     borderRadius: 16, paddingHorizontal: 14, paddingVertical: 6, marginBottom: 10,
   },
-  recGroup: { fontFamily: 'Inter_800ExtraBold', fontSize: 12, letterSpacing: 0.4, textTransform: 'uppercase', color: ui.muted, marginTop: 10, marginBottom: 4 },
+  recGroup: { fontFamily: 'Figtree_800ExtraBold', fontSize: 12, letterSpacing: 0.4, textTransform: 'uppercase', color: ui.muted, marginTop: 10, marginBottom: 4 },
   recGroupRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   recLock: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  recLockText: { fontFamily: 'Inter_600SemiBold', fontSize: 11, color: ui.muted },
+  recLockText: { fontFamily: 'Figtree_600SemiBold', fontSize: 11, color: ui.muted },
   recField: { paddingVertical: 8, borderTopWidth: 1, borderTopColor: ui.line },
   recFieldBare: { paddingVertical: 0 },
-  recLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 12, color: ui.muted, marginBottom: 3 },
+  recLabel: { fontFamily: 'Figtree_600SemiBold', fontSize: 12, color: ui.muted, marginBottom: 3 },
   recInput: {
-    fontFamily: 'Inter_500Medium', fontSize: 15, color: ui.text,
+    fontFamily: 'Figtree_500Medium', fontSize: 15, color: ui.text,
     paddingVertical: 6, minHeight: 34,
   },
-  recValue: { fontFamily: 'Inter_500Medium', fontSize: 15, color: ui.text, paddingVertical: 6, minHeight: 34 },
+  recValue: { fontFamily: 'Figtree_500Medium', fontSize: 15, color: ui.text, paddingVertical: 6, minHeight: 34 },
   recSpin: { position: 'absolute', right: 0, top: 12 },
-  recEmptyAll: { fontFamily: 'Inter_500Medium', fontSize: 14, color: ui.muted, paddingVertical: 14 },
+  recEmptyAll: { fontFamily: 'Figtree_500Medium', fontSize: 14, color: ui.muted, paddingVertical: 14 },
   vaxRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     paddingVertical: 10, borderTopWidth: 1, borderTopColor: ui.line,
   },
-  vaxName: { fontFamily: 'Inter_600SemiBold', fontSize: 15, color: ui.text },
-  vaxWhen: { fontFamily: 'Inter_500Medium', fontSize: 12.5, color: ui.muted, marginTop: 2 },
-  vaxNote: { fontFamily: 'Inter_500Medium', fontSize: 12.5, color: ui.muted, marginTop: 3 },
+  vaxName: { fontFamily: 'Figtree_600SemiBold', fontSize: 15, color: ui.text },
+  vaxWhen: { fontFamily: 'Figtree_500Medium', fontSize: 12.5, color: ui.muted, marginTop: 2 },
+  vaxNote: { fontFamily: 'Figtree_500Medium', fontSize: 12.5, color: ui.muted, marginTop: 3 },
   vaxDueRow: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 5, flexWrap: 'wrap' },
   // A plain future date is just information; the two that need a parent to DO
   // something get a fill, so the list can be scanned rather than read.
-  vaxDue: { fontFamily: 'Inter_600SemiBold', fontSize: 12, color: ui.muted },
+  vaxDue: { fontFamily: 'Figtree_600SemiBold', fontSize: 12, color: ui.muted },
   vaxDueNow: {
     color: ui.danger, backgroundColor: ui.dangerSoft,
     paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, overflow: 'hidden',
@@ -1268,7 +1268,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   medTimes: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 5 },
   medTime: { paddingHorizontal: 9, paddingVertical: 3, borderRadius: 99,
              backgroundColor: ui.bg, borderWidth: 1, borderColor: '#E7E3DC' },
-  medTimeText: { fontFamily: 'Inter_700Bold', fontSize: 12, color: ui.text },
+  medTimeText: { fontFamily: 'Figtree_700Bold', fontSize: 12, color: ui.text },
   vaxRemove: { padding: 6 },
   vaxAdd: { borderTopWidth: 1, borderTopColor: ui.line, paddingTop: 10, paddingBottom: 12, gap: 8 },
   vaxInputName: {
@@ -1279,13 +1279,13 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   // ("Date der Impfung") are long enough to need it.
   vaxDates: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
   vaxDateBox: { flex: 1, minWidth: 130 },
-  vaxMini: { fontFamily: 'Inter_600SemiBold', fontSize: 11, color: ui.muted },
+  vaxMini: { fontFamily: 'Figtree_600SemiBold', fontSize: 11, color: ui.muted },
   vaxAddBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
     backgroundColor: ui.orangeDeep, borderRadius: 12, paddingVertical: 11, minHeight: 44,
   },
   vaxAddOff: { opacity: 0.45 },
-  vaxAddText: { fontFamily: 'Inter_700Bold', fontSize: 14, color: '#FFFFFF' },
+  vaxAddText: { fontFamily: 'Figtree_700Bold', fontSize: 14, color: '#FFFFFF' },
   pictureBox: {
     backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line,
     borderRadius: 16, padding: 14, gap: 12, marginBottom: 10,
@@ -1294,15 +1294,15 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   renameBox: { flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 8 },
   renameInput: {
     flex: 1, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, borderRadius: 12,
-    paddingHorizontal: 14, paddingVertical: 12, fontFamily: 'Inter_500Medium', fontSize: 15, color: ui.text,
+    paddingHorizontal: 14, paddingVertical: 12, fontFamily: 'Figtree_500Medium', fontSize: 15, color: ui.text,
   },
   saveBtn: {
     backgroundColor: ui.orange, borderRadius: 12, paddingHorizontal: 18, paddingVertical: 13,
     alignItems: 'center', justifyContent: 'center', minWidth: 84,
   },
-  saveBtnText: { fontFamily: 'Inter_800ExtraBold', fontSize: 14, color: '#fff' },
+  saveBtnText: { fontFamily: 'Figtree_800ExtraBold', fontSize: 14, color: '#fff' },
   footNote: {
-    fontFamily: 'Inter_500Medium', fontSize: 12.5, color: ui.muted, lineHeight: 18,
+    fontFamily: 'Figtree_500Medium', fontSize: 12.5, color: ui.muted, lineHeight: 18,
     backgroundColor: ui.soft, borderRadius: 12, padding: 12, marginTop: 16,
   },
 });

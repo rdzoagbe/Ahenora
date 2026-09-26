@@ -100,7 +100,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 9999,
   },
-  badgeText: { fontFamily: 'Inter_700Bold', fontSize: 11, letterSpacing: 0.4 },
+  badgeText: { fontFamily: 'Figtree_700Bold', fontSize: 11, letterSpacing: 0.4 },
   closeBtn: {
     padding: 8,
     borderRadius: 9999,
@@ -113,7 +113,7 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
   subtitle: {
-    fontFamily: 'Inter_500Medium',
+    fontFamily: 'Figtree_500Medium',
     fontSize: 13,
     lineHeight: 19,
     marginTop: 8,
@@ -128,7 +128,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  dismissText: { fontFamily: 'Inter_700Bold', fontSize: 13 },
+  dismissText: { fontFamily: 'Figtree_700Bold', fontSize: 13 },
   ctaBtn: {
     flex: 1.4,
     flexDirection: 'row',
@@ -138,5 +138,5 @@ const styles = StyleSheet.create({
     paddingVertical: 13,
     borderRadius: 9999,
   },
-  ctaText: { fontFamily: 'Inter_800ExtraBold', fontSize: 13 },
+  ctaText: { fontFamily: 'Figtree_800ExtraBold', fontSize: 13 },
 });

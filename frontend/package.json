@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@babel/runtime": "8.0.5",
+    "@expo-google-fonts/figtree": "0.4.1",
     "@expo-google-fonts/inter": "0.4.2",
     "@expo-google-fonts/playfair-display": "0.4.2",
     "@expo/metro-runtime": "~57.0.7",

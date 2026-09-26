@@ -108,10 +108,10 @@ export function PinPad({
 const styles = StyleSheet.create({
   dotsRow: { flexDirection: 'row', gap: 16, justifyContent: 'center', marginTop: 22, marginBottom: 10 },
   dot: { width: 14, height: 14, borderRadius: 9999, borderWidth: 1.5 },
-  errText: { textAlign: 'center', fontFamily: 'Inter_500Medium', fontSize: 12, marginBottom: 4 },
+  errText: { textAlign: 'center', fontFamily: 'Figtree_500Medium', fontSize: 12, marginBottom: 4 },
   pad: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 10 },
   // Wide rather than square: three rows of keys plus a header has to fit above
   // the fold on a short phone, and this is the dimension there is slack in.
   key: { width: '33.333%', aspectRatio: 1.6, alignItems: 'center', justifyContent: 'center' },
-  keyText: { fontFamily: 'Inter_500Medium', fontSize: 26 },
+  keyText: { fontFamily: 'Figtree_500Medium', fontSize: 26 },
 });

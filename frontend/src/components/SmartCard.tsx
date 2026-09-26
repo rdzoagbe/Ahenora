@@ -228,7 +228,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   typeText: {
-    fontFamily: 'Inter_800ExtraBold',
+    fontFamily: 'Figtree_800ExtraBold',
     fontSize: 12,
     letterSpacing: 0.5,
     textTransform: 'uppercase',
@@ -244,7 +244,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   due: {
-    fontFamily: 'Inter_700Bold',
+    fontFamily: 'Figtree_700Bold',
     fontSize: 12,
   },
   titleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 14 },
@@ -260,7 +260,7 @@ const styles = StyleSheet.create({
   },
   iconGlyph: { fontSize: 28, lineHeight: 34, textAlign: 'center' },
   title: {
-    fontFamily: 'Inter_800ExtraBold',
+    fontFamily: 'Figtree_800ExtraBold',
     fontSize: 20,
     lineHeight: 27,
     marginBottom: 8,
@@ -270,7 +270,7 @@ const styles = StyleSheet.create({
     textDecorationLine: 'line-through',
   },
   desc: {
-    fontFamily: 'Inter_500Medium',
+    fontFamily: 'Figtree_500Medium',
     fontSize: 15,
     lineHeight: 22,
     marginBottom: 16,
@@ -278,7 +278,7 @@ const styles = StyleSheet.create({
   meta: { marginBottom: 16 },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 7, flexWrap: 'wrap' },
   metaText: {
-    fontFamily: 'Inter_600SemiBold',
+    fontFamily: 'Figtree_600SemiBold',
     fontSize: 13,
   },
   metaDot: { marginHorizontal: 2 },
@@ -293,7 +293,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   doneText: {
-    fontFamily: 'Inter_800ExtraBold',
+    fontFamily: 'Figtree_800ExtraBold',
     fontSize: 15,
   },
   deleteBtn: {
