@@ -126,6 +126,12 @@ HARNESSES = [
 ]
 
 
+# Harnesses whose households keep the fourteen-day trial every new household
+# starts with. Every other harness starts its households on Free, because that
+# is what they test.
+TRIAL_HARNESSES = {"e2e_onboarding.py"}
+
+
 def wait_for(url: str, timeout: float = 60.0, need_ok: bool = False) -> bool:
     """Wait for a URL to answer.
 
@@ -190,7 +196,9 @@ def main() -> int:
             api_port += 1
             api = subprocess.Popen(
                 [sys.executable, os.path.join(HERE, "e2e_backend.py"), str(api_port)],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                env={**os.environ,
+                     "E2E_NEW_HOUSEHOLD_TRIAL": "1" if harness in TRIAL_HARNESSES else "0"})
             name = harness.replace("e2e_", "").replace(".py", "")
             if not wait_for(f"http://127.0.0.1:{api_port}/api/health"):
                 print(f"--- {name}: backend never came up")
