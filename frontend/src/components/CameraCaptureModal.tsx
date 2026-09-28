@@ -12,7 +12,7 @@ import {
 import { BlurView } from 'expo-blur';
 import * as ImagePicker from 'expo-image-picker';
 import {
-  X, Sparkles, Camera, Image as ImageIcon, FileScan, Check, ChefHat,
+  X, Sparkles, Camera, Image as ImageIcon, FileScan, Check, ChefHat, ShoppingCart,
 } from 'lucide-react-native';
 import { PressScale } from './PressScale';
 import { useStore } from '../store';
@@ -45,7 +45,9 @@ interface Props {
   onDraft: (d: Draft & { transcript: string }) => void;
 }
 
-type Phase = 'idle' | 'scanning' | 'confirm' | 'recipe' | 'error';
+// 'shopping' reuses the recipe step's list: a photographed shopping list is
+// the same decision — which of these lines go on the list — without a dish.
+type Phase = 'idle' | 'scanning' | 'confirm' | 'recipe' | 'shopping' | 'error';
 
 export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
   const { t, theme, lang } = useStore();
@@ -179,6 +181,18 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
       if (result.kind === 'recipe' && result.recipe) {
         setRecipe(result.recipe);
         setPhase('recipe');
+      } else if (result.kind === 'shopping' && result.shopping_items?.length) {
+        // A shopping list goes on the shopping list. It used to become one
+        // task named after the list, with every item on it lost.
+        const items = result.shopping_items;
+        setRecipe({
+          title: result.title || '',
+          ingredients: items.map((i) => ({ name: i.name, qty: null, unit: '' })),
+        } as unknown as CapturedRecipe);
+        // A line the scan was unsure of starts unticked, as in the kitchen's
+        // own list reader: a misread never lands on the list silently.
+        setSkipped(new Set(items.flatMap((i, n) => (i.unsure ? [n] : []))));
+        setPhase('shopping');
       } else {
         setPhase('confirm');
       }
@@ -282,13 +296,20 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
             </PressScale>
           </View>
 
-          {phase === 'recipe' && recipe ? (
+          {(phase === 'recipe' || phase === 'shopping') && recipe ? (
             <>
               <View style={[styles.heroIcon, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
-                <ChefHat color={theme.colors.accent} size={28} />
+                {phase === 'shopping'
+                  ? <ShoppingCart color={theme.colors.accent} size={28} />
+                  : <ChefHat color={theme.colors.accent} size={28} />}
               </View>
-              <Text style={[styles.heading, { color: theme.colors.text }]}>{t('cam_looks_like_recipe')}</Text>
-              <Text style={[styles.sub, { color: theme.colors.textMuted }]} numberOfLines={2}>{recipe.title}</Text>
+              <Text testID={phase === 'shopping' ? 'cam-shopping-heading' : undefined}
+                style={[styles.heading, { color: theme.colors.text }]}>
+                {t(phase === 'shopping' ? 'cam_looks_like_shopping' : 'cam_looks_like_recipe')}
+              </Text>
+              <Text style={[styles.sub, { color: theme.colors.textMuted }]} numberOfLines={2}>
+                {phase === 'shopping' ? t('cam_shopping_sub') : recipe.title}
+              </Text>
 
               <ScrollView style={styles.list} contentContainerStyle={styles.listInner}>
                 {recipe.ingredients.map((item, index) => {
@@ -333,7 +354,9 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
                   onPress={() => { setRecipe(null); setPhase('confirm'); }}
                   style={[styles.secondaryBtn, { borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}
                 >
-                  <Text style={[styles.secondaryText, { color: theme.colors.text }]}>{t('cam_file_instead')}</Text>
+                  <Text style={[styles.secondaryText, { color: theme.colors.text }]}>
+                    {t(phase === 'shopping' ? 'cam_task_instead' : 'cam_file_instead')}
+                  </Text>
                 </PressScale>
               </View>
             </>

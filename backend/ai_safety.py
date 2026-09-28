@@ -402,9 +402,12 @@ Rules you must follow:
 - Return JSON only, with keys "kind", "type", "title", "description",
   "assignee", "due_date", "vault_category", "save_to_vault", "expires_on" and "amount".
 - "kind" is "recipe" if the photo is a recipe — a cookbook page, a magazine
-  page, a recipe card — and "document" for everything else. When it is
-  "recipe", the other keys still describe it as a document; a second pass
-  reads the recipe itself.
+  page, a recipe card. It is "shopping" if the photo is a list of things to
+  buy — a handwritten or printed shopping list, groceries, toiletries,
+  cleaning products — with no dates or instructions beyond the items. It is
+  "document" for everything else. When it is "recipe" or "shopping", the
+  other keys still describe it as a document; a second pass reads the
+  recipe or the items themselves.
 - "type" is one of SIGN_SLIP, RSVP, TASK, APPOINTMENT, SCHOOL. Use
   APPOINTMENT where the document is about the family being somewhere at a
   time — a dentist or doctor slot, a parents evening, a fitting, a viewing.
@@ -523,9 +526,9 @@ def validate_document_scan(parsed: dict, members: list) -> dict:
     if amount and not re.match(r"^[^\d]{0,3}\s?\d[\d.,\s]*[^\d]{0,4}$", amount):
         amount = ""
 
+    kind = str(parsed.get("kind") or "").strip().lower()
     return {
-        "kind": "recipe" if str(parsed.get("kind") or "").strip().lower() == "recipe"
-                else "document",
+        "kind": kind if kind in ("recipe", "shopping") else "document",
         "type": card_type,
         "title": title,
         "description": description,
