@@ -94,7 +94,7 @@ const isYoung = (m: { role?: string }) =>
   YOUNG_ROLES.includes(m.role?.toLowerCase() || '');
 
 export default function Settings() {
-  const { user, t, lang, logout, subscription, appearanceMode, setAppearance, inviteRequested, clearInviteRequest, membersRequested, clearMembersRequest } = useStore();
+  const { user, t, lang, logout, subscription, refreshSubscription, appearanceMode, setAppearance, inviteRequested, clearInviteRequest, membersRequested, clearMembersRequest } = useStore();
   const router = useRouter();
   const ui = useUI();
   const styles = useMemo(() => createStyles(ui), [ui]);
@@ -340,7 +340,24 @@ export default function Settings() {
   const planLabel =
     subscription?.plan === 'household' || subscription?.plan === 'family_office' ? t('plan_household')
     : subscription?.plan === 'executive' ? t('plan_executive')
+    : subscription?.plan === 'duo' ? t('plan_duo')
     : t('plan_village');
+  // The children's sections: shown, hidden by choice, or hidden by Duo.
+  const kidsOnDuo = subscription?.plan === 'duo';
+  const kidsShown = !subscription?.kids_sections_hidden;
+  const [kidsSaving, setKidsSaving] = useState(false);
+  const toggleKidsSections = async () => {
+    if (kidsOnDuo || kidsSaving) return;
+    setKidsSaving(true);
+    try {
+      await api.setKidsSectionsHidden(kidsShown);
+      await refreshSubscription().catch(() => undefined);
+    } catch {
+      showToast(t('set_error'), 'error');
+    } finally {
+      setKidsSaving(false);
+    }
+  };
   const weeklyBrief = Boolean(entitlements?.weekly_brief || subscription?.limits?.weekly_brief);
   // The brief had a backend, an API method and a finished 230-line screen,
   // and nothing anywhere imported it — so the stat below told a paying
@@ -1078,8 +1095,23 @@ export default function Settings() {
               subtitle={t('set_invite_family_member_sub')}
               onPress={() => openInvite('', 'family')}
               right={<ChevronRight color={ui.muted} size={18} />}
-              divider={false}
+              divider={!user?.is_helper}
             />
+            {/* A couple, or flatmates, can put the children's side away.
+                Hidden, never deleted; on Duo it is always hidden. */}
+            {!user?.is_helper ? (
+              <ToggleRow
+                testID="settings-kids-sections"
+                tile={<IconTile bg={ui.mint}><Star color={ui.mintText} size={18} /></IconTile>}
+                title={t('set_kids_sections')}
+                subtitle={kidsOnDuo ? t('set_kids_sections_duo')
+                  : kidsShown ? t('set_kids_sections_on') : t('set_kids_sections_off')}
+                on={kidsShown}
+                onPress={toggleKidsSections}
+                disabled={kidsOnDuo || kidsSaving}
+                divider={false}
+              />
+            ) : null}
           </Card>
 
 

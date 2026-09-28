@@ -18,8 +18,12 @@ export type PurchaseCycle = 'monthly' | 'yearly';
 // named "household" in the RevenueCat dashboard and hold the household:p1m /
 // household:p1y packages. A missing Household offering fails soft (no_offering),
 // so shipping this before the dashboard is set up never crashes a buyer.
-export type PurchaseTier = 'family' | 'household';
+// Duo is its own offering ("duo": duo:monthly / duo:yearly on Google Play,
+// ahenora_duo_monthly / _yearly on the App Store). Nothing points the default
+// offering at it, so an app that predates Duo never sells it by accident.
+export type PurchaseTier = 'duo' | 'family' | 'household';
 const HOUSEHOLD_OFFERING_ID = 'household';
+const DUO_OFFERING_ID = 'duo';
 
 export interface BillingResult {
   ok: boolean;
@@ -29,6 +33,8 @@ export interface BillingResult {
   premium?: boolean;
   /** user tapped back on the payment sheet — not an error. */
   cancelled?: boolean;
+  /** A move down: the store applies it at the renewal date, not now. */
+  deferred?: boolean;
   error?: string;
 }
 
@@ -110,6 +116,24 @@ function hasPremium(customerInfo: any): boolean {
 }
 
 /**
+ * The Google Play subscription this person already pays for, if any, as the
+ * bare subscription id ("premium_monthly", not "premium_monthly:yearly").
+ *
+ * Google Play keeps every subscription separate. Buying Household while
+ * paying for Family, without naming Family as the one being replaced, starts
+ * a SECOND subscription — and both charge. Apple does not need this: every
+ * Ahenora plan is in one subscription group, and a purchase inside a group
+ * replaces the old one by itself.
+ */
+export function androidSubscriptionToReplace(customerInfo: any): string | null {
+  const fromEntitlement = customerInfo?.entitlements?.active?.[ENTITLEMENT_ID]?.productIdentifier;
+  const fromList = (customerInfo?.activeSubscriptions ?? [])[0];
+  const id = String(fromEntitlement || fromList || '').trim();
+  if (!id) return null;
+  return id.split(':')[0] || null;
+}
+
+/**
  * Launch the Play payment sheet for the chosen cycle. Resolves with the
  * entitlement state; the caller then refreshes backend entitlements (the
  * RevenueCat webhook updates the family plan server-side in parallel).
@@ -118,22 +142,46 @@ export async function purchasePremium(
   userId: string,
   cycle: PurchaseCycle,
   tier: PurchaseTier = 'family',
+  /** Moving up (charged now) or down (at renewal). Only read on Android. */
+  direction: 'up' | 'down' = 'up',
 ): Promise<BillingResult> {
   const loaded = await getPurchases();
   if (!loaded || !(await initBilling(userId))) return { ok: false, available: false };
   try {
     const offerings = await loaded.Purchases.getOfferings();
-    // Family sells from the default offering; Household from its own named one.
+    // Family sells from the default offering; Household and Duo from their
+    // own named ones.
     const offering = tier === 'household'
       ? (offerings?.all?.[HOUSEHOLD_OFFERING_ID] ?? null)
-      : offerings?.current;
+      : tier === 'duo'
+        ? (offerings?.all?.[DUO_OFFERING_ID] ?? null)
+        : offerings?.current;
     if (!offering) return { ok: false, available: true, error: 'no_offering' };
     const pkg = cycle === 'yearly'
       ? offering.annual ?? offering.availablePackages?.find((p: any) => /year|annual/i.test(p?.product?.identifier || ''))
       : offering.monthly ?? offering.availablePackages?.find((p: any) => /month/i.test(p?.product?.identifier || ''));
     if (!pkg) return { ok: false, available: true, error: 'no_offering' };
-    const { customerInfo } = await loaded.Purchases.purchasePackage(pkg);
-    return { ok: true, available: true, premium: hasPremium(customerInfo) };
+    // A switch on Google Play must name the subscription it replaces, or
+    // Google starts a second one next to it. Up: now, with the unused time
+    // credited. Down: when the current period ends, as on the App Store.
+    // Both stores apply a move down at the renewal date (Apple does it by
+    // itself inside the subscription group).
+    const deferred = direction === 'down';
+    let change: any = null;
+    if (Platform.OS === 'android') {
+      const current = await loaded.Purchases.getCustomerInfo().catch(() => null);
+      const old = androidSubscriptionToReplace(current);
+      if (old) {
+        change = {
+          oldProductIdentifier: old,
+          replacementMode: deferred ? 'DEFERRED' : 'WITH_TIME_PRORATION',
+        };
+      }
+    }
+    const { customerInfo } = change
+      ? await loaded.Purchases.purchasePackage(pkg, null, change)
+      : await loaded.Purchases.purchasePackage(pkg);
+    return { ok: true, available: true, premium: hasPremium(customerInfo), deferred };
   } catch (e: any) {
     if (e?.userCancelled) return { ok: false, available: true, cancelled: true };
     logger.warn('billing: purchase failed', e);

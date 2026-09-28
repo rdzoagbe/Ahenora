@@ -57,6 +57,7 @@ import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/compo
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { logger } from '../../src/logger';
 import { refreshOutcome, onlyWhatIsOnScreen, type RefreshSnapshot } from '../../src/refreshOutcome';
+import { useKidsSectionsHidden } from '../../src/kidsSections';
 
 // The teen-accounts hint is a one-time announcement, so what it needs is a
 // memory, not a timer. Scoped to the device, not the household: the key has no
@@ -196,6 +197,9 @@ export default function Kids() {
   const viewerIsHelper = !!user?.is_helper;
   const { isLocked, promptUpgrade } = usePremiumGate();
   const allowanceLocked = isLocked('allowance');
+  // On Duo, or when the household put them away, the children's half of the
+  // hub is not shown. The grown-ups and the chat stay; nothing is deleted.
+  const kidsHidden = useKidsSectionsHidden();
   const router = useRouter();
 
   const [members, setMembers] = useState<FamilyMember[]>([]);
@@ -407,7 +411,7 @@ export default function Kids() {
     setShowMore(false);
   }, []);
   const activeChild = children.find((c) => c.member_id === selectedChild) || children[0];
-  const isFocused = Boolean(focusedChild) && Boolean(activeChild);
+  const isFocused = Boolean(focusedChild) && Boolean(activeChild) && !kidsHidden;
 
   // The hint's real gate is !isFocused: with a child profile open, Kids renders
   // that profile and the hint never appears. Marking it seen on mount would
@@ -1772,13 +1776,13 @@ export default function Kids() {
             <View style={styles.hubGrownups}>
               <Text style={styles.hubLabel}>{t('hub_parents')}</Text>
               {parents.map(renderPerson)}
-              {children.length > 0 ? <Text style={styles.hubLabel}>{t('hub_kids_teens')}</Text> : null}
+              {children.length > 0 && !kidsHidden ? <Text style={styles.hubLabel}>{t('hub_kids_teens')}</Text> : null}
             </View>
           ) : null}
 
           {/* Only once the screen has something to explain — a tip above an
               error or a blank slate is noise. */}
-          {!isFocused && !showBlockingError && !loading && children.length > 0 ? (
+          {!isFocused && !kidsHidden && !showBlockingError && !loading && children.length > 0 ? (
             <FirstRunTip
               id="kids_stars"
               testID="kids-first-run-tip"
@@ -1790,7 +1794,7 @@ export default function Kids() {
 
           {showBlockingError ? (
             <ErrorState title={t('kids_page_unavailable')} message={errorMessage || t('kids_load_error')} onRetry={load} />
-          ) : children.length === 0 && !loading ? (
+          ) : kidsHidden ? null : children.length === 0 && !loading ? (
             <EmptyState title={t('kids_no_children')} message={t('kids_no_children_msg')} actionLabel={t('kids_add_child')} onAction={openChildSheet} />
           ) : (
             <>

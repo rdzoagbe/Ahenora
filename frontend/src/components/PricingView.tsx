@@ -16,6 +16,7 @@ import {
   Crown,
   Briefcase,
   Gem,
+  Heart,
   Lock,
 } from 'lucide-react-native';
 import { PressScale } from './PressScale';
@@ -23,6 +24,7 @@ import { useUI, UIColors } from './Kit';
 import { useStore } from '../store';
 import { api, Plan, BillingCycle, bustSubscriptionCache } from '../api';
 import { purchasePremium, restorePurchases } from '../billing';
+import { PlanChangeSheet, PLAN_RANK } from './PlanChangeSheet';
 
 // Where a web (or billing-less) user is sent to actually subscribe. Store
 // billing only exists in the native app, so on web the purchase and restore
@@ -63,18 +65,22 @@ function unavailableAlert(t: (k: string) => string) {
   );
 }
 
-// Three tiers: Free (Village) + Family (executive) + Household.
-const PLAN_ORDER: Plan[] = ['village', 'executive', 'household'];
+// Four tiers, lowest first: Free (Village), Duo, Family (executive), Household.
+// The order is also what the buttons say: a plan above yours reads "Upgrade",
+// one below reads "Downgrade".
+const PLAN_ORDER: Plan[] = ['village', 'duo', 'executive', 'household'];
 
 const PLAN_PRICES: Record<Plan, { monthly: number; yearly: number }> = {
   village: { monthly: 0, yearly: 0 },
+  duo: { monthly: 1.99, yearly: 19.99 },
   executive: { monthly: 6.99, yearly: 49.99 },
   household: { monthly: 14.99, yearly: 149.99 },
   family_office: { monthly: 19.99, yearly: 179.99 },
 };
 
 // Which Stripe tier a plan buys through. Family = the executive plan.
-const PLAN_TO_TIER: Partial<Record<Plan, 'family' | 'household'>> = {
+const PLAN_TO_TIER: Partial<Record<Plan, 'duo' | 'family' | 'household'>> = {
+  duo: 'duo',
   executive: 'family',
   household: 'household',
 };
@@ -148,11 +154,16 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
    * bust the cache, ask a few times, and say plainly when it has not landed
    * yet rather than celebrating.
    */
-  const waitForPaidPlan = useCallback(async (): Promise<boolean> => {
+  // With a target, waits for THAT plan — a switch from Duo to Family is not
+  // done when the plan is merely "not free". The server is also asked to
+  // re-read the store once, which is where an upgrade shows first.
+  const waitForPaidPlan = useCallback(async (target?: Plan): Promise<boolean> => {
+    if (target) await api.reconcileBilling().catch(() => undefined);
     for (let i = 0; i < 6; i++) {
       bustSubscriptionCache();
       await refreshSubscription().catch(() => undefined);
-      if (subRef.current?.plan && subRef.current.plan !== 'village') return true;
+      const now = subRef.current?.plan;
+      if (target ? now === target : (now && now !== 'village')) return true;
       await new Promise((r) => setTimeout(r, 2000));
     }
     return false;
@@ -173,6 +184,30 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
     }
     Alert.alert(t('price_downgrade_title_web'), t('price_downgrade_msg_web'));
   }, [t]);
+
+  // A move down is confirmed on a sheet that lists what changes first.
+  const [downTo, setDownTo] = useState<Plan | null>(null);
+  const hasChildren = (subscription?.young_people_count ?? subscription?.children_count ?? 0) > 0;
+
+  // Where the current paid plan is billed decides where it can be changed.
+  // Changing it anywhere else would START a second subscription in another
+  // store while the first one carries on charging.
+  const changeableHere = (through: string | null | undefined): boolean => {
+    if (!through) return true;
+    if (through === 'card') return onWeb;
+    if (through === 'app_store') return Platform.OS === 'ios';
+    if (through === 'play_store') return Platform.OS === 'android';
+    return true;
+  };
+  const sayWhereToChange = (through: string) => {
+    const key = through === 'app_store' ? 'chg_elsewhere_app_store'
+      : through === 'play_store' ? 'chg_elsewhere_play'
+        : Platform.OS === 'ios' ? 'chg_elsewhere_card_ios' : 'chg_elsewhere_card';
+    Alert.alert(t('chg_elsewhere_title'), t(key));
+  };
+  const sayBooked = (from: Plan, to: Plan) => {
+    Alert.alert(t('chg_booked_title'), t('chg_booked_msg', { from: t(`plan_${from}`), to: t(`plan_${to}`) }));
+  };
 
   const handleChoose = async (plan: Plan) => {
     if (!user) {
@@ -203,7 +238,28 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
       return;
     }
 
-    if (busy) return;
+    // Duo is for two people with a login. Said before any store opens.
+    if (plan === 'duo' && subscription?.duo_eligible === false) {
+      Alert.alert(t('duo_not_eligible_title'),
+        t('duo_not_eligible_msg', { count: subscription?.duo_people_count ?? 3 }));
+      return;
+    }
+
+    const through = subscription?.billed_through ?? null;
+    if (!changeableHere(through)) {
+      sayWhereToChange(through as string);
+      return;
+    }
+
+    if ((PLAN_RANK[plan] ?? 0) < (PLAN_RANK[currentPlan] ?? 0)) {
+      setDownTo(plan);
+      return;
+    }
+    await performChange(plan, 'up');
+  };
+
+  const performChange = async (plan: Plan, direction: 'up' | 'down') => {
+    if (busy || !user) return;
     setBusy(true);
     try {
       // Web (an iPhone in Safari, a laptop) has no store billing. Pay by card
@@ -214,6 +270,29 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
           // This tier isn't buyable here yet (Stripe off, or this tier's prices
           // not set up) — point to Google Play rather than dead-ending.
           unavailableAlert(t);
+          return;
+        }
+        // Already paying by card: change that subscription, never a second
+        // Checkout next to it.
+        if (subscription?.billed_by_card) {
+          try {
+            const res = await api.changeCardPlan(tier, cycle);
+            if (res.effective === 'renewal') {
+              bustSubscriptionCache();
+              await refreshSubscription().catch(() => undefined);
+              sayBooked(currentPlan, plan);
+            } else if (res.effective === 'now') {
+              if (await waitForPaidPlan(plan)) {
+                Alert.alert(t('price_purchase_done_title'), t('price_purchase_done_msg'));
+              } else {
+                Alert.alert(t('price_checkout_pending_title'), t('price_checkout_pending_msg'));
+              }
+            } else {
+              Alert.alert(t('price_current_plan_title'), t('price_current_plan_msg'));
+            }
+          } catch {
+            Alert.alert(t('price_purchase_failed_title'), t('chg_failed'));
+          }
           return;
         }
         try {
@@ -229,10 +308,12 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
         return;
       }
 
-      // Native (Android). Family sells from the default offering, Household from
-      // its own; purchasePremium picks the right one by tier.
-      const nativeTier = plan === 'household' ? 'household' : 'family';
-      const res = await purchasePremium(user.user_id, cycle, nativeTier);
+      // Native. Family sells from the default offering, Household and Duo
+      // from their own; purchasePremium picks the right one by tier, and on
+      // Android names the subscription being replaced so Google does not
+      // start a second one.
+      const nativeTier = PLAN_TO_TIER[plan] ?? 'family';
+      const res = await purchasePremium(user.user_id, cycle, nativeTier, direction);
       // Household's RevenueCat offering may not be set up on this build yet —
       // don't dead-end, point the buyer to the web where it always works.
       if (res.available && res.error === 'no_offering' && plan === 'household') {
@@ -243,6 +324,10 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
         else Alert.alert(t('price_household_web_title'), t('price_household_web_msg'));
         return;
       }
+      if (res.available && res.error === 'no_offering') {
+        Alert.alert(t('price_unavailable_title'), t('price_unavailable_msg'));
+        return;
+      }
       if (!res.available) {
         // No store billing here — almost always because this is the web app.
         // Don't dead-end: offer to open Google Play, where subscribing works.
@@ -251,9 +336,15 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
       }
       if (res.cancelled) return;
       if (res.ok && res.premium) {
-        // The store says it went through. Whether OUR side knows yet is a
-        // separate question, and the honest answer is worth waiting for.
-        if (await waitForPaidPlan()) {
+        if (res.deferred) {
+          // A move down lands at the renewal date. The store has booked it;
+          // the plan on screen rightly stays what was paid for until then.
+          bustSubscriptionCache();
+          await refreshSubscription().catch(() => undefined);
+          sayBooked(currentPlan, plan);
+        } else if (await waitForPaidPlan(currentPlan === 'village' ? undefined : plan)) {
+          // The store says it went through. Whether OUR side knows yet is a
+          // separate question, and the honest answer is worth waiting for.
           Alert.alert(t('price_purchase_done_title'), t('price_purchase_done_msg'));
         } else {
           Alert.alert(t('price_checkout_pending_title'), t('price_checkout_pending_msg'));
@@ -389,8 +480,13 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
                 plan={plan}
                 cycle={cycle}
                 isCurrent={plan === currentPlan}
+                currentPlan={currentPlan}
                 onChoose={() => handleChoose(plan)}
                 showCurrentBadge={plan === currentPlan}
+                duoBlockedFor={plan === 'duo' && subscription?.duo_eligible === false
+                  ? (subscription?.duo_people_count ?? null) : null}
+                pending={plan === currentPlan && subscription?.pending_plan
+                  ? { plan: subscription.pending_plan, at: subscription.pending_plan_at ?? null } : null}
                 t={t}
                 styles={styles}
                 ui={ui}
@@ -455,6 +551,21 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+      {downTo ? (
+        <PlanChangeSheet
+          visible
+          from={currentPlan}
+          to={downTo}
+          hasChildren={hasChildren}
+          busy={busy}
+          onClose={() => setDownTo(null)}
+          onConfirm={() => {
+            const target = downTo;
+            setDownTo(null);
+            performChange(target, 'down').catch(() => undefined);
+          }}
+        />
+      ) : null}
     </View>
   );
 }
@@ -506,8 +617,11 @@ function PlanCard({
   plan,
   cycle,
   isCurrent,
+  currentPlan,
   onChoose,
   showCurrentBadge,
+  duoBlockedFor,
+  pending,
   t,
   styles,
   ui,
@@ -515,8 +629,13 @@ function PlanCard({
   plan: Plan;
   cycle: BillingCycle;
   isCurrent: boolean;
+  currentPlan: Plan;
   onChoose: () => void;
   showCurrentBadge: boolean;
+  /** Duo cannot be chosen: how many people the household has. */
+  duoBlockedFor: number | null;
+  /** A downgrade booked for the renewal date. */
+  pending: { plan: Plan; at: string | null } | null;
   t: (k: string, p?: any) => string;
   styles: ReturnType<typeof createStyles>;
   ui: UIColors;
@@ -532,6 +651,14 @@ function PlanCard({
   const priceDisplay = price;
   const isFree = plan === 'village';
   const isMiddle = plan === 'executive';
+  // Above the plan you are on reads "Upgrade"; below it, "Downgrade".
+  const isDown = (PLAN_RANK[plan] ?? 0) < (PLAN_RANK[currentPlan] ?? 0);
+  const pendingDate = pending?.at ? new Date(pending.at) : null;
+  const pendingText = pending
+    ? (pendingDate && !Number.isNaN(pendingDate.getTime())
+      ? t('chg_pending', { plan: t(`plan_${pending.plan}`), date: pendingDate.toLocaleDateString() })
+      : t('chg_pending_nodate', { plan: t(`plan_${pending.plan}`) }))
+    : null;
 
   const theme = PLAN_THEMES[plan];
   const Icon = theme.icon;
@@ -615,6 +742,16 @@ function PlanCard({
         </View>
       ) : null}
 
+      {duoBlockedFor != null ? (
+        <Text testID="pricing-duo-blocked" style={styles.blockedNote}>
+          {t('duo_not_eligible_card', { count: duoBlockedFor })}
+        </Text>
+      ) : null}
+
+      {pendingText ? (
+        <Text testID="pricing-pending" style={styles.blockedNote}>{pendingText}</Text>
+      ) : null}
+
       {showCurrentBadge && isCurrent ? (
         <View style={[styles.cta, styles.ctaCurrent]}>
           <Text style={[styles.ctaText, { color: '#fff' }]}>
@@ -627,14 +764,15 @@ function PlanCard({
           onPress={onChoose}
           style={[
             styles.cta,
-            isFree ? styles.ctaDisabled : styles.ctaUpgrade,
+            isFree || isDown ? styles.ctaDisabled : styles.ctaUpgrade,
           ]}
         >
-          {isFree ? null : <Crown color="#fff" size={14} />}
-          {/* The free plan's button sits on a themed surface, so its label must
-              follow the theme; the Premium button keeps white on orange. */}
-          <Text style={[styles.ctaText, isFree ? styles.ctaTextThemed : styles.ctaTextOnAccent]}>
-            {isFree ? t('pricing_get_started') : t('pricing_upgrade')}
+          {isFree || isDown ? null : <Crown color="#fff" size={14} />}
+          {/* A quiet button for a move down (or the free plan), which sits on
+              a themed surface, so its label follows the theme; an upgrade
+              keeps white on orange. */}
+          <Text style={[styles.ctaText, isFree || isDown ? styles.ctaTextThemed : styles.ctaTextOnAccent]}>
+            {isDown ? t('pricing_downgrade') : isFree ? t('pricing_get_started') : t('pricing_upgrade')}
           </Text>
         </PressScale>
       )}
@@ -666,6 +804,14 @@ const PLAN_THEMES: Record<
       'pf_free_5',
       'pf_free_6',
     ],
+  },
+  duo: {
+    icon: Heart,
+    // The brand's sage tile for Duo.
+    iconBg: 'rgba(46,120,82,0.14)',
+    iconColor: '#2E7852',
+    gradient: ['rgba(46,120,82,0.09)', 'rgba(46,120,82,0.03)'] as const,
+    features: ['pf_duo_1', 'pf_duo_2', 'pf_duo_3', 'pf_duo_4', 'pf_duo_5', 'pf_duo_6'],
   },
   executive: {
     icon: Briefcase,
@@ -921,6 +1067,14 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     marginBottom: 6,
   },
   featuresList: { marginTop: 16, marginBottom: 20, gap: 10 },
+  blockedNote: {
+    color: ui.muted,
+    fontFamily: 'Figtree_600SemiBold',
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: -8,
+    marginBottom: 14,
+  },
   lockedRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: -8, marginBottom: 18 },
   lockedCheck: {
     width: 18,

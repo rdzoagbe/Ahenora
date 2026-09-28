@@ -1763,7 +1763,9 @@ export interface ScanResult {
   recipe?: CapturedRecipe;
 }
 
-export type Plan = 'village' | 'executive' | 'household' | 'family_office';
+// 'duo' is the plan for two (a couple). Its stored id is its name.
+export type Plan = 'village' | 'duo' | 'executive' | 'household' | 'family_office';
+export type PaidTier = 'duo' | 'family' | 'household';
 export type BillingCycle = 'monthly' | 'yearly';
 
 export interface Subscription {
@@ -1771,6 +1773,8 @@ export interface Subscription {
   billing_cycle: BillingCycle;
   /** A card subscription (Stripe) — managed and cancelled on Stripe's page. */
   billed_by_card?: boolean;
+  /** Where the paid plan is billed; a switch has to happen there. */
+  billed_through?: 'card' | 'app_store' | 'play_store' | null;
   grandfathered: boolean;
   testing_window?: boolean;
   // Announced billing cutover date (ISO). When set and in the future, the app
@@ -1799,6 +1803,16 @@ export interface Subscription {
   price_monthly: number;
   price_yearly: number;
   admin_unlocked?: boolean;
+  /** Duo is for two people with a login; false when the household has more. */
+  duo_eligible?: boolean;
+  duo_people_count?: number;
+  /** A downgrade waiting for the renewal date, and when it lands. */
+  pending_plan?: Plan | null;
+  pending_plan_at?: string | null;
+  /** The children's sections are put away (always on Duo, or by choice). */
+  kids_sections_hidden?: boolean;
+  /** The household's own choice, whatever the plan. */
+  kids_sections_choice?: boolean;
   // Alternating custody (garde alternée). Absent on older servers; off by
   // default. our_weeks is the ISO-week parity the children are in this home.
   custody?: CustodyConfig;
@@ -2842,7 +2856,13 @@ export const api = {
   /** Stripe's hosted billing page, where a card subscriber cancels. */
   openStripePortal: () =>
     request<{ url: string }>('/billing/stripe/portal', { method: 'POST' }),
-  createStripeCheckout: (tier: 'family' | 'household', cycle: BillingCycle) =>
+  /** Move a card subscription to another plan: up now, down at renewal. */
+  changeCardPlan: (tier: PaidTier, cycle: BillingCycle) => {
+    invalidateUsageCaches();
+    return request<{ ok: boolean; plan: Plan; effective: 'now' | 'renewal' | 'none'; at?: string | null }>(
+      '/billing/stripe/change', { method: 'POST', body: { tier, cycle } });
+  },
+  createStripeCheckout: (tier: PaidTier, cycle: BillingCycle) =>
     request<{ url: string; session_id?: string }>('/billing/stripe/checkout', {
       method: 'POST',
       body: { tier, cycle },
@@ -2853,6 +2873,11 @@ export const api = {
       method: 'POST',
       body: { plan, billing_cycle },
     });
+  },
+  /** Show or hide the children's sections for the whole household. */
+  setKidsSectionsHidden: (hidden: boolean) => {
+    cache.invalidate('getSubscription');
+    return request<Subscription>('/family/kids-sections', { method: 'PUT', body: { hidden } });
   },
   setCustody: (config: CustodyConfig) => {
     // The subscription payload carries custody, so drop its cache to force the

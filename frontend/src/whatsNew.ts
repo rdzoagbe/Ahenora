@@ -51,6 +51,11 @@ export const WHATS_NEW: Record<string, string[]> = {
  * look on. Set it to '' to fall back to announcing store versions only.
  */
 export const RELEASE_NOTES: Record<string, string[]> = {
+  // Duo. Set to the day it ships; the key only has to differ from the last.
+  '2026-10-05': [
+    'wn_duo',
+    'wn_duo_hide',
+  ],
   '2026-09-28': [
     'wn_2609_look',
     'wn_2609_links',
@@ -58,7 +63,7 @@ export const RELEASE_NOTES: Record<string, string[]> = {
   ],
 };
 
-export const CURRENT_RELEASE = '2026-09-28';
+export const CURRENT_RELEASE = '2026-10-05';
 
 /** What the banner announces: the current release if one is set, else the store version. */
 export function announcement(version: string): { key: string; items: string[]; byDate: boolean } {

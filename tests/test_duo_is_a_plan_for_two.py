@@ -451,5 +451,29 @@ class TheCardWebhook(unittest.TestCase):
         self.assertEqual(changes["billing_cycle"], "yearly")
 
 
+@unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
+class WhereTheSubscriptionLives(unittest.TestCase):
+    """A switch must happen in the store that bills — never start a second."""
+
+    def test_card(self):
+        self.assertEqual(server.billed_through(
+            {"plan": "duo", "stripe_customer_id": "cus", "stripe_subscription_status": "active"}), "card")
+
+    def test_the_store_the_webhook_named(self):
+        self.assertEqual(server.billed_through(
+            {"plan": "executive", "rc_store": "PLAY_STORE", "rc_product_id": "ahenora_x"}), "play_store")
+        self.assertEqual(server.billed_through({"plan": "executive", "rc_store": "APP_STORE"}), "app_store")
+
+    def test_before_the_store_was_recorded_the_product_says(self):
+        self.assertEqual(server.billed_through(
+            {"plan": "executive", "rc_product_id": "ahenora_executive_monthly"}), "app_store")
+        self.assertEqual(server.billed_through(
+            {"plan": "executive", "rc_product_id": "premium_monthly"}), "play_store")
+
+    def test_free_and_founding_are_nowhere(self):
+        self.assertIsNone(server.billed_through({"plan": "village", "rc_product_id": "premium_monthly"}))
+        self.assertIsNone(server.billed_through({"plan": "household", "grandfathered": True}))
+
+
 if __name__ == "__main__":
     unittest.main()

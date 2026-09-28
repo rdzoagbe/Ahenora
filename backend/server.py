@@ -1472,6 +1472,7 @@ async def build_subscription(family_id: str):
         "billing_cycle": family["billing_cycle"],
         # Card subscribers manage their plan on Stripe's page, not in a store.
         "billed_by_card": billed_by_card(family),
+        "billed_through": billed_through(family),
         # A downgrade waiting for the renewal date: the plan it becomes and
         # when. The Plans page says so, rather than leaving someone to wonder
         # why the plan they chose has not appeared.
@@ -13851,6 +13852,11 @@ async def revenuecat_webhook(payload: dict, authorization: Optional[str] = Heade
         "rc_event_at": utcnow(),
         "updated_at": utcnow(),
     }
+    store = str(event.get("store") or "").strip().upper()
+    if store in RC_STORES:
+        # Which store this household pays through, so a plan switch is sent
+        # there and never started as a second subscription somewhere else.
+        changes["rc_store"] = RC_STORES[store]
     exp_ms = event.get("expiration_at_ms")
     if exp_ms:
         try:
@@ -14762,6 +14768,32 @@ async def stripe_checkout(payload: dict = Body(default=None), user=Depends(requi
 
 
 CARD_SUBSCRIPTION_OVER = ("canceled", "incomplete_expired")
+
+
+def billed_through(family: dict) -> Optional[str]:
+    """Where this household's paid plan is billed: "card", "app_store",
+    "play_store", or None (free, founding, or no store on record).
+
+    A plan switch has to happen where the subscription lives. Bought on an
+    iPhone and switched on an Android phone, it would be a second subscription
+    in a second store, both charging. The store is read from the webhook when
+    RevenueCat said; before that field existed, the product id tells it —
+    every App Store product is named ahenora_*, no Google Play one is.
+    """
+    family = family or {}
+    if family.get("plan") not in PAID_PLANS:
+        return None
+    if billed_by_card(family):
+        return "card"
+    store = family.get("rc_store")
+    if store == "APP_STORE":
+        return "app_store"
+    if store == "PLAY_STORE":
+        return "play_store"
+    product = str(family.get("rc_product_id") or "").lower()
+    if not product:
+        return None
+    return "app_store" if product.startswith("ahenora_") else "play_store"
 
 
 def billed_by_card(family: dict) -> bool:
