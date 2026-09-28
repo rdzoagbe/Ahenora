@@ -8,8 +8,9 @@ The question shapes the app and never limits it. These pin:
     nothing deleted, and Settings brings them back;
   * the recommendation: Duo for one or two people, Family for children in one
     or two homes, Household beyond what Family holds;
-  * the trial: fourteen days of that plan, no card, nothing charged at the
-    end, once per household, and never over a plan that is paid for.
+  * the trial: every NEW household gets the whole app for fourteen days, no
+    card, nothing charged at the end; what to keep afterwards follows the
+    setup. An existing free household is untouched.
 """
 import asyncio
 import os
@@ -112,7 +113,7 @@ class TheQuestion(unittest.TestCase):
         self.answer("couple")
         with self.assertRaises(HTTPException):
             self.answer("family", 2, start_trial=True)
-        self.assertNotIn("trial_plan", self.family())
+        self.assertEqual(self.family()["household_living"], "couple")
 
     def test_a_couple_has_the_childrens_side_put_away(self):
         self.new_household()
@@ -125,22 +126,32 @@ class TheQuestion(unittest.TestCase):
         self.new_household()
         self.assertFalse(self.answer("family", 2)["kids_sections_hidden"])
 
-    def test_the_trial_is_the_plan_that_fits(self):
+    def test_a_new_household_starts_with_the_whole_app(self):
         self.new_household()
-        sub = self.answer("family", 2, start_trial=True)
-        self.assertEqual(sub["plan"], "village")
-        self.assertEqual(sub["trial"]["plan"], "executive")
+        sub = asyncio.run(server.build_subscription("fam1"))
+        self.assertEqual(sub["plan"], "village", "nothing has been bought")
+        self.assertEqual(sub["trial"]["plan"], "household", "the whole app")
         self.assertEqual(sub["trial"]["days_left"], 14)
-        self.assertTrue(sub["limits"]["meal_planner"], "the trial opens the plan's features")
+        self.assertTrue(sub["limits"]["meal_planner"])
+        self.assertTrue(sub["limits"]["helper_accounts"])
         self.assertTrue(sub["trial_used"])
-        fam = self.family()
-        self.assertNotIn("stripe_customer_id", fam, "no card is taken")
+        self.assertNotIn("stripe_customer_id", self.family(), "no card is taken")
 
-    def test_a_duo_trial_hides_the_childrens_side(self):
+    def test_what_to_keep_follows_the_setup(self):
         self.new_household()
-        sub = self.answer("solo", start_trial=True)
-        self.assertEqual(sub["trial"]["plan"], "duo")
+        self.assertEqual(self.answer("family", 2)["trial"]["recommended_plan"], "executive")
+
+    def test_a_couple_is_pointed_at_duo_and_sees_no_childrens_side(self):
+        self.new_household()
+        sub = self.answer("couple")
+        self.assertEqual(sub["trial"]["recommended_plan"], "duo")
         self.assertTrue(sub["kids_sections_hidden"])
+
+    def test_skipping_the_question_still_recommends_from_who_is_there(self):
+        self.new_household()
+        self.assertEqual(asyncio.run(server.build_subscription("fam1"))["trial"]["recommended_plan"], "duo")
+        asyncio.run(self.db["family_members"].insert_one({"family_id": "fam1", "role": "Child"}))
+        self.assertEqual(asyncio.run(server.build_subscription("fam1"))["trial"]["recommended_plan"], "executive")
 
     def test_when_it_ends_the_household_is_on_free_with_everything(self):
         self.new_household()
@@ -152,9 +163,13 @@ class TheQuestion(unittest.TestCase):
         self.assertEqual(sub["plan"], "village")
         self.assertFalse(sub["limits"]["meal_planner"])
 
-    def test_no_trial_without_asking_for_one(self):
-        self.new_household()
-        self.assertIsNone(self.answer("family", 1)["trial"])
+    def test_an_existing_free_household_gets_no_trial(self):
+        """Existing households keep Free exactly as it is."""
+        asyncio.run(self.db["families"].insert_one({"family_id": "fam1", "plan": "village",
+                                                    "billing_cycle": "monthly"}))
+        sub = asyncio.run(server.build_subscription("fam1"))
+        self.assertIsNone(sub["trial"])
+        self.assertFalse(sub["limits"]["meal_planner"])
 
     def test_the_route_is_for_full_members(self):
         with open(os.path.join(os.path.dirname(__file__), "..", "backend", "server.py"), encoding="utf-8") as fh:

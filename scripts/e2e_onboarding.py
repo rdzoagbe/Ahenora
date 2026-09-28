@@ -94,7 +94,7 @@ async def main():
         r["two_homes_is_pointed_at_family"] = "Family" in await page.inner_text(
             '[data-testid="onboarding-plan-title"]')
         await page.screenshot(path="onboarding_plan.png")
-        await page.click('[data-testid="onboarding-start-free"]')     # plan -> setup
+        await page.click('[data-testid="onboarding-trial"]')          # plan -> setup
         await page.wait_for_timeout(900)
         await page.click('[data-testid="onboarding-continue"]')       # setup -> invite
         await page.wait_for_timeout(700)
@@ -140,7 +140,7 @@ async def main():
         await page2.click('[data-testid="onboarding-living-family"]')
         await page2.click('[data-testid="onboarding-continue"]')
         await page2.wait_for_timeout(500)
-        await page2.click('[data-testid="onboarding-start-free"]')
+        await page2.click('[data-testid="onboarding-trial"]')
         await page2.wait_for_timeout(900)
         await page2.click('[data-testid="onboarding-continue"]')
         await page2.wait_for_timeout(700)
@@ -156,7 +156,11 @@ async def main():
         r["one_home_writes_nothing"] = not (sub2.get("custody") or {}).get("enabled")
         r["one_home_still_finishes_setup"] = bool(
             api("GET", "/auth/me", None, tok2).get("onboarding_completed"))
-        r["start_on_free_starts_no_trial"] = sub2.get("trial") is None and sub2.get("plan") == "village"
+        # The whole app for fourteen days, with nothing bought, and Family
+        # recommended because there are children.
+        trial2 = sub2.get("trial") or {}
+        r["a_new_household_has_the_whole_app"] = trial2.get("plan") == "household" and sub2.get("plan") == "village"
+        r["a_family_is_recommended_family"] = trial2.get("recommended_plan") == "executive"
 
         # ---- a couple: the Duo trial ---------------------------------------
         tok3 = register("duo")
@@ -182,7 +186,7 @@ async def main():
         await page3.click('[data-testid="onboarding-continue"]')
         await page3.wait_for_timeout(3000)
         sub3 = api("GET", "/subscription", None, tok3)
-        r["the_couple_is_on_a_duo_trial"] = (sub3.get("trial") or {}).get("plan") == "duo"
+        r["the_couple_is_recommended_duo"] = (sub3.get("trial") or {}).get("recommended_plan") == "duo"
         r["with_nothing_bought"] = sub3.get("plan") == "village" and not sub3.get("billed_through")
         r["and_the_childrens_side_put_away"] = sub3.get("kids_sections_hidden") is True
         r["and_the_question_is_not_asked_twice"] = sub3.get("household_setup_due") is False

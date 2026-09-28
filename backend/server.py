@@ -1146,9 +1146,9 @@ def plan_rank(plan: Optional[str]) -> int:
 DUO_MAX_PEOPLE = 2
 
 
-# The free trial a new household may start at setup: fourteen days of the
-# plan that fits it, with no card taken and nothing charged at the end. When
-# it ends the household is simply on Free again, with everything it made.
+# The free trial every new household starts with: fourteen days of the whole
+# app, with no card taken and nothing charged at the end. When it ends the
+# household is simply on Free again, with everything it made.
 TRIAL_DAYS = 14
 TRIAL_PLANS = ("duo", "executive", "household")
 HOUSEHOLD_LIVING = ("solo", "couple", "family", "two_homes")
@@ -1162,6 +1162,19 @@ def recommended_plan(living: str, children: int) -> str:
         return "duo"
     limit = PLAN_CATALOG["executive"]["limits"]["max_children"]
     return "household" if children > limit else "executive"
+
+
+def plan_for_household(family: dict, young_people: int, people: int) -> str:
+    """The plan to recommend when the trial ends: from what the household said
+    at setup, or — if it skipped the question — from who is actually in it."""
+    living = (family or {}).get("household_living")
+    if living in HOUSEHOLD_LIVING:
+        return recommended_plan(living, int((family or {}).get("household_children") or 0))
+    if young_people > PLAN_CATALOG["executive"]["limits"]["max_children"]:
+        return "household"
+    if young_people > 0 or people > DUO_MAX_PEOPLE:
+        return "executive"
+    return "duo"
 
 
 def active_trial(family: dict, now: Optional[datetime] = None) -> Optional[dict]:
@@ -1540,7 +1553,10 @@ async def build_subscription(family_id: str):
         # stays "village" — nothing has been bought — while the limits are
         # the trial plan's.
         "trial": ({"plan": trial["plan"], "ends_at": iso(trial["ends_at"]),
-                   "days_left": trial["days_left"]} if trial else None),
+                   "days_left": trial["days_left"],
+                   # What to keep when it ends, from the household's own setup.
+                   "recommended_plan": plan_for_household(family, young_people_count, duo_people)}
+                  if trial else None),
         "trial_used": bool(family.get("trial_used")),
         # Set up a brand-new household: asked once, at setup.
         "household_setup_due": bool(family.get("household_setup_due")),
@@ -6548,6 +6564,15 @@ async def _seed_new_family(database, user: dict, family_id: str, email: str, nam
         # Only households created from here on carry the flag: nobody already
         # using the app, and nobody who joins by invitation, is asked.
         "household_setup_due": True,
+        # And it starts with the whole app for fourteen days: no card taken,
+        # nothing charged when it ends. Three days before, the app recommends
+        # the plan that fits what the household told it; if nobody chooses
+        # one, the household is on Free again with everything it made. Only
+        # new households: a family already on Free keeps exactly what it has.
+        "trial_plan": "household",
+        "trial_started_at": utcnow(),
+        "trial_ends_at": utcnow() + timedelta(days=TRIAL_DAYS),
+        "trial_used": True,
     })
     await database["family_members"].insert_one({
         "member_id": new_id("member"),
@@ -13514,6 +13539,8 @@ async def household_setup(payload: HouseholdSetupIn, user=Depends(require_full_m
     }
     if living in ("solo", "couple"):
         changes["kids_sections_hidden"] = True
+    # A household created since the trial became automatic is already on it;
+    # this only starts one for a household created between the two changes.
     if (payload.start_trial and not family.get("trial_used")
             and family.get("plan") in (None, "village")):
         changes["trial_plan"] = plan

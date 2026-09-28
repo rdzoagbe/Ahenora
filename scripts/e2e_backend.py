@@ -23,6 +23,13 @@ server.db = FakeDatabase()
 # premium — exercising the household-level admin elevation end to end.
 server.ADMIN_EMAILS = set(server.ADMIN_EMAILS) | {"e2e-admin@sim.test"}
 
+# Every new household starts with the whole app for fourteen days. Most
+# harnesses test what a household on Free sees (a paywall, a locked kitchen),
+# so their households start on Free: a trial that ends the moment it starts.
+# The harnesses that test the trial itself ask for it.
+if os.environ.get("E2E_NEW_HOUSEHOLD_TRIAL") != "1":
+    server.TRIAL_DAYS = 0
+
 if __name__ == "__main__":
     import uvicorn
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8990

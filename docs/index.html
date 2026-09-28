@@ -331,6 +331,9 @@
   .plan li::before { content: "✓"; position: absolute; left: 0; top: 9px; color: var(--mint-ink); font-weight: 800; }
   .plan li.lead::before { content: ""; }
   .plan li.lead { color: var(--muted); font-weight: 600; padding-left: 0; }
+  /* What a plan leaves out, said on the card rather than discovered later. */
+  .plan li.note::before { content: ""; }
+  .plan li.note { color: var(--muted); font-size: 0.92em; padding-left: 0; }
 
   /* ---------- final cta ---------- */
   /* ---------- faq ---------- */
@@ -644,7 +647,7 @@
       <div class="section-head">
         <span class="kicker">Pricing</span>
         <h2>Simple plans</h2>
-        <p>Every parent is always free, and so is everything that keeps a family coordinated — the calendar, tasks, chores and the shared lists. The paid plans add the extras below: Duo for two people, Family and Household for more children.</p>
+        <p>Every parent is always free, and so is everything that keeps a family coordinated — the calendar, tasks, chores and the shared lists. The paid plans add the extras below: Duo for two people, Family and Household for more children. Every new household starts with the whole app free for 14 days &mdash; no card, nothing charged when it ends.</p>
       </div>
       <!-- Monthly / yearly, the same choice the app offers. The saving is shown
            PER CARD because it is not the same on each: a year of Duo saves 16%,
@@ -659,10 +662,11 @@
           <h3>Free</h3>
           <div class="price">&euro;0</div>
           <ul>
+            <li class="lead">After your 14 free days, free for good:</li>
             <li>Up to two adults and two children</li>
             <li>Tasks, calendar and shared lists</li>
             <li>Kids' chores, stars and rewards</li>
-            <li>View any document you've saved</li>
+            <li>Ten scans a month</li>
             <li>All reminders and nudges</li>
           </ul>
         </div>
@@ -674,11 +678,12 @@
             &euro;1.99 <span>/ month</span></div>
           <p class="saving" hidden>Saves &euro;3.89 a year &mdash; 16% off monthly</p>
           <ul>
-            <li class="lead">For couples and two-person homes:</li>
+            <li class="lead">Everything in Free for two adults, plus:</li>
             <li>Meal planner, saved plans and recipe AI</li>
             <li>Unlimited scans</li>
             <li>The Sunday brief and weekly report</li>
-            <li>Gift pot and a larger document vault</li>
+            <li>Gift pot and a 500&nbsp;MB document vault</li>
+            <li class="note">No children&rsquo;s section &mdash; that is Family</li>
           </ul>
         </div>
         <div class="plan featured">
@@ -690,11 +695,10 @@
             &euro;6.99 <span>/ month</span></div>
           <p class="saving" hidden>Saves &euro;33.89 a year &mdash; 40% off monthly</p>
           <ul>
-            <li class="lead">Everything in Free, plus:</li>
-            <li>Up to 5 children</li>
-            <li>Meal planner, saved plans and recipe AI</li>
-            <li>Pocket money and the weekly report</li>
-            <li>Carpool and a larger document vault</li>
+            <li class="lead">Everything in Duo, plus:</li>
+            <li>Up to 5 children, with chores, stars and rewards</li>
+            <li>Pocket money</li>
+            <li>Carpool schedule for the school run</li>
           </ul>
         </div>
         <div class="plan">
