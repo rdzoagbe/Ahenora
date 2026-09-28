@@ -98,6 +98,25 @@ class NothingThatShipsCanBeCancelledByAccident(unittest.TestCase):
                 self.assertTrue(os.path.exists(os.path.join(WORKFLOWS, name)))
 
 
+class TwoRunsForOneCommitDoNotFailTheSecond(unittest.TestCase):
+    """A merge followed by a hand publish rebuilds the web export twice for
+    the same commit. On 2026-09-28 the second run failed red ("cannot pull
+    with rebase: You have unstaged changes") although the site had been
+    rebuilt, correctly, by the first: a false alarm on every hotfix."""
+
+    def setUp(self):
+        steps = [s for job in load("frontend-ci-eas-update.yml")["jobs"].values()
+                 for s in job.get("steps", [])]
+        self.script = next(s["run"] for s in steps if s.get("name") == "Commit the rebuilt export")
+
+    def test_it_stands_down_when_this_commit_is_already_exported(self):
+        self.assertIn('Web: rebuild ahenora.com export for $GITHUB_SHA"', self.script)
+        self.assertLess(self.script.index("grep -qxF"), self.script.index("git pull --rebase"))
+
+    def test_stray_export_files_cannot_block_the_retry(self):
+        self.assertIn("git pull --rebase --autostash origin main", self.script)
+
+
 if __name__ == "__main__":
     unittest.main()
 

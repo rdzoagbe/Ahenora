@@ -307,10 +307,24 @@ jobs:
           # Rebase-and-retry so a concurrent push to main (a human merge, or
           # another workflow) can't reject this export with a non-fast-forward
           # and silently drop it until the next frontend merge.
+          #
+          # A merge followed by a hand publish runs this job TWICE for the same
+          # commit (the push run and the dispatch run). The first to push wins;
+          # the second used to fail the whole run red on a rebase refused for
+          # "unstaged changes" left by the export — while the site had in fact
+          # been rebuilt, correctly, by the first. So: if main already carries
+          # this commit's export, there is nothing left to do. Otherwise
+          # rebase with --autostash, so stray files from the export cannot
+          # block the retry.
           for attempt in 1 2 3; do
             if git push origin main; then exit 0; fi
-            echo "push rejected (attempt $attempt) — rebasing on latest main"
-            git pull --rebase origin main
+            git fetch origin main
+            if git log origin/main -n 30 --format=%s | grep -qxF "Web: rebuild ahenora.com export for $GITHUB_SHA"; then
+              echo "Another run already published this commit's web export - nothing to do."
+              exit 0
+            fi
+            echo "push rejected (attempt $attempt) - rebasing on latest main"
+            git pull --rebase --autostash origin main
           done
           git push origin main
 
