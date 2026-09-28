@@ -1730,7 +1730,9 @@ export interface CapturedRecipe {
  * with the permission slips.
  */
 export interface ScanResult {
-  kind: 'document' | 'recipe';
+  kind: 'document' | 'recipe' | 'shopping';
+  /** A photographed shopping list, read item by item. Unsure reads come unticked. */
+  shopping_items?: { name: string; unsure?: boolean }[];
   type: CardType;
   title: string;
   description: string;

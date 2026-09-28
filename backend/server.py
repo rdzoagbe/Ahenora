@@ -15492,6 +15492,32 @@ async def vision_extract(payload: VisionIn, user=Depends(require_user)):
             log.warning("recipe pass failed: %s", exc)
             result["kind"] = "document"
 
+    if result["kind"] == "shopping":
+        # A photographed shopping list is a list of things to buy, not one job
+        # called "Toiletries shopping list" with the items thrown away. That
+        # is what this route used to make of it: the camera on Home had no
+        # word for a shopping list, so the kitchen's own list reader was only
+        # reachable from the kitchen. Read the items with that reader, inside
+        # this request so the photograph is charged once. If the second pass
+        # fails, it stays a document, as before.
+        try:
+            text = await _gemini_vision(
+                "Read the shopping list in this photo.",
+                image_base64,
+                system=SHOPPING_SCAN_SYSTEM_PROMPT,
+                fast=True,
+            )
+            parsed = extract_json(text)
+            if parsed is None:
+                raise UnsafeRecipe("unparseable")
+            result["shopping_items"] = validate_shopping_scan(parsed)
+        except UnsafeRecipe as exc:
+            log.info("shopping pass rejected by safety gate: %s", exc.reason)
+            result["kind"] = "document"
+        except Exception as exc:
+            log.warning("shopping pass failed: %s", exc)
+            result["kind"] = "document"
+
     # Returned so the card and the vault keep the DOCUMENT, not the table it
     # was lying on. Only when it actually changed: sending the original back
     # unchanged would be several megabytes of response for nothing.
