@@ -6,6 +6,7 @@ import json
 import base64
 import random
 import asyncio
+import math
 import hashlib
 import traceback
 import hmac
@@ -1145,6 +1146,41 @@ def plan_rank(plan: Optional[str]) -> int:
 DUO_MAX_PEOPLE = 2
 
 
+# The free trial a new household may start at setup: fourteen days of the
+# plan that fits it, with no card taken and nothing charged at the end. When
+# it ends the household is simply on Free again, with everything it made.
+TRIAL_DAYS = 14
+TRIAL_PLANS = ("duo", "executive", "household")
+HOUSEHOLD_LIVING = ("solo", "couple", "family", "two_homes")
+
+
+def recommended_plan(living: str, children: int) -> str:
+    """The plan a household of this shape is pointed at. Duo covers one or two
+    people; children bring Family, and more than Family holds bring
+    Household."""
+    if living in ("solo", "couple"):
+        return "duo"
+    limit = PLAN_CATALOG["executive"]["limits"]["max_children"]
+    return "household" if children > limit else "executive"
+
+
+def active_trial(family: dict, now: Optional[datetime] = None) -> Optional[dict]:
+    """The trial in force, or None. A household that is paying is never on
+    trial, whatever the dates say: the plan it bought is the plan it has."""
+    family = family or {}
+    if family.get("plan") not in (None, "village"):
+        return None
+    plan = family.get("trial_plan")
+    ends = _coerce_dt(family.get("trial_ends_at"))
+    if plan not in TRIAL_PLANS or not ends:
+        return None
+    now = now or utcnow()
+    if now >= ends:
+        return None
+    return {"plan": plan, "ends_at": ends,
+            "days_left": max(1, int(math.ceil((ends - now).total_seconds() / 86400)))}
+
+
 async def count_duo_people(database, family_id: str) -> int:
     everyone = await database["family_members"].count_documents({"family_id": family_id})
     children = await database["family_members"].count_documents(
@@ -1437,7 +1473,9 @@ async def build_subscription(family_id: str):
     )
     young_people_count = await count_young_people(database, family_id)
     duo_people = await count_duo_people(database, family_id)
-    catalog = plan_catalog_for(family["plan"])
+    trial = active_trial(family)
+    effective_plan = trial["plan"] if trial else family["plan"]
+    catalog = plan_catalog_for(effective_plan)
     limits = catalog["limits"]
     # TESTING WINDOW: until billing is live, every family gets Premium limits so
     # closed-test families can exercise the gated features and aren't blocked by
@@ -1496,8 +1534,17 @@ async def build_subscription(family_id: str):
         # An admin household is shown the top plan, so only its own choice
         # hides anything there.
         "kids_sections_hidden": bool(family.get("kids_sections_hidden"))
-                                or (family["plan"] == "duo" and not admin_household),
+                                or (effective_plan == "duo" and not admin_household),
         "kids_sections_choice": bool(family.get("kids_sections_hidden")),
+        # A free trial in force: which plan, and until when. The plan above
+        # stays "village" — nothing has been bought — while the limits are
+        # the trial plan's.
+        "trial": ({"plan": trial["plan"], "ends_at": iso(trial["ends_at"]),
+                   "days_left": trial["days_left"]} if trial else None),
+        "trial_used": bool(family.get("trial_used")),
+        # Set up a brand-new household: asked once, at setup.
+        "household_setup_due": bool(family.get("household_setup_due")),
+        "household_living": family.get("household_living"),
         "limits": limits,
         "price_monthly": catalog["price_monthly"],
         "price_yearly": catalog["price_yearly"],
@@ -4995,6 +5042,15 @@ class SubscriptionChangeIn(BaseModel):
     billing_cycle: str
 
 
+class HouseholdSetupIn(BaseModel):
+    # Who lives here: "solo", "couple", "family" (one home) or "two_homes".
+    living: str
+    children: int = Field(default=0, ge=0, le=20)
+    # Start the free trial of the plan that fits. Optional: Free is always a
+    # full answer, and so is buying straight away.
+    start_trial: bool = False
+
+
 class KidsSectionsIn(BaseModel):
     # A household without children (a couple, flatmates) can put the
     # children's side of the app away. Hidden, never deleted: turning it back
@@ -6484,9 +6540,14 @@ async def _seed_new_family(database, user: dict, family_id: str, email: str, nam
         "billing_cycle": "monthly",
         "grandfathered": False,
         "updated_at": utcnow(),
+        "created_at": utcnow(),
         "ai_scans_used": 0,
         "ai_scans_period_start": utcnow(),
         "vault_bytes_used": 0,
+        # A brand-new household is asked who lives in it, once, during setup.
+        # Only households created from here on carry the flag: nobody already
+        # using the app, and nobody who joins by invitation, is asked.
+        "household_setup_due": True,
     })
     await database["family_members"].insert_one({
         "member_id": new_id("member"),
@@ -13424,6 +13485,49 @@ async def set_custody(payload: CustodyConfigIn, user=Depends(require_full_member
     return await build_subscription(user["family_id"])
 
 
+@app.post("/api/household/setup")
+async def household_setup(payload: HouseholdSetupIn, user=Depends(require_full_member)):
+    """The answer to "who lives with you?", given once by a new household.
+
+    It shapes the app, it never limits it: a couple or somebody on their own
+    has the children's sections put away (Settings brings them back), and the
+    household may start a fourteen-day trial of the plan that fits — no card,
+    nothing charged when it ends. Only households created with the question
+    can answer it, and only once, so an existing family or somebody who
+    joined by invitation is never re-shaped by it.
+    """
+    living = (payload.living or "").strip().lower()
+    if living not in HOUSEHOLD_LIVING:
+        raise HTTPException(status_code=400, detail="living must be solo, couple, family or two_homes")
+    database = get_db()
+    family = await get_family_doc(user["family_id"])
+    if not family.get("household_setup_due"):
+        raise HTTPException(status_code=409, detail="household_setup_done")
+    children = payload.children if living in ("family", "two_homes") else 0
+    plan = recommended_plan(living, children)
+    changes = {
+        "household_setup_due": False,
+        "household_living": living,
+        "household_children": children,
+        "household_setup_at": utcnow(),
+        "updated_at": utcnow(),
+    }
+    if living in ("solo", "couple"):
+        changes["kids_sections_hidden"] = True
+    if (payload.start_trial and not family.get("trial_used")
+            and family.get("plan") in (None, "village")):
+        changes["trial_plan"] = plan
+        changes["trial_started_at"] = utcnow()
+        changes["trial_ends_at"] = utcnow() + timedelta(days=TRIAL_DAYS)
+        changes["trial_used"] = True
+    await database["families"].update_one({"family_id": user["family_id"]}, {"$set": changes})
+    log.info("Household setup: family=%s living=%s trial=%s",
+             user["family_id"], living, changes.get("trial_plan") or "none")
+    sub = await build_subscription(user["family_id"])
+    sub["recommended_plan"] = plan
+    return sub
+
+
 @app.put("/api/family/kids-sections")
 async def set_kids_sections(payload: KidsSectionsIn, user=Depends(require_full_member)):
     """Show or hide the children's sections for the whole household. On Duo
@@ -14790,6 +14894,10 @@ def billed_through(family: dict) -> Optional[str]:
         return "app_store"
     if store == "PLAY_STORE":
         return "play_store"
+    if store:
+        # A promotional grant (or any rail that is not a store) has nothing
+        # to change in a store: a new plan is simply bought.
+        return None
     product = str(family.get("rc_product_id") or "").lower()
     if not product:
         return None
@@ -19154,6 +19262,8 @@ ALLOWED_EVENTS = {
     # How many households say they share custody at setup. The wedge the app is
     # positioned on, and until now nothing counted whether anyone answered yes.
     "onboarding_custody_set",
+    # The new sign-up: who lives here was answered; a free trial was started.
+    "onboarding_household_set", "onboarding_trial_started",
     # Visits to the vault, as opposed to saves into it. Every other tab counted
     # its opens and this one did not, so the only question anybody actually
     # asked about the vault — does anyone find it? — had no answer, and got

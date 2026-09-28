@@ -487,6 +487,7 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
                   ? (subscription?.duo_people_count ?? null) : null}
                 pending={plan === currentPlan && subscription?.pending_plan
                   ? { plan: subscription.pending_plan, at: subscription.pending_plan_at ?? null } : null}
+                trialDaysLeft={subscription?.trial?.plan === plan ? subscription.trial.days_left : null}
                 t={t}
                 styles={styles}
                 ui={ui}
@@ -622,6 +623,7 @@ function PlanCard({
   showCurrentBadge,
   duoBlockedFor,
   pending,
+  trialDaysLeft,
   t,
   styles,
   ui,
@@ -636,6 +638,8 @@ function PlanCard({
   duoBlockedFor: number | null;
   /** A downgrade booked for the renewal date. */
   pending: { plan: Plan; at: string | null } | null;
+  /** This plan is on a free trial: days left. */
+  trialDaysLeft?: number | null;
   t: (k: string, p?: any) => string;
   styles: ReturnType<typeof createStyles>;
   ui: UIColors;
@@ -737,7 +741,8 @@ function PlanCard({
           </View>
           <Text style={styles.lockedText}>{t('pf_locked_kitchen')}</Text>
           <View style={styles.lockedChip}>
-            <Text style={styles.lockedChipText}>{t('plan_executive')}</Text>
+            {/* The cheapest plan with the kitchen, which is now Duo. */}
+            <Text style={styles.lockedChipText}>{t('plan_duo')}</Text>
           </View>
         </View>
       ) : null}
@@ -746,6 +751,10 @@ function PlanCard({
         <Text testID="pricing-duo-blocked" style={styles.blockedNote}>
           {t('duo_not_eligible_card', { count: duoBlockedFor })}
         </Text>
+      ) : null}
+
+      {trialDaysLeft ? (
+        <Text testID="pricing-trial" style={styles.blockedNote}>{t('pricing_trial_note', { n: trialDaysLeft })}</Text>
       ) : null}
 
       {pendingText ? (

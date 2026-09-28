@@ -50,6 +50,7 @@ import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSh
 import { TabScreen } from '../../src/components/TabScreen';
 import { GettingStarted } from '../../src/components/GettingStarted';
 import { Day7Card } from '../../src/components/Day7Card';
+import { TrialCard } from '../../src/components/TrialCard';
 import { UpgradeBanner } from '../../src/components/UpgradeBanner';
 import { CoParentNudge } from '../../src/components/CoParentNudge';
 import { CaptureMenuSheet } from '../../src/components/CaptureMenuSheet';
@@ -1577,6 +1578,10 @@ export default function Feed() {
             {/* The one week-in question: asked once, never again once answered
                 or dismissed on any device. */}
             <Day7Card />
+
+            {/* A free trial about to end: three days' warning, and the plain
+                fact that nothing is charged when it does. */}
+            <TrialCard />
 
             {/* First-run checklist — demoted below the day; self-hides once done */}
             <GettingStarted

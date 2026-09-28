@@ -16,6 +16,10 @@ What this proves, end to end and through the UI:
      the calendar comes up already coloured, with no second setup step.
   4. Saying "one home" writes nothing. An intact family must not end up with a
      custody schedule because they walked past the question.
+  5. A new household is asked who lives with it, and shown the plan that
+     fits: children across two homes are pointed at Family, a couple at Duo.
+     A couple who starts the trial is on Duo's limits with nothing bought,
+     has the children's side put away, and is never asked about custody.
 
 Usage:  python3 scripts/e2e_onboarding.py <web_port> <api_port>
 """
@@ -78,9 +82,21 @@ async def main():
         tok = register("sep")
         page, _ = await onboard(br, tok)
 
-        await page.click('[data-testid="onboarding-continue"]')       # 0 -> 1
+        await page.click('[data-testid="onboarding-continue"]')       # welcome -> living
         await page.wait_for_timeout(500)
-        await page.click('[data-testid="onboarding-continue"]')       # 1 -> 2 (invite)
+        r["a_new_household_is_asked_who_lives_there"] = await page.locator(
+            '[data-testid="onboarding-living-two_homes"]').count() == 1
+        await page.click('[data-testid="onboarding-living-two_homes"]')
+        await page.click('[data-testid="onboarding-children-plus"]')  # two children
+        await page.wait_for_timeout(200)
+        await page.click('[data-testid="onboarding-continue"]')       # living -> plan
+        await page.wait_for_timeout(500)
+        r["two_homes_is_pointed_at_family"] = "Family" in await page.inner_text(
+            '[data-testid="onboarding-plan-title"]')
+        await page.screenshot(path="onboarding_plan.png")
+        await page.click('[data-testid="onboarding-start-free"]')     # plan -> setup
+        await page.wait_for_timeout(900)
+        await page.click('[data-testid="onboarding-continue"]')       # setup -> invite
         await page.wait_for_timeout(700)
 
         body = await page.inner_text("body")
@@ -121,10 +137,16 @@ async def main():
         page2, _ = await onboard(br, tok2)
         await page2.click('[data-testid="onboarding-continue"]')
         await page2.wait_for_timeout(500)
+        await page2.click('[data-testid="onboarding-living-family"]')
+        await page2.click('[data-testid="onboarding-continue"]')
+        await page2.wait_for_timeout(500)
+        await page2.click('[data-testid="onboarding-start-free"]')
+        await page2.wait_for_timeout(900)
         await page2.click('[data-testid="onboarding-continue"]')
         await page2.wait_for_timeout(700)
-        await page2.click('[data-testid="onboarding-custody-none"]')
-        await page2.wait_for_timeout(300)
+        # One home: the custody question is not asked at all.
+        r["one_home_is_not_asked_about_custody"] = await page2.locator(
+            '[data-testid="onboarding-custody-even"]').count() == 0
         await page2.click('[data-testid="onboarding-continue"]')
         await page2.wait_for_timeout(500)
         await page2.click('[data-testid="onboarding-continue"]')
@@ -134,6 +156,36 @@ async def main():
         r["one_home_writes_nothing"] = not (sub2.get("custody") or {}).get("enabled")
         r["one_home_still_finishes_setup"] = bool(
             api("GET", "/auth/me", None, tok2).get("onboarding_completed"))
+        r["start_on_free_starts_no_trial"] = sub2.get("trial") is None and sub2.get("plan") == "village"
+
+        # ---- a couple: the Duo trial ---------------------------------------
+        tok3 = register("duo")
+        page3, _ = await onboard(br, tok3)
+        await page3.click('[data-testid="onboarding-continue"]')
+        await page3.wait_for_timeout(500)
+        await page3.click('[data-testid="onboarding-living-couple"]')
+        r["a_couple_is_not_asked_how_many_children"] = await page3.locator(
+            '[data-testid="onboarding-children-plus"]').count() == 0
+        await page3.click('[data-testid="onboarding-continue"]')
+        await page3.wait_for_timeout(500)
+        r["a_couple_is_pointed_at_duo"] = "Duo" in await page3.inner_text(
+            '[data-testid="onboarding-plan-title"]')
+        r["the_trial_says_no_card"] = "No card needed" in await page3.inner_text("body")
+        await page3.click('[data-testid="onboarding-trial"]')
+        await page3.wait_for_timeout(1200)
+        await page3.click('[data-testid="onboarding-continue"]')      # setup -> invite
+        await page3.wait_for_timeout(700)
+        r["a_couple_is_not_asked_about_custody"] = await page3.locator(
+            '[data-testid="onboarding-custody-even"]').count() == 0
+        await page3.click('[data-testid="onboarding-continue"]')      # invite -> ready
+        await page3.wait_for_timeout(500)
+        await page3.click('[data-testid="onboarding-continue"]')
+        await page3.wait_for_timeout(3000)
+        sub3 = api("GET", "/subscription", None, tok3)
+        r["the_couple_is_on_a_duo_trial"] = (sub3.get("trial") or {}).get("plan") == "duo"
+        r["with_nothing_bought"] = sub3.get("plan") == "village" and not sub3.get("billed_through")
+        r["and_the_childrens_side_put_away"] = sub3.get("kids_sections_hidden") is True
+        r["and_the_question_is_not_asked_twice"] = sub3.get("household_setup_due") is False
 
         await br.close()
 

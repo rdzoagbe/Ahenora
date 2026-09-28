@@ -1766,6 +1766,7 @@ export interface ScanResult {
 // 'duo' is the plan for two (a couple). Its stored id is its name.
 export type Plan = 'village' | 'duo' | 'executive' | 'household' | 'family_office';
 export type PaidTier = 'duo' | 'family' | 'household';
+export type HouseholdLiving = 'solo' | 'couple' | 'family' | 'two_homes';
 export type BillingCycle = 'monthly' | 'yearly';
 
 export interface Subscription {
@@ -1813,6 +1814,12 @@ export interface Subscription {
   kids_sections_hidden?: boolean;
   /** The household's own choice, whatever the plan. */
   kids_sections_choice?: boolean;
+  /** A free trial in force (no card; nothing charged when it ends). */
+  trial?: { plan: Plan; ends_at: string; days_left: number } | null;
+  trial_used?: boolean;
+  /** A brand-new household is asked who lives in it, once, at setup. */
+  household_setup_due?: boolean;
+  household_living?: HouseholdLiving | null;
   // Alternating custody (garde alternée). Absent on older servers; off by
   // default. our_weeks is the ISO-week parity the children are in this home.
   custody?: CustodyConfig;
@@ -2873,6 +2880,13 @@ export const api = {
       method: 'POST',
       body: { plan, billing_cycle },
     });
+  },
+  /** Answer "who lives with you?" once, optionally starting the free trial. */
+  householdSetup: (living: HouseholdLiving, children: number, start_trial: boolean) => {
+    cache.invalidate('getSubscription');
+    invalidateUsageCaches();
+    return request<Subscription & { recommended_plan: Plan }>('/household/setup', {
+      method: 'POST', body: { living, children, start_trial } });
   },
   /** Show or hide the children's sections for the whole household. */
   setKidsSectionsHidden: (hidden: boolean) => {

@@ -29,3 +29,29 @@ export function lossesFor(from: Plan, to: Plan, hasChildren: boolean): string[] 
   }
   return out;
 }
+
+export type Living = 'solo' | 'couple' | 'family' | 'two_homes';
+
+/**
+ * The plan a household of this shape is pointed at during setup. Mirrors
+ * recommended_plan() on the server, which decides the trial: Duo for one or
+ * two people, Family for children in one or two homes, Household beyond the
+ * five children Family holds.
+ */
+export function recommendPlan(living: Living, children: number): Plan {
+  if (living === 'solo' || living === 'couple') return 'duo';
+  return children > 5 ? 'household' : 'executive';
+}
+
+/** The first lines of each paid plan's card, for the setup step. */
+export const PLAN_HIGHLIGHTS: Partial<Record<Plan, string[]>> = {
+  duo: ['pf_duo_2', 'pf_duo_3', 'pf_duo_4', 'pf_duo_5'],
+  executive: ['pf_prem_1', 'pf_prem_2', 'pf_prem_3', 'pf_prem_5'],
+  household: ['pf_house_2', 'pf_house_3', 'pf_house_4', 'pf_house_5'],
+};
+
+export const PLAN_PRICE: Partial<Record<Plan, { monthly: string; yearly: string }>> = {
+  duo: { monthly: '€1.99', yearly: '€19.99' },
+  executive: { monthly: '€6.99', yearly: '€49.99' },
+  household: { monthly: '€14.99', yearly: '€149.99' },
+};

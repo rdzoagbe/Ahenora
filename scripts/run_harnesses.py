@@ -72,6 +72,10 @@ HARNESSES = [
     # all. Drives a real RevenueCat webhook through the real endpoint and reads
     # the row the founder reads.
     "e2e_billing_screen.py",
+    # The Plans page with Duo: which way each button goes, what a move down
+    # says before it happens, and that Duo hides the children's side without
+    # deleting it.
+    "e2e_plans.py",
     "e2e_week.py",
     "e2e_contrast.py",
     # Narrow phones: every other harness runs at 390 or wider, so the end of the

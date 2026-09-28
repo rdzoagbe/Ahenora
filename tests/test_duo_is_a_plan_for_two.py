@@ -470,6 +470,10 @@ class WhereTheSubscriptionLives(unittest.TestCase):
         self.assertEqual(server.billed_through(
             {"plan": "executive", "rc_product_id": "premium_monthly"}), "play_store")
 
+    def test_a_promotional_grant_is_no_store(self):
+        self.assertIsNone(server.billed_through(
+            {"plan": "executive", "rc_store": "PROMOTIONAL", "rc_product_id": "ahenora_executive_monthly"}))
+
     def test_free_and_founding_are_nowhere(self):
         self.assertIsNone(server.billed_through({"plan": "village", "rc_product_id": "premium_monthly"}))
         self.assertIsNone(server.billed_through({"plan": "household", "grandfathered": True}))
