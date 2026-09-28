@@ -8,6 +8,7 @@ import { SECRET_SANTA_ENABLED } from '../features';
 import { PressScale } from './PressScale';
 import { useUI, UIColors } from './Kit';
 import { useStore } from '../store';
+import { useKidsSectionsHidden } from '../kidsSections';
 import { HandOverSheet } from './HandOverSheet';
 import { FeedbackSheet } from './FeedbackSheet';
 
@@ -39,6 +40,8 @@ export function MoreSheet({ visible, onClose }: { visible: boolean; onClose: () 
   const { t, user } = useStore();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  // No kid hand-over when the children's sections are put away (Duo).
+  const kidsHidden = useKidsSectionsHidden();
   const styles = createStyles(ui);
 
   const go = (path: string) => {
@@ -63,7 +66,8 @@ export function MoreSheet({ visible, onClose }: { visible: boolean; onClose: () 
     // sends. Goes to the same inbox as Contact support, marked as feedback.
     { key: 'feedback', icon: MessageSquareHeart, tone: ui.lavenderText, soft: ui.lavender,
       title: t('fb_title'), sub: t('fb_more_sub'), path: '' },
-  ].filter((it) => !(user?.is_helper && it.key === 'kid'));
+  ].filter((it) => !(user?.is_helper && it.key === 'kid'))
+    .filter((it) => !(kidsHidden && it.key === 'kid'));
   // A helper can't hand the device to a child — exiting kid mode needs a
   // parent's PIN they don't hold. The deeper surfaces (billing, member
   // management, expenses) are refused server-side by require_full_member.

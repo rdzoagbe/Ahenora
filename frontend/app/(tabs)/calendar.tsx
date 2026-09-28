@@ -19,6 +19,7 @@ import { logger } from '../../src/logger';
 import { TabScreen } from '../../src/components/TabScreen';
 import { Card as KitCard, IconTile, ScreenHeader, UI, useUI, UIColors } from '../../src/components/Kit';
 import { useStore } from '../../src/store';
+import { useKidsSectionsHidden } from '../../src/kidsSections';
 import { api, logEvent, CalendarImportResult, Card, Carpool, GiftPot } from '../../src/api';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { AddCardModal } from '../../src/components/AddCardModal';
@@ -129,13 +130,16 @@ export default function Calendar() {
   const { isLocked, promptUpgrade } = usePremiumGate();
   const router = useRouter();
   const carpoolLocked = isLocked('carpool');
+  // Custody and carpool are the children's side; on Duo (or when the
+  // household put that side away) they are not shown. Nothing is deleted.
+  const kidsHidden = useKidsSectionsHidden();
   const { width: windowWidth } = useWindowDimensions();
 
   // Alternating custody (garde alternée). The config lives on the subscription
   // payload; parents (never helpers/teens, matching the server's write gate)
   // set it, and it tints whose ISO week it is across the month.
   const custody = subscription?.custody;
-  const custodyOn = !!custody?.enabled;
+  const custodyOn = !!custody?.enabled && !kidsHidden;
   const isParent = !!user && !user.is_helper && !user.is_teen;
   const [custodyOpen, setCustodyOpen] = useState(false);
   const [custEnabled, setCustEnabled] = useState(false);
@@ -1357,7 +1361,7 @@ export default function Calendar() {
                   </PressScale>
                 ) : null}
               </View>
-            ) : isParent ? (
+            ) : isParent && !kidsHidden ? (
               <PressScale testID="custody-setup" accessibilityRole="button" onPress={openCustody} style={styles.custodySetupBtn}>
                 <Users color={ui.lavenderText} size={16} />
                 <Text style={styles.custodySetupText}>{t('custody_setup')}</Text>
@@ -1552,8 +1556,8 @@ export default function Calendar() {
           )}
 
           {/* Carpool Coordinator */}
-          {!carpoolLocked ? <View style={{ marginTop: 18 }}><PremiumPreviewBanner /></View> : null}
-          {carpoolLocked ? (
+          {!carpoolLocked && !kidsHidden ? <View style={{ marginTop: 18 }}><PremiumPreviewBanner /></View> : null}
+          {kidsHidden ? null : carpoolLocked ? (
             <View style={styles.carpoolSection}>
               <View style={styles.carpoolHeader}>
                 <Car color={ui.orange} size={18} />

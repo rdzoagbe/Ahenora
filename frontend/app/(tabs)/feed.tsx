@@ -50,6 +50,7 @@ import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSh
 import { TabScreen } from '../../src/components/TabScreen';
 import { GettingStarted } from '../../src/components/GettingStarted';
 import { Day7Card } from '../../src/components/Day7Card';
+import { TrialCard } from '../../src/components/TrialCard';
 import { UpgradeBanner } from '../../src/components/UpgradeBanner';
 import { CoParentNudge } from '../../src/components/CoParentNudge';
 import { CaptureMenuSheet } from '../../src/components/CaptureMenuSheet';
@@ -342,6 +343,8 @@ const SEEN_ALERTS_KEY = 'coo_seen_alert_ids';
 
 export default function Feed() {
   const { user, t, lang, subscription, dataVersion, requestInvite } = useStore();
+  // On Duo the children's side is put away: no custody line, no stars.
+  const kidsHidden = !!subscription?.kids_sections_hidden;
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
   const [assigned, setAssigned] = useState<Card[]>([]);
   // Someone this household invited who never made it in. Only the household
@@ -1240,7 +1243,7 @@ export default function Feed() {
             <View style={styles.topMetaRow}>
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={styles.dateText}>{feedDateLine(now, lang)} <Text style={styles.sun}>{timeEmoji(now)}</Text></Text>
-                <Text style={styles.weekLine} testID="feed-week">{feedWeekLine(now, t, subscription?.custody)}</Text>
+                <Text style={styles.weekLine} testID="feed-week">{feedWeekLine(now, t, kidsHidden ? null : subscription?.custody)}</Text>
               </View>
               <View style={styles.topActions}>
                 <PressScale
@@ -1576,6 +1579,10 @@ export default function Feed() {
                 or dismissed on any device. */}
             <Day7Card />
 
+            {/* A free trial about to end: three days' warning, and the plain
+                fact that nothing is charged when it does. */}
+            <TrialCard />
+
             {/* First-run checklist — demoted below the day; self-hides once done */}
             <GettingStarted
               hasMember={members.length > 1}
@@ -1884,10 +1891,12 @@ export default function Feed() {
                     <Text style={[styles.reportNum, report.tasks_overdue > 0 && { color: ui.danger }]}>{report.tasks_overdue}</Text>
                     <Text style={styles.reportLabel}>{t('feed_report_overdue')}</Text>
                   </View>
+                  {kidsHidden ? null : (
                   <View style={styles.reportCell}>
                     <Text style={[styles.reportNum, { color: ui.orangeText }]}>{report.stars_earned}</Text>
                     <Text style={styles.reportLabel}>{t('feed_report_stars')}</Text>
                   </View>
+                  )}
                 </View>
                 {report.total_spent > 0 ? (
                   <View style={styles.reportSpent}>
@@ -1906,7 +1915,11 @@ export default function Feed() {
             ) : null}
 
             <View style={styles.footerSnapshot}>
-              <Text style={styles.footerSnapshotText}>{members.filter((m) => m.role?.toLowerCase() === 'child').length} {t('feed_kids')} · {rewardCount} {t('feed_rewards')} · {vaultCount} {t('feed_vault_docs')}</Text>
+              <Text style={styles.footerSnapshotText}>
+                {kidsHidden
+                  ? `${vaultCount} ${t('feed_vault_docs')}`
+                  : `${members.filter((m) => m.role?.toLowerCase() === 'child').length} ${t('feed_kids')} · ${rewardCount} ${t('feed_rewards')} · ${vaultCount} ${t('feed_vault_docs')}`}
+              </Text>
             </View>
             </>
             ) : null}
