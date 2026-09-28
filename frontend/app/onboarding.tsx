@@ -3,7 +3,7 @@ import { Alert, StyleSheet, Text, TextInput, View } from 'react-native';
 import { KeyboardAwareScrollView } from '../src/components/KeyboardAwareScrollView';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { ArrowRight, Check, LayoutGrid, ListChecks, Lock, Plus, Sparkles, Star, UserPlus, UtensilsCrossed, X } from 'lucide-react-native';
+import { ArrowRight, Check, Heart, Home, LayoutGrid, ListChecks, Lock, Minus, Plus, Sparkles, Star, User, UserPlus, Users, UtensilsCrossed, X } from 'lucide-react-native';
 
 import { PressScale } from '../src/components/PressScale';
 import { useStore } from '../src/store';
@@ -13,6 +13,8 @@ import type { Lang } from '../src/i18n';
 import { logger } from '../src/logger';
 import { isoWeek } from '../src/utils/date';
 import type { CustodyWeeks } from '../src/utils/date';
+import { PLAN_HIGHLIGHTS, PLAN_PRICE, recommendPlan, type Living } from '../src/planChange';
+import { useDuoOffered } from '../src/duoOffered';
 
 // Guided, account-seeding onboarding: by the time the user lands on the
 // dashboard it already has a task, a shopping list and (optionally) a co-parent
@@ -20,7 +22,7 @@ import type { CustodyWeeks } from '../src/utils/date';
 // step is optional; whatever they leave filled gets seeded at finish.
 export default function Onboarding() {
   const router = useRouter();
-  const { user, loading, theme, lang, setLang, refreshUser, t } = useStore();
+  const { user, loading, theme, lang, setLang, refreshUser, refreshSubscription, subscription, t } = useStore();
   const styles = useMemo(() => createStyles(theme.colors), [theme]);
 
   const [step, setStep] = useState(0);
@@ -42,6 +44,26 @@ export default function Onboarding() {
    */
   const [custodyWeeks, setCustodyWeeks] = useState<CustodyWeeks | null>(null);
   const [finishing, setFinishing] = useState(false);
+
+  // A brand-new household (and only that: never someone who joined by
+  // invitation, never an existing family) is asked who lives with them, and
+  // shown the plan that fits with a free trial — no card, nothing charged
+  // when it ends. Latched once seen, so the steps never shift under the
+  // person once the answer has been saved.
+  const [askHousehold, setAskHousehold] = useState(false);
+  const setupDue = !!subscription?.household_setup_due;
+  if (setupDue && !askHousehold) setAskHousehold(true);
+  const [living, setLiving] = useState<Living | null>(null);
+  const [children, setChildren] = useState(1);
+  const [planBusy, setPlanBusy] = useState(false);
+  // Chose "Subscribe now": setup finishes on the Plans page, not on Home.
+  const [subscribeAfter, setSubscribeAfter] = useState(false);
+  const withChildren = living === 'family' || living === 'two_homes';
+  const recommended = living ? recommendPlan(living, withChildren ? children : 0) : 'duo';
+  // The trial needs no store; buying does. Where Duo cannot be bought yet
+  // (an iPhone before Apple approves it), "Subscribe now" is not offered for it.
+  const duoOffered = useDuoOffered();
+  const canSubscribeNow = recommended !== 'duo' || duoOffered;
 
   const firstName = (user?.name || '').split(' ')[0];
   // Which ISO week it is right now, so the custody question can be answered by
@@ -75,7 +97,26 @@ export default function Onboarding() {
     setShopDraft('');
   };
 
-  const goFeed = () => router.replace('/(tabs)/feed');
+  const goFeed = () => router.replace(subscribeAfter ? '/pricing' : '/(tabs)/feed');
+
+  /** Save the answer, optionally with the trial, and move on either way: a
+   *  failed save costs the household nothing it cannot set in Settings. */
+  const choosePlan = async (how: 'trial' | 'subscribe' | 'free') => {
+    if (!living || planBusy) return;
+    setPlanBusy(true);
+    try {
+      await api.householdSetup(living, withChildren ? children : 0, how === 'trial');
+      logEvent('onboarding_household_set');
+      if (how === 'trial') logEvent('onboarding_trial_started');
+      await refreshSubscription().catch(() => undefined);
+    } catch (e) {
+      logger.warn('household setup failed', e);
+    } finally {
+      setPlanBusy(false);
+    }
+    if (how === 'subscribe') setSubscribeAfter(true);
+    next();
+  };
 
   const finish = async () => {
     if (finishing) return;
@@ -154,9 +195,17 @@ export default function Onboarding() {
     }
   };
 
-  const totalSteps = 4;
+  const steps: string[] = askHousehold
+    ? ['welcome', 'living', 'plan', 'setup', 'invite', 'ready']
+    : ['welcome', 'setup', 'invite', 'ready'];
+  const current = steps[step];
+  const totalSteps = steps.length;
   const isLast = step === totalSteps - 1;
-  const next = () => setStep((s) => Math.min(s + 1, totalSteps - 1));
+  function next() { setStep((s) => Math.min(s + 1, totalSteps - 1)); }
+  // The custody question belongs to two homes; a couple or a family under one
+  // roof is not asked it. A household that was not asked who lives there keeps
+  // the question as it always had it.
+  const askCustody = !askHousehold || living === 'two_homes';
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.bg }]}>
@@ -177,7 +226,7 @@ export default function Onboarding() {
 
         <KeyboardAwareScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           {/* Step 0 — welcome + language */}
-          {step === 0 ? (
+          {current === 'welcome' ? (
             <View>
               <View style={[styles.badge, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
                 <Sparkles color={theme.colors.accent} size={13} />
@@ -231,11 +280,110 @@ export default function Onboarding() {
 
           {/* Step 1 — first task and first list, together. They were two
               near-empty screens; both are prefilled inputs and belong on one. */}
-          {step === 1 ? (
+          {current === 'living' ? (
+            <View>
+              <View style={[styles.badge, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
+                <Home color={theme.colors.accent} size={13} />
+                <Text style={[styles.badgeText, { color: theme.colors.text }]}>{t('ob_step_of', { n: step + 1, total: totalSteps })}</Text>
+              </View>
+              <Text style={[styles.title, { color: theme.colors.text }]}>{t('ob_living_title')}</Text>
+              <Text style={[styles.sub, { color: theme.colors.textMuted }]}>{t('ob_living_hint')}</Text>
+              <View style={styles.list}>
+                {([
+                  ['solo', User], ['couple', Heart], ['family', Users], ['two_homes', Home],
+                ] as const).map(([key, Icon]) => {
+                  const active = living === key;
+                  return (
+                    <PressScale
+                      key={key}
+                      testID={`onboarding-living-${key}`}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected: active }}
+                      onPress={() => setLiving(key)}
+                      style={[styles.livingRow, { backgroundColor: theme.colors.bgSoft, borderColor: active ? theme.colors.accent : theme.colors.cardBorder }]}
+                    >
+                      <Icon color={active ? theme.colors.accentInk : theme.colors.textMuted} size={20} />
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={[styles.rowText, { color: theme.colors.text }]}>{t(`ob_living_${key}`)}</Text>
+                        <Text style={[styles.subSmall, { color: theme.colors.textMuted, marginTop: 2 }]}>{t(`ob_living_${key}_sub`)}</Text>
+                      </View>
+                      {active ? <Check color={theme.colors.accent} size={18} /> : null}
+                    </PressScale>
+                  );
+                })}
+              </View>
+              {withChildren ? (
+                <View style={styles.countRow}>
+                  <Text style={[styles.rowText, { color: theme.colors.text, flex: 1 }]}>{t('ob_children_count')}</Text>
+                  <PressScale testID="onboarding-children-minus" accessibilityRole="button" accessibilityLabel="−"
+                    onPress={() => setChildren((n) => Math.max(1, n - 1))}
+                    style={[styles.countBtn, { borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}>
+                    <Minus color={theme.colors.text} size={16} />
+                  </PressScale>
+                  <Text testID="onboarding-children-count" style={[styles.countText, { color: theme.colors.text }]}>{children}</Text>
+                  <PressScale testID="onboarding-children-plus" accessibilityRole="button" accessibilityLabel="+"
+                    onPress={() => setChildren((n) => Math.min(10, n + 1))}
+                    style={[styles.countBtn, { borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}>
+                    <Plus color={theme.colors.text} size={16} />
+                  </PressScale>
+                </View>
+              ) : null}
+            </View>
+          ) : null}
+
+          {current === 'plan' ? (
+            <View>
+              <View style={[styles.badge, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
+                <Sparkles color={theme.colors.accent} size={13} />
+                <Text style={[styles.badgeText, { color: theme.colors.text }]}>{t('ob_step_of', { n: step + 1, total: totalSteps })}</Text>
+              </View>
+              <Text testID="onboarding-plan-title" style={[styles.title, { color: theme.colors.text }]}>
+                {t('ob_plan_title', { plan: t(`plan_${recommended}`) })}
+              </Text>
+              <Text style={[styles.sub, { color: theme.colors.textMuted }]}>{t('ob_plan_try_hint')}</Text>
+              <View style={[styles.planCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.accent }]}>
+                <Text style={[styles.planName, { color: theme.colors.text }]}>{t(`plan_${recommended}`)}</Text>
+                <Text style={[styles.subSmall, { color: theme.colors.textMuted, marginTop: 2 }]}>{t(`plan_${recommended}_tag`)}</Text>
+                <Text style={[styles.planPrice, { color: theme.colors.text }]}>
+                  {t('ob_plan_price', { price: PLAN_PRICE[recommended]?.monthly ?? '', yearly: PLAN_PRICE[recommended]?.yearly ?? '' })}
+                </Text>
+                <View style={{ gap: 8, marginTop: 12 }}>
+                  {(PLAN_HIGHLIGHTS[recommended] ?? []).map((k) => (
+                    <View key={k} style={styles.valueRow}>
+                      <Check color={theme.colors.accent} size={16} />
+                      <Text style={[styles.valueText, { color: theme.colors.text }]}>{t(k)}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+              <PressScale testID="onboarding-trial" accessibilityRole="button" disabled={planBusy}
+                onPress={() => { choosePlan('trial').catch(() => undefined); }}
+                style={[styles.trialBtn, { backgroundColor: theme.colors.primary }, planBusy && { opacity: 0.6 }]}>
+                <Text style={[styles.nextText, { color: theme.colors.primaryText }]}>{t('ob_trial_cta', { plan: t(`plan_${recommended}`) })}</Text>
+              </PressScale>
+              <Text style={[styles.subSmall, { color: theme.colors.textMuted, textAlign: 'center', marginTop: 8 }]}>{t('ob_trial_note')}</Text>
+              <View style={styles.planAlt}>
+                {canSubscribeNow ? (
+                <PressScale testID="onboarding-subscribe-now" accessibilityRole="button" disabled={planBusy}
+                  onPress={() => { choosePlan('subscribe').catch(() => undefined); }}
+                  style={[styles.altBtn, { borderColor: theme.colors.cardBorder }]}>
+                  <Text style={[styles.altText, { color: theme.colors.text }]}>{t('ob_subscribe_now')}</Text>
+                </PressScale>
+                ) : null}
+                <PressScale testID="onboarding-start-free" accessibilityRole="button" disabled={planBusy}
+                  onPress={() => { choosePlan('free').catch(() => undefined); }}
+                  style={[styles.altBtn, { borderColor: theme.colors.cardBorder }]}>
+                  <Text style={[styles.altText, { color: theme.colors.text }]}>{t('ob_start_free')}</Text>
+                </PressScale>
+              </View>
+            </View>
+          ) : null}
+
+          {current === 'setup' ? (
             <View>
               <View style={[styles.badge, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
                 <ListChecks color={theme.colors.accent} size={13} />
-                <Text style={[styles.badgeText, { color: theme.colors.text }]}>{t('ob_step_of', { n: 2, total: 4 })}</Text>
+                <Text style={[styles.badgeText, { color: theme.colors.text }]}>{t('ob_step_of', { n: step + 1, total: totalSteps })}</Text>
               </View>
               <Text style={[styles.title, { color: theme.colors.text }]}>{t('ob_setup_title')}</Text>
               <Text style={[styles.sub, { color: theme.colors.textMuted }]}>{t('ob_setup_hint')}</Text>
@@ -287,11 +435,11 @@ export default function Onboarding() {
           ) : null}
 
           {/* Step 3 — invite a family member */}
-          {step === 2 ? (
+          {current === 'invite' ? (
             <View>
               <View style={[styles.badge, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
                 <UserPlus color={theme.colors.accent} size={13} />
-                <Text style={[styles.badgeText, { color: theme.colors.text }]}>{t('ob_step_of', { n: 3, total: 4 })}</Text>
+                <Text style={[styles.badgeText, { color: theme.colors.text }]}>{t('ob_step_of', { n: step + 1, total: totalSteps })}</Text>
               </View>
               <Text style={[styles.title, { color: theme.colors.text }]}>{t('ob_invite_title')}</Text>
               <Text style={[styles.sub, { color: theme.colors.textMuted }]}>{t('ob_invite_why')}</Text>
@@ -299,6 +447,7 @@ export default function Onboarding() {
               {/* Asked here rather than on a step of its own: this is already
                   the screen about the other parent, and a fifth step is a
                   fifth chance to abandon setup. */}
+              {askCustody ? (<>
               <Text style={[styles.subSmall, { color: theme.colors.text, marginTop: 18, marginBottom: 2 }]}>
                 {t('ob_custody_q')}
               </Text>
@@ -330,6 +479,7 @@ export default function Onboarding() {
                   );
                 })}
               </View>
+              </>) : null}
 
               <Text style={[styles.subSmall, { color: theme.colors.textMuted, marginTop: 18 }]}>
                 {custodyWeeks ? t('ob_invite_hint_coparent') : t('ob_invite_hint')}
@@ -350,7 +500,7 @@ export default function Onboarding() {
           ) : null}
 
           {/* Step 3 — you're ready */}
-          {step === 3 ? (
+          {current === 'ready' ? (
             <View style={styles.readyWrap}>
               <View style={[styles.readyIcon, { backgroundColor: theme.colors.primary }]}>
                 <Sparkles color={theme.colors.primaryText} size={30} />
@@ -383,17 +533,19 @@ export default function Onboarding() {
             <View style={{ flex: 1 }} />
           )}
 
+          {current === 'plan' ? null : (
           <PressScale
             testID="onboarding-continue"
             onPress={isLast ? finish : next}
-            disabled={finishing}
-            style={[styles.nextBtn, { backgroundColor: theme.colors.primary }, finishing && { opacity: 0.6 }]}
+            disabled={finishing || (current === 'living' && !living)}
+            style={[styles.nextBtn, { backgroundColor: theme.colors.primary }, (finishing || (current === 'living' && !living)) && { opacity: 0.6 }]}
           >
             <Text style={[styles.nextText, { color: theme.colors.primaryText }]}>
               {isLast ? (finishing ? t('ob_setting_up') : t('ob_go_dashboard')) : t('ob_continue')}
             </Text>
             {!isLast ? <ArrowRight color={theme.colors.primaryText} size={16} /> : null}
           </PressScale>
+          )}
         </View>
       </SafeAreaView>
     </View>
@@ -453,4 +605,17 @@ const createStyles = (c: any) =>
     skipText: { fontFamily: 'Figtree_600SemiBold', fontSize: 14 },
     nextBtn: { flex: 1, height: 54, borderRadius: 9999, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
     nextText: { fontFamily: 'Figtree_700Bold', fontSize: 15 },
+    livingRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 16, paddingVertical: 14, borderRadius: 16, borderWidth: 1 },
+    countRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 20 },
+    countBtn: { width: 40, height: 40, borderRadius: 9999, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+    countText: { fontFamily: 'Figtree_700Bold', fontSize: 18, minWidth: 24, textAlign: 'center' },
+    planCard: { borderWidth: 1.5, borderRadius: 20, padding: 18, marginTop: 18 },
+    planName: { fontFamily: 'PlayfairDisplay_400Regular_Italic', fontSize: 28 },
+    planPrice: { fontFamily: 'Figtree_700Bold', fontSize: 15, marginTop: 10 },
+    planAlt: { flexDirection: 'row', gap: 10, marginTop: 16 },
+    // Its own style, not nextBtn's: nextBtn grows to fill the footer row, and
+    // "flex: 0" to undo that collapses it to nothing on the web.
+    trialBtn: { minHeight: 54, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18, marginTop: 18 },
+    altBtn: { flex: 1, minHeight: 48, borderRadius: 9999, borderWidth: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
+    altText: { fontFamily: 'Figtree_600SemiBold', fontSize: 14 },
   });

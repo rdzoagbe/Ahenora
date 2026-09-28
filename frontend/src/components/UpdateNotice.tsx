@@ -11,6 +11,7 @@ import { useUI, UIColors } from './Kit';
 import { useStore } from '../store';
 import { api } from '../api';
 import { announcement } from '../whatsNew';
+import { useDuoOffered } from '../duoOffered';
 import { FeedbackSheet } from './FeedbackSheet';
 import { logger } from '../logger';
 import { hasPendingTarget } from '../pendingNotificationTarget';
@@ -112,7 +113,12 @@ export function UpdateNotice() {
 
   const version = Constants.expoConfig?.version || '';
   // An over-the-air release announces itself by date; a store build by version.
-  const news = announcement(version);
+  // Duo news is only told where Duo can be bought (not yet on an iPhone
+  // before Apple approves it).
+  const duoOffered = useDuoOffered();
+  const announced = announcement(version);
+  const news = duoOffered ? announced
+    : { ...announced, items: announced.items.filter((k) => !k.startsWith('wn_duo')) };
   const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   /**

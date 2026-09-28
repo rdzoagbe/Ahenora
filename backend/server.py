@@ -6,6 +6,7 @@ import json
 import base64
 import random
 import asyncio
+import math
 import hashlib
 import traceback
 import hmac
@@ -1040,6 +1041,33 @@ PLAN_CATALOG = {
             "secret_santa": False,
         },
     },
+    # Duo — for two. A couple, or any two-person home, gets the everyday
+    # paid kit (the kitchen, unlimited scans, the Sunday brief, the gift pot)
+    # without the children's side of the app, which is what Family charges
+    # for. Two people, no young people: adding a child is the moment Family
+    # starts to make sense, and the cap says so. A household that moves down
+    # to Duo keeps every child record it had; the app hides those sections,
+    # nothing here deletes them.
+    "duo": {
+        "price_monthly": 1.99,
+        "price_yearly": 19.99,
+        "limits": {
+            "max_members": 2,
+            "max_children": 0,
+            "ai_scans_per_month": AI_SCANS_UNLIMITED,
+            "vault_bytes": 500 * 1024 * 1024,
+            "weekly_brief": True,
+            "multi_property": False,
+            "meal_planner": True,
+            "allowance": False,
+            "carpool": False,
+            "weekly_report": True,
+            "helper_accounts": False,
+            "priority_support": False,
+            "gift_pot": True,
+            "secret_santa": True,
+        },
+    },
     # The middle tier — shown as "Family". The stored id stays "executive" so
     # existing subscribers, RevenueCat product ids and webhooks keep working
     # unchanged; only the label the app shows moved to "Family".
@@ -1101,6 +1129,70 @@ def plan_catalog_for(plan: str) -> dict:
     return PLAN_CATALOG["village"]
 
 
+# The order the plans stand in, lowest first. The app labels every button from
+# this ("Upgrade" above you, "Downgrade" below), and a card switch uses it to
+# decide whether the change is charged now or waits for the renewal date.
+PLAN_RANK = {"village": 0, "duo": 1, "executive": 2, "household": 3, "family_office": 3}
+
+
+def plan_rank(plan: Optional[str]) -> int:
+    return PLAN_RANK.get(plan or "village", 0)
+
+
+# Duo is for two people. "People" are the ones who sign in: parents,
+# co-parents, teens, helpers — plus anyone already invited. A child without a
+# login is not counted: a couple with a baby may still choose Duo, and the app
+# tells them first what that hides.
+DUO_MAX_PEOPLE = 2
+
+
+# The free trial a new household may start at setup: fourteen days of the
+# plan that fits it, with no card taken and nothing charged at the end. When
+# it ends the household is simply on Free again, with everything it made.
+TRIAL_DAYS = 14
+TRIAL_PLANS = ("duo", "executive", "household")
+HOUSEHOLD_LIVING = ("solo", "couple", "family", "two_homes")
+
+
+def recommended_plan(living: str, children: int) -> str:
+    """The plan a household of this shape is pointed at. Duo covers one or two
+    people; children bring Family, and more than Family holds bring
+    Household."""
+    if living in ("solo", "couple"):
+        return "duo"
+    limit = PLAN_CATALOG["executive"]["limits"]["max_children"]
+    return "household" if children > limit else "executive"
+
+
+def active_trial(family: dict, now: Optional[datetime] = None) -> Optional[dict]:
+    """The trial in force, or None. A household that is paying is never on
+    trial, whatever the dates say: the plan it bought is the plan it has."""
+    family = family or {}
+    if family.get("plan") not in (None, "village"):
+        return None
+    plan = family.get("trial_plan")
+    ends = _coerce_dt(family.get("trial_ends_at"))
+    if plan not in TRIAL_PLANS or not ends:
+        return None
+    now = now or utcnow()
+    if now >= ends:
+        return None
+    return {"plan": plan, "ends_at": ends,
+            "days_left": max(1, int(math.ceil((ends - now).total_seconds() / 86400)))}
+
+
+async def count_duo_people(database, family_id: str) -> int:
+    everyone = await database["family_members"].count_documents({"family_id": family_id})
+    children = await database["family_members"].count_documents(
+        {"family_id": family_id, "role": {"$regex": "^child$", "$options": "i"}}
+    )
+    signed_in = everyone - children
+    invited = await database["family_invites"].count_documents(
+        {"family_id": family_id, "status": "pending", "expires_at": {"$gt": utcnow()}}
+    )
+    return signed_in + invited
+
+
 # Features gated behind paid plans. Maps the feature flag to a user-facing
 # upgrade message used when a free-tier family hits the gate (HTTP 402).
 PREMIUM_FEATURE_MESSAGES = {
@@ -1108,13 +1200,13 @@ PREMIUM_FEATURE_MESSAGES = {
     # tier's old name, and the app shows this text as-is to anyone on a build
     # that does not translate it — so it went on sending people to look for a
     # plan the pricing screen no longer lists.
-    "meal_planner": "Meal Planner is available on the Family plan.",
+    "meal_planner": "Meal Planner is available on Duo and Family.",
     "allowance": "Pocket money tracking is available on the Family plan.",
     "carpool": "Carpool Coordinator is available on the Family plan.",
-    "weekly_report": "Weekly Report is available on the Family plan.",
+    "weekly_report": "Weekly Report is available on Duo and Family.",
     "helper_accounts": "Helper and carer accounts are available on the Household plan.",
-    "gift_pot": "The Gift Pot is available on Family.",
-    "secret_santa": "Sending a Secret Santa draw is available on Family.",
+    "gift_pot": "The Gift Pot is available on Duo and Family.",
+    "secret_santa": "Sending a Secret Santa draw is available on Duo and Family.",
 }
 
 
@@ -1380,7 +1472,10 @@ async def build_subscription(family_id: str):
         {"family_id": family_id, "role": {"$regex": "^child$", "$options": "i"}}
     )
     young_people_count = await count_young_people(database, family_id)
-    catalog = plan_catalog_for(family["plan"])
+    duo_people = await count_duo_people(database, family_id)
+    trial = active_trial(family)
+    effective_plan = trial["plan"] if trial else family["plan"]
+    catalog = plan_catalog_for(effective_plan)
     limits = catalog["limits"]
     # TESTING WINDOW: until billing is live, every family gets Premium limits so
     # closed-test families can exercise the gated features and aren't blocked by
@@ -1415,6 +1510,12 @@ async def build_subscription(family_id: str):
         "billing_cycle": family["billing_cycle"],
         # Card subscribers manage their plan on Stripe's page, not in a store.
         "billed_by_card": billed_by_card(family),
+        "billed_through": billed_through(family),
+        # A downgrade waiting for the renewal date: the plan it becomes and
+        # when. The Plans page says so, rather than leaving someone to wonder
+        # why the plan they chose has not appeared.
+        "pending_plan": family.get("pending_plan") or None,
+        "pending_plan_at": iso(family.get("pending_plan_at")),
         "grandfathered": grandfathered,
         "updated_at": iso(family.get("updated_at")),
         "ai_scans_used": family.get("ai_scans_used", 0),
@@ -1423,6 +1524,27 @@ async def build_subscription(family_id: str):
         "members_count": members_count,
         "children_count": children_count,
         "young_people_count": young_people_count,
+        # Whether Duo can be chosen, and why not. The Plans page shows the
+        # reason on the Duo card instead of letting a household of four buy a
+        # plan for two.
+        "duo_people_count": duo_people,
+        "duo_eligible": duo_people <= DUO_MAX_PEOPLE,
+        # Whether the app shows the children's sections. Hidden on Duo, or
+        # when the household chose to hide them. Nothing is deleted either way.
+        # An admin household is shown the top plan, so only its own choice
+        # hides anything there.
+        "kids_sections_hidden": bool(family.get("kids_sections_hidden"))
+                                or (effective_plan == "duo" and not admin_household),
+        "kids_sections_choice": bool(family.get("kids_sections_hidden")),
+        # A free trial in force: which plan, and until when. The plan above
+        # stays "village" — nothing has been bought — while the limits are
+        # the trial plan's.
+        "trial": ({"plan": trial["plan"], "ends_at": iso(trial["ends_at"]),
+                   "days_left": trial["days_left"]} if trial else None),
+        "trial_used": bool(family.get("trial_used")),
+        # Set up a brand-new household: asked once, at setup.
+        "household_setup_due": bool(family.get("household_setup_due")),
+        "household_living": family.get("household_living"),
         "limits": limits,
         "price_monthly": catalog["price_monthly"],
         "price_yearly": catalog["price_yearly"],
@@ -4920,6 +5042,22 @@ class SubscriptionChangeIn(BaseModel):
     billing_cycle: str
 
 
+class HouseholdSetupIn(BaseModel):
+    # Who lives here: "solo", "couple", "family" (one home) or "two_homes".
+    living: str
+    children: int = Field(default=0, ge=0, le=20)
+    # Start the free trial of the plan that fits. Optional: Free is always a
+    # full answer, and so is buying straight away.
+    start_trial: bool = False
+
+
+class KidsSectionsIn(BaseModel):
+    # A household without children (a couple, flatmates) can put the
+    # children's side of the app away. Hidden, never deleted: turning it back
+    # on shows everything exactly as it was.
+    hidden: bool
+
+
 class CustodyConfigIn(BaseModel):
     # Alternating custody (garde alternée). enabled turns the Feed/Calendar
     # markers on; our_weeks is the parity of ISO week the children are in this
@@ -6402,9 +6540,14 @@ async def _seed_new_family(database, user: dict, family_id: str, email: str, nam
         "billing_cycle": "monthly",
         "grandfathered": False,
         "updated_at": utcnow(),
+        "created_at": utcnow(),
         "ai_scans_used": 0,
         "ai_scans_period_start": utcnow(),
         "vault_bytes_used": 0,
+        # A brand-new household is asked who lives in it, once, during setup.
+        # Only households created from here on carry the flag: nobody already
+        # using the app, and nobody who joins by invitation, is asked.
+        "household_setup_due": True,
     })
     await database["family_members"].insert_one({
         "member_id": new_id("member"),
@@ -13342,6 +13485,62 @@ async def set_custody(payload: CustodyConfigIn, user=Depends(require_full_member
     return await build_subscription(user["family_id"])
 
 
+@app.post("/api/household/setup")
+async def household_setup(payload: HouseholdSetupIn, user=Depends(require_full_member)):
+    """The answer to "who lives with you?", given once by a new household.
+
+    It shapes the app, it never limits it: a couple or somebody on their own
+    has the children's sections put away (Settings brings them back), and the
+    household may start a fourteen-day trial of the plan that fits — no card,
+    nothing charged when it ends. Only households created with the question
+    can answer it, and only once, so an existing family or somebody who
+    joined by invitation is never re-shaped by it.
+    """
+    living = (payload.living or "").strip().lower()
+    if living not in HOUSEHOLD_LIVING:
+        raise HTTPException(status_code=400, detail="living must be solo, couple, family or two_homes")
+    database = get_db()
+    family = await get_family_doc(user["family_id"])
+    if not family.get("household_setup_due"):
+        raise HTTPException(status_code=409, detail="household_setup_done")
+    children = payload.children if living in ("family", "two_homes") else 0
+    plan = recommended_plan(living, children)
+    changes = {
+        "household_setup_due": False,
+        "household_living": living,
+        "household_children": children,
+        "household_setup_at": utcnow(),
+        "updated_at": utcnow(),
+    }
+    if living in ("solo", "couple"):
+        changes["kids_sections_hidden"] = True
+    if (payload.start_trial and not family.get("trial_used")
+            and family.get("plan") in (None, "village")):
+        changes["trial_plan"] = plan
+        changes["trial_started_at"] = utcnow()
+        changes["trial_ends_at"] = utcnow() + timedelta(days=TRIAL_DAYS)
+        changes["trial_used"] = True
+    await database["families"].update_one({"family_id": user["family_id"]}, {"$set": changes})
+    log.info("Household setup: family=%s living=%s trial=%s",
+             user["family_id"], living, changes.get("trial_plan") or "none")
+    sub = await build_subscription(user["family_id"])
+    sub["recommended_plan"] = plan
+    return sub
+
+
+@app.put("/api/family/kids-sections")
+async def set_kids_sections(payload: KidsSectionsIn, user=Depends(require_full_member)):
+    """Show or hide the children's sections for the whole household. On Duo
+    they stay hidden whatever this says — Duo has no children's side — and
+    the stored choice comes back into force if the household moves up."""
+    await get_db()["families"].update_one(
+        {"family_id": user["family_id"]},
+        {"$set": {"kids_sections_hidden": bool(payload.hidden), "updated_at": utcnow()}},
+        upsert=True,
+    )
+    return await build_subscription(user["family_id"])
+
+
 # -----------------------------------------------------------------------------
 # Billing (RevenueCat)
 # -----------------------------------------------------------------------------
@@ -13461,7 +13660,15 @@ def rc_plan_from_product(product: Optional[str],
     term: a lifetime entitlement, or a store that answered without dates.
     """
     pid = (product or "").lower()
-    plan = "household" if "household" in pid else "executive"
+    # Duo before the fallback: every Duo product carries the word (Google's
+    # `duo:monthly`, Apple's `ahenora_duo_yearly`), and without this line a
+    # €1.99 Duo purchase would be granted Family.
+    if "household" in pid:
+        plan = "household"
+    elif "duo" in pid:
+        plan = "duo"
+    else:
+        plan = "executive"
     cycle = rc_cycle_from_term(term_days)
     if cycle is None:
         cycle = "yearly" if ("year" in pid or "annual" in pid) else "monthly"
@@ -13749,6 +13956,11 @@ async def revenuecat_webhook(payload: dict, authorization: Optional[str] = Heade
         "rc_event_at": utcnow(),
         "updated_at": utcnow(),
     }
+    store = str(event.get("store") or "").strip().upper()
+    if store in RC_STORES:
+        # Which store this household pays through, so a plan switch is sent
+        # there and never started as a second subscription somewhere else.
+        changes["rc_store"] = RC_STORES[store]
     exp_ms = event.get("expiration_at_ms")
     if exp_ms:
         try:
@@ -13756,11 +13968,17 @@ async def revenuecat_webhook(payload: dict, authorization: Optional[str] = Heade
         except (ValueError, TypeError, OSError):
             pass
 
-    if event_type in RC_PREMIUM_EVENTS:
+    if event_type == "PRODUCT_CHANGE":
+        changes.update(rc_product_change(event, granted_plan, cycle, changes.get("rc_expires_at")))
+    elif event_type in RC_PREMIUM_EVENTS:
         changes["plan"] = granted_plan
         changes["billing_cycle"] = cycle
+        # The renewal is the moment a scheduled change lands; whatever was
+        # pending has now either happened or been replaced by this purchase.
+        changes["pending_plan"] = None
     elif event_type in RC_DOWNGRADE_EVENTS:
         changes["plan"] = "village"
+        changes["pending_plan"] = None
     # Other events (CANCELLATION, BILLING_ISSUE, TRANSFER, TEST) just record state.
 
     await database["families"].update_one(
@@ -13780,6 +13998,34 @@ async def revenuecat_webhook(payload: dict, authorization: Optional[str] = Heade
         store=event.get("store"),
     )
     return {"ok": True, "matched": True}
+
+
+def rc_product_change(event: dict, old_plan: str, old_cycle: str, period_end) -> dict:
+    """What a PRODUCT_CHANGE means for the household, which depends on the way
+    it goes.
+
+    RevenueCat sends it when somebody switches plans in the store. Its
+    `product_id` is the plan they are LEAVING and `new_product_id` the one they
+    chose. It used to be treated as a purchase of `product_id` — which kept
+    somebody who had just paid to move up from Duo to Family on Duo until the
+    next renewal, up to a year later.
+
+    Up: the stores apply an upgrade at once (Apple within the group; Google
+    with the time-prorated replacement the app asks for), so the new plan is
+    granted now. Down, or the same plan on another cycle: the stores wait for
+    the renewal date, so the household keeps what it has paid for and the
+    change is recorded as pending, to be applied by the renewal event.
+    """
+    new_pid = event.get("new_product_id")
+    if not new_pid:
+        return {"plan": old_plan, "billing_cycle": old_cycle}
+    new_plan, new_cycle = rc_plan_from_product(new_pid)
+    if plan_rank(new_plan) > plan_rank(old_plan):
+        return {"plan": new_plan, "billing_cycle": new_cycle,
+                "rc_product_id": new_pid, "pending_plan": None}
+    return {"plan": old_plan, "billing_cycle": old_cycle,
+            "pending_plan": new_plan, "pending_plan_cycle": new_cycle,
+            "pending_plan_at": period_end}
 
 
 async def _fetch_rc_subscriber(user_id: str, secret: str) -> dict:
@@ -13856,7 +14102,7 @@ async def reconcile_billing(user: dict = Depends(require_user)):
         # paying household, and must not read as one that never paid.
         changes["rc_last_event"] = "RECONCILE_VERIFIED"
         changes["rc_event_at"] = utcnow()
-    elif family.get("plan") in ("executive", "household") and family.get("rc_last_event"):
+    elif family.get("plan") in PAID_PLANS and family.get("rc_last_event"):
         changes["plan"] = "village"
 
     await database["families"].update_one(
@@ -14387,10 +14633,12 @@ def billing_is_live() -> bool:
 # The two paid tiers the app sells, and the internal plan id each grants. The
 # app screen speaks "family"/"household"; the catalog and webhooks speak
 # "executive"/"household". This is the one place the two vocabularies meet.
-STRIPE_TIER_TO_PLAN = {"family": "executive", "household": "household"}
+STRIPE_TIER_TO_PLAN = {"duo": "duo", "family": "executive", "household": "household"}
 # Where each (tier, cycle) reads its Stripe price id from the environment.
 # Family reuses the original two vars so nothing that already worked has to move.
 STRIPE_PRICE_ENV = {
+    ("duo", "monthly"): "STRIPE_PRICE_DUO_MONTHLY",
+    ("duo", "yearly"): "STRIPE_PRICE_DUO_YEARLY",
     ("family", "monthly"): "STRIPE_PRICE_MONTHLY",
     ("family", "yearly"): "STRIPE_PRICE_YEARLY",
     ("household", "monthly"): "STRIPE_PRICE_HOUSEHOLD_MONTHLY",
@@ -14412,6 +14660,17 @@ def _stripe_plan_for_price(price_id: Optional[str]) -> Optional[str]:
     for (tier, _cycle), env_key in STRIPE_PRICE_ENV.items():
         if os.environ.get(env_key) == price_id:
             return STRIPE_TIER_TO_PLAN[tier]
+    return None
+
+
+def _stripe_cycle_for_price(price_id: Optional[str]) -> Optional[str]:
+    """Which billing cycle a Stripe price is — so a switch from monthly to
+    yearly (or a scheduled move at renewal) is recorded as the cycle it is."""
+    if not price_id:
+        return None
+    for (_tier, cycle), env_key in STRIPE_PRICE_ENV.items():
+        if os.environ.get(env_key) == price_id:
+            return cycle
     return None
 
 
@@ -14506,7 +14765,11 @@ def stripe_event_changes(event: dict) -> tuple[Optional[str], Optional[str], dic
         if status in STRIPE_ACTIVE_STATUSES:
             # A renewal or a tier change carries only the subscription, so read
             # the plan back from its price. Fall back to Family if unmapped.
-            changes["plan"] = _stripe_plan_for_price(_stripe_sub_price_id(obj)) or "executive"
+            price_id = _stripe_sub_price_id(obj)
+            changes["plan"] = _stripe_plan_for_price(price_id) or "executive"
+            cycle = _stripe_cycle_for_price(price_id)
+            if cycle:
+                changes["billing_cycle"] = cycle
         else:
             changes["plan"] = "village"
         changes["stripe_subscription_status"] = status
@@ -14545,7 +14808,7 @@ async def stripe_checkout(payload: dict = Body(default=None), user=Depends(requi
         raise HTTPException(status_code=503, detail="Card checkout is not configured")
     tier = ((payload or {}).get("tier") or (payload or {}).get("plan") or "family").lower()
     if tier not in STRIPE_TIER_TO_PLAN:
-        raise HTTPException(status_code=400, detail="tier must be family or household")
+        raise HTTPException(status_code=400, detail="tier must be duo, family or household")
     cycle = ((payload or {}).get("cycle") or "monthly").lower()
     if cycle not in ("monthly", "yearly"):
         raise HTTPException(status_code=400, detail="cycle must be monthly or yearly")
@@ -14556,6 +14819,14 @@ async def stripe_checkout(payload: dict = Body(default=None), user=Depends(requi
 
     app_url = _public_app_url()
     family = await get_family_doc(user["family_id"])
+    # A household already paying by card changes its subscription; it never
+    # starts a second one. A second Checkout here meant two live subscriptions
+    # on one card — the old plan kept charging next to the new — which is the
+    # one outcome a plan switch must never have.
+    if billed_by_card(family) and family.get("stripe_subscription_id"):
+        raise HTTPException(status_code=409, detail="card_subscription_exists")
+    if internal_plan == "duo" and await count_duo_people(get_db(), user["family_id"]) > DUO_MAX_PEOPLE:
+        raise HTTPException(status_code=409, detail="duo_not_eligible")
     form = [
         ("mode", "subscription"),
         ("line_items[0][price]", price_id),
@@ -14603,6 +14874,36 @@ async def stripe_checkout(payload: dict = Body(default=None), user=Depends(requi
 CARD_SUBSCRIPTION_OVER = ("canceled", "incomplete_expired")
 
 
+def billed_through(family: dict) -> Optional[str]:
+    """Where this household's paid plan is billed: "card", "app_store",
+    "play_store", or None (free, founding, or no store on record).
+
+    A plan switch has to happen where the subscription lives. Bought on an
+    iPhone and switched on an Android phone, it would be a second subscription
+    in a second store, both charging. The store is read from the webhook when
+    RevenueCat said; before that field existed, the product id tells it —
+    every App Store product is named ahenora_*, no Google Play one is.
+    """
+    family = family or {}
+    if family.get("plan") not in PAID_PLANS:
+        return None
+    if billed_by_card(family):
+        return "card"
+    store = family.get("rc_store")
+    if store == "APP_STORE":
+        return "app_store"
+    if store == "PLAY_STORE":
+        return "play_store"
+    if store:
+        # A promotional grant (or any rail that is not a store) has nothing
+        # to change in a store: a new plan is simply bought.
+        return None
+    product = str(family.get("rc_product_id") or "").lower()
+    if not product:
+        return None
+    return "app_store" if product.startswith("ahenora_") else "play_store"
+
+
 def billed_by_card(family: dict) -> bool:
     """Whether this household's paid plan is a card subscription it can manage here.
 
@@ -14617,6 +14918,150 @@ def billed_by_card(family: dict) -> bool:
         and (family or {}).get("plan") in PAID_PLANS
         and (family or {}).get("stripe_subscription_status") not in CARD_SUBSCRIPTION_OVER
     )
+
+
+def _stripe_call(method: str, path: str, form=None) -> dict:
+    """One Stripe API call, with the failure turned into a 502 the app can
+    read. Blocking — callers run it in a thread."""
+    try:
+        resp = requests.request(
+            method, f"{STRIPE_API_BASE}{path}", data=form,
+            auth=(os.environ["STRIPE_SECRET_KEY"], ""), timeout=20,
+        )
+    except requests.RequestException as exc:
+        log.warning("Stripe %s %s failed: %s", method, path.split("/")[1], type(exc).__name__)
+        raise HTTPException(status_code=502, detail="card_change_failed")
+    if resp.status_code >= 400:
+        log.warning("Stripe %s %s refused %s: %s", method, path.split("/")[1],
+                    resp.status_code, resp.text[:300])
+        raise HTTPException(status_code=502, detail="card_change_failed")
+    return resp.json()
+
+
+def _stripe_period_end(sub: dict) -> Optional[int]:
+    """When the paid period ends. Newer Stripe API versions moved the period
+    from the subscription onto its items, so both places are read."""
+    end = sub.get("current_period_end")
+    if isinstance(end, int):
+        return end
+    items = ((sub.get("items") or {}).get("data")) or []
+    if items and isinstance(items[0].get("current_period_end"), int):
+        return items[0]["current_period_end"]
+    return None
+
+
+def stripe_switch_plan(sub_id: str, new_price: str, upgrade: bool) -> dict:
+    """Move a card subscription to another price, the way the stores do it.
+
+    Up: now. The new plan starts at once and Stripe charges only the
+    difference for the days left (proration, invoiced immediately). If that
+    payment fails, the change is not applied (pending_if_incomplete) — nobody
+    gets a better plan on a declined card, and nobody loses the one they had.
+
+    Down: at the renewal date. The household keeps what it paid for until the
+    end of the period, then the cheaper price takes over. That is a two-phase
+    subscription schedule: this period at the current price, then the new
+    price. A schedule left over from an earlier pending change is released
+    first, so the latest choice is the one that counts.
+
+    Returns {"effective": "now" | "renewal", "at": <unix ts or None>}.
+    """
+    sub = _stripe_call("GET", f"/subscriptions/{sub_id}")
+    items = ((sub.get("items") or {}).get("data")) or []
+    if not items:
+        raise HTTPException(status_code=502, detail="card_change_failed")
+    item = items[0]
+    current_price = (item.get("price") or {}).get("id") if isinstance(item.get("price"), dict) else item.get("price")
+    schedule = sub.get("schedule")
+    if isinstance(schedule, dict):
+        schedule = schedule.get("id")
+    if schedule:
+        _stripe_call("POST", f"/subscription_schedules/{schedule}/release")
+
+    if upgrade:
+        _stripe_call("POST", f"/subscriptions/{sub_id}", [
+            ("items[0][id]", item["id"]),
+            ("items[0][price]", new_price),
+            ("proration_behavior", "always_invoice"),
+            ("payment_behavior", "pending_if_incomplete"),
+        ])
+        return {"effective": "now", "at": None}
+
+    if current_price == new_price:
+        return {"effective": "renewal", "at": _stripe_period_end(sub)}
+    sched = _stripe_call("POST", "/subscription_schedules", [("from_subscription", sub_id)])
+    phases = sched.get("phases") or []
+    if not phases:
+        raise HTTPException(status_code=502, detail="card_change_failed")
+    start = phases[0].get("start_date")
+    end = phases[0].get("end_date") or _stripe_period_end(sub)
+    if not isinstance(start, int) or not isinstance(end, int):
+        raise HTTPException(status_code=502, detail="card_change_failed")
+    # The second phase needs an end of its own; one period's length is enough,
+    # because the schedule releases the subscription at the end of it and the
+    # subscription then simply renews at the new price.
+    length = max(end - start, 86400)
+    _stripe_call("POST", f"/subscription_schedules/{sched['id']}", [
+        ("end_behavior", "release"),
+        ("proration_behavior", "none"),
+        ("phases[0][items][0][price]", current_price),
+        ("phases[0][items][0][quantity]", "1"),
+        ("phases[0][start_date]", str(start)),
+        ("phases[0][end_date]", str(end)),
+        ("phases[1][items][0][price]", new_price),
+        ("phases[1][items][0][quantity]", "1"),
+        ("phases[1][end_date]", str(end + length)),
+    ])
+    return {"effective": "renewal", "at": end}
+
+
+@app.post("/api/billing/stripe/change")
+async def stripe_change_plan(payload: dict = Body(default=None), user=Depends(require_full_member)):
+    """Switch a card subscriber to another paid plan without a second
+    subscription. Upgrades apply now (the difference is charged); downgrades
+    wait for the renewal date. Moving to Free is a cancellation, which lives
+    on Stripe's own page (the portal), not here."""
+    if not os.environ.get("STRIPE_SECRET_KEY"):
+        raise HTTPException(status_code=503, detail="Card billing is not configured")
+    tier = ((payload or {}).get("tier") or "").lower()
+    cycle = ((payload or {}).get("cycle") or "monthly").lower()
+    if tier not in STRIPE_TIER_TO_PLAN:
+        raise HTTPException(status_code=400, detail="tier must be duo, family or household")
+    if cycle not in ("monthly", "yearly"):
+        raise HTTPException(status_code=400, detail="cycle must be monthly or yearly")
+    new_price = _stripe_price_id(tier, cycle)
+    if not new_price:
+        raise HTTPException(status_code=503, detail="That plan is not available for card checkout")
+    family = await get_family_doc(user["family_id"])
+    sub_id = (family or {}).get("stripe_subscription_id")
+    if not billed_by_card(family) or not sub_id:
+        raise HTTPException(status_code=404, detail="This household has no card subscription")
+    new_plan = STRIPE_TIER_TO_PLAN[tier]
+    if new_plan == "duo" and await count_duo_people(get_db(), user["family_id"]) > DUO_MAX_PEOPLE:
+        raise HTTPException(status_code=409, detail="duo_not_eligible")
+    current = family.get("plan")
+    if new_plan == current and cycle == family.get("billing_cycle"):
+        return {"ok": True, "effective": "none", "at": None, "plan": current}
+    # Same plan, other cycle: treated as a move up when going to yearly (paid
+    # now, like the stores do), down when going to monthly.
+    if new_plan == current:
+        upgrade = cycle == "yearly"
+    else:
+        upgrade = plan_rank(new_plan) > plan_rank(current)
+    result = await asyncio.to_thread(stripe_switch_plan, sub_id, new_price, upgrade)
+    changes = {"updated_at": utcnow()}
+    if result["effective"] == "renewal":
+        changes["pending_plan"] = new_plan
+        changes["pending_plan_cycle"] = cycle
+        changes["pending_plan_at"] = (
+            datetime.fromtimestamp(result["at"], tz=timezone.utc) if result.get("at") else None)
+    else:
+        changes["pending_plan"] = None
+    await get_db()["families"].update_one({"family_id": user["family_id"]}, {"$set": changes})
+    log.info("Card plan change: family=%s %s -> %s (%s)", user["family_id"], current,
+             new_plan, result["effective"])
+    return {"ok": True, "plan": new_plan, "effective": result["effective"],
+            "at": iso(changes.get("pending_plan_at")) if result["effective"] == "renewal" else None}
 
 
 @app.post("/api/billing/stripe/portal")
@@ -14703,6 +15148,9 @@ async def stripe_webhook(request: Request):
         )
         return {"ok": True, "matched": False}
 
+    if changes.get("plan") and (changes["plan"] == family.get("pending_plan")
+                                or changes["plan"] == "village"):
+        changes["pending_plan"] = None
     await database["families"].update_one(
         {"family_id": family["family_id"]}, {"$set": changes}
     )
@@ -14732,6 +15180,12 @@ async def stripe_config():
         "price_monthly": PLAN_CATALOG["executive"]["price_monthly"],
         "price_yearly": PLAN_CATALOG["executive"]["price_yearly"],
         "tiers": {
+            "duo": {
+                "plan": "duo",
+                "price_monthly": PLAN_CATALOG["duo"]["price_monthly"],
+                "price_yearly": PLAN_CATALOG["duo"]["price_yearly"],
+                "buyable": stripe_configured() and tier_ready("duo"),
+            },
             "family": {
                 "plan": "executive",
                 "price_monthly": PLAN_CATALOG["executive"]["price_monthly"],
@@ -18808,6 +19262,8 @@ ALLOWED_EVENTS = {
     # How many households say they share custody at setup. The wedge the app is
     # positioned on, and until now nothing counted whether anyone answered yes.
     "onboarding_custody_set",
+    # The new sign-up: who lives here was answered; a free trial was started.
+    "onboarding_household_set", "onboarding_trial_started",
     # Visits to the vault, as opposed to saves into it. Every other tab counted
     # its opens and this one did not, so the only question anybody actually
     # asked about the vault — does anyone find it? — had no answer, and got
@@ -19564,7 +20020,7 @@ LADDER_DEFINITIONS = {
 }
 
 
-PAID_PLANS = ("executive", "household")
+PAID_PLANS = ("duo", "executive", "household")
 
 
 @app.get("/api/metrics/paywall")

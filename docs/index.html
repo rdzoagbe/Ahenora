@@ -311,7 +311,7 @@
   /* ---------- pricing ---------- */
   /* Three tiers now, so the row widens and the cards wrap rather than being
      squeezed: a plan whose price wraps mid-figure reads as a mistake. */
-  .plans { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px; max-width: 1080px; margin: 0 auto; }
+  .plans { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; max-width: 1180px; margin: 0 auto; }
   .cycle { display: flex; justify-content: center; gap: 4px; margin: 0 auto 22px; padding: 4px;
            background: var(--bg-warm); border: 1px solid var(--line); border-radius: 999px; width: max-content; }
   .cycle-btn { font: inherit; font-size: 14px; font-weight: 600; color: var(--muted); cursor: pointer;
@@ -644,11 +644,11 @@
       <div class="section-head">
         <span class="kicker">Pricing</span>
         <h2>Simple plans</h2>
-        <p>Every parent is always free, and so is everything that keeps a family coordinated — the calendar, tasks, chores and the shared lists. The paid plans add room for more children and the extras below.</p>
+        <p>Every parent is always free, and so is everything that keeps a family coordinated — the calendar, tasks, chores and the shared lists. The paid plans add the extras below: Duo for two people, Family and Household for more children.</p>
       </div>
       <!-- Monthly / yearly, the same choice the app offers. The saving is shown
-           PER CARD because it is not the same on both: a year of Family saves
-           40%, a year of Household saves 17%. One badge over the toggle would
+           PER CARD because it is not the same on each: a year of Duo saves 16%,
+           of Family 40%, of Household 17%. One badge over the toggle would
            have been a false claim on one of the two. -->
       <div class="cycle" role="group" aria-label="Billing period">
         <button type="button" class="cycle-btn is-on" data-cycle="monthly" aria-pressed="true">Monthly</button>
@@ -664,6 +664,21 @@
             <li>Kids' chores, stars and rewards</li>
             <li>View any document you've saved</li>
             <li>All reminders and nudges</li>
+          </ul>
+        </div>
+        <div class="plan">
+          <h3>Duo</h3>
+          <div class="price"
+               data-m="&euro;1.99" data-m-note="/ month"
+               data-y="&euro;19.99" data-y-note="/ year &middot; &euro;1.67 a month">
+            &euro;1.99 <span>/ month</span></div>
+          <p class="saving" hidden>Saves &euro;3.89 a year &mdash; 16% off monthly</p>
+          <ul>
+            <li class="lead">For couples and two-person homes:</li>
+            <li>Meal planner, saved plans and recipe AI</li>
+            <li>Unlimited scans</li>
+            <li>The Sunday brief and weekly report</li>
+            <li>Gift pot and a larger document vault</li>
           </ul>
         </div>
         <div class="plan featured">

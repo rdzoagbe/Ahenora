@@ -1,6 +1,6 @@
 {
   "title": "Terms & Support",
-  "updated": "24 September 2026",
+  "updated": "28 September 2026",
   "subtitle": "Terms of use, who may hold an account, acceptable use, subscriptions, limits of liability, and support contact for the Ahenora app.",
   "intro": "These terms cover your use of Ahenora — who may use it, what you may do with it, what we promise, and what we do not. By using Ahenora you agree to them. If you do not, please stop using the app and delete your account.",
   "sections": [
@@ -35,7 +35,7 @@
     },
     {
       "title": "Subscriptions and payments",
-      "body": "The paid plans, Family and Household, are billed by the App Store on iPhone, by Google Play on Android, or by card through Stripe on the web, at the price shown before you buy. They renew automatically until cancelled. Cancel a store subscription in the App Store or Google Play, where you bought it; cancel a card subscription online from the Plans page in the web app at ahenora.com/app (Manage or cancel your card subscription), or write to support@ahenora.com from your account email. Cancelling keeps the plan until the end of the paid period. Refunds for store purchases follow the App Store's or Google Play's policy; for card purchases, you keep every right your local law gives you. If a payment fails or a subscription lapses, the household returns to the free plan and its data is not deleted."
+      "body": "The paid plans, Duo, Family and Household, are billed by the App Store on iPhone, by Google Play on Android, or by card through Stripe on the web, at the price shown before you buy. They renew automatically until cancelled. Cancel a store subscription in the App Store or Google Play, where you bought it; cancel a card subscription online from the Plans page in the web app at ahenora.com/app (Manage or cancel your card subscription), or write to support@ahenora.com from your account email. Cancelling keeps the plan until the end of the paid period. Moving to a higher plan takes effect at once, and the unused part of the old plan is credited; moving to a lower plan takes effect at the next renewal date. Moving to a plan without the children’s sections hides them; nothing is deleted, and they come back on a plan that has them. Refunds for store purchases follow the App Store's or Google Play's policy; for card purchases, you keep every right your local law gives you. If a payment fails or a subscription lapses, the household returns to the free plan and its data is not deleted."
     },
     {
       "title": "Availability, and what we do not promise",

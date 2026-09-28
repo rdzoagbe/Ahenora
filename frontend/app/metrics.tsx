@@ -31,6 +31,8 @@ const EVENT_LABELS: Record<string, string> = {
   // Counted since launch but never shown — the custody one is the wedge the
   // app is positioned on, and the number sat in Mongo unread.
   onboarding_custody_set: 'Onboardings that set custody',
+  onboarding_household_set: 'New households that said who lives there',
+  onboarding_trial_started: 'Free trials started at setup',
   onboarding_skipped: 'Onboardings skipped',
   calendar_import_cancelled: 'Calendar imports cancelled',
 };
