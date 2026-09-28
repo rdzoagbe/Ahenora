@@ -189,6 +189,28 @@ export async function purchasePremium(
   }
 }
 
+/**
+ * Whether the store can sell this tier here right now: its offering exists
+ * and its products loaded. The App Store only hands out a product once Apple
+ * has approved it (the review sandbox excepted), so this is how Duo stays off
+ * iPhones until approval without a second release — and appears by itself
+ * the day it is approved. False on the web and wherever billing is missing.
+ */
+export async function tierReady(userId: string, tier: PurchaseTier): Promise<boolean> {
+  const loaded = await getPurchases();
+  if (!loaded || !(await initBilling(userId))) return false;
+  try {
+    const offerings = await loaded.Purchases.getOfferings();
+    const offering = tier === 'household'
+      ? offerings?.all?.[HOUSEHOLD_OFFERING_ID]
+      : tier === 'duo' ? offerings?.all?.[DUO_OFFERING_ID] : offerings?.current;
+    return Boolean(offering?.availablePackages?.some((p: any) => p?.product?.identifier));
+  } catch (e) {
+    logger.warn('billing: offerings unavailable', e);
+    return false;
+  }
+}
+
 /** Restore purchases (e.g. reinstalled app / new device). */
 export async function restorePurchases(userId: string): Promise<BillingResult> {
   const loaded = await getPurchases();

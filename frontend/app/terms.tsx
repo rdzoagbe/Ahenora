@@ -7,7 +7,7 @@ export default function TermsScreen() {
     <LegalPage
       title={'Terms & Support'}
       subtitle={'Terms of use, who may hold an account, acceptable use, subscriptions, limits of liability, and support contact for the Ahenora app.'}
-      updatedAt={'24 September 2026'}
+      updatedAt={'28 September 2026'}
       sections={[
         {
           title: 'About this app',

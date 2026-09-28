@@ -14,6 +14,7 @@ import { logger } from '../src/logger';
 import { isoWeek } from '../src/utils/date';
 import type { CustodyWeeks } from '../src/utils/date';
 import { PLAN_HIGHLIGHTS, PLAN_PRICE, recommendPlan, type Living } from '../src/planChange';
+import { useDuoOffered } from '../src/duoOffered';
 
 // Guided, account-seeding onboarding: by the time the user lands on the
 // dashboard it already has a task, a shopping list and (optionally) a co-parent
@@ -59,6 +60,10 @@ export default function Onboarding() {
   const [subscribeAfter, setSubscribeAfter] = useState(false);
   const withChildren = living === 'family' || living === 'two_homes';
   const recommended = living ? recommendPlan(living, withChildren ? children : 0) : 'duo';
+  // The trial needs no store; buying does. Where Duo cannot be bought yet
+  // (an iPhone before Apple approves it), "Subscribe now" is not offered for it.
+  const duoOffered = useDuoOffered();
+  const canSubscribeNow = recommended !== 'duo' || duoOffered;
 
   const firstName = (user?.name || '').split(' ')[0];
   // Which ISO week it is right now, so the custody question can be answered by
@@ -358,11 +363,13 @@ export default function Onboarding() {
               </PressScale>
               <Text style={[styles.subSmall, { color: theme.colors.textMuted, textAlign: 'center', marginTop: 8 }]}>{t('ob_trial_note')}</Text>
               <View style={styles.planAlt}>
+                {canSubscribeNow ? (
                 <PressScale testID="onboarding-subscribe-now" accessibilityRole="button" disabled={planBusy}
                   onPress={() => { choosePlan('subscribe').catch(() => undefined); }}
                   style={[styles.altBtn, { borderColor: theme.colors.cardBorder }]}>
                   <Text style={[styles.altText, { color: theme.colors.text }]}>{t('ob_subscribe_now')}</Text>
                 </PressScale>
+                ) : null}
                 <PressScale testID="onboarding-start-free" accessibilityRole="button" disabled={planBusy}
                   onPress={() => { choosePlan('free').catch(() => undefined); }}
                   style={[styles.altBtn, { borderColor: theme.colors.cardBorder }]}>

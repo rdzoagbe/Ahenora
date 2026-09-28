@@ -161,3 +161,18 @@ describe('every Duo string exists in every language', () => {
     }
   });
 });
+
+describe('Duo waits for the App Store on an iPhone', () => {
+  it('is offered on an iPhone only once the store hands out the Duo products', () => {
+    const hook = read('duoOffered.ts');
+    expect(hook).toContain("Platform.OS !== 'ios'");
+    expect(hook).toContain("tierReady(userId, 'duo')");
+    expect(read('billing.ts')).toContain('offering?.availablePackages?.some(');
+  });
+
+  it('the Plans page, the setup step and the news all ask', () => {
+    expect(read('components', 'PricingView.tsx')).toContain("p !== 'duo' || duoOffered || currentPlan === 'duo'");
+    expect(read('..', 'app', 'onboarding.tsx')).toContain("recommended !== 'duo' || duoOffered");
+    expect(read('components', 'UpdateNotice.tsx')).toContain("!k.startsWith('wn_duo')");
+  });
+});

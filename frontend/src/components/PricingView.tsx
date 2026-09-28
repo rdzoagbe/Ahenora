@@ -25,6 +25,7 @@ import { useStore } from '../store';
 import { api, Plan, BillingCycle, bustSubscriptionCache } from '../api';
 import { purchasePremium, restorePurchases } from '../billing';
 import { PlanChangeSheet, PLAN_RANK } from './PlanChangeSheet';
+import { useDuoOffered } from '../duoOffered';
 
 // Where a web (or billing-less) user is sent to actually subscribe. Store
 // billing only exists in the native app, so on web the purchase and restore
@@ -121,6 +122,10 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
   // are buyable yet. Null until asked.
   const [stripeCfg, setStripeCfg] = useState<Awaited<ReturnType<typeof api.getStripeConfig>> | null>(null);
   const currentPlan: Plan = subscription?.plan ?? 'village';
+  // Duo is listed where it can be bought; a household already on it always
+  // sees its own plan.
+  const duoOffered = useDuoOffered();
+  const planOrder = PLAN_ORDER.filter((p) => p !== 'duo' || duoOffered || currentPlan === 'duo');
   const onWeb = Platform.OS === 'web';
   const tierBuyable = (plan: Plan): boolean => {
     const tier = PLAN_TO_TIER[plan];
@@ -474,7 +479,7 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
         </View>
 
         <View style={styles.cardsContainer}>
-          {PLAN_ORDER.map((plan) => (
+          {planOrder.map((plan) => (
             <View key={plan}>
               <PlanCard
                 plan={plan}
