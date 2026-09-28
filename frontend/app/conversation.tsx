@@ -82,5 +82,5 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: ui.line,
   },
   back: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-  title: { flex: 1, textAlign: 'center', fontFamily: 'Inter_800ExtraBold', fontSize: 17, color: ui.text },
+  title: { flex: 1, textAlign: 'center', fontFamily: 'Figtree_800ExtraBold', fontSize: 17, color: ui.text },
 });

@@ -226,7 +226,7 @@ export function AvatarPicker({
 
 const styles = StyleSheet.create({
   box: { alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  initial: { fontFamily: 'Inter_800ExtraBold' },
+  initial: { fontFamily: 'Figtree_800ExtraBold' },
 });
 
 const pickerStyles = StyleSheet.create({
@@ -237,5 +237,5 @@ const pickerStyles = StyleSheet.create({
   option: { width: 58, height: 58, borderRadius: 29, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   optionOn: { borderWidth: 2.5 },
   swatch: { width: 30, height: 30, borderRadius: 15, borderWidth: 1.5 },
-  label: { fontFamily: 'Inter_600SemiBold', fontSize: 12.5, marginRight: 2 },
+  label: { fontFamily: 'Figtree_600SemiBold', fontSize: 12.5, marginRight: 2 },
 });

@@ -172,20 +172,20 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   // footer, so that reservation would just read as dead space under the buttons.
   sheet: { backgroundColor: ui.card, borderColor: ui.line, paddingBottom: 24 },
   header: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 },
-  title: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 17 },
+  title: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 17 },
 
   cols: { flexDirection: 'row', gap: 10 },
   col: { flex: 1 },
-  colLabel: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 12, marginBottom: 7, textAlign: 'center' },
+  colLabel: { color: ui.muted, fontFamily: 'Figtree_700Bold', fontSize: 12, marginBottom: 7, textAlign: 'center' },
   colScroll: { height: 188, backgroundColor: ui.bg, borderRadius: 12, borderWidth: 1, borderColor: ui.line },
   cell: { paddingVertical: 9, alignItems: 'center', borderRadius: 9, marginHorizontal: 4, marginVertical: 2 },
   cellOn: { backgroundColor: ui.orange },
-  cellText: { color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 14.5 },
-  cellTextOn: { color: '#fff', fontFamily: 'Inter_800ExtraBold' },
+  cellText: { color: ui.text, fontFamily: 'Figtree_600SemiBold', fontSize: 14.5 },
+  cellTextOn: { color: '#fff', fontFamily: 'Figtree_800ExtraBold' },
 
   footer: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 18 },
   clearBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 13, paddingHorizontal: 16, borderRadius: 12, borderWidth: 1, borderColor: ui.line },
-  clearText: { color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 13.5 },
+  clearText: { color: ui.muted, fontFamily: 'Figtree_700Bold', fontSize: 13.5 },
   saveBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 12, backgroundColor: ui.orange },
-  saveText: { color: '#fff', fontFamily: 'Inter_800ExtraBold', fontSize: 14.5 },
+  saveText: { color: '#fff', fontFamily: 'Figtree_800ExtraBold', fontSize: 14.5 },
 });

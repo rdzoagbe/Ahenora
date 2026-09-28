@@ -94,7 +94,7 @@ const styles = StyleSheet.create({
   emoji: {
     fontSize: 28,
     fontWeight: '800',
-    color: '#F56519',
+    color: '#B0450B',
     width: 56,
     height: 56,
     lineHeight: 56,
@@ -105,20 +105,20 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   title: {
-    fontFamily: 'Inter_800ExtraBold',
+    fontFamily: 'Figtree_800ExtraBold',
     fontSize: 20,
     textAlign: 'center',
     marginBottom: 8,
   },
   subtitle: {
-    fontFamily: 'Inter_500Medium',
+    fontFamily: 'Figtree_500Medium',
     fontSize: 14,
     lineHeight: 20,
     textAlign: 'center',
     marginBottom: 20,
   },
   detail: {
-    fontFamily: 'Inter_500Medium',
+    fontFamily: 'Figtree_500Medium',
     fontSize: 12,
     lineHeight: 17,
     textAlign: 'center',
@@ -126,14 +126,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
   },
   button: {
-    backgroundColor: '#F56519',
+    backgroundColor: '#CA470A',
     borderRadius: 99,
     paddingHorizontal: 28,
     paddingVertical: 14,
   },
   buttonText: {
     color: '#FFFFFF',
-    fontFamily: 'Inter_800ExtraBold',
+    fontFamily: 'Figtree_800ExtraBold',
     fontSize: 15,
   },
 });

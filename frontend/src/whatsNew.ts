@@ -36,3 +36,35 @@ export const WHATS_NEW: Record<string, string[]> = {
     'wn_102_recipes',
   ],
 };
+
+/**
+ * Releases that ship over the air, announced by date.
+ *
+ * WHATS_NEW is keyed by the store version, which an over-the-air update does
+ * not change — so everything shipped between store builds (most of what
+ * ships) arrived in silence. A release here is announced once to anyone who
+ * had the app before it, exactly like a store version: a first run records it
+ * without announcing it.
+ *
+ * To announce a release: add its notes here and set CURRENT_RELEASE to its
+ * date. Same rules as above — three bullets at most, i18n keys, the tab to
+ * look on. Set it to '' to fall back to announcing store versions only.
+ */
+export const RELEASE_NOTES: Record<string, string[]> = {
+  '2026-09-28': [
+    'wn_2609_look',
+    'wn_2609_links',
+    'wn_2609_feedback',
+  ],
+};
+
+export const CURRENT_RELEASE = '2026-09-28';
+
+/** What the banner announces: the current release if one is set, else the store version. */
+export function announcement(version: string): { key: string; items: string[]; byDate: boolean } {
+  if (CURRENT_RELEASE && RELEASE_NOTES[CURRENT_RELEASE]?.length) {
+    return { key: CURRENT_RELEASE, items: RELEASE_NOTES[CURRENT_RELEASE], byDate: true };
+  }
+  return { key: version, items: WHATS_NEW[version] || [], byDate: false };
+}
+

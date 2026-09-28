@@ -46,7 +46,7 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   label: {
-    fontFamily: 'Inter_700Bold',
+    fontFamily: 'Figtree_700Bold',
     fontSize: 13,
   },
 });

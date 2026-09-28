@@ -62,14 +62,14 @@ const styles = StyleSheet.create({
   },
   text: {
     color: '#FFFFFF',
-    fontFamily: 'Inter_700Bold',
+    fontFamily: 'Figtree_700Bold',
     fontSize: 13,
     letterSpacing: 0.2,
     textAlign: 'center',
   },
   sub: {
     color: 'rgba(255,255,255,0.72)',
-    fontFamily: 'Inter_500Medium',
+    fontFamily: 'Figtree_500Medium',
     fontSize: 11.5,
     marginTop: 2,
     textAlign: 'center',

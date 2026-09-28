@@ -50,13 +50,13 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     borderWidth: 1,
   },
-  title: { fontFamily: 'Inter_800ExtraBold', fontSize: 25, lineHeight: 31,
+  title: { fontFamily: 'Figtree_800ExtraBold', fontSize: 25, lineHeight: 31,
     textAlign: 'center',
     letterSpacing: -0.35,
   },
   message: {
     marginTop: 8,
-    fontFamily: 'Inter_500Medium',
+    fontFamily: 'Figtree_500Medium',
     fontSize: 15,
     lineHeight: 22,
     textAlign: 'center',
@@ -68,7 +68,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   actionText: {
-    fontFamily: 'Inter_800ExtraBold',
+    fontFamily: 'Figtree_800ExtraBold',
     fontSize: 15,
   },
 });

@@ -87,6 +87,6 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
     marginTop: 8,
   },
-  native: { fontFamily: 'Inter_600SemiBold', fontSize: 16 },
-  label: { fontFamily: 'Inter_400Regular', fontSize: 12, marginTop: 2 },
+  native: { fontFamily: 'Figtree_600SemiBold', fontSize: 16 },
+  label: { fontFamily: 'Figtree_400Regular', fontSize: 12, marginTop: 2 },
 });

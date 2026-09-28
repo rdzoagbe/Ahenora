@@ -221,25 +221,25 @@ const createStyles = (ui: UIColors) =>
     iconBtn: { padding: 8, borderRadius: 999, backgroundColor: ui.soft },
     box: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, paddingHorizontal: 14 },
     input: {
-      flex: 1, color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 16,
+      flex: 1, color: ui.text, fontFamily: 'Figtree_600SemiBold', fontSize: 16,
       // Web focus rings on a field that already sits inside a bordered card
       // read as a double border.
       outlineStyle: 'none' as never,
     },
     clearBtn: { padding: 5, borderRadius: 999, backgroundColor: ui.soft },
     empty: { paddingTop: 34, paddingHorizontal: 8, gap: 6, alignItems: 'center' },
-    emptyTitle: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 16, textAlign: 'center' },
-    emptyBody: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 13.5, textAlign: 'center', lineHeight: 20 },
+    emptyTitle: { color: ui.text, fontFamily: 'Figtree_700Bold', fontSize: 16, textAlign: 'center' },
+    emptyBody: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 13.5, textAlign: 'center', lineHeight: 20 },
     group: { marginTop: 18, gap: 8 },
     groupLabel: {
-      color: ui.muted, fontFamily: 'Inter_700Bold', fontSize: 11.5,
+      color: ui.muted, fontFamily: 'Figtree_700Bold', fontSize: 11.5,
       letterSpacing: 0.8, textTransform: 'uppercase', paddingLeft: 4,
     },
     groupCard: { padding: 0, overflow: 'hidden' },
     row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13, paddingHorizontal: 14 },
     rowDivider: { borderTopWidth: 1, borderTopColor: ui.line },
     tile: { width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
-    rowTitle: { color: ui.text, fontFamily: 'Inter_600SemiBold', fontSize: 15 },
-    rowSub: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, marginTop: 1 },
-    truncated: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12.5, textAlign: 'center', marginTop: 16 },
+    rowTitle: { color: ui.text, fontFamily: 'Figtree_600SemiBold', fontSize: 15 },
+    rowSub: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 12.5, marginTop: 1 },
+    truncated: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 12.5, textAlign: 'center', marginTop: 16 },
   });

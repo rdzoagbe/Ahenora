@@ -55,7 +55,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(239,68,68,0.25)',
   },
   title: {
-    fontFamily: 'Inter_800ExtraBold',
+    fontFamily: 'Figtree_800ExtraBold',
     fontSize: 24,
     lineHeight: 30,
     textAlign: 'center',
@@ -63,7 +63,7 @@ const styles = StyleSheet.create({
   },
   message: {
     marginTop: 8,
-    fontFamily: 'Inter_500Medium',
+    fontFamily: 'Figtree_500Medium',
     fontSize: 15,
     lineHeight: 22,
     textAlign: 'center',
@@ -75,7 +75,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   actionText: {
-    fontFamily: 'Inter_800ExtraBold',
+    fontFamily: 'Figtree_800ExtraBold',
     fontSize: 15,
   },
 });

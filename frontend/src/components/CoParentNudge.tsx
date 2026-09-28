@@ -211,22 +211,22 @@ export function CoParentNudge({ visible, onInvite, stranded, onResend }: Props) 
 
 const createStyles = (ui: UIColors) => StyleSheet.create({
   note: {
-    color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 8,
+    color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 12, marginTop: 8,
   },
   secondary: { alignItems: 'center', paddingVertical: 10, marginTop: 2 },
   secondaryText: {
-    color: ui.muted, fontFamily: 'Inter_600SemiBold', fontSize: 13,
+    color: ui.muted, fontFamily: 'Figtree_600SemiBold', fontSize: 13,
   },
   card: { borderRadius: 20, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.orangeSoft, padding: 16, marginBottom: 16 },
   dismiss: { position: 'absolute', top: 10, right: 10, padding: 6, zIndex: 1 },
   iconTile: { width: 44, height: 44, borderRadius: 13, backgroundColor: ui.orangeSoft, alignItems: 'center', justifyContent: 'center', marginBottom: 11 },
-  title: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 18, letterSpacing: -0.3 },
-  body: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 14, lineHeight: 20, marginTop: 5, marginBottom: 14 },
+  title: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 18, letterSpacing: -0.3 },
+  body: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 14, lineHeight: 20, marginTop: 5, marginBottom: 14 },
   // orangeDeep, not the brand orange: white text on #F56519 reads at 3.11:1.
   // The palette has carried a deeper orange for white-on-fill since the last
   // legibility pass — this button missed it because the card it sits on was
   // switched off before anything could measure it.
   cta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, backgroundColor: ui.orangeDeep, paddingVertical: 13, borderRadius: 14 },
-  ctaText: { color: '#fff', fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
+  ctaText: { color: '#fff', fontFamily: 'Figtree_800ExtraBold', fontSize: 15 },
   ctaOff: { opacity: 0.55 },
 });

@@ -9,16 +9,15 @@ import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import { useFonts } from 'expo-font';
 import {
-  Inter_400Regular,
-  Inter_500Medium,
-  Inter_600SemiBold,
-  Inter_700Bold,
-  Inter_800ExtraBold,
-} from '@expo-google-fonts/inter';
+  Figtree_400Regular,
+  Figtree_500Medium,
+  Figtree_600SemiBold,
+  Figtree_700Bold,
+  Figtree_800ExtraBold,
+} from '@expo-google-fonts/figtree';
 import {
   PlayfairDisplay_400Regular_Italic,
   PlayfairDisplay_700Bold,
-  PlayfairDisplay_800ExtraBold,
 } from '@expo-google-fonts/playfair-display';
 import { Platform } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -239,14 +238,13 @@ function RootNavigator() {
 
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({
-    Inter_400Regular,
-    Inter_500Medium,
-    Inter_600SemiBold,
-    Inter_700Bold,
-    Inter_800ExtraBold,
+    Figtree_400Regular,
+    Figtree_500Medium,
+    Figtree_600SemiBold,
+    Figtree_700Bold,
+    Figtree_800ExtraBold,
     PlayfairDisplay_400Regular_Italic,
     PlayfairDisplay_700Bold,
-    PlayfairDisplay_800ExtraBold,
   });
 
   useEffect(() => {

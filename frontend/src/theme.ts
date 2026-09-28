@@ -37,43 +37,43 @@ export interface AppTheme {
 }
 
 /**
- * Reference-style palette:
- * - soft warm-grey app canvas
- * - solid white elevated cards
- * - near-black text/buttons
- * - restrained orange accent for task dots/counts only
+ * The Ahenóra palette (rebrand, stage 1):
+ * - Shea, a warm off-white ground, under white cards
+ * - Ink, a warm near-black, for text and dark buttons
+ * - one orange (#F26A1B) for actions and stars; a deeper ink of it for text
  */
 export const lightTheme: AppTheme = {
   mode: 'light',
   colors: {
-    bg: '#F4F5F2',
+    // The rebrand's warm ground (Shea) under white cards. Every ink below was
+    // measured against bg, card and bgSoft; src/__tests__/brandContrast.test.ts
+    // holds each pair at the WCAG bar so a later tweak cannot quietly fail it.
+    bg: '#FAF6F1',
     bgElevated: '#FFFFFF',
-    bgSoft: '#ECEEEC',
+    bgSoft: '#F3ECE3',
     card: '#FFFFFF',
-    cardBorder: 'rgba(31,35,35,0.08)',
+    cardBorder: 'rgba(34,32,29,0.09)',
     glassTint: '#FFFFFF',
-    text: '#202323',
-    // Both greys were chosen by eye and both failed a measured contrast sweep
-    // (4.3:1 and 2.5:1 on white). textSoft is the quieter of the two and marks
-    // inactive controls, so it clears the 3:1 bar WCAG sets for those rather
-    // than the 4.5:1 for body text.
-    textMuted: '#5F6667',
-    textSoft: '#767D7E',
+    text: '#22201D',
+    // textMuted is body text (4.5:1); textSoft marks inactive controls, which
+    // WCAG holds to 3:1.
+    textMuted: '#6B635B',
+    textSoft: '#80776E',
     tabBar: '#FFFFFF',
-    tabBorder: 'rgba(31,35,35,0.08)',
-    primary: '#202323',
+    tabBorder: 'rgba(34,32,29,0.08)',
+    primary: '#22201D',
     primaryText: '#FFFFFF',
     accent: '#F26A1B',
     accentSoft: 'rgba(242,106,27,0.12)',
-    accentInk: '#B8410A',
-    success: '#11B886',
-    danger: '#C81E1E',
-    shadow: '#202323',
+    accentInk: '#B0450B',
+    success: '#2F7D55',
+    danger: '#B8322A',
+    shadow: '#22201D',
   },
   ambient: {
-    base: '#F4F5F2',
+    base: '#FAF6F1',
     glowA: ['rgba(255,255,255,0.92)', 'rgba(255,255,255,0)'],
-    glowB: ['rgba(222,225,222,0.74)', 'rgba(222,225,222,0)'],
+    glowB: ['rgba(243,236,227,0.74)', 'rgba(243,236,227,0)'],
     glowC: ['rgba(242,106,27,0.08)', 'rgba(242,106,27,0)'],
   },
 };
@@ -81,31 +81,32 @@ export const lightTheme: AppTheme = {
 export const darkTheme: AppTheme = {
   mode: 'dark',
   colors: {
-    bg: '#101419',
-    bgElevated: '#171D24',
-    bgSoft: '#202833',
-    card: '#171D24',
-    cardBorder: 'rgba(255,255,255,0.10)',
-    glassTint: '#171D24',
-    text: '#F8FAFC',
-    textMuted: '#CBD5E1',
-    textSoft: '#94A3B8',
-    tabBar: '#202323',
-    tabBorder: 'rgba(255,255,255,0.08)',
-    primary: '#FFFFFF',
-    primaryText: '#202323',
+    // Warm dark, not blue-grey: the same brand at night.
+    bg: '#15120F',
+    bgElevated: '#211D19',
+    bgSoft: '#2A2520',
+    card: '#211D19',
+    cardBorder: 'rgba(255,240,225,0.10)',
+    glassTint: '#211D19',
+    text: '#F5EFE8',
+    textMuted: '#B3A698',
+    textSoft: '#8F8377',
+    tabBar: '#1B1815',
+    tabBorder: 'rgba(255,240,225,0.08)',
+    primary: '#F5EFE8',
+    primaryText: '#22201D',
     accent: '#F26A1B',
     accentSoft: 'rgba(242,106,27,0.18)',
-    accentInk: '#FF9A63',
-    success: '#22C55E',
-    danger: '#F87171',
+    accentInk: '#FF9B5E',
+    success: '#7CCB9C',
+    danger: '#F08A80',
     shadow: '#000000',
   },
   ambient: {
-    base: '#101419',
-    glowA: ['rgba(255,255,255,0.04)', 'rgba(255,255,255,0)'],
+    base: '#15120F',
+    glowA: ['rgba(255,240,225,0.04)', 'rgba(255,240,225,0)'],
     glowB: ['rgba(242,106,27,0.12)', 'rgba(242,106,27,0)'],
-    glowC: ['rgba(17,184,134,0.08)', 'rgba(17,184,134,0)'],
+    glowC: ['rgba(124,203,156,0.06)', 'rgba(124,203,156,0)'],
   },
 };
 

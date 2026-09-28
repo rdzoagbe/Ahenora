@@ -136,9 +136,9 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     backgroundColor: ui.orangeSoft, borderWidth: 1, borderColor: ui.orange,
     borderRadius: 999, paddingVertical: 10, paddingHorizontal: 14,
   },
-  text: { flex: 1, minWidth: 0, color: ui.orangeText, fontFamily: 'Inter_600SemiBold', fontSize: 13, lineHeight: 18 },
+  text: { flex: 1, minWidth: 0, color: ui.orangeText, fontFamily: 'Figtree_600SemiBold', fontSize: 13, lineHeight: 18 },
   btn: { backgroundColor: ui.orangeDeep, borderRadius: 999, paddingVertical: 7, paddingHorizontal: 14 },
-  btnText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 12.5 },
+  btnText: { color: '#FFFFFF', fontFamily: 'Figtree_800ExtraBold', fontSize: 12.5 },
   dismiss: { padding: 2 },
-  dismissText: { color: ui.orangeText, fontFamily: 'Inter_700Bold', fontSize: 13 },
+  dismissText: { color: ui.orangeText, fontFamily: 'Figtree_700Bold', fontSize: 13 },
 });

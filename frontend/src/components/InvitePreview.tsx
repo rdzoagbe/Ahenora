@@ -97,7 +97,7 @@ const styles = StyleSheet.create({
   wrap: { borderRadius: 18, borderWidth: 1, padding: 14, gap: 12, width: '100%' },
   handoverBlock: { gap: 7 },
   eyebrow: {
-    fontFamily: 'Inter_700Bold', fontSize: 11, letterSpacing: 0.5, textTransform: 'uppercase',
+    fontFamily: 'Figtree_700Bold', fontSize: 11, letterSpacing: 0.5, textTransform: 'uppercase',
   },
   card: {
     flexDirection: 'row', alignItems: 'center', gap: 11,
@@ -109,10 +109,10 @@ const styles = StyleSheet.create({
   },
   glyph: { fontSize: 17 },
   cardText: { flex: 1, minWidth: 0, gap: 2 },
-  cardTitle: { fontFamily: 'Inter_700Bold', fontSize: 14, lineHeight: 19 },
-  cardNote: { fontFamily: 'Inter_600SemiBold', fontSize: 11.5, lineHeight: 15 },
+  cardTitle: { fontFamily: 'Figtree_700Bold', fontSize: 14, lineHeight: 19 },
+  cardNote: { fontFamily: 'Figtree_600SemiBold', fontSize: 11.5, lineHeight: 15 },
   counts: { flexDirection: 'row', gap: 8 },
   count: { flex: 1, borderRadius: 12, paddingVertical: 10, paddingHorizontal: 6, alignItems: 'center', gap: 2 },
-  countValue: { fontFamily: 'Inter_800ExtraBold', fontSize: 19 },
-  countLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 10.5, lineHeight: 13, textAlign: 'center' },
+  countValue: { fontFamily: 'Figtree_800ExtraBold', fontSize: 19 },
+  countLabel: { fontFamily: 'Figtree_600SemiBold', fontSize: 10.5, lineHeight: 13, textAlign: 'center' },
 });

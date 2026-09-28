@@ -113,12 +113,12 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     width: 40, height: 40, borderRadius: 13, alignItems: 'center',
     justifyContent: 'center', backgroundColor: ui.orangeSoft, marginBottom: 12,
   },
-  title: { fontFamily: 'Inter_700Bold', fontSize: 17, color: ui.text, marginBottom: 6 },
-  body: { fontFamily: 'Inter_500Medium', fontSize: 14, color: ui.muted, lineHeight: 20 },
+  title: { fontFamily: 'Figtree_700Bold', fontSize: 17, color: ui.text, marginBottom: 6 },
+  body: { fontFamily: 'Figtree_500Medium', fontSize: 14, color: ui.muted, lineHeight: 20 },
   cta: {
     marginTop: 14, backgroundColor: ui.orange, borderRadius: 14, paddingVertical: 13,
     alignItems: 'center', justifyContent: 'center',
   },
   ctaOff: { opacity: 0.6 },
-  ctaText: { fontFamily: 'Inter_700Bold', fontSize: 15, color: '#fff' },
+  ctaText: { fontFamily: 'Figtree_700Bold', fontSize: 15, color: '#fff' },
 });

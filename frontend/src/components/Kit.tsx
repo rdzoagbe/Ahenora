@@ -22,32 +22,43 @@ import { useStore } from '../store';
 // roles apart is what stops that coming back — which is why orange now has an
 // orangeText twin, like every other accent already had.
 export const UI = {
-  bg: '#F6F3EE',
+  bg: '#FAF6F1',
   card: '#FFFFFF',
-  text: '#101318',
-  muted: '#5F656E',
-  soft: '#F1EFEA',
-  line: '#E6E1DA',
-  orange: '#F56519',
-  orangeText: '#B8410A',
+  text: '#22201D',
+  muted: '#6B635B',
+  soft: '#F3ECE3',
+  line: '#ECE4DA',
+  // ONE orange. This palette carried #F56519 while the theme carried
+  // #F26A1B — two brand oranges side by side on the same screens.
+  orange: '#F26A1B',
+  orangeText: '#B0450B',
   // The brand orange with WHITE on it reads at 3.1:1 — fine as a surface,
   // not fine as a background for a label. This deeper orange is used only
   // where white text or a white glyph sits on the fill (buttons, avatar
   // circles, today's date pill); every other orange surface keeps the vivid
   // brand value above.
   orangeDeep: '#CA470A',
-  orangeSoft: '#FFF0E7',
-  mint: '#DFF7EC',
-  mintText: '#0A7D52',
-  lavender: '#EDEBFF',
-  lavenderText: '#5A48E8',
-  gold: '#FBEFD6',
-  goldText: '#8A5A0F',
-  blue: '#E8F0FE',
-  blueText: '#1558C0',
-  danger: '#C81E1E',
-  dangerSoft: 'rgba(220,38,38,0.10)',
+  orangeSoft: '#FDEBDD',
+  // The rebrand's tile tints. The keys keep their old names so no screen
+  // moves; the hues are the brand's: sage, plum, sand and sky.
+  mint: '#E3EFE6',
+  mintText: '#2E7852',
+  lavender: '#F2E6EF',
+  lavenderText: '#843C79',
+  gold: '#F5ECDA',
+  goldText: '#7C5E16',
+  blue: '#E3EBF6',
+  blueText: '#2F5A96',
+  danger: '#B8322A',
+  dangerSoft: 'rgba(184,50,42,0.10)',
   star: '#F59E0B',
+  // Checkboxes. An outline is a control boundary, which WCAG holds to 3:1 —
+  // the old outline was the card-border grey at 1.3:1, a box a low-vision
+  // parent could not find. Done is sage with a white tick, the same on every
+  // screen, so "finished" reads as one colour wherever it appears.
+  checkLine: '#968B80',
+  doneFill: '#2F7D55',
+  doneTick: '#FFFFFF',
 };
 
 export type UIColors = typeof UI;
@@ -68,18 +79,21 @@ export function useUI(): UIColors {
       orangeDeep: UI.orangeDeep,
       // Dark mode moves ink the other way: the brand orange reads at 2.8:1 on
       // its own tint here, so orange TEXT is lightened rather than darkened.
-      orangeText: '#FF9A63',
-      orangeSoft: 'rgba(245,101,25,0.15)',
-      mint: 'rgba(15,163,107,0.15)',
-      mintText: '#34D399',
-      lavender: 'rgba(107,92,255,0.15)',
-      lavenderText: '#A78BFA',
-      gold: 'rgba(245,158,11,0.15)',
-      goldText: '#FBBF24',
-      blue: 'rgba(26,115,232,0.15)',
-      blueText: '#60A5FA',
-      danger: '#F87171',
-      dangerSoft: 'rgba(239,68,68,0.15)',
+      orangeText: '#FF9B5E',
+      orangeSoft: 'rgba(242,106,27,0.15)',
+      mint: 'rgba(124,203,156,0.15)',
+      mintText: '#7CCB9C',
+      lavender: 'rgba(215,155,203,0.15)',
+      lavenderText: '#D79BCB',
+      gold: 'rgba(225,192,110,0.15)',
+      goldText: '#E1C06E',
+      blue: 'rgba(143,179,230,0.15)',
+      blueText: '#8FB3E6',
+      danger: '#F08A80',
+      dangerSoft: 'rgba(240,138,128,0.15)',
+      checkLine: '#7A6E63',
+      doneFill: '#7CCB9C',
+      doneTick: '#22201D',
       star: '#F59E0B',
     };
   }, [dark, theme]);
@@ -258,22 +272,23 @@ const kit = StyleSheet.create({
   headerRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12 },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   hubBtn: { minWidth: 40, height: 40, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
-  hubLabel: { fontFamily: 'Inter_700Bold', fontSize: 9, letterSpacing: 0.2, marginTop: 1 },
-  brand: { fontFamily: 'Inter_800ExtraBold', fontSize: 13, letterSpacing: 1.6, textTransform: 'uppercase', marginBottom: 8 },
-  eyebrow: { fontFamily: 'Inter_600SemiBold', fontSize: 14, letterSpacing: 0.2, marginBottom: 2 },
+  hubLabel: { fontFamily: 'Figtree_700Bold', fontSize: 9, letterSpacing: 0.2, marginTop: 1 },
+  brand: { fontFamily: 'Figtree_800ExtraBold', fontSize: 13, letterSpacing: 1.6, textTransform: 'uppercase', marginBottom: 8 },
+  eyebrow: { fontFamily: 'Figtree_600SemiBold', fontSize: 14, letterSpacing: 0.2, marginBottom: 2 },
   title: { fontFamily: SERIF, letterSpacing: -0.5 },
   card: {
     borderRadius: 22,
     borderWidth: 1,
-    shadowColor: '#000000',
+    // A warm shadow under a warm ground; pure black read as grey dirt.
+    shadowColor: '#22201D',
     shadowOpacity: 0.06,
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 8 },
     elevation: 2,
   },
-  sectionTitle: { fontFamily: 'Inter_800ExtraBold', fontSize: 17, letterSpacing: -0.2 },
+  sectionTitle: { fontFamily: 'Figtree_800ExtraBold', fontSize: 17, letterSpacing: -0.2 },
   badge: { borderRadius: 99, paddingHorizontal: 10, paddingVertical: 4, alignSelf: 'flex-start' },
-  badgeText: { fontFamily: 'Inter_800ExtraBold', fontSize: 10, letterSpacing: 0.4 },
+  badgeText: { fontFamily: 'Figtree_800ExtraBold', fontSize: 10, letterSpacing: 0.4 },
   toggle: { width: 46, height: 28, borderRadius: 99, justifyContent: 'center' },
   toggleKnob: {
     position: 'absolute',
@@ -292,14 +307,14 @@ const kit = StyleSheet.create({
   divider: { height: 1 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 13, paddingVertical: 13 },
   rowBorder: { borderBottomWidth: 1 },
-  rowTitle: { fontFamily: 'Inter_700Bold', fontSize: 15 },
-  rowSub: { fontFamily: 'Inter_500Medium', fontSize: 12.5, marginTop: 2 },
+  rowTitle: { fontFamily: 'Figtree_700Bold', fontSize: 15 },
+  rowSub: { fontFamily: 'Figtree_500Medium', fontSize: 12.5, marginTop: 2 },
   miniRow: { flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 8, flex: 1, minWidth: 0 },
   miniAvatar: { width: 38, height: 38, borderRadius: 99, alignItems: 'center', justifyContent: 'center' },
-  miniInitial: { fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
-  miniName: { fontFamily: 'Inter_700Bold', fontSize: 14 },
-  miniSub: { fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 1 },
+  miniInitial: { fontFamily: 'Figtree_800ExtraBold', fontSize: 14 },
+  miniName: { fontFamily: 'Figtree_700Bold', fontSize: 14 },
+  miniSub: { fontFamily: 'Figtree_500Medium', fontSize: 12, marginTop: 1 },
   statBox: { width: '48%', minHeight: 64, borderRadius: 14, borderWidth: 1, padding: 12, justifyContent: 'center' },
-  statValue: { fontFamily: 'Inter_800ExtraBold', fontSize: 16 },
-  statLabel: { fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 2 },
+  statValue: { fontFamily: 'Figtree_800ExtraBold', fontSize: 16 },
+  statLabel: { fontFamily: 'Figtree_500Medium', fontSize: 12, marginTop: 2 },
 });

@@ -54,7 +54,7 @@ function TabIcon({ focused, Icon, label, badge = 0 }: { focused: boolean; Icon: 
         ) : null}
       </View>
       <Text
-        style={[styles.tabLabel, { color: labelColor, fontFamily: focused ? 'Inter_800ExtraBold' : 'Inter_600SemiBold' }]}
+        style={[styles.tabLabel, { color: labelColor, fontFamily: focused ? 'Figtree_800ExtraBold' : 'Figtree_600SemiBold' }]}
         numberOfLines={1} adjustsFontSizeToFit minimumFontScale={LABEL_MIN_SCALE}
       >
         {label}
@@ -439,10 +439,10 @@ const styles = StyleSheet.create({
     position: 'absolute', top: -5, right: -9, minWidth: 17, height: 17, borderRadius: 9,
     alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4, borderWidth: 1.5,
   },
-  tabBadgeText: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 10 },
+  tabBadgeText: { color: '#FFFFFF', fontFamily: 'Figtree_800ExtraBold', fontSize: 10 },
   tabLabel: {
     fontSize: LABEL_FONT_SIZE,
-    fontFamily: 'Inter_800ExtraBold',
+    fontFamily: 'Figtree_800ExtraBold',
     letterSpacing: -0.1,
   },
 
@@ -465,7 +465,7 @@ const styles = StyleSheet.create({
   },
   sidebarBrandText: {
     color: '#FFFFFF',
-    fontFamily: 'Inter_800ExtraBold',
+    fontFamily: 'Figtree_800ExtraBold',
     fontSize: 20,
     letterSpacing: 2,
   },
@@ -492,7 +492,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.15)',
   },
   sidebarLabel: {
-    fontFamily: 'Inter_700Bold',
+    fontFamily: 'Figtree_700Bold',
     fontSize: 14,
   },
 });

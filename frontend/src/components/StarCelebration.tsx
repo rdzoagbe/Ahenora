@@ -114,6 +114,6 @@ const styles = StyleSheet.create({
     zIndex: 999,
   },
   burst: { fontSize: 34, marginBottom: 2 },
-  amount: { fontFamily: 'Inter_800ExtraBold', fontSize: 26, textAlign: 'center' },
-  praise: { fontFamily: 'Inter_600SemiBold', fontSize: 14, marginTop: 4, textAlign: 'center' },
+  amount: { fontFamily: 'Figtree_800ExtraBold', fontSize: 26, textAlign: 'center' },
+  praise: { fontFamily: 'Figtree_600SemiBold', fontSize: 14, marginTop: 4, textAlign: 'center' },
 });

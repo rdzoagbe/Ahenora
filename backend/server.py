@@ -1454,6 +1454,10 @@ def public_user(user: dict) -> dict:
         # hides the sensitive surfaces (vault, billing, member management),
         # which the backend also denies via require_full_member.
         "is_helper": bool(user.get("is_helper")),
+        # When this account began, so the app can tell a new install from an
+        # existing family meeting an update ("What's new" is for the latter).
+        "member_since": iso(_coerce_dt(user.get("created_at"))),
+        "day7_feedback_due": day7_feedback_due(user),
     }
 
 
@@ -18756,6 +18760,28 @@ async def delete_chore(chore_id: str, user: dict = Depends(require_user), databa
 class SupportContactIn(BaseModel):
     subject: str
     message: str
+    # "support" (the default: somebody needs a reply), "feedback" (the
+    # Send-feedback button) or "day7" (the one question a week in). All three
+    # land in the same inbox, which is the one place Roland already reads.
+    kind: Optional[str] = None
+
+
+FEEDBACK_KINDS = ("feedback", "day7")
+DAY7_AFTER = timedelta(days=7)
+
+
+def day7_feedback_due(user: dict) -> bool:
+    """Whether to ask this person the one week-in question.
+
+    A week is long enough to have a view and short enough to still care. Asked
+    once per person, across every device — the answer or the dismissal is
+    stored on the account, so a second phone does not ask again. Never asked
+    of a teen: the question is about running the household.
+    """
+    if user.get("is_teen") or user.get("day7_feedback_done"):
+        return False
+    created = _coerce_dt(user.get("created_at"))
+    return bool(created and utcnow() - created >= DAY7_AFTER)
 
 # -----------------------------------------------------------------------------
 # Metrics (first-party, count-only — no payloads, no third-party SDKs)
@@ -19849,8 +19875,13 @@ async def submit_support_contact(
     message = body.message.strip()[:5000]
     if not subject or not message:
         raise HTTPException(400, "Subject and message are required")
+    # Anything that names no kind — an older build, a script — is a support
+    # request: a request for help must never be quietly filed as an opinion.
+    kind = getattr(body, "kind", None)
+    kind = kind if kind in FEEDBACK_KINDS else "support"
     ticket = {
         "ticket_id": new_id("tkt"),
+        "kind": kind,
         "family_id": user["family_id"],
         "user_id": user["user_id"],
         "user_email": user.get("email", ""),
@@ -19868,10 +19899,16 @@ async def submit_support_contact(
         notified["email"] = await asyncio.wait_for(send_support_ticket_email(ticket), timeout=20.0)
     except Exception as exc:  # noqa: BLE001
         notified["email"] = {"sent": False, "error": f"{type(exc).__name__}: {exc}"[:160]}
-    try:
-        notified["ack"] = await asyncio.wait_for(send_support_ack_email(ticket), timeout=20.0)
-    except Exception as exc:  # noqa: BLE001
-        notified["ack"] = {"sent": False, "error": f"{type(exc).__name__}: {exc}"[:160]}
+    # The acknowledgement promises a reply. Feedback asks for none, and a
+    # "we'll get back to you" in answer to "I love the new look" is noise.
+    if kind == "support":
+        try:
+            notified["ack"] = await asyncio.wait_for(send_support_ack_email(ticket), timeout=20.0)
+        except Exception as exc:  # noqa: BLE001
+            notified["ack"] = {"sent": False, "error": f"{type(exc).__name__}: {exc}"[:160]}
+    if kind == "day7":
+        await database["users"].update_one(
+            {"user_id": user["user_id"]}, {"$set": {"day7_feedback_done": True}})
     try:
         notified["push"] = await asyncio.wait_for(
             notify_admins_of_support_ticket(database, ticket), timeout=10.0)
@@ -19890,12 +19927,22 @@ async def submit_support_contact(
     return {"ok": True, "ticket_id": ticket["ticket_id"]}
 
 
+@app.post("/api/feedback/day7/dismiss")
+async def dismiss_day7_feedback(user: dict = Depends(require_user), database=Depends(get_db)):
+    """"Not now" on the week-in question. It is not asked again, anywhere."""
+    await database["users"].update_one(
+        {"user_id": user["user_id"]}, {"$set": {"day7_feedback_done": True}})
+    return {"ok": True}
+
+
 def public_support_ticket(ticket: dict) -> dict:
     notified = ticket.get("notified") if isinstance(ticket.get("notified"), dict) else {}
     email = notified.get("email") if isinstance(notified.get("email"), dict) else None
     push = notified.get("push") if isinstance(notified.get("push"), dict) else None
     return {
         "ticket_id": ticket.get("ticket_id"),
+        # Tickets from before feedback existed are support requests.
+        "kind": ticket.get("kind") or "support",
         "family_id": ticket.get("family_id"),
         "user_id": ticket.get("user_id"),
         "user_email": ticket.get("user_email") or "",

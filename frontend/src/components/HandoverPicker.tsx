@@ -144,10 +144,10 @@ export function HandoverPicker({ value, onChange, onAvailability }: Props) {
 const styles = StyleSheet.create({
   wrap: { gap: 8 },
   centre: { paddingVertical: 20, alignItems: 'center' },
-  title: { fontFamily: 'Inter_700Bold', fontSize: 15, lineHeight: 20 },
-  hint: { fontFamily: 'Inter_500Medium', fontSize: 12.5, lineHeight: 17, marginBottom: 2 },
+  title: { fontFamily: 'Figtree_700Bold', fontSize: 15, lineHeight: 20 },
+  hint: { fontFamily: 'Figtree_500Medium', fontSize: 12.5, lineHeight: 17, marginBottom: 2 },
   empty: { borderRadius: 14, borderWidth: 1, padding: 14 },
-  emptyText: { fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 18 },
+  emptyText: { fontFamily: 'Figtree_500Medium', fontSize: 13, lineHeight: 18 },
   row: {
     flexDirection: 'row', alignItems: 'center', gap: 11,
     borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10, minHeight: 56,
@@ -158,11 +158,11 @@ const styles = StyleSheet.create({
   },
   glyph: { fontSize: 17 },
   text: { flex: 1, minWidth: 0, gap: 2 },
-  cardTitle: { fontFamily: 'Inter_700Bold', fontSize: 14 },
-  due: { fontFamily: 'Inter_500Medium', fontSize: 11.5 },
+  cardTitle: { fontFamily: 'Figtree_700Bold', fontSize: 14 },
+  due: { fontFamily: 'Figtree_500Medium', fontSize: 11.5 },
   tick: {
     width: 22, height: 22, borderRadius: 999, borderWidth: 1.5,
     alignItems: 'center', justifyContent: 'center',
   },
-  tickMark: { color: '#FFFFFF', fontFamily: 'Inter_800ExtraBold', fontSize: 12 },
+  tickMark: { color: '#FFFFFF', fontFamily: 'Figtree_800ExtraBold', fontSize: 12 },
 });

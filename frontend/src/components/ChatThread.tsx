@@ -583,7 +583,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   root: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   listContent: { padding: 16, gap: 10, flexGrow: 1 },
-  empty: { flex: 1, textAlign: 'center', color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 14, marginTop: 40 },
+  empty: { flex: 1, textAlign: 'center', color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 14, marginTop: 40 },
   bubbleRow: { flexDirection: 'row' },
   rowMine: { justifyContent: 'flex-end' },
   rowTheirs: { justifyContent: 'flex-start' },
@@ -591,19 +591,19 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   bubble: { borderRadius: 18, paddingHorizontal: 15, paddingVertical: 10 },
   bubbleMine: { backgroundColor: ui.orange, borderBottomRightRadius: 4 },
   bubbleTheirs: { backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, borderBottomLeftRadius: 4 },
-  sender: { fontFamily: 'Inter_700Bold', fontSize: 12, color: ui.orangeText, marginBottom: 3 },
+  sender: { fontFamily: 'Figtree_700Bold', fontSize: 12, color: ui.orangeText, marginBottom: 3 },
   // 16/23 rather than 15/21. A chat is read at arm's length, often one-handed
   // and often by somebody older than the person who built it; the old size was
   // legible in a screenshot and tiring on a phone. Font scaling from the OS
   // still applies on top of this.
-  msgText: { fontFamily: 'Inter_400Regular', fontSize: 16, lineHeight: 23, color: ui.text },
+  msgText: { fontFamily: 'Figtree_400Regular', fontSize: 16, lineHeight: 23, color: ui.text },
   msgTextMine: { color: '#fff' },
   receipt: {
     alignSelf: 'flex-end', marginTop: 3, marginRight: 4,
-    fontFamily: 'Inter_500Medium', fontSize: 12, color: ui.muted,
+    fontFamily: 'Figtree_500Medium', fontSize: 12, color: ui.muted,
   },
   editedMark: {
-    fontFamily: 'Inter_400Regular', fontSize: 10, color: ui.muted,
+    fontFamily: 'Figtree_400Regular', fontSize: 10, color: ui.muted,
     marginTop: 2, alignSelf: 'flex-end',
   },
   editedMarkMine: { color: 'rgba(255,255,255,0.8)' },
@@ -613,7 +613,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   sheetLabel: {
-    fontFamily: 'Inter_700Bold', fontSize: 11, letterSpacing: 0.6,
+    fontFamily: 'Figtree_700Bold', fontSize: 11, letterSpacing: 0.6,
     textTransform: 'uppercase', color: ui.muted,
     paddingHorizontal: 16, paddingTop: 4,
   },
@@ -626,7 +626,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   reactionMine: { borderColor: ui.orange },
   reactionEmoji: { fontSize: 12 },
-  reactionCount: { fontFamily: 'Inter_500Medium', fontSize: 11, color: ui.muted },
+  reactionCount: { fontFamily: 'Figtree_500Medium', fontSize: 11, color: ui.muted },
   sheetBackdrop: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.35)',
     alignItems: 'center', justifyContent: 'center', padding: 24,
@@ -641,14 +641,14 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   sheetEmojiBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   sheetEmojiText: { fontSize: 24 },
   sheetAction: { paddingVertical: 12, paddingHorizontal: 16, alignItems: 'center' },
-  sheetActionText: { fontFamily: 'Inter_600SemiBold', fontSize: 15, color: ui.text },
+  sheetActionText: { fontFamily: 'Figtree_600SemiBold', fontSize: 15, color: ui.text },
   quote: {
     borderLeftWidth: 3, borderLeftColor: ui.orange, paddingLeft: 8,
     marginBottom: 6, opacity: 0.9,
   },
   quoteMine: { borderLeftColor: '#fff' },
-  quoteName: { fontFamily: 'Inter_700Bold', fontSize: 11, color: ui.orangeText },
-  quoteText: { fontFamily: 'Inter_400Regular', fontSize: 13, lineHeight: 18, color: ui.muted },
+  quoteName: { fontFamily: 'Figtree_700Bold', fontSize: 11, color: ui.orangeText },
+  quoteText: { fontFamily: 'Figtree_400Regular', fontSize: 13, lineHeight: 18, color: ui.muted },
   quoteTextMine: { color: '#fff' },
   replyBar: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
@@ -665,7 +665,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   input: {
     flex: 1, maxHeight: 120, minHeight: 44, borderRadius: 22, backgroundColor: ui.card,
     borderWidth: 1, borderColor: ui.line, paddingHorizontal: 16, paddingTop: 11, paddingBottom: 11,
-    fontFamily: 'Inter_400Regular', fontSize: 15, color: ui.text,
+    fontFamily: 'Figtree_400Regular', fontSize: 15, color: ui.text,
   },
   sendBtn: {
     width: 44, height: 44, borderRadius: 22, backgroundColor: ui.orange,

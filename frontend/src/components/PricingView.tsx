@@ -654,9 +654,10 @@ const PLAN_THEMES: Record<
 > = {
   village: {
     icon: Users,
-    iconBg: 'rgba(99,102,241,0.15)',
-    iconColor: '#6366F1',
-    gradient: ['rgba(99,102,241,0.10)', 'rgba(99,102,241,0.04)'] as const,
+    // The brand's sky tile for the free plan.
+    iconBg: 'rgba(47,90,150,0.12)',
+    iconColor: '#2F5A96',
+    gradient: ['rgba(47,90,150,0.08)', 'rgba(47,90,150,0.03)'] as const,
     features: [
       'pf_free_1',
       'pf_free_2',
@@ -668,9 +669,10 @@ const PLAN_THEMES: Record<
   },
   executive: {
     icon: Briefcase,
-    iconBg: 'rgba(16,185,129,0.18)',
-    iconColor: '#059669',
-    gradient: ['rgba(16,185,129,0.15)', 'rgba(99,102,241,0.15)'] as const,
+    // Family carries the brand orange: it is the plan most families choose.
+    iconBg: 'rgba(242,106,27,0.14)',
+    iconColor: '#B0450B',
+    gradient: ['rgba(242,106,27,0.12)', 'rgba(242,106,27,0.04)'] as const,
     features: [
       'pf_prem_1',
       'pf_prem_2',
@@ -683,9 +685,10 @@ const PLAN_THEMES: Record<
   },
   household: {
     icon: Gem,
-    iconBg: 'rgba(236,72,153,0.18)',
-    iconColor: '#F472B6',
-    gradient: ['rgba(236,72,153,0.12)', 'rgba(139,92,246,0.12)'] as const,
+    // The brand's plum tile for Household.
+    iconBg: 'rgba(132,60,121,0.14)',
+    iconColor: '#843C79',
+    gradient: ['rgba(132,60,121,0.10)', 'rgba(132,60,121,0.04)'] as const,
     features: [
       'pf_house_1',
       'pf_house_2',
@@ -698,9 +701,10 @@ const PLAN_THEMES: Record<
   // resolves to a theme; never shown in PLAN_ORDER.
   family_office: {
     icon: Gem,
-    iconBg: 'rgba(236,72,153,0.18)',
-    iconColor: '#F472B6',
-    gradient: ['rgba(236,72,153,0.12)', 'rgba(139,92,246,0.12)'] as const,
+    // The brand's plum tile for Household.
+    iconBg: 'rgba(132,60,121,0.14)',
+    iconColor: '#843C79',
+    gradient: ['rgba(132,60,121,0.10)', 'rgba(132,60,121,0.04)'] as const,
     features: [
       'pf_house_1',
       'pf_house_2',
@@ -732,7 +736,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   badgeText: {
     color: ui.text,
-    fontFamily: 'Inter_500Medium',
+    fontFamily: 'Figtree_500Medium',
     fontSize: 11,
     letterSpacing: 0.5,
   },
@@ -744,7 +748,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   subtitle: {
     color: ui.muted,
-    fontFamily: 'Inter_400Regular',
+    fontFamily: 'Figtree_400Regular',
     fontSize: 15,
     marginTop: 6,
   },
@@ -781,7 +785,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     zIndex: 1,
   },
   toggleText: {
-    fontFamily: 'Inter_500Medium',
+    fontFamily: 'Figtree_500Medium',
     fontSize: 13,
     color: ui.muted,
   },
@@ -797,7 +801,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   billingNote: {
     color: ui.muted,
-    fontFamily: 'Inter_600SemiBold',
+    fontFamily: 'Figtree_600SemiBold',
     fontSize: 12,
     lineHeight: 18,
     textAlign: 'center',
@@ -805,10 +809,10 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     paddingHorizontal: 20,
   },
   restoreLink: { alignSelf: 'center', paddingVertical: 8, paddingHorizontal: 12 },
-  restoreLinkText: { color: ui.orangeText, fontFamily: 'Inter_700Bold', fontSize: 13 },
+  restoreLinkText: { color: ui.orangeText, fontFamily: 'Figtree_700Bold', fontSize: 13 },
   savingsText: {
     color: ui.mintText,
-    fontFamily: 'Inter_600SemiBold',
+    fontFamily: 'Figtree_600SemiBold',
     fontSize: 11,
     letterSpacing: 0.6,
   },
@@ -827,9 +831,11 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     // canvas its own wrapper paints.
     backgroundColor: ui.card,
   },
+  // The featured plan is marked in the brand orange, not a mint that belonged
+  // to no palette.
   cardFeatured: {
-    borderColor: 'rgba(52,211,153,0.4)',
-    shadowColor: '#34D399',
+    borderColor: 'rgba(242,106,27,0.45)',
+    shadowColor: '#F26A1B',
     shadowOpacity: 0.25,
     shadowRadius: 30,
   },
@@ -843,11 +849,11 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     paddingHorizontal: 9,
     paddingVertical: 4,
     borderRadius: 9999,
-    backgroundColor: '#34D399',
+    backgroundColor: '#CA470A',
   },
   popularText: {
-    color: '#080910',
-    fontFamily: 'Inter_600SemiBold',
+    color: '#FFFFFF',
+    fontFamily: 'Figtree_600SemiBold',
     fontSize: 10,
     letterSpacing: 0.4,
   },
@@ -867,13 +873,13 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   planTag: {
     color: ui.muted,
-    fontFamily: 'Inter_400Regular',
+    fontFamily: 'Figtree_400Regular',
     fontSize: 11,
     marginTop: 2,
   },
   planDesc: {
     color: ui.muted,
-    fontFamily: 'Inter_400Regular',
+    fontFamily: 'Figtree_400Regular',
     fontSize: 13,
     lineHeight: 19,
     marginBottom: 18,
@@ -885,7 +891,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   priceSymbol: {
     color: ui.muted,
-    fontFamily: 'Inter_500Medium',
+    fontFamily: 'Figtree_500Medium',
     fontSize: 16,
     marginBottom: 10,
   },
@@ -897,7 +903,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   pricePer: {
     color: ui.muted,
-    fontFamily: 'Inter_400Regular',
+    fontFamily: 'Figtree_400Regular',
     fontSize: 13,
     marginBottom: 12,
     marginLeft: 4,
@@ -909,7 +915,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   yearlyNote: {
     color: ui.muted,
-    fontFamily: 'Inter_400Regular',
+    fontFamily: 'Figtree_400Regular',
     fontSize: 11,
     marginTop: 2,
     marginBottom: 6,
@@ -926,7 +932,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   lockedText: {
     color: ui.muted,
-    fontFamily: 'Inter_400Regular',
+    fontFamily: 'Figtree_400Regular',
     fontSize: 13,
     flex: 1,
     lineHeight: 19,
@@ -939,7 +945,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   lockedChipText: {
     color: ui.orangeText,
-    fontFamily: 'Inter_700Bold',
+    fontFamily: 'Figtree_700Bold',
     fontSize: 10,
     letterSpacing: 0.3,
   },
@@ -955,7 +961,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   featureText: {
     color: ui.text,
-    fontFamily: 'Inter_400Regular',
+    fontFamily: 'Figtree_400Regular',
     fontSize: 13,
     flex: 1,
     lineHeight: 19,
@@ -974,7 +980,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     borderColor: ui.line,
   },
   ctaUpgrade: {
-    backgroundColor: '#F56519',
+    backgroundColor: ui.orangeDeep,
   },
   // Label colours for the two CTA surfaces: themed text on the free plan's
   // neutral button, white on the orange Premium button.
@@ -990,14 +996,14 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     justifyContent: 'center',
   },
   ctaText: {
-    fontFamily: 'Inter_600SemiBold',
+    fontFamily: 'Figtree_600SemiBold',
     fontSize: 14,
     letterSpacing: 0.3,
   },
   legalWrap: { marginTop: 22, alignItems: 'center', gap: 6 },
   legalNote: {
     color: ui.muted,
-    fontFamily: 'Inter_400Regular',
+    fontFamily: 'Figtree_400Regular',
     fontSize: 11,
     lineHeight: 16,
     textAlign: 'center',
@@ -1008,15 +1014,15 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     alignSelf: 'center', marginBottom: 14, paddingVertical: 12, paddingHorizontal: 18,
     borderRadius: 14, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.card,
   },
-  manageCardText: { color: ui.text, fontFamily: 'Inter_700Bold', fontSize: 14 },
+  manageCardText: { color: ui.text, fontFamily: 'Figtree_700Bold', fontSize: 14 },
   legalLinkHit: { paddingVertical: 6, paddingHorizontal: 6 },
   legalLinkText: {
     color: ui.text,
-    fontFamily: 'Inter_600SemiBold',
+    fontFamily: 'Figtree_600SemiBold',
     fontSize: 12,
     textDecorationLine: 'underline',
   },
-  legalDot: { color: ui.muted, fontFamily: 'Inter_400Regular', fontSize: 12 },
+  legalDot: { color: ui.muted, fontFamily: 'Figtree_400Regular', fontSize: 12 },
   faqWrap: { marginTop: 32 },
   faqTitle: {
     color: ui.text,
@@ -1031,7 +1037,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   faqQ: {
     color: ui.text,
-    fontFamily: 'Inter_600SemiBold',
+    fontFamily: 'Figtree_600SemiBold',
     fontSize: 14,
     marginBottom: 4,
   },
@@ -1040,7 +1046,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     flex: 1,
     flexShrink: 1,
     color: ui.muted,
-    fontFamily: 'Inter_400Regular',
+    fontFamily: 'Figtree_400Regular',
     fontSize: 13,
     lineHeight: 19,
   },

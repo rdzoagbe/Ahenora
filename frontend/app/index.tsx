@@ -601,7 +601,7 @@ export default function Landing() {
                   accessibilityRole="button"
                 >
                   <Text style={[styles.secondaryCtaText, { color: theme.colors.textMuted }]}>
-                    {t('land_new_here')} <Text style={{ color: theme.colors.accent, fontFamily: 'Inter_700Bold' }}>{t('land_email_signup')}</Text>
+                    {t('land_new_here')} <Text style={{ color: theme.colors.accent, fontFamily: 'Figtree_700Bold' }}>{t('land_email_signup')}</Text>
                   </Text>
                 </PressScale>
               </>
@@ -659,7 +659,7 @@ const styles = StyleSheet.create({
   top: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 6 },
   logoRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   logoDot: { width: 15, height: 15, borderRadius: 9999 },
-  logoText: { fontFamily: 'Inter_700Bold', fontSize: 15, letterSpacing: 1.5 },
+  logoText: { fontFamily: 'Figtree_700Bold', fontSize: 15, letterSpacing: 1.5 },
   langBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -669,7 +669,7 @@ const styles = StyleSheet.create({
     borderRadius: 9999,
     borderWidth: 1,
   },
-  langText: { fontFamily: 'Inter_600SemiBold', fontSize: 11 },
+  langText: { fontFamily: 'Figtree_600SemiBold', fontSize: 11 },
   centerScroll: { flex: 1 },
   center: { flexGrow: 1, justifyContent: 'center' },
   badge: {
@@ -683,7 +683,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginBottom: 14,
   },
-  badgeText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
+  badgeText: { fontFamily: 'Figtree_600SemiBold', fontSize: 12 },
   invitePreviewWrap: { width: '100%', marginBottom: 14 },
   inviteBanner: {
     borderRadius: 18,
@@ -691,8 +691,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginBottom: 14,
   },
-  inviteText: { fontFamily: 'Inter_400Regular', fontSize: 13, lineHeight: 19 },
-  inviteStrong: { fontFamily: 'Inter_600SemiBold' },
+  inviteText: { fontFamily: 'Figtree_400Regular', fontSize: 13, lineHeight: 19 },
+  inviteStrong: { fontFamily: 'Figtree_600SemiBold' },
   heading: {
     fontFamily: 'PlayfairDisplay_400Regular_Italic',
     fontSize: 47,
@@ -700,7 +700,7 @@ const styles = StyleSheet.create({
     maxWidth: 330,
   },
   sub: {
-    fontFamily: 'Inter_400Regular',
+    fontFamily: 'Figtree_400Regular',
     fontSize: 15,
     lineHeight: 22,
     marginTop: 12,
@@ -720,7 +720,7 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   tourBtnText: {
-    fontFamily: 'Inter_800ExtraBold',
+    fontFamily: 'Figtree_800ExtraBold',
     fontSize: 14,
   },
   testingCard: {
@@ -734,7 +734,7 @@ const styles = StyleSheet.create({
   },
   testingText: {
     flex: 1,
-    fontFamily: 'Inter_600SemiBold',
+    fontFamily: 'Figtree_600SemiBold',
     fontSize: 12,
     lineHeight: 18,
   },
@@ -759,7 +759,7 @@ const styles = StyleSheet.create({
     gap: 8,
     borderWidth: 1,
   },
-  secondaryCtaText: { fontFamily: 'Inter_600SemiBold', fontSize: 14 },
+  secondaryCtaText: { fontFamily: 'Figtree_600SemiBold', fontSize: 14 },
   googleDot: {
     width: 26,
     height: 26,
@@ -779,11 +779,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  ctaText: { fontFamily: 'Inter_700Bold', fontSize: 15 },
+  ctaText: { fontFamily: 'Figtree_700Bold', fontSize: 15 },
   secureRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 14 },
-  secureText: { fontFamily: 'Inter_400Regular', fontSize: 11, flex: 1, textAlign: 'center' },
+  secureText: { fontFamily: 'Figtree_400Regular', fontSize: 11, flex: 1, textAlign: 'center' },
   adminNote: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 10 },
-  adminNoteText: { fontFamily: 'Inter_400Regular', fontSize: 10, textAlign: 'center' },
+  adminNoteText: { fontFamily: 'Figtree_400Regular', fontSize: 10, textAlign: 'center' },
   footer: { alignItems: 'center', paddingBottom: 10, gap: 10 },
-  foot: { fontFamily: 'Inter_400Regular', fontSize: 11, textAlign: 'center' },
+  foot: { fontFamily: 'Figtree_400Regular', fontSize: 11, textAlign: 'center' },
 });

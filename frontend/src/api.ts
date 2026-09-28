@@ -931,6 +931,10 @@ export interface User {
   /** A restricted 13-17 account — routed to the teen view, not the full app. */
   is_teen?: boolean;
   is_helper?: boolean;
+  /** When this account began (ISO). Tells a new install from a family meeting an update. */
+  member_since?: string | null;
+  /** Ask the one week-in question (answered or dismissed once, on any device). */
+  day7_feedback_due?: boolean;
 }
 
 export interface TeenCard {
@@ -1524,6 +1528,8 @@ export interface Subscriber {
 /** /api/admin/support-tickets — admin only. The support form's inbox. */
 export interface SupportTicket {
   ticket_id: string;
+  /** 'support' needs a reply; 'feedback' and 'day7' are opinions. */
+  kind?: 'support' | 'feedback' | 'day7';
   family_id: string | null;
   user_id: string | null;
   user_email: string;
@@ -3080,8 +3086,14 @@ export const api = {
   reportLite: () => request<{ tasks_done: number; stars_earned: number }>('/report/lite'),
 
   // Support
-  submitSupportRequest: (data: { subject: string; message: string }) =>
+  submitSupportRequest: (data: { subject: string; message: string; kind?: 'support' | 'feedback' | 'day7' }) =>
     request<{ ok: boolean; ticket_id: string }>('/support/contact', { method: 'POST', body: data }),
+  dismissDay7Feedback: () => request<{ ok: boolean }>('/feedback/day7/dismiss', { method: 'POST' }),
+  /** Admin: make a household a founding family (the top plan, free) — or undo it. */
+  adminSetFoundingFamily: (email: string, grandfathered: boolean) =>
+    request<{ ok: boolean; family_id: string; grandfathered: boolean }>('/admin/grandfather', {
+      method: 'POST', body: { email, grandfathered },
+    }),
 
   // Chore Wheel
   listChores: () => request<Chore[]>('/chores'),

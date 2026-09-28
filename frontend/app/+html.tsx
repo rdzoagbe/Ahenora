@@ -56,7 +56,7 @@ export default function Root({ children }: PropsWithChildren) {
             absolute because the web build lives under /app/. */}
         <link rel="manifest" href="/app/manifest.json" />
         <link rel="apple-touch-icon" href="/app/apple-touch-icon.png" />
-        <meta name="theme-color" content="#101419" />
+        <meta name="theme-color" content="#FAF6F1" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="Ahenora" />
@@ -90,9 +90,9 @@ export default function Root({ children }: PropsWithChildren) {
   function bar(text, btnLabel, onClick) {
     var el = document.createElement('div');
     el.id = 'coo-install-bar';
-    el.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;display:flex;align-items:center;gap:10px;padding:10px 14px;padding-top:calc(10px + env(safe-area-inset-top));background:#1A1F27;color:#fff;font:600 13px/1.35 Inter,-apple-system,sans-serif;box-shadow:0 2px 12px rgba(0,0,0,.35)';
+    el.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;display:flex;align-items:center;gap:10px;padding:10px 14px;padding-top:calc(10px + env(safe-area-inset-top));background:#22201D;color:#fff;font:600 13px/1.35 Figtree_600SemiBold,-apple-system,sans-serif;box-shadow:0 2px 12px rgba(0,0,0,.35)';
     var dot = document.createElement('span');
-    dot.style.cssText = 'width:14px;height:14px;border-radius:50%;background:#F97C3C;flex:none';
+    dot.style.cssText = 'width:14px;height:14px;border-radius:50%;background:#F26A1B;flex:none';
     var msg = document.createElement('span');
     msg.style.cssText = 'flex:1;min-width:0';
     msg.textContent = text;
@@ -100,7 +100,7 @@ export default function Root({ children }: PropsWithChildren) {
     if (btnLabel) {
       var b = document.createElement('button');
       b.textContent = btnLabel;
-      b.style.cssText = 'background:#F97C3C;color:#fff;border:0;border-radius:999px;padding:7px 14px;font:700 13px Inter,sans-serif';
+      b.style.cssText = 'background:#CA470A;color:#fff;border:0;border-radius:999px;padding:7px 14px;font:700 13px Figtree_700Bold,sans-serif';
       b.onclick = onClick;
       el.appendChild(b);
     }

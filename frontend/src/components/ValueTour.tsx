@@ -125,14 +125,14 @@ const styles = StyleSheet.create({
   },
   logoRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   logoDot: { width: 15, height: 15, borderRadius: 9999 },
-  logoText: { fontFamily: 'Inter_700Bold', fontSize: 15, letterSpacing: 1.5 },
+  logoText: { fontFamily: 'Figtree_700Bold', fontSize: 15, letterSpacing: 1.5 },
   skipBtn: {
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 9999,
     borderWidth: 1,
   },
-  skipText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
+  skipText: { fontFamily: 'Figtree_600SemiBold', fontSize: 12 },
   pager: { flex: 1 },
   slide: {
     flex: 1,
@@ -157,7 +157,7 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   sub: {
-    fontFamily: 'Inter_400Regular',
+    fontFamily: 'Figtree_400Regular',
     fontSize: 15,
     lineHeight: 23,
     textAlign: 'center',
@@ -174,5 +174,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  nextText: { fontFamily: 'Inter_700Bold', fontSize: 15 },
+  nextText: { fontFamily: 'Figtree_700Bold', fontSize: 15 },
 });

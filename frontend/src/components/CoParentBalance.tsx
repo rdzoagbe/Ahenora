@@ -94,6 +94,6 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
     backgroundColor: ui.mint,
   },
-  title: { color: ui.text, fontFamily: 'Inter_800ExtraBold', fontSize: 14.5, letterSpacing: -0.2 },
-  sub: { color: ui.muted, fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 2 },
+  title: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 14.5, letterSpacing: -0.2 },
+  sub: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 12, marginTop: 2 },
 });

@@ -75,7 +75,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   backText: {
     color: ui.text,
-    fontFamily: 'Inter_500Medium',
+    fontFamily: 'Figtree_500Medium',
     fontSize: 12,
     letterSpacing: 0.4,
   },

@@ -186,7 +186,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   badgeText: {
-    fontFamily: 'Inter_700Bold',
+    fontFamily: 'Figtree_700Bold',
     fontSize: 11,
     letterSpacing: 0.4,
   },
@@ -197,7 +197,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   sub: {
-    fontFamily: 'Inter_500Medium',
+    fontFamily: 'Figtree_500Medium',
     fontSize: 15,
     lineHeight: 22,
     marginBottom: 28,
@@ -212,9 +212,9 @@ const styles = StyleSheet.create({
     borderRadius: 9999,
     gap: 8,
   },
-  ctaText: { fontFamily: 'Inter_800ExtraBold', fontSize: 15 },
+  ctaText: { fontFamily: 'Figtree_800ExtraBold', fontSize: 15 },
   loadingWrap: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  loadingText: { fontFamily: 'Inter_600SemiBold', fontSize: 14 },
+  loadingText: { fontFamily: 'Figtree_600SemiBold', fontSize: 14 },
   briefPanel: {
     borderRadius: 24,
     borderWidth: 1,
@@ -224,14 +224,14 @@ const styles = StyleSheet.create({
   briefScroll: { maxHeight: 420 },
   briefContent: { paddingRight: 8 },
   briefText: {
-    fontFamily: 'Inter_500Medium',
+    fontFamily: 'Figtree_500Medium',
     fontSize: 16,
     lineHeight: 27,
     letterSpacing: 0.1,
   },
   generatedAt: {
     marginTop: 20,
-    fontFamily: 'Inter_500Medium',
+    fontFamily: 'Figtree_500Medium',
     fontSize: 11,
   },
   shareBtn: {
@@ -244,5 +244,5 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 9999,
   },
-  shareText: { fontFamily: 'Inter_800ExtraBold', fontSize: 14 },
+  shareText: { fontFamily: 'Figtree_800ExtraBold', fontSize: 14 },
 });
