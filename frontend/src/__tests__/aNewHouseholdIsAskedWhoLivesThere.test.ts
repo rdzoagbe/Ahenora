@@ -49,8 +49,11 @@ describe('the setup steps', () => {
     expect(note).toBeGreaterThan(trial);
   });
 
-  it('always offer Free and buying straight away too', () => {
-    expect(onboarding).toContain('testID="onboarding-start-free"');
+  it('start the fourteen free days, and still let anyone buy straight away', () => {
+    // The whole app is already free for fourteen days from sign-up, so there
+    // is no separate "Start on Free" to choose.
+    expect(onboarding).not.toContain('testID="onboarding-start-free"');
+    expect(onboarding).toContain('testID="onboarding-trial"');
     expect(onboarding).toContain('testID="onboarding-subscribe-now"');
   });
 
@@ -81,7 +84,7 @@ describe('every sign-up string exists in every language', () => {
     'ob_living_title', 'ob_living_hint', 'ob_living_solo', 'ob_living_solo_sub', 'ob_living_couple',
     'ob_living_couple_sub', 'ob_living_family', 'ob_living_family_sub', 'ob_living_two_homes',
     'ob_living_two_homes_sub', 'ob_children_count', 'ob_plan_title', 'ob_plan_try_hint', 'ob_plan_price',
-    'ob_trial_cta', 'ob_trial_note', 'ob_subscribe_now', 'ob_start_free', 'trial_card_title',
+    'ob_trial_cta', 'ob_trial_note', 'ob_subscribe_to', 'trial_card_title',
     'trial_card_title_one', 'trial_card_msg', 'trial_card_cta', 'trial_card_later', 'pricing_trial_note',
   ];
   it.each(LANGS)('%s', (lang) => {

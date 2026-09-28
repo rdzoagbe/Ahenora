@@ -1815,7 +1815,7 @@ export interface Subscription {
   /** The household's own choice, whatever the plan. */
   kids_sections_choice?: boolean;
   /** A free trial in force (no card; nothing charged when it ends). */
-  trial?: { plan: Plan; ends_at: string; days_left: number } | null;
+  trial?: { plan: Plan; ends_at: string; days_left: number; recommended_plan?: Plan } | null;
   trial_used?: boolean;
   /** A brand-new household is asked who lives in it, once, at setup. */
   household_setup_due?: boolean;

@@ -340,7 +340,7 @@ export default function Onboarding() {
               <Text testID="onboarding-plan-title" style={[styles.title, { color: theme.colors.text }]}>
                 {t('ob_plan_title', { plan: t(`plan_${recommended}`) })}
               </Text>
-              <Text style={[styles.sub, { color: theme.colors.textMuted }]}>{t('ob_plan_try_hint')}</Text>
+              <Text style={[styles.sub, { color: theme.colors.textMuted }]}>{t('ob_plan_try_hint', { plan: t(`plan_${recommended}`) })}</Text>
               <View style={[styles.planCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.accent }]}>
                 <Text style={[styles.planName, { color: theme.colors.text }]}>{t(`plan_${recommended}`)}</Text>
                 <Text style={[styles.subSmall, { color: theme.colors.textMuted, marginTop: 2 }]}>{t(`plan_${recommended}_tag`)}</Text>
@@ -359,23 +359,23 @@ export default function Onboarding() {
               <PressScale testID="onboarding-trial" accessibilityRole="button" disabled={planBusy}
                 onPress={() => { choosePlan('trial').catch(() => undefined); }}
                 style={[styles.trialBtn, { backgroundColor: theme.colors.primary }, planBusy && { opacity: 0.6 }]}>
-                <Text style={[styles.nextText, { color: theme.colors.primaryText }]}>{t('ob_trial_cta', { plan: t(`plan_${recommended}`) })}</Text>
+                <Text style={[styles.nextText, { color: theme.colors.primaryText }]}>{t('ob_trial_cta')}</Text>
               </PressScale>
               <Text style={[styles.subSmall, { color: theme.colors.textMuted, textAlign: 'center', marginTop: 8 }]}>{t('ob_trial_note')}</Text>
-              <View style={styles.planAlt}>
-                {canSubscribeNow ? (
-                <PressScale testID="onboarding-subscribe-now" accessibilityRole="button" disabled={planBusy}
-                  onPress={() => { choosePlan('subscribe').catch(() => undefined); }}
-                  style={[styles.altBtn, { borderColor: theme.colors.cardBorder }]}>
-                  <Text style={[styles.altText, { color: theme.colors.text }]}>{t('ob_subscribe_now')}</Text>
-                </PressScale>
-                ) : null}
-                <PressScale testID="onboarding-start-free" accessibilityRole="button" disabled={planBusy}
-                  onPress={() => { choosePlan('free').catch(() => undefined); }}
-                  style={[styles.altBtn, { borderColor: theme.colors.cardBorder }]}>
-                  <Text style={[styles.altText, { color: theme.colors.text }]}>{t('ob_start_free')}</Text>
-                </PressScale>
-              </View>
+              {/* Every new household already has the whole app for fourteen
+                  days; "Start on Free" had nothing left to mean. Buying now
+                  stays, for whoever already knows. */}
+              {canSubscribeNow ? (
+                <View style={styles.planAlt}>
+                  <PressScale testID="onboarding-subscribe-now" accessibilityRole="button" disabled={planBusy}
+                    onPress={() => { choosePlan('subscribe').catch(() => undefined); }}
+                    style={[styles.altBtn, { borderColor: theme.colors.cardBorder }]}>
+                    <Text style={[styles.altText, { color: theme.colors.text }]}>
+                      {t('ob_subscribe_to', { plan: t(`plan_${recommended}`) })}
+                    </Text>
+                  </PressScale>
+                </View>
+              ) : null}
             </View>
           ) : null}
 

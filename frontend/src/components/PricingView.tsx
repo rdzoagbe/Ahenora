@@ -492,7 +492,9 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
                   ? (subscription?.duo_people_count ?? null) : null}
                 pending={plan === currentPlan && subscription?.pending_plan
                   ? { plan: subscription.pending_plan, at: subscription.pending_plan_at ?? null } : null}
-                trialDaysLeft={subscription?.trial?.plan === plan ? subscription.trial.days_left : null}
+                trialDaysLeft={subscription?.trial
+                  && (subscription.trial.recommended_plan ?? subscription.trial.plan) === plan
+                  ? subscription.trial.days_left : null}
                 t={t}
                 styles={styles}
                 ui={ui}
@@ -825,7 +827,9 @@ const PLAN_THEMES: Record<
     iconBg: 'rgba(46,120,82,0.14)',
     iconColor: '#2E7852',
     gradient: ['rgba(46,120,82,0.09)', 'rgba(46,120,82,0.03)'] as const,
-    features: ['pf_duo_1', 'pf_duo_2', 'pf_duo_3', 'pf_duo_4', 'pf_duo_5', 'pf_duo_6'],
+    // A ladder: Duo is Free for two adults plus the everyday extras, and says
+    // plainly that the children's side is Family's.
+    features: ['pf_duo_1', 'pf_duo_2', 'pf_duo_3', 'pf_duo_4', 'pf_duo_5', 'pf_duo_6', 'pf_duo_nokids'],
   },
   executive: {
     icon: Briefcase,
@@ -834,13 +838,13 @@ const PLAN_THEMES: Record<
     iconColor: '#B0450B',
     gradient: ['rgba(242,106,27,0.12)', 'rgba(242,106,27,0.04)'] as const,
     features: [
+      // Everything Duo has, so the card only lists what Family adds: the
+      // children's side. Listing the kitchen and the scans again made Duo
+      // look like it charged for things Family gives away.
+      'pf_prem_lead',
       'pf_prem_1',
-      'pf_prem_2',
       'pf_prem_3',
       'pf_prem_4',
-      'pf_prem_5',
-      'pf_prem_6',
-      'pf_prem_7',
     ],
   },
   household: {

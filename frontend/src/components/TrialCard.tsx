@@ -38,7 +38,10 @@ export function TrialCard() {
   }, [due, key]);
 
   if (!due || hidden || !trial) return null;
-  const plan = t(`plan_${trial.plan}`);
+  // The trial is the whole app; what to keep is the plan that fits what the
+  // household told us at setup (Duo without children, Family with them).
+  const keep = trial.recommended_plan ?? trial.plan;
+  const plan = t(`plan_${keep}`);
   const later = () => {
     setHidden(true);
     AsyncStorage.setItem(key, '1').catch(() => undefined);
@@ -53,11 +56,11 @@ export function TrialCard() {
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={[styles.title, { color: ui.text }]}>
             {trial.days_left <= 1
-              ? t('trial_card_title_one', { plan })
-              : t('trial_card_title', { plan, n: trial.days_left })}
+              ? t('trial_card_title_one')
+              : t('trial_card_title', { n: trial.days_left })}
           </Text>
           <Text style={[styles.msg, { color: ui.muted }]}>
-            {t('trial_card_msg', { price: PLAN_PRICE[trial.plan]?.monthly ?? '' })}
+            {t('trial_card_msg', { plan, price: PLAN_PRICE[keep]?.monthly ?? '' })}
           </Text>
         </View>
       </View>

@@ -324,6 +324,9 @@
   .plan li::before { content: "✓"; position: absolute; left: 0; top: 9px; color: var(--mint-ink); font-weight: 800; }
   .plan li.lead::before { content: ""; }
   .plan li.lead { color: var(--muted); font-weight: 600; padding-left: 0; }
+  /* What a plan leaves out, said on the card rather than discovered later. */
+  .plan li.note::before { content: ""; }
+  .plan li.note { color: var(--muted); font-size: 0.92em; padding-left: 0; }
 
   /* ---------- final cta ---------- */
   /* ---------- faq ---------- */
@@ -635,7 +638,7 @@
       <div class="section-head">
         <span class="kicker">Tarifs</span>
         <h2>Des formules simples</h2>
-        <p>Chaque parent est toujours gratuit, tout comme ce qui garde une famille coordonnée : l'agenda, les tâches, les corvées et les listes partagées. Les formules payantes ajoutent les options ci-dessous : Duo pour deux personnes, Famille et Foyer pour plus d'enfants.</p>
+        <p>Chaque parent est toujours gratuit, tout comme ce qui garde une famille coordonnée : l'agenda, les tâches, les corvées et les listes partagées. Les formules payantes ajoutent les options ci-dessous : Duo pour deux personnes, Famille et Foyer pour plus d'enfants. Chaque nouveau foyer commence avec toute l'app gratuite pendant 14 jours &mdash; sans carte, rien n'est débité à la fin.</p>
       </div>
       <!-- Monthly / yearly, the same choice the app offers. The saving is shown
            PER CARD because it is not the same on each: a year of Duo saves 16%,
@@ -650,10 +653,11 @@
           <h3>Gratuit</h3>
           <div class="price">0&nbsp;&euro;</div>
           <ul>
+            <li class="lead">Après vos 14 jours gratuits, gratuit pour toujours&nbsp;:</li>
             <li>Jusqu'à deux adultes et deux enfants</li>
             <li>Tâches, agenda et listes partagées</li>
             <li>Corvées, étoiles et récompenses</li>
-            <li>Consultez tous vos documents enregistrés</li>
+            <li>Dix scans par mois</li>
             <li>Tous les rappels et relances</li>
           </ul>
         </div>
@@ -665,11 +669,12 @@
             1,99&nbsp;&euro; <span>/ mois</span></div>
           <p class="saving" hidden>Économisez 3,89&nbsp;&euro; par an &mdash; 16&nbsp;% de moins qu'au mois</p>
           <ul>
-            <li class="lead">Pour les couples et foyers à deux&nbsp;:</li>
+            <li class="lead">Tout le plan Gratuit pour deux adultes, plus&nbsp;:</li>
             <li>Planificateur de repas, plans enregistrés et IA recettes</li>
             <li>Scans illimités</li>
             <li>Le point du dimanche et le rapport hebdomadaire</li>
-            <li>Cagnotte cadeau et un coffre plus grand</li>
+            <li>Cagnotte cadeau et un coffre de 500&nbsp;Mo</li>
+            <li class="note">Pas d&rsquo;espace enfants &mdash; c&rsquo;est Famille</li>
           </ul>
         </div>
         <div class="plan featured">
@@ -681,11 +686,10 @@
             6,99&nbsp;&euro; <span>/ mois</span></div>
           <p class="saving" hidden>Économisez 33,89&nbsp;&euro; par an &mdash; 40&nbsp;% de moins qu'au mois</p>
           <ul>
-            <li class="lead">Tout du plan Gratuit, plus&nbsp;:</li>
-            <li>Jusqu'à 5 enfants</li>
-            <li>Planificateur de repas, plans enregistrés et IA recettes</li>
-            <li>Argent de poche et rapport hebdomadaire</li>
-            <li>Covoiturage et un coffre plus grand</li>
+            <li class="lead">Tout Duo, plus&nbsp;:</li>
+            <li>Jusqu'à 5 enfants, avec corvées, étoiles et récompenses</li>
+            <li>Argent de poche</li>
+            <li>Planning de covoiturage pour l'école</li>
           </ul>
         </div>
         <div class="plan">
