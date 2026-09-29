@@ -138,5 +138,37 @@ class TheCameraOnHome(unittest.TestCase):
         self.assertEqual(len(self.calls), 1)
 
 
+RECEIPT_AS_DOCUMENT = ('{"kind":"receipt","type":"TASK","title":"Carrefour receipt",'
+                       '"description":"Groceries.","assignee":"","due_date":null,'
+                       '"vault_category":"","save_to_vault":false,"expires_on":null,"amount":null}')
+RECEIPT = ('{"shop":"Carrefour","date":"2026-09-28","total":12.5,'
+           '"items":[{"name":"Milk","qty":1,"unit":"l","line_total":1.2},'
+           '{"name":"Bread","qty":null,"unit":"piece","line_total":2.3}]}')
+
+
+@unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
+class AReceiptGoesToTheExpenses(TheCameraOnHome):
+    """The camera on Home routes a till receipt the way the Spending screen
+    reads one: shop, date, total and lines — still one photograph, one scan."""
+
+    def test_the_prompt_offers_receipt(self):
+        self.assertIn('"receipt"', DOCUMENT_SCAN_SYSTEM_PROMPT)
+
+    def test_a_receipt_comes_back_read(self):
+        self.model(RECEIPT_AS_DOCUMENT, RECEIPT)
+        out = self.scan()
+        self.assertEqual(out["kind"], "receipt")
+        self.assertEqual(out["receipt"]["shop"], "Carrefour")
+        self.assertEqual(out["receipt"]["total"], 12.5)
+        self.assertEqual(len(out["receipt"]["items"]), 2)
+        self.assertEqual(self.used(), 1)
+
+    def test_an_unreadable_receipt_stays_a_document(self):
+        self.model(RECEIPT_AS_DOCUMENT, "not json at all")
+        out = self.scan()
+        self.assertEqual(out["kind"], "document")
+        self.assertNotIn("receipt", out)
+
+
 if __name__ == "__main__":
     unittest.main()

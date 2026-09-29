@@ -15518,6 +15518,29 @@ async def vision_extract(payload: VisionIn, user=Depends(require_user)):
             log.warning("shopping pass failed: %s", exc)
             result["kind"] = "document"
 
+    if result["kind"] == "receipt":
+        # A till receipt belongs in the expenses, with its lines, exactly as
+        # if it had been scanned from the Spending screen. Read with that
+        # screen's reader, inside this request (one photograph, one scan). A
+        # receipt the reader cannot make sense of stays a document.
+        try:
+            text = await _gemini_vision(
+                "Read the shop receipt in this photo.",
+                image_base64,
+                system=RECEIPT_SCAN_SYSTEM_PROMPT,
+                fast=True,
+            )
+            parsed = extract_json(text)
+            if parsed is None:
+                raise UnsafeRecipe("unparseable")
+            result["receipt"] = validate_receipt_scan(parsed)
+        except UnsafeRecipe as exc:
+            log.info("receipt pass rejected by safety gate: %s", exc.reason)
+            result["kind"] = "document"
+        except Exception as exc:
+            log.warning("receipt pass failed: %s", type(exc).__name__)
+            result["kind"] = "document"
+
     # Returned so the card and the vault keep the DOCUMENT, not the table it
     # was lying on. Only when it actually changed: sending the original back
     # unchanged would be several megabytes of response for nothing.
