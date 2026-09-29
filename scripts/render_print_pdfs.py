@@ -17,6 +17,7 @@ import base64
 import glob
 import os
 import sys
+from urllib.parse import urlparse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from e2e_browser import launch_chromium  # noqa: E402
@@ -64,7 +65,9 @@ async def main(only):
         page = await browser.new_page()
 
         async def fonts(route):
-            if "fonts.googleapis.com" in route.request.url:
+            # The stylesheet request gets the embedded faces; the font files it
+            # would have pointed at are never needed, so they are refused.
+            if urlparse(route.request.url).hostname == "fonts.googleapis.com":
                 await route.fulfill(status=200, content_type="text/css", body=css)
             else:
                 await route.abort()
