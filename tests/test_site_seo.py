@@ -259,9 +259,9 @@ class FrenchPage(unittest.TestCase):
         # Translated marketing that quietly restates a price is a promise the
         # billing code will not keep. Same figures, French separators.
         fr = read("fr.html")
-        for figure in ("6,99", "49,99", "14,99", "149,99", "33,89", "29,89"):
+        for figure in ("4,99", "39,99", "9,99", "99,99", "19,89", "1,99", "19,99"):
             self.assertIn(figure, fr, "missing price %s" % figure)
-        for figure in ("6.99", "49.99", "33.89"):
+        for figure in ("4.99", "39.99", "9.99", "99.99", "19.89"):
             self.assertIn(figure, read("index.html"))
 
     def test_no_english_price_format_survives(self):
@@ -396,10 +396,11 @@ class TheFaq(unittest.TestCase):
                 self.assertNotIn(ceiling, free, page)
 
     def test_the_free_plan_answer_names_the_limit_that_actually_bites(self):
-        # Two children is the number a household meets. If the copy stops
-        # saying so, the answer has stopped answering the question.
-        for page, phrase in (("index.html", "two children"),
-                             ("fr.html", "deux enfants")):
+        # Since 2026-09-29 the limit a household meets is the first child:
+        # children are on Family. If the copy stops saying so, the answer has
+        # stopped answering the question.
+        for page, phrase in (("index.html", "Children, with their chores"),
+                             ("fr.html", "Les enfants, avec leurs corvées")):
             free = ld_of("FAQPage", page)["mainEntity"][0]["acceptedAnswer"]["text"]
             self.assertIn(phrase, free, page)
 

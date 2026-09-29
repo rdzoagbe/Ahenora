@@ -30,6 +30,16 @@ server.ADMIN_EMAILS = set(server.ADMIN_EMAILS) | {"e2e-admin@sim.test"}
 if os.environ.get("E2E_NEW_HOUSEHOLD_TRIAL") != "1":
     server.TRIAL_DAYS = 0
 
+# The browser harnesses exercise the children's side on a household that has
+# not paid (stars, chores, kid mode). Free became a plan for adults on
+# 2026-09-29, with households that already had children keeping them for a
+# notice period; the harness households are treated as those, whatever the
+# date the run happens on, so no harness starts failing on the day the
+# notice period ends. The new rules have their own unit tests.
+from datetime import datetime, timezone  # noqa: E402
+server.NEW_FREE_FROM = datetime(2999, 1, 1, tzinfo=timezone.utc)
+server.LEGACY_FREE_UNTIL = datetime(2999, 1, 1, tzinfo=timezone.utc)
+
 if __name__ == "__main__":
     import uvicorn
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8990

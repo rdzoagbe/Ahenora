@@ -74,8 +74,8 @@ const PLAN_ORDER: Plan[] = ['village', 'duo', 'executive', 'household'];
 const PLAN_PRICES: Record<Plan, { monthly: number; yearly: number }> = {
   village: { monthly: 0, yearly: 0 },
   duo: { monthly: 1.99, yearly: 19.99 },
-  executive: { monthly: 6.99, yearly: 49.99 },
-  household: { monthly: 14.99, yearly: 149.99 },
+  executive: { monthly: 4.99, yearly: 39.99 },
+  household: { monthly: 9.99, yearly: 99.99 },
   family_office: { monthly: 19.99, yearly: 179.99 },
 };
 
@@ -753,6 +753,19 @@ function PlanCard({
           </View>
         </View>
       ) : null}
+      {/* Children are a paid feature: shown locked on Free, pointing at the
+          plan that has them. */}
+      {isFree ? (
+        <View style={styles.lockedRow} testID="pricing-free-locked-children">
+          <View style={styles.lockedCheck}>
+            <Lock color={ui.muted} size={11} />
+          </View>
+          <Text style={styles.lockedText}>{t('pf_locked_children')}</Text>
+          <View style={styles.lockedChip}>
+            <Text style={styles.lockedChipText}>{t('plan_executive')}</Text>
+          </View>
+        </View>
+      ) : null}
 
       {duoBlockedFor != null ? (
         <Text testID="pricing-duo-blocked" style={styles.blockedNote}>
@@ -813,9 +826,10 @@ const PLAN_THEMES: Record<
     iconColor: '#2F5A96',
     gradient: ['rgba(47,90,150,0.08)', 'rgba(47,90,150,0.03)'] as const,
     features: [
+      // No children on Free (2026-09-29): pf_free_3, "Kids stars & rewards",
+      // is now a locked row below, pointing at Family.
       'pf_free_1',
       'pf_free_2',
-      'pf_free_3',
       'pf_free_4',
       'pf_free_5',
       'pf_free_6',

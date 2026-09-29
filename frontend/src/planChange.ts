@@ -52,6 +52,6 @@ export const PLAN_HIGHLIGHTS: Partial<Record<Plan, string[]>> = {
 
 export const PLAN_PRICE: Partial<Record<Plan, { monthly: string; yearly: string }>> = {
   duo: { monthly: '€1.99', yearly: '€19.99' },
-  executive: { monthly: '€6.99', yearly: '€49.99' },
-  household: { monthly: '€14.99', yearly: '€149.99' },
+  executive: { monthly: '€4.99', yearly: '€39.99' },
+  household: { monthly: '€9.99', yearly: '€99.99' },
 };

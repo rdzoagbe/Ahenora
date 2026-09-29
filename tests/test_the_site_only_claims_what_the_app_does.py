@@ -158,14 +158,15 @@ class ThePricesAndLimits(unittest.TestCase):
     def test_the_advertised_yearly_saving_is_arithmetic(self):
         # Two different savings on two cards, which is why the page shows them
         # per card rather than one badge over the toggle.
-        for key, saving, pct in (("executive", "33.89", "40"), ("household", "29.89", "17")):
+        for key, saving, pct in (("executive", "19.89", "33"), ("household", "19.89", "17")):
             plan = self.plan(key)
             real = plan["price_monthly"] * 12 - plan["price_yearly"]
             self.assertEqual(f"{real:.2f}", saving, key)
             self.assertEqual(str(round(100 * real / (plan["price_monthly"] * 12))), pct, key)
 
     def test_the_child_limits_are_the_enforced_ones(self):
-        self.assertEqual(self.plan("village")["limits"]["max_children"], 2)
+        # Children are a paid feature since 2026-09-29.
+        self.assertEqual(self.plan("village")["limits"]["max_children"], 0)
         self.assertEqual(self.plan("executive")["limits"]["max_children"], 5)
         self.assertEqual(self.plan("household")["limits"]["max_children"], 10)
 
@@ -180,7 +181,9 @@ class ThePricesAndLimits(unittest.TestCase):
 
     def test_the_free_vault_and_scan_allowance_match_the_faq(self):
         self.assertEqual(self.plan("village")["limits"]["vault_bytes"], 25 * 1024 * 1024)
-        self.assertEqual(self.plan("village")["limits"]["ai_scans_per_month"], 10)
+        self.assertEqual(self.plan("village")["limits"]["ai_scans_per_month"], 3)
+        self.assertIn("three camera scans", faq_answers("index.html")[0])
+        self.assertIn("trois scans", faq_answers("fr.html")[0])
         self.assertIn("25 MB", faq_answers("index.html")[0])
         self.assertIn("25 Mo", faq_answers("fr.html")[0])
 

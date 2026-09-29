@@ -51,6 +51,7 @@ import { TabScreen } from '../../src/components/TabScreen';
 import { GettingStarted } from '../../src/components/GettingStarted';
 import { Day7Card } from '../../src/components/Day7Card';
 import { TrialCard } from '../../src/components/TrialCard';
+import { FreeChangeCard } from '../../src/components/FreeChangeCard';
 import { UpgradeBanner } from '../../src/components/UpgradeBanner';
 import { CoParentNudge } from '../../src/components/CoParentNudge';
 import { CaptureMenuSheet } from '../../src/components/CaptureMenuSheet';
@@ -1582,6 +1583,10 @@ export default function Feed() {
             {/* A free trial about to end: three days' warning, and the plain
                 fact that nothing is charged when it does. */}
             <TrialCard />
+
+            {/* Free became a plan for adults: a household that had children on
+                Free is told the date, in good time. */}
+            <FreeChangeCard />
 
             {/* First-run checklist — demoted below the day; self-hides once done */}
             <GettingStarted
