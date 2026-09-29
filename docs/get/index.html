@@ -42,9 +42,10 @@
       // iPadOS reports itself as a Mac; a Mac with a touch screen is an iPad.
       var isIOS = /iPhone|iPad|iPod/i.test(ua) ||
         (/Macintosh/i.test(ua) && (navigator.maxTouchPoints || 0) > 1);
+      // Only these three fixed addresses, never anything read from the URL:
+      // a redirect built from the query string is an open redirect. (There
+      // is no web analytics, so a campaign tag had nothing to reach anyway.)
       var target = isAndroid ? PLAY : (isIOS ? APPLE : WEB);
-      // Preserve any query string (e.g. campaign tags) onto the web path only.
-      if (target === WEB && window.location.search) target = WEB + window.location.search;
       // Update the manual fallback to match the final target, then go.
       var manual = document.getElementById('manual');
       if (manual) manual.setAttribute('href', target);
