@@ -348,15 +348,143 @@ Rules you must follow:
 Return no prose, no markdown. JSON only."""
 
 
+# What a cookbook actually prints, mapped to the units the planner knows, with
+# the factor to convert the amount. The strict gate was written for recipes the
+# model invents, where it controls the unit; a photographed page says "c. à
+# soupe", "1 bouquet" or "a cup", and one such line used to throw the WHOLE
+# recipe away — reported from a real phone: "Fleurs de courgettes à la
+# romaine" became a task with every ingredient lost.
+_UNIT_ALIASES = {
+    "gram": ("g", 1), "grams": ("g", 1), "gramme": ("g", 1), "grammes": ("g", 1),
+    "gr": ("g", 1), "grs": ("g", 1), "gramm": ("g", 1), "gramos": ("g", 1),
+    "kilo": ("kg", 1), "kilos": ("kg", 1), "kilogram": ("kg", 1), "kilogramme": ("kg", 1),
+    "cl": ("ml", 10), "dl": ("ml", 100), "millilitre": ("ml", 1), "milliliter": ("ml", 1),
+    "litre": ("l", 1), "litres": ("l", 1), "liter": ("l", 1), "litro": ("l", 1),
+    "tablespoon": ("tbsp", 1), "tablespoons": ("tbsp", 1), "c. à soupe": ("tbsp", 1),
+    "c. a soupe": ("tbsp", 1), "cuillère à soupe": ("tbsp", 1), "cuillères à soupe": ("tbsp", 1),
+    "cas": ("tbsp", 1), "càs": ("tbsp", 1), "cs": ("tbsp", 1), "el": ("tbsp", 1),
+    "esslöffel": ("tbsp", 1), "cucharada": ("tbsp", 1), "cucharadas": ("tbsp", 1),
+    "teaspoon": ("tsp", 1), "teaspoons": ("tsp", 1), "c. à café": ("tsp", 1),
+    "c. a cafe": ("tsp", 1), "cuillère à café": ("tsp", 1), "cuillères à café": ("tsp", 1),
+    "cac": ("tsp", 1), "càc": ("tsp", 1), "cc": ("tsp", 1), "tl": ("tsp", 1),
+    "teelöffel": ("tsp", 1), "cucharadita": ("tsp", 1), "cucharaditas": ("tsp", 1),
+    "pincée": ("pinch", 1), "pincées": ("pinch", 1), "prise": ("pinch", 1), "pizca": ("pinch", 1),
+    "gousse": ("clove", 1), "gousses": ("clove", 1), "zehe": ("clove", 1), "diente": ("clove", 1),
+    "boîte": ("can", 1), "boîtes": ("can", 1), "dose": ("can", 1), "lata": ("can", 1), "tin": ("can", 1),
+    "pièce": ("piece", 1), "pièces": ("piece", 1), "unité": ("piece", 1), "stück": ("piece", 1),
+    "pc": ("piece", 1), "pcs": ("piece", 1), "unidad": ("piece", 1), "unidades": ("piece", 1),
+    "whole": ("piece", 1), "": ("piece", 1),
+    # Things counted rather than weighed.
+    "filet": ("piece", 1), "filets": ("piece", 1), "fillet": ("piece", 1), "fillets": ("piece", 1),
+    "tranche": ("piece", 1), "tranches": ("piece", 1), "slice": ("piece", 1), "slices": ("piece", 1),
+    "scheibe": ("piece", 1), "scheiben": ("piece", 1), "rodaja": ("piece", 1), "rodajas": ("piece", 1),
+    "bouquet": ("piece", 1), "botte": ("piece", 1), "bunch": ("piece", 1), "bund": ("piece", 1),
+    "brin": ("piece", 1), "brins": ("piece", 1), "sprig": ("piece", 1), "sprigs": ("piece", 1),
+    "feuille": ("piece", 1), "feuilles": ("piece", 1), "leaf": ("piece", 1), "leaves": ("piece", 1),
+    "sachet": ("piece", 1), "sachets": ("piece", 1), "packet": ("piece", 1), "pack": ("piece", 1),
+    "œuf": ("piece", 1), "oeuf": ("piece", 1), "œufs": ("piece", 1), "oeufs": ("piece", 1),
+    "cup": ("ml", 240), "cups": ("ml", 240), "tasse": ("ml", 240), "verre": ("ml", 200),
+    "oz": ("g", 28), "lb": ("g", 454), "lbs": ("g", 454),
+    "à volonté": ("to taste", 0), "au goût": ("to taste", 0), "nach geschmack": ("to taste", 0),
+    "al gusto": ("to taste", 0),
+}
+_DEFAULT_CAPTURED_MINUTES = 30
+
+
+def _repair_step(text: str) -> str:
+    step = re.sub(r"\s+", " ", text).strip()
+    step = re.sub(r"^\s*(?:step\s*)?\d+\s*[.)\-:]\s*", "", step, flags=re.IGNORECASE)
+    if len(step) <= MAX_STEP_LEN:
+        return step
+    # Cut at the last full sentence that fits, or at a word, never mid-word.
+    cut = step[:MAX_STEP_LEN - 1]
+    end = max(cut.rfind(". "), cut.rfind("! "), cut.rfind("? "))
+    if end >= MIN_STEP_LEN:
+        return cut[:end + 1]
+    return cut[:cut.rfind(" ")].rstrip(",;:") + "…" if " " in cut else cut + "…"
+
+
+def repair_captured_recipe(parsed):
+    """Make a PHOTOGRAPHED recipe fit the gate instead of failing it.
+
+    Only the shape is repaired; the substance is not. The food-safety screen
+    (_BLOCKED_TERMS) still runs, unchanged, on everything that comes out of
+    here, and a refusal is still a refusal. What changes:
+      * an amount or unit the planner does not know keeps the ingredient,
+        without an amount ("to taste") — it still belongs on the shopping
+        list, which is the point of photographing it;
+      * a method longer than the planner's steps is merged, not dropped, and
+        an over-long step is cut at a sentence;
+      * a missing or impossible cooking time becomes a sensible default.
+    """
+    if not isinstance(parsed, dict) or parsed.get("refused") is True:
+        return parsed
+    out = dict(parsed)
+
+    raw_steps = parsed.get("steps")
+    if isinstance(raw_steps, list):
+        steps = [_repair_step(s) for s in raw_steps if isinstance(s, str)]
+        steps = [s for s in steps if len(s) >= MIN_STEP_LEN]
+        if len(steps) > MAX_STEPS:
+            # Merge neighbours into MAX_STEPS groups, in order.
+            size = -(-len(steps) // MAX_STEPS)
+            steps = [_repair_step(" ".join(steps[i:i + size])) for i in range(0, len(steps), size)]
+        out["steps"] = steps
+
+    try:
+        minutes = int(float(parsed.get("minutes") or 0))
+    except (TypeError, ValueError):
+        minutes = 0
+    out["minutes"] = minutes if MIN_MINUTES <= minutes <= MAX_MINUTES else _DEFAULT_CAPTURED_MINUTES
+
+    raw_ingredients = parsed.get("ingredients")
+    if isinstance(raw_ingredients, list):
+        fixed = []
+        for item in raw_ingredients:
+            if isinstance(item, str):
+                item = {"name": item}
+            if not isinstance(item, dict):
+                continue
+            name = re.sub(r"\s+", " ", str(item.get("name") or "")).strip()[:MAX_INGREDIENT_NAME_LEN]
+            if not name:
+                continue
+            unit = str(item.get("unit") or "").strip().lower()
+            if unit.endswith("s") and unit[:-1] in _UNIT_CAPS:
+                unit = unit[:-1]
+            factor = 1
+            if unit not in _UNIT_CAPS:
+                unit, factor = _UNIT_ALIASES.get(unit, (None, 1))
+            try:
+                qty = float(item.get("qty")) * factor
+            except (TypeError, ValueError):
+                qty = None
+            if unit is None or unit == "to taste" or qty is None or not (0 < qty <= _UNIT_CAPS[unit]):
+                fixed.append({"name": name, "qty": 0, "unit": "to taste"})
+            else:
+                fixed.append({"name": name, "qty": qty, "unit": unit})
+        out["ingredients"] = fixed[:MAX_INGREDIENTS] or None
+
+    # Suggestions are for recipes the app writes; a photograph has none, and a
+    # malformed one must not sink the page.
+    out.pop("serve_with", None)
+    out.pop("seasoning", None)
+    return out
+
+
 def validate_captured_recipe(parsed: dict) -> dict:
     """A photographed recipe: the recipe gate plus a usable title.
 
     Reused on COMMIT as well as capture — the client hands the recipe back
     when the family adds it to a day, and nothing client-supplied is stored
-    without passing this gate again.
+    without passing this gate again. Repaired first (see above): the shape of
+    a real cookbook page is not a reason to lose the recipe.
     """
+    parsed = repair_captured_recipe(parsed)
     if not isinstance(parsed, dict):
         raise UnsafeRecipe("not an object")
+    if parsed.get("refused") is True:
+        # Said first, so a "no" is never mistaken for a bad read and asked again.
+        raise UnsafeRecipe("model refused")
     title = sanitize_user_text(str(parsed.get("title") or ""))
     if len(title) < 2:
         raise UnsafeRecipe("no usable title")
