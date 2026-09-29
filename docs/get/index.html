@@ -26,19 +26,26 @@
       <a id="manual" href="/app/">tap here to continue</a>.</p>
   </div>
   <script>
-    // Send Android phones to the Play Store (where the native app lives) and
-    // everyone else — iPhone, iPad, desktop — to the web app. A no-JS or slow
-    // client still gets the manual link above, defaulted to the web app so it
-    // works on every device.
+    // Send each phone to its own store: Android to Google Play, iPhone and
+    // iPad to the App Store, and everything else (desktop, ChromeOS) to the
+    // web app. This is the address the printed flyers' QR code carries, so
+    // it has to be right for whoever scans it. A no-JS or slow client still
+    // gets the manual link above, defaulted to the web app so it works on
+    // every device.
     (function () {
       var PLAY = 'https://play.google.com/store/apps/details?id=com.householdcoo.app';
+      var APPLE = 'https://apps.apple.com/app/id6806811163';
       var WEB = '/app/';
       var ua = navigator.userAgent || '';
       // Android phones/tablets, but NOT ChromeOS (which should use the web app).
       var isAndroid = /Android/i.test(ua) && !/CrOS/i.test(ua);
-      var target = isAndroid ? PLAY : WEB;
-      // Preserve any query string (e.g. campaign tags) onto the web path only.
-      if (!isAndroid && window.location.search) target = WEB + window.location.search;
+      // iPadOS reports itself as a Mac; a Mac with a touch screen is an iPad.
+      var isIOS = /iPhone|iPad|iPod/i.test(ua) ||
+        (/Macintosh/i.test(ua) && (navigator.maxTouchPoints || 0) > 1);
+      // Only these three fixed addresses, never anything read from the URL:
+      // a redirect built from the query string is an open redirect. (There
+      // is no web analytics, so a campaign tag had nothing to reach anyway.)
+      var target = isAndroid ? PLAY : (isIOS ? APPLE : WEB);
       // Update the manual fallback to match the final target, then go.
       var manual = document.getElementById('manual');
       if (manual) manual.setAttribute('href', target);
