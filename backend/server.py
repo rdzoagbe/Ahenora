@@ -15475,22 +15475,33 @@ async def vision_extract(payload: VisionIn, user=Depends(require_user)):
         # already exists for photographed recipes; if that second pass fails,
         # this quietly stays a document, which is still a true description
         # of a photograph of a cookbook page.
-        try:
-            text = await _gemini_vision(
-                "Read the recipe in this photo.",
-                image_base64,
-                system=RECIPE_PHOTO_SYSTEM_PROMPT,
-            )
-            parsed = extract_json(text)
-            if parsed is None:
-                raise UnsafeRecipe("unparseable")
-            result["recipe"] = validate_captured_recipe(parsed)
-        except UnsafeRecipe as exc:
-            log.info("recipe pass rejected by safety gate: %s", exc.reason)
-            result["kind"] = "document"
-        except Exception as exc:
-            log.warning("recipe pass failed: %s", exc)
-            result["kind"] = "document"
+        #
+        # Two attempts, not one. A model's read of a busy cookbook page varies
+        # from one try to the next, and the cost of giving up is a recipe the
+        # family photographed turning into a task with every ingredient lost.
+        # A refusal or a food-safety block is final at once: asking again is
+        # for a bad read, not for a no.
+        for attempt in (1, 2):
+            try:
+                text = await _gemini_vision(
+                    "Read the recipe in this photo.",
+                    image_base64,
+                    system=RECIPE_PHOTO_SYSTEM_PROMPT,
+                )
+                parsed = extract_json(text)
+                if parsed is None:
+                    raise UnsafeRecipe("unparseable")
+                result["recipe"] = validate_captured_recipe(parsed)
+                break
+            except UnsafeRecipe as exc:
+                log.info("recipe pass %d rejected by safety gate: %s", attempt, exc.reason)
+                if attempt == 2 or exc.reason in ("model refused", "blocked content"):
+                    result["kind"] = "document"
+                    break
+            except Exception as exc:
+                log.warning("recipe pass %d failed: %s", attempt, exc)
+                if attempt == 2:
+                    result["kind"] = "document"
 
     if result["kind"] == "shopping":
         # A photographed shopping list is a list of things to buy, not one job

@@ -170,5 +170,41 @@ class AReceiptGoesToTheExpenses(TheCameraOnHome):
         self.assertNotIn("receipt", out)
 
 
+RECIPE_AS_DOCUMENT = ('{"kind":"recipe","type":"TASK","title":"Fleurs de courgettes",'
+                      '"description":"Cook it.","assignee":"","due_date":null,'
+                      '"vault_category":"","save_to_vault":false,"expires_on":null,"amount":null}')
+A_RECIPE = ('{"title":"Fleurs de courgettes","minutes":25,"servings":4,'
+            '"ingredients":[{"name":"fleurs de courgettes","qty":12,"unit":"pièces"},'
+            '{"name":"eau gazeuse","qty":15,"unit":"cl"}],'
+            '"steps":["Nettoyez les fleurs.","Préparez la pâte à beignets.","Faites frire deux minutes."]}')
+
+
+@unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
+class ARecipeIsReadTwiceBeforeGivingUp(TheCameraOnHome):
+    def sequence(self, *answers):
+        answers = list(answers)
+
+        async def fake(prompt, image, system="", fast=False):
+            self.calls.append(prompt)
+            return answers.pop(0)
+        server._gemini_vision = fake
+
+    def test_a_bad_first_read_is_tried_again(self):
+        self.sequence(RECIPE_AS_DOCUMENT, "garbled", A_RECIPE)
+        out = self.scan()
+        self.assertEqual(out["kind"], "recipe")
+        self.assertEqual(out["recipe"]["ingredients"][1]["unit"], "ml")
+        self.assertEqual(self.used(), 1, "still one scan")
+
+    def test_two_bad_reads_leave_a_document(self):
+        self.sequence(RECIPE_AS_DOCUMENT, "garbled", "still garbled")
+        self.assertEqual(self.scan()["kind"], "document")
+
+    def test_a_refusal_is_not_asked_twice(self):
+        self.sequence(RECIPE_AS_DOCUMENT, '{"refused": true}')
+        self.assertEqual(self.scan()["kind"], "document")
+        self.assertEqual(len(self.calls), 2)
+
+
 if __name__ == "__main__":
     unittest.main()

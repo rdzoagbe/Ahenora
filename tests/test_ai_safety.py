@@ -357,10 +357,17 @@ class ValidateCapturedRecipe(unittest.TestCase):
             validate_captured_recipe(bad)
 
     def test_the_recipe_gate_still_applies(self):
+        # A photographed page is REPAIRED rather than thrown away (see
+        # tests/test_a_photographed_recipe_is_repaired_not_rejected.py): an
+        # absurd amount is dropped, never shown, and the ingredient stays for
+        # the shopping list. The gate itself is unchanged for recipes the app
+        # writes, where the model controls the amount.
         bad = self.photo()
         bad["ingredients"][0] = {"name": "flour", "qty": 9000, "unit": "g"}
+        out = validate_captured_recipe(bad)
+        self.assertEqual(out["ingredients"][0], {"name": "flour", "qty": None, "unit": "to taste"})
         with self.assertRaises(UnsafeRecipe):
-            validate_captured_recipe(bad)
+            validate_recipe({**bad, "title": None})
 
 
 class ExtractJson(unittest.TestCase):
