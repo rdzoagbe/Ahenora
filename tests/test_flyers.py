@@ -33,6 +33,19 @@ LANGS = ("fr", "en")
 SIZES = ("a3", "a5")
 
 
+def mailbox(code):
+    with open(os.path.join(PRINT_DIR, f"mailbox-a5-{code}.html"), encoding="utf-8") as fh:
+        return fh.read()
+
+
+def catalog_price(tier):
+    """The monthly price the backend actually charges for a plan."""
+    with open(os.path.join(ROOT, "backend", "server.py"), encoding="utf-8") as fh:
+        src = fh.read()
+    m = re.search(r'\n    "%s": \{.*?"price_monthly": ([0-9.]+)' % tier, src, re.S)
+    return float(m.group(1))
+
+
 def flyer(code, size="a3"):
     with open(os.path.join(PRINT_DIR, f"flyer-{size}-{code}.html"), encoding="utf-8") as fh:
         return fh.read()
@@ -56,6 +69,11 @@ class TheFlyers(unittest.TestCase):
                     flyer(code, size), expected,
                     f"docs/print/flyer-{size}-{code}.html was edited by hand; "
                     f"change scripts/build_flyers.py and rebuild instead")
+        for code, copy in build_flyers.MAILBOX_COPY.items():
+            self.assertEqual(
+                mailbox(code), build_flyers.mailbox_html(copy),
+                f"docs/print/mailbox-a5-{code}.html was edited by hand; "
+                f"change scripts/build_flyers.py and rebuild instead")
 
     def test_each_sheet_declares_its_own_page_size(self):
         # Both sizes exist and each asks the printer for the right sheet. An A5
@@ -120,17 +138,17 @@ class TheFlyers(unittest.TestCase):
             self.assertIsNotNone(box, "QR viewBox missing or not square")
             self.assertEqual(int(box.group(1)), expected_modules)
 
-    def test_both_flyers_say_iOS_is_coming(self):
-        # The whole point of printing now rather than waiting: an iPhone owner
-        # must not read this, search the App Store, find nothing, and conclude
-        # the app does not exist.
-        self.assertIn("Bientôt sur iPhone", flyer("fr"))
-        self.assertIn("Coming soon to iPhone", flyer("en"))
-
-    def test_both_flyers_tell_an_iPhone_owner_what_to_do_today(self):
-        # "Coming soon" on its own is a dead end.
-        self.assertIn("navigateur", flyer("fr"))
-        self.assertIn("browser", flyer("en"))
+    def test_the_posters_say_the_app_is_on_iPhone_now(self):
+        # They used to say "coming soon to iPhone". The app is on the App
+        # Store now, and a poster that still says otherwise sends iPhone
+        # owners to a browser for no reason.
+        for code in LANGS:
+            for size in SIZES:
+                html = flyer(code, size)
+                self.assertNotIn("Bientôt sur iPhone", html)
+                self.assertNotIn("Coming soon to iPhone", html)
+                self.assertIn("App Store", html)
+                self.assertIn("Google Play", html)
 
     def test_the_two_languages_carry_the_same_offer(self):
         # A poster that promises four things in one language and three in the
@@ -145,8 +163,70 @@ class TheFlyers(unittest.TestCase):
         self.assertNotIn("utm_", build_flyers.URL)
 
     def test_print_artefacts_are_kept_out_of_search(self):
+        # (The letterbox flyers live in the same folder, so this covers them.)
         with open(os.path.join(ROOT, "docs", "robots.txt"), encoding="utf-8") as fh:
             self.assertIn("Disallow: /print/", fh.read())
+
+
+
+@unittest.skipUnless(HAVE_QR, "qrcode not installed")
+class TheLetterboxFlyer(unittest.TestCase):
+    """The A5 that goes through letterboxes, front and back."""
+
+    def test_it_is_two_A5_sides_and_nothing_spills(self):
+        for code in LANGS:
+            html = mailbox(code)
+            self.assertIn("size: A5 portrait", html)
+            self.assertEqual(html.count('<section class="page'), 2)
+            self.assertIn("width: 148mm; height: 210mm; overflow: hidden;", html)
+
+    def test_the_front_qr_sends_each_phone_to_its_own_store(self):
+        # One code for everybody: /get works out the phone. The back carries
+        # a code per store as well.
+        for code in LANGS:
+            front, back = mailbox(code).split('<section class="page back">')
+            self.assertIn(f'aria-label="QR code to {build_flyers.GET_URL}"', front)
+            self.assertIn(f'aria-label="QR code to {build_flyers.APP_STORE}"', back)
+            self.assertIn(f'aria-label="QR code to {build_flyers.GOOGLE_PLAY}"', back)
+            # The front stands alone if someone prints one side only.
+            self.assertIn("ahenora.com", front)
+
+    def test_get_routes_an_iPhone_to_the_App_Store(self):
+        # The flyer's main code lands on /get. Before the App Store launch it
+        # sent iPhones to the web app; a flyer that promises the App Store must
+        # actually open it.
+        with open(os.path.join(ROOT, "docs", "get", "index.html"), encoding="utf-8") as fh:
+            page = fh.read()
+        self.assertIn(build_flyers.APP_STORE, page)
+        self.assertIn(build_flyers.GOOGLE_PLAY, page)
+        self.assertIn("iPhone|iPad|iPod", page)
+
+    def test_the_printed_prices_are_the_prices_charged(self):
+        # A flyer is out in the world for months. The prices on it must be the
+        # ones the backend charges, or the first person to act on it is
+        # charged something else than they were promised.
+        tiers = ["village", "duo", "executive", "household"]
+        for code in LANGS:
+            plans = build_flyers.MAILBOX_COPY[code]["plans"]
+            self.assertEqual(len(plans), len(tiers))
+            for (name, price, _), tier in zip(plans, tiers):
+                shown = float(re.sub(r"[^0-9,.]", "", price.replace("&nbsp;", ""))
+                              .replace(",", "."))
+                self.assertEqual(shown, catalog_price(tier), f"{code} {name}")
+
+    def test_it_promises_the_trial_the_app_gives(self):
+        with open(os.path.join(ROOT, "backend", "server.py"), encoding="utf-8") as fh:
+            days = re.search(r"^TRIAL_DAYS = (\d+)", fh.read(), re.M)
+        self.assertIsNotNone(days, "TRIAL_DAYS default not found in server.py")
+        self.assertIn("14 days free", mailbox("en"))
+        self.assertIn("14 jours offerts", mailbox("fr"))
+        self.assertEqual(days.group(1), "14")
+
+    def test_both_languages_carry_the_same_offer(self):
+        en, fr = build_flyers.MAILBOX_COPY["en"], build_flyers.MAILBOX_COPY["fr"]
+        self.assertEqual(len(en["features"]), len(fr["features"]))
+        self.assertEqual(len(en["plans"]), len(fr["plans"]))
+        self.assertEqual(set(en), set(fr))
 
 
 if __name__ == "__main__":
