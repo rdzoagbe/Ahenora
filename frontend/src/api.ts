@@ -1818,6 +1818,10 @@ export interface Subscription {
   kids_sections_hidden?: boolean;
   /** The household's own choice, whatever the plan. */
   kids_sections_choice?: boolean;
+  /** Free with children, past the notice period: children kept, hidden until Family. */
+  children_locked?: boolean;
+  /** Free with children, inside the notice period: the date it ends (ISO). */
+  free_children_until?: string | null;
   /** A free trial in force (no card; nothing charged when it ends). */
   trial?: { plan: Plan; ends_at: string; days_left: number; recommended_plan?: Plan } | null;
   trial_used?: boolean;

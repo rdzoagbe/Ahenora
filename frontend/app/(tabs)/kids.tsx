@@ -58,6 +58,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { logger } from '../../src/logger';
 import { refreshOutcome, onlyWhatIsOnScreen, type RefreshSnapshot } from '../../src/refreshOutcome';
 import { useKidsSectionsHidden } from '../../src/kidsSections';
+import { ChildrenLockedCard } from '../../src/components/FreeChangeCard';
 
 // The teen-accounts hint is a one-time announcement, so what it needs is a
 // memory, not a timer. Scoped to the device, not the household: the key has no
@@ -1794,7 +1795,12 @@ export default function Kids() {
 
           {showBlockingError ? (
             <ErrorState title={t('kids_page_unavailable')} message={errorMessage || t('kids_load_error')} onRetry={load} />
-          ) : kidsHidden ? null : children.length === 0 && !loading ? (
+          ) : kidsHidden ? (
+            // Free with children after the change: the children are kept and
+            // one tap from coming back. (Duo, or a household that chose to
+            // hide them, shows nothing here.)
+            <ChildrenLockedCard />
+          ) : children.length === 0 && !loading ? (
             <EmptyState title={t('kids_no_children')} message={t('kids_no_children_msg')} actionLabel={t('kids_add_child')} onAction={openChildSheet} />
           ) : (
             <>

@@ -1016,11 +1016,16 @@ PLAN_CATALOG = {
         "price_yearly": 0.0,
         "limits": {
             "max_members": 10,
-            "max_children": 2,
-            # Ten, not five. The scan is the thing the listing and the flyer
-            # both lead with, and five is not enough times to feel it work
-            # before the app starts saying no.
-            "ai_scans_per_month": 10,
+            # Children are a paid feature (2026-09-29). A family with two
+            # children used to get on Free what another family paid Family
+            # for, which was unfair to the one paying and gave the other no
+            # reason to. Every new household still has the whole app for its
+            # first fourteen days; households that were already on Free with
+            # children keep them until LEGACY_FREE_UNTIL (see below).
+            "max_children": 0,
+            # Three: enough to see the camera work, not enough to live on.
+            # The first fourteen days are unlimited anyway (the trial).
+            "ai_scans_per_month": 3,
             "vault_bytes": 25 * 1024 * 1024,
             "weekly_brief": False,
             "multi_property": False,
@@ -1072,8 +1077,10 @@ PLAN_CATALOG = {
     # existing subscribers, RevenueCat product ids and webhooks keep working
     # unchanged; only the label the app shows moved to "Family".
     "executive": {
-        "price_monthly": 6.99,
-        "price_yearly": 49.99,
+        # Lowered from 6.99 / 49.99 on 2026-09-29: the step up from Duo at
+        # 1.99 was too steep for a family's first subscription.
+        "price_monthly": 4.99,
+        "price_yearly": 39.99,
         "limits": {
             "max_members": 12,
             "max_children": 5,
@@ -1096,8 +1103,10 @@ PLAN_CATALOG = {
     # larger vault, and no scan ceiling. Co-parenting essentials stay in Family;
     # Household sells on scale, not on the wedge.
     "household": {
-        "price_monthly": 14.99,
-        "price_yearly": 149.99,
+        # Lowered from 14.99 / 149.99 on 2026-09-29, with Family, so each step
+        # up the ladder is a similar size: 0, 1.99, 4.99, 9.99.
+        "price_monthly": 9.99,
+        "price_yearly": 99.99,
         "limits": {
             "max_members": 20,
             "max_children": 10,
@@ -1116,6 +1125,35 @@ PLAN_CATALOG = {
         },
     },
 }
+
+
+# What Free was before 2026-09-29, kept for the households that were already on
+# it — for a notice period, not for ever. They are told in the app, keep
+# their children's side until LEGACY_FREE_UNTIL, and after that the children
+# are hidden (never deleted) until the household subscribes to Family.
+LEGACY_VILLAGE_LIMITS = {
+    **{"max_members": 10, "max_children": 2, "ai_scans_per_month": 10},
+}
+# Households created before this are "already on Free".
+NEW_FREE_FROM = datetime(2026, 9, 30, tzinfo=timezone.utc)
+LEGACY_FREE_UNTIL = datetime(2026, 11, 30, tzinfo=timezone.utc)
+
+
+def is_legacy_free(family: dict) -> bool:
+    """A household that was on Free before the smaller Free: created before
+    it, or so old that it has no creation date at all."""
+    created = _coerce_dt((family or {}).get("created_at"))
+    return created is None or created < NEW_FREE_FROM
+
+
+def free_limits_for(family: dict, now: Optional[datetime] = None) -> dict:
+    """Free's limits for this household today: the old ones during the
+    notice period for a household that had them, the new ones otherwise."""
+    base = PLAN_CATALOG["village"]["limits"]
+    now = now or utcnow()
+    if is_legacy_free(family) and now < LEGACY_FREE_UNTIL:
+        return {**base, **LEGACY_VILLAGE_LIMITS}
+    return base
 
 
 def plan_catalog_for(plan: str) -> dict:
@@ -1490,6 +1528,18 @@ async def build_subscription(family_id: str):
     effective_plan = trial["plan"] if trial else family["plan"]
     catalog = plan_catalog_for(effective_plan)
     limits = catalog["limits"]
+    if effective_plan in (None, "village"):
+        limits = free_limits_for(family)
+    # Free, with children in it, and past any notice period: the children's
+    # side is locked (hidden, kept) until the household subscribes.
+    children_locked = (effective_plan in (None, "village") and young_people_count > 0
+                       and limits.get("max_children", 0) == 0)
+    # Free with children, still inside the notice period: the date it ends,
+    # so the app can say so in good time.
+    free_children_until = (iso(LEGACY_FREE_UNTIL)
+                           if effective_plan in (None, "village") and young_people_count > 0
+                           and limits.get("max_children", 0) > 0 and is_legacy_free(family)
+                           else None)
     # TESTING WINDOW: until billing is live, every family gets Premium limits so
     # closed-test families can exercise the gated features and aren't blocked by
     # the child cap. "Live" means EITHER rail is configured — Google Play via
@@ -1547,7 +1597,14 @@ async def build_subscription(family_id: str):
         # An admin household is shown the top plan, so only its own choice
         # hides anything there.
         "kids_sections_hidden": bool(family.get("kids_sections_hidden"))
-                                or (effective_plan == "duo" and not admin_household),
+                                or (effective_plan == "duo" and not admin_household)
+                                or bool(children_locked and not (testing_window or admin_household or grandfathered)),
+        # Free with children, past any notice period: the children and their
+        # stars are kept, and shown again the moment Family is bought. Never
+        # for a household the top limits apply to anyway.
+        "children_locked": bool(children_locked and not (testing_window or admin_household or grandfathered)),
+        "free_children_until": (None if (testing_window or admin_household or grandfathered)
+                                else free_children_until),
         "kids_sections_choice": bool(family.get("kids_sections_hidden")),
         # A free trial in force: which plan, and until when. The plan above
         # stays "village" — nothing has been bought — while the limits are
@@ -14678,6 +14735,25 @@ def _stripe_price_id(tier: str, cycle: str) -> Optional[str]:
     return (os.environ.get(key) or None) if key else None
 
 
+def _stripe_old_prices() -> dict:
+    """Prices no longer sold that existing card subscribers still pay.
+
+    When a plan's price changes, the new Stripe price goes in the usual
+    variable and the OLD one here — STRIPE_OLD_PRICES, a comma-separated list
+    of `price_id=tier:cycle` — so the next renewal of somebody on the old
+    price is still recognised as the plan they bought. Without it, a Household
+    subscriber renewing at the old price fell to the Family fallback: a
+    downgrade nobody asked for, on the day they paid.
+    """
+    out = {}
+    for part in (os.environ.get("STRIPE_OLD_PRICES") or "").split(","):
+        price, _, spec = part.strip().partition("=")
+        tier, _, cycle = spec.strip().partition(":")
+        if price and tier in STRIPE_TIER_TO_PLAN and cycle in ("monthly", "yearly"):
+            out[price.strip()] = (tier, cycle)
+    return out
+
+
 def _stripe_plan_for_price(price_id: Optional[str]) -> Optional[str]:
     """Which internal plan a Stripe price grants — the reverse of the table
     above, so a renewal or a plan-change event (which carries only the price)
@@ -14687,7 +14763,8 @@ def _stripe_plan_for_price(price_id: Optional[str]) -> Optional[str]:
     for (tier, _cycle), env_key in STRIPE_PRICE_ENV.items():
         if os.environ.get(env_key) == price_id:
             return STRIPE_TIER_TO_PLAN[tier]
-    return None
+    old = _stripe_old_prices().get(price_id)
+    return STRIPE_TIER_TO_PLAN[old[0]] if old else None
 
 
 def _stripe_cycle_for_price(price_id: Optional[str]) -> Optional[str]:
@@ -14698,7 +14775,8 @@ def _stripe_cycle_for_price(price_id: Optional[str]) -> Optional[str]:
     for (_tier, cycle), env_key in STRIPE_PRICE_ENV.items():
         if os.environ.get(env_key) == price_id:
             return cycle
-    return None
+    old = _stripe_old_prices().get(price_id)
+    return old[1] if old else None
 
 
 def _public_app_url() -> str:
