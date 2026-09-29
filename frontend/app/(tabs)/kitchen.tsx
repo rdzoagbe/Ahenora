@@ -28,7 +28,7 @@ import { logger } from '../../src/logger';
 import { refreshOutcome } from '../../src/refreshOutcome';
 import { suggestWeek, MealSuggestion, SuggestLang, localizedMealTitle, localizedMealIngredients, resolveRecipeId, recipeIngredients, searchRecipes } from '../../src/mealSuggestions';
 import { quantityFor, shoppingNameFor, formatAiQuantity, AiIngredient } from '../../src/recipeQuantities';
-import { categoriseShoppingItem } from '../../src/shoppingCategories';
+import { categoriseShoppingItem, shoppingLabel } from '../../src/shoppingCategories';
 import { recipeMethod } from '../../src/recipeSteps';
 import { apiErrorText, isAiAllowanceError } from '../../src/apiError';
 import { ScansLeft } from '../../src/components/ScansLeft';
@@ -418,8 +418,25 @@ export default function Kitchen() {
     try {
       const created = await api.addMealFromCapture(captureDay, captured, suggestLang);
       setMeals((prev) => [...prev, created]);
+      // And what the dish needs, onto the list — the same as the camera on
+      // Home does. Anything already on the list is skipped by the server. A
+      // failure here leaves the meal planned and says so, rather than
+      // pretending the list was done.
+      const names = captured.ingredients.map(shoppingLabel);
+      let listed = true;
+      if (names.length) {
+        try {
+          await api.bulkAddShopping(names, captured.ingredients.map((i) => categoriseShoppingItem(i.name) ?? undefined));
+          setShopItems(await api.listShopping().catch(() => []));
+        } catch (e) {
+          logger.warn('captured ingredients not listed', e);
+          listed = false;
+        }
+      }
       setShowCapture(false);
-      showToast(`1 ${t('kitchen_meals_added')}`, 'success');
+      showToast(listed && names.length
+        ? t('cam_done_meal', { day: t(`day_${captureDay}`), count: String(names.length) })
+        : `1 ${t('kitchen_meals_added')}`, listed ? 'success' : 'error');
     } catch (e: any) {
       showToast(apiErrorText(e, t, 'vault_could_not_add_meal'), 'error');
     } finally {

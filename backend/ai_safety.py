@@ -405,9 +405,11 @@ Rules you must follow:
   page, a recipe card. It is "shopping" if the photo is a list of things to
   buy — a handwritten or printed shopping list, groceries, toiletries,
   cleaning products — with no dates or instructions beyond the items. It is
-  "document" for everything else. When it is "recipe" or "shopping", the
-  other keys still describe it as a document; a second pass reads the
-  recipe or the items themselves.
+  "receipt" if the photo is a till receipt from a shop, restaurant or
+  pharmacy showing what was paid. It is "document" for everything else,
+  including bills and invoices that are still to be paid. When it is
+  "recipe", "shopping" or "receipt", the other keys still describe it as a
+  document; a second pass reads the recipe, the items or the receipt.
 - "type" is one of SIGN_SLIP, RSVP, TASK, APPOINTMENT, SCHOOL. Use
   APPOINTMENT where the document is about the family being somewhere at a
   time — a dentist or doctor slot, a parents evening, a fitting, a viewing.
@@ -528,7 +530,7 @@ def validate_document_scan(parsed: dict, members: list) -> dict:
 
     kind = str(parsed.get("kind") or "").strip().lower()
     return {
-        "kind": kind if kind in ("recipe", "shopping") else "document",
+        "kind": kind if kind in ("recipe", "shopping", "receipt") else "document",
         "type": card_type,
         "title": title,
         "description": description,

@@ -12,14 +12,14 @@ import {
 import { BlurView } from 'expo-blur';
 import * as ImagePicker from 'expo-image-picker';
 import {
-  X, Sparkles, Camera, Image as ImageIcon, FileScan, Check, ChefHat, ShoppingCart,
+  X, Sparkles, Camera, Image as ImageIcon, FileScan, Check, ChefHat, ShoppingCart, Receipt, Lock,
 } from 'lucide-react-native';
 import { PressScale } from './PressScale';
 import { useStore } from '../store';
 import { apiErrorText } from '../apiError';
 import { ScansLeft } from './ScansLeft';
 import { localeFor } from '../utils/date';
-import { api, CardType, CapturedRecipe, ScanResult } from '../api';
+import { api, CardType, CapturedRecipe, ScanResult, ScannedReceipt } from '../api';
 import { DOCUMENT_CATEGORIES, CATEGORY_STYLE } from '../documentCategories';
 import { scanDocument } from '../documentScanner';
 import { categoriseShoppingItem, shoppingLabel } from '../shoppingCategories';
@@ -47,10 +47,17 @@ interface Props {
 
 // 'shopping' reuses the recipe step's list: a photographed shopping list is
 // the same decision — which of these lines go on the list — without a dish.
-type Phase = 'idle' | 'scanning' | 'confirm' | 'recipe' | 'shopping' | 'error';
+type Phase = 'idle' | 'scanning' | 'confirm' | 'recipe' | 'shopping' | 'receipt' | 'done' | 'error';
+
+// The planner's days, in its own order and its own keys (day_monday…).
+const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+/** Today, as a planner day: a recipe photographed now is most often tonight's. */
+function today(): string {
+  return DAYS[(new Date().getDay() + 6) % 7];
+}
 
 export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
-  const { t, theme, lang } = useStore();
+  const { t, theme, lang, user, subscription, showUpgradePrompt } = useStore();
   const [phase, setPhase] = useState<Phase>('idle');
   const [preview, setPreview] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -61,6 +68,14 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
   const [recipe, setRecipe] = useState<CapturedRecipe | null>(null);
   const [skipped, setSkipped] = useState<Set<number>>(new Set());
   const [adding, setAdding] = useState(false);
+  // A recipe goes on a day of the week as well as on the list. null means
+  // "not planned": the ingredients only.
+  const [mealDay, setMealDay] = useState<string | null>(null);
+  const mealsLocked = subscription?.limits?.meal_planner === false && !subscription?.admin_unlocked;
+  // A till receipt, read line by line, on its way to the expenses.
+  const [receipt, setReceipt] = useState<ScannedReceipt | null>(null);
+  // What was just done, said back before the sheet closes.
+  const [doneText, setDoneText] = useState('');
 
   // Tags each scan so a result that lands after the sheet was closed (Android
   // hardware back mid-scan) is dropped instead of setting a stale confirm step
@@ -78,6 +93,9 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
       setRecipe(null);
       setSkipped(new Set());
       setAdding(false);
+      setMealDay(null);
+      setReceipt(null);
+      setDoneText('');
     }
   }, [visible]);
 
@@ -180,7 +198,15 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
       setCategory(result.vault_category || '');
       if (result.kind === 'recipe' && result.recipe) {
         setRecipe(result.recipe);
+        // Planned for today unless the plan does not include meals, in which
+        // case only the ingredients can go anywhere.
+        setMealDay(mealsLocked ? null : today());
         setPhase('recipe');
+      } else if (result.kind === 'receipt' && result.receipt && !user?.is_helper) {
+        // A helper cannot see the household's money, so a receipt they
+        // photograph stays a document — it never becomes an expense.
+        setReceipt(result.receipt);
+        setPhase('receipt');
       } else if (result.kind === 'shopping' && result.shopping_items?.length) {
         // A shopping list goes on the shopping list. It used to become one
         // task named after the list, with every item on it lost.
@@ -245,20 +271,57 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
   const addIngredients = async () => {
     if (!recipe || adding) return;
     const wanted = recipe.ingredients.filter((_, i) => !skipped.has(i));
-    if (wanted.length === 0) return;
+    const planDay = phase === 'recipe' ? mealDay : null;
+    if (wanted.length === 0 && !planDay) return;
     setAdding(true);
     const names = wanted.map(shoppingLabel);
     try {
+      // The meal first: if it fails, nothing has been added to the list
+      // either, and trying again cannot double anything up.
+      if (planDay) {
+        await api.addMealFromCapture(planDay, recipe, lang);
+      }
       // An unrecognised ingredient has no aisle; the server files those under
-      // "Other" itself, so send nothing rather than a guess.
-      await api.bulkAddShopping(
-        names,
-        wanted.map((i) => categoriseShoppingItem(i.name) ?? undefined),
-      );
-      onClose();
+      // "Other" itself, so send nothing rather than a guess. Anything already
+      // on the list is skipped by the server, so nothing is listed twice.
+      if (names.length) {
+        await api.bulkAddShopping(
+          names,
+          wanted.map((i) => categoriseShoppingItem(i.name) ?? undefined),
+        );
+      }
+      setDoneText(planDay
+        ? t('cam_done_meal', { day: t(`day_${planDay}`), count: String(names.length) })
+        : t('cam_done_shopping', { count: String(names.length) }));
+      setPhase('done');
     } catch (e: any) {
       logger.warn('bulk add from recipe failed', e);
       setErr(apiErrorText(e, t, 'cam_shopping_add_failed'));
+      setAdding(false);
+    }
+  };
+
+  /** Save the receipt as an expense, with the lines the reader was sure of. */
+  const saveReceipt = async () => {
+    if (!receipt || adding) return;
+    setAdding(true);
+    try {
+      const shop = receipt.shop || t('cam_receipt_shop_unknown');
+      await api.addExpense({
+        merchant: shop,
+        description: shop,
+        amount: receipt.total,
+        category: 'Groceries',
+        spent_on: receipt.date || undefined,
+        items: receipt.items
+          .filter((i) => !i.unsure)
+          .map((i) => ({ name: i.name, qty: i.qty, unit: i.unit, line_total: i.line_total })),
+      });
+      setDoneText(t('cam_done_receipt', { amount: receipt.total.toFixed(2), shop }));
+      setPhase('done');
+    } catch (e: any) {
+      logger.warn('receipt from camera failed', e);
+      setErr(apiErrorText(e, t, 'exp_save_failed'));
       setAdding(false);
     }
   };
@@ -311,6 +374,51 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
                 {phase === 'shopping' ? t('cam_shopping_sub') : recipe.title}
               </Text>
 
+              {/* A recipe goes on a day as well as on the list. Today is
+                  picked; "Not planned" leaves the week alone. On a plan
+                  without the kitchen the days are shown locked, and the
+                  ingredients still go on the list. */}
+              {phase === 'recipe' ? (
+                <>
+                  <Text style={[styles.dayLabel, { color: theme.colors.textMuted }]}>{t('cam_cook_on')}</Text>
+                  {mealsLocked ? (
+                    <PressScale
+                      testID="cam-meal-locked"
+                      accessibilityRole="button"
+                      onPress={() => showUpgradePrompt('meal_planner', t('premium_meal_planner'))}
+                      style={[styles.lockedDays, { borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}
+                    >
+                      <Lock color={theme.colors.textMuted} size={14} />
+                      <Text style={[styles.lockedDaysText, { color: theme.colors.textMuted }]}>{t('premium_meal_planner')}</Text>
+                    </PressScale>
+                  ) : (
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dayRow}>
+                      {[...DAYS, null].map((d) => {
+                        const on = mealDay === d;
+                        return (
+                          <PressScale
+                            key={d ?? 'none'}
+                            testID={`cam-day-${d ?? 'none'}`}
+                            accessibilityRole="button"
+                            accessibilityState={{ selected: on }}
+                            onPress={() => setMealDay(d)}
+                            style={[styles.dayChip, {
+                              borderColor: on ? theme.colors.accent : theme.colors.cardBorder,
+                              backgroundColor: on ? theme.colors.accentSoft : theme.colors.bgSoft,
+                            }]}
+                          >
+                            <Text style={[styles.dayChipText, { color: on ? theme.colors.text : theme.colors.textMuted }]}>
+                              {d ? t(`day_${d}`) : t('cam_not_planned')}
+                            </Text>
+                          </PressScale>
+                        );
+                      })}
+                    </ScrollView>
+                  )}
+                  <Text style={[styles.dayLabel, { color: theme.colors.textMuted }]}>{t('cam_ingredients_to_list')}</Text>
+                </>
+              ) : null}
+
               <ScrollView style={styles.list} contentContainerStyle={styles.listInner}>
                 {recipe.ingredients.map((item, index) => {
                   const on = !skipped.has(index);
@@ -342,11 +450,17 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
                 <PressScale
                   testID="cam-add-shopping"
                   onPress={addIngredients}
-                  disabled={adding || chosenCount === 0}
-                  style={[styles.primaryBtn, { backgroundColor: theme.colors.primary, opacity: chosenCount === 0 ? 0.5 : 1 }]}
+                  disabled={adding || (chosenCount === 0 && !(phase === 'recipe' && mealDay))}
+                  style={[styles.primaryBtn, { backgroundColor: theme.colors.primary,
+                    opacity: chosenCount === 0 && !(phase === 'recipe' && mealDay) ? 0.5 : 1 }]}
                 >
-                  <Text style={[styles.primaryText, { color: theme.colors.primaryText }]}>
-                    {adding ? t('cam_adding') : t('cam_add_to_shopping', { count: String(chosenCount) })}
+                  <Text style={[styles.primaryText, { color: theme.colors.primaryText }]} numberOfLines={2}>
+                    {adding ? t('cam_adding')
+                      : phase === 'recipe' && mealDay
+                        ? (chosenCount > 0
+                          ? t('cam_add_meal_and_list', { day: t(`day_${mealDay}`), count: String(chosenCount) })
+                          : t('cam_add_meal_only', { day: t(`day_${mealDay}`) }))
+                        : t('cam_add_to_shopping', { count: String(chosenCount) })}
                   </Text>
                 </PressScale>
                 <PressScale
@@ -357,6 +471,73 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
                   <Text style={[styles.secondaryText, { color: theme.colors.text }]}>
                     {t(phase === 'shopping' ? 'cam_task_instead' : 'cam_file_instead')}
                   </Text>
+                </PressScale>
+              </View>
+            </>
+          ) : phase === 'receipt' && receipt ? (
+            <>
+              <View style={[styles.heroIcon, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
+                <Receipt color={theme.colors.accent} size={28} />
+              </View>
+              <Text testID="cam-receipt-heading" style={[styles.heading, { color: theme.colors.text }]}>
+                {t('cam_looks_like_receipt')}
+              </Text>
+              <Text style={[styles.sub, { color: theme.colors.textMuted }]} numberOfLines={2}>
+                {[receipt.shop, receipt.date ? new Date(receipt.date).toLocaleDateString(localeFor(lang)) : '']
+                  .filter(Boolean).join(' · ')}
+              </Text>
+              <View style={[styles.facts, { borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}>
+                <Text style={[styles.factText, { color: theme.colors.text }]}>
+                  {t('cam_receipt_total', { amount: receipt.total.toFixed(2) })}
+                </Text>
+                {/* The lines and the printed total disagree: say so, fix
+                    neither — the person holding the receipt decides. */}
+                {!receipt.reconciles ? (
+                  <Text style={[styles.factText, { color: theme.colors.textMuted }]}>
+                    {t('cam_receipt_mismatch', { amount: receipt.lines_total.toFixed(2) })}
+                  </Text>
+                ) : null}
+                <Text style={[styles.factText, { color: theme.colors.textMuted }]}>
+                  {t('cam_receipt_lines', { count: String(receipt.items.filter((i) => !i.unsure).length) })}
+                </Text>
+              </View>
+
+              {err ? <Text style={[styles.errText, { color: theme.colors.danger }]}>{err}</Text> : null}
+
+              <View style={styles.controls}>
+                <PressScale
+                  testID="cam-add-expense"
+                  onPress={saveReceipt}
+                  disabled={adding}
+                  style={[styles.primaryBtn, { backgroundColor: theme.colors.primary }]}
+                >
+                  <Text style={[styles.primaryText, { color: theme.colors.primaryText }]}>
+                    {adding ? t('cam_adding') : t('cam_add_expense', { amount: receipt.total.toFixed(2) })}
+                  </Text>
+                </PressScale>
+                <PressScale
+                  testID="cam-receipt-as-document"
+                  onPress={() => { setReceipt(null); setPhase('confirm'); }}
+                  style={[styles.secondaryBtn, { borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}
+                >
+                  <Text style={[styles.secondaryText, { color: theme.colors.text }]}>{t('cam_file_instead')}</Text>
+                </PressScale>
+              </View>
+            </>
+          ) : phase === 'done' ? (
+            <>
+              <View style={[styles.heroIcon, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
+                <Check color={theme.colors.accent} size={28} />
+              </View>
+              <Text testID="cam-done" style={[styles.heading, { color: theme.colors.text }]}>{t('cam_done_title')}</Text>
+              <Text style={[styles.sub, { color: theme.colors.textMuted }]}>{doneText}</Text>
+              <View style={styles.controls}>
+                <PressScale
+                  testID="cam-done-close"
+                  onPress={onClose}
+                  style={[styles.primaryBtn, { backgroundColor: theme.colors.primary }]}
+                >
+                  <Text style={[styles.primaryText, { color: theme.colors.primaryText }]}>{t('done')}</Text>
                 </PressScale>
               </View>
             </>
@@ -579,6 +760,12 @@ const styles = StyleSheet.create({
   },
   chipText: { fontFamily: 'Figtree_700Bold', fontSize: 13 },
   list: { maxHeight: 230, marginBottom: 14 },
+  dayLabel: { fontFamily: 'Figtree_700Bold', fontSize: 12, letterSpacing: 0.4, textTransform: 'uppercase', marginBottom: 8 },
+  dayRow: { gap: 8, paddingBottom: 12 },
+  dayChip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 9999, borderWidth: 1 },
+  dayChipText: { fontFamily: 'Figtree_700Bold', fontSize: 13 },
+  lockedDays: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderRadius: 12, padding: 10, marginBottom: 12 },
+  lockedDaysText: { flex: 1, fontFamily: 'Figtree_600SemiBold', fontSize: 13 },
   listInner: { gap: 8 },
   row: {
     flexDirection: 'row',
