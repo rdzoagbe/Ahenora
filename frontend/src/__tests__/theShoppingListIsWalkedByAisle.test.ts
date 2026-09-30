@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { AISLE_ORDER, AISLE_EMOJI, aisleKey, groupByAisle, splitQuantity } from '../shoppingAisles';
+import { AISLE_ORDER, AISLE_EMOJI, aisleKey, groupByAisle, splitQuantity, whereItWent } from '../shoppingAisles';
 import { TRANSLATIONS, SUPPORTED_LANGS } from '../i18n';
 
 // Roland, 2026-09-30: every shopping item went onto one long list with no
@@ -54,5 +54,43 @@ describe('the shopping list, by aisle', () => {
     expect(splitQuantity('Lot de 3')).toEqual({ label: 'Lot de 3', qty: null });
     expect(splitQuantity('Bread')).toEqual({ label: 'Bread', qty: null });
     expect(splitQuantity('')).toEqual({ label: '', qty: null });
+  });
+});
+
+describe('saying where an added item went', () => {
+  const t = (key: string, p: Record<string, string | number> = {}) => {
+    const en: Record<string, string> = {
+      shop_added_to_aisle: 'Added to {aisle}: {name}',
+      shop_added_many: '{n} added: {where}',
+      shopcat_produce: 'Fruit & veg', shopcat_household: 'Cleaning & household', shopcat_other: 'Other',
+    };
+    return (en[key] ?? key).replace(/\{(\w+)\}/g, (_, k) => String(p[k] ?? ''));
+  };
+
+  it('names the aisle for one item, without its amount', () => {
+    expect(whereItWent(t, [{ name: 'Tomatoes 400g', category: 'Produce' }]))
+      .toBe('Added to Fruit & veg: Tomatoes');
+  });
+
+  it('counts several by aisle, in walking order', () => {
+    expect(whereItWent(t, [
+      { name: 'toilet paper', category: 'Household' },
+      { name: 'tomatoes', category: 'Produce' },
+      { name: 'washing liquid', category: 'Household' },
+    ])).toBe('3 added: Fruit & veg (1) · Cleaning & household (2)');
+  });
+
+  it('says nothing, rather than break the add, when there is nothing to say', () => {
+    expect(whereItWent(t, [])).toBeNull();
+    expect(whereItWent(t, undefined)).toBeNull();
+    expect(whereItWent(t, [undefined, null])).toBeNull();
+  });
+
+  it('is written in every app language', () => {
+    for (const lang of SUPPORTED_LANGS) {
+      for (const key of ['shop_added_to_aisle', 'shop_added_many']) {
+        expect([lang, key, TRANSLATIONS[lang][key]]).toEqual([lang, key, expect.stringContaining('{')]);
+      }
+    }
   });
 });

@@ -29,7 +29,7 @@ import { refreshOutcome } from '../../src/refreshOutcome';
 import { suggestWeek, MealSuggestion, SuggestLang, localizedMealTitle, localizedMealIngredients, resolveRecipeId, recipeIngredients, searchRecipes } from '../../src/mealSuggestions';
 import { quantityFor, shoppingNameFor, formatAiQuantity, AiIngredient } from '../../src/recipeQuantities';
 import { categoriseShoppingItem, shoppingLabel } from '../../src/shoppingCategories';
-import { groupByAisle, Aisle, AISLE_EMOJI, splitQuantity } from '../../src/shoppingAisles';
+import { groupByAisle, Aisle, AISLE_EMOJI, splitQuantity, whereItWent } from '../../src/shoppingAisles';
 import { AislePickerSheet } from '../../src/components/AislePickerSheet';
 import { recipeMethod } from '../../src/recipeSteps';
 import { apiErrorText, isAiAllowanceError } from '../../src/apiError';
@@ -382,11 +382,11 @@ export default function Kitchen() {
     setScanAdding(true);
     try {
       if (scanReplace) await api.clearAllShopping();
-      await api.bulkAddShopping(picked, picked.map((n) => categoriseShoppingItem(n) || undefined));
+      const r = await api.bulkAddShopping(picked, picked.map((n) => categoriseShoppingItem(n) || undefined));
       setShopItems(await api.listShopping().catch(() => []));
       setShowScan(false);
       setScanReplace(false);
-      showToast(t('cook_added_to_list', { n: picked.length }), 'success');
+      showToast(whereItWent(t, r?.items ?? []) ?? t('cook_added_to_list', { n: picked.length }), 'success');
     } catch {
       showToast(t('vault_could_not_add_meal'), 'error');
     } finally {
@@ -483,11 +483,13 @@ export default function Kitchen() {
       if (names.length === 1) {
         const item = await api.addShoppingItem({ name: names[0], category: categoriseShoppingItem(names[0]) || undefined });
         setShopItems((prev) => [item, ...prev]);
+        // Say which aisle it went to, so nobody has to go and look for it.
+        showToast(whereItWent(t, [item]) ?? t('shop_items_added', { n: 1 }), 'success');
       } else {
         const r = await api.bulkAddShopping(names, names.map((n) => categoriseShoppingItem(n) || undefined));
         setShopItems(await api.listShopping().catch(() => []));
         // Items, not "ingredients": this is whatever was typed, nappies included.
-        showToast(t('shop_items_added', { n: r.added }), 'success');
+        showToast(whereItWent(t, r?.items ?? []) ?? t('shop_items_added', { n: r.added }), 'success');
       }
       setShopInput('');
     } catch {
@@ -504,6 +506,8 @@ export default function Kitchen() {
     try {
       const item = await api.addShoppingItem({ name, category: categoriseShoppingItem(name) || undefined });
       setShopItems((prev) => [item, ...prev]);
+      const said = whereItWent(t, [item]);
+      if (said) showToast(said, 'success');
     } catch {
       showToast(t('vault_could_not_add_item'), 'error');
       setRegulars(await api.listFrequentShopping().then((r) => r.items).catch(() => []));
@@ -901,7 +905,7 @@ export default function Kitchen() {
         }),
       );
       setShopItems((prev) => [...prev, ...created]);
-      showToast(t('cook_added_to_list', { n: created.length }), 'success');
+      showToast(whereItWent(t, created) ?? t('cook_added_to_list', { n: created.length }), 'success');
     } catch {
       setShopItems(await api.listShopping().catch(() => []));
       showToast(t('vault_could_not_add_meal'), 'error');
@@ -1118,7 +1122,7 @@ export default function Kitchen() {
       const r = await api.bulkAddShopping(names, names.map((n) => categoriseShoppingItem(n) || undefined));
       setRestoreEntry(null);
       setShopItems(await api.listShopping().catch(() => []));
-      showToast(t('shop_items_added', { n: r.added }), 'success');
+      showToast(whereItWent(t, r?.items ?? []) ?? t('shop_items_added', { n: r.added }), 'success');
     } catch { showToast(t('vault_could_not_update'), 'error'); }
   }, [restoreEntry, restoreSel, showToast]);
 

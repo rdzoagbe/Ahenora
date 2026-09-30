@@ -23,6 +23,7 @@ import { api, CardType, CapturedRecipe, ScanResult, ScannedReceipt } from '../ap
 import { DOCUMENT_CATEGORIES, CATEGORY_STYLE } from '../documentCategories';
 import { scanDocument } from '../documentScanner';
 import { categoriseShoppingItem, shoppingLabel } from '../shoppingCategories';
+import { whereItWent } from '../shoppingAisles';
 import { logger } from '../logger';
 
 interface Draft {
@@ -284,15 +285,19 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
       // An unrecognised ingredient has no aisle; the server files those under
       // "Other" itself, so send nothing rather than a guess. Anything already
       // on the list is skipped by the server, so nothing is listed twice.
+      let where: string | null = null;
       if (names.length) {
-        await api.bulkAddShopping(
+        const r = await api.bulkAddShopping(
           names,
           wanted.map((i) => categoriseShoppingItem(i.name) ?? undefined),
         );
+        // Which aisles the items went to, under the summary line.
+        where = whereItWent(t, r?.items ?? []);
       }
-      setDoneText(planDay
+      const summary = planDay
         ? t('cam_done_meal', { day: t(`day_${planDay}`), count: String(names.length) })
-        : t('cam_done_shopping', { count: String(names.length) }));
+        : t('cam_done_shopping', { count: String(names.length) });
+      setDoneText(where ? `${summary}\n${where}` : summary);
       setPhase('done');
     } catch (e: any) {
       logger.warn('bulk add from recipe failed', e);

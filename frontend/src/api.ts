@@ -2974,7 +2974,7 @@ export const api = {
       timeoutMs: VISION_TIMEOUT_MS,
     }),
   bulkAddShopping: (names: string[], categories?: (string | undefined)[]) =>
-    request<{ ok: boolean; added: number }>('/shopping/bulk', {
+    request<{ ok: boolean; added: number; items?: { name: string; category: string }[] }>('/shopping/bulk', {
       method: 'POST',
       body: { names, categories: categories?.map((c) => c || 'Other') || [] },
     }),

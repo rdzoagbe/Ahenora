@@ -65,6 +65,7 @@ import { isSoloHousehold } from '../../src/household';
 import { useStore } from '../../src/store';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { useUI, UIColors } from '../../src/components/Kit';
+import { whereItWent } from '../../src/shoppingAisles';
 import { api, logEvent, ActivityEntry, Announcement, Card, CardType, ChatThreadSummary, CustodyConfig, FamilyMember, GiftPot, SantaDraw, HandoffNote, WeeklyReport , Room } from '../../src/api';
 import { syncCardReminderNotifications, syncMorningDigest, syncDinnerReminder, syncSundayRecap, ensureAskedNotificationPermissionOnce } from '../../src/notifications';
 import { logger } from '../../src/logger';
@@ -742,10 +743,11 @@ export default function Feed() {
     setCapturing(true);
     try {
       if (intent.kind === 'shopping') {
-        await Promise.all(intent.items.map((name) => api.addShoppingItem({ name })));
+        const added = await Promise.all(intent.items.map((name) => api.addShoppingItem({ name })));
         setCaptureText('');
         showToast(
-          t('feed_capture_to_list', { n: intent.items.length }),
+          // Where each item landed, e.g. "Added to Fruit & veg: tomatoes".
+          whereItWent(t, added) ?? t('feed_capture_to_list', { n: intent.items.length }),
           'success',
           { label: t('feed_capture_open'), onPress: () => router.navigate('/(tabs)/kitchen') },
         );

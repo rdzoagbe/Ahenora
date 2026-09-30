@@ -8,6 +8,7 @@ import { PressScale } from '../src/components/PressScale';
 import { ChatThread } from '../src/components/ChatThread';
 import { useUI, UIColors } from '../src/components/Kit';
 import { useStore } from '../src/store';
+import { whereItWent } from '../src/shoppingAisles';
 import { api, HandoffNote, TeenHome } from '../src/api';
 import { logger } from '../src/logger';
 import { localeFor } from '../src/utils/date';
@@ -108,9 +109,9 @@ export default function TeenScreen() {
     setShopBusy(true);
     setShopNote(null);
     try {
-      await api.addShoppingItem({ name });
+      const item = await api.addShoppingItem({ name });
       setShopItem('');
-      setShopNote(t('teen_shop_added'));
+      setShopNote(whereItWent(t, [item]) ?? t('teen_shop_added'));
     } catch (e) {
       // Same rule as finishing a task: a tap that did nothing must say so.
       logger.warn('teen shopping add failed', e);

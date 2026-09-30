@@ -19,6 +19,7 @@ import { AddCardModal } from './AddCardModal';
 import { PressScale } from './PressScale';
 import { useUI, UIColors } from './Kit';
 import { useStore } from '../store';
+import { whereItWent } from '../shoppingAisles';
 import { api, CardType } from '../api';
 import { logger } from '../logger';
 import { selectedCalendarDayAt } from '../calendarSelection';
@@ -171,11 +172,12 @@ export function GlobalCapture({ visible, onClose }: { visible: boolean; onClose:
     if (!name || shoppingSaving) return;
     setShoppingSaving(true);
     try {
-      await api.bulkAddShopping([name]);
+      const r = await api.bulkAddShopping([name]);
       bumpData();
       setShowShopping(false);
       setShoppingText('');
-      showToast(t('qa_added_toast'));
+      // Which aisle it landed in, so nobody has to open the list to check.
+      showToast(whereItWent(t, r?.items ?? []) ?? t('qa_added_toast'));
     } catch (e) {
       // Don't fail silently — the sheet stays open with the text intact, but the
       // user needs to know the tap didn't land so they don't just retry blindly.

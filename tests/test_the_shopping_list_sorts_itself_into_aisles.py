@@ -88,6 +88,16 @@ class TheListSortsItself(unittest.TestCase):
         ]:
             self.assertEqual(shopping_aisles.classify(name), aisle, name)
 
+    def test_rolands_second_set_of_examples(self):
+        # "chicken thigh to meat, dried beans to the cupboard, washing soap to
+        # cleaning". Soap on its own is for hands and stays in Health.
+        self.assertEqual(self.add("chicken thigh")["category"], "Meat")
+        self.assertEqual(self.add("dried beans")["category"], "Pantry")
+        self.assertEqual(self.add("washing soap")["category"], "Household")
+        self.assertEqual(shopping_aisles.classify("savon noir"), "Household")
+        self.assertEqual(shopping_aisles.classify("savon de Marseille"), "Household")
+        self.assertEqual(shopping_aisles.classify("soap"), "Health")
+
     def test_the_most_specific_words_win(self):
         # One rule instead of a precedence table: the longest matching term.
         for name, aisle in [
@@ -119,6 +129,19 @@ class TheListSortsItself(unittest.TestCase):
         self.assertEqual(listed["milk"], "Dairy")
         self.assertEqual(listed["bin bags"], "Household")
         self.assertEqual(listed["nappies"], "Baby")
+
+    def test_a_bulk_add_says_where_each_item_went(self):
+        # So the app can say "Added to Fruit & veg: tomatoes" without the
+        # person having to go and look.
+        res = asyncio.run(server.bulk_add_shopping(Bulk(["tomatoes", "toilet paper"]), USER))
+        self.assertEqual(res["added"], 2)
+        self.assertEqual(res["items"], [
+            {"name": "tomatoes", "category": "Produce"},
+            {"name": "toilet paper", "category": "Household"},
+        ])
+        # Something already on the list is not added again, and not reported.
+        again = asyncio.run(server.bulk_add_shopping(Bulk(["tomatoes"]), USER))
+        self.assertEqual((again["added"], again["items"]), (0, []))
 
     def test_an_old_list_gains_its_aisles_without_a_rewrite(self):
         asyncio.run(self.db["shopping_list"].insert_one({
