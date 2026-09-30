@@ -779,6 +779,15 @@ async def family_has_admin(database, family_id: str) -> bool:
     return has_admin
 
 
+def admin_display_plan(bought: Optional[str]) -> str:
+    """The plan an admin household is shown: what it bought, if anything;
+    otherwise the top tier, whose limits it has."""
+    if bought in ("duo", "executive", "household"):
+        return bought
+    # Nothing bought — or the retired "family_office", which is the top tier.
+    return "household"
+
+
 def apply_admin_subscription(subscription: dict) -> dict:
     # Admin/tester accounts keep their own family data, but plan limits are bypassed
     # so the founder can test every feature without changing customer billing rules.
@@ -787,7 +796,13 @@ def apply_admin_subscription(subscription: dict) -> dict:
     # that plan_catalog_for() still resolves — so limits were right, but every
     # member of an admin household saw "Family Office Plan" in Settings and an
     # "Upgrade" button on a plan they were already above.
-    admin_sub["plan"] = "household"
+    #
+    # Only when nothing has been bought, though. The founder testing the store
+    # bought Duo and was still told he was on Household: the Plans page marked
+    # Household current and every other plan "Downgrade", and the purchase
+    # looked as if it had not landed. A real purchase is reported as itself;
+    # the limits below are what keep every feature open.
+    admin_sub["plan"] = admin_display_plan(subscription.get("plan"))
     admin_sub["billing_cycle"] = admin_sub.get("billing_cycle", "yearly")
     admin_sub["grandfathered"] = True
     admin_sub["admin_unlocked"] = True
@@ -1562,7 +1577,7 @@ async def build_subscription(family_id: str):
         # middle tier's.
         limits = PLAN_CATALOG["household"]["limits"]
     return {
-        "plan": "household" if admin_household else family["plan"],
+        "plan": admin_display_plan(family["plan"]) if admin_household else family["plan"],
         # Lets the app show "you're previewing Premium free" notices so launch
         # gating never feels like a surprise takeaway.
         "testing_window": testing_window,

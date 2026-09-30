@@ -76,5 +76,37 @@ class HouseholdPlan(unittest.TestCase):
         self.assertEqual(sub["limits"], server.PLAN_CATALOG["household"]["limits"])
 
 
+    def test_an_admin_household_that_bought_a_plan_is_shown_that_plan(self):
+        # Field case, 2026-09-30: the founder bought Duo and the Plans page
+        # still said Household — Household marked current, every other plan
+        # "Downgrade", and the purchase looking as if it had not landed. The
+        # plan bought is reported as itself; the top limits stay.
+        self._seed("fam4", ["admin@x.com", "wife@x.com"])
+        for bought in ("duo", "executive", "household"):
+            asyncio.run(self.db["families"].delete_many({"family_id": "fam4"}))
+            asyncio.run(self.db["families"].insert_one({
+                "family_id": "fam4", "plan": bought, "billing_cycle": "monthly"}))
+            server._ADMIN_FAMILY_CACHE.clear()
+            sub = asyncio.run(server.build_subscription("fam4"))
+            self.assertEqual(sub["plan"], bought)
+            self.assertEqual(sub["limits"], server.PLAN_CATALOG["household"]["limits"])
+            # Duo hides the children's sections for customers, never for the
+            # household testing everything.
+            self.assertFalse(sub["kids_sections_hidden"])
+
+    def test_the_admin_himself_sees_the_plan_he_bought(self):
+        admin = {"plan": "duo", "billing_cycle": "monthly",
+                 "limits": dict(server.PLAN_CATALOG["duo"]["limits"])}
+        shown = server.apply_admin_subscription(admin)
+        self.assertEqual(shown["plan"], "duo")
+        self.assertTrue(shown["admin_unlocked"])
+        self.assertEqual(shown["limits"]["max_children"], 999)
+        # Nothing bought: the top tier, whose limits he has.
+        self.assertEqual(server.apply_admin_subscription(
+            {"plan": "village", "limits": {}})["plan"], "household")
+        self.assertEqual(server.apply_admin_subscription(
+            {"plan": "family_office", "limits": {}})["plan"], "household")
+
+
 if __name__ == "__main__":
     unittest.main()

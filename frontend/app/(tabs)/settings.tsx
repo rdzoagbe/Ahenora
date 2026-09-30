@@ -343,7 +343,9 @@ export default function Settings() {
     : subscription?.plan === 'duo' ? t('plan_duo')
     : t('plan_village');
   // The children's sections: shown, hidden by choice, or hidden by Duo.
-  const kidsOnDuo = subscription?.plan === 'duo';
+  // Locked only when Duo is what hides them: an admin household on Duo keeps
+  // every section, and its toggle stays its own.
+  const kidsOnDuo = subscription?.plan === 'duo' && !!subscription?.kids_sections_hidden;
   const kidsShown = !subscription?.kids_sections_hidden;
   const [kidsSaving, setKidsSaving] = useState(false);
   const toggleKidsSections = async () => {
