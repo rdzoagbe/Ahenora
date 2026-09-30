@@ -37,17 +37,39 @@ export function inviteMessage(inviterName: string, url: string, invitedYou: stri
   return `${who ? `${who} ` : ''}${invitedYou}\n\n${url}`;
 }
 
+/**
+ * The link an invitation is shared as: the invitation page on ahenora.com, in
+ * the sender's language, rather than the web app.
+ *
+ * Roland, 2026-09-30, on an invitation his partner got on WhatsApp: "this
+ * shouldn't be how the invitation comes". It previewed as the website's own
+ * card and opened the browser version of the app; installing from the store
+ * lost the invitation on the way. The page at /join says who is inviting,
+ * sends the phone to its own store with the invitation copied, and hands the
+ * invitation to the app when it is installed (docs: scripts/build_join_pages.py).
+ *
+ * A url with no invitation in it is returned as it was, never mangled.
+ */
+export function joinUrl(inviteUrl: string, lang?: string | null): string {
+  const m = /[?#&]invite=([^&#\s]+)/.exec(inviteUrl || '');
+  if (!m) return inviteUrl;
+  const prefix = lang === 'fr' || lang === 'es' || lang === 'de' ? `${lang}/` : '';
+  return `https://ahenora.com/${prefix}join/?invite=${m[1]}`;
+}
+
 export async function shareHouseholdInvite(opts: {
   inviterName: string;
   title: string;
   invitedYou: string;
   relationship?: string;
+  /** The sender's app language: the invitation page and its preview match it. */
+  lang?: string | null;
 }): Promise<ShareInviteOutcome> {
   let url: string | null = null;
   try {
     const res = await api.createInviteLink(
       opts.relationship ? { relationship: opts.relationship } : undefined);
-    url = res?.invite_url || null;
+    url = res?.invite_url ? joinUrl(res.invite_url, opts.lang) : null;
   } catch (e) {
     logger.warn('invite link could not be created', e);
     return { kind: 'unavailable' };

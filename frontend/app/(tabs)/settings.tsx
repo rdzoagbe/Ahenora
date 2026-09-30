@@ -41,6 +41,7 @@ import { Card, Chevron, Divider, IconTile, MiniRow, NavRow, ScreenHeader, StatBo
 import { useStore } from '../../src/store';
 import { openReview } from '../../src/reviewPrompt';
 import { api, reportPushFailure, Card as CardType, Entitlements, FamilyInvite, FamilyMember, NotificationSettings } from '../../src/api';
+import { joinUrl } from '../../src/inviteShare';
 import { LANG_NAMES } from '../../src/i18n';
 import { appVersionInfo, ensureNotificationPermissions, registerForPushNotificationsAsync, sendLocalNotification, sendTestScheduledReminderNotification, syncCardReminderNotifications } from '../../src/notifications';
 import { BUILD_TAG } from '../../src/buildInfo';
@@ -420,7 +421,9 @@ export default function Settings() {
     );
   }, [invites]);
 
-  const shareInviteLink = useCallback(async (inviteUrl?: string | null, email?: string | null) => {
+  const shareInviteLink = useCallback(async (rawInviteUrl?: string | null, email?: string | null) => {
+    // Shared as the invitation page in the sender's language, not the web app.
+    const inviteUrl = rawInviteUrl ? joinUrl(rawInviteUrl, lang) : rawInviteUrl;
     if (!inviteUrl) {
       setInviteResult(email ? `${t('set_invite_link_unavailable_for')} ${email}.` : t('set_invite_link_unavailable'));
       return;
@@ -439,7 +442,7 @@ export default function Settings() {
     } catch {
       setInviteResult(`${t('set_share_sheet_error')} ${inviteUrl}`);
     }
-  }, [user?.name]);
+  }, [user?.name, lang]);
 
   /** Ask the server to push to this account right now, and say what came back.
    *

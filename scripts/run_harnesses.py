@@ -123,6 +123,9 @@ HARNESSES = [
     "e2e_meals.py",
     "e2e_calendar.py",
     "e2e_invite.py",
+    # A shared invitation arrives as an invitation: its page names who is
+    # inviting and offers this phone's store, and the app takes it pasted.
+    "e2e_join.py",
     "e2e_webupdate.py",
     "e2e_sharelink.py",
     "e2e_journey.py",

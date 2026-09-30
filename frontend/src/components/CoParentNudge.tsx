@@ -48,7 +48,7 @@ interface Props {
  * Dismissible for genuine single parents, who can still invite from Settings.
  */
 export function CoParentNudge({ visible, onInvite, stranded, onResend }: Props) {
-  const { t, user } = useStore();
+  const { t, user, lang } = useStore();
   const ui = useUI();
   const styles = useMemo(() => createStyles(ui), [ui]);
   // null = still reading the flag (avoid a flash); false = show; true = hidden.
@@ -110,6 +110,7 @@ export function CoParentNudge({ visible, onInvite, stranded, onResend }: Props) 
         inviterName: user?.name || '',
         title: t('cp_share_title'),
         invitedYou: t('cp_share_invited_you'),
+        lang,
       });
       if (out.kind === 'shared') setSent(true);
       else if (out.kind === 'copied') { setSent(true); setLinkNote(t('cp_share_copied')); }
