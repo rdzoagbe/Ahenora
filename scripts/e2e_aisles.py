@@ -76,6 +76,17 @@ async def main():
         r["adding_several_says_which_aisles"] = (
             "3 added:" in said and "Fruit & veg (1)" in said and "Baby (1)" in said)
         await page.wait_for_timeout(3500)
+        # With the orange + button, the way Roland added his chicken breast:
+        # the keyboard stays up, so the message must be under the box, not at
+        # the foot of the screen where the keyboard covers it.
+        await box.fill("Chicken breast")
+        await page.click('[data-testid="shop-add"]')
+        await page.wait_for_timeout(900)
+        note = page.locator('[data-testid="shop-added-note"]')
+        r["adding_one_says_its_aisle_under_the_box"] = (
+            await note.count() == 1
+            and "Added to Meat & fish: Chicken breast" in await note.inner_text())
+        await page.wait_for_timeout(3500)
         await box.fill("Bananas")
         await box.press("Enter")
         await page.wait_for_timeout(900)
