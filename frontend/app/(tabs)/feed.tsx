@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
+  Keyboard,
   Platform,
   ScrollView,
   StyleSheet,
@@ -745,6 +746,9 @@ export default function Feed() {
       if (intent.kind === 'shopping') {
         const added = await Promise.all(intent.items.map((name) => api.addShoppingItem({ name })));
         setCaptureText('');
+        // The message says which aisle it went to; with the keyboard up it
+        // would sit behind it, unread.
+        Keyboard.dismiss();
         showToast(
           // Where each item landed, e.g. "Added to Fruit & veg: tomatoes".
           whereItWent(t, added) ?? t('feed_capture_to_list', { n: intent.items.length }),

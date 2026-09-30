@@ -141,6 +141,16 @@ export default function Kitchen() {
     });
   }, []);
   const [shopInput, setShopInput] = useState('');
+  // "Added to Meat & fish: chicken breast", shown under the box it was typed
+  // in. It was a toast at the foot of the screen, which is exactly where the
+  // keyboard sits while somebody is adding: Roland added chicken breast and
+  // saw nothing. Here it is on screen whatever the keyboard is doing.
+  const [addedNote, setAddedNote] = useState<string | null>(null);
+  useEffect(() => {
+    if (!addedNote) return;
+    const timer = setTimeout(() => setAddedNote(null), 5000);
+    return () => clearTimeout(timer);
+  }, [addedNote]);
   const [addingShop, setAddingShop] = useState(false);
 
   const [meals, setMeals] = useState<MealPlan[]>([]);
@@ -484,12 +494,12 @@ export default function Kitchen() {
         const item = await api.addShoppingItem({ name: names[0], category: categoriseShoppingItem(names[0]) || undefined });
         setShopItems((prev) => [item, ...prev]);
         // Say which aisle it went to, so nobody has to go and look for it.
-        showToast(whereItWent(t, [item]) ?? t('shop_items_added', { n: 1 }), 'success');
+        setAddedNote(whereItWent(t, [item]) ?? t('shop_items_added', { n: 1 }));
       } else {
         const r = await api.bulkAddShopping(names, names.map((n) => categoriseShoppingItem(n) || undefined));
         setShopItems(await api.listShopping().catch(() => []));
         // Items, not "ingredients": this is whatever was typed, nappies included.
-        showToast(whereItWent(t, r?.items ?? []) ?? t('shop_items_added', { n: r.added }), 'success');
+        setAddedNote(whereItWent(t, r?.items ?? []) ?? t('shop_items_added', { n: r?.added ?? names.length }));
       }
       setShopInput('');
     } catch {
@@ -497,7 +507,7 @@ export default function Kitchen() {
     } finally {
       setAddingShop(false);
     }
-  }, [shopInput, showToast]);
+  }, [shopInput, showToast, t]);
 
   // Add a regular back to the list in one tap. Drop it from the row straight
   // away so it feels instant, and it stays gone because it is now on the list.
@@ -507,7 +517,7 @@ export default function Kitchen() {
       const item = await api.addShoppingItem({ name, category: categoriseShoppingItem(name) || undefined });
       setShopItems((prev) => [item, ...prev]);
       const said = whereItWent(t, [item]);
-      if (said) showToast(said, 'success');
+      if (said) setAddedNote(said);
     } catch {
       showToast(t('vault_could_not_add_item'), 'error');
       setRegulars(await api.listFrequentShopping().then((r) => r.items).catch(() => []));
@@ -1377,6 +1387,7 @@ export default function Kitchen() {
                   onSubmitEditing={addShopItem}
                 />
                 <PressScale
+                  testID="shop-add"
                   accessibilityRole="button"
                   accessibilityLabel={t('a11y_add')} onPress={addShopItem} disabled={addingShop || !shopInput.trim()} style={[styles.shopAddBtn, (!shopInput.trim() || addingShop) && { opacity: 0.4 }]}>
                   <Plus color="#FFFFFF" size={18} />
@@ -1393,7 +1404,14 @@ export default function Kitchen() {
               </View>
               {/* The legend: without it a camera next to a shopping list could
                   mean anything. One line says exactly what it does. */}
-              <Text style={styles.scanHint}>{t('scan_hint')}</Text>
+              {addedNote ? (
+                <View testID="shop-added-note" style={styles.addedNote} accessibilityLiveRegion="polite">
+                  <Check color={ui.mintText} size={15} />
+                  <Text style={styles.addedNoteText}>{addedNote}</Text>
+                </View>
+              ) : (
+                <Text style={styles.scanHint}>{t('scan_hint')}</Text>
+              )}
 
               {/* Your regulars — what this household buys often, from past trips,
                   and not on the list right now. One tap adds it back, so the
@@ -2838,6 +2856,11 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   // picture, name and count, and its items boxed beneath it, so the list reads
   // as blocks rather than one long column (Roland, after the first version).
   // The band folds its section away.
+  addedNote: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10,
+    paddingHorizontal: 12, paddingVertical: 9, borderRadius: 12, backgroundColor: ui.mint,
+  },
+  addedNoteText: { flex: 1, fontFamily: 'Figtree_700Bold', fontSize: 13.5, color: ui.mintText },
   sectionHead: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     marginTop: 12, paddingHorizontal: 14, paddingVertical: 11,
