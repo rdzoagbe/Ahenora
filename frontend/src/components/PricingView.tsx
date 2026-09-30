@@ -665,8 +665,11 @@ function PlanCard({
   // Above the plan you are on reads "Upgrade"; below it, "Downgrade".
   const isDown = (PLAN_RANK[plan] ?? 0) < (PLAN_RANK[currentPlan] ?? 0);
   const pendingDate = pending?.at ? new Date(pending.at) : null;
+  // A date already past is never shown: "Changes to Duo on 28/09" read on the
+  // 30th says the switch failed, when the store is only waiting for the next
+  // renewal. Without a trustworthy date, say "at your renewal date".
   const pendingText = pending
-    ? (pendingDate && !Number.isNaN(pendingDate.getTime())
+    ? (pendingDate && !Number.isNaN(pendingDate.getTime()) && pendingDate.getTime() > Date.now()
       ? t('chg_pending', { plan: t(`plan_${pending.plan}`), date: pendingDate.toLocaleDateString() })
       : t('chg_pending_nodate', { plan: t(`plan_${pending.plan}`) }))
     : null;
