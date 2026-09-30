@@ -125,6 +125,34 @@ async def main():
         await page.wait_for_timeout(500)
         r["aisle_comes_back"] = "Toilet paper" in await page.inner_text("body")
 
+        # The same list in dark mode: every aisle tint comes from the theme,
+        # and a section band that only works on white would be unreadable.
+        dark = await browser.new_context(viewport={"width": 390, "height": 844})
+        dpage = await dark.new_page()
+        dpage.on("pageerror", lambda e: errs.append(str(e)))
+
+        async def droute(ro):
+            path = ro.request.url.split("/api/", 1)[1]
+            resp = await dark.request.fetch(
+                f"{API}/{path}", method=ro.request.method,
+                headers={k: v for k, v in ro.request.headers.items()
+                         if k.lower() not in ("host", "content-length", "origin", "referer")},
+                data=ro.request.post_data)
+            await ro.fulfill(status=resp.status, content_type="application/json",
+                             body=await resp.body())
+
+        await dpage.route("**/api/**", droute)
+        await dpage.add_init_script(
+            f"localStorage.setItem('coo_session_token','{tok}');"
+            "localStorage.setItem('coo_appearance_mode_minimal_light_v5','dark');")
+        await dpage.goto(f"{WEB}/kitchen", wait_until="domcontentloaded")
+        await dpage.wait_for_timeout(2600)
+        r["dark_mode_shows_the_sections"] = await dpage.locator(
+            '[data-testid="shop-aisle-head-Produce"]').count() == 1
+        if SHOTS:
+            await dpage.locator('[data-testid="shop-aisle-head-Produce"]').scroll_into_view_if_needed()
+            await dpage.screenshot(path=os.path.join(SHOTS, "aisles-dark.png"), full_page=False)
+
         r["no_js_errors"] = not errs
         await browser.close()
 

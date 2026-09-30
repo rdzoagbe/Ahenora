@@ -48,6 +48,23 @@ function catLabel(cat: string, t: (k: string) => string): string {
   return val === key ? cat : val;
 }
 
+// Each aisle's section wears its own tint, so the list reads as blocks at a
+// glance. Neighbours in walking order never share one. Built from the theme's
+// soft/text pairs, so dark mode gets its own versions for free.
+function aisleTint(aisle: Aisle, ui: UIColors): { bg: string; fg: string } {
+  const pairs: Record<Aisle, [string, string]> = {
+    Produce: [ui.mint, ui.mintText], Bakery: [ui.gold, ui.goldText],
+    Meat: [ui.dangerSoft, ui.danger], Dairy: [ui.blue, ui.blueText],
+    Frozen: [ui.lavender, ui.lavenderText], Pantry: [ui.orangeSoft, ui.orangeText],
+    Snacks: [ui.gold, ui.goldText], Drinks: [ui.blue, ui.blueText],
+    Household: [ui.lavender, ui.lavenderText], Health: [ui.mint, ui.mintText],
+    Baby: [ui.orangeSoft, ui.orangeText], School: [ui.gold, ui.goldText],
+    Other: [ui.soft, ui.muted],
+  };
+  const [bg, fg] = pairs[aisle];
+  return { bg, fg };
+}
+
 const KEEP_AWAKE_TAG = 'kitchen-screen';
 const KEEP_AWAKE_KEY = 'coo_keep_screen_on';
 
@@ -1207,11 +1224,13 @@ export default function Kitchen() {
   // The list in aisle order, a heading before each aisle. One flat run of rows
   // so the windowed list can measure and scroll headings and items alike.
   const shopRows = useMemo(() => {
-    const rows: ({ kind: 'aisle'; aisle: Aisle; count: number } | { kind: 'item'; item: ShoppingItem })[] = [];
+    const rows: ({ kind: 'aisle'; aisle: Aisle; count: number; open: boolean }
+      | { kind: 'item'; item: ShoppingItem; last: boolean })[] = [];
     for (const group of groupByAisle(uncheckedItems)) {
-      rows.push({ kind: 'aisle', aisle: group.aisle, count: group.items.length });
-      if (folded.has(group.aisle)) continue;
-      for (const item of group.items) rows.push({ kind: 'item', item });
+      const open = !folded.has(group.aisle);
+      rows.push({ kind: 'aisle', aisle: group.aisle, count: group.items.length, open });
+      if (!open) continue;
+      group.items.forEach((item, i) => rows.push({ kind: 'item', item, last: i === group.items.length - 1 }));
     }
     return rows;
   }, [uncheckedItems, folded]);
@@ -1402,23 +1421,25 @@ export default function Kitchen() {
               <WindowedList testID="shop-list-scroll" count={shopRows.length} window={12}>
                 {shopRows.map((row) => {
                   if (row.kind === 'aisle') {
+                    const tint = aisleTint(row.aisle, ui);
                     return (
-                      <View key={`aisle-${row.aisle}`} style={styles.aisleHead}>
-                        <PressScale
-                          testID={`shop-aisle-head-${row.aisle}`}
-                          accessibilityRole="button"
-                          accessibilityLabel={`${catLabel(row.aisle, t)}, ${row.count}`}
-                          onPress={() => toggleFold(row.aisle)}
-                          style={styles.aislePill}
-                        >
-                          <Text style={styles.aisleEmoji}>{AISLE_EMOJI[row.aisle]}</Text>
-                          <Text style={styles.aisleHeadText}>{catLabel(row.aisle, t)}</Text>
-                          <Text style={styles.aisleHeadCount}>{row.count}</Text>
-                          {folded.has(row.aisle)
-                            ? <ChevronRight color={ui.muted} size={14} />
-                            : <ChevronDown color={ui.muted} size={14} />}
-                        </PressScale>
-                      </View>
+                      <PressScale
+                        key={`aisle-${row.aisle}`}
+                        testID={`shop-aisle-head-${row.aisle}`}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${catLabel(row.aisle, t)}, ${row.count}`}
+                        onPress={() => toggleFold(row.aisle)}
+                        style={[styles.sectionHead, { backgroundColor: tint.bg }, !row.open && styles.sectionHeadFolded]}
+                      >
+                        <Text style={styles.aisleEmoji}>{AISLE_EMOJI[row.aisle]}</Text>
+                        <Text style={[styles.sectionTitle, { color: tint.fg }]} numberOfLines={1}>{catLabel(row.aisle, t)}</Text>
+                        <View style={[styles.sectionCount, { borderColor: tint.fg }]}>
+                          <Text style={[styles.sectionCountText, { color: tint.fg }]}>{row.count}</Text>
+                        </View>
+                        {row.open
+                          ? <ChevronDown color={tint.fg} size={16} />
+                          : <ChevronRight color={tint.fg} size={16} />}
+                      </PressScale>
                     );
                   }
                   const item = row.item;
@@ -1429,7 +1450,7 @@ export default function Kitchen() {
                       testID={`shop-item-${item.item_id}`}
                       onPress={() => (selectMode ? toggleSelected(item.item_id) : toggleShopItem(item))}
                       onLongPress={() => { setSelectMode(true); toggleSelected(item.item_id); }}
-                      style={[styles.shopCard, selectMode && selectedIds.has(item.item_id) && styles.rowSelected]}
+                      style={[styles.sectionRow, row.last && styles.sectionRowLast, selectMode && selectedIds.has(item.item_id) && styles.rowSelected]}
                     >
                       {selectMode ? (
                         <View style={[styles.selBox, selectedIds.has(item.item_id) && styles.selBoxOn]}>
@@ -1482,27 +1503,28 @@ export default function Kitchen() {
 
               {checkedItems.length > 0 ? (
                 <>
-                  <View style={styles.aisleHead}>
-                    <PressScale
-                      testID="shop-done-head"
-                      accessibilityRole="button"
-                      accessibilityLabel={`${t('vault_done')}, ${checkedItems.length}`}
-                      onPress={() => toggleFold('__done')}
-                      style={styles.aislePill}
-                    >
-                      <Text style={styles.aisleHeadText}>{t('vault_done')}</Text>
-                      <Text style={styles.aisleHeadCount}>{checkedItems.length}</Text>
-                      {folded.has('__done')
-                        ? <ChevronRight color={ui.muted} size={14} />
-                        : <ChevronDown color={ui.muted} size={14} />}
-                    </PressScale>
-                  </View>
-                  {(folded.has('__done') ? [] : checkedItems).map((item) => (
+                  <PressScale
+                    testID="shop-done-head"
+                    accessibilityRole="button"
+                    accessibilityLabel={`${t('vault_done')}, ${checkedItems.length}`}
+                    onPress={() => toggleFold('__done')}
+                    style={[styles.sectionHead, { backgroundColor: ui.soft }, folded.has('__done') && styles.sectionHeadFolded]}
+                  >
+                    <Check color={ui.mintText} size={16} />
+                    <Text style={[styles.sectionTitle, { color: ui.muted }]}>{t('vault_done')}</Text>
+                    <View style={[styles.sectionCount, { borderColor: ui.muted }]}>
+                      <Text style={[styles.sectionCountText, { color: ui.muted }]}>{checkedItems.length}</Text>
+                    </View>
+                    {folded.has('__done')
+                      ? <ChevronRight color={ui.muted} size={16} />
+                      : <ChevronDown color={ui.muted} size={16} />}
+                  </PressScale>
+                  {(folded.has('__done') ? [] : checkedItems).map((item, i) => (
                     <PressScale
                       key={item.item_id}
                       onPress={() => (selectMode ? toggleSelected(item.item_id) : toggleShopItem(item))}
                       onLongPress={() => { setSelectMode(true); toggleSelected(item.item_id); }}
-                      style={[styles.shopCard, styles.shopCardDone, selectMode && selectedIds.has(item.item_id) && styles.rowSelected]}
+                      style={[styles.sectionRow, styles.shopCardDone, i === checkedItems.length - 1 && styles.sectionRowLast, selectMode && selectedIds.has(item.item_id) && styles.rowSelected]}
                     >
                       {selectMode ? (
                         <View style={[styles.selBox, selectedIds.has(item.item_id) && styles.selBoxOn]}>
@@ -2808,22 +2830,32 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   rowTextDone: { textDecorationLine: 'line-through', color: ui.muted },
   rowCat: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 12 },
-  // The list after the reference Roland sent: each aisle a small pill that
-  // folds its items away, each item a card of its own with a round tick and
-  // its amount in a tag at the end.
-  aisleHead: { flexDirection: 'row', paddingTop: 14, paddingBottom: 8 },
-  aislePill: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10,
-    backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line,
+  // Each aisle is a section of its own: a tinted band with the aisle's
+  // picture, name and count, and its items boxed beneath it, so the list reads
+  // as blocks rather than one long column (Roland, after the first version).
+  // The band folds its section away.
+  sectionHead: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    marginTop: 12, paddingHorizontal: 14, paddingVertical: 11,
+    borderTopLeftRadius: 16, borderTopRightRadius: 16,
+    borderWidth: 1, borderColor: ui.line, borderBottomWidth: 0,
   },
-  aisleEmoji: { fontSize: 13 },
-  aisleHeadText: { fontFamily: 'Figtree_700Bold', fontSize: 13, color: ui.text },
-  aisleHeadCount: { fontFamily: 'Figtree_600SemiBold', fontSize: 12, color: ui.muted },
-  shopCard: {
+  sectionHeadFolded: { borderRadius: 16, borderBottomWidth: 1 },
+  aisleEmoji: { fontSize: 16 },
+  sectionTitle: { flex: 1, fontFamily: 'Figtree_800ExtraBold', fontSize: 15 },
+  sectionCount: {
+    minWidth: 24, height: 22, borderRadius: 99, borderWidth: 1.5, paddingHorizontal: 6,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  sectionCountText: { fontFamily: 'Figtree_800ExtraBold', fontSize: 12 },
+  sectionRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: ui.card, borderRadius: 14, borderWidth: 1, borderColor: ui.line,
-    paddingVertical: 13, paddingHorizontal: 14, marginBottom: 7,
+    backgroundColor: ui.card, paddingVertical: 13, paddingHorizontal: 14,
+    borderLeftWidth: 1, borderRightWidth: 1, borderTopWidth: 1,
+    borderColor: ui.line,
+  },
+  sectionRowLast: {
+    borderBottomWidth: 1, borderBottomLeftRadius: 16, borderBottomRightRadius: 16,
   },
   shopCardDone: { opacity: 0.75 },
   shopCircle: {
