@@ -65,3 +65,32 @@ export function splitQuantity(name: string): { label: string; qty: string | null
   if (JOINING_WORDS.has(lastWord)) return { label: text, qty: null };
   return { label: m[1].replace(/[\s,:-]+$/, ''), qty: m[2].replace(/\s+/g, ' ') };
 }
+
+/**
+ * Where just-added items went, in one line: "Added to Fruit & veg: Tomatoes",
+ * or for several, "3 added: Fruit & veg (2) · Cleaning & household (1)".
+ *
+ * Roland, 2026-09-30: once the list was in aisles, adding something meant
+ * going to look for it. The message says where it landed instead. Null when
+ * nothing was added, so the caller can keep its own "already on the list".
+ */
+export function whereItWent(
+  t: (key: string, params?: Record<string, string | number>) => string,
+  added: ({ name: string; category?: string | null } | null | undefined)[] | null | undefined,
+): string | null {
+  // Tolerates an older server (no list back) and a half-empty answer: this is
+  // a courtesy message, and it must never be the thing that breaks an add.
+  const items = (added ?? []).filter((i): i is { name: string; category?: string | null } =>
+    !!i && typeof i.name === 'string');
+  if (!items.length) return null;
+  if (items.length === 1) {
+    return t('shop_added_to_aisle', {
+      name: splitQuantity(items[0].name).label,
+      aisle: t(aisleKey(items[0].category || 'Other')),
+    });
+  }
+  const where = groupByAisle(items)
+    .map((g) => `${t(aisleKey(g.aisle))} (${g.items.length})`)
+    .join(' · ');
+  return t('shop_added_many', { n: items.length, where });
+}

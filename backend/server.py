@@ -16579,6 +16579,7 @@ async def bulk_add_shopping(body: BulkShoppingIn, user=Depends(require_user)):
     have = {(e.get("name") or "").strip().lower() for e in existing}
     added = 0
     added_names: list[str] = []
+    added_items: list[dict] = []
     remembered = await remembered_aisles(database, user["family_id"], body.names)
     for index, raw in enumerate(body.names):
         name = (raw or "").strip()
@@ -16586,20 +16587,24 @@ async def bulk_add_shopping(body: BulkShoppingIn, user=Depends(require_user)):
             continue
         have.add(name.lower())
         supplied = body.categories[index] if index < len(body.categories) else None
+        category = choose_aisle(name, remembered.get(shopping_item_key(name)), supplied)
         await database["shopping_list"].insert_one({
             "item_id": new_id("shop"),
             "family_id": user["family_id"],
             "name": name,
-            "category": choose_aisle(name, remembered.get(shopping_item_key(name)), supplied),
+            "category": category,
             "checked": False,
             "added_by": user.get("name", ""),
             "created_at": utcnow(),
         })
         added += 1
         added_names.append(name)
+        added_items.append({"name": name, "category": category})
     if added_names:
         await queue_shopping_notification(database, user, added_names)
-    return {"ok": True, "added": added}
+    # What went where, so the app can say "Added to Fruit & veg: tomatoes"
+    # instead of leaving somebody to go and look.
+    return {"ok": True, "added": added, "items": added_items}
 
 
 # -----------------------------------------------------------------------------

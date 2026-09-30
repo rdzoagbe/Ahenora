@@ -69,7 +69,20 @@ async def main():
         box = page.get_by_placeholder("Add items — commas for several")
         await box.fill("Tomatoes 400g, Milk x2, Pampers")
         await box.press("Enter")
-        await page.wait_for_timeout(1800)
+        await page.wait_for_timeout(900)
+        # Roland: "when I add an item, tell me where it has been added, so I
+        # don't have to go and look." Several at once are counted by aisle.
+        said = await page.inner_text("body")
+        r["adding_several_says_which_aisles"] = (
+            "3 added:" in said and "Fruit & veg (1)" in said and "Baby (1)" in said)
+        await page.wait_for_timeout(3500)
+        await box.fill("Bananas")
+        await box.press("Enter")
+        await page.wait_for_timeout(900)
+        r["adding_one_says_its_aisle"] = "Added to Fruit & veg: Bananas" in await page.inner_text("body")
+        if SHOTS:
+            await page.screenshot(path=os.path.join(SHOTS, "aisles-toast.png"), full_page=False)
+        await page.wait_for_timeout(3500)
 
         items = {i["name"]: i for i in api("GET", "/shopping", t=tok)}
         r["server_sorted_the_plus_button_adds"] = (

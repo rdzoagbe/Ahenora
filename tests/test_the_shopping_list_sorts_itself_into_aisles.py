@@ -120,6 +120,19 @@ class TheListSortsItself(unittest.TestCase):
         self.assertEqual(listed["bin bags"], "Household")
         self.assertEqual(listed["nappies"], "Baby")
 
+    def test_a_bulk_add_says_where_each_item_went(self):
+        # So the app can say "Added to Fruit & veg: tomatoes" without the
+        # person having to go and look.
+        res = asyncio.run(server.bulk_add_shopping(Bulk(["tomatoes", "toilet paper"]), USER))
+        self.assertEqual(res["added"], 2)
+        self.assertEqual(res["items"], [
+            {"name": "tomatoes", "category": "Produce"},
+            {"name": "toilet paper", "category": "Household"},
+        ])
+        # Something already on the list is not added again, and not reported.
+        again = asyncio.run(server.bulk_add_shopping(Bulk(["tomatoes"]), USER))
+        self.assertEqual((again["added"], again["items"]), (0, []))
+
     def test_an_old_list_gains_its_aisles_without_a_rewrite(self):
         asyncio.run(self.db["shopping_list"].insert_one({
             "item_id": "shop_old", "family_id": "fam", "name": "bananas",
