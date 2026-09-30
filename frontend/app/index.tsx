@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, ImageBackground, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, ImageBackground, Platform, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as AuthSession from 'expo-auth-session';
@@ -76,6 +76,14 @@ export default function Landing() {
   };
   const [signingIn, setSigningIn] = useState(false);
   const [inviteToken, setInviteToken] = useState<string | null>(null);
+  // "Have an invitation?" — for the invitation that could not travel on its
+  // own. The app cannot open an ahenora.com link by itself, and installing
+  // from the store drops it, so the invitation page copies it and it is
+  // pasted here (Roland, 2026-09-30).
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const [pasteText, setPasteText] = useState('');
+  const [pasteError, setPasteError] = useState(false);
+  const [pasteBusy, setPasteBusy] = useState(false);
   const [invitedBy, setInvitedBy] = useState<string | null>(null);
   // What the invitation put aside, and how big the household is. Shown before
   // anybody is asked to make an account: signing up to find out what you have
@@ -172,6 +180,31 @@ export default function Landing() {
 
     return () => subscription.remove();
   }, []);
+
+  const applyPastedInvite = async () => {
+    const raw = pasteText.trim();
+    const token = extractInviteToken(raw) || (/^[A-Za-z0-9_-]{8,200}$/.test(raw) ? raw : null);
+    if (!token) { setPasteError(true); return; }
+    setPasteBusy(true);
+    setPasteError(false);
+    try {
+      const { api } = await import('../src/api');
+      const invite = await api.getInvite(token);
+      await rememberInvite(token);
+      setInviteToken(token);
+      setInvitedBy(invite.inviter_name);
+      setInviteHandover(invite.handover || null);
+      setInviteHousehold(invite.household || null);
+      setPasteOpen(false);
+      setPasteText('');
+    } catch (e: any) {
+      // Unknown, expired or used: said plainly, and nothing is kept.
+      logger.warn('Pasted invite lookup failed:', e?.message || e);
+      setPasteError(true);
+    } finally {
+      setPasteBusy(false);
+    }
+  };
 
   /** Turn a Google id_token into a session and land in the app. Shared by the
    *  native popup result and the web redirect return, so both finish identically. */
@@ -618,6 +651,50 @@ export default function Landing() {
               <Text style={[styles.secondaryCtaText, { color: theme.colors.text }]}>{t('land_view_plans')}</Text>
               <ArrowRight color={theme.colors.text} size={14} />
             </PressScale>
+
+            {!inviteToken ? (
+              pasteOpen ? (
+                <View testID="invite-paste" style={[styles.pasteBox, { borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}>
+                  <Text style={[styles.pasteTitle, { color: theme.colors.text }]}>{t('land_have_invite')}</Text>
+                  <Text style={[styles.pasteHint, { color: theme.colors.textMuted }]}>{t('land_paste_invite_hint')}</Text>
+                  <TextInput
+                    testID="invite-paste-input"
+                    value={pasteText}
+                    onChangeText={(v) => { setPasteText(v); setPasteError(false); }}
+                    placeholder={t('land_paste_invite_ph')}
+                    placeholderTextColor={theme.colors.textMuted}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    returnKeyType="go"
+                    onSubmitEditing={applyPastedInvite}
+                    style={[styles.pasteInput, { color: theme.colors.text, borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.card }]}
+                  />
+                  {pasteError ? (
+                    <Text testID="invite-paste-error" style={[styles.pasteHint, { color: '#B8322A' }]}>{t('land_invite_bad')}</Text>
+                  ) : null}
+                  <PressScale
+                    testID="invite-paste-use"
+                    onPress={applyPastedInvite}
+                    disabled={pasteBusy || !pasteText.trim()}
+                    style={[styles.pasteBtn, { backgroundColor: theme.colors.accent }, (pasteBusy || !pasteText.trim()) && styles.ctaDisabled]}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('land_use_invite')}
+                  >
+                    {pasteBusy ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.pasteBtnText}>{t('land_use_invite')}</Text>}
+                  </PressScale>
+                </View>
+              ) : (
+                <PressScale
+                  testID="invite-paste-open"
+                  onPress={() => setPasteOpen(true)}
+                  style={styles.pasteLink}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('land_have_invite')}
+                >
+                  <Text style={[styles.pasteLinkText, { color: theme.colors.accent }]}>{t('land_have_invite')}</Text>
+                </PressScale>
+              )
+            ) : null}
           </View>
 
           <View style={styles.secureRow}>
@@ -685,6 +762,17 @@ const styles = StyleSheet.create({
   },
   badgeText: { fontFamily: 'Figtree_600SemiBold', fontSize: 12 },
   invitePreviewWrap: { width: '100%', marginBottom: 14 },
+  pasteLink: { alignSelf: 'center', paddingVertical: 10, paddingHorizontal: 12, marginTop: 4 },
+  pasteLinkText: { fontFamily: 'Figtree_700Bold', fontSize: 14.5 },
+  pasteBox: { borderWidth: 1, borderRadius: 18, padding: 14, marginTop: 10, gap: 8 },
+  pasteTitle: { fontFamily: 'Figtree_800ExtraBold', fontSize: 15.5 },
+  pasteHint: { fontFamily: 'Figtree_500Medium', fontSize: 13, lineHeight: 18 },
+  pasteInput: {
+    borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 11,
+    fontFamily: 'Figtree_500Medium', fontSize: 14.5,
+  },
+  pasteBtn: { borderRadius: 12, paddingVertical: 12, alignItems: 'center', justifyContent: 'center' },
+  pasteBtnText: { color: '#FFFFFF', fontFamily: 'Figtree_800ExtraBold', fontSize: 15 },
   inviteBanner: {
     borderRadius: 18,
     padding: 14,

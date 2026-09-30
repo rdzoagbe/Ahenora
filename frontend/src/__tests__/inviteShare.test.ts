@@ -21,10 +21,12 @@ jest.mock('../logger', () => ({ logger: { warn: jest.fn() } }));
 jest.mock('../api', () => ({ api: { createInviteLink: jest.fn() } }));
 
 import { api } from '../api';
-import { inviteMessage, shareHouseholdInvite } from '../inviteShare';
+import { inviteMessage, joinUrl, shareHouseholdInvite } from '../inviteShare';
 
 const createInviteLink = api.createInviteLink as jest.Mock;
 const URL = 'https://ahenora.com/app/auth?invite=abc123';
+// What is actually shared: the invitation page, not the web app.
+const JOIN = 'https://ahenora.com/join/?invite=abc123';
 
 describe('inviteMessage', () => {
   it('names the person doing the inviting', () => {
@@ -44,6 +46,23 @@ describe('inviteMessage', () => {
   });
 });
 
+describe('joinUrl', () => {
+  // Roland: "this shouldn't be how the invitation comes". It previewed as the
+  // website and opened the web app; now it opens the invitation page.
+  it('shares the invitation page, in the sender language', () => {
+    expect(joinUrl(URL)).toBe(JOIN);
+    expect(joinUrl(URL, 'en')).toBe(JOIN);
+    expect(joinUrl(URL, 'fr')).toBe('https://ahenora.com/fr/join/?invite=abc123');
+    expect(joinUrl('https://ahenora.com/app/?invite=2B8o_x-9', 'de'))
+      .toBe('https://ahenora.com/de/join/?invite=2B8o_x-9');
+  });
+
+  it('leaves a link with no invitation in it alone', () => {
+    expect(joinUrl('https://ahenora.com/app/')).toBe('https://ahenora.com/app/');
+    expect(joinUrl('')).toBe('');
+  });
+});
+
 describe('shareHouseholdInvite', () => {
   const opts = { inviterName: 'Roland', title: 'Join', invitedYou: 'invited you.' };
 
@@ -58,7 +77,7 @@ describe('shareHouseholdInvite', () => {
 
     expect(await shareHouseholdInvite(opts)).toEqual({ kind: 'shared' });
     expect(shareMock).toHaveBeenCalledTimes(1);
-    expect((shareMock.mock.calls[0][0] as { message: string }).message).toContain(URL);
+    expect((shareMock.mock.calls[0][0] as { message: string }).message).toContain(JOIN);
   });
 
   it('says so when the server will not mint a link', async () => {
@@ -76,7 +95,7 @@ describe('shareHouseholdInvite', () => {
   it('hands the link back when the share sheet fails', async () => {
     createInviteLink.mockResolvedValue({ invite_url: URL });
     shareMock.mockRejectedValue(new Error('no activity'));
-    expect(await shareHouseholdInvite(opts)).toEqual({ kind: 'failed', url: URL });
+    expect(await shareHouseholdInvite(opts)).toEqual({ kind: 'failed', url: JOIN });
   });
 
   it('copies instead of sharing on the web', async () => {
@@ -87,8 +106,8 @@ describe('shareHouseholdInvite', () => {
       value: { clipboard: { writeText } }, configurable: true, writable: true,
     });
 
-    expect(await shareHouseholdInvite(opts)).toEqual({ kind: 'copied', url: URL });
-    expect(writeText).toHaveBeenCalledWith(URL);
+    expect(await shareHouseholdInvite(opts)).toEqual({ kind: 'copied', url: JOIN });
+    expect(writeText).toHaveBeenCalledWith(JOIN);
   });
 
   it('still returns the link when the browser has no clipboard', async () => {
@@ -97,6 +116,6 @@ describe('shareHouseholdInvite', () => {
     Object.defineProperty(global, 'navigator', {
       value: {}, configurable: true, writable: true,
     });
-    expect(await shareHouseholdInvite(opts)).toEqual({ kind: 'failed', url: URL });
+    expect(await shareHouseholdInvite(opts)).toEqual({ kind: 'failed', url: JOIN });
   });
 });

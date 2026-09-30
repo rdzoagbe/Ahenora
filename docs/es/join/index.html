@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Te han invitado a Ahenora</title>
+<meta name="robots" content="noindex">
+<meta name="description" content="Abre la invitación para unirte: un calendario, tareas y listas compartidos por toda la familia.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Ahenora">
+<meta property="og:title" content="Te han invitado a unirte a un hogar en Ahenora">
+<meta property="og:description" content="Abre la invitación para unirte: un calendario, tareas y listas compartidos por toda la familia.">
+<meta property="og:image" content="https://ahenora.com/assets/invite-og-es.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:url" content="https://ahenora.com/es/join/">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="/assets/icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700;800&family=Playfair+Display:wght@700;800&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#FAF6F1; --card:#FFFFFF; --ink:#22201D; --muted:#6B635B; --line:#ECE4DA;
+          --orange:#F26A1B; --orangeDeep:#CA470A; --soft:#FDEBDD; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; background:var(--bg); color:var(--ink);
+              font-family:Figtree,-apple-system,"Segoe UI",Roboto,Arial,sans-serif; }
+  main { max-width:440px; margin:0 auto; padding:28px 20px 40px; }
+  .brand { display:flex; align-items:center; gap:10px; font-weight:800; font-size:20px; }
+  .brand img { width:40px; height:40px; border-radius:11px; }
+  h1 { font-family:"Playfair Display",Georgia,serif; font-weight:800; font-size:30px;
+       line-height:1.12; margin:26px 0 10px; text-wrap:balance; }
+  .sub { color:var(--muted); font-size:15.5px; line-height:1.5; margin:0 0 22px; }
+  .step { background:var(--card); border:1px solid var(--line); border-radius:18px;
+          padding:16px; margin-bottom:12px; }
+  .step h2 { display:flex; align-items:center; gap:10px; font-size:16px; margin:0 0 12px; }
+  .num { width:24px; height:24px; border-radius:99px; background:var(--soft); color:var(--orangeDeep);
+         display:inline-flex; align-items:center; justify-content:center; font-size:13px; font-weight:800; }
+  a.btn, button.btn { display:block; width:100%; text-align:center; text-decoration:none; border:0;
+         font:inherit; font-weight:800; font-size:16px; padding:14px 16px; border-radius:14px;
+         cursor:pointer; margin-top:8px; }
+  .primary { background:var(--orange); color:#fff; }
+  .ghost { background:var(--soft); color:var(--orangeDeep); }
+  .hint { color:var(--muted); font-size:13.5px; line-height:1.45; margin:10px 2px 0; }
+  .ok { color:#2E7852; font-weight:700; }
+  .browser { display:block; text-align:center; margin:18px 0 0; color:var(--orangeDeep);
+             font-weight:700; font-size:15px; }
+  .gone { background:var(--card); border:1px solid var(--line); border-radius:18px; padding:18px;
+          font-size:15.5px; line-height:1.5; }
+  footer { color:var(--muted); font-size:12.5px; text-align:center; margin-top:28px; }
+  [hidden] { display:none !important; }
+  a:focus-visible, button:focus-visible { outline:3px solid var(--orange); outline-offset:2px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="brand"><img src="/assets/icon.png" alt="">Ahenora</div>
+  <h1 id="heading">Te han invitado a unirte a un hogar</h1>
+  <p class="sub">Ahenora es el calendario, las tareas y las listas compartidos de la familia: todos ven la misma semana.</p>
+
+  <div id="gone" class="gone" hidden></div>
+
+  <div id="steps">
+    <section class="step" id="get">
+      <h2><span class="num">1</span>Descarga la app</h2>
+      <a class="btn primary" id="store-ios" href="https://apps.apple.com/app/id6806811163">Descargar en el App Store</a>
+      <a class="btn primary" id="store-android" href="https://play.google.com/store/apps/details?id=com.householdcoo.app">Disponible en Google Play</a>
+    </section>
+    <section class="step">
+      <h2><span class="num">2</span>Abre tu invitación</h2>
+      <a class="btn primary" id="open-app" href="householdcoo://">Abrir en Ahenora</a>
+      <p class="hint">¿Ya tienes la app? Esto abre tu invitación en ella.</p>
+      <button class="btn ghost" id="copy" type="button">Copiar mi invitación</button>
+      <p class="hint" id="copy-note">Si la app no la abre, copia tu invitación y, en Ahenora, toca «¿Tienes una invitación?» y pégala.</p>
+    </section>
+    <a class="browser" id="browser" href="/app/">O continúa en el navegador</a>
+  </div>
+  <footer>Ahenora · Sin anuncios · Los datos de tu familia nunca se venden</footer>
+</main>
+<script>
+(function () {
+  var TEXT = {"heading_named": "{name} te invita a unirte a su hogar", "gone": "Esta invitación ha caducado o ya se ha usado. Pídeles que te envíen una nueva.", "missing": "A este enlace le falta la invitación. Pídeles que te lo vuelvan a enviar.", "copied": "Copiada. En Ahenora, toca «¿Tienes una invitación?» y pégala."};
+  var API = "https://household-coo-production.up.railway.app";
+  var params = new URLSearchParams(window.location.search);
+  var token = (params.get('invite') || '').trim();
+  var valid = /^[A-Za-z0-9_-]{8,200}$/.test(token);
+  var $ = function (id) { return document.getElementById(id); };
+
+  function showGone(message) {
+    $('steps').hidden = true;
+    $('gone').hidden = false;
+    $('gone').textContent = message;
+  }
+  if (!valid) { showGone(TEXT.missing); return; }
+
+  // The invitation as a link the app understands, and as one it can paste.
+  var joinLink = window.location.origin + window.location.pathname + '?invite=' + encodeURIComponent(token);
+  $('open-app').href = 'householdcoo://?invite=' + encodeURIComponent(token);
+  $('browser').href = '/app/?invite=' + encodeURIComponent(token);
+
+  // Only the store this phone can use; a computer is offered both, and the
+  // browser comes first for it.
+  var ua = navigator.userAgent || '';
+  var android = /Android/i.test(ua) && !/CrOS/i.test(ua);
+  var ios = /iPhone|iPad|iPod/i.test(ua) || (/Macintosh/i.test(ua) && (navigator.maxTouchPoints || 0) > 1);
+  if (android) $('store-ios').hidden = true;
+  if (ios) $('store-android').hidden = true;
+
+  function copy(then) {
+    var done = function () {
+      $('copy-note').textContent = TEXT.copied;
+      $('copy-note').className = 'hint ok';
+      if (then) then();
+    };
+    try {
+      navigator.clipboard.writeText(joinLink).then(done, function () { if (then) then(); });
+    } catch (e) { if (then) then(); }
+  }
+  $('copy').addEventListener('click', function () { copy(); });
+  // Going to the store loses the link, so the invitation is copied on the way.
+  ['store-ios', 'store-android'].forEach(function (id) {
+    $(id).addEventListener('click', function (e) {
+      var href = this.href;
+      e.preventDefault();
+      copy(function () { window.location.href = href; });
+      setTimeout(function () { window.location.href = href; }, 600);
+    });
+  });
+
+  // Who is inviting, and whether the invitation still stands.
+  fetch(API + '/api/family/invite/' + encodeURIComponent(token))
+    .then(function (res) {
+      if (res.status === 404 || res.status === 410) { showGone(TEXT.gone); return null; }
+      return res.ok ? res.json() : null;
+    })
+    .then(function (invite) {
+      if (!invite) return;
+      if (invite.status && invite.status !== 'pending') { showGone(TEXT.gone); return; }
+      var name = (invite.inviter_name || '').trim();
+      if (name) $('heading').textContent = TEXT.heading_named.replace('{name}', name);
+    })
+    .catch(function () { /* the page still works without the name */ });
+})();
+</script>
+</body>
+</html>
