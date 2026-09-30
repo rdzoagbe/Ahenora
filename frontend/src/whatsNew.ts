@@ -51,6 +51,12 @@ export const WHATS_NEW: Record<string, string[]> = {
  * look on. Set it to '' to fall back to announcing store versions only.
  */
 export const RELEASE_NOTES: Record<string, string[]> = {
+  // Aisles, and the lower prices again: a family that has not opened the app
+  // since yesterday would otherwise never hear about them.
+  '2026-10-01': [
+    'wn_aisles',
+    'wn_prices',
+  ],
   '2026-09-30': [
     'wn_prices',
     'wn_camera',
@@ -65,7 +71,7 @@ export const RELEASE_NOTES: Record<string, string[]> = {
   ],
 };
 
-export const CURRENT_RELEASE = '2026-09-30';
+export const CURRENT_RELEASE = '2026-10-01';
 
 /** What the banner announces: the current release if one is set, else the store version. */
 export function announcement(version: string): { key: string; items: string[]; byDate: boolean } {

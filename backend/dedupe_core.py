@@ -23,7 +23,8 @@ FAMILY_SCOPED_COLLECTIONS = [
     "activity", "allowance_txns", "allowances", "announcements", "calendar_contacts",
     "cards", "carpools", "chore_logs", "chores", "expenses", "family_invites",
     "family_members", "handoff_notes", "meal_plans_saved", "meals", "messages",
-    "redemptions", "rewards", "routine_logs", "routines", "shopping_history",
+    "redemptions", "rewards", "routine_logs", "routines", "shopping_aisles",
+    "shopping_history",
     "shopping_list", "star_transactions", "templates", "vault",
 ]
 

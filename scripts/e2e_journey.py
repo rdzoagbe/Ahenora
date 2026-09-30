@@ -33,6 +33,12 @@ WEB = f"http://127.0.0.1:{sys.argv[1] if len(sys.argv) > 1 else '8945'}/app"
 API = f"http://127.0.0.1:{sys.argv[2] if len(sys.argv) > 2 else '8991'}/api"
 
 
+
+def has_item(body: str, name: str, qty: str) -> bool:
+    """A shopping item on screen: its name, with its amount in the tag beside it."""
+    lines = [l.strip() for l in body.splitlines()]
+    return any(l == name and qty in lines[k + 1:k + 3] for k, l in enumerate(lines))
+
 def api(method, path, body=None, token=None):
     req = urllib.request.Request(
         f"{API}{path}",
@@ -106,7 +112,9 @@ async def main():
         await shop.fill("Plantain x6, Rice 1kg, Tomatoes x4, Chicken 600g")
         await shop.press("Enter")
         await android.wait_for_timeout(1500)
-        r["A_shopping_item_added"] = "Plantain x6" in await android.inner_text("body")
+        # The list shows the amount in its own tag since items are grouped by
+        # aisle: "Plantain" and, beside it, "x6".
+        r["A_shopping_item_added"] = has_item(await android.inner_text("body"), "Plantain", "x6")
 
         # ---- Android/inviter: send the invitation via the real form ----
         await android.goto(f"{WEB}/settings", wait_until="domcontentloaded")
@@ -172,7 +180,7 @@ async def main():
         # ---- iPhone/invitee: the shared household is really shared ----
         await iphone.goto(f"{WEB}/kitchen", wait_until="domcontentloaded")
         await iphone.wait_for_timeout(2500)
-        r["B_sees_shared_shopping"] = "Plantain x6" in await iphone.inner_text("body")
+        r["B_sees_shared_shopping"] = has_item(await iphone.inner_text("body"), "Plantain", "x6")
 
         # ---- Vault privacy: a shared household is not a shared filing
         # cabinet. Uploads happen over the API (a file picker cannot be
@@ -229,7 +237,7 @@ async def main():
         await iphone.wait_for_timeout(2500)
         body = await iphone.inner_text("body")
         r["B_selected_item_deleted"] = "Okra" not in body
-        r["B_unselected_items_kept"] = "Palm oil" in body and "Plantain x6" in body
+        r["B_unselected_items_kept"] = "Palm oil" in body and has_item(body, "Plantain", "x6")
 
         # ---- Clear all: one undo point, older archives swept ----
         api("DELETE", "/shopping/all", None, tok_a)  # clears + archives
