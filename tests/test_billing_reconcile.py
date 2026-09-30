@@ -156,5 +156,40 @@ class Reconcile(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 503)
 
 
+@unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
+class ABookedDowngradeFollowsTheStore(unittest.TestCase):
+    """Field case, 2026-09-30: Google said "Plan changing, next payment
+    EUR 1.99 on 27 Oct"; the Plans page said "Changes to Duo on 28/09"."""
+
+    NOW = datetime(2026, 9, 30, 6, 0, tzinfo=timezone.utc)
+    RENEWS = datetime(2026, 10, 27, 9, 0, tzinfo=timezone.utc)
+
+    def sub(self, expires):
+        return {"entitlements": {"premium": {
+            "product_identifier": "premium_monthly",
+            "expires_date": expires.strftime("%Y-%m-%dT%H:%M:%SZ")}}}
+
+    def test_the_renewal_date_comes_from_the_store(self):
+        self.assertEqual(server.rc_entitlement_renews_at(self.sub(self.RENEWS), self.NOW),
+                         self.RENEWS)
+        self.assertIsNone(server.rc_entitlement_renews_at(
+            self.sub(self.NOW - timedelta(days=2)), self.NOW))
+
+    def test_a_pending_change_takes_the_store_date(self):
+        family = {"plan": "executive", "pending_plan": "duo",
+                  "pending_plan_at": datetime(2026, 9, 28, tzinfo=timezone.utc)}
+        self.assertEqual(server.reconcile_pending_change(family, "executive", self.RENEWS),
+                         {"pending_plan_at": self.RENEWS})
+
+    def test_once_the_store_reports_the_new_plan_nothing_is_pending(self):
+        family = {"plan": "executive", "pending_plan": "duo"}
+        self.assertEqual(server.reconcile_pending_change(family, "duo", self.RENEWS),
+                         {"pending_plan": None})
+
+    def test_nothing_booked_nothing_changed(self):
+        self.assertEqual(server.reconcile_pending_change({"plan": "executive"}, "executive",
+                                                         self.RENEWS), {})
+
+
 if __name__ == "__main__":
     unittest.main()

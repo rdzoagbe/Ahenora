@@ -14170,6 +14170,42 @@ def rc_entitlement_state(subscriber: dict, now: datetime) -> tuple[bool, Optiona
     return False, None
 
 
+def rc_entitlement_renews_at(subscriber: dict, now: datetime) -> Optional[datetime]:
+    """When the active entitlement runs to — the store's next renewal date.
+    None for a lifetime entitlement, or when nothing active carries a date."""
+    latest = None
+    for ent in ((subscriber or {}).get("entitlements") or {}).values():
+        if not isinstance(ent, dict) or ent.get("expires_date") is None:
+            continue
+        try:
+            exp_dt = ensure_aware_utc(parse_dt(str(ent["expires_date"])))
+        except Exception:
+            continue
+        if exp_dt and exp_dt > now and (latest is None or exp_dt > latest):
+            latest = exp_dt
+    return latest
+
+
+def reconcile_pending_change(family: dict, store_plan: Optional[str],
+                             renews_at: Optional[datetime]) -> dict:
+    """Keep a booked downgrade honest against what the store says.
+
+    Field case, 2026-09-30: a Family-to-Duo switch on Google Play was shown as
+    "Changes to Duo on 28/09" — a date already past — while Google said the
+    change lands with the next payment on 27 October. The date had been taken
+    from the change event, which is not the renewal date. The store's own
+    renewal date is. And once the store reports the new plan, the change has
+    happened and is no longer pending."""
+    pending = family.get("pending_plan")
+    if not pending:
+        return {}
+    if store_plan == pending:
+        return {"pending_plan": None}
+    if renews_at:
+        return {"pending_plan_at": renews_at}
+    return {}
+
+
 @app.post("/api/billing/reconcile")
 async def reconcile_billing(user: dict = Depends(require_user)):
     """Ask RevenueCat directly what this user's subscription really is.
@@ -14201,8 +14237,11 @@ async def reconcile_billing(user: dict = Depends(require_user)):
         # paying household, and must not read as one that never paid.
         changes["rc_last_event"] = "RECONCILE_VERIFIED"
         changes["rc_event_at"] = utcnow()
+        changes.update(reconcile_pending_change(
+            family, changes["plan"], rc_entitlement_renews_at(subscriber, utcnow())))
     elif family.get("plan") in PAID_PLANS and family.get("rc_last_event"):
         changes["plan"] = "village"
+        changes["pending_plan"] = None
 
     await database["families"].update_one(
         {"family_id": user["family_id"]}, {"$set": changes}
