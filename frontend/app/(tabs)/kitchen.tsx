@@ -2699,7 +2699,7 @@ export default function Kitchen() {
           intercepted by an overlay it could not explain. */}
       <LoadingOverlay visible={loading} label={t('loading')} />
       <AislePickerSheet
-        itemName={aisleItem?.name ?? null}
+        itemName={aisleItem ? splitQuantity(aisleItem.name).label : null}
         current={aisleItem?.category ?? null}
         onPick={(aisle) => { if (aisleItem) moveToAisle(aisleItem, aisle); }}
         onClose={() => setAisleItem(null)}
