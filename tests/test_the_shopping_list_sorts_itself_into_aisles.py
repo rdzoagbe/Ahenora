@@ -88,6 +88,16 @@ class TheListSortsItself(unittest.TestCase):
         ]:
             self.assertEqual(shopping_aisles.classify(name), aisle, name)
 
+    def test_rolands_second_set_of_examples(self):
+        # "chicken thigh to meat, dried beans to the cupboard, washing soap to
+        # cleaning". Soap on its own is for hands and stays in Health.
+        self.assertEqual(self.add("chicken thigh")["category"], "Meat")
+        self.assertEqual(self.add("dried beans")["category"], "Pantry")
+        self.assertEqual(self.add("washing soap")["category"], "Household")
+        self.assertEqual(shopping_aisles.classify("savon noir"), "Household")
+        self.assertEqual(shopping_aisles.classify("savon de Marseille"), "Household")
+        self.assertEqual(shopping_aisles.classify("soap"), "Health")
+
     def test_the_most_specific_words_win(self):
         # One rule instead of a precedence table: the longest matching term.
         for name, aisle in [

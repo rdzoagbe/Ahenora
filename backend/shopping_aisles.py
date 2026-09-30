@@ -230,6 +230,12 @@ TERMS: dict[str, list[str]] = {
         "papel higienico", "toilettenpapier", "klopapier",
         # laundry and dishes
         "detergent", "laundry", "laundry detergent", "washing powder",
+        # Soap that washes clothes or the house, not hands: "soap" alone stays
+        # in Health & beauty, so these are listed as the longer phrases.
+        "washing soap", "laundry soap", "soap powder", "soap flakes",
+        "savon noir", "savon de marseille", "savon lessive", "savon a linge",
+        "jabon de lavar", "jabon para la ropa", "jabon de marsella", "kernseife",
+        "gallseife",
         "lessive", "lessive liquide", "detergente", "waschmittel",
         "fabric softener", "softener", "adoucissant", "suavizante",
         "weichspuler", "dishwasher tablets", "dishwasher pods",
