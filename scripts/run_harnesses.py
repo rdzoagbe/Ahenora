@@ -61,6 +61,9 @@ HARNESSES = [
     # The capture bar routes a typed line to the list, the menu or a card. Its
     # whole risk is a wrong guess, so the harness leans on what must NOT move.
     "e2e_capture.py",
+    # The shopping list in aisles: items sorted however they arrive, in the
+    # order a shop is walked, and a household's own re-sorting remembered.
+    "e2e_aisles.py",
     "e2e_activity.py",
     "e2e_search.py",
     "e2e_handoff.py",

@@ -23,6 +23,13 @@ from fastapi import FastAPI, HTTPException, Depends, Header, UploadFile, File, Q
 import requests
 import webpush as webpush_lib
 from dedupe_core import run as dedupe_run
+from shopping_aisles import (
+    AISLES as SHOPPING_AISLE_ORDER,
+    choose_aisle,
+    classify as classify_shopping_item,
+    item_key as shopping_item_key,
+    remembered_aisles,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 try:
@@ -2225,12 +2232,12 @@ def public_handoff_note(note: dict, viewer_id: Optional[str] = None) -> dict:
     }
 
 
-def public_shopping_item(item: dict) -> dict:
+def public_shopping_item(item: dict, aisle: Optional[str] = None) -> dict:
     return {
         "item_id": item["item_id"],
         "family_id": item["family_id"],
         "name": item["name"],
-        "category": item.get("category", "Other"),
+        "category": aisle or item.get("category", "Other"),
         "checked": item.get("checked", False),
         "added_by": item.get("added_by", ""),
         "created_at": iso(item["created_at"]),
@@ -5822,7 +5829,8 @@ _FAMILY_SCOPED_COLLECTIONS = (
     "activity", "allowance_txns", "allowances", "announcements", "calendar_contacts",
     "cards", "carpools", "chore_logs", "chores", "expenses", "family_invites",
     "family_members", "handoff_notes", "meal_plans_saved", "meals", "redemptions",
-    "rewards", "routine_logs", "routines", "shopping_history", "shopping_list",
+    "rewards", "routine_logs", "routines", "shopping_aisles", "shopping_history",
+    "shopping_list",
     # "templates" has no feature behind it any more — the recurring-template
     # endpoints were removed once it was found that nothing could ever create
     # one. The COLLECTION stays listed: rows written before it went are still
@@ -16035,28 +16043,60 @@ SHOPPING_CATEGORIES = [
     "Pantry", "Drinks", "Snacks", "Baby", "Household",
     "Health", "School", "Other",
 ]
+# The aisle sorter and the stored categories must name the same aisles, or an
+# item could be sorted into an aisle the list cannot show.
+assert set(SHOPPING_AISLE_ORDER) == set(SHOPPING_CATEGORIES)
+
+
+def shown_aisle(item: dict, remembered: dict[str, str]) -> str:
+    """The aisle an item is shown in. The household's own choice for this name
+    wins; then the aisle stored with it; and an item stored as "Other" — every
+    item added before the server sorted them, and anything the word list did not
+    know then — is sorted again by name, so an existing list gains its aisles
+    without anything being rewritten."""
+    mine = remembered.get(shopping_item_key(item.get("name") or ""))
+    if mine:
+        return mine
+    stored = item.get("category") or "Other"
+    if stored in SHOPPING_CATEGORIES and stored != "Other":
+        return stored
+    return classify_shopping_item(item.get("name") or "") or "Other"
 
 
 @app.get("/api/shopping")
 async def list_shopping(user=Depends(require_user)):
     database = get_db()
-    rows = []
+    items = []
     async for item in database["shopping_list"].find(
         {"family_id": user["family_id"]},
         {"_id": 0},
     ).sort("created_at", -1):
-        rows.append(public_shopping_item(item))
-    return rows
+        items.append(item)
+    remembered = await remembered_aisles(
+        database, user["family_id"], [i.get("name") or "" for i in items])
+    return [public_shopping_item(i, shown_aisle(i, remembered)) for i in items]
+
+
+async def aisle_for_new_item(database, family_id: str, name: str,
+                             supplied: Optional[str] = None,
+                             remembered: Optional[dict[str, str]] = None) -> str:
+    """The aisle a new item is stored in, however it arrived: the household's
+    earlier choice for this name, then the word list, then what the app
+    guessed, then "Other"."""
+    if remembered is None:
+        remembered = await remembered_aisles(database, family_id, [name])
+    return choose_aisle(name, remembered.get(shopping_item_key(name)), supplied)
 
 
 @app.post("/api/shopping")
 async def add_shopping_item(payload: ShoppingItemIn, user=Depends(require_user)):
     database = get_db()
+    name = payload.name.strip()
     doc = {
         "item_id": new_id("shop"),
         "family_id": user["family_id"],
-        "name": payload.name.strip(),
-        "category": payload.category if payload.category in SHOPPING_CATEGORIES else "Other",
+        "name": name,
+        "category": await aisle_for_new_item(database, user["family_id"], name, payload.category),
         "checked": False,
         "added_by": user.get("name", ""),
         "created_at": utcnow(),
@@ -16075,15 +16115,34 @@ async def update_shopping_item(item_id: str, payload: ShoppingItemPatchIn, user=
     if payload.name is not None:
         updates["name"] = payload.name.strip()
     if payload.category is not None:
+        if payload.category not in SHOPPING_CATEGORIES:
+            raise HTTPException(422, "Unknown aisle")
         updates["category"] = payload.category
     if not updates:
         raise HTTPException(400, "Nothing to update")
-    result = await database["shopping_list"].update_one(
+    current = await database["shopping_list"].find_one(
+        {"item_id": item_id, "family_id": user["family_id"]}, {"_id": 0})
+    if not current:
+        raise HTTPException(404, "Item not found")
+    if "name" in updates and "category" not in updates:
+        # A renamed item is sorted again: "tomatoes" edited to "toilet paper"
+        # must not stay in fruit and veg.
+        updates["category"] = await aisle_for_new_item(
+            database, user["family_id"], updates["name"])
+    await database["shopping_list"].update_one(
         {"item_id": item_id, "family_id": user["family_id"]},
         {"$set": updates},
     )
-    if result.matched_count == 0:
-        raise HTTPException(404, "Item not found")
+    if payload.category is not None:
+        # Somebody moved this item to another aisle. Remember it for the
+        # household, so the next time anyone adds it, it lands there.
+        key = shopping_item_key(updates.get("name") or current.get("name") or "")
+        if key:
+            await database["shopping_aisles"].update_one(
+                {"family_id": user["family_id"], "key": key},
+                {"$set": {"category": payload.category, "updated_at": utcnow()}},
+                upsert=True,
+            )
     doc = await database["shopping_list"].find_one({"item_id": item_id}, {"_id": 0})
     return public_shopping_item(doc)
 
@@ -16216,14 +16275,14 @@ async def reuse_shopping_history(history_id: str, user=Depends(require_user)):
     if not h:
         raise HTTPException(404, "Not found")
     added = 0
-    for name in h.get("items", []):
-        if not name:
-            continue
+    names = [n for n in h.get("items", []) if n]
+    remembered = await remembered_aisles(database, user["family_id"], names)
+    for name in names:
         await database["shopping_list"].insert_one({
             "item_id": new_id("shop"),
             "family_id": user["family_id"],
             "name": name,
-            "category": "Other",
+            "category": choose_aisle(name, remembered.get(shopping_item_key(name))),
             "checked": False,
             "added_by": user.get("name", ""),
             "created_at": utcnow(),
@@ -16520,6 +16579,7 @@ async def bulk_add_shopping(body: BulkShoppingIn, user=Depends(require_user)):
     have = {(e.get("name") or "").strip().lower() for e in existing}
     added = 0
     added_names: list[str] = []
+    remembered = await remembered_aisles(database, user["family_id"], body.names)
     for index, raw in enumerate(body.names):
         name = (raw or "").strip()
         if not name or name.lower() in have:
@@ -16530,7 +16590,7 @@ async def bulk_add_shopping(body: BulkShoppingIn, user=Depends(require_user)):
             "item_id": new_id("shop"),
             "family_id": user["family_id"],
             "name": name,
-            "category": supplied if supplied in SHOPPING_CATEGORIES else "Other",
+            "category": choose_aisle(name, remembered.get(shopping_item_key(name)), supplied),
             "checked": False,
             "added_by": user.get("name", ""),
             "created_at": utcnow(),
@@ -18876,6 +18936,7 @@ async def sync_meals_to_shopping(user: dict = Depends(require_user), database=De
         all_ingredients.extend(meal.get("ingredients", []))
     unique = list(set(i.strip() for i in all_ingredients if i.strip()))
     added = 0
+    remembered = await remembered_aisles(database, user["family_id"], unique)
     for name in unique:
         existing = await database["shopping_list"].find_one(
             {"family_id": user["family_id"], "name": {"$regex": f"^{re.escape(name)}$", "$options": "i"}}
@@ -18885,9 +18946,7 @@ async def sync_meals_to_shopping(user: dict = Depends(require_user), database=De
                 "item_id": new_id("shop"),
                 "family_id": user["family_id"],
                 "name": name,
-                # "Other" (not the non-existent "Groceries") so the app's
-                # name-based aisle derivation kicks in on display.
-                "category": "Other",
+                "category": choose_aisle(name, remembered.get(shopping_item_key(name))),
                 "checked": False,
                 "added_by": user.get("name", ""),
                 "created_at": utcnow(),

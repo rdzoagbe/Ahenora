@@ -5,7 +5,7 @@ import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
-import { Plus, X, Trash2, ShoppingCart, Check, UtensilsCrossed, ChevronLeft, History, RotateCcw, Sparkles, Sun, ChefHat, Clock, AlertTriangle, Search, Minus, Camera, Image as ImageIcon , ListChecks, Leaf, Shuffle} from 'lucide-react-native';
+import { Plus, X, Trash2, ShoppingCart, Check, UtensilsCrossed, ChevronLeft, History, RotateCcw, Sparkles, Sun, ChefHat, Clock, AlertTriangle, Search, Minus, Camera, Image as ImageIcon , ListChecks, Leaf, Shuffle, Tag, ChevronDown, ChevronRight} from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { SpendingView } from '../../src/components/SpendingView';
@@ -29,6 +29,8 @@ import { refreshOutcome } from '../../src/refreshOutcome';
 import { suggestWeek, MealSuggestion, SuggestLang, localizedMealTitle, localizedMealIngredients, resolveRecipeId, recipeIngredients, searchRecipes } from '../../src/mealSuggestions';
 import { quantityFor, shoppingNameFor, formatAiQuantity, AiIngredient } from '../../src/recipeQuantities';
 import { categoriseShoppingItem, shoppingLabel } from '../../src/shoppingCategories';
+import { groupByAisle, Aisle, AISLE_EMOJI, splitQuantity } from '../../src/shoppingAisles';
+import { AislePickerSheet } from '../../src/components/AislePickerSheet';
 import { recipeMethod } from '../../src/recipeSteps';
 import { apiErrorText, isAiAllowanceError } from '../../src/apiError';
 import { ScansLeft } from '../../src/components/ScansLeft';
@@ -110,6 +112,17 @@ export default function Kitchen() {
   const { toast, showToast } = useToast();
 
   const [shopItems, setShopItems] = useState<ShoppingItem[]>([]);
+  // The item whose aisle is being changed, or null.
+  const [aisleItem, setAisleItem] = useState<ShoppingItem | null>(null);
+  // Aisles (and "Done") folded away while shopping, by name.
+  const [folded, setFolded] = useState<Set<string>>(() => new Set());
+  const toggleFold = useCallback((key: string) => {
+    setFolded((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }, []);
   const [shopInput, setShopInput] = useState('');
   const [addingShop, setAddingShop] = useState(false);
 
@@ -456,7 +469,8 @@ export default function Kitchen() {
       } else {
         const r = await api.bulkAddShopping(names, names.map((n) => categoriseShoppingItem(n) || undefined));
         setShopItems(await api.listShopping().catch(() => []));
-        showToast(`${r.added} ${t('vault_ingredients_added_to_list')}`, 'success');
+        // Items, not "ingredients": this is whatever was typed, nappies included.
+        showToast(t('shop_items_added', { n: r.added }), 'success');
       }
       setShopInput('');
     } catch {
@@ -1087,7 +1101,7 @@ export default function Kitchen() {
       const r = await api.bulkAddShopping(names, names.map((n) => categoriseShoppingItem(n) || undefined));
       setRestoreEntry(null);
       setShopItems(await api.listShopping().catch(() => []));
-      showToast(`${r.added} ${t('vault_ingredients_added_to_list')}`, 'success');
+      showToast(t('shop_items_added', { n: r.added }), 'success');
     } catch { showToast(t('vault_could_not_update'), 'error'); }
   }, [restoreEntry, restoreSel, showToast]);
 
@@ -1190,6 +1204,33 @@ export default function Kitchen() {
 
   const uncheckedItems = useMemo(() => shopItems.filter((i) => !i.checked), [shopItems]);
   const checkedItems = useMemo(() => shopItems.filter((i) => i.checked), [shopItems]);
+  // The list in aisle order, a heading before each aisle. One flat run of rows
+  // so the windowed list can measure and scroll headings and items alike.
+  const shopRows = useMemo(() => {
+    const rows: ({ kind: 'aisle'; aisle: Aisle; count: number } | { kind: 'item'; item: ShoppingItem })[] = [];
+    for (const group of groupByAisle(uncheckedItems)) {
+      rows.push({ kind: 'aisle', aisle: group.aisle, count: group.items.length });
+      if (folded.has(group.aisle)) continue;
+      for (const item of group.items) rows.push({ kind: 'item', item });
+    }
+    return rows;
+  }, [uncheckedItems, folded]);
+
+  // Move an item to another aisle. The server remembers the choice for the
+  // household, so the next "chips" lands where this house keeps its chips.
+  const moveToAisle = useCallback(async (item: ShoppingItem, aisle: Aisle) => {
+    setAisleItem(null);
+    if (item.category === aisle) return;
+    const before = item.category;
+    setShopItems((prev) => prev.map((i) => (i.item_id === item.item_id ? { ...i, category: aisle } : i)));
+    try {
+      await api.updateShoppingItem(item.item_id, { category: aisle });
+      showToast(t('shop_aisle_moved', { aisle: catLabel(aisle, t) }), 'success');
+    } catch {
+      setShopItems((prev) => prev.map((i) => (i.item_id === item.item_id ? { ...i, category: before } : i)));
+      showToast(t('shop_aisle_failed'), 'error');
+    }
+  }, [showToast, t]);
 
   const selectView = (v: KitchenView) => setView(v);
 
@@ -1358,78 +1399,119 @@ export default function Kitchen() {
               {/* A full weekly shop ran the page on for screens, burying the
                   meal ideas and the history beneath it. Ten at a time, the
                   rest inside. */}
-              <WindowedList testID="shop-list-scroll" count={uncheckedItems.length} window={10}>
-                {uncheckedItems.map((item, index) => (
-                  <PressScale
-                    key={item.item_id}
-                    onPress={() => (selectMode ? toggleSelected(item.item_id) : toggleShopItem(item))}
-                    onLongPress={() => { setSelectMode(true); toggleSelected(item.item_id); }}
-                    style={[styles.row, selectMode && selectedIds.has(item.item_id) && styles.rowSelected]}
-                  >
-                    {selectMode ? (
-                      <View style={[styles.selBox, selectedIds.has(item.item_id) && styles.selBoxOn]}>
-                        {selectedIds.has(item.item_id) ? <Check color={ui.bg} size={13} /> : null}
+              <WindowedList testID="shop-list-scroll" count={shopRows.length} window={12}>
+                {shopRows.map((row) => {
+                  if (row.kind === 'aisle') {
+                    return (
+                      <View key={`aisle-${row.aisle}`} style={styles.aisleHead}>
+                        <PressScale
+                          testID={`shop-aisle-head-${row.aisle}`}
+                          accessibilityRole="button"
+                          accessibilityLabel={`${catLabel(row.aisle, t)}, ${row.count}`}
+                          onPress={() => toggleFold(row.aisle)}
+                          style={styles.aislePill}
+                        >
+                          <Text style={styles.aisleEmoji}>{AISLE_EMOJI[row.aisle]}</Text>
+                          <Text style={styles.aisleHeadText}>{catLabel(row.aisle, t)}</Text>
+                          <Text style={styles.aisleHeadCount}>{row.count}</Text>
+                          {folded.has(row.aisle)
+                            ? <ChevronRight color={ui.muted} size={14} />
+                            : <ChevronDown color={ui.muted} size={14} />}
+                        </PressScale>
                       </View>
-                    ) : (
-                      <View style={styles.numBadge}><Text style={styles.numText}>{index + 1}</Text></View>
-                    )}
-                    <View style={{ flex: 1, minWidth: 0 }}>
-                      <Text style={styles.rowText}>{item.name}</Text>
-                      {/* What the family's own receipts say. Shown here, on the
-                          list, because the decision this can change is made
-                          before leaving the house — the Spending tab reports
-                          the same thing after the money is gone. */}
-                      {(() => {
-                        const tip = cheaperBy.get(item.name.trim().toLowerCase());
-                        if (!tip) return null;
-                        return (
-                          <Text style={styles.rowCheaper} numberOfLines={1}>
-                            {t('kit_cheaper_at', {
-                              shop: tip.shop,
-                              amount: `${t('currency_symbol')}${tip.saving.toFixed(2)}`,
-                              unit: tip.unit,
-                            })}
-                          </Text>
-                        );
-                      })()}
-                    </View>
-                    {(() => {
-                      // Everything stored before this shipped is "Other", because the
-                      // app never sent a category. Derive from the name in that case
-                      // so existing lists gain aisles without a data migration.
-                      const cat = item.category && item.category !== 'Other'
-                        ? item.category
-                        : categoriseShoppingItem(item.name) || item.category;
-                      return cat ? <Text style={styles.rowCat}>{catLabel(cat, t)}</Text> : null;
-                    })()}
-                    <PressScale
-                    accessibilityRole="button"
-                    accessibilityLabel={t('a11y_delete')} onPress={() => deleteShopItem(item.item_id)} hitSlop={12} style={{ padding: 4 }}>
-                      <Trash2 color={ui.muted} size={15} />
-                    </PressScale>
-                  </PressScale>
-                ))}
-              </WindowedList>
-              {uncheckedItems.length > 0 ? <Text style={styles.hint}>{t('vault_shop_tap_hint')}</Text> : null}
-
-              {checkedItems.length > 0 ? (
-                <>
-                  <View style={styles.divider}><Text style={styles.dividerText}>{t('vault_done')} ({checkedItems.length})</Text></View>
-                  {checkedItems.map((item) => (
+                    );
+                  }
+                  const item = row.item;
+                  const { label, qty } = splitQuantity(item.name);
+                  return (
                     <PressScale
                       key={item.item_id}
+                      testID={`shop-item-${item.item_id}`}
                       onPress={() => (selectMode ? toggleSelected(item.item_id) : toggleShopItem(item))}
                       onLongPress={() => { setSelectMode(true); toggleSelected(item.item_id); }}
-                      style={[styles.row, selectMode && selectedIds.has(item.item_id) && styles.rowSelected]}
+                      style={[styles.shopCard, selectMode && selectedIds.has(item.item_id) && styles.rowSelected]}
                     >
                       {selectMode ? (
                         <View style={[styles.selBox, selectedIds.has(item.item_id) && styles.selBoxOn]}>
                           {selectedIds.has(item.item_id) ? <Check color={ui.bg} size={13} /> : null}
                         </View>
                       ) : (
-                        <Check color={ui.mintText} size={20} />
+                        <View style={styles.shopCircle} />
                       )}
-                      <Text style={[styles.rowText, styles.rowTextDone]}>{item.name}</Text>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={styles.rowText}>{label}</Text>
+                        {/* What the family's own receipts say. Shown here, on the
+                            list, because the decision this can change is made
+                            before leaving the house — the Spending tab reports
+                            the same thing after the money is gone. */}
+                        {(() => {
+                          const tip = cheaperBy.get(item.name.trim().toLowerCase());
+                          if (!tip) return null;
+                          return (
+                            <Text style={styles.rowCheaper} numberOfLines={1}>
+                              {t('kit_cheaper_at', {
+                                shop: tip.shop,
+                                amount: `${t('currency_symbol')}${tip.saving.toFixed(2)}`,
+                                unit: tip.unit,
+                              })}
+                            </Text>
+                          );
+                        })()}
+                      </View>
+                      {qty ? <View style={styles.qtyPill}><Text style={styles.qtyText}>{qty}</Text></View> : null}
+                      <PressScale
+                        testID={`shop-aisle-${item.item_id}`}
+                        accessibilityRole="button"
+                        accessibilityLabel={t('shop_aisle_change', { name: item.name })}
+                        onPress={() => setAisleItem(item)}
+                        hitSlop={12}
+                        style={{ padding: 4 }}
+                      >
+                        <Tag color={ui.muted} size={15} />
+                      </PressScale>
+                      <PressScale
+                      accessibilityRole="button"
+                      accessibilityLabel={t('a11y_delete')} onPress={() => deleteShopItem(item.item_id)} hitSlop={12} style={{ padding: 4 }}>
+                        <Trash2 color={ui.muted} size={15} />
+                      </PressScale>
+                    </PressScale>
+                  );
+                })}
+              </WindowedList>
+              {uncheckedItems.length > 0 ? <Text style={styles.hint}>{t('vault_shop_tap_hint')}</Text> : null}
+
+              {checkedItems.length > 0 ? (
+                <>
+                  <View style={styles.aisleHead}>
+                    <PressScale
+                      testID="shop-done-head"
+                      accessibilityRole="button"
+                      accessibilityLabel={`${t('vault_done')}, ${checkedItems.length}`}
+                      onPress={() => toggleFold('__done')}
+                      style={styles.aislePill}
+                    >
+                      <Text style={styles.aisleHeadText}>{t('vault_done')}</Text>
+                      <Text style={styles.aisleHeadCount}>{checkedItems.length}</Text>
+                      {folded.has('__done')
+                        ? <ChevronRight color={ui.muted} size={14} />
+                        : <ChevronDown color={ui.muted} size={14} />}
+                    </PressScale>
+                  </View>
+                  {(folded.has('__done') ? [] : checkedItems).map((item) => (
+                    <PressScale
+                      key={item.item_id}
+                      onPress={() => (selectMode ? toggleSelected(item.item_id) : toggleShopItem(item))}
+                      onLongPress={() => { setSelectMode(true); toggleSelected(item.item_id); }}
+                      style={[styles.shopCard, styles.shopCardDone, selectMode && selectedIds.has(item.item_id) && styles.rowSelected]}
+                    >
+                      {selectMode ? (
+                        <View style={[styles.selBox, selectedIds.has(item.item_id) && styles.selBoxOn]}>
+                          {selectedIds.has(item.item_id) ? <Check color={ui.bg} size={13} /> : null}
+                        </View>
+                      ) : (
+                        <View style={[styles.shopCircle, styles.shopCircleOn]}><Check color="#FFFFFF" size={13} /></View>
+                      )}
+                      <Text style={[styles.rowText, styles.rowTextDone, { flex: 1, minWidth: 0 }]}>{item.name}</Text>
                       <PressScale
                   accessibilityRole="button"
                   accessibilityLabel={t('a11y_delete')} onPress={() => deleteShopItem(item.item_id)} hitSlop={12} style={{ padding: 4 }}>
@@ -2346,7 +2428,7 @@ export default function Kitchen() {
                   <Text style={styles.rowText}>{item.name}</Text>
                   {item.unsure ? <Text style={styles.scanUnsure}>{t('scan_unsure')}</Text> : null}
                 </View>
-                <Text style={styles.rowCat}>{categoriseShoppingItem(item.name) || ''}</Text>
+                <Text style={styles.rowCat}>{catLabel(categoriseShoppingItem(item.name) || 'Other', t)}</Text>
               </PressScale>
             ))}
             {shopItems.length > 0 ? (
@@ -2616,6 +2698,12 @@ export default function Kitchen() {
           Found by a browser harness whose click on the Meals tab was
           intercepted by an overlay it could not explain. */}
       <LoadingOverlay visible={loading} label={t('loading')} />
+      <AislePickerSheet
+        itemName={aisleItem?.name ?? null}
+        current={aisleItem?.category ?? null}
+        onPick={(aisle) => { if (aisleItem) moveToAisle(aisleItem, aisle); }}
+        onClose={() => setAisleItem(null)}
+      />
       <AppToast visible={Boolean(toast)} message={toast?.message || null} tone={toast?.tone || 'info'} />
     </SwipeableTabView>
   );
@@ -2713,8 +2801,6 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   // intended; only the geometry needed to match so the row lines up.
   shopAddBtn: { width: 42, height: 42, borderRadius: 14, backgroundColor: ui.orangeDeep, alignItems: 'center', justifyContent: 'center' },
   row: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: ui.line },
-  numBadge: { width: 24, height: 24, borderRadius: 99, backgroundColor: ui.orangeSoft, alignItems: 'center', justifyContent: 'center' },
-  numText: { color: ui.orangeText, fontFamily: 'Figtree_800ExtraBold', fontSize: 12 },
   hint: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 12, textAlign: 'center', paddingTop: 10 },
   rowText: { color: ui.text, fontFamily: 'Figtree_600SemiBold', fontSize: 15 },
   rowCheaper: {
@@ -2722,6 +2808,34 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   rowTextDone: { textDecorationLine: 'line-through', color: ui.muted },
   rowCat: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 12 },
+  // The list after the reference Roland sent: each aisle a small pill that
+  // folds its items away, each item a card of its own with a round tick and
+  // its amount in a tag at the end.
+  aisleHead: { flexDirection: 'row', paddingTop: 14, paddingBottom: 8 },
+  aislePill: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10,
+    backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line,
+  },
+  aisleEmoji: { fontSize: 13 },
+  aisleHeadText: { fontFamily: 'Figtree_700Bold', fontSize: 13, color: ui.text },
+  aisleHeadCount: { fontFamily: 'Figtree_600SemiBold', fontSize: 12, color: ui.muted },
+  shopCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: ui.card, borderRadius: 14, borderWidth: 1, borderColor: ui.line,
+    paddingVertical: 13, paddingHorizontal: 14, marginBottom: 7,
+  },
+  shopCardDone: { opacity: 0.75 },
+  shopCircle: {
+    width: 22, height: 22, borderRadius: 99, borderWidth: 2, borderColor: ui.muted,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  shopCircleOn: { backgroundColor: ui.mintText, borderColor: ui.mintText },
+  qtyPill: {
+    paddingHorizontal: 9, paddingVertical: 3, borderRadius: 99,
+    backgroundColor: ui.soft, borderWidth: 1, borderColor: ui.line,
+  },
+  qtyText: { fontFamily: 'Figtree_600SemiBold', fontSize: 12.5, color: ui.muted },
   divider: { marginTop: 8, paddingVertical: 4 },
   dividerText: { color: ui.muted, fontFamily: 'Figtree_700Bold', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5 },
   empty: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 13, textAlign: 'center', paddingVertical: 14 },

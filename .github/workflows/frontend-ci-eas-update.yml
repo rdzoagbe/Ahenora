@@ -28,6 +28,9 @@ on:
       # aCardWearsItsIcon.test.ts reads backend/card_icons.py the same way, to
       # check the icon the app draws against the one the server actually picks.
       - 'backend/card_icons.py'
+      # theShoppingListIsWalkedByAisle.test.ts reads backend/shopping_aisles.py
+      # so the list's aisle order can never drift from the server's.
+      - 'backend/shopping_aisles.py'
       # aRecipeIsSeasoned reads the recipe prompt to check it still asks for
       # salt, pepper and the dish's own herbs. Reported by a cook who noticed
       # our recipes had none: the prompt is the only place that rule lives, so
@@ -54,6 +57,9 @@ on:
       # aCardWearsItsIcon.test.ts reads backend/card_icons.py the same way, to
       # check the icon the app draws against the one the server actually picks.
       - 'backend/card_icons.py'
+      # theShoppingListIsWalkedByAisle.test.ts reads backend/shopping_aisles.py
+      # so the list's aisle order can never drift from the server's.
+      - 'backend/shopping_aisles.py'
   # The OTA is published on a schedule, not on merge. 02:00 UTC is the middle
   # of the night across Europe, where most households are, and late evening in
   # the Americas — so a bundle becomes available while nobody is mid-task, and
