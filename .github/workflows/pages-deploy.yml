@@ -79,6 +79,11 @@ jobs:
         uses: actions/upload-pages-artifact@v5
         with:
           path: docs
+          # docs/.well-known holds the files that let invitation links open the
+          # app (Android App Links, iOS Universal Links). This action leaves
+          # hidden files out unless told otherwise, and a missing file fails
+          # nothing: the phone just opens the browser instead.
+          include-hidden-files: true
 
       - name: Deploy to GitHub Pages
         id: deployment
@@ -97,6 +102,25 @@ jobs:
             echo "$url -> $code"
             if [ "$code" != "200" ]; then
               echo "::error::$url returned $code (expected 200) — Play would reject this"
+              fail=1
+            fi
+          done
+          [ "$fail" -eq 0 ] || exit 1
+
+      # The two files phones fetch before they let the app open an invitation
+      # link. Checked on the live site, as JSON, after every deploy.
+      - name: Smoke-check the app-link association files
+        run: |
+          base="${{ steps.deployment.outputs.page_url }}"
+          base="${base%/}"
+          fail=0
+          for path in .well-known/assetlinks.json .well-known/apple-app-site-association; do
+            url="$base/$path"
+            body=$(curl -sS --retry 5 --retry-delay 6 --retry-all-errors -w '\n%{http_code}' "$url" || echo "000")
+            code=$(printf '%s' "$body" | tail -n1)
+            echo "$url -> $code"
+            if [ "$code" != "200" ] || ! printf '%s' "$body" | sed '$d' | python3 -m json.tool > /dev/null; then
+              echo "::error::$url is not served as valid JSON ($code); invitation links will open the browser, not the app"
               fail=1
             fi
           done

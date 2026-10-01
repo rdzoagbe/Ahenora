@@ -1,0 +1,15 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls",
+      "delegate_permission/common.get_login_creds"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.householdcoo.app",
+      "sha256_cert_fingerprints": [
+        "6D:30:9D:1D:B5:3C:D7:26:80:B2:C9:E7:0C:A8:E6:7A:80:2D:8E:B9:A4:9C:2B:57:A3:CD:CF:00:2C:E4:53:1C"
+      ]
+    }
+  }
+]

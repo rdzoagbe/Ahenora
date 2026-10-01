@@ -1,0 +1,18 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "Y2Y8A56NR6.com.ahenora.app",
+        "appIDs": ["Y2Y8A56NR6.com.ahenora.app"],
+        "paths": ["/join/*", "/fr/join/*", "/es/join/*", "/de/join/*"],
+        "components": [
+          { "/": "/join/*" },
+          { "/": "/fr/join/*" },
+          { "/": "/es/join/*" },
+          { "/": "/de/join/*" }
+        ]
+      }
+    ]
+  }
+}

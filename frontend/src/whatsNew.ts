@@ -15,6 +15,11 @@
  * A version with no entry here simply shows nothing.
  */
 export const WHATS_NEW: Record<string, string[]> = {
+  // The store version that opens invitation links in the app itself.
+  '1.2.1': [
+    'wn_121_invites',
+    'wn_aisles',
+  ],
   '1.2.0': [
     'wn_120_scan',
     'wn_120_speed',

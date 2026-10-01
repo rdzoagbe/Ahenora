@@ -44,6 +44,21 @@
         <data android:scheme="exp+household-coo"/>
       </intent-filter>
 
+      <!-- Invitation links open the app (Android App Links), from 1.2.1.
+           Verified by docs/.well-known/assetlinks.json on ahenora.com; only
+           the invitation pages, never the website or the web app. Mirrored
+           in app.json android.intentFilters; tests/test_join_pages.py holds
+           the two, the site file and the pages to each other. -->
+      <intent-filter android:autoVerify="true">
+        <action android:name="android.intent.action.VIEW"/>
+        <category android:name="android.intent.category.DEFAULT"/>
+        <category android:name="android.intent.category.BROWSABLE"/>
+        <data android:scheme="https" android:host="ahenora.com" android:pathPrefix="/join"/>
+        <data android:scheme="https" android:host="ahenora.com" android:pathPrefix="/fr/join"/>
+        <data android:scheme="https" android:host="ahenora.com" android:pathPrefix="/es/join"/>
+        <data android:scheme="https" android:host="ahenora.com" android:pathPrefix="/de/join"/>
+      </intent-filter>
+
       <intent-filter>
         <action android:name="android.intent.action.VIEW"/>
         <category android:name="android.intent.category.DEFAULT"/>
