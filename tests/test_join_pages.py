@@ -74,3 +74,83 @@ class TheInvitationPage(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class InvitationLinksOpenTheApp(unittest.TestCase):
+    """From 1.2.1, tapping an invitation opens Ahenora when it is installed.
+
+    Four things must name the same paths, the same app and the same signing
+    key, or the phone silently opens the browser instead: the site's two
+    association files, the Android manifest that actually builds, and the
+    app.json the iPhone build reads. A mismatch fails nothing at build time,
+    so it fails here.
+    """
+    JOIN_PATHS = ["/join", "/fr/join", "/es/join", "/de/join"]
+
+    def setUp(self):
+        import json
+        self.json = json
+        wk = os.path.join(DOCS, ".well-known")
+        with open(os.path.join(wk, "assetlinks.json"), encoding="utf-8") as fh:
+            self.assetlinks = json.load(fh)
+        with open(os.path.join(wk, "apple-app-site-association"), encoding="utf-8") as fh:
+            self.aasa = json.load(fh)
+        with open(os.path.join(ROOT, "frontend", "app.json"), encoding="utf-8") as fh:
+            self.app = json.load(fh)["expo"]
+        with open(os.path.join(ROOT, "frontend", "eas.json"), encoding="utf-8") as fh:
+            self.eas = fh.read()
+        with open(os.path.join(ROOT, "frontend", "android", "app", "src", "main",
+                               "AndroidManifest.xml"), encoding="utf-8") as fh:
+            self.manifest = fh.read()
+
+    def test_the_pages_the_links_open_are_the_invitation_pages(self):
+        self.assertEqual(
+            sorted("/" + v["path"] for v in build_join_pages.LANGS.values()),
+            sorted(self.JOIN_PATHS))
+
+    def test_android_trusts_the_play_signed_app(self):
+        target = self.assetlinks[0]["target"]
+        self.assertEqual(target["package_name"], self.app["android"]["package"])
+        self.assertIn("delegate_permission/common.handle_all_urls", self.assetlinks[0]["relation"])
+        # Google Play's app signing key, as shown in Play Console.
+        self.assertEqual(target["sha256_cert_fingerprints"], [
+            "6D:30:9D:1D:B5:3C:D7:26:80:B2:C9:E7:0C:A8:E6:7A:80:2D:8E:B9:A4:9C:2B:57:A3:CD:CF:00:2C:E4:53:1C"])
+
+    def test_the_android_build_claims_exactly_the_invitation_paths(self):
+        # The committed manifest is what builds; app.json is its mirror.
+        block = re.search(r'<intent-filter android:autoVerify="true">(.*?)</intent-filter>',
+                          self.manifest, re.S)
+        self.assertIsNotNone(block, "no verified intent filter in AndroidManifest.xml")
+        found = re.findall(r'android:host="ahenora.com" android:pathPrefix="([^"]+)"', block.group(1))
+        self.assertEqual(sorted(found), sorted(self.JOIN_PATHS))
+        mirror = [f for f in self.app["android"]["intentFilters"] if f.get("autoVerify")]
+        self.assertEqual(sorted(d["pathPrefix"] for d in mirror[0]["data"]), sorted(self.JOIN_PATHS))
+        self.assertTrue(all(d["host"] == "ahenora.com" for d in mirror[0]["data"]))
+
+    def test_the_iphone_build_and_the_site_name_the_same_app(self):
+        self.assertIn("applinks:ahenora.com", self.app["ios"]["associatedDomains"])
+        team = re.search(r'"appleTeamId":\s*"([A-Z0-9]{10})"', self.eas).group(1)
+        app_id = f'{team}.{self.app["ios"]["bundleIdentifier"]}'
+        detail = self.aasa["applinks"]["details"][0]
+        self.assertEqual(detail["appIDs"], [app_id])
+        self.assertEqual(detail["appID"], app_id)
+        self.assertEqual(sorted(c["/"] for c in detail["components"]),
+                         sorted(p + "/*" for p in self.JOIN_PATHS))
+
+    def test_the_website_itself_is_never_claimed_by_the_app(self):
+        # Only invitations. The homepage, the web app and everything else must
+        # keep opening in the browser.
+        detail = self.aasa["applinks"]["details"][0]
+        for path in detail["paths"] + [c["/"] for c in detail["components"]]:
+            self.assertTrue(path.split("/*")[0] in self.JOIN_PATHS, path)
+
+    def test_github_pages_publishes_the_well_known_folder(self):
+        # Jekyll skips dot-folders unless it is switched off, and the Pages
+        # upload action leaves hidden files out unless told to include them.
+        # Either one alone ships a site without the files, silently.
+        self.assertTrue(os.path.exists(os.path.join(DOCS, ".nojekyll")))
+        with open(os.path.join(ROOT, ".github", "workflows", "pages-deploy.yml"),
+                  encoding="utf-8") as fh:
+            workflow = fh.read()
+        self.assertIn("include-hidden-files: true", workflow)
+        self.assertIn(".well-known/apple-app-site-association", workflow)
