@@ -133,10 +133,45 @@ jobs:
       # ~7 minutes and an EAS build credit to upload something that already
       # existed — and it landed under a second build number, which makes the
       # version's build list harder to read, not easier.
+      # The build signs in to Apple too, with the same App Store Connect API key
+      # the submit uses. Without it EAS can only reuse the stored provisioning
+      # profile, and that profile is frozen at the capabilities the app had
+      # when it was made: 1.2.1 added Associated Domains (invitation links
+      # open the app) and the build failed with "Provisioning profile ...
+      # doesn't include the Associated Domains capability". Signed in, EAS
+      # syncs the capability onto the App ID and makes a matching profile.
+      - name: Let the build sign in to Apple
+        if: ${{ github.event.inputs.build != 'false' }}
+        id: buildauth
+        working-directory: frontend
+        env:
+          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          if [ -n "$ASC_API_KEY_P8" ] && [ -n "$ASC_KEY_ID" ] && [ -n "$ASC_ISSUER_ID" ]; then
+            umask 077
+            printf '%s' "$ASC_API_KEY_P8" > asc-api-key.p8
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::No App Store Connect API key: the build reuses the stored signing profile and cannot add new capabilities."
+          fi
+
       - name: Build with EAS
         if: ${{ github.event.inputs.build != 'false' }}
         working-directory: frontend
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
         run: |
+          if [ "${{ steps.buildauth.outputs.ready }}" = "true" ]; then
+            export EXPO_ASC_API_KEY_PATH=./asc-api-key.p8
+            export EXPO_ASC_KEY_ID="$ASC_KEY_ID"
+            export EXPO_ASC_ISSUER_ID="$ASC_ISSUER_ID"
+            export EXPO_APPLE_TEAM_ID=Y2Y8A56NR6
+            export EXPO_APPLE_TEAM_TYPE=INDIVIDUAL
+          fi
           npx eas-cli@latest build \
             --platform ios \
             --profile "${{ github.event.inputs.profile }}" \
