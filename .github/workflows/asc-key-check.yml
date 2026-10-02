@@ -30,11 +30,19 @@ jobs:
           import base64, re
           raw = os.environ["ASC_API_KEY_P8"]
           # What was pasted, described without showing it: counts and yes/no.
-          body = re.sub(r"-----[A-Z ]+-----", "", raw.replace("\\n", "\n"))
+          lines = raw.replace("\\n", "\n").splitlines()
+          # The header lines are dropped whole, whatever their dashes became
+          # (a text editor can turn ----- into long dashes).
+          body = "".join(l for l in lines if "PRIVATE KEY" not in l)
           body = re.sub(r"\s+", "", body)
-          print("Pasted text: lines=%d, BEGIN line=%s, END line=%s, key characters=%d, only base64 characters=%s"
-                % (len(raw.strip().splitlines()), "BEGIN PRIVATE KEY" in raw, "END PRIVATE KEY" in raw,
-                   len(body), bool(re.fullmatch(r"[A-Za-z0-9+/=]+", body or "-"))))
+          odd = [c for c in body if not re.match(r"[A-Za-z0-9+/=]", c)]
+          print("Pasted text: lines=%d, BEGIN line=%s, END line=%s, key characters=%d, unexpected characters=%d (non-ASCII: %d)"
+                % (len([l for l in lines if l.strip()]), "BEGIN PRIVATE KEY" in raw, "END PRIVATE KEY" in raw,
+                   len(body), len(odd), sum(1 for c in odd if ord(c) > 127)))
+          header_dashes_ok = all(l.strip().startswith("-----") and l.strip().endswith("-----")
+                                 for l in lines if "PRIVATE KEY" in l)
+          print("Header lines use plain dashes:", header_dashes_ok)
+          body = "".join(c for c in body if c not in odd)
           try:
               der_len = len(base64.b64decode(body, validate=True))
               print("Decoded key length:", der_len, "bytes (an App Store Connect key is about 138)")
