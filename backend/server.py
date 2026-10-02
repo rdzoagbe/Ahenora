@@ -77,6 +77,7 @@ from ai_safety import (
     sanitize_user_text,
     sanitize_message_text,
     validate_recipe,
+    ensure_seasoned,
     CHEF_SYSTEM_PROMPT,
     MAX_QUESTION_LEN,
     build_chef_prompt,
@@ -18627,7 +18628,7 @@ async def generate_meal_recipe(
         parsed = extract_json(text)
         if parsed is None:
             raise UnsafeRecipe("unparseable")
-        recipe = validate_recipe(parsed)
+        recipe = ensure_seasoned(validate_recipe(parsed), language)
         if "ingredients" not in recipe:
             # Still a usable recipe, but the model ignored half the prompt —
             # loud in the logs so a quiet downgrade cannot become the norm.
@@ -18823,7 +18824,7 @@ async def generate_recipe_from_name(
         parsed = extract_json(text)
         if parsed is None:
             raise UnsafeRecipe("unparseable")
-        recipe = validate_recipe(parsed)
+        recipe = ensure_seasoned(validate_recipe(parsed), language)
     except UnsafeRecipe as exc:
         log.info("recipe rejected by safety gate: %s", exc.reason)
         raise HTTPException(422, "We could not write a recipe for this one.")
@@ -18957,6 +18958,19 @@ async def add_meal_from_capture(
     return public_meal(meal)
 
 
+# Aisles that hold nothing anyone cooks: washing liquid, toilet paper,
+# toothpaste, nappies, exercise books. Roland, 2026-10-02: "does it make the
+# difference between what can be cooked and what not?" It did not: the whole
+# list went to the model, and the minimum of three items could be met by soap.
+NOT_COOKABLE_AISLES = {"Household", "Health", "Baby", "School"}
+
+
+def cookable_item(name: str) -> bool:
+    """Whether a shopping-list item could go into a dinner. Unknown items
+    stay in: the model can judge "present for Ama" better than a word list."""
+    return classify_shopping_item(name) not in NOT_COOKABLE_AISLES
+
+
 @app.post("/api/meals/suggest-ai")
 async def suggest_meals_ai(
     lang: str = "en",
@@ -18988,7 +19002,7 @@ async def suggest_meals_ai(
         {"family_id": user["family_id"]}, {"_id": 0, "name": 1}
     ):
         name = sanitize_user_text(row.get("name") or "", MAX_INGREDIENT_LEN)
-        if name:
+        if name and cookable_item(name):
             items.append(name)
 
     # The minimum is judged on the CURRENT list alone. History used to top the
@@ -19004,7 +19018,7 @@ async def suggest_meals_ai(
         ).sort("created_at", -1).limit(3):
             for raw in (row.get("items") or [])[:20]:
                 name = sanitize_user_text(raw or "", MAX_INGREDIENT_LEN)
-                if name and name not in items:
+                if name and name not in items and cookable_item(name):
                     items.append(name)
 
     items = items[:40]

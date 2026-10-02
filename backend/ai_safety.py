@@ -904,6 +904,62 @@ def validate_recipe(parsed: dict) -> dict:
 MAX_SEASONING = 4
 
 
+# Salt and pepper by language, for ensure_seasoned below.
+_SALT_PEPPER = {
+    "en": ("Salt", "Black pepper"),
+    "fr": ("Sel", "Poivre noir"),
+    "es": ("Sal", "Pimienta negra"),
+    "de": ("Salz", "Schwarzer Pfeffer"),
+}
+# Something in the dish already salts it: salt itself, or a salty sauce/stock.
+_SALTY_WORDS = (
+    "salt", "sel", "sal", "salz", "soy", "soja", "sojasauce", "stock", "bouillon",
+    "caldo", "bruhe", "bruhwurfel", "maggi", "fish sauce", "nuoc mam", "miso",
+)
+_PEPPER_WORDS = ("pepper", "poivre", "pimienta", "pfeffer")
+# A sweet dish is not salted and peppered by default.
+_SWEET_WORDS = (
+    "sugar", "sucre", "azucar", "zucker", "honey", "miel", "honig", "chocolate",
+    "chocolat", "schokolade", "jam", "confiture", "mermelada", "marmelade",
+    "maple", "custard", "icing",
+)
+
+
+def _plain_words(text: str) -> str:
+    text = unicodedata.normalize("NFKD", (text or "").lower())
+    text = "".join(c for c in text if not unicodedata.combining(c))
+    return " " + re.sub(r"[^a-z]+", " ", text).strip() + " "
+
+
+def ensure_seasoned(recipe: dict, language: str) -> dict:
+    """Salt (and pepper) on every savoury recipe, whatever the model did.
+
+    The prompt has asked for seasoning since a cook reported recipes with no
+    salt, no pepper and no herbs; this makes it true rather than hoped for
+    (Roland, 2026-10-02: "verify that the recipes all have good seasoning").
+    Only adds, never removes; only "to taste", so no amount is invented; and
+    leaves sweet dishes and anything already salted (soy sauce, stock) alone.
+    """
+    ingredients = recipe.get("ingredients")
+    if not isinstance(ingredients, list) or not ingredients:
+        return recipe
+    names = [_plain_words(i.get("name", "")) for i in ingredients if isinstance(i, dict)]
+    joined = "".join(names)
+    has = lambda words: any(f" {w} " in joined for w in words)
+    if has(_SWEET_WORDS):
+        return recipe
+    salt, pepper = _SALT_PEPPER.get(language, _SALT_PEPPER["en"])
+    added = []
+    if not has(_SALTY_WORDS):
+        added.append({"name": salt, "qty": 0, "unit": "to taste"})
+        if not has(_PEPPER_WORDS):
+            added.append({"name": pepper, "qty": 0, "unit": "to taste"})
+    if added:
+        recipe = dict(recipe)
+        recipe["ingredients"] = list(ingredients) + added
+    return recipe
+
+
 def _validate_seasoning(raw, ingredients) -> list:
     """Spices that would improve the dish, kept separate from what it needs.
 
@@ -1090,6 +1146,10 @@ Rules you must follow:
   not a list of ingredients. Give it in the language you are asked for.
 - "uses" lists items FROM THE PROVIDED SHOPPING LIST that the dish uses. Never
   put anything in "uses" that is not on the list.
+- Only FOOD goes into a dinner. If something on the list is not an ingredient
+  (cleaning products, toiletries, pet food, nappies, stationery) ignore it
+  completely: never put it in "uses" and never build a dish around it. Drinks
+  and snacks may be left out too when they do not belong in a dinner.
 - "need" lists the few extra ingredients to buy. Keep it short and ordinary.
 - "minutes" is a realistic hands-on time for a weeknight.
 - Cook the food this family actually buys. If the list is West African, propose
