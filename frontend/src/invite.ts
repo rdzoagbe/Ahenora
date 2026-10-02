@@ -4,7 +4,18 @@ import * as Linking from 'expo-linking';
 
 // Shared by the landing screen (signed-out flow) and the in-app join prompt
 // (signed-in flow) so both read invite links the same way.
+// Invitation tokens are URL-safe base64. Whatever follows one in a pasted
+// message ("…?invite=abc see you soon") is not part of it.
+function cleanToken(token: string | null | undefined): string | null {
+  const m = (token || '').trim().match(/^[A-Za-z0-9_-]+/);
+  return m ? m[0] : null;
+}
+
 export function extractInviteToken(rawUrl?: string | null) {
+  return cleanToken(readInviteParam(rawUrl));
+}
+
+function readInviteParam(rawUrl?: string | null) {
   if (!rawUrl) return null;
 
   try {
@@ -20,8 +31,8 @@ export function extractInviteToken(rawUrl?: string | null) {
     const token = url.searchParams.get('invite');
     return token?.trim() || null;
   } catch {
-    const match = rawUrl.match(/[?#&]invite=([^&#]+)/);
-    return match ? decodeURIComponent(match[1]) : null;
+    const match = rawUrl.match(/[?#&]invite=([A-Za-z0-9_-]+)/);
+    return match ? match[1] : null;
   }
 }
 

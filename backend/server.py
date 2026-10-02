@@ -5239,13 +5239,15 @@ class HandoffNoteIn(BaseModel):
 
 
 class ShoppingItemIn(BaseModel):
-    name: str
+    # A list item is a few words; the cap keeps a pasted page out of the list
+    # (and out of the aisle sorter, which runs on every list load).
+    name: str = Field(max_length=300)
     category: str = "Other"
 
 
 class ShoppingItemPatchIn(BaseModel):
     checked: Optional[bool] = None
-    name: Optional[str] = None
+    name: Optional[str] = Field(default=None, max_length=300)
     category: Optional[str] = None
 
 
@@ -5860,6 +5862,11 @@ _FAMILY_SCOPED_COLLECTIONS = (
     # answer to "delete my data": it would keep a deleted user's name for another
     # fortnight. Found by the drift check in test_deletion_completeness.
     "client_errors",
+    # Both carry family_id and were missing (audit, 2026-10-02):
+    #   plan_walls        — which limits a household hit, by day.
+    #   shopping_pending  — items waiting to go out in one "added to the list"
+    #                       notification, with the adder's name.
+    "plan_walls", "shopping_pending",
 )
 
 
@@ -5875,8 +5882,10 @@ async def _purge_user_account(database: Any, user_id: str, email: str) -> None:
     # the daily push job reads. _push_zones() reads BOTH notification_tokens and
     # web_push_subscriptions, so listing only the first deleted half the ways
     # this person could still be contacted.
+    # password_resets: a pending reset code is keyed to the person (audit,
+    # 2026-10-02: it outlived a deleted account).
     for collection in ("user_sessions", "notification_tokens", "notification_settings",
-                       "support_tickets", "web_push_subscriptions"):
+                       "support_tickets", "web_push_subscriptions", "password_resets"):
         await database[collection].delete_many({"user_id": user_id})
     if email:
         await database["family_invites"].delete_many({"email": email, "status": "pending"})
@@ -6004,13 +6013,23 @@ async def delete_account(payload: DeleteAccountIn, user=Depends(require_user)):
 
     deleted_household = False
     if family_id and other_account is None:
-        # Last account-holder: the household leaves with them.
+        # Last account-holder: the household leaves with them, and so does a
+        # card subscription. Nobody would be left to cancel it, and it would
+        # carry on charging a household that no longer exists (audit,
+        # 2026-10-02). If Stripe cannot be reached the deletion waits rather
+        # than leave that behind.
+        family = await database["families"].find_one({"family_id": family_id}, {"_id": 0}) or {}
+        if card_subscription_exists(family) and stripe_configured():
+            if not await run_in_threadpool(
+                    _stripe_cancel_now, family["stripe_subscription_id"]):
+                raise HTTPException(status_code=502, detail="card_cancel_failed")
         await _purge_family(database, family_id)
         deleted_household = True
     elif family_id:
         # A co-parent remains — take only this member out; the family stays.
         await database["family_members"].delete_many(
             {"family_id": family_id, "user_id": fresh["user_id"]})
+        await _purge_departing_parent(database, family_id, fresh["user_id"])
 
     await _purge_user_account(database, fresh["user_id"], email)
 
@@ -6018,6 +6037,52 @@ async def delete_account(payload: DeleteAccountIn, user=Depends(require_user)):
     await send_account_deleted_email(email, fresh.get("name") or "")
 
     return {"ok": True, "deleted_household": deleted_household}
+
+
+def _stripe_cancel_now(subscription_id: str) -> bool:
+    """Cancel a card subscription at once. True when it is cancelled, or was
+    already gone. Blocking — callers run it in a thread."""
+    try:
+        resp = requests.delete(
+            f"{STRIPE_API_BASE}/subscriptions/{subscription_id}",
+            auth=(os.environ["STRIPE_SECRET_KEY"], ""), timeout=20)
+    except requests.RequestException as exc:
+        log.warning("Stripe cancel on account deletion failed: %s", type(exc).__name__)
+        return False
+    if resp.status_code == 404:
+        return True
+    if resp.status_code >= 400:
+        log.warning("Stripe refused a cancel on account deletion: %s", resp.status_code)
+        return False
+    return True
+
+
+async def _purge_departing_parent(database: Any, family_id: str, user_id: str) -> None:
+    """What only the departing parent could see leaves with them.
+
+    The household's shared things stay: they belong to the people still in it.
+    But a private card or a private vault document was never anybody else's,
+    and once its owner's account is gone nobody can open it again; keeping it
+    would be keeping a deleted person's data (audit, 2026-10-02)."""
+    cards = [c async for c in database["cards"].find(
+        {"family_id": family_id, "created_by_user_id": user_id}, {"_id": 0})]
+    for card in cards:
+        if card.get("shared") is not True and card.get("visible_to") is None:
+            await database["cards"].delete_one(
+                {"family_id": family_id, "card_id": card.get("card_id")})
+    docs = [d async for d in database["vault"].find(
+        {"family_id": family_id, "owner_user_id": user_id}, {"_id": 0})]
+    freed = 0
+    for doc in docs:
+        others = [u for u in (doc.get("visible_to") or []) if u != user_id]
+        if (doc.get("visibility") or "shared") == "shared" or others:
+            continue
+        freed += len((doc.get("image_base64") or "").encode("utf-8"))
+        await database["vault"].delete_one({"family_id": family_id, "doc_id": doc.get("doc_id")})
+    if freed:
+        await database["families"].update_one(
+            {"family_id": family_id},
+            {"$inc": {"vault_bytes_used": -freed}, "$set": {"updated_at": utcnow()}})
 
 
 # Bounds how often the RevenueCat webhook prints its diagnostic line. See the
@@ -10444,11 +10509,22 @@ async def family_invite_lookup(token: str):
     if invite.get("expires_at") and _expired(invite["expires_at"]):
         raise HTTPException(status_code=410, detail="Invite has expired")
 
-    await _mark_invite_opened(database, invite)
     inviter = await database["users"].find_one(
         {"user_id": invite.get("created_by_user_id")},
         {"_id": 0},
     )
+    inviter_name = (inviter or {}).get("name") or invite.get("created_by_name") or "A family member"
+
+    # A used or withdrawn invitation is a link anyone may still hold (it was
+    # forwarded, it sits in a chat). It says only that it no longer stands:
+    # not the email it went to, not the household (audit, 2026-10-02).
+    status = invite.get("status", "pending")
+    if status != "pending":
+        return {"invite_id": invite["invite_id"], "status": status,
+                "inviter_name": inviter_name, "email": None, "relationship": None,
+                "expires_at": None, "handover": None, "household": None}
+
+    await _mark_invite_opened(database, invite)
 
     # What is waiting on the other side of the link. An invitation that shows
     # only who sent it asks somebody to sign up for an unknown; showing the
@@ -10463,9 +10539,9 @@ async def family_invite_lookup(token: str):
 
     return {
         "invite_id": invite["invite_id"],
-        "status": invite.get("status", "pending"),
+        "status": status,
         "email": invite.get("email"),
-        "inviter_name": (inviter or {}).get("name") or invite.get("created_by_name") or "A family member",
+        "inviter_name": inviter_name,
         "relationship": invite.get("relationship"),
         "expires_at": iso(invite.get("expires_at")),
         "handover": handover,
@@ -16670,7 +16746,7 @@ async def bulk_add_shopping(body: BulkShoppingIn, user=Depends(require_user)):
     added_items: list[dict] = []
     remembered = await remembered_aisles(database, user["family_id"], body.names)
     for index, raw in enumerate(body.names):
-        name = (raw or "").strip()
+        name = (raw or "").strip()[:300]
         if not name or name.lower() in have:
             continue
         have.add(name.lower())

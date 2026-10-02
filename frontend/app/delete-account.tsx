@@ -42,7 +42,10 @@ export default function DeleteAccountScreen() {
       return out;
     } catch (error: any) {
       setBusy(false);
-      Alert.alert(t('del_failed_title'), error?.message || t('del_failed_body'));
+      // The card subscription is cancelled first; when Stripe cannot be
+      // reached, nothing is deleted and the person is told why.
+      const msg = String(error?.message || '').includes('card_cancel_failed') ? t('del_card_cancel_failed') : error?.message;
+      Alert.alert(t('del_failed_title'), msg || t('del_failed_body'));
     }
   };
 

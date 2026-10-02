@@ -111,6 +111,37 @@ class TheListSortsItself(unittest.TestCase):
         ]:
             self.assertEqual(shopping_aisles.classify(name), aisle, name)
 
+    def test_the_product_word_beats_the_flavour(self):
+        # Code review, 2026-10-02: the longer word used to win, and the
+        # flavour is usually the longer word.
+        for name, aisle in [
+            ("fruit juice", "Drinks"), ("lemon juice", "Drinks"),
+            ("garlic bread", "Bakery"), ("ginger beer", "Drinks"),
+            ("chicken stock", "Pantry"), ("chocolate milk", "Dairy"),
+            ("strawberry yoghurt", "Dairy"), ("salt and vinegar crisps", "Snacks"),
+            ("milk chocolate", "Snacks"), ("coconut milk", "Pantry"),
+            ("butternut squash", "Produce"),
+        ]:
+            self.assertEqual(shopping_aisles.classify(name), aisle, name)
+
+    def test_a_word_that_only_starts_like_another_is_not_it(self):
+        for name, aisle in [
+            ("pepperoni", "Meat"), ("watercress", "Produce"), ("honeydew", "Produce"),
+            ("pâte feuilletée", "Bakery"), ("pâte brisée", "Bakery"),
+            ("eau micellaire", "Health"), ("frying pan", "Household"),
+            ("tomaten", "Produce"), ("kartoffeln", "Produce"),
+            ("grape", "Produce"), ("persil", "Produce"),
+        ]:
+            self.assertEqual(shopping_aisles.classify(name), aisle, name)
+        self.assertIsNone(shopping_aisles.classify("carnet"))
+
+    def test_a_pasted_page_costs_nothing(self):
+        import time
+        start = time.monotonic()
+        self.assertIsNone(shopping_aisles.classify("a" * 100000))
+        self.assertIsNone(shopping_aisles.classify("zzzzz " * 20000))
+        self.assertLess(time.monotonic() - start, 0.5)
+
     def test_an_unknown_item_is_other_not_a_guess(self):
         # A wrong aisle sends someone to the wrong end of the shop.
         self.assertIsNone(shopping_aisles.classify("present for Ama"))

@@ -7,7 +7,7 @@ export default function PrivacyScreen() {
     <LegalPage
       title={'Privacy Policy'}
       subtitle={'How Ahenora handles account data, household content, messages, children\'s profiles, calendar imports, photos, notifications, and support requests.'}
-      updatedAt={'24 September 2026'}
+      updatedAt={'2 October 2026'}
       sections={[
         {
           title: 'Who is responsible for your data',
@@ -75,9 +75,9 @@ export default function PrivacyScreen() {
         {
           title: 'Who else processes your data',
           body: [
-            'We use service providers to run the app, and they process data on our instructions and for no purpose of their own: Railway (hosting), MongoDB Atlas (database), Resend (email), Google and Apple (sign-in), Expo, Apple and Google (notifications to phones, and your browser\'s own push service on the web), and Google (the AI provider named above). When you import a calendar, we read it from Google or Microsoft at your request.',
+            'We use service providers to run the app, and they process data on our instructions and for no purpose of their own: Railway (hosting), MongoDB Atlas (database), Resend (email), Google and Apple (sign-in), Expo, Apple and Google (notifications to phones, and your browser\'s own push service on the web), and Google (the AI provider named above). When you import a calendar, we read it from Google or Microsoft at your request. The ahenora.com website and the web app load their typefaces from Google Fonts, so your browser asks Google\'s servers for them, which shows Google your IP address; no account information is sent.',
             'Paid plans are sold by Apple through the App Store, by Google through Google Play, or by Stripe for card payments on the web. RevenueCat tells us when a store subscription is active. We never see your card details.',
-            'Links you share outside your household show some information to whoever opens them. An invitation shows the invited email address, the inviter\'s name, the household being joined, the one task the invitation hands over, and counts — how many things are on this week, how many children, how many shopping items — never what they are. A gift pot link shows the pot\'s title and note, the organiser\'s name, the target and the total pledged. A Secret Santa link shows one person their own match, the budget and the date.',
+            'Links you share outside your household show some information to whoever opens them. An invitation shows the invited email address, the inviter\'s name, the relationship they chose, the household being joined, the one task the invitation hands over, and counts — how many things are on this week, how many children, how many shopping items — never what they are. Once an invitation has been used or withdrawn, its link shows only the inviter\'s name and that it no longer stands. A gift pot link shows the pot\'s title and note, the organiser\'s name, the target and the total pledged. A Secret Santa link shows one person their own match, the budget and the date.',
             'Someone who joins a gift pot through its link gives the name they choose and how much and how they will give, which the household then sees. A phone number or email you type for someone outside the household in a Secret Santa draw is shown to you so you can send them their link; Ahenora never contacts them.',
             'Our providers may process data outside your country. Where data leaves the UK or the EEA, it is covered by the transfer safeguards those providers offer, such as standard contractual clauses.',
           ],
@@ -86,7 +86,7 @@ export default function PrivacyScreen() {
           title: 'Security and retention',
           body: [
             'All traffic is encrypted in transit. Passwords are stored as salted hashes and session tokens only as hashes, so a copy of our database does not hand anyone your password or your session. Tokens on your device are kept in the platform\'s secure storage where it is available.',
-            'We keep your data while your account and household are active. When you delete your account we delete your profile, sessions, push tokens and memberships, and a household that no longer has anyone in it. Some records may persist briefly in routine backups, and we keep what the law requires us to keep — billing records, for example.',
+            'We keep your data while your account and household are active. When you delete your account we delete your profile, sessions, push tokens and memberships, your private cards and private documents, and a household that no longer has anyone in it. If you were the last person in a household paying by card, the card subscription is cancelled first. Some records may persist briefly in routine backups, and we keep what the law requires us to keep — billing records, for example.',
             'You can end sessions on devices you no longer hold from Settings, without changing your password.',
           ],
         },

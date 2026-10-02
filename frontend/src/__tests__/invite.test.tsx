@@ -66,6 +66,9 @@ describe('reading a token out of a link', () => {
     expect(extractInviteToken('https://ahenora.com/app/')).toBeNull();
     expect(extractInviteToken(null)).toBeNull();
     expect(extractInviteToken('')).toBeNull();
+    // Pasted with the message around it, or with a stray % sign.
+    expect(extractInviteToken('https://ahenora.com/join/?invite=abc_D-9 see you soon')).toBe('abc_D-9');
+    expect(extractInviteToken('?invite=abc%zz')).toBe('abc');
   });
 });
 

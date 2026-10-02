@@ -62,11 +62,15 @@ class DeletionCoverage(unittest.TestCase):
         # with a family_id. Reading the source rather than a curated list is
         # the point: a new feature shows up here without anyone updating a test.
         family_scoped = set()
-        for name in set(re.findall(r'database\["([a-z_]+)"\]', text)):
+        # get_db()[...] too: plan_walls was written that way and slipped past.
+        handle = r'(?:database|get_db\(\))'
+        for name in set(re.findall(handle + r'\["([a-z_]+)"\]', text)):
             for match in re.finditer(
-                    r'database\["%s"\]\.(?:insert_one|update_one|update_many)\('
+                    handle + r'\["%s"\]\.(?:insert_one|update_one|update_many)\('
                     % re.escape(name), text):
-                window = text[match.start():match.start() + 1200]
+                # A little before the call as well: a filter built just above
+                # it ({"family_id": ...} in a variable) is still family data.
+                window = text[max(0, match.start() - 400):match.start() + 1200]
                 if '"family_id"' in window:
                     family_scoped.add(name)
                     break
