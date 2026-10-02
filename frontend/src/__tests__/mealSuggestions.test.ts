@@ -80,6 +80,27 @@ describe('recipe methods', () => {
     }
   });
 
+  it('seasons every dish, in every language', () => {
+    // Roland, 2026-10-02: "verify that the meals recipes all have good
+    // seasoning". Half the library said nothing about salt, pepper or spice,
+    // and five West African dishes mentioned no seasoning at all.
+    const SEASONED: Record<'en' | 'es' | 'fr' | 'de', RegExp> = {
+      // Pepper counts on its own: a ham-and-cheese quesadilla is salted by
+      // what is in it.
+      en: /\b(salt|salted|season|pepper)/i,
+      es: /\bsal\b|salpiment|sazon|pimienta/i,
+      fr: /\b(sel|sal[ée]|salez|assaisonn)|poivr/i,
+      de: /salz|würz|abschmeck|pfeffer/i,
+    };
+    const unseasoned: string[] = [];
+    for (const id of RECIPE_IDS) {
+      for (const lang of ['en', 'es', 'fr', 'de'] as const) {
+        if (!RECIPE_METHODS[id].steps[lang].some((s) => SEASONED[lang].test(s))) unseasoned.push(`${id}.${lang}`);
+      }
+    }
+    expect(unseasoned).toEqual([]);
+  });
+
   it('returns nothing for a typed meal or a recipe we no longer ship', () => {
     expect(recipeMethod(null, 'en')).toBeNull();
     expect(recipeMethod(undefined, 'fr')).toBeNull();
