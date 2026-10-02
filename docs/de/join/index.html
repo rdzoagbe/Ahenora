@@ -79,7 +79,7 @@
 </main>
 <script>
 (function () {
-  var TEXT = {"heading_named": "{name} lädt dich in den Haushalt ein", "gone": "Diese Einladung ist abgelaufen oder wurde schon verwendet. Bitte um eine neue.", "missing": "In diesem Link fehlt die Einladung. Bitte darum, ihn noch einmal zu schicken.", "copied": "Kopiert. Tippe in Ahenora auf „Hast du eine Einladung?“ und füge sie ein."};
+  var TEXT = {"heading_named": "{name} lädt dich in den Haushalt ein", "gone": "Diese Einladung ist abgelaufen oder wurde schon verwendet. Bitte um eine neue.", "missing": "In diesem Link fehlt die Einladung. Bitte darum, ihn noch einmal zu schicken.", "copied": "Kopiert. Tippe in Ahenora auf „Hast du eine Einladung?“ und füge sie ein.", "copy_manual": "Dieser Browser konnte sie nicht kopieren. Halte den Link unten gedrückt, kopiere ihn, hol dir dann die App und füge ihn dort ein."};
   var API = "https://household-coo-production.up.railway.app";
   var params = new URLSearchParams(window.location.search);
   var token = (params.get('invite') || '').trim();
@@ -106,24 +106,66 @@
   if (android) $('store-ios').hidden = true;
   if (ios) $('store-android').hidden = true;
 
+  // In-app browsers (Facebook, Instagram, Messenger) often have no clipboard
+  // API, or refuse it. Then the old way, and if that fails too the link is
+  // shown to copy by hand: a silent failure here meant the store opened and
+  // the invitation was lost.
+  function legacyCopy() {
+    try {
+      var area = document.createElement('textarea');
+      area.value = joinLink;
+      area.setAttribute('readonly', '');
+      area.style.position = 'fixed';
+      area.style.opacity = '0';
+      document.body.appendChild(area);
+      area.select();
+      var ok = document.execCommand('copy');
+      document.body.removeChild(area);
+      return ok;
+    } catch (e) { return false; }
+  }
+  var shownByHand = false;
+  function showByHand() {
+    shownByHand = true;
+    var note = $('copy-note');
+    note.className = 'hint';
+    note.textContent = TEXT.copy_manual + ' ';
+    var link = document.createElement('span');
+    link.textContent = joinLink;
+    link.style.userSelect = 'all';
+    link.style.webkitUserSelect = 'all';
+    link.style.wordBreak = 'break-all';
+    link.style.fontWeight = '700';
+    note.appendChild(link);
+  }
   function copy(then) {
-    var done = function () {
+    var finished = false;
+    var done = function (ok) {
+      if (finished) return;
+      finished = true;
+      if (!ok && !legacyCopy()) { showByHand(); return; }
       $('copy-note').textContent = TEXT.copied;
       $('copy-note').className = 'hint ok';
       if (then) then();
     };
+    // A clipboard promise that never settles counts as a refusal.
+    setTimeout(function () { done(false); }, 1500);
     try {
-      navigator.clipboard.writeText(joinLink).then(done, function () { if (then) then(); });
-    } catch (e) { if (then) then(); }
+      navigator.clipboard.writeText(joinLink).then(function () { done(true); }, function () { done(false); });
+    } catch (e) { done(false); }
   }
   $('copy').addEventListener('click', function () { copy(); });
   // Going to the store loses the link, so the invitation is copied on the way.
+  // When it could not be copied, the first tap shows it instead; a second tap
+  // goes to the store.
   ['store-ios', 'store-android'].forEach(function (id) {
     $(id).addEventListener('click', function (e) {
       var href = this.href;
+      if (shownByHand) return;
       e.preventDefault();
-      copy(function () { window.location.href = href; });
-      setTimeout(function () { window.location.href = href; }, 600);
+      var gone = false;
+      var go = function () { if (!gone) { gone = true; window.location.href = href; } };
+      copy(go);
     });
   });
 
@@ -137,7 +179,7 @@
       if (!invite) return;
       if (invite.status && invite.status !== 'pending') { showGone(TEXT.gone); return; }
       var name = (invite.inviter_name || '').trim();
-      if (name) $('heading').textContent = TEXT.heading_named.replace('{name}', name);
+      if (name) $('heading').textContent = TEXT.heading_named.split('{name}').join(name);
     })
     .catch(function () { /* the page still works without the name */ });
 })();

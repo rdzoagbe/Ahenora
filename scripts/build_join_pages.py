@@ -50,6 +50,7 @@ LANGS = {
         "open_hint": "Already have the app? This opens your invitation in it.",
         "copy": "Copy my invitation",
         "copied": "Copied. In Ahenora, tap “Have an invitation?” and paste it.",
+        "copy_manual": "This browser would not copy it. Press and hold the link below, copy it, then get the app and paste it there.",
         "copy_hint": "If the app does not open it, copy your invitation, then in Ahenora tap “Have an invitation?” and paste it.",
         "browser": "Or continue in your browser",
         "gone": "This invitation has expired or has already been used. Ask them to send you a new one.",
@@ -72,6 +73,7 @@ LANGS = {
         "open_hint": "Vous avez déjà l’app ? Ce bouton y ouvre votre invitation.",
         "copy": "Copier mon invitation",
         "copied": "Copiée. Dans Ahenora, touchez « Vous avez une invitation ? » et collez-la.",
+        "copy_manual": "Ce navigateur n’a pas pu la copier. Appuyez longuement sur le lien ci-dessous, copiez-le, puis installez l’app et collez-le.",
         "copy_hint": "Si l’app ne l’ouvre pas, copiez votre invitation, puis dans Ahenora touchez « Vous avez une invitation ? » et collez-la.",
         "browser": "Ou continuer dans le navigateur",
         "gone": "Cette invitation a expiré ou a déjà été utilisée. Demandez-leur de vous en envoyer une nouvelle.",
@@ -94,6 +96,7 @@ LANGS = {
         "open_hint": "¿Ya tienes la app? Esto abre tu invitación en ella.",
         "copy": "Copiar mi invitación",
         "copied": "Copiada. En Ahenora, toca «¿Tienes una invitación?» y pégala.",
+        "copy_manual": "Este navegador no pudo copiarla. Mantén pulsado el enlace de abajo, cópialo y luego instala la app y pégalo allí.",
         "copy_hint": "Si la app no la abre, copia tu invitación y, en Ahenora, toca «¿Tienes una invitación?» y pégala.",
         "browser": "O continúa en el navegador",
         "gone": "Esta invitación ha caducado o ya se ha usado. Pídeles que te envíen una nueva.",
@@ -116,6 +119,7 @@ LANGS = {
         "open_hint": "Du hast die App schon? Damit öffnest du die Einladung darin.",
         "copy": "Meine Einladung kopieren",
         "copied": "Kopiert. Tippe in Ahenora auf „Hast du eine Einladung?“ und füge sie ein.",
+        "copy_manual": "Dieser Browser konnte sie nicht kopieren. Halte den Link unten gedrückt, kopiere ihn, hol dir dann die App und füge ihn dort ein.",
         "copy_hint": "Öffnet die App sie nicht, kopiere deine Einladung und tippe in Ahenora auf „Hast du eine Einladung?“, um sie einzufügen.",
         "browser": "Oder im Browser weitermachen",
         "gone": "Diese Einladung ist abgelaufen oder wurde schon verwendet. Bitte um eine neue.",
@@ -232,24 +236,66 @@ TEMPLATE = """<!doctype html>
   if (android) $('store-ios').hidden = true;
   if (ios) $('store-android').hidden = true;
 
+  // In-app browsers (Facebook, Instagram, Messenger) often have no clipboard
+  // API, or refuse it. Then the old way, and if that fails too the link is
+  // shown to copy by hand: a silent failure here meant the store opened and
+  // the invitation was lost.
+  function legacyCopy() {{
+    try {{
+      var area = document.createElement('textarea');
+      area.value = joinLink;
+      area.setAttribute('readonly', '');
+      area.style.position = 'fixed';
+      area.style.opacity = '0';
+      document.body.appendChild(area);
+      area.select();
+      var ok = document.execCommand('copy');
+      document.body.removeChild(area);
+      return ok;
+    }} catch (e) {{ return false; }}
+  }}
+  var shownByHand = false;
+  function showByHand() {{
+    shownByHand = true;
+    var note = $('copy-note');
+    note.className = 'hint';
+    note.textContent = TEXT.copy_manual + ' ';
+    var link = document.createElement('span');
+    link.textContent = joinLink;
+    link.style.userSelect = 'all';
+    link.style.webkitUserSelect = 'all';
+    link.style.wordBreak = 'break-all';
+    link.style.fontWeight = '700';
+    note.appendChild(link);
+  }}
   function copy(then) {{
-    var done = function () {{
+    var finished = false;
+    var done = function (ok) {{
+      if (finished) return;
+      finished = true;
+      if (!ok && !legacyCopy()) {{ showByHand(); return; }}
       $('copy-note').textContent = TEXT.copied;
       $('copy-note').className = 'hint ok';
       if (then) then();
     }};
+    // A clipboard promise that never settles counts as a refusal.
+    setTimeout(function () {{ done(false); }}, 1500);
     try {{
-      navigator.clipboard.writeText(joinLink).then(done, function () {{ if (then) then(); }});
-    }} catch (e) {{ if (then) then(); }}
+      navigator.clipboard.writeText(joinLink).then(function () {{ done(true); }}, function () {{ done(false); }});
+    }} catch (e) {{ done(false); }}
   }}
   $('copy').addEventListener('click', function () {{ copy(); }});
   // Going to the store loses the link, so the invitation is copied on the way.
+  // When it could not be copied, the first tap shows it instead; a second tap
+  // goes to the store.
   ['store-ios', 'store-android'].forEach(function (id) {{
     $(id).addEventListener('click', function (e) {{
       var href = this.href;
+      if (shownByHand) return;
       e.preventDefault();
-      copy(function () {{ window.location.href = href; }});
-      setTimeout(function () {{ window.location.href = href; }}, 600);
+      var gone = false;
+      var go = function () {{ if (!gone) {{ gone = true; window.location.href = href; }} }};
+      copy(go);
     }});
   }});
 
@@ -263,7 +309,7 @@ TEMPLATE = """<!doctype html>
       if (!invite) return;
       if (invite.status && invite.status !== 'pending') {{ showGone(TEXT.gone); return; }}
       var name = (invite.inviter_name || '').trim();
-      if (name) $('heading').textContent = TEXT.heading_named.replace('{{name}}', name);
+      if (name) $('heading').textContent = TEXT.heading_named.split('{{name}}').join(name);
     }})
     .catch(function () {{ /* the page still works without the name */ }});
 }})();
@@ -275,7 +321,7 @@ TEMPLATE = """<!doctype html>
 
 def page(code: str, copy: dict) -> str:
     esc = {k: html.escape(v, quote=True) for k, v in copy.items()}
-    text = {k: copy[k] for k in ("heading_named", "gone", "missing", "copied")}
+    text = {k: copy[k] for k in ("heading_named", "gone", "missing", "copied", "copy_manual")}
     return TEMPLATE.format(
         lang=code, scheme=SCHEME, app_store=APP_STORE, google_play=GOOGLE_PLAY,
         app_store_label=esc["app_store"], google_play_label=esc["google_play"],

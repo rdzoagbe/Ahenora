@@ -81,10 +81,10 @@ TERMS: dict[str, list[str]] = {
         "orange", "oranges", "naranja", "naranjas", "clementine", "clementines",
         "mandarine", "mandarina", "lemon", "lemons", "citron", "citrons", "limon",
         "zitrone", "lime", "limes", "citron vert", "pear", "pears", "poire",
-        "poires", "pera", "birne", "grapes", "raisin", "uvas", "trauben",
+        "poires", "pera", "birne", "grapes", "grape", "watercress", "honeydew", "butternut squash", "raisin", "uvas", "trauben",
         "strawberry", "strawberries", "fraise", "fraises", "fresa", "fresas",
         "erdbeere", "erdbeeren", "raspberries", "framboise", "framboises",
-        "blueberries", "myrtille", "myrtilles", "cherries", "cerise", "cerises",
+        "blueberries", "myrtille", "myrtilles", "cherries", "cherry", "cerise", "cerises",
         "peach", "peaches", "peche", "peches", "melocoton", "pfirsich",
         "nectarine", "apricot", "abricot", "abricots", "plum", "prune", "prunes",
         "kiwi", "mango", "mangue", "pineapple", "ananas", "pina", "melon", "melone",
@@ -98,7 +98,7 @@ TERMS: dict[str, list[str]] = {
         "pains au chocolat", "chocolatine", "chocolatines", "brioche", "brioches",
         "roll", "rolls", "bread rolls", "petits pains", "bun", "buns", "bagel",
         "bagels", "pitta", "pita", "naan", "wraps", "tortilla", "tortillas",
-        "crumpets", "muffins", "wrap", "dough", "pizza dough", "pate a pizza",
+        "crumpets", "muffins", "wrap", "dough", "pizza dough", "pate a pizza", "pate feuilletee", "pate brisee", "pate sablee", "puff pastry", "shortcrust pastry",
         "masa", "teig", "bollo", "bollos", "barra de pan", "brotchen",
         "toast bread", "biscottes", "brioche tranchee",
     ],
@@ -112,7 +112,7 @@ TERMS: dict[str, list[str]] = {
         "lamm", "veal", "veau", "turkey", "dinde", "pavo", "pute", "duck", "canard",
         "sausage", "sausages", "saucisse", "saucisses", "salchicha", "salchichas",
         "wurst", "wurstchen", "merguez", "ham", "jambon", "jamon", "schinken",
-        "bacon", "lardons", "chorizo", "salami", "pate", "rillettes", "ribs",
+        "bacon", "lardons", "chorizo", "salami", "pate", "pepperoni", "rillettes", "ribs",
         "cotes", "cote de porc", "roti", "gigot", "fish", "poisson", "pescado",
         "fisch", "salmon", "saumon", "lachs", "cod", "cabillaud", "bacalao",
         "tuna", "thon", "atun", "thunfisch", "hake", "merlu", "sea bass", "burger", "burgers", "hamburger",
@@ -187,16 +187,16 @@ TERMS: dict[str, list[str]] = {
         "salsa de tomate", "tomatensauce", "sugo", "fideos", "fufu", "attieke", "semolina", "corn flour",
         "farine de mais", "maizena", "cornflour", "breadcrumbs", "chapelure",
         "raisins secs", "dried fruit", "fruits secs", "compote", "compotes",
-        "apple sauce", "puree", "puree mousseline", "croutons", "olives",
+        "apple sauce", "puree", "puree mousseline", "croutons", "olives", "olive",
         "cornichons", "gherkins", "capers", "capres", "chocolate spread",
     ],
     "Snacks": [
-        "snacks", "snack", "chocolate", "chocolates", "chocolat", "schokolade",
+        "snacks", "snack", "chocolate", "chocolates", "milk chocolate", "chocolat au lait", "dark chocolate", "chocolat", "schokolade",
         "biscuits", "biscuit", "cookies", "cookie", "galletas", "galleta",
         "kekse", "keks", "crisps", "chips", "patatas fritas", "sweets", "candy",
         "bonbons", "bonbon", "caramelos", "chuches", "sussigkeiten", "cake",
         "cakes", "gateau", "gateaux", "pastel", "kuchen", "popcorn", "pop corn",
-        "nuts", "noix", "nueces", "nusse", "almonds", "amandes", "cashews", "noix de cajou", "pistachios",
+        "nuts", "noix", "nueces", "nusse", "almonds", "almond", "amandes", "cashews", "noix de cajou", "pistachios",
         "pistaches", "crackers", "tuc", "pringles", "doritos", "haribo",
         "kinder", "oreo", "oreos", "petit beurre", "madeleines", "brownies",
         "cereal bars", "barres de cereales", "granola bars", "dried mango",
@@ -243,12 +243,12 @@ TERMS: dict[str, list[str]] = {
         "sel lave vaisselle", "dishwasher salt", "rinse aid",
         "liquide de rincage", "cleaning wipes", "lingettes menage",
         "lingettes desinfectantes", "stain remover", "detachant", "vanish",
-        "ariel", "persil", "skip", "le chat", "dash", "lenor", "fairy", "dreft",
+        "ariel", "skip", "le chat", "dash", "lenor", "fairy", "dreft",
         "mir", "paic", "finish", "sun lave vaisselle", "cajoline",
         # cleaning
         "cleaning", "cleaner", "cleaning products", "produits menagers",
         "produit menager", "menage", "nettoyant", "nettoyant multi usage",
-        "limpiador", "reiniger", "bleach", "javel", "eau de javel", "lejia",
+        "limpiador", "reiniger", "bleach", "javel", "eau de javel", "lejia", "frying pan", "pans", "saucepan", "poele",
         "disinfectant", "desinfectant", "desinfectante", "anti bacterial spray",
         "multi surface", "glass cleaner", "vitres", "window cleaner",
         "floor cleaner", "toilet cleaner", "wc gel", "harpic", "domestos",
@@ -283,7 +283,7 @@ TERMS: dict[str, list[str]] = {
         "sirop pour la toux", "antiseptic", "antiseptique", "betadine",
         "biseptine", "saline", "serum physiologique", "strepsils",
         # hygiene and beauty
-        "toothpaste", "dentifrice", "pasta de dientes", "zahnpasta", "colgate",
+        "toothpaste", "dentifrice", "pasta de dientes", "zahnpasta", "colgate", "eau micellaire", "micellar water",
         "signal", "sensodyne", "toothbrush", "toothbrushes", "brosse a dents",
         "cepillo de dientes", "zahnburste", "mouthwash", "bain de bouche",
         "dental floss", "fil dentaire", "shampoo", "shampooing", "champu",
@@ -376,41 +376,68 @@ def _build():
 _PHRASES, _SINGLE = _build()
 
 
+# Words that name WHAT the item is, rather than what it tastes of or is made
+# from. Between two single words, one of these wins whatever the lengths:
+# "lemon juice" is a drink, "garlic bread" bread, "chicken stock" a stock cube,
+# "chocolate milk" milk (code review, 2026-10-02: the longer word used to win,
+# and the flavour is usually the longer word). Phrases still beat these, so
+# "lait de coco" and "coconut milk" stay where they are.
+PRODUCT_WORDS = {
+    "juice", "jus", "zumo", "saft", "squash", "beer", "biere", "cerveza", "bier",
+    "sauce", "stock", "bouillon", "bread", "brot", "milk", "lait", "leche",
+    "milch", "yoghurt", "yogurt", "yaourt", "yogur", "joghurt", "crisps", "tea",
+    "cake", "gateau", "oil", "huile", "aceite",
+}
+
+# Endings a longer form of a stem may add ("tomate" -> "tomaten").
+_STEM_ENDINGS = ("", "s", "e", "es", "n", "en", "er", "ern", "x")
+
+# Names are a few words. A pasted page of text must not cost seconds per
+# request (code review, 2026-10-02: a 100k-letter "word" took 27 s).
+_MAX_TEXT = 200
+_MAX_STEMMED_WORD = 30
+
+
 def _word_matches(word: str, term: str) -> bool:
     if word == term or word in (term + "s", term + "es", term + "x"):
         return True
-    # A long stem also matches its longer forms ("tomate" -> "tomaten",
-    # "kartoffel" -> "kartoffeln"). Short words must match exactly, or "ail"
-    # would claim "aile" and "pain" would claim "painting".
-    return len(term) >= 5 and word.startswith(term)
+    # A long stem also matches its inflected forms ("tomate" -> "tomaten",
+    # "kartoffel" -> "kartoffeln"), but not another word that merely starts
+    # with it: "pepperoni" is not a pepper, "watercress" not water, "carnet"
+    # (a notebook) not "carne". Short words must match exactly, or "ail" would
+    # claim "aile" and "pain" would claim "painting".
+    return len(term) >= 5 and word.startswith(term) and word[len(term):] in _STEM_ENDINGS
 
 
 def classify(name: str) -> Optional[str]:
     """The aisle for an item name, or None when no word is recognised."""
-    text = normalise(name)
+    text = normalise((name or "")[:_MAX_TEXT])
     if not text:
         return None
     words = text.split()
     padded = f" {text} "
-    best: Optional[tuple[int, str]] = None
+    # Ranked by (kind, length): a phrase beats any single word, a product word
+    # beats a describing word, and within a kind the longest term wins.
+    best: Optional[tuple[tuple[int, int], str]] = None
 
-    def consider(length: int, aisle: str):
+    def consider(rank: tuple[int, int], aisle: str):
         nonlocal best
-        if best is None or length > best[0]:
-            best = (length, aisle)
+        if best is None or rank > best[0]:
+            best = (rank, aisle)
 
     for term, aisle in _PHRASES:
         if f" {term} " in padded:
-            consider(len(term), aisle)
+            consider((2, len(term)), aisle)
     for word in words:
-        # The word itself, the word less a plural ending, and every stem of five
-        # letters or more; _word_matches decides which of those really match.
+        # The word itself, the word less a plural ending, and the stems that
+        # _STEM_ENDINGS allows; _word_matches decides which really match.
         candidates = {word, word[:-1], word[:-2]}
-        candidates.update(word[:k] for k in range(5, len(word)))
+        if len(word) <= _MAX_STEMMED_WORD:
+            candidates.update(word[:-k] for k in range(1, 4) if len(word) - k >= 5)
         for term in candidates:
             aisle = _SINGLE.get(term)
             if aisle and _word_matches(word, term):
-                consider(len(term), aisle)
+                consider((1 if term in PRODUCT_WORDS else 0, len(term)), aisle)
     return best[1] if best else None
 
 

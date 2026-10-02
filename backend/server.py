@@ -1596,6 +1596,10 @@ async def build_subscription(family_id: str):
         # Card subscribers manage their plan on Stripe's page, not in a store.
         "billed_by_card": billed_by_card(family),
         "billed_through": billed_through(family),
+        # Whose store account pays, when a store does. Only that person can
+        # change the plan: from anyone else's phone a "change" is a second,
+        # separate subscription (audit, 2026-10-02).
+        **(await store_billing_owner(database, family)),
         # A downgrade waiting for the renewal date: the plan it becomes and
         # when. The Plans page says so, rather than leaving someone to wonder
         # why the plan they chose has not appeared.
@@ -5235,13 +5239,15 @@ class HandoffNoteIn(BaseModel):
 
 
 class ShoppingItemIn(BaseModel):
-    name: str
+    # A list item is a few words; the cap keeps a pasted page out of the list
+    # (and out of the aisle sorter, which runs on every list load).
+    name: str = Field(max_length=300)
     category: str = "Other"
 
 
 class ShoppingItemPatchIn(BaseModel):
     checked: Optional[bool] = None
-    name: Optional[str] = None
+    name: Optional[str] = Field(default=None, max_length=300)
     category: Optional[str] = None
 
 
@@ -5856,6 +5862,11 @@ _FAMILY_SCOPED_COLLECTIONS = (
     # answer to "delete my data": it would keep a deleted user's name for another
     # fortnight. Found by the drift check in test_deletion_completeness.
     "client_errors",
+    # Both carry family_id and were missing (audit, 2026-10-02):
+    #   plan_walls        — which limits a household hit, by day.
+    #   shopping_pending  — items waiting to go out in one "added to the list"
+    #                       notification, with the adder's name.
+    "plan_walls", "shopping_pending",
 )
 
 
@@ -5871,8 +5882,10 @@ async def _purge_user_account(database: Any, user_id: str, email: str) -> None:
     # the daily push job reads. _push_zones() reads BOTH notification_tokens and
     # web_push_subscriptions, so listing only the first deleted half the ways
     # this person could still be contacted.
+    # password_resets: a pending reset code is keyed to the person (audit,
+    # 2026-10-02: it outlived a deleted account).
     for collection in ("user_sessions", "notification_tokens", "notification_settings",
-                       "support_tickets", "web_push_subscriptions"):
+                       "support_tickets", "web_push_subscriptions", "password_resets"):
         await database[collection].delete_many({"user_id": user_id})
     if email:
         await database["family_invites"].delete_many({"email": email, "status": "pending"})
@@ -6000,13 +6013,23 @@ async def delete_account(payload: DeleteAccountIn, user=Depends(require_user)):
 
     deleted_household = False
     if family_id and other_account is None:
-        # Last account-holder: the household leaves with them.
+        # Last account-holder: the household leaves with them, and so does a
+        # card subscription. Nobody would be left to cancel it, and it would
+        # carry on charging a household that no longer exists (audit,
+        # 2026-10-02). If Stripe cannot be reached the deletion waits rather
+        # than leave that behind.
+        family = await database["families"].find_one({"family_id": family_id}, {"_id": 0}) or {}
+        if card_subscription_exists(family) and stripe_configured():
+            if not await run_in_threadpool(
+                    _stripe_cancel_now, family["stripe_subscription_id"]):
+                raise HTTPException(status_code=502, detail="card_cancel_failed")
         await _purge_family(database, family_id)
         deleted_household = True
     elif family_id:
         # A co-parent remains — take only this member out; the family stays.
         await database["family_members"].delete_many(
             {"family_id": family_id, "user_id": fresh["user_id"]})
+        await _purge_departing_parent(database, family_id, fresh["user_id"])
 
     await _purge_user_account(database, fresh["user_id"], email)
 
@@ -6014,6 +6037,52 @@ async def delete_account(payload: DeleteAccountIn, user=Depends(require_user)):
     await send_account_deleted_email(email, fresh.get("name") or "")
 
     return {"ok": True, "deleted_household": deleted_household}
+
+
+def _stripe_cancel_now(subscription_id: str) -> bool:
+    """Cancel a card subscription at once. True when it is cancelled, or was
+    already gone. Blocking — callers run it in a thread."""
+    try:
+        resp = requests.delete(
+            f"{STRIPE_API_BASE}/subscriptions/{subscription_id}",
+            auth=(os.environ["STRIPE_SECRET_KEY"], ""), timeout=20)
+    except requests.RequestException as exc:
+        log.warning("Stripe cancel on account deletion failed: %s", type(exc).__name__)
+        return False
+    if resp.status_code == 404:
+        return True
+    if resp.status_code >= 400:
+        log.warning("Stripe refused a cancel on account deletion: %s", resp.status_code)
+        return False
+    return True
+
+
+async def _purge_departing_parent(database: Any, family_id: str, user_id: str) -> None:
+    """What only the departing parent could see leaves with them.
+
+    The household's shared things stay: they belong to the people still in it.
+    But a private card or a private vault document was never anybody else's,
+    and once its owner's account is gone nobody can open it again; keeping it
+    would be keeping a deleted person's data (audit, 2026-10-02)."""
+    cards = [c async for c in database["cards"].find(
+        {"family_id": family_id, "created_by_user_id": user_id}, {"_id": 0})]
+    for card in cards:
+        if card.get("shared") is not True and card.get("visible_to") is None:
+            await database["cards"].delete_one(
+                {"family_id": family_id, "card_id": card.get("card_id")})
+    docs = [d async for d in database["vault"].find(
+        {"family_id": family_id, "owner_user_id": user_id}, {"_id": 0})]
+    freed = 0
+    for doc in docs:
+        others = [u for u in (doc.get("visible_to") or []) if u != user_id]
+        if (doc.get("visibility") or "shared") == "shared" or others:
+            continue
+        freed += len((doc.get("image_base64") or "").encode("utf-8"))
+        await database["vault"].delete_one({"family_id": family_id, "doc_id": doc.get("doc_id")})
+    if freed:
+        await database["families"].update_one(
+            {"family_id": family_id},
+            {"$inc": {"vault_bytes_used": -freed}, "$set": {"updated_at": utcnow()}})
 
 
 # Bounds how often the RevenueCat webhook prints its diagnostic line. See the
@@ -10440,11 +10509,22 @@ async def family_invite_lookup(token: str):
     if invite.get("expires_at") and _expired(invite["expires_at"]):
         raise HTTPException(status_code=410, detail="Invite has expired")
 
-    await _mark_invite_opened(database, invite)
     inviter = await database["users"].find_one(
         {"user_id": invite.get("created_by_user_id")},
         {"_id": 0},
     )
+    inviter_name = (inviter or {}).get("name") or invite.get("created_by_name") or "A family member"
+
+    # A used or withdrawn invitation is a link anyone may still hold (it was
+    # forwarded, it sits in a chat). It says only that it no longer stands:
+    # not the email it went to, not the household (audit, 2026-10-02).
+    status = invite.get("status", "pending")
+    if status != "pending":
+        return {"invite_id": invite["invite_id"], "status": status,
+                "inviter_name": inviter_name, "email": None, "relationship": None,
+                "expires_at": None, "handover": None, "household": None}
+
+    await _mark_invite_opened(database, invite)
 
     # What is waiting on the other side of the link. An invitation that shows
     # only who sent it asks somebody to sign up for an unknown; showing the
@@ -10459,9 +10539,9 @@ async def family_invite_lookup(token: str):
 
     return {
         "invite_id": invite["invite_id"],
-        "status": invite.get("status", "pending"),
+        "status": status,
         "email": invite.get("email"),
-        "inviter_name": (inviter or {}).get("name") or invite.get("created_by_name") or "A family member",
+        "inviter_name": inviter_name,
         "relationship": invite.get("relationship"),
         "expires_at": iso(invite.get("expires_at")),
         "handover": handover,
@@ -14062,6 +14142,10 @@ async def revenuecat_webhook(payload: dict, authorization: Optional[str] = Heade
         "rc_product_id": event.get("product_id"),
         "rc_event_at": utcnow(),
         "updated_at": utcnow(),
+        # Whose store account the subscription lives on. A household has
+        # several adults and only one of them bought; asking the store about
+        # anyone else answers "nothing", which is not the same as "lapsed".
+        "rc_app_user_id": app_user_id,
     }
     store = str(event.get("store") or "").strip().upper()
     if store in RC_STORES:
@@ -14214,6 +14298,23 @@ def reconcile_pending_change(family: dict, store_plan: Optional[str],
     return {}
 
 
+def reconcile_may_downgrade(family: dict, user_id: str) -> bool:
+    """Whether a reconcile that found no subscription may put the household on
+    Free.
+
+    Only when the person asking is the one who bought it. The store is asked
+    about the CALLER: a co-parent opening the Plans page has no subscription of
+    their own, and that used to read as "the household's plan has lapsed" and
+    drop a paying family to Free (audit, 2026-10-02). And never for a household
+    paying by card: the store knows nothing about Stripe. A lapse the
+    purchaser's store does not report still arrives as an EXPIRATION webhook."""
+    family = family or {}
+    return (family.get("plan") in PAID_PLANS
+            and bool(family.get("rc_last_event"))
+            and family.get("rc_app_user_id") == user_id
+            and not billed_by_card(family))
+
+
 @app.post("/api/billing/reconcile")
 async def reconcile_billing(user: dict = Depends(require_user)):
     """Ask RevenueCat directly what this user's subscription really is.
@@ -14245,9 +14346,10 @@ async def reconcile_billing(user: dict = Depends(require_user)):
         # paying household, and must not read as one that never paid.
         changes["rc_last_event"] = "RECONCILE_VERIFIED"
         changes["rc_event_at"] = utcnow()
+        changes["rc_app_user_id"] = user["user_id"]
         changes.update(reconcile_pending_change(
             family, changes["plan"], rc_entitlement_renews_at(subscriber, utcnow())))
-    elif family.get("plan") in PAID_PLANS and family.get("rc_last_event"):
+    elif reconcile_may_downgrade(family, user["user_id"]):
         changes["plan"] = "village"
         changes["pending_plan"] = None
 
@@ -14377,6 +14479,7 @@ async def sweep_billing_once(database: Any, budget: int = 0, secret: str = "") -
             "rc_event_at": now,
             "rc_reconciled_at": now,
             "updated_at": now,
+            "rc_app_user_id": uid,
         }})
         corrected += 1
         unpaid.discard(fid)
@@ -14547,6 +14650,7 @@ async def replay_unmatched_billing(database: Any, secret: str = "") -> dict:
             "rc_event_at": now,
             "rc_reconciled_at": now,
             "updated_at": now,
+            "rc_app_user_id": uid,
         }})
         await database["billing_events"].update_one(
             {"event_id": ev.get("event_id")},
@@ -14758,8 +14862,13 @@ async def admin_billing_events(user=Depends(require_user), limit: int = Query(de
 # -----------------------------------------------------------------------------
 STRIPE_API_BASE = "https://api.stripe.com/v1"
 # A Stripe subscription is live (Premium) in these statuses; anything else
-# (canceled, unpaid, incomplete_expired, past_due after retries) is not.
-STRIPE_ACTIVE_STATUSES = {"active", "trialing"}
+# (canceled, unpaid, incomplete_expired) is not.
+# past_due is Stripe still retrying a failed renewal: the plan stays while it
+# does, as the stores' billing grace does. Dropping to Free on the first failed
+# attempt also unlocked a second Checkout, and when a retry then succeeded the
+# household had two live subscriptions (audit, 2026-10-02). A lapse arrives as
+# unpaid, canceled or subscription.deleted.
+STRIPE_ACTIVE_STATUSES = {"active", "trialing", "past_due"}
 
 
 def stripe_configured() -> bool:
@@ -14951,6 +15060,42 @@ def stripe_event_changes(event: dict) -> tuple[Optional[str], Optional[str], dic
     return family_id, customer, changes
 
 
+def stripe_changes_for_family(event: dict, family: dict, changes: dict) -> dict:
+    """The changes a Stripe event may make to THIS household, once it is known.
+
+    Two guards (audit, 2026-10-02):
+
+    - A subscription event about a subscription that is not the household's
+      current one is recorded but moves no plan. Events are matched to the
+      household by Stripe customer, and one customer can carry an old or a
+      duplicate subscription: its cancellation must not put a household that
+      pays on its live subscription on Free, and its renewal must not set the
+      plan from a price nobody pays any more.
+    - A booked change is settled only when the plan AND the billing cycle it
+      named have arrived. A yearly-to-monthly switch on the same plan made
+      Stripe send the unchanged plan at once, which cleared the booking within
+      seconds while the switch itself still waited for the renewal.
+    """
+    changes = dict(changes)
+    etype = (event or {}).get("type", "")
+    obj = ((event or {}).get("data") or {}).get("object") or {}
+    current = (family or {}).get("stripe_subscription_id")
+    if (etype.startswith("customer.subscription.") and current
+            and obj.get("id") and obj.get("id") != current):
+        for key in ("plan", "billing_cycle", "stripe_subscription_status"):
+            changes.pop(key, None)
+        return changes
+    plan = changes.get("plan")
+    if plan == "village":
+        changes["pending_plan"] = None
+    elif plan and plan == (family or {}).get("pending_plan"):
+        wanted_cycle = (family or {}).get("pending_plan_cycle")
+        cycle = changes.get("billing_cycle") or (family or {}).get("billing_cycle")
+        if not wanted_cycle or cycle == wanted_cycle:
+            changes["pending_plan"] = None
+    return changes
+
+
 async def _stripe_family_for_event(database, family_id: Optional[str],
                                    customer: Optional[str]) -> Optional[dict]:
     """Which family this event is about: the id the checkout carried, or the
@@ -14990,7 +15135,7 @@ async def stripe_checkout(payload: dict = Body(default=None), user=Depends(requi
     # starts a second one. A second Checkout here meant two live subscriptions
     # on one card — the old plan kept charging next to the new — which is the
     # one outcome a plan switch must never have.
-    if billed_by_card(family) and family.get("stripe_subscription_id"):
+    if card_subscription_exists(family):
         raise HTTPException(status_code=409, detail="card_subscription_exists")
     if internal_plan == "duo" and await count_duo_people(get_db(), user["family_id"]) > DUO_MAX_PEOPLE:
         raise HTTPException(status_code=409, detail="duo_not_eligible")
@@ -15041,6 +15186,18 @@ async def stripe_checkout(payload: dict = Body(default=None), user=Depends(requi
 CARD_SUBSCRIPTION_OVER = ("canceled", "incomplete_expired")
 
 
+async def store_billing_owner(database, family: dict) -> dict:
+    """{billing_owner_user_id, billing_owner_name} for a plan paid through the
+    App Store or Google Play, as far as the webhooks have said who bought it;
+    empty values otherwise (card, free, or not yet known)."""
+    owner = (family or {}).get("rc_app_user_id")
+    if not owner or billed_through(family) not in ("app_store", "play_store"):
+        return {"billing_owner_user_id": None, "billing_owner_name": None}
+    person = await database["users"].find_one({"user_id": owner}, {"_id": 0, "name": 1})
+    return {"billing_owner_user_id": owner,
+            "billing_owner_name": ((person or {}).get("name") or "").strip() or None}
+
+
 def billed_through(family: dict) -> Optional[str]:
     """Where this household's paid plan is billed: "card", "app_store",
     "play_store", or None (free, founding, or no store on record).
@@ -15069,6 +15226,15 @@ def billed_through(family: dict) -> Optional[str]:
     if not product:
         return None
     return "app_store" if product.startswith("ahenora_") else "play_store"
+
+
+def card_subscription_exists(family: dict) -> bool:
+    """A card subscription that has not ended, whatever the plan says. Checkout
+    must refuse while one exists, or a household whose renewal failed (plan
+    briefly not paid) could start a second subscription next to the first."""
+    family = family or {}
+    return bool(family.get("stripe_subscription_id")) and \
+        family.get("stripe_subscription_status") not in CARD_SUBSCRIPTION_OVER
 
 
 def billed_by_card(family: dict) -> bool:
@@ -15315,9 +15481,7 @@ async def stripe_webhook(request: Request):
         )
         return {"ok": True, "matched": False}
 
-    if changes.get("plan") and (changes["plan"] == family.get("pending_plan")
-                                or changes["plan"] == "village"):
-        changes["pending_plan"] = None
+    changes = stripe_changes_for_family(event, family, changes)
     await database["families"].update_one(
         {"family_id": family["family_id"]}, {"$set": changes}
     )
@@ -16582,7 +16746,7 @@ async def bulk_add_shopping(body: BulkShoppingIn, user=Depends(require_user)):
     added_items: list[dict] = []
     remembered = await remembered_aisles(database, user["family_id"], body.names)
     for index, raw in enumerate(body.names):
-        name = (raw or "").strip()
+        name = (raw or "").strip()[:300]
         if not name or name.lower() in have:
             continue
         have.add(name.lower())

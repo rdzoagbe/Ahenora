@@ -166,7 +166,9 @@ export async function purchasePremium(
     // credited. Down: when the current period ends, as on the App Store.
     // Both stores apply a move down at the renewal date (Apple does it by
     // itself inside the subscription group).
-    const deferred = direction === 'down';
+    // Android only defers when there IS a subscription to replace; with none,
+    // Google charges for the new plan straight away.
+    let deferred = direction === 'down';
     let change: any = null;
     if (Platform.OS === 'android') {
       const current = await loaded.Purchases.getCustomerInfo().catch(() => null);
@@ -176,6 +178,8 @@ export async function purchasePremium(
           oldProductIdentifier: old,
           replacementMode: deferred ? 'DEFERRED' : 'WITH_TIME_PRORATION',
         };
+      } else {
+        deferred = false;
       }
     }
     const { customerInfo } = change

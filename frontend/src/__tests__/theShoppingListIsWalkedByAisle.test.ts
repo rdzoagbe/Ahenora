@@ -46,6 +46,10 @@ describe('the shopping list, by aisle', () => {
   it('puts the amount in its own tag, and only a real trailing amount', () => {
     expect(splitQuantity('Tomatoes 400g')).toEqual({ label: 'Tomatoes', qty: '400g' });
     expect(splitQuantity('Milk x2')).toEqual({ label: 'Milk', qty: 'x2' });
+    // A decimal comma is part of the amount, not a separator.
+    expect(splitQuantity('Riz 2,5 kg')).toEqual({ label: 'Riz', qty: '2,5 kg' });
+    expect(splitQuantity('Lait 1,5 L')).toEqual({ label: 'Lait', qty: '1,5 L' });
+    expect(splitQuantity('Bananas, 6')).toEqual({ label: 'Bananas', qty: '6' });
     expect(splitQuantity('Rice 1.5 kg')).toEqual({ label: 'Rice', qty: '1.5 kg' });
     expect(splitQuantity('Bin bags 30')).toEqual({ label: 'Bin bags', qty: '30' });
     // Left exactly as typed:

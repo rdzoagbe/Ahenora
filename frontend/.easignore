@@ -1,4 +1,4 @@
-﻿node_modules
+node_modules
 .expo
 dist
 web-build
@@ -17,3 +17,8 @@ yarn-debug.log*
 yarn-error.log*
 
 .DS_Store
+
+# Signing keys never travel with the build archive.
+*.p8
+*.p12
+*.pem

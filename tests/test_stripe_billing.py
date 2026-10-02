@@ -105,9 +105,17 @@ class EventInterpretation(unittest.TestCase):
 
     def test_a_lapsed_subscription_drops_to_free(self):
         event = {"type": "customer.subscription.updated",
-                 "data": {"object": {"status": "past_due", "customer": "cus_123"}}}
+                 "data": {"object": {"status": "unpaid", "customer": "cus_123"}}}
         _, _, changes = server.stripe_event_changes(event)
         self.assertEqual(changes["plan"], "village")
+
+    def test_a_renewal_stripe_is_still_retrying_keeps_the_plan(self):
+        # past_due: a failed renewal Stripe will retry. Dropping to Free here
+        # also unlocked a second Checkout next to the live subscription.
+        event = {"type": "customer.subscription.updated",
+                 "data": {"object": {"status": "past_due", "customer": "cus_123"}}}
+        _, _, changes = server.stripe_event_changes(event)
+        self.assertEqual(changes["plan"], "executive")
 
     def test_a_deleted_subscription_drops_to_free(self):
         event = {"type": "customer.subscription.deleted",

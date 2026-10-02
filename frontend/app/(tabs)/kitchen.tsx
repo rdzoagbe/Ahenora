@@ -145,12 +145,17 @@ export default function Kitchen() {
   // in. It was a toast at the foot of the screen, which is exactly where the
   // keyboard sits while somebody is adding: Roland added chicken breast and
   // saw nothing. Here it is on screen whatever the keyboard is doing.
-  const [addedNote, setAddedNote] = useState<string | null>(null);
+  // Stamped, so the same words said twice still get their full five seconds.
+  const [addedNoteState, setAddedNoteState] = useState<{ text: string; at: number } | null>(null);
+  const setAddedNote = (text: string | null) =>
+    setAddedNoteState(text ? { text, at: Date.now() } : null);
+  const addedNote = addedNoteState?.text ?? null;
+  const addedNoteAt = addedNoteState?.at ?? 0;
   useEffect(() => {
-    if (!addedNote) return;
-    const timer = setTimeout(() => setAddedNote(null), 5000);
+    if (!addedNoteAt) return;
+    const timer = setTimeout(() => setAddedNoteState(null), 5000);
     return () => clearTimeout(timer);
-  }, [addedNote]);
+  }, [addedNoteAt]);
   const [addingShop, setAddingShop] = useState(false);
 
   const [meals, setMeals] = useState<MealPlan[]>([]);

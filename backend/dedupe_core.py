@@ -26,6 +26,8 @@ FAMILY_SCOPED_COLLECTIONS = [
     "redemptions", "rewards", "routine_logs", "routines", "shopping_aisles",
     "shopping_history",
     "shopping_list", "star_transactions", "templates", "vault",
+    "expense_items", "expense_settlements", "gift_pots", "santa_draws",
+    "event_candidates", "client_errors", "plan_walls", "shopping_pending",
 ]
 
 # family_id-scoped collections whose presence means a family was really used.

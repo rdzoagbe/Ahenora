@@ -49,7 +49,8 @@ export const AISLE_EMOJI: Record<Aisle, string> = {
 const JOINING_WORDS = new Set(['of', 'de', 'du', 'des', 'd', 'for', 'pour', 'à', 'a', 'x', 'von', 'für', 'para', 'con', 'with', 'avec', 'mit']);
 
 // "400g", "1.5 kg", "x2", "2x", "12", "3 pcs" at the END of a name.
-const TRAILING_QTY = /^(.*\S)[\s,]+((?:x\s?\d+(?:[.,]\d+)?)|(?:\d+(?:[.,]\d+)?\s?(?:x|g|kg|mg|ml|cl|dl|l|lb|lbs|oz|pcs?|pieces?|pack|packs|pk)?))$/i;
+// A comma only separates when a space follows it: \"Riz 2,5 kg\" is 2.5 kg.
+const TRAILING_QTY = /^(.*\S)(?:\s*,\s+|\s+)((?:x\s?\d+(?:[.,]\d+)?)|(?:\d+(?:[.,]\d+)?\s?(?:x|g|kg|mg|ml|cl|dl|l|lb|lbs|oz|pcs?|pieces?|pack|packs|pk)?))$/i;
 
 /**
  * The name and the amount of a list item, apart, so the amount can sit in its

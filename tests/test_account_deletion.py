@@ -159,5 +159,88 @@ class DeletingYourAccount(unittest.TestCase):
         self.assertEqual(self._count(db, "users", user_id="u9"), 0)
 
 
+@unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
+class WhatLeavesWithTheAccount(unittest.TestCase):
+    """Audit, 2026-10-02: a departing co-parent's private things stayed behind
+    where nobody could open them, and a last account's card subscription kept
+    charging a household that no longer existed."""
+
+    def setUp(self):
+        self._get_db = server.get_db
+        self._email = server.send_account_deleted_email
+        self._cancel = server._stripe_cancel_now
+        self._configured = server.stripe_configured
+
+        async def _no_email(*a, **k):
+            return {"sent": False}
+        server.send_account_deleted_email = _no_email
+        self.db = FakeDatabase()
+        server.get_db = lambda: self.db
+
+    def tearDown(self):
+        server.get_db = self._get_db
+        server.send_account_deleted_email = self._email
+        server._stripe_cancel_now = self._cancel
+        server.stripe_configured = self._configured
+
+    def seed(self, *users, family=None):
+        async def go():
+            for uid in users:
+                await self.db["users"].insert_one({"user_id": uid, "family_id": "fam1",
+                    "email": f"{uid}@x.com", "name": uid, "password_hash": None})
+            await self.db["families"].insert_one(dict({"family_id": "fam1", "plan": "village",
+                                                       "vault_bytes_used": 10}, **(family or {})))
+        asyncio.run(go())
+
+    def ids(self, coll, key):
+        async def go():
+            return sorted([r[key] async for r in self.db[coll].find({}, {"_id": 0})])
+        return asyncio.run(go())
+
+    def delete(self, uid="u1"):
+        return asyncio.run(server.delete_account(
+            server.DeleteAccountIn(confirm=True), user={"user_id": uid, "family_id": "fam1"}))
+
+    def test_a_co_parents_private_things_leave_and_shared_ones_stay(self):
+        self.seed("u1", "u9")
+        async def go():
+            cards = self.db["cards"]
+            await cards.insert_one({"card_id": "mine_private", "family_id": "fam1", "created_by_user_id": "u1"})
+            await cards.insert_one({"card_id": "mine_shared", "family_id": "fam1", "created_by_user_id": "u1", "shared": True})
+            await cards.insert_one({"card_id": "mine_assigned", "family_id": "fam1", "created_by_user_id": "u1", "visible_to": ["u1", "u9"]})
+            await cards.insert_one({"card_id": "theirs", "family_id": "fam1", "created_by_user_id": "u9"})
+            vault = self.db["vault"]
+            await vault.insert_one({"doc_id": "passport", "family_id": "fam1", "owner_user_id": "u1", "visibility": "private", "image_base64": "abcd"})
+            await vault.insert_one({"doc_id": "lease", "family_id": "fam1", "owner_user_id": "u1", "visibility": "shared", "image_base64": "abcd"})
+            await vault.insert_one({"doc_id": "for_u9", "family_id": "fam1", "owner_user_id": "u1", "visibility": "selected", "visible_to": ["u1", "u9"], "image_base64": "abcd"})
+            await vault.insert_one({"doc_id": "theirs", "family_id": "fam1", "owner_user_id": "u9", "visibility": "private", "image_base64": "abcd"})
+        asyncio.run(go())
+        self.delete("u1")
+        self.assertEqual(self.ids("cards", "card_id"), ["mine_assigned", "mine_shared", "theirs"])
+        self.assertEqual(self.ids("vault", "doc_id"), ["for_u9", "lease", "theirs"])
+        fam = asyncio.run(self.db["families"].find_one({"family_id": "fam1"}))
+        self.assertEqual(fam["vault_bytes_used"], 6)
+
+    def test_the_last_account_cancels_a_card_subscription(self):
+        self.seed("u1", family={"plan": "executive", "stripe_subscription_id": "sub_1",
+                                "stripe_subscription_status": "active"})
+        cancelled = []
+        server.stripe_configured = lambda: True
+        server._stripe_cancel_now = lambda sid: cancelled.append(sid) or True
+        self.delete("u1")
+        self.assertEqual(cancelled, ["sub_1"])
+        self.assertEqual(self.ids("users", "user_id"), [])
+
+    def test_the_deletion_waits_when_stripe_cannot_cancel(self):
+        self.seed("u1", family={"plan": "executive", "stripe_subscription_id": "sub_1",
+                                "stripe_subscription_status": "active"})
+        server.stripe_configured = lambda: True
+        server._stripe_cancel_now = lambda sid: False
+        with self.assertRaises(HTTPException) as err:
+            self.delete("u1")
+        self.assertEqual(err.exception.status_code, 502)
+        self.assertEqual(self.ids("users", "user_id"), ["u1"])
+
+
 if __name__ == "__main__":
     unittest.main()
