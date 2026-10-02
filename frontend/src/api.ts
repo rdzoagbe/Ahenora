@@ -1780,6 +1780,9 @@ export interface Subscription {
   billed_by_card?: boolean;
   /** Where the paid plan is billed; a switch has to happen there. */
   billed_through?: 'card' | 'app_store' | 'play_store' | null;
+  /** Who bought a store subscription; only their store account can change it. */
+  billing_owner_user_id?: string | null;
+  billing_owner_name?: string | null;
   grandfathered: boolean;
   testing_window?: boolean;
   // Announced billing cutover date (ISO). When set and in the future, the app

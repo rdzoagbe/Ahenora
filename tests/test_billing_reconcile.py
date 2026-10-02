@@ -138,9 +138,25 @@ class Reconcile(unittest.TestCase):
     def test_an_expired_billing_plan_downgrades(self):
         changed = self.run_reconcile(
             {},
-            {"plan": "executive", "rc_last_event": "RENEWAL"},
+            {"plan": "executive", "rc_last_event": "RENEWAL", "rc_app_user_id": "u1"},
         )
         self.assertEqual(changed.get("plan"), "village")
+
+    def test_a_co_parent_without_a_subscription_does_not_downgrade_the_household(self):
+        # The store is asked about the caller. The other parent bought the
+        # plan, so this caller having none says nothing about the household.
+        changed = self.run_reconcile(
+            {}, {"plan": "executive", "rc_last_event": "RENEWAL", "rc_app_user_id": "u2"})
+        self.assertNotIn("plan", changed)
+        # Nor when nobody has recorded who bought it yet.
+        changed = self.run_reconcile({}, {"plan": "executive", "rc_last_event": "RENEWAL"})
+        self.assertNotIn("plan", changed)
+
+    def test_a_verified_purchase_records_who_bought_it(self):
+        changed = self.run_reconcile(
+            {"premium": {"expires_date": FUTURE, "product_identifier": "coo_annual"}},
+            {"plan": "village"})
+        self.assertEqual(changed.get("rc_app_user_id"), "u1")
 
     def test_a_manually_granted_plan_is_never_revoked(self):
         # No webhook state on the family: the plan did not come from billing,

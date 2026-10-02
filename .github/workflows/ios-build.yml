@@ -149,9 +149,12 @@ jobs:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
         run: |
+          # The key goes OUTSIDE frontend/: EAS uploads that folder as the
+          # build archive, filtered by .easignore (not .gitignore), so a key
+          # written there would be stored on Expo's servers with the build.
           if [ -n "$ASC_API_KEY_P8" ] && [ -n "$ASC_KEY_ID" ] && [ -n "$ASC_ISSUER_ID" ]; then
             umask 077
-            printf '%s' "$ASC_API_KEY_P8" > asc-api-key.p8
+            printf '%s' "$ASC_API_KEY_P8" > "$RUNNER_TEMP/asc-build-key.p8"
             echo "ready=true" >> "$GITHUB_OUTPUT"
           else
             echo "ready=false" >> "$GITHUB_OUTPUT"
@@ -166,7 +169,7 @@ jobs:
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
         run: |
           if [ "${{ steps.buildauth.outputs.ready }}" = "true" ]; then
-            export EXPO_ASC_API_KEY_PATH=./asc-api-key.p8
+            export EXPO_ASC_API_KEY_PATH="$RUNNER_TEMP/asc-build-key.p8"
             export EXPO_ASC_KEY_ID="$ASC_KEY_ID"
             export EXPO_ASC_ISSUER_ID="$ASC_ISSUER_ID"
             export EXPO_APPLE_TEAM_ID=Y2Y8A56NR6
@@ -176,6 +179,10 @@ jobs:
             --platform ios \
             --profile "${{ github.event.inputs.profile }}" \
             --non-interactive
+
+      - name: Remove the build's Apple key
+        if: ${{ always() }}
+        run: rm -f "$RUNNER_TEMP/asc-build-key.p8"
 
       # Authentication for a NON-INTERACTIVE submit. An Apple ID alone cannot
       # do this: the Developer Program requires two-factor auth, and there is

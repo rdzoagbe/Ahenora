@@ -251,12 +251,24 @@ export function PricingView({ embedded = false, onAuthRequired }: Props) {
     }
 
     const through = subscription?.billed_through ?? null;
+    // A store subscription belongs to the store account that bought it. A
+    // co-parent on the same phone type would otherwise start a SECOND
+    // subscription from their own account while the first keeps charging.
+    const owner = subscription?.billing_owner_user_id;
+    if ((through === 'app_store' || through === 'play_store') && owner && owner !== user.user_id) {
+      Alert.alert(t('chg_owner_title'), t('chg_owner_msg', {
+        name: subscription?.billing_owner_name || t('set_a_family_member'),
+      }));
+      return;
+    }
     if (!changeableHere(through)) {
       sayWhereToChange(through as string);
       return;
     }
 
-    if ((PLAN_RANK[plan] ?? 0) < (PLAN_RANK[currentPlan] ?? 0)) {
+    // Nothing is being paid (a trial, the old free access): a smaller plan is
+    // a first purchase, not a change booked for a renewal that never comes.
+    if (through && (PLAN_RANK[plan] ?? 0) < (PLAN_RANK[currentPlan] ?? 0)) {
       setDownTo(plan);
       return;
     }
