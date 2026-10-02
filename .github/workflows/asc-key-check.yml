@@ -65,6 +65,11 @@ jobs:
           r = requests.get("https://api.appstoreconnect.apple.com/v1/apps",
                            params={"filter[bundleId]": "com.ahenora.app", "fields[apps]": "name,bundleId"},
                            headers={"Authorization": f"Bearer {token}"}, timeout=30)
+          # Neither id is secret (Apple shows both on the Keys page). Spaced
+          # out so they can be compared with that page; GitHub would mask them
+          # as written because they are stored as secrets.
+          print("Key ID used:   ", " ".join(os.environ["ASC_KEY_ID"].strip()))
+          print("Issuer ID used:", " ".join(os.environ["ASC_ISSUER_ID"].strip()))
           if r.status_code == 401:
               print("Apple refused the key (401): the Key ID, Issuer ID and .p8 do not belong together, or the key is revoked.")
               sys.exit(1)
