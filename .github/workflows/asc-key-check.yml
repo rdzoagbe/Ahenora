@@ -27,7 +27,23 @@ jobs:
           missing = [n for n in ("ASC_API_KEY_P8", "ASC_KEY_ID", "ASC_ISSUER_ID") if not os.environ.get(n, "").strip()]
           if missing:
               print("Missing secrets:", ", ".join(missing)); sys.exit(1)
-          key = os.environ["ASC_API_KEY_P8"].strip().replace("\\n", "\n")
+          import base64, re
+          raw = os.environ["ASC_API_KEY_P8"]
+          # What was pasted, described without showing it: counts and yes/no.
+          body = re.sub(r"-----[A-Z ]+-----", "", raw.replace("\\n", "\n"))
+          body = re.sub(r"\s+", "", body)
+          print("Pasted text: lines=%d, BEGIN line=%s, END line=%s, key characters=%d, only base64 characters=%s"
+                % (len(raw.strip().splitlines()), "BEGIN PRIVATE KEY" in raw, "END PRIVATE KEY" in raw,
+                   len(body), bool(re.fullmatch(r"[A-Za-z0-9+/=]+", body or "-"))))
+          try:
+              der_len = len(base64.b64decode(body, validate=True))
+              print("Decoded key length:", der_len, "bytes (an App Store Connect key is about 138)")
+          except Exception:
+              print("The key characters are not valid base64.")
+          # The same key however it was pasted: header lines missing, line
+          # breaks lost or turned into spaces.
+          key = "-----BEGIN PRIVATE KEY-----\n" + "\n".join(
+              body[i:i + 64] for i in range(0, len(body), 64)) + "\n-----END PRIVATE KEY-----\n"
           try:
               token = jwt.encode(
                   {"iss": os.environ["ASC_ISSUER_ID"].strip(), "iat": int(time.time()),
