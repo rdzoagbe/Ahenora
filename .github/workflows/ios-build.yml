@@ -154,7 +154,9 @@ jobs:
           # written there would be stored on Expo's servers with the build.
           if [ -n "$ASC_API_KEY_P8" ] && [ -n "$ASC_KEY_ID" ] && [ -n "$ASC_ISSUER_ID" ]; then
             umask 077
-            printf '%s' "$ASC_API_KEY_P8" > "$RUNNER_TEMP/asc-build-key.p8"
+            # Rebuilt from its base64 body: a key pasted through a text
+            # editor can come back with its ----- header lines altered.
+            printf '%s' "$ASC_API_KEY_P8" | python3 -c 'import re,sys; l=sys.stdin.read().replace(chr(92)+"n",chr(10)).splitlines(); b=re.sub(r"[^A-Za-z0-9+/=]","","".join(x for x in l if "PRIVATE KEY" not in x)); sys.stdout.write("-----BEGIN PRIVATE KEY-----\n"+"\n".join(b[i:i+64] for i in range(0,len(b),64))+"\n-----END PRIVATE KEY-----\n")' > "$RUNNER_TEMP/asc-build-key.p8"
             echo "ready=true" >> "$GITHUB_OUTPUT"
           else
             echo "ready=false" >> "$GITHUB_OUTPUT"
@@ -209,7 +211,7 @@ jobs:
         run: |
           if [ -n "$ASC_API_KEY_P8" ] && [ -n "$ASC_KEY_ID" ] && [ -n "$ASC_ISSUER_ID" ]; then
             umask 077
-            printf '%s' "$ASC_API_KEY_P8" > asc-api-key.p8
+            printf '%s' "$ASC_API_KEY_P8" | python3 -c 'import re,sys; l=sys.stdin.read().replace(chr(92)+"n",chr(10)).splitlines(); b=re.sub(r"[^A-Za-z0-9+/=]","","".join(x for x in l if "PRIVATE KEY" not in x)); sys.stdout.write("-----BEGIN PRIVATE KEY-----\n"+"\n".join(b[i:i+64] for i in range(0,len(b),64))+"\n-----END PRIVATE KEY-----\n")' > asc-api-key.p8
             echo "method=api-key" >> "$GITHUB_OUTPUT"
             echo "Using an App Store Connect API key." >> "$GITHUB_STEP_SUMMARY"
           elif [ -n "$APPLE_APP_SPECIFIC_PASSWORD" ]; then

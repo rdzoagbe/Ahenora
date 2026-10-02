@@ -27,7 +27,31 @@ jobs:
           missing = [n for n in ("ASC_API_KEY_P8", "ASC_KEY_ID", "ASC_ISSUER_ID") if not os.environ.get(n, "").strip()]
           if missing:
               print("Missing secrets:", ", ".join(missing)); sys.exit(1)
-          key = os.environ["ASC_API_KEY_P8"].strip().replace("\\n", "\n")
+          import base64, re
+          raw = os.environ["ASC_API_KEY_P8"]
+          # What was pasted, described without showing it: counts and yes/no.
+          lines = raw.replace("\\n", "\n").splitlines()
+          # The header lines are dropped whole, whatever their dashes became
+          # (a text editor can turn ----- into long dashes).
+          body = "".join(l for l in lines if "PRIVATE KEY" not in l)
+          body = re.sub(r"\s+", "", body)
+          odd = [c for c in body if not re.match(r"[A-Za-z0-9+/=]", c)]
+          print("Pasted text: lines=%d, BEGIN line=%s, END line=%s, key characters=%d, unexpected characters=%d (non-ASCII: %d)"
+                % (len([l for l in lines if l.strip()]), "BEGIN PRIVATE KEY" in raw, "END PRIVATE KEY" in raw,
+                   len(body), len(odd), sum(1 for c in odd if ord(c) > 127)))
+          header_dashes_ok = all(l.strip().startswith("-----") and l.strip().endswith("-----")
+                                 for l in lines if "PRIVATE KEY" in l)
+          print("Header lines use plain dashes:", header_dashes_ok)
+          body = "".join(c for c in body if c not in odd)
+          try:
+              der_len = len(base64.b64decode(body, validate=True))
+              print("Decoded key length:", der_len, "bytes (an App Store Connect key is about 138)")
+          except Exception:
+              print("The key characters are not valid base64.")
+          # The same key however it was pasted: header lines missing, line
+          # breaks lost or turned into spaces.
+          key = "-----BEGIN PRIVATE KEY-----\n" + "\n".join(
+              body[i:i + 64] for i in range(0, len(body), 64)) + "\n-----END PRIVATE KEY-----\n"
           try:
               token = jwt.encode(
                   {"iss": os.environ["ASC_ISSUER_ID"].strip(), "iat": int(time.time()),
@@ -41,6 +65,11 @@ jobs:
           r = requests.get("https://api.appstoreconnect.apple.com/v1/apps",
                            params={"filter[bundleId]": "com.ahenora.app", "fields[apps]": "name,bundleId"},
                            headers={"Authorization": f"Bearer {token}"}, timeout=30)
+          # Neither id is secret (Apple shows both on the Keys page). Spaced
+          # out so they can be compared with that page; GitHub would mask them
+          # as written because they are stored as secrets.
+          print("Key ID used:   ", " ".join(os.environ["ASC_KEY_ID"].strip()))
+          print("Issuer ID used:", " ".join(os.environ["ASC_ISSUER_ID"].strip()))
           if r.status_code == 401:
               print("Apple refused the key (401): the Key ID, Issuer ID and .p8 do not belong together, or the key is revoked.")
               sys.exit(1)
