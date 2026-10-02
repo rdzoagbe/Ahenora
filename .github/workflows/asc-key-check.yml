@@ -1,0 +1,52 @@
+name: Check the App Store Connect key
+
+# Read-only: signs in to App Store Connect with the key in the repository
+# secrets and lists the app. Run it after replacing the key, so the next
+# iPhone release does not find out the hard way. Prints only the outcome,
+# never the key or the token.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Sign in to App Store Connect and list the app
+        env:
+          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          pip install --quiet "pyjwt[crypto]==2.9.0" requests
+          python - <<'PY'
+          import os, sys, time, jwt, requests
+          missing = [n for n in ("ASC_API_KEY_P8", "ASC_KEY_ID", "ASC_ISSUER_ID") if not os.environ.get(n, "").strip()]
+          if missing:
+              print("Missing secrets:", ", ".join(missing)); sys.exit(1)
+          key = os.environ["ASC_API_KEY_P8"].strip().replace("\\n", "\n")
+          try:
+              token = jwt.encode(
+                  {"iss": os.environ["ASC_ISSUER_ID"].strip(), "iat": int(time.time()),
+                   "exp": int(time.time()) + 600, "aud": "appstoreconnect-v1"},
+                  key, algorithm="ES256",
+                  headers={"kid": os.environ["ASC_KEY_ID"].strip(), "typ": "JWT"})
+          except Exception as exc:
+              print("The .p8 contents could not be read as a private key:", type(exc).__name__)
+              print("Paste the whole file, including the BEGIN and END lines.")
+              sys.exit(1)
+          r = requests.get("https://api.appstoreconnect.apple.com/v1/apps",
+                           params={"filter[bundleId]": "com.ahenora.app", "fields[apps]": "name,bundleId"},
+                           headers={"Authorization": f"Bearer {token}"}, timeout=30)
+          if r.status_code == 401:
+              print("Apple refused the key (401): the Key ID, Issuer ID and .p8 do not belong together, or the key is revoked.")
+              sys.exit(1)
+          if r.status_code >= 400:
+              print("Apple answered", r.status_code); sys.exit(1)
+          apps = [a["attributes"]["name"] for a in r.json().get("data", [])]
+          print("Signed in with key", os.environ["ASC_KEY_ID"].strip(), "- apps found:", apps or "none")
+          sys.exit(0 if apps else 1)
+          PY
