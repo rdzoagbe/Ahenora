@@ -47,23 +47,14 @@ describe('The client asks the server for what it may hand over', () => {
   });
 });
 
-describe('The screen is where the requirement lives', () => {
+describe('Handing something over is optional', () => {
   const settings = read(SETTINGS);
 
-  it('refuses to send an emailed invitation with nothing chosen', () => {
-    expect(settings).toContain("setInviteResult(t('handover_required'))");
-  });
-
-  it('applies the same rule to the phone invitation', () => {
-    const guards = settings.match(/handoverPossible && !handoverCardId/g) || [];
-    expect(guards.length).toBeGreaterThanOrEqual(2);
-  });
-
-  it('stops requiring a choice when the household has nothing to give', () => {
-    // A household made five minutes ago has no cards. Requiring a handover
-    // there would be an invitation nobody could send.
-    expect(settings).toContain('onAvailability={setHandoverPossible}');
-    expect(settings).toContain('handoverPossible && !handoverCardId');
+  it('never refuses to send an invitation because nothing was chosen', () => {
+    // Roland, 2026-10-03: "Can't I just send the invitation?" It was required,
+    // on email, phone and link alike.
+    expect(settings).not.toContain("setInviteResult(t('handover_required'))");
+    expect(settings).not.toMatch(/!handoverCardId\)\s*\{/);
   });
 
   it('forgets the choice once the invitation is sent', () => {
@@ -89,15 +80,8 @@ describe('The picker never blocks the invitation on its own failure', () => {
   });
 });
 
-describe('Every door out of the invite sheet obeys the same rule', () => {
+describe('Every door out of the invite sheet', () => {
   const settings = read(SETTINGS);
-
-  it('guards email, phone AND link, not just the first two', () => {
-    // The link was the one door without the guard, so the requirement could
-    // be walked around simply by choosing Link. Found in review.
-    const guards = settings.match(/handoverPossible && !handoverCardId/g) || [];
-    expect(guards.length).toBe(3);
-  });
 
   it('spends the choice on every path that creates an invitation', () => {
     // Otherwise a second invitation from the same open sheet silently
