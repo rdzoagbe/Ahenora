@@ -33,6 +33,30 @@ for (const perm of FORBIDDEN) {
   }
 }
 
+// Drawing over other apps. React Native's dev menu needs it, so the DEBUG
+// manifest declares it; a release build has no business asking for it, and
+// Google asks for a justification when it appears (audit, 2026-10-02).
+if (/<uses-permission[^>]*android:name="android\.permission\.SYSTEM_ALERT_WINDOW"(?![^>]*tools:node="remove")[^>]*\/?>/.test(xml)) {
+  problems.push('SYSTEM_ALERT_WINDOW is declared in the main (release) manifest; it belongs in src/debug only');
+}
+
+// The committed android/ folder is what builds, and app.json only mirrors it.
+// Two settings drifted apart once already: the system bars were forced dark
+// while the app follows the phone's setting.
+const appJson = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'app.json'), 'utf8')).expo;
+const strings = fs.readFileSync(
+  path.join(__dirname, '..', 'android', 'app', 'src', 'main', 'res', 'values', 'strings.xml'), 'utf8');
+const style = (strings.match(/name="expo_system_ui_user_interface_style"[^>]*>([^<]*)</) || [])[1];
+if (style && appJson.userInterfaceStyle && style !== appJson.userInterfaceStyle) {
+  problems.push(`strings.xml interface style "${style}" differs from app.json userInterfaceStyle "${appJson.userInterfaceStyle}"`);
+}
+const manifestPrefixes = [...xml.matchAll(/android:host="ahenora\.com"\s+android:pathPrefix="([^"]+)"/g)].map((m) => m[1]).sort();
+const mirrored = ((appJson.android || {}).intentFilters || [])
+  .flatMap((f) => f.data || []).filter((d) => d.host === 'ahenora.com').map((d) => d.pathPrefix).sort();
+if (JSON.stringify(manifestPrefixes) !== JSON.stringify(mirrored)) {
+  problems.push(`invitation link paths differ: manifest ${manifestPrefixes.join(',')} vs app.json ${mirrored.join(',')}`);
+}
+
 if (problems.length) {
   console.error('❌ Android permissions guard failed:\n  ' + problems.join('\n  '));
   console.error('\nSee android/NATIVE_CONFIG.md. Broad media/storage permissions must be');
@@ -40,4 +64,4 @@ if (problems.length) {
   process.exit(1);
 }
 
-console.log('✅ Android permissions guard passed — no unguarded broad media/storage permissions.');
+console.log('✅ Android permissions guard passed — no unguarded broad media/storage permissions, no overlay permission, native config matches app.json.');

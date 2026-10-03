@@ -11,7 +11,7 @@ import fs from 'fs';
 import path from 'path';
 
 import { TRANSLATIONS } from '../i18n';
-import { announcement, CURRENT_RELEASE, RELEASE_NOTES, WHATS_NEW } from '../whatsNew';
+import { announcement, newestStoreVersion, CURRENT_RELEASE, RELEASE_NOTES, WHATS_NEW } from '../whatsNew';
 
 const LANGS = Object.keys(TRANSLATIONS) as (keyof typeof TRANSLATIONS)[];
 const read = (...p: string[]) => fs.readFileSync(path.join(__dirname, '..', ...p), 'utf8');
@@ -37,6 +37,25 @@ describe('release notes', () => {
     expect(a.byDate).toBe(true);
     expect(a.key).toBe(CURRENT_RELEASE);
     expect(a.items).toEqual(RELEASE_NOTES[CURRENT_RELEASE]);
+  });
+
+  it('the newest store version announces its own notes with the dated ones', () => {
+    // 1.2.1's "invitation links open the app" was outranked by the dated
+    // release and never shown to anybody.
+    const newest = newestStoreVersion();
+    const a = announcement(newest);
+    expect(a.byDate).toBe(false);
+    expect(a.items.slice(0, WHATS_NEW[newest].length)).toEqual(WHATS_NEW[newest]);
+    expect(a.items.length).toBeLessThanOrEqual(3);
+    expect(new Set(a.items).size).toBe(a.items.length);
+    // Its own key, so somebody who saw the dated notes on an older build still
+    // hears about the new store version once.
+    expect(a.key).not.toBe(CURRENT_RELEASE);
+    expect(a.key.startsWith(newest)).toBe(true);
+  });
+
+  it('knows which store version is newest', () => {
+    expect(newestStoreVersion()).toBe('1.2.2');
   });
 
   it('store versions keep their own notes', () => {
