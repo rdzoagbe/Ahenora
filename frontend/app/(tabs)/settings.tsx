@@ -117,13 +117,11 @@ export default function Settings() {
   const [inviteRole, setInviteRole] = useState('');
   const [inviteLabel, setInviteLabel] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
-  // The one thing this invitation hands over. Required before an adult
-  // invitation can be sent — see HandoverPicker for why the rule lives in the
-  // screen rather than on the wire. `handoverPossible` is false only when the
-  // household has no card to give, which a brand-new household really can be:
-  // that must not become an invitation nobody can send.
+  // The one thing this invitation hands over, if the sender picks one. It is
+  // optional: Roland, 2026-10-03, "Why do they have to get access to
+  // something? Can't I just send the invitation?" Making it required forced a
+  // helper to be handed something like "Medication" just to be invited.
   const [handoverCardId, setHandoverCardId] = useState<string | null>(null);
-  const [handoverPossible, setHandoverPossible] = useState(true);
   const [invitePhone, setInvitePhone] = useState('');
   const [sending, setSending] = useState(false);
   const [inviteResult, setInviteResult] = useState<string | null>(null);
@@ -631,11 +629,6 @@ export default function Settings() {
       setInviteResult(t('set_invite_valid_email'));
       return;
     }
-    if (handoverPossible && !handoverCardId) {
-      setInviteError(true);
-      setInviteResult(t('handover_required'));
-      return;
-    }
     setSending(true);
     setInviteResult(null);
     setInviteError(false);
@@ -685,11 +678,6 @@ export default function Settings() {
       setInviteResult(t('set_invite_valid_phone'));
       return;
     }
-    if (handoverPossible && !handoverCardId) {
-      setInviteError(true);
-      setInviteResult(t('handover_required'));
-      return;
-    }
     setSending(true);
     setInviteResult(null);
     setInviteError(false);
@@ -731,14 +719,6 @@ export default function Settings() {
   // clipboard; on native the share sheet opens (its own Copy included).
   // Plain function: manual useCallback trips the React Compiler here.
   const shareNewLink = async () => {
-    // The link is an adult invitation like any other, and it was the one door
-    // without this guard — so the rule could be walked around simply by
-    // choosing Link. Found in review.
-    if (handoverPossible && !handoverCardId) {
-      setInviteError(true);
-      setInviteResult(t('handover_required'));
-      return;
-    }
     setSending(true);
     setInviteResult(null);
     setInviteError(false);
@@ -1509,7 +1489,6 @@ export default function Settings() {
           <HandoverPicker
             value={handoverCardId}
             onChange={(id) => { setHandoverCardId(id); setInviteError(false); setInviteResult(null); }}
-            onAvailability={setHandoverPossible}
           />
         </View>
 

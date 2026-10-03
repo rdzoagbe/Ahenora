@@ -1598,8 +1598,8 @@ const en: Dict = {
   addcard_repeat_reminder_keep: 'Yes, remind me each time',
   addcard_repeat_reminder_off: 'No reminder',
 
-  handover_title: 'What would you hand to them first?',
-  handover_hint: 'Pick one real thing. It is waiting for them when they join, so joining does something instead of being a new empty app.',
+  handover_title: 'Hand them something to start with? (optional)',
+  handover_hint: 'If you like, pick one task to be waiting for them when they join. Or just send the invitation.',
   handover_repeats: 'repeats',
   handover_no_date: 'No date yet',
   handover_empty: 'Nothing to hand over yet. Add a task first and you can give it to them as they join.',
@@ -3978,8 +3978,8 @@ const es: Dict = {
   addcard_repeat_reminder_keep: 'Sí, recuérdamelo cada vez',
   addcard_repeat_reminder_off: 'Sin recordatorio',
 
-  handover_title: '¿Qué le pasarías primero?',
-  handover_hint: 'Elige una cosa real. Le estará esperando cuando entre, para que unirse sirva de algo en vez de abrir una aplicación vacía.',
+  handover_title: '¿Le pasas algo para empezar? (opcional)',
+  handover_hint: 'Si quieres, elige una tarea que le espere cuando entre. O envía la invitación sin más.',
   handover_repeats: 'se repite',
   handover_no_date: 'Sin fecha aún',
   handover_empty: 'Aún no hay nada que pasar. Añade una tarea primero y podrás dársela al entrar.',
@@ -6349,8 +6349,8 @@ const fr: Dict = {
   addcard_repeat_reminder_keep: 'Oui, me rappeler à chaque fois',
   addcard_repeat_reminder_off: 'Aucun rappel',
 
-  handover_title: 'Que lui confiez-vous en premier ?',
-  handover_hint: 'Choisissez une vraie chose. Elle l\'attend à son arrivée, pour que rejoindre serve à quelque chose au lieu d\'ouvrir une application vide.',
+  handover_title: 'Lui confier quelque chose pour commencer ? (facultatif)',
+  handover_hint: 'Si vous le souhaitez, choisissez une tâche qui l\'attendra à son arrivée. Ou envoyez simplement l\'invitation.',
   handover_repeats: 'récurrent',
   handover_no_date: 'Pas encore de date',
   handover_empty: 'Rien à confier pour l\'instant. Ajoutez d\'abord une tâche et vous pourrez la lui confier à son arrivée.',
@@ -8720,8 +8720,8 @@ const de: Dict = {
   addcard_repeat_reminder_keep: 'Ja, jedes Mal erinnern',
   addcard_repeat_reminder_off: 'Keine Erinnerung',
 
-  handover_title: 'Was übergibst du zuerst?',
-  handover_hint: 'Wähle eine echte Sache. Sie wartet beim Beitritt auf die Person, damit der Beitritt etwas bewirkt statt eine leere App zu öffnen.',
+  handover_title: 'Zum Start etwas übergeben? (optional)',
+  handover_hint: 'Wenn du magst, wähle eine Aufgabe, die beim Beitritt auf die Person wartet. Oder schick einfach die Einladung.',
   handover_repeats: 'wiederholt sich',
   handover_no_date: 'Noch kein Datum',
   handover_empty: 'Noch nichts zu übergeben. Leg zuerst eine Aufgabe an, dann kannst du sie beim Beitritt übergeben.',
