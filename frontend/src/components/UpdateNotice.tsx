@@ -3,6 +3,7 @@ import { AppState, AppStateStatus, Keyboard, Linking, Platform, StyleSheet, Text
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
+import * as Application from 'expo-application';
 import * as Updates from 'expo-updates';
 import { RefreshCw, Sparkles, Store } from 'lucide-react-native';
 
@@ -111,7 +112,14 @@ export function UpdateNotice() {
   const [storeUrl, setStoreUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const version = Constants.expoConfig?.version || '';
+  // The INSTALLED store version, not the one in the running bundle: an
+  // over-the-air update carries app.json's version, so a phone still on the
+  // 1.2.0 binary reported 1.2.2 and would have announced 1.2.2's native-only
+  // changes ("invitation links open the app") that it does not have. The web
+  // app has no store version and announces dated releases only.
+  const version = Platform.OS === 'web'
+    ? ''
+    : (Application.nativeApplicationVersion || Constants.expoConfig?.version || '');
   // An over-the-air release announces itself by date; a store build by version.
   // Duo news is only told where Duo can be bought (not yet on an iPhone
   // before Apple approves it).

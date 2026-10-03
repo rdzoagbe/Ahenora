@@ -39,6 +39,7 @@ jest.mock('expo-updates', () => ({
 jest.mock('@react-native-async-storage/async-storage', () =>
   require('@react-native-async-storage/async-storage/jest/async-storage-mock'));
 jest.mock('expo-constants', () => ({ expoConfig: { version: '2.0.0' } }));
+jest.mock('expo-application', () => ({ nativeApplicationVersion: '2.0.0' }));
 jest.mock('../api', () => ({ api: { appVersionInfo: () => Promise.resolve(null) } }));
 // Nothing to announce: this file is about applying a staged update, not the
 // release notes. Mirrors the module's shape — WHATS_NEW for store versions and

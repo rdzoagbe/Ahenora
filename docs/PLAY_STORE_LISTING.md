@@ -34,7 +34,7 @@ WHAT AHENORA DOES
 • Tasks & reminders — Capture to-dos, permission slips, and appointments, assign them, and get nudged before they're due.
 • Kids' chores & rewards — A simple chore chart with stars kids actually want to earn, plus pocket-money tracking.
 • Teen accounts — Give a 13–17-year-old their own private login: just their tasks and schedule, nothing else. They tick it off, you approve, everyone stays in sync.
-• Meal planner & shopping list — Plan the week's meals and build a shared shopping list that updates for everyone.
+• Meal planner & shopping list — Plan the week's meals from what you buy, with seasoned step-by-step recipes, and a shared shopping list that sorts itself into aisles and updates for everyone.
 • Scan documents — Snap a school letter or bill and turn it into a task or a saved document.
 • Secure vault — Keep important household paperwork organised by category.
 • Handoff notes & announcements — Leave a note for your partner and keep the whole family in the loop.
@@ -47,7 +47,7 @@ PRIVATE BY DESIGN
 
 We don't sell your data. Everything is encrypted in transit, and you're always in control — manage notifications, delete content, or delete your account any time from Settings.
 
-Start free with the Village plan. Bring calm to your household — try Ahenora today.
+Every new household gets the whole app free for 14 days, with no card. After that, the Free plan keeps two adults organised, and Duo, Family or Household add the rest. Bring calm to your household — try Ahenora today.
 ```
 
 **App category:** Parenting (keep — broad discovery + your audience; don't switch to Productivity)

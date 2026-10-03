@@ -152,7 +152,7 @@ CE QUE FAIT AHENORA
 • Tâches et rappels — Notez les mots à signer, les rendez-vous et les corvées, attribuez-les, et recevez un rappel avant l'échéance.
 • Corvées et récompenses — Un tableau de corvées simple, avec des étoiles que les enfants ont envie de gagner et un suivi de l'argent de poche.
 • Comptes ado — Votre 13-17 ans a son propre espace privé : seulement ses tâches et les événements partagés, rien d'autre de la famille. Il coche, vous validez.
-• Repas et liste de courses — Planifiez les dîners de la semaine et transformez-les en une liste de courses partagée qui se met à jour pour tout le monde.
+• Repas et liste de courses — Planifiez les dîners de la semaine à partir de vos courses, avec des recettes pas à pas bien assaisonnées, et une liste partagée qui se range toute seule par rayon.
 • Scannez vos papiers — Photographiez un mot de l'école ou une facture : Ahenora en lit la date et vous propose de créer l'événement dans l'agenda.
 • Coffre sécurisé — Rangez les documents importants du foyer, classés par catégorie.
 • Notes de passage de relais — Laissez un mot à votre conjoint et tenez toute la famille au courant.
@@ -165,7 +165,7 @@ PRIVÉ PAR PRINCIPE
 
 Nous ne vendons pas vos données. Tout est chiffré pendant le transport, et vous gardez la main : gérez les notifications, supprimez un contenu ou supprimez votre compte à tout moment depuis les Réglages.
 
-Commencez gratuitement avec la formule Village. Un abonnement facultatif ouvre le planificateur de repas, l'argent de poche et un coffre plus grand.
+Chaque nouveau foyer profite de toute l'app gratuitement pendant 14 jours, sans carte. Ensuite, la formule Gratuite garde deux adultes organisés, et Duo, Famille ou Foyer ajoutent le reste.
 
 Ramenez le calme à la maison — essayez Ahenora.
 ```
