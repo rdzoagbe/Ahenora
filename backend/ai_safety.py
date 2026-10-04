@@ -294,6 +294,11 @@ Rules you must follow:
   {"shop": string, "date": "YYYY-MM-DD", "total": number,
    "items": [{"name": string, "qty": number, "unit": string,
               "line_total": number, "unsure": boolean}]}
+- "date" is the day of the purchase. Receipts outside the United States print
+  the DAY FIRST: "04/10/2026" and "le 04/10/26" are 4 October 2026, never
+  10 April. Read it day-first unless the receipt is plainly American (a US
+  address, prices in $). The card-payment slip at the bottom repeats the date
+  and can confirm it. If no date can be read, return "".
 - "name" is the product, expanded into ordinary words in the language of the
   receipt. Till receipts abbreviate heavily: "PT LT DEMI ECR" is "petit lait
   demi ecreme", "TOM GRAPPE" is "tomates grappe". Expand what you are sure of
@@ -550,6 +555,9 @@ Rules you must follow:
 - "due_date" is an ISO date string if the document states or implies one, and
   null otherwise. Never invent a date to fill the field. When the document
   gives a time as well as a date, include it: "2026-03-14T09:30:00".
+  Outside the United States dates are written DAY FIRST: "04/10/2026" is
+  4 October 2026, never 10 April. Read them day-first unless the document is
+  plainly American.
 - "expires_on" is an ISO date for a document that stops being valid — a
   passport, an insurance policy, a permit, a membership. Null otherwise. This
   is the date the DOCUMENT expires, which is not the same as a date the family
@@ -1319,7 +1327,31 @@ MAX_RECEIPT_ITEMS = 80
 RECEIPT_UNITS = {"kg", "g", "l", "ml", "piece"}
 
 
-def validate_receipt_scan(parsed: dict) -> dict:
+def _receipt_day_first(read: "_datetime.date", today: "Optional[_datetime.date]" = None) -> "_datetime.date":
+    """Undo a day/month swap on a receipt date.
+
+    Roland, 2026-10-04: a Marché Frais receipt printed "04/10/2026" (4 October)
+    was read as 10 April, so a shop made that afternoon was filed six months
+    back and October's total was short by EUR 116.96. A receipt is scanned on
+    or soon after the day it was printed, so when the date as read is in the
+    future or months away, and the same digits the other way round give a day
+    in the past two weeks, that other way round is the one on the paper.
+    """
+    today = today or _datetime.date.today()
+    if read.day > 12 or read.day == read.month:
+        return read
+    try:
+        swapped = read.replace(month=read.day, day=read.month)
+    except ValueError:
+        return read
+    def plausible(d):
+        return _datetime.timedelta(days=-1) <= (today - d) <= _datetime.timedelta(days=14)
+    if not plausible(read) and plausible(swapped):
+        return swapped
+    return read
+
+
+def validate_receipt_scan(parsed: dict, today: "Optional[_datetime.date]" = None) -> dict:
     """Check a scanned receipt before it is shown for review.
 
     Nothing here is saved: like the shopping-list scan, this returns candidates
@@ -1400,7 +1432,7 @@ def validate_receipt_scan(parsed: dict) -> dict:
     # the app can ask, which is the one thing a guess cannot do.
     raw_date = str(parsed.get("date") or "").strip()[:10]
     try:
-        date = _datetime.date.fromisoformat(raw_date).isoformat()
+        date = _receipt_day_first(_datetime.date.fromisoformat(raw_date), today).isoformat()
     except ValueError:
         date = ""
 
