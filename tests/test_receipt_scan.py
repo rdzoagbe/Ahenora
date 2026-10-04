@@ -152,6 +152,28 @@ class TheHeaderFields(unittest.TestCase):
                 out = validate_receipt_scan(receipt([line()], date=bad))
                 self.assertEqual(out["date"], "")
 
+    def test_a_day_first_date_read_month_first_is_put_back(self):
+        """Roland, 2026-10-04: "04/10/2026" on a Marché Frais receipt (4
+        October) came back as 10 April, and October's total was short."""
+        import datetime
+        today = datetime.date(2026, 10, 4)
+        out = validate_receipt_scan(receipt([line()], date="2026-04-10"), today=today)
+        self.assertEqual(out["date"], "2026-10-04")
+
+    def test_a_date_that_already_makes_sense_is_left_alone(self):
+        import datetime
+        today = datetime.date(2026, 10, 4)
+        for d in ("2026-10-04", "2026-10-01", "2026-09-28", "2026-05-05", "2026-03-09"):
+            with self.subTest(date=d):
+                # Recent dates stand; an old receipt scanned months later stays
+                # in its own month unless the swap lands in the last two weeks.
+                out = validate_receipt_scan(receipt([line()], date=d), today=today)
+                self.assertEqual(out["date"], d)
+
+    def test_the_reader_is_told_receipts_print_the_day_first(self):
+        from ai_safety import RECEIPT_SCAN_SYSTEM_PROMPT
+        self.assertIn("DAY FIRST", RECEIPT_SCAN_SYSTEM_PROMPT)
+
     def test_the_products_keep_the_words_on_the_receipt(self):
         out = validate_receipt_scan(receipt([
             line(name="Lait demi-ecreme"), line(name="Tomates grappe")]))
