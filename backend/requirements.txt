@@ -1,22 +1,22 @@
-fastapi==0.141.1
+fastapi==0.142.2
 uvicorn==0.54.0
-cryptography>=50.0.1  # hard dependency of google-auth (id-token verification)
+cryptography>=50.0.2  # hard dependency of google-auth (id-token verification)
 pymongo==4.18.2  # transitive via motor; pinned deliberately so deploys don't drift
 pydantic>=2.13.5
 tzdata>=2026.4
 motor==3.7.1
 pytest>=9.1.1
 black>=26.5.1
-isort>=9.0.1
+isort>=9.0.2
 flake8>=7.4.1
-mypy>=2.3.1
+mypy>=2.4.0
 requests>=2.34.2
 pandas>=3.0.6,<4  # the unbounded floor was already resolving 3.x on every deploy; now it says so, bounded against the next major
 numpy>=2.4.6  # transitive via pandas; floor pinned deliberately
 python-multipart>=0.0.32  # no import anywhere; FastAPI needs it for multipart uploads
-google-genai>=2.25.0,<3
+google-genai>=2.27.0,<3
 pillow>=12.3.0
-google-auth>=2.58.1
+google-auth>=2.59.1
 openpyxl>=3.1.5  # looks unused, is not: pd.read_excel(engine="openpyxl") passes it as a string
 python-docx>=1.2.0
 qrcode>=8.2  # scripts/build_flyers.py; the flyer test rebuilds and compares
