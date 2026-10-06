@@ -102,6 +102,7 @@
     "decode-uri-component": "^0.5.0",
     "@istanbuljs/load-nyc-config": {
       "js-yaml": "^3.15.1"
-    }
+    },
+    "http-cache-semantics": "^4.3.0"
   }
 }

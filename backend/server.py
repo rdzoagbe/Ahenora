@@ -6298,11 +6298,19 @@ def mongo_posture(url: str = "") -> dict:
     if "tls=false" in options or "ssl=false" in options:
         tls = False
 
-    if "mongodb.net" in host_part:
+    # Each host by its name, not a substring of the whole string: a replica
+    # set lists several ("a:27017,b:27017"), and "mongodb.net.example.com"
+    # contains "mongodb.net" without being Atlas.
+    hosts = [h.strip().rsplit(":", 1)[0] for h in host_part.split(",") if h.strip()]
+
+    def under(domain: str) -> bool:
+        return bool(hosts) and all(h == domain or h.endswith("." + domain) for h in hosts)
+
+    if under("mongodb.net"):
         where = "atlas"
-    elif "railway.internal" in host_part or host_part.endswith(".internal"):
+    elif under("internal"):
         where = "private-network"
-    elif host_part.startswith(("localhost", "127.0.0.1")):
+    elif hosts and all(h in ("localhost", "127.0.0.1") for h in hosts):
         where = "localhost"
     else:
         where = "other"
