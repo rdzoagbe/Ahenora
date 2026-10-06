@@ -46,7 +46,7 @@ def page(name):
 
 def visible(name):
     """The page as a reader meets it: no scripts, styles or comments."""
-    s = re.sub(r"<script.*?</script>|<style.*?</style>|<!--.*?-->", "", page(name), flags=re.S)
+    s = re.sub(r"<script\b.*?</script\b[^>]*>|<style\b.*?</style\b[^>]*>|<!--.*?--!?>", "", page(name), flags=re.S | re.I)
     return re.sub(r"\s+", " ", html_mod.unescape(re.sub(r"<[^>]+>", " ", s)))
 
 
@@ -59,7 +59,7 @@ def plan_card(name, heading):
     tell a true claim from a false one when the same word belongs on one card
     and not another.
     """
-    s = re.sub(r"<script.*?</script>|<style.*?</style>|<!--.*?-->", "", page(name), flags=re.S)
+    s = re.sub(r"<script\b.*?</script\b[^>]*>|<style\b.*?</style\b[^>]*>|<!--.*?--!?>", "", page(name), flags=re.S | re.I)
     cards = re.split(r"<h3>", s)
     # The heading must match EXACTLY, closing tag and all. A prefix match
     # looks equivalent and is not: the moment the middle tier was renamed
