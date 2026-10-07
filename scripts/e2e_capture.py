@@ -169,8 +169,13 @@ async def main():
                           if c["card_id"] == picked), "")
             await page.click(f'[data-testid="feed-card-complete-{picked}"]')
             await page.wait_for_timeout(2000)
-            r["it_leaves_the_screen_at_once"] = await page.locator(
+            # Rebrand Stage 2 (Roland, 2026-10-07): a ticked task stays in
+            # today's list, greyed out with its tick, instead of vanishing. So
+            # it leaves the OPEN rows at once and reappears as a done row.
+            r["it_leaves_the_open_list_at_once"] = await page.locator(
                 f'[data-testid="feed-card-{picked}"]').count() == 0
+            r["it_shows_as_done_today"] = await page.locator(
+                f'[data-testid="feed-done-{picked}"]').count() == 1
 
             done = next((c for c in api("GET", "/cards", None, tok)
                          if c["card_id"] == picked), None)
@@ -179,7 +184,8 @@ async def main():
             # The reload is the moment it would come back.
             await page.reload(wait_until="domcontentloaded")
             await page.wait_for_timeout(3200)
-            r["it_is_still_gone_after_a_reload"] = await page.locator(
+            # Never back as an OPEN row (it may stay as a greyed done row).
+            r["it_is_not_open_again_after_a_reload"] = await page.locator(
                 f'[data-testid="feed-card-{picked}"]').count() == 0
             # Scoped to the task rows, not the whole page. The first version
             # searched the body and failed on "Roland finished Dinner with
