@@ -18,7 +18,6 @@ import {
   BarChart3,
   Bell,
   Search as SearchIcon,
-  UserCheck,
   CalendarDays,
   Camera,
   Check,
@@ -61,7 +60,7 @@ import { NotificationsNudge } from '../../src/components/NotificationsNudge';
 import { GiftingStrip } from '../../src/components/GiftingStrip';
 import { CoParentBalance } from '../../src/components/CoParentBalance';
 import { StreakChip } from '../../src/components/StreakChip';
-import { WindowedList } from '../../src/components/WindowedList';
+import { FamilyPulse, PulseShopItem } from '../../src/components/FamilyPulse';
 import { isSoloHousehold } from '../../src/household';
 import { useStore } from '../../src/store';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
@@ -299,6 +298,40 @@ function snoozeOptions(t: TFunc): { label: string; date: Date }[] {
   ];
 }
 
+/** The time column of today's list: "08:30", "All day", "Any time", or the
+ *  weekday for something you handed to someone for later. */
+function todayTimeLabel(card: Card, t: TFunc, lang: string): string {
+  const time = dueTime(card);
+  if (time === null) return t('feed_any_time');
+  const due = new Date(time);
+  if (!sameLocalDay(due, new Date())) return due.toLocaleDateString(lang, { weekday: 'short' });
+  if (due.getHours() === 0 && due.getMinutes() === 0) return t('feed_all_day');
+  return due.toLocaleTimeString(lang, { hour: '2-digit', minute: '2-digit' });
+}
+
+/** A card ticked off today: greyed, struck through, and one tap to undo. */
+function DoneRow({ card, onOpen, onUndo, styles }: { card: Card; onOpen: () => void; onUndo: () => void; styles: ReturnType<typeof createStyles> }) {
+  const ui = useUI();
+  const { t } = useStore();
+  return (
+    <PressScale style={styles.taskRow} onPress={onOpen} testID={`feed-done-${card.card_id}`}>
+      <PressScale
+        onPress={onUndo}
+        style={[styles.checkRing, { backgroundColor: ui.doneFill, borderColor: ui.doneFill }]}
+        accessibilityLabel={t('feed_mark_not_done')}
+        accessibilityRole="button"
+        testID={`feed-done-undo-${card.card_id}`}
+      >
+        <Check size={16} strokeWidth={3} color={ui.doneTick} />
+      </PressScale>
+      <View style={styles.taskBody}>
+        <Text style={[styles.taskTitle, styles.taskTitleDone]} numberOfLines={1}>{card.title}</Text>
+        <Text style={styles.taskMeta} numberOfLines={1}>{t('feed_done_today')}</Text>
+      </View>
+    </PressScale>
+  );
+}
+
 function TaskRow({ card, onOpen, onComplete, styles }: { card: Card; onOpen: () => void; onComplete: () => void; styles: ReturnType<typeof createStyles> }) {
   const ui = useUI();
   const { t } = useStore();
@@ -349,6 +382,8 @@ export default function Feed() {
   // On Duo the children's side is put away: no custody line, no stars.
   const kidsHidden = !!subscription?.kids_sections_hidden;
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
+  // The shopping list, for its line in the Family pulse.
+  const [shopItems, setShopItems] = useState<PulseShopItem[]>([]);
   const [assigned, setAssigned] = useState<Card[]>([]);
   // Someone this household invited who never made it in. Only the household
   // that sent an invitation can send it again, so the prompt belongs here.
@@ -526,6 +561,7 @@ export default function Feed() {
       // Who did what, lately. Best effort: an empty strip is better than a
       // failed feed.
       api.listActivity(8).then(setActivity).catch(() => undefined);
+      api.listShopping().then(setShopItems).catch(() => undefined);
 
       // What was handed to me. Same best-effort rule: this strip never gets
       // to take the feed down with it.
@@ -930,12 +966,46 @@ export default function Feed() {
   }, [rooms]);
 
   const TASK_CAP = 5;
+  // What the Family pulse holds (rebrand Stage 2): overdue work, and work
+  // somebody ELSE handed you whatever its date. The Today list below leaves
+  // these out, so nothing is shown twice.
+  const uid = user?.user_id;
+  const handedFromOthers = useMemo(
+    () => (uid ? assigned.filter((c) => c.status === 'OPEN' && c.created_by_user_id && c.created_by_user_id !== uid) : []),
+    [assigned, uid],
+  );
+  const pulseIds = useMemo(
+    () => new Set([...dashboard.overdue, ...handedFromOthers].map((c) => c.card_id)),
+    [dashboard.overdue, handedFromOthers],
+  );
+  // Today, as ONE list (Roland, 2026-10-07: "everything should be there, no
+  // need to list the different times of the day"): what is on today in time
+  // order, then what has no date, then what was ticked off today, greyed.
+  const todayCards = useMemo(() => {
+    const today = new Date();
+    const doneToday = cards.filter((c) => {
+      if (c.status !== 'DONE' || !c.completed_at) return false;
+      if (!sameLocalDay(new Date(c.completed_at), today)) return false;
+      const time = dueTime(c);
+      return time === null || sameLocalDay(new Date(time), today);
+    });
+    const open = feedCards.filter((c) => !pulseIds.has(c.card_id));
+    const rank = (c: Card) => (c.status === 'DONE' ? 2 : dueTime(c) === null ? 1 : 0);
+    return uniqueCards([...open, ...doneToday]).sort((a, b) => {
+      const ra = rank(a);
+      const rb = rank(b);
+      if (ra !== rb && (ra === 1 || rb === 1)) return ra - rb;
+      return (dueTime(a) ?? Number.MAX_SAFE_INTEGER) - (dueTime(b) ?? Number.MAX_SAFE_INTEGER) || ra - rb;
+    });
+  }, [cards, feedCards, pulseIds]);
   const roomCards = useMemo(
-    () => (roomFilter ? feedCards.filter((c) => c.room === roomFilter) : feedCards),
-    [feedCards, roomFilter],
+    () => (roomFilter ? todayCards.filter((c) => c.room === roomFilter) : todayCards),
+    [todayCards, roomFilter],
   );
   const visibleCards = showAllTasks ? roomCards : roomCards.slice(0, TASK_CAP);
   const hiddenTaskCount = roomCards.length - visibleCards.length;
+  const memberName = (userId?: string | null) =>
+    (members.find((m) => m.user_id === userId)?.name || '').split(' ')[0];
   // Hand-offs lead the list; everything else follows. Split rather than
   // duplicated, so a task with your name on it appears exactly once.
   // "Keigh gave Roland the swimming kit" is not news to Roland when the task
@@ -968,7 +1038,6 @@ export default function Feed() {
   const handedToMe = assigned.filter((c) => c.status === 'OPEN');
   const handedIds = new Set(handedToMe.map((c) => c.card_id));
 
-  const restOfList = visibleCards.filter((c) => !handedIds.has(c.card_id));
   const firstName = (user?.name || '').split(' ')[0] || '';
   const headline = greetingFallback(firstName, t, now);
   const alertCount = dashboard.priority.length;
@@ -1045,7 +1114,12 @@ export default function Feed() {
     } else {
       pendingDismissRef.current.delete(card.card_id);
     }
-    setCards((prev) => (next === 'DONE' ? prev.filter((c) => c.card_id !== card.card_id) : prev.map((c) => (c.card_id === card.card_id ? { ...c, status: next, completed_at: null } : c))));
+    // A ticked card stays in today's list, greyed out with its tick (rebrand
+    // Stage 2): what has been done today is part of the day. It used to vanish,
+    // which read as the tick failing as often as it read as done.
+    setCards((prev) => prev.map((c) => (c.card_id === card.card_id
+      ? { ...c, status: next, completed_at: next === 'DONE' ? new Date().toISOString() : null }
+      : c)));
     // The pinned "Handed to you" section reads from `assigned` (a separate
     // fetch), not `cards`, so completing a handed task from there would leave
     // it sitting in the section with a stale count until the next reload.
@@ -1418,6 +1492,30 @@ export default function Feed() {
               onPhoto={() => { setShowCaptureMenu(false); setShowCamera(true); }}
             />
 
+            {!loading ? (
+              <FamilyPulse
+                overdue={dashboard.overdue}
+                handed={handedFromOthers}
+                shopping={shopItems}
+                handedByName={(card) => memberName(card.created_by_user_id)}
+                dayLine={(card) => formatDayLine(card.due_date, t)}
+                onOpenCard={(card) => setSelectedCard(card)}
+                onOpenShopping={() => router.navigate('/(tabs)/kitchen' as never)}
+                onSeeAll={() => { setShowAlerts(true); markAlertsSeen(); }}
+              />
+            ) : null}
+
+            <View style={styles.todayHead}>
+              <Text style={styles.todayTitle} accessibilityRole="header">{t('feed_today')}</Text>
+              <PressScale
+                testID="feed-open-calendar"
+                accessibilityRole="link"
+                onPress={() => router.navigate('/(tabs)/calendar')}
+              >
+                <Text style={styles.todayLink}>{t('feed_open_calendar')}</Text>
+              </PressScale>
+            </View>
+
 
             {/* The stats strip lived here: "Due today / Sign slips / This
                 week" — three numbers sitting above the task list that shows
@@ -1466,18 +1564,13 @@ export default function Feed() {
             <View style={styles.listCard}>
               {loading ? (
                 <ActivityIndicator color={ui.orange} style={{ paddingVertical: 32 }} />
-              ) : loadError && visibleCards.length === 0 && handedToMe.length === 0 ? (
+              ) : loadError && visibleCards.length === 0 ? (
                 <PressScale onPress={handleRefresh} style={styles.emptyBox}>
                   <AlertTriangle color={ui.orange} size={22} />
                   <Text style={styles.emptyTitle}>{t('feed_load_failed_title')}</Text>
                   <Text style={styles.emptySub}>{t('feed_load_failed_sub')}</Text>
                 </PressScale>
-              /* Handed-to-you is pinned independent of the tab, so the empty
-                 state must yield to it: a task a co-parent gave you for next
-                 week is the whole point, and it must not be hidden behind
-                 "Nothing urgent" just because you have no cards of your own
-                 due today. */
-              ) : visibleCards.length === 0 && handedToMe.length === 0 ? (
+              ) : visibleCards.length === 0 ? (
                 <View style={styles.emptyBox}>
                   <CheckCircle2 color={ui.mintText} size={22} />
                   <Text style={styles.emptyTitle}>{t('feed_nothing_urgent')}</Text>
@@ -1493,48 +1586,21 @@ export default function Feed() {
                 </View>
               ) : (
                 <>
-                  {/* Work somebody handed you is still WORK, so it belongs in
-                      the list rather than in a box above it. As its own card
-                      it pushed the actual task list a full screen further
-                      down — the feed's whole job is what is happening today,
-                      and today's tasks had ended up last. Pinned here it
-                      keeps its emphasis and costs no extra height. Filtered
-                      against the rows below so nothing appears twice. */}
-                  {handedToMe.length > 0 ? (
-                    <View testID="feed-assigned">
-                      <View style={styles.handedHeader}>
-                        <UserCheck color={ui.orangeText} size={15} />
-                        <Text style={styles.handedTitle}>{t('feed_assigned_title')}</Text>
-                        <Text style={styles.handedCount}>{handedToMe.length}</Text>
+                  {/* One list, in the order the day happens: timed things,
+                      then anything with no date ("Any time"), then what was
+                      ticked off today, greyed with its tick. Overdue work and
+                      work somebody handed you are in the Family pulse above. */}
+                  {visibleCards.map((card, index) => (
+                    <View key={card.card_id} style={styles.todayRow}>
+                      <Text style={styles.todayTime} numberOfLines={1}>{todayTimeLabel(card, t, lang)}</Text>
+                      <View style={[styles.todayRowBody, card.status === 'DONE' && styles.todayRowDone]}>
+                        {card.status === 'DONE' ? (
+                          <DoneRow card={card} onOpen={() => setSelectedCard(card)} onUndo={() => toggle(card)} styles={styles} />
+                        ) : (
+                          <TaskRow card={card} onOpen={() => setSelectedCard(card)} onComplete={() => toggle(card)} styles={styles} />
+                        )}
+                        {index < visibleCards.length - 1 ? <View style={styles.rowDivider} /> : null}
                       </View>
-                      <WindowedList
-                        testID="feed-assigned-scroll"
-                        count={handedToMe.length}
-                        window={3}
-                      >
-                        {handedToMe.map((card) => (
-                          <View key={card.card_id}>
-                            <TaskRow card={card} onOpen={() => setSelectedCard(card)} onComplete={() => toggle(card)} styles={styles} />
-                            <View style={styles.rowDivider} />
-                          </View>
-                        ))}
-                      </WindowedList>
-                    </View>
-                  ) : null}
-                  {/* Two lists share this card, and until now the seam between
-                      them was drawn with the same divider used BETWEEN rows of
-                      one list — so the handed section's scroll area looked like
-                      it had simply stopped working partway down. This names the
-                      second list, which is the cheapest way to say "different
-                      list, not more of the same one". Only when both are
-                      present: on its own, the list below needs no label. */}
-                  {handedToMe.length > 0 && restOfList.length > 0 ? (
-                    <Text style={styles.restTitle}>{t('feed_rest_title')}</Text>
-                  ) : null}
-                  {restOfList.map((card, index) => (
-                    <View key={card.card_id}>
-                      <TaskRow card={card} onOpen={() => setSelectedCard(card)} onComplete={() => toggle(card)} styles={styles} />
-                      {index < restOfList.length - 1 ? <View style={styles.rowDivider} /> : null}
                     </View>
                   ))}
                 </>
@@ -1546,7 +1612,7 @@ export default function Feed() {
                 <Text style={styles.seeAllText}>{t('feed_see_all_tasks', { n: hiddenTaskCount })}</Text>
                 <ChevronRight color={ui.orangeText} size={16} />
               </PressScale>
-            ) : showAllTasks && feedCards.length > TASK_CAP ? (
+            ) : showAllTasks && roomCards.length > TASK_CAP ? (
               <PressScale testID="feed-see-less" onPress={() => setShowAllTasks(false)} style={styles.seeAllBtn}>
                 <Text style={styles.seeAllText}>{t('feed_show_less')}</Text>
               </PressScale>
@@ -2531,6 +2597,20 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
   },
+  todayHead: {
+    flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between',
+    paddingHorizontal: 4, marginBottom: 8,
+  },
+  todayTitle: { color: ui.text, fontFamily: 'Figtree_700Bold', fontSize: 17 },
+  todayLink: { color: ui.orangeText, fontFamily: 'Figtree_600SemiBold', fontSize: 13 },
+  todayRow: { flexDirection: 'row', alignItems: 'stretch' },
+  todayTime: {
+    width: 58, paddingLeft: 14, paddingTop: 29, color: ui.text,
+    fontFamily: 'Figtree_700Bold', fontSize: 12.5, fontVariant: ['tabular-nums'],
+  },
+  todayRowBody: { flex: 1, minWidth: 0 },
+  todayRowDone: { opacity: 0.55 },
+  taskTitleDone: { textDecorationLine: 'line-through' },
   listCard: {
     overflow: 'hidden',
     borderRadius: 24,

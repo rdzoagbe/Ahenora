@@ -20,7 +20,7 @@ WEB = f"http://127.0.0.1:{sys.argv[1]}/app"
 API = f"http://127.0.0.1:{sys.argv[2]}/api"
 
 SEATS = ["feed", "calendar", "kids", "kitchen", "vault"]
-LABELS = ["Feed", "Calendar", "Family", "Kitchen", "Vault"]
+LABELS = ["Home", "Calendar", "Family", "Kitchen", "Vault"]
 
 def api(m, p, b=None, t=None):
     r = urllib.request.Request(f"{API}{p}", data=json.dumps(b).encode() if b is not None else None,
@@ -161,7 +161,7 @@ async def main():
         # learn is doing half its job. The five places are Feed · Calendar ·
         # Family · Kitchen · Vault, in one pill. Messaging moved into the
         # Family Hub (open a member to chat), so there is no Messages seat.
-        r["active_tab_named"] = "Feed" in bar
+        r["active_tab_named"] = "Home" in bar
         r["all_five_tabs_named"] = all(w in bar for w in LABELS)
         seat_counts = {n: await p.locator(f'[data-testid="tab-{n}"]').count() for n in SEATS}
         r["every_seat_present"] = all(c == 1 for c in seat_counts.values())
