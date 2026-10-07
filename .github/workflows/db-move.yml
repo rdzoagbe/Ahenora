@@ -1,0 +1,160 @@
+name: Move the database to another cluster
+
+# One-off, run by hand: copies the app's database from the cluster it lives on
+# (Atlas M10, ~$60/month idle) to a cheaper Atlas Flex cluster in the same
+# project. Roland, 2026-10-07: "Do we need to keep MongoDB? I've been charged
+# 89 EUR."
+#
+#   mode=check  connects to both clusters and lists every collection with its
+#               count. Writes nothing anywhere.
+#   mode=copy   dumps the database from the source and restores it into the
+#               target (replacing what the target holds of THAT database
+#               only), then compares every collection's count, source vs
+#               target. Never writes to the source.
+#
+# The source is the secret MIGRATE_SOURCE_URL (the app's MONGO_URL, copied
+# from Railway into GitHub secrets by Roland). The target is the SAME login on
+# another host: Atlas users belong to the project, so only the host differs,
+# and the host is not a secret. No connection string is ever printed.
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "check (read-only) or copy"
+        required: true
+        default: check
+        type: choice
+        options: [check, copy]
+      target_host:
+        description: "The new cluster's address, e.g. ahenora-flex.xxxxx.mongodb.net"
+        required: true
+        type: string
+      db_name:
+        description: "The database name (Railway's DB_NAME)"
+        required: true
+        default: household_coo
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: db-move
+  cancel-in-progress: false
+
+jobs:
+  move:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Install the MongoDB tools
+        run: |
+          set -e
+          # The current release for this runner, from MongoDB's own index,
+          # rather than a pinned file name that can be withdrawn.
+          URL=$(curl -fsSL https://fastdl.mongodb.org/tools/db/release.json | python3 -c '
+          import json, sys
+          v = json.load(sys.stdin)["versions"][0]
+          print(next(d["archive"]["url"] for d in v["downloads"]
+                     if "ubuntu2404-x86_64" in d["archive"]["url"] and d["archive"]["url"].endswith(".tgz")))')
+          echo "Tools: $URL"
+          curl -fsSL "$URL" -o tools.tgz
+          tar -xzf tools.tgz
+          echo "$PWD/$(tar -tzf tools.tgz | head -1 | cut -d/ -f1)/bin" >> "$GITHUB_PATH"
+          pip install --quiet "pymongo[srv]==4.18.2"
+
+      - name: Work out both connection strings without printing them
+        env:
+          SOURCE: ${{ secrets.MIGRATE_SOURCE_URL }}
+          TARGET_HOST: ${{ inputs.target_host }}
+        run: |
+          python3 - <<'PY'
+          import os, re, sys
+          src = os.environ["SOURCE"].strip()
+          host = os.environ["TARGET_HOST"].strip().lower()
+          if not src:
+              print("::error::The secret MIGRATE_SOURCE_URL is missing."); sys.exit(1)
+          if not re.fullmatch(r"[a-z0-9-]+\.[a-z0-9]+\.mongodb\.net", host):
+              print("::error::target_host should look like ahenora-flex.xxxxx.mongodb.net"); sys.exit(1)
+          m = re.match(r"^(mongodb\+srv://[^@/]+@)([^/?]+)(.*)$", src)
+          if not m:
+              print("::error::MIGRATE_SOURCE_URL is not an Atlas mongodb+srv:// string with a login."); sys.exit(1)
+          src_host = m.group(2).lower()
+          if src_host == host:
+              print("::error::The target is the same cluster as the source."); sys.exit(1)
+          tgt = m.group(1) + host + m.group(3)
+          print("::add-mask::" + tgt)
+          print("Source host:", src_host)
+          print("Target host:", host)
+          with open(os.environ["GITHUB_ENV"], "a") as fh:
+              fh.write("TARGET_URL=" + tgt + "\n")
+          PY
+
+      - name: Count every collection on both sides (read-only)
+        env:
+          SOURCE_URL: ${{ secrets.MIGRATE_SOURCE_URL }}
+          DB_NAME: ${{ inputs.db_name }}
+        run: |
+          python3 - <<'PY'
+          import os, sys
+          from pymongo import MongoClient
+          db = os.environ["DB_NAME"]
+          def counts(url):
+              c = MongoClient(url, serverSelectionTimeoutMS=20000)
+              d = c[db]
+              return {n: d[n].estimated_document_count() for n in sorted(d.list_collection_names())}
+          try:
+              s = counts(os.environ["SOURCE_URL"])
+          except Exception as e:
+              print("::error::Cannot reach the SOURCE cluster:", type(e).__name__); sys.exit(1)
+          try:
+              t = counts(os.environ["TARGET_URL"])
+          except Exception as e:
+              print("::error::Cannot reach the TARGET cluster:", type(e).__name__,
+                    "- check Network Access allows it and the cluster has finished creating."); sys.exit(1)
+          if not s:
+              print("::error::The source has no collections in database", db, "- is DB_NAME right?"); sys.exit(1)
+          print(f"Database '{db}': {len(s)} collections, {sum(s.values())} records on the source;",
+                f"{len(t)} collections, {sum(t.values())} records on the target.")
+          PY
+
+      - name: Copy the database (source is only read)
+        if: ${{ inputs.mode == 'copy' }}
+        env:
+          SOURCE_URL: ${{ secrets.MIGRATE_SOURCE_URL }}
+          DB_NAME: ${{ inputs.db_name }}
+        run: |
+          set -eo pipefail
+          mongodump --uri="$SOURCE_URL" --db="$DB_NAME" --archive=dump.archive --gzip --quiet
+          ls -la dump.archive | awk '{print "Dump size:", $5, "bytes"}'
+          mongorestore --uri="$TARGET_URL" --archive=dump.archive --gzip --drop \
+            --nsInclude="${DB_NAME}.*" --numInsertionWorkersPerCollection=4 --quiet
+          rm -f dump.archive
+
+      - name: Compare every collection, source vs target
+        if: ${{ inputs.mode == 'copy' }}
+        env:
+          SOURCE_URL: ${{ secrets.MIGRATE_SOURCE_URL }}
+          DB_NAME: ${{ inputs.db_name }}
+        run: |
+          python3 - <<'PY'
+          import os, sys
+          from pymongo import MongoClient
+          db = os.environ["DB_NAME"]
+          s = MongoClient(os.environ["SOURCE_URL"])[db]
+          t = MongoClient(os.environ["TARGET_URL"])[db]
+          bad = []
+          names = sorted(s.list_collection_names())
+          for n in names:
+              a, b = s[n].count_documents({}), t[n].count_documents({})
+              ia = sorted(i["name"] for i in s[n].list_indexes())
+              ib = sorted(i["name"] for i in t[n].list_indexes())
+              if a != b or ia != ib:
+                  bad.append(f"{n}: {a} vs {b} records, indexes {'same' if ia == ib else 'differ'}")
+          total = sum(s[n].count_documents({}) for n in names)
+          if bad:
+              print("::error::Differences after the copy:")
+              for line in bad: print("  ", line)
+              sys.exit(1)
+          print(f"All {len(names)} collections match: {total} records and every index.")
+          PY
