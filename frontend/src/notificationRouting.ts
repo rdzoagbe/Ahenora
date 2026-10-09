@@ -101,6 +101,17 @@ export function targetForNotification(data: unknown): { pathname: string; params
     // opens on the shopping view, so no parameter is needed to get there.
     case 'shopping_added':
       return { pathname: '/(tabs)/kitchen' };
+    // "Keigh finished the shop" is about the list that just got shorter, and
+    // the list is in the Kitchen.
+    case 'shopping_done':
+      return { pathname: '/(tabs)/kitchen' };
+    // "Keigh finished School run" names a card, and the Done card on Home
+    // shows it with an Undo, so the card itself opens: the same treatment a
+    // hand-off gets, because it is the other half of the same job.
+    case 'task_done':
+      return d.card_id
+        ? { pathname: '/(tabs)/feed', params: { cardId: String(d.card_id) } }
+        : { pathname: '/(tabs)/feed' };
     // "Your Secret Santa is drawn" also landed on the Feed, and this one is
     // worse: the whole point is to find out who you are buying for, and the
     // draw is a screen the Feed cannot show.

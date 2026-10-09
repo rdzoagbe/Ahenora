@@ -3003,6 +3003,11 @@ PUSH_I18N = {
         "accepted_body": "They have joined your household.",
         "shopping_title": "{name} added to the shopping list",
         "shopping_body": "{items}",
+        "done_title": "{name} finished something",
+        "done_body": "{title}",
+        "shop_done_title": "{name} finished the shop",
+        "shop_done_body_one": "1 thing bought",
+        "shop_done_body": "{n} things bought",
         "santa_title": "Your Secret Santa match is ready",
         "santa_body": "{title}: open Ahenora to reveal who you're giving to.",
         "assigned_title": "{name} handed you something",
@@ -3051,6 +3056,11 @@ PUSH_I18N = {
         "accepted_body": "Cette personne a rejoint votre foyer.",
         "shopping_title": "{name} a ajouté à la liste de courses",
         "shopping_body": "{items}",
+        "done_title": "{name} a terminé quelque chose",
+        "done_body": "{title}",
+        "shop_done_title": "{name} a fini les courses",
+        "shop_done_body_one": "1 article acheté",
+        "shop_done_body": "{n} articles achetés",
         "santa_title": "Votre Père Noël secret est tiré",
         "santa_body": "{title} : ouvrez Ahenora pour découvrir à qui vous offrez.",
         "assigned_title": "{name} vous a confié quelque chose",
@@ -3098,6 +3108,11 @@ PUSH_I18N = {
         "accepted_body": "Ya forma parte de tu hogar.",
         "shopping_title": "{name} añadió a la lista de la compra",
         "shopping_body": "{items}",
+        "done_title": "{name} terminó algo",
+        "done_body": "{title}",
+        "shop_done_title": "{name} terminó la compra",
+        "shop_done_body_one": "1 cosa comprada",
+        "shop_done_body": "{n} cosas compradas",
         "santa_title": "Tu amigo invisible está listo",
         "santa_body": "{title}: abre Ahenora para descubrir a quién le regalas.",
         "assigned_title": "{name} te ha encargado algo",
@@ -3145,6 +3160,11 @@ PUSH_I18N = {
         "accepted_body": "Die Person ist deinem Haushalt beigetreten.",
         "shopping_title": "{name} hat die Einkaufsliste ergänzt",
         "shopping_body": "{items}",
+        "done_title": "{name} hat etwas erledigt",
+        "done_body": "{title}",
+        "shop_done_title": "{name} hat den Einkauf erledigt",
+        "shop_done_body_one": "1 Sache gekauft",
+        "shop_done_body": "{n} Sachen gekauft",
         "santa_title": "Dein Wichtel-Los steht fest",
         "santa_body": "{title}: öffne Ahenora, um zu sehen, wen du beschenkst.",
         "assigned_title": "{name} hat dir etwas übergeben",
@@ -3384,6 +3404,87 @@ async def notify_assignment(database, actor: dict, card: dict, assignee_name: st
         )
     except Exception as e:
         log.warning("assignment notification failed: %s", e)
+
+
+async def _other_parents(database, family_id: str, actor_user_id: Optional[str]) -> list:
+    """The parent-level accounts in a household other than the one acting.
+
+    Who hears that something got done. Parents only, as for the shopping
+    adds: a teen with their own phone does not need to know a parent paid the
+    nursery, and telling them is how a useful notification becomes noise to
+    be muted. The actor is never told about their own tick.
+    """
+    out = []
+    for account in await _family_accounts(database, family_id):
+        uid = account.get("user_id")
+        if not uid or uid == actor_user_id:
+            continue
+        if not _is_parent_role(account.get("role")):
+            continue
+        out.append(account)
+    return out
+
+
+async def _push_lang(database, user_id: str) -> dict:
+    target = await database["users"].find_one({"user_id": user_id}, {"_id": 0, "language": 1})
+    return PUSH_I18N.get((target or {}).get("language") or "en", PUSH_I18N["en"])
+
+
+async def notify_completion(database, actor: dict, card: dict) -> None:
+    """Tell the other parent that something shared got done.
+
+    Roland, 2026-10-09: "when a co-parent marks something as done I do not get
+    the notification". He was right: the server wrote who finished it into the
+    household activity and sent nobody anything, while a hand-off, a new card
+    and a shopping add all pushed. Finishing was the one half of a shared job
+    that stayed silent — and it is the half the other parent is waiting on.
+
+    Silent on purpose for a private card (its title is nobody else's
+    business; the activity log already keeps it out of their feed), for an
+    undo, and for a re-save of something already done — the caller sends it
+    only on the OPEN → DONE edge.
+    """
+    try:
+        if not card.get("shared"):
+            return
+        title = (card.get("title") or "").strip()
+        who = actor.get("name") or "Someone"
+        for account in await _other_parents(database, card["family_id"], actor.get("user_id")):
+            L = await _push_lang(database, account["user_id"])
+            await send_push_to_user(
+                database, account["user_id"],
+                L["done_title"].format(name=who),
+                L["done_body"].format(title=title) if title else L["done_title"].format(name=who),
+                {"type": "task_done", "card_id": card.get("card_id"), "family_id": card["family_id"]},
+                pref_key="new_card_alerts",
+            )
+    except Exception as e:
+        log.warning("completion notification failed: %s", e)
+
+
+async def notify_shop_done(database, actor: dict, family_id: str, bought: int) -> None:
+    """Tell the other parent the shop is done, once, when the trip is cleared.
+
+    One push per trip rather than per item ticked in the aisle: twelve ticks
+    would be twelve buzzes, the same harm the shopping-add batching exists
+    to avoid. Clearing the trip is the moment the shop is actually over.
+    """
+    try:
+        if bought <= 0:
+            return
+        who = actor.get("name") or "Someone"
+        for account in await _other_parents(database, family_id, actor.get("user_id")):
+            L = await _push_lang(database, account["user_id"])
+            body = L["shop_done_body_one"] if bought == 1 else L["shop_done_body"].format(n=bought)
+            await send_push_to_user(
+                database, account["user_id"],
+                L["shop_done_title"].format(name=who),
+                body,
+                {"type": "shopping_done", "family_id": family_id},
+                pref_key="new_card_alerts",
+            )
+    except Exception as e:
+        log.warning("shop done notification failed: %s", e)
 
 
 async def send_new_card_alert(family_id: str, card: dict, created_by_user_id: Optional[str] = None,
@@ -12050,6 +12151,10 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
         merged = {**card, **changes}
         await log_activity(database, user, "task_done", card.get("title", ""),
                            shared=bool(merged.get("shared")), ref=card_id)
+        # And SAY so to the other parent. The log line above is only found by
+        # opening the app; a shared job getting done is news to the person
+        # who was waiting on it.
+        await notify_completion(database, user, merged)
 
     # A hand-off: the name changed, so somebody has just been given a job.
     # Only on a real change — re-saving a card without touching the assignee
@@ -16415,6 +16520,8 @@ async def clear_checked_shopping(user=Depends(require_user)):
     result = await database["shopping_list"].delete_many(
         {"family_id": user["family_id"], "checked": True}
     )
+    # The shop is over: tell the other parent, once, how much was bought.
+    await notify_shop_done(database, user, user["family_id"], len(names))
     return {"deleted": result.deleted_count}
 
 
