@@ -1,21 +1,24 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { AlertCircle, ChevronRight, ShoppingCart, Star, UserCheck } from 'lucide-react-native';
+import { AlertCircle, ChevronRight, ShoppingCart, UserCheck } from 'lucide-react-native';
 
 import { PressScale } from './PressScale';
 import { useUI, UIColors } from './Kit';
 import { useStore } from '../store';
 import type { Card } from '../api';
 import { aisleKey, groupByAisle } from '../shoppingAisles';
+import { planPulseRows } from '../pulseRows';
 
 /**
  * What needs you, before anything else on Home (rebrand Stage 2, agreed on the
- * design canvas 2026-10-07).
+ * design canvas 2026-10-07; lightened 2026-10-09 after Roland found the
+ * shipped Home "too charged").
  *
  * Three kinds of thing, and only these: what is overdue, what somebody else
  * handed you (whatever its date: a job for next week given to you today is
  * news today), and the shopping list by aisle. Everything else about the day
- * is in the Today list under it, so nothing is shown twice.
+ * is in the Today list under it, so nothing is shown twice. How overdue work
+ * folds into one row is in src/pulseRows.ts.
  */
 export interface PulseShopItem {
   name: string;
@@ -23,7 +26,11 @@ export interface PulseShopItem {
   checked?: boolean;
 }
 
-const MAX_ROWS = 4;
+function dueMs(card: Card): number | null {
+  if (!card.due_date) return null;
+  const time = new Date(card.due_date).getTime();
+  return Number.isNaN(time) ? null : time;
+}
 
 export function FamilyPulse({
   overdue,
@@ -49,14 +56,7 @@ export function FamilyPulse({
   const { t } = useStore();
   const styles = createStyles(ui);
 
-  const handedIds = new Set(handed.map((c) => c.card_id));
-  const overdueOnly = overdue.filter((c) => !handedIds.has(c.card_id));
-  const rows: { card: Card; kind: 'overdue' | 'handed' }[] = [
-    ...overdueOnly.map((card) => ({ card, kind: 'overdue' as const })),
-    ...handed.map((card) => ({ card, kind: 'handed' as const })),
-  ];
-  const shown = rows.slice(0, MAX_ROWS);
-  const more = rows.length - shown.length;
+  const { rows, more, needing } = planPulseRows(overdue, handed, dueMs);
 
   const open = shopping.filter((i) => !i.checked);
   const aisles = groupByAisle(open).map((g) => t(aisleKey(g.aisle)));
@@ -64,13 +64,14 @@ export function FamilyPulse({
     ? `${aisles.slice(0, 3).join(', ')}, ${t('pulse_more_aisles', { n: aisles.length - 3 })}`
     : aisles.join(', ');
 
-  const count = rows.length + (open.length > 0 ? 1 : 0);
+  const count = needing + (open.length > 0 ? 1 : 0);
   const headline = count === 0
     ? t('pulse_all_calm')
     : count === 1 ? t('pulse_need_you_one') : t('pulse_need_you', { n: count });
 
-  const handedRows = shown.filter((r) => r.kind === 'handed');
-  const renderRow = ({ card, kind }: { card: Card; kind: 'overdue' | 'handed' }, first: boolean) => {
+  const chevron = <ChevronRight color={ui.muted} size={18} />;
+
+  const renderCardRow = (kind: 'overdue' | 'handed', card: Card, first: boolean) => {
     const by = kind === 'handed' ? handedByName(card) : '';
     const sub = kind === 'overdue'
       ? t('pulse_overdue', { when: dayLine(card) })
@@ -96,29 +97,56 @@ export function FamilyPulse({
           <Text style={styles.title} numberOfLines={1}>{card.title}</Text>
           <Text style={[styles.sub, kind === 'overdue' && { color: ui.danger }]} numberOfLines={1}>{sub}</Text>
         </View>
-        <ChevronRight color={ui.muted} size={18} />
+        {chevron}
       </PressScale>
     );
   };
 
+  const renderGroupRow = (cards: Card[], first: boolean) => {
+    const names = cards.slice(0, 2).map((c) => c.title).join(', ');
+    const rest = cards.length - 2;
+    const oldest = t('pulse_overdue_oldest', { when: dayLine(cards[0]) });
+    const sub = `${names}${rest > 0 ? ` ${t('pulse_more', { n: rest })}` : ''} · ${oldest}`;
+    const title = t('pulse_overdue_n', { n: cards.length });
+    return (
+      <PressScale
+        key="overdue-group"
+        testID="pulse-overdue-group"
+        accessibilityRole="button"
+        accessibilityLabel={`${title}, ${sub}`}
+        onPress={onSeeAll}
+        style={[styles.row, !first && styles.rowLine]}
+      >
+        <View style={[styles.icon, { backgroundColor: ui.dangerSoft }]}>
+          <AlertCircle color={ui.danger} size={17} />
+        </View>
+        <View style={styles.body}>
+          <Text style={styles.title} numberOfLines={1}>{title}</Text>
+          <Text style={[styles.sub, { color: ui.danger }]} numberOfLines={1}>{sub}</Text>
+        </View>
+        {chevron}
+      </PressScale>
+    );
+  };
+
+  const overdueRows = rows.filter((r) => r.kind !== 'handed');
+  const handedRows = rows.filter((r) => r.kind === 'handed');
+
   return (
     <View style={styles.card} testID="family-pulse">
       <View style={styles.head}>
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={styles.eyebrow}>{t('pulse_title')}</Text>
-          <Text style={styles.headline} testID="family-pulse-headline">{headline}</Text>
-        </View>
-        <View style={styles.badge}>
-          <Star color="#FFFFFF" fill="#FFFFFF" size={20} />
-        </View>
+        <Text style={styles.eyebrow}>{t('pulse_title')}</Text>
+        <Text style={styles.headline} testID="family-pulse-headline" numberOfLines={1}>{headline}</Text>
       </View>
 
-      {shown.filter((r) => r.kind === 'overdue').map((r, i) => renderRow(r, i === 0))}
+      {overdueRows.map((r, i) => (r.kind === 'overdue_group'
+        ? renderGroupRow(r.cards, i === 0)
+        : renderCardRow('overdue', (r as { card: Card }).card, i === 0)))}
       {handedRows.length > 0 ? (
         // One container for what was handed over, so "what somebody gave me"
         // can be found as a whole (the hand-off harness reads it).
         <View testID="feed-assigned">
-          {handedRows.map((r, i) => renderRow(r, i === 0 && !shown.some((x) => x.kind === 'overdue')))}
+          {handedRows.map((r, i) => renderCardRow('handed', (r as { card: Card }).card, i === 0 && overdueRows.length === 0))}
         </View>
       ) : null}
 
@@ -144,7 +172,7 @@ export function FamilyPulse({
             </Text>
             {aisleLine ? <Text style={styles.sub} numberOfLines={1}>{aisleLine}</Text> : null}
           </View>
-          <ChevronRight color={ui.muted} size={18} />
+          {chevron}
         </PressScale>
       ) : null}
     </View>
@@ -168,16 +196,15 @@ const createStyles = (ui: UIColors) =>
       shadowOffset: { width: 0, height: 8 },
       elevation: 2,
     },
-    head: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingBottom: 8 },
+    // One line: the eyebrow on the left, the count in grey on the right. The
+    // orange star that sat here was the same colour and weight as the +, so
+    // neither read as the thing to press.
+    head: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, paddingBottom: 4 },
     eyebrow: {
       color: ui.orangeText, fontFamily: 'Figtree_800ExtraBold', fontSize: 11.5,
       letterSpacing: 1.2, textTransform: 'uppercase',
     },
-    headline: { color: ui.text, fontFamily: 'Figtree_700Bold', fontSize: 16, marginTop: 2 },
-    badge: {
-      width: 42, height: 42, borderRadius: 21, backgroundColor: ui.orange,
-      alignItems: 'center', justifyContent: 'center',
-    },
+    headline: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 12.5, flexShrink: 1 },
     row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 9, minHeight: 50 },
     rowLine: { borderTopWidth: 1, borderTopColor: ui.line },
     icon: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },

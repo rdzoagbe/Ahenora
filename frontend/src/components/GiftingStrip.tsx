@@ -20,6 +20,13 @@ interface Props {
   onSeeAllBirthdays: () => void;
   onOpenSanta: (draw: SantaDraw) => void;
   onNewSanta: () => void;
+  /**
+   * One row per live thing instead of the full card. Home (2026-10-09) shows
+   * the soonest birthday as a single line that opens its pot; the full card
+   * with its month heading and segmented control was the tallest block on
+   * the page after the day's work, for the least urgent thing on it.
+   */
+  compact?: boolean;
 }
 
 const MAX_ROWS = 4;
@@ -43,7 +50,7 @@ function longMonth(d: Date, lang: string): string {
  * happens.
  */
 export function GiftingStrip({
-  birthdays, potByCard, santaDraws, lang, onOpenBirthday, onSeeAllBirthdays, onOpenSanta, onNewSanta,
+  birthdays, potByCard, santaDraws, lang, onOpenBirthday, onSeeAllBirthdays, onOpenSanta, onNewSanta, compact = false,
 }: Props) {
   const { t } = useStore();
   const ui = useUI();
@@ -82,6 +89,53 @@ export function GiftingStrip({
     if (d.status === 'matched') return `${people} · ${t('ss_matched_pill')}`;
     return people;
   };
+
+  if (compact) {
+    const first = hasBirthdays ? birthdays[0] : null;
+    const pot = first ? potByCard[first.card_id] : undefined;
+    const target = pot ? (pot.target_total ?? pot.per_head * Math.max(pot.contributor_count, 2)) : 0;
+    const birthdaySub = first
+      ? `${(first.title || '').trim()}, ${new Date(first.due_date as string).toLocaleDateString(lang, { day: 'numeric', month: 'long' })} · ${
+        pot ? t('gp_chip', { total: String(pot.total_pledged), target: String(Math.round(target)) }) : t('gp_start_short')}`
+      : '';
+    const draw = hasSanta ? draws[0] : null;
+    return (
+      <View style={styles.compact}>
+        {first ? (
+          <PressScale
+            testID={`gift-pot-row-${first.card_id}`}
+            onPress={() => onOpenBirthday(first)}
+            style={styles.compactRow}
+            accessibilityRole="button"
+            accessibilityLabel={`${t('gp_title')}, ${birthdaySub}`}
+          >
+            <View style={styles.compactIcon}><Gift color={ui.lavenderText} size={18} /></View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={styles.compactTitle} numberOfLines={1}>{t('gp_title')}</Text>
+              <Text style={styles.sub} numberOfLines={1}>{birthdaySub}</Text>
+            </View>
+            <ChevronRight color={ui.muted} size={18} />
+          </PressScale>
+        ) : null}
+        {draw ? (
+          <PressScale
+            testID={`gifting-santa-${draw.draw_id}`}
+            onPress={() => onOpenSanta(draw)}
+            style={styles.compactRow}
+            accessibilityRole="button"
+            accessibilityLabel={draw.title || t('ss_title')}
+          >
+            <View style={styles.compactIcon}><Gift color={ui.orangeText} size={18} /></View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={styles.compactTitle} numberOfLines={1}>{draw.title || t('ss_title')}</Text>
+              <Text style={styles.sub} numberOfLines={1}>{santaSub(draw)}</Text>
+            </View>
+            <ChevronRight color={ui.muted} size={18} />
+          </PressScale>
+        ) : null}
+      </View>
+    );
+  }
 
   return (
     <View style={styles.card}>
@@ -231,4 +285,13 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
 
   seeAll: { alignItems: 'center', paddingVertical: 10, marginTop: 2 },
   seeAllText: { color: ui.orangeText, fontFamily: 'Figtree_700Bold', fontSize: 12.5 },
+
+  // The one-line form: the same shape as the Notes & family board row under it.
+  compact: { gap: 10, marginTop: 14 },
+  compactRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, paddingVertical: 12,
+    borderRadius: 18, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line,
+  },
+  compactIcon: { width: 34, height: 34, borderRadius: 11, backgroundColor: ui.lavender, alignItems: 'center', justifyContent: 'center' },
+  compactTitle: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 15.5 },
 });

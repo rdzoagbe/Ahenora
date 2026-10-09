@@ -59,8 +59,10 @@ import { keepRoomFilter, roomFilterWorthShowing, roomsInUse } from '../../src/ro
 import { NotificationsNudge } from '../../src/components/NotificationsNudge';
 import { GiftingStrip } from '../../src/components/GiftingStrip';
 import { CoParentBalance } from '../../src/components/CoParentBalance';
-import { StreakChip } from '../../src/components/StreakChip';
+import { streakLabel, useStreak } from '../../src/components/StreakChip';
 import { FamilyPulse, PulseShopItem } from '../../src/components/FamilyPulse';
+import { DoneCard, completedForHome } from '../../src/components/DoneCard';
+import { activityPhrase } from '../../src/activityPhrase';
 import { isSoloHousehold } from '../../src/household';
 import { useStore } from '../../src/store';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
@@ -185,17 +187,6 @@ function relativeDue(date: string | null | undefined, t: (k: string, p?: Record<
   return t('feed_in_h', { n: Math.round(diffMin / 60) });
 }
 
-// A small emoji that tracks the time of day, matching the greeting.
-function timeEmoji(now: Date | null) {
-  if (!now) return '';
-  const h = now.getHours();
-  if (h < 6) return '🌙';
-  if (h < 12) return '☀️';
-  if (h < 18) return '🌤️';
-  if (h < 21) return '🌆';
-  return '🌙';
-}
-
 function statusCopy(type: CardType, ui: UIColors, t: TFunc, imported?: boolean) {
   // Imported agenda items read as neutral gray — colored pills mean "added by
   // the family", gray means "came from a connected calendar".
@@ -218,7 +209,14 @@ function initials(name: string): string {
   return (words[0][0] + words[words.length - 1][0]).toUpperCase();
 }
 
-function cardMeta(card: Card, t: TFunc) {
+/**
+ * The grey line under a row's title. In today's list the time column already
+ * says when and the badge already says who, so a row there is asked for
+ * neither — "Any time · No deadline · TASK" under one undated task was three
+ * ways of saying the same nothing (Roland, 2026-10-08: "too charged").
+ */
+function cardMeta(card: Card, t: TFunc, opts: { withDay?: boolean; withAssignee?: boolean } = {}) {
+  const { withDay = true, withAssignee = true } = opts;
   // Use the parsed description text (URLs/Location/People stripped) so list
   // rows never show raw links — the detail sheet renders those as chips.
   const desc = parseDescription(card.description, t).text.split('\n')[0];
@@ -231,31 +229,14 @@ function cardMeta(card: Card, t: TFunc) {
   // already carries privacy, a name, a description and a day, and a fifth
   // floating pill on a phone-width row is how a list stops being scannable.
   const where = card.room ? t(`room_${card.room}`) : null;
-  const parts = [privacy, card.assignee, where, desc, formatDayLine(card.due_date, t)].filter(Boolean);
+  const parts = [
+    privacy,
+    withAssignee ? card.assignee : null,
+    where,
+    desc,
+    withDay ? formatDayLine(card.due_date, t) : null,
+  ].filter(Boolean);
   return parts.join(' · ');
-}
-
-/**
- * The server stores what happened, not a sentence about it — so a French
- * co-parent reads a French feed and an English one reads English.
- */
-function activityPhrase(entry: ActivityEntry, t: TFunc): string {
-  switch (entry.kind) {
-    case 'task_done': return t('act_task_done', { subject: entry.subject });
-    case 'task_created': return t('act_task_created', { subject: entry.subject });
-    case 'task_assigned':
-      return t('act_task_assigned', { subject: entry.subject, target: entry.target || '' });
-    case 'stars_awarded':
-      return t('act_stars_awarded', { n: String(entry.amount ?? 0), subject: entry.subject });
-    case 'member_joined': return t('act_member_joined');
-    case 'list_cleared': return t('act_list_cleared', { n: String(entry.amount ?? 0) });
-    case 'week_planned': return t('act_week_planned');
-    case 'doc_shared': return t('act_doc_shared', { subject: entry.subject });
-    case 'pot_pledge':
-      return t('act_pot_pledge', { amount: String(entry.amount ?? 0), subject: entry.subject });
-    case 'santa_opened': return t('act_santa_opened');
-    default: return '';
-  }
 }
 
 function shortWhen(iso: string, t: TFunc): string {
@@ -309,51 +290,46 @@ function todayTimeLabel(card: Card, t: TFunc, lang: string): string {
   return due.toLocaleTimeString(lang, { hour: '2-digit', minute: '2-digit' });
 }
 
-/** A card ticked off today: greyed, struck through, and one tap to undo. */
-function DoneRow({ card, onOpen, onUndo, styles }: { card: Card; onOpen: () => void; onUndo: () => void; styles: ReturnType<typeof createStyles> }) {
-  const ui = useUI();
-  const { t } = useStore();
-  return (
-    <PressScale style={styles.taskRow} onPress={onOpen} testID={`feed-done-${card.card_id}`}>
-      <PressScale
-        onPress={onUndo}
-        style={[styles.checkRing, { backgroundColor: ui.doneFill, borderColor: ui.doneFill }]}
-        accessibilityLabel={t('feed_mark_not_done')}
-        accessibilityRole="button"
-        testID={`feed-done-undo-${card.card_id}`}
-      >
-        <Check size={16} strokeWidth={3} color={ui.doneTick} />
-      </PressScale>
-      <View style={styles.taskBody}>
-        <Text style={[styles.taskTitle, styles.taskTitleDone]} numberOfLines={1}>{card.title}</Text>
-        <Text style={styles.taskMeta} numberOfLines={1}>{t('feed_done_today')}</Text>
-      </View>
-    </PressScale>
-  );
-}
-
-function TaskRow({ card, onOpen, onComplete, styles }: { card: Card; onOpen: () => void; onComplete: () => void; styles: ReturnType<typeof createStyles> }) {
+/**
+ * One open thing in today's list. A ticked card leaves this list for the Done
+ * card below it (it used to stay here greyed out), so every row is open.
+ *
+ * `compact` is the undated row: checkbox and title, the group label "Any time"
+ * above the first of them saying what the time column would have said on each.
+ * Nothing that only repeats the row — the TASK pill on a task, the chevron on
+ * a row that is itself the button, the day on a row sitting under its time —
+ * is drawn on either kind.
+ */
+function TaskRow({ card, onOpen, onComplete, styles, compact = false }: {
+  card: Card; onOpen: () => void; onComplete: () => void; styles: ReturnType<typeof createStyles>; compact?: boolean;
+}) {
   const ui = useUI();
   const { t } = useStore();
   const imported = card.source === 'CALENDAR';
-  const status = statusCopy(card.type, ui, t, imported);
+  // A pill only where the kind changes what you do: a slip to sign, an
+  // invitation to answer, something a calendar put here. "TASK" on a task
+  // was true of nearly every row and so said nothing.
+  const status = imported || card.type !== 'TASK' ? statusCopy(card.type, ui, t, imported) : null;
+  // The badge on the right says whose it is and the time column says when,
+  // so the line underneath carries only what nothing else on the row does.
+  const meta = cardMeta(card, t, { withDay: false, withAssignee: false });
   return (
-    <PressScale style={styles.taskRow} onPress={onOpen} testID={`feed-card-${card.card_id}`}>
+    <PressScale style={[styles.taskRow, compact && styles.taskRowCompact]} onPress={onOpen} testID={`feed-card-${card.card_id}`}>
       <PressScale
         onPress={onComplete}
-        style={[styles.checkRing, card.status === 'DONE' && { backgroundColor: ui.doneFill, borderColor: ui.doneFill }]}
-        accessibilityLabel={card.status === 'DONE' ? t('feed_mark_not_done') : t('feed_mark_done')}
+        style={styles.checkRing}
+        accessibilityLabel={t('feed_mark_done')}
         accessibilityRole="button"
         testID={`feed-card-complete-${card.card_id}`}
       >
-        {card.status === 'DONE' ? <Check size={16} strokeWidth={3} color={ui.doneTick} /> : null}
+        {null}
       </PressScale>
       <View style={styles.taskBody}>
         <View style={styles.taskTitleRow}>
           {imported ? <CalendarDays color={ui.muted} size={13} /> : null}
           <Text style={[styles.taskTitle, { flexShrink: 1 }]} numberOfLines={1}>{card.title}</Text>
         </View>
-        <Text style={styles.taskMeta} numberOfLines={1}>{cardMeta(card, t)}</Text>
+        {meta ? <Text style={styles.taskMeta} numberOfLines={1}>{meta}</Text> : null}
       </View>
       {card.assignee && card.assignee.trim() ? (
         <View
@@ -365,10 +341,11 @@ function TaskRow({ card, onOpen, onComplete, styles }: { card: Card; onOpen: () 
           </Text>
         </View>
       ) : null}
-      <View style={[styles.statusPill, { backgroundColor: status.bg }]}>
-        <Text style={[styles.statusPillText, { color: status.fg }]}>{status.label}</Text>
-      </View>
-      <ChevronRight color={ui.text} size={18} />
+      {status ? (
+        <View style={[styles.statusPill, { backgroundColor: status.bg }]}>
+          <Text style={[styles.statusPillText, { color: status.fg }]}>{status.label}</Text>
+        </View>
+      ) : null}
     </PressScale>
   );
 }
@@ -406,6 +383,9 @@ export default function Feed() {
   const ui = useUI();
   const router = useRouter();
   const styles = useMemo(() => createStyles(ui), [ui]);
+  // Days in a row the app was opened: one phrase in the line under the
+  // greeting, where a chip of its own sat between Today and the gift pot.
+  const streak = useStreak();
   const [cards, setCards] = useState<Card[]>([]);
   // Gift pots keyed by their birthday card, so the Gift Pot strip can show a
   // pot's progress inline. Fetched alongside the feed; empty is fine.
@@ -980,24 +960,20 @@ export default function Feed() {
   );
   // Today, as ONE list (Roland, 2026-10-07: "everything should be there, no
   // need to list the different times of the day"): what is on today in time
-  // order, then what has no date, then what was ticked off today, greyed.
+  // order, then what has no date. What was ticked off is in the Done card
+  // under this list, not greyed inside it (Roland, 2026-10-09).
   const todayCards = useMemo(() => {
-    const today = new Date();
-    const doneToday = cards.filter((c) => {
-      if (c.status !== 'DONE' || !c.completed_at) return false;
-      if (!sameLocalDay(new Date(c.completed_at), today)) return false;
-      const time = dueTime(c);
-      return time === null || sameLocalDay(new Date(time), today);
-    });
     const open = feedCards.filter((c) => !pulseIds.has(c.card_id));
-    const rank = (c: Card) => (c.status === 'DONE' ? 2 : dueTime(c) === null ? 1 : 0);
-    return uniqueCards([...open, ...doneToday]).sort((a, b) => {
+    const rank = (c: Card) => (dueTime(c) === null ? 1 : 0);
+    return uniqueCards(open).sort((a, b) => {
       const ra = rank(a);
       const rb = rank(b);
-      if (ra !== rb && (ra === 1 || rb === 1)) return ra - rb;
-      return (dueTime(a) ?? Number.MAX_SAFE_INTEGER) - (dueTime(b) ?? Number.MAX_SAFE_INTEGER) || ra - rb;
+      if (ra !== rb) return ra - rb;
+      return (dueTime(a) ?? Number.MAX_SAFE_INTEGER) - (dueTime(b) ?? Number.MAX_SAFE_INTEGER);
     });
-  }, [cards, feedCards, pulseIds]);
+  }, [feedCards, pulseIds]);
+  // The last few completions, household-wide, newest first, for the Done card.
+  const completed = useMemo(() => completedForHome(cards), [cards]);
   const roomCards = useMemo(
     () => (roomFilter ? todayCards.filter((c) => c.room === roomFilter) : todayCards),
     [todayCards, roomFilter],
@@ -1040,6 +1016,14 @@ export default function Feed() {
 
   const firstName = (user?.name || '').split(' ')[0] || '';
   const headline = greetingFallback(firstName, t, now);
+  // One grey line under the greeting: the date, the week and its parity (for
+  // a separated co-parent the parity IS the schedule), and the streak. These
+  // were three lines in two places before, above and below the greeting.
+  const dayLine = [
+    feedDateLine(now, lang),
+    feedWeekLine(now, t, kidsHidden ? null : subscription?.custody),
+    streakLabel(streak, t),
+  ].filter(Boolean).join(' · ');
   const alertCount = dashboard.priority.length;
   // The bell badge counts what you have NOT looked at yet, not how much work is
   // outstanding. Counting the latter meant the badge never cleared however many
@@ -1320,12 +1304,8 @@ export default function Feed() {
         scrollViewProps={{ contentContainerStyle: [styles.scroll, { paddingHorizontal: px }] }}
       >
           <View style={[styles.page, { maxWidth: maxW }]}>
-            <Text style={styles.brand}>Ahenora</Text>
             <View style={styles.topMetaRow}>
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={styles.dateText}>{feedDateLine(now, lang)} <Text style={styles.sun}>{timeEmoji(now)}</Text></Text>
-                <Text style={styles.weekLine} testID="feed-week">{feedWeekLine(now, t, kidsHidden ? null : subscription?.custody)}</Text>
-              </View>
+              <Text style={styles.brand}>Ahenora</Text>
               <View style={styles.topActions}>
                 <PressScale
                   testID="feed-search"
@@ -1366,25 +1346,10 @@ export default function Feed() {
             <View style={styles.heroRow}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.heroTitle} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.6}>{headline}</Text>
-                {/* Calm was a hero-sized card; as an ambient signal it earns a
-                    pill, not the top third of the screen. */}
-                <View style={styles.heroMetaRow}>
-                  {/* A plain-language status you can act on, not a bare number:
-                      "All calm" when nothing's overdue, else a count that reads
-                      as a nudge. */}
-                  <PressScale
-                    onPress={() => Alert.alert(t('feed_calm_title'), t('feed_calm_explain'))}
-                    style={[styles.calmPill, dashboard.overdue.length > 0 && styles.calmPillWarn]}
-                    accessibilityRole="button"
-                    accessibilityLabel={t('feed_calm_title')}
-                  >
-                    <Text style={[styles.calmPillText, dashboard.overdue.length > 0 && styles.calmPillTextWarn]}>
-                      {dashboard.overdue.length > 0
-                        ? t('feed_calm_overdue', { n: String(dashboard.overdue.length) })
-                        : t('feed_calm_ok')}
-                    </Text>
-                  </PressScale>
-                </View>
+                {/* The "N overdue" pill that sat here said what the Family
+                    pulse says a few rows down, in its own words, with the
+                    items. Said once, in the place that owns it. */}
+                <Text style={styles.weekLine} testID="feed-week" numberOfLines={2}>{dayLine}</Text>
               </View>
             </View>
 
@@ -1587,22 +1552,38 @@ export default function Feed() {
               ) : (
                 <>
                   {/* One list, in the order the day happens: timed things,
-                      then anything with no date ("Any time"), then what was
-                      ticked off today, greyed with its tick. Overdue work and
-                      work somebody handed you are in the Family pulse above. */}
-                  {visibleCards.map((card, index) => (
-                    <View key={card.card_id} style={styles.todayRow}>
-                      <Text style={styles.todayTime} numberOfLines={1}>{todayTimeLabel(card, t, lang)}</Text>
-                      <View style={[styles.todayRowBody, card.status === 'DONE' && styles.todayRowDone]}>
-                        {card.status === 'DONE' ? (
-                          <DoneRow card={card} onOpen={() => setSelectedCard(card)} onUndo={() => toggle(card)} styles={styles} />
-                        ) : (
-                          <TaskRow card={card} onOpen={() => setSelectedCard(card)} onComplete={() => toggle(card)} styles={styles} />
-                        )}
-                        {index < visibleCards.length - 1 ? <View style={styles.rowDivider} /> : null}
+                      then anything with no date under one "Any time" label.
+                      Overdue work and work somebody handed you are in the
+                      Family pulse above; what was ticked off is in the Done
+                      card below. Nothing is shown twice. */}
+                  {visibleCards.map((card, index) => {
+                    const undated = dueTime(card) === null;
+                    const firstUndated = undated && (index === 0 || dueTime(visibleCards[index - 1]) !== null);
+                    return (
+                      <View key={card.card_id}>
+                        {firstUndated ? (
+                          <Text style={[styles.anyTimeLabel, index > 0 && styles.anyTimeLabelAfter]} testID="feed-any-time">
+                            {t('feed_any_time')}
+                          </Text>
+                        ) : null}
+                        <View style={styles.todayRow}>
+                          {!undated ? (
+                            <Text style={styles.todayTime} numberOfLines={1}>{todayTimeLabel(card, t, lang)}</Text>
+                          ) : null}
+                          <View style={styles.todayRowBody}>
+                            <TaskRow
+                              card={card}
+                              compact={undated}
+                              onOpen={() => setSelectedCard(card)}
+                              onComplete={() => toggle(card)}
+                              styles={styles}
+                            />
+                            {index < visibleCards.length - 1 ? <View style={styles.rowDivider} /> : null}
+                          </View>
+                        </View>
                       </View>
-                    </View>
-                  ))}
+                    );
+                  })}
                 </>
               )}
             </View>
@@ -1618,15 +1599,25 @@ export default function Feed() {
               </PressScale>
             ) : null}
 
-            {/* The streak sat between the date and the greeting, third of three
-                pills before a single task was visible. It is a reward for
-                coming back, not a status to read first — so it moves below the
-                day it is a reward for. */}
-            <StreakChip />
+            {/* What was ticked off, with Undo, and the door to the whole
+                record. It lived under Settings › More › Completed history —
+                the one place nobody looks for the thing they just finished. */}
+            {!loading ? (
+              <DoneCard
+                done={completed.done}
+                weekCount={completed.weekCount}
+                lang={lang}
+                who={(card) => (card.completed_by_name || '').split(' ')[0]}
+                onUndo={(card) => toggle(card)}
+                onOpen={(card) => setSelectedCard(card)}
+                onSeeAll={() => router.push('/history' as never)}
+              />
+            ) : null}
 
-            {/* Upcoming birthdays / Secret Santa, gathered into one compact
-                strip. Hidden when there's nothing live. */}
+            {/* The soonest birthday (and a live Secret Santa) as one row each.
+                Hidden when there's nothing live. */}
             <GiftingStrip
+              compact
               birthdays={dashboard.upcomingBirthdays}
               potByCard={giftPotByCard}
               santaDraws={santaDraws}
@@ -1699,7 +1690,7 @@ export default function Feed() {
                 who did what, the board, notes, the weekly report. Collapsed by
                 default; tap to open. This is what keeps the Feed to one screen. */}
             <PressScale testID="feed-household-open" onPress={() => setShowHousehold((v) => !v)} style={styles.householdRow}>
-              <View style={styles.householdIcon}><History color={ui.mintText} size={17} /></View>
+              <View style={[styles.householdIcon, { backgroundColor: ui.lavender }]}><MessageSquare color={ui.lavenderText} size={17} /></View>
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={styles.householdTitle}>{t('feed_household')}</Text>
                 {/* The teaser repeats the newest line; hide it once the list
@@ -2323,21 +2314,13 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     justifyContent: 'space-between',
     marginTop: 2,
   },
-  dateText: {
-    color: ui.muted,
-    fontFamily: 'Figtree_600SemiBold',
-    fontSize: 15,
-    letterSpacing: 0.1,
-  },
-  sun: {
-    color: ui.orangeText,
-  },
   weekLine: {
     color: ui.muted,
     fontFamily: 'Figtree_600SemiBold',
-    fontSize: 12.5,
-    letterSpacing: 0.2,
-    marginTop: 1,
+    fontSize: 13,
+    lineHeight: 18,
+    letterSpacing: 0.1,
+    marginTop: 6,
   },
   topActions: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   bellWrap: {
@@ -2367,8 +2350,8 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     flexDirection: 'row',
     gap: 14,
     alignItems: 'center',
-    marginTop: 8,
-    marginBottom: 22,
+    marginTop: 4,
+    marginBottom: 18,
   },
   heroTitle: {
     color: ui.text,
@@ -2386,28 +2369,6 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     fontSize: 17,
     letterSpacing: 0.2,
   },
-  heroMetaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginTop: 10,
-  },
-  calmPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: ui.mint,
-    borderRadius: 9999,
-    paddingHorizontal: 11,
-    paddingVertical: 5,
-  },
-  calmPillText: {
-    color: ui.mintText,
-    fontFamily: 'Figtree_800ExtraBold',
-    fontSize: 12.5,
-    letterSpacing: 0.2,
-  },
-  calmPillWarn: { backgroundColor: ui.orangeSoft },
-  calmPillTextWarn: { color: ui.orangeText },
   seeAllBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2609,8 +2570,13 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     fontFamily: 'Figtree_700Bold', fontSize: 12.5, fontVariant: ['tabular-nums'],
   },
   todayRowBody: { flex: 1, minWidth: 0 },
-  todayRowDone: { opacity: 0.55 },
-  taskTitleDone: { textDecorationLine: 'line-through' },
+  // "Any time", once, above the undated rows — instead of once per row.
+  anyTimeLabel: {
+    color: ui.muted, fontFamily: 'Figtree_700Bold', fontSize: 11.5, letterSpacing: 0.6,
+    textTransform: 'uppercase', paddingHorizontal: 14, paddingTop: 12, paddingBottom: 2,
+  },
+  anyTimeLabelAfter: { borderTopWidth: 1, borderTopColor: ui.line, paddingTop: 10 },
+  taskRowCompact: { minHeight: 54, paddingVertical: 8 },
   listCard: {
     overflow: 'hidden',
     borderRadius: 24,

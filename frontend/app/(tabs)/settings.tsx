@@ -133,11 +133,9 @@ export default function Settings() {
   const [notificationStatus, setNotificationStatus] = useState<string | null>(null);
   const [savingNotifications, setSavingNotifications] = useState(false);
   const [entitlements, setEntitlements] = useState<Entitlements | null>(null);
-  const [completedCards, setCompletedCards] = useState<CardType[]>([]);
 
   const [refreshing, setRefreshing] = useState(false);
   const [expandMembers, setExpandMembers] = useState(false);
-  const [expandHistory, setExpandHistory] = useState(false);
   const [expandUsage, setExpandUsage] = useState(false);
   // Settings is a hub now: each group is a row that opens on tap, so the
   // screen is a short list of homes rather than a long scroll of everything.
@@ -149,29 +147,17 @@ export default function Settings() {
     try {
       // Each call is individually fault-tolerant so one failing endpoint
       // (offline / cold backend) can't blank the whole Settings screen.
-      const [memberRows, inviteRows, notificationRows, entitlementRows, completedRows] = await Promise.all([
+      const [memberRows, inviteRows, notificationRows, entitlementRows] = await Promise.all([
         api.familyMembers().catch(() => null),
         api.listInvites().catch(() => null),
         api.getNotificationSettings().catch(() => ({ card_reminders: false, deadline_alerts: false, new_card_alerts: false, chat_messages: false })),
         api.getEntitlements().catch(() => null),
-        api.listCards('DONE')
-          .then(async (rows) => {
-            const directDone = rows.filter((card) => card.status === 'DONE');
-            if (directDone.length > 0) return directDone;
-            const allCards = await api.listCards().catch(() => [] as CardType[]);
-            return allCards.filter((card) => card.status === 'DONE');
-          })
-          .catch(async () => {
-            const allCards = await api.listCards().catch(() => [] as CardType[]);
-            return allCards.filter((card) => card.status === 'DONE');
-          }),
       ]);
       // Only overwrite on success — keep existing data if a call failed.
       if (memberRows) setMembers(memberRows);
       if (inviteRows) setInvites(inviteRows);
       setNotificationPrefs(notificationRows);
       setEntitlements(entitlementRows);
-      setCompletedCards(completedRows);
 
     } catch (error) {
       logger.warn('settings load failed', error);
@@ -1145,77 +1131,17 @@ export default function Settings() {
               right={<ChevronRight color={ui.muted} size={18} />}
               onPress={() => router.push('/onboarding')}
             />
+            {/* The list itself lives on its own screen now, reached from the
+                Done card on Home as well as from here: what you ticked off is
+                found from the page you ticked it off on, not from Settings. */}
             <NavRow
-              testID="settings-completed-history-toggle"
+              testID="settings-completed-history"
               tile={<IconTile bg={ui.soft}><CalendarDays color={ui.text} size={18} /></IconTile>}
               title={t('set_completed_history')}
-              subtitle={`${completedCards.length} ${completedCards.length === 1 ? t('set_completed_card') : t('set_completed_cards')}`}
-              right={<Chevron open={expandHistory} />}
-              onPress={() => setExpandHistory((v) => !v)}
+              subtitle={t('set_completed_history_sub')}
+              right={<ChevronRight color={ui.muted} size={18} />}
+              onPress={() => router.push('/history' as never)}
             />
-            {expandHistory ? (
-              <View style={styles.expandBox}>
-                {completedCards.length === 0 ? <Text style={styles.emptyText}>{t('set_no_completed_cards')}</Text> : completedCards.slice(0, 8).map((card) => (
-                  <View key={card.card_id} style={styles.inviteRow}>
-                    <MiniRow initial={card.type === 'TASK' ? 'T' : card.type === 'RSVP' ? 'R' : 'S'} name={card.title} sub={`${t('set_done')} · ${card.assignee || t('set_family')}`} />
-                    <View style={styles.historyBtnRow}>
-                      <PressScale
-                        testID={`restore-card-${card.card_id}`}
-                        onPress={() => {
-                          Alert.alert(t('set_restore_card_title'), `"${card.title}" ${t('set_restore_card_msg')}`, [
-                            { text: t('cancel'), style: 'cancel' },
-                            {
-                              text: t('set_restore'),
-                              onPress: async () => {
-                                try {
-                                  await api.updateCard(card.card_id, { status: 'OPEN' });
-                                  setCompletedCards((prev) => prev.filter((c) => c.card_id !== card.card_id));
-                                } catch {
-                                  Alert.alert(t('set_error'), t('set_restore_error'));
-                                }
-                              },
-                            },
-                          ]);
-                        }}
-                        style={styles.ghostBtn}
-                      >
-                        <RotateCcw color={ui.text} size={14} />
-                        <Text style={styles.ghostBtnText}>{t('set_restore')}</Text>
-                      </PressScale>
-                      {/* Permanent removal — the card AND its "done" line in the
-                          feed go. Restore un-completes; this erases. */}
-                      <PressScale
-                        testID={`delete-card-${card.card_id}`}
-                        accessibilityRole="button"
-                        accessibilityLabel={t('set_delete')}
-                        onPress={() => {
-                          Alert.alert(t('set_delete_card_title'), `"${card.title}" ${t('set_delete_card_msg')}`, [
-                            { text: t('cancel'), style: 'cancel' },
-                            {
-                              text: t('set_delete'),
-                              style: 'destructive',
-                              onPress: async () => {
-                                setCompletedCards((prev) => prev.filter((c) => c.card_id !== card.card_id));
-                                try {
-                                  await api.deleteCard(card.card_id);
-                                } catch {
-                                  Alert.alert(t('set_error'), t('set_delete_error'));
-                                  setCompletedCards(await api.listCards('DONE').catch(() => []));
-                                }
-                              },
-                            },
-                          ]);
-                        }}
-                        hitSlop={8}
-                        style={styles.historyDeleteBtn}
-                      >
-                        <Trash2 color={ui.danger} size={15} />
-                      </PressScale>
-                    </View>
-                  </View>
-                ))}
-              </View>
-            ) : null}
             <Divider />
 
             <NavRow

@@ -17,10 +17,7 @@ function localDay(d: Date) {
  * the app. Client-side (AsyncStorage) — advances once per local day, resets
  * to 1 after a missed day. Renders nothing until the count is known.
  */
-export function StreakChip() {
-  const { t } = useStore();
-  const ui = useUI();
-  const styles = useMemo(() => createStyles(ui), [ui]);
+export function useStreak(): number | null {
   const [streak, setStreak] = useState<number | null>(null);
 
   useEffect(() => {
@@ -47,9 +44,25 @@ export function StreakChip() {
     return () => { alive = false; };
   }, []);
 
+  return streak;
+}
+
+/** The streak as one short phrase, or '' until it is known. Home folds it
+ *  into the line under the greeting rather than giving it a chip of its own. */
+export function streakLabel(streak: number | null, t: (k: string, p?: Record<string, string | number>) => string): string {
+  if (streak === null) return '';
+  return streak >= 2 ? t('streak_days', { n: streak }) : t('streak_day1');
+}
+
+export function StreakChip() {
+  const { t } = useStore();
+  const ui = useUI();
+  const styles = useMemo(() => createStyles(ui), [ui]);
+  const streak = useStreak();
+
   if (streak === null) return null;
 
-  const label = streak >= 2 ? t('streak_days', { n: streak }) : t('streak_day1');
+  const label = streakLabel(streak, t);
 
   return (
     <View style={styles.chip}>
