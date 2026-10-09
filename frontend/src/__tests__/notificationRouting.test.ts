@@ -149,7 +149,7 @@ describe('a notification that reports something must not then hide it', () => {
       'family_invite', 'family_joined', 'invite_accepted',
       'star_milestone', 'teen_approval', 'teen_star', 'reward_redeemed',
       'billing_alert', 'due_vaccinations', 'due_documents', 'due_dates',
-      'shopping_added', 'vault_doc',
+      'shopping_added', 'shopping_done', 'task_done', 'vault_doc',
     ];
     const withPayload: Record<string, unknown>[] = [
       ...serverSends.map((type) => ({ type })),
@@ -166,8 +166,19 @@ describe('a notification that reports something must not then hide it', () => {
     expect(landsOnFallback.sort()).toEqual([
       'announcement', 'card_reminder', 'daily_tip', 'handoff_note',
       'morning_digest', 'new_card', 'shared_card', 'sunday_recap',
-      'task_assigned',
+      'task_assigned', 'task_done',
     ]);
+  });
+
+  it('takes "finished the shop" to the list and "finished a task" to the card', () => {
+    // Roland, 2026-10-09: a co-parent ticking something off told nobody. The
+    // server now says so; the tap has to land on the thing it named.
+    expect(targetForNotification({ type: 'shopping_done', family_id: 'fam1' }))
+      .toEqual({ pathname: '/(tabs)/kitchen' });
+    expect(targetForNotification({ type: 'task_done', card_id: 'card_9', family_id: 'fam1' }))
+      .toEqual({ pathname: '/(tabs)/feed', params: { cardId: 'card_9' } });
+    expect(targetForNotification({ type: 'task_done' }))
+      .toEqual({ pathname: '/(tabs)/feed' });
   });
 
   it('takes a shopping alert to the shopping list', () => {
@@ -216,6 +227,7 @@ describe('a notification that reports something must not then hide it', () => {
       chat: { thread: 'dm:~a~b' },
       gift_pot: { pot_id: 'pot_1' },
       santa_draw: { draw_id: 'draw_1' },
+      task_done: { card_id: 'card_1' },
     };
     // And for some the Feed IS the destination: a notification about
     // everything, or the test ping. Named one by one so the check cannot be
