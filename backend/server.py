@@ -8959,6 +8959,42 @@ async def delete_activity(activity_id: str, user=Depends(require_user)):
     return {"ok": True, "hidden": True}
 
 
+@app.get("/api/activity/hidden")
+async def list_hidden_activity(user=Depends(require_user)):
+    """The lines this person cleared from Home, newest first.
+
+    Hiding was one-way: a line left the feed and nothing anywhere listed it
+    again, so a tap on the wrong X lost it for good as far as the person could
+    tell. The completed-history screen shows these under their own heading,
+    with a way back. Only shared lines can be hidden (a private one is deleted
+    outright), and only your own hides are yours to see.
+    """
+    database = get_db()
+    me = user["user_id"]
+    rows = []
+    cursor = database["activity"].find(
+        {"family_id": user["family_id"], "hidden_by": me},
+        {"_id": 0},
+    ).sort("created_at", -1).limit(50)
+    async for row in cursor:
+        rows.append(public_activity(row))
+    return rows
+
+
+@app.post("/api/activity/{activity_id}/unhide")
+async def unhide_activity(activity_id: str, user=Depends(require_user)):
+    """Put a line you hid back on your Home. Nobody else's view changes."""
+    database = get_db()
+    me = user["user_id"]
+    result = await database["activity"].update_one(
+        {"activity_id": activity_id, "family_id": user["family_id"], "hidden_by": me},
+        {"$pull": {"hidden_by": me}},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Not found")
+    return {"ok": True}
+
+
 SEARCH_LIMIT = 40
 
 

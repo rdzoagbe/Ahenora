@@ -2579,6 +2579,12 @@ export const api = {
   // leaves your feed.
   deleteActivity: (id: string) =>
     request(`/activity/${id}`, { method: 'DELETE' }),
+  // The lines this person cleared from Home, so what left the feed can be
+  // found again (the completed-history screen) and put back.
+  listHiddenActivity: () =>
+    request<ActivityEntry[]>('/activity/hidden'),
+  unhideActivity: (id: string) =>
+    request(`/activity/${id}/unhide`, { method: 'POST' }),
   search: (q: string) =>
     request<SearchResponse>(`/search?q=${encodeURIComponent(q)}`),
   listAssignedToMe: () => request<Card[]>('/cards/mine'),

@@ -169,9 +169,10 @@ async def main():
                           if c["card_id"] == picked), "")
             await page.click(f'[data-testid="feed-card-complete-{picked}"]')
             await page.wait_for_timeout(2000)
-            # Rebrand Stage 2 (Roland, 2026-10-07): a ticked task stays in
-            # today's list, greyed out with its tick, instead of vanishing. So
-            # it leaves the OPEN rows at once and reappears as a done row.
+            # A ticked task leaves the OPEN rows at once and reappears, with
+            # an Undo, in the Done card under Today (Roland, 2026-10-09; it
+            # sat greyed inside Today for Stage 2 on 2026-10-07, and before
+            # that it vanished, which read as the tick failing).
             r["it_leaves_the_open_list_at_once"] = await page.locator(
                 f'[data-testid="feed-card-{picked}"]').count() == 0
             r["it_shows_as_done_today"] = await page.locator(
@@ -184,7 +185,7 @@ async def main():
             # The reload is the moment it would come back.
             await page.reload(wait_until="domcontentloaded")
             await page.wait_for_timeout(3200)
-            # Never back as an OPEN row (it may stay as a greyed done row).
+            # Never back as an OPEN row (it may still show in the Done card).
             r["it_is_not_open_again_after_a_reload"] = await page.locator(
                 f'[data-testid="feed-card-{picked}"]').count() == 0
             # Scoped to the task rows, not the whole page. The first version
