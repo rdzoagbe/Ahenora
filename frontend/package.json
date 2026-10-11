@@ -103,6 +103,10 @@
     "@istanbuljs/load-nyc-config": {
       "js-yaml": "^3.15.1"
     },
-    "http-cache-semantics": "^4.3.0"
+    "http-cache-semantics": "^4.3.0",
+    "@react-native/community-cli-plugin": {
+      "metro": "0.84.5",
+      "metro-config": "0.84.5"
+    }
   }
 }
