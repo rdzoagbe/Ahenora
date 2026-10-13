@@ -17,6 +17,12 @@ updates:
       - dependency-name: "expo-*"
       - dependency-name: "@expo/*"
       - dependency-name: "@expo-google-fonts/*"
+      # The SDK also ships packages with "expo" at the END of the name, which
+      # none of the patterns above match. babel-preset-expo 57 -> 58 (an SDK 58
+      # package on an SDK 57 app) arrived that way in #688 and passed CI,
+      # because today's code still compiles. eslint-config-expo has the same
+      # gap. Pinned to the SDK like the rest; moved by `npx expo install --fix`.
+      - dependency-name: "*-expo"
       - dependency-name: "react"
       - dependency-name: "react-dom"
       - dependency-name: "react-native"
