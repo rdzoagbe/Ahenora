@@ -222,6 +222,38 @@ def main():
         fail("invitee register", "new account unexpectedly landed in the inviter's family")
     ok("invitee registered", invitee_email)
 
+    # 3b. The door is locked. Two accounts in two households is exactly the
+    # set-up the authorization walk of 2026-10-10 tested against the code; this
+    # asks the same of the running server. No token and a made-up token must
+    # both be turned away from household data, and a parent in one household
+    # must not be able to touch a card in another, even knowing its id. A 404
+    # for the stranger is the designed answer: whether the thing exists is
+    # itself private.
+    locked = ["/cards", "/vault", "/family/members", "/auth/me", "/admin/subscribers"]
+    for path in locked:
+        for label, tok in (("no token", None), ("made-up token", "not-a-real-token")):
+            status, res = call("GET", path, token=tok)
+            if status != 401:
+                fail("door is locked", f"{label} on GET {path} answered {status}, expected 401: {res}")
+    ok("anonymous and made-up tokens refused", ", ".join(locked))
+    status, res = call("POST", "/cards", {"type": "TASK", "title": "Smoke: door check"},
+                       token=token_a, retry_safe=False)
+    if status != 200 or not res.get("card_id"):
+        fail("door is locked", f"inviter could not add a card: {status}: {res}")
+    card_id = res["card_id"]
+    status, res = call("PATCH", f"/cards/{card_id}", {"title": "Reached from another household"},
+                       token=token_b, retry_safe=False)
+    if status != 404:
+        fail("door is locked", f"another household's PATCH on a card answered {status}, expected 404: {res}")
+    status, res = call("GET", "/cards", token=token_a)
+    mine = [c for c in (res if isinstance(res, list) else res.get("cards", [])) if c.get("card_id") == card_id]
+    if status != 200 or not mine or mine[0].get("title") != "Smoke: door check":
+        fail("door is locked", f"the inviter's card was changed or lost: {status}: {mine}")
+    status, res = call("DELETE", f"/cards/{card_id}", token=token_a, retry_safe=False)
+    if status != 200:
+        fail("door is locked", f"could not remove the check card: {status}: {res}")
+    ok("another household cannot reach a card by id")
+
     # 4. Send the invitation (email delivery to .smoke will fail; irrelevant).
     # "Co-parent" rather than an arbitrary label: it is a typed relationship,
     # so it still proves the wording carries through to the member row, AND
