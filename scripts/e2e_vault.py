@@ -169,9 +169,12 @@ async def main():
         # there was one.
         await add_document("Will not save", settle=1200)
         body = await page.inner_text("body")
+        # The server's own words ("storage unavailable") are never shown any
+        # more (src/apiError.ts); a 500 is said as "Something went wrong on
+        # our side", so that counts as saying something too.
         r["a_failed_save_says_something"] = (
             "could not" in body.lower() or "error" in body.lower()
-            or "unavailable" in body.lower())
+            or "unavailable" in body.lower() or "went wrong" in body.lower())
         r["a_failed_save_did_not_invent_a_document"] = not any(
             d.get("title") == "Will not save" for d in api("GET", "/vault", None, token))
         await page.screenshot(path="vault_failed_save.png")
